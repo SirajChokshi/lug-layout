@@ -30,8 +30,8 @@ export interface ITrackScene extends IViewerScene {
 const TRACK_PARTS = (part: { readonly role: string }): boolean => part.role === "track";
 const STEP_RADIANS = Math.PI / 8;
 const HALF_STEP_RADIANS = Math.PI / 16;
-const ORBIT_DISTANCE_FACTOR = 0.9;
-const ORBIT_ELEVATION_FACTOR = 1.1;
+const ORBIT_DISTANCE_FACTOR = 0.3;
+const ORBIT_ELEVATION_FACTOR = 2.6;
 const MIN_ORBIT_RADIUS_LDU = 400;
 
 interface PlacedPart {

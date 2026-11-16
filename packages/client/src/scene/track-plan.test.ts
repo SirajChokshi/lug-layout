@@ -25,15 +25,15 @@ class BundleDirectoryFetcher implements IAssetFetcher {
   }
 }
 
-const BALLOON = "74746, 74747.1*3, 74747*7, 74746, 74747*5, 74746*5";
+const BALLOON = "ldraw:74746, ldraw:74747.1*3, ldraw:74747*7, ldraw:74746, ldraw:74747*5, ldraw:74746*5";
 const DOGBONE = [
-  "75541-f1",
+  "ldraw:75541-f1",
   BALLOON,
   "/",
-  "74746*2, 75541-f1, 74746*8, 75542-f1.1, 74746*2, 75541-f1",
+  "ldraw:74746*2, ldraw:75541-f1, ldraw:74746*8, ldraw:75542-f1.1, ldraw:74746*2, ldraw:75541-f1",
   BALLOON,
   "/",
-  "74747, 74746*6, 74747",
+  "ldraw:74747, ldraw:74746*6, ldraw:74747",
 ].join(", ");
 
 let catalog: TrackCatalog;
@@ -48,10 +48,10 @@ beforeAll(async () => {
 
 describe("track graph from catalog pieces", () => {
   it("closes a circle of R40 curves only after sixteen, and leaves a short loop open", () => {
-    const circle = new TrackGraph(buildTrackPlan("74747*16", catalog).layout);
+    const circle = new TrackGraph(buildTrackPlan("ldraw:74747*16", catalog).layout);
     expect([circle.joinCount, circle.openEnds.length, circle.issues.length]).toEqual([16, 0, 0]);
 
-    const short = new TrackGraph(buildTrackPlan("74747*15, 74746", catalog).layout);
+    const short = new TrackGraph(buildTrackPlan("ldraw:74747*15, ldraw:74746", catalog).layout);
     expect(short.joinCount).toBe(15);
     expect(Array.from(short.openEnds, (end) => short.endPlacement[end])).toEqual([0, 15]);
   });
@@ -65,7 +65,7 @@ describe("track graph from catalog pieces", () => {
   });
 
   it("lets a facing switch's state choose the route and gives a trailing move one way on", () => {
-    const { layout } = buildTrackPlan("74746, 75541-f1, 74746", catalog);
+    const { layout } = buildTrackPlan("ldraw:74746, ldraw:75541-f1, ldraw:74746", catalog);
     const graph = new TrackGraph(layout);
     const states = new Uint8Array(graph.switchCount);
     const facing = 0;
@@ -84,7 +84,7 @@ describe("track graph from catalog pieces", () => {
   });
 
   it("reports coincident ends that do not face each other instead of joining them", () => {
-    const { layout: planned } = buildTrackPlan("74746", catalog);
+    const { layout: planned } = buildTrackPlan("ldraw:74746", catalog);
     const layout = new TrackLayout(planned.pieces);
     const piece = planned.piece(0);
     layout.place(piece, POSE16_IDENTITY, 0);

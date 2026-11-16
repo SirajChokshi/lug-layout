@@ -2,7 +2,7 @@ import type { TrackCatalog, TrackPiece } from "@brr/catalog";
 import { TrackLayout, type TrackEndRef, type TrackPieceSpec } from "@brr/domain";
 import { HALF_TURN_16, pose16, POSE16_IDENTITY, type Pose16 } from "@brr/math";
 
-const PIECE_TOKEN = /^(?<part>[0-9a-z-]+)(?:\.(?<connector>\d+))?(?:\*(?<count>\d+))?$/u;
+const PIECE_TOKEN = /^(?<part>[0-9a-z:-]+)(?:\.(?<connector>\d+))?(?:\*(?<count>\d+))?$/u;
 const BRANCH_TOKEN = "/";
 const GROUND_PLATES = 0;
 
