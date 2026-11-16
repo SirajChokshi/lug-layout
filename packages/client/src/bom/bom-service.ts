@@ -13,7 +13,23 @@ import { inject, injectable } from "inversify";
 
 export type BomScope =
   | { readonly kind: "world" }
-  | { readonly kind: "region"; readonly region: PlacementRegion };
+  | { readonly kind: "region"; readonly region: PlacementRegion }
+  | { readonly kind: "selection" };
+
+export function sceneRegion(scope: BomScope): PlacementRegion | null {
+  switch (scope.kind) {
+    case "world":
+      return null;
+    case "region":
+      return scope.region;
+    case "selection":
+      throw new Error("this scene has no selection; choose World or Region");
+    default: {
+      const unhandled: never = scope;
+      throw new Error(`unhandled scope ${String(unhandled)}`);
+    }
+  }
+}
 
 export interface BomInput {
   readonly name: string;

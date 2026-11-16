@@ -1,4 +1,5 @@
-import type { EditorOptions, IEditor, IPlanService } from "@brr/client";
+import type { EditorOptions, IBomService, IEditor, IPlanService } from "@brr/client";
+import { BomPanel } from "./bom-panel.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CreditsFooter,
@@ -15,6 +16,7 @@ import { useEditorSnapshot } from "./use-editor.ts";
 interface EditorAppProps {
   readonly editor: IEditor;
   readonly plans: IPlanService;
+  readonly bomService: IBomService;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -48,7 +50,14 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
   );
 }
 
-export function EditorApp({ editor, plans, options, disclaimer, showState }: EditorAppProps) {
+export function EditorApp({
+  editor,
+  plans,
+  bomService,
+  options,
+  disclaimer,
+  showState,
+}: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   return (
     <div
@@ -73,6 +82,14 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
         <TrackPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />
+        {snapshot.status === "ready" && (
+          <BomPanel
+            service={bomService}
+            source={editor}
+            region={null}
+            selectionLabel={snapshot.selection?.item ?? null}
+          />
+        )}
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}

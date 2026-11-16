@@ -14,7 +14,7 @@ import type {
 } from "@brr/client";
 import { CreditLinks, partsCreditText, RunningGearPanel } from "@brr/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BomPanel } from "./bom-panel.tsx";
+import { BomPanel } from "@brr/ui";
 import { ImportPanel } from "./import-panel.tsx";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
@@ -306,7 +306,12 @@ export function App({
           </pre>
         )}
         {report && !error && bom && (
-          <BomPanel service={bom.service} source={bom.source} region={params.region} />
+          <BomPanel
+            service={bom.service}
+            source={bom.source}
+            region={params.region}
+            selectionLabel={null}
+          />
         )}
         {result && !error && (
           <pre id="result" data-done="1">
