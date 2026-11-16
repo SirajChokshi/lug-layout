@@ -1,0 +1,2917 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n117f3e5b6f0bbdd9\nParts\n2,261\nModules\n3\nStud instances (drawn of total)\n6,415 of 6,415\nScene triangles\n1,002,086\nLoad\n37 ms\nGPU buffers allocated so far, JS heap\nvertex+index 6.8 MiB, other 0.1 MiB, JS heap 56.9 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n3 / 0 / 0\nDraw calls\n409\nDrawn triangles\n1,002,087\nScene coverage\n17%\nFrame rate (rAF)\n1.7 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 300,
+        "z": -100,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "10246-1.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Main model.ldr",
+            "title": "Main model"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor.ldr",
+            "title": "Ground floor"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Pool player.ldr",
+            "title": "Pool player"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Pool table.ldr",
+            "title": "Ground floor - Pool table"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Slide door.ldr",
+            "title": "Ground floor - Slide door"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Cue holder.ldr",
+            "title": "Ground floor - Cue holder"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Fan.ldr",
+            "title": "Ground floor - Fan"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Dart player.ldr",
+            "title": "Dart player"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Column.ldr",
+            "title": "Ground floor - Column"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Shop window.ldr",
+            "title": "Ground floor - Shop window"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Female officer.ldr",
+            "title": "Female officer"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Al the barber.ldr",
+            "title": "Al the barber"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Barrel.ldr",
+            "title": "Ground floor - Barrel"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Stairs.ldr",
+            "title": "Ground floor - Stairs"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Cupboard.ldr",
+            "title": "Ground floor - Cupboard"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Secret door.ldr",
+            "title": "Ground floor - Secret door"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Wig stand.ldr",
+            "title": "Ground floor - Wig stand"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Styling chair.ldr",
+            "title": "Ground floor - Styling chair"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Mirror holder bottom.ldr",
+            "title": "Ground floor - Mirror holder bottom"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Grid.ldr",
+            "title": "Ground floor - Grid"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Stairs long.ldr",
+            "title": "Ground floor - Stairs long"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Lamp.ldr",
+            "title": "Ground floor - Lamp"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Roof.ldr",
+            "title": "Ground floor - Roof"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Bench.ldr",
+            "title": "Ground floor - Bench"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Letters1.ldr",
+            "title": "Ground floor - Letters1"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Letters3.ldr",
+            "title": "Ground floor - Letters3"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Letters2.ldr",
+            "title": "Ground floor - Letters2"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Letters4.ldr",
+            "title": "Ground floor - Letters4"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Letters6.ldr",
+            "title": "Ground floor - Letters6"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ground floor - Letters5.ldr",
+            "title": "Ground floor - Letters5"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor.ldr",
+            "title": "First floor"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Ace Brickman.ldr",
+            "title": "Ace Brickman"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Lady in red.ldr",
+            "title": "Lady in red"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Fence.ldr",
+            "title": "First floor - Fence"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Lamp.ldr",
+            "title": "First floor - Lamp"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Wall1.ldr",
+            "title": "First floor - Wall1"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Armchair.ldr",
+            "title": "First floor - Armchair"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - File cabinet.ldr",
+            "title": "First floor - File cabinet"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Writing desk.ldr",
+            "title": "First floor - Writing desk"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Safe.ldr",
+            "title": "First floor - Safe"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Chair.ldr",
+            "title": "First floor - Chair"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Desk lamp.ldr",
+            "title": "First floor - Desk lamp"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Wardrobe stand.ldr",
+            "title": "First floor - Wardrobe stand"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Wall2.ldr",
+            "title": "First floor - Wall2"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Painting.ldr",
+            "title": "First floor - Painting"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Fan.ldr",
+            "title": "First floor - Fan"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Windows sims large.ldr",
+            "title": "First floor - Windows sims large"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Windows sims small.ldr",
+            "title": "First floor - Windows sims small"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Fire escape.ldr",
+            "title": "First floor - Fire escape"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - First floor - Fire escape release.ldr",
+            "title": "First floor - Fire escape release"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor.ldr",
+            "title": "Second floor"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Fridge and drawer.ldr",
+            "title": "Second floor - Fridge and drawer"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Flowerpot.ldr",
+            "title": "Second floor - Flowerpot"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Rolling pin.ldr",
+            "title": "Second floor - Rolling pin"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Cupboard.ldr",
+            "title": "Second floor - Cupboard"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Lamp.ldr",
+            "title": "Second floor - Lamp"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Ornament1.ldr",
+            "title": "Second Floor - Ornament1"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Spotlight.ldr",
+            "title": "Second floor - Spotlight"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Ornament2.ldr",
+            "title": "Second Floor - Ornament2"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Ornament3.ldr",
+            "title": "Second Floor - Ornament3"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Ornament4.ldr",
+            "title": "Second Floor - Ornament4"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Second floor - Water container.ldr",
+            "title": "Second floor - Water container"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Roof.ldr",
+            "title": "Roof"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Roof - Ornament.ldr",
+            "title": "Roof - Ornament"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Sign.ldr",
+            "title": "Sign"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Sign - Backside.ldr",
+            "title": "Sign - Backside"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - News stand.ldr",
+            "title": "News stand"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - News stand - Lid.ldr",
+            "title": "News stand - Lid"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Tree.ldr",
+            "title": "Tree"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10246 - Lamppost.ldr",
+            "title": "Lamppost"
+          }
+        ],
+        "instanceCount": 2269,
+        "drawnInstanceCount": 2261,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3811.dat",
+            "official": "3811.dat",
+            "instances": 1,
+            "partId": "ldraw:3811"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070b.dat",
+            "official": "3070b.dat",
+            "instances": 35,
+            "partId": "ldraw:3070b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6636.dat",
+            "official": "6636.dat",
+            "instances": 43,
+            "partId": "ldraw:6636"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "official": "3022.dat",
+            "instances": 40,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "official": "3069b.dat",
+            "instances": 69,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2412b.dat",
+            "official": "2412b.dat",
+            "instances": 9,
+            "partId": "ldraw:2412b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068b.dat",
+            "official": "3068b.dat",
+            "instances": 61,
+            "partId": "ldraw:3068b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87580.dat",
+            "official": "87580.dat",
+            "instances": 3,
+            "partId": "ldraw:87580"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "official": "3020.dat",
+            "instances": 16,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "official": "3024.dat",
+            "instances": 73,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431.dat",
+            "official": "2431.dat",
+            "instances": 44,
+            "partId": "ldraw:2431"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "official": "3623.dat",
+            "instances": 30,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87079.dat",
+            "official": "87079.dat",
+            "instances": 10,
+            "partId": "ldraw:87079"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "official": "3710.dat",
+            "instances": 41,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98283.dat",
+            "official": "98283.dat",
+            "instances": 87,
+            "partId": "ldraw:98283"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "official": "3004.dat",
+            "instances": 156,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3622.dat",
+            "official": "3622.dat",
+            "instances": 34,
+            "partId": "ldraw:3622"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3700.dat",
+            "official": "3700.dat",
+            "instances": 6,
+            "partId": "ldraw:3700"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3666.dat",
+            "official": "3666.dat",
+            "instances": 56,
+            "partId": "ldraw:3666"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99206.dat",
+            "official": "99206.dat",
+            "instances": 2,
+            "partId": "ldraw:99206"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4162.dat",
+            "official": "4162.dat",
+            "instances": 14,
+            "partId": "ldraw:4162"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15573.dat",
+            "official": "15573.dat",
+            "instances": 110,
+            "partId": "ldraw:15573"
+          },
+          {
+            "kind": "compiled",
+            "reference": "11833.dat",
+            "official": "11833.dat",
+            "instances": 2,
+            "partId": "ldraw:11833",
+            "file": "parts/11833.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2013-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "11833.dat",
+              "title": "Plate 4 x 4 Round with 2 x 2 Round Hole"
+            },
+            "sourceFiles": 32
+          },
+          {
+            "kind": "bundle",
+            "reference": "4032b.dat",
+            "official": "4032b.dat",
+            "instances": 12,
+            "partId": "ldraw:4032b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3023.dat",
+            "official": "3023.dat",
+            "instances": 119,
+            "partId": "ldraw:3023"
+          },
+          {
+            "kind": "compiled",
+            "reference": "30413.dat",
+            "official": "30413.dat",
+            "instances": 6,
+            "partId": "ldraw:30413",
+            "file": "parts/30413.dat",
+            "header": {
+              "author": "R. M. Rodinsky [dublar]",
+              "ldrawOrg": "Part UPDATE 2019-02",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "30413.dat",
+              "title": "Panel 1 x 4 x 1 with Rounded Corners, Thick Wall"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "compiled",
+            "reference": "14769.dat",
+            "official": "14769.dat",
+            "instances": 1,
+            "partId": "ldraw:14769",
+            "file": "parts/14769.dat",
+            "header": {
+              "author": "Max Martin Richter [MMR1988]",
+              "ldrawOrg": "Part UPDATE 2014-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "14769.dat",
+              "title": "Tile 2 x 2 Round with Round Underside Stud"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "bundle",
+            "reference": "3010.dat",
+            "official": "3010.dat",
+            "instances": 60,
+            "partId": "ldraw:3010"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2921.dat",
+            "official": "2921.dat",
+            "instances": 12,
+            "partId": "ldraw:2921"
+          },
+          {
+            "kind": "bundle",
+            "reference": "59900.dat",
+            "official": "59900.dat",
+            "instances": 14,
+            "partId": "ldraw:59900"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3021.dat",
+            "official": "3021.dat",
+            "instances": 12,
+            "partId": "ldraw:3021"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99780.dat",
+            "official": "99780.dat",
+            "instances": 14,
+            "partId": "ldraw:99780"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32028.dat",
+            "official": "32028.dat",
+            "instances": 30,
+            "partId": "ldraw:32028"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6141.dat",
+            "official": "6141.dat",
+            "instances": 21,
+            "partId": "ldraw:6141"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3460.dat",
+            "official": "3460.dat",
+            "instances": 23,
+            "partId": "ldraw:3460"
+          },
+          {
+            "kind": "compiled",
+            "reference": "99207.dat",
+            "official": "99207.dat",
+            "instances": 9,
+            "partId": "ldraw:99207",
+            "file": "parts/99207.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2012-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "99207.dat",
+              "title": "Bracket 1 x 2 - 2 x 2 Up"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "bundle",
+            "reference": "3008.dat",
+            "official": "3008.dat",
+            "instances": 5,
+            "partId": "ldraw:3008"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3009.dat",
+            "official": "3009.dat",
+            "instances": 21,
+            "partId": "ldraw:3009"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "official": "3005.dat",
+            "instances": 77,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60475b.dat",
+            "official": "60475b.dat",
+            "instances": 8,
+            "partId": "ldraw:60475b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2420.dat",
+            "official": "2420.dat",
+            "instances": 16,
+            "partId": "ldraw:2420"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30126.dat",
+            "official": "30126.dat",
+            "instances": 2,
+            "partId": "ldraw:30126"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2357.dat",
+            "official": "2357.dat",
+            "instances": 7,
+            "partId": "ldraw:2357"
+          },
+          {
+            "kind": "compiled",
+            "reference": "10172.dat",
+            "official": "10172.dat",
+            "instances": 1,
+            "partId": "ldraw:10172",
+            "file": "parts/10172.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2022-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "10172.dat",
+              "title": "Minifig Trophy Cup 2.4L"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "bundle",
+            "reference": "60593c01.dat",
+            "official": "60593c01.dat",
+            "instances": 12,
+            "partId": "ldraw:60593c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60594.dat",
+            "official": "60594.dat",
+            "instances": 9,
+            "partId": "ldraw:60594"
+          },
+          {
+            "kind": "bundle",
+            "reference": "86210.dat",
+            "official": "86210.dat",
+            "instances": 7,
+            "partId": "ldraw:86210"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60581.dat",
+            "official": "60581.dat",
+            "instances": 2,
+            "partId": "ldraw:60581"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87087.dat",
+            "official": "87087.dat",
+            "instances": 9,
+            "partId": "ldraw:87087"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60596.dat",
+            "official": "60596.dat",
+            "instances": 10,
+            "partId": "ldraw:60596"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60623.dat",
+            "official": "60623.dat",
+            "instances": 2,
+            "partId": "ldraw:60623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "62361.dat",
+            "official": "62361.dat",
+            "instances": 1,
+            "partId": "ldraw:62361"
+          },
+          {
+            "kind": "compiled",
+            "reference": "14769p0b.dat",
+            "official": "14769p0b.dat",
+            "instances": 1,
+            "partId": "ldraw:14769p0b",
+            "file": "parts/14769p0b.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2025-12",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "14769p0b.dat",
+              "title": "Tile 2 x 2 Round with Round Underside Stud with Dart Board Pattern"
+            },
+            "sourceFiles": 22
+          },
+          {
+            "kind": "bundle",
+            "reference": "30374.dat",
+            "official": "30374.dat",
+            "instances": 9,
+            "partId": "ldraw:30374"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11090.dat",
+            "official": "11090.dat",
+            "instances": 1,
+            "partId": "ldraw:11090"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3068bp0c.dat",
+            "official": "3068bp0c.dat",
+            "instances": 1,
+            "partId": "ldraw:3068bp0c",
+            "file": "parts/3068bp0c.dat",
+            "header": {
+              "author": "J.C. Tchang [tchang]",
+              "ldrawOrg": "Part UPDATE 2013-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3068bp0c.dat",
+              "title": "Tile 2 x 2 with Gold Star with Brick in Center Pattern"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "3817.dat",
+            "official": "3817.dat",
+            "instances": 4,
+            "partId": "ldraw:3817"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3816.dat",
+            "official": "3816.dat",
+            "instances": 4,
+            "partId": "ldraw:3816"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815.dat",
+            "official": "3815.dat",
+            "instances": 4,
+            "partId": "ldraw:3815"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p1y.dat",
+            "official": "973p1y.dat",
+            "instances": 1,
+            "partId": "ldraw:973p1y",
+            "file": "parts/973p1y.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2019-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p1y.dat",
+              "title": "Minifig Torso with Jacket with Pockets over Dark Red V-Neck Sweater Pattern"
+            },
+            "sourceFiles": 17
+          },
+          {
+            "kind": "bundle",
+            "reference": "3818.dat",
+            "official": "3818.dat",
+            "instances": 6,
+            "partId": "ldraw:3818"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3820.dat",
+            "official": "3820.dat",
+            "instances": 12,
+            "partId": "ldraw:3820"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626bp01.dat",
+            "official": "3626bp01.dat",
+            "instances": 6,
+            "partId": "ldraw:3626bp01"
+          },
+          {
+            "kind": "compiled",
+            "reference": "98385.dat",
+            "official": "98385.dat",
+            "instances": 1,
+            "partId": "ldraw:98385",
+            "file": "parts/98385.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2016-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "98385.dat",
+              "title": "Minifig Hair Spiked"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "3819.dat",
+            "official": "3819.dat",
+            "instances": 6,
+            "partId": "ldraw:3819"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973pdd.dat",
+            "official": "973pdd.dat",
+            "instances": 1,
+            "partId": "ldraw:973pdd",
+            "file": "parts/973pdd.dat",
+            "header": {
+              "author": "Peter Lind [peterlinddk]",
+              "ldrawOrg": "Part UPDATE 2012-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "973pdd.dat",
+              "title": "Minifig Torso with Blue Plaid Shirt Pattern"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "compiled",
+            "reference": "41334.dat",
+            "official": "41334.dat",
+            "instances": 1,
+            "partId": "ldraw:41334",
+            "file": "parts/41334.dat",
+            "header": {
+              "author": "Paul Easter [pneaster]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "41334.dat",
+              "title": "Minifig Hat Knit Cap"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "bundle",
+            "reference": "3660.dat",
+            "official": "3660.dat",
+            "instances": 7,
+            "partId": "ldraw:3660"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3176.dat",
+            "official": "3176.dat",
+            "instances": 4,
+            "partId": "ldraw:3176"
+          },
+          {
+            "kind": "bundle",
+            "reference": "85984.dat",
+            "official": "85984.dat",
+            "instances": 10,
+            "partId": "ldraw:85984"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6628.dat",
+            "official": "6628.dat",
+            "instances": 2,
+            "partId": "ldraw:6628"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4733.dat",
+            "official": "4733.dat",
+            "instances": 1,
+            "partId": "ldraw:4733"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87994.dat",
+            "official": "87994.dat",
+            "instances": 1,
+            "partId": "ldraw:87994"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4740.dat",
+            "official": "4740.dat",
+            "instances": 10,
+            "partId": "ldraw:4740"
+          },
+          {
+            "kind": "compiled",
+            "reference": "10246 - 11187a.dat",
+            "official": "11187a.dat",
+            "instances": 8,
+            "partId": "ldraw:11187a",
+            "file": "parts/11187a.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part Alias UPDATE 2023-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "11187a.dat",
+              "title": "=Minifig Snowshoe with Short Toe Webbing"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "bundle",
+            "reference": "4274.dat",
+            "official": "4274.dat",
+            "instances": 5,
+            "partId": "ldraw:4274"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6541.dat",
+            "official": "6541.dat",
+            "instances": 10,
+            "partId": "ldraw:6541"
+          },
+          {
+            "kind": "compiled",
+            "reference": "87618.dat",
+            "official": "87618.dat",
+            "instances": 1,
+            "partId": "ldraw:87618",
+            "file": "parts/87618.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2024-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "87618.dat",
+              "title": "Bar 4.5L with Handle"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "57895.dat",
+            "official": "57895.dat",
+            "instances": 3,
+            "partId": "ldraw:57895"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60616b.dat",
+            "official": "60616b.dat",
+            "instances": 2,
+            "partId": "ldraw:60616b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3940.dat",
+            "official": "3940.dat",
+            "instances": 2,
+            "partId": "ldraw:3940",
+            "file": "parts/3940.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2024-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3940.dat",
+              "title": "~Moved to 3940b"
+            },
+            "sourceFiles": 35
+          },
+          {
+            "kind": "bundle",
+            "reference": "18674.dat",
+            "official": "18674.dat",
+            "instances": 2,
+            "partId": "ldraw:18674"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3899.dat",
+            "official": "3899.dat",
+            "instances": 1,
+            "partId": "ldraw:3899"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2454.dat",
+            "official": "2454.dat",
+            "instances": 4,
+            "partId": "ldraw:2454"
+          },
+          {
+            "kind": "compiled",
+            "reference": "14418.dat",
+            "official": "14418.dat",
+            "instances": 8,
+            "partId": "ldraw:14418",
+            "file": "parts/14418.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "14418.dat",
+              "title": "Plate 1 x 2 with Socket Joint-8 with Friction"
+            },
+            "sourceFiles": 25
+          },
+          {
+            "kind": "compiled",
+            "reference": "2736.dat",
+            "official": "2736.dat",
+            "instances": 8,
+            "partId": "ldraw:2736",
+            "file": "parts/2736.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-10",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2736.dat",
+              "title": "Technic Axle Towball"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "59443.dat",
+            "official": "59443.dat",
+            "instances": 13,
+            "partId": "ldraw:59443"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32062.dat",
+            "official": "32062.dat",
+            "instances": 18,
+            "partId": "ldraw:32062"
+          },
+          {
+            "kind": "compiled",
+            "reference": "57895p02.dat",
+            "official": "57895p02.dat",
+            "instances": 2,
+            "partId": "ldraw:57895p02",
+            "file": "parts/57895p02.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2025-08",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "57895p02.dat",
+              "title": "Glass for Window 1 x 4 x 6 with \"THE HIGHLANDER\" and White Decorative Border Pattern"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "3065.dat",
+            "official": "3065.dat",
+            "instances": 3,
+            "partId": "ldraw:3065"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3062b.dat",
+            "official": "3062b.dat",
+            "instances": 15,
+            "partId": "ldraw:3062b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60474.dat",
+            "official": "60474.dat",
+            "instances": 3,
+            "partId": "ldraw:60474"
+          },
+          {
+            "kind": "compiled",
+            "reference": "86500.dat",
+            "official": "86500.dat",
+            "instances": 2,
+            "partId": "ldraw:86500",
+            "file": "parts/86500.dat",
+            "header": {
+              "author": "Santeri Piippo [arezey]",
+              "ldrawOrg": "Part UPDATE 2024-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "86500.dat",
+              "title": "Dome 4 x 4 Smooth"
+            },
+            "sourceFiles": 17
+          },
+          {
+            "kind": "bundle",
+            "reference": "15254.dat",
+            "official": "15254.dat",
+            "instances": 5,
+            "partId": "ldraw:15254"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92593.dat",
+            "official": "92593.dat",
+            "instances": 9,
+            "partId": "ldraw:92593"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63864.dat",
+            "official": "63864.dat",
+            "instances": 38,
+            "partId": "ldraw:63864"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4477.dat",
+            "official": "4477.dat",
+            "instances": 4,
+            "partId": "ldraw:4477"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3680.dat",
+            "official": "3680.dat",
+            "instances": 3,
+            "partId": "ldraw:3680"
+          },
+          {
+            "kind": "bundle",
+            "reference": "14719.dat",
+            "official": "14719.dat",
+            "instances": 14,
+            "partId": "ldraw:14719"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2489.dat",
+            "official": "2489.dat",
+            "instances": 1,
+            "partId": "ldraw:2489"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98138p0a.dat",
+            "official": "98138p0a.dat",
+            "instances": 6,
+            "partId": "ldraw:98138p0a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "98138p0d.dat",
+            "official": "98138p0d.dat",
+            "instances": 5,
+            "partId": "ldraw:98138p0d",
+            "file": "parts/98138p0d.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2015-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "98138p0d.dat",
+              "title": "Tile 1 x 1 Round with Spiral Red Pattern"
+            },
+            "sourceFiles": 15
+          },
+          {
+            "kind": "bundle",
+            "reference": "3032.dat",
+            "official": "3032.dat",
+            "instances": 2,
+            "partId": "ldraw:3032"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2780.dat",
+            "official": "2780.dat",
+            "instances": 6,
+            "partId": "ldraw:2780"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3679.dat",
+            "official": "3679.dat",
+            "instances": 3,
+            "partId": "ldraw:3679"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2430.dat",
+            "official": "2430.dat",
+            "instances": 2,
+            "partId": "ldraw:2430"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2429.dat",
+            "official": "2429.dat",
+            "instances": 2,
+            "partId": "ldraw:2429"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30414.dat",
+            "official": "30414.dat",
+            "instances": 1,
+            "partId": "ldraw:30414"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4599b.dat",
+            "official": "4599b.dat",
+            "instances": 11,
+            "partId": "ldraw:4599b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3830.dat",
+            "official": "3830.dat",
+            "instances": 1,
+            "partId": "ldraw:3830"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54200.dat",
+            "official": "54200.dat",
+            "instances": 17,
+            "partId": "ldraw:54200"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3831.dat",
+            "official": "3831.dat",
+            "instances": 1,
+            "partId": "ldraw:3831"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88072.dat",
+            "official": "88072.dat",
+            "instances": 2,
+            "partId": "ldraw:88072"
+          },
+          {
+            "kind": "compiled",
+            "reference": "95820.dat",
+            "official": "95820.dat",
+            "instances": 3,
+            "partId": "ldraw:95820",
+            "file": "parts/95820.dat",
+            "header": {
+              "author": "Michael Heidemann [mikeheide]",
+              "ldrawOrg": "Part UPDATE 2014-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "95820.dat",
+              "title": "Brick 1 x 2 with Clip Vertical (Thick C-Clip)"
+            },
+            "sourceFiles": 22
+          },
+          {
+            "kind": "bundle",
+            "reference": "4216.dat",
+            "official": "4216.dat",
+            "instances": 14,
+            "partId": "ldraw:4216"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87552.dat",
+            "official": "87552.dat",
+            "instances": 3,
+            "partId": "ldraw:87552"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626c.dat",
+            "official": "3626c.dat",
+            "instances": 3,
+            "partId": "ldraw:3626c"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15535.dat",
+            "official": "15535.dat",
+            "instances": 13,
+            "partId": "ldraw:15535"
+          },
+          {
+            "kind": "compiled",
+            "reference": "85975.dat",
+            "official": "85975.dat",
+            "instances": 1,
+            "partId": "ldraw:85975",
+            "file": "parts/85975.dat",
+            "header": {
+              "author": "Joerg Sommerer [Brickaneer]",
+              "ldrawOrg": "Part UPDATE 2012-03",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "85975.dat",
+              "title": "Minifig Hat Fez"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "bundle",
+            "reference": "15712.dat",
+            "official": "15712.dat",
+            "instances": 3,
+            "partId": "ldraw:15712"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99781.dat",
+            "official": "99781.dat",
+            "instances": 5,
+            "partId": "ldraw:99781"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3839b.dat",
+            "official": "3839b.dat",
+            "instances": 3,
+            "partId": "ldraw:3839b",
+            "file": "parts/3839b.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3839b.dat",
+              "title": "Plate 1 x 2 with Handles Type 2"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "4865a.dat",
+            "official": "4865a.dat",
+            "instances": 1,
+            "partId": "ldraw:4865a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4735.dat",
+            "official": "4735.dat",
+            "instances": 2,
+            "partId": "ldraw:4735"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48336.dat",
+            "official": "48336.dat",
+            "instances": 1,
+            "partId": "ldraw:48336"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60897.dat",
+            "official": "60897.dat",
+            "instances": 7,
+            "partId": "ldraw:60897"
+          },
+          {
+            "kind": "compiled",
+            "reference": "92746.dat",
+            "official": "92746.dat",
+            "instances": 1,
+            "partId": "ldraw:92746",
+            "file": "parts/92746.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "92746.dat",
+              "title": "Minifig Hair Tousled and Layered"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "40240.dat",
+            "official": "40240.dat",
+            "instances": 1,
+            "partId": "ldraw:40240",
+            "file": "parts/40240.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2016-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "40240.dat",
+              "title": "Minifig Hair Short Bowl Cut"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "60614.dat",
+            "official": "60614.dat",
+            "instances": 2,
+            "partId": "ldraw:60614"
+          },
+          {
+            "kind": "bundle",
+            "reference": "62113.dat",
+            "official": "62113.dat",
+            "instances": 3,
+            "partId": "ldraw:62113"
+          },
+          {
+            "kind": "compiled",
+            "reference": "48729a.dat",
+            "official": "48729a.dat",
+            "instances": 2,
+            "partId": "ldraw:48729a",
+            "file": "parts/48729a.dat",
+            "header": {
+              "author": "Andreas Weissenburg [grubaluk]",
+              "ldrawOrg": "Part UPDATE 2016-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "48729a.dat",
+              "title": "Bar 1.5L with Clip without Hole in Shaft"
+            },
+            "sourceFiles": 4
+          },
+          {
+            "kind": "bundle",
+            "reference": "2423.dat",
+            "official": "2423.dat",
+            "instances": 1,
+            "partId": "ldraw:2423"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30134.dat",
+            "official": "30134.dat",
+            "instances": 2,
+            "partId": "ldraw:30134"
+          },
+          {
+            "kind": "compiled",
+            "reference": "10246 - 20193.dat",
+            "official": "20193.dat",
+            "instances": 1,
+            "partId": "ldraw:20193",
+            "file": "parts/20193.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2019-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "20193.dat",
+              "title": "Sheet Plastic 3.6 x 6.6 Rectangular with Mirror Glass Pattern"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "bundle",
+            "reference": "92926.dat",
+            "official": "92926.dat",
+            "instances": 1,
+            "partId": "ldraw:92926"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11303.dat",
+            "official": "11303.dat",
+            "instances": 1,
+            "partId": "ldraw:11303"
+          },
+          {
+            "kind": "compiled",
+            "reference": "15470.dat",
+            "official": "15470.dat",
+            "instances": 2,
+            "partId": "ldraw:15470",
+            "file": "parts/15470.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2014-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "15470.dat",
+              "title": "Plate 1 x 1 Round with Swirled Top"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "bundle",
+            "reference": "4510.dat",
+            "official": "4510.dat",
+            "instances": 5,
+            "partId": "ldraw:4510"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3832.dat",
+            "official": "3832.dat",
+            "instances": 1,
+            "partId": "ldraw:3832"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4286.dat",
+            "official": "4286.dat",
+            "instances": 8,
+            "partId": "ldraw:4286"
+          },
+          {
+            "kind": "bundle",
+            "reference": "16577.dat",
+            "official": "16577.dat",
+            "instances": 1,
+            "partId": "ldraw:16577"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60592c01.dat",
+            "official": "60592c01.dat",
+            "instances": 26,
+            "partId": "ldraw:60592c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60481.dat",
+            "official": "60481.dat",
+            "instances": 1,
+            "partId": "ldraw:60481"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3040b.dat",
+            "official": "3040b.dat",
+            "instances": 6,
+            "partId": "ldraw:3040b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4282.dat",
+            "official": "4282.dat",
+            "instances": 2,
+            "partId": "ldraw:4282"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3297.dat",
+            "official": "3297.dat",
+            "instances": 3,
+            "partId": "ldraw:3297"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2456.dat",
+            "official": "2456.dat",
+            "instances": 2,
+            "partId": "ldraw:2456"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4161.dat",
+            "official": "4161.dat",
+            "instances": 6,
+            "partId": "ldraw:4161"
+          },
+          {
+            "kind": "bundle",
+            "reference": "47905.dat",
+            "official": "47905.dat",
+            "instances": 1,
+            "partId": "ldraw:47905"
+          },
+          {
+            "kind": "bundle",
+            "reference": "61252.dat",
+            "official": "61252.dat",
+            "instances": 3,
+            "partId": "ldraw:61252"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92690.dat",
+            "official": "92690.dat",
+            "instances": 2,
+            "partId": "ldraw:92690"
+          },
+          {
+            "kind": "bundle",
+            "reference": "18920.dat",
+            "official": "18920.dat",
+            "instances": 2,
+            "partId": "ldraw:18920"
+          },
+          {
+            "kind": "compiled",
+            "reference": "91988.dat",
+            "official": "91988.dat",
+            "instances": 11,
+            "partId": "ldraw:91988",
+            "file": "parts/91988.dat",
+            "header": {
+              "author": "Owen Burgoyne [C3POwen]",
+              "ldrawOrg": "Part UPDATE 2012-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "91988.dat",
+              "title": "Plate 2 x 14"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "bundle",
+            "reference": "92107.dat",
+            "official": "92107.dat",
+            "instances": 4,
+            "partId": "ldraw:92107"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3036.dat",
+            "official": "3036.dat",
+            "instances": 2,
+            "partId": "ldraw:3036"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3456.dat",
+            "official": "3456.dat",
+            "instances": 3,
+            "partId": "ldraw:3456"
+          },
+          {
+            "kind": "bundle",
+            "reference": "41539.dat",
+            "official": "41539.dat",
+            "instances": 2,
+            "partId": "ldraw:41539"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60479.dat",
+            "official": "60479.dat",
+            "instances": 7,
+            "partId": "ldraw:60479"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3795.dat",
+            "official": "3795.dat",
+            "instances": 15,
+            "partId": "ldraw:3795"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92280.dat",
+            "official": "92280.dat",
+            "instances": 4,
+            "partId": "ldraw:92280"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11211.dat",
+            "official": "11211.dat",
+            "instances": 6,
+            "partId": "ldraw:11211"
+          },
+          {
+            "kind": "bundle",
+            "reference": "85861.dat",
+            "official": "85861.dat",
+            "instances": 17,
+            "partId": "ldraw:85861"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98100.dat",
+            "official": "98100.dat",
+            "instances": 3,
+            "partId": "ldraw:98100"
+          },
+          {
+            "kind": "compiled",
+            "reference": "12885.dat",
+            "official": "12885.dat",
+            "instances": 2,
+            "partId": "ldraw:12885",
+            "file": "parts/12885.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "12885.dat",
+              "title": "Minifig Paint Roller Brush Handle"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "6231.dat",
+            "official": "6231.dat",
+            "instances": 1,
+            "partId": "ldraw:6231"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30340.dat",
+            "official": "30340.dat",
+            "instances": 1,
+            "partId": "ldraw:30340"
+          },
+          {
+            "kind": "compiled",
+            "reference": "58380.dat",
+            "official": "58380.dat",
+            "instances": 1,
+            "partId": "ldraw:58380",
+            "file": "parts/58380.dat",
+            "header": {
+              "author": "Rolf Osterthun [Rolf]",
+              "ldrawOrg": "Part UPDATE 2011-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "58380.dat",
+              "title": "Door 1 x 3 x 4 Right with Hollow Hinge"
+            },
+            "sourceFiles": 33
+          },
+          {
+            "kind": "bundle",
+            "reference": "4081b.dat",
+            "official": "4081b.dat",
+            "instances": 3,
+            "partId": "ldraw:4081b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4592.dat",
+            "official": "4592.dat",
+            "instances": 1,
+            "partId": "ldraw:4592"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4593.dat",
+            "official": "4593.dat",
+            "instances": 1,
+            "partId": "ldraw:4593"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "official": "3003.dat",
+            "instances": 1,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "33291.dat",
+            "official": "33291.dat",
+            "instances": 13,
+            "partId": "ldraw:33291"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2877.dat",
+            "official": "2877.dat",
+            "instances": 20,
+            "partId": "ldraw:2877"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15395.dat",
+            "official": "15395.dat",
+            "instances": 2,
+            "partId": "ldraw:15395"
+          },
+          {
+            "kind": "compiled",
+            "reference": "15279.dat",
+            "official": "15279.dat",
+            "instances": 1,
+            "partId": "ldraw:15279",
+            "file": "parts/15279.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2014-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "15279.dat",
+              "title": "Plant Grass Stem"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "64644.dat",
+            "official": "64644.dat",
+            "instances": 13,
+            "partId": "ldraw:64644"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6143.dat",
+            "official": "6143.dat",
+            "instances": 1,
+            "partId": "ldraw:6143"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3741a.dat",
+            "official": "3741a.dat",
+            "instances": 1,
+            "partId": "ldraw:3741a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "15533.dat",
+            "official": "15533.dat",
+            "instances": 21,
+            "partId": "ldraw:15533",
+            "file": "parts/15533.dat",
+            "header": {
+              "author": "Owen Burgoyne [C3POwen]",
+              "ldrawOrg": "Part UPDATE 2014-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "15533.dat",
+              "title": "Brick 1 x 4 with Embossed Bricks"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "4079.dat",
+            "official": "4079.dat",
+            "instances": 2,
+            "partId": "ldraw:4079"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92410.dat",
+            "official": "92410.dat",
+            "instances": 3,
+            "partId": "ldraw:92410"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4536.dat",
+            "official": "4536.dat",
+            "instances": 4,
+            "partId": "ldraw:4536"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069bp01.dat",
+            "official": "3069bp01.dat",
+            "instances": 4,
+            "partId": "ldraw:3069bp01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4070.dat",
+            "official": "4070.dat",
+            "instances": 20,
+            "partId": "ldraw:4070"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3068bp76.dat",
+            "official": "3068bp76.dat",
+            "instances": 1,
+            "partId": "ldraw:3068bp76",
+            "file": "parts/3068bp76.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2018-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3068bp76.dat",
+              "title": "Tile 2 x 2 with Map Street Level with Red \"X\" Pattern"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068bpt3.dat",
+            "official": "3068bpt3.dat",
+            "instances": 4,
+            "partId": "ldraw:3068bpt3"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4345b.dat",
+            "official": "4345b.dat",
+            "instances": 2,
+            "partId": "ldraw:4345b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4346.dat",
+            "official": "4346.dat",
+            "instances": 2,
+            "partId": "ldraw:4346"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4449-f1.dat",
+            "official": "4449-f1.dat",
+            "instances": 2,
+            "partId": "ldraw:4449-f1"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069bpw2.dat",
+            "official": "3069bpw2.dat",
+            "instances": 1,
+            "partId": "ldraw:3069bpw2"
+          },
+          {
+            "kind": "compiled",
+            "reference": "61506.dat",
+            "official": "61506.dat",
+            "instances": 1,
+            "partId": "ldraw:61506",
+            "file": "parts/61506.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2012-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "61506.dat",
+              "title": "Minifig Hat Fedora"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "bundle",
+            "reference": "6266.dat",
+            "official": "6266.dat",
+            "instances": 1,
+            "partId": "ldraw:6266"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2540.dat",
+            "official": "2540.dat",
+            "instances": 2,
+            "partId": "ldraw:2540"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3068bp71.dat",
+            "official": "3068bp71.dat",
+            "instances": 1,
+            "partId": "ldraw:3068bp71",
+            "file": "parts/3068bp71.dat",
+            "header": {
+              "author": "Howard Lande [HowardLande]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "3068bp71.dat",
+              "title": "Tile 2 x 2 with Ship Portrait Pattern"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "3068bp77.dat",
+            "official": "3068bp77.dat",
+            "instances": 1,
+            "partId": "ldraw:3068bp77",
+            "file": "parts/3068bp77.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2018-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3068bp77.dat",
+              "title": "Tile 2 x 2 with \"WANTED\" Sign, Minifig Front and Side Mugshots Poster Pattern"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "32529.dat",
+            "official": "32529.dat",
+            "instances": 1,
+            "partId": "ldraw:32529",
+            "file": "parts/32529.dat",
+            "header": {
+              "author": "Guy Vivan [guyvivan]",
+              "ldrawOrg": "Part UPDATE 2009-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "32529.dat",
+              "title": "Technic Pin Joiner Plate 1 x 2 x 1 & 1/2"
+            },
+            "sourceFiles": 22
+          },
+          {
+            "kind": "compiled",
+            "reference": "3673.dat",
+            "official": "3673.dat",
+            "instances": 1,
+            "partId": "ldraw:3673",
+            "file": "parts/3673.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2012-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3673.dat",
+              "title": "Technic Pin"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "compiled",
+            "reference": "6041.dat",
+            "official": "6041.dat",
+            "instances": 1,
+            "partId": "ldraw:6041",
+            "file": "parts/6041.dat",
+            "header": {
+              "author": "Paul Easter [pneaster]",
+              "ldrawOrg": "Part UPDATE 2022-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6041.dat",
+              "title": "Propeller 3 Blade 3.5 Diameter with Axlehole"
+            },
+            "sourceFiles": 21
+          },
+          {
+            "kind": "compiled",
+            "reference": "60797c02.dat",
+            "official": "60797c02.dat",
+            "instances": 1,
+            "partId": "ldraw:60797c02",
+            "file": "parts/60797c02.dat",
+            "header": {
+              "author": "Owen Burgoyne [C3POwen]",
+              "ldrawOrg": "Shortcut UPDATE 2024-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "60797c02.dat",
+              "title": "Door 1 x 4 x 6 with 3 Panes and Stud Handle with Trans Brown Glass"
+            },
+            "sourceFiles": 24
+          },
+          {
+            "kind": "compiled",
+            "reference": "10246 - 86210p01.dat",
+            "official": "86210p01.dat",
+            "instances": 2,
+            "partId": "ldraw:86210p01",
+            "file": "parts/86210p01.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2025-07",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "86210p01.dat",
+              "title": "Glass for Window 1 x 4 x 3 Opening with \"ACE BRICKMAN PRIVATE DETECTIVE\" Pattern"
+            },
+            "sourceFiles": 17
+          },
+          {
+            "kind": "compiled",
+            "reference": "93273.dat",
+            "official": "93273.dat",
+            "instances": 3,
+            "partId": "ldraw:93273",
+            "file": "parts/93273.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "93273.dat",
+              "title": "Slope Brick Curved 4 x 1 Double"
+            },
+            "sourceFiles": 21
+          },
+          {
+            "kind": "compiled",
+            "reference": "15332.dat",
+            "official": "15332.dat",
+            "instances": 2,
+            "partId": "ldraw:15332",
+            "file": "parts/15332.dat",
+            "header": {
+              "author": "Owen Burgoyne [C3POwen]",
+              "ldrawOrg": "Part UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "15332.dat",
+              "title": "Fence Spindled 1 x 4 x 2 with 4 Studs"
+            },
+            "sourceFiles": 17
+          },
+          {
+            "kind": "bundle",
+            "reference": "42446.dat",
+            "official": "42446.dat",
+            "instances": 1,
+            "partId": "ldraw:42446"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3035.dat",
+            "official": "3035.dat",
+            "instances": 2,
+            "partId": "ldraw:3035"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60470b.dat",
+            "official": "60470b.dat",
+            "instances": 2,
+            "partId": "ldraw:60470b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "30350b.dat",
+            "official": "30350b.dat",
+            "instances": 1,
+            "partId": "ldraw:30350b",
+            "file": "parts/30350b.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "30350b.dat",
+              "title": "Tile 2 x 3 with Clips Horizontal (Thick C-Clips)"
+            },
+            "sourceFiles": 24
+          },
+          {
+            "kind": "bundle",
+            "reference": "61780.dat",
+            "official": "61780.dat",
+            "instances": 1,
+            "partId": "ldraw:61780"
+          },
+          {
+            "kind": "bundle",
+            "reference": "62462.dat",
+            "official": "62462.dat",
+            "instances": 1,
+            "partId": "ldraw:62462"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4150p03.dat",
+            "official": "4150p03.dat",
+            "instances": 1,
+            "partId": "ldraw:4150p03"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4529.dat",
+            "official": "4529.dat",
+            "instances": 1,
+            "partId": "ldraw:4529"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4533.dat",
+            "official": "4533.dat",
+            "instances": 1,
+            "partId": "ldraw:4533"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30044.dat",
+            "official": "30044.dat",
+            "instances": 2,
+            "partId": "ldraw:30044"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3659.dat",
+            "official": "3659.dat",
+            "instances": 4,
+            "partId": "ldraw:3659"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3245c.dat",
+            "official": "3245c.dat",
+            "instances": 6,
+            "partId": "ldraw:3245c",
+            "file": "parts/3245c.dat",
+            "header": {
+              "author": "Stephan Meisinger [smr]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "3245c.dat",
+              "title": "Brick 1 x 2 x 2 without Understud"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "bundle",
+            "reference": "58181.dat",
+            "official": "58181.dat",
+            "instances": 2,
+            "partId": "ldraw:58181"
+          },
+          {
+            "kind": "inlineDiffers",
+            "reference": "10246 - 93575.dat",
+            "official": "93575.dat",
+            "instances": 7,
+            "colorsMatch": true,
+            "inlineColors": [
+              16
+            ],
+            "officialColors": [
+              16
+            ],
+            "maxVertexDistanceLdu": 38.37603821396888,
+            "maxFaceDistanceLdu": 37.7802858673968,
+            "weldEpsilonLdu": 0.05
+          },
+          {
+            "kind": "compiled",
+            "reference": "32064a.dat",
+            "official": "32064a.dat",
+            "instances": 2,
+            "partId": "ldraw:32064a",
+            "file": "parts/32064a.dat",
+            "header": {
+              "author": "Lutz Uhlmann [El-Lutzo]",
+              "ldrawOrg": "Part UPDATE 2022-02",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "32064a.dat",
+              "title": "Technic Brick 1 x 2 with Axlehole with Open Sides and Stud Blocker"
+            },
+            "sourceFiles": 18
+          },
+          {
+            "kind": "bundle",
+            "reference": "11477.dat",
+            "official": "11477.dat",
+            "instances": 4,
+            "partId": "ldraw:11477"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3957b.dat",
+            "official": "3957b.dat",
+            "instances": 4,
+            "partId": "ldraw:3957b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "93606.dat",
+            "official": "93606.dat",
+            "instances": 3,
+            "partId": "ldraw:93606",
+            "file": "parts/93606.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2014-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "93606.dat",
+              "title": "Slope Brick Curved 4 x 2"
+            },
+            "sourceFiles": 25
+          },
+          {
+            "kind": "bundle",
+            "reference": "44294.dat",
+            "official": "44294.dat",
+            "instances": 1,
+            "partId": "ldraw:44294"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3648b.dat",
+            "official": "3648b.dat",
+            "instances": 1,
+            "partId": "ldraw:3648b",
+            "file": "parts/3648b.dat",
+            "header": {
+              "author": "Remco Braak [remco1974]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "3648b.dat",
+              "title": "Technic Gear 24 Tooth with Single Axle Hole"
+            },
+            "sourceFiles": 28
+          },
+          {
+            "kind": "compiled",
+            "reference": "3873.dat",
+            "official": "3873.dat",
+            "instances": 12,
+            "partId": "ldraw:3873",
+            "file": "parts/3873.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2025-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3873.dat",
+              "title": "Technic Chain Tread 2.5 Wide"
+            },
+            "sourceFiles": 39
+          },
+          {
+            "kind": "bundle",
+            "reference": "3960.dat",
+            "official": "3960.dat",
+            "instances": 1,
+            "partId": "ldraw:3960"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92438.dat",
+            "official": "92438.dat",
+            "instances": 1,
+            "partId": "ldraw:92438"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3033.dat",
+            "official": "3033.dat",
+            "instances": 1,
+            "partId": "ldraw:3033"
+          },
+          {
+            "kind": "compiled",
+            "reference": "15429.dat",
+            "official": "15429.dat",
+            "instances": 4,
+            "partId": "ldraw:15429",
+            "file": "parts/15429.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "15429.dat",
+              "title": "Animal Cat Tail"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "bundle",
+            "reference": "3665b.dat",
+            "official": "3665b.dat",
+            "instances": 7,
+            "partId": "ldraw:3665b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "2639.dat",
+            "official": "2639.dat",
+            "instances": 1,
+            "partId": "ldraw:2639",
+            "file": "parts/2639.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2003-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2639.dat",
+              "title": "Plate 4 x 4 Corner"
+            },
+            "sourceFiles": 5
+          },
+          {
+            "kind": "bundle",
+            "reference": "60478.dat",
+            "official": "60478.dat",
+            "instances": 3,
+            "partId": "ldraw:60478"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98138.dat",
+            "official": "98138.dat",
+            "instances": 2,
+            "partId": "ldraw:98138"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63965.dat",
+            "official": "63965.dat",
+            "instances": 1,
+            "partId": "ldraw:63965"
+          },
+          {
+            "kind": "compiled",
+            "reference": "2417.dat",
+            "official": "2417.dat",
+            "instances": 2,
+            "partId": "ldraw:2417",
+            "file": "parts/2417.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2417.dat",
+              "title": "Plant Leaves 6 x 5"
+            },
+            "sourceFiles": 15
+          },
+          {
+            "kind": "compiled",
+            "reference": "10246 - 11062.dat",
+            "official": "11062.dat",
+            "instances": 1,
+            "partId": "ldraw:11062",
+            "file": "parts/11062.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2020-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "11062.dat",
+              "title": "Support 2 x 2 x 7 Lamppost with 4 Base Flutes"
+            },
+            "sourceFiles": 26
+          },
+          {
+            "kind": "bundle",
+            "reference": "44728.dat",
+            "official": "44728.dat",
+            "instances": 1,
+            "partId": "ldraw:44728"
+          },
+          {
+            "kind": "compiled",
+            "reference": "2654.dat",
+            "official": "2654.dat",
+            "instances": 1,
+            "partId": "ldraw:2654",
+            "file": "parts/2654.dat",
+            "header": {
+              "author": "[PTadmin]",
+              "ldrawOrg": "Part UPDATE 2020-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2654.dat",
+              "title": "~Moved to 2654a"
+            },
+            "sourceFiles": 27
+          },
+          {
+            "kind": "bundle",
+            "reference": "4865b.dat",
+            "official": "4865b.dat",
+            "instances": 1,
+            "partId": "ldraw:4865b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3817b.dat",
+            "official": "3817b.dat",
+            "instances": 2,
+            "partId": "ldraw:3817b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3816b.dat",
+            "official": "3816b.dat",
+            "instances": 2,
+            "partId": "ldraw:3816b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815b.dat",
+            "official": "3815b.dat",
+            "instances": 2,
+            "partId": "ldraw:3815b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p9j.dat",
+            "official": "973p9j.dat",
+            "instances": 1,
+            "partId": "ldraw:973p9j",
+            "file": "parts/973p9j.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2024-11",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p9j.dat",
+              "title": "Minifig Torso with Female Top with 2 White Buttons and Black Straps Pattern"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "85974.dat",
+            "official": "85974.dat",
+            "instances": 1,
+            "partId": "ldraw:85974"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069bp0c.dat",
+            "official": "3069bp0c.dat",
+            "instances": 1,
+            "partId": "ldraw:3069bp0c"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p7l.dat",
+            "official": "973p7l.dat",
+            "instances": 1,
+            "partId": "ldraw:973p7l",
+            "file": "parts/973p7l.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2025-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p7l.dat",
+              "title": "Minifig Torso with Female Police Shirt with Gold Badge, Pocket and Black Tie Pattern"
+            },
+            "sourceFiles": 17
+          },
+          {
+            "kind": "compiled",
+            "reference": "13251.dat",
+            "official": "13251.dat",
+            "instances": 1,
+            "partId": "ldraw:13251",
+            "file": "parts/13251.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2019-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "13251.dat",
+              "title": "Minifig Hair Female with Elaborate Knot Bun"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "15530p01.dat",
+            "official": "15530p01.dat",
+            "instances": 1,
+            "partId": "ldraw:15530p01",
+            "file": "parts/15530p01.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2016-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "15530p01.dat",
+              "title": "Minifig Hat Police With Gold Badge Pattern"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p7i.dat",
+            "official": "973p7i.dat",
+            "instances": 1,
+            "partId": "ldraw:973p7i",
+            "file": "parts/973p7i.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2019-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p7i.dat",
+              "title": "Minifig Torso with White Vertical Stripes and Red Bow Tie Pattern"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "bundle",
+            "reference": "3901.dat",
+            "official": "3901.dat",
+            "instances": 1,
+            "partId": "ldraw:3901"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3836.dat",
+            "official": "3836.dat",
+            "instances": 1,
+            "partId": "ldraw:3836"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p9i.dat",
+            "official": "973p9i.dat",
+            "instances": 1,
+            "partId": "ldraw:973p9i",
+            "file": "parts/973p9i.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2019-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p9i.dat",
+              "title": "Minifig Torso with Open Suit Jacket with White Shirt, Dark Red Tie and Reddish Brown Belt Pattern"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "bundle",
+            "reference": "62810.dat",
+            "official": "62810.dat",
+            "instances": 1,
+            "partId": "ldraw:62810"
+          },
+          {
+            "kind": "compiled",
+            "reference": "10246 - 10830p01.dat",
+            "official": "10830p01.dat",
+            "instances": 1,
+            "partId": "ldraw:10830p01",
+            "file": "parts/10830p01.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2020-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "10830p01.dat",
+              "title": "Minifig Tool Magnifying Glass with Thick Frame and TransClear Lens"
+            },
+            "sourceFiles": 21
+          },
+          {
+            "kind": "inlineDiffers",
+            "reference": "10246 - 13786p02.dat",
+            "official": "13786p02.dat",
+            "instances": 1,
+            "colorsMatch": true,
+            "inlineColors": [
+              0,
+              15,
+              16,
+              28,
+              29,
+              308
+            ],
+            "officialColors": [
+              0,
+              15,
+              16,
+              28,
+              29,
+              308
+            ],
+            "maxVertexDistanceLdu": 0.18840912929048828,
+            "maxFaceDistanceLdu": 1.7954879869024776,
+            "weldEpsilonLdu": 0.05
+          }
+        ],
+        "inlineParts": [
+          {
+            "inline": "10246 - 10830p01.dat",
+            "official": "10830p01.dat"
+          },
+          {
+            "inline": "10246 - 11062.dat",
+            "official": "11062.dat"
+          },
+          {
+            "inline": "10246 - 11187a.dat",
+            "official": "11187a.dat"
+          },
+          {
+            "inline": "10246 - 13786p02.dat",
+            "official": "13786p02.dat"
+          },
+          {
+            "inline": "10246 - 20193.dat",
+            "official": "20193.dat"
+          },
+          {
+            "inline": "10246 - 86210p01.dat",
+            "official": "86210p01.dat"
+          },
+          {
+            "inline": "10246 - 93575.dat",
+            "official": "93575.dat"
+          }
+        ],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 17,
+        "fetched": {
+          "requests": 562,
+          "found": 340,
+          "notFound": 222,
+          "bytes": 2420893
+        },
+        "timings": {
+          "bakeMs": 21.90000000037253,
+          "resolveMs": 2524.5,
+          "totalMs": 2546.4000000003725
+        },
+        "importMs": 2950,
+        "sceneMs": 1868.4000000003725
+      }
+    ]
+  }
+}
