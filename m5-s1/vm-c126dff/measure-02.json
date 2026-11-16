@@ -1,0 +1,32 @@
+{
+ "image": "02-nine-fit.png",
+ "size": [
+  1600,
+  1000
+ ],
+ "method": "longest run of table-brown pixels on any row = the 2400 mm table width; longest run of baseplate-green (bridging gaps of up to 3 px where the magenta issue outline crosses it) on any row = the baseplate row; brown-or-green run down the table's centre column = table depth",
+ "tableWidthPx": 742,
+ "tableRow": 364,
+ "tableX": [
+  429,
+  1170
+ ],
+ "baseplatesInRow": 9,
+ "baseplateRowPx": 712,
+ "plateRow": 332,
+ "plateX": [
+  429,
+  1140
+ ],
+ "tableDepthPx": 371,
+ "depthColumn": 800,
+ "depthY": [
+  284,
+  654
+ ],
+ "mmPerPx": 3.2345,
+ "tableDepthMm": 1200,
+ "baseplateRowMm": 2303,
+ "oneBaseplateMm": 255.88,
+ "overhangPastTableEdgeMm": -97
+}

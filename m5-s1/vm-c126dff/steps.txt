@@ -1,0 +1,10 @@
+room 4000 x 3000 mm and table 2400 x 1200 mm x 750 mm drawn
+nine 3811 baseplates along the near edge: 9 inside, 0 errors
+tenth baseplate: 3811 baseplate 32×32 at 8080, 2320 is not on a table: 40960 mm² of its footprint is off the table tops, up to 160 mm past the edge (limit 0 mm).
+column of five deep: 3811 baseplate 32×32 at 8080, 2320 is not on a table: 40960 mm² of its footprint is off the table tops, up to 160 mm past the edge (limit 0 mm). | 3811 baseplate 32×32 at 2320, 4880 is not on a table: 20480 mm² of its footprint is off the table tops, up to 80 mm past the edge (limit 0 mm).
+10264-1 in the middle of the table: errors 2
+10185-1 on the front row: 10185-1 at 4880, 2320 is not on a table: 2048 mm² of its footprint is off the table tops, up to 8 mm past the edge (limit 0 mm).
+one baseplate outside the room: sandbox placements [16], plan errors still 3
+obstacle pillar 300 x 300 mm at 3400, 800 mm: errors 3
+pillar moved onto the table: Table "Table 1" overlaps obstacle "Obstacle 1".
+

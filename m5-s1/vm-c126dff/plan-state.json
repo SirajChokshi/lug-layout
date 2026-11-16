@@ -1,0 +1,136 @@
+{
+ "plans": [
+  {
+   "id": "plan-1",
+   "name": "Plan 1",
+   "originChunkX": 0,
+   "originChunkZ": 0,
+   "footprint": {
+    "roomWidthMm": 4000,
+    "roomDepthMm": 3000,
+    "tables": [
+     {
+      "name": "Table 1",
+      "rect": {
+       "x": 800,
+       "z": 800,
+       "width": 2400,
+       "depth": 1200
+      },
+      "heightMm": 750,
+      "id": "table-2"
+     }
+    ],
+    "obstacles": [
+     {
+      "name": "Obstacle 1",
+      "rect": {
+       "x": 3400,
+       "z": 800,
+       "width": 300,
+       "depth": 300
+      },
+      "id": "obstacle-3"
+     }
+    ]
+   },
+   "maxOverhangMm": 0
+  }
+ ],
+ "checks": [
+  {
+   "regionId": "plan-1",
+   "room": {
+    "minX": 0,
+    "minZ": 0,
+    "maxX": 10000,
+    "maxZ": 7500
+   },
+   "tables": [
+    {
+     "id": "table-2",
+     "name": "Table 1",
+     "heightMm": 750,
+     "surface": {
+      "minX": 2000,
+      "minZ": 2000,
+      "maxX": 8000,
+      "maxZ": 5000
+     },
+     "studs": {
+      "rect": {
+       "minX": 2000,
+       "minZ": 2000,
+       "maxX": 8000,
+       "maxZ": 5000
+      },
+      "studsWide": 300,
+      "studsDeep": 150
+     }
+    }
+   ],
+   "obstacles": [
+    {
+     "minX": 8500,
+     "minZ": 2000,
+     "maxX": 9250,
+     "maxZ": 2750
+    }
+   ],
+   "inside": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ],
+   "issues": [
+    {
+     "rule": "fit",
+     "severity": "error",
+     "placements": [
+      9
+     ],
+     "message": "3811 baseplate 32×32 at 8080, 2320 is not on a table: 40960 mm² of its footprint is off the table tops, up to 160 mm past the edge (limit 0 mm).",
+     "overhangMm": 160,
+     "uncoveredMm2": 40960
+    },
+    {
+     "rule": "fit",
+     "severity": "error",
+     "placements": [
+      13
+     ],
+     "message": "3811 baseplate 32×32 at 2320, 4880 is not on a table: 20480 mm² of its footprint is off the table tops, up to 80 mm past the edge (limit 0 mm).",
+     "overhangMm": 80,
+     "uncoveredMm2": 20480
+    },
+    {
+     "rule": "fit",
+     "severity": "error",
+     "placements": [
+      15
+     ],
+     "message": "10185-1 at 4880, 2320 is not on a table: 2048 mm² of its footprint is off the table tops, up to 8 mm past the edge (limit 0 mm).",
+     "overhangMm": 8,
+     "uncoveredMm2": 2048
+    }
+   ]
+  }
+ ],
+ "sandboxPlacements": [
+  16
+ ],
+ "tableTopY": -4
+}
