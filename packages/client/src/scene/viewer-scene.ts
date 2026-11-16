@@ -1,4 +1,4 @@
-import type { BundleLod, ModelSection, PartBundle } from "@brr/catalog";
+import type { BundleLod, ModelSection, PartBundle, PartFilter } from "@brr/catalog";
 import {
   COLOR_CHANNELS,
   type ChunkInstances,
@@ -6,7 +6,10 @@ import {
   type PartPalette,
 } from "@brr/render";
 
+export const PALETTE_PARTS: PartFilter = (part) => part.role !== "model";
+
 export interface SceneSummary {
+  readonly bundleVersion: string;
   readonly parts: number;
   readonly modules: number;
   readonly studInstances: number;
@@ -127,6 +130,7 @@ function summarize(
     }
   }
   return {
+    bundleVersion: bundle.bundleVersion,
     parts,
     modules: chunks.length,
     studInstances,

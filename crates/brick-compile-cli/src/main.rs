@@ -238,6 +238,8 @@ fn run(args: &Args) -> Result<(), String> {
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let text = String::from_utf8_lossy(&source);
         let baked = bake_model(&text).map_err(|e| format!("{file}: {e}"))?;
+        let mut model_parts: Vec<Value> = Vec::new();
+        let mut model_part_index: HashMap<usize, usize> = HashMap::new();
         let mut instance_parts = Vec::with_capacity(baked.instances.len());
         let mut instance_colors = Vec::with_capacity(baked.instances.len());
         let mut instance_matrices = Vec::with_capacity(baked.instances.len() * 12);
@@ -259,7 +261,11 @@ fn run(args: &Args) -> Result<(), String> {
                     parts.len() - 1
                 }
             };
-            instance_parts.push(index);
+            let local = *model_part_index.entry(index).or_insert_with(|| {
+                model_parts.push(parts[index]["id"].clone());
+                model_parts.len() - 1
+            });
+            instance_parts.push(local);
             instance_colors.push(instance.color);
             instance_matrices.extend(instance.matrix.m.map(|v| v as f32));
         }
@@ -289,6 +295,7 @@ fn run(args: &Args) -> Result<(), String> {
             "sha256": entry["sha256"],
             "sections": sections,
             "inlinePartsResolvedToOfficial": inline_parts,
+            "parts": model_parts,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
         });
         fs::write(

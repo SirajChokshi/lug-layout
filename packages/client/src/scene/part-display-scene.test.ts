@@ -11,6 +11,7 @@ import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { PART_DISPLAY_SCENE } from "../tokens.ts";
+import { PALETTE_PARTS } from "./viewer-scene.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
@@ -54,12 +55,12 @@ it("shows every palette part on the integer lattice when resolved through the re
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
 
   await container.get(PART_DISPLAY_SCENE).load("standard");
-  const bundle = await container.get(PART_BUNDLE_LOADER).load("standard");
+  const bundle = await container.get(PART_BUNDLE_LOADER).load("standard", PALETTE_PARTS);
 
   const shown = new Set(
     backend.chunks.flatMap((chunk) => [...chunk.partIndex.subarray(0, chunk.count)]),
   );
-  const hidden = bundle.parts.filter((part, index) => part.role !== "model" && !shown.has(index));
+  const hidden = bundle.parts.filter((_part, index) => !shown.has(index));
   expect(hidden.map((part) => part.id)).toEqual([]);
   for (const chunk of backend.chunks) {
     for (let i = 0; i < chunk.count; i++) {

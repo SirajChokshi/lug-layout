@@ -1,14 +1,20 @@
 import { inject, injectable } from "inversify";
 import { parseGlb, readInheritColorMesh, readPartMesh } from "./glb.ts";
-import { parseManifest, parseModelFile, parsePartExtras, type ManifestPart } from "./manifest.ts";
+import {
+  parseManifest,
+  parseModelFile,
+  parsePartExtras,
+  type BundleManifest,
+  type ManifestPart,
+} from "./manifest.ts";
 import type {
   BundleLod,
-  BundleModelEntry,
   IAssetFetcher,
   IPartBundleLoader,
+  ModelBundle,
   PartAsset,
   PartBundle,
-  PartModel,
+  PartFilter,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
@@ -55,10 +61,25 @@ export class HttpAssetFetcher implements IAssetFetcher {
 
 @injectable()
 export class HttpPartBundleLoader implements IPartBundleLoader {
+  private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
+
   constructor(@inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher) {}
 
-  async load(lod: BundleLod): Promise<PartBundle> {
-    const manifest = parseManifest(JSON.parse(await this.fetcher.text(`${lod}/manifest.json`)));
+  private manifest(lod: BundleLod): Promise<BundleManifest> {
+    const cached = this.manifests.get(lod);
+    if (cached) return cached;
+    const loading = this.fetcher
+      .text(`${lod}/manifest.json`)
+      .then((text) => parseManifest(JSON.parse(text)));
+    this.manifests.set(lod, loading);
+    return loading;
+  }
+
+  private async bundle(
+    lod: BundleLod,
+    manifest: BundleManifest,
+    parts: ReadonlyArray<ManifestPart>,
+  ): Promise<PartBundle> {
     const studPrimitiveNames = manifest.studPrimitives.map((primitive) => primitive.name);
     const studPrimitives = await Promise.all(
       manifest.studPrimitives.map(async (primitive): Promise<StudPrimitiveAsset> => {
@@ -66,11 +87,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         return { mesh: readInheritColorMesh(glb, primitive.name) };
       }),
     );
-    const parts = await mapConcurrently(manifest.parts, MAX_CONCURRENT_FETCHES, async (part) =>
+    const assets = await mapConcurrently(parts, MAX_CONCURRENT_FETCHES, async (part) =>
       toPartAsset(part, await this.fetcher.bytes(`${lod}/${part.file}`), studPrimitiveNames),
     );
     return {
-      parts,
+      bundleVersion: manifest.bundleVersion,
+      parts: assets,
       studPrimitives,
       colors: manifest.colors,
       credits: manifest.credits,
@@ -78,18 +100,39 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     };
   }
 
-  async loadModel(lod: BundleLod, entry: BundleModelEntry): Promise<PartModel> {
-    const model = parseModelFile(
+  async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
+    const manifest = await this.manifest(lod);
+    return this.bundle(lod, manifest, manifest.parts.filter(include));
+  }
+
+  async loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
+    const manifest = await this.manifest(lod);
+    const entry = manifest.models.find((model) => model.name === name);
+    if (!entry) {
+      const available = manifest.models.map((model) => model.name).join(", ");
+      throw new Error(`model "${name}" is not in the bundle (available: ${available})`);
+    }
+    const file = parseModelFile(
       JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`)),
       entry.file,
     );
-    const count = model.instances.part.length;
+    const manifestParts = new Map(manifest.parts.map((part) => [part.id, part]));
+    const parts = file.parts.map((id) => {
+      const part = manifestParts.get(id);
+      if (!part) throw new Error(`${entry.file}: part ${id} is not in the manifest`);
+      return part;
+    });
+    const count = file.instances.part.length;
     return {
-      sections: model.sections,
-      instanceCount: count,
-      partIndex: Uint16Array.from(model.instances.part),
-      ldrawColor: Uint16Array.from(model.instances.color),
-      matrices: Float32Array.from(model.instances.matrix),
+      bundle: await this.bundle(lod, manifest, parts),
+      entry,
+      model: {
+        sections: file.sections,
+        instanceCount: count,
+        partIndex: Uint16Array.from(file.instances.part),
+        ldrawColor: Uint16Array.from(file.instances.color),
+        matrices: Float32Array.from(file.instances.matrix),
+      },
     };
   }
 }

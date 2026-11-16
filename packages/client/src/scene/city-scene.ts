@@ -20,7 +20,13 @@ import {
 } from "./procedural-city.ts";
 import { withStuds } from "./stud-stream.ts";
 import { straightRunPitchStuds } from "./straight-track.ts";
-import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
+import {
+  ColorTable,
+  PALETTE_PARTS,
+  showChunks,
+  type IViewerScene,
+  type SceneSummary,
+} from "./viewer-scene.ts";
 
 export type CityCamera = "aerial" | "street";
 
@@ -162,7 +168,10 @@ export class CityScene implements ICityScene {
   }
 
   async load(lod: BundleLod): Promise<SceneSummary> {
-    const [bundle, far] = await Promise.all([this.loader.load(lod), this.loader.load("far")]);
+    const [bundle, far] = await Promise.all([
+      this.loader.load(lod, PALETTE_PARTS),
+      this.loader.load("far", PALETTE_PARTS),
+    ]);
     const colors = new ColorTable(bundle);
     const parts = cityParts(bundle, colors);
     const layout = generateCity(

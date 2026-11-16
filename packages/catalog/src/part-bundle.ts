@@ -77,6 +77,7 @@ export interface PartModel {
 }
 
 export interface PartBundle {
+  readonly bundleVersion: string;
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
   readonly colors: ReadonlyArray<BundleColor>;
@@ -84,9 +85,22 @@ export interface PartBundle {
   readonly models: ReadonlyArray<BundleModelEntry>;
 }
 
+export interface PartSummary {
+  readonly id: string;
+  readonly role: PartRole;
+}
+
+export type PartFilter = (part: PartSummary) => boolean;
+
+export interface ModelBundle {
+  readonly bundle: PartBundle;
+  readonly entry: BundleModelEntry;
+  readonly model: PartModel;
+}
+
 export interface IPartBundleLoader {
-  load(lod: BundleLod): Promise<PartBundle>;
-  loadModel(lod: BundleLod, entry: BundleModelEntry): Promise<PartModel>;
+  load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
+  loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
 }
 
 export interface IAssetFetcher {

@@ -23,6 +23,7 @@ export interface ManifestStudPrimitive {
 }
 
 export interface BundleManifest {
+  readonly bundleVersion: string;
   readonly unit: "LDU";
   readonly upAxis: "+Y";
   readonly parts: ReadonlyArray<ManifestPart>;
@@ -34,6 +35,7 @@ export interface BundleManifest {
 
 export interface ModelFile {
   readonly sections: ReadonlyArray<ModelSection>;
+  readonly parts: ReadonlyArray<string>;
   readonly instances: {
     readonly part: ReadonlyArray<number>;
     readonly color: ReadonlyArray<number>;
@@ -73,6 +75,7 @@ function isManifestPart(value: unknown): value is ManifestPart {
 export function parseManifest(value: unknown): BundleManifest {
   if (
     !isRecord(value) ||
+    typeof value["bundleVersion"] !== "string" ||
     value["unit"] !== "LDU" ||
     value["upAxis"] !== "+Y" ||
     !Array.isArray(value["parts"]) ||
@@ -81,7 +84,7 @@ export function parseManifest(value: unknown): BundleManifest {
     !Array.isArray(value["colors"]) ||
     !Array.isArray(value["models"])
   ) {
-    throw new Error("bundle manifest does not match the M0 bundle format");
+    throw new Error("bundle manifest does not match the M1 bundle format");
   }
   return value as unknown as BundleManifest;
 }
@@ -105,20 +108,26 @@ export function parsePartExtras(value: unknown, label: string): PartExtras {
 
 const MATRIX_FLOATS = 12;
 
+function isStringArray(value: unknown): value is ReadonlyArray<string> {
+  return Array.isArray(value) && value.every((v) => typeof v === "string");
+}
+
 function isNumberArray(value: unknown): value is ReadonlyArray<number> {
   return Array.isArray(value) && value.every((v) => typeof v === "number");
 }
 
 export function parseModelFile(value: unknown, label: string): ModelFile {
-  if (!isRecord(value) || !isRecord(value["instances"])) {
-    throw new Error(`${label}: model file does not match the M0 bundle format`);
+  if (!isRecord(value) || !isRecord(value["instances"]) || !isStringArray(value["parts"])) {
+    throw new Error(`${label}: model file does not match the M1 bundle format`);
   }
+  const partCount = value["parts"].length;
   const { part, color, matrix } = value["instances"];
   if (
     !isNumberArray(part) ||
     !isNumberArray(color) ||
     !isNumberArray(matrix) ||
     part.length !== color.length ||
+    part.some((index) => index >= partCount) ||
     matrix.length !== part.length * MATRIX_FLOATS
   ) {
     throw new Error(`${label}: model instance arrays are inconsistent`);

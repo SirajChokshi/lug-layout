@@ -31,13 +31,7 @@ export class ModelScene implements IModelScene {
   }
 
   async load(lod: BundleLod): Promise<SceneSummary> {
-    const bundle = await this.loader.load(lod);
-    const entry = bundle.models.find((model) => model.name === this.modelName);
-    if (!entry) {
-      const available = bundle.models.map((model) => model.name).join(", ");
-      throw new Error(`model "${this.modelName}" is not in the bundle (available: ${available})`);
-    }
-    const model = await this.loader.loadModel(lod, entry);
+    const { bundle, entry, model } = await this.loader.loadModel(lod, this.modelName);
     const colors = new ColorTable(bundle);
     const colorIndex = new Uint16Array(model.instanceCount);
     for (let i = 0; i < model.instanceCount; i++) {

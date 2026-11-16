@@ -5,7 +5,13 @@ import { buildPartDisplay } from "./part-display.ts";
 import { CHUNK_LDU } from "@brr/math";
 import { chunkInstances } from "./placements.ts";
 import { withStuds } from "./stud-stream.ts";
-import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
+import {
+  ColorTable,
+  PALETTE_PARTS,
+  showChunks,
+  type IViewerScene,
+  type SceneSummary,
+} from "./viewer-scene.ts";
 
 const ORBIT_RADIUS_LDU = 1050;
 const ORBIT_HEIGHT_LDU = 560;
@@ -19,7 +25,7 @@ export class PartDisplayScene implements IViewerScene {
   ) {}
 
   async load(lod: BundleLod): Promise<SceneSummary> {
-    const bundle = await this.loader.load(lod);
+    const bundle = await this.loader.load(lod, PALETTE_PARTS);
     const colors = new ColorTable(bundle);
     const chunks = buildPartDisplay(bundle, colors)
       .chunks()
