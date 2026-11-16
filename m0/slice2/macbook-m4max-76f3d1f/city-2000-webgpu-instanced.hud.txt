@@ -1,0 +1,31 @@
+Brick Railroad
+API
+webgpu
+Adapter
+apple / metal-3
+Strategy
+instanced
+Drawing buffer
+3600×2086 px (devicePixelRatio 2)
+Parts
+2,035
+Modules
+16
+Stud instances
+23,242
+Scene triangles
+1,542,652
+Load
+115 ms
+Draw calls
+181
+Drawn triangles
+1,542,653
+Median frame (GPU-synced)
+2.1 ms
+p95 frame
+3.0 ms
+Median CPU submit
+0.4 ms
+Measured frames
+120

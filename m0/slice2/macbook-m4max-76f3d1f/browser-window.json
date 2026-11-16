@@ -1,0 +1,251 @@
+{
+  "chromeVersion": "Chrome/157.0.8103.52",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "windowBounds": {
+    "left": 0,
+    "top": 39,
+    "width": 1800,
+    "height": 1130,
+    "windowState": "maximized"
+  },
+  "runs": {
+    "city-2000-webgpu-instanced": {
+      "url": "http://localhost:4173/?scene=city&parts=2000&api=webgpu&strategy=instanced&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=2000&api=webgpu&strategy=instanced&measure=1&warmup=10&frames=120"
+    },
+    "city-2000-webgpu-batched": {
+      "url": "http://localhost:4173/?scene=city&parts=2000&api=webgpu&strategy=batched&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 3,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=2000&api=webgpu&strategy=batched&measure=1&warmup=10&frames=120"
+    },
+    "city-2000-webgl2-instanced": {
+      "url": "http://localhost:4173/?scene=city&parts=2000&api=webgl2&strategy=instanced&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=2000&api=webgl2&strategy=instanced&measure=1&warmup=10&frames=120"
+    },
+    "city-2000-webgl2-batched": {
+      "url": "http://localhost:4173/?scene=city&parts=2000&api=webgl2&strategy=batched&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=2000&api=webgl2&strategy=batched&measure=1&warmup=10&frames=120"
+    },
+    "city-20000-webgpu-instanced": {
+      "url": "http://localhost:4173/?scene=city&parts=20000&api=webgpu&strategy=instanced&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=20000&api=webgpu&strategy=instanced&measure=1&warmup=10&frames=120"
+    },
+    "city-20000-webgpu-batched": {
+      "url": "http://localhost:4173/?scene=city&parts=20000&api=webgpu&strategy=batched&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 3,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=20000&api=webgpu&strategy=batched&measure=1&warmup=10&frames=120"
+    },
+    "city-20000-webgl2-instanced": {
+      "url": "http://localhost:4173/?scene=city&parts=20000&api=webgl2&strategy=instanced&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=20000&api=webgl2&strategy=instanced&measure=1&warmup=10&frames=120"
+    },
+    "city-20000-webgl2-batched": {
+      "url": "http://localhost:4173/?scene=city&parts=20000&api=webgl2&strategy=batched&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 5,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=20000&api=webgl2&strategy=batched&measure=1&warmup=10&frames=120"
+    },
+    "city-100000-webgpu-instanced": {
+      "url": "http://localhost:4173/?scene=city&parts=100000&api=webgpu&strategy=instanced&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 4,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=100000&api=webgpu&strategy=instanced&measure=1&warmup=10&frames=120"
+    },
+    "city-100000-webgpu-batched": {
+      "url": "http://localhost:4173/?scene=city&parts=100000&api=webgpu&strategy=batched&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 8,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=100000&api=webgpu&strategy=batched&measure=1&warmup=10&frames=120"
+    },
+    "city-100000-webgl2-instanced": {
+      "url": "http://localhost:4173/?scene=city&parts=100000&api=webgl2&strategy=instanced&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 4,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=100000&api=webgl2&strategy=instanced&measure=1&warmup=10&frames=120"
+    },
+    "city-100000-webgl2-batched": {
+      "url": "http://localhost:4173/?scene=city&parts=100000&api=webgl2&strategy=batched&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 20,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=100000&api=webgl2&strategy=batched&measure=1&warmup=10&frames=120"
+    },
+    "street-20000-webgpu-instanced": {
+      "url": "http://localhost:4173/?scene=city&parts=20000&api=webgpu&strategy=instanced&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=20000&api=webgpu&strategy=instanced&camera=street&measure=1&warmup=10&frames=120"
+    },
+    "street-20000-webgl2-instanced": {
+      "url": "http://localhost:4173/?scene=city&parts=20000&api=webgl2&strategy=instanced&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?scene=city&parts=20000&api=webgl2&strategy=instanced&camera=street&measure=1&warmup=10&frames=120"
+    }
+  }
+}
