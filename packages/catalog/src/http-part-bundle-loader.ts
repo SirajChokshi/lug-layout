@@ -6,6 +6,7 @@ import {
   parsePartExtras,
   type BundleManifest,
   type ManifestPart,
+  type ModelFileLattice,
 } from "./manifest.ts";
 import type {
   BundleCredit,
@@ -15,6 +16,7 @@ import type {
   ImportContext,
   IPartBundleLoader,
   ModelBundle,
+  ModelLattice,
   PartAsset,
   PartBundle,
   PartFilter,
@@ -25,6 +27,12 @@ import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
 const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
 const MAX_CONCURRENT_FETCHES = 32;
+
+function modelLattice(lattice: ModelFileLattice | null): ModelLattice | null {
+  if (lattice === null) return null;
+  const [phaseX, phaseZ] = lattice.phase;
+  return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
+}
 
 async function mapConcurrently<T, R>(
   items: ReadonlyArray<T>,
@@ -73,7 +81,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
 
   constructor(@inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher) {}
 
-  private manifest(lod: BundleLod): Promise<BundleManifest> {
+  loadManifest(lod: BundleLod): Promise<BundleManifest> {
     const cached = this.manifests.get(lod);
     if (cached) return cached;
     const loading = this.fetcher
@@ -114,11 +122,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       colors: manifest.colors,
       credits: manifest.credits,
       models: manifest.models,
+      trackCatalog: manifest.trackCatalog,
     };
   }
 
   async importContext(lod: BundleLod): Promise<ImportContext> {
-    const manifest = await this.manifest(lod);
+    const manifest = await this.loadManifest(lod);
     if (!manifest.compiler) throw new Error(`bundle ${manifest.bundleVersion} ships no compiler`);
     return {
       bundleVersion: manifest.bundleVersion,
@@ -136,7 +145,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     partIds: ReadonlyArray<string>,
     compiled: ReadonlyArray<CompiledPartGlb>,
   ): Promise<PartBundle> {
-    const manifest = await this.manifest(lod);
+    const manifest = await this.loadManifest(lod);
     const manifestParts = new Map(manifest.parts.map((part) => [part.id, part]));
     const compiledParts = new Map(compiled.map((part) => [part.partId, part.glb]));
     const studPrimitiveNames = manifest.studPrimitives.map((primitive) => primitive.name);
@@ -166,16 +175,17 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       colors: manifest.colors,
       credits: [...manifest.credits, ...compiledCredits],
       models: manifest.models,
+      trackCatalog: manifest.trackCatalog,
     };
   }
 
   async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
-    const manifest = await this.manifest(lod);
+    const manifest = await this.loadManifest(lod);
     return this.bundle(lod, manifest, manifest.parts.filter(include));
   }
 
   async loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
-    const manifest = await this.manifest(lod);
+    const manifest = await this.loadManifest(lod);
     const entry = manifest.models.find((model) => model.name === name);
     if (!entry) {
       const available = manifest.models.map((model) => model.name).join(", ");
@@ -192,18 +202,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       return part;
     });
     const count = file.instances.part.length;
-    const [phaseX, phaseZ] = file.lattice.phase;
     return {
       bundle: await this.bundle(lod, manifest, parts),
       entry,
       model: {
         sections: file.sections,
-        lattice: {
-          phaseX,
-          phaseZ,
-          aabbMin: file.lattice.aabb.min,
-          aabbMax: file.lattice.aabb.max,
-        },
+        lattice: modelLattice(file.lattice),
         instanceCount: count,
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),
@@ -221,10 +225,22 @@ function compiledPartAsset(
   const bytes = glb.slice().buffer;
   const extras = parsePartExtras(parseGlb(bytes).document.extras, id);
   if (!extras.bounds) throw new Error(`${id}: compiled GLB carries no bounds`);
-  const part: ManifestPart = { id, role: COMPILED_PART_ROLE, file: "", bounds: extras.bounds };
+  const sources = extras.sources ?? [];
+  const part: ManifestPart = {
+    id,
+    path: sources[0]?.path ?? id,
+    role: COMPILED_PART_ROLE,
+    file: "",
+    bounds: extras.bounds,
+  };
   return {
     part: toPartAsset(part, bytes, studPrimitiveNames),
-    credits: (extras.sources ?? []).map((source) => ({ license: source.license })),
+    credits: sources.map((source) => ({
+      path: source.path,
+      title: "",
+      author: source.author,
+      license: source.license,
+    })),
   };
 }
 

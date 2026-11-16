@@ -1,0 +1,1180 @@
+{
+  "frame": "bundle +Y up (z = −z_LDraw); x → Re, z → Im; connector 0 at the origin facing −x",
+  "n": 16,
+  "pieces": [
+    {
+      "id": "ldraw:53401",
+      "part": "ldraw:53401",
+      "title": "Train Track 6 Studs Wide Straight",
+      "kind": "straight",
+      "system": "lego-plastic",
+      "joinClass": "lego-train",
+      "status": "certified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "16",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 0,
+          "status": "certified",
+          "residualLdu": 0
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 320,
+          "segments": [
+            {
+              "kind": "straight",
+              "lengthLdu": 320
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 160,
+        "zLdu": 0,
+        "headingHalfSteps": 0
+      }
+    },
+    {
+      "id": "ldraw:53400",
+      "part": "ldraw:53400",
+      "title": "Train Track 6 Studs Wide Curved",
+      "kind": "curve",
+      "system": "lego-plastic",
+      "joinClass": "lego-train",
+      "status": "unverified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "unverified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "40",
+            "-40",
+            "0",
+            "0"
+          ],
+          "heading": 1,
+          "status": "unverified",
+          "residualLdu": 0.0014847741947485202
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 314.1592653589794,
+          "segments": [
+            {
+              "kind": "arc",
+              "radiusLdu": 799.9999999999993,
+              "sweepRadians": 0.3926990816987246
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 156.0730294984053,
+        "zLdu": 15.371700497664728,
+        "headingHalfSteps": 1
+      }
+    },
+    {
+      "id": "ldraw:74746",
+      "part": "ldraw:74746",
+      "title": "Train Track 9V Straight",
+      "kind": "straight",
+      "system": "lego-9v",
+      "joinClass": "lego-train",
+      "status": "certified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "16",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 0,
+          "status": "certified",
+          "residualLdu": 7.837739514543061e-14
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 320,
+          "segments": [
+            {
+              "kind": "straight",
+              "lengthLdu": 320
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 160,
+        "zLdu": -3.9188697572715304e-14,
+        "headingHalfSteps": 0
+      }
+    },
+    {
+      "id": "ldraw:74747",
+      "part": "ldraw:74747",
+      "title": "Train Track 9V Curved",
+      "kind": "curve",
+      "system": "lego-9v",
+      "joinClass": "lego-train",
+      "status": "certified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "40",
+            "-40",
+            "0",
+            "0"
+          ],
+          "heading": 1,
+          "status": "certified",
+          "residualLdu": 7.741948029150472e-7
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 314.1592653589794,
+          "segments": [
+            {
+              "kind": "arc",
+              "radiusLdu": 799.9999999999993,
+              "sweepRadians": 0.3926990816987246
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 156.07225805549513,
+        "zLdu": 15.3717754365486,
+        "headingHalfSteps": 1
+      }
+    },
+    {
+      "id": "ldraw:75541-f1",
+      "part": "ldraw:75541-f1",
+      "title": "Train Track 9V Switch Right Straight",
+      "kind": "switch",
+      "system": "lego-9v",
+      "joinClass": "lego-train",
+      "status": "certified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "32",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 0,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "48",
+            "0",
+            "0",
+            "0",
+            "-24",
+            "40",
+            "0",
+            "0"
+          ],
+          "heading": 1,
+          "status": "certified",
+          "residualLdu": 8.921174634225937e-7
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 640,
+          "segments": [
+            {
+              "kind": "straight",
+              "lengthLdu": 640
+            }
+          ]
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "lengthLdu": 715.4425087102757,
+          "segments": [
+            {
+              "kind": "arc",
+              "radiusLdu": 800.0000000000009,
+              "sweepRadians": 0.643501108793284
+            },
+            {
+              "kind": "arc",
+              "radiusLdu": 800.0000000000009,
+              "sweepRadians": -0.25080202709455945
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 320,
+        "zLdu": 0,
+        "headingHalfSteps": 0
+      }
+    },
+    {
+      "id": "ldraw:75541-f2",
+      "part": "ldraw:75541-f2",
+      "title": "Train Track 9V Switch Right Branching",
+      "kind": "switch",
+      "system": "lego-9v",
+      "joinClass": "lego-train",
+      "status": "certified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "32",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 0,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "48",
+            "0",
+            "0",
+            "0",
+            "-24",
+            "40",
+            "0",
+            "0"
+          ],
+          "heading": 1,
+          "status": "certified",
+          "residualLdu": 8.921174634225937e-7
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 640,
+          "segments": [
+            {
+              "kind": "straight",
+              "lengthLdu": 640
+            }
+          ]
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "lengthLdu": 715.4425087102757,
+          "segments": [
+            {
+              "kind": "arc",
+              "radiusLdu": 800.0000000000009,
+              "sweepRadians": 0.643501108793284
+            },
+            {
+              "kind": "arc",
+              "radiusLdu": 800.0000000000009,
+              "sweepRadians": -0.25080202709455945
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 320,
+        "zLdu": 0,
+        "headingHalfSteps": 0
+      }
+    },
+    {
+      "id": "ldraw:75542-f1",
+      "part": "ldraw:75542-f1",
+      "title": "Train Track 9V Switch Left Straight",
+      "kind": "switch",
+      "system": "lego-9v",
+      "joinClass": "lego-train",
+      "status": "certified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "32",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 0,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "48",
+            "0",
+            "0",
+            "-40",
+            "24",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 15,
+          "status": "certified",
+          "residualLdu": 8.921173213213257e-7
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 640,
+          "segments": [
+            {
+              "kind": "straight",
+              "lengthLdu": 640
+            }
+          ]
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "lengthLdu": 715.4425087102757,
+          "segments": [
+            {
+              "kind": "arc",
+              "radiusLdu": 800,
+              "sweepRadians": -0.6435011087932847
+            },
+            {
+              "kind": "arc",
+              "radiusLdu": 800,
+              "sweepRadians": 0.2508020270945599
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 320,
+        "zLdu": 0,
+        "headingHalfSteps": 0
+      }
+    },
+    {
+      "id": "ldraw:75542-f2",
+      "part": "ldraw:75542-f2",
+      "title": "Train Track 9V Switch Left Branching",
+      "kind": "switch",
+      "system": "lego-9v",
+      "joinClass": "lego-train",
+      "status": "certified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "32",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 0,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "48",
+            "0",
+            "0",
+            "-40",
+            "24",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 15,
+          "status": "certified",
+          "residualLdu": 8.921173213213257e-7
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 640,
+          "segments": [
+            {
+              "kind": "straight",
+              "lengthLdu": 640
+            }
+          ]
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "lengthLdu": 715.4425087102757,
+          "segments": [
+            {
+              "kind": "arc",
+              "radiusLdu": 800,
+              "sweepRadians": -0.6435011087932847
+            },
+            {
+              "kind": "arc",
+              "radiusLdu": 800,
+              "sweepRadians": 0.2508020270945599
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 320,
+        "zLdu": 0,
+        "headingHalfSteps": 0
+      }
+    },
+    {
+      "id": "ldraw:32087",
+      "part": "ldraw:32087",
+      "title": "Train Track 9V Crossing",
+      "kind": "crossing",
+      "system": "lego-9v",
+      "joinClass": "lego-train",
+      "status": "certified",
+      "connectors": [
+        {
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 8,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "16",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 0,
+          "status": "certified",
+          "residualLdu": 0
+        },
+        {
+          "coefficients": [
+            "8",
+            "0",
+            "0",
+            "0",
+            "8",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 4,
+          "status": "certified",
+          "residualLdu": 1.7763568394002505e-14
+        },
+        {
+          "coefficients": [
+            "8",
+            "0",
+            "0",
+            "0",
+            "-8",
+            "0",
+            "0",
+            "0"
+          ],
+          "heading": 12,
+          "status": "certified",
+          "residualLdu": 0
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "lengthLdu": 320,
+          "segments": [
+            {
+              "kind": "straight",
+              "lengthLdu": 320
+            }
+          ]
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "lengthLdu": 320,
+          "segments": [
+            {
+              "kind": "straight",
+              "lengthLdu": 320
+            }
+          ]
+        }
+      ],
+      "partFrame": {
+        "xLdu": 160,
+        "zLdu": 0,
+        "headingHalfSteps": 0
+      }
+    }
+  ],
+  "checks": [
+    {
+      "id": "ldraw:53401",
+      "railTopY": -16,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/53401s02.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0,
+          "railHalfSpacingLdu": 50
+        },
+        {
+          "connector": 1,
+          "marker": "s/53401s02.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0,
+          "railHalfSpacingLdu": 50
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "straight",
+          "railCoverage": [
+            1,
+            1
+          ],
+          "rejected": []
+        }
+      ]
+    },
+    {
+      "id": "ldraw:53400",
+      "railTopY": -16,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/53400s03.dat",
+          "derivation": "reference end",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": -0.25,
+          "railHalfSpacingLdu": 50.015625
+        },
+        {
+          "connector": 1,
+          "marker": "s/53400s04.dat",
+          "derivation": "arc: radius 40 studs from the file's !HELP rotation point (0/-800), turn -1 step from the end markers; not certified (no unique field candidate within the file's precision)",
+          "markerResidualLdu": 0.0014847741947485202,
+          "railCentreOffsetLdu": 0.25,
+          "railHalfSpacingLdu": 50.015625
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "arc",
+          "railCoverage": [
+            0.9622641509433962,
+            0.9685534591194969
+          ],
+          "rejected": []
+        }
+      ]
+    },
+    {
+      "id": "ldraw:74746",
+      "railTopY": -16,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/2865as01.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
+          "railHalfSpacingLdu": 50.5
+        },
+        {
+          "connector": 1,
+          "marker": "s/2865as01.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 7.837739514543061e-14,
+          "railCentreOffsetLdu": -0.015625,
+          "railHalfSpacingLdu": 50.5
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "straight",
+          "railCoverage": [
+            1,
+            1
+          ],
+          "rejected": []
+        }
+      ]
+    },
+    {
+      "id": "ldraw:74747",
+      "railTopY": -16,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/2867as04.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": -0.25,
+          "railHalfSpacingLdu": 50.515625
+        },
+        {
+          "connector": 1,
+          "marker": "s/2867as03.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 7.741948029150472e-7,
+          "railCentreOffsetLdu": 0.25,
+          "railHalfSpacingLdu": 50.515625
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "arc",
+          "railCoverage": [
+            0.9622641509433962,
+            0.9685534591194969
+          ],
+          "rejected": []
+        }
+      ]
+    },
+    {
+      "id": "ldraw:75541-f1",
+      "railTopY": -16,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/2859s02.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": -0.125,
+          "railHalfSpacingLdu": 50.640625
+        },
+        {
+          "connector": 1,
+          "marker": "s/2865as01.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
+          "railHalfSpacingLdu": 50.5
+        },
+        {
+          "connector": 2,
+          "marker": "s/2867as04.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 8.921174634225937e-7,
+          "railCentreOffsetLdu": -0.25,
+          "railHalfSpacingLdu": 50.515625
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "straight",
+          "railCoverage": [
+            0.8442367601246106,
+            0.9781931464174455
+          ],
+          "rejected": []
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "family": "reversed-arcs",
+          "railCoverage": [
+            0.9833333333333333,
+            0.8805555555555555
+          ],
+          "rejected": [
+            {
+              "family": "arc-then-straight",
+              "railCoverage": 0.13559322033898305
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ldraw:75541-f2",
+      "railTopY": -16,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/2859s02.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": -0.125,
+          "railHalfSpacingLdu": 50.640625
+        },
+        {
+          "connector": 1,
+          "marker": "s/2865as01.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
+          "railHalfSpacingLdu": 50.5
+        },
+        {
+          "connector": 2,
+          "marker": "s/2867as04.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 8.921174634225937e-7,
+          "railCentreOffsetLdu": -0.25,
+          "railHalfSpacingLdu": 50.515625
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "straight",
+          "railCoverage": [
+            0.8442367601246106,
+            0.9781931464174455
+          ],
+          "rejected": []
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "family": "reversed-arcs",
+          "railCoverage": [
+            0.9833333333333333,
+            0.9527777777777777
+          ],
+          "rejected": [
+            {
+              "family": "arc-then-straight",
+              "railCoverage": 0.13559322033898305
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ldraw:75542-f1",
+      "railTopY": -16,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/2859s02.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.140625,
+          "railHalfSpacingLdu": 50.625
+        },
+        {
+          "connector": 1,
+          "marker": "s/2865as01.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
+          "railHalfSpacingLdu": 50.5
+        },
+        {
+          "connector": 2,
+          "marker": "s/2867as03.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 8.921173213213257e-7,
+          "railCentreOffsetLdu": 0.25,
+          "railHalfSpacingLdu": 50.515625
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "straight",
+          "railCoverage": [
+            0.9813084112149533,
+            0.8411214953271028
+          ],
+          "rejected": []
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "family": "reversed-arcs",
+          "railCoverage": [
+            0.8833333333333333,
+            0.9861111111111112
+          ],
+          "rejected": [
+            {
+              "family": "arc-then-straight",
+              "railCoverage": 0.14124293785310735
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ldraw:75542-f2",
+      "railTopY": -16,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/2859s02.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.140625,
+          "railHalfSpacingLdu": 50.625
+        },
+        {
+          "connector": 1,
+          "marker": "s/2865as01.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
+          "railHalfSpacingLdu": 50.5
+        },
+        {
+          "connector": 2,
+          "marker": "s/2867as03.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 8.921173213213257e-7,
+          "railCentreOffsetLdu": 0.25,
+          "railHalfSpacingLdu": 50.515625
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "straight",
+          "railCoverage": [
+            0.9813084112149533,
+            0.8411214953271028
+          ],
+          "rejected": []
+        },
+        {
+          "from": 0,
+          "to": 2,
+          "family": "reversed-arcs",
+          "railCoverage": [
+            0.9555555555555556,
+            0.9861111111111112
+          ],
+          "rejected": [
+            {
+              "family": "arc-then-straight",
+              "railCoverage": 0.14124293785310735
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ldraw:32087",
+      "railTopY": -16.05,
+      "connectors": [
+        {
+          "connector": 0,
+          "marker": "s/2865s04.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
+          "railHalfSpacingLdu": 50.25
+        },
+        {
+          "connector": 1,
+          "marker": "s/2865s04.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
+          "railHalfSpacingLdu": 50.25
+        },
+        {
+          "connector": 2,
+          "marker": "s/2865s04.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 1.7763568394002505e-14,
+          "railCentreOffsetLdu": -0.015625,
+          "railHalfSpacingLdu": 50.25
+        },
+        {
+          "connector": 3,
+          "marker": "s/2865s04.dat",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
+          "railHalfSpacingLdu": 50.25
+        }
+      ],
+      "routes": [
+        {
+          "from": 0,
+          "to": 1,
+          "family": "straight",
+          "railCoverage": [
+            0.9503105590062112,
+            0.9565217391304348
+          ],
+          "rejected": []
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "family": "straight",
+          "railCoverage": [
+            0.9565217391304348,
+            0.9565217391304348
+          ],
+          "rejected": []
+        }
+      ]
+    }
+  ],
+  "layouts": [
+    {
+      "name": "passing-loop",
+      "status": "certified",
+      "unverifiedPieces": [],
+      "pieces": 34,
+      "connectors": 70,
+      "exactJoins": 35,
+      "openEnds": 0,
+      "measuredJoinGapsLdu": {
+        "max": 0.00009886747195012656,
+        "mean": 0.000048799269729584606
+      },
+      "measuredHeadingErrorDegreesMax": 0.00018858476003534696
+    },
+    {
+      "name": "figure-eight",
+      "status": "certified",
+      "unverifiedPieces": [],
+      "pieces": 33,
+      "connectors": 68,
+      "exactJoins": 34,
+      "openEnds": 0,
+      "measuredJoinGapsLdu": {
+        "max": 0.00009886747195012656,
+        "mean": 0.00006256579232749015
+      },
+      "measuredHeadingErrorDegreesMax": 0.00018858476003534696
+    },
+    {
+      "name": "plastic-oval",
+      "status": "unverified",
+      "unverifiedPieces": [
+        "ldraw:53400"
+      ],
+      "pieces": 24,
+      "connectors": 48,
+      "exactJoins": 24,
+      "openEnds": 0,
+      "measuredJoinGapsLdu": {
+        "max": 0.0015311806025836152,
+        "mean": 0.000984817934488396
+      },
+      "measuredHeadingErrorDegreesMax": 0.000055889479991908876
+    }
+  ]
+}

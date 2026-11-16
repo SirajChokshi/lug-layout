@@ -5,6 +5,7 @@ import type {
   IEditor,
   LatencySample,
 } from "@brr/client";
+import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
@@ -75,6 +76,7 @@ export function CatalogList({ editor, snapshot }: PanelProps) {
 
 export function PlacementToolbar({ editor, snapshot }: PanelProps) {
   const canRotate = snapshot.mode === "place" || snapshot.selection !== null;
+  const { history } = snapshot;
   return (
     <div className="toolbar" role="toolbar" aria-label="Placement tools">
       <button
@@ -104,6 +106,22 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
         onClick={() => editor.focusSelection()}
       >
         Focus (F)
+      </button>
+      <button
+        type="button"
+        data-action="undo"
+        disabled={history.undo === null}
+        onClick={(event) => editor.undo(event.timeStamp)}
+      >
+        Undo{history.undo === null ? "" : ` ${history.undo}`} (Ctrl+Z)
+      </button>
+      <button
+        type="button"
+        data-action="redo"
+        disabled={history.redo === null}
+        onClick={(event) => editor.redo(event.timeStamp)}
+      >
+        Redo{history.redo === null ? "" : ` ${history.redo}`} (Ctrl+Shift+Z)
       </button>
       <p className="toolbar-hint">
         Right-drag orbits, Shift-drag pans, the wheel zooms, C centres on the cursor.
@@ -160,7 +178,8 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
 
 function latencyText(sample: LatencySample | null, snapshot: EditorSnapshot): string {
   if (!sample) return "none yet";
-  return `${sample.ms.toFixed(1)} ms (${sample.action} ${itemLabel(snapshot, sample.item)}, ${degrees(sample.rot)})`;
+  const action = sample.step === "do" ? sample.action : `${sample.step} ${sample.action}`;
+  return `${sample.ms.toFixed(1)} ms (${action} ${itemLabel(snapshot, sample.item)}, ${degrees(sample.rot)})`;
 }
 
 function rebuildText(sample: LatencySample | null): string {
@@ -194,7 +213,11 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       snapshot.hover ? `${snapshot.hover.x}, ${snapshot.hover.z}` : "off the ground",
     ],
     ["Placements", integer.format(snapshot.placements)],
-    ["Last placement latency", latencyText(snapshot.lastLatency, snapshot)],
+    [
+      "History (undo, redo)",
+      `${integer.format(snapshot.history.undoDepth)}, ${integer.format(snapshot.history.redoDepth)}`,
+    ],
+    ["Last edit latency", latencyText(snapshot.lastLatency, snapshot)],
     ["Rebuilt for it", rebuildText(snapshot.lastLatency)],
   );
   if (stats) {
@@ -242,8 +265,8 @@ export function CreditsFooter({
   return (
     <footer>
       {credits &&
-        `Models from the LDraw Official Model Repository: ${modelCredits(credits)}. Parts: LDraw parts library, ${credits.partFiles} files (${credits.partLicenses.join(", ")}), modified from LDraw: flattened, studs extracted. Colours: LDraw LDConfig.ldr. `}
-      {disclaimer}
+        `Models from the LDraw Official Model Repository: ${modelCredits(credits)}. ${partsCreditText(credits.partFiles, credits.partFilesLod)}`}
+      {disclaimer} <CreditLinks />
     </footer>
   );
 }

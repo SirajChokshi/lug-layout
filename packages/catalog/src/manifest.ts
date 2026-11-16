@@ -2,30 +2,43 @@ import type {
   BundleColor,
   BundleCredit,
   BundleModelEntry,
-  BundleSource,
   ModelSection,
   PartRole,
   TrackEnd,
   Vec3Tuple,
 } from "./part-bundle.ts";
+import { parseTrackCatalog, type TrackCatalog } from "./track-catalog.ts";
 
 export interface ManifestPart {
   readonly id: string;
+  readonly path: string;
   readonly role: PartRole;
   readonly file: string;
   readonly bounds: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
-  readonly displayColor?: { readonly ldraw: number };
+  readonly displayColor?: { readonly ldraw: number; readonly source: string };
   readonly trackEnds?: ReadonlyArray<TrackEnd>;
 }
 
 export interface ManifestStudPrimitive {
   readonly name: string;
+  readonly path: string;
   readonly file: string;
 }
 
 export interface BundleCompiler {
   readonly file: string;
   readonly unofficialAllowlist: ReadonlyArray<string>;
+}
+
+export interface BundleSource {
+  readonly repo: string;
+  readonly commit: string;
+  readonly root: string;
+}
+
+export interface BundleInputs {
+  readonly ldraw: BundleSource;
+  readonly omr: BundleSource;
 }
 
 export interface BundleManifest {
@@ -39,6 +52,10 @@ export interface BundleManifest {
   readonly colors: ReadonlyArray<BundleColor>;
   readonly credits: ReadonlyArray<BundleCredit>;
   readonly models: ReadonlyArray<BundleModelEntry>;
+  readonly modified: string;
+  readonly disclaimer: string;
+  readonly inputs: BundleInputs;
+  readonly trackCatalog: TrackCatalog;
 }
 
 export interface ModelFileLattice {
@@ -49,7 +66,7 @@ export interface ModelFileLattice {
 export interface ModelFile {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly parts: ReadonlyArray<string>;
-  readonly lattice: ModelFileLattice;
+  readonly lattice: ModelFileLattice | null;
   readonly instances: {
     readonly part: ReadonlyArray<number>;
     readonly color: ReadonlyArray<number>;
@@ -65,6 +82,7 @@ export interface StudExtra {
 
 export interface SourceExtra {
   readonly path: string;
+  readonly author: string;
   readonly license: string | null;
 }
 
@@ -86,6 +104,7 @@ function isManifestPart(value: unknown): value is ManifestPart {
   if (!isRecord(value) || !isRecord(value["bounds"])) return false;
   return (
     typeof value["id"] === "string" &&
+    typeof value["path"] === "string" &&
     typeof value["file"] === "string" &&
     typeof value["role"] === "string" &&
     isVec3(value["bounds"]["min"]) &&
@@ -111,13 +130,33 @@ function isCompiler(value: unknown): value is BundleCompiler {
   );
 }
 
+function isCredit(value: unknown): value is BundleCredit {
+  return (
+    isRecord(value) &&
+    typeof value["path"] === "string" &&
+    typeof value["title"] === "string" &&
+    typeof value["author"] === "string" &&
+    (value["license"] === null || typeof value["license"] === "string")
+  );
+}
+
 function isBundleModelEntry(value: unknown): value is BundleModelEntry {
   return (
     isRecord(value) &&
     typeof value["name"] === "string" &&
     typeof value["file"] === "string" &&
     typeof value["source"] === "string" &&
-    (value["origin"] === "omr" || value["origin"] === "generated")
+    (value["origin"] === "omr" || value["origin"] === "generated") &&
+    (value["set"] === null || isRecord(value["set"])) &&
+    isStringArray(value["authors"]) &&
+    isStringArray(value["licenses"]) &&
+    Array.isArray(value["sections"])
+  );
+}
+
+function isSource(value: unknown): boolean {
+  return (
+    isRecord(value) && typeof value["repo"] === "string" && typeof value["commit"] === "string"
   );
 }
 
@@ -131,6 +170,8 @@ export function parseManifest(value: unknown): BundleManifest {
     !value["parts"].every(isManifestPart) ||
     !Array.isArray(value["studPrimitives"]) ||
     !Array.isArray(value["colors"]) ||
+    !Array.isArray(value["credits"]) ||
+    !value["credits"].every(isCredit) ||
     !Array.isArray(value["models"]) ||
     !isBundleSource(value["source"]) ||
     !(
@@ -138,13 +179,19 @@ export function parseManifest(value: unknown): BundleManifest {
       value["compiler"] === undefined ||
       isCompiler(value["compiler"])
     ) ||
-    !value["models"].every(isBundleModelEntry)
+    !value["models"].every(isBundleModelEntry) ||
+    typeof value["modified"] !== "string" ||
+    typeof value["disclaimer"] !== "string" ||
+    !isRecord(value["inputs"]) ||
+    !isSource(value["inputs"]["ldraw"]) ||
+    !isSource(value["inputs"]["omr"])
   ) {
     throw new Error("bundle manifest does not match the M1 bundle format");
   }
   return {
-    ...(value as unknown as BundleManifest),
+    ...(value as unknown as Omit<BundleManifest, "trackCatalog" | "compiler">),
     compiler: isCompiler(value["compiler"]) ? value["compiler"] : null,
+    trackCatalog: parseTrackCatalog(value["trackCatalog"]),
   };
 }
 
@@ -198,8 +245,8 @@ export function parseModelFile(value: unknown, label: string): ModelFile {
     throw new Error(`${label}: model file does not match the M1 bundle format`);
   }
   const partCount = value["parts"].length;
-  if (!isModelFileLattice(value["lattice"])) {
-    throw new Error(`${label}: model file has no lattice phase and AABB from the bake`);
+  if (value["lattice"] !== null && !isModelFileLattice(value["lattice"])) {
+    throw new Error(`${label}: model file lattice is neither null nor a phase and AABB`);
   }
   const { part, color, matrix } = value["instances"];
   if (

@@ -19,8 +19,15 @@ import {
 } from "./fetch-ldraw.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
 import { readPalette, type Palette } from "./palette.ts";
-import { publishBundle, type BundleInputs } from "./publish.ts";
-import { geometryReports, licenseAuditReport, readSources, writeReports } from "./verify/facts.ts";
+import { MANIFEST_FILE, publishBundle, type BundleInputs } from "./publish.ts";
+import {
+  geometryReports,
+  licenseAuditReport,
+  readSources,
+  TRACK_CATALOG_FILE,
+  trackCatalogReports,
+  writeReports,
+} from "./verify/facts.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -143,6 +150,7 @@ async function factsCommand(check: boolean): Promise<void> {
       shadowLibrary,
     }),
     ...geometryReports(lock.source, auditLibrary, shadowLibrary, palette.studPrimitives),
+    ...trackCatalogReports(auditLibrary, palette),
   ];
   if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
@@ -166,6 +174,23 @@ async function fileSha256(path: string): Promise<string> {
   return createHash("sha256")
     .update(await readFile(path))
     .digest("hex");
+}
+
+async function addTrackCatalog(directory: string): Promise<void> {
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    parts: ReadonlyArray<{ id: string }>;
+  };
+  const catalog = JSON.parse(
+    await readFile(join(verifiedFactsRoot, TRACK_CATALOG_FILE), "utf8"),
+  ) as { n: number; pieces: ReadonlyArray<{ id: string }> };
+  const bundled = new Set(manifest.parts.map((part) => part.id));
+  const missing = catalog.pieces.filter((piece) => !bundled.has(piece.id));
+  if (missing.length > 0) {
+    throw new Error(`track catalog pieces missing from the bundle: ${missing.map((p) => p.id)}`);
+  }
+  const trackCatalog = { n: catalog.n, pieces: catalog.pieces };
+  await writeFile(manifestPath, `${JSON.stringify({ ...manifest, trackCatalog }, null, 2)}\n`);
 }
 
 async function bundleCommand(): Promise<void> {
@@ -216,6 +241,7 @@ async function bundleCommand(): Promise<void> {
       "--compiler",
       compilerWasm,
     ]);
+    await addTrackCatalog(out);
     const { bundleVersion, files } = await publishBundle(out, inputs);
     process.stdout.write(
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,

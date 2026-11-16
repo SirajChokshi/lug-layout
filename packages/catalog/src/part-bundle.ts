@@ -1,4 +1,9 @@
+import type { BundleSource } from "./manifest.ts";
+import type { BundleManifest } from "./manifest.ts";
+import type { TrackCatalog } from "./track-catalog.ts";
+
 export type BundleLod = "standard" | "low" | "far";
+export const BUNDLE_LODS: ReadonlyArray<BundleLod> = ["standard", "low", "far"];
 export type PartRole = "ground" | "road" | "track" | "wall" | "roof" | "detail" | "model";
 export type Vec3Tuple = readonly [number, number, number];
 
@@ -53,6 +58,9 @@ export interface BundleColor {
 }
 
 export interface BundleCredit {
+  readonly path: string;
+  readonly title: string;
+  readonly author: string;
   readonly license: string | null;
 }
 
@@ -64,11 +72,28 @@ export interface ModelSection {
 
 export type ModelOrigin = "omr" | "generated";
 
+export interface ModelSet {
+  readonly name: string;
+  readonly year: number;
+  readonly source: string;
+}
+
 export interface BundleModelEntry {
   readonly name: string;
   readonly file: string;
   readonly origin: ModelOrigin;
+  readonly set: ModelSet | null;
   readonly source: string;
+  readonly authors: ReadonlyArray<string>;
+  readonly licenses: ReadonlyArray<string>;
+  readonly sections: ReadonlyArray<ModelSection>;
+  readonly inlinePartsResolvedToOfficial: ReadonlyArray<InlinePartResolution>;
+  readonly instances: number;
+}
+
+export interface InlinePartResolution {
+  readonly inline: string;
+  readonly official: string;
 }
 
 export interface ModelLattice {
@@ -80,7 +105,7 @@ export interface ModelLattice {
 
 export interface PartModel {
   readonly sections: ReadonlyArray<ModelSection>;
-  readonly lattice: ModelLattice;
+  readonly lattice: ModelLattice | null;
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint16Array;
@@ -94,6 +119,7 @@ export interface PartBundle {
   readonly colors: ReadonlyArray<BundleColor>;
   readonly credits: ReadonlyArray<BundleCredit>;
   readonly models: ReadonlyArray<BundleModelEntry>;
+  readonly trackCatalog: TrackCatalog;
 }
 
 export interface PartSummary {
@@ -107,12 +133,6 @@ export interface ModelBundle {
   readonly bundle: PartBundle;
   readonly entry: BundleModelEntry;
   readonly model: PartModel;
-}
-
-export interface BundleSource {
-  readonly repo: string;
-  readonly commit: string;
-  readonly root: string;
 }
 
 export interface ImportContext {
@@ -131,6 +151,7 @@ export interface CompiledPartGlb {
 }
 
 export interface IPartBundleLoader {
+  loadManifest(lod: BundleLod): Promise<BundleManifest>;
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
   importContext(lod: BundleLod): Promise<ImportContext>;

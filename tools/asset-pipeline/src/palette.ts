@@ -12,6 +12,7 @@ export interface PaletteModel {
   readonly source: string;
   readonly retrieved: string;
   readonly notDrawn?: ReadonlyArray<{ readonly section: string; readonly reason: string }>;
+  readonly set?: { readonly name: string; readonly year: number; readonly source: string };
 }
 
 export interface Palette {

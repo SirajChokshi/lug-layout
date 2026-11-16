@@ -1,12 +1,12 @@
 export { catalogModule } from "./catalog.module.ts";
 export { directColorSrgb, isDirectColor } from "./colors.ts";
-export { INHERIT_COLOR } from "./part-bundle.ts";
+export { BUNDLE_LODS, INHERIT_COLOR } from "./part-bundle.ts";
+export type { BundleInputs, BundleManifest, BundleSource } from "./manifest.ts";
 export type {
   BundleColor,
   BundleCredit,
   BundleLod,
   BundleModelEntry,
-  BundleSource,
   ColorGroup,
   CompiledPartGlb,
   IAssetFetcher,
@@ -17,6 +17,7 @@ export type {
   ModelLattice,
   ModelOrigin,
   ModelSection,
+  ModelSet,
   PartAsset,
   PartBundle,
   PartFilter,
@@ -29,3 +30,16 @@ export type {
   Vec3Tuple,
 } from "./part-bundle.ts";
 export { ASSET_FETCHER, BUNDLE_BASE_URL, PART_BUNDLE_LOADER } from "./tokens.ts";
+export { parseTrackCatalog } from "./track-catalog.ts";
+export type {
+  TrackCatalog,
+  TrackConnector,
+  TrackJoinClass,
+  TrackPartFrame,
+  TrackPathSegment,
+  TrackPiece,
+  TrackPieceKind,
+  TrackPoseStatus,
+  TrackRoute,
+  TrackSystem,
+} from "./track-catalog.ts";

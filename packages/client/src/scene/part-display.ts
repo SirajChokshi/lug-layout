@@ -9,9 +9,8 @@ const SLOT_CELLS = 6;
 const BRICK_AREA_FIRST_CELL = 20;
 const BRICK_AREA_COLUMNS = 2;
 const STACK_LAYERS = 3;
-const TRACK_ORIGIN_X_LDU = 200;
-const TRACK_FIRST_ORIGIN_Z_LDU = 120;
-const TRACK_SPACING_Z_LDU = 220;
+const TRACK_ROW_CHUNK_Z = 1;
+const TRACK_GAP_LDU = 40;
 
 const DISPLAY_COLORS = {
   ground: "Green",
@@ -56,12 +55,22 @@ export function buildPartDisplay(bundle: PartBundle, colors: ColorTable): World 
   );
 
   const trackColor = colors.indexOfName(DISPLAY_COLORS.track);
-  let trackRow = 0;
+  const trackRow = new ModuleWriter(world, 0, TRACK_ROW_CHUNK_Z);
+  let trackEdgeX = 0;
   bundle.parts.forEach((part, index) => {
     if (part.role !== "track") return;
-    const z = TRACK_FIRST_ORIGIN_Z_LDU + trackRow * TRACK_SPACING_Z_LDU;
-    studded.push(index, trackColor, TRACK_ORIGIN_X_LDU, z, plateDepthBelowOrigin(part), 0);
-    trackRow++;
+    const [minX, , minZ] = part.boundsMin;
+    const [maxX] = part.boundsMax;
+    const x = Math.ceil(trackEdgeX - minX);
+    trackRow.push(
+      index,
+      trackColor,
+      x,
+      Math.ceil(TRACK_GAP_LDU - minZ),
+      plateDepthBelowOrigin(part),
+      0,
+    );
+    trackEdgeX = x + maxX + TRACK_GAP_LDU;
   });
 
   const bricks: PartFootprint[] = [];

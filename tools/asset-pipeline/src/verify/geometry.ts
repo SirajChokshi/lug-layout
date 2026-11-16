@@ -1,16 +1,16 @@
+import {
+  addZeta16,
+  conjugateZeta16,
+  rotateZeta16,
+  ZETA16_ORDER,
+  zeta16ToStuds,
+  type Zeta16,
+} from "@brr/math";
 import { applyToPoint, type Vec3 } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { isStudPrimitive, LDCAD_META, metaValues, subfilePlacement } from "../ldraw/parse.ts";
 import { dependencyClosure, INHERIT_COLOR, walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
-import {
-  addZeta16,
-  mirrorZeta16,
-  rotateZeta16,
-  zeta16ToPlane,
-  ZETA16_ORDER,
-  ZETA16_STEP_RADIANS,
-  type Zeta16Coefficients,
-} from "../track/cyclotomic.ts";
+import { ZETA16_STEP_RADIANS } from "../track/cyclotomic.ts";
 import {
   findTrackEnds,
   LDU_PER_STUD,
@@ -390,7 +390,7 @@ export function crossCheckLdcadTrackSnaps(
 interface ComposedPose {
   readonly via: ReadonlyArray<string>;
   readonly headingSteps: number;
-  readonly exactCoefficients: Zeta16Coefficients | null;
+  readonly exactCoefficients: Zeta16 | null;
   readonly exactDerivation: string;
   readonly measuredXStuds: number;
   readonly measuredZStuds: number;
@@ -424,12 +424,12 @@ export function composeDivergingWithCurve(
       measuredResidualToExactLdu: null,
     };
   }
-  const curve = mirrored ? mirrorZeta16(curveEnd.coefficients) : curveEnd.coefficients;
+  const curve = mirrored ? conjugateZeta16(curveEnd.coefficients) : curveEnd.coefficients;
   const exactCoefficients = addZeta16(
     switchEnd.coefficients,
     rotateZeta16(curve, switchEnd.headingSteps),
   );
-  const exact = zeta16ToPlane(exactCoefficients);
+  const exact = zeta16ToStuds(exactCoefficients);
   return {
     via: names,
     headingSteps,
@@ -438,7 +438,7 @@ export function composeDivergingWithCurve(
     measuredXStuds,
     measuredZStuds,
     measuredResidualToExactLdu:
-      Math.hypot(exact.x - measuredXStuds, exact.y - measuredZStuds) * LDU_PER_STUD,
+      Math.hypot(exact.x - measuredXStuds, exact.z - measuredZStuds) * LDU_PER_STUD,
   };
 }
 
