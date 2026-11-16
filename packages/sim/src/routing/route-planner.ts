@@ -24,7 +24,7 @@ export class RoutePlanner {
     fromEdge: number,
     fromOffsetLdu: number,
     targetBlock: number,
-    blockPenaltyLdu: Float64Array,
+    placementPenaltyLdu: Float64Array,
     out: Int32Array,
   ): number {
     const { graph, edgeLengthLdu } = this.blocks;
@@ -49,7 +49,7 @@ export class RoutePlanner {
         const next = graph.successors[s] ?? NO_EDGE;
         if (next === NO_EDGE || this.settled[next] === 1) continue;
         const cost =
-          (edgeLengthLdu[next] ?? 0) + (blockPenaltyLdu[this.blocks.edgeBlock(next)] ?? 0);
+          (edgeLengthLdu[next] ?? 0) + (placementPenaltyLdu[graph.edgePlacement[next] ?? 0] ?? 0);
         if (reached + cost < (this.distance[next] ?? Number.POSITIVE_INFINITY)) {
           this.distance[next] = reached + cost;
           this.previous[next] = edge;

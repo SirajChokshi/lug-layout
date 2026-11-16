@@ -1,10 +1,10 @@
-import { BLOCK_CLEARANCE_LDU, NO_TRAIN, type BlockKeeper } from "./block-keeper.ts";
+import { BLOCK_CLEARANCE_LDU, type BlockKeeper } from "./block-keeper.ts";
 import { NO_BLOCK, type BlockMap } from "./block-map.ts";
 
 export interface AutopilotTrains {
   readonly trains: number;
   readonly trainSpeed: Float64Array;
-  trainLengthLdu(train: number): number;
+  bodyLengthLdu(train: number): number;
   driveAtTopSpeed(train: number): void;
 }
 
@@ -40,7 +40,7 @@ export class Autopilot {
       this.idleTicks[train] = idle;
       const due = state === "waiting" ? idle >= this.retryTicks : idle >= this.dwellTicks;
       if (!due) continue;
-      const target = this.pickStop(train, trains.trainLengthLdu(train));
+      const target = this.pickStop(train, trains.bodyLengthLdu(train));
       if (target === NO_BLOCK) continue;
       this.keeper.goTo(train, target);
       trains.driveAtTopSpeed(train);
@@ -68,7 +68,7 @@ export class Autopilot {
     return (
       block !== current &&
       this.blocks.blockIsJunction[block] === 0 &&
-      this.keeper.blockOwner[block] === NO_TRAIN &&
+      this.keeper.blockIsFree(block) &&
       (this.blocks.blockLengthLdu[block] ?? 0) >= lengthLdu + 2 * BLOCK_CLEARANCE_LDU
     );
   }

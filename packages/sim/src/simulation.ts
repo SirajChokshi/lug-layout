@@ -197,7 +197,7 @@ export class Simulation {
       this.vehicleCount = firstVehicle;
       throw new Error(`a ${length} LDU train does not fit behind (${edge}, ${offsetLdu})`);
     }
-    this.blocks?.place(train, edge, offsetLdu, length, this.switchStates);
+    this.blocks?.place(train, edge, offsetLdu, this.bodyLengthLdu(train), this.switchStates);
     this.trainCount++;
     return train;
   }
@@ -224,7 +224,7 @@ export class Simulation {
     this.applyThrottle(train, this.trainMaxSpeed[train] ?? 0);
   }
 
-  trainLengthLdu(train: number): number {
+  bodyLengthLdu(train: number): number {
     return this.trainLength[train] ?? 0;
   }
 
@@ -275,6 +275,7 @@ export class Simulation {
       train,
       this.trainEdge[train] ?? 0,
       this.trainOffset[train] ?? 0,
+      this.bodyLengthLdu(train),
       this.switchStates,
     );
     return true;
@@ -410,6 +411,7 @@ export class Simulation {
           this.trainOffset[train] ?? 0,
           speed,
           braking,
+          this.bodyLengthLdu(train),
           this.switchStates,
         )
       : this.clearDistanceAhead(train, stoppingDistance);
@@ -462,7 +464,7 @@ export class Simulation {
     for (let t = 0; t < this.trainCount; t++) {
       const base = t * PATH_CAPACITY;
       const count = this.pathCount[t] ?? 0;
-      const length = this.trainLength[t] ?? 0;
+      const length = this.bodyLengthLdu(t);
       let slot = this.pathTop[t] ?? 0;
       let covered = this.trainOffset[t] ?? 0;
       let used = 1;

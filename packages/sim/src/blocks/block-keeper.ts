@@ -23,10 +23,11 @@ const MODE_NAMES: ReadonlyArray<TrainRouteState> = [
 ];
 
 export class BlockKeeper {
-  readonly blockOwner: Int32Array;
+  readonly placementOwner: Int32Array;
+  readonly blockHeldPieces: Int32Array;
   readonly arrivals: Uint32Array;
   readonly targetBlock: Int32Array;
-  private readonly blockHolds: Int32Array;
+  private readonly placementHolds: Int32Array;
   private readonly ringCapacity: number;
   private readonly ringEdge: Int32Array;
   private readonly ringStartS: Float64Array;
@@ -47,8 +48,9 @@ export class BlockKeeper {
     readonly trainCapacity: number,
   ) {
     const { graph } = blocks;
-    this.blockOwner = new Int32Array(blocks.blockCount).fill(NO_TRAIN);
-    this.blockHolds = new Int32Array(blocks.blockCount);
+    this.placementOwner = new Int32Array(graph.placementCount).fill(NO_TRAIN);
+    this.placementHolds = new Int32Array(graph.placementCount);
+    this.blockHeldPieces = new Int32Array(blocks.blockCount);
     this.arrivals = new Uint32Array(trainCapacity);
     this.targetBlock = new Int32Array(trainCapacity).fill(NO_BLOCK);
     this.ringCapacity = 2 * graph.edgeCount + 8;
@@ -63,7 +65,7 @@ export class BlockKeeper {
     this.planner = new RoutePlanner(blocks);
     this.route = new Int32Array(graph.edgeCount);
     this.reverseRoute = new Int32Array(graph.edgeCount);
-    this.penalty = new Float64Array(blocks.blockCount);
+    this.penalty = new Float64Array(graph.placementCount);
     let total = 0;
     for (let edge = 0; edge < graph.edgeCount; edge++) total += blocks.edgeLengthLdu[edge] ?? 0;
     this.occupiedPenaltyLdu = total;
@@ -91,7 +93,7 @@ export class BlockKeeper {
       covered += edgeLengthLdu[edge] ?? 0;
     }
     for (let i = 0; i < count; i++) {
-      const owner = this.blockOwner[this.blocks.edgeBlock(body[i] ?? 0)] ?? NO_TRAIN;
+      const owner = this.edgeOwner(body[i] ?? 0);
       if (owner !== NO_TRAIN && owner !== train) {
         throw new Error(`train ${train} overlaps track held by train ${owner}`);
       }
@@ -111,12 +113,18 @@ export class BlockKeeper {
     this.frontSeq[train] = (this.ringNext[train] ?? 1) - 1;
   }
 
-  reseat(train: number, frontEdge: number, frontOffsetLdu: number, switchStates: Uint8Array): void {
+  reseat(
+    train: number,
+    frontEdge: number,
+    frontOffsetLdu: number,
+    lengthLdu: number,
+    switchStates: Uint8Array,
+  ): void {
     const mode = this.mode[train] ?? MODE_MANUAL;
     const target = this.targetBlock[train] ?? NO_BLOCK;
     while ((this.ringNext[train] ?? 0) > (this.ringHead[train] ?? 0)) this.dropOldest(train);
     this.placed[train] = 0;
-    this.place(train, frontEdge, frontOffsetLdu, this.lengthLdu[train] ?? 0, switchStates);
+    this.place(train, frontEdge, frontOffsetLdu, lengthLdu, switchStates);
     this.targetBlock[train] = target;
     this.mode[train] = mode === MODE_REVERSING || mode === MODE_ROUTED ? MODE_WAITING : mode;
   }
@@ -155,7 +163,11 @@ export class BlockKeeper {
   canThrow(switchId: number): boolean {
     const end = this.blocks.graph.switchEnd[switchId] ?? 0;
     const placement = this.blocks.graph.endPlacement[end] ?? 0;
-    return this.blockOwner[this.blocks.placementBlock[placement] ?? 0] === NO_TRAIN;
+    return this.placementOwner[placement] === NO_TRAIN;
+  }
+
+  blockIsFree(block: number): boolean {
+    return this.blockHeldPieces[block] === 0;
   }
 
   clearDistanceAhead(
@@ -164,10 +176,12 @@ export class BlockKeeper {
     frontOffsetLdu: number,
     speedLduPerS: number,
     brakingLduPerS2: number,
+    bodyLengthLdu: number,
     switchStates: Uint8Array,
   ): number {
+    this.lengthLdu[train] = bodyLengthLdu;
     const sFront = this.locateFront(train, frontEdge, frontOffsetLdu);
-    this.releaseBehind(train, sFront - (this.lengthLdu[train] ?? 0));
+    this.releaseBehind(train, sFront - bodyLengthLdu);
     const mode = this.mode[train] ?? MODE_MANUAL;
     if (mode === MODE_MANUAL) {
       const stopping = (speedLduPerS * speedLduPerS) / (2 * brakingLduPerS2);
@@ -183,6 +197,32 @@ export class BlockKeeper {
       this.arrivals[train] = (this.arrivals[train] ?? 0) + 1;
     }
     return clear > 0 ? clear : 0;
+  }
+
+  private edgeOwner(edge: number): number {
+    return this.placementOwner[this.blocks.graph.edgePlacement[edge] ?? 0] ?? NO_TRAIN;
+  }
+
+  private hold(train: number, edge: number): void {
+    const placement = this.blocks.graph.edgePlacement[edge] ?? 0;
+    const holds = (this.placementHolds[placement] ?? 0) + 1;
+    this.placementHolds[placement] = holds;
+    this.placementOwner[placement] = train;
+    if (holds === 1) {
+      const block = this.blocks.placementBlock[placement] ?? 0;
+      this.blockHeldPieces[block] = (this.blockHeldPieces[block] ?? 0) + 1;
+    }
+  }
+
+  private unhold(edge: number): void {
+    const placement = this.blocks.graph.edgePlacement[edge] ?? 0;
+    const holds = (this.placementHolds[placement] ?? 0) - 1;
+    this.placementHolds[placement] = holds;
+    if (holds === 0) {
+      this.placementOwner[placement] = NO_TRAIN;
+      const block = this.blocks.placementBlock[placement] ?? 0;
+      this.blockHeldPieces[block] = (this.blockHeldPieces[block] ?? 0) - 1;
+    }
   }
 
   private slot(train: number, seq: number): number {
@@ -216,27 +256,19 @@ export class BlockKeeper {
     this.ringEdge[at] = edge;
     this.ringStartS[at] = startS;
     this.ringNext[train] = next + 1;
-    const block = this.blocks.edgeBlock(edge);
-    this.blockOwner[block] = train;
-    this.blockHolds[block] = (this.blockHolds[block] ?? 0) + 1;
+    this.hold(train, edge);
   }
 
   private dropOldest(train: number): void {
     const head = this.ringHead[train] ?? 0;
-    const block = this.blocks.edgeBlock(this.ringEdge[this.slot(train, head)] ?? 0);
     this.ringHead[train] = head + 1;
-    const holds = (this.blockHolds[block] ?? 0) - 1;
-    this.blockHolds[block] = holds;
-    if (holds === 0) this.blockOwner[block] = NO_TRAIN;
+    this.unhold(this.ringEdge[this.slot(train, head)] ?? 0);
   }
 
   private dropNewest(train: number): void {
     const last = (this.ringNext[train] ?? 1) - 1;
-    const block = this.blocks.edgeBlock(this.ringEdge[this.slot(train, last)] ?? 0);
     this.ringNext[train] = last;
-    const holds = (this.blockHolds[block] ?? 0) - 1;
-    this.blockHolds[block] = holds;
-    if (holds === 0) this.blockOwner[block] = NO_TRAIN;
+    this.unhold(this.ringEdge[this.slot(train, last)] ?? 0);
   }
 
   private releaseBehind(train: number, sTail: number): void {
@@ -256,7 +288,7 @@ export class BlockKeeper {
       const last = this.ringEdge[this.slot(train, (this.ringNext[train] ?? 1) - 1)] ?? 0;
       const next = nextEdge(graph, last, switchStates);
       if (next === NO_EDGE) return;
-      const owner = this.blockOwner[this.blocks.edgeBlock(next)] ?? NO_TRAIN;
+      const owner = this.edgeOwner(next);
       if (owner !== NO_TRAIN && owner !== train) return;
       this.append(train, next, endS);
       endS += edgeLengthLdu[next] ?? 0;
@@ -266,7 +298,7 @@ export class BlockKeeper {
   private routeIsFree(train: number, route: Int32Array, count: number): boolean {
     if (count === 0) return false;
     for (let i = 1; i < count; i++) {
-      const owner = this.blockOwner[this.blocks.edgeBlock(route[i] ?? 0)] ?? NO_TRAIN;
+      const owner = this.edgeOwner(route[i] ?? 0);
       if (owner !== NO_TRAIN && owner !== train) return false;
     }
     return true;
@@ -303,9 +335,9 @@ export class BlockKeeper {
     frontOffsetLdu: number,
     sFront: number,
   ): void {
-    for (let b = 0; b < this.penalty.length; b++) {
-      const owner = this.blockOwner[b] ?? NO_TRAIN;
-      this.penalty[b] = owner !== NO_TRAIN && owner !== train ? this.occupiedPenaltyLdu : 0;
+    for (let p = 0; p < this.penalty.length; p++) {
+      const owner = this.placementOwner[p] ?? NO_TRAIN;
+      this.penalty[p] = owner !== NO_TRAIN && owner !== train ? this.occupiedPenaltyLdu : 0;
     }
     const target = this.targetBlock[train] ?? NO_BLOCK;
     const count = this.planner.plan(frontEdge, frontOffsetLdu, target, this.penalty, this.route);

@@ -8,10 +8,11 @@ import {
 import { TrackGraph, type TrackLayout } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
-import type { SimFrameLayout, SimLoad, SimLoaded, SimPathSegment, TrainSpec } from "@brr/sim";
+import type { SimFrameLayout, SimLoad, SimLoaded, TrainSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import { vehicleFromModel, type ModelVehicle } from "../sim/model-vehicle.ts";
 import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
+import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { SIM_CLIENT } from "../tokens.ts";
 import { plateDepthBelowOrigin } from "./part-footprint.ts";
 import { withStuds } from "./stud-stream.ts";
@@ -84,22 +85,6 @@ const FOLLOW_SWING_RADIANS = 0.9;
 
 function mergedBundle(track: PartBundle, model: PartBundle): PartBundle {
   return { ...track, parts: [...track.parts, ...model.parts] };
-}
-
-function routeSegments(
-  graph: TrackGraph,
-  layout: TrackLayout,
-  pieces: ReadonlyArray<TrackPiece>,
-): SimPathSegment[][] {
-  const segments: SimPathSegment[][] = [];
-  for (let edge = 0; edge < graph.edgeCount; edge += 2) {
-    const placement = graph.edgePlacement[edge] ?? 0;
-    const piece = pieces[layout.piece(placement)];
-    const route = piece?.routes[graph.edgeRoute[edge] ?? 0];
-    if (!route) throw new Error(`edge ${edge} has no catalog route`);
-    segments.push([...route.segments]);
-  }
-  return segments;
 }
 
 function railTopY(
@@ -186,24 +171,7 @@ export class RunScene implements IRunScene {
       brakingLduPerS2: request.brakingLduPerS2,
     };
     const load: SimLoad = {
-      graph: {
-        edgeCount: graph.edgeCount,
-        switchCount: graph.switchCount,
-        endXLdu: graph.endXLdu,
-        endZLdu: graph.endZLdu,
-        endHeading: graph.endHeading,
-        edgeFromEnd: graph.edgeFromEnd,
-        edgeToEnd: graph.edgeToEnd,
-        successorStart: graph.successorStart,
-        successors: graph.successors,
-        edgeSwitch: graph.edgeSwitch,
-        placementCount: graph.placementCount,
-        edgePlacement: graph.edgePlacement,
-        edgeRoute: graph.edgeRoute,
-        endPlacement: graph.endPlacement,
-        endPartner: graph.endPartner,
-        switchEnd: graph.switchEnd,
-      },
+      graph: simTopology(graph),
       routeSegments: routeSegments(graph, layout, catalogPieces),
       capacity: { trains: request.trains.length, vehicles: request.trains.length },
       trains: request.trains.map((train) => ({

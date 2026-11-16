@@ -1,11 +1,19 @@
-import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import {
+  ASSET_FETCHER,
+  PART_BUNDLE_LOADER,
+  type IAssetFetcher,
+  type TrackCatalog,
+} from "@brr/catalog";
 import { TrackGraph } from "@brr/domain";
-import { SIM_TICK_HZ, SimSession, simTrackFromGraph, type SimPathSegment } from "@brr/sim";
+import { SIM_TICK_HZ, SimSession, simTrackFromGraph, type VehicleSpec } from "@brr/sim";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { vehicleFromModel } from "../sim/model-vehicle.ts";
+import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { buildTrackPlan } from "./track-plan.ts";
+import { TRACK_PARTS } from "./track-scene.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
@@ -37,62 +45,94 @@ const TWO_SIDINGS = [
   "/",
   SIDING,
 ].join(", ");
-const LOCOMOTIVE = { lengthLdu: 706, frontBogieLdu: 183, rearBogieLdu: 523 };
-const SIMULATED_MINUTES = 20;
+const SWITCHLESS_OVAL = "ldraw:74746*4, ldraw:74747*8, ldraw:74746*4, ldraw:74747*8";
+const LOCOMOTIVE_MODEL = "10133-1";
+const AUTOPILOT_MINUTES = 20;
 const MIN_ARRIVALS_PER_TRAIN = 20;
+const OVAL_MINUTES = 2;
+const OVAL_SPEED_LDU_PER_S = 150;
 
-it("keeps three or four autopilot trains off each other's track pieces while they all keep arriving", async () => {
+let catalog: TrackCatalog;
+let locomotive: VehicleSpec;
+
+beforeAll(async () => {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-  const bundle = await container.get(PART_BUNDLE_LOADER).load("standard", () => false);
-  const { layout, catalogPieces } = buildTrackPlan(TWO_SIDINGS, bundle.trackCatalog);
+  const loader = container.get(PART_BUNDLE_LOADER);
+  catalog = (await loader.load("standard", TRACK_PARTS)).trackCatalog;
+  const model = await loader.loadModel("standard", LOCOMOTIVE_MODEL);
+  locomotive = vehicleFromModel(model.model, model.bundle.parts).spec;
+});
+
+function session(
+  plan: string,
+  fronts: ReadonlyArray<readonly [number, number]>,
+  autopilotSeed: number | null,
+): SimSession {
+  const { layout, catalogPieces } = buildTrackPlan(plan, catalog);
   const graph = new TrackGraph(layout);
-  const segments: SimPathSegment[][] = [];
-  for (let edge = 0; edge < graph.edgeCount; edge += 2) {
-    const piece = catalogPieces[layout.piece(graph.edgePlacement[edge] ?? 0)];
-    segments.push([...(piece?.routes[graph.edgeRoute[edge] ?? 0]?.segments ?? [])]);
-  }
-  const topology = {
-    edgeCount: graph.edgeCount,
-    switchCount: graph.switchCount,
-    endXLdu: graph.endXLdu,
-    endZLdu: graph.endZLdu,
-    endHeading: graph.endHeading,
-    edgeFromEnd: graph.edgeFromEnd,
-    edgeToEnd: graph.edgeToEnd,
-    successorStart: graph.successorStart,
-    successors: graph.successors,
-    edgeSwitch: graph.edgeSwitch,
-    placementCount: graph.placementCount,
-    edgePlacement: graph.edgePlacement,
-    edgeRoute: graph.edgeRoute,
-    endPlacement: graph.endPlacement,
-    endPartner: graph.endPartner,
-    switchEnd: graph.switchEnd,
-  };
-  const { track } = simTrackFromGraph(topology, segments);
+  const topology = simTopology(graph);
+  const { track } = simTrackFromGraph(topology, routeSegments(graph, layout, catalogPieces));
   const spec = {
-    vehicles: [LOCOMOTIVE],
+    vehicles: [locomotive],
     maxSpeedLduPerS: 400,
     accelerationLduPerS2: 150,
     brakingLduPerS2: 300,
   };
+  return new SimSession({
+    track,
+    capacity: { trains: fronts.length, vehicles: fronts.length },
+    trains: fronts.map(([edge, offsetLdu]) => ({ spec, placement: { edge, offsetLdu } })),
+    railway: { topology, autopilotSeed },
+  });
+}
+
+function run(target: SimSession, minutes: number): void {
+  for (let tick = 0; tick < minutes * 60 * SIM_TICK_HZ; tick++) target.simulation.step();
+}
+
+it("keeps three or four autopilot trains off each other's track pieces while they all keep arriving", () => {
   for (const fronts of [
     [70, 30, 140],
     [70, 30, 98, 140],
   ]) {
-    const session = new SimSession({
-      track,
-      capacity: { trains: fronts.length, vehicles: fronts.length },
-      trains: fronts.map((edge) => ({ spec, placement: { edge, offsetLdu: 100 } })),
-      railway: { topology, autopilotSeed: 1 },
-    });
-    const sim = session.simulation;
-    for (let tick = 0; tick < SIMULATED_MINUTES * 60 * SIM_TICK_HZ; tick++) sim.step();
-    expect(sim.separationCounters[0]).toBe(0);
-    for (const arrivals of sim.blocks?.arrivals ?? []) {
+    const autopilot = session(
+      TWO_SIDINGS,
+      fronts.map((edge) => [edge, 100] as const),
+      1,
+    );
+    run(autopilot, AUTOPILOT_MINUTES);
+    expect(autopilot.simulation.separationCounters[0]).toBe(0);
+    for (const arrivals of autopilot.simulation.blocks?.arrivals ?? []) {
       expect(arrivals).toBeGreaterThanOrEqual(MIN_ARRIVALS_PER_TRAIN);
     }
   }
+});
+
+it("runs two manual trains on a switchless oval and stops the follower behind a stopped leader", () => {
+  const fronts = [
+    [0, 300],
+    [12, 300],
+  ] as const;
+  const both = session(SWITCHLESS_OVAL, fronts, null);
+  both.apply({ kind: "throttle", train: 0, speedLduPerS: OVAL_SPEED_LDU_PER_S });
+  both.apply({ kind: "throttle", train: 1, speedLduPerS: OVAL_SPEED_LDU_PER_S });
+  run(both, OVAL_MINUTES);
+  expect(both.simulation.separationCounters[0]).toBe(0);
+  expect(Array.from(both.simulation.trainSpeed)).toEqual([
+    OVAL_SPEED_LDU_PER_S,
+    OVAL_SPEED_LDU_PER_S,
+  ]);
+
+  const following = session(SWITCHLESS_OVAL, fronts, null);
+  following.apply({ kind: "throttle", train: 0, speedLduPerS: OVAL_SPEED_LDU_PER_S });
+  run(following, OVAL_MINUTES);
+  const sim = following.simulation;
+  expect(sim.separationCounters[0]).toBe(0);
+  expect(sim.trainSpeed[0]).toBe(0);
+  expect(sim.trainEdge[0]).not.toBe(fronts[0][0]);
+  const couplersTouchingBogieDistance =
+    locomotive.frontBogieLdu + locomotive.lengthLdu - locomotive.rearBogieLdu;
+  expect(sim.separationCounters[1]).toBeGreaterThan(couplersTouchingBogieDistance);
 });
