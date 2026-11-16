@@ -68,7 +68,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
       const runScene = container.get(RUN_SCENE);
       runScene.configure({
         plan: viewer.track ?? "",
-        model: viewer.trainModel,
+        consist: viewer.consist,
         trains: viewer.trains,
         speedLduPerS: viewer.speedLduPerS,
         accelerationLduPerS2: viewer.accelerationLduPerS2,

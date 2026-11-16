@@ -142,6 +142,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),
         matrices: Float32Array.from(file.instances.matrix),
+        vehicles: file.vehicles,
       },
     };
   }

@@ -1,4 +1,4 @@
-import type { BundleLod, CityCamera, GraphicsApi, TrainRequest } from "@brr/client";
+import type { BundleLod, CityCamera, ConsistEntry, GraphicsApi, TrainRequest } from "@brr/client";
 
 export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run";
 
@@ -10,7 +10,7 @@ export interface ViewerParams {
   readonly model: string | null;
   readonly track: string | null;
   readonly run: boolean;
-  readonly trainModel: string;
+  readonly consist: ReadonlyArray<ConsistEntry>;
   readonly trains: ReadonlyArray<TrainRequest>;
   readonly speedLduPerS: number;
   readonly accelerationLduPerS2: number;
@@ -38,7 +38,8 @@ const DEFAULT_SEED = 1;
 const DEFAULT_WARMUP_FRAMES = 5;
 const DEFAULT_MEASURED_FRAMES = 60;
 const DEFAULT_MAX_MEASURE_MS = 120_000;
-const DEFAULT_TRAIN_MODEL = "10133-1";
+const DEFAULT_CONSIST = "10133-1";
+const REVERSED_SUFFIX = ":r";
 const DEFAULT_TRAINS = "0@0";
 const DEFAULT_SPEED_LDU_PER_S = 400;
 const DEFAULT_ACCELERATION_LDU_PER_S2 = 150;
@@ -65,6 +66,16 @@ function autopilotSeed(value: string | null): number | null {
     throw new Error(`autopilot=${value} is not a seed from 1 to ${MAX_AUTOPILOT_SEED}`);
   }
   return seed;
+}
+
+function consistEntries(value: string): ConsistEntry[] {
+  return value.split(",").map((token) => {
+    const trimmed = token.trim();
+    const reversed = trimmed.endsWith(REVERSED_SUFFIX);
+    const model = reversed ? trimmed.slice(0, -REVERSED_SUFFIX.length) : trimmed;
+    if (model.length === 0) throw new Error(`train=${value}: "${token}" names no model`);
+    return { model, reversed };
+  });
 }
 
 function positiveNumber(value: string | null, fallback: number): number {
@@ -108,7 +119,7 @@ export function readViewerParams(search: string): ViewerParams {
     model: params.get("model"),
     track: params.get("track"),
     run: params.get("run") === "1",
-    trainModel: params.get("train") ?? DEFAULT_TRAIN_MODEL,
+    consist: consistEntries(params.get("train") ?? DEFAULT_CONSIST),
     trains: trainRequests(params.get("trains") ?? DEFAULT_TRAINS),
     speedLduPerS: positiveNumber(params.get("speed"), DEFAULT_SPEED_LDU_PER_S),
     accelerationLduPerS2: positiveNumber(params.get("accel"), DEFAULT_ACCELERATION_LDU_PER_S2),

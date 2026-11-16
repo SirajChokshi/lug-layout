@@ -54,7 +54,14 @@ export type {
   RoadSnapView,
   SelectionView,
 } from "./edit/editor.ts";
-export type { IRunScene, RunRequest, RunStatus, TrainRequest } from "./scene/run-scene.ts";
+export type {
+  IRunScene,
+  RunRequest,
+  RunStatus,
+  RunVehicleStatus,
+  TrainRequest,
+} from "./scene/run-scene.ts";
+export type { ConsistEntry } from "./sim/consist.ts";
 export type { ISimClient, SimTickCost } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export type { SimBenchResult } from "@brr/sim";

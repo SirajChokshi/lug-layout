@@ -1,4 +1,5 @@
 import type { BundleManifest } from "./manifest.ts";
+import type { BakedVehicle } from "./model-vehicle.ts";
 import type { TrackCatalog } from "./track-catalog.ts";
 
 export type BundleLod = "standard" | "low" | "far";
@@ -113,6 +114,7 @@ export interface PartModel {
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint16Array;
   readonly matrices: Float32Array;
+  readonly vehicles: ReadonlyArray<BakedVehicle>;
 }
 
 export interface PartBundle {
