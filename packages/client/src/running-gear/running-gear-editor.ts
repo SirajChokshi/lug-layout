@@ -313,10 +313,12 @@ export class RunningGearEditor implements IRunningGear {
     const detected = selected ? source?.vehicles[selected.vehicle] : undefined;
     if (!source || !selected || !detected) return null;
     const result = effectiveVehicle(detected, this.draft ?? undefined);
-    const shown = result.vehicle ?? detected;
-    const local = (p: Vec3Tuple): Vec3Tuple => toDetected(detected, toModelFrame(shown, p));
+    const shown = result.vehicle;
+    const local = (p: Vec3Tuple): Vec3Tuple =>
+      shown ? toDetected(detected, toModelFrame(shown, p)) : p;
+    const draftBogies = this.draft?.bogies ?? detectedBogies(detected);
     const owner = new Map<number, number>();
-    shown.bogies.forEach((bogie, b) => {
+    draftBogies.forEach((bogie, b) => {
       for (const instance of bogie.instances) owner.set(instance, b);
     });
     const wheelsets = new Set(detected.wheelsets.map((w) => w.instance));
@@ -327,6 +329,22 @@ export class RunningGearEditor implements IRunningGear {
     const boxes = members.map((instance) =>
       this.box(source, detected, instance, owner, wheelsets, couplerInstances),
     );
+    const draftFaces = new Map((this.draft?.couplers ?? []).map((c) => [c.instance, c.face]));
+    const couplers: GearCoupler[] = [detected.frontCoupler, detected.rearCoupler].flatMap((c) => {
+      if (!c) return [];
+      const face = draftFaces.get(c.instance) ?? toModelFrame(detected, c.face);
+      return [
+        {
+          instance: c.instance,
+          face: toDetected(detected, face),
+          bogie: owner.get(c.instance) ?? null,
+          obsoleteSources: c.obsoleteSources,
+        },
+      ];
+    });
+    const axles = shown
+      ? [...shown.bogies.flatMap((bogie) => bogie.axles), ...shown.fixedAxles].map(local)
+      : detected.wheelsets.map((w) => w.centre);
     let spec: VehicleSpec | null = null;
     const issues = [...result.issues];
     if (result.vehicle) {
@@ -342,20 +360,9 @@ export class RunningGearEditor implements IRunningGear {
       vehicle: selected.vehicle,
       source: this.draft ? "override" : "detected",
       boxes,
-      pivots: shown.bogies.map((bogie) => local(bogie.pivot)),
-      axles: [...shown.bogies.flatMap((bogie) => bogie.axles), ...shown.fixedAxles].map(local),
-      couplers: [shown.frontCoupler, shown.rearCoupler].flatMap((c) =>
-        c
-          ? [
-              {
-                instance: c.instance,
-                face: local(c.face),
-                bogie: c.bogie,
-                obsoleteSources: c.obsoleteSources,
-              },
-            ]
-          : [],
-      ),
+      pivots: draftBogies.map((bogie) => toDetected(detected, bogie.pivot)),
+      axles,
+      couplers,
       spec,
       detectedSpec: vehicleSpec(detected, false),
       issues,
