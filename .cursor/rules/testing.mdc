@@ -1,0 +1,21 @@
+---
+description: Vitest/Playwright/cargo testing conventions, fixtures, goldens and benches
+globs: **/*.test.ts,**/*.test.tsx,**/*.bench.ts,**/e2e/**,packages/test-fixtures/**,crates/**/tests/**
+alwaysApply: false
+---
+
+# Testing
+
+- Every new or changed test passes the `.cursor/skills/test-audit` authoring gate. No placeholder, duplicate or implementation-coupled tests.
+- **Vitest** for TypeScript, with `*.test.ts` next to the source. Use `nodePreset` from `@brr/config/vitest-preset`. Lint rules in `tools/oxlint-plugin` are tested with `RuleTester` from `oxlint/plugins-dev`. Pure packages run in the `node` environment, and only `ui` uses `jsdom`/`happy-dom`.
+- **Pure packages need no mocks.** Construct engines directly with real data from `@brr/test-fixtures`.
+- **Services:** build a container from the real `ContainerModule`s, override only the boundary tokens (storage, rpc, scene backend) with in-memory fakes, then resolve through tokens.
+- **Exact math and rules:** prefer property tests (for example, any closed loop of pieces returns the identity pose, and joins are symmetric) plus explicit negative cases. A broken join must be rejected, not just a good one accepted.
+- **Layout and plan rules** get headless tests: a minimal world fixture, then the expected issue list (rule id, placement ids, severity in sandbox mode and in plan mode).
+- **Goldens** (baked models, BOMs, exported `.mpd`/`.brr.zip`, round-trip worlds) live in `packages/test-fixtures`. Update them only on purpose, and explain why in the commit.
+- **Benches:** `*.bench.ts` cover hot loops and include a frame or tick allocation probe. They run in `turbo bench`. Phase gates use the real Tier A numbers.
+- **No network, wall clock or randomness** in tests. Inject a clock and seed every RNG.
+- **Rust:** unit tests in-module, integration tests in `crates/*/tests` against fixture `.dat`/`.ldr` files. WASM output is checked from TypeScript in `@brr/import` tests.
+- **E2E (Playwright)** starts in M3: import → place → BOM export smoke tests.
+- A bug fix comes with a test that fails before the fix, at the owning boundary. When fixing forward, don't add overly specific tests that only pin the exact failure you hit.
+- Tests never count as merge evidence (see `merge-evidence.mdc`).

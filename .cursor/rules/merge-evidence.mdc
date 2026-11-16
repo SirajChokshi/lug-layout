@@ -1,0 +1,12 @@
+---
+description: PRs merge only with demonstrated evidence in the PR; agents never push to main
+alwaysApply: true
+---
+
+# Merge evidence
+
+- **A PR merges only once the PR itself shows evidence that the change works:** before/after screenshots, a video demo, or carefully measured performance or correctness numbers (method, hardware, before and after values).
+- **Tests the author wrote never count as evidence.** Passing CI is required, but it isn't proof.
+- Put the evidence in the PR body or a PR comment before asking for a merge. If it's missing, the PR stays open.
+- **Never push to `main`.** Never merge by pushing commits, reverts or squashes straight to `main`. Changes land only through a PR merged on GitHub by someone with merge authority. Open the PR, attach the evidence, and leave the merge to the owner unless they explicitly ask the agent to merge and a real merge path exists.
+- **When fixing forward,** fix the cause and don't add overly specific tests that only pin the one failure you hit (see `.cursor/skills/test-audit`).

@@ -1,0 +1,25 @@
+{
+  "name": "lug-layout",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "oxlint --deny-warnings",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "check": "pnpm lint && pnpm format:check && turbo run typecheck test build"
+  },
+  "devDependencies": {
+    "@brr/oxlint-plugin": "workspace:*",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
+    "turbo": "2.11.11",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "packageManager": "pnpm@10.33.4"
+}
