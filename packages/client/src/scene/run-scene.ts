@@ -41,6 +41,7 @@ export interface RunRequest {
   readonly follow: boolean;
   readonly start: boolean;
   readonly autopilotSeed: number | null;
+  readonly followDistanceLdu: number;
 }
 
 export type TrainRouteStatus = "manual" | "waiting" | "routed" | "arrived" | "reversing";
@@ -90,8 +91,7 @@ export interface IRunScene extends IViewerScene {
 const ORBIT_DISTANCE_FACTOR = 0.9;
 const ORBIT_ELEVATION_FACTOR = 1.1;
 const MIN_ORBIT_RADIUS_LDU = 400;
-const FOLLOW_DISTANCE_LDU = 1400;
-const FOLLOW_HEIGHT_LDU = 650;
+const FOLLOW_HEIGHT_PER_DISTANCE = 650 / 1400;
 const FOLLOW_SWING_RADIANS = 0.9;
 
 function mergedBundle(track: PartBundle, models: ReadonlyArray<PartBundle>): PartBundle {
@@ -364,20 +364,17 @@ export class RunScene implements IRunScene {
     const frame = this.sim.latestFrame();
     const layout = this.frameLayout;
     if (!frame || !layout || layout.vehicles === 0) return false;
-    const o = layout.poseStart;
+    const o = layout.vehiclePoseStart;
     const data = frame.data;
-    const fx = data[o] ?? 0;
-    const fz = data[o + 1] ?? 0;
-    const rx = data[o + 2] ?? 0;
-    const rz = data[o + 3] ?? 0;
-    const x = (fx + rx) / 2;
-    const z = (fz + rz) / 2;
-    const angle =
-      Math.atan2(fz - rz, fx - rx) + Math.PI + FOLLOW_SWING_RADIANS * Math.sin(t * 2 * Math.PI);
+    const x = data[o] ?? 0;
+    const z = data[o + 1] ?? 0;
+    const outward = Math.atan2(z - this.centreZ, x - this.centreX);
+    const angle = outward + FOLLOW_SWING_RADIANS * Math.sin(t * 2 * Math.PI);
+    const distance = this.request?.followDistanceLdu ?? 0;
     this.backend.setView(
-      x + FOLLOW_DISTANCE_LDU * Math.cos(angle),
-      this.railY + FOLLOW_HEIGHT_LDU,
-      z + FOLLOW_DISTANCE_LDU * Math.sin(angle),
+      x + distance * Math.cos(angle),
+      this.railY + distance * FOLLOW_HEIGHT_PER_DISTANCE,
+      z + distance * Math.sin(angle),
       x,
       this.railY,
       z,

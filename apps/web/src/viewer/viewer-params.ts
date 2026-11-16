@@ -16,6 +16,7 @@ export interface ViewerParams {
   readonly accelerationLduPerS2: number;
   readonly brakingLduPerS2: number;
   readonly follow: boolean;
+  readonly followDistanceLdu: number;
   readonly simBenchTicks: number;
   readonly hud: boolean;
   readonly start: boolean;
@@ -41,6 +42,7 @@ const DEFAULT_MAX_MEASURE_MS = 120_000;
 const DEFAULT_CONSIST = "10133-1";
 const REVERSED_SUFFIX = ":r";
 const DEFAULT_TRAINS = "0@0";
+const DEFAULT_FOLLOW_DISTANCE_LDU = 1400;
 const DEFAULT_SPEED_LDU_PER_S = 400;
 const DEFAULT_ACCELERATION_LDU_PER_S2 = 150;
 const DEFAULT_BRAKING_LDU_PER_S2 = 300;
@@ -125,6 +127,7 @@ export function readViewerParams(search: string): ViewerParams {
     accelerationLduPerS2: positiveNumber(params.get("accel"), DEFAULT_ACCELERATION_LDU_PER_S2),
     brakingLduPerS2: positiveNumber(params.get("brake"), DEFAULT_BRAKING_LDU_PER_S2),
     follow: params.get("view") === "follow",
+    followDistanceLdu: positiveNumber(params.get("follow"), DEFAULT_FOLLOW_DISTANCE_LDU),
     simBenchTicks: positiveNumber(params.get("simBench"), 0),
     hud: params.get("hud") !== "0",
     start: params.get("start") !== "0",

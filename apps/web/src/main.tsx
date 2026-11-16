@@ -76,6 +76,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
         follow: viewer.follow,
         start: viewer.start,
         autopilotSeed: viewer.autopilotSeed,
+        followDistanceLdu: viewer.followDistanceLdu,
       });
       return { scene: runScene, placements: null, run: runScene };
     }
