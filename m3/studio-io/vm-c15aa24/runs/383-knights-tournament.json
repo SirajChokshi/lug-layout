@@ -1,0 +1,1188 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\nef26624ecd20b4a0\nParts\n244\nModules\n2\nStud instances (drawn of total)\n740 of 740\nScene triangles\n114,583\nLoad\n37 ms\nGPU buffers allocated so far, JS heap\nvertex+index 1.1 MiB, other 0.0 MiB, JS heap 44.0 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n75\nDrawn triangles\n114,584\nScene coverage\n14%\nFrame rate (rAF)\n4.3 fps\nParts list\nWorld\nRegion (LDU, placement origins)\nBuild parts list",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 200,
+        "z": -140,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "383-knights-tournament.io!modelv2.ldr",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "383-knights-tournament",
+            "title": "Untitled Model"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Guard",
+            "title": "Guard"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Red knight white horse",
+            "title": "Red knight white horse"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Blue knight on black horse",
+            "title": "Blue knight on black horse"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Tent",
+            "title": "Tent"
+          },
+          {
+            "author": "Steve Bliss [sbliss]",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "970c00",
+            "title": "Hips and Legs Plain"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Right Arm and Hand",
+            "title": "Right Arm and Hand"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Left Arm and Hand",
+            "title": "Left Arm and Hand"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "White Horse",
+            "title": "White Horse"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Red Knight",
+            "title": "Red Knight"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "White Horse Copy",
+            "title": "White Horse Copy"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Blue Knight",
+            "title": "Blue Knight"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "King",
+            "title": "King"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Princess",
+            "title": "Princess"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Right Arm and Hand Copy",
+            "title": "Right Arm and Hand Copy"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Left Arm and Hand Copy 2",
+            "title": "Left Arm and Hand Copy 2"
+          },
+          {
+            "author": "Steve Bliss [sbliss]",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "970c00",
+            "title": "Hips and Legs Plain"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 3",
+            "title": "SubModel Group 3"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "Left Arm and Hand Copy 3",
+            "title": "Left Arm and Hand Copy 3"
+          },
+          {
+            "author": "Steve Bliss [sbliss]",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "970c00",
+            "title": "Hips and Legs Plain"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "970c00",
+            "title": "Hips and Legs Plain"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 1",
+            "title": "SubModel Group 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "970c00",
+            "title": "Hips and Legs Plain"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 2",
+            "title": "SubModel Group 2"
+          }
+        ],
+        "instanceCount": 244,
+        "drawnInstanceCount": 244,
+        "parts": [
+          {
+            "kind": "compiled",
+            "reference": "3844.dat",
+            "instances": 2,
+            "partId": "ldraw:3844",
+            "file": "parts/3844.dat",
+            "header": {
+              "author": "Chris Dee [cwdee]",
+              "ldrawOrg": "Part UPDATE 2020-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3844.dat",
+              "title": "Minifig Helmet Castle with Neck Protector"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815.dat",
+            "instances": 4,
+            "partId": "ldraw:3815"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3816.dat",
+            "instances": 4,
+            "partId": "ldraw:3816"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3817.dat",
+            "instances": 4,
+            "partId": "ldraw:3817"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p4r.dat",
+            "instances": 2,
+            "partId": "ldraw:973p4r",
+            "file": "parts/973p4r.dat",
+            "header": {
+              "author": "Andy Westrate [westrate]",
+              "ldrawOrg": "Part UPDATE 2015-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p4r.dat",
+              "title": "Minifig Torso with Tri-Coloured Shield Large Pattern"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "bundle",
+            "reference": "3818.dat",
+            "instances": 6,
+            "partId": "ldraw:3818"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3820.dat",
+            "instances": 12,
+            "partId": "ldraw:3820"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3819.dat",
+            "instances": 6,
+            "partId": "ldraw:3819"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3626ap01.dat",
+            "instances": 6,
+            "partId": "ldraw:3626ap01",
+            "file": "parts/3626ap01.dat",
+            "header": {
+              "author": "Jonathan Wilson [jonwil]",
+              "ldrawOrg": "Part UPDATE 2024-07",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "3626ap01.dat",
+              "title": "Minifig Head with Standard Grin Pattern (Solid Stud)"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "compiled",
+            "reference": "3848.dat",
+            "instances": 2,
+            "partId": "ldraw:3848",
+            "file": "parts/3848.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2004-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3848.dat",
+              "title": "Minifig Battleaxe"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "bundle",
+            "reference": "3795.dat",
+            "instances": 2,
+            "partId": "ldraw:3795"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3660b.dat",
+            "instances": 4,
+            "partId": "ldraw:3660b",
+            "file": "parts/3660b.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2026-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3660b.dat",
+              "title": "Slope Brick 45 2 x 2 Inverted with Flat Bottom Pin with Inner Stopper Ring"
+            },
+            "sourceFiles": 23
+          },
+          {
+            "kind": "compiled",
+            "reference": "3023b.dat",
+            "instances": 7,
+            "partId": "ldraw:3023b",
+            "file": "parts/3023b.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2023-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3023b.dat",
+              "title": "Plate 1 x 2"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "3040b.dat",
+            "instances": 24,
+            "partId": "ldraw:3040b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "instances": 4,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "instances": 2,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "instances": 2,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3039.dat",
+            "instances": 4,
+            "partId": "ldraw:3039"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "instances": 2,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "instances": 8,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "instances": 24,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p4t.dat",
+            "instances": 1,
+            "partId": "ldraw:973p4t",
+            "file": "parts/973p4t.dat",
+            "header": {
+              "author": "Andy Westrate [westrate]",
+              "ldrawOrg": "Part UPDATE 2015-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p4t.dat",
+              "title": "Minifig Torso with Red/Peach Quarters Shield Pattern"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "compiled",
+            "reference": "3843.dat",
+            "instances": 2,
+            "partId": "ldraw:3843",
+            "file": "parts/3843.dat",
+            "header": {
+              "author": "Paul Easter [pneaster]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3843.dat",
+              "title": "Minifig Helmet Visor with Grille and Feather"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "compiled",
+            "reference": "3842a.dat",
+            "instances": 2,
+            "partId": "ldraw:3842a",
+            "file": "parts/3842a.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3842a.dat",
+              "title": "Minifig Helmet Classic with Thin Chin Guard and Visor Dimples"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "3849.dat",
+            "instances": 2,
+            "partId": "ldraw:3849"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3846p4t.dat",
+            "instances": 1,
+            "partId": "ldraw:3846p4t",
+            "file": "parts/3846p4t.dat",
+            "header": {
+              "author": "Andy Westrate [westrate]",
+              "ldrawOrg": "Part UPDATE 2015-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3846p4t.dat",
+              "title": "Minifig Shield Triangular with Red/Peach Quarters Pattern"
+            },
+            "sourceFiles": 7
+          },
+          {
+            "kind": "compiled",
+            "reference": "3846p4u.dat",
+            "instances": 1,
+            "partId": "ldraw:3846p4u",
+            "file": "parts/3846p4u.dat",
+            "header": {
+              "author": "Andy Westrate [westrate]",
+              "ldrawOrg": "Part UPDATE 2015-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3846p4u.dat",
+              "title": "Minifig Shield Triangular with Maroon/Red Quarters Pattern"
+            },
+            "sourceFiles": 7
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p4u.dat",
+            "instances": 1,
+            "partId": "ldraw:973p4u",
+            "file": "parts/973p4u.dat",
+            "header": {
+              "author": "Andy Westrate [westrate]",
+              "ldrawOrg": "Part UPDATE 2015-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p4u.dat",
+              "title": "Minifig Torso with Maroon/Red Quarters Shield Pattern"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "compiled",
+            "reference": "3497.dat",
+            "instances": 1,
+            "partId": "ldraw:3497",
+            "file": "parts/3497.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2015-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3497.dat",
+              "title": "Baseplate 8 x 24"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "3009.dat",
+            "instances": 15,
+            "partId": "ldraw:3009"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3008.dat",
+            "instances": 10,
+            "partId": "ldraw:3008"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3062a.dat",
+            "instances": 18,
+            "partId": "ldraw:3062a",
+            "file": "parts/3062a.dat",
+            "header": {
+              "author": "Tore Eriksson [Tore_Eriksson]",
+              "ldrawOrg": "Part UPDATE 2020-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3062a.dat",
+              "title": "Brick 1 x 1 Round with Solid Stud"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "bundle",
+            "reference": "3460.dat",
+            "instances": 2,
+            "partId": "ldraw:3460"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3021.dat",
+            "instances": 4,
+            "partId": "ldraw:3021"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "instances": 2,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3659.dat",
+            "instances": 2,
+            "partId": "ldraw:3659"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3794b.dat",
+            "instances": 1,
+            "partId": "ldraw:3794b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "instances": 1,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3665.dat",
+            "instances": 8,
+            "partId": "ldraw:3665"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3456.dat",
+            "instances": 1,
+            "partId": "ldraw:3456"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3622.dat",
+            "instances": 2,
+            "partId": "ldraw:3622"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3298.dat",
+            "instances": 21,
+            "partId": "ldraw:3298"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3596d25.dat",
+            "instances": 2,
+            "partId": "ldraw:3596d25",
+            "file": "parts/3596d25.dat",
+            "header": {
+              "author": "J.C. Tchang [tchang]",
+              "ldrawOrg": "Shortcut UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3596d25.dat",
+              "title": "Flag on Flagpole Type 5 with Tri-Coloured Shield Sticker"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "compiled",
+            "reference": "3778.dat",
+            "instances": 1,
+            "partId": "ldraw:3778",
+            "file": "parts/3778.dat",
+            "header": {
+              "author": "Tore Eriksson [Tore_Eriksson]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3778.dat",
+              "title": "Plant Tree Columnar 4 x 4 x 11.5"
+            },
+            "sourceFiles": 15
+          },
+          {
+            "kind": "bundle",
+            "reference": "3901.dat",
+            "instances": 1,
+            "partId": "ldraw:3901"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815b.dat",
+            "instances": 2,
+            "partId": "ldraw:3815b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3816c.dat",
+            "instances": 2,
+            "partId": "ldraw:3816c",
+            "file": "parts/3816c.dat",
+            "header": {
+              "author": "Max Martin Richter [MMR1988]",
+              "ldrawOrg": "Part UPDATE 2023-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3816c.dat",
+              "title": "Minifig Leg Right"
+            },
+            "sourceFiles": 24
+          },
+          {
+            "kind": "compiled",
+            "reference": "3817c.dat",
+            "instances": 2,
+            "partId": "ldraw:3817c",
+            "file": "parts/3817c.dat",
+            "header": {
+              "author": "Max Martin Richter [MMR1988]",
+              "ldrawOrg": "Part UPDATE 2023-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3817c.dat",
+              "title": "Minifig Leg Left"
+            },
+            "sourceFiles": 23
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p4s.dat",
+            "instances": 1,
+            "partId": "ldraw:973p4s",
+            "file": "parts/973p4s.dat",
+            "header": {
+              "author": "Damien Guichard [BrickCaster]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "973p4s.dat",
+              "title": "Minifig Torso with Tri-Coloured Shield and Gold Trim Pattern"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p72.dat",
+            "instances": 1,
+            "partId": "ldraw:973p72",
+            "file": "parts/973p72.dat",
+            "header": {
+              "author": "Heather Patey",
+              "ldrawOrg": "Part UPDATE 2015-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "973p72.dat",
+              "title": "Minifig Torso with Gold Necklace and Yellow Undershirt Pattern"
+            },
+            "sourceFiles": 15
+          },
+          {
+            "kind": "bundle",
+            "reference": "3625.dat",
+            "instances": 1,
+            "partId": "ldraw:3625"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3899.dat",
+            "instances": 2,
+            "partId": "ldraw:3899"
+          }
+        ],
+        "inlineParts": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 19,
+        "fetched": {
+          "requests": 195,
+          "found": 118,
+          "notFound": 77,
+          "bytes": 369597
+        },
+        "timings": {
+          "bakeMs": 4,
+          "resolveMs": 1059.3000000002794,
+          "totalMs": 1063.3000000002794
+        },
+        "studio": {
+          "file": "383-knights-tournament.io",
+          "entry": "modelv2.ldr",
+          "studioVersion": "2.25.11_3",
+          "convertedLines": 256,
+          "unconvertedLines": [],
+          "parts": [
+            {
+              "studio": "3003.dat",
+              "bricklinkId": "3003",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3004.dat",
+              "bricklinkId": "3004",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 8,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3005.dat",
+              "bricklinkId": "3005",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 24,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3008.dat",
+              "bricklinkId": "3008",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 10,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3009.dat",
+              "bricklinkId": "3009",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 15,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3020.dat",
+              "bricklinkId": "3020",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3021.dat",
+              "bricklinkId": "3021",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3022.dat",
+              "bricklinkId": "3022",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3023b.dat",
+              "bricklinkId": "3023b",
+              "bricklinkIdSource": "fileName",
+              "instances": 7,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3024.dat",
+              "bricklinkId": "3024",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3039.dat",
+              "bricklinkId": "3039",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3040b.dat",
+              "bricklinkId": "3040b",
+              "bricklinkIdSource": "fileName",
+              "instances": 24,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3062a.dat",
+              "bricklinkId": "3062a",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 18,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3069b.dat",
+              "bricklinkId": "3069b",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3298.dat",
+              "bricklinkId": "3298",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 21,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3456.dat",
+              "bricklinkId": "3456",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3460.dat",
+              "bricklinkId": "3460",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3497.dat",
+              "bricklinkId": "3497",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3596d25.dat",
+              "bricklinkId": "3596d25",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3622.dat",
+              "bricklinkId": "3622",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3623.dat",
+              "bricklinkId": "3623",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3625.dat",
+              "bricklinkId": "3625",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3626ap01.dat",
+              "bricklinkId": "3626ap01",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 5,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3659.dat",
+              "bricklinkId": "3659",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3660b.dat",
+              "bricklinkId": "3660b",
+              "bricklinkIdSource": "fileName",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3665.dat",
+              "bricklinkId": "3665",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 8,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3778.dat",
+              "bricklinkId": "3778",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3794b.dat",
+              "bricklinkId": "3794b",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3795.dat",
+              "bricklinkId": "3795",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3815.dat",
+              "bricklinkId": "3815",
+              "bricklinkIdSource": "fileName",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3815b.dat",
+              "bricklinkId": "3815b",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3816.dat",
+              "bricklinkId": "3816",
+              "bricklinkIdSource": "fileName",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3816c.dat",
+              "bricklinkId": "3816c",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3817.dat",
+              "bricklinkId": "3817",
+              "bricklinkIdSource": "fileName",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3817c.dat",
+              "bricklinkId": "3817c",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3818.dat",
+              "bricklinkId": "3818",
+              "bricklinkIdSource": "fileName",
+              "instances": 5,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3819.dat",
+              "bricklinkId": "3819",
+              "bricklinkIdSource": "fileName",
+              "instances": 5,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3820.dat",
+              "bricklinkId": "3820",
+              "bricklinkIdSource": "fileName",
+              "instances": 10,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3842a.dat",
+              "bricklinkId": "3842a",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3843.dat",
+              "bricklinkId": "3843",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3844.dat",
+              "bricklinkId": "3844",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3846p4t.dat",
+              "bricklinkId": "3846p4t",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3846p4u.dat",
+              "bricklinkId": "3846p4u",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3848.dat",
+              "bricklinkId": "3848",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3849.dat",
+              "bricklinkId": "3849",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3899.dat",
+              "bricklinkId": "3899",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3901.dat",
+              "bricklinkId": "3901",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "973p4r.dat",
+              "bricklinkId": "973p4r",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "973p4s.dat",
+              "bricklinkId": "973p4s",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "973p4t.dat",
+              "bricklinkId": "973p4t",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "973p4u.dat",
+              "bricklinkId": "973p4u",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "973p72.dat",
+              "bricklinkId": "973p72",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            }
+          ],
+          "unknownColors": [],
+          "flexibleSections": []
+        },
+        "importMs": 1833.7999999998137,
+        "sceneMs": 323.60000000009313
+      }
+    ]
+  }
+}
