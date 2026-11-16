@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { AuditLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import type { Palette } from "../palette.ts";
+import { trackPartPoses } from "../track/track-end-poses.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
@@ -71,6 +72,34 @@ export function geometryReports(
     },
     { fileName: "scenes/road-baseplates.ldr", render: () => roadBaseplateScene() },
   ];
+}
+
+const TRACK_POSE_PARTS = [
+  "53401",
+  "53400",
+  "74746",
+  "74747",
+  "75541-f1",
+  "75541-f2",
+  "75542-f1",
+  "75542-f2",
+  "32087",
+];
+
+export function trackEndsReport(source: InputLock["source"], library: LdrawLibrary): FactReport {
+  return {
+    fileName: "track-ends.json",
+    render: () => {
+      const markers = loadTrackEndMarkers();
+      return asJson({
+        schemaVersion: 1,
+        source,
+        angleSteps: 16,
+        frame: "LDraw part frame (-Y up), LDU; x maps to Re and z to Im of the plane",
+        parts: TRACK_POSE_PARTS.map((id) => trackPartPoses(library, markers, id)),
+      });
+    },
+  };
 }
 
 export async function readSources(

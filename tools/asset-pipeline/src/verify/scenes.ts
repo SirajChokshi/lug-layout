@@ -2,9 +2,10 @@ import { applyToPoint, IDENTITY, type Affine } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { findTrackEnds, type TrackEnd, type TrackEndMarker } from "../track/track-ends.ts";
 
-const MAIN_COLOUR = 16;
+const MAIN_COLOR = 16;
 const ROAD_PLATE_PITCH_LDU = 720;
 const DECIMALS = 6;
+const SCENE_AUTHOR = "Brick Railroad tools/asset-pipeline (cli.ts facts, from measured end poses)";
 const STRAIGHTS_AFTER_SWITCH = 2;
 const PLACEMENT_ANGLE_GRID = Math.PI / 16;
 const ROAD_STRAIGHTS = ["44336", "2358", "610", "606", "30225b"];
@@ -50,7 +51,7 @@ function formatNumber(value: number): string {
 function toLdraw(title: string, placements: ReadonlyArray<ScenePlacement>): string {
   const lines = placements.map(({ part, transform }) => {
     const [a, b, c, d, e, f, g, h, i, x, y, z] = transform;
-    return [1, MAIN_COLOUR, x, y, z, a, b, c, d, e, f, g, h, i]
+    return [1, MAIN_COLOR, x, y, z, a, b, c, d, e, f, g, h, i]
       .map((value) => formatNumber(value))
       .concat(`${part}.dat`)
       .join(" ");
@@ -58,6 +59,7 @@ function toLdraw(title: string, placements: ReadonlyArray<ScenePlacement>): stri
   return [
     `0 ${title}`,
     `0 Name: ${title.toLowerCase().replaceAll(" ", "-")}.ldr`,
+    `0 Author: ${SCENE_AUTHOR}`,
     ...lines,
     "",
   ].join("\n");
@@ -107,7 +109,7 @@ export function roadBaseplateScene(): string {
     "Road Baseplates",
     ROAD_STRAIGHTS.map((part, index) => ({
       part,
-      transform: translated(IDENTITY, index * ROAD_PLATE_PITCH_LDU, 0),
+      transform: translated(IDENTITY, 0, index * ROAD_PLATE_PITCH_LDU),
     })),
   );
 }

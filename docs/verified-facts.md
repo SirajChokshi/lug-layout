@@ -18,7 +18,7 @@ Every file is pinned by SHA-256 in `ldraw.lock.json`: `files` for the bundle and
 
 | Claim | Verdict | Value | Source | Script | §11 item | Date |
 |---|---|---|---|---|---|---|
-| Every file the bundle ships is CA and official | VERIFIED | 418 `.dat` files in the bundle closure (palette parts plus the parts of the OMR 7936-1 model): 406 `Licensed under CC BY 4.0 : see CAreadme.txt` and 12 `Licensed under CC BY 2.0 and CC BY 4.0`. None is `Unofficial_*`, unlicensed or non-CA | `ldraw.lock.json` `files`, at the pin | `cli.ts facts` (`closureLicenses`) | 1 | 2026-11-16 |
+| Every file the bundle ships is CA and official | VERIFIED | 529 `.dat` files in the bundle closure (palette parts plus the parts of the OMR 7936-1 model and of the two verification scenes): 516 `Licensed under CC BY 4.0 : see CAreadme.txt` and 13 `Licensed under CC BY 2.0 and CC BY 4.0`. None is `Unofficial_*`, unlicensed or non-CA | `ldraw.lock.json` `files`, at the pin | `cli.ts facts` (`closureLicenses`) | 1 | 2026-11-16 |
 | 9V track 74746, 74747, 74747c04, the plastic sub-parts 2865a and 2867a, and the "moved" stubs 2865 and 2867 are CA | VERIFIED | `CC BY 4.0`, `Part`/`Shortcut UPDATE 2025-02`. `2865.dat` is `~Moved to 74746` and `2867.dat` is `~Moved to 74747`. Every dependency is CA and official, with 0 missing | `parts/74746.dat` and others, at the pin | `cli.ts facts` (`auditPart`) | 1, 5 | 2026-11-16 |
 | 9V switches 75541-f1/-f2 (right) and 75542-f1/-f2 (left) and their bodies 2859/2861 are CA | VERIFIED | `CC BY 4.0`, `UPDATE 2025-08`. 75541-f1 keywords are `BrickLink 2859c01, Rebrickable 75541`. 148/151 dependencies, all CA and official | `parts/75541-f1.dat` and others, at the pin | `cli.ts facts` | 1, 5 | 2026-11-16 |
 | 9V 90° crossing 32087 is CA | VERIFIED | `CC BY 4.0`, `Part UPDATE 2020-03`, `BrickLink 32087c01`. 44 dependencies, all CA and official | `parts/32087.dat`, at the pin | `cli.ts facts` | 1, 5 | 2026-11-16 |
@@ -43,7 +43,9 @@ Track ends are the origins of the end-sleeper sub-files listed in `tools/asset-p
 
 Relative poses are measured from the end with the least x, rotated so that its inward direction is +x. They're written in studs as ℤ[ζ₁₆] coefficients (c₀…c₇) of Σ cₖζᵏ, with x → Re and z → Im. A pose is **certified** when the search finds exactly one coefficient vector with |c| ≤ 64 within one unit of the file's last printed decimal, and the chance of a random hit per axis is below 0.25. `geometry.json` records coefficients only for certified ends; for the others it records the search statistics and `null`.
 
-The same command writes two LDraw scenes from the measured end poses, `docs/verified-facts/scenes/switch-then-reversed-curve.ldr` and `docs/verified-facts/scenes/road-baseplates.ldr`. Placement rotations are snapped to the 11.25° grid; positions come from the measured end markers.
+The same command writes two LDraw scenes from the measured end poses, `docs/verified-facts/scenes/switch-then-reversed-curve.ldr` and `docs/verified-facts/scenes/road-baseplates.ldr`. Placement rotations are snapped to the 11.25° grid; positions come from the measured end markers. Both are listed under `palette.json` `models`, so the bundle build bakes them like any model, and the app renders them at `/?model=switch-then-reversed-curve` and `/?model=road-baseplates`. The screenshots in `docs/verified-facts/evidence/` were taken there with the WebGL2 backend. Parts use colour 16 (LDConfig main colour), because no produced colour is claimed.
+
+It also writes `tools/asset-pipeline/track-ends.json` (schema version 1) for the bundle build and the layout code. For each track part it gives the entry end's inward heading in the part frame, and for every end its part-frame position (LDU), outward heading, heading step relative to the entry (N = 16) and, for certified ends only, the eight ℤ[ζ₁₆] coefficients in studs.
 
 | Claim | Verdict | Value | Source | Script | §11 item | Date |
 |---|---|---|---|---|---|---|

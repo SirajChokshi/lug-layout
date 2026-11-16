@@ -65,11 +65,15 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/2-4stud4.dat` | Stud Tube Open 0.5 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/2-8sphe.dat` | Sphere 0.25 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16chrd.dat` | Chord 0.1875 | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/3-16con5.dat` | Cone 5 x 0.1875 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16cyli.dat` | Cylinder 0.1875 | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16cylo.dat` | Cylinder Open 0.1875 | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16edge.dat` | Circle 0.1875 | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16ndis.dat` | Disc Negative 0.1875 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/3-16rin5.dat` | ~Ring 5 x 0.1875 (Obsolete) | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/3-16ring1.dat` | Ring 1 x 0.1875 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16ring3.dat` | Ring 3 x 0.1875 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/3-16ring4.dat` | Ring 4 x 0.1875 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16stud4.dat` | Stud Tube Open 0.1875 | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-4cyli.dat` | Cylinder 0.75 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-4cylo.dat` | Cylinder Open 0.75 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -85,6 +89,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/3-8edge.dat` | Circle 0.375 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-8ndis.dat` | Disc Negative 0.375 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-8ring12.dat` | Ring 12 x 0.375 | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/4-4con0.dat` | Cone 0 x 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4con1.dat` | Cone 1 x 1.0 | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4con10.dat` | Cone 10 x 1.0 | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4con12.dat` | Cone 12 x 1.0 | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -102,6 +107,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/4-4disc.dat` | Disc 1.0 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4edge.dat` | Circle 1.0 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ndis.dat` | Disc Negative 1.0 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/4-4rin10.dat` | ~Ring 10 x 1.0 (Obsolete) | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ring1.dat` | Ring 1 x 1.0 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ring10.dat` | Ring 10 x 1.0 | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ring11.dat` | Ring 11 x 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -135,6 +141,9 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/48/4-4ring22.dat` | Hi-Res Ring 22 x 1.0 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/4-4ring6.dat` | Hi-Res Ring 6 x 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/5-16cyli.dat` | Cylinder 0.3125 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/5-16cylo.dat` | Cylinder Open 0.3125 | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/5-16edge.dat` | Circle 0.3125 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/5-16ndis.dat` | Disc Negative 0.3125 | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/5-8cyli.dat` | Cylinder 0.625 | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/5-8cylo.dat` | Cylinder Open 0.625 | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/5-8edge.dat` | Circle 0.625 | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -167,6 +176,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/8/3-8cylo.dat` | Lo-Res Cylinder Open 0.375 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/3-8edge.dat` | Lo-Res Circle 0.375 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/3-8ndis.dat` | Lo-Res Disc Negative 0.375 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/8/4-4con0.dat` | Lo-Res Cone 0 x 1.0 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/4-4cyli.dat` | Cylinder 1.0 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/4-4cylo.dat` | Lo-Res Cylinder Open 1.0 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/4-4cyls.dat` | Cylinder Sloped 1.0 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -179,6 +189,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/8/4-4ring6.dat` | Lo-Res Ring 6 x 1.0 | Tim Lampmann [L4mpi] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/4-4ring7.dat` | Ring 7 x 1.0 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/4-8sphe.dat` | Sphere 0.5 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/8/r04q1000.dat` | Lo-Res Torus Tube 1 x 1.0000 x 0.25 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/stud.dat` | Stud (Fast-Draw) | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/stud10.dat` | Stud Truncated Laterally Curved 40D for Round 2 x 2 Parts (Fast Draw) | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8/stud12.dat` | Stud Underside Cross (Fast-Draw) | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -199,11 +210,20 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/axlehole.dat` | Technic Axle Hole Closed | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box2-11.dat` | Box with 2 Faces without 11 Edges | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box2-5.dat` | Box with 2 Faces without 5 Edges | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box2-7.dat` | Box with 2 Faces without 7 Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box2-9.dat` | Box with 2 Faces without 9 Edges | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box2-9p.dat` | Box with 2 Faces with 3 Parallel Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3-3.dat` | Box with 3 Adjacent Faces and 3 Missing Edges | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3-5a.dat` | Box with 3 Adjacent Faces without 5 Adjacent Edges | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3-9a.dat` | Box with 3 Adjacent Faces without 9 Adjacent Edges | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3u10p.dat` | Box with 3 Faces without 10 Parallel Edges | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3u2p.dat` | Box with 3 Faces without 2 Parallel Edges | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3u4a.dat` | Box with 3 Faces without 4 Adjacent Edges | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3u4p.dat` | Box with 3 Faces without 4 Parallel Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3u5p.dat` | Box with 3 Faces without 5 Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3u6.dat` | Box with 3 Faces without 6 Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3u6a.dat` | Box with 3 Faces without 4 Adjacent and 2 Parallel Edges | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3u7a.dat` | Box with 3 Faces without 7 Adjacent Edges | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3u8p.dat` | Box with 3 Faces and 4 Parallel Edges | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box4-1.dat` | Box with 4 Faces without 1 Edge | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box4-2p.dat` | Box with 4 Faces without 2 Parallel Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -214,6 +234,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/box4o8a.dat` | Box with 4 Faces (2 Parallel Pairs) without Top and Bottom Edges | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box4t.dat` | Box with 4 Adjacent Faces and All Edges | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box5-1.dat` | Box with 5 Faces without 1 Edge | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box5-2p.dat` | Box with 5 Faces without 2 Parallel Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box5-4a.dat` | Box with 5 Faces without 4 Adjacent Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box5.dat` | Box with 5 Faces and All Edges | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/clh-base.dat` | Click Lock Hinge - Base without Fingers | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -258,40 +279,64 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/stud4od.dat` | Stud Tube Open without Outer Cylinder and Top Surface | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stud4s.dat` | Stud Tube Open Sloped | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-1x2.dat` | Stud Group 1 x 2 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug-1x3.dat` | Stud Group 1 x 3 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-1x4.dat` | Stud Group 1 x 4 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-1x8.dat` | Stud Group 1 x 8 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-2x1.dat` | Stud Group 2 x 1 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-2x2.dat` | Stud Group 2 x 2 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-3x3.dat` | Stud Group 3 x 3 | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-4x4.dat` | Stud Group 4 x 4 | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug-5x5.dat` | Stud Group 5 x 5 | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-6x6.dat` | Stud Group 6 x 6 | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug-7x7.dat` | Stud Group 7 x 7 | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-8x8.dat` | Stud Group 8 x 8 | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug-9x9.dat` | Stud Group 9 x 9 | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug10-2x2.dat` | Stud Group Truncated Laterally Curved 40D for Round 2 x 2 Parts | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug2-4x1.dat` | Stud Open Group 4 x 1 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug2.dat` | ~Moved to stug-2x2 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug3-1x3.dat` | Stud Tube Solid Group 1 x 3 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug3-1x7.dat` | Stud Tube Solid Group 1 x 7 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug3.dat` | ~Moved to stug-3x3 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug4-1x3.dat` | Stud Tube Open Group 1 x 3 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug4-1x4.dat` | Stud Tube Open Group 1 x 4 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug4-1x5.dat` | Stud Tube Open Group 1 x 5 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug4-2x2.dat` | Stud Tube Open Group 2 x 2 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug4-4x4.dat` | Stud Tube Open Group 4 x 4 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug4-5x5.dat` | Stud Tube Open Group 5 x 5 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug4.dat` | ~Moved to stug-4x4 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug5.dat` | ~Moved to stug-5x5 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug6.dat` | ~Moved to stug-6x6 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug7.dat` | ~Moved to stug-7x7 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug8.dat` | ~Moved to stug-8x8 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug9.dat` | ~Moved to stug-9x9 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/t04o6250.dat` | Torus Outside 1 x 0.6250 x 0.25 | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/t08o6250.dat` | Torus Outside 1 x 0.6250 x 0.125 | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/t16o1429.dat` | Torus Outside 1 x 0.1429 x 0.0625 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/tri3a4.dat` | Triangular Prism with 3 Adjacent Faces without 4 Edges | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/tri3u1.dat` | Triangular Prism with 3 Faces without 1 Edge | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/tri3u3.dat` | Triangular Prism with 3 Faces without 3 Edges | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/tri4.dat` | Triangular Prism with 2 Square Faces and 2 Triangular Faces | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/triangle.dat` | Triangle | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/wpin.dat` | Wheel Holding Pin | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/wpin2.dat` | Wheel Holding Pin with 2 Fillets | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/wpin2a.dat` | Wheel Holding Pin with 2 Fillets without Bottom Faces | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/wpinhole.dat` | Wheel Hole Notched Through | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2358.dat` | Baseplate 32 x 32 Road 7-Stud Straight | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2376.dat` | Tile 2 x 2 Round with Lifting Ring | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2412b.dat` | Tile 1 x 2 Grille with Groove | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/2431.dat` | Tile 1 x 4 with Groove | Santeri Piippo [arezey] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2436a.dat` | Bracket 1 x 2 - 1 x 4 with Square Corners | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2456.dat` | Brick 2 x 6 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2780.dat` | Technic Pin with Friction and Slots | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/2859.dat` | ~Train Track 9V Switch Right - Plastic Part | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2859c00.dat` | ~Train Track 9V Switch Right - Plastic Part with Underside Cover Plate and Metal Elements | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2860a.dat` | ~Train Track 9V Switch Tongue Right - Plastic Part | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2860ac01.dat` | ~Train Track 9V Switch Tongue Right | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2863.dat` | ~Train Track 9V Bottom Plate Right | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2864.dat` | ~Train Track 9V Switch Command Rod | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2864c01.dat` | ~Train Track 9V Switch Command Rod with Metal Plate | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2865a.dat` | ~Train Track 9V Straight - Plastic Part | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2867a.dat` | ~Train Track 9V Curved - Plastic Part | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2877.dat` | Brick 1 x 2 with Grille | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2926.dat` | Plate 1 x 4 with 2 Wheel Pins | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3001.dat` | Brick 2 x 4 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -302,6 +347,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/3020.dat` | Plate 2 x 4 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3021.dat` | Plate 2 x 3 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3022.dat` | Plate 2 x 2 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/30225b.dat` | Baseplate 32 x 32 Road 8-Stud Dual | Alex Forencich [aforencich] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/3023.dat` | ~Moved to 3023b | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3023b.dat` | Plate 1 x 2 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3024.dat` | Plate 1 x 1 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -346,6 +392,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/41770a.dat` | Wing 2 x 4 Left without Chamfer | Takeshi Takahashi [RainbowDolphin] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/44301.dat` | ~Moved to 44301a | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/44301a.dat` | Hinge Plate 1 x 2 Locking with Groove with Single Finger on End Vertical | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/44336.dat` | Baseplate 32 x 32 Road 6-Stud Straight | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/44336p01.dat` | Baseplate 32 x 32 Road 6-Stud Straight with Yellow Road Edge Pattern | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/44336p04.dat` | Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern | Sylvain Sauvage [SLS] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4477.dat` | Plate 1 x 10 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -363,21 +410,55 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/6015.dat` | Tyre 12/ 40 x 11 Wide | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/60471.dat` | Hinge Plate 1 x 2 Locking 9-Position with Dual Finger on Side | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/60474.dat` | Plate 4 x 4 Round with Hole and Snapstud | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/606.dat` | Baseplate 32 x 32 Road 9-Stud Straight | Leonardo Zide [leozide] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/610.dat` | Baseplate 32 x 32 Road 8-Stud Straight | Leonardo Zide [leozide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/61409.dat` | ~Slope Brick 18 2 x 1 x 0.667 Grille (Obsolete) | Tim Gould [timgould] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/6141.dat` | Plate 1 x 1 Round | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/61485.dat` | Turntable Flat Base 4 x 4 | Santeri Piippo [arezey] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/63868.dat` | Plate 1 x 2 with Clip Horizontal on End (Thick C-Clip) | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/74746.dat` | Train Track 9V Straight | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/74747.dat` | Train Track 9V Curved | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/75541-f2.dat` | Train Track 9V Switch Right Branching | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/84954.dat` | Windscreen 3 x 4 x 3 | Joerg Sommerer [Brickaneer] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/85984.dat` | Slope Brick 31 1 x 2 x 0.667 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/973p8o.dat` | Minifig Torso with Safety Vest with Reflective Stripes, Pocket and Train Logo Pattern | Tim Lampmann [L4mpi] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/15535s02.dat` | ~Tile 2 x 2 Round with Hole - 1/4 | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2358s01.dat` | ~Baseplate 32 x 32 Road 7-Stud Straight without Top Surface | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2431s01.dat` | ~Tile 1 x 4 with Groove without Top Face | Santeri Piippo [arezey] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2859s02.dat` | ~Train Track 9V Switch Right - Plastic Part, Common Part Without Studs | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2859s03.dat` | ~Train Track 9V Switch Right - Plastic Part, Common Rail Side Clamp Cutout, Common Area | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2859s04.dat` | ~Train Track 9V Switch Right - Plastic Part, Common Rail Side Clamp Cutout | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2859s05.dat` | ~Train Track 9V Switch Right - Plastic Part, Common Rail Side Clamp Cutout with Rail Connection End | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2859s06.dat` | ~Train Track 9V Switch Right - Straight End Sleeper Common Areas | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2859s07.dat` | ~Train Track 9V Switch Right - Switch Stand Mount Quarter | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2859s10.dat` | ~Train Track 9V Switch Right - Plastic Part, Underside Cover Connector | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2860s01.dat` | ~Train Track 9V Switch Tongue Right - Common Subpart | Jens Brühl [jb70] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2863s01.dat` | ~Train Track 9V Bottom Plate Right - Hole, High | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2863s02.dat` | ~Train Track 9V Bottom Plate Right - Hole, Low | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2864s01.dat` | ~Train Track 9V Switch Command Rod, Metal Plate Pin | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as01.dat` | ~Train Track 9V Straight - Plastic Part, End Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as02.dat` | ~Train Track 9V Straight - Plastic Part, Middle Area of Centre Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as03.dat` | ~Train Track 9V Straight - Plastic Part, Side of Centre Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as04.dat` | ~Train Track 9V Straight - Plastic Part, Centre Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as05.dat` | ~Train Track 9V Straight - Plastic Part, Centre Underside Rail Area | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as06.dat` | ~Train Track 9V Straight - Plastic Part, Rail Side End without Cutouts | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as07.dat` | ~Train Track 9V Straight - Plastic Part, Common Rail Side End | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as08.dat` | ~Train Track 9V Straight - Plastic Part, Rail Side End - Cutout Section | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as09.dat` | ~Train Track 9V Straight - Plastic Part, Rail Reinforcement | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as10.dat` | ~Train Track 9V Straight - Plastic Part, Common Rail Side Clamp Cutout | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865as11.dat` | ~Train Track 9V Straight - Plastic Part, End Sleeper Adapter | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2867as01.dat` | ~Train Track 9V Curved - Half | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2867as02.dat` | ~Train Track 9V Curved - Plastic Part, Centre Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2867as03.dat` | ~Train Track 9V Curved - Plastic Part, Right End Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2867as04.dat` | ~Train Track 9V Curved - Plastic Part, Left End Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2867as05.dat` | ~Train Track 9V Curved - Plastic Part, End Sleeper Common Area | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3001s01.dat` | ~Brick 2 x 4 without Front and Back Faces | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3003s01.dat` | ~Brick 2 x 2 without Front Face | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3003s02.dat` | ~Brick 2 x 2 without Front and Back Faces | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3004s01.dat` | ~Brick 1 x 2 without Front Face | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3009s01.dat` | ~Brick 1 x 6 without Front Face | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3010s01.dat` | ~Brick 1 x 4 without Front Face | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/30225bs1.dat` | ~Baseplate 32 x 32 Road 8-Stud Dual without Top Surface | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3023bs01.dat` | ~Plate 1 x 2 without Front Face | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3024s01.dat` | ~Plate 1 x 1 without Front Face | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30386s01.dat` | ~Hinge Brick 1 x 2 Locking Double - without Two Finger End | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -426,12 +507,42 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/6015s01.dat` | ~Tyre 12/ 40 x 11 Wide - 1/36 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/6015s02.dat` | ~Tyre 12/ 40 x 11 Wide - Quarter Side Wall | Evert-Jan Boer [ejboer] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/60474s01.dat` | ~Plate 4 x 4 Round - 1/8 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/606s01.dat` | ~Baseplate 32 x 32 Road 9-Stud Straight without Top Surface | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/610s01.dat` | ~Baseplate 32 x 32 Road 8-Stud Straight without Top Surface | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/85984s01.dat` | ~Slope Brick 31 1 x 2 x 0.667 without Top Surface | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/973s01.dat` | ~Minifig Torso without Front or Back | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9074s01.dat` | ~Train Track 9V Switch Command Rod Conductor Plate, Half | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9097s01.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, End Section of Main Rail without End Connector | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9099s01.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, Frog Rail without End Connector | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9610s01.dat` | ~Train Track 9V Curved - Inner Metal Rail Half | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9611s01.dat` | ~Train Track 9V Straight - Metal Rail, Symmetric Half | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9611s02.dat` | ~Train Track 9V Straight - Metal Rail, Clamp | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9611s03.dat` | ~Train Track 9V Straight - Metal Rail, Interlocking End | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9621s01.dat` | ~Train Track 9V Curved - Outer Metal Rail Half | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9627s01.dat` | ~Train Track 9V Switch Right - Straight Metal Rail, Centre Section of Main Rail, Half | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9628s01.dat` | ~Train Track 9V Switch Right - Straight Metal Rail, Centre Section of Frog Rail, Half | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/u9635s01.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, Start Section of Main Rail without End Connector | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9074.dat` | ~Train Track 9V Switch Command Rod Conductor Plate | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9097.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, End Section of Main Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9098.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, Closure Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9099.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, Frog Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9171.dat` | ~Train Track 9V Switch - Internal Contact Plate | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9172.dat` | ~Train Track 9V Switch Right - External Contact Plate | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9173.dat` | ~Train Track 9V Switch - Internal Contact Plate for Switch Function | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9240.dat` | ~Train Track 9V Switch Tongue Right - Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9309.dat` | ~Train Track 9V Switch Right - Straight Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9610.dat` | ~Train Track 9V Curved - Inner Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9611.dat` | ~Train Track 9V Straight - Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9621.dat` | ~Train Track 9V Curved - Outer Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9627.dat` | ~Train Track 9V Switch Right - Straight Metal Rail, Centre Section of Main Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9628.dat` | ~Train Track 9V Switch Right - Straight Metal Rail, Closure Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9631.dat` | ~Train Track 9V Switch/Crossing - Upper Straight Internal Wire | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9634.dat` | ~Train Track 9V Switch Right - Curved Internal Wire | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/u9635.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, Start Section of Main Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 
-## OMR models
+## Models
 
-Unmodified files from the LDraw Official Model Repository, pinned by SHA-256 in `tools/asset-pipeline/palette.json`.
+Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json`. OMR files are unmodified downloads; the Source column says where each model came from.
 
 | File | Sub-file | Author | License | Source |
 |---|---|---|---|---|
@@ -440,3 +551,5 @@ Unmodified files from the LDraw Official Model Repository, pinned by SHA-256 in 
 | `omr/7936-1.mpd` | 7936 - Crane.ldr | Marc Giraudet [Mad_Marc] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://library.ldraw.org/media/omr_models/1311/7936-1.mpd?v=1758937645 (retrieved 2026-11-16T03:38:57Z) |
 | `omr/7936-1.mpd` | 7936 - Track.ldr | Marc Giraudet [Mad_Marc] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://library.ldraw.org/media/omr_models/1311/7936-1.mpd?v=1758937645 (retrieved 2026-11-16T03:38:57Z) |
 | `omr/7936-1.mpd` | 7936 - Worker.ldr | Marc Giraudet [Mad_Marc] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://library.ldraw.org/media/omr_models/1311/7936-1.mpd?v=1758937645 (retrieved 2026-11-16T03:38:57Z) |
+| `../../docs/verified-facts/scenes/switch-then-reversed-curve.ldr` | switch-then-reversed-curve.ldr | Brick Railroad tools/asset-pipeline (cli.ts facts, from measured end poses) |  | generated by tools/asset-pipeline `cli.ts facts` from the measured end poses in docs/verified-facts/geometry.json (retrieved 2026-11-16) |
+| `../../docs/verified-facts/scenes/road-baseplates.ldr` | road-baseplates.ldr | Brick Railroad tools/asset-pipeline (cli.ts facts, from measured end poses) |  | generated by tools/asset-pipeline `cli.ts facts` from the measured end poses in docs/verified-facts/geometry.json (retrieved 2026-11-16) |

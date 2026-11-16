@@ -239,9 +239,9 @@ export async function renderModelAttribution(
     }
   }
   return [
-    "## OMR models",
+    "## Models",
     "",
-    "Unmodified files from the LDraw Official Model Repository, pinned by SHA-256 in `tools/asset-pipeline/palette.json`.",
+    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json`. OMR files are unmodified downloads; the Source column says where each model came from.",
     "",
     "| File | Sub-file | Author | License | Source |",
     "|---|---|---|---|---|",

@@ -1,0 +1,490 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "kind": "github-mirror",
+    "repo": "kulits/ldraw-parts",
+    "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+    "root": "ldraw"
+  },
+  "angleSteps": 16,
+  "frame": "LDraw part frame (-Y up), LDU; x maps to Re and z to Im of the plane",
+  "parts": [
+    {
+      "id": "53401",
+      "entryInwardDegrees": 0,
+      "ends": [
+        {
+          "marker": "s/53401s02.dat",
+          "xLdu": -160,
+          "zLdu": 0,
+          "outwardDegrees": 180,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/53401s02.dat",
+          "xLdu": 160,
+          "zLdu": 0,
+          "outwardDegrees": 0,
+          "headingSteps": 0,
+          "certified": true,
+          "coefficients": [
+            16,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "53400",
+      "entryInwardDegrees": 11.25,
+      "ends": [
+        {
+          "marker": "s/53400s03.dat",
+          "xLdu": -156.073,
+          "zLdu": -15.372,
+          "outwardDegrees": 191.25,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/53400s04.dat",
+          "xLdu": 156.073,
+          "zLdu": -15.372,
+          "outwardDegrees": 348.75,
+          "headingSteps": 15,
+          "certified": false,
+          "coefficients": null
+        }
+      ]
+    },
+    {
+      "id": "74746",
+      "entryInwardDegrees": 0,
+      "ends": [
+        {
+          "marker": "s/2865as01.dat",
+          "xLdu": -160,
+          "zLdu": 0,
+          "outwardDegrees": 180,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "xLdu": 160,
+          "zLdu": 0,
+          "outwardDegrees": 0,
+          "headingSteps": 0,
+          "certified": true,
+          "coefficients": [
+            16,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "74747",
+      "entryInwardDegrees": 11.25,
+      "ends": [
+        {
+          "marker": "s/2867as04.dat",
+          "xLdu": -156.072258,
+          "zLdu": -15.371776,
+          "outwardDegrees": 191.25,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2867as03.dat",
+          "xLdu": 156.072258,
+          "zLdu": -15.371776,
+          "outwardDegrees": 348.75,
+          "headingSteps": 15,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            40,
+            -40,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "75541-f1",
+      "entryInwardDegrees": 0,
+      "ends": [
+        {
+          "marker": "s/2859s02.dat",
+          "xLdu": -320,
+          "zLdu": 0,
+          "outwardDegrees": 180,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "xLdu": 320,
+          "zLdu": 0,
+          "outwardDegrees": 0,
+          "headingSteps": 0,
+          "certified": true,
+          "coefficients": [
+            32,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2867as04.dat",
+          "xLdu": 333.853255,
+          "zLdu": -259.103626,
+          "outwardDegrees": 337.5,
+          "headingSteps": 15,
+          "certified": true,
+          "coefficients": [
+            48,
+            0,
+            0,
+            -40,
+            24,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "75541-f2",
+      "entryInwardDegrees": 0,
+      "ends": [
+        {
+          "marker": "s/2859s02.dat",
+          "xLdu": -320,
+          "zLdu": 0,
+          "outwardDegrees": 180,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "xLdu": 320,
+          "zLdu": 0,
+          "outwardDegrees": 0,
+          "headingSteps": 0,
+          "certified": true,
+          "coefficients": [
+            32,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2867as04.dat",
+          "xLdu": 333.853255,
+          "zLdu": -259.103626,
+          "outwardDegrees": 337.5,
+          "headingSteps": 15,
+          "certified": true,
+          "coefficients": [
+            48,
+            0,
+            0,
+            -40,
+            24,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "75542-f1",
+      "entryInwardDegrees": 0,
+      "ends": [
+        {
+          "marker": "s/2859s02.dat",
+          "xLdu": -320,
+          "zLdu": 0,
+          "outwardDegrees": 180,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "xLdu": 320,
+          "zLdu": 0,
+          "outwardDegrees": 0,
+          "headingSteps": 0,
+          "certified": true,
+          "coefficients": [
+            32,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2867as03.dat",
+          "xLdu": 333.853255,
+          "zLdu": 259.103626,
+          "outwardDegrees": 22.5,
+          "headingSteps": 1,
+          "certified": true,
+          "coefficients": [
+            48,
+            0,
+            0,
+            0,
+            -24,
+            40,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "75542-f2",
+      "entryInwardDegrees": 0,
+      "ends": [
+        {
+          "marker": "s/2859s02.dat",
+          "xLdu": -320,
+          "zLdu": 0,
+          "outwardDegrees": 180,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "xLdu": 320,
+          "zLdu": 0,
+          "outwardDegrees": 0,
+          "headingSteps": 0,
+          "certified": true,
+          "coefficients": [
+            32,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2867as03.dat",
+          "xLdu": 333.853255,
+          "zLdu": 259.103626,
+          "outwardDegrees": 22.5,
+          "headingSteps": 1,
+          "certified": true,
+          "coefficients": [
+            48,
+            0,
+            0,
+            0,
+            -24,
+            40,
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "32087",
+      "entryInwardDegrees": 0,
+      "ends": [
+        {
+          "marker": "s/2865s04.dat",
+          "xLdu": -160,
+          "zLdu": 0,
+          "outwardDegrees": 180,
+          "headingSteps": 8,
+          "certified": true,
+          "coefficients": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "xLdu": 0,
+          "zLdu": -160,
+          "outwardDegrees": 270,
+          "headingSteps": 12,
+          "certified": true,
+          "coefficients": [
+            8,
+            0,
+            0,
+            0,
+            -8,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "xLdu": 0,
+          "zLdu": 160,
+          "outwardDegrees": 90,
+          "headingSteps": 4,
+          "certified": true,
+          "coefficients": [
+            8,
+            0,
+            0,
+            0,
+            8,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "xLdu": 160,
+          "zLdu": 0,
+          "outwardDegrees": 0,
+          "headingSteps": 0,
+          "certified": true,
+          "coefficients": [
+            16,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ]
+    }
+  ]
+}

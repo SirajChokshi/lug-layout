@@ -1,5 +1,6 @@
 0 Switch Then Reversed Curve
 0 Name: switch-then-reversed-curve.ldr
+0 Author: Brick Railroad tools/asset-pipeline (cli.ts facts, from measured end poses)
 1 16 0 0 0 1 0 0 0 1 0 0 0 1 75541-f2.dat
 1 16 483.927744 0 -304.628225 -0.980785 0 -0.19509 0 1 0 0.19509 0 -0.980785 74747.dat
 1 16 480 0 0 1 0 0 0 1 0 0 0 1 74746.dat

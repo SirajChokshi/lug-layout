@@ -1,7 +1,8 @@
 0 Road Baseplates
 0 Name: road-baseplates.ldr
+0 Author: Brick Railroad tools/asset-pipeline (cli.ts facts, from measured end poses)
 1 16 0 0 0 1 0 0 0 1 0 0 0 1 44336.dat
-1 16 720 0 0 1 0 0 0 1 0 0 0 1 2358.dat
-1 16 1440 0 0 1 0 0 0 1 0 0 0 1 610.dat
-1 16 2160 0 0 1 0 0 0 1 0 0 0 1 606.dat
-1 16 2880 0 0 1 0 0 0 1 0 0 0 1 30225b.dat
+1 16 0 0 720 1 0 0 0 1 0 0 0 1 2358.dat
+1 16 0 0 1440 1 0 0 0 1 0 0 0 1 610.dat
+1 16 0 0 2160 1 0 0 0 1 0 0 0 1 606.dat
+1 16 0 0 2880 1 0 0 0 1 0 0 0 1 30225b.dat
