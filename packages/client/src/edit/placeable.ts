@@ -101,7 +101,11 @@ export function modelPlaceable(
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
 ): Placeable {
-  const shift = modelFrameShift(model.lattice);
+  const { lattice } = model;
+  if (lattice === null) {
+    throw new Error(`model ${name} has no stud lattice from the bake, so it cannot be placed`);
+  }
+  const shift = modelFrameShift(lattice);
   const colorIndex = new Uint16Array(model.instanceCount);
   for (let i = 0; i < model.instanceCount; i++) {
     colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
@@ -121,7 +125,7 @@ export function modelPlaceable(
     worldColor: 0,
     parts: local,
     studs: withStuds(local, parts, colors, undefined).studs,
-    box: shiftedBox(model.lattice.aabbMin, model.lattice.aabbMax, shift),
+    box: shiftedBox(lattice.aabbMin, lattice.aabbMax, shift),
     partBoxes: instanceBoxes(local, parts),
     frameShift: shift,
     credit,

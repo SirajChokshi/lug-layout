@@ -57,7 +57,7 @@ export interface ModelFileLattice {
 export interface ModelFile {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly parts: ReadonlyArray<string>;
-  readonly lattice: ModelFileLattice;
+  readonly lattice: ModelFileLattice | null;
   readonly instances: {
     readonly part: ReadonlyArray<number>;
     readonly color: ReadonlyArray<number>;
@@ -200,8 +200,8 @@ export function parseModelFile(value: unknown, label: string): ModelFile {
     throw new Error(`${label}: model file does not match the M1 bundle format`);
   }
   const partCount = value["parts"].length;
-  if (!isModelFileLattice(value["lattice"])) {
-    throw new Error(`${label}: model file has no lattice phase and AABB from the bake`);
+  if (value["lattice"] !== null && !isModelFileLattice(value["lattice"])) {
+    throw new Error(`${label}: model file lattice is neither null nor a phase and AABB`);
   }
   const { part, color, matrix } = value["instances"];
   if (
