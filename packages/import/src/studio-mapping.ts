@@ -11,6 +11,7 @@ export interface LdrawPartExists {
 export type StudioPartOutcome =
   | { readonly kind: "kept" }
   | { readonly kind: "bricklinkCrosswalk"; readonly ldraw: string }
+  | { readonly kind: "crosswalkTargetMissing"; readonly ldraw: string }
   | { readonly kind: "ambiguous"; readonly candidates: ReadonlyArray<string> }
   | { readonly kind: "custom" };
 
@@ -38,12 +39,33 @@ export interface StudioMapping {
   readonly flexibleSections: ReadonlyArray<StudioFlexibleSection>;
 }
 
+const LDRAW_NAMESPACE = "ldraw:";
 const SUBFILE_LINE = "1";
 const SUBFILE_REFERENCE_TOKEN = 14;
 const PART_EXTENSION = ".dat";
 const STUDIO_BRICKLINK_PREFIX = "bl_";
 const STUDIO_FLEXIBLE_SECTION_PREFIX = "__flexiblesubmodel_";
 const FILE_META = /^0\s+FILE\s+(.+)$/iu;
+
+export class BricklinkPartsCrosswalk implements BricklinkToLdraw {
+  private readonly candidates = new Map<string, ReadonlyArray<string>>();
+
+  constructor(bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>) {
+    for (const [bricklinkId, ldrawIds] of Object.entries(bricklinkParts)) {
+      const key = bricklinkId.toLowerCase();
+      const merged = [...(this.candidates.get(key) ?? []), ...ldrawIds.map(withoutNamespace)];
+      this.candidates.set(key, [...new Set(merged)].toSorted());
+    }
+  }
+
+  ldrawCandidates(bricklinkId: string): ReadonlyArray<string> {
+    return this.candidates.get(bricklinkId.toLowerCase()) ?? [];
+  }
+}
+
+function withoutNamespace(id: string): string {
+  return id.startsWith(LDRAW_NAMESPACE) ? id.slice(LDRAW_NAMESPACE.length) : id;
+}
 
 function normalize(reference: string): string {
   return reference.trim().replaceAll("\\", "/").toLowerCase();
@@ -108,8 +130,11 @@ async function decide(
   }
   if (await exists.isLdrawPart(reference)) return { kind: "kept" };
   const [only] = candidates;
-  if (candidates.length === 1 && only !== undefined)
-    return { kind: "bricklinkCrosswalk", ldraw: only };
+  if (candidates.length === 1 && only !== undefined) {
+    return (await exists.isLdrawPart(withExtension(only)))
+      ? { kind: "bricklinkCrosswalk", ldraw: only }
+      : { kind: "crosswalkTargetMissing", ldraw: only };
+  }
   return { kind: "ambiguous", candidates };
 }
 
