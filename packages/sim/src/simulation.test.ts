@@ -322,6 +322,29 @@ describe("Coupled running gear on a circle", () => {
     }
     expect(worst).toBeLessThan(0.1);
   });
+
+  it("gives the body length as head to solved tail, the distance a stopped reverse moves the head", () => {
+    const session = new SimSession(coupledCircle());
+    const sim = session.simulation;
+    sim.setThrottle(0, 500);
+    run(sim, 6);
+    sim.setThrottle(0, 0);
+    run(sim, 4);
+    const circumference = 2 * Math.PI * RADIUS;
+    const arcLength = circumference / ARC_STEPS;
+    const headAlong = (): number => {
+      const edge = sim.trainEdge[0] ?? 0;
+      const offset = sim.trainOffset[0] ?? 0;
+      const route = Math.floor(edge / 2);
+      return edge % 2 === 0 ? route * arcLength + offset : (route + 1) * arcLength - offset;
+    };
+    const head = headAlong();
+    const length = sim.bodyLengthLdu(0);
+    expect(sim.reverse(0)).toBe(true);
+    const moved = (((head - headAlong()) % circumference) + circumference) % circumference;
+    expect(moved).toBeCloseTo(length, 6);
+    expect(sim.bodyLengthLdu(0)).toBeCloseTo(length, 6);
+  });
 });
 
 describe("Simulation determinism", () => {

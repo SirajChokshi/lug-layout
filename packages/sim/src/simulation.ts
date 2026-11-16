@@ -50,6 +50,7 @@ export interface SimRailway {
 const AUTOPILOT_DWELL_SECONDS = 3;
 const AUTOPILOT_RETRY_SECONDS = 2;
 const NOBODY = -1;
+const NOT_SOLVED = -1;
 
 export class Simulation {
   private tickCount = 0;
@@ -60,7 +61,8 @@ export class Simulation {
   readonly trainOffset: Float64Array;
   readonly trainSpeed: Float64Array;
   readonly trainThrottle: Float64Array;
-  private readonly trainLength: Float64Array;
+  private readonly trainSolvedLength: Float64Array;
+  private readonly trainSolvedTick: Int32Array;
   private readonly trainMaxSpeed: Float64Array;
   private readonly trainAcceleration: Float64Array;
   private readonly trainBraking: Float64Array;
@@ -130,7 +132,8 @@ export class Simulation {
     this.trainOffset = new Float64Array(capacity.trains);
     this.trainSpeed = new Float64Array(capacity.trains);
     this.trainThrottle = new Float64Array(capacity.trains);
-    this.trainLength = new Float64Array(capacity.trains);
+    this.trainSolvedLength = new Float64Array(capacity.trains);
+    this.trainSolvedTick = new Int32Array(capacity.trains).fill(NOT_SOLVED);
     this.trainMaxSpeed = new Float64Array(capacity.trains);
     this.trainAcceleration = new Float64Array(capacity.trains);
     this.trainBraking = new Float64Array(capacity.trains);
@@ -219,7 +222,7 @@ export class Simulation {
     this.trainOffset[train] = offsetLdu;
     this.trainSpeed[train] = 0;
     this.trainThrottle[train] = 0;
-    this.trainLength[train] = length;
+    this.trainSolvedTick[train] = NOT_SOLVED;
     this.trainMaxSpeed[train] = spec.maxSpeedLduPerS;
     this.trainAcceleration[train] = spec.accelerationLduPerS2;
     this.trainBraking[train] = spec.brakingLduPerS2;
@@ -258,7 +261,8 @@ export class Simulation {
   }
 
   bodyLengthLdu(train: number): number {
-    return this.trainLength[train] ?? 0;
+    if (this.trainSolvedTick[train] !== this.tickCount) this.poseTrain(train, null, 0, null, 0);
+    return this.trainSolvedLength[train] ?? 0;
   }
 
   private applyThrottle(train: number, speedLduPerS: number): void {
@@ -304,6 +308,7 @@ export class Simulation {
     this.trainEdge[train] = this.track.reverseEdge[tailEdge] ?? 0;
     this.trainOffset[train] = (this.track.edgeLength[tailEdge] ?? 0) - tailOffset;
     this.trainReversed[train] = this.trainReversed[train] === 1 ? 0 : 1;
+    this.trainSolvedTick[train] = NOT_SOLVED;
     this.blocks?.reseat(
       train,
       this.trainEdge[train] ?? 0,
@@ -364,7 +369,7 @@ export class Simulation {
     poseStart: number,
   ): number {
     this.samplingTrain = train;
-    return this.poser.writeTrain(
+    const length = this.poser.writeTrain(
       this.pathSampler,
       this.vehicleGeometry,
       this.vehicleGeometryAt,
@@ -376,6 +381,9 @@ export class Simulation {
       poses,
       poseStart,
     );
+    this.trainSolvedLength[train] = length;
+    this.trainSolvedTick[train] = this.tickCount;
+    return length;
   }
 
   stateHash(): number {
@@ -518,6 +526,7 @@ export class Simulation {
 
   private measureSeparation(edgePlacement: Int32Array): void {
     const tick = this.tickCount;
+    this.writeVehiclePoses(this.poseScratch);
     let shared = false;
     for (let t = 0; t < this.trainCount; t++) {
       const base = t * PATH_CAPACITY;
@@ -539,7 +548,6 @@ export class Simulation {
     const counters = this.separationCounters;
     if (shared) counters[0] = (counters[0] ?? 0) + 1;
     let nearest = counters[1] ?? Number.POSITIVE_INFINITY;
-    this.writeVehiclePoses(this.poseScratch);
     const poses = this.poseScratch;
     for (let t = 0; t < this.trainCount; t++) {
       const firstA = this.trainVehicleStart[t] ?? 0;
