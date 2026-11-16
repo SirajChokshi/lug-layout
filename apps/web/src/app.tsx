@@ -21,7 +21,12 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
   const rows: Array<readonly [string, string]> = [
     ["API", api],
     ["Adapter", backend.adapter],
+    [
+      "Drawing buffer",
+      `${report.drawingBuffer.width}×${report.drawingBuffer.height} px (devicePixelRatio ${report.drawingBuffer.devicePixelRatio})`,
+    ],
     ["Parts", integer.format(summary.parts)],
+    ["Modules", integer.format(summary.modules)],
     ["Stud instances", integer.format(summary.studInstances)],
     ["Scene triangles", integer.format(summary.bodyTriangles + summary.studTriangles)],
     ["Load", `${integer.format(report.loadMs)} ms`],
@@ -58,9 +63,8 @@ export function App({ scene, params }: AppProps) {
     const canvas = canvasRef.current;
     if (!canvas || started.current) return;
     started.current = true;
-    runViewer(scene, canvas, params, setReport, setResult).catch((e: unknown) =>
-      setError(String(e)),
-    );
+    const showError = (e: unknown): void => setError(String(e));
+    runViewer(scene, canvas, params, setReport, setResult, showError).catch(showError);
   }, [scene, params]);
 
   return (
@@ -69,7 +73,7 @@ export function App({ scene, params }: AppProps) {
       <aside className="hud">
         <h1>Brick Railroad</h1>
         {error && <p className="error">{error}</p>}
-        {report && (
+        {report && !error && (
           <dl>
             {hudRows(report).map(([label, value]) => (
               <div key={label}>
@@ -79,7 +83,7 @@ export function App({ scene, params }: AppProps) {
             ))}
           </dl>
         )}
-        {result && (
+        {result && !error && (
           <pre id="result" data-done="1">
             {JSON.stringify(result)}
           </pre>

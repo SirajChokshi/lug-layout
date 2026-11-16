@@ -8,7 +8,6 @@ export type {
   ColorGroup,
   IAssetFetcher,
   IPartBundleLoader,
-  LdrawAttribution,
   MeshArrays,
   ModelSection,
   PartAsset,

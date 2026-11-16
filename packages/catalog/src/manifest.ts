@@ -13,8 +13,6 @@ export interface ManifestPart {
   readonly role: PartRole;
   readonly file: string;
   readonly title: string;
-  readonly author: string;
-  readonly license: string;
   readonly bounds: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
   readonly displayColor?: { readonly ldraw: number; readonly source: string };
 }
@@ -33,12 +31,10 @@ export interface BundleManifest {
   readonly colors: ReadonlyArray<BundleColor>;
   readonly credits: ReadonlyArray<BundleCredit>;
   readonly models: ReadonlyArray<BundleModelEntry>;
-  readonly disclaimer: string;
 }
 
 export interface ModelFile {
   readonly name: string;
-  readonly source: string;
   readonly sections: ReadonlyArray<ModelSection>;
   readonly instances: {
     readonly part: ReadonlyArray<number>;

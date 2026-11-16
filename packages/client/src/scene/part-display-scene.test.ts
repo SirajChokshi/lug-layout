@@ -1,4 +1,4 @@
-import { ASSET_FETCHER, type IAssetFetcher } from "@brr/catalog";
+import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -41,9 +41,14 @@ it("shows every palette part on the integer lattice when resolved through the re
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
 
-  const summary = await container.get(PART_DISPLAY_SCENE).load("standard");
+  await container.get(PART_DISPLAY_SCENE).load("standard");
+  const bundle = await container.get(PART_BUNDLE_LOADER).load("standard");
 
-  expect(summary.usage.filter((u) => u.role !== "model" && u.instances === 0)).toEqual([]);
+  const shown = new Set(
+    backend.chunks.flatMap((chunk) => [...chunk.partIndex.subarray(0, chunk.count)]),
+  );
+  const hidden = bundle.parts.filter((part, index) => part.role !== "model" && !shown.has(index));
+  expect(hidden.map((part) => part.id)).toEqual([]);
   for (const chunk of backend.chunks) {
     for (let i = 0; i < chunk.count; i++) {
       expect(Number.isInteger(chunk.matrices[i * 12 + 3])).toBe(true);

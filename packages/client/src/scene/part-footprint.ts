@@ -1,14 +1,11 @@
-import type { PartAsset, PartRole } from "@brr/catalog";
+import type { PartAsset } from "@brr/catalog";
 import { PLATE_LDU, STUD_LDU } from "./placements.ts";
 
 export interface PartFootprint {
   readonly index: number;
-  readonly id: string;
-  readonly role: PartRole;
   readonly widthStuds: number;
   readonly depthStuds: number;
   readonly heightPlates: number;
-  readonly studCount: number;
 }
 
 function wholeMultiple(value: number, unit: number, what: string, id: string): number {
@@ -30,11 +27,8 @@ export function footprintOf(part: PartAsset, index: number): PartFootprint {
   }
   return {
     index,
-    id: part.id,
-    role: part.role,
     widthStuds: wholeMultiple(maxX - minX, STUD_LDU, "width", part.id),
     depthStuds: wholeMultiple(maxZ - minZ, STUD_LDU, "depth", part.id),
     heightPlates: part.role === "ground" || part.role === "road" ? 0 : plateDepthBelowOrigin(part),
-    studCount: part.studPrimitiveIndex.length,
   };
 }

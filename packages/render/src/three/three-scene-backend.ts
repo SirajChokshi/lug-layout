@@ -113,6 +113,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   private readonly chunkGroups = new Map<number, Group>();
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
+  private failure: string | undefined;
 
   async init(config: SceneBackendConfig): Promise<BackendInfo> {
     const renderer = new WebGPURenderer({
@@ -121,6 +122,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       forceWebGL: config.api === "webgl2",
     });
     await renderer.init();
+    this.watchForFailure(renderer, config.canvas);
     renderer.info.autoReset = false;
     renderer.setPixelRatio(config.pixelRatio);
     renderer.setSize(config.canvas.clientWidth, config.canvas.clientHeight, false);
@@ -136,6 +138,29 @@ export class ThreeSceneBackend implements ISceneBackend {
       activeApi: this.isWebGpu(renderer) ? "webgpu" : "webgl2",
       adapter: this.describeAdapter(renderer),
     };
+  }
+
+  private watchForFailure(renderer: WebGPURenderer, canvas: HTMLCanvasElement): void {
+    const device = webGpuDevice(renderer.backend);
+    if (device) {
+      void device.lost.then((info) =>
+        this.fail(`WebGPU device lost (${info.reason}): ${info.message}`),
+      );
+      device.addEventListener("uncapturederror", (event) =>
+        this.fail(`WebGPU error: ${event.error.message}`),
+      );
+      return;
+    }
+    canvas.addEventListener("webglcontextlost", () => this.fail("WebGL2 context lost"));
+  }
+
+  private fail(reason: string): void {
+    this.failure ??= reason;
+  }
+
+  private throwIfFailed(): void {
+    if (this.failure !== undefined)
+      throw new Error(`Rendering failed, frames are not valid: ${this.failure}`);
   }
 
   private isWebGpu(renderer: WebGPURenderer): boolean {
@@ -288,6 +313,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   renderFrame(out: FrameStats): void {
     const renderer = this.renderer;
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
+    this.throwIfFailed();
     renderer.info.reset();
     renderer.render(this.scene, this.camera);
     out.drawCalls = renderer.info.render.drawCalls;
@@ -300,9 +326,10 @@ export class ThreeSceneBackend implements ISceneBackend {
     const device = webGpuDevice(renderer.backend);
     if (device) {
       await device.queue.onSubmittedWorkDone();
-      return;
+    } else {
+      const gl = webGl2Context(renderer.backend);
+      gl?.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.readbackPixel);
     }
-    const gl = webGl2Context(renderer.backend);
-    gl?.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.readbackPixel);
+    this.throwIfFailed();
   }
 }

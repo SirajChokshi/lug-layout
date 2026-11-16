@@ -60,7 +60,6 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       colors: manifest.colors,
       credits: manifest.credits,
       models: manifest.models,
-      disclaimer: manifest.disclaimer,
     };
   }
 
@@ -68,8 +67,6 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     const model = parseModelFile(JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`)));
     const count = model.instances.part.length;
     return {
-      name: model.name,
-      source: model.source,
       sections: model.sections,
       instanceCount: count,
       partIndex: Uint16Array.from(model.instances.part),
@@ -103,18 +100,10 @@ function toPartAsset(
     id: part.id,
     role: part.role,
     title: part.title,
-    attribution: {
-      file: extras.ldraw.file,
-      title: part.title,
-      author: part.author,
-      license: part.license,
-      note: extras.ldraw.note,
-    },
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
-    studPrimitiveNames,
     studPrimitiveIndex,
     studColors,
     studMatrices,

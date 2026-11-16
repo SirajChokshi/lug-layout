@@ -21,24 +21,14 @@ export interface PartMesh {
   readonly groups: ReadonlyArray<ColorGroup>;
 }
 
-export interface LdrawAttribution {
-  readonly file: string;
-  readonly title: string;
-  readonly author: string;
-  readonly license: string;
-  readonly note: string;
-}
-
 export interface PartAsset {
   readonly id: string;
   readonly role: PartRole;
   readonly title: string;
-  readonly attribution: LdrawAttribution;
   readonly boundsMin: Vec3Tuple;
   readonly boundsMax: Vec3Tuple;
   readonly producedColor: number | undefined;
   readonly mesh: PartMesh;
-  readonly studPrimitiveNames: ReadonlyArray<string>;
   readonly studPrimitiveIndex: Uint8Array;
   readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
@@ -77,8 +67,6 @@ export interface BundleModelEntry {
 }
 
 export interface PartModel {
-  readonly name: string;
-  readonly source: string;
   readonly sections: ReadonlyArray<ModelSection>;
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
@@ -93,7 +81,6 @@ export interface PartBundle {
   readonly colors: ReadonlyArray<BundleColor>;
   readonly credits: ReadonlyArray<BundleCredit>;
   readonly models: ReadonlyArray<BundleModelEntry>;
-  readonly disclaimer: string;
 }
 
 export interface IPartBundleLoader {

@@ -1,4 +1,4 @@
-import type { BundleLod, ModelSection, PartBundle, PartRole } from "@brr/catalog";
+import type { BundleLod, ModelSection, PartBundle } from "@brr/catalog";
 import {
   COLOR_CHANNELS,
   type BackendInfo,
@@ -7,25 +7,15 @@ import {
   type SceneBackendConfig,
 } from "@brr/render";
 
-export interface PartUsage {
-  readonly id: string;
-  readonly role: PartRole;
-  readonly title: string;
-  readonly instances: number;
-  readonly trianglesPerInstance: number;
-}
-
 export interface SceneSummary {
   readonly parts: number;
   readonly modules: number;
   readonly studInstances: number;
   readonly bodyTriangles: number;
   readonly studTriangles: number;
-  readonly usage: ReadonlyArray<PartUsage>;
   readonly creditedFiles: number;
   readonly creditedLicenses: ReadonlyArray<string>;
   readonly modelSections: ReadonlyArray<ModelSection>;
-  readonly disclaimer: string;
 }
 
 export interface InstanceList {
@@ -115,7 +105,7 @@ export function summarize(
   let studInstances = 0;
   let bodyTriangles = 0;
   let studTriangleTotal = 0;
-  const usage = bundle.parts.map((part, p): PartUsage => {
+  bundle.parts.forEach((part, p) => {
     const count = instances[p] ?? 0;
     let body = 0;
     for (const group of part.mesh.groups) body += group.indices.length / 3;
@@ -124,13 +114,6 @@ export function summarize(
     studInstances += count * part.studPrimitiveIndex.length;
     bodyTriangles += count * body;
     studTriangleTotal += count * studs;
-    return {
-      id: part.id,
-      role: part.role,
-      title: part.title,
-      instances: count,
-      trianglesPerInstance: body + studs,
-    };
   });
   return {
     parts,
@@ -138,10 +121,8 @@ export function summarize(
     studInstances,
     bodyTriangles,
     studTriangles: studTriangleTotal,
-    usage,
     creditedFiles: bundle.credits.length,
     creditedLicenses: [...new Set(bundle.credits.map((c) => c.license ?? "none"))],
     modelSections,
-    disclaimer: bundle.disclaimer,
   };
 }
