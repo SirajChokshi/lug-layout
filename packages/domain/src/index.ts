@@ -93,3 +93,14 @@ export {
   type UnmappedLine,
 } from "./bom/catalog-ids.ts";
 export { brickLinkWantedListXml, plainBomCsv, rebrickableCsv } from "./bom/export-formats.ts";
+export {
+  ownVsBuy,
+  parsePartsCsv,
+  planFiles,
+  type OwnBuy,
+  type OwnBuyLine,
+  type OwnedLine,
+  type ParsedCollection,
+  type PartsCollection,
+  type PlanFiles,
+} from "./plan/own-vs-buy.ts";
