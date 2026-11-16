@@ -53,10 +53,11 @@ function localInstances(ref) {
   const entry = manifest.models.find((m) => `omr:${m.name}` === ref);
   const model = JSON.parse(fs.readFileSync(path.join(bundleDir, entry.file), "utf8"));
   const { part, matrix } = model.instances;
+  const manifestIndex = model.parts.map((id) => manifest.parts.findIndex((p) => p.id === id));
   return {
     shift: expectedShift(model.lattice),
     lattice: model.lattice,
-    instances: part.map((p, i) => ({ part: p, m: matrix.slice(i * 12, i * 12 + 12) })),
+    instances: part.map((p, i) => ({ part: manifestIndex[p], m: matrix.slice(i * 12, i * 12 + 12) })),
   };
 }
 

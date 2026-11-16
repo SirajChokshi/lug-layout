@@ -10,6 +10,7 @@ async function openEditor({ api, base, width, height, videoDir, extraQuery = '' 
   const browser = await chromium.launch({
     headless: false,
     executablePath: process.env.CHROME_PATH || undefined,
+    channel: process.env.CHROME_PATH ? undefined : arg('channel', process.env.CHROME_CHANNEL) || undefined,
     args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--start-maximized'],
   });
   const context = await browser.newContext({
