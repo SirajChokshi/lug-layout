@@ -1,0 +1,205 @@
+{
+  "url": "http://localhost:4173/?model=10218-1&api=webgpu&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 2,042 | Modules | 1 | Stud instances (drawn of total) | 7,040 of 7,040 | Scene triangles | 936,912 | Load | 184 ms | GPU buffers allocated so far, JS heap | vertex+index 5.7 MiB, other 0.0 MiB, JS heap 30.4 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 222 | Drawn triangles (median) | 936,913 | Scene coverage (sampled frames) | 27%, 28%, 24%, 24%, 30%, 31%, 30%, 24%, 23% | Median frame (GPU-synced) | 512.9 ms | p95 frame | 527.0 ms | Median CPU submit | 3.6 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "10218-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "google / swiftshader"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "bundleVersion": "aa83d3a97cb22130",
+      "parts": 2042,
+      "modules": 1,
+      "studInstances": 7040,
+      "visibleStudInstances": 7040,
+      "bodyTriangles": 585936,
+      "studTriangles": 350976,
+      "creditedFiles": 1723,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "10218-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10218-1.mpd",
+        "sections": [
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Stefan Frenz (smf) with LDCad",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - rigidHoseD9.ldr",
+            "title": "rigidHoseD9"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 1 Basement.ldr",
+            "title": "Brown House 1 Basement"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 2 Downstairs.ldr",
+            "title": "Brown House 2 Downstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 3 Upstairs.ldr",
+            "title": "Brown House 3 Upstairs"
+          },
+          {
+            "author": "Stefan Frenz",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 4 Roof.ldr",
+            "title": "Brown House 4 Roof"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Corkskrew Stair.ldr",
+            "title": "Corkskrew Stair"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 1 Basement.ldr",
+            "title": "Blue House 1 Basement"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 2 Downstairs.ldr",
+            "title": "Blue House 2 Downstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 3 Upstairs.ldr",
+            "title": "Blue House 3 Upstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 4 Roof.ldr",
+            "title": "Blue House 4 Roof"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig1.ldr",
+            "title": "MiniFig1"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig2.ldr",
+            "title": "MiniFig2"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig3.ldr",
+            "title": "MiniFig3"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig4.ldr",
+            "title": "MiniFig4"
+          },
+          {
+            "author": "Stefan Frenz [smf]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House.ldr",
+            "title": "Brown House"
+          },
+          {
+            "author": "Stefan Frenz [smf]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House.ldr",
+            "title": "Blue House"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 5936176,
+      "otherBytes": 35792,
+      "jsHeapBytes": 31872839
+    },
+    "loadMs": 184.19999999925494,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 512.9000000003725,
+      "p95FrameMs": 527,
+      "meanFrameMs": 507.560000000149,
+      "medianCpuSubmitMs": 3.599999999627471,
+      "fpsFromMedian": 1.9496977968400735,
+      "medianDrawCalls": 222,
+      "medianDrawnTriangles": 936913,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.2708333333333333,
+        0.2756076388888889,
+        0.23828125,
+        0.2378472222222222,
+        0.3003472222222222,
+        0.3068576388888889,
+        0.3038194444444444,
+        0.2417534722222222,
+        0.22960069444444445
+      ]
+    },
+    "drawCalls": 222,
+    "drawnTriangles": 936913,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}

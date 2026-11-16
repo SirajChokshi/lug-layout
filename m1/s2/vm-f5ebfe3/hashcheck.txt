@@ -1,0 +1,15 @@
+standard bundleVersion aa83d3a97cb22130 files 717 manifest cache-control: no-cache inputs: {"ldraw":{"kind":"github-mirror","repo":"kulits/ldraw-parts","commit":"c70360d1c588be894997b2168c61909bc8058c4d","root":"ldraw"},"omr":{"kind":"github-mirror","repo":"anteloc/ldraw-lib","commit":"606be1421f6c353d9f23f6c467e0be1812280455","root":"models"},"lockSha256":"5e0872d00d82e91471672bd09e847d88f2990617961ec2bfd04d09222ba27374","paletteSha256":"e9538ab87f2cd00b6da63d3c01d4c861524611f70d56dd7fc8c30f9e8dfb7db9"}
+low bundleVersion 4770397c0190c018 files 717 manifest cache-control: no-cache inputs: {"ldraw":{"kind":"github-mirror","repo":"kulits/ldraw-parts","commit":"c70360d1c588be894997b2168c61909bc8058c4d","root":"ldraw"},"omr":{"kind":"github-mirror","repo":"anteloc/ldraw-lib","commit":"606be1421f6c353d9f23f6c467e0be1812280455","root":"models"},"lockSha256":"5e0872d00d82e91471672bd09e847d88f2990617961ec2bfd04d09222ba27374","paletteSha256":"e9538ab87f2cd00b6da63d3c01d4c861524611f70d56dd7fc8c30f9e8dfb7db9"}
+far bundleVersion ef0c89591e93aa21 files 717 manifest cache-control: no-cache inputs: {"ldraw":{"kind":"github-mirror","repo":"kulits/ldraw-parts","commit":"c70360d1c588be894997b2168c61909bc8058c4d","root":"ldraw"},"omr":{"kind":"github-mirror","repo":"anteloc/ldraw-lib","commit":"606be1421f6c353d9f23f6c467e0be1812280455","root":"models"},"lockSha256":"5e0872d00d82e91471672bd09e847d88f2990617961ec2bfd04d09222ba27374","paletteSha256":"e9538ab87f2cd00b6da63d3c01d4c861524611f70d56dd7fc8c30f9e8dfb7db9"}
+fetched 2151 files; sha256 matches name hash and immutable header: 2151 ; failures: 0 []
+largest 10:
+ standard/75541-f2.a510821ee299a0b1.glb 1347144 a510821ee299a0b169aeb880239354c201ec054ac0e3309471936ad08849d9fc
+ low/75541-f2.d85dff98f90f7302.glb 1170856 d85dff98f90f7302aa536cf92b85f2ecef2e1f235f9157e70477f6a7693414a3
+ far/75541-f2.09118aff90b4ad89.glb 500844 09118aff90b4ad8958bca6dfad18d9f2b76642b96c2b9ff4f3ed840f6eb19c0f
+ standard/92438.0aa489190452c2c5.glb 379772 0aa489190452c2c57625763ab4b79ee43f273be9d3b57931e7f72645933ab2c1
+ standard/74747.17975565b59662c0.glb 366068 17975565b59662c0b0093140eed0f5e167b118a482266c6296b977f93bc70199
+ standard/4093b.75c9459ff5264f7d.glb 346588 75c9459ff5264f7df73655fdf87a7ab84dffa11e54dfb652af2024fabd0a3345
+ low/74747.c536a7f6dd5ae145.glb 334920 c536a7f6dd5ae145a4ff944956b74ba1afb5560d341d00ddf57d5c4cd298e768
+ standard/6584.3e548c080d18dde6.glb 303836 3e548c080d18dde6089256550748e0aaf100febf4394ed2efb7160d4e94f487e
+ standard/model-10264-1.128c33327adf3028.json 277978 128c33327adf30287d9ab410944300c93f77f6ab460d907e0a57451e7e44f098
+ low/model-10264-1.128c33327adf3028.json 277978 128c33327adf30287d9ab410944300c93f77f6ab460d907e0a57451e7e44f098

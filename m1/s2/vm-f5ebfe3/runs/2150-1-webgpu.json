@@ -1,0 +1,191 @@
+{
+  "url": "http://localhost:4173/?model=2150-1&api=webgpu&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 625 | Modules | 1 | Stud instances (drawn of total) | 2,449 of 2,449 | Scene triangles | 410,477 | Load | 83 ms | GPU buffers allocated so far, JS heap | vertex+index 3.3 MiB, other 0.0 MiB, JS heap 21.8 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 157 | Drawn triangles (median) | 410,478 | Scene coverage (sampled frames) | 10%, 13%, 14%, 14%, 13%, 10%, 10%, 12%, 12% | Median frame (GPU-synced) | 227.2 ms | p95 frame | 236.6 ms | Median CPU submit | 3.0 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "2150-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "google / swiftshader"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "bundleVersion": "aa83d3a97cb22130",
+      "parts": 625,
+      "modules": 1,
+      "studInstances": 2449,
+      "visibleStudInstances": 2449,
+      "bodyTriangles": 289517,
+      "studTriangles": 120960,
+      "creditedFiles": 1723,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "2150-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/2150-1.mpd",
+        "sections": [
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - station with platform.ldr",
+            "title": "station with platform"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - station building.ldr",
+            "title": "station building"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - streat lamp.ldr",
+            "title": "streat lamp"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - bench.ldr",
+            "title": "bench"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - luggage car 1.ldr",
+            "title": "luggage car 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - luggage car 2.ldr",
+            "title": "luggage car 2"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 1.ldr",
+            "title": "minifig 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 2.ldr",
+            "title": "minifig 2"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 3.ldr",
+            "title": "minifig 3"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 4.ldr",
+            "title": "minifig 4"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 5.ldr",
+            "title": "minifig 5"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 6.ldr",
+            "title": "minifig 6"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 7.ldr",
+            "title": "minifig 7"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 8.ldr",
+            "title": "minifig 8"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 3481712,
+      "otherBytes": 25392,
+      "jsHeapBytes": 22807816
+    },
+    "loadMs": 83.29999999888241,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 227.19999999925494,
+      "p95FrameMs": 236.60000000149012,
+      "meanFrameMs": 230.25999999977648,
+      "medianCpuSubmitMs": 3,
+      "fpsFromMedian": 4.401408450718659,
+      "medianDrawCalls": 157,
+      "medianDrawnTriangles": 410478,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.0954861111111111,
+        0.1271701388888889,
+        0.1371527777777778,
+        0.13802083333333334,
+        0.12630208333333334,
+        0.0959201388888889,
+        0.1037326388888889,
+        0.11631944444444445,
+        0.11805555555555555
+      ]
+    },
+    "drawCalls": 157,
+    "drawnTriangles": 410478,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}

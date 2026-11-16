@@ -1,0 +1,122 @@
+[
+  {
+    "set": "7936-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 147 | Modules | 1 | Stud instances (drawn of total) | 622 of 622 | Scene triangles | 140,603 | Load | 70 ms | GPU buffers allocated so far, JS heap | vertex+index 1.9 MiB, other 0.0 MiB, JS heap 16.3 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 72 | Drawn triangles (median) | 140,604 | Scene coverage (sampled frames) | 16%, 15%, 15%, 14%, 16%, 16%, 17%, 16%, 15% | Median frame (GPU-synced) | 45.9 ms | p95 frame | 50.2 ms | Median CPU submit | 1.6 ms | Measured frames | 5"
+  },
+  {
+    "set": "7936-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 147 | Modules | 1 | Stud instances (drawn of total) | 622 of 622 | Scene triangles | 140,603 | Load | 78 ms | GPU buffers allocated so far, JS heap | vertex+index 1.9 MiB, other 0.0 MiB, JS heap 17.0 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 72 | Drawn triangles (median) | 140,604 | Scene coverage (sampled frames) | 16%, 15%, 15%, 14%, 16%, 16%, 17%, 16%, 15% | Median frame (GPU-synced) | 156.5 ms | p95 frame | 159.2 ms | Median CPU submit | 1.9 ms | Measured frames | 5"
+  },
+  {
+    "set": "10264-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 2,567 | Modules | 1 | Stud instances (drawn of total) | 7,489 of 7,489 | Scene triangles | 1,222,336 | Load | 198 ms | GPU buffers allocated so far, JS heap | vertex+index 7.6 MiB, other 0.1 MiB, JS heap 35.5 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 334 | Drawn triangles (median) | 1,222,337 | Scene coverage (sampled frames) | 15%, 17%, 17%, 16%, 18%, 19%, 21%, 17%, 16% | Median frame (GPU-synced) | 188.3 ms | p95 frame | 191.2 ms | Median CPU submit | 3.1 ms | Measured frames | 5"
+  },
+  {
+    "set": "10264-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 2,567 | Modules | 1 | Stud instances (drawn of total) | 7,489 of 7,489 | Scene triangles | 1,222,336 | Load | 193 ms | GPU buffers allocated so far, JS heap | vertex+index 7.6 MiB, other 0.1 MiB, JS heap 36.8 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 334 | Drawn triangles (median) | 1,222,337 | Scene coverage (sampled frames) | 15%, 17%, 17%, 16%, 18%, 19%, 21%, 17%, 16% | Median frame (GPU-synced) | 551.5 ms | p95 frame | 568.4 ms | Median CPU submit | 3.7 ms | Measured frames | 5"
+  },
+  {
+    "set": "10185-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 2,405 | Modules | 1 | Stud instances (drawn of total) | 7,607 of 7,607 | Scene triangles | 1,036,406 | Load | 130 ms | GPU buffers allocated so far, JS heap | vertex+index 4.7 MiB, other 0.0 MiB, JS heap 27.8 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 195 | Drawn triangles (median) | 1,036,407 | Scene coverage (sampled frames) | 25%, 25%, 21%, 21%, 28%, 28%, 27%, 22%, 21% | Median frame (GPU-synced) | 174.0 ms | p95 frame | 178.6 ms | Median CPU submit | 3.2 ms | Measured frames | 5"
+  },
+  {
+    "set": "10185-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 2,405 | Modules | 1 | Stud instances (drawn of total) | 7,607 of 7,607 | Scene triangles | 1,036,406 | Load | 129 ms | GPU buffers allocated so far, JS heap | vertex+index 4.7 MiB, other 0.0 MiB, JS heap 26.0 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 195 | Drawn triangles (median) | 1,036,407 | Scene coverage (sampled frames) | 25%, 25%, 21%, 21%, 28%, 28%, 27%, 22%, 21% | Median frame (GPU-synced) | 560.8 ms | p95 frame | 586.5 ms | Median CPU submit | 3.1 ms | Measured frames | 5"
+  },
+  {
+    "set": "10190-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 1,484 | Modules | 1 | Stud instances (drawn of total) | 5,127 of 5,127 | Scene triangles | 747,070 | Load | 128 ms | GPU buffers allocated so far, JS heap | vertex+index 3.9 MiB, other 0.0 MiB, JS heap 21.1 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 146 | Drawn triangles (median) | 747,071 | Scene coverage (sampled frames) | 21%, 23%, 20%, 20%, 20%, 19%, 23%, 24%, 23% | Median frame (GPU-synced) | 150.1 ms | p95 frame | 158.0 ms | Median CPU submit | 2.9 ms | Measured frames | 5"
+  },
+  {
+    "set": "10190-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 1,484 | Modules | 1 | Stud instances (drawn of total) | 5,127 of 5,127 | Scene triangles | 747,070 | Load | 128 ms | GPU buffers allocated so far, JS heap | vertex+index 3.9 MiB, other 0.0 MiB, JS heap 22.7 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 146 | Drawn triangles (median) | 747,071 | Scene coverage (sampled frames) | 21%, 23%, 20%, 20%, 20%, 19%, 23%, 24%, 23% | Median frame (GPU-synced) | 424.0 ms | p95 frame | 450.1 ms | Median CPU submit | 2.6 ms | Measured frames | 5"
+  },
+  {
+    "set": "10218-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 2,042 | Modules | 1 | Stud instances (drawn of total) | 7,040 of 7,040 | Scene triangles | 936,912 | Load | 152 ms | GPU buffers allocated so far, JS heap | vertex+index 5.7 MiB, other 0.0 MiB, JS heap 29.9 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 222 | Drawn triangles (median) | 936,913 | Scene coverage (sampled frames) | 27%, 28%, 24%, 24%, 30%, 31%, 30%, 24%, 23% | Median frame (GPU-synced) | 176.1 ms | p95 frame | 180.0 ms | Median CPU submit | 3.7 ms | Measured frames | 5"
+  },
+  {
+    "set": "10218-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 2,042 | Modules | 1 | Stud instances (drawn of total) | 7,040 of 7,040 | Scene triangles | 936,912 | Load | 184 ms | GPU buffers allocated so far, JS heap | vertex+index 5.7 MiB, other 0.0 MiB, JS heap 30.4 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 222 | Drawn triangles (median) | 936,913 | Scene coverage (sampled frames) | 27%, 28%, 24%, 24%, 30%, 31%, 30%, 24%, 23% | Median frame (GPU-synced) | 512.9 ms | p95 frame | 527.0 ms | Median CPU submit | 3.6 ms | Measured frames | 5"
+  },
+  {
+    "set": "2150-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 625 | Modules | 1 | Stud instances (drawn of total) | 2,449 of 2,449 | Scene triangles | 410,477 | Load | 104 ms | GPU buffers allocated so far, JS heap | vertex+index 3.3 MiB, other 0.0 MiB, JS heap 20.2 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 157 | Drawn triangles (median) | 410,478 | Scene coverage (sampled frames) | 10%, 13%, 14%, 14%, 13%, 10%, 10%, 12%, 12% | Median frame (GPU-synced) | 79.3 ms | p95 frame | 82.3 ms | Median CPU submit | 2.1 ms | Measured frames | 5"
+  },
+  {
+    "set": "2150-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 625 | Modules | 1 | Stud instances (drawn of total) | 2,449 of 2,449 | Scene triangles | 410,477 | Load | 83 ms | GPU buffers allocated so far, JS heap | vertex+index 3.3 MiB, other 0.0 MiB, JS heap 21.8 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 157 | Drawn triangles (median) | 410,478 | Scene coverage (sampled frames) | 10%, 13%, 14%, 14%, 13%, 10%, 10%, 12%, 12% | Median frame (GPU-synced) | 227.2 ms | p95 frame | 236.6 ms | Median CPU submit | 3.0 ms | Measured frames | 5"
+  },
+  {
+    "set": "4554-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 617 | Modules | 1 | Stud instances (drawn of total) | 2,447 of 2,447 | Scene triangles | 404,253 | Load | 78 ms | GPU buffers allocated so far, JS heap | vertex+index 3.2 MiB, other 0.0 MiB, JS heap 19.8 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 150 | Drawn triangles (median) | 404,254 | Scene coverage (sampled frames) | 10%, 13%, 14%, 14%, 13%, 10%, 10%, 12%, 12% | Median frame (GPU-synced) | 73.0 ms | p95 frame | 78.5 ms | Median CPU submit | 2.0 ms | Measured frames | 5"
+  },
+  {
+    "set": "4554-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 617 | Modules | 1 | Stud instances (drawn of total) | 2,447 of 2,447 | Scene triangles | 404,253 | Load | 81 ms | GPU buffers allocated so far, JS heap | vertex+index 3.2 MiB, other 0.0 MiB, JS heap 20.9 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 150 | Drawn triangles (median) | 404,254 | Scene coverage (sampled frames) | 10%, 13%, 14%, 14%, 13%, 10%, 10%, 12%, 12% | Median frame (GPU-synced) | 223.4 ms | p95 frame | 225.8 ms | Median CPU submit | 2.5 ms | Measured frames | 5"
+  },
+  {
+    "set": "4555-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 390 | Modules | 1 | Stud instances (drawn of total) | 2,996 of 2,996 | Scene triangles | 382,200 | Load | 92 ms | GPU buffers allocated so far, JS heap | vertex+index 4.0 MiB, other 0.0 MiB, JS heap 23.7 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 141 | Drawn triangles (median) | 382,201 | Scene coverage (sampled frames) | 17%, 19%, 15%, 14%, 16%, 15%, 18%, 20%, 19% | Median frame (GPU-synced) | 75.6 ms | p95 frame | 77.7 ms | Median CPU submit | 2.0 ms | Measured frames | 5"
+  },
+  {
+    "set": "4555-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 390 | Modules | 1 | Stud instances (drawn of total) | 2,996 of 2,996 | Scene triangles | 382,200 | Load | 97 ms | GPU buffers allocated so far, JS heap | vertex+index 4.0 MiB, other 0.0 MiB, JS heap 22.2 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 141 | Drawn triangles (median) | 382,201 | Scene coverage (sampled frames) | 17%, 19%, 15%, 14%, 16%, 15%, 18%, 20%, 19% | Median frame (GPU-synced) | 238.2 ms | p95 frame | 246.4 ms | Median CPU submit | 2.6 ms | Measured frames | 5"
+  },
+  {
+    "set": "10128-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 336 | Modules | 1 | Stud instances (drawn of total) | 2,137 of 2,137 | Scene triangles | 322,238 | Load | 87 ms | GPU buffers allocated so far, JS heap | vertex+index 3.2 MiB, other 0.0 MiB, JS heap 20.6 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 124 | Drawn triangles (median) | 322,239 | Scene coverage (sampled frames) | 12%, 13%, 13%, 14%, 16%, 15%, 14%, 13%, 13% | Median frame (GPU-synced) | 72.7 ms | p95 frame | 73.9 ms | Median CPU submit | 2.2 ms | Measured frames | 5"
+  },
+  {
+    "set": "10128-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 336 | Modules | 1 | Stud instances (drawn of total) | 2,137 of 2,137 | Scene triangles | 322,238 | Load | 93 ms | GPU buffers allocated so far, JS heap | vertex+index 3.2 MiB, other 0.0 MiB, JS heap 21.4 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 124 | Drawn triangles (median) | 322,239 | Scene coverage (sampled frames) | 12%, 13%, 13%, 14%, 16%, 15%, 14%, 13%, 13% | Median frame (GPU-synced) | 214.9 ms | p95 frame | 223.6 ms | Median CPU submit | 2.5 ms | Measured frames | 5"
+  },
+  {
+    "set": "10133-1",
+    "api": "webgl2",
+    "error": false,
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 419 | Modules | 1 | Stud instances (drawn of total) | 1,396 of 1,396 | Scene triangles | 208,440 | Load | 68 ms | GPU buffers allocated so far, JS heap | vertex+index 1.8 MiB, other 0.0 MiB, JS heap 17.9 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 87 | Drawn triangles (median) | 208,441 | Scene coverage (sampled frames) | 8%, 13%, 13%, 14%, 12%, 8%, 13%, 17%, 17% | Median frame (GPU-synced) | 60.7 ms | p95 frame | 65.9 ms | Median CPU submit | 1.7 ms | Measured frames | 5"
+  },
+  {
+    "set": "10133-1",
+    "api": "webgpu",
+    "error": false,
+    "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | aa83d3a97cb22130 | Parts | 419 | Modules | 1 | Stud instances (drawn of total) | 1,396 of 1,396 | Scene triangles | 208,440 | Load | 65 ms | GPU buffers allocated so far, JS heap | vertex+index 1.8 MiB, other 0.0 MiB, JS heap 17.3 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 87 | Drawn triangles (median) | 208,441 | Scene coverage (sampled frames) | 8%, 13%, 13%, 14%, 12%, 8%, 13%, 17%, 17% | Median frame (GPU-synced) | 196.3 ms | p95 frame | 203.7 ms | Median CPU submit | 2.1 ms | Measured frames | 5"
+  }
+]

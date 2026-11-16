@@ -1,0 +1,4 @@
+palette.json with model 4555-1 removed (local edit in a second checkout, not committed); standard LOD file names, before vs after:
+removed (27): 2362b.32735c1f5409927d.glb 2439.0e153cbe33edebd2.glb 2580c01.1bdf1b6528591e15.glb 2635.28bacd3bfabe9b06.glb 2653.68a596cd9e9b379c.glb 2873.7328645ad60cc712.glb 2878c02.748b1630966a29bc.glb 2959c01.3972a991f5a1a340.glb 3228b.79719846369befb4.glb 3747a.130bc08bfc8461f2.glb 3787.6d4291ddb3c13944.glb 3839a.3e0fa3447b2da9ac.glb 4022.233edaba249cc6a7.glb 4211.3e3cb97b8965ce8f.glb 4213.82193bf3c5c7412d.glb 4214.350bd1d83216d953.glb 4215a.373167c8f5435394.glb 425p01.344a046a4a2e66f4.glb 4315.b57461882c312e98.glb 4865d01.8149534a9fe39570.glb 4870.a83442e75dc42ef4.glb 6160.79432a32440f4e0f.glb 6546.5c61dec7b30f7e61.glb 6576.f42913cd7cedbd80.glb 6584.3e548c080d18dde6.glb 73037.4f236c80dede4d3e.glb model-4555-1.aa225ddae31bee4c.json 
+added (0): 
+unchanged: 691

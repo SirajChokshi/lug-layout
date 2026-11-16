@@ -1,0 +1,18 @@
+S1-d697e5d model-10264-1 parts=2,567 bundle=null
+  cold: 707 req, 24.09 MB transferred (23.88 MB body), 0 from cache, 0 revalidated, load 593 ms
+  warm: 707 req, 0.21 MB transferred (23.88 MB body), 0 from cache, 707 revalidated, load 454 ms
+S1-d697e5d model-7936-1 parts=147 bundle=null
+  cold: 707 req, 24.06 MB transferred (23.85 MB body), 0 from cache, 0 revalidated, load 486 ms
+  warm: 707 req, 0.21 MB transferred (23.85 MB body), 0 from cache, 707 revalidated, load 411 ms
+S1-d697e5d city-20k parts=20,090 bundle=null
+  cold: 1412 req, 37.95 MB transferred (37.53 MB body), 0 from cache, 0 revalidated, load 858 ms
+  warm: 1412 req, 0.42 MB transferred (37.53 MB body), 0 from cache, 1412 revalidated, load 846 ms
+S2-f5ebfe3 model-10264-1 parts=2,567 bundle=aa83d3a97cb22130
+  cold: 312 req, 8.07 MB transferred (7.98 MB body), 0 from cache, 0 revalidated, load 267 ms
+  warm: 312 req, 0.00 MB transferred (7.98 MB body), 311 from cache, 1 revalidated, load 201 ms
+S2-f5ebfe3 model-7936-1 parts=147 bundle=aa83d3a97cb22130
+  cold: 70 req, 2.24 MB transferred (2.22 MB body), 0 from cache, 0 revalidated, load 103 ms
+  warm: 70 req, 0.00 MB transferred (2.22 MB body), 69 from cache, 1 revalidated, load 93 ms
+S2-f5ebfe3 city-20k parts=20,090 bundle=aa83d3a97cb22130
+  cold: 36 req, 1.27 MB transferred (1.26 MB body), 0 from cache, 0 revalidated, load 149 ms
+  warm: 36 req, 0.00 MB transferred (1.26 MB body), 34 from cache, 2 revalidated, load 119 ms

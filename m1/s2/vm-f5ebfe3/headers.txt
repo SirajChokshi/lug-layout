@@ -1,0 +1,28 @@
+$ curl -sI http://localhost:4173/bundle/standard/manifest.json
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Content-Length: 917539
+Content-Type: application/json
+ETag: W/"917539-1794853929323"
+
+$ curl -sI http://localhost:4173/bundle/standard/3001.694b1c49eb71932a.glb
+HTTP/1.1 200 OK
+Cache-Control: public, max-age=31536000, immutable
+Content-Length: 14724
+Content-Type: model/gltf-binary
+ETag: W/"14724-1794853929251"
+
+$ curl -sI http://localhost:4173/bundle/far/model-10264-1.128c33327adf3028.json
+HTTP/1.1 200 OK
+Cache-Control: public, max-age=31536000, immutable
+Content-Length: 277978
+Content-Type: application/json
+ETag: W/"277978-1794853929159"
+
+$ curl -sI http://localhost:4173/bundle/low/stud-primitive-stud.1035a0fa0ba97966.glb
+HTTP/1.1 200 OK
+Cache-Control: public, max-age=31536000, immutable
+Content-Length: 2556
+Content-Type: model/gltf-binary
+ETag: W/"2556-1794853929239"
+

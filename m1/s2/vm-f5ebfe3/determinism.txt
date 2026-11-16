@@ -1,0 +1,6 @@
+standard: file lists identical (718 names)
+standard: manifest byte-identical
+low: file lists identical (718 names)
+low: manifest byte-identical
+far: file lists identical (718 names)
+far: manifest byte-identical
