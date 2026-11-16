@@ -54,6 +54,7 @@ export interface IViewerScene {
   readonly backend: ISceneBackend;
   load(lod: BundleLod): Promise<SceneSummary>;
   setCamera(t: number): void;
+  onFrame?(): void;
 }
 
 export class ColorTable {

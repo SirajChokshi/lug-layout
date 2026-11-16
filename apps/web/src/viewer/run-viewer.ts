@@ -136,6 +136,7 @@ export async function runViewer(
   let windowStart = startedAt;
   const tick = (now: number): void => {
     scene.setCamera(((now - startedAt) % ORBIT_PERIOD_MS) / ORBIT_PERIOD_MS);
+    scene.onFrame?.();
     try {
       scene.backend.renderFrame(frame);
     } catch (error) {

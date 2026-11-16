@@ -1,6 +1,6 @@
-import type { BundleLod, CityCamera, GraphicsApi } from "@brr/client";
+import type { BundleLod, CityCamera, GraphicsApi, TrainRequest } from "@brr/client";
 
-export type AppMode = "edit" | "parts" | "model" | "city" | "track";
+export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run";
 
 export interface ViewerParams {
   readonly mode: AppMode;
@@ -9,6 +9,16 @@ export interface ViewerParams {
   readonly lod: BundleLod;
   readonly model: string | null;
   readonly track: string | null;
+  readonly run: boolean;
+  readonly trainModel: string;
+  readonly trains: ReadonlyArray<TrainRequest>;
+  readonly speedLduPerS: number;
+  readonly accelerationLduPerS2: number;
+  readonly brakingLduPerS2: number;
+  readonly follow: boolean;
+  readonly simBenchTicks: number;
+  readonly hud: boolean;
+  readonly start: boolean;
   readonly city: boolean;
   readonly parts: number;
   readonly seed: number;
@@ -27,6 +37,24 @@ const DEFAULT_SEED = 1;
 const DEFAULT_WARMUP_FRAMES = 5;
 const DEFAULT_MEASURED_FRAMES = 60;
 const DEFAULT_MAX_MEASURE_MS = 120_000;
+const DEFAULT_TRAIN_MODEL = "10133-1";
+const DEFAULT_TRAINS = "0@0";
+const DEFAULT_SPEED_LDU_PER_S = 400;
+const DEFAULT_ACCELERATION_LDU_PER_S2 = 150;
+const DEFAULT_BRAKING_LDU_PER_S2 = 300;
+const TRAIN_POSITION = /^(?<edge>\d+)@(?<offset>\d+(?:\.\d+)?)$/u;
+
+function trainRequests(value: string): TrainRequest[] {
+  return value.split(";").map((token) => {
+    const groups = TRAIN_POSITION.exec(token.trim())?.groups;
+    if (groups === undefined) {
+      throw new Error(
+        `trains=${value}: "${token}" is not a directed edge and offset "edge@offsetLdu"`,
+      );
+    }
+    return { edge: Number(groups["edge"]), offsetLdu: Number(groups["offset"]) };
+  });
+}
 
 function positiveNumber(value: string | null, fallback: number): number {
   const parsed = Number(value);
@@ -52,7 +80,7 @@ function originChunks(value: string | null): readonly [number, number] {
 function appMode(params: URLSearchParams): AppMode {
   const scene = params.get("scene");
   if (scene === "city") return "city";
-  if (params.get("track") !== null) return "track";
+  if (params.get("track") !== null) return params.get("run") === "1" ? "run" : "track";
   if (params.get("model") !== null) return "model";
   if (scene === "parts") return "parts";
   return "edit";
@@ -68,6 +96,16 @@ export function readViewerParams(search: string): ViewerParams {
     lod: params.get("lod") === "low" ? "low" : "standard",
     model: params.get("model"),
     track: params.get("track"),
+    run: params.get("run") === "1",
+    trainModel: params.get("train") ?? DEFAULT_TRAIN_MODEL,
+    trains: trainRequests(params.get("trains") ?? DEFAULT_TRAINS),
+    speedLduPerS: positiveNumber(params.get("speed"), DEFAULT_SPEED_LDU_PER_S),
+    accelerationLduPerS2: positiveNumber(params.get("accel"), DEFAULT_ACCELERATION_LDU_PER_S2),
+    brakingLduPerS2: positiveNumber(params.get("brake"), DEFAULT_BRAKING_LDU_PER_S2),
+    follow: params.get("view") === "follow",
+    simBenchTicks: positiveNumber(params.get("simBench"), 0),
+    hud: params.get("hud") !== "0",
+    start: params.get("start") !== "0",
     city: params.get("scene") === "city",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),

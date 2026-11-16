@@ -83,6 +83,7 @@ export async function measureFrames(
   while (frames < params.measuredFrames && performance.now() - started < params.maxMeasureMs) {
     const t0 = performance.now();
     scene.setCamera(frames / params.measuredFrames);
+    scene.onFrame?.();
     scene.backend.renderFrame(stats);
     const t1 = performance.now();
     await scene.backend.waitForGpu();

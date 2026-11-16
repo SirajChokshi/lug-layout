@@ -14,6 +14,8 @@
     "@brr/domain": "workspace:*",
     "@brr/math": "workspace:*",
     "@brr/render": "workspace:*",
+    "@brr/rpc": "workspace:*",
+    "@brr/sim": "workspace:*",
     "inversify": "8.3.0"
   },
   "devDependencies": {

@@ -1,6 +1,13 @@
-import type { IViewerScene, PlacementDump, TrackSummary } from "@brr/client";
+import type {
+  IRunScene,
+  IViewerScene,
+  PlacementDump,
+  RunStatus,
+  SimBenchResult,
+  TrackSummary,
+} from "@brr/client";
 import { CreditLinks, partsCreditText } from "@brr/ui";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
 import type { MemoryReport } from "./viewer/memory-report.ts";
@@ -15,6 +22,99 @@ interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
   readonly placements: (() => PlacementDump) | null;
+  readonly run: IRunScene | null;
+}
+
+const BENCH_AFTER_MS = 5_000;
+
+function useSimBench(
+  run: IRunScene | null,
+  ticks: number,
+  onError: (error: unknown) => void,
+): SimBenchResult | null {
+  const [result, setResult] = useState<SimBenchResult | null>(null);
+  useEffect(() => {
+    if (!run || ticks <= 0) return;
+    const timer = setTimeout(() => {
+      run.sim.bench(ticks).then(setResult, onError);
+    }, BENCH_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [run, ticks, onError]);
+  return result;
+}
+
+const MICROSECONDS_PER_MS = 1000;
+const THROTTLE_STEP_LDU_PER_S = 50;
+
+function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, string]> {
+  if (!status) return [];
+  const { tickCost } = status;
+  const perTick = tickCost.ticks > 0 ? (tickCost.stepMs / tickCost.ticks) * MICROSECONDS_PER_MS : 0;
+  const speeds = status.trainSpeedLduPerS.map((speed) => speed.toFixed(0)).join(", ");
+  const rows: Array<readonly [string, string]> = [
+    ["Sim tick (60 Hz, worker)", integer.format(status.tick)],
+    ["Sim state hash", status.stateHash.toString(16).padStart(8, "0")],
+    [
+      "Sim step cost (live, worker clock)",
+      `${perTick.toFixed(2)} µs/tick over ${integer.format(tickCost.ticks)} ticks`,
+    ],
+    ["Trains (speed LDU/s)", `${status.trains} (${speeds})`],
+    ["Train edges", status.trainEdge.join(", ")],
+  ];
+  if (status.vehicle) {
+    const { lengthLdu, frontBogieLdu, rearBogieLdu } = status.vehicle;
+    rows.push([
+      "Vehicle (LDU)",
+      `length ${lengthLdu.toFixed(1)}, bogies at ${frontBogieLdu.toFixed(1)} and ${rearBogieLdu.toFixed(1)} from ${status.wheelsets} wheelsets; ${status.vehicleInstances} parts touch the wheels, ${status.excludedInstances} stand apart and stay off the train`,
+    ]);
+  }
+  const spans: string[] = [];
+  for (let p = 0; p + 3 < status.bogiePointsLdu.length; p += 4) {
+    const [fx = 0, fz = 0, rx = 0, rz = 0] = status.bogiePointsLdu.slice(p, p + 4);
+    spans.push(Math.hypot(fx - rx, fz - rz).toFixed(6));
+  }
+  rows.push(["Bogie centres apart (LDU, per vehicle)", spans.join(", ")]);
+  rows.push([
+    "Route path end vs exact end",
+    `${status.maxEndResidualLdu.toExponential(1)} LDU, ${status.maxEndHeadingResidualRadians.toExponential(1)} rad`,
+  ]);
+  return rows;
+}
+
+function useTrainKeys(
+  run: IRunScene | null,
+  topSpeed: number,
+  onError: (error: unknown) => void,
+): void {
+  useEffect(() => {
+    if (!run) return;
+    let speed = topSpeed;
+    const switchStates = new Map<number, number>();
+    const onKey = (event: KeyboardEvent): void => {
+      const status = run.status();
+      if (!status) return;
+      const send = (command: Parameters<IRunScene["sim"]["command"]>[0]): void => {
+        run.sim.command(command).catch(onError);
+      };
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        const step = event.key === "ArrowUp" ? THROTTLE_STEP_LDU_PER_S : -THROTTLE_STEP_LDU_PER_S;
+        speed = Math.min(Math.max(speed + step, 0), topSpeed);
+        for (let train = 0; train < status.trains; train++) {
+          send({ kind: "throttle", train, speedLduPerS: speed });
+        }
+      } else if (event.key === "r") {
+        for (let train = 0; train < status.trains; train++) send({ kind: "reverse", train });
+      } else if (/^[1-9]$/u.test(event.key)) {
+        const switchIndex = Number(event.key) - 1;
+        if (switchIndex >= status.switches) return;
+        const state = switchStates.get(switchIndex) === 1 ? 0 : 1;
+        switchStates.set(switchIndex, state);
+        send({ kind: "switch", switchIndex, state });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [run, topSpeed, onError]);
 }
 
 function mebibytes(bytes: number): string {
@@ -130,12 +230,16 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params, placements }: AppProps) {
+export function App({ scene, params, placements, run }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const [report, setReport] = useState<ViewerReport | null>(null);
   const [result, setResult] = useState<ViewerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const showRunError = useCallback((e: unknown): void => setError(String(e)), []);
+  useTrainKeys(run, params.speedLduPerS, showRunError);
+  const bench = useSimBench(run, params.simBenchTicks, showRunError);
+  const runStatus = run?.status() ?? null;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -148,18 +252,24 @@ export function App({ scene, params, placements }: AppProps) {
   return (
     <>
       <canvas ref={canvasRef} className="scene" />
-      <aside className="hud">
+      <aside className="hud" hidden={!params.hud}>
         <h1>Brick Railroad</h1>
         {error && <p className="error">{error}</p>}
         {report && !error && (
           <dl>
-            {hudRows(report).map(([label, value]) => (
+            {[...hudRows(report), ...runRows(runStatus)].map(([label, value]) => (
               <div key={label}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>
               </div>
             ))}
           </dl>
+        )}
+        {runStatus && !error && <pre id="sim">{JSON.stringify(runStatus)}</pre>}
+        {bench && !error && (
+          <pre id="sim-bench" data-done="1">
+            {JSON.stringify(bench)}
+          </pre>
         )}
         {result && !error && (
           <pre id="result" data-done="1">

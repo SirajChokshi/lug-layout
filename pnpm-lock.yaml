@@ -35,6 +35,9 @@ importers:
       '@brr/client':
         specifier: workspace:*
         version: link:../../packages/client
+      '@brr/sim-worker':
+        specifier: workspace:*
+        version: link:../../packages/workers/sim-worker
       '@brr/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -103,6 +106,12 @@ importers:
       '@brr/render':
         specifier: workspace:*
         version: link:../render
+      '@brr/rpc':
+        specifier: workspace:*
+        version: link:../rpc
+      '@brr/sim':
+        specifier: workspace:*
+        version: link:../sim
       inversify:
         specifier: 8.3.0
         version: 8.3.0(reflect-metadata@0.2.2)
@@ -191,6 +200,37 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  packages/rpc:
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../config
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
+  packages/sim:
+    dependencies:
+      '@brr/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@brr/math':
+        specifier: workspace:*
+        version: link:../math
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5))
+
   packages/test-fixtures: {}
 
   packages/ui:
@@ -214,6 +254,37 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+
+  packages/workers/sim-worker:
+    dependencies:
+      '@brr/rpc':
+        specifier: workspace:*
+        version: link:../../rpc
+      '@brr/sim':
+        specifier: workspace:*
+        version: link:../../sim
+      inversify:
+        specifier: 8.3.0
+        version: 8.3.0(reflect-metadata@0.2.2)
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../../config
+      '@brr/domain':
+        specifier: workspace:*
+        version: link:../../domain
+      '@brr/math':
+        specifier: workspace:*
+        version: link:../../math
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5))
 
   tools/asset-pipeline:
     dependencies:

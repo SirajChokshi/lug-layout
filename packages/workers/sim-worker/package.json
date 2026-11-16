@@ -1,0 +1,25 @@
+{
+  "name": "@brr/sim-worker",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./entry": "./src/entry.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brr/rpc": "workspace:*",
+    "@brr/sim": "workspace:*",
+    "inversify": "8.3.0"
+  },
+  "devDependencies": {
+    "@brr/config": "workspace:*",
+    "@brr/domain": "workspace:*",
+    "@brr/math": "workspace:*",
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

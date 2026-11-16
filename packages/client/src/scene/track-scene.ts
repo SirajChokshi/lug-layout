@@ -26,7 +26,7 @@ export interface ITrackScene extends IViewerScene {
   selectPlan(plan: string): void;
 }
 
-const TRACK_PARTS = (part: { readonly role: string }): boolean => part.role === "track";
+export const TRACK_PARTS = (part: { readonly role: string }): boolean => part.role === "track";
 const STEP_RADIANS = Math.PI / 8;
 const HALF_STEP_RADIANS = Math.PI / 16;
 const ORBIT_DISTANCE_FACTOR = 0.3;
@@ -104,7 +104,26 @@ function chunkedInstances(placed: ReadonlyArray<PlacedPart>): Map<number, ChunkP
   return chunks;
 }
 
-function summarizeTrack(
+export function trackChunks(
+  layout: TrackLayout,
+  catalogPieces: ReadonlyArray<TrackPiece>,
+  bundle: PartBundle,
+  colors: ColorTable,
+): KeyedChunk[] {
+  const placed: PlacedPart[] = [];
+  for (let p = 0; p < layout.count; p++) {
+    const piece = catalogPieces[layout.piece(p)];
+    if (!piece) throw new Error(`placement ${p} has no catalog piece`);
+    placed.push(partPlacement(layout, p, piece, bundle, colors));
+  }
+  const chunks: KeyedChunk[] = [];
+  for (const [key, instances] of chunkedInstances(placed)) {
+    chunks.push({ key, instances: withStuds(instances, bundle.parts, colors, undefined) });
+  }
+  return chunks;
+}
+
+export function summarizeTrack(
   plan: string,
   graph: TrackGraph,
   layout: TrackLayout,
@@ -150,16 +169,7 @@ export class TrackScene implements ITrackScene {
     const graph = new TrackGraph(layout);
     this.frame(graph);
     const colors = new ColorTable(bundle);
-    const placed: PlacedPart[] = [];
-    for (let p = 0; p < layout.count; p++) {
-      const piece = catalogPieces[layout.piece(p)];
-      if (!piece) throw new Error(`placement ${p} has no catalog piece`);
-      placed.push(partPlacement(layout, p, piece, bundle, colors));
-    }
-    const chunks: KeyedChunk[] = [];
-    for (const [key, instances] of chunkedInstances(placed)) {
-      chunks.push({ key, instances: withStuds(instances, bundle.parts, colors, undefined) });
-    }
+    const chunks = trackChunks(layout, catalogPieces, bundle, colors);
     const summary = showChunks(this.backend, bundle, undefined, colors, chunks, null);
     return { ...summary, track: summarizeTrack(this.plan, graph, layout, catalogPieces) };
   }
