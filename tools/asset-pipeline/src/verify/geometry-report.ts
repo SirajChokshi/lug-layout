@@ -78,7 +78,9 @@ export function buildGeometryReport(
       measureRails(libraries.official, "53401", RAIL_SECTION_X),
     ],
     baseplates: BASEPLATES.map((part) => measureBaseplate(libraries.official, part)),
-    roadStudZones: ROAD_STUD_ZONES.map((part) => measureStudZones(libraries.official, part)),
+    roadStudZones: ROAD_STUD_ZONES.map((part) =>
+      measureStudZones(libraries.official, part, topStudPrimitives),
+    ),
     roadMarkings: ROAD_MARKINGS.map((part) => ({
       part,
       markingBandsByColor: measureMarkingBands(libraries.official, part),
