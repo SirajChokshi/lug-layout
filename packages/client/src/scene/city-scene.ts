@@ -191,7 +191,8 @@ export class CityScene implements ICityScene {
       );
       return;
     }
-    const z = this.minX + this.extent * t;
+    const drivableLength = Math.max(this.extent - STREET_LOOK_AHEAD_LDU, 0);
+    const z = this.minX + drivableLength * t;
     this.backend.setView(
       this.streetX,
       STREET_EYE_HEIGHT_LDU,

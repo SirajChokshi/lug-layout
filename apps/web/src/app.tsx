@@ -1,5 +1,6 @@
 import type { IViewerScene } from "@brr/client";
 import { useEffect, useRef, useState } from "react";
+import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import { runViewer, type ViewerReport, type ViewerResult } from "./viewer/run-viewer.ts";
 import type { ViewerParams } from "./viewer/viewer-params.ts";
 
@@ -12,6 +13,10 @@ interface AppProps {
   readonly params: ViewerParams;
 }
 
+function percent(fraction: number): string {
+  return `${(fraction * 100).toFixed(0)}%`;
+}
+
 function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]> {
   const { backend, summary, frame, timings, liveFps } = report;
   const api =
@@ -21,7 +26,6 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
   const rows: Array<readonly [string, string]> = [
     ["API", api],
     ["Adapter", backend.adapter],
-    ["Strategy", backend.strategy],
     [
       "Drawing buffer",
       `${report.drawingBuffer.width}×${report.drawingBuffer.height} px (devicePixelRatio ${Number(report.drawingBuffer.devicePixelRatio.toFixed(2))})`,
@@ -31,9 +35,23 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ["Stud instances", integer.format(summary.studInstances)],
     ["Scene triangles", integer.format(summary.bodyTriangles + summary.studTriangles)],
     ["Load", `${integer.format(report.loadMs)} ms`],
-    ["Draw calls", integer.format(frame.drawCalls)],
-    ["Drawn triangles", integer.format(frame.triangles)],
   ];
+  if (timings) {
+    rows.push(
+      ["Draw calls (median)", integer.format(timings.medianDrawCalls)],
+      ["Drawn triangles (median)", integer.format(timings.medianDrawnTriangles)],
+      ["Scene coverage (sampled frames)", timings.sceneCoverage.map(percent).join(", ")],
+    );
+  } else {
+    rows.push(
+      ["Draw calls", integer.format(frame.drawCalls)],
+      ["Drawn triangles", integer.format(frame.triangles)],
+    );
+  }
+  if (report.liveSceneCoverage !== null) {
+    const empty = report.liveSceneCoverage < MIN_SCENE_COVERAGE ? " (essentially empty frame)" : "";
+    rows.push(["Scene coverage", `${percent(report.liveSceneCoverage)}${empty}`]);
+  }
   if (liveFps !== null) rows.push(["Frame rate (rAF)", `${liveFps.toFixed(1)} fps`]);
   if (timings) {
     rows.push(

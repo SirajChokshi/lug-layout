@@ -1,4 +1,5 @@
 import type { BackendInfo, FrameStats, IViewerScene, SceneSummary } from "@brr/client";
+import { FrameCoverage } from "./frame-coverage.ts";
 import { measureFrames, type FrameTimings } from "./measure-frames.ts";
 import type { ViewerParams } from "./viewer-params.ts";
 
@@ -17,6 +18,7 @@ export interface ViewerReport {
   readonly summary: SceneSummary;
   readonly loadMs: number;
   readonly liveFps: number | null;
+  readonly liveSceneCoverage: number | null;
   readonly frame: FrameStats;
   readonly timings: FrameTimings | null;
 }
@@ -45,7 +47,6 @@ export async function runViewer(
   const backend = await scene.attach({
     canvas,
     api: params.api,
-    strategy: params.strategy,
     pixelRatio: devicePixelRatio,
     antialias: true,
   });
@@ -59,24 +60,27 @@ export async function runViewer(
   const loadMs = performance.now() - loadStart;
   const frame: FrameStats = { drawCalls: 0, triangles: 0 };
   window.addEventListener("resize", () => scene.resize(canvas.clientWidth, canvas.clientHeight));
+  const coverage = new FrameCoverage(backend.backgroundSrgb);
   onReport({
     backend,
     drawingBuffer: drawingBuffer(),
     summary,
     loadMs,
     liveFps: null,
+    liveSceneCoverage: null,
     frame: { ...frame },
     timings: null,
   });
 
   if (params.measure) {
-    const timings = await measureFrames(scene, params, frame);
+    const timings = await measureFrames(scene, params, canvas, coverage, frame);
     onReport({
       backend,
       drawingBuffer: drawingBuffer(),
       summary,
       loadMs,
       liveFps: null,
+      liveSceneCoverage: null,
       frame: { ...frame },
       timings,
     });
@@ -87,8 +91,8 @@ export async function runViewer(
       summary,
       loadMs,
       timings,
-      drawCalls: frame.drawCalls,
-      drawnTriangles: frame.triangles,
+      drawCalls: timings.medianDrawCalls,
+      drawnTriangles: timings.medianDrawnTriangles,
       userAgent: navigator.userAgent,
     });
     return;
@@ -114,6 +118,7 @@ export async function runViewer(
         summary,
         loadMs,
         liveFps,
+        liveSceneCoverage: coverage.sceneFraction(canvas),
         frame: { ...frame },
         timings: null,
       });

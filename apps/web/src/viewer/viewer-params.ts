@@ -1,8 +1,7 @@
-import type { BundleLod, CityCamera, GraphicsApi, InstancingStrategy } from "@brr/client";
+import type { BundleLod, CityCamera, GraphicsApi } from "@brr/client";
 
 export interface ViewerParams {
   readonly api: GraphicsApi;
-  readonly strategy: InstancingStrategy;
   readonly lod: BundleLod;
   readonly model: string | null;
   readonly city: boolean;
@@ -30,7 +29,6 @@ export function readViewerParams(search: string): ViewerParams {
   const params = new URLSearchParams(search);
   return {
     api: params.get("api") === "webgl2" ? "webgl2" : "webgpu",
-    strategy: params.get("strategy") === "batched" ? "batched" : "instanced",
     lod: params.get("lod") === "low" ? "low" : "standard",
     model: params.get("model"),
     city: params.get("scene") === "city",

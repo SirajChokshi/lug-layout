@@ -1,11 +1,5 @@
 export type { BundleLod, ModelSection } from "@brr/catalog";
-export type {
-  BackendInfo,
-  FrameStats,
-  GraphicsApi,
-  InstancingStrategy,
-  SceneBackendConfig,
-} from "@brr/render";
+export type { BackendInfo, FrameStats, GraphicsApi, SceneBackendConfig } from "@brr/render";
 export { mainThreadModules, type MainThreadConfig } from "./client.module.ts";
 export type { IViewerScene, ModelCredit, SceneSummary } from "./scene/viewer-scene.ts";
 export type { CityCamera, CityRequest, ICityScene } from "./scene/city-scene.ts";

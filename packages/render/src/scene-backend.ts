@@ -1,12 +1,10 @@
 import type { PartAsset, StudPrimitiveAsset } from "@brr/catalog";
 
 export type GraphicsApi = "webgpu" | "webgl2";
-export type InstancingStrategy = "instanced" | "batched";
 
 export interface SceneBackendConfig {
   readonly canvas: HTMLCanvasElement;
   readonly api: GraphicsApi;
-  readonly strategy: InstancingStrategy;
   readonly pixelRatio: number;
   readonly antialias: boolean;
 }
@@ -15,7 +13,7 @@ export interface BackendInfo {
   readonly requestedApi: GraphicsApi;
   readonly activeApi: GraphicsApi;
   readonly adapter: string;
-  readonly strategy: InstancingStrategy;
+  readonly backgroundSrgb: number;
 }
 
 export interface PartPalette {
