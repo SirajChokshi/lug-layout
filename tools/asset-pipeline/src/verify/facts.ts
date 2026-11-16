@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import type { AuditLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import type { Palette } from "../palette.ts";
+import { CATALOG_LAYOUTS, catalogScene } from "../track/catalog-scenes.ts";
+import { buildTrackCatalog } from "../track/track-catalog.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
@@ -91,6 +93,31 @@ export function geometryReports(
       fileName: "scenes/oval-passing-siding-9v.ldr",
       render: () => ovalPassingSidingScene(library, loadTrackEndMarkers()),
     },
+  ];
+}
+
+export const TRACK_CATALOG_FILE = "track-catalog.json";
+
+export function trackCatalogReports(
+  library: LdrawLibrary,
+  palette: Palette,
+): ReadonlyArray<FactReport> {
+  const markers = loadTrackEndMarkers();
+  const trackParts = palette.parts.filter((part) => part.role === "track").map((part) => part.id);
+  const catalog = buildTrackCatalog(library, trackParts, markers);
+  const scenes = CATALOG_LAYOUTS.map((layout) => ({
+    layout,
+    scene: catalogScene(library, markers, catalog.pieces, layout),
+  }));
+  return [
+    {
+      fileName: TRACK_CATALOG_FILE,
+      render: () => asJson({ ...catalog, layouts: scenes.map(({ scene }) => scene.check) }),
+    },
+    ...scenes.map(({ layout, scene }) => ({
+      fileName: `scenes/${layout.name}.ldr`,
+      render: () => scene.ldraw,
+    })),
   ];
 }
 

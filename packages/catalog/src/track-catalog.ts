@@ -120,8 +120,8 @@ function parseSegment(value: unknown, label: string): TrackPathSegment {
         sweepRadians: finite(raw["sweepRadians"], `${label}.sweepRadians`),
       };
     default: {
-      const _exhaustive: never = kind;
-      throw new Error(`unhandled ${String(_exhaustive)}`);
+      const unhandled: never = kind;
+      throw new Error(`unhandled ${String(unhandled)}`);
     }
   }
 }
