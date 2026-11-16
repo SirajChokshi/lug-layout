@@ -6,12 +6,14 @@ import {
   parsePartExtras,
   type BundleManifest,
   type ManifestPart,
+  type ModelFileLattice,
 } from "./manifest.ts";
 import type {
   BundleLod,
   IAssetFetcher,
   IPartBundleLoader,
   ModelBundle,
+  ModelLattice,
   PartAsset,
   PartBundle,
   PartFilter,
@@ -21,6 +23,12 @@ import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
 const MAX_CONCURRENT_FETCHES = 32;
+
+function modelLattice(lattice: ModelFileLattice | null): ModelLattice | null {
+  if (lattice === null) return null;
+  const [phaseX, phaseZ] = lattice.phase;
+  return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
+}
 
 async function mapConcurrently<T, R>(
   items: ReadonlyArray<T>,
@@ -123,18 +131,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       return part;
     });
     const count = file.instances.part.length;
-    const [phaseX, phaseZ] = file.lattice.phase;
     return {
       bundle: await this.bundle(lod, manifest, parts),
       entry,
       model: {
         sections: file.sections,
-        lattice: {
-          phaseX,
-          phaseZ,
-          aabbMin: file.lattice.aabb.min,
-          aabbMax: file.lattice.aabb.max,
-        },
+        lattice: modelLattice(file.lattice),
         instanceCount: count,
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),

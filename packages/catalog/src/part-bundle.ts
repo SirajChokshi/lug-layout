@@ -103,7 +103,7 @@ export interface ModelLattice {
 
 export interface PartModel {
   readonly sections: ReadonlyArray<ModelSection>;
-  readonly lattice: ModelLattice;
+  readonly lattice: ModelLattice | null;
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint16Array;

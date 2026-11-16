@@ -7,7 +7,7 @@ use brick_compile::affine::Vec3;
 use brick_compile::colors::parse_ldconfig;
 use brick_compile::compile::modified_note;
 use brick_compile::inline::inline_part_distance;
-use brick_compile::lattice::{model_lattice, LatticeInstance};
+use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{parse as parse_ldraw, Header};
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::bake_model;
@@ -325,14 +325,17 @@ fn run(args: &Args) -> Result<(), String> {
                 bounds_max: shapes[index].bounds[1],
             })
             .collect();
-        let lattice = model_lattice(&lattice_instances).map_err(|e| format!("{file}: {e}"))?;
-        let lattice_json = json!({
-            "phase": lattice.phase,
-            "phaseLayerY": lattice.phase_layer_y,
-            "phaseLayerStuds": lattice.phase_layer_studs,
-            "phaseLayerAgreeing": lattice.phase_layer_agreeing,
-            "aabb": { "min": lattice.aabb_min, "max": lattice.aabb_max },
-        });
+        let lattice_json = match model_lattice(&lattice_instances) {
+            Ok(lattice) => json!({
+                "phase": lattice.phase,
+                "phaseLayerY": lattice.phase_layer_y,
+                "phaseLayerStuds": lattice.phase_layer_studs,
+                "phaseLayerAgreeing": lattice.phase_layer_agreeing,
+                "aabb": { "min": lattice.aabb_min, "max": lattice.aabb_max },
+            }),
+            Err(LatticeError::NoIntegerPhaseStuds) => Value::Null,
+            Err(e) => return Err(format!("{file}: {e}")),
+        };
         let model_file = format!("model-{}.json", stem(name));
         let sections: Vec<Value> = baked
             .sections
