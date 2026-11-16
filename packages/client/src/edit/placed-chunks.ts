@@ -6,12 +6,48 @@ import {
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
-import type { Placeable } from "./placeable.ts";
+import { BOX_FLOATS, type Placeable } from "./placeable.ts";
 
 export interface PlacedModel {
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
   readonly box: WorldBox;
+  rayHit(ray: Float64Array): number;
+}
+
+function slab(
+  origin: number,
+  direction: number,
+  lo: number,
+  hi: number,
+  range: Float64Array,
+): boolean {
+  if (direction === 0) return origin >= lo && origin <= hi;
+  const t1 = (lo - origin) / direction;
+  const t2 = (hi - origin) / direction;
+  range[0] = Math.max(range[0] ?? 0, Math.min(t1, t2));
+  range[1] = Math.min(range[1] ?? 0, Math.max(t1, t2));
+  return (range[0] ?? 0) <= (range[1] ?? 0);
+}
+
+const rayRange = new Float64Array(2);
+
+export function rayBoxDistance(
+  ray: Float64Array,
+  minX: number,
+  minY: number,
+  minZ: number,
+  maxX: number,
+  maxY: number,
+  maxZ: number,
+): number {
+  rayRange[0] = 0;
+  rayRange[1] = Number.POSITIVE_INFINITY;
+  const hit =
+    slab(ray[0] ?? 0, ray[3] ?? 0, minX, maxX, rayRange) &&
+    slab(ray[1] ?? 0, ray[4] ?? 0, minY, maxY, rayRange) &&
+    slab(ray[2] ?? 0, ray[5] ?? 0, minZ, maxZ, rayRange);
+  return hit ? (rayRange[0] ?? 0) : Number.POSITIVE_INFINITY;
 }
 
 interface Contribution {
@@ -81,6 +117,40 @@ class PlacedEntry implements PlacedModel {
       contribution[field]++;
     }
     return keys;
+  }
+
+  rayHit(ray: Float64Array): number {
+    const box = this.box;
+    if (
+      rayBoxDistance(ray, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ) ===
+      Number.POSITIVE_INFINITY
+    ) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const boxes = this.placeable.partBoxes;
+    const { cos, sin } = this;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+      const loX = boxes[b] ?? 0;
+      const loZ = boxes[b + 2] ?? 0;
+      const hiX = boxes[b + 3] ?? 0;
+      const hiZ = boxes[b + 5] ?? 0;
+      const ax = this.x + cos * loX + sin * loZ;
+      const az = this.z - sin * loX + cos * loZ;
+      const bx = this.x + cos * hiX + sin * hiZ;
+      const bz = this.z - sin * hiX + cos * hiZ;
+      const t = rayBoxDistance(
+        ray,
+        Math.min(ax, bx),
+        this.yLdu + (boxes[b + 1] ?? 0),
+        Math.min(az, bz),
+        Math.max(ax, bx),
+        this.yLdu + (boxes[b + 4] ?? 0),
+        Math.max(az, bz),
+      );
+      if (t < nearest) nearest = t;
+    }
+    return nearest;
   }
 
   private worldBox(): WorldBox {

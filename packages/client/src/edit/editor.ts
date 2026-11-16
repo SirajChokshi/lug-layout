@@ -143,28 +143,6 @@ function snapToLattice(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU + 0;
 }
 
-function rayHitsBox(ray: Float64Array, box: WorldBox): number {
-  let near = Number.NEGATIVE_INFINITY;
-  let far = Number.POSITIVE_INFINITY;
-  const mins = [box.minX, box.minY, box.minZ];
-  const maxs = [box.maxX, box.maxY, box.maxZ];
-  for (let axis = 0; axis < 3; axis++) {
-    const origin = ray[axis] ?? 0;
-    const direction = ray[axis + 3] ?? 0;
-    const lo = mins[axis] ?? 0;
-    const hi = maxs[axis] ?? 0;
-    if (direction === 0) {
-      if (origin < lo || origin > hi) return Number.POSITIVE_INFINITY;
-      continue;
-    }
-    const t1 = (lo - origin) / direction;
-    const t2 = (hi - origin) / direction;
-    near = Math.max(near, Math.min(t1, t2));
-    far = Math.min(far, Math.max(t1, t2));
-  }
-  return near <= far && far >= 0 ? Math.max(near, 0) : Number.POSITIVE_INFINITY;
-}
-
 @injectable()
 export class Editor implements IEditor {
   private readonly listeners = new Set<() => void>();
@@ -422,7 +400,7 @@ export class Editor implements IEditor {
     let best: PlacedModel | null = null;
     let bestT = Number.POSITIVE_INFINITY;
     for (const model of this.placed.models()) {
-      const t = rayHitsBox(this.ray, model.box);
+      const t = model.rayHit(this.ray);
       if (t < bestT) {
         bestT = t;
         best = model;

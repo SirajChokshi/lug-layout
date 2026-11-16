@@ -20,11 +20,41 @@ export interface Placeable {
   readonly parts: ChunkPartInstances;
   readonly studs: StudInstances;
   readonly box: LocalBox;
+  readonly partBoxes: Float32Array;
   readonly frameShift: Vec3Tuple;
   readonly credit: ModelCredit | null;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
+export const BOX_FLOATS = 6;
+
+function instanceBoxes(
+  instances: ChunkPartInstances,
+  parts: ReadonlyArray<PartAsset>,
+): Float32Array {
+  const boxes = new Float32Array(instances.count * BOX_FLOATS);
+  for (let i = 0; i < instances.count; i++) {
+    const part = parts[instances.partIndex[i] ?? 0];
+    if (!part) continue;
+    const m = instances.matrices;
+    const o = i * INSTANCE_MATRIX_FLOATS;
+    const b = i * BOX_FLOATS;
+    for (let axis = 0; axis < 3; axis++) {
+      let lo = m[o + axis * 4 + 3] ?? 0;
+      let hi = lo;
+      for (let k = 0; k < 3; k++) {
+        const coefficient = m[o + axis * 4 + k] ?? 0;
+        const a = coefficient * (part.boundsMin[k] ?? 0);
+        const c = coefficient * (part.boundsMax[k] ?? 0);
+        lo += Math.min(a, c);
+        hi += Math.max(a, c);
+      }
+      boxes[b + axis] = lo;
+      boxes[b + 3 + axis] = hi;
+    }
+  }
+  return boxes;
+}
 
 export function phaseShift(phase: number): number {
   return HALF_STUD_LDU - phase;
@@ -92,6 +122,7 @@ export function modelPlaceable(
     parts: local,
     studs: withStuds(local, parts, colors, undefined).studs,
     box: shiftedBox(model.lattice.aabbMin, model.lattice.aabbMax, shift),
+    partBoxes: instanceBoxes(local, parts),
     frameShift: shift,
     credit,
   };
@@ -123,6 +154,7 @@ export function baseplatePlaceable(
     parts: local,
     studs: withStuds(local, parts, colors, undefined).studs,
     box: shiftedBox(part.boundsMin, part.boundsMax, noShift),
+    partBoxes: instanceBoxes(local, parts),
     frameShift: noShift,
     credit: null,
   };
