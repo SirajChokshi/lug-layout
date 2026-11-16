@@ -22,6 +22,13 @@ import type {
   PlanPlacement,
   PlanRuleId,
 } from "./plan-rules.ts";
+import {
+  trackBomLines,
+  trackFootprints,
+  trackInRegion,
+  trackIssues,
+  type TrackInput,
+} from "./track-checks.ts";
 import { placedFeature, placedRect } from "./placed-geometry.ts";
 import {
   accessibleEdges,
@@ -510,6 +517,7 @@ function planBom(
   placed: ReadonlyArray<Placed>,
   profile: ModuleProfile | null,
   crosswalk: Crosswalk,
+  track: ReadonlyArray<PartCount>,
 ): PlanBom {
   const lines = new Map<
     string,
@@ -558,6 +566,7 @@ function planBom(
       substructure: (recipe?.substructure ?? []).reduce((sum, line) => sum + line.quantity, 0),
     });
   }
+  for (const line of track) add(line, false);
   const sorted = [...lines.values()].toSorted(
     (a, b) =>
       a.part.localeCompare(b.part, "en", { numeric: true }) ||
@@ -576,6 +585,7 @@ export function checkBuildable(
   placements: ReadonlyArray<BuildablePlacement>,
   catalog: BuildableCatalog,
   settings: BuildableSettings,
+  track: TrackInput | null,
 ): BuildableReport {
   const { standards, crosswalk } = catalog;
   const profile =
@@ -597,12 +607,14 @@ export function checkBuildable(
     ...(profile ? moduleIssues(placed, region, profile) : []),
     ...roadIssues(placed),
   ];
-  const bom = planBom(placed, profile, crosswalk);
+  const trackInPlan = track ? trackInRegion(trackFootprints(track), check.room) : [];
+  if (track) issues.push(...trackIssues(region, check, track, trackInPlan));
+  const bom = planBom(placed, profile, crosswalk, trackBomLines(trackInPlan));
   issues.push(...mappingIssues(placed, bom, crosswalk));
   const errors = issues.filter((i) => i.severity === "error").length;
   const warnings = issues.length - errors;
   const verdict: BuildableVerdict =
-    placed.length === 0 && errors === 0
+    placed.length + trackInPlan.length === 0 && errors === 0
       ? "empty"
       : errors === 0 && warnings === 0
         ? "buildable"

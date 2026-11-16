@@ -680,3 +680,8 @@ footer a {
   color: #334;
   font-size: 12px;
 }
+
+.buildable-issues li[data-severity="warning"] .issue-rule {
+  background: #fff8c5;
+  color: #7d4e00;
+}

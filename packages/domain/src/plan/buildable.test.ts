@@ -210,7 +210,7 @@ function report(
   maxReachMm = 700,
 ) {
   const check = checkPlan(plan, placements);
-  return checkBuildable(plan, check, placements, CATALOG, { profile, maxReachMm });
+  return checkBuildable(plan, check, placements, CATALOG, { profile, maxReachMm }, null);
 }
 
 function rules(
@@ -373,10 +373,14 @@ describe("verdict and parts list", () => {
     const catalog: BuildableCatalog = { ...CATALOG, specs: new Map([[spec.ref, spec]]) };
     const placement = at(0, spec, T_X, T_Z);
     const check = checkPlan(OPEN_TABLE, [placement]);
-    const result = checkBuildable(OPEN_TABLE, check, [placement], catalog, {
-      profile: "free",
-      maxReachMm: 700,
-    });
+    const result = checkBuildable(
+      OPEN_TABLE,
+      check,
+      [placement],
+      catalog,
+      { profile: "free", maxReachMm: 700 },
+      null,
+    );
     expect(result.issues).toEqual([]);
     expect(result.bom.lines.map((l) => [l.part, l.ldrawColor, l.bricklink.part])).toEqual([
       ["ldraw:2495", 15, "2495"],

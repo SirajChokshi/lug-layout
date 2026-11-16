@@ -22,7 +22,12 @@ export type PlanRuleId =
   | "moduleGrid"
   | "moduleJoin"
   | "roadJoin"
-  | "bomMapping";
+  | "bomMapping"
+  | "trackOpenEnd"
+  | "trackJoin"
+  | "trackUnverified"
+  | "trackFit"
+  | "trackSeam";
 export type IssueSeverity = "error" | "warning";
 
 export interface PlacementKey {
@@ -41,6 +46,7 @@ export interface PlanIssue {
   readonly rule: PlanRuleId;
   readonly severity: IssueSeverity;
   readonly placements: ReadonlyArray<PlacementKey>;
+  readonly trackPieces?: ReadonlyArray<number>;
   readonly message: string;
   readonly overhangMm: number;
   readonly nearestTableMm: number;

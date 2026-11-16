@@ -130,3 +130,10 @@ export {
   type UnmappedLine,
 } from "./bom/catalog-ids.ts";
 export { brickLinkWantedListXml, plainBomCsv, rebrickableCsv } from "./bom/export-formats.ts";
+export {
+  trackFootprints,
+  type TrackFootprint,
+  type TrackInput,
+  type TrackPieceInfo,
+  type TrackPoseStatus,
+} from "./plan/track-checks.ts";

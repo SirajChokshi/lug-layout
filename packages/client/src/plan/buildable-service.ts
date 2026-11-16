@@ -9,6 +9,8 @@ import {
   type ItemSpec,
   type ModuleProfileId,
   type ModuleStandards,
+  trackFootprints,
+  type TrackInput,
 } from "@brr/domain";
 import { isRot90 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
@@ -42,7 +44,10 @@ export interface IBuildableService {
   ): void;
   setProfile(planId: string, profile: ModuleProfileId): void;
   setMaxReach(planId: string, maxReachMm: number): void;
+  setTrack(track: TrackInput | null): void;
 }
+
+const TRACK_ISSUE_BOX_HEIGHT_LDU = 24;
 
 const DEFAULT_SETTINGS: PlanSettings = {
   profile: DEFAULT_MODULE_PROFILE,
@@ -127,6 +132,13 @@ export class BuildableService implements IBuildableService {
     this.recompute();
   }
 
+  private track: TrackInput | null = null;
+
+  setTrack(track: TrackInput | null): void {
+    this.track = track;
+    this.recompute();
+  }
+
   private recompute(): void {
     const catalog = this.catalog;
     const plan = this.plans.snapshot();
@@ -135,7 +147,16 @@ export class BuildableService implements IBuildableService {
       ? plan.plans.flatMap((region, i) => {
           const check = plan.checks[i];
           return check
-            ? [checkBuildable(region, check, placements, catalog, this.settingsFor(region.id))]
+            ? [
+                checkBuildable(
+                  region,
+                  check,
+                  placements,
+                  catalog,
+                  this.settingsFor(region.id),
+                  this.track,
+                ),
+              ]
             : [];
         })
       : [];
@@ -152,9 +173,18 @@ export class BuildableService implements IBuildableService {
     const flagged = new Set(
       reports.flatMap((r) => r.issues.flatMap((issue) => issue.placements.map(placementId))),
     );
-    this.backend.setIssueBoxes(
-      plan.placements.filter((p) => flagged.has(placementId(p.key))).map((p) => p.box),
+    const flaggedTrack = new Set(
+      reports.flatMap((r) => r.issues.flatMap((issue) => issue.trackPieces ?? [])),
     );
+    const trackBoxes = this.track
+      ? trackFootprints(this.track)
+          .filter((f) => flaggedTrack.has(f.placement))
+          .map((f) => ({ ...f.box, minY: 0, maxY: TRACK_ISSUE_BOX_HEIGHT_LDU }))
+      : [];
+    this.backend.setIssueBoxes([
+      ...plan.placements.filter((p) => flagged.has(placementId(p.key))).map((p) => p.box),
+      ...trackBoxes,
+    ]);
     for (const listener of this.listeners) listener();
   }
 }

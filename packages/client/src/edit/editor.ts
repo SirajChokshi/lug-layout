@@ -22,7 +22,8 @@ import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
-import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
+import { TRACK_SYSTEMS, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
+import type { TrackSystem } from "@brr/catalog";
 import {
   PlacedChunks,
   type PlacedModel,
@@ -180,8 +181,17 @@ export interface IEditor {
 
 const EDITOR_LOD: BundleLod = "standard";
 const BASEPLATE_ID = "ldraw:3811";
-export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
-const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
+export const TRACK_ITEM_ID = "track:lego-9v";
+const TRACK_ITEM_PREFIX = "track:";
+const TRACK_ITEM_LABELS: Readonly<Record<TrackSystem, string>> = {
+  "lego-9v": "Track: 9V straights and R40 curves",
+  "lego-plastic": "Track: plastic 53401 straights and 53400 R40 curves",
+};
+
+function trackSystemOf(id: string | null): TrackSystem | null {
+  if (id === null || !id.startsWith(TRACK_ITEM_PREFIX)) return null;
+  return TRACK_SYSTEMS.find((system) => `${TRACK_ITEM_PREFIX}${system}` === id) ?? null;
+}
 const END_MARKER_HALF_LDU = 30;
 const END_MARKER_HEIGHT_LDU = 40;
 const P95 = 0.95;
@@ -304,7 +314,8 @@ export class Editor implements IEditor {
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
-      this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+      const track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+      this.track = track;
       this.plans.setTableTopY(this.baseplateBottomY());
       const crosswalk = await this.loader.loadCrosswalk("standard");
       this.buildable.setCatalog(
@@ -315,6 +326,7 @@ export class Editor implements IEditor {
         crosswalk,
         Object.fromEntries(bundle.colors.map((color) => [color.code, color.name])),
       );
+      this.buildable.setTrack(track.trackInput());
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -333,7 +345,7 @@ export class Editor implements IEditor {
             studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
             studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
           })),
-          this.trackItem(this.track, palette.parts),
+          ...TRACK_SYSTEMS.map((system) => this.trackItem(track, system, palette.parts)),
         ],
         track: this.trackView(),
         credits: {
@@ -489,14 +501,19 @@ export class Editor implements IEditor {
     this.update({ lastLatency: sample, latencies: [...this.state.latencies, sample] });
   }
 
-  private trackItem(track: TrackDrawing, parts: ReadonlyArray<PartAsset>): CatalogItemView {
-    const straight = track.kitParts().find((k) => k.piece.kind === "straight");
+  private trackItem(
+    track: TrackDrawing,
+    system: TrackSystem,
+    parts: ReadonlyArray<PartAsset>,
+  ): CatalogItemView {
+    const kit = track.kitParts(system);
+    const straight = kit.find((k) => k.piece.kind === "straight");
     const part = straight ? parts[straight.partIndex] : undefined;
     return {
-      id: TRACK_ITEM_ID,
-      label: TRACK_ITEM_LABEL,
+      id: `${TRACK_ITEM_PREFIX}${system}`,
+      label: TRACK_ITEM_LABELS[system],
       kind: "track",
-      parts: track.kitParts().length,
+      parts: kit.length,
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
     };
@@ -591,7 +608,7 @@ export class Editor implements IEditor {
       this.pending = {
         step: "do",
         action: "track",
-        item: TRACK_ITEM_ID,
+        item: `${TRACK_ITEM_PREFIX}${track.activeSystem}`,
         rot: 0,
         x: this.hoverX,
         z: this.hoverZ,
@@ -600,17 +617,20 @@ export class Editor implements IEditor {
         report: { chunks: commit.chunks.length, instances, studs },
       };
     }
+    if (commit.laid > 0) this.buildable.setTrack(track.trackInput());
     if (commit.refused) this.lastTrackCommit = "refused";
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.update({ track: this.trackView() });
   }
 
   chooseItem(id: string | null): void {
-    if (id === TRACK_ITEM_ID && this.track) {
+    const system = trackSystemOf(id);
+    if (system && this.track) {
+      this.track.useSystem(system);
       this.active = null;
       this.backend.setGhost(null);
       this.select(null);
-      this.update({ mode: "track", activeItem: TRACK_ITEM_ID });
+      this.update({ mode: "track", activeItem: id, track: this.trackView() });
       return;
     }
     if (this.state.mode === "track") {

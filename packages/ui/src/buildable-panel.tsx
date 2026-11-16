@@ -24,6 +24,10 @@ const VERDICT_LABELS: Readonly<Record<BuildableReport["verdict"], string>> = {
   empty: "Nothing placed in this plan",
 };
 
+function countText(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 function useBuildable(service: IBuildableService): BuildableSnapshot {
   return useSyncExternalStore(
     (listener) => service.subscribe(listener),
@@ -139,8 +143,9 @@ export function BuildablePanel({ plans, buildable }: BuildablePanelProps) {
       <h2>{region.name}</h2>
       <p className={`buildable-verdict ${report.verdict}`}>
         {VERDICT_LABELS[report.verdict]}
-        {report.verdict === "draft"
-          ? ` — ${report.errors} ${report.errors === 1 ? "error" : "errors"}`
+        {report.verdict === "draft" ? ` — ${countText(report.errors, "error")}` : ""}
+        {report.verdict === "draft" && report.warnings > 0
+          ? `, ${countText(report.warnings, "warning")}`
           : ""}
       </p>
       <label className="buildable-field">
