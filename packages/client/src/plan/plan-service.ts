@@ -1,6 +1,7 @@
 import {
   checkPlan,
   regionOf,
+  uncheckedPlan,
   type PlacementKey,
   type PlanCheck,
   type PlanObstacle,
@@ -62,6 +63,14 @@ export interface IPlanService {
   removeObstacle(planId: string, obstacleId: string): void;
   setPlacements(placements: ReadonlyArray<PlacedForPlan>): void;
   setTableTopY(y: number): void;
+}
+
+function checkedOrFlagged(plan: PlanRegion, placements: ReadonlyArray<PlanPlacement>): PlanCheck {
+  try {
+    return checkPlan(plan, placements);
+  } catch (error) {
+    return uncheckedPlan(plan, placements, String(error));
+  }
 }
 
 function placementId(key: PlacementKey): string {
@@ -241,7 +250,7 @@ export class PlanService implements IPlanService {
   private commit(patch: Partial<PlanSnapshot>): void {
     const next = { ...this.state, ...patch };
     const domain = next.placements.map(toDomain);
-    const checks = next.plans.map((plan) => checkPlan(plan, domain));
+    const checks = next.plans.map((plan) => checkedOrFlagged(plan, domain));
     const sandboxPlacements = domain
       .filter((placement) => regionOf(next.plans, placement.box) === null)
       .map((placement) => placement.key);

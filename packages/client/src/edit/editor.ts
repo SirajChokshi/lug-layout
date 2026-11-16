@@ -5,7 +5,14 @@ import {
   type PartBundle,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
-import { EditHistory, World, type AppliedEdit, type EditKind, type HistoryStep } from "@brr/domain";
+import {
+  EditHistory,
+  World,
+  roomRect,
+  type AppliedEdit,
+  type EditKind,
+  type HistoryStep,
+} from "@brr/domain";
 import { STUD_LDU, chunkOf } from "@brr/math";
 import {
   CAMERA_FOV_DEGREES,
@@ -28,7 +35,6 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import { baseplatePlaceable, modelPlaceable, type Placeable } from "./placeable.ts";
-import { roomRect } from "@brr/domain";
 import { PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 

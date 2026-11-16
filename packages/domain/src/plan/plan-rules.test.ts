@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LduRect, PlanRegion, PlanTable } from "./plan-region.ts";
-import { checkPlan, type PlanIssue, type PlanPlacement } from "./plan-rules.ts";
+import {
+  FLOAT_BOX_TOLERANCE_LDU,
+  checkPlan,
+  type PlanIssue,
+  type PlanPlacement,
+} from "./plan-rules.ts";
 
 const CHUNK = 640;
 const BASEPLATE_LDU = 640;
@@ -127,5 +132,126 @@ describe("checkPlan footprint problems", () => {
       'Table "c" is not inside the room.',
       'Table "c" is 900 mm high, but "a" sets the layout at 750 mm; layouts are flat.',
     ]);
+  });
+});
+
+const MODEL_AABBS: Record<string, { readonly minZ: number; readonly maxZ: number }> = {
+  "10185-1": { minZ: -340, maxZ: 330.0482535107422 },
+  "10133-1": { minZ: -88.84993553161621, maxZ: 247.11567640304565 },
+  "7936-1": { minZ: -489, maxZ: 489 },
+  "10190-1": { minZ: -320, maxZ: 345.97850036621094 },
+};
+const TOLERANCE_MM = FLOAT_BOX_TOLERANCE_LDU * 0.4;
+
+function modelBox(name: string, x: number, z: number): LduRect {
+  const aabb = MODEL_AABBS[name];
+  if (!aabb) throw new Error(name);
+  return { minX: x - 320, maxX: x + 320, minZ: z + aabb.minZ, maxZ: z + aabb.maxZ };
+}
+
+function placed(box: LduRect): PlanPlacement {
+  return { key: { chunkKey: 1, slot: 0 }, ref: "omr:10185-1", label: "10185-1", box };
+}
+
+function atOrigin(depth: number): PlanRegion {
+  return { ...region([table("t", 800, 0, 2400, depth)]), originChunkX: 0, originChunkZ: -7 };
+}
+
+function at(depth: number, maxOverhangMm: number): PlanRegion {
+  return region([table("t", 0, 0, 2400, depth)], {
+    originChunkX: 0,
+    originChunkZ: 0,
+    maxOverhangMm,
+  });
+}
+
+describe("checkPlan with float model boxes", () => {
+  it("measures 10185-1 hanging 267 mm off a table far from world zero, and again after the table changes", () => {
+    const box = modelBox("10185-1", 4000, -840);
+    for (const [depth, edge] of [
+      [1321, -1177.5],
+      [1400, -980],
+    ] as const) {
+      const [fit] = checkPlan(atOrigin(depth), [placed(box)]).issues;
+      const trueMm = (box.maxZ - edge) * 0.4;
+      expect(fit?.rule).toBe("fit");
+      expect(Math.abs((fit?.overhangMm ?? 0) - trueMm)).toBeLessThanOrEqual(TOLERANCE_MM);
+      expect(fit?.message).toContain(`reaches ${Math.ceil(trueMm * 10) / 10} mm`);
+    }
+  });
+
+  it("matches the exact back-edge overhang for real model boxes across positions and depths", () => {
+    let checked = 0;
+    for (const name of Object.keys(MODEL_AABBS)) {
+      for (let originChunkZ = -8; originChunkZ <= -1; originChunkZ++) {
+        for (let z = -1500; z <= 1500; z += 60) {
+          const box = modelBox(name, 4000, z);
+          for (let depth = 100; depth <= 1500; depth += 37) {
+            const edge = originChunkZ * CHUNK + depth * 2.5;
+            if (!(box.minZ >= originChunkZ * CHUNK && box.minZ < edge && edge < box.maxZ)) continue;
+            const trueMm = (box.maxZ - edge) * 0.4;
+            const plan: PlanRegion = {
+              ...region([table("t", 1000, 0, 2400, depth)], { originChunkX: 0, originChunkZ }),
+              footprint: {
+                roomWidthMm: 5000,
+                roomDepthMm: 3600,
+                tables: [table("t", 1000, 0, 2400, depth)],
+                obstacles: [],
+              },
+            };
+            const fit = checkPlan(plan, [placed(box)]).issues.find((i) => i.rule === "fit");
+            const reported = fit?.overhangMm ?? 0;
+            expect(trueMm - reported).toBeLessThanOrEqual(TOLERANCE_MM);
+            expect(reported - trueMm).toBeLessThanOrEqual(1e-9);
+            checked++;
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(1000);
+  });
+
+  it("treats float noise under the tolerance as on the table and shows a real excess above the limit", () => {
+    const box = { minX: 2000, maxX: 2640, minZ: 1660, maxZ: 2000 + 330.0482535107422 };
+    expect(checkPlan(at(832, 100), [placed(box)]).issues).toEqual([]);
+    expect(checkPlan(at(932, 0), [placed(box)]).issues).toEqual([]);
+    const over = { ...box, maxZ: 2080 + 250 + 0.15 };
+    const [fit] = checkPlan(at(832, 100), [placed(over)]).issues;
+    expect(fit?.message).toContain("reaches 100.1 mm");
+    expect(fit?.message).toContain("(limit 100 mm)");
+  });
+
+  it("ignores float noise at the room edge and at obstacles", () => {
+    const plan: PlanRegion = {
+      ...region([table("t", 0, 0, 2400, 1200)], { originChunkX: 0, originChunkZ: 0 }),
+      footprint: {
+        roomWidthMm: 4000,
+        roomDepthMm: 3000,
+        tables: [table("t", 0, 0, 2400, 1200)],
+        obstacles: [{ id: "o", name: "pillar", rect: { x: 0, z: 1200, width: 400, depth: 400 } }],
+      },
+    };
+    const nearEdges = { minX: -0.048, maxX: 640, minZ: 2360, maxZ: 3000.048 };
+    expect(checkPlan(plan, [placed(nearEdges)]).issues).toEqual([]);
+  });
+});
+
+describe("checkPlan messages for plates entirely off the tables", () => {
+  const plan = region([table("a", 0, 0, 1000, 800)], { originChunkX: 0, originChunkZ: 0 });
+
+  it("says a plate touching a table edge is entirely off and touching", () => {
+    const touching = { minX: 2500, minZ: 100, maxX: 3140, maxZ: 740 };
+    const [fit] = checkPlan(plan, [placed(touching)]).issues;
+    expect([fit?.entirelyOffTables, fit?.nearestTableMm, fit?.overhangMm]).toEqual([true, 0, 256]);
+    expect(fit?.message).toContain("entirely off the tables, touching the edge of the nearest one");
+  });
+
+  it("labels the distance off a corner as the larger axis gap", () => {
+    const diagonal = { minX: 2600, minZ: 2100, maxX: 3240, maxZ: 2740 };
+    const [fit] = checkPlan(plan, [placed(diagonal)]).issues;
+    expect(fit?.nearestTableMm).toBe(40);
+    expect(fit?.message).toContain(
+      "40 mm from the nearest one along x or z (the larger of the two axis gaps)",
+    );
   });
 });
