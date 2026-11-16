@@ -34,7 +34,6 @@ export interface PartAsset {
 }
 
 export interface StudPrimitiveAsset {
-  readonly name: string;
   readonly mesh: MeshArrays;
 }
 

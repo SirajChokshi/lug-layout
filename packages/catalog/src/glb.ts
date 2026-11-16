@@ -17,7 +17,6 @@ interface GltfAccessor {
 
 interface GltfBufferView {
   readonly byteOffset: number;
-  readonly byteLength: number;
 }
 
 interface GltfPrimitive {

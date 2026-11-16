@@ -45,7 +45,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     const studPrimitives = await Promise.all(
       manifest.studPrimitives.map(async (primitive): Promise<StudPrimitiveAsset> => {
         const glb = parseGlb(await this.fetcher.bytes(`${lod}/${primitive.file}`));
-        return { name: primitive.name, mesh: readInheritColorMesh(glb, primitive.name) };
+        return { mesh: readInheritColorMesh(glb, primitive.name) };
       }),
     );
     const parts = await Promise.all(
@@ -63,7 +63,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   async loadModel(lod: BundleLod, entry: BundleModelEntry): Promise<PartModel> {
-    const model = parseModelFile(JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`)));
+    const model = parseModelFile(
+      JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`)),
+      entry.file,
+    );
     const count = model.instances.part.length;
     return {
       sections: model.sections,

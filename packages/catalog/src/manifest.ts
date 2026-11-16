@@ -31,7 +31,6 @@ export interface BundleManifest {
 }
 
 export interface ModelFile {
-  readonly name: string;
   readonly sections: ReadonlyArray<ModelSection>;
   readonly instances: {
     readonly part: ReadonlyArray<number>;
@@ -108,9 +107,9 @@ function isNumberArray(value: unknown): value is ReadonlyArray<number> {
   return Array.isArray(value) && value.every((v) => typeof v === "number");
 }
 
-export function parseModelFile(value: unknown): ModelFile {
-  if (!isRecord(value) || !isRecord(value["instances"]) || typeof value["name"] !== "string") {
-    throw new Error("model file does not match the M0 bundle format");
+export function parseModelFile(value: unknown, label: string): ModelFile {
+  if (!isRecord(value) || !isRecord(value["instances"])) {
+    throw new Error(`${label}: model file does not match the M0 bundle format`);
   }
   const { part, color, matrix } = value["instances"];
   if (
@@ -120,7 +119,7 @@ export function parseModelFile(value: unknown): ModelFile {
     part.length !== color.length ||
     matrix.length !== part.length * MATRIX_FLOATS
   ) {
-    throw new Error(`model ${value["name"]}: instance arrays are inconsistent`);
+    throw new Error(`${label}: model instance arrays are inconsistent`);
   }
   return value as unknown as ModelFile;
 }
