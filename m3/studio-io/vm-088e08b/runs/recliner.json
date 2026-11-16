@@ -1,0 +1,370 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\nf6d81b89e28c4728\nParts\n39\nModules\n2\nStud instances (drawn of total)\n129 of 129\nScene triangles\n14,254\nLoad\n35 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.2 MiB, other 0.0 MiB, JS heap 44.0 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n22\nDrawn triangles\n14,255\nScene coverage\n5% (essentially empty frame)\nFrame rate (rAF)\n5.6 fps\nParts list\nWorld\nRegion (LDU, placement origins)\nBuild parts list",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 80,
+        "z": 0,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "recliner.io!modelv2.ldr",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "recliner",
+            "title": "Untitled Model"
+          }
+        ],
+        "instanceCount": 39,
+        "drawnInstanceCount": 39,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3958.dat",
+            "instances": 1,
+            "partId": "ldraw:3958"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3002.dat",
+            "instances": 1,
+            "partId": "ldraw:3002"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "instances": 4,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87087.dat",
+            "instances": 1,
+            "partId": "ldraw:87087"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "instances": 1,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "instances": 4,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6141.dat",
+            "instances": 1,
+            "partId": "ldraw:6141"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6091.dat",
+            "instances": 2,
+            "partId": "ldraw:6091"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3023a.dat",
+            "instances": 2,
+            "partId": "ldraw:3023a",
+            "file": "parts/3023a.dat",
+            "header": {
+              "author": "Rene Rechthaler [Blechtaler]",
+              "ldrawOrg": "Part UPDATE 2023-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3023a.dat",
+              "title": "Plate 1 x 2 with Flat Pin"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "compiled",
+            "reference": "5841.dat",
+            "instances": 2,
+            "partId": "ldraw:5841",
+            "file": "parts/5841.dat",
+            "header": {
+              "author": "Jeff Jones [notmaster]",
+              "ldrawOrg": "Part UPDATE 2024-11",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "5841.dat",
+              "title": "Brick 2 x 1 x 1 with Curved Top"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "instances": 2,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48336.dat",
+            "instances": 1,
+            "partId": "ldraw:48336"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "instances": 2,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63868.dat",
+            "instances": 2,
+            "partId": "ldraw:63868"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "instances": 6,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068b.dat",
+            "instances": 1,
+            "partId": "ldraw:3068b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "instances": 2,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "bundle",
+            "reference": "85984.dat",
+            "instances": 2,
+            "partId": "ldraw:85984"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431.dat",
+            "instances": 2,
+            "partId": "ldraw:2431"
+          }
+        ],
+        "inlineParts": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 11,
+        "fetched": {
+          "requests": 35,
+          "found": 19,
+          "notFound": 16,
+          "bytes": 16699
+        },
+        "timings": {
+          "bakeMs": 1.799999998882413,
+          "resolveMs": 236.30000000074506,
+          "totalMs": 238.09999999962747
+        },
+        "studio": {
+          "file": "recliner.io",
+          "entry": "modelv2.ldr",
+          "studioVersion": "2.26.7_1",
+          "convertedLines": 39,
+          "unconvertedLines": [],
+          "parts": [
+            {
+              "studio": "2431.dat",
+              "bricklinkId": "2431",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3001.dat",
+              "bricklinkId": "3001",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3002.dat",
+              "bricklinkId": "3002",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3003.dat",
+              "bricklinkId": "3003",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3005.dat",
+              "bricklinkId": "3005",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3022.dat",
+              "bricklinkId": "3022",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3023a.dat",
+              "bricklinkId": "3023a",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3068b.dat",
+              "bricklinkId": "3068b",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3069b.dat",
+              "bricklinkId": "3069b",
+              "bricklinkIdSource": "fileName",
+              "instances": 6,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3623.dat",
+              "bricklinkId": "3623",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3710.dat",
+              "bricklinkId": "3710",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3958.dat",
+              "bricklinkId": "3958",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "48336.dat",
+              "bricklinkId": "48336",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "5841.dat",
+              "bricklinkId": "5841",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6091.dat",
+              "bricklinkId": "6091",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6141.dat",
+              "bricklinkId": "6141",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "63868.dat",
+              "bricklinkId": "63868",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "85984.dat",
+              "bricklinkId": "85984",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "87087.dat",
+              "bricklinkId": "87087",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            }
+          ],
+          "unknownColors": [],
+          "flexibleSections": []
+        },
+        "importMs": 1045.2000000011176,
+        "sceneMs": 311.5
+      }
+    ]
+  }
+}
