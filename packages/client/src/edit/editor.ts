@@ -172,6 +172,7 @@ export interface TrackView {
   readonly bom: ReadonlyArray<TrackBomLine>;
   readonly openEnds: number;
   readonly joins: number;
+  readonly coincidentEndIssues: number;
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
   readonly solve: TrackSolveStats | null;
@@ -669,6 +670,7 @@ export class Editor implements IEditor {
       })),
       openEnds: track.openEnds().length,
       joins: track.joinedPairs(),
+      coincidentEndIssues: track.coincidentEndIssues(),
       drag: track.dragView(),
       lastCommit: this.lastTrackCommit,
       solve:
