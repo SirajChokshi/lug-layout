@@ -9,6 +9,10 @@ import type {
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
 
+function ldu(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 function degrees(rot: number): string {
   return `${rot * DEGREES_PER_QUARTER_TURN}°`;
 }
@@ -136,7 +140,8 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
           <div>
             <dt>Footprint x, z (LDU)</dt>
             <dd>
-              {selection.box.minX}…{selection.box.maxX}, {selection.box.minZ}…{selection.box.maxZ}
+              {ldu(selection.box.minX)}…{ldu(selection.box.maxX)}, {ldu(selection.box.minZ)}…
+              {ldu(selection.box.maxZ)}
             </dd>
           </div>
           <div>
