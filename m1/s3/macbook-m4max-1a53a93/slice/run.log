@@ -1,0 +1,32 @@
+2026-11-16T17:11:56.827Z window {
+  left: 0,
+  top: 39,
+  width: 1800,
+  height: 1130,
+  windowState: 'maximized'
+}
+2026-11-16T17:11:56.858Z run city-20000-webgpu-aerial http://localhost:4173/?scene=city&parts=20000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T17:11:58.618Z city-20000-webgpu-aerial done true 2s  [] {}
+2026-11-16T17:11:58.640Z run city-20000-webgpu-street http://localhost:4173/?scene=city&parts=20000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T17:12:00.283Z city-20000-webgpu-street done true 2s  [] {}
+2026-11-16T17:12:00.307Z run city-20000-webgl2-aerial http://localhost:4173/?scene=city&parts=20000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T17:12:02.073Z city-20000-webgl2-aerial done true 2s  [] {}
+2026-11-16T17:12:02.101Z run city-20000-webgl2-street http://localhost:4173/?scene=city&parts=20000&api=webgl2&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T17:12:03.736Z city-20000-webgl2-street done true 2s  [] {}
+2026-11-16T17:12:03.771Z run city-250000-webgpu-aerial http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T17:12:07.674Z city-250000-webgpu-aerial done true 4s  [] {}
+2026-11-16T17:12:07.700Z run city-250000-webgpu-street http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T17:12:10.334Z city-250000-webgpu-street done true 3s  [] {}
+2026-11-16T17:12:10.370Z run city-250000-webgl2-aerial http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T17:12:13.615Z city-250000-webgl2-aerial done true 3s  [] {}
+2026-11-16T17:12:13.648Z run city-250000-webgl2-street http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T17:12:15.842Z city-250000-webgl2-street done true 2s  [] {}
+2026-11-16T17:12:15.869Z run city-1000000-webgpu-aerial http://localhost:4173/?scene=city&parts=1000000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T17:12:24.091Z city-1000000-webgpu-aerial done true 8s  [] {}
+2026-11-16T17:12:24.121Z run city-1000000-webgpu-street http://localhost:4173/?scene=city&parts=1000000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T17:12:28.875Z city-1000000-webgpu-street done true 5s  [] {}
+2026-11-16T17:12:28.905Z run city-1000000-webgl2-aerial http://localhost:4173/?scene=city&parts=1000000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T17:12:37.361Z city-1000000-webgl2-aerial done true 8s  [] {}
+2026-11-16T17:12:37.393Z run city-1000000-webgl2-street http://localhost:4173/?scene=city&parts=1000000&api=webgl2&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T17:12:42.556Z city-1000000-webgl2-street done true 5s  [] {}
+2026-11-16T17:12:46.588Z finished

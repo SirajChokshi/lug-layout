@@ -1,0 +1,35 @@
+Brick Railroad
+API
+webgl2
+Adapter
+Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)
+Drawing buffer
+3600×2086 px (devicePixelRatio 2)
+Parts
+20,090
+Modules
+25
+Stud instances (drawn of total)
+34,145 of 120,037
+Scene triangles
+5,493,920
+Load
+83 ms
+GPU buffers allocated so far, JS heap
+vertex+index 2.6 MiB, other 0.0 MiB, JS heap 32.4 MiB
+Chunk tiers near/mid/far (median)
+25 / 0 / 0
+Draw calls (median)
+65
+Drawn triangles (median)
+1,858,353
+Scene coverage (sampled frames)
+65%, 65%, 65%, 64%, 63%, 62%, 60%, 56%, 50%
+Median frame (GPU-synced)
+2.6 ms
+p95 frame
+3.4 ms
+Median CPU submit
+0.2 ms
+Measured frames
+120

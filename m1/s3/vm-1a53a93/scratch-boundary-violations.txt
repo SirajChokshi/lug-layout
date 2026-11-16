@@ -1,0 +1,5 @@
+  error web-composes-ui-client-workers: apps/web/src/main.tsx → packages/render/src/index.ts
+  error render-never-imports-domain: packages/render/src/index.ts → packages/domain/src/index.ts
+  error math-depends-on-nothing: packages/math/src/index.ts → node_modules/.pnpm/inversify@8.3.0_reflect-metadata@0.2.2/node_modules/inversify/lib/index.js
+  error client-depends-on-l2-adapters: packages/client/src/index.ts → packages/math/src/index.ts
+x 4 dependency violations (4 errors, 0 warnings). 66 modules, 186 dependencies cruised.
