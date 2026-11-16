@@ -7,6 +7,7 @@ export type {
   GraphicsApi,
   ISceneBackend,
   PartPalette,
+  RebaseEvent,
   SceneBackendConfig,
   StudInstances,
 } from "./scene-backend.ts";

@@ -1,4 +1,4 @@
-import type { IViewerScene } from "@brr/client";
+import type { IViewerScene, PlacementDump } from "@brr/client";
 import { useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
@@ -14,6 +14,7 @@ const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
+  readonly placements: (() => PlacementDump) | null;
 }
 
 function mebibytes(bytes: number): string {
@@ -27,6 +28,13 @@ function tierText(tiers: ChunkTiers): string {
 function memoryText(memory: MemoryReport): string {
   const heap = memory.jsHeapBytes === null ? "not reported" : mebibytes(memory.jsHeapBytes);
   return `vertex+index ${mebibytes(memory.vertexIndexBytes)}, other ${mebibytes(memory.otherBytes)}, JS heap ${heap}`;
+}
+
+function renderOriginText(report: ViewerReport): string {
+  const { frame, rebases } = report;
+  const last = rebases.at(-1);
+  const lastText = last ? `, last at frame ${last.frame}` : "";
+  return `(${frame.renderOriginChunkX}, ${frame.renderOriginChunkZ}); ${frame.rebaseCount} rebases${lastText}`;
 }
 
 function percent(fraction: number): string {
@@ -55,6 +63,7 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ["Scene triangles", integer.format(summary.bodyTriangles + summary.studTriangles)],
     ["Load", `${integer.format(report.loadMs)} ms`],
     ["GPU buffers allocated so far, JS heap", memoryText(report.memory)],
+    ["Render origin (chunks), rebases", renderOriginText(report)],
   ];
   if (timings) {
     rows.push(
@@ -99,7 +108,7 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params }: AppProps) {
+export function App({ scene, params, placements }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const [report, setReport] = useState<ViewerReport | null>(null);
@@ -111,8 +120,8 @@ export function App({ scene, params }: AppProps) {
     if (!canvas || started.current) return;
     started.current = true;
     const showError = (e: unknown): void => setError(String(e));
-    runViewer(scene, canvas, params, setReport, setResult, showError).catch(showError);
-  }, [scene, params]);
+    runViewer(scene, canvas, params, placements, setReport, setResult, showError).catch(showError);
+  }, [scene, params, placements]);
 
   return (
     <>

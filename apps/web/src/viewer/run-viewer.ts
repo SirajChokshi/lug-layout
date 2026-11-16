@@ -1,4 +1,11 @@
-import type { BackendInfo, FrameStats, IViewerScene, SceneSummary } from "@brr/client";
+import type {
+  BackendInfo,
+  FrameStats,
+  IViewerScene,
+  PlacementDump,
+  RebaseEvent,
+  SceneSummary,
+} from "@brr/client";
 import { FrameCoverage } from "./frame-coverage.ts";
 import { measureFrames, type FrameTimings } from "./measure-frames.ts";
 import { memoryReport, type MemoryReport } from "./memory-report.ts";
@@ -22,6 +29,7 @@ export interface ViewerReport {
   readonly liveFps: number | null;
   readonly liveSceneCoverage: number | null;
   readonly frame: FrameStats;
+  readonly rebases: ReadonlyArray<RebaseEvent>;
   readonly timings: FrameTimings | null;
 }
 
@@ -36,12 +44,15 @@ export interface ViewerResult {
   readonly drawCalls: number;
   readonly drawnTriangles: number;
   readonly userAgent: string;
+  readonly worldPlacements: PlacementDump | null;
+  readonly rebases: ReadonlyArray<RebaseEvent>;
 }
 
 export async function runViewer(
   scene: IViewerScene,
   canvas: HTMLCanvasElement,
   params: ViewerParams,
+  placements: (() => PlacementDump) | null,
   onReport: (report: ViewerReport) => void,
   onResult: (result: ViewerResult) => void,
   onError: (error: unknown) => void,
@@ -67,6 +78,9 @@ export async function runViewer(
     nearChunks: 0,
     midChunks: 0,
     farChunks: 0,
+    renderOriginChunkX: 0,
+    renderOriginChunkZ: 0,
+    rebaseCount: 0,
   };
   const memory = (): MemoryReport => memoryReport(scene.backend.bufferMemory());
   window.addEventListener("resize", () =>
@@ -82,6 +96,7 @@ export async function runViewer(
     liveFps: null,
     liveSceneCoverage: null,
     frame: { ...frame },
+    rebases: [...scene.backend.rebaseLog()],
     timings: null,
   });
 
@@ -96,6 +111,7 @@ export async function runViewer(
       liveFps: null,
       liveSceneCoverage: null,
       frame: { ...frame },
+      rebases: [...scene.backend.rebaseLog()],
       timings,
     });
     onResult({
@@ -109,6 +125,8 @@ export async function runViewer(
       drawCalls: timings.medianDrawCalls,
       drawnTriangles: timings.medianDrawnTriangles,
       userAgent: navigator.userAgent,
+      worldPlacements: placements ? placements() : null,
+      rebases: scene.backend.rebaseLog(),
     });
     return;
   }
@@ -136,6 +154,7 @@ export async function runViewer(
         liveFps,
         liveSceneCoverage: coverage.sceneFraction(canvas),
         frame: { ...frame },
+        rebases: [...scene.backend.rebaseLog()],
         timings: null,
       });
       frames = 0;
