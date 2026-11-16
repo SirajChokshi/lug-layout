@@ -1,0 +1,25 @@
+Brick Railroad
+API
+webgl2
+Adapter
+Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5)
+Load
+644 ms
+Mode
+select
+Ghost rotation
+270°
+Cursor on lattice (LDU)
+3200, 12800
+Placements
+60
+Last placement latency
+4803.6 ms (place 10185-1, 270°)
+Rebuilt for it
+4 chunks, 2,409 parts, 11,703 studs
+Frame rate (rAF)
+0.8 fps
+Draw calls
+2,920
+Drawn triangles
+11,850,512

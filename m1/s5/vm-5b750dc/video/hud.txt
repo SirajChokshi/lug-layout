@@ -1,0 +1,25 @@
+Brick Railroad
+API
+webgpu
+Adapter
+google / swiftshader
+Load
+559 ms
+Mode
+select
+Ghost rotation
+90°
+Cursor on lattice (LDU)
+1620, 860
+Placements
+19
+Last placement latency
+7808.8 ms (delete 4554-1, 0°)
+Rebuilt for it
+6 chunks, 1 parts, 1,024 studs
+Frame rate (rAF)
+0.5 fps
+Draw calls
+2,157
+Drawn triangles
+5,899,043

@@ -1,0 +1,13 @@
+INSPECTOR
+Model
+10185-1
+x, z (LDU)
+3200, 8000
+Height (plates)
+0
+Rotation
+0°
+Footprint x, z (LDU)
+2880…3520, 7660…8330.048253510742
+Chunk key, slot
+35184418226188, 1
