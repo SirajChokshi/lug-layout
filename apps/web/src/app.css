@@ -680,3 +680,27 @@ footer a {
   color: #334;
   font-size: 12px;
 }
+
+.own-vs-buy {
+  margin: 8px 0;
+  padding-top: 6px;
+  border-top: 1px solid #e3e8ee;
+}
+
+.own-vs-buy h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.plan-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.plan-downloads button {
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 6px;
+}

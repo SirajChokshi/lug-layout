@@ -72,6 +72,7 @@ export {
   DEFAULT_MODULE_PROFILE,
   type BuildableSnapshot,
   type IBuildableService,
+  type PlanPurchase,
   type PlanSettings,
 } from "./plan/buildable-service.ts";
 export type {
@@ -82,6 +83,10 @@ export type {
   PlacementBom,
   PlanBom,
   PlanBomEntry,
+  OwnBuy,
+  OwnBuyLine,
+  PartsCollection,
+  PlanFiles,
 } from "@brr/domain";
 export {
   BOM_SERVICE,

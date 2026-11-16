@@ -1,5 +1,7 @@
 import type {
   BuildableReport,
+  OwnBuy,
+  PlanPurchase,
   BuildableSnapshot,
   IBuildableService,
   IPlanService,
@@ -74,12 +76,136 @@ function colorLabel(line: PlanBomEntry, colorNames: Readonly<Record<number, stri
   return colorNames[line.ldrawColor] ?? `colour ${line.ldrawColor}`;
 }
 
+interface PlanDownload {
+  readonly label: string;
+  readonly suffix: string;
+  readonly type: string;
+  readonly body: (purchase: PlanPurchase) => string;
+}
+
+const PLAN_DOWNLOADS: ReadonlyArray<PlanDownload> = [
+  {
+    label: "BrickLink Wanted List XML",
+    suffix: "bricklink.xml",
+    type: "application/xml",
+    body: (purchase) => purchase.files.brickLinkXml,
+  },
+  {
+    label: "Rebrickable CSV",
+    suffix: "rebrickable.csv",
+    type: "text/csv",
+    body: (purchase) => purchase.files.rebrickableCsv,
+  },
+  {
+    label: "Plain CSV",
+    suffix: "parts.csv",
+    type: "text/csv",
+    body: (purchase) => purchase.files.plainCsv,
+  },
+];
+
+function fileStem(planName: string, purchase: PlanPurchase): string {
+  const stem = planName.trim().replaceAll(/[^A-Za-z0-9-]+/gu, "-");
+  return purchase.ownBuy ? `${stem}.to-buy` : stem;
+}
+
+function save(planName: string, purchase: PlanPurchase, download: PlanDownload): void {
+  const url = URL.createObjectURL(new Blob([download.body(purchase)], { type: download.type }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${fileStem(planName, purchase)}.${download.suffix}`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function OwnVsBuy({
+  buildable,
+  state,
+  purchase,
+  planName,
+}: {
+  readonly buildable: IBuildableService;
+  readonly state: BuildableSnapshot;
+  readonly purchase: PlanPurchase | undefined;
+  readonly planName: string;
+}) {
+  const { collection, collectionProblems } = state;
+  const ownBuy = purchase?.ownBuy ?? null;
+  return (
+    <div
+      className="own-vs-buy"
+      data-collection-parts={collection?.parts ?? 0}
+      data-own={ownBuy?.ownParts ?? 0}
+      data-buy={ownBuy?.buyParts ?? 0}
+    >
+      <h3>Own vs buy</h3>
+      <label className="buildable-field">
+        Parts I own: CSV with Part, Color, Quantity in Rebrickable ids
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          data-action="import-collection"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            void file.text().then((text) => buildable.importCollection(file.name, text));
+          }}
+        />
+      </label>
+      {collection && (
+        <p className="own-summary">
+          {collection.name}: {integer.format(collection.parts)} parts in{" "}
+          {integer.format(collection.lines.length)} lines.{" "}
+          {ownBuy
+            ? `This plan uses ${integer.format(ownBuy.ownParts)} of them; ${integer.format(ownBuy.buyParts)} parts to buy.`
+            : ""}{" "}
+          <button type="button" onClick={() => buildable.clearCollection()}>
+            Clear
+          </button>
+        </p>
+      )}
+      {collectionProblems.length > 0 && (
+        <ul className="buildable-issues">
+          {collectionProblems.slice(0, 5).map((problem) => (
+            <li key={problem}>{problem}</li>
+          ))}
+        </ul>
+      )}
+      {purchase && (
+        <div className="plan-downloads">
+          <span>{ownBuy ? "Shortfall to buy:" : "Whole plan:"}</span>
+          {PLAN_DOWNLOADS.map((download) => (
+            <button
+              key={download.suffix}
+              type="button"
+              data-download={download.suffix}
+              onClick={() => save(planName, purchase, download)}
+            >
+              {download.label}
+            </button>
+          ))}
+          {purchase.files.anyColourParts + purchase.files.unmappedParts > 0 && (
+            <p className="plan-meta">
+              Not in the BrickLink and Rebrickable files:{" "}
+              {integer.format(purchase.files.anyColourParts)} substructure parts in any colour and{" "}
+              {integer.format(purchase.files.unmappedParts)} parts with no catalog id. The plain CSV
+              lists them.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BomTable({
   report,
   colorNames,
+  ownBuy,
 }: {
   readonly report: BuildableReport;
   readonly colorNames: Readonly<Record<number, string>>;
+  readonly ownBuy: OwnBuy | null;
 }) {
   const { bom } = report;
   const substructure = bom.lines.reduce((sum, line) => sum + line.substructure, 0);
@@ -97,15 +223,19 @@ function BomTable({
             <th>BrickLink</th>
             <th>Colour</th>
             <th>Qty</th>
+            {ownBuy && <th>Own</th>}
+            {ownBuy && <th>Buy</th>}
           </tr>
         </thead>
         <tbody>
-          {bom.lines.map((line) => (
+          {bom.lines.map((line, i) => (
             <tr key={`${line.part} ${line.ldrawColor ?? "any"}`} className={rowClass(line)}>
               <td>{line.part.replace("ldraw:", "")}</td>
               <td>{line.bricklink.part ?? "none"}</td>
               <td>{colorLabel(line, colorNames)}</td>
               <td>{integer.format(line.quantity)}</td>
+              {ownBuy && <td>{integer.format(ownBuy.lines[i]?.own ?? 0)}</td>}
+              {ownBuy && <td>{integer.format(ownBuy.lines[i]?.buy ?? line.quantity)}</td>}
             </tr>
           ))}
         </tbody>
@@ -127,6 +257,7 @@ export function BuildablePanel({ plans, buildable }: BuildablePanelProps) {
   const report = state.reports.find((r) => r.regionId === planId);
   if (!region || !report || !planId) return null;
   const settings = state.settings[planId];
+  const purchase = state.purchases.find((p) => p.regionId === planId);
   return (
     <section
       className="buildable"
@@ -173,7 +304,8 @@ export function BuildablePanel({ plans, buildable }: BuildablePanelProps) {
         />
       </label>
       <IssueList issues={report.issues} />
-      <BomTable report={report} colorNames={state.colorNames} />
+      <OwnVsBuy buildable={buildable} state={state} purchase={purchase} planName={region.name} />
+      <BomTable report={report} colorNames={state.colorNames} ownBuy={purchase?.ownBuy ?? null} />
     </section>
   );
 }

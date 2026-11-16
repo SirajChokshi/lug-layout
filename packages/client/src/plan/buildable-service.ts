@@ -9,6 +9,12 @@ import {
   type ItemSpec,
   type ModuleProfileId,
   type ModuleStandards,
+  ownVsBuy,
+  parsePartsCsv,
+  planFiles,
+  type OwnBuy,
+  type PartsCollection,
+  type PlanFiles,
 } from "@brr/domain";
 import { isRot90 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
@@ -23,9 +29,18 @@ export interface PlanSettings {
   readonly maxReachMm: number;
 }
 
+export interface PlanPurchase {
+  readonly regionId: string;
+  readonly ownBuy: OwnBuy | null;
+  readonly files: PlanFiles;
+}
+
 export interface BuildableSnapshot {
   readonly ready: boolean;
   readonly reports: ReadonlyArray<BuildableReport>;
+  readonly purchases: ReadonlyArray<PlanPurchase>;
+  readonly collection: PartsCollection | null;
+  readonly collectionProblems: ReadonlyArray<string>;
   readonly settings: Readonly<Record<string, PlanSettings>>;
   readonly profiles: ReadonlyArray<ModuleProfileId>;
   readonly colorNames: Readonly<Record<number, string>>;
@@ -42,6 +57,8 @@ export interface IBuildableService {
   ): void;
   setProfile(planId: string, profile: ModuleProfileId): void;
   setMaxReach(planId: string, maxReachMm: number): void;
+  importCollection(name: string, csv: string): void;
+  clearCollection(): void;
 }
 
 const DEFAULT_SETTINGS: PlanSettings = {
@@ -76,11 +93,16 @@ export class BuildableService implements IBuildableService {
   private state: BuildableSnapshot = {
     ready: false,
     reports: [],
+    purchases: [],
+    collection: null,
+    collectionProblems: [],
     settings: {},
     profiles: ["free"],
     colorNames: {},
   };
   private colorNames: Readonly<Record<number, string>> = {};
+  private collection: PartsCollection | null = null;
+  private collectionProblems: ReadonlyArray<string> = [];
 
   constructor(
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
@@ -127,6 +149,19 @@ export class BuildableService implements IBuildableService {
     this.recompute();
   }
 
+  importCollection(name: string, csv: string): void {
+    const parsed = parsePartsCsv(name, csv);
+    this.collection = parsed.collection;
+    this.collectionProblems = parsed.problems;
+    this.recompute();
+  }
+
+  clearCollection(): void {
+    this.collection = null;
+    this.collectionProblems = [];
+    this.recompute();
+  }
+
   private recompute(): void {
     const catalog = this.catalog;
     const plan = this.plans.snapshot();
@@ -142,9 +177,17 @@ export class BuildableService implements IBuildableService {
     const settings = Object.fromEntries(
       plan.plans.map((region) => [region.id, this.settingsFor(region.id)]),
     );
+    const collection = this.collection;
+    const purchases = reports.map((report): PlanPurchase => {
+      const ownBuy = collection ? ownVsBuy(report.bom, collection) : null;
+      return { regionId: report.regionId, ownBuy, files: planFiles(report.bom, ownBuy) };
+    });
     this.state = {
       ready: catalog !== null,
       reports,
+      purchases,
+      collection,
+      collectionProblems: this.collectionProblems,
       settings,
       profiles: ["free", ...(catalog?.standards.profiles.map((p) => p.id) ?? [])],
       colorNames: this.colorNames,
