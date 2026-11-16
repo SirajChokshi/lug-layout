@@ -1,0 +1,1332 @@
+{
+  "source": {
+    "kind": "github-mirror",
+    "repo": "kulits/ldraw-parts",
+    "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+    "root": "ldraw"
+  },
+  "connectivitySource": {
+    "kind": "github-mirror",
+    "repo": "RolandMelkert/LDCadShadowLibrary",
+    "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+    "root": ""
+  },
+  "bundleClosure": {
+    "files": 115,
+    "licenses": {
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 115
+    },
+    "withoutLicense": [],
+    "nonCaLicense": [],
+    "unofficial": []
+  },
+  "auditClosure": {
+    "files": 369,
+    "licenses": {
+      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 2,
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 367
+    },
+    "withoutLicense": [],
+    "nonCaLicense": [],
+    "unofficial": []
+  },
+  "absentFromPin": [
+    "53404",
+    "53407",
+    "53834",
+    "88002",
+    "88011"
+  ],
+  "ldcadShadow": {
+    "licenseFileFirstLine": "Attribution-ShareAlike 4.0 International",
+    "patchFileLicenses": {
+      "CC BY-SA 4.0, see LICENSE.md": 21
+    }
+  },
+  "parts": [
+    {
+      "id": "74746",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Straight",
+        "author": "Max Martin Richter [MMR1988]",
+        "ldrawOrg": "Part UPDATE 2025-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 2865c01"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 69,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "74747",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Curved",
+        "author": "Willy Tschager [Holly-Wood]",
+        "ldrawOrg": "Shortcut UPDATE 2025-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 2867c01"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 52,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "74747c04",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Curved (Complete 4 Segments)",
+        "author": "Steffen [Steffen]",
+        "ldrawOrg": "Shortcut UPDATE 2025-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 53,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2865",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "~Moved to 74746",
+        "author": "[PTadmin]",
+        "ldrawOrg": "Part UPDATE 2025-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": "74746"
+      },
+      "dependencyFiles": 70,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2867",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "~Moved to 74747",
+        "author": "[PTadmin]",
+        "ldrawOrg": "Part UPDATE 2025-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": "74747"
+      },
+      "dependencyFiles": 53,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2865a",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "~Train Track 9V Straight - Plastic Part",
+        "author": "Max Martin Richter [MMR1988]",
+        "ldrawOrg": "Part UPDATE 2025-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 61,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2867a",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "~Train Track 9V Curved - Plastic Part",
+        "author": "Max Martin Richter [MMR1988]",
+        "ldrawOrg": "Part UPDATE 2025-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 47,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "75541-f1",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Switch Right Straight",
+        "author": "Max Martin Richter [MMR1988]",
+        "ldrawOrg": "Shortcut UPDATE 2025-08",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 2859c01",
+          "Rebrickable 75541"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 148,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "75541-f2",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Switch Right Branching",
+        "author": "Steffen [Steffen]",
+        "ldrawOrg": "Shortcut UPDATE 2025-08",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 2859c01",
+          "Rebrickable 75541"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 148,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "75542-f1",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Switch Left Straight",
+        "author": "Max Martin Richter [MMR1988]",
+        "ldrawOrg": "Shortcut UPDATE 2025-08",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 2861c01",
+          "Rebrickable 75542"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 151,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "75542-f2",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Switch Left Branching",
+        "author": "Steffen [Steffen]",
+        "ldrawOrg": "Shortcut UPDATE 2025-08",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 2861c01",
+          "Rebrickable 75542"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 151,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2859",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "~Train Track 9V Switch Right - Plastic Part",
+        "author": "Max Martin Richter [MMR1988]",
+        "ldrawOrg": "Part UPDATE 2025-08",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 85,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2861",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "~Train Track 9V Switch Left - Plastic Part",
+        "author": "Max Martin Richter [MMR1988]",
+        "ldrawOrg": "Part UPDATE 2025-08",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 84,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "32087",
+      "group": "track-9v",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Crossing",
+        "author": "Ludo Soete [ludo]",
+        "ldrawOrg": "Part UPDATE 2020-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 32087c01"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 44,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/2865s04.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 2,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "53401",
+      "group": "track-6-wide-plastic",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 6 Studs Wide Straight",
+        "author": "Ronald Vallenduuk [Duq]",
+        "ldrawOrg": "Part UPDATE 2013-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 45,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "53400",
+      "group": "track-6-wide-plastic",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 6 Studs Wide Curved",
+        "author": "Ronald Vallenduuk [Duq]",
+        "ldrawOrg": "Part UPDATE 2015-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 44,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/53400s03.dat",
+          "s/53400s04.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 4,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "53400c04",
+      "group": "track-6-wide-plastic",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 6 Studs Wide Curved (Complete 4 Segments)",
+        "author": "Steffen [Steffen]",
+        "ldrawOrg": "Shortcut UPDATE 2015-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 45,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/53400s03.dat",
+          "s/53400s04.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 4,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "53404",
+      "group": "track-6-wide-plastic",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "53407",
+      "group": "track-6-wide-plastic",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "53834",
+      "group": "track-6-wide-plastic",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "64022",
+      "group": "track-flexible",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track Flexible Segment (Complete, Straight)",
+        "author": "Philippe Hurbain [Philo]",
+        "ldrawOrg": "Shortcut UPDATE 2011-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 88492c00"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 90,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "64022c01",
+      "group": "track-flexible",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track Flexible Segment (Complete, Bent Left)",
+        "author": "Philippe Hurbain [Philo]",
+        "ldrawOrg": "Shortcut UPDATE 2011-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 88492c00",
+          "Rebrickable 64022"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 90,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "64022c02",
+      "group": "track-flexible",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track Flexible Segment (Complete, Bent Right)",
+        "author": "Philippe Hurbain [Philo]",
+        "ldrawOrg": "Shortcut UPDATE 2011-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 88492c00",
+          "Rebrickable 64022"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 90,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "88492",
+      "group": "track-flexible",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track Flexible Segment Female Half",
+        "author": "Philippe Hurbain [Philo]",
+        "ldrawOrg": "Part UPDATE 2024-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 64,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "88493",
+      "group": "track-flexible",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track Flexible Segment Male Half",
+        "author": "Philippe Hurbain [Philo]",
+        "ldrawOrg": "Part UPDATE 2024-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 60,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "44336",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 6-Stud Straight",
+        "author": "Chris Dee [cwdee]",
+        "ldrawOrg": "Part UPDATE 2009-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "6-stud",
+          "roadplate",
+          "Straight"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 15,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "44341",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 6-Stud T-Junction",
+        "author": "Michael Heidemann [mikeheide]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "6-stud",
+          "roadplate",
+          "t-intersection"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 16,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "44342",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 6-Stud Curve",
+        "author": "Chris Dee [cwdee]",
+        "ldrawOrg": "Part UPDATE 2009-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "6-stud",
+          "curved",
+          "roadplate"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 20,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "44343",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 6-Stud Crossroads",
+        "author": "Michael Heidemann [mikeheide]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "roadplate",
+          "X-road"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 14,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2358",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 7-Stud Straight",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 19,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2359",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 7-Stud Curve",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "curved",
+          "roadplate"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 22,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2360",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 7-Stud T-Junction",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 19,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "2361",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 7-Stud Crossroads",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 15,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "606",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 9-Stud Straight",
+        "author": "Leonardo Zide [leozide]",
+        "ldrawOrg": "Part UPDATE 2010-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 20,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "607",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 9-Stud Crossroads",
+        "author": "Leonardo Zide [leozide]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 15,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "608",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 9-Stud T-Junction",
+        "author": "Leonardo Zide [leozide]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 20,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "609",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 9-Stud Curve",
+        "author": "Leonardo Zide [leozide]",
+        "ldrawOrg": "Part UPDATE 2010-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "curved",
+          "roadplate"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 23,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "610",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 8-Stud Straight",
+        "author": "Leonardo Zide [leozide]",
+        "ldrawOrg": "Part UPDATE 2010-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 15,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "611",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 8-Stud Crossroads",
+        "author": "Leonardo Zide [leozide]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 15,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "612",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 8-Stud T-Junction",
+        "author": "Leonardo Zide [leozide]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 15,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "613",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 8-Stud Curve",
+        "author": "Leonardo Zide [leozide]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 23,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "30225b",
+      "group": "road-baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 8-Stud Dual",
+        "author": "Alex Forencich [aforencich]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 30225c01",
+          "Rebrickable 30225"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 18,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "3811",
+      "group": "baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2025-09",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 14,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "3857",
+      "group": "baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 16 x 32 with Square Corners",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2020-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 12,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "3867",
+      "group": "baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 16 x 16",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2005-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 12,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "4186",
+      "group": "baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 48 x 48",
+        "author": "Steve Bliss [sbliss]",
+        "ldrawOrg": "Part UPDATE 2015-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 15,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "782",
+      "group": "baseplate",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 50 x 50",
+        "author": "Chris Dee [cwdee]",
+        "ldrawOrg": "Part UPDATE 2025-09",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 4186a",
+          "Rebrickable 4186a"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 9,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "3700",
+      "group": "module-join",
+      "status": "officialCA",
+      "header": {
+        "title": "Technic Brick 1 x 2 with Hole",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 17,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3700.dat",
+          "stud2.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3701",
+      "group": "module-join",
+      "status": "officialCA",
+      "header": {
+        "title": "Technic Brick 1 x 4 with Holes",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 18,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3701.dat",
+          "stud2.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3702",
+      "group": "module-join",
+      "status": "officialCA",
+      "header": {
+        "title": "Technic Brick 1 x 8 with Holes",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 18,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3702.dat",
+          "stud2.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3894",
+      "group": "module-join",
+      "status": "officialCA",
+      "header": {
+        "title": "Technic Brick 1 x 6 with Holes",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 18,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3894.dat",
+          "stud2.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "32000",
+      "group": "module-join",
+      "status": "officialCA",
+      "header": {
+        "title": "Technic Brick 1 x 2 with Holes",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2003-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 9,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "32000.dat",
+          "stud2.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "87574",
+      "group": "train-motor",
+      "status": "officialCA",
+      "header": {
+        "title": "Electric Power Functions Train Motor",
+        "author": "Santeri Piippo [arezey]",
+        "ldrawOrg": "Shortcut UPDATE 2023-05",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 87574c01"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 65,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "connect4.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "88002",
+      "group": "train-motor",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "88011",
+      "group": "train-motor",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    }
+  ]
+}

@@ -13,6 +13,13 @@ export interface Palette {
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly parts: ReadonlyArray<{ readonly id: string; readonly role: PartRole }>;
+  readonly audit: ReadonlyArray<AuditGroup>;
+  readonly connectivitySource: Palette["source"];
+}
+
+export interface AuditGroup {
+  readonly group: string;
+  readonly parts: ReadonlyArray<string>;
 }
 
 export async function readPalette(path: string): Promise<Palette> {
@@ -28,6 +35,8 @@ function isPalette(value: unknown): value is Palette {
     typeof candidate["source"] === "object" &&
     Array.isArray(candidate["config"]) &&
     Array.isArray(candidate["studPrimitives"]) &&
-    Array.isArray(candidate["parts"])
+    Array.isArray(candidate["parts"]) &&
+    Array.isArray(candidate["audit"]) &&
+    typeof candidate["connectivitySource"] === "object"
   );
 }
