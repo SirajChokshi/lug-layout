@@ -39,7 +39,9 @@ export function EditorApp({ editor, options, disclaimer, showState }: EditorAppP
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
       data-selection={snapshot.selection?.item ?? ""}
       data-ghost-rot={snapshot.ghostRot}
-      data-snap={snapshot.snap ? snapshot.snap.joinedCells : ""}
+      data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
+      data-snap-state={snapshot.snap?.state ?? ""}
+      data-refused={snapshot.refusedClicks}
       data-road-joined={snapshot.roads.joinedCells}
       data-road-open={snapshot.roads.openCells}
       data-road-mismatch={snapshot.roads.mismatchedCells}

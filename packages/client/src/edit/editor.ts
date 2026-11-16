@@ -108,8 +108,22 @@ export interface RoadJoinView {
   readonly issues: ReadonlyArray<RoadIssueView>;
 }
 
+export type RoadSnapState = "snapped" | "free" | "refused";
+
 export interface RoadSnapView {
+  readonly state: RoadSnapState;
   readonly joinedCells: number;
+  readonly mismatchedCells: number;
+  readonly overlappingCells: number;
+}
+
+export interface RefusedClick {
+  readonly item: string;
+  readonly x: number;
+  readonly z: number;
+  readonly rot: number;
+  readonly mismatchedCells: number;
+  readonly overlappingCells: number;
 }
 
 export interface EditorStats {
@@ -139,6 +153,8 @@ export interface EditorSnapshot {
   readonly showJoins: boolean;
   readonly snapRoads: boolean;
   readonly snap: RoadSnapView | null;
+  readonly refusedClicks: number;
+  readonly lastRefusal: RefusedClick | null;
 }
 
 export interface EditorCredits {
@@ -303,6 +319,8 @@ export class Editor implements IEditor {
     showJoins: true,
     snapRoads: true,
     snap: null,
+    refusedClicks: 0,
+    lastRefusal: null,
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -562,10 +580,26 @@ export class Editor implements IEditor {
       this.hoverX,
       this.hoverZ,
     );
-    if (!snap) return null;
-    this.hoverX = snap.x;
-    this.hoverZ = snap.z;
-    return { joinedCells: snap.joinedCells };
+    if (snap) {
+      this.hoverX = snap.x;
+      this.hoverZ = snap.z;
+      return {
+        state: "snapped",
+        joinedCells: snap.joinedCells,
+        mismatchedCells: 0,
+        overlappingCells: 0,
+      };
+    }
+    const fit = this.roadNetwork.fit({
+      id: -1,
+      x: this.hoverX,
+      z: this.hoverZ,
+      yLdu: 0,
+      rot: this.ghostRot,
+      surface,
+    });
+    const refused = fit.mismatchedCells > 0 || fit.overlappingCells > 0;
+    return { state: refused ? "refused" : "free", ...fit };
   }
 
   pointerMove(ndcX: number, ndcY: number): void {
@@ -584,7 +618,23 @@ export class Editor implements IEditor {
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
-      this.snapGhostToRoad();
+      const snap = this.snapGhostToRoad();
+      this.placeGhost();
+      if (snap?.state === "refused") {
+        this.update({
+          snap,
+          refusedClicks: this.state.refusedClicks + 1,
+          lastRefusal: {
+            item: this.active.id,
+            x: this.hoverX,
+            z: this.hoverZ,
+            rot: this.ghostRot,
+            mismatchedCells: snap.mismatchedCells,
+            overlappingCells: snap.overlappingCells,
+          },
+        });
+        return;
+      }
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
       return;
     }

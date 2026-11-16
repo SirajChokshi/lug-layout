@@ -116,7 +116,7 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
           checked={snapshot.snapRoads}
           onChange={(event) => editor.setSnapRoads(event.target.checked)}
         />
-        Snap road pieces to matching road edges
+        Snap road pieces to matching road edges and refuse clicks that would mismatch
       </label>
       <dl>
         <div>
@@ -142,6 +142,14 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
         <div>
           <dt>Overlapping pieces</dt>
           <dd data-road="overlap">{roads.overlaps}</dd>
+        </div>
+        <div>
+          <dt>Refused clicks</dt>
+          <dd data-road="refused">
+            {snapshot.refusedClicks}
+            {snapshot.lastRefusal &&
+              ` (last: ${snapshot.lastRefusal.item.replace(/^[a-z]+:/u, "")} at ${snapshot.lastRefusal.x}, ${snapshot.lastRefusal.z}, ${snapshot.lastRefusal.mismatchedCells} mismatched, ${snapshot.lastRefusal.overlappingCells} overlapping)`}
+          </dd>
         </div>
       </dl>
       {roads.issues.length > 0 && (
@@ -263,6 +271,25 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   );
 }
 
+function snapText(snapshot: EditorSnapshot): string {
+  const { snap } = snapshot;
+  if (!snap) return "none";
+  switch (snap.state) {
+    case "snapped":
+      return `snapped, ${snap.joinedCells} edge cells join`;
+    case "free":
+      return snap.joinedCells > 0
+        ? `exact here, ${snap.joinedCells} edge cells join`
+        : "free, touches no road";
+    case "refused":
+      return `click refused: ${snap.mismatchedCells} mismatched, ${snap.overlappingCells} overlapping cells`;
+    default: {
+      const unhandled: never = snap.state;
+      throw new Error(`unhandled snap state ${String(unhandled)}`);
+    }
+  }
+}
+
 function latencyText(sample: LatencySample | null, snapshot: EditorSnapshot): string {
   if (!sample) return "none yet";
   const action = sample.step === "do" ? sample.action : `${sample.step} ${sample.action}`;
@@ -295,10 +322,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       snapshot.mode === "place" ? `place ${itemLabel(snapshot, snapshot.activeItem)}` : "select",
     ],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
-    [
-      "Road-edge snap",
-      snapshot.snap ? `snapped, ${snapshot.snap.joinedCells} edge cells join` : "none",
-    ],
+    ["Road-edge snap", snapText(snapshot)],
     [
       "Cursor on lattice (LDU)",
       snapshot.hover ? `${snapshot.hover.x}, ${snapshot.hover.z}` : "off the ground",

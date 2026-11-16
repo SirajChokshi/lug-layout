@@ -49,6 +49,8 @@ export type {
   RoadIssueView,
   RoadJoinView,
   RoadPlacementDump,
+  RefusedClick,
+  RoadSnapState,
   RoadSnapView,
   SelectionView,
 } from "./edit/editor.ts";
