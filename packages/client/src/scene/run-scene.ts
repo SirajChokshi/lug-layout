@@ -191,7 +191,9 @@ export class RunScene implements IRunScene {
     for (let t = 0; t < request.trains.length; t++) {
       await this.sim.command({ kind: "throttle", train: t, speedLduPerS: request.speedLduPerS });
     }
+    const firstFrame = this.sim.nextFrame();
     this.sim.run(true);
+    await firstFrame;
     return {
       ...summary,
       parts: summary.parts + count * request.trains.length,

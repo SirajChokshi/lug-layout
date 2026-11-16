@@ -29,6 +29,7 @@ export interface ISimClient {
   run(running: boolean): void;
   command(command: SimCommand): Promise<boolean>;
   latestFrame(): SimFrameMessage | null;
+  nextFrame(): Promise<SimFrameMessage>;
   tickCost(): SimTickCost;
   log(): Promise<SimLogSnapshot>;
   bench(ticks: number): Promise<SimBenchResult>;
@@ -46,6 +47,7 @@ export class SimWorkerProxy implements ISimClient {
   private ticks = 0;
   private stepMs = 0;
   private frames = 0;
+  private readonly frameWaiters: Array<(frame: SimFrameMessage) => void> = [];
 
   constructor(@inject(SIM_WORKER_PORT) port: RpcPort) {
     this.endpoint = new RpcEndpoint(port, SIM_PROTOCOL);
@@ -56,6 +58,7 @@ export class SimWorkerProxy implements ISimClient {
       this.ticks += reply.frame.batchTicks;
       this.stepMs += reply.frame.batchStepMs;
       this.frames++;
+      for (const resolve of this.frameWaiters.splice(0)) resolve(reply.frame);
       if (previous) {
         this.endpoint.post({ kind: "recycle", buffer: previous.data }, [previous.data.buffer]);
       }
@@ -84,6 +87,10 @@ export class SimWorkerProxy implements ISimClient {
 
   latestFrame(): SimFrameMessage | null {
     return this.latest;
+  }
+
+  nextFrame(): Promise<SimFrameMessage> {
+    return new Promise((resolve) => this.frameWaiters.push(resolve));
   }
 
   tickCost(): SimTickCost {
