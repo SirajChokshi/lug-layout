@@ -47,7 +47,7 @@ export async function runViewer(
   onError: (error: unknown) => void,
 ): Promise<void> {
   const devicePixelRatio = window.devicePixelRatio;
-  const backend = await scene.attach({
+  const backend = await scene.backend.init({
     canvas,
     api: params.api,
     pixelRatio: devicePixelRatio,
@@ -68,8 +68,10 @@ export async function runViewer(
     midChunks: 0,
     farChunks: 0,
   };
-  const memory = (): MemoryReport => memoryReport(scene.bufferMemory());
-  window.addEventListener("resize", () => scene.resize(canvas.clientWidth, canvas.clientHeight));
+  const memory = (): MemoryReport => memoryReport(scene.backend.bufferMemory());
+  window.addEventListener("resize", () =>
+    scene.backend.resize(canvas.clientWidth, canvas.clientHeight),
+  );
   const coverage = new FrameCoverage(backend.backgroundSrgb);
   onReport({
     backend,
@@ -117,7 +119,7 @@ export async function runViewer(
   const tick = (now: number): void => {
     scene.setCamera(((now - startedAt) % ORBIT_PERIOD_MS) / ORBIT_PERIOD_MS);
     try {
-      scene.renderFrame(frame);
+      scene.backend.renderFrame(frame);
     } catch (error) {
       onError(error);
       return;

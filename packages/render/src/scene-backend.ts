@@ -23,7 +23,7 @@ export interface GeometrySet {
 
 export interface PartPalette {
   readonly detailed: GeometrySet;
-  readonly far: GeometrySet;
+  readonly far?: GeometrySet;
   readonly colorsSrgb: Uint8Array;
   readonly ldrawColorsSrgb: ReadonlyMap<number, number>;
 }
@@ -54,8 +54,8 @@ export interface FrameStats {
 }
 
 export interface BufferMemory {
-  readonly geometryBytes: number;
-  readonly instanceBytes: number;
+  readonly vertexIndexBytes: number;
+  readonly otherBytes: number;
 }
 
 export interface ISceneBackend {

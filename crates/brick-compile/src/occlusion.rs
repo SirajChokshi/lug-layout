@@ -1,10 +1,15 @@
+use std::thread;
+
 use crate::affine::Vec3;
 use crate::flatten::Triangle;
 
-const HEMISPHERE_RAYS: usize = 64;
+const HEMISPHERE_RAYS: usize = 1024;
+const HORIZON_RAYS: usize = 64;
 const SIDE_OFFSET_LDU: f64 = 1e-3;
 const HIT_EPSILON: f64 = 1e-9;
 const GOLDEN_ANGLE: f64 = 2.399_963_229_728_653;
+const SAMPLE_PULL_TO_CENTROID: f64 = 0.1;
+const LEAF_TRIANGLES: usize = 4;
 
 fn sub(a: Vec3, b: Vec3) -> Vec3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -22,55 +27,146 @@ fn dot(a: Vec3, b: Vec3) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn upper_hemisphere() -> Vec<Vec3> {
-    (0..HEMISPHERE_RAYS)
-        .map(|i| {
-            let y = i as f64 / (HEMISPHERE_RAYS - 1) as f64;
-            let radius = (1.0 - y * y).sqrt();
-            let angle = GOLDEN_ANGLE * i as f64;
-            [radius * angle.cos(), y, radius * angle.sin()]
-        })
-        .collect()
+fn lerp(a: Vec3, b: Vec3, t: f64) -> Vec3 {
+    [0, 1, 2].map(|axis| a[axis] + (b[axis] - a[axis]) * t)
 }
 
+fn upward_directions() -> Vec<Vec3> {
+    let hemisphere = (0..HEMISPHERE_RAYS).map(|i| {
+        let y = (i as f64 + 0.5) / HEMISPHERE_RAYS as f64;
+        let radius = (1.0 - y * y).sqrt();
+        let angle = GOLDEN_ANGLE * i as f64;
+        [radius * angle.cos(), y, radius * angle.sin()]
+    });
+    let horizon = (0..HORIZON_RAYS).map(|i| {
+        let angle = std::f64::consts::TAU * i as f64 / HORIZON_RAYS as f64;
+        [angle.cos(), 0.0, angle.sin()]
+    });
+    hemisphere.chain(horizon).collect()
+}
+
+fn sample_points(points: &[Vec3; 3]) -> [Vec3; 7] {
+    let [a, b, c] = *points;
+    let centroid = [0, 1, 2].map(|axis| (a[axis] + b[axis] + c[axis]) / 3.0);
+    let toward = |p: Vec3| lerp(p, centroid, SAMPLE_PULL_TO_CENTROID);
+    [
+        centroid,
+        toward(a),
+        toward(b),
+        toward(c),
+        toward(lerp(a, b, 0.5)),
+        toward(lerp(b, c, 0.5)),
+        toward(lerp(c, a, 0.5)),
+    ]
+}
+
+#[derive(Clone, Copy)]
 struct Bounds {
     min: Vec3,
     max: Vec3,
 }
 
 impl Bounds {
+    const EMPTY: Bounds = Bounds {
+        min: [f64::INFINITY; 3],
+        max: [f64::NEG_INFINITY; 3],
+    };
+
     fn of(points: &[Vec3; 3]) -> Self {
-        let mut min = points[0];
-        let mut max = points[0];
-        for p in &points[1..] {
-            for axis in 0..3 {
-                min[axis] = min[axis].min(p[axis]);
-                max[axis] = max[axis].max(p[axis]);
-            }
-        }
-        Bounds { min, max }
+        points.iter().fold(Bounds::EMPTY, |b, p| b.grow(*p))
     }
 
-    fn ray_misses(&self, origin: Vec3, direction: Vec3) -> bool {
+    fn grow(self, p: Vec3) -> Self {
+        Bounds {
+            min: [0, 1, 2].map(|axis| self.min[axis].min(p[axis])),
+            max: [0, 1, 2].map(|axis| self.max[axis].max(p[axis])),
+        }
+    }
+
+    fn union(self, other: Bounds) -> Self {
+        self.grow(other.min).grow(other.max)
+    }
+
+    fn ray_misses(&self, origin: Vec3, inverse: Vec3) -> bool {
         let mut near = 0.0_f64;
         let mut far = f64::INFINITY;
         for axis in 0..3 {
-            if direction[axis].abs() < HIT_EPSILON {
+            let a = (self.min[axis] - origin[axis]) * inverse[axis];
+            let b = (self.max[axis] - origin[axis]) * inverse[axis];
+            let (lo, hi) = if a.is_nan() || b.is_nan() {
                 if origin[axis] < self.min[axis] || origin[axis] > self.max[axis] {
                     return true;
                 }
-                continue;
-            }
-            let inverse = 1.0 / direction[axis];
-            let a = (self.min[axis] - origin[axis]) * inverse;
-            let b = (self.max[axis] - origin[axis]) * inverse;
-            near = near.max(a.min(b));
-            far = far.min(a.max(b));
+                (f64::NEG_INFINITY, f64::INFINITY)
+            } else {
+                (a.min(b), a.max(b))
+            };
+            near = near.max(lo);
+            far = far.min(hi);
             if near > far {
                 return true;
             }
         }
         false
+    }
+}
+
+enum Node {
+    Leaf {
+        bounds: Bounds,
+        triangles: Vec<usize>,
+    },
+    Branch {
+        bounds: Bounds,
+        children: Box<[Node; 2]>,
+    },
+}
+
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+    inverse: Vec3,
+}
+
+impl Node {
+    fn build(mut triangles: Vec<usize>, bounds: &[Bounds], centroids: &[Vec3]) -> Node {
+        let all = triangles
+            .iter()
+            .fold(Bounds::EMPTY, |b, &t| b.union(bounds[t]));
+        if triangles.len() <= LEAF_TRIANGLES {
+            return Node::Leaf {
+                bounds: all,
+                triangles,
+            };
+        }
+        let extent = sub(all.max, all.min);
+        let axis = (0..3)
+            .max_by(|&a, &b| extent[a].total_cmp(&extent[b]))
+            .unwrap_or(0);
+        triangles.sort_by(|&a, &b| centroids[a][axis].total_cmp(&centroids[b][axis]));
+        let upper = triangles.split_off(triangles.len() / 2);
+        Node::Branch {
+            bounds: all,
+            children: Box::new([
+                Node::build(triangles, bounds, centroids),
+                Node::build(upper, bounds, centroids),
+            ]),
+        }
+    }
+
+    fn blocks(&self, ray: &Ray, mesh: &[Triangle], own: usize) -> bool {
+        match self {
+            Node::Leaf { bounds, triangles } => {
+                !bounds.ray_misses(ray.origin, ray.inverse)
+                    && triangles
+                        .iter()
+                        .any(|&t| t != own && ray_hits(ray.origin, ray.direction, &mesh[t].points))
+            }
+            Node::Branch { bounds, children } => {
+                !bounds.ray_misses(ray.origin, ray.inverse)
+                    && children.iter().any(|child| child.blocks(ray, mesh, own))
+            }
+        }
     }
 }
 
@@ -96,42 +192,58 @@ fn ray_hits(origin: Vec3, direction: Vec3, points: &[Vec3; 3]) -> bool {
     dot(edge2, q) * inverse > HIT_EPSILON
 }
 
-fn escapes(
-    origin: Vec3,
-    direction: Vec3,
-    triangles: &[Triangle],
-    bounds: &[Bounds],
-    own: usize,
-) -> bool {
-    triangles.iter().zip(bounds).enumerate().all(|(j, (t, b))| {
-        j == own || b.ray_misses(origin, direction) || !ray_hits(origin, direction, &t.points)
+fn triangle_visible(i: usize, triangles: &[Triangle], tree: &Node, directions: &[Vec3]) -> bool {
+    let [a, b, c] = triangles[i].points;
+    let normal = cross(sub(b, a), sub(c, a));
+    let length = dot(normal, normal).sqrt();
+    if length < HIT_EPSILON {
+        return false;
+    }
+    let unit = normal.map(|v| v / length);
+    let samples = sample_points(&triangles[i].points);
+    [unit, unit.map(|v| -v)].iter().any(|side| {
+        samples.iter().any(|sample| {
+            let origin = [0, 1, 2].map(|axis| sample[axis] + side[axis] * SIDE_OFFSET_LDU);
+            directions
+                .iter()
+                .filter(|d| dot(**d, *side) > 0.0)
+                .any(|d| {
+                    let ray = Ray {
+                        origin,
+                        direction: *d,
+                        inverse: d.map(|v| 1.0 / v),
+                    };
+                    !tree.blocks(&ray, triangles, i)
+                })
+        })
     })
 }
 
 pub fn visible_from_above(triangles: &[Triangle]) -> Vec<bool> {
-    let directions = upper_hemisphere();
+    if triangles.is_empty() {
+        return Vec::new();
+    }
+    let directions = upward_directions();
     let bounds: Vec<Bounds> = triangles.iter().map(|t| Bounds::of(&t.points)).collect();
-    triangles
+    let centroids: Vec<Vec3> = triangles
         .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            let [a, b, c] = t.points;
-            let normal = cross(sub(b, a), sub(c, a));
-            let length = dot(normal, normal).sqrt();
-            if length < HIT_EPSILON {
-                return false;
-            }
-            let unit = normal.map(|v| v / length);
-            let centroid = [0, 1, 2].map(|axis| (a[axis] + b[axis] + c[axis]) / 3.0);
-            [unit, unit.map(|v| -v)].iter().any(|side| {
-                let origin = [0, 1, 2].map(|axis| centroid[axis] + side[axis] * SIDE_OFFSET_LDU);
-                directions
-                    .iter()
-                    .filter(|d| dot(**d, *side) > 0.0)
-                    .any(|d| escapes(origin, *d, triangles, &bounds, i))
-            })
-        })
-        .collect()
+        .map(|t| [0, 1, 2].map(|axis| t.points.iter().map(|p| p[axis]).sum::<f64>() / 3.0))
+        .collect();
+    let tree = Node::build((0..triangles.len()).collect(), &bounds, &centroids);
+    let workers = thread::available_parallelism().map_or(1, |n| n.get());
+    let chunk = triangles.len().div_ceil(workers);
+    let mut visible = vec![false; triangles.len()];
+    thread::scope(|scope| {
+        for (w, slice) in visible.chunks_mut(chunk).enumerate() {
+            let (tree, directions) = (&tree, &directions);
+            scope.spawn(move || {
+                for (k, out) in slice.iter_mut().enumerate() {
+                    *out = triangle_visible(w * chunk + k, triangles, tree, directions);
+                }
+            });
+        }
+    });
+    visible
 }
 
 pub fn drop_hidden_from_above(triangles: &mut Vec<Triangle>) {

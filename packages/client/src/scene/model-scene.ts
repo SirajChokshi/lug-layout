@@ -1,22 +1,8 @@
 import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr/catalog";
-import {
-  INSTANCE_MATRIX_FLOATS,
-  SCENE_BACKEND,
-  type BackendInfo,
-  type BufferMemory,
-  type FrameStats,
-  type ISceneBackend,
-  type SceneBackendConfig,
-} from "@brr/render";
+import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import { chunkKey } from "./placements.ts";
-import {
-  ColorTable,
-  partPalette,
-  summarize,
-  type IViewerScene,
-  type SceneSummary,
-} from "./viewer-scene.ts";
+import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 import { withStuds } from "./stud-stream.ts";
 
 export interface IModelScene extends IViewerScene {
@@ -37,19 +23,15 @@ export class ModelScene implements IModelScene {
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
-    @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
+    @inject(SCENE_BACKEND) readonly backend: ISceneBackend,
   ) {}
 
   selectModel(name: string): void {
     this.modelName = name;
   }
 
-  attach(config: SceneBackendConfig): Promise<BackendInfo> {
-    return this.backend.init(config);
-  }
-
   async load(lod: BundleLod): Promise<SceneSummary> {
-    const [bundle, far] = await Promise.all([this.loader.load(lod), this.loader.load("far")]);
+    const bundle = await this.loader.load(lod);
     const entry = bundle.models.find((model) => model.name === this.modelName);
     if (!entry) {
       const available = bundle.models.map((model) => model.name).join(", ");
@@ -75,13 +57,18 @@ export class ModelScene implements IModelScene {
       colors,
       undefined,
     );
-    this.backend.setPalette(partPalette(bundle, far, colors));
-    this.backend.setChunk(chunkKey(0, 0), chunk);
-    return summarize(bundle, [chunk], [chunk.studs], {
-      name: entry.name,
-      source: entry.source,
-      sections: model.sections,
-    });
+    return showChunks(
+      this.backend,
+      bundle,
+      undefined,
+      colors,
+      [{ key: chunkKey(0, 0), instances: chunk }],
+      {
+        name: entry.name,
+        source: entry.source,
+        sections: model.sections,
+      },
+    );
   }
 
   private frame(matrices: Float32Array, count: number): void {
@@ -117,21 +104,5 @@ export class ModelScene implements IModelScene {
       this.centreY,
       this.centreZ,
     );
-  }
-
-  resize(width: number, height: number): void {
-    this.backend.resize(width, height);
-  }
-
-  renderFrame(out: FrameStats): void {
-    this.backend.renderFrame(out);
-  }
-
-  waitForGpu(): Promise<void> {
-    return this.backend.waitForGpu();
-  }
-
-  bufferMemory(): BufferMemory {
-    return this.backend.bufferMemory();
   }
 }

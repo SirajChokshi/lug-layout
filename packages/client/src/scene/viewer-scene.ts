@@ -1,11 +1,9 @@
 import type { BundleLod, ModelSection, PartBundle } from "@brr/catalog";
 import {
   COLOR_CHANNELS,
-  type BackendInfo,
-  type BufferMemory,
-  type FrameStats,
+  type ChunkInstances,
+  type ISceneBackend,
   type PartPalette,
-  type SceneBackendConfig,
 } from "@brr/render";
 
 export interface SceneSummary {
@@ -26,24 +24,20 @@ export interface ModelCredit {
   readonly sections: ReadonlyArray<ModelSection>;
 }
 
-export interface InstanceList {
+interface InstanceList {
   readonly count: number;
   readonly partIndex: Uint16Array;
 }
 
-export interface StudList {
+interface StudList {
   readonly count: number;
   readonly primitiveIndex: Uint8Array;
 }
 
 export interface IViewerScene {
-  attach(config: SceneBackendConfig): Promise<BackendInfo>;
+  readonly backend: ISceneBackend;
   load(lod: BundleLod): Promise<SceneSummary>;
   setCamera(t: number): void;
-  resize(width: number, height: number): void;
-  renderFrame(out: FrameStats): void;
-  waitForGpu(): Promise<void>;
-  bufferMemory(): BufferMemory;
 }
 
 export class ColorTable {
@@ -84,16 +78,20 @@ export function ldrawColorsSrgb(bundle: PartBundle): ReadonlyMap<number, number>
   return new Map(bundle.colors.map((c) => [c.code, Number.parseInt(c.rgb.slice(1), 16)]));
 }
 
-export function partPalette(bundle: PartBundle, far: PartBundle, colors: ColorTable): PartPalette {
+function partPalette(
+  bundle: PartBundle,
+  far: PartBundle | undefined,
+  colors: ColorTable,
+): PartPalette {
   return {
     detailed: { parts: bundle.parts, studPrimitives: bundle.studPrimitives },
-    far: { parts: far.parts, studPrimitives: far.studPrimitives },
+    ...(far ? { far: { parts: far.parts, studPrimitives: far.studPrimitives } } : {}),
     colorsSrgb: colors.toSrgb(),
     ldrawColorsSrgb: ldrawColorsSrgb(bundle),
   };
 }
 
-export function summarize(
+function summarize(
   bundle: PartBundle,
   chunks: ReadonlyArray<InstanceList>,
   studs: ReadonlyArray<StudList>,
@@ -139,4 +137,28 @@ export function summarize(
     creditedLicenses: [...new Set(bundle.credits.map((c) => c.license ?? "none"))],
     model,
   };
+}
+
+export interface KeyedChunk {
+  readonly key: number;
+  readonly instances: ChunkInstances;
+}
+
+export function showChunks(
+  backend: ISceneBackend,
+  bundle: PartBundle,
+  far: PartBundle | undefined,
+  colors: ColorTable,
+  chunks: ReadonlyArray<KeyedChunk>,
+  model: ModelCredit | null,
+): SceneSummary {
+  backend.setPalette(partPalette(bundle, far, colors));
+  for (const chunk of chunks) backend.setChunk(chunk.key, chunk.instances);
+  const instances = chunks.map((chunk) => chunk.instances);
+  return summarize(
+    bundle,
+    instances,
+    instances.map((chunk) => chunk.studs),
+    model,
+  );
 }

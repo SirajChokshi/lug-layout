@@ -203,7 +203,14 @@ The MVP ships three module profiles: `free`, `lego-modular` and `mils`. Numbers 
 | Far | Voxel greedy mesh of the model (1 stud × 1 stud × 1 plate) | A procedural pattern computed from `worldPos mod 20` |
 | Very far (M6; impostors P1) | Voxel greedy mesh of the whole super-chunk, then impostors | none |
 
-*M0 status (2026-11-16, slice 3):* tiers are chosen per 32×32 chunk every frame from the projected stud pitch (near ≥ 12 px, mid ≥ 3 px, else far). Near draws the standard parts and the standard stud stream. Mid and far draw a far LOD instead of merged or voxel meshes. The far LOD is the `p/8` part triangles minus those the part itself hides from every upward and horizontal direction, so a 2×4 brick keeps its 10 outer triangles. Mid adds 8-segment studs, and far drops studs. Covered studs are culled per chunk in the city only. The voxel and super-chunk meshes and impostors aren't built yet.
+*M0 status (2026-11-16, slice 3):* the city picks a tier for each 32×32 chunk every frame from the projected stud pitch (near ≥ 12 px, mid ≥ 3 px, else far). Near draws the standard parts and the standard stud stream. Mid and far draw a far LOD instead of merged or voxel meshes: the `p/8` part triangles minus those the part itself appears to hide from above.
+
+The far-LOD visibility test is sampled, not exact. A triangle is kept if any of 7 points on it (the centroid, plus points near each vertex and each edge midpoint) has an unblocked ray, on either face side, along any of 1,024 upper-hemisphere directions or a 64-direction horizontal ring, cast against the part's own triangles. An independent dense re-check (7 points, 512 + 64 directions) finds:
+- 3001, 2412b and the other city bricks, plates and tiles: no visible dropped triangle;
+- 3062b: nothing dropped;
+- 53401: 1 visible triangle out of 1,203 dropped, covering 8 of 51,081 LDU² through 0.17% of directions.
+
+The earlier 64-centroid-ray version dropped 122 visible 53401 triangles and all of 3062b's 60. "Above" means the part's own +Y, so the far LOD is valid only for upright parts. Only the city tiers; the part display and imported models stay near-only. Mid adds 8-segment studs, and far drops studs. Covered studs are culled per chunk in the city only. The voxel and super-chunk meshes and impostors aren't built yet.
 
 **Studs.**
 - Studs inside a model are culled when the model is baked.
@@ -341,7 +348,12 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 7. Road plate geometry: size, clip connectors, lane and sidewalk widths, and stud zones. *Partly cleared 2026-11-16:* the classic 32×32 road baseplates have studless roadways of 20, 18, 16 and 14 studs (6-, 7-, 8- and 9-stud verges), and printed 44336 lanes are 176 LDU between lines. The 60304-era plates with clips aren't in LDraw.
 8. The OMR's current set count and how well it covers Town and Train sets.
 9. Three.js `WebGPURenderer` with `BatchedMesh`: performance and WebGL2 fallback behavior at 250k parts.
-   *Closed 2026-11-16 at 250k (M0 slices 2 and 3, PR #15 and the slice 3 PR):* `WebGPURenderer` with chunked `InstancedMesh`, not `BatchedMesh`, renders the 250,665-part city on a MacBook Pro M4 Max at 3600×2086. Aerial medians are 11.5 ms on WebGPU and 13.2 ms on the WebGL2 fallback; street medians are 7.6 and 8.4 ms. Both APIs draw the same counts: 1,557 draws and 10.6M triangles aerial. `BatchedMesh` lost to chunked instancing on both APIs up to 100k in slice 2 and was removed. Past 250k, frame time grows with draw calls. At 500k the aerial medians are 24.2 and 23.9 ms (3,144 draws). **At 1M, aerial is about 40 ms** (39.7 ms WebGPU, 38.0 ms WebGL2, 5,670 draws, 13.5 ms CPU submit), and street is 15.7 and 15.4 ms. Accounted GPU buffers are 175 MiB at 1M. These are M4 Max figures, much faster than Tier A.
+   *Closed 2026-11-16 at 250k (M0 slices 2 and 3, PR #15 and #16):* `WebGPURenderer` with chunked `InstancedMesh`, not `BatchedMesh`, renders the 250,665-part city on a MacBook Pro M4 Max at 3600×2086. Measured at `9d26e81`, aerial medians are 11.5 ms on WebGPU and 13.2 ms on the WebGL2 fallback, and street medians are 7.6 and 8.4 ms, with identical counts on both APIs.
+   - **Tiering:** the 250k aerial view ran **every chunk at the mid tier** (0/196/0): far-LOD shells with 8-segment studs, 10.6M of 63.4M scene triangles drawn, and 76% of studs culled as covered.
+   - **`BatchedMesh`:** it lost to chunked instancing on both APIs up to 100k in slice 2 and was removed.
+   - **Past 250k:** frame time grows with draw calls. At 500k, aerial is 24 ms (3,144 draws). **At 1M, aerial is about 40 ms** (39.7 ms WebGPU, 38.0 ms WebGL2, 5,670 draws, 13.5 ms CPU submit); street is about 15.5 ms.
+   - **Memory:** GPU vertex and index buffers actually allocated through WebGL2 `bufferData` and WebGPU `createBuffer` are 72.8 MiB after the 1M aerial run. Allocation is lazy, so it depends on what has been drawn.
+   - **Hardware:** these are M4 Max figures, much faster than Tier A.
 10. Browser WebGPU coverage today: Safari 26, Firefox on platforms other than Windows, Linux Chrome.
 
 **Needed before M5 (plan mode) or P1.**

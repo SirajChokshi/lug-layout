@@ -44,7 +44,7 @@ function sampleCoverage(
   for (let k = 0; k < COVERAGE_SAMPLES; k++) {
     const t = (lastMeasuredPosition * k) / (COVERAGE_SAMPLES - 1);
     scene.setCamera(t);
-    scene.renderFrame(stats);
+    scene.backend.renderFrame(stats);
     const fraction = coverage.sceneFraction(canvas);
     if (fraction < MIN_SCENE_COVERAGE) {
       throw new Error(
@@ -65,8 +65,8 @@ export async function measureFrames(
 ): Promise<FrameTimings> {
   for (let i = 0; i < params.warmupFrames; i++) {
     scene.setCamera(i / params.warmupFrames);
-    scene.renderFrame(stats);
-    await scene.waitForGpu();
+    scene.backend.renderFrame(stats);
+    await scene.backend.waitForGpu();
   }
   const frameMs = new Float64Array(params.measuredFrames);
   const cpuMs = new Float64Array(params.measuredFrames);
@@ -80,9 +80,9 @@ export async function measureFrames(
   while (frames < params.measuredFrames && performance.now() - started < params.maxMeasureMs) {
     const t0 = performance.now();
     scene.setCamera(frames / params.measuredFrames);
-    scene.renderFrame(stats);
+    scene.backend.renderFrame(stats);
     const t1 = performance.now();
-    await scene.waitForGpu();
+    await scene.backend.waitForGpu();
     const t2 = performance.now();
     cpuMs[frames] = t1 - t0;
     frameMs[frames] = t2 - t0;

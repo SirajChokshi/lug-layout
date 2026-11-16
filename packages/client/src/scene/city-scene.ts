@@ -5,14 +5,7 @@ import {
   type PartBundle,
   type PartRole,
 } from "@brr/catalog";
-import {
-  SCENE_BACKEND,
-  type BackendInfo,
-  type BufferMemory,
-  type FrameStats,
-  type ISceneBackend,
-  type SceneBackendConfig,
-} from "@brr/render";
+import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
 import { CHUNK_LDU, CHUNK_STUDS, placementsToInstances } from "./placements.ts";
@@ -25,13 +18,7 @@ import {
 } from "./procedural-city.ts";
 import { withStuds } from "./stud-stream.ts";
 import { straightRunPitchStuds } from "./straight-track.ts";
-import {
-  ColorTable,
-  partPalette,
-  summarize,
-  type IViewerScene,
-  type SceneSummary,
-} from "./viewer-scene.ts";
+import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 
 export type CityCamera = "aerial" | "street";
 
@@ -145,15 +132,11 @@ export class CityScene implements ICityScene {
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
-    @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
+    @inject(SCENE_BACKEND) readonly backend: ISceneBackend,
   ) {}
 
   configure(request: CityRequest): void {
     this.request = request;
-  }
-
-  attach(config: SceneBackendConfig): Promise<BackendInfo> {
-    return this.backend.init(config);
   }
 
   async load(lod: BundleLod): Promise<SceneSummary> {
@@ -169,25 +152,16 @@ export class CityScene implements ICityScene {
       parts,
       cityColors(colors),
     );
-    const instances = layout.chunks.map((chunk) =>
-      withStuds(placementsToInstances(chunk), bundle.parts, colors, COVERING_ROLES),
-    );
-    this.backend.setPalette(partPalette(bundle, far, colors));
-    layout.chunks.forEach((chunk, i) => {
-      const built = instances[i];
-      if (built) this.backend.setChunk(chunk.key, built);
-    });
+    const chunks = layout.chunks.map((chunk) => ({
+      key: chunk.key,
+      instances: withStuds(placementsToInstances(chunk), bundle.parts, colors, COVERING_ROLES),
+    }));
     this.minX = layout.firstChunk * CHUNK_LDU;
     this.extent = layout.side * CHUNK_LDU;
     const middleRoad =
       layout.roadColumns[Math.floor(layout.roadColumns.length / 2)] ?? layout.firstChunk;
     this.streetX = middleRoad * CHUNK_LDU + CHUNK_LDU / 2;
-    return summarize(
-      bundle,
-      layout.chunks,
-      instances.map((chunk) => chunk.studs),
-      null,
-    );
+    return showChunks(this.backend, bundle, far, colors, chunks, null);
   }
 
   setCamera(t: number): void {
@@ -215,21 +189,5 @@ export class CityScene implements ICityScene {
       STREET_EYE_HEIGHT_LDU * STREET_LOOK_DOWN_FACTOR,
       z + STREET_LOOK_AHEAD_LDU,
     );
-  }
-
-  resize(width: number, height: number): void {
-    this.backend.resize(width, height);
-  }
-
-  renderFrame(out: FrameStats): void {
-    this.backend.renderFrame(out);
-  }
-
-  waitForGpu(): Promise<void> {
-    return this.backend.waitForGpu();
-  }
-
-  bufferMemory(): BufferMemory {
-    return this.backend.bufferMemory();
   }
 }

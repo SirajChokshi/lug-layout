@@ -26,6 +26,7 @@ import {
   type SceneBackendConfig,
   type StudInstances,
 } from "../scene-backend.ts";
+import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { fixedColorGeometry, inheritBodyGeometry, primitiveGeometry } from "./part-geometry.ts";
 
 const MATRIX4_FLOATS = 16;
@@ -97,22 +98,6 @@ interface LevelGeometries {
 
 const EMPTY_LEVEL: LevelGeometries = { parts: [], studs: [] };
 
-function geometryBytes(geometry: BufferGeometry | undefined): number {
-  if (!geometry) return 0;
-  let bytes = geometry.index?.array.byteLength ?? 0;
-  for (const name of Object.keys(geometry.attributes)) {
-    bytes += geometry.getAttribute(name).array.byteLength;
-  }
-  return bytes;
-}
-
-function levelBytes(level: LevelGeometries): number {
-  let bytes = 0;
-  for (const part of level.parts) bytes += geometryBytes(part.body) + geometryBytes(part.fixed);
-  for (const stud of level.studs) bytes += geometryBytes(stud);
-  return bytes;
-}
-
 function disposeLevel(level: LevelGeometries): void {
   for (const part of level.parts) {
     part.body?.dispose();
@@ -130,6 +115,20 @@ function assertSameParts(detailed: GeometrySet, other: GeometrySet): void {
   }
 }
 
+interface InstanceAttributes {
+  readonly matrices: InstancedBufferAttribute;
+  readonly colors: InstancedBufferAttribute;
+}
+
+function countBy(select: ArrayLike<number>, total: number, keys: number): Uint32Array {
+  const counts = new Uint32Array(keys);
+  for (let i = 0; i < total; i++) {
+    const key = select[i] ?? 0;
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
 class ChunkRecord {
   tier = TIER_UNSET;
 
@@ -142,7 +141,6 @@ class ChunkRecord {
     readonly maxX: number,
     readonly minZ: number,
     readonly maxZ: number,
-    readonly instanceBytes: number,
   ) {}
 
   applyTier(tier: number): void {
@@ -175,11 +173,11 @@ export class ThreeSceneBackend implements ISceneBackend {
   });
   private detailedLevel: LevelGeometries = EMPTY_LEVEL;
   private farLevel: LevelGeometries = EMPTY_LEVEL;
-  private paletteGeometryBytes = 0;
   private linearColors = new Float32Array(0);
   private readonly chunks = new Map<number, ChunkRecord>();
   private chunkList: ChunkRecord[] = [];
-  private chunkInstanceBytes = 0;
+  private tiered = false;
+  private readonly bufferTally = new GpuBufferTally();
   private focalLengthPx = 1;
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
@@ -193,6 +191,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     });
     await renderer.init();
     this.watchForFailure(renderer, config.canvas);
+    this.watchBuffers(renderer);
     renderer.info.autoReset = false;
     renderer.setPixelRatio(config.pixelRatio);
     renderer.setSize(config.canvas.clientWidth, config.canvas.clientHeight, false);
@@ -223,6 +222,16 @@ export class ThreeSceneBackend implements ISceneBackend {
       return;
     }
     canvas.addEventListener("webglcontextlost", () => this.fail("WebGL2 context lost"));
+  }
+
+  private watchBuffers(renderer: WebGPURenderer): void {
+    const device = webGpuDevice(renderer.backend);
+    if (device) {
+      this.bufferTally.watchWebGpu(device);
+      return;
+    }
+    const gl = webGl2Context(renderer.backend);
+    if (gl) this.bufferTally.watchWebGl2(gl);
   }
 
   private fail(reason: string): void {
@@ -262,7 +271,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.clearChunks();
     disposeLevel(this.detailedLevel);
     disposeLevel(this.farLevel);
-    assertSameParts(palette.detailed, palette.far);
+    if (palette.far) assertSameParts(palette.detailed, palette.far);
     const linearColor = (code: number, out: Float32Array): void => {
       const srgb = palette.ldrawColorsSrgb.get(code);
       if (srgb === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
@@ -279,8 +288,8 @@ export class ThreeSceneBackend implements ISceneBackend {
       studs: set.studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh)),
     });
     this.detailedLevel = level(palette.detailed);
-    this.farLevel = level(palette.far);
-    this.paletteGeometryBytes = levelBytes(this.detailedLevel) + levelBytes(this.farLevel);
+    this.farLevel = palette.far ? level(palette.far) : EMPTY_LEVEL;
+    this.tiered = palette.far !== undefined;
     const colorCount = palette.colorsSrgb.length / COLOR_CHANNELS;
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
     for (let c = 0; c < colorCount; c++) {
@@ -302,7 +311,6 @@ export class ThreeSceneBackend implements ISceneBackend {
     const record = this.buildChunk(chunk);
     this.chunks.set(key, record);
     this.chunkList.push(record);
-    this.chunkInstanceBytes += record.instanceBytes;
     this.scene.add(record.group);
   }
 
@@ -317,7 +325,6 @@ export class ThreeSceneBackend implements ISceneBackend {
     }
     this.chunks.delete(key);
     this.chunkList = this.chunkList.filter((record) => record !== existing);
-    this.chunkInstanceBytes -= existing.instanceBytes;
   }
 
   private clearChunks(): void {
@@ -333,44 +340,23 @@ export class ThreeSceneBackend implements ISceneBackend {
     const shellBodies = new Group();
     const coarseStuds = new Group();
     group.add(detailed, shellBodies, coarseStuds);
-    let instanceBytes = 0;
     const partCount = this.detailedLevel.parts.length;
-    const counts = new Uint32Array(partCount);
-    for (let i = 0; i < chunk.count; i++) {
-      const part = chunk.partIndex[i] ?? 0;
-      counts[part] = (counts[part] ?? 0) + 1;
-    }
+    const counts = countBy(chunk.partIndex, chunk.count, partCount);
     for (let p = 0; p < partCount; p++) {
       const count = counts[p] ?? 0;
       if (count === 0) continue;
-      const matrices = new Float32Array(count * MATRIX4_FLOATS);
-      const colors = new Float32Array(count * COLOR_CHANNELS);
-      let slot = 0;
-      for (let i = 0; i < chunk.count; i++) {
-        if (chunk.partIndex[i] !== p) continue;
-        writeMatrix4(chunk.matrices, i, matrices, slot);
-        this.writeColor(chunk.colorIndex[i] ?? 0, colors, slot);
-        slot++;
-      }
-      instanceBytes += matrices.byteLength + colors.byteLength;
-      const matrixAttribute = new InstancedBufferAttribute(matrices, MATRIX4_FLOATS);
-      const colorAttribute = new InstancedBufferAttribute(colors, COLOR_CHANNELS);
-      this.addPartMeshes(
-        detailed,
-        this.detailedLevel.parts[p],
+      const attributes = this.instanceAttributes(
+        chunk.partIndex,
+        chunk.count,
+        p,
         count,
-        matrixAttribute,
-        colorAttribute,
+        chunk.matrices,
+        chunk.colorIndex,
       );
-      this.addPartMeshes(
-        shellBodies,
-        this.farLevel.parts[p],
-        count,
-        matrixAttribute,
-        colorAttribute,
-      );
+      this.addPartMeshes(detailed, this.detailedLevel.parts[p], count, attributes);
+      this.addPartMeshes(shellBodies, this.farLevel.parts[p], count, attributes);
     }
-    instanceBytes += this.addStudMeshes(chunk.studs, detailed, coarseStuds);
+    this.addStudMeshes(chunk.studs, detailed, coarseStuds);
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let minZ = Number.POSITIVE_INFINITY;
@@ -393,69 +379,104 @@ export class ThreeSceneBackend implements ISceneBackend {
       maxX,
       minZ,
       maxZ,
-      instanceBytes,
     );
     record.applyTier(TIER_NEAR);
     return record;
   }
 
-  private writeColor(colorIndex: number, target: Float32Array, slot: number): void {
-    const c = colorIndex * COLOR_CHANNELS;
-    target[slot * COLOR_CHANNELS] = this.linearColors[c] ?? 0;
-    target[slot * COLOR_CHANNELS + 1] = this.linearColors[c + 1] ?? 0;
-    target[slot * COLOR_CHANNELS + 2] = this.linearColors[c + 2] ?? 0;
+  private instanceAttributes(
+    select: ArrayLike<number>,
+    total: number,
+    key: number,
+    count: number,
+    sourceMatrices: Float32Array,
+    colorIndex: Uint16Array,
+  ): InstanceAttributes {
+    const matrices = new Float32Array(count * MATRIX4_FLOATS);
+    const colors = new Float32Array(count * COLOR_CHANNELS);
+    let slot = 0;
+    for (let i = 0; i < total; i++) {
+      if (select[i] !== key) continue;
+      writeMatrix4(sourceMatrices, i, matrices, slot);
+      const c = (colorIndex[i] ?? 0) * COLOR_CHANNELS;
+      colors[slot * COLOR_CHANNELS] = this.linearColors[c] ?? 0;
+      colors[slot * COLOR_CHANNELS + 1] = this.linearColors[c + 1] ?? 0;
+      colors[slot * COLOR_CHANNELS + 2] = this.linearColors[c + 2] ?? 0;
+      slot++;
+    }
+    return {
+      matrices: new InstancedBufferAttribute(matrices, MATRIX4_FLOATS),
+      colors: new InstancedBufferAttribute(colors, COLOR_CHANNELS),
+    };
   }
 
   private addPartMeshes(
     layer: Group,
     geometries: PartGeometries | undefined,
     count: number,
-    matrices: InstancedBufferAttribute,
-    colors: InstancedBufferAttribute,
+    attributes: InstanceAttributes,
   ): void {
     if (geometries?.body) {
-      layer.add(this.instancedMesh(geometries.body, this.material, count, matrices, colors));
+      layer.add(
+        this.instancedMesh(
+          geometries.body,
+          this.material,
+          count,
+          attributes.matrices,
+          attributes.colors,
+        ),
+      );
     }
     if (geometries?.fixed) {
       layer.add(
-        this.instancedMesh(geometries.fixed, this.fixedColorMaterial, count, matrices, undefined),
+        this.instancedMesh(
+          geometries.fixed,
+          this.fixedColorMaterial,
+          count,
+          attributes.matrices,
+          undefined,
+        ),
       );
     }
   }
 
-  private addStudMeshes(studs: StudInstances, detailed: Group, coarse: Group): number {
-    let bytes = 0;
+  private addStudMeshes(studs: StudInstances, detailed: Group, coarse: Group): void {
     const primitiveCount = this.detailedLevel.studs.length;
-    const counts = new Uint32Array(primitiveCount);
-    for (let s = 0; s < studs.count; s++) {
-      const k = studs.primitiveIndex[s] ?? 0;
-      counts[k] = (counts[k] ?? 0) + 1;
-    }
+    const counts = countBy(studs.primitiveIndex, studs.count, primitiveCount);
     for (let k = 0; k < primitiveCount; k++) {
       const count = counts[k] ?? 0;
       const detailedGeometry = this.detailedLevel.studs[k];
-      const coarseGeometry = this.farLevel.studs[k];
-      if (count === 0 || !detailedGeometry || !coarseGeometry) continue;
-      const matrices = new Float32Array(count * MATRIX4_FLOATS);
-      const colors = new Float32Array(count * COLOR_CHANNELS);
-      let slot = 0;
-      for (let s = 0; s < studs.count; s++) {
-        if (studs.primitiveIndex[s] !== k) continue;
-        writeMatrix4(studs.matrices, s, matrices, slot);
-        this.writeColor(studs.colorIndex[s] ?? 0, colors, slot);
-        slot++;
-      }
-      bytes += matrices.byteLength + colors.byteLength;
-      const matrixAttribute = new InstancedBufferAttribute(matrices, MATRIX4_FLOATS);
-      const colorAttribute = new InstancedBufferAttribute(colors, COLOR_CHANNELS);
+      if (count === 0 || !detailedGeometry) continue;
+      const attributes = this.instanceAttributes(
+        studs.primitiveIndex,
+        studs.count,
+        k,
+        count,
+        studs.matrices,
+        studs.colorIndex,
+      );
       detailed.add(
-        this.instancedMesh(detailedGeometry, this.material, count, matrixAttribute, colorAttribute),
+        this.instancedMesh(
+          detailedGeometry,
+          this.material,
+          count,
+          attributes.matrices,
+          attributes.colors,
+        ),
       );
-      coarse.add(
-        this.instancedMesh(coarseGeometry, this.material, count, matrixAttribute, colorAttribute),
-      );
+      const coarseGeometry = this.farLevel.studs[k];
+      if (coarseGeometry) {
+        coarse.add(
+          this.instancedMesh(
+            coarseGeometry,
+            this.material,
+            count,
+            attributes.matrices,
+            attributes.colors,
+          ),
+        );
+      }
     }
-    return bytes;
   }
 
   private instancedMesh(
@@ -488,6 +509,12 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   private assignTiers(out: FrameStats): void {
+    if (!this.tiered) {
+      out.nearChunks = this.chunkList.length;
+      out.midChunks = 0;
+      out.farChunks = 0;
+      return;
+    }
     const eye = this.camera.position;
     let near = 0;
     let mid = 0;
@@ -516,7 +543,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   bufferMemory(): BufferMemory {
-    return { geometryBytes: this.paletteGeometryBytes, instanceBytes: this.chunkInstanceBytes };
+    return this.bufferTally.snapshot();
   }
 
   renderFrame(out: FrameStats): void {

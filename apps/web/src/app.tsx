@@ -8,7 +8,7 @@ import type { ViewerParams } from "./viewer/viewer-params.ts";
 
 const TRADEMARK_DISCLAIMER =
   "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.";
-const BYTES_PER_MEGABYTE = 1024 * 1024;
+const BYTES_PER_MEBIBYTE = 1024 * 1024;
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 interface AppProps {
@@ -16,8 +16,8 @@ interface AppProps {
   readonly params: ViewerParams;
 }
 
-function megabytes(bytes: number): string {
-  return `${(bytes / BYTES_PER_MEGABYTE).toFixed(1)} MB`;
+function mebibytes(bytes: number): string {
+  return `${(bytes / BYTES_PER_MEBIBYTE).toFixed(1)} MiB`;
 }
 
 function tierText(tiers: ChunkTiers): string {
@@ -25,8 +25,8 @@ function tierText(tiers: ChunkTiers): string {
 }
 
 function memoryText(memory: MemoryReport): string {
-  const heap = memory.jsHeapBytes === null ? "not reported" : megabytes(memory.jsHeapBytes);
-  return `geometry ${megabytes(memory.geometryBytes)}, instances ${megabytes(memory.instanceBytes)}, JS heap ${heap}`;
+  const heap = memory.jsHeapBytes === null ? "not reported" : mebibytes(memory.jsHeapBytes);
+  return `vertex+index ${mebibytes(memory.vertexIndexBytes)}, other ${mebibytes(memory.otherBytes)}, JS heap ${heap}`;
 }
 
 function percent(fraction: number): string {
@@ -54,7 +54,7 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ],
     ["Scene triangles", integer.format(summary.bodyTriangles + summary.studTriangles)],
     ["Load", `${integer.format(report.loadMs)} ms`],
-    ["Buffers (accounted) and JS heap", memoryText(report.memory)],
+    ["GPU buffers allocated so far, JS heap", memoryText(report.memory)],
   ];
   if (timings) {
     rows.push(

@@ -38,7 +38,7 @@ class RecordingBackend implements ISceneBackend {
   renderFrame(): void {}
   async waitForGpu(): Promise<void> {}
   bufferMemory(): BufferMemory {
-    return { geometryBytes: 0, instanceBytes: 0 };
+    return { vertexIndexBytes: 0, otherBytes: 0 };
   }
 }
 
