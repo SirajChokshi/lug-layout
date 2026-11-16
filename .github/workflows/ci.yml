@@ -25,5 +25,5 @@ jobs:
       - run: pnpm lint:rust
       - run: pnpm format:check
       - run: pnpm check:rust
-      - run: pnpm --filter @brr/asset-pipeline verify
+      - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm turbo run typecheck test build

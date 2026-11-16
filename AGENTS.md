@@ -41,7 +41,7 @@ docs/                   architecture.md, verified-facts.md
 - `pnpm check` runs everything CI runs
 - `pnpm --filter @brr/web dev`
 - `pnpm lint:rust` (no comments in `crates/`) and `pnpm check:rust` (fmt, clippy `-D warnings`, `cargo test`)
-- `pnpm --filter @brr/asset-pipeline fetch` re-pins LDraw inputs (network); `verify` checks them offline; `build` compiles the bundle that `apps/web` serves at `/bundle/`
+- `pnpm --filter @brr/asset-pipeline fetch-ldraw` re-pins LDraw inputs (network; plain `fetch` would run pnpm's built-in), `verify-ldraw` checks them offline, `build` compiles the bundle that `apps/web` serves at `/bundle/`
 - The app's viewer takes `?api=webgpu|webgl2&lod=standard|low`, and `&measure=1` for GPU-synced frame timing
 - Later: `turbo run bench`, `turbo run wasm`, and the package-boundary check (dependency-cruiser or Turborepo `boundaries`)
 
