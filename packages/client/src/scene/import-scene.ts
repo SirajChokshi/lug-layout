@@ -1,7 +1,9 @@
 import {
   PART_BUNDLE_LOADER,
+  type BundleCredit,
   type BundleLod,
   type IPartBundleLoader,
+  type PartAsset,
   type PartBundle,
 } from "@brr/catalog";
 import { World } from "@brr/domain";
@@ -58,9 +60,9 @@ interface PlacedModule {
 }
 
 const MODULE_GAP_LDU = 4 * STUD_LDU;
-const ORBIT_DISTANCE_FACTOR = 2.4;
+const ORBIT_DISTANCE_FACTOR = 2.8;
 const ORBIT_ELEVATION_FACTOR = 0.9;
-const MIN_ORBIT_RADIUS_LDU = 400;
+const MIN_ORBIT_RADIUS_LDU = 200;
 const NO_COLOR = 0;
 const GROUND_PLATES = 0;
 const NO_TURN = 0;
@@ -121,7 +123,9 @@ export class ImportScene implements IImportScene {
   private readonly modules: PlacedModule[] = [];
   private readonly partIds: string[] = [];
   private readonly partSlots = new Map<string, number>();
-  private readonly compiled = new Map<string, Uint8Array>();
+  private readonly parts: PartAsset[] = [];
+  private readonly compiledCredits: BundleCredit[] = [];
+  private base: PartBundle | undefined;
   private nextX = 0;
   private view = emptyBounds();
 
@@ -134,6 +138,7 @@ export class ImportScene implements IImportScene {
   async load(lod: BundleLod): Promise<SceneSummary> {
     this.lod = lod;
     const bundle = await this.loader.loadPartSet(lod, [], []);
+    this.base = bundle;
     return showChunks(this.backend, bundle, undefined, new ColorTable(bundle), [], null);
   }
 
@@ -141,12 +146,17 @@ export class ImportScene implements IImportScene {
     const started = performance.now();
     const result = await this.importer.importText(fileName, text, this.lod);
     const imported = performance.now();
-    for (const id of result.partIds) {
-      if (this.partSlots.has(id)) continue;
+    const newIds = result.partIds.filter((id) => !this.partSlots.has(id));
+    const added = await this.loader.loadPartSet(this.lod, newIds, result.compiled);
+    for (const [index, id] of newIds.entries()) {
+      const part = added.parts[index];
+      if (!part) throw new Error(`part ${id} did not load`);
       this.partSlots.set(id, this.partIds.length);
       this.partIds.push(id);
+      this.parts.push(part);
     }
-    for (const part of result.compiled) this.compiled.set(part.partId, part.glb);
+    const baseCredits = this.base?.credits.length ?? 0;
+    this.compiledCredits.push(...added.credits.slice(baseCredits));
     const bounds = instanceBounds(result);
     const x = latticeCeil(this.nextX - bounds.minX);
     const z = latticeRound(-(bounds.minZ + bounds.maxZ) / 2);
@@ -155,12 +165,11 @@ export class ImportScene implements IImportScene {
     this.modules.push({ result, x, z, bounds });
     this.nextX = x + bounds.maxX + MODULE_GAP_LDU;
     this.frame();
-    const bundle = await this.loader.loadPartSet(
-      this.lod,
-      this.partIds,
-      [...this.compiled].map(([partId, glb]) => ({ partId, glb })),
+    const base = this.base ?? added;
+    const summary = this.show(
+      { ...base, parts: this.parts, credits: [...base.credits, ...this.compiledCredits] },
+      result,
     );
-    const summary = this.show(bundle, result);
     return {
       result,
       placement: { module, x, z, yPlates: GROUND_PLATES, rot: NO_TURN },

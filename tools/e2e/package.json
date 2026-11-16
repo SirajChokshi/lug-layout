@@ -4,7 +4,11 @@
   "type": "module",
   "scripts": {
     "import-models": "node src/import-models.ts",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "compiler-parity": "node --experimental-transform-types --no-warnings src/compiler-parity.ts"
+  },
+  "dependencies": {
+    "@brr/import": "workspace:*"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",

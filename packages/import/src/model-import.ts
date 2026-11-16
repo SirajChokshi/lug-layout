@@ -7,7 +7,7 @@ import type {
   LdrawHeader,
   PartOutcome,
 } from "./brick-compiler.ts";
-import { isDirectColor } from "@brr/catalog";
+import { isDirectColor } from "@brr/catalog/colors";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
 
 export interface ImportJob {

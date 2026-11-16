@@ -125,7 +125,12 @@ export async function runWasiCommand(
   try {
     start();
   } catch (error) {
-    if (!(error instanceof WasiExit)) throw error;
+    if (!(error instanceof WasiExit)) {
+      const panic = new TextDecoder().decode(stderr.bytes()).trim();
+      throw new Error(panic === "" ? String(error) : `${String(error)}: ${panic}`, {
+        cause: error,
+      });
+    }
     exitCode = error.code;
   }
   return { exitCode, stdout: stdout.bytes(), stderr: new TextDecoder().decode(stderr.bytes()) };
