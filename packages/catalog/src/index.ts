@@ -27,3 +27,16 @@ export type {
   Vec3Tuple,
 } from "./part-bundle.ts";
 export { ASSET_FETCHER, BUNDLE_BASE_URL, PART_BUNDLE_LOADER } from "./tokens.ts";
+export { parseTrackCatalog } from "./track-catalog.ts";
+export type {
+  TrackCatalog,
+  TrackConnector,
+  TrackJoinClass,
+  TrackPartFrame,
+  TrackPathSegment,
+  TrackPiece,
+  TrackPieceKind,
+  TrackPoseStatus,
+  TrackRoute,
+  TrackSystem,
+} from "./track-catalog.ts";

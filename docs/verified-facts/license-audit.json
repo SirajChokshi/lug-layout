@@ -12,10 +12,10 @@
     "root": ""
   },
   "bundleClosure": {
-    "files": 1777,
+    "files": 1784,
     "licenses": {
-      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 117,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 1660
+      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 118,
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 1666
     },
     "withoutLicense": [],
     "nonCaLicense": [],

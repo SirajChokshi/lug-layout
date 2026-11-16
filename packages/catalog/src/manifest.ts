@@ -7,6 +7,7 @@ import type {
   TrackEnd,
   Vec3Tuple,
 } from "./part-bundle.ts";
+import { parseTrackCatalog, type TrackCatalog } from "./track-catalog.ts";
 
 export interface ManifestPart {
   readonly id: string;
@@ -47,6 +48,7 @@ export interface BundleManifest {
   readonly modified: string;
   readonly disclaimer: string;
   readonly inputs: BundleInputs;
+  readonly trackCatalog: TrackCatalog;
 }
 
 export interface ModelFileLattice {
@@ -147,7 +149,10 @@ export function parseManifest(value: unknown): BundleManifest {
   ) {
     throw new Error("bundle manifest does not match the M1 bundle format");
   }
-  return value as unknown as BundleManifest;
+  return {
+    ...(value as unknown as Omit<BundleManifest, "trackCatalog">),
+    trackCatalog: parseTrackCatalog(value["trackCatalog"]),
+  };
 }
 
 function isStudExtra(value: unknown): value is StudExtra {
