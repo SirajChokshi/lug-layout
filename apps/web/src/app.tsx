@@ -149,7 +149,7 @@ export function App({ scene, params, placements }: AppProps) {
       <footer>
         {report && modelCredit(report)}
         {report &&
-          `Parts: LDraw parts library, ${report.summary.creditedFiles} files (${report.summary.creditedLicenses.join(", ")}), modified from LDraw: flattened, studs extracted. Colours: LDraw LDConfig.ldr. `}
+          `Parts and colours: LDraw parts library, ${report.summary.creditedFiles} files, modified from LDraw: flattened, studs extracted. `}
         {TRADEMARK_DISCLAIMER} <a href={CREDITS_HREF}>Credits</a> · <a href={ABOUT_HREF}>About</a>
       </footer>
     </>
