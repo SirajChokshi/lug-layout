@@ -1,5 +1,7 @@
 import type {
   IRunningGear,
+  IBomService,
+  IBomSource,
   IImportScene,
   ImportedModule,
   IRunScene,
@@ -12,6 +14,7 @@ import type {
 } from "@brr/client";
 import { CreditLinks, partsCreditText, RunningGearPanel } from "@brr/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BomPanel } from "./bom-panel.tsx";
 import { ImportPanel } from "./import-panel.tsx";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
@@ -30,6 +33,7 @@ interface AppProps {
   readonly run: IRunScene | null;
   readonly runningGear: IRunningGear | null;
   readonly importScene: IImportScene | null;
+  readonly bom: { readonly service: IBomService; readonly source: IBomSource } | null;
 }
 
 const BENCH_AFTER_MS = 5_000;
@@ -249,7 +253,15 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params, placements, run, runningGear, importScene }: AppProps) {
+export function App({
+  scene,
+  params,
+  placements,
+  run,
+  runningGear,
+  importScene,
+  bom,
+}: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const [viewerReport, setReport] = useState<ViewerReport | null>(null);
@@ -292,6 +304,9 @@ export function App({ scene, params, placements, run, runningGear, importScene }
           <pre id="sim-bench" data-done="1">
             {JSON.stringify(bench)}
           </pre>
+        )}
+        {report && !error && bom && (
+          <BomPanel service={bom.service} source={bom.source} region={params.region} />
         )}
         {result && !error && (
           <pre id="result" data-done="1">

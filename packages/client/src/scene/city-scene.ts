@@ -6,7 +6,7 @@ import {
   type PartRole,
 } from "@brr/catalog";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
-import { World } from "@brr/domain";
+import { BomCounter, countPlacements, World, type PlacementContents } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
 import { CHUNK_LDU, CHUNK_STUDS } from "@brr/math";
@@ -19,6 +19,7 @@ import {
   type RoadModule,
 } from "./procedural-city.ts";
 import { withStuds } from "./stud-stream.ts";
+import type { BomInput, BomScope, IBomSource } from "../bom/bom-service.ts";
 import { straightRunPitchStuds } from "./straight-track.ts";
 import {
   ColorTable,
@@ -38,7 +39,7 @@ export interface CityRequest {
   readonly originChunkZ: number;
 }
 
-export interface ICityScene extends IViewerScene {
+export interface ICityScene extends IViewerScene, IBomSource {
   configure(request: CityRequest): void;
   placementDump(): PlacementDump;
 }
@@ -134,6 +135,13 @@ function cityColors(colors: ColorTable): CityColors {
   };
 }
 
+interface CityBomTables {
+  readonly lod: BundleLod;
+  readonly partIds: ReadonlyArray<string>;
+  readonly ldrawColors: ReadonlyArray<number>;
+  readonly colors: ColorTable;
+}
+
 @injectable()
 export class CityScene implements ICityScene {
   private request: CityRequest = {
@@ -148,6 +156,7 @@ export class CityScene implements ICityScene {
   private minZ = 0;
   private extent = CHUNK_LDU;
   private streetX = CHUNK_LDU / 2;
+  private bomTables: CityBomTables | null = null;
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -164,6 +173,12 @@ export class CityScene implements ICityScene {
       this.loader.load("far", PALETTE_PARTS),
     ]);
     const colors = new ColorTable(bundle);
+    this.bomTables = {
+      lod,
+      partIds: bundle.parts.map((part) => part.id),
+      ldrawColors: bundle.colors.map((color) => color.code),
+      colors,
+    };
     const parts = cityParts(bundle, colors);
     const layout = generateCity(
       {
@@ -188,6 +203,27 @@ export class CityScene implements ICityScene {
       layout.roadColumns[Math.floor(layout.roadColumns.length / 2)] ?? layout.firstChunkX;
     this.streetX = middleRoad * CHUNK_LDU + CHUNK_LDU / 2;
     return showChunks(this.backend, bundle, far, colors, chunks, null);
+  }
+
+  bomInput(scope: BomScope): BomInput {
+    const tables = this.bomTables;
+    if (!tables) throw new Error("the city scene has not loaded");
+    const counter = new BomCounter(tables.partIds, tables.ldrawColors);
+    const contents: PlacementContents = {
+      addTo: (target, refId, colorId) => target.add(refId, tables.colors.codeAt(colorId), 1),
+    };
+    const placements = countPlacements(
+      this.world,
+      contents,
+      counter,
+      scope.kind === "region" ? scope.region : null,
+    );
+    return {
+      name: `city-${this.request.seed}-${this.request.targetParts}`,
+      lod: tables.lod,
+      placements,
+      counter,
+    };
   }
 
   placementDump(): PlacementDump {
