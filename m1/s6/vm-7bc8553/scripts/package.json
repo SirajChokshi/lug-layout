@@ -1,0 +1,9 @@
+{
+  "name": "s6-evidence-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "1.65.1",
+    "pngjs": "7.0.0"
+  }
+}

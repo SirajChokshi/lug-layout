@@ -1,0 +1,11 @@
+omr:7936-1: 466 footprint cells, 358 over a placed 3811 baseplate
+omr:10264-1: 1024 footprint cells, 1024 over a placed 3811 baseplate
+omr:10185-1: 1024 footprint cells, 1024 over a placed 3811 baseplate
+omr:10190-1: 1024 footprint cells, 1024 over a placed 3811 baseplate
+omr:10218-1: 1024 footprint cells, 1024 over a placed 3811 baseplate
+omr:2150-1: 272 footprint cells, 166 over a placed 3811 baseplate
+omr:4554-1: 272 footprint cells, 166 over a placed 3811 baseplate
+omr:4555-1: 1536 footprint cells, 1024 over a placed 3811 baseplate
+omr:10128-1: 1536 footprint cells, 1024 over a placed 3811 baseplate
+omr:10133-1: 0 footprint cells, 0 over a placed 3811 baseplate
+predicted baseplate studs culled under footprints: 6834 | app reported: 6834

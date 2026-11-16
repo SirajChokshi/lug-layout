@@ -1,0 +1,6 @@
+Google Chrome 157.0.8103.50 
+Linux 6.12.113+
+8
+model name	: Intel(R) Xeon(R) Processor
+               total        used        free      shared  buff/cache   available
+Mem:              47          21          22           0           3          25

@@ -1,0 +1,2 @@
+omr:2150-1: 272 footprint cells, 166 over a placed 3811 baseplate
+predicted baseplate studs culled under footprints: 166 | app reported: 166

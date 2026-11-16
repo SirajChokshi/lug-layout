@@ -1,0 +1,456 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "api": "webgl2",
+  "lower": "10185-1",
+  "upper": "10264-1",
+  "hover": "0,0",
+  "hudBefore": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 637 ms | Mode | select | Ghost rotation | 0° | Cursor on lattice (LDU) | 0, 0 | Lands at (plates) | – | Placements | 2 | History (undo, redo) | 2, 0 | Last edit latency | 1052.9 ms (place 10185-1, 0°) | Rebuilt for it | 4 chunks, 2,406 parts, 1,725 studs | Studs drawn | 1,725 | Studs culled inside models | 5,882 | Studs culled under footprints | 1,024 | Frame rate (rAF) | 3.0 fps | Draw calls | 402 | Drawn triangles | 747,531",
+  "hudGhost": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 637 ms | Mode | place 10264-1 | Ghost rotation | 0° | Cursor on lattice (LDU) | 0, 0 | Lands at (plates) | 105 | Placements | 2 | History (undo, redo) | 2, 0 | Last edit latency | 1052.9 ms (place 10185-1, 0°) | Rebuilt for it | 4 chunks, 2,406 parts, 1,725 studs | Studs drawn | 1,725 | Studs culled inside models | 5,882 | Studs culled under footprints | 1,024 | Frame rate (rAF) | 1.6 fps | Draw calls | 735 | Drawn triangles | 1,687,483",
+  "hudPlaced": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 637 ms | Mode | select | Ghost rotation | 0° | Cursor on lattice (LDU) | -20740, -3200 | Lands at (plates) | – | Placements | 3 | History (undo, redo) | 3, 0 | Last edit latency | 1659.8 ms (place 10264-1, 0°) | Rebuilt for it | 4 chunks, 4,973 parts, 3,783 studs | Studs drawn | 3,783 | Studs culled inside models | 11,313 | Studs culled under footprints | 1,024 | Frame rate (rAF) | 1.7 fps | Draw calls | 839 | Drawn triangles | 1,687,483",
+  "worldBeforeStack": {
+    "refs": [
+      "ldraw:3811",
+      "omr:7936-1",
+      "omr:10264-1",
+      "omr:10185-1",
+      "omr:10190-1",
+      "omr:10218-1",
+      "omr:2150-1",
+      "omr:4554-1",
+      "omr:4555-1",
+      "omr:10128-1",
+      "omr:10133-1"
+    ],
+    "frameShifts": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        -120,
+        8,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        -150,
+        8,
+        80
+      ],
+      [
+        -150,
+        8,
+        80
+      ],
+      [
+        -40,
+        4,
+        -300
+      ],
+      [
+        -100,
+        4,
+        -200
+      ],
+      [
+        0,
+        85.25,
+        -80
+      ]
+    ],
+    "covers": [
+      {
+        "id": "ldraw:3811",
+        "studsDrawnPerPlacement": 1024,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "omr:7936-1",
+        "studsDrawnPerPlacement": 310,
+        "studsCulledAtBake": 312,
+        "footprintCells": 466,
+        "flatCells": 10,
+        "heightPlates": 32
+      },
+      {
+        "id": "omr:10264-1",
+        "studsDrawnPerPlacement": 2058,
+        "studsCulledAtBake": 5431,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 100
+      },
+      {
+        "id": "omr:10185-1",
+        "studsDrawnPerPlacement": 1725,
+        "studsCulledAtBake": 5882,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 105
+      },
+      {
+        "id": "omr:10190-1",
+        "studsDrawnPerPlacement": 1727,
+        "studsCulledAtBake": 3400,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 103
+      },
+      {
+        "id": "omr:10218-1",
+        "studsDrawnPerPlacement": 1830,
+        "studsCulledAtBake": 5210,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 89
+      },
+      {
+        "id": "omr:2150-1",
+        "studsDrawnPerPlacement": 865,
+        "studsCulledAtBake": 1584,
+        "footprintCells": 272,
+        "flatCells": 0,
+        "heightPlates": 72
+      },
+      {
+        "id": "omr:4554-1",
+        "studsDrawnPerPlacement": 879,
+        "studsCulledAtBake": 1568,
+        "footprintCells": 272,
+        "flatCells": 0,
+        "heightPlates": 72
+      },
+      {
+        "id": "omr:4555-1",
+        "studsDrawnPerPlacement": 1787,
+        "studsCulledAtBake": 1209,
+        "footprintCells": 1536,
+        "flatCells": 1536,
+        "heightPlates": 76
+      },
+      {
+        "id": "omr:10128-1",
+        "studsDrawnPerPlacement": 1257,
+        "studsCulledAtBake": 880,
+        "footprintCells": 1536,
+        "flatCells": 1536,
+        "heightPlates": 67
+      },
+      {
+        "id": "omr:10133-1",
+        "studsDrawnPerPlacement": 395,
+        "studsCulledAtBake": 1001,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 34
+      }
+    ],
+    "placements": {
+      "refId": [
+        0,
+        3
+      ],
+      "colorId": [
+        2,
+        0
+      ],
+      "x": [
+        0,
+        0
+      ],
+      "z": [
+        0,
+        0
+      ],
+      "yPlates": [
+        0,
+        0
+      ],
+      "rot": [
+        0,
+        0
+      ]
+    },
+    "studs": {
+      "drawn": 1725,
+      "culledInsideModels": 5882,
+      "culledUnderFootprints": 1024
+    }
+  },
+  "world": {
+    "refs": [
+      "ldraw:3811",
+      "omr:7936-1",
+      "omr:10264-1",
+      "omr:10185-1",
+      "omr:10190-1",
+      "omr:10218-1",
+      "omr:2150-1",
+      "omr:4554-1",
+      "omr:4555-1",
+      "omr:10128-1",
+      "omr:10133-1"
+    ],
+    "frameShifts": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        -120,
+        8,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        -150,
+        8,
+        80
+      ],
+      [
+        -150,
+        8,
+        80
+      ],
+      [
+        -40,
+        4,
+        -300
+      ],
+      [
+        -100,
+        4,
+        -200
+      ],
+      [
+        0,
+        85.25,
+        -80
+      ]
+    ],
+    "covers": [
+      {
+        "id": "ldraw:3811",
+        "studsDrawnPerPlacement": 1024,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "omr:7936-1",
+        "studsDrawnPerPlacement": 310,
+        "studsCulledAtBake": 312,
+        "footprintCells": 466,
+        "flatCells": 10,
+        "heightPlates": 32
+      },
+      {
+        "id": "omr:10264-1",
+        "studsDrawnPerPlacement": 2058,
+        "studsCulledAtBake": 5431,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 100
+      },
+      {
+        "id": "omr:10185-1",
+        "studsDrawnPerPlacement": 1725,
+        "studsCulledAtBake": 5882,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 105
+      },
+      {
+        "id": "omr:10190-1",
+        "studsDrawnPerPlacement": 1727,
+        "studsCulledAtBake": 3400,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 103
+      },
+      {
+        "id": "omr:10218-1",
+        "studsDrawnPerPlacement": 1830,
+        "studsCulledAtBake": 5210,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 89
+      },
+      {
+        "id": "omr:2150-1",
+        "studsDrawnPerPlacement": 865,
+        "studsCulledAtBake": 1584,
+        "footprintCells": 272,
+        "flatCells": 0,
+        "heightPlates": 72
+      },
+      {
+        "id": "omr:4554-1",
+        "studsDrawnPerPlacement": 879,
+        "studsCulledAtBake": 1568,
+        "footprintCells": 272,
+        "flatCells": 0,
+        "heightPlates": 72
+      },
+      {
+        "id": "omr:4555-1",
+        "studsDrawnPerPlacement": 1787,
+        "studsCulledAtBake": 1209,
+        "footprintCells": 1536,
+        "flatCells": 1536,
+        "heightPlates": 76
+      },
+      {
+        "id": "omr:10128-1",
+        "studsDrawnPerPlacement": 1257,
+        "studsCulledAtBake": 880,
+        "footprintCells": 1536,
+        "flatCells": 1536,
+        "heightPlates": 67
+      },
+      {
+        "id": "omr:10133-1",
+        "studsDrawnPerPlacement": 395,
+        "studsCulledAtBake": 1001,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 34
+      }
+    ],
+    "placements": {
+      "refId": [
+        0,
+        3,
+        2
+      ],
+      "colorId": [
+        2,
+        0,
+        0
+      ],
+      "x": [
+        0,
+        0,
+        0
+      ],
+      "z": [
+        0,
+        0,
+        0
+      ],
+      "yPlates": [
+        0,
+        0,
+        105
+      ],
+      "rot": [
+        0,
+        0,
+        0
+      ]
+    },
+    "studs": {
+      "drawn": 3783,
+      "culledInsideModels": 11313,
+      "culledUnderFootprints": 1024
+    }
+  },
+  "rotations": [
+    {
+      "turn": 1,
+      "yPlates": [
+        0,
+        0,
+        105
+      ],
+      "rot": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "turn": 2,
+      "yPlates": [
+        0,
+        0,
+        105
+      ],
+      "rot": [
+        0,
+        0,
+        2
+      ]
+    },
+    {
+      "turn": 3,
+      "yPlates": [
+        0,
+        0,
+        105
+      ],
+      "rot": [
+        0,
+        0,
+        3
+      ]
+    },
+    {
+      "turn": 4,
+      "yPlates": [
+        0,
+        0,
+        105
+      ],
+      "rot": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
