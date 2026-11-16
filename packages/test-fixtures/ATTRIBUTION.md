@@ -772,10 +772,6 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/2859c00.dat` | ~Train Track 9V Switch Right - Plastic Part with Underside Cover Plate and Metal Elements | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2860a.dat` | ~Train Track 9V Switch Tongue Right - Plastic Part | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2860ac01.dat` | ~Train Track 9V Switch Tongue Right | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/2861.dat` | ~Train Track 9V Switch Left - Plastic Part | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/2861c00.dat` | ~Train Track 9V Switch Left - Plastic Part with Underside Cover Plate and Metal Elements | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/2862a.dat` | ~Train Track 9V Switch Tongue Left - Plastic Part | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/2862ac01.dat` | ~Train Track 9V Switch Tongue Left | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2863.dat` | ~Train Track 9V Bottom Plate Right | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2864.dat` | ~Train Track 9V Switch Command Rod | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2864c01.dat` | ~Train Track 9V Switch Command Rod with Metal Plate | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -794,7 +790,6 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/2921.dat` | Brick 1 x 1 with Handle | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2926.dat` | Plate 1 x 4 with 2 Wheel Pins | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2927.dat` | Train Wheel Tiny | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/2939.dat` | ~Train Track 9V Bottom Plate Left | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2959.dat` | ~Magnet Cylindrical Casing (Obsolete) | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2959c01.dat` | ~Magnet Cylindrical in Casing (Complete) (Obsolete) | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3001.dat` | Brick 2 x 4 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1342,7 +1337,6 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/755.dat` | ~Hose Flexible Segment End Section | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/75535.dat` | Technic Pin Joiner Round | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/75541-f2.dat` | Train Track 9V Switch Right Branching | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/75542-f2.dat` | Train Track 9V Switch Left Branching | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/756.dat` | ~Hose Flexible Segment Center Section | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/77.dat` | ~Technic Flex-System Hose Segment | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/84954.dat` | Windscreen 3 x 4 x 3 | Joerg Sommerer [Brickaneer] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
@@ -1776,11 +1770,6 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/u9173.dat` | ~Train Track 9V Switch - Internal Contact Plate for Switch Function | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/u9240.dat` | ~Train Track 9V Switch Tongue Right - Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/u9309.dat` | ~Train Track 9V Switch Right - Straight Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/u9508.dat` | ~Train Track 9V Switch Left - Curved Metal Rail, Start Section of Main Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/u9509.dat` | ~Train Track 9V Switch Left - Curved Metal Rail, End Section of Main Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/u9541.dat` | ~Train Track 9V Switch Left - Curved Metal Rail, Closure Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/u9544.dat` | ~Train Track 9V Switch Left - Curved Metal Rail, Frog Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
-| `parts/u9545.dat` | ~Train Track 9V Switch Tongue Left - Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/u9610.dat` | ~Train Track 9V Curved - Inner Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/u9611.dat` | ~Train Track 9V Straight - Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/u9621.dat` | ~Train Track 9V Curved - Outer Metal Rail | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1808,5 +1797,3 @@ Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json`. OMR models
 | 10133-1 | 4 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10133-1.mpd (retrieved 2026-11-16T17:20:00Z) |
 | switch-then-reversed-curve | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from measured track-end poses |  | generated by tools/asset-pipeline `cli.ts facts`: parts placed from the measured track-end poses in docs/verified-facts/geometry.json (retrieved 2026-11-16) |
 | road-baseplates | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents |  | generated by tools/asset-pipeline `cli.ts facts`: plates abutted edge to edge using the measured plate extents in docs/verified-facts/geometry.json (retrieved 2026-11-16) |
-| r40-circle-9v | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math) |  | generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json) (retrieved 2026-11-16) |
-| oval-passing-siding-9v | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math) |  | generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json) (retrieved 2026-11-16) |

@@ -2,11 +2,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { walkPart } from "../ldraw/walk.ts";
-import { ZETA16_ORDER, type Zeta16 } from "@brr/math";
 import {
   findZeta16Representation,
+  ZETA16_ORDER,
   ZETA16_STEP_RADIANS,
   type FieldRepresentation,
+  type Zeta16Coefficients,
 } from "./cyclotomic.ts";
 
 export const LDU_PER_STUD = 20;
@@ -37,7 +38,7 @@ export interface RelativeTrackEnd {
   readonly toleranceLdu: number;
   readonly fieldSearch: FieldSearchSummary | null;
   readonly fieldCertified: boolean;
-  readonly coefficients: Zeta16 | null;
+  readonly coefficients: Zeta16Coefficients | null;
 }
 
 interface FieldSearchSummary {
@@ -111,14 +112,11 @@ function normalizeAngle(angle: number): number {
   return ((angle % turn) + turn) % turn;
 }
 
-export function entryInwardAngle(entry: TrackEnd): number {
-  return Math.round((entry.outward + Math.PI) / PART_FRAME_HEADING_GRID) * PART_FRAME_HEADING_GRID;
-}
-
 export function relativeToEntry(ends: ReadonlyArray<TrackEnd>): ReadonlyArray<RelativeTrackEnd> {
   const entry = ends[0];
   if (entry === undefined) return [];
-  const inward = entryInwardAngle(entry);
+  const inward =
+    Math.round((entry.outward + Math.PI) / PART_FRAME_HEADING_GRID) * PART_FRAME_HEADING_GRID;
   const cos = Math.cos(-inward);
   const sin = Math.sin(-inward);
   return ends.map((end) => {

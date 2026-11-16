@@ -13,18 +13,18 @@ const DECIMALS = 6;
 const SCENE_AUTHOR = "Brick Railroad tools/asset-pipeline (cli.ts facts)";
 const STRAIGHTS_AFTER_SWITCH = 2;
 
-export interface ScenePlacement {
+interface ScenePlacement {
   readonly part: string;
   readonly transform: Affine;
 }
 
-export function rotationY(angle: number): Affine {
+function rotationY(angle: number): Affine {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   return [cos, 0, -sin, 0, 1, 0, sin, 0, cos, 0, 0, 0];
 }
 
-export function translated(m: Affine, x: number, z: number): Affine {
+function translated(m: Affine, x: number, z: number): Affine {
   return [m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], x, 0, z];
 }
 
@@ -51,11 +51,7 @@ function formatNumber(value: number): string {
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
-export function toLdraw(
-  title: string,
-  method: string,
-  placements: ReadonlyArray<ScenePlacement>,
-): string {
+function toLdraw(title: string, method: string, placements: ReadonlyArray<ScenePlacement>): string {
   const lines = placements.map(({ part, transform }) => {
     const [a, b, c, d, e, f, g, h, i, x, y, z] = transform;
     return [1, INHERIT_COLOR, x, y, z, a, b, c, d, e, f, g, h, i]

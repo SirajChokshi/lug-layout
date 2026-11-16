@@ -1,5 +1,5 @@
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import { ZETA16_ORDER } from "@brr/math";
+import { ZETA16_ORDER } from "../track/cyclotomic.ts";
 import { loadTrackEndMarkers, type RelativeTrackEnd } from "../track/track-ends.ts";
 import {
   composeDivergingWithCurve,
