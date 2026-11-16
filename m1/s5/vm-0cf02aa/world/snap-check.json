@@ -1,7 +1,1026 @@
 {
+ "definitions": {
+  "distance": "max over x and z of the distance from the stud's world position to the nearest baseplate stud line (x, z = 10 mod 20), in LDU, float64",
+  "exact": "distance 0",
+  "nearLattice": "upright, square-yawed stud with 0 < distance <= 1 LDU",
+  "halfStud": "upright, square-yawed stud within 1 LDU of a half-stud offset on x or z",
+  "otherOffset": "upright, square-yawed stud at any other offset",
+  "angled": "stud not upright or yawed more than 1 degree off a quarter turn",
+  "angledWithinNearLatticeLdu": "angled studs that happen to lie within 1 LDU of the lattice (already counted in angled)",
+  "rotationInvariance": "each stud's deviation rotated back into the model frame, compared across every placement of the set, difference taken modulo 20 LDU"
+ },
  "placements": 60,
  "poseViolations": [],
  "shiftMismatches": [],
+ "rotationInvariance": [
+  {
+   "ref": "omr:7936-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:10264-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:10185-1",
+   "placements": 8,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:10190-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:10218-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:2150-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:4554-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:4555-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:10128-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "omr:10133-1",
+   "placements": 4,
+   "rotations": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  },
+  {
+   "ref": "ldraw:3811",
+   "placements": 16,
+   "rotations": [
+    0
+   ],
+   "maxModelFrameDeviationDifferenceLdu": 0
+  }
+ ],
+ "worstNearLatticeInstances": [
+  {
+   "ref": "omr:10264-1",
+   "instance": 1932,
+   "part": "ldraw:3005",
+   "distanceLdu": 0.0159912109375,
+   "modelStudYUp": [
+    -289.9840087890625,
+    616,
+    170
+   ],
+   "instanceTranslationYUp": [
+    -289.9840087890625,
+    616,
+    170
+   ]
+  },
+  {
+   "ref": "omr:10264-1",
+   "instance": 1827,
+   "part": "ldraw:3005",
+   "distanceLdu": 0.0150146484375,
+   "modelStudYUp": [
+    -289.9849853515625,
+    568,
+    170
+   ],
+   "instanceTranslationYUp": [
+    -289.9849853515625,
+    568,
+    170
+   ]
+  },
+  {
+   "ref": "omr:10264-1",
+   "instance": 1848,
+   "part": "ldraw:2357",
+   "distanceLdu": 0.0150146484375,
+   "modelStudYUp": [
+    -309.9849853515625,
+    592,
+    170
+   ],
+   "instanceTranslationYUp": [
+    -309.9849853515625,
+    592,
+    170
+   ]
+  },
+  {
+   "ref": "omr:10264-1",
+   "instance": 1857,
+   "part": "ldraw:3005",
+   "distanceLdu": 0.00800323486328125,
+   "modelStudYUp": [
+    110.00800323486328,
+    592,
+    -310
+   ],
+   "instanceTranslationYUp": [
+    110.00800323486328,
+    592,
+    -310
+   ]
+  },
+  {
+   "ref": "omr:10264-1",
+   "instance": 1855,
+   "part": "ldraw:3010",
+   "distanceLdu": 0.007999420166015625,
+   "modelStudYUp": [
+    -49.992000579833984,
+    592,
+    -310
+   ],
+   "instanceTranslationYUp": [
+    -19.992000579833984,
+    592,
+    -310
+   ]
+  },
+  {
+   "ref": "omr:10264-1",
+   "instance": 1856,
+   "part": "ldraw:3010",
+   "distanceLdu": 0.007999420166015625,
+   "modelStudYUp": [
+    30.007999420166016,
+    592,
+    -310
+   ],
+   "instanceTranslationYUp": [
+    60.007999420166016,
+    592,
+    -310
+   ]
+  },
+  {
+   "ref": "omr:10218-1",
+   "instance": 733,
+   "part": "ldraw:3666",
+   "distanceLdu": 0.02500152587890625,
+   "modelStudYUp": [
+    -149.9749984741211,
+    464,
+    309.9939880371094
+   ],
+   "instanceTranslationYUp": [
+    -99.9749984741211,
+    464,
+    309.9939880371094
+   ]
+  },
+  {
+   "ref": "omr:10218-1",
+   "instance": 739,
+   "part": "ldraw:3009",
+   "distanceLdu": 0.02500152587890625,
+   "modelStudYUp": [
+    -29.974998474121094,
+    488,
+    169.99400329589844
+   ],
+   "instanceTranslationYUp": [
+    -79.9749984741211,
+    488,
+    169.99400329589844
+   ]
+  },
+  {
+   "ref": "omr:10218-1",
+   "instance": 740,
+   "part": "ldraw:3008",
+   "distanceLdu": 0.02500152587890625,
+   "modelStudYUp": [
+    -129.9749984741211,
+    488,
+    309.9939880371094
+   ],
+   "instanceTranslationYUp": [
+    -59.974998474121094,
+    488,
+    309.9939880371094
+   ]
+  },
+  {
+   "ref": "omr:10218-1",
+   "instance": 744,
+   "part": "ldraw:3008",
+   "distanceLdu": 0.02500152587890625,
+   "modelStudYUp": [
+    30.025001525878906,
+    488,
+    9.994000434875488
+   ],
+   "instanceTranslationYUp": [
+    100.0250015258789,
+    488,
+    9.994000434875488
+   ]
+  },
+  {
+   "ref": "omr:10218-1",
+   "instance": 745,
+   "part": "ldraw:3008",
+   "distanceLdu": 0.02500152587890625,
+   "modelStudYUp": [
+    30.025001525878906,
+    488,
+    309.9939880371094
+   ],
+   "instanceTranslationYUp": [
+    100.0250015258789,
+    488,
+    309.9939880371094
+   ]
+  },
+  {
+   "ref": "omr:10218-1",
+   "instance": 765,
+   "part": "ldraw:3003",
+   "distanceLdu": 0.02500152587890625,
+   "modelStudYUp": [
+    50.025001525878906,
+    488,
+    269.9939880371094
+   ],
+   "instanceTranslationYUp": [
+    40.025001525878906,
+    488,
+    259.9939880371094
+   ]
+  },
+  {
+   "ref": "omr:4555-1",
+   "instance": 175,
+   "part": "ldraw:4870",
+   "distanceLdu": 0.04400634765625,
+   "modelStudYUp": [
+    -150.04400634765625,
+    72,
+    790
+   ],
+   "instanceTranslationYUp": [
+    -160.04400634765625,
+    72,
+    780
+   ]
+  },
+  {
+   "ref": "omr:4555-1",
+   "instance": 105,
+   "part": "ldraw:4282",
+   "distanceLdu": 0.04400062561035156,
+   "modelStudYUp": [
+    -170.04400062561035,
+    480,
+    -10
+   ],
+   "instanceTranslationYUp": [
+    -20.04400062561035,
+    480,
+    -20
+   ]
+  },
+  {
+   "ref": "omr:4555-1",
+   "instance": 116,
+   "part": "ldraw:3036",
+   "distanceLdu": 0.04400062561035156,
+   "modelStudYUp": [
+    49.95599937438965,
+    480,
+    730
+   ],
+   "instanceTranslationYUp": [
+    -20.04400062561035,
+    480,
+    780
+   ]
+  },
+  {
+   "ref": "omr:4555-1",
+   "instance": 117,
+   "part": "ldraw:3003",
+   "distanceLdu": 0.04400062561035156,
+   "modelStudYUp": [
+    -10.044000625610352,
+    504,
+    -30
+   ],
+   "instanceTranslationYUp": [
+    -20.04400062561035,
+    504,
+    -20
+   ]
+  },
+  {
+   "ref": "omr:4555-1",
+   "instance": 118,
+   "part": "ldraw:3003",
+   "distanceLdu": 0.04400062561035156,
+   "modelStudYUp": [
+    -10.044000625610352,
+    504,
+    810
+   ],
+   "instanceTranslationYUp": [
+    -20.04400062561035,
+    504,
+    820
+   ]
+  },
+  {
+   "ref": "omr:4555-1",
+   "instance": 122,
+   "part": "ldraw:4510",
+   "distanceLdu": 0.04400062561035156,
+   "modelStudYUp": [
+    29.95599937438965,
+    496,
+    290
+   ],
+   "instanceTranslationYUp": [
+    29.95599937438965,
+    496,
+    220
+   ]
+  },
+  {
+   "ref": "omr:10128-1",
+   "instance": 109,
+   "part": "ldraw:6106",
+   "distanceLdu": 0.0540008544921875,
+   "modelStudYUp": [
+    -110.05400085449219,
+    336,
+    -110
+   ],
+   "instanceTranslationYUp": [
+    -120.05400085449219,
+    336,
+    -160
+   ]
+  },
+  {
+   "ref": "omr:10133-1",
+   "instance": 373,
+   "part": "ldraw:3710",
+   "distanceLdu": 0.4000000059604645,
+   "modelStudYUp": [
+    -270,
+    -38.25,
+    -29.599999994039536
+   ],
+   "instanceTranslationYUp": [
+    -270,
+    -38.25,
+    0.4000000059604645
+   ]
+  },
+  {
+   "ref": "omr:10133-1",
+   "instance": 374,
+   "part": "ldraw:3666",
+   "distanceLdu": 0.4000000059604645,
+   "modelStudYUp": [
+    -290,
+    -38.25,
+    -49.599999994039536
+   ],
+   "instanceTranslationYUp": [
+    -290,
+    -38.25,
+    0.4000000059604645
+   ]
+  },
+  {
+   "ref": "omr:10133-1",
+   "instance": 371,
+   "part": "ldraw:3023",
+   "distanceLdu": 0.39999961853027344,
+   "modelStudYUp": [
+    -270,
+    -30.25,
+    30.399999618530273
+   ],
+   "instanceTranslationYUp": [
+    -280,
+    -30.25,
+    30.399999618530273
+   ]
+  },
+  {
+   "ref": "omr:10133-1",
+   "instance": 372,
+   "part": "ldraw:3023",
+   "distanceLdu": 0.39999961853027344,
+   "modelStudYUp": [
+    -270,
+    -30.25,
+    -29.600000381469727
+   ],
+   "instanceTranslationYUp": [
+    -280,
+    -30.25,
+    -29.600000381469727
+   ]
+  },
+  {
+   "ref": "omr:10133-1",
+   "instance": 409,
+   "part": "ldraw:3037",
+   "distanceLdu": 0.26000022888183594,
+   "modelStudYUp": [
+    150,
+    152,
+    29.739999771118164
+   ],
+   "instanceTranslationYUp": [
+    180,
+    152,
+    29.739999771118164
+   ]
+  },
+  {
+   "ref": "omr:10133-1",
+   "instance": 394,
+   "part": "ldraw:3666",
+   "distanceLdu": 0.25999999046325684,
+   "modelStudYUp": [
+    210,
+    72,
+    49.74000000953674
+   ],
+   "instanceTranslationYUp": [
+    210,
+    72,
+    -0.25999999046325684
+   ]
+  }
+ ],
+ "nearLatticeInstances": {
+  "omr:7936-1": [],
+  "omr:10264-1": [
+   734,
+   735,
+   749,
+   755,
+   756,
+   757,
+   758,
+   1790,
+   1800,
+   1826,
+   1827,
+   1828,
+   1829,
+   1830,
+   1831,
+   1832,
+   1833,
+   1834,
+   1848,
+   1849,
+   1850,
+   1851,
+   1852,
+   1853,
+   1854,
+   1855,
+   1856,
+   1857,
+   1859,
+   1860,
+   1861,
+   1862,
+   1863,
+   1864,
+   1865,
+   1866,
+   1867,
+   1908,
+   1922,
+   1923,
+   1924,
+   1925,
+   1926,
+   1927,
+   1928,
+   1929,
+   1930,
+   1931,
+   1932,
+   1933,
+   1934,
+   1935,
+   1936,
+   1942
+  ],
+  "omr:10185-1": [],
+  "omr:10190-1": [],
+  "omr:10218-1": [
+   577,
+   594,
+   615,
+   616,
+   617,
+   645,
+   648,
+   649,
+   656,
+   659,
+   667,
+   668,
+   688,
+   696,
+   697,
+   698,
+   699,
+   700,
+   701,
+   702,
+   703,
+   705,
+   707,
+   712,
+   714,
+   716,
+   731,
+   733,
+   734,
+   735,
+   736,
+   737,
+   738,
+   739,
+   740,
+   741,
+   742,
+   743,
+   744,
+   745,
+   746,
+   747,
+   750,
+   752,
+   753,
+   754,
+   755,
+   757,
+   758,
+   761,
+   762,
+   763,
+   764,
+   765,
+   767,
+   768,
+   781,
+   782,
+   783,
+   784,
+   795,
+   796,
+   797,
+   798,
+   805,
+   806,
+   807,
+   808,
+   809,
+   810,
+   813,
+   814,
+   815,
+   816,
+   817,
+   818,
+   819,
+   820,
+   821,
+   822,
+   823,
+   824,
+   825,
+   826,
+   827,
+   828,
+   829,
+   830,
+   831,
+   832,
+   833,
+   834,
+   835,
+   836,
+   837,
+   838,
+   839,
+   840,
+   841,
+   842,
+   843,
+   844,
+   849,
+   850,
+   852,
+   853,
+   854,
+   855,
+   857,
+   858,
+   859,
+   860,
+   861,
+   862,
+   863,
+   864,
+   865,
+   866,
+   867,
+   868,
+   869,
+   870,
+   871,
+   872,
+   873,
+   874,
+   875,
+   876,
+   877,
+   878,
+   879,
+   880,
+   881,
+   882,
+   883,
+   884,
+   885,
+   886,
+   887,
+   888,
+   889,
+   890,
+   891,
+   892,
+   893,
+   894,
+   895,
+   896,
+   897,
+   898,
+   903,
+   904,
+   905,
+   906,
+   907,
+   908,
+   909,
+   910,
+   911,
+   912,
+   915,
+   916,
+   917,
+   918,
+   919,
+   920,
+   934,
+   935,
+   936,
+   937,
+   943,
+   944,
+   945,
+   946,
+   947,
+   948,
+   949,
+   953,
+   954
+  ],
+  "omr:2150-1": [],
+  "omr:4554-1": [],
+  "omr:4555-1": [
+   105,
+   106,
+   107,
+   108,
+   109,
+   110,
+   111,
+   112,
+   113,
+   114,
+   115,
+   116,
+   117,
+   118,
+   119,
+   120,
+   121,
+   122,
+   123,
+   124,
+   125,
+   126,
+   127,
+   128,
+   129,
+   130,
+   131,
+   132,
+   133,
+   135,
+   136,
+   137,
+   138,
+   139,
+   140,
+   141,
+   142,
+   143,
+   144,
+   145,
+   146,
+   147,
+   148,
+   149,
+   150,
+   151,
+   152,
+   153,
+   154,
+   155,
+   156,
+   157,
+   158,
+   159,
+   160,
+   161,
+   162,
+   163,
+   164,
+   165,
+   166,
+   167,
+   168,
+   169,
+   171,
+   172,
+   175,
+   179,
+   220,
+   221,
+   222,
+   223,
+   228,
+   229,
+   230,
+   231,
+   250,
+   251,
+   255,
+   256
+  ],
+  "omr:10128-1": [
+   109
+  ],
+  "omr:10133-1": [
+   29,
+   30,
+   42,
+   43,
+   44,
+   45,
+   48,
+   49,
+   50,
+   51,
+   55,
+   56,
+   57,
+   58,
+   59,
+   60,
+   61,
+   62,
+   63,
+   64,
+   105,
+   106,
+   107,
+   114,
+   115,
+   116,
+   128,
+   129,
+   130,
+   131,
+   132,
+   133,
+   134,
+   135,
+   136,
+   137,
+   139,
+   140,
+   144,
+   145,
+   146,
+   147,
+   148,
+   149,
+   150,
+   151,
+   154,
+   162,
+   163,
+   164,
+   165,
+   168,
+   169,
+   170,
+   171,
+   172,
+   173,
+   175,
+   176,
+   177,
+   178,
+   180,
+   181,
+   182,
+   183,
+   184,
+   185,
+   186,
+   187,
+   200,
+   201,
+   202,
+   203,
+   204,
+   205,
+   206,
+   207,
+   209,
+   211,
+   217,
+   218,
+   219,
+   220,
+   221,
+   222,
+   225,
+   232,
+   253,
+   254,
+   255,
+   291,
+   292,
+   293,
+   294,
+   295,
+   296,
+   305,
+   306,
+   328,
+   330,
+   331,
+   332,
+   333,
+   335,
+   347,
+   348,
+   350,
+   351,
+   352,
+   353,
+   355,
+   356,
+   361,
+   364,
+   365,
+   366,
+   367,
+   368,
+   371,
+   372,
+   373,
+   374,
+   375,
+   376,
+   377,
+   378,
+   379,
+   380,
+   381,
+   382,
+   383,
+   384,
+   385,
+   386,
+   387,
+   388,
+   392,
+   393,
+   394,
+   395,
+   396,
+   397,
+   398,
+   399,
+   400,
+   401,
+   402,
+   403,
+   404,
+   405,
+   406,
+   407,
+   408,
+   409,
+   410,
+   412
+  ]
+ },
  "perPlacement": [
   {
    "ref": "omr:7936-1",
@@ -9,13 +1028,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 622,
-   "studsOnBaseplatePhase": 254,
-   "studsOnOtherIntegerPhase": 352,
-   "studsOffIntegerLattice": 16,
-   "studsOnModelLattice": 254,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 252,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 258,
+   "otherOffset": 0,
+   "angled": 112,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:7936-1",
@@ -23,13 +1043,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 622,
-   "studsOnBaseplatePhase": 254,
-   "studsOnOtherIntegerPhase": 352,
-   "studsOffIntegerLattice": 16,
-   "studsOnModelLattice": 254,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 252,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 258,
+   "otherOffset": 0,
+   "angled": 112,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:7936-1",
@@ -37,13 +1058,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 622,
-   "studsOnBaseplatePhase": 254,
-   "studsOnOtherIntegerPhase": 352,
-   "studsOffIntegerLattice": 16,
-   "studsOnModelLattice": 254,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 252,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 258,
+   "otherOffset": 0,
+   "angled": 112,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:7936-1",
@@ -51,13 +1073,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 622,
-   "studsOnBaseplatePhase": 254,
-   "studsOnOtherIntegerPhase": 352,
-   "studsOffIntegerLattice": 16,
-   "studsOnModelLattice": 254,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 252,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 258,
+   "otherOffset": 0,
+   "angled": 112,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10264-1",
@@ -65,13 +1088,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 7489,
-   "studsOnBaseplatePhase": 5234,
-   "studsOnOtherIntegerPhase": 422,
-   "studsOffIntegerLattice": 1833,
-   "studsOnModelLattice": 5234,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 5230,
+   "nearLattice": 249,
+   "nearLatticeMaxLdu": 0.0159912109375,
+   "halfStud": 97,
+   "otherOffset": 8,
+   "angled": 1905,
+   "angledWithinNearLatticeLdu": 20
   },
   {
    "ref": "omr:10264-1",
@@ -79,13 +1103,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 7489,
-   "studsOnBaseplatePhase": 5234,
-   "studsOnOtherIntegerPhase": 422,
-   "studsOffIntegerLattice": 1833,
-   "studsOnModelLattice": 5234,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 5230,
+   "nearLattice": 249,
+   "nearLatticeMaxLdu": 0.0159912109375,
+   "halfStud": 97,
+   "otherOffset": 8,
+   "angled": 1905,
+   "angledWithinNearLatticeLdu": 20
   },
   {
    "ref": "omr:10264-1",
@@ -93,13 +1118,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 7489,
-   "studsOnBaseplatePhase": 5234,
-   "studsOnOtherIntegerPhase": 422,
-   "studsOffIntegerLattice": 1833,
-   "studsOnModelLattice": 5234,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 5230,
+   "nearLattice": 249,
+   "nearLatticeMaxLdu": 0.0159912109375,
+   "halfStud": 97,
+   "otherOffset": 8,
+   "angled": 1905,
+   "angledWithinNearLatticeLdu": 20
   },
   {
    "ref": "omr:10264-1",
@@ -107,13 +1133,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 7489,
-   "studsOnBaseplatePhase": 5234,
-   "studsOnOtherIntegerPhase": 422,
-   "studsOffIntegerLattice": 1833,
-   "studsOnModelLattice": 5234,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 5230,
+   "nearLattice": 249,
+   "nearLatticeMaxLdu": 0.0159912109375,
+   "halfStud": 97,
+   "otherOffset": 8,
+   "angled": 1905,
+   "angledWithinNearLatticeLdu": 20
   },
   {
    "ref": "omr:10185-1",
@@ -121,13 +1148,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 7607,
-   "studsOnBaseplatePhase": 7157,
-   "studsOnOtherIntegerPhase": 100,
-   "studsOffIntegerLattice": 350,
-   "studsOnModelLattice": 7157,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 7157,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 8,
+   "otherOffset": 124,
+   "angled": 318,
+   "angledWithinNearLatticeLdu": 8
   },
   {
    "ref": "omr:10185-1",
@@ -135,13 +1163,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 7607,
-   "studsOnBaseplatePhase": 7157,
-   "studsOnOtherIntegerPhase": 100,
-   "studsOffIntegerLattice": 350,
-   "studsOnModelLattice": 7157,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 7157,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 8,
+   "otherOffset": 124,
+   "angled": 318,
+   "angledWithinNearLatticeLdu": 8
   },
   {
    "ref": "omr:10185-1",
@@ -149,13 +1178,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 7607,
-   "studsOnBaseplatePhase": 7157,
-   "studsOnOtherIntegerPhase": 100,
-   "studsOffIntegerLattice": 350,
-   "studsOnModelLattice": 7157,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 7157,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 8,
+   "otherOffset": 124,
+   "angled": 318,
+   "angledWithinNearLatticeLdu": 8
   },
   {
    "ref": "omr:10185-1",
@@ -163,13 +1193,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 7607,
-   "studsOnBaseplatePhase": 7157,
-   "studsOnOtherIntegerPhase": 100,
-   "studsOffIntegerLattice": 350,
-   "studsOnModelLattice": 7157,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 7157,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 8,
+   "otherOffset": 124,
+   "angled": 318,
+   "angledWithinNearLatticeLdu": 8
   },
   {
    "ref": "omr:10190-1",
@@ -177,13 +1208,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 5127,
-   "studsOnBaseplatePhase": 4948,
-   "studsOnOtherIntegerPhase": 72,
-   "studsOffIntegerLattice": 107,
-   "studsOnModelLattice": 4948,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 4948,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 57,
+   "otherOffset": 0,
+   "angled": 122,
+   "angledWithinNearLatticeLdu": 10
   },
   {
    "ref": "omr:10190-1",
@@ -191,13 +1223,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 5127,
-   "studsOnBaseplatePhase": 4948,
-   "studsOnOtherIntegerPhase": 72,
-   "studsOffIntegerLattice": 107,
-   "studsOnModelLattice": 4948,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 4948,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 57,
+   "otherOffset": 0,
+   "angled": 122,
+   "angledWithinNearLatticeLdu": 10
   },
   {
    "ref": "omr:10190-1",
@@ -205,13 +1238,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 5127,
-   "studsOnBaseplatePhase": 4948,
-   "studsOnOtherIntegerPhase": 72,
-   "studsOffIntegerLattice": 107,
-   "studsOnModelLattice": 4948,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 4948,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 57,
+   "otherOffset": 0,
+   "angled": 122,
+   "angledWithinNearLatticeLdu": 10
   },
   {
    "ref": "omr:10190-1",
@@ -219,13 +1253,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 5127,
-   "studsOnBaseplatePhase": 4948,
-   "studsOnOtherIntegerPhase": 72,
-   "studsOffIntegerLattice": 107,
-   "studsOnModelLattice": 4948,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 4948,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 57,
+   "otherOffset": 0,
+   "angled": 122,
+   "angledWithinNearLatticeLdu": 10
   },
   {
    "ref": "omr:10218-1",
@@ -233,13 +1268,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 7040,
-   "studsOnBaseplatePhase": 5662,
-   "studsOnOtherIntegerPhase": 214,
-   "studsOffIntegerLattice": 1164,
-   "studsOnModelLattice": 5662,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 5634,
+   "nearLattice": 1010,
+   "nearLatticeMaxLdu": 0.02500152587890625,
+   "halfStud": 153,
+   "otherOffset": 15,
+   "angled": 228,
+   "angledWithinNearLatticeLdu": 18
   },
   {
    "ref": "omr:10218-1",
@@ -247,13 +1283,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 7040,
-   "studsOnBaseplatePhase": 5662,
-   "studsOnOtherIntegerPhase": 214,
-   "studsOffIntegerLattice": 1164,
-   "studsOnModelLattice": 5662,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 5634,
+   "nearLattice": 1010,
+   "nearLatticeMaxLdu": 0.02500152587890625,
+   "halfStud": 153,
+   "otherOffset": 15,
+   "angled": 228,
+   "angledWithinNearLatticeLdu": 18
   },
   {
    "ref": "omr:10218-1",
@@ -261,13 +1298,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 7040,
-   "studsOnBaseplatePhase": 5662,
-   "studsOnOtherIntegerPhase": 214,
-   "studsOffIntegerLattice": 1164,
-   "studsOnModelLattice": 5662,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 5634,
+   "nearLattice": 1010,
+   "nearLatticeMaxLdu": 0.02500152587890625,
+   "halfStud": 153,
+   "otherOffset": 15,
+   "angled": 228,
+   "angledWithinNearLatticeLdu": 18
   },
   {
    "ref": "omr:10218-1",
@@ -275,13 +1313,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 7040,
-   "studsOnBaseplatePhase": 5662,
-   "studsOnOtherIntegerPhase": 214,
-   "studsOffIntegerLattice": 1164,
-   "studsOnModelLattice": 5662,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 5634,
+   "nearLattice": 1010,
+   "nearLatticeMaxLdu": 0.02500152587890625,
+   "halfStud": 153,
+   "otherOffset": 15,
+   "angled": 228,
+   "angledWithinNearLatticeLdu": 18
   },
   {
    "ref": "omr:2150-1",
@@ -289,13 +1328,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 2449,
-   "studsOnBaseplatePhase": 2245,
-   "studsOnOtherIntegerPhase": 118,
-   "studsOffIntegerLattice": 86,
-   "studsOnModelLattice": 2245,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2245,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 188,
+   "otherOffset": 0,
+   "angled": 16,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:2150-1",
@@ -303,13 +1343,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 2449,
-   "studsOnBaseplatePhase": 2245,
-   "studsOnOtherIntegerPhase": 118,
-   "studsOffIntegerLattice": 86,
-   "studsOnModelLattice": 2245,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2245,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 188,
+   "otherOffset": 0,
+   "angled": 16,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:2150-1",
@@ -317,13 +1358,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 2449,
-   "studsOnBaseplatePhase": 2245,
-   "studsOnOtherIntegerPhase": 118,
-   "studsOffIntegerLattice": 86,
-   "studsOnModelLattice": 2245,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2245,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 188,
+   "otherOffset": 0,
+   "angled": 16,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:2150-1",
@@ -331,13 +1373,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 2449,
-   "studsOnBaseplatePhase": 2245,
-   "studsOnOtherIntegerPhase": 118,
-   "studsOffIntegerLattice": 86,
-   "studsOnModelLattice": 2245,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2245,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 188,
+   "otherOffset": 0,
+   "angled": 16,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:4554-1",
@@ -345,13 +1388,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 2447,
-   "studsOnBaseplatePhase": 2245,
-   "studsOnOtherIntegerPhase": 118,
-   "studsOffIntegerLattice": 84,
-   "studsOnModelLattice": 2245,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2245,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 186,
+   "otherOffset": 0,
+   "angled": 16,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:4554-1",
@@ -359,13 +1403,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 2447,
-   "studsOnBaseplatePhase": 2245,
-   "studsOnOtherIntegerPhase": 118,
-   "studsOffIntegerLattice": 84,
-   "studsOnModelLattice": 2245,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2245,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 186,
+   "otherOffset": 0,
+   "angled": 16,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:4554-1",
@@ -373,13 +1418,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 2447,
-   "studsOnBaseplatePhase": 2245,
-   "studsOnOtherIntegerPhase": 118,
-   "studsOffIntegerLattice": 84,
-   "studsOnModelLattice": 2245,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2245,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 186,
+   "otherOffset": 0,
+   "angled": 16,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:4554-1",
@@ -387,13 +1433,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 2447,
-   "studsOnBaseplatePhase": 2245,
-   "studsOnOtherIntegerPhase": 118,
-   "studsOffIntegerLattice": 84,
-   "studsOnModelLattice": 2245,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2245,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 186,
+   "otherOffset": 0,
+   "angled": 16,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:4555-1",
@@ -401,13 +1448,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 2996,
-   "studsOnBaseplatePhase": 2022,
-   "studsOnOtherIntegerPhase": 264,
-   "studsOffIntegerLattice": 710,
-   "studsOnModelLattice": 2022,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2022,
+   "nearLattice": 634,
+   "nearLatticeMaxLdu": 0.04400634765625,
+   "halfStud": 304,
+   "otherOffset": 12,
+   "angled": 24,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:4555-1",
@@ -415,13 +1463,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 2996,
-   "studsOnBaseplatePhase": 2022,
-   "studsOnOtherIntegerPhase": 264,
-   "studsOffIntegerLattice": 710,
-   "studsOnModelLattice": 2022,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2022,
+   "nearLattice": 634,
+   "nearLatticeMaxLdu": 0.04400634765625,
+   "halfStud": 304,
+   "otherOffset": 12,
+   "angled": 24,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:4555-1",
@@ -429,13 +1478,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 2996,
-   "studsOnBaseplatePhase": 2022,
-   "studsOnOtherIntegerPhase": 264,
-   "studsOffIntegerLattice": 710,
-   "studsOnModelLattice": 2022,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2022,
+   "nearLattice": 634,
+   "nearLatticeMaxLdu": 0.04400634765625,
+   "halfStud": 304,
+   "otherOffset": 12,
+   "angled": 24,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:4555-1",
@@ -443,13 +1493,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 2996,
-   "studsOnBaseplatePhase": 2022,
-   "studsOnOtherIntegerPhase": 264,
-   "studsOffIntegerLattice": 710,
-   "studsOnModelLattice": 2022,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 2022,
+   "nearLattice": 634,
+   "nearLatticeMaxLdu": 0.04400634765625,
+   "halfStud": 304,
+   "otherOffset": 12,
+   "angled": 24,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10128-1",
@@ -457,13 +1508,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 2137,
-   "studsOnBaseplatePhase": 1897,
-   "studsOnOtherIntegerPhase": 20,
-   "studsOffIntegerLattice": 220,
-   "studsOnModelLattice": 1897,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1895,
+   "nearLattice": 26,
+   "nearLatticeMaxLdu": 0.0540008544921875,
+   "halfStud": 8,
+   "otherOffset": 0,
+   "angled": 208,
+   "angledWithinNearLatticeLdu": 1
   },
   {
    "ref": "omr:10128-1",
@@ -471,13 +1523,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 2137,
-   "studsOnBaseplatePhase": 1897,
-   "studsOnOtherIntegerPhase": 20,
-   "studsOffIntegerLattice": 220,
-   "studsOnModelLattice": 1897,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1895,
+   "nearLattice": 26,
+   "nearLatticeMaxLdu": 0.0540008544921875,
+   "halfStud": 8,
+   "otherOffset": 0,
+   "angled": 208,
+   "angledWithinNearLatticeLdu": 1
   },
   {
    "ref": "omr:10128-1",
@@ -485,13 +1538,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 2137,
-   "studsOnBaseplatePhase": 1897,
-   "studsOnOtherIntegerPhase": 20,
-   "studsOffIntegerLattice": 220,
-   "studsOnModelLattice": 1897,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1895,
+   "nearLattice": 26,
+   "nearLatticeMaxLdu": 0.0540008544921875,
+   "halfStud": 8,
+   "otherOffset": 0,
+   "angled": 208,
+   "angledWithinNearLatticeLdu": 1
   },
   {
    "ref": "omr:10128-1",
@@ -499,13 +1553,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 2137,
-   "studsOnBaseplatePhase": 1897,
-   "studsOnOtherIntegerPhase": 20,
-   "studsOffIntegerLattice": 220,
-   "studsOnModelLattice": 1897,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1895,
+   "nearLattice": 26,
+   "nearLatticeMaxLdu": 0.0540008544921875,
+   "halfStud": 8,
+   "otherOffset": 0,
+   "angled": 208,
+   "angledWithinNearLatticeLdu": 1
   },
   {
    "ref": "omr:10133-1",
@@ -513,13 +1568,14 @@
    "z": 4800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 1396,
-   "studsOnBaseplatePhase": 526,
-   "studsOnOtherIntegerPhase": 20,
-   "studsOffIntegerLattice": 850,
-   "studsOnModelLattice": 526,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 438,
+   "nearLattice": 700,
+   "nearLatticeMaxLdu": 0.4000000059604645,
+   "halfStud": 71,
+   "otherOffset": 0,
+   "angled": 187,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10133-1",
@@ -527,13 +1583,14 @@
    "z": 3200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 1396,
-   "studsOnBaseplatePhase": 526,
-   "studsOnOtherIntegerPhase": 20,
-   "studsOffIntegerLattice": 850,
-   "studsOnModelLattice": 526,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 438,
+   "nearLattice": 700,
+   "nearLatticeMaxLdu": 0.4000000059604645,
+   "halfStud": 71,
+   "otherOffset": 0,
+   "angled": 187,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10133-1",
@@ -541,13 +1598,14 @@
    "z": 1600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 1396,
-   "studsOnBaseplatePhase": 526,
-   "studsOnOtherIntegerPhase": 20,
-   "studsOffIntegerLattice": 850,
-   "studsOnModelLattice": 526,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 438,
+   "nearLattice": 700,
+   "nearLatticeMaxLdu": 0.4000000059604645,
+   "halfStud": 71,
+   "otherOffset": 0,
+   "angled": 187,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10133-1",
@@ -555,13 +1613,14 @@
    "z": 0,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1396,
-   "studsOnBaseplatePhase": 526,
-   "studsOnOtherIntegerPhase": 20,
-   "studsOffIntegerLattice": 850,
-   "studsOnModelLattice": 526,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 438,
+   "nearLattice": 700,
+   "nearLatticeMaxLdu": 0.4000000059604645,
+   "halfStud": 71,
+   "otherOffset": 0,
+   "angled": 187,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -569,13 +1628,14 @@
    "z": 7680,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -583,13 +1643,14 @@
    "z": 7680,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10185-1",
@@ -597,13 +1658,14 @@
    "z": 8000,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 7607,
-   "studsOnBaseplatePhase": 7157,
-   "studsOnOtherIntegerPhase": 100,
-   "studsOffIntegerLattice": 350,
-   "studsOnModelLattice": 7157,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 7157,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 8,
+   "otherOffset": 124,
+   "angled": 318,
+   "angledWithinNearLatticeLdu": 8
   },
   {
    "ref": "ldraw:3811",
@@ -611,13 +1673,14 @@
    "z": 8320,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -625,13 +1688,14 @@
    "z": 8320,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -639,13 +1703,14 @@
    "z": 9280,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -653,13 +1718,14 @@
    "z": 9280,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -667,13 +1733,14 @@
    "z": 9920,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -681,13 +1748,14 @@
    "z": 9920,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10185-1",
@@ -695,13 +1763,14 @@
    "z": 9600,
    "yPlates": 0,
    "rot": 1,
-   "yLdu": 0,
    "studs": 7607,
-   "studsOnBaseplatePhase": 7157,
-   "studsOnOtherIntegerPhase": 100,
-   "studsOffIntegerLattice": 350,
-   "studsOnModelLattice": 7157,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 7157,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 8,
+   "otherOffset": 124,
+   "angled": 318,
+   "angledWithinNearLatticeLdu": 8
   },
   {
    "ref": "ldraw:3811",
@@ -709,13 +1778,14 @@
    "z": 10880,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -723,13 +1793,14 @@
    "z": 10880,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10185-1",
@@ -737,13 +1808,14 @@
    "z": 11200,
    "yPlates": 0,
    "rot": 2,
-   "yLdu": 0,
    "studs": 7607,
-   "studsOnBaseplatePhase": 7157,
-   "studsOnOtherIntegerPhase": 100,
-   "studsOffIntegerLattice": 350,
-   "studsOnModelLattice": 7157,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 7157,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 8,
+   "otherOffset": 124,
+   "angled": 318,
+   "angledWithinNearLatticeLdu": 8
   },
   {
    "ref": "ldraw:3811",
@@ -751,13 +1823,14 @@
    "z": 11520,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -765,13 +1838,14 @@
    "z": 11520,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -779,13 +1853,14 @@
    "z": 12480,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -793,13 +1868,14 @@
    "z": 12480,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -807,13 +1883,14 @@
    "z": 13120,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "ldraw:3811",
@@ -821,13 +1898,14 @@
    "z": 13120,
    "yPlates": 0,
    "rot": 0,
-   "yLdu": 0,
    "studs": 1024,
-   "studsOnBaseplatePhase": 1024,
-   "studsOnOtherIntegerPhase": 0,
-   "studsOffIntegerLattice": 0,
-   "studsOnModelLattice": 1024,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 1024,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 0,
+   "otherOffset": 0,
+   "angled": 0,
+   "angledWithinNearLatticeLdu": 0
   },
   {
    "ref": "omr:10185-1",
@@ -835,15 +1913,14 @@
    "z": 12800,
    "yPlates": 0,
    "rot": 3,
-   "yLdu": 0,
    "studs": 7607,
-   "studsOnBaseplatePhase": 7157,
-   "studsOnOtherIntegerPhase": 100,
-   "studsOffIntegerLattice": 350,
-   "studsOnModelLattice": 7157,
-   "modelLatticeMaxDeviationLdu": 0
+   "exact": 7157,
+   "nearLattice": 0,
+   "nearLatticeMaxLdu": 0,
+   "halfStud": 8,
+   "otherOffset": 124,
+   "angled": 318,
+   "angledWithinNearLatticeLdu": 8
   }
- ],
- "studsOnModelLattice": 173772,
- "modelLatticeMaxDeviationLdu": 0
+ ]
 }
