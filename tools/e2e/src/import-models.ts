@@ -6,6 +6,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 const VIEWPORT = { width: 1920, height: 1080 } as const;
 const IMPORT_TIMEOUT_MS = 600_000;
 const SETTLE_MS = 1_500;
+const ERROR_READ_TIMEOUT_MS = 10_000;
 const DEFAULT_CHROME = "/usr/local/bin/google-chrome";
 
 const { values, positionals } = parseArgs({
@@ -50,11 +51,9 @@ async function importFile(
     expectedModules,
     { timeout: IMPORT_TIMEOUT_MS, polling: 250 },
   );
-  const error = await page
-    .locator(".import-panel .error")
-    .textContent({ timeout: 100 })
-    .catch(() => null);
-  return error;
+  const error = page.locator(".import-panel .error");
+  if ((await error.count()) === 0) return null;
+  return error.textContent({ timeout: ERROR_READ_TIMEOUT_MS });
 }
 
 async function captureRejection(page: Page, name: string, error: string): Promise<void> {

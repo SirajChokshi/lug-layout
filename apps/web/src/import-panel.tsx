@@ -237,7 +237,7 @@ export function ImportPanel({ scene, onImported }: ImportPanelProps) {
         setModules((previous) => [...previous, module]);
         onImported(module);
       } catch (e) {
-        setError(`${file.name}: ${String(e)}`);
+        setError(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
     setBusy(null);
