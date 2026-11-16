@@ -1,0 +1,16 @@
+---
+description: Real parts only, exact integer geometry, no approximation or fudging of joins, dimensions or facts
+alwaysApply: true
+---
+
+# Real parts, no approximation
+
+- **Geometry comes from data, never from memory.** Connector poses, track paths, footprints, gauges, switch offsets and module dimensions are imported from LDraw, LDCad or published standards by the pipeline. Never type them into code. The only literal constants allowed are the canonical units: LDU, stud 20, plate 8, brick 24, chunk 640.
+- **Unverified facts (§11) stay flagged.** Until verified, a value is marked `unverified` in data and its rules show "unverified" warnings. Don't guess a number to make something work.
+- **Integer LDU everywhere on the lattice.** x and z are the plan axes, y counts plates above the top face of the baseplate. LDraw files are −Y up, so convert exactly once, at the compile and import boundary. Floats are for rendering and for imported models' internal matrices only, and never for joins.
+- **Exact joins.** Track ends join if and only if their ℤ[ζ_N] coefficient vectors are equal and their headings differ by N/2. Models sit on the 20-LDU lattice with 90° rotations at whole plate heights. There's no snapping radius and no "close enough". The one ε is 1e-6 LDU, and only for algebraic poses outside the field, to absorb representation error, never physical slack.
+- **No silent substitutes.** An unresolved part becomes a badged placeholder. An unknown color snaps to canonical with a warning. A missing connector is an error, not an inferred guess. Never substitute logo studs.
+- **Imported models are immutable.** Badges (L1, L2, provenance) never block placement and never rewrite bricks.
+- **Validity is strict.** Layout and plan rules are zero-tolerance. The "real-world play" tolerance mode never counts as Valid. Sandbox mode changes errors into warnings. It doesn't change the geometry.
+- **Third-party is namespaced and flagged.** Ids look like `ldraw:53401`. `thirdParty` provenance is refused unless `allowThirdParty` is set, and the BOM always flags it.
+- Never weaken a rule, widen a tolerance or edit a golden file just to make a test pass. Find the real cause or ask.

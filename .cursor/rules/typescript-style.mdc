@@ -1,0 +1,23 @@
+---
+description: TypeScript style for the @brr monorepo
+globs: **/*.ts,**/*.tsx
+alwaysApply: false
+---
+
+# TypeScript style
+
+- **Compiler settings:** extend the `@brr/config` presets (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`). ESM only. Don't loosen them per package.
+- **Tooling:** oxlint lints and oxfmt formats (`pnpm lint`, `pnpm format`). Never add ESLint or Prettier.
+- **Imports:** all at the top of the file, with no inline `import()` types or dynamic imports except worker URLs and code-split UI routes. Use `import type` for type-only imports. Relative imports carry an explicit `.ts` or `.tsx` extension.
+- **Exports:** named exports only. Default exports only where a tool requires them (configs).
+- **No `any` and no non-null `!`** (both are lint errors). Narrow with checks, and use `unknown` plus `schema` validators at I/O boundaries.
+- **Data shapes:** discriminated unions on `kind`, and string-literal unions instead of `enum`. Every `switch` over a union ends with:
+  ```ts
+  default: { const _exhaustive: never = x; throw new Error(`unhandled ${String(_exhaustive)}`); }
+  ```
+- **Naming:** files in `kebab-case.ts`, classes and types in `PascalCase`, service interfaces prefixed `I` (`ILayoutService`), tokens in `SCREAMING_SNAKE`, branded ids where mixing would be a bug (`PartId`, `ModelHash`).
+- **Immutability:** `readonly` fields and `ReadonlyArray` by default. Typed arrays are the deliberate mutable exception (see the hot-path rule).
+- **Errors:** validation returns issue lists and never throws. Throw only for programmer errors and broken invariants.
+- **Numbers:** `bigint` only for exact track coefficients. Use integers for LDU, and floats only in render and sim derivations.
+- **React (ui only):** function components, no business logic. Read state through client view models and call client service interfaces. No domain or render imports.
+- **No comments at all** (see `no-comments.mdc`).
