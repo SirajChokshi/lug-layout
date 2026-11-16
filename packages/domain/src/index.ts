@@ -85,11 +85,15 @@ export {
   type TrackPieceDef,
 } from "./track/track-pose.ts";
 export {
-  DEFAULT_CLOSURE_TURNS,
   runMoves,
-  solveClosure,
   solveDrag,
   type DragPlan,
   type TrackRun,
   type TrackSegment,
 } from "./track/track-solver.ts";
+export {
+  solveClosure,
+  UNLIMITED_BUDGET,
+  type ClosureResult,
+  type SearchBudget,
+} from "./track/closure.ts";

@@ -6,8 +6,10 @@ function closureText(drag: TrackDragView): string {
   switch (drag.closure) {
     case "exact":
       return "joins the open end exactly";
-    case "refused":
-      return "no exact join with 9V straights and R40 curves: release lays nothing";
+    case "impossible":
+      return "no exact join exists with any run of 9V straights and R40 curves: release lays nothing";
+    case "limit":
+      return "the search hit its time limit before finding an exact join: release lays nothing";
     case null:
       return drag.pieces === 0
         ? "drag away from the start"
@@ -34,8 +36,10 @@ function commitText(track: TrackView): string {
       return "laid and joined exactly";
     case "laid":
       return "laid with an open end";
-    case "refused":
-      return "refused: no exact join";
+    case "refused-impossible":
+      return "refused: no exact join exists";
+    case "refused-limit":
+      return "refused: search hit its time limit";
     case null:
       return "none yet";
     default: {

@@ -12,7 +12,8 @@ import {
 import { describe, expect, it } from "vitest";
 import { drawingKit, type DrawingKit } from "./drawing-kit.ts";
 import { advance, connectorPose, layMoves, type TrackPieceDef } from "./track-pose.ts";
-import { runMoves, solveClosure, solveDrag, type TrackRun } from "./track-solver.ts";
+import { solveClosure, type ClosureResult, type SearchBudget } from "./closure.ts";
+import { runMoves, solveDrag, type TrackRun } from "./track-solver.ts";
 
 interface GeometryEnd {
   readonly fieldCertified: boolean;
@@ -54,6 +55,7 @@ function nineVoltKit(): DrawingKit {
 }
 
 const kit = nineVoltKit();
+const PROPERTY_TIMEOUT_MS = 30_000;
 
 function seeded(seed: number): () => number {
   let state = seed >>> 0;
@@ -114,20 +116,101 @@ describe("exact track composition", () => {
   });
 });
 
+function closedBy(start: Pose16, goal: Pose16, result: ClosureResult): boolean {
+  return result.kind === "exact" && posesJoin16(endOf(start, result.run), goal);
+}
+
+function turnsRun(random: () => number, turns: number): TrackRun {
+  const segments: TrackRun["segments"][number][] = [];
+  let pieces = 0;
+  for (let s = 0; s < turns; s++) {
+    const count = Math.floor(random() * 4);
+    if (count) segments.push({ kind: "straight", count });
+    pieces += count;
+    const curves = 1 + Math.floor(random() * 6);
+    segments.push({ kind: "turn", sign: random() < 0.5 ? 1 : -1, curves });
+    pieces += curves;
+  }
+  return { segments, pieces };
+}
+
+function expiredBudget(): SearchBudget {
+  let tick = 0;
+  return { now: () => (tick += 1000), limitMs: 1 };
+}
+
 describe("solveClosure", () => {
-  it("closes any gap a run of straights and curves can span, with no more pieces than that run", () => {
+  it("closes any gap a run of up to three turns spans, with no more pieces than that run", () => {
     const random = seeded(42);
     for (let trial = 0; trial < 60; trial++) {
       const start = pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), Math.floor(random() * 16));
       const reference = randomRun(random);
       const goal = openEndFacing(endOf(start, reference));
-      const run = solveClosure(kit, start, goal);
-      expect(run !== null && posesJoin16(endOf(start, run), goal)).toBe(true);
-      expect(run?.pieces ?? Infinity).toBeLessThanOrEqual(reference.pieces);
+      const result = solveClosure(kit, start, goal);
+      expect(closedBy(start, goal, result)).toBe(true);
+      expect(result.kind === "exact" ? result.run.pieces : Infinity).toBeLessThanOrEqual(
+        reference.pieces,
+      );
     }
   });
 
-  it("closes a full oval from one open end back to the other", () => {
+  it(
+    "closes every goal a four-turn run reaches, never with more pieces than that run",
+    () => {
+      const random = seeded(99);
+      for (let trial = 0; trial < 400; trial++) {
+        const reference = turnsRun(random, 4);
+        const goal = openEndFacing(endOf(POSE16_IDENTITY, reference));
+        const result = solveClosure(kit, POSE16_IDENTITY, goal);
+        expect(closedBy(POSE16_IDENTITY, goal, result)).toBe(true);
+        expect(result.kind === "exact" ? result.run.pieces : Infinity).toBeLessThanOrEqual(
+          reference.pieces,
+        );
+      }
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
+
+  it(
+    "closes goals reached by runs of up to eight turns from any heading",
+    () => {
+      const random = seeded(5);
+      for (let trial = 0; trial < 120; trial++) {
+        const start = pose16(zeta16([2n, 0n, -1n, 0n, 3n, 0n, 0n, 1n]), Math.floor(random() * 16));
+        const goal = openEndFacing(endOf(start, turnsRun(random, 1 + Math.floor(random() * 8))));
+        expect(closedBy(start, goal, solveClosure(kit, start, goal))).toBe(true);
+      }
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
+
+  it(
+    "closes every pose up to six pieces away and calls none of them impossible",
+    () => {
+      const moves = [kit.straight, kit.left, kit.right];
+      const reached = new Map<string, Pose16>();
+      let frontier: Pose16[] = [POSE16_IDENTITY];
+      for (let depth = 0; depth < 6; depth++) {
+        frontier = frontier
+          .flatMap((pose) => moves.map((move) => advance(pose, move)))
+          .filter((pose) => {
+            const key = `${pose.position.join(",")}@${pose.heading}`;
+            if (reached.has(key)) return false;
+            reached.set(key, pose);
+            return true;
+          });
+      }
+      for (const end of reached.values()) {
+        const goal = openEndFacing(end);
+        expect(closedBy(POSE16_IDENTITY, goal, solveClosure(kit, POSE16_IDENTITY, goal))).toBe(
+          true,
+        );
+      }
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
+
+  it("closes a full oval from one open end back to the other with eight curves", () => {
     const start = POSE16_IDENTITY;
     const oval: TrackRun = {
       segments: [
@@ -139,28 +222,33 @@ describe("solveClosure", () => {
     };
     const end = endOf(start, oval);
     const back = pose16(start.position, start.heading + 8);
-    const run = solveClosure(kit, end, back);
-    expect(run?.pieces).toBe(8);
-    expect(run !== null && posesJoin16(endOf(end, run), back)).toBe(true);
+    const result = solveClosure(kit, end, back);
+    expect(result.kind === "exact" ? result.run.pieces : 0).toBe(8);
+    expect(closedBy(end, back, result)).toBe(true);
   });
 
-  it("refuses a gap that is one stud off any reachable pose", () => {
+  it("proves a gap one stud off any reachable pose impossible, even with no time left", () => {
     const random = seeded(3);
     for (let trial = 0; trial < 30; trial++) {
-      const start = POSE16_IDENTITY;
-      const goal = openEndFacing(endOf(start, randomRun(random)));
+      const goal = openEndFacing(endOf(POSE16_IDENTITY, randomRun(random)));
       const coefficient = Math.floor(random() * 8);
       const shifted = goal.position.map((c, k) => (k === coefficient ? c + 1n : c));
-      expect(solveClosure(kit, start, pose16(zeta16(shifted), goal.heading))).toBeNull();
+      const offGoal = pose16(zeta16(shifted), goal.heading);
+      expect(solveClosure(kit, POSE16_IDENTITY, offGoal).kind).toBe("impossible");
+      expect(solveClosure(kit, POSE16_IDENTITY, offGoal, expiredBudget()).kind).toBe("impossible");
     }
   });
 
-  it("refuses an end whose heading is turned by one step", () => {
-    const start = POSE16_IDENTITY;
-    const goal = openEndFacing(
-      endOf(start, { segments: [{ kind: "straight", count: 5 }], pieces: 5 }),
-    );
-    expect(solveClosure(kit, start, pose16(goal.position, goal.heading + 1), 1)).toBeNull();
+  it("reports the search limit, not impossibility, when time runs out before a join is found", () => {
+    const random = seeded(99);
+    let limited = 0;
+    for (let trial = 0; trial < 40; trial++) {
+      const goal = openEndFacing(endOf(POSE16_IDENTITY, turnsRun(random, 4)));
+      const result = solveClosure(kit, POSE16_IDENTITY, goal, expiredBudget());
+      expect(result.kind).not.toBe("impossible");
+      if (result.kind === "limit") limited++;
+    }
+    expect(limited).toBeGreaterThan(0);
   });
 });
 

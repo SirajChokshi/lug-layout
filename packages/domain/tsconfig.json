@@ -1,7 +1,5 @@
 {
   "extends": "@brr/config/tsconfig.lib.json",
-  "include": ["src", "vitest.config.ts"],
-  "compilerOptions": {
-    "types": ["node"]
-  }
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }
