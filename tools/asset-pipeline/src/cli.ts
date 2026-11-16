@@ -3,14 +3,18 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  fetchAuditInputs,
   fetchClosure,
   renderAttribution,
   renderModelAttribution,
+  verifyAuditInputs,
   verifyClosure,
   verifyModels,
   type InputLock,
 } from "./fetch-ldraw.ts";
+import { LdrawLibrary } from "./ldraw/library.ts";
 import { readPalette } from "./palette.ts";
+import { licenseAuditReport, readSources, writeReports } from "./verify/facts.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -18,6 +22,9 @@ const palettePath = join(toolRoot, "palette.json");
 const lockPath = join(toolRoot, "ldraw.lock.json");
 const fixturesRoot = join(repoRoot, "packages", "test-fixtures");
 const ldrawRoot = join(fixturesRoot, "ldraw");
+const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
+const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
+const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(lockPath, "utf8")) as InputLock;
@@ -30,7 +37,9 @@ async function fetchCommand(): Promise<void> {
   const modelSources = await Promise.all(
     palette.models.map((model) => readFile(join(fixturesRoot, model.file), "utf8")),
   );
-  const lock = await fetchClosure(palette, ldrawRoot, modelSources);
+  const closure = await fetchClosure(palette, ldrawRoot, modelSources);
+  const audit = await fetchAuditInputs(palette, auditRoot, connectivityRoot);
+  const lock: InputLock = { ...closure, audit };
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
@@ -52,6 +61,35 @@ async function verifyCommand(): Promise<void> {
     return;
   }
   process.stdout.write("LDraw inputs match ldraw.lock.json\n");
+}
+
+async function factsCommand(check: boolean): Promise<void> {
+  const lock = await readLock();
+  const palette = await readPalette(palettePath);
+  const { audit } = lock;
+  if (audit === undefined) throw new Error("ldraw.lock.json has no audit inputs; run fetch-ldraw");
+  const problems = [
+    ...(await verifyClosure(lock, ldrawRoot)),
+    ...(await verifyAuditInputs(audit, auditRoot, connectivityRoot)),
+  ];
+  if (problems.length > 0) {
+    process.stderr.write(`${problems.join("\n")}\nrun fetch-ldraw to restore the pinned inputs\n`);
+    process.exitCode = 1;
+    return;
+  }
+  const reports = [
+    licenseAuditReport({
+      lock,
+      audit,
+      palette,
+      bundleSources: await readSources(ldrawRoot, lock.files),
+      auditSources: await readSources(auditRoot, audit.files),
+      shadowSources: await readSources(connectivityRoot, audit.connectivity.files),
+      auditLibrary: new LdrawLibrary([auditRoot]),
+      shadowLibrary: new LdrawLibrary([connectivityRoot]),
+    }),
+  ];
+  if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
 
 const BUNDLE_LODS = ["standard", "low"] as const;
@@ -101,7 +139,10 @@ switch (command) {
   case "bundle":
     await bundleCommand();
     break;
+  case "facts":
+    await factsCommand(process.argv.includes("--check"));
+    break;
   default:
-    process.stderr.write("usage: cli.ts fetch|verify|bundle\n");
+    process.stderr.write("usage: cli.ts fetch|verify|bundle|facts [--check]\n");
     process.exitCode = 2;
 }

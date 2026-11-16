@@ -9,21 +9,36 @@ import {
 } from "./ldraw/parse.ts";
 import type { Palette } from "./palette.ts";
 
+export interface AuditLock {
+  readonly files: Readonly<Record<string, string>>;
+  readonly absentParts: ReadonlyArray<string>;
+  readonly connectivity: {
+    readonly source: Palette["source"];
+    readonly files: Readonly<Record<string, string>>;
+  };
+}
+
 export interface InputLock {
   readonly source: Palette["source"];
   readonly files: Readonly<Record<string, string>>;
+  readonly audit?: AuditLock;
 }
+
+type Source = Palette["source"];
 
 const SEARCH_DIRECTORIES = ["parts/", "p/"] as const;
 const LOW_RESOLUTION_DIRECTORY = "p/8/";
+const CONNECTIVITY_LICENSE = "LICENSE.md";
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-async function download(palette: Palette, path: string): Promise<Uint8Array | undefined> {
-  const { repo, commit, root } = palette.source;
-  const url = `https://raw.githubusercontent.com/${repo}/${commit}/${root}/${path}`;
+async function download(source: Source, path: string): Promise<Uint8Array | undefined> {
+  const { repo, commit, root } = source;
+  const url = ["https://raw.githubusercontent.com", repo, commit, root, path]
+    .filter((segment) => segment !== "")
+    .join("/");
   const response = await fetch(url);
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
@@ -31,12 +46,12 @@ async function download(palette: Palette, path: string): Promise<Uint8Array | un
 }
 
 async function resolveReference(
-  palette: Palette,
+  source: Source,
   reference: string,
 ): Promise<{ path: string; bytes: Uint8Array } | undefined> {
   for (const directory of SEARCH_DIRECTORIES) {
     const path = directory + reference;
-    const bytes = await download(palette, path);
+    const bytes = await download(source, path);
     if (bytes) return { path, bytes };
   }
   return undefined;
@@ -65,7 +80,7 @@ export async function fetchClosure(
   }
 
   for (const configFile of palette.config) {
-    const bytes = await download(palette, configFile);
+    const bytes = await download(palette.source, configFile);
     if (!bytes) throw new Error(`missing config file ${configFile}`);
     await store(configFile, bytes);
   }
@@ -73,12 +88,12 @@ export async function fetchClosure(
   while (queue.length > 0) {
     const reference = queue.shift();
     if (reference === undefined) break;
-    const resolved = await resolveReference(palette, reference);
+    const resolved = await resolveReference(palette.source, reference);
     if (!resolved) throw new Error(`unresolved LDraw reference ${reference}`);
     await store(resolved.path, resolved.bytes);
     const children = subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes)));
     if (resolved.path.startsWith("p/") && !resolved.path.startsWith(LOW_RESOLUTION_DIRECTORY)) {
-      const lowResolution = await download(palette, LOW_RESOLUTION_DIRECTORY + reference);
+      const lowResolution = await download(palette.source, LOW_RESOLUTION_DIRECTORY + reference);
       if (lowResolution) {
         await store(LOW_RESOLUTION_DIRECTORY + reference, lowResolution);
         children.push(...subfileReferences(parseLdraw(new TextDecoder().decode(lowResolution))));
@@ -95,6 +110,87 @@ export async function fetchClosure(
     Object.entries(files).toSorted(([a], [b]) => a.localeCompare(b)),
   );
   return { source: palette.source, files: sorted };
+}
+
+function sortedRecord(files: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(files).toSorted(([a], [b]) => a.localeCompare(b)));
+}
+
+async function storeInto(
+  directory: string,
+  files: Record<string, string>,
+  path: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  const target = join(directory, path);
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, bytes);
+  files[path] = sha256(bytes);
+}
+
+export async function fetchAuditInputs(
+  palette: Palette,
+  auditDirectory: string,
+  connectivityDirectory: string,
+): Promise<AuditLock> {
+  const files: Record<string, string> = {};
+  const absentParts: string[] = [];
+  const seeds = palette.audit.flatMap((group) => group.parts.map((part) => `${part}.dat`));
+  const seen = new Set<string>(seeds);
+  const queue = [...seeds];
+  for (let reference = queue.shift(); reference !== undefined; reference = queue.shift()) {
+    const resolved = await resolveReference(palette.source, reference);
+    if (!resolved) {
+      if (!seeds.includes(reference)) throw new Error(`unresolved LDraw reference ${reference}`);
+      absentParts.push(reference.replace(/\.dat$/u, ""));
+      continue;
+    }
+    await storeInto(auditDirectory, files, resolved.path, resolved.bytes);
+    for (const child of subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes)))) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+  const connectivity: Record<string, string> = {};
+  for (const path of [CONNECTIVITY_LICENSE, ...Object.keys(files)]) {
+    const bytes = await download(palette.connectivitySource, path);
+    if (bytes) await storeInto(connectivityDirectory, connectivity, path, bytes);
+  }
+  return {
+    files: sortedRecord(files),
+    absentParts: absentParts.toSorted(),
+    connectivity: { source: palette.connectivitySource, files: sortedRecord(connectivity) },
+  };
+}
+
+async function hashProblems(
+  files: Readonly<Record<string, string>>,
+  directory: string,
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const [path, expected] of Object.entries(files)) {
+    let bytes: Uint8Array;
+    try {
+      bytes = await readFile(join(directory, path));
+    } catch {
+      problems.push(`missing ${join(directory, path)}`);
+      continue;
+    }
+    if (sha256(bytes) !== expected) problems.push(`hash mismatch ${join(directory, path)}`);
+  }
+  return problems;
+}
+
+export async function verifyAuditInputs(
+  audit: AuditLock,
+  auditDirectory: string,
+  connectivityDirectory: string,
+): Promise<string[]> {
+  return [
+    ...(await hashProblems(audit.files, auditDirectory)),
+    ...(await hashProblems(audit.connectivity.files, connectivityDirectory)),
+  ];
 }
 
 async function listFiles(directory: string): Promise<string[]> {

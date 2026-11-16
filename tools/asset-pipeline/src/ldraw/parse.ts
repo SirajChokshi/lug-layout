@@ -111,3 +111,18 @@ export function modelPartReferences(source: string): string[] {
   }
   return [...parts].toSorted();
 }
+
+export function metaValues(file: LdrawFile, key: string): string[] {
+  const values: string[] = [];
+  for (const line of file.lines) {
+    if (line.kind === "meta" && line.tokens[0] === key) values.push(line.tokens.slice(1).join(" "));
+  }
+  return values;
+}
+
+export function keywords(file: LdrawFile): string[] {
+  return metaValues(file, "!KEYWORDS")
+    .flatMap((value) => value.split(","))
+    .map((keyword) => keyword.trim())
+    .filter((keyword) => keyword !== "");
+}
