@@ -8,7 +8,12 @@ import {
 } from "@brr/catalog";
 import { TrackGraph, type TrackLayout } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
-import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";
+import {
+  INSTANCE_MATRIX_FLOATS,
+  SCENE_BACKEND,
+  type ChunkInstances,
+  type ISceneBackend,
+} from "@brr/render";
 import type { SimFrameLayout, SimLoad, SimLoaded, TrainSpec, VehicleSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import {
@@ -18,8 +23,9 @@ import {
   type RigidBodyInstances,
 } from "../sim/consist.ts";
 import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
+import { BOX_FLOATS, type IRunningGear } from "../running-gear/running-gear-editor.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
-import { SIM_CLIENT } from "../tokens.ts";
+import { RUNNING_GEAR, SIM_CLIENT } from "../tokens.ts";
 import { plateDepthBelowOrigin } from "./part-footprint.ts";
 import { withStuds } from "./stud-stream.ts";
 import { buildTrackPlan } from "./track-plan.ts";
@@ -124,6 +130,33 @@ interface PlacedVehicle {
 
 const NO_BODY = -1;
 
+function instanceBoxes(model: PartModel, bundle: PartBundle): Float32Array {
+  const out = new Float32Array(model.instanceCount * BOX_FLOATS);
+  const m = model.matrices;
+  for (let i = 0; i < model.instanceCount; i++) {
+    const part = bundle.parts[model.partIndex[i] ?? 0];
+    const o = i * INSTANCE_MATRIX_FLOATS;
+    const b = i * BOX_FLOATS;
+    for (let axis = 0; axis < 3; axis++) {
+      out[b + axis] = Number.POSITIVE_INFINITY;
+      out[b + 3 + axis] = Number.NEGATIVE_INFINITY;
+    }
+    if (!part) continue;
+    for (let corner = 0; corner < 8; corner++) {
+      const x = corner & 1 ? part.boundsMax[0] : part.boundsMin[0];
+      const y = corner & 2 ? part.boundsMax[1] : part.boundsMin[1];
+      const z = corner & 4 ? part.boundsMax[2] : part.boundsMin[2];
+      for (let axis = 0; axis < 3; axis++) {
+        const r = o + axis * 4;
+        const value = (m[r] ?? 0) * x + (m[r + 1] ?? 0) * y + (m[r + 2] ?? 0) * z + (m[r + 3] ?? 0);
+        out[b + axis] = Math.min(out[b + axis] ?? 0, value);
+        out[b + 3 + axis] = Math.max(out[b + 3 + axis] ?? 0, value);
+      }
+    }
+  }
+  return out;
+}
+
 function railTopY(
   layout: TrackLayout,
   pieces: ReadonlyArray<TrackPiece>,
@@ -151,6 +184,7 @@ export class RunScene implements IRunScene {
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) readonly backend: ISceneBackend,
     @inject(SIM_CLIENT) readonly sim: ISimClient,
+    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
   ) {}
 
   configure(request: RunRequest): void {
@@ -178,12 +212,28 @@ export class RunScene implements IRunScene {
     const railPart = railPartFor(layout, catalogPieces);
     this.railY = railTopY(layout, catalogPieces, bundle);
     const first = modelBundles[0];
+    await this.runningGear.setModels(
+      models.map((name, i) => {
+        const loaded = modelBundles[i];
+        if (!loaded) throw new Error(`model ${name} did not load`);
+        return {
+          name,
+          sha256: loaded.entry.sha256,
+          vehicles: loaded.model.vehicles,
+          instanceBoxes: instanceBoxes(loaded.model, loaded.bundle),
+        };
+      }),
+    );
     const consist = request.consist.flatMap((entry) => {
       const loaded = modelByName.get(entry.model);
       if (!loaded) throw new Error(`model ${entry.model} did not load`);
-      return consistVehicles(loaded.model, entry.model, entry.reversed, railPart).map(
-        (vehicle) => ({ vehicle, loaded }),
-      );
+      return consistVehicles(
+        loaded.model,
+        entry.model,
+        entry.reversed,
+        railPart,
+        this.runningGear.effectiveVehicles(entry.model),
+      ).map((vehicle) => ({ vehicle, loaded }));
     });
     this.consist = consist.map(({ vehicle }) => vehicle);
     const rigidChunks = consist.map(({ vehicle, loaded }) => {

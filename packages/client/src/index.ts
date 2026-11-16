@@ -62,6 +62,20 @@ export type {
   TrainRequest,
 } from "./scene/run-scene.ts";
 export type { ConsistEntry } from "./sim/consist.ts";
+export type {
+  GearBox,
+  GearCoupler,
+  GearModelView,
+  GearSnapshot,
+  GearView,
+  IRunningGear,
+} from "./running-gear/running-gear-editor.ts";
+export type {
+  BogieOverride,
+  CouplerOverride,
+  RunningGearOverride,
+  VehicleOverride,
+} from "./running-gear/override.ts";
 export type { ISimClient, SimTickCost } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export type { SimBenchResult } from "@brr/sim";
@@ -92,6 +106,7 @@ export type {
   TableTop,
 } from "@brr/domain";
 export {
+  RUNNING_GEAR,
   CITY_SCENE,
   CREDITS,
   EDITOR,

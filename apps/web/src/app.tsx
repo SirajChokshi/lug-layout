@@ -1,4 +1,5 @@
 import type {
+  IRunningGear,
   IRunScene,
   IViewerScene,
   PlacementDump,
@@ -6,7 +7,7 @@ import type {
   SimBenchResult,
   TrackSummary,
 } from "@brr/client";
-import { CreditLinks, partsCreditText } from "@brr/ui";
+import { CreditLinks, partsCreditText, RunningGearPanel } from "@brr/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
@@ -23,6 +24,7 @@ interface AppProps {
   readonly params: ViewerParams;
   readonly placements: (() => PlacementDump) | null;
   readonly run: IRunScene | null;
+  readonly runningGear: IRunningGear | null;
 }
 
 const BENCH_AFTER_MS = 5_000;
@@ -242,7 +244,7 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params, placements, run }: AppProps) {
+export function App({ scene, params, placements, run, runningGear }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const [report, setReport] = useState<ViewerReport | null>(null);
@@ -289,6 +291,7 @@ export function App({ scene, params, placements, run }: AppProps) {
           </pre>
         )}
       </aside>
+      {runningGear && params.gear && <RunningGearPanel gear={runningGear} />}
       <footer>
         {report && modelCredit(report)}
         {report && partsCreditText(report.summary.creditedFiles, params.lod)}

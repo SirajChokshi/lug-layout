@@ -19,6 +19,7 @@ export interface ViewerParams {
   readonly followDistanceLdu: number;
   readonly simBenchTicks: number;
   readonly hud: boolean;
+  readonly gear: boolean;
   readonly start: boolean;
   readonly autopilotSeed: number | null;
   readonly city: boolean;
@@ -130,6 +131,7 @@ export function readViewerParams(search: string): ViewerParams {
     followDistanceLdu: positiveNumber(params.get("follow"), DEFAULT_FOLLOW_DISTANCE_LDU),
     simBenchTicks: positiveNumber(params.get("simBench"), 0),
     hud: params.get("hud") !== "0",
+    gear: params.get("gear") === "1",
     start: params.get("start") !== "0",
     autopilotSeed: autopilotSeed(params.get("autopilot")),
     city: params.get("scene") === "city",

@@ -168,19 +168,20 @@ export function consistVehicles(
   name: string,
   reversed: boolean,
   railPart: string,
+  vehicles: ReadonlyArray<BakedVehicle> = model.vehicles,
 ): ConsistVehicle[] {
-  if (model.vehicles.length === 0) throw new Error(`model ${name} has no vehicle`);
-  const first = model.vehicles[0];
+  if (vehicles.length === 0) throw new Error(`model ${name} has no vehicle`);
+  const first = vehicles[0];
   const forwardX = Math.cos(first?.yawRadians ?? 0);
   const forwardZ = Math.sin(first?.yawRadians ?? 0);
-  const order = model.vehicles
+  const order = vehicles
     .map((vehicle, index) => ({
       index,
       ahead: vehicle.originXLdu * forwardX + vehicle.originZLdu * forwardZ,
     }))
     .toSorted((a, b) => (reversed ? a.ahead - b.ahead : b.ahead - a.ahead));
   return order.map(({ index }) => {
-    const vehicle = model.vehicles[index];
+    const vehicle = vehicles[index];
     if (!vehicle) throw new Error(`model ${name} has no vehicle ${index}`);
     const sign = reversed ? -1 : 1;
     const orientation: Orientation = { vehicle, sign };

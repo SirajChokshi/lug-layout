@@ -116,6 +116,7 @@ function isBundleModelEntry(value: unknown): value is BundleModelEntry {
     typeof value["name"] === "string" &&
     typeof value["file"] === "string" &&
     typeof value["source"] === "string" &&
+    typeof value["sha256"] === "string" &&
     (value["origin"] === "omr" || value["origin"] === "generated") &&
     (value["set"] === null || isRecord(value["set"])) &&
     isStringArray(value["authors"]) &&
