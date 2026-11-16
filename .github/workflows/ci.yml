@@ -30,6 +30,7 @@ jobs:
           key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
       - run: pnpm --filter @brr/asset-pipeline restore-ldraw
       - run: pnpm lint
+      - run: pnpm lint:boundaries
       - run: pnpm lint:rust
       - run: pnpm format:check
       - run: pnpm check:rust

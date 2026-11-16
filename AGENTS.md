@@ -20,10 +20,13 @@ The source of truth is `docs/architecture.md`. Section numbers like "§14" refer
 apps/web                Vite + React; main-thread composition root
 packages/
   config                shared tsconfig presets and the Vitest preset
-  math schema           L0/L1 (planned)
-  domain catalog render storage rpc   L2 (planned)
+  math                  L0: units, Rot90, lattice check, chunk key
+  schema                L1 (planned)
+  domain                L2: World, a sparse map of struct-of-arrays chunks
+  catalog render        L2 adapters
+  storage rpc           L2 (planned)
   sim import            L3 (planned)
-  client                L4: OOP services (Inversify), no React (planned)
+  client                L4: OOP services (Inversify), no React
   ui  workers/*         L5 (planned)
   compile-wasm          generated from crates/brick-compile-wasm. Never hand-edit.
 crates/                 brick-compile (lib), brick-compile-cli; -wasm (planned)
@@ -43,7 +46,8 @@ docs/                   architecture.md, verified-facts.md
 - `pnpm lint:rust` (no comments in `crates/`) and `pnpm check:rust` (fmt, clippy `-D warnings`, `cargo test`)
 - `pnpm --filter @brr/asset-pipeline fetch-ldraw` re-pins LDraw inputs (network; plain `fetch` would run pnpm's built-in). `restore-ldraw` downloads exactly the pinned files into the git-ignored `.cache/` (network once, then a no-op), `verify-ldraw` checks them offline, and `build` restores, verifies and compiles the bundle that `apps/web` serves at `/bundle/`. LDraw `.dat` files are never committed. `pnpm check` restores them first; the Rust integration test reads `.cache/ldraw`, so run `restore-ldraw` before a bare `cargo test`
 - The app's viewer takes `?api=webgpu|webgl2&lod=standard|low`, and `&measure=1` for GPU-synced frame timing
-- Later: `turbo run bench`, `turbo run wasm`, and the package-boundary check (dependency-cruiser or Turborepo `boundaries`)
+- `pnpm lint:boundaries` runs dependency-cruiser (`.dependency-cruiser.json`) against the §14.2 layer table; CI and `pnpm check` run it
+- Later: `turbo run bench`, `turbo run wasm`
 
 Before you finish: `pnpm check` is green.
 
