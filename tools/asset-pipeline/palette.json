@@ -1,0 +1,90 @@
+{
+  "source": {
+    "kind": "github-mirror",
+    "repo": "kulits/ldraw-parts",
+    "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+    "root": "ldraw"
+  },
+  "config": ["LDConfig.ldr"],
+  "studPrimitives": ["stud.dat", "stud2.dat"],
+  "unofficialAllowlist": [],
+  "parts": [
+    {
+      "id": "3811",
+      "role": "ground"
+    },
+    {
+      "id": "44336p04",
+      "role": "road",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "44336pr0004 element 4277471 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
+    },
+    {
+      "id": "44336p01",
+      "role": "road",
+      "displayColor": {
+        "ldraw": 2,
+        "source": "44336pr0001 elements 4179968, 4219946 in Green; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
+    },
+    {
+      "id": "53401",
+      "role": "track"
+    },
+    {
+      "id": "53400",
+      "role": "track"
+    },
+    {
+      "id": "3001",
+      "role": "wall"
+    },
+    {
+      "id": "3003",
+      "role": "wall"
+    },
+    {
+      "id": "3004",
+      "role": "wall"
+    },
+    {
+      "id": "3009",
+      "role": "wall"
+    },
+    {
+      "id": "3010",
+      "role": "wall"
+    },
+    {
+      "id": "3020",
+      "role": "roof"
+    },
+    {
+      "id": "3022",
+      "role": "roof"
+    },
+    {
+      "id": "3024",
+      "role": "detail"
+    },
+    {
+      "id": "3062b",
+      "role": "detail"
+    },
+    {
+      "id": "3068b",
+      "role": "detail"
+    }
+  ],
+  "models": [
+    {
+      "name": "7936-1",
+      "file": "omr/7936-1.mpd",
+      "sha256": "f26bc3b65089335753e0b0d5d77c1b048dd7f2475cafd177a4c44ff440a4fd10",
+      "source": "https://library.ldraw.org/media/omr_models/1311/7936-1.mpd?v=1758937645",
+      "retrieved": "2026-11-16T03:38:57Z"
+    }
+  ]
+}

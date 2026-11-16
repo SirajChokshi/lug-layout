@@ -10,6 +10,28 @@
     },
     "test": {
       "dependsOn": ["^build"]
+    },
+    "@brr/asset-pipeline#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "palette.json",
+        "ldraw.lock.json",
+        "$TURBO_ROOT$/crates/**",
+        "$TURBO_ROOT$/Cargo.toml",
+        "$TURBO_ROOT$/Cargo.lock",
+        "$TURBO_ROOT$/packages/test-fixtures/ldraw/**",
+        "$TURBO_ROOT$/rust-toolchain.toml"
+      ],
+      "outputs": ["dist/**"],
+      "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]
+    },
+    "@brr/client#test": {
+      "dependsOn": ["^build", "@brr/asset-pipeline#build"]
+    },
+    "@brr/web#build": {
+      "dependsOn": ["^build", "@brr/asset-pipeline#build"],
+      "outputs": ["dist/**"]
     }
   }
 }

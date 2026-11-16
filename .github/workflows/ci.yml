@@ -15,7 +15,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm lint:rust
       - run: pnpm format:check
+      - run: pnpm check:rust
+      - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm turbo run typecheck test build
