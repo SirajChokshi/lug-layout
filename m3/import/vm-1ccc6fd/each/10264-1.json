@@ -1,0 +1,3331 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\nee34880874f1d18d\nParts\n2,567\nModules\n4\nStud instances (drawn of total)\n7,489 of 7,489\nScene triangles\n1,222,336\nLoad\n35 ms\nGPU buffers allocated so far, JS heap\nvertex+index 7.6 MiB, other 0.1 MiB, JS heap 58.8 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n4 / 0 / 0\nDraw calls\n517\nDrawn triangles\n1,222,337\nScene coverage\n18%\nFrame rate (rAF)\n1.1 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 320,
+        "z": 0,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "10264-1.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 10.ldr",
+            "title": "10"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 11.ldr",
+            "title": "11"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 12.ldr",
+            "title": "12"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 14.ldr",
+            "title": "14"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 15-a.ldr",
+            "title": "15-a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 15-b.ldr",
+            "title": "15-b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 17.ldr",
+            "title": "17"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 18-a.ldr",
+            "title": "18-a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 18-b.ldr",
+            "title": "18-b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 19.ldr",
+            "title": "19"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 21.ldr",
+            "title": "21"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 22.ldr",
+            "title": "22"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 22-5.ldr",
+            "title": "22-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 22-6.ldr",
+            "title": "22-6"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 23.ldr",
+            "title": "23"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 24-29.ldr",
+            "title": "24-29"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 27.ldr",
+            "title": "27"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 31-38.ldr",
+            "title": "31-38"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 32.ldr",
+            "title": "32"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 36.ldr",
+            "title": "36"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 37.ldr",
+            "title": "37"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig1-pose.ldr",
+            "title": "minifig1-pose"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t1.ldr",
+            "title": "t1"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 40.ldr",
+            "title": "40"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 41.ldr",
+            "title": "41"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 41-5.ldr",
+            "title": "41-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 42.ldr",
+            "title": "42"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 43.ldr",
+            "title": "43"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig2.ldr",
+            "title": "minifig2"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t2.ldr",
+            "title": "t2"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - helmet.ldr",
+            "title": "helmet"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - scooter.ldr",
+            "title": "scooter"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 46.ldr",
+            "title": "46"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 47-52.ldr",
+            "title": "47-52"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 50.ldr",
+            "title": "50"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 51.ldr",
+            "title": "51"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 54.ldr",
+            "title": "54"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 55.ldr",
+            "title": "55"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 56.ldr",
+            "title": "56"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 57.ldr",
+            "title": "57"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 57a.ldr",
+            "title": "57a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 58.ldr",
+            "title": "58"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 59.ldr",
+            "title": "59"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 61.ldr",
+            "title": "61"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 62a.ldr",
+            "title": "62a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 62b.ldr",
+            "title": "62b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 63.ldr",
+            "title": "63"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 64a.ldr",
+            "title": "64a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 64b.ldr",
+            "title": "64b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 65-67.ldr",
+            "title": "65-67"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 70a.ldr",
+            "title": "70a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 70b.ldr",
+            "title": "70b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 71.ldr",
+            "title": "71"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 73.ldr",
+            "title": "73"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 74.ldr",
+            "title": "74"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 75-.ldr",
+            "title": "75-"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 76.ldr",
+            "title": "76"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 77.ldr",
+            "title": "77"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 78.ldr",
+            "title": "78"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 80.ldr",
+            "title": "80"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 79.ldr",
+            "title": "79"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 81.ldr",
+            "title": "81"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 82.ldr",
+            "title": "82"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 87-94.ldr",
+            "title": "87-94"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 91.ldr",
+            "title": "91"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 98-101.ldr",
+            "title": "98-101"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 101.ldr",
+            "title": "101"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 103.ldr",
+            "title": "103"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 104.ldr",
+            "title": "104"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 108.ldr",
+            "title": "108"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111.ldr",
+            "title": "111"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111-4.ldr",
+            "title": "111-4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111-5.ldr",
+            "title": "111-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111-5a.ldr",
+            "title": "111-5a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111-9.ldr",
+            "title": "111-9"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 112.ldr",
+            "title": "112"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig3-pose.ldr",
+            "title": "minifig3-pose"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 113-131.ldr",
+            "title": "113-131"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 117.ldr",
+            "title": "117"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 121.ldr",
+            "title": "121"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 128.ldr",
+            "title": "128"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 128-4.ldr",
+            "title": "128-4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 129.ldr",
+            "title": "129"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 131.ldr",
+            "title": "131"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 133.ldr",
+            "title": "133"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 133-3.ldr",
+            "title": "133-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 133-5.ldr",
+            "title": "133-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 134.ldr",
+            "title": "134"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 135.ldr",
+            "title": "135"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 135-3.ldr",
+            "title": "135-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck.ldr",
+            "title": "truck"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck12.ldr",
+            "title": "truck12"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck13.ldr",
+            "title": "truck13"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck17.ldr",
+            "title": "truck17"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck20.ldr",
+            "title": "truck20"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifigChainStuds-1.ldr",
+            "title": "minifigChainStuds-1"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck22.ldr",
+            "title": "truck22"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck23.ldr",
+            "title": "truck23"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck23-3.ldr",
+            "title": "truck23-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck24.ldr",
+            "title": "truck24"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck25-32.ldr",
+            "title": "truck25-32"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck28.ldr",
+            "title": "truck28"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck29.ldr",
+            "title": "truck29"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck30.ldr",
+            "title": "truck30"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck31.ldr",
+            "title": "truck31"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck34.ldr",
+            "title": "truck34"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck36.ldr",
+            "title": "truck36"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck37.ldr",
+            "title": "truck37"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck38.ldr",
+            "title": "truck38"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 137-210.ldr",
+            "title": "137-210"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 148.ldr",
+            "title": "148"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig4.ldr",
+            "title": "minifig4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t3.ldr",
+            "title": "t3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t4.ldr",
+            "title": "t4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig5.ldr",
+            "title": "minifig5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 149.ldr",
+            "title": "149"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 151.ldr",
+            "title": "151"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 152a.ldr",
+            "title": "152a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 152b.ldr",
+            "title": "152b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 154.ldr",
+            "title": "154"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 157.ldr",
+            "title": "157"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 158.ldr",
+            "title": "158"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 160.ldr",
+            "title": "160"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 160-5.ldr",
+            "title": "160-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 161.ldr",
+            "title": "161"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 162.ldr",
+            "title": "162"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 163.ldr",
+            "title": "163"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 164.ldr",
+            "title": "164"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 166.ldr",
+            "title": "166"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 167.ldr",
+            "title": "167"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 170a.ldr",
+            "title": "170a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 170b.ldr",
+            "title": "170b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 171-178.ldr",
+            "title": "171-178"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 173.ldr",
+            "title": "173"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 174a.ldr",
+            "title": "174a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 174b.ldr",
+            "title": "174b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 177.ldr",
+            "title": "177"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 180.ldr",
+            "title": "180"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 181a.ldr",
+            "title": "181a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 181b.ldr",
+            "title": "181b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 182.ldr",
+            "title": "182"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 183.ldr",
+            "title": "183"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 184.ldr",
+            "title": "184"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 187.ldr",
+            "title": "187"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 187-5.ldr",
+            "title": "187-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 187-7.ldr",
+            "title": "187-7"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 188.ldr",
+            "title": "188"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 188-2.ldr",
+            "title": "188-2"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 189.ldr",
+            "title": "189"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 190a.ldr",
+            "title": "190a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 190b.ldr",
+            "title": "190b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 190c.ldr",
+            "title": "190c"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 191.ldr",
+            "title": "191"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 192.ldr",
+            "title": "192"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 193.ldr",
+            "title": "193"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 194.ldr",
+            "title": "194"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 194-5.ldr",
+            "title": "194-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 195.ldr",
+            "title": "195"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 196.ldr",
+            "title": "196"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 197.ldr",
+            "title": "197"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 198.ldr",
+            "title": "198"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 199-205.ldr",
+            "title": "199-205"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 204.ldr",
+            "title": "204"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 205.ldr",
+            "title": "205"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 207.ldr",
+            "title": "207"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig6.ldr",
+            "title": "minifig6"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t5.ldr",
+            "title": "t5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 211-261.ldr",
+            "title": "211-261"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 222.ldr",
+            "title": "222"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 223.ldr",
+            "title": "223"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 225.ldr",
+            "title": "225"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 226.ldr",
+            "title": "226"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 233.ldr",
+            "title": "233"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 234.ldr",
+            "title": "234"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 235.ldr",
+            "title": "235"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 237.ldr",
+            "title": "237"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 237-3.ldr",
+            "title": "237-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 238.ldr",
+            "title": "238"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 238-3.ldr",
+            "title": "238-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 238-5.ldr",
+            "title": "238-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 239.ldr",
+            "title": "239"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 240.ldr",
+            "title": "240"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 242.ldr",
+            "title": "242"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 242-5.ldr",
+            "title": "242-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 245.ldr",
+            "title": "245"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 245-4.ldr",
+            "title": "245-4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 245-5.ldr",
+            "title": "245-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 249.ldr",
+            "title": "249"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 250.ldr",
+            "title": "250"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 251.ldr",
+            "title": "251"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 256.ldr",
+            "title": "256"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 257.ldr",
+            "title": "257"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 263-293.ldr",
+            "title": "263-293"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 273.ldr",
+            "title": "273"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 276.ldr",
+            "title": "276"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 278.ldr",
+            "title": "278"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 279.ldr",
+            "title": "279"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 280.ldr",
+            "title": "280"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 287.ldr",
+            "title": "287"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 289.ldr",
+            "title": "289"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 292a.ldr",
+            "title": "292a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 292b.ldr",
+            "title": "292b"
+          }
+        ],
+        "instanceCount": 2567,
+        "drawnInstanceCount": 2567,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3811.dat",
+            "instances": 1,
+            "partId": "ldraw:3811"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070b.dat",
+            "instances": 51,
+            "partId": "ldraw:3070b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "instances": 15,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "instances": 77,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92593.dat",
+            "instances": 18,
+            "partId": "ldraw:92593"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4162.dat",
+            "instances": 20,
+            "partId": "ldraw:4162"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068b.dat",
+            "instances": 99,
+            "partId": "ldraw:3068b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2412b.dat",
+            "instances": 33,
+            "partId": "ldraw:2412b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63864.dat",
+            "instances": 11,
+            "partId": "ldraw:63864"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431.dat",
+            "instances": 41,
+            "partId": "ldraw:2431"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15573.dat",
+            "instances": 26,
+            "partId": "ldraw:15573"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87580.dat",
+            "instances": 2,
+            "partId": "ldraw:87580"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3680.dat",
+            "instances": 1,
+            "partId": "ldraw:3680"
+          },
+          {
+            "kind": "bundle",
+            "reference": "27448.dat",
+            "instances": 1,
+            "partId": "ldraw:27448"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6636.dat",
+            "instances": 18,
+            "partId": "ldraw:6636"
+          },
+          {
+            "kind": "bundle",
+            "reference": "35787.dat",
+            "instances": 12,
+            "partId": "ldraw:35787"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "instances": 86,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "bundle",
+            "reference": "85861.dat",
+            "instances": 18,
+            "partId": "ldraw:85861"
+          },
+          {
+            "kind": "bundle",
+            "reference": "14719.dat",
+            "instances": 5,
+            "partId": "ldraw:14719"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "instances": 35,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "instances": 99,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "instances": 6,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "instances": 27,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3700.dat",
+            "instances": 13,
+            "partId": "ldraw:3700"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2780.dat",
+            "instances": 15,
+            "partId": "ldraw:2780"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3010.dat",
+            "instances": 97,
+            "partId": "ldraw:3010"
+          },
+          {
+            "kind": "bundle",
+            "reference": "35480.dat",
+            "instances": 56,
+            "partId": "ldraw:35480"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "instances": 91,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4865b.dat",
+            "instances": 4,
+            "partId": "ldraw:4865b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87079.dat",
+            "instances": 17,
+            "partId": "ldraw:87079"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3021.dat",
+            "instances": 27,
+            "partId": "ldraw:3021"
+          },
+          {
+            "kind": "bundle",
+            "reference": "26603.dat",
+            "instances": 7,
+            "partId": "ldraw:26603"
+          },
+          {
+            "kind": "bundle",
+            "reference": "61409.dat",
+            "instances": 4,
+            "partId": "ldraw:61409"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98283.dat",
+            "instances": 5,
+            "partId": "ldraw:98283"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3009.dat",
+            "instances": 77,
+            "partId": "ldraw:3009"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30505.dat",
+            "instances": 3,
+            "partId": "ldraw:30505"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6215.dat",
+            "instances": 2,
+            "partId": "ldraw:6215"
+          },
+          {
+            "kind": "bundle",
+            "reference": "43722.dat",
+            "instances": 4,
+            "partId": "ldraw:43722"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32124.dat",
+            "instances": 6,
+            "partId": "ldraw:32124"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6143.dat",
+            "instances": 6,
+            "partId": "ldraw:6143"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4032a.dat",
+            "instances": 5,
+            "partId": "ldraw:4032a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "18674.dat",
+            "instances": 9,
+            "partId": "ldraw:18674"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4599a.dat",
+            "instances": 9,
+            "partId": "ldraw:4599a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92280.dat",
+            "instances": 3,
+            "partId": "ldraw:92280"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3622.dat",
+            "instances": 13,
+            "partId": "ldraw:3622"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2357.dat",
+            "instances": 16,
+            "partId": "ldraw:2357"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3008.dat",
+            "instances": 16,
+            "partId": "ldraw:3008"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3666.dat",
+            "instances": 49,
+            "partId": "ldraw:3666"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4216.dat",
+            "instances": 4,
+            "partId": "ldraw:4216"
+          },
+          {
+            "kind": "bundle",
+            "reference": "51739.dat",
+            "instances": 5,
+            "partId": "ldraw:51739"
+          },
+          {
+            "kind": "bundle",
+            "reference": "24307.dat",
+            "instances": 1,
+            "partId": "ldraw:24307"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3460.dat",
+            "instances": 36,
+            "partId": "ldraw:3460"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99780.dat",
+            "instances": 3,
+            "partId": "ldraw:99780"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3023.dat",
+            "instances": 124,
+            "partId": "ldraw:3023"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99781.dat",
+            "instances": 4,
+            "partId": "ldraw:99781"
+          },
+          {
+            "kind": "bundle",
+            "reference": "23969.dat",
+            "instances": 5,
+            "partId": "ldraw:23969"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60475b.dat",
+            "instances": 3,
+            "partId": "ldraw:60475b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88072.dat",
+            "instances": 4,
+            "partId": "ldraw:88072"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4081b.dat",
+            "instances": 5,
+            "partId": "ldraw:4081b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15535.dat",
+            "instances": 3,
+            "partId": "ldraw:15535"
+          },
+          {
+            "kind": "bundle",
+            "reference": "61184.dat",
+            "instances": 1,
+            "partId": "ldraw:61184"
+          },
+          {
+            "kind": "bundle",
+            "reference": "42610.dat",
+            "instances": 3,
+            "partId": "ldraw:42610"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92409.dat",
+            "instances": 2,
+            "partId": "ldraw:92409"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4274.dat",
+            "instances": 6,
+            "partId": "ldraw:4274"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4735.dat",
+            "instances": 5,
+            "partId": "ldraw:4735"
+          },
+          {
+            "kind": "bundle",
+            "reference": "36752a.dat",
+            "instances": 1,
+            "partId": "ldraw:36752a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4592.dat",
+            "instances": 6,
+            "partId": "ldraw:4592"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4593.dat",
+            "instances": 6,
+            "partId": "ldraw:4593"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32028.dat",
+            "instances": 5,
+            "partId": "ldraw:32028"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44728.dat",
+            "instances": 11,
+            "partId": "ldraw:44728"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15712.dat",
+            "instances": 5,
+            "partId": "ldraw:15712"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2432.dat",
+            "instances": 1,
+            "partId": "ldraw:2432"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4070.dat",
+            "instances": 6,
+            "partId": "ldraw:4070"
+          },
+          {
+            "kind": "bundle",
+            "reference": "20482.dat",
+            "instances": 7,
+            "partId": "ldraw:20482"
+          },
+          {
+            "kind": "bundle",
+            "reference": "93555.dat",
+            "instances": 2,
+            "partId": "ldraw:93555"
+          },
+          {
+            "kind": "bundle",
+            "reference": "34103.dat",
+            "instances": 6,
+            "partId": "ldraw:34103"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11253.dat",
+            "instances": 6,
+            "partId": "ldraw:11253"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4522.dat",
+            "instances": 1,
+            "partId": "ldraw:4522"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4006.dat",
+            "instances": 2,
+            "partId": "ldraw:4006"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815.dat",
+            "instances": 2,
+            "partId": "ldraw:3815"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3816.dat",
+            "instances": 2,
+            "partId": "ldraw:3816"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3817.dat",
+            "instances": 2,
+            "partId": "ldraw:3817"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p7w.dat",
+            "instances": 2,
+            "partId": "ldraw:973p7w"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3818.dat",
+            "instances": 6,
+            "partId": "ldraw:3818"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3820.dat",
+            "instances": 12,
+            "partId": "ldraw:3820"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3819.dat",
+            "instances": 6,
+            "partId": "ldraw:3819"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626bp39.dat",
+            "instances": 1,
+            "partId": "ldraw:3626bp39"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3624.dat",
+            "instances": 1,
+            "partId": "ldraw:3624"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92586.dat",
+            "instances": 1,
+            "partId": "ldraw:92586"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2420.dat",
+            "instances": 19,
+            "partId": "ldraw:2420"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32073.dat",
+            "instances": 2,
+            "partId": "ldraw:32073"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6536.dat",
+            "instances": 3,
+            "partId": "ldraw:6536"
+          },
+          {
+            "kind": "bundle",
+            "reference": "18654.dat",
+            "instances": 3,
+            "partId": "ldraw:18654"
+          },
+          {
+            "kind": "bundle",
+            "reference": "43093.dat",
+            "instances": 4,
+            "partId": "ldraw:43093"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3706.dat",
+            "instances": 4,
+            "partId": "ldraw:3706"
+          },
+          {
+            "kind": "bundle",
+            "reference": "59443.dat",
+            "instances": 18,
+            "partId": "ldraw:59443"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "instances": 34,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3062b.dat",
+            "instances": 37,
+            "partId": "ldraw:3062b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6141.dat",
+            "instances": 27,
+            "partId": "ldraw:6141"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2495c01.dat",
+            "instances": 1,
+            "partId": "ldraw:2495c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3836.dat",
+            "instances": 1,
+            "partId": "ldraw:3836"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2458.dat",
+            "instances": 4,
+            "partId": "ldraw:2458"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60623.dat",
+            "instances": 3,
+            "partId": "ldraw:60623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60596.dat",
+            "instances": 8,
+            "partId": "ldraw:60596"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88393.dat",
+            "instances": 2,
+            "partId": "ldraw:88393"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4282.dat",
+            "instances": 5,
+            "partId": "ldraw:4282"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60803.dat",
+            "instances": 2,
+            "partId": "ldraw:60803"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87552.dat",
+            "instances": 15,
+            "partId": "ldraw:87552"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60616b.dat",
+            "instances": 3,
+            "partId": "ldraw:60616b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32828.dat",
+            "instances": 5,
+            "partId": "ldraw:32828"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98138.dat",
+            "instances": 21,
+            "partId": "ldraw:98138"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32530.dat",
+            "instances": 1,
+            "partId": "ldraw:32530"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87087.dat",
+            "instances": 11,
+            "partId": "ldraw:87087"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6091.dat",
+            "instances": 12,
+            "partId": "ldraw:6091"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069bpw2.dat",
+            "instances": 1,
+            "partId": "ldraw:3069bpw2"
+          },
+          {
+            "kind": "bundle",
+            "reference": "43888.dat",
+            "instances": 2,
+            "partId": "ldraw:43888"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3297.dat",
+            "instances": 1,
+            "partId": "ldraw:3297"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4740.dat",
+            "instances": 7,
+            "partId": "ldraw:4740"
+          },
+          {
+            "kind": "bundle",
+            "reference": "90258.dat",
+            "instances": 2,
+            "partId": "ldraw:90258"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30383.dat",
+            "instances": 2,
+            "partId": "ldraw:30383"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60592c01.dat",
+            "instances": 16,
+            "partId": "ldraw:60592c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "25269.dat",
+            "instances": 61,
+            "partId": "ldraw:25269"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15254.dat",
+            "instances": 1,
+            "partId": "ldraw:15254"
+          },
+          {
+            "kind": "bundle",
+            "reference": "20309.dat",
+            "instances": 1,
+            "partId": "ldraw:20309"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30134.dat",
+            "instances": 3,
+            "partId": "ldraw:30134"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64288.dat",
+            "instances": 1,
+            "partId": "ldraw:64288"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30043.dat",
+            "instances": 1,
+            "partId": "ldraw:30043"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2445.dat",
+            "instances": 1,
+            "partId": "ldraw:2445"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15068.dat",
+            "instances": 4,
+            "partId": "ldraw:15068"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98585.dat",
+            "instances": 2,
+            "partId": "ldraw:98585"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6628.dat",
+            "instances": 2,
+            "partId": "ldraw:6628"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32062.dat",
+            "instances": 17,
+            "partId": "ldraw:32062"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4218b.dat",
+            "instances": 9,
+            "partId": "ldraw:4218b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4219b.dat",
+            "instances": 1,
+            "partId": "ldraw:4219b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44302a.dat",
+            "instances": 2,
+            "partId": "ldraw:44302a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "18651.dat",
+            "instances": 1,
+            "partId": "ldraw:18651"
+          },
+          {
+            "kind": "bundle",
+            "reference": "24316.dat",
+            "instances": 3,
+            "partId": "ldraw:24316"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32123b.dat",
+            "instances": 6,
+            "partId": "ldraw:32123b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "59895.dat",
+            "instances": 3,
+            "partId": "ldraw:59895"
+          },
+          {
+            "kind": "bundle",
+            "reference": "53585.dat",
+            "instances": 2,
+            "partId": "ldraw:53585"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6112.dat",
+            "instances": 5,
+            "partId": "ldraw:6112"
+          },
+          {
+            "kind": "bundle",
+            "reference": "13971.dat",
+            "instances": 1,
+            "partId": "ldraw:13971"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60479.dat",
+            "instances": 1,
+            "partId": "ldraw:60479"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30357.dat",
+            "instances": 30,
+            "partId": "ldraw:30357"
+          },
+          {
+            "kind": "bundle",
+            "reference": "85080.dat",
+            "instances": 6,
+            "partId": "ldraw:85080"
+          },
+          {
+            "kind": "bundle",
+            "reference": "27925.dat",
+            "instances": 16,
+            "partId": "ldraw:27925"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44300.dat",
+            "instances": 2,
+            "partId": "ldraw:44300"
+          },
+          {
+            "kind": "bundle",
+            "reference": "16577.dat",
+            "instances": 1,
+            "partId": "ldraw:16577"
+          },
+          {
+            "kind": "bundle",
+            "reference": "36840.dat",
+            "instances": 10,
+            "partId": "ldraw:36840"
+          },
+          {
+            "kind": "bundle",
+            "reference": "24246.dat",
+            "instances": 7,
+            "partId": "ldraw:24246"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3029.dat",
+            "instances": 4,
+            "partId": "ldraw:3029"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54200.dat",
+            "instances": 5,
+            "partId": "ldraw:54200"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815c01.dat",
+            "instances": 3,
+            "partId": "ldraw:3815c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973.dat",
+            "instances": 2,
+            "partId": "ldraw:973"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626bp04.dat",
+            "instances": 1,
+            "partId": "ldraw:3626bp04"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87991.dat",
+            "instances": 1,
+            "partId": "ldraw:87991"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2446.dat",
+            "instances": 1,
+            "partId": "ldraw:2446"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2447.dat",
+            "instances": 1,
+            "partId": "ldraw:2447"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15396.dat",
+            "instances": 1,
+            "partId": "ldraw:15396"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3464.dat",
+            "instances": 2,
+            "partId": "ldraw:3464"
+          },
+          {
+            "kind": "bundle",
+            "reference": "95344.dat",
+            "instances": 1,
+            "partId": "ldraw:95344"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30031.dat",
+            "instances": 1,
+            "partId": "ldraw:30031"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60474.dat",
+            "instances": 2,
+            "partId": "ldraw:60474"
+          },
+          {
+            "kind": "bundle",
+            "reference": "59900.dat",
+            "instances": 4,
+            "partId": "ldraw:59900"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "instances": 2,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11476.dat",
+            "instances": 9,
+            "partId": "ldraw:11476"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92690.dat",
+            "instances": 3,
+            "partId": "ldraw:92690"
+          },
+          {
+            "kind": "bundle",
+            "reference": "14769p0c.dat",
+            "instances": 2,
+            "partId": "ldraw:14769p0c"
+          },
+          {
+            "kind": "bundle",
+            "reference": "86208.dat",
+            "instances": 1,
+            "partId": "ldraw:86208"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88704.dat",
+            "instances": 1,
+            "partId": "ldraw:88704"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4523.dat",
+            "instances": 1,
+            "partId": "ldraw:4523"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626cpd66.dat",
+            "instances": 1,
+            "partId": "ldraw:3626cpd66"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11303.dat",
+            "instances": 1,
+            "partId": "ldraw:11303"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3702.dat",
+            "instances": 2,
+            "partId": "ldraw:3702"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6232.dat",
+            "instances": 2,
+            "partId": "ldraw:6232"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3007.dat",
+            "instances": 1,
+            "partId": "ldraw:3007"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30365.dat",
+            "instances": 2,
+            "partId": "ldraw:30365"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64453.dat",
+            "instances": 2,
+            "partId": "ldraw:64453"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30414.dat",
+            "instances": 2,
+            "partId": "ldraw:30414"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11477.dat",
+            "instances": 18,
+            "partId": "ldraw:11477"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2039.dat",
+            "instances": 1,
+            "partId": "ldraw:2039"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626c.dat",
+            "instances": 1,
+            "partId": "ldraw:3626c"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92947.dat",
+            "instances": 1,
+            "partId": "ldraw:92947"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63965.dat",
+            "instances": 1,
+            "partId": "ldraw:63965"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48723.dat",
+            "instances": 2,
+            "partId": "ldraw:48723"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32556.dat",
+            "instances": 1,
+            "partId": "ldraw:32556"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32607.dat",
+            "instances": 29,
+            "partId": "ldraw:32607"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3832.dat",
+            "instances": 11,
+            "partId": "ldraw:3832"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3027.dat",
+            "instances": 6,
+            "partId": "ldraw:3027"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4477.dat",
+            "instances": 10,
+            "partId": "ldraw:4477"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3031.dat",
+            "instances": 5,
+            "partId": "ldraw:3031"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30504.dat",
+            "instances": 3,
+            "partId": "ldraw:30504"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3034.dat",
+            "instances": 5,
+            "partId": "ldraw:3034"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30041.dat",
+            "instances": 3,
+            "partId": "ldraw:30041"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3035.dat",
+            "instances": 3,
+            "partId": "ldraw:3035"
+          },
+          {
+            "kind": "bundle",
+            "reference": "50950.dat",
+            "instances": 16,
+            "partId": "ldraw:50950"
+          },
+          {
+            "kind": "bundle",
+            "reference": "27263.dat",
+            "instances": 5,
+            "partId": "ldraw:27263"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98100.dat",
+            "instances": 4,
+            "partId": "ldraw:98100"
+          },
+          {
+            "kind": "bundle",
+            "reference": "93274.dat",
+            "instances": 21,
+            "partId": "ldraw:93274"
+          },
+          {
+            "kind": "bundle",
+            "reference": "35464.dat",
+            "instances": 80,
+            "partId": "ldraw:35464"
+          },
+          {
+            "kind": "bundle",
+            "reference": "33909.dat",
+            "instances": 2,
+            "partId": "ldraw:33909"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068bpt3.dat",
+            "instances": 1,
+            "partId": "ldraw:3068bpt3"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069bp01.dat",
+            "instances": 1,
+            "partId": "ldraw:3069bp01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6264.dat",
+            "instances": 3,
+            "partId": "ldraw:6264"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30056.dat",
+            "instances": 1,
+            "partId": "ldraw:30056"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6541.dat",
+            "instances": 2,
+            "partId": "ldraw:6541"
+          },
+          {
+            "kind": "bundle",
+            "reference": "61252.dat",
+            "instances": 2,
+            "partId": "ldraw:61252"
+          },
+          {
+            "kind": "bundle",
+            "reference": "23443.dat",
+            "instances": 4,
+            "partId": "ldraw:23443"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64648.dat",
+            "instances": 1,
+            "partId": "ldraw:64648"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98138p87.dat",
+            "instances": 1,
+            "partId": "ldraw:98138p87"
+          },
+          {
+            "kind": "bundle",
+            "reference": "33320.dat",
+            "instances": 1,
+            "partId": "ldraw:33320"
+          },
+          {
+            "kind": "bundle",
+            "reference": "37762.dat",
+            "instances": 1,
+            "partId": "ldraw:37762"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11090.dat",
+            "instances": 3,
+            "partId": "ldraw:11090"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60478.dat",
+            "instances": 1,
+            "partId": "ldraw:60478"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p86.dat",
+            "instances": 1,
+            "partId": "ldraw:973p86"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626cpd67.dat",
+            "instances": 1,
+            "partId": "ldraw:3626cpd67"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3901.dat",
+            "instances": 1,
+            "partId": "ldraw:3901"
+          },
+          {
+            "kind": "bundle",
+            "reference": "52107.dat",
+            "instances": 1,
+            "partId": "ldraw:52107"
+          },
+          {
+            "kind": "bundle",
+            "reference": "18920.dat",
+            "instances": 1,
+            "partId": "ldraw:18920"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87989.dat",
+            "instances": 1,
+            "partId": "ldraw:87989"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60897.dat",
+            "instances": 1,
+            "partId": "ldraw:60897"
+          },
+          {
+            "kind": "bundle",
+            "reference": "26047.dat",
+            "instances": 1,
+            "partId": "ldraw:26047"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3795.dat",
+            "instances": 8,
+            "partId": "ldraw:3795"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11211.dat",
+            "instances": 6,
+            "partId": "ldraw:11211"
+          },
+          {
+            "kind": "bundle",
+            "reference": "37352.dat",
+            "instances": 3,
+            "partId": "ldraw:37352"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64644.dat",
+            "instances": 13,
+            "partId": "ldraw:64644"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2546p02.dat",
+            "instances": 1,
+            "partId": "ldraw:2546p02"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15395.dat",
+            "instances": 3,
+            "partId": "ldraw:15395"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3741a.dat",
+            "instances": 1,
+            "partId": "ldraw:3741a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "24866.dat",
+            "instances": 16,
+            "partId": "ldraw:24866"
+          },
+          {
+            "kind": "bundle",
+            "reference": "41879b.dat",
+            "instances": 1,
+            "partId": "ldraw:41879b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626bp8b.dat",
+            "instances": 1,
+            "partId": "ldraw:3626bp8b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88286.dat",
+            "instances": 1,
+            "partId": "ldraw:88286"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6567c01.dat",
+            "instances": 4,
+            "partId": "ldraw:6567c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60593c01.dat",
+            "instances": 12,
+            "partId": "ldraw:60593c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "57895.dat",
+            "instances": 1,
+            "partId": "ldraw:57895"
+          },
+          {
+            "kind": "bundle",
+            "reference": "36841.dat",
+            "instances": 3,
+            "partId": "ldraw:36841"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6179.dat",
+            "instances": 2,
+            "partId": "ldraw:6179"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6187.dat",
+            "instances": 2,
+            "partId": "ldraw:6187"
+          },
+          {
+            "kind": "bundle",
+            "reference": "18980.dat",
+            "instances": 2,
+            "partId": "ldraw:18980"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3957b.dat",
+            "instances": 2,
+            "partId": "ldraw:3957b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99206.dat",
+            "instances": 3,
+            "partId": "ldraw:99206"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4346.dat",
+            "instances": 1,
+            "partId": "ldraw:4346"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4345b.dat",
+            "instances": 1,
+            "partId": "ldraw:4345b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98138p0a.dat",
+            "instances": 2,
+            "partId": "ldraw:98138p0a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2453b.dat",
+            "instances": 1,
+            "partId": "ldraw:2453b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "28327.dat",
+            "instances": 1,
+            "partId": "ldraw:28327"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973d06.dat",
+            "instances": 1,
+            "partId": "ldraw:973d06"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626cp8k.dat",
+            "instances": 1,
+            "partId": "ldraw:3626cp8k"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64798.dat",
+            "instances": 1,
+            "partId": "ldraw:64798"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4528.dat",
+            "instances": 1,
+            "partId": "ldraw:4528"
+          },
+          {
+            "kind": "bundle",
+            "reference": "10314.dat",
+            "instances": 1,
+            "partId": "ldraw:10314"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30503.dat",
+            "instances": 1,
+            "partId": "ldraw:30503"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4150p03.dat",
+            "instances": 1,
+            "partId": "ldraw:4150p03"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98369.dat",
+            "instances": 1,
+            "partId": "ldraw:98369"
+          },
+          {
+            "kind": "bundle",
+            "reference": "34173.dat",
+            "instances": 1,
+            "partId": "ldraw:34173"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068a.dat",
+            "instances": 1,
+            "partId": "ldraw:3068a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "10247.dat",
+            "instances": 7,
+            "partId": "ldraw:10247"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32054.dat",
+            "instances": 1,
+            "partId": "ldraw:32054"
+          },
+          {
+            "kind": "bundle",
+            "reference": "47457.dat",
+            "instances": 5,
+            "partId": "ldraw:47457"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3040b.dat",
+            "instances": 5,
+            "partId": "ldraw:3040b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92950.dat",
+            "instances": 1,
+            "partId": "ldraw:92950"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60806.dat",
+            "instances": 1,
+            "partId": "ldraw:60806"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60614.dat",
+            "instances": 2,
+            "partId": "ldraw:60614"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6180.dat",
+            "instances": 1,
+            "partId": "ldraw:6180"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32606.dat",
+            "instances": 3,
+            "partId": "ldraw:32606"
+          },
+          {
+            "kind": "bundle",
+            "reference": "62361.dat",
+            "instances": 3,
+            "partId": "ldraw:62361"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2540.dat",
+            "instances": 2,
+            "partId": "ldraw:2540"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2335.dat",
+            "instances": 2,
+            "partId": "ldraw:2335"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3960p0e.dat",
+            "instances": 1,
+            "partId": "ldraw:3960p0e"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3895.dat",
+            "instances": 2,
+            "partId": "ldraw:3895"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3701.dat",
+            "instances": 2,
+            "partId": "ldraw:3701"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11399.dat",
+            "instances": 1,
+            "partId": "ldraw:11399"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48336.dat",
+            "instances": 1,
+            "partId": "ldraw:48336"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4286.dat",
+            "instances": 2,
+            "partId": "ldraw:4286"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2412a.dat",
+            "instances": 1,
+            "partId": "ldraw:2412a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30162.dat",
+            "instances": 2,
+            "partId": "ldraw:30162"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30374.dat",
+            "instances": 3,
+            "partId": "ldraw:30374"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98282.dat",
+            "instances": 4,
+            "partId": "ldraw:98282"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4079.dat",
+            "instances": 1,
+            "partId": "ldraw:4079"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3829c01.dat",
+            "instances": 1,
+            "partId": "ldraw:3829c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3665b.dat",
+            "instances": 4,
+            "partId": "ldraw:3665b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87620.dat",
+            "instances": 2,
+            "partId": "ldraw:87620"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11458.dat",
+            "instances": 2,
+            "partId": "ldraw:11458"
+          },
+          {
+            "kind": "bundle",
+            "reference": "29120.dat",
+            "instances": 1,
+            "partId": "ldraw:29120"
+          },
+          {
+            "kind": "bundle",
+            "reference": "29119.dat",
+            "instances": 1,
+            "partId": "ldraw:29119"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30104k01.dat",
+            "instances": 2,
+            "partId": "ldraw:30104k01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30104k02.dat",
+            "instances": 5,
+            "partId": "ldraw:30104k02"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2877.dat",
+            "instances": 1,
+            "partId": "ldraw:2877"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92262.dat",
+            "instances": 1,
+            "partId": "ldraw:92262"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92263.dat",
+            "instances": 1,
+            "partId": "ldraw:92263"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60470b.dat",
+            "instances": 2,
+            "partId": "ldraw:60470b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15462.dat",
+            "instances": 1,
+            "partId": "ldraw:15462"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4716.dat",
+            "instances": 1,
+            "partId": "ldraw:4716"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32270.dat",
+            "instances": 1,
+            "partId": "ldraw:32270"
+          },
+          {
+            "kind": "bundle",
+            "reference": "85943.dat",
+            "instances": 1,
+            "partId": "ldraw:85943"
+          },
+          {
+            "kind": "bundle",
+            "reference": "41682.dat",
+            "instances": 1,
+            "partId": "ldraw:41682"
+          },
+          {
+            "kind": "bundle",
+            "reference": "24014.dat",
+            "instances": 1,
+            "partId": "ldraw:24014"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32039.dat",
+            "instances": 1,
+            "partId": "ldraw:32039"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30395.dat",
+            "instances": 1,
+            "partId": "ldraw:30395"
+          },
+          {
+            "kind": "bundle",
+            "reference": "57515.dat",
+            "instances": 1,
+            "partId": "ldraw:57515"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87994.dat",
+            "instances": 2,
+            "partId": "ldraw:87994"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3823.dat",
+            "instances": 1,
+            "partId": "ldraw:3823"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4460b.dat",
+            "instances": 2,
+            "partId": "ldraw:4460b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "45677.dat",
+            "instances": 1,
+            "partId": "ldraw:45677"
+          },
+          {
+            "kind": "bundle",
+            "reference": "61254.dat",
+            "instances": 4,
+            "partId": "ldraw:61254"
+          },
+          {
+            "kind": "bundle",
+            "reference": "56903.dat",
+            "instances": 4,
+            "partId": "ldraw:56903"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44294.dat",
+            "instances": 2,
+            "partId": "ldraw:44294"
+          }
+        ],
+        "inlineParts": [
+          {
+            "inline": "10264 - 13971.dat",
+            "official": "13971.dat"
+          },
+          {
+            "inline": "10264 - 34173.dat",
+            "official": "34173.dat"
+          },
+          {
+            "inline": "3960p0e.dat",
+            "official": "3960p0e.dat"
+          }
+        ],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 32,
+        "fetched": {
+          "requests": 114,
+          "found": 64,
+          "notFound": 50,
+          "bytes": 152924
+        },
+        "timings": {
+          "bakeMs": 19,
+          "resolveMs": 1293.3000000000466,
+          "totalMs": 1312.3000000000466
+        },
+        "importMs": 1723.6000000000931,
+        "sceneMs": 3380.5
+      }
+    ]
+  }
+}

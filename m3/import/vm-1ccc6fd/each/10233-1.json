@@ -1,0 +1,2450 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\nee34880874f1d18d\nParts\n1,385\nModules\n4\nStud instances (drawn of total)\n3,894 of 3,894\nScene triangles\n679,545\nLoad\n34 ms\nGPU buffers allocated so far, JS heap\nvertex+index 4.8 MiB, other 0.1 MiB, JS heap 55.4 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n4 / 0 / 0\nDraw calls\n370\nDrawn triangles\n679,546\nScene coverage\n5% (essentially empty frame)\nFrame rate (rAF)\n2.3 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 80,
+        "z": 720,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "10233-1.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Main.ldr",
+            "title": "Main"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Locomotive.ldr",
+            "title": "Locomotive"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S06.ldr",
+            "title": "Loco S06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S09a.ldr",
+            "title": "Loco S09a"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S09b.ldr",
+            "title": "Loco S09b"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S09c.ldr",
+            "title": "Loco S09c"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S10a.ldr",
+            "title": "Loco S10a"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S11a.ldr",
+            "title": "Loco S11a"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S11b.ldr",
+            "title": "Loco S11b"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S10b.ldr",
+            "title": "Loco S10b"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S12a.ldr",
+            "title": "Loco S12a"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S12b.ldr",
+            "title": "Loco S12b"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S13a.ldr",
+            "title": "Loco S13a"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S13b.ldr",
+            "title": "Loco S13b"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S04.ldr",
+            "title": "Loco S04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S08.ldr",
+            "title": "Loco S08"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S07.ldr",
+            "title": "Loco S07"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S14.ldr",
+            "title": "Loco S14"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S15.ldr",
+            "title": "Loco S15"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S16.ldr",
+            "title": "Loco S16"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S17 R.ldr",
+            "title": "Loco S17 R"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S17 L.ldr",
+            "title": "Loco S17 L"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S18.ldr",
+            "title": "Loco S18"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S19.ldr",
+            "title": "Loco S19"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S19 s05.ldr",
+            "title": "Loco S19 s05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S19 s05 s2.ldr",
+            "title": "Loco S19 s05 s2"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S19 s06.ldr",
+            "title": "Loco S19 s06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S19 s07.ldr",
+            "title": "Loco S19 s07"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S19 s08.ldr",
+            "title": "Loco S19 s08"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S19 s09.ldr",
+            "title": "Loco S19 s09"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S19 s10.ldr",
+            "title": "Loco S19 s10"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S23.ldr",
+            "title": "Loco S23"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S24.ldr",
+            "title": "Loco S24"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S24 s04a.ldr",
+            "title": "Loco S24 s04a"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S24 s04b.ldr",
+            "title": "Loco S24 s04b"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S25.ldr",
+            "title": "Loco S25"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S25 s03.ldr",
+            "title": "Loco S25 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S25 s5.ldr",
+            "title": "Loco S25 s5"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S26.ldr",
+            "title": "Loco S26"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S27.ldr",
+            "title": "Loco S27"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S27 s02.ldr",
+            "title": "Loco S27 s02"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S27 s03.ldr",
+            "title": "Loco S27 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S28.ldr",
+            "title": "Loco S28"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S30.ldr",
+            "title": "Loco S30"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S30 s03.ldr",
+            "title": "Loco S30 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S31.ldr",
+            "title": "Loco S31"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S31 s05a.ldr",
+            "title": "Loco S31 s05a"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S31 s05b.ldr",
+            "title": "Loco S31 s05b"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S32.ldr",
+            "title": "Loco S32"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S33.ldr",
+            "title": "Loco S33"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S35.ldr",
+            "title": "Loco S35"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S35 s04.ldr",
+            "title": "Loco S35 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Loco S36.ldr",
+            "title": "Loco S36"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Wagon 1.ldr",
+            "title": "Wagon 1"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S04.ldr",
+            "title": "W1 S04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S05.ldr",
+            "title": "W1 S05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S06.ldr",
+            "title": "W1 S06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S12.ldr",
+            "title": "W1 S12"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S13.ldr",
+            "title": "W1 S13"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S14.ldr",
+            "title": "W1 S14"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S15.ldr",
+            "title": "W1 S15"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S17.ldr",
+            "title": "W1 S17"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S17 s04.ldr",
+            "title": "W1 S17 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S17 s04 s3.ldr",
+            "title": "W1 S17 s04 s3"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S17 s05.ldr",
+            "title": "W1 S17 s05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S17 s06.ldr",
+            "title": "W1 S17 s06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S18.ldr",
+            "title": "W1 S18"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S18 s03.ldr",
+            "title": "W1 S18 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S18 s04.ldr",
+            "title": "W1 S18 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S18 s05.ldr",
+            "title": "W1 S18 s05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S18 s06 s3.ldr",
+            "title": "W1 S18 s06 s3"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S18 s06.ldr",
+            "title": "W1 S18 s06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S18 s07.ldr",
+            "title": "W1 S18 s07"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S19.ldr",
+            "title": "W1 S19"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S19 s07.ldr",
+            "title": "W1 S19 s07"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S20.ldr",
+            "title": "W1 S20"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S20 s03.ldr",
+            "title": "W1 S20 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S21.ldr",
+            "title": "W1 S21"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S21 s03.ldr",
+            "title": "W1 S21 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S22.ldr",
+            "title": "W1 S22"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S24.ldr",
+            "title": "W1 S24"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S24 s03.ldr",
+            "title": "W1 S24 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S24 s04.ldr",
+            "title": "W1 S24 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S24 s05.ldr",
+            "title": "W1 S24 s05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S24 s06.ldr",
+            "title": "W1 S24 s06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S24 s07.ldr",
+            "title": "W1 S24 s07"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S25.ldr",
+            "title": "W1 S25"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S25 s03.ldr",
+            "title": "W1 S25 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S26.ldr",
+            "title": "W1 S26"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S26 s04.ldr",
+            "title": "W1 S26 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S26 s05.ldr",
+            "title": "W1 S26 s05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S26 s06.ldr",
+            "title": "W1 S26 s06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S26 s07.ldr",
+            "title": "W1 S26 s07"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S28.ldr",
+            "title": "W1 S28"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W1 S28 s08.ldr",
+            "title": "W1 S28 s08"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - Wagon 2.ldr",
+            "title": "Wagon 2"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S12a.ldr",
+            "title": "W2 S12a"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S12b.ldr",
+            "title": "W2 S12b"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S13.ldr",
+            "title": "W2 S13"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S14.ldr",
+            "title": "W2 S14"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S16.ldr",
+            "title": "W2 S16"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S16 s04.ldr",
+            "title": "W2 S16 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S16 S04 s3.ldr",
+            "title": "W2 S16 S04 s3"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S16 S05.ldr",
+            "title": "W2 S16 S05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S16 S06.ldr",
+            "title": "W2 S16 S06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S17.ldr",
+            "title": "W2 S17"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S17 s04.ldr",
+            "title": "W2 S17 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S17 S04 s3.ldr",
+            "title": "W2 S17 S04 s3"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S17 S05.ldr",
+            "title": "W2 S17 S05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S17 S06.ldr",
+            "title": "W2 S17 S06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S18.ldr",
+            "title": "W2 S18"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S18 s04.ldr",
+            "title": "W2 S18 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S19.ldr",
+            "title": "W2 S19"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S19 s03.ldr",
+            "title": "W2 S19 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S20 s03.ldr",
+            "title": "W2 S20 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S20.ldr",
+            "title": "W2 S20"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S21.ldr",
+            "title": "W2 S21"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S23 s07.ldr",
+            "title": "W2 S23 s07"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S23 s06.ldr",
+            "title": "W2 S23 s06"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S23 s05.ldr",
+            "title": "W2 S23 s05"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S23 s04.ldr",
+            "title": "W2 S23 s04"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S23 s03.ldr",
+            "title": "W2 S23 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S23.ldr",
+            "title": "W2 S23"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S24 s03.ldr",
+            "title": "W2 S24 s03"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S24.ldr",
+            "title": "W2 S24"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S26.ldr",
+            "title": "W2 S26"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S27.ldr",
+            "title": "W2 S27"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - W2 S27 s08.ldr",
+            "title": "W2 S27 s08"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - M Woman 2.ldr",
+            "title": "M Woman 2"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - M Stewart.ldr",
+            "title": "M Stewart"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - M Driver.ldr",
+            "title": "M Driver"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - M Woman 1.ldr",
+            "title": "M Woman 1"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - M Man 1.ldr",
+            "title": "M Man 1"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10233 - M Man 2.ldr",
+            "title": "M Man 2"
+          }
+        ],
+        "instanceCount": 1385,
+        "drawnInstanceCount": 1385,
+        "parts": [
+          {
+            "kind": "compiled",
+            "reference": "92339.dat",
+            "instances": 3,
+            "partId": "ldraw:92339",
+            "file": "parts/92339.dat",
+            "header": {
+              "author": "Howard Lande [HowardLande]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "92339.dat",
+              "title": "Train Base 6 x 28 with 6 Holes and Twin 2 x 2 Cutouts"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "instances": 27,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3002.dat",
+            "instances": 4,
+            "partId": "ldraw:3002"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3009.dat",
+            "instances": 26,
+            "partId": "ldraw:3009"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "instances": 20,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3040b.dat",
+            "instances": 6,
+            "partId": "ldraw:3040b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3795.dat",
+            "instances": 13,
+            "partId": "ldraw:3795"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4032a.dat",
+            "instances": 14,
+            "partId": "ldraw:4032a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2412b.dat",
+            "instances": 29,
+            "partId": "ldraw:2412b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3794a.dat",
+            "instances": 25,
+            "partId": "ldraw:3794a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2420.dat",
+            "instances": 20,
+            "partId": "ldraw:2420"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "instances": 9,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3023.dat",
+            "instances": 113,
+            "partId": "ldraw:3023"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2357.dat",
+            "instances": 12,
+            "partId": "ldraw:2357"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "instances": 44,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60479.dat",
+            "instances": 10,
+            "partId": "ldraw:60479"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3666.dat",
+            "instances": 16,
+            "partId": "ldraw:3666"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2432.dat",
+            "instances": 2,
+            "partId": "ldraw:2432"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54200.dat",
+            "instances": 42,
+            "partId": "ldraw:54200"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3956.dat",
+            "instances": 6,
+            "partId": "ldraw:3956",
+            "file": "parts/3956.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3956.dat",
+              "title": "Bracket 2 x 2 - 2 x 2 Up"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "60897.dat",
+            "instances": 44,
+            "partId": "ldraw:60897"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92947.dat",
+            "instances": 4,
+            "partId": "ldraw:92947"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63965.dat",
+            "instances": 4,
+            "partId": "ldraw:63965"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4162.dat",
+            "instances": 17,
+            "partId": "ldraw:4162"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "instances": 2,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44728.dat",
+            "instances": 5,
+            "partId": "ldraw:44728"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "instances": 33,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2877.dat",
+            "instances": 31,
+            "partId": "ldraw:2877"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2921.dat",
+            "instances": 16,
+            "partId": "ldraw:2921"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070b.dat",
+            "instances": 44,
+            "partId": "ldraw:3070b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3460.dat",
+            "instances": 29,
+            "partId": "ldraw:3460"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87552.dat",
+            "instances": 2,
+            "partId": "ldraw:87552"
+          },
+          {
+            "kind": "compiled",
+            "reference": "99207.dat",
+            "instances": 5,
+            "partId": "ldraw:99207",
+            "file": "parts/99207.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2012-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "99207.dat",
+              "title": "Bracket 1 x 2 - 2 x 2 Up"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "compiled",
+            "reference": "87079p03.dat",
+            "instances": 1,
+            "partId": "ldraw:87079p03",
+            "file": "parts/87079p03.dat",
+            "header": {
+              "author": "Max Martin Richter [MMR1988]",
+              "ldrawOrg": "Part UPDATE 2025-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "87079p03.dat",
+              "title": "Tile 2 x 4 with Orange Triangle Top Right Pattern"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "compiled",
+            "reference": "87079p02.dat",
+            "instances": 1,
+            "partId": "ldraw:87079p02",
+            "file": "parts/87079p02.dat",
+            "header": {
+              "author": "Max Martin Richter [MMR1988]",
+              "ldrawOrg": "Part UPDATE 2025-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "87079p02.dat",
+              "title": "Tile 2 x 4 with Orange Triangle Top Left Pattern"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "bundle",
+            "reference": "3832.dat",
+            "instances": 2,
+            "partId": "ldraw:3832"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99206.dat",
+            "instances": 4,
+            "partId": "ldraw:99206"
+          },
+          {
+            "kind": "compiled",
+            "reference": "87609.dat",
+            "instances": 2,
+            "partId": "ldraw:87609",
+            "file": "parts/87609.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "87609.dat",
+              "title": "Plate 2 x 6 x 0.667 with Four Studs On Side and Four Raised"
+            },
+            "sourceFiles": 18
+          },
+          {
+            "kind": "bundle",
+            "reference": "87079.dat",
+            "instances": 16,
+            "partId": "ldraw:87079"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "instances": 30,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "61409.dat",
+            "instances": 26,
+            "partId": "ldraw:61409"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92280.dat",
+            "instances": 3,
+            "partId": "ldraw:92280"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4079.dat",
+            "instances": 7,
+            "partId": "ldraw:4079"
+          },
+          {
+            "kind": "compiled",
+            "reference": "95820.dat",
+            "instances": 1,
+            "partId": "ldraw:95820",
+            "file": "parts/95820.dat",
+            "header": {
+              "author": "Michael Heidemann [mikeheide]",
+              "ldrawOrg": "Part UPDATE 2014-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "95820.dat",
+              "title": "Brick 1 x 2 with Clip Vertical (Thick C-Clip)"
+            },
+            "sourceFiles": 22
+          },
+          {
+            "kind": "bundle",
+            "reference": "3039.dat",
+            "instances": 1,
+            "partId": "ldraw:3039"
+          },
+          {
+            "kind": "compiled",
+            "reference": "93273.dat",
+            "instances": 1,
+            "partId": "ldraw:93273",
+            "file": "parts/93273.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "93273.dat",
+              "title": "Slope Brick Curved 4 x 1 Double"
+            },
+            "sourceFiles": 21
+          },
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "instances": 47,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4070.dat",
+            "instances": 26,
+            "partId": "ldraw:4070"
+          },
+          {
+            "kind": "bundle",
+            "reference": "52107.dat",
+            "instances": 2,
+            "partId": "ldraw:52107"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "instances": 18,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48336.dat",
+            "instances": 9,
+            "partId": "ldraw:48336"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431.dat",
+            "instances": 22,
+            "partId": "ldraw:2431"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6636.dat",
+            "instances": 12,
+            "partId": "ldraw:6636"
+          },
+          {
+            "kind": "compiled",
+            "reference": "61678.dat",
+            "instances": 4,
+            "partId": "ldraw:61678",
+            "file": "parts/61678.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2014-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "61678.dat",
+              "title": "Slope Brick Curved 4 x 1"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "compiled",
+            "reference": "32084.dat",
+            "instances": 3,
+            "partId": "ldraw:32084",
+            "file": "parts/32084.dat",
+            "header": {
+              "author": "Greg Teft [gregteft]",
+              "ldrawOrg": "Part UPDATE 2012-02",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "32084.dat",
+              "title": "Wedge 6 x 8 Triple with Cutout 4 x 4"
+            },
+            "sourceFiles": 31
+          },
+          {
+            "kind": "bundle",
+            "reference": "2653.dat",
+            "instances": 2,
+            "partId": "ldraw:2653"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3622.dat",
+            "instances": 4,
+            "partId": "ldraw:3622"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3010.dat",
+            "instances": 10,
+            "partId": "ldraw:3010"
+          },
+          {
+            "kind": "compiled",
+            "reference": "62360p01.dat",
+            "instances": 1,
+            "partId": "ldraw:62360p01",
+            "file": "parts/62360p01.dat",
+            "header": {
+              "author": "Ulrich Röder [UR]",
+              "ldrawOrg": "Part UPDATE 2019-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "62360p01.dat",
+              "title": "Windscreen 3 x 6 x 1 Curved with Black Frame Pattern"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "3701.dat",
+            "instances": 6,
+            "partId": "ldraw:3701"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2780.dat",
+            "instances": 8,
+            "partId": "ldraw:2780"
+          },
+          {
+            "kind": "compiled",
+            "reference": "2444.dat",
+            "instances": 16,
+            "partId": "ldraw:2444",
+            "file": "parts/2444.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2016-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2444.dat",
+              "title": "Plate 2 x 2 with Hole and Split Underside Ribs"
+            },
+            "sourceFiles": 21
+          },
+          {
+            "kind": "bundle",
+            "reference": "3034.dat",
+            "instances": 1,
+            "partId": "ldraw:3034"
+          },
+          {
+            "kind": "compiled",
+            "reference": "2878.dat",
+            "instances": 8,
+            "partId": "ldraw:2878",
+            "file": "parts/2878.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2878.dat",
+              "title": "Train Wheel Bogie Single Axle without Wheelset"
+            },
+            "sourceFiles": 33
+          },
+          {
+            "kind": "bundle",
+            "reference": "3021.dat",
+            "instances": 8,
+            "partId": "ldraw:3021"
+          },
+          {
+            "kind": "compiled",
+            "reference": "91994.dat",
+            "instances": 3,
+            "partId": "ldraw:91994",
+            "file": "parts/91994.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Shortcut UPDATE 2023-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "91994.dat",
+              "title": "Train Buffer Beam with Open Buffer Bottom with Sealed Magnet (Type 2) (Complete)"
+            },
+            "sourceFiles": 52
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626c.dat",
+            "instances": 2,
+            "partId": "ldraw:3626c"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "instances": 5,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "compiled",
+            "reference": "57878.dat",
+            "instances": 16,
+            "partId": "ldraw:57878",
+            "file": "parts/57878.dat",
+            "header": {
+              "author": "Max Martin Richter [MMR1988]",
+              "ldrawOrg": "Part UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "57878.dat",
+              "title": "Train Wheel with Closed Centre for Wheel Bogie"
+            },
+            "sourceFiles": 20
+          },
+          {
+            "kind": "compiled",
+            "reference": "57877.dat",
+            "instances": 8,
+            "partId": "ldraw:57877",
+            "file": "parts/57877.dat",
+            "header": {
+              "author": "Max Martin Richter [MMR1988]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "57877.dat",
+              "title": "~Axle Steel 5 x 100 LDU"
+            },
+            "sourceFiles": 5
+          },
+          {
+            "kind": "compiled",
+            "reference": "4092b.dat",
+            "instances": 4,
+            "partId": "ldraw:4092b",
+            "file": "parts/4092b.dat",
+            "header": {
+              "author": "Donald Sutter [technog]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4092b.dat",
+              "title": "Train Bogie Plate with Short Pin"
+            },
+            "sourceFiles": 18
+          },
+          {
+            "kind": "compiled",
+            "reference": "30000.dat",
+            "instances": 2,
+            "partId": "ldraw:30000",
+            "file": "parts/30000.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2012-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "30000.dat",
+              "title": "Brick 2 x 2 with Pins and Axlehole"
+            },
+            "sourceFiles": 26
+          },
+          {
+            "kind": "compiled",
+            "reference": "2730.dat",
+            "instances": 2,
+            "partId": "ldraw:2730",
+            "file": "parts/2730.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2010-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2730.dat",
+              "title": "Technic Brick 1 x 10 with Holes"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "bundle",
+            "reference": "3706.dat",
+            "instances": 2,
+            "partId": "ldraw:3706"
+          },
+          {
+            "kind": "compiled",
+            "reference": "55423.dat",
+            "instances": 4,
+            "partId": "ldraw:55423",
+            "file": "parts/55423.dat",
+            "header": {
+              "author": "Matthew J. Chiles [mchiles]",
+              "ldrawOrg": "Shortcut UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "55423.dat",
+              "title": "Train Wheel for RC Train w Technic Axle Hole and Rubber Ring"
+            },
+            "sourceFiles": 30
+          },
+          {
+            "kind": "compiled",
+            "reference": "2871b.dat",
+            "instances": 2,
+            "partId": "ldraw:2871b",
+            "file": "parts/2871b.dat",
+            "header": {
+              "author": "Donald Sutter [technog]",
+              "ldrawOrg": "Part UPDATE 2011-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2871b.dat",
+              "title": "Electric Train Motor RC/PF Decorative Side"
+            },
+            "sourceFiles": 31
+          },
+          {
+            "kind": "bundle",
+            "reference": "32028.dat",
+            "instances": 6,
+            "partId": "ldraw:32028"
+          },
+          {
+            "kind": "bundle",
+            "reference": "51739.dat",
+            "instances": 5,
+            "partId": "ldraw:51739"
+          },
+          {
+            "kind": "bundle",
+            "reference": "45677.dat",
+            "instances": 2,
+            "partId": "ldraw:45677"
+          },
+          {
+            "kind": "compiled",
+            "reference": "11203.dat",
+            "instances": 3,
+            "partId": "ldraw:11203",
+            "file": "parts/11203.dat",
+            "header": {
+              "author": "Rolf Osterthun [Rolf]",
+              "ldrawOrg": "Part UPDATE 2022-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "11203.dat",
+              "title": "Tile 2 x 2 Inverted"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "bundle",
+            "reference": "30414.dat",
+            "instances": 4,
+            "partId": "ldraw:30414"
+          },
+          {
+            "kind": "compiled",
+            "reference": "32064a.dat",
+            "instances": 2,
+            "partId": "ldraw:32064a",
+            "file": "parts/32064a.dat",
+            "header": {
+              "author": "Lutz Uhlmann [El-Lutzo]",
+              "ldrawOrg": "Part UPDATE 2022-02",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "32064a.dat",
+              "title": "Technic Brick 1 x 2 with Axlehole with Open Sides and Stud Blocker"
+            },
+            "sourceFiles": 18
+          },
+          {
+            "kind": "bundle",
+            "reference": "6091.dat",
+            "instances": 9,
+            "partId": "ldraw:6091"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3705.dat",
+            "instances": 1,
+            "partId": "ldraw:3705"
+          },
+          {
+            "kind": "compiled",
+            "reference": "2922b.dat",
+            "instances": 2,
+            "partId": "ldraw:2922b",
+            "file": "parts/2922b.dat",
+            "header": {
+              "author": "Guy Vivan [guyvivan]",
+              "ldrawOrg": "Part UPDATE 2020-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "2922b.dat",
+              "title": "Train Pantograph Shoe with Locking Hinge"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "compiled",
+            "reference": "30552.dat",
+            "instances": 2,
+            "partId": "ldraw:30552",
+            "file": "parts/30552.dat",
+            "header": {
+              "author": "Franklin W. Cain [fwcain]",
+              "ldrawOrg": "Part UPDATE 2022-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "30552.dat",
+              "title": "Hinge Arm Locking with Single Finger and Axlehole"
+            },
+            "sourceFiles": 42
+          },
+          {
+            "kind": "compiled",
+            "reference": "4519.dat",
+            "instances": 2,
+            "partId": "ldraw:4519",
+            "file": "parts/4519.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4519.dat",
+              "title": "Technic Axle 3"
+            },
+            "sourceFiles": 4
+          },
+          {
+            "kind": "bundle",
+            "reference": "32123b.dat",
+            "instances": 4,
+            "partId": "ldraw:32123b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "99021.dat",
+            "instances": 4,
+            "partId": "ldraw:99021",
+            "file": "parts/99021.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2012-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "99021.dat",
+              "title": "Technic Pneumatic Hose Connector with Bush"
+            },
+            "sourceFiles": 28
+          },
+          {
+            "kind": "bundle",
+            "reference": "6632.dat",
+            "instances": 4,
+            "partId": "ldraw:6632"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30165.dat",
+            "instances": 3,
+            "partId": "ldraw:30165"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6191.dat",
+            "instances": 4,
+            "partId": "ldraw:6191"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3030.dat",
+            "instances": 1,
+            "partId": "ldraw:3030",
+            "file": "parts/3030.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2002-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3030.dat",
+              "title": "Plate 4 x 10"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "bundle",
+            "reference": "93274.dat",
+            "instances": 6,
+            "partId": "ldraw:93274"
+          },
+          {
+            "kind": "compiled",
+            "reference": "43719.dat",
+            "instances": 1,
+            "partId": "ldraw:43719",
+            "file": "parts/43719.dat",
+            "header": {
+              "author": "John Riley [jriley]",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "43719.dat",
+              "title": "Wing 4 x 4 with 2 x 2 Cutout"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "6179.dat",
+            "instances": 2,
+            "partId": "ldraw:6179"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068b.dat",
+            "instances": 8,
+            "partId": "ldraw:3068b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3032.dat",
+            "instances": 2,
+            "partId": "ldraw:3032"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30357.dat",
+            "instances": 2,
+            "partId": "ldraw:30357"
+          },
+          {
+            "kind": "compiled",
+            "reference": "13269.dat",
+            "instances": 2,
+            "partId": "ldraw:13269",
+            "file": "parts/13269.dat",
+            "header": {
+              "author": "Max Martin Richter [MMR1988]",
+              "ldrawOrg": "Part UPDATE 2013-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "13269.dat",
+              "title": "Slope Brick 33/45 6 x 4 with 2 x 2 Cutout"
+            },
+            "sourceFiles": 25
+          },
+          {
+            "kind": "bundle",
+            "reference": "63864.dat",
+            "instances": 21,
+            "partId": "ldraw:63864"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3031.dat",
+            "instances": 2,
+            "partId": "ldraw:3031"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2445.dat",
+            "instances": 3,
+            "partId": "ldraw:2445"
+          },
+          {
+            "kind": "bundle",
+            "reference": "42446.dat",
+            "instances": 1,
+            "partId": "ldraw:42446"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99780.dat",
+            "instances": 13,
+            "partId": "ldraw:99780"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4865a.dat",
+            "instances": 6,
+            "partId": "ldraw:4865a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4287a.dat",
+            "instances": 1,
+            "partId": "ldraw:4287a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3245c.dat",
+            "instances": 8,
+            "partId": "ldraw:3245c",
+            "file": "parts/3245c.dat",
+            "header": {
+              "author": "Stephan Meisinger [smr]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "3245c.dat",
+              "title": "Brick 1 x 2 x 2 without Understud"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "bundle",
+            "reference": "47905.dat",
+            "instances": 1,
+            "partId": "ldraw:47905"
+          },
+          {
+            "kind": "compiled",
+            "reference": "4595.dat",
+            "instances": 1,
+            "partId": "ldraw:4595",
+            "file": "parts/4595.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2012-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4595.dat",
+              "title": "Brick 1 x 2 x 0.667 with Studs on Sides"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "compiled",
+            "reference": "3068bp73.dat",
+            "instances": 1,
+            "partId": "ldraw:3068bp73",
+            "file": "parts/3068bp73.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3068bp73.dat",
+              "title": "Tile 2 x 2 with Green Monitor Screen, Black Button, Dark Bluish Grey Window Pattern"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "87544.dat",
+            "instances": 1,
+            "partId": "ldraw:87544"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60581.dat",
+            "instances": 1,
+            "partId": "ldraw:60581"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4035.dat",
+            "instances": 19,
+            "partId": "ldraw:4035"
+          },
+          {
+            "kind": "compiled",
+            "reference": "60602.dat",
+            "instances": 19,
+            "partId": "ldraw:60602",
+            "file": "parts/60602.dat",
+            "header": {
+              "author": "Alex Taylor [anathema]",
+              "ldrawOrg": "Part UPDATE 2012-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "60602.dat",
+              "title": "Glass for Window 1 x 2 x 3"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "bundle",
+            "reference": "3958.dat",
+            "instances": 3,
+            "partId": "ldraw:3958"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92946.dat",
+            "instances": 4,
+            "partId": "ldraw:92946"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3062b.dat",
+            "instances": 4,
+            "partId": "ldraw:3062b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3660.dat",
+            "instances": 6,
+            "partId": "ldraw:3660"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2377.dat",
+            "instances": 4,
+            "partId": "ldraw:2377"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60601.dat",
+            "instances": 4,
+            "partId": "ldraw:60601"
+          },
+          {
+            "kind": "compiled",
+            "reference": "6558.dat",
+            "instances": 4,
+            "partId": "ldraw:6558",
+            "file": "parts/6558.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2009-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6558.dat",
+              "title": "Technic Pin Long with Friction and Slot"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "bundle",
+            "reference": "6141.dat",
+            "instances": 12,
+            "partId": "ldraw:6141"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3176.dat",
+            "instances": 4,
+            "partId": "ldraw:3176"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2436b.dat",
+            "instances": 2,
+            "partId": "ldraw:2436b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "4590.dat",
+            "instances": 2,
+            "partId": "ldraw:4590",
+            "file": "parts/4590.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2024-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4590.dat",
+              "title": "Plate 1 x 2 with 2 Offset Hollow Studs"
+            },
+            "sourceFiles": 27
+          },
+          {
+            "kind": "compiled",
+            "reference": "3673.dat",
+            "instances": 2,
+            "partId": "ldraw:3673",
+            "file": "parts/3673.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2012-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3673.dat",
+              "title": "Technic Pin"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068bpt3.dat",
+            "instances": 2,
+            "partId": "ldraw:3068bpt3"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4449-f1.dat",
+            "instances": 3,
+            "partId": "ldraw:4449-f1"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3033.dat",
+            "instances": 1,
+            "partId": "ldraw:3033"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88930.dat",
+            "instances": 24,
+            "partId": "ldraw:88930"
+          },
+          {
+            "kind": "bundle",
+            "reference": "12825.dat",
+            "instances": 6,
+            "partId": "ldraw:12825"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44300.dat",
+            "instances": 3,
+            "partId": "ldraw:44300"
+          },
+          {
+            "kind": "bundle",
+            "reference": "22463.dat",
+            "instances": 1,
+            "partId": "ldraw:22463"
+          },
+          {
+            "kind": "compiled",
+            "reference": "60849.dat",
+            "instances": 3,
+            "partId": "ldraw:60849",
+            "file": "parts/60849.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "60849.dat",
+              "title": "Minifig Hose Nozzle with Side String Hole Simplified"
+            },
+            "sourceFiles": 15
+          },
+          {
+            "kind": "compiled",
+            "reference": "30553.dat",
+            "instances": 3,
+            "partId": "ldraw:30553",
+            "file": "parts/30553.dat",
+            "header": {
+              "author": "Franklin W. Cain [fwcain]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "30553.dat",
+              "title": "Hinge Arm Locking with Dual Finger and Axlehole"
+            },
+            "sourceFiles": 29
+          },
+          {
+            "kind": "bundle",
+            "reference": "88292.dat",
+            "instances": 4,
+            "partId": "ldraw:88292"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87620.dat",
+            "instances": 2,
+            "partId": "ldraw:87620"
+          },
+          {
+            "kind": "compiled",
+            "reference": "95228.dat",
+            "instances": 1,
+            "partId": "ldraw:95228",
+            "file": "parts/95228.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2011-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "95228.dat",
+              "title": "Minifig Bottle 1 x 1 x 2 Cylindrical"
+            },
+            "sourceFiles": 20
+          },
+          {
+            "kind": "compiled",
+            "reference": "3040p06.dat",
+            "instances": 1,
+            "partId": "ldraw:3040p06",
+            "file": "parts/3040p06.dat",
+            "header": {
+              "author": "J.C. Tchang [tchang]",
+              "ldrawOrg": "Part UPDATE 2010-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3040p06.dat",
+              "title": "Slope Brick 45 2 x 1 with Green + Red Lamps and Keypad Pattern"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "bundle",
+            "reference": "60478.dat",
+            "instances": 1,
+            "partId": "ldraw:60478"
+          },
+          {
+            "kind": "compiled",
+            "reference": "30153.dat",
+            "instances": 1,
+            "partId": "ldraw:30153",
+            "file": "parts/30153.dat",
+            "header": {
+              "author": "Franklin W. Cain [fwcain]",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "30153.dat",
+              "title": "Rock 1 x 1 Gem Facetted"
+            },
+            "sourceFiles": 4
+          },
+          {
+            "kind": "bundle",
+            "reference": "92410.dat",
+            "instances": 1,
+            "partId": "ldraw:92410"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4536.dat",
+            "instances": 2,
+            "partId": "ldraw:4536"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3899.dat",
+            "instances": 2,
+            "partId": "ldraw:3899"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3665a.dat",
+            "instances": 2,
+            "partId": "ldraw:3665a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3028.dat",
+            "instances": 2,
+            "partId": "ldraw:3028"
+          },
+          {
+            "kind": "compiled",
+            "reference": "76252.dat",
+            "instances": 1,
+            "partId": "ldraw:76252",
+            "file": "parts/76252.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "76252.dat",
+              "title": "Technic Flex-System Hose 22L (440LDU)"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "bundle",
+            "reference": "88286.dat",
+            "instances": 1,
+            "partId": "ldraw:88286"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3626cp01.dat",
+            "instances": 4,
+            "partId": "ldraw:3626cp01",
+            "file": "parts/3626cp01.dat",
+            "header": {
+              "author": "J.C. Tchang [tchang]",
+              "ldrawOrg": "Part UPDATE 2024-07",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3626cp01.dat",
+              "title": "Minifig Head with Standard Grin Pattern (Hollow Stud)"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p8o.dat",
+            "instances": 1,
+            "partId": "ldraw:973p8o"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815b.dat",
+            "instances": 6,
+            "partId": "ldraw:3815b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3818.dat",
+            "instances": 6,
+            "partId": "ldraw:3818"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3819.dat",
+            "instances": 6,
+            "partId": "ldraw:3819"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3820.dat",
+            "instances": 12,
+            "partId": "ldraw:3820"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3816b.dat",
+            "instances": 6,
+            "partId": "ldraw:3816b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3817b.dat",
+            "instances": 6,
+            "partId": "ldraw:3817b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "62810.dat",
+            "instances": 1,
+            "partId": "ldraw:62810"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p94.dat",
+            "instances": 1,
+            "partId": "ldraw:973p94"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3901.dat",
+            "instances": 1,
+            "partId": "ldraw:3901"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p9h.dat",
+            "instances": 1,
+            "partId": "ldraw:973p9h",
+            "file": "parts/973p9h.dat",
+            "header": {
+              "author": "Evert-Jan Boer [ejboer]",
+              "ldrawOrg": "Part UPDATE 2019-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p9h.dat",
+              "title": "Minifig Torso with Pinstripe Vest, Red Tie and Pocket Watch Pattern"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "bundle",
+            "reference": "3624.dat",
+            "instances": 1,
+            "partId": "ldraw:3624"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p8h.dat",
+            "instances": 1,
+            "partId": "ldraw:973p8h",
+            "file": "parts/973p8h.dat",
+            "header": {
+              "author": "J.C. Tchang [tchang]",
+              "ldrawOrg": "Part UPDATE 2025-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p8h.dat",
+              "title": "Minifig Torso with Suit with Pocket, Brown Pen, Red Tie, Train Logo Pattern"
+            },
+            "sourceFiles": 23
+          },
+          {
+            "kind": "compiled",
+            "reference": "92746.dat",
+            "instances": 1,
+            "partId": "ldraw:92746",
+            "file": "parts/92746.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2017-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "92746.dat",
+              "title": "Minifig Hair Tousled and Layered"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "3626cp8c.dat",
+            "instances": 2,
+            "partId": "ldraw:3626cp8c",
+            "file": "parts/3626cp8c.dat",
+            "header": {
+              "author": "Howard Lande [HowardLande]",
+              "ldrawOrg": "Part UPDATE 2023-06",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "3626cp8c.dat",
+              "title": "Minifig Head Female with Peach Lips, Smile, Black Eyebrows Pattern (Hollow Stud)"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p8k.dat",
+            "instances": 1,
+            "partId": "ldraw:973p8k",
+            "file": "parts/973p8k.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2015-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p8k.dat",
+              "title": "Minifig Torso with Female Shirt with Two Buttons and Shell Pendant Pattern"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "compiled",
+            "reference": "62711.dat",
+            "instances": 1,
+            "partId": "ldraw:62711",
+            "file": "parts/62711.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "62711.dat",
+              "title": "Minifig Hair Short Bob Cut"
+            },
+            "sourceFiles": 7
+          },
+          {
+            "kind": "bundle",
+            "reference": "973.dat",
+            "instances": 1,
+            "partId": "ldraw:973"
+          }
+        ],
+        "inlineParts": [
+          {
+            "inline": "10233 - 91994.dat",
+            "official": "91994.dat"
+          }
+        ],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 17,
+        "fetched": {
+          "requests": 526,
+          "found": 301,
+          "notFound": 225,
+          "bytes": 1446363
+        },
+        "timings": {
+          "bakeMs": 15.899999999906868,
+          "resolveMs": 1542.8000000000466,
+          "totalMs": 1558.6999999999534
+        },
+        "importMs": 2001.3000000000466,
+        "sceneMs": 1345.5
+      }
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+$ curl -sI http://127.0.0.1:4173/bundle/standard/brick-compile.50cf3cd147f17b74.wasm
+HTTP/1.1 200 OK
+Vary: Origin
+Cache-Control: public, max-age=31536000, immutable
+Content-Length: 485988
+Content-Type: application/wasm
+Last-Modified: Mon, 16 Nov 2026 21:01:42 GMT
+ETag: W/"485988-1794862902865"
+Date: Mon, 16 Nov 2026 21:15:02 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+$ grep -o 'new Worker([^)]*)' dist/assets/index-*.js
+new Worker(new URL(`/assets/entry-DI9MFwVM.js`,``+import.meta.url)
