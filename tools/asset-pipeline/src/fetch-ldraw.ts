@@ -29,6 +29,7 @@ type Source = Palette["source"];
 const SEARCH_DIRECTORIES = ["parts/", "p/"] as const;
 const LOW_RESOLUTION_DIRECTORY = "p/8/";
 const CONNECTIVITY_LICENSE = "LICENSE.md";
+const RESTORE_CONCURRENCY = 16;
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -182,6 +183,48 @@ async function hashProblems(
   return problems;
 }
 
+export interface RestoreResult {
+  readonly present: number;
+  readonly downloaded: number;
+}
+
+async function hasPinnedBytes(path: string, expected: string): Promise<boolean> {
+  try {
+    return sha256(await readFile(path)) === expected;
+  } catch {
+    return false;
+  }
+}
+
+export async function restoreFiles(
+  source: Source,
+  files: Readonly<Record<string, string>>,
+  directory: string,
+): Promise<RestoreResult> {
+  const pending = Object.entries(files);
+  let present = 0;
+  let downloaded = 0;
+  const worker = async (): Promise<void> => {
+    for (let entry = pending.shift(); entry !== undefined; entry = pending.shift()) {
+      const [path, expected] = entry;
+      const target = join(directory, path);
+      if (await hasPinnedBytes(target, expected)) {
+        present += 1;
+        continue;
+      }
+      const bytes = await download(source, path);
+      if (!bytes)
+        throw new Error(`pinned file ${path} is missing from ${source.repo}@${source.commit}`);
+      if (sha256(bytes) !== expected) throw new Error(`hash mismatch ${path} from ${source.repo}`);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, bytes);
+      downloaded += 1;
+    }
+  };
+  await Promise.all(Array.from({ length: RESTORE_CONCURRENCY }, worker));
+  return { present, downloaded };
+}
+
 export async function verifyAuditInputs(
   audit: AuditLock,
   auditDirectory: string,
@@ -261,10 +304,12 @@ export async function renderAttribution(lock: InputLock, directory: string): Pro
   return [
     "# Test fixture attribution",
     "",
-    "LDraw files under `ldraw/` are unmodified copies from the LDraw parts library, fetched from the",
+    "The LDraw files listed below are unmodified copies from the LDraw parts library, fetched from the",
     `GitHub mirror \`${repo}\` at commit \`${commit}\` (\`${root}\`) and pinned by SHA-256 in`,
-    "`tools/asset-pipeline/ldraw.lock.json`. LDraw parts are © their authors and redistributed under",
-    "the license named in each file's `!LICENSE` header. See https://www.ldraw.org/ for the library.",
+    "`tools/asset-pipeline/ldraw.lock.json`. They aren't committed: `pnpm --filter @brr/asset-pipeline",
+    "restore-ldraw` downloads them into `.cache/ldraw` and checks every hash. LDraw parts are © their",
+    "authors and redistributed under the license named in each file's `!LICENSE` header. See",
+    "https://www.ldraw.org/ for the library.",
     "",
     "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.",
     "",
