@@ -10,6 +10,8 @@ import {
   Group,
   HemisphereLight,
   InstancedBufferAttribute,
+  BufferAttribute,
+  BufferGeometry,
   InstancedMesh,
   LineBasicNodeMaterial,
   LineSegments,
@@ -21,7 +23,6 @@ import {
   SRGBColorSpace,
   Vector3,
   WebGPURenderer,
-  type BufferGeometry,
   MeshStandardNodeMaterial,
 } from "three/webgpu";
 import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
@@ -47,6 +48,7 @@ import {
   type StudInstances,
   type TrackEndKind,
   type TrackEndMarker,
+  type SuperChunkMesh,
   type WorldBox,
 } from "../scene-backend.ts";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
@@ -214,6 +216,10 @@ function disposeTree(root: Group | LineSegments): void {
     }
   });
 }
+const VECTOR_FLOATS = 3;
+const VOXEL_ROUGHNESS = 0.3;
+const RGBA_CHANNELS = 4;
+const UNORM8_MAX = 255;
 
 function writeMatrix4(
   source: Float32Array,
@@ -393,6 +399,14 @@ class FarModelNode {
   ) {}
 }
 
+class SuperChunkRecord {
+  constructor(
+    readonly mesh: Mesh,
+    readonly originX: number,
+    readonly originZ: number,
+  ) {}
+}
+
 @injectable()
 export class ThreeSceneBackend implements ISceneBackend {
   private renderer: WebGPURenderer | undefined;
@@ -428,6 +442,15 @@ export class ThreeSceneBackend implements ISceneBackend {
   private camera: PerspectiveCamera | OrthographicCamera = this.perspective;
   private aspect = 1;
   private orthoHalfHeight = 0;
+  private readonly superLayer = new Group();
+  private readonly superChunks = new Map<number, SuperChunkRecord>();
+  private superList: SuperChunkRecord[] = [];
+  private readonly voxelMaterial = new MeshStandardNodeMaterial({
+    roughness: VOXEL_ROUGHNESS,
+    metalness: 0,
+    vertexColors: true,
+    flatShading: true,
+  });
   private ghost: Group | undefined;
   private ghostX = 0;
   private ghostZ = 0;
@@ -533,6 +556,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
     this.scene.add(this.trackEndGroup);
+    this.scene.add(this.superLayer);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -635,6 +659,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     for (const node of this.farModelList) this.scene.remove(node.group);
     this.farModelNodes.clear();
     this.farModelList = [];
+    for (const key of this.superChunks.keys()) this.deleteSuperChunk(key);
     this.setGhost(null);
     disposeLevel(this.detailedLevel);
     disposeLevel(this.farLevel);
@@ -765,6 +790,69 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   deleteChunk(key: number): void {
     this.removeChunk(key);
+  }
+
+  setSuperChunk(key: number, mesh: SuperChunkMesh): void {
+    const visible = this.superChunks.get(key)?.mesh.visible ?? false;
+    this.deleteSuperChunk(key);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(mesh.positions, VECTOR_FLOATS));
+    const colors = new Uint8Array(mesh.vertexCount * RGBA_CHANNELS);
+    for (let v = 0; v < mesh.vertexCount; v++) {
+      const c = (mesh.colorIndex[v] ?? 0) * COLOR_CHANNELS;
+      const o = v * RGBA_CHANNELS;
+      colors[o] = Math.round((this.linearColors[c] ?? 0) * UNORM8_MAX);
+      colors[o + 1] = Math.round((this.linearColors[c + 1] ?? 0) * UNORM8_MAX);
+      colors[o + 2] = Math.round((this.linearColors[c + 2] ?? 0) * UNORM8_MAX);
+      colors[o + 3] = UNORM8_MAX;
+    }
+    geometry.setAttribute("color", new BufferAttribute(colors, RGBA_CHANNELS, true));
+    geometry.setIndex(new BufferAttribute(mesh.indices, 1));
+    geometry.computeBoundingSphere();
+    const object = new Mesh(geometry, this.voxelMaterial);
+    object.matrixAutoUpdate = false;
+    object.visible = visible;
+    const record = new SuperChunkRecord(object, mesh.originX, mesh.originZ);
+    this.placeSuperChunk(record);
+    this.superChunks.set(key, record);
+    this.superList.push(record);
+    this.superLayer.add(object);
+  }
+
+  setSuperChunkVisible(key: number, visible: boolean): void {
+    const record = this.superChunks.get(key);
+    if (record) record.mesh.visible = visible;
+  }
+
+  deleteSuperChunk(key: number): void {
+    const record = this.superChunks.get(key);
+    if (!record) return;
+    this.superLayer.remove(record.mesh);
+    record.mesh.geometry.dispose();
+    this.superChunks.delete(key);
+    this.superList = this.superList.filter((existing) => existing !== record);
+  }
+
+  private placeSuperChunk(record: SuperChunkRecord): void {
+    record.mesh.position.set(
+      record.originX - this.renderOriginX,
+      0,
+      record.originZ - this.renderOriginZ,
+    );
+    record.mesh.updateMatrix();
+    record.mesh.updateMatrixWorld(true);
+  }
+
+  studPitchPx(distanceLdu: number): number {
+    if (this.camera === this.orthographic) return this.orthoStudPitchPx();
+    return (STUD_PITCH_LDU * this.focalLengthPx) / Math.max(distanceLdu, CAMERA_NEAR_LDU);
+  }
+
+  private orthoStudPitchPx(): number {
+    return (
+      (STUD_PITCH_LDU * this.focalLengthPx * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360)) /
+      Math.max(this.orthoHalfHeight, CAMERA_NEAR_LDU)
+    );
   }
 
   private removeChunk(key: number): void {
@@ -1446,6 +1534,10 @@ export class ThreeSceneBackend implements ISceneBackend {
       node.group.updateMatrix();
       node.group.updateMatrixWorld(true);
     }
+    for (let i = 0; i < this.superList.length; i++) {
+      const record = this.superList[i];
+      if (record) this.placeSuperChunk(record);
+    }
     const ghost = this.ghost;
     if (ghost) {
       ghost.position.set(
@@ -1555,9 +1647,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     let mid = 0;
     let far = 0;
     const orthographic = this.camera === this.orthographic;
-    const orthoStudPitchPx =
-      (STUD_PITCH_LDU * this.focalLengthPx * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360)) /
-      Math.max(this.orthoHalfHeight, CAMERA_NEAR_LDU);
+    const orthoStudPitchPx = this.orthoStudPitchPx();
     let nearestStudPitchPx = 0;
     for (let i = 0; i < this.chunkList.length; i++) {
       const record = this.chunkList[i];
@@ -1604,6 +1694,11 @@ export class ThreeSceneBackend implements ISceneBackend {
     out.renderOriginChunkX = this.renderOriginX / CHUNK_LDU;
     out.renderOriginChunkZ = this.renderOriginZ / CHUNK_LDU;
     out.rebaseCount = this.rebaseCount;
+    let visibleSuperChunks = 0;
+    for (let i = 0; i < this.superList.length; i++) {
+      if (this.superList[i]?.mesh.visible) visibleSuperChunks++;
+    }
+    out.superChunks = visibleSuperChunks;
     this.frame++;
   }
 

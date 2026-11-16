@@ -364,7 +364,14 @@ function compiledPartAsset(
 function toPartAsset(
   part: Pick<
     ManifestPart,
-    "id" | "title" | "role" | "bounds" | "displayColor" | "producedColors" | "trackEnds"
+    | "id"
+    | "title"
+    | "role"
+    | "bounds"
+    | "displayColor"
+    | "producedColors"
+    | "trackEnds"
+    | "farVoxels"
   >,
   bytes: ArrayBuffer,
   studPrimitiveNames: ReadonlyArray<string>,
@@ -397,5 +404,14 @@ function toPartAsset(
     studPrimitiveIndex,
     studColors,
     studMatrices,
+    farVoxels: part.farVoxels
+      ? {
+          origin: part.farVoxels.origin,
+          cellLdu: part.farVoxels.cellLdu,
+          dims: part.farVoxels.dims,
+          cellIndex: Uint32Array.from(part.farVoxels.cellIndex),
+          ldrawColor: Uint32Array.from(part.farVoxels.ldrawColor),
+        }
+      : undefined,
   };
 }

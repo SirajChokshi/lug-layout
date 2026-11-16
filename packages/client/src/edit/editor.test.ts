@@ -157,6 +157,12 @@ class HeadlessBackend implements ISceneBackend {
   setPalette(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setSuperChunk(): void {}
+  setSuperChunkVisible(): void {}
+  deleteSuperChunk(): void {}
+  studPitchPx(): number {
+    return 0;
+  }
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
@@ -215,7 +221,14 @@ async function startEditor(
     dataset: {},
   } as unknown as HTMLCanvasElement;
 
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  await editor.start(canvas, {
+    api: "webgl2",
+    pixelRatio: 1,
+    look: NO_LOOK,
+    tier: null,
+    superChunkLod: true,
+    measuredFrames: 60,
+  });
   return { editor, backend, manifest: await realLoader.loadManifest("standard") };
 }
 
@@ -428,7 +441,14 @@ async function editorWithFailingSaves() {
     clientHeight: 480,
     dataset: {},
   } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  await editor.start(canvas, {
+    api: "webgl2",
+    pixelRatio: 1,
+    look: NO_LOOK,
+    tier: null,
+    superChunkLod: true,
+    measuredFrames: 60,
+  });
   expect(editor.snapshot().status).toBe("ready");
 
   editor.chooseItem(BASEPLATE);
@@ -682,7 +702,14 @@ it("leaves road mode when the world turns read-only, and refuses road draw and e
     clientHeight: 480,
     dataset: {},
   } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  await editor.start(canvas, {
+    api: "webgl2",
+    pixelRatio: 1,
+    look: NO_LOOK,
+    tier: null,
+    superChunkLod: true,
+    measuredFrames: 60,
+  });
   const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
   if (!kit) throw new Error("no Dark Bluish Grey road kit");
   const tile = 640;
@@ -765,7 +792,14 @@ it("offers none of the editing commands on a selection in a world another tab ho
     clientHeight: 480,
     dataset: {},
   } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  await editor.start(canvas, {
+    api: "webgl2",
+    pixelRatio: 1,
+    look: NO_LOOK,
+    tier: null,
+    superChunkLod: true,
+    measuredFrames: 60,
+  });
   const selectBaseplate = () => {
     editor.chooseItem(null);
     editor.click(0, 0, 0);

@@ -32,6 +32,8 @@ const BOX_CORNERS = 8;
 
 export type CameraTarget = Pick<ISceneBackend, "setView">;
 
+const eyeScratch = new Float64Array(3);
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -535,13 +537,21 @@ export class ViewCamera {
     return this.orthographic ? PLAN_EYE_HEIGHT_LDU : this.pose.distance;
   }
 
-  apply(backend: CameraTarget): void {
+  eye(out: Float64Array): void {
     const { pose } = this;
     const eyeDistance = this.eyeDistance();
     const horizontal = eyeDistance * Math.cos(pose.pitch);
-    const eyeX = pose.targetX + horizontal * Math.cos(pose.yaw);
-    const eyeY = pose.targetY + eyeDistance * Math.sin(pose.pitch);
-    const eyeZ = pose.targetZ + horizontal * Math.sin(pose.yaw);
+    out[0] = pose.targetX + horizontal * Math.cos(pose.yaw);
+    out[1] = pose.targetY + eyeDistance * Math.sin(pose.pitch);
+    out[2] = pose.targetZ + horizontal * Math.sin(pose.yaw);
+  }
+
+  apply(backend: CameraTarget): void {
+    const { pose } = this;
+    this.eye(eyeScratch);
+    const eyeX = eyeScratch[0] ?? 0;
+    const eyeY = eyeScratch[1] ?? 0;
+    const eyeZ = eyeScratch[2] ?? 0;
     if (this.orthographic) {
       backend.setView(eyeX, eyeY, eyeZ, pose.targetX, pose.targetY, pose.targetZ, this.halfHeight);
       return;
