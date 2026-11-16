@@ -1,0 +1,3 @@
+{"name":"two trains, critic's positions","simulatedMinutes":30,"throttles":[150,150],"sharedPieceTicks":0,"checkedTicks":108000,"minBogieSeparationLdu":1329,"finalSpeeds":[150,150],"distanceLdu":[269926,269926],"trainTicksBelowThrottle":118}
+{"name":"follower behind a stopped leader","simulatedMinutes":5,"throttles":[150,0],"sharedPieceTicks":0,"checkedTicks":18000,"minBogieSeparationLdu":600,"finalSpeeds":[0,0],"distanceLdu":[961,0],"trainTicksBelowThrottle":17660}
+{"name":"four trains, different throttles","simulatedMinutes":30,"throttles":[100,200,300,400],"sharedPieceTicks":0,"checkedTicks":108000,"minBogieSeparationLdu":576,"finalSpeeds":[100,75,224,0],"distanceLdu":[179967,183337,182860,181996],"trainTicksBelowThrottle":302045}

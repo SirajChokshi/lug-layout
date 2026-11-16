@@ -1,0 +1,222 @@
+{
+ "url": "http://localhost:4182/?api=webgl2&lod=low&track=ldraw:74746*4,ldraw:74747*8,ldraw:74746*4,ldraw:74747*8&run=1&train=10133-1&trains=0@300;12@300&speed=150",
+ "errors": [],
+ "samples": [
+  {
+   "tick": 1811,
+   "stateHash": 2132635225,
+   "trains": 2,
+   "switches": 0,
+   "trainEdge": [
+    30,
+    42
+   ],
+   "trainOffsetLdu": [
+    0.47587712816493877,
+    17.99808105122679
+   ],
+   "trainSpeedLduPerS": [
+    150,
+    150
+   ],
+   "bogiePointsLdu": [
+    502.5241228718352,
+    1600,
+    842.5241228718352,
+    1600,
+    -786.1352878466757,
+    651.7053298252956,
+    -777.3446709051076,
+    989.0377280212342
+   ],
+   "arrivals": [
+    0,
+    0
+   ],
+   "routeStates": [
+    "manual",
+    "manual"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 1328.9731952452912,
+   "checkedTicks": 1811,
+   "tickCost": {
+    "ticks": 1811,
+    "stepMs": 17.699999941512942,
+    "frames": 1814
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "vehicleInstances": 398,
+   "excludedInstances": 21,
+   "maxEndResidualLdu": 5.084229945850415e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 3630,
+   "stateHash": 3376008978,
+   "trains": 2,
+   "switches": 0,
+   "trainEdge": [
+    10,
+    22
+   ],
+   "trainOffsetLdu": [
+    120.5424888973505,
+    143.90542746143296
+   ],
+   "trainSpeedLduPerS": [
+    150,
+    150
+   ],
+   "bogiePointsLdu": [
+    1527.5695887915822,
+    39.270548285682025,
+    1191.7017542563299,
+    -5.67505623413682e-14,
+    1621.8855649969996,
+    1523.2663827710248,
+    1889.6887523030275,
+    1317.957165521607
+   ],
+   "arrivals": [
+    0,
+    0
+   ],
+   "routeStates": [
+    "manual",
+    "manual"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 1328.9731952452912,
+   "checkedTicks": 3630,
+   "tickCost": {
+    "ticks": 3630,
+    "stepMs": 36.79999989271164,
+    "frames": 3633
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "vehicleInstances": 398,
+   "excludedInstances": 21,
+   "maxEndResidualLdu": 5.084229945850415e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 5414,
+   "stateHash": 1904656866,
+   "trains": 2,
+   "switches": 0,
+   "trainEdge": [
+    38,
+    2
+   ],
+   "trainOffsetLdu": [
+    158.94983530755667,
+    176.47203923061852
+   ],
+   "trainSpeedLduPerS": [
+    150,
+    150
+   ],
+   "bogiePointsLdu": [
+    -729.5674493745323,
+    1128.224521955839,
+    -529.3304132024866,
+    1399.8410736677547,
+    313.4720392306185,
+    -7.67785058931941e-14,
+    -26.52309942376405,
+    0.43979263787934286
+   ],
+   "arrivals": [
+    0,
+    0
+   ],
+   "routeStates": [
+    "manual",
+    "manual"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 1328.9731952452912,
+   "checkedTicks": 5414,
+   "tickCost": {
+    "ticks": 5414,
+    "stepMs": 48.69999985024333,
+    "frames": 5417
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "vehicleInstances": 398,
+   "excludedInstances": 21,
+   "maxEndResidualLdu": 5.084229945850415e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 7221,
+   "stateHash": 36920160,
+   "trains": 2,
+   "switches": 0,
+   "trainEdge": [
+    18,
+    30
+   ],
+   "trainOffsetLdu": [
+    254.85718171776284,
+    260.69791635878346
+   ],
+   "trainSpeedLduPerS": [
+    150,
+    150
+   ],
+   "bogiePointsLdu": [
+    1988.662531833517,
+    1171.2107433457568,
+    2078.6769189814854,
+    845.9910761587728,
+    242.3020836412166,
+    1600,
+    582.3020836412167,
+    1600
+   ],
+   "arrivals": [
+    0,
+    0
+   ],
+   "routeStates": [
+    "manual",
+    "manual"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 1328.9731952452912,
+   "checkedTicks": 7221,
+   "tickCost": {
+    "ticks": 7221,
+    "stepMs": 60.89999980852008,
+    "frames": 7224
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "vehicleInstances": 398,
+   "excludedInstances": 21,
+   "maxEndResidualLdu": 5.084229945850415e-13,
+   "maxEndHeadingResidualRadians": 0
+  }
+ ]
+}

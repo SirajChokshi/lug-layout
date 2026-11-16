@@ -1,0 +1,69 @@
+Brick Railroad
+API
+webgl2
+Adapter
+Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)
+Drawing buffer
+960×600 px (devicePixelRatio 1)
+Bundle
+f0a97b867d31782c
+Parts
+820
+Modules
+12
+Stud instances (drawn of total)
+1,152 of 1,152
+Scene triangles
+188,896
+Load
+131 ms
+GPU buffers allocated so far, JS heap
+vertex+index 2.0 MiB, other 0.0 MiB, JS heap 21.4 MiB
+Render origin (chunks), rebases
+(3, 1); 1 rebases, last at frame 0
+Track placements
+24
+Exact joins
+24 of 48 ends paired
+Open ends
+0
+Coincident ends not joined
+0
+Switches
+0
+Directed edges (reachable from edge 0)
+48 (24)
+Chunk tiers near/mid/far
+12 / 0 / 0
+Draw calls
+104
+Drawn triangles
+275,231
+Scene coverage
+12%
+Frame rate (rAF)
+6.3 fps
+Sim tick (60 Hz, worker)
+7,296
+Sim state hash
+f1936c37
+Sim step cost (live, worker clock)
+8.42 µs/tick over 7,296 ticks
+Trains (speed LDU/s)
+2 (150, 150)
+Train edges
+20, 32
+Train routes
+manual, manual
+Arrivals per train
+0, 0
+Ticks with two trains on one track piece
+0 of 7,296
+Closest bogies of different trains
+1,329 LDU
+Vehicle (LDU)
+length 706.0, bogies at 183.0 and 523.0 from 4 wheelsets; 398 parts touch the wheels, 21 stand apart and stay off the train
+Bogie centres apart (LDU, per vehicle)
+337.446917, 340.000000
+Route path end vs exact end
+5.1e-13 LDU, 0.0e+0 rad
