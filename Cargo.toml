@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/brick-compile", "crates/brick-compile-cli"]
+members = ["crates/brick-compile", "crates/brick-compile-cli", "crates/brick-compile-wasm"]
 
 [workspace.package]
 edition = "2021"

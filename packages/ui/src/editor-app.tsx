@@ -1,4 +1,5 @@
-import type { EditorOptions, IEditor, IPlanService } from "@brr/client";
+import type { EditorOptions, IBuildableService, IEditor, IPlanService } from "@brr/client";
+import { BuildablePanel, BuildableState } from "./buildable-panel.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CatalogList,
@@ -13,6 +14,7 @@ import { useEditorSnapshot } from "./use-editor.ts";
 interface EditorAppProps {
   readonly editor: IEditor;
   readonly plans: IPlanService;
+  readonly buildable: IBuildableService;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -46,7 +48,14 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
   );
 }
 
-export function EditorApp({ editor, plans, options, disclaimer, showState }: EditorAppProps) {
+export function EditorApp({
+  editor,
+  plans,
+  buildable,
+  options,
+  disclaimer,
+  showState,
+}: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   return (
     <div
@@ -64,7 +73,11 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
         <CatalogList editor={editor} snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
       </div>
+      <div className="buildable-dock">
+        <BuildablePanel plans={plans} buildable={buildable} />
+      </div>
       {showState && <EditorState editor={editor} />}
+      {showState && <BuildableState buildable={buildable} />}
       {showState && <PlanState plans={plans} />}
       <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />
     </div>
