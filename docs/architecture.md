@@ -202,6 +202,8 @@ Third-party track arrives later as an extra `TrackProfile` plus a `PartSource` (
 
 **Streaming (D4).** The camera chooses a tier for each chunk. Near chunks load fully. Mid and far chunks load only their merged or voxel model meshes. Super-chunks beyond the far radius stay unloaded and show as a super-chunk far LOD, or as a flat ground color until that exists. Super-chunk shards load from IndexedDB on demand, so a world's total size doesn't affect frame time. Super-chunk far LOD moves from P1 into M6.
 
+**Camera-relative rendering (M1 S4).** World positions are exact integer LDU, up to the whole int32 range. float32 has a spacing of 2 LDU at 10 km, so no world-scale coordinate is sent to the GPU. The renderer keeps a render origin at a chunk corner: chunk groups are placed at (chunk origin − render origin) and the camera at (eye − render origin), with both differences taken in float64 from exact values. The origin is set to the camera's chunk on the first view and moves to it whenever the camera is more than 8 chunks away. Each move is logged with its frame number.
+
 **Plan overlay.** Plan regions draw their room walls, table tops (with their real heights as optional plinths), obstacles, aisles and reach zones as translucent overlays, with mm/cm/inch rulers. An optional "real table" view hides everything outside the region.
 
 **LOD per model**, chosen by screen size:
