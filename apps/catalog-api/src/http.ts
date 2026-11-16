@@ -79,7 +79,7 @@ export function matchesEtag(request: Request, etag: string): boolean {
   return header
     .split(",")
     .map((candidate) => candidate.trim().replace(/^W\//, ""))
-    .some((candidate) => candidate === "*" || candidate === etag);
+    .some((candidate) => candidate === etag);
 }
 
 export function withoutBody(response: Response): Response {

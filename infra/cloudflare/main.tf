@@ -2,7 +2,6 @@ locals {
   wrangler    = jsondecode(file("${path.module}/../../apps/catalog-api/wrangler.json"))
   d1          = one(local.wrangler.d1_databases)
   r2          = one(local.wrangler.r2_buckets)
-  rate_limit  = one(local.wrangler.ratelimits)
   bundle_path = abspath("${path.module}/${var.worker_bundle}")
 }
 
@@ -30,30 +29,34 @@ resource "cloudflare_workers_script" "catalog_api" {
   content_sha256     = filesha256(local.bundle_path)
   compatibility_date = local.wrangler.compatibility_date
 
-  bindings = [
-    {
-      type = "d1"
-      name = local.d1.binding
-      id   = cloudflare_d1_database.catalog.id
-    },
-    {
-      type        = "r2_bucket"
-      name        = local.r2.binding
-      bucket_name = cloudflare_r2_bucket.catalog_releases.name
-    },
-    {
-      type         = "ratelimit"
-      name         = local.rate_limit.name
-      namespace_id = local.rate_limit.namespace_id
-      simple = {
-        limit  = local.rate_limit.simple.limit
-        period = local.rate_limit.simple.period
+  bindings = concat(
+    [
+      {
+        type = "d1"
+        name = local.d1.binding
+        id   = cloudflare_d1_database.catalog.id
+      },
+      {
+        type        = "r2_bucket"
+        name        = local.r2.binding
+        bucket_name = cloudflare_r2_bucket.catalog_releases.name
+      },
+    ],
+    [
+      for limiter in local.wrangler.ratelimits : {
+        type         = "ratelimit"
+        name         = limiter.name
+        namespace_id = limiter.namespace_id
+        simple = {
+          limit  = limiter.simple.limit
+          period = limiter.simple.period
+        }
       }
-    },
-  ]
+    ],
+  )
 
   observability = {
-    enabled = true
+    enabled = local.wrangler.observability.enabled
   }
 }
 

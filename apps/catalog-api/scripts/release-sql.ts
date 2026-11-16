@@ -80,7 +80,28 @@ const copiedTables: ReadonlyArray<CopiedTable> = [
 
 const themeColumns = ["id", "name", "parent_id", "path"] as const;
 
-export function sourceSchemaProblems(db: DatabaseSync): ReadonlyArray<string> {
+export function releaseProblems(db: DatabaseSync): ReadonlyArray<string> {
+  const schema = sourceSchemaProblems(db);
+  if (schema.length > 0) return schema;
+  const modules = Number(
+    db.prepare(`SELECT count(*) AS n FROM sets WHERE kind = ${MODULE_KIND}`).get()?.["n"] ?? 0,
+  );
+  const unknownKinds = Number(
+    db
+      .prepare(`SELECT count(*) AS n FROM sets WHERE kind NOT IN (${SET_KIND}, ${MODULE_KIND})`)
+      .get()?.["n"] ?? 0,
+  );
+  return [
+    ...(modules > 0
+      ? [
+          `release has ${modules} module rows; modules are refused until the release build imports real module data`,
+        ]
+      : []),
+    ...(unknownKinds > 0 ? [`release has ${unknownKinds} sets of unknown kind`] : []),
+  ];
+}
+
+function sourceSchemaProblems(db: DatabaseSync): ReadonlyArray<string> {
   const expected = [
     { source: "themes", columns: [...themeColumns] },
     ...copiedTables.map(({ source, columns }) => ({ source, columns: [...columns] })),
@@ -120,8 +141,6 @@ export function* releaseStatements(
 ): Generator<string> {
   const tables = releaseTables(release.id);
   yield* metadataSchema();
-  yield `DELETE FROM ${CURRENT_RELEASE_TABLE} WHERE release_id = ${sqlLiteral(release.id)}`;
-  yield `DELETE FROM ${RELEASES_TABLE} WHERE id = ${sqlLiteral(release.id)}`;
   yield* dropRelease(release.id);
   yield* releaseSchema(release.id);
   yield* batchedInserts(
@@ -152,7 +171,9 @@ export function* releaseStatements(
     counts,
   ]
     .map(sqlLiteral)
-    .join(", ")})`;
+    .join(
+      ", ",
+    )}) ON CONFLICT(id) DO UPDATE SET sha256 = excluded.sha256, bytes = excluded.bytes, object_key = excluded.object_key, source = excluded.source, loaded_at = excluded.loaded_at, counts = excluded.counts`;
   if (promote) {
     yield `INSERT INTO ${CURRENT_RELEASE_TABLE}(slot, release_id) VALUES ('current', ${sqlLiteral(release.id)}) ON CONFLICT(slot) DO UPDATE SET release_id = excluded.release_id`;
   }

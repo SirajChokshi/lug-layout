@@ -32,13 +32,21 @@ import {
   themeHref,
   type Route,
 } from "./routes.ts";
-import { sqliteDownload } from "./sqlite-download.ts";
+import {
+  parseRange,
+  rangeNotSatisfiable,
+  sqliteCacheKey,
+  sqliteFromStorage,
+} from "./sqlite-download.ts";
 
 export interface CatalogEnv {
   readonly CATALOG_DB: D1Database;
   readonly CATALOG_RELEASES: R2Bucket;
   readonly QUERY_RATE_LIMIT: RateLimit;
+  readonly FILE_RATE_LIMIT: RateLimit;
 }
+
+export const DATA_ATTRIBUTION = "Catalog data from Rebrickable (https://rebrickable.com)";
 
 export interface EdgeContext {
   waitUntil(promise: Promise<unknown>): void;
@@ -90,21 +98,42 @@ async function respond(
     return respondCurrent(route, url, db);
   }
   if (route.kind === "sqlite") {
-    if (!(await allowed(env, request, "file"))) return tooManyRequests();
-    const release = await releases.find(db, route.release, Date.now());
-    if (release === undefined) return unknownRelease(route.release);
-    return sqliteDownload(env.CATALOG_RELEASES, release, request);
+    return respondSqlite(route.release, request, url, env, context, edgeCache, db);
   }
   if (matchesEtag(request, releaseEtag(route.release))) return notModified(route.release);
   const cacheKey = new Request(canonicalUrl(url.origin, route), { method: "GET" });
   const cached = await edgeCache.match(cacheKey);
   if (cached !== undefined) return tagged(cached, "HIT");
-  if (!(await allowed(env, request, "query"))) return tooManyRequests();
+  if (!(await allowed(env.QUERY_RATE_LIMIT, request))) return tooManyRequests();
   const release = await releases.find(db, route.release, Date.now());
   if (release === undefined) return unknownRelease(route.release);
   const fresh = await respondVersioned(route, release, url.origin, db);
   context.waitUntil(edgeCache.put(cacheKey, fresh.clone()));
   return tagged(fresh, "MISS");
+}
+
+async function respondSqlite(
+  releaseId: string,
+  request: Request,
+  url: URL,
+  env: CatalogEnv,
+  context: EdgeContext,
+  edgeCache: Cache,
+  db: CatalogReader,
+): Promise<Response> {
+  const cacheUrl = sqliteHref(url.origin, releaseId);
+  const cached = await edgeCache.match(new Request(cacheUrl, { headers: request.headers }));
+  if (cached !== undefined) return tagged(cached, "HIT");
+  if (!(await allowed(env.FILE_RATE_LIMIT, request))) return tooManyRequests();
+  const release = await releases.find(db, releaseId, Date.now());
+  if (release === undefined) return unknownRelease(releaseId);
+  const range = parseRange(request.headers.get("range"), release.bytes);
+  if (range.kind === "unsatisfiable") return rangeNotSatisfiable(release);
+  const fresh = await sqliteFromStorage(env.CATALOG_RELEASES, release, request, range);
+  if (fresh.status !== 200 || fresh.body === null) return tagged(fresh, "MISS");
+  const [client, stored] = fresh.body.tee();
+  context.waitUntil(edgeCache.put(sqliteCacheKey(cacheUrl), new Response(stored, fresh)));
+  return tagged(new Response(client, fresh), "MISS");
 }
 
 async function respondCurrent(
@@ -233,9 +262,9 @@ async function respondVersioned(
   }
 }
 
-async function allowed(env: CatalogEnv, request: Request, bucket: string): Promise<boolean> {
+async function allowed(limiter: RateLimit, request: Request): Promise<boolean> {
   const client = request.headers.get("cf-connecting-ip") ?? "unknown";
-  const outcome = await env.QUERY_RATE_LIMIT.limit({ key: `${bucket}:${client}` });
+  const outcome = await limiter.limit({ key: client });
   return outcome.success;
 }
 
@@ -262,6 +291,7 @@ function releaseBody(origin: string, release: CatalogRelease) {
     source: release.source,
     loadedAt: release.loadedAt,
     counts: release.counts,
+    attribution: DATA_ATTRIBUTION,
     links: {
       self,
       search: `${self}/search`,

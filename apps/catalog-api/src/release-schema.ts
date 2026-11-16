@@ -6,9 +6,11 @@ export const CURRENT_RELEASE_TABLE = "catalog_current";
 
 export const SET_KIND = 0;
 export const MODULE_KIND = 1;
-export const MINIFIG_INVENTORY_OFFSET = 1_000_000;
 
 export const FTS_TOKENIZER = "unicode61 remove_diacritics 2";
+export const SET_KIND_TOKEN = "set";
+export const MODULE_KIND_TOKEN = "module";
+export const SETS_FTS_RANK = "bm25(1.0, 1.0, 0.0)";
 
 export interface ReleaseTables {
   readonly themes: string;
@@ -70,7 +72,7 @@ export function releaseSchema(releaseId: string): ReadonlyArray<string> {
     `CREATE TABLE ${t.minifigs}(id INTEGER PRIMARY KEY, fig_num TEXT NOT NULL UNIQUE, name TEXT NOT NULL, num_parts INTEGER)`,
     `CREATE TABLE ${t.inventoryParts}(inventory_id INTEGER NOT NULL, part_id INTEGER NOT NULL, color_id INTEGER NOT NULL, is_spare INTEGER NOT NULL, quantity INTEGER NOT NULL, PRIMARY KEY(inventory_id, part_id, color_id, is_spare)) WITHOUT ROWID`,
     `CREATE TABLE ${t.inventoryMinifigs}(inventory_id INTEGER NOT NULL, minifig_id INTEGER NOT NULL, quantity INTEGER NOT NULL, PRIMARY KEY(inventory_id, minifig_id)) WITHOUT ROWID`,
-    `CREATE VIRTUAL TABLE ${t.setsFts} USING fts5(name, theme, content='', tokenize='${FTS_TOKENIZER}')`,
+    `CREATE VIRTUAL TABLE ${t.setsFts} USING fts5(name, theme, kind, content='', tokenize='${FTS_TOKENIZER}')`,
     `CREATE VIRTUAL TABLE ${t.partsFts} USING fts5(part_num, name, category, content='', tokenize='${FTS_TOKENIZER}')`,
   ];
 }
@@ -86,7 +88,8 @@ export function releaseIndexes(releaseId: string): ReadonlyArray<string> {
 export function releaseSearchIndex(releaseId: string): ReadonlyArray<string> {
   const t = releaseTables(releaseId);
   return [
-    `INSERT INTO ${t.setsFts}(rowid, name, theme) SELECT s.id, s.name, coalesce(th.path, '') FROM ${t.sets} s LEFT JOIN ${t.themes} th ON th.id = s.theme_id`,
+    `INSERT INTO ${t.setsFts}(rowid, name, theme, kind) SELECT s.id, s.name, coalesce(th.path, ''), CASE s.kind WHEN ${MODULE_KIND} THEN '${MODULE_KIND_TOKEN}' ELSE '${SET_KIND_TOKEN}' END FROM ${t.sets} s LEFT JOIN ${t.themes} th ON th.id = s.theme_id`,
+    `INSERT INTO ${t.setsFts}(${t.setsFts}, rank) VALUES('rank', '${SETS_FTS_RANK}')`,
     `INSERT INTO ${t.partsFts}(rowid, part_num, name, category) SELECT p.id, p.part_num, p.name, coalesce(c.name, '') FROM ${t.parts} p LEFT JOIN ${t.partCategories} c ON c.id = p.cat_id`,
     `INSERT INTO ${t.setsFts}(${t.setsFts}) VALUES('optimize')`,
     `INSERT INTO ${t.partsFts}(${t.partsFts}) VALUES('optimize')`,

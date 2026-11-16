@@ -213,6 +213,26 @@
       "to": {
         "path": "(^|/)node_modules/"
       }
+    },
+    {
+      "name": "catalog-api-imports-no-workspace-package",
+      "severity": "error",
+      "from": {
+        "path": "^apps/catalog-api/"
+      },
+      "to": {
+        "path": "^(packages|tools|apps/web)/"
+      }
+    },
+    {
+      "name": "nothing-imports-catalog-api",
+      "severity": "error",
+      "from": {
+        "pathNot": "^apps/catalog-api/"
+      },
+      "to": {
+        "path": "^apps/catalog-api/"
+      }
     }
   ],
   "options": {

@@ -1,6 +1,6 @@
 import type { D1Cost } from "./http.ts";
-import { MODULE_KIND, SET_KIND, releaseTables } from "./release-schema.ts";
-import type { SearchKind } from "./routes.ts";
+import { MODULE_KIND, MODULE_KIND_TOKEN, SET_KIND_TOKEN, releaseTables } from "./release-schema.ts";
+import { MIN_PREFIX_LENGTH, type SearchKind } from "./routes.ts";
 
 export type CatalogReader = Pick<D1DatabaseSession, "prepare" | "batch">;
 
@@ -130,8 +130,14 @@ const setColumns = (sets: string, themes: string): string =>
 
 const themeColumns = "id, name, path, parent_id, set_count, module_count";
 
-export function ftsPrefixQuery(tokens: ReadonlyArray<string>): string {
-  return tokens.map((token) => `"${token.replaceAll('"', '""')}"*`).join(" ");
+export function ftsMatchExpression(tokens: ReadonlyArray<string>): string {
+  return tokens
+    .map((token, index) => {
+      const phrase = `"${token.replaceAll('"', '""')}"`;
+      const typing = index === tokens.length - 1 && token.length >= MIN_PREFIX_LENGTH;
+      return typing ? `${phrase}*` : phrase;
+    })
+    .join(" ");
 }
 
 export async function searchCatalog(
@@ -142,22 +148,25 @@ export async function searchCatalog(
   limit: number,
 ): Promise<Measured<SearchHits>> {
   const t = releaseTables(release);
-  const match = ftsPrefixQuery(tokens);
+  const text = ftsMatchExpression(tokens);
   const statements = kinds.map((kind) => {
     switch (kind) {
       case "set":
       case "module":
         return db
           .prepare(
-            `SELECT ${setColumns("s", "th")} FROM ${t.setsFts} JOIN ${t.sets} s ON s.id = ${t.setsFts}.rowid LEFT JOIN ${t.themes} th ON th.id = s.theme_id WHERE ${t.setsFts} MATCH ?1 AND s.kind = ?2 ORDER BY ${t.setsFts}.rank LIMIT ?3`,
+            `WITH hits AS (SELECT rowid AS id, rank FROM ${t.setsFts} WHERE ${t.setsFts} MATCH ?1 ORDER BY rank LIMIT ?2) SELECT ${setColumns("s", "th")} FROM hits JOIN ${t.sets} s ON s.id = hits.id LEFT JOIN ${t.themes} th ON th.id = s.theme_id ORDER BY hits.rank`,
           )
-          .bind(match, kind === "set" ? SET_KIND : MODULE_KIND, limit);
+          .bind(
+            `{kind} : "${kind === "set" ? SET_KIND_TOKEN : MODULE_KIND_TOKEN}" AND {name theme} : (${text})`,
+            limit,
+          );
       case "part":
         return db
           .prepare(
-            `SELECT p.part_num, p.name, c.name AS category FROM ${t.partsFts} JOIN ${t.parts} p ON p.id = ${t.partsFts}.rowid LEFT JOIN ${t.partCategories} c ON c.id = p.cat_id WHERE ${t.partsFts} MATCH ?1 ORDER BY ${t.partsFts}.rank LIMIT ?2`,
+            `WITH hits AS (SELECT rowid AS id, rank FROM ${t.partsFts} WHERE ${t.partsFts} MATCH ?1 ORDER BY rank LIMIT ?2) SELECT p.part_num, p.name, c.name AS category FROM hits JOIN ${t.parts} p ON p.id = hits.id LEFT JOIN ${t.partCategories} c ON c.id = p.cat_id ORDER BY hits.rank`,
           )
-          .bind(match, limit);
+          .bind(text, limit);
       default: {
         const exhaustive: never = kind;
         throw new Error(`unhandled search kind ${String(exhaustive)}`);

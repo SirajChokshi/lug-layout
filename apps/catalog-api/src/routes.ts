@@ -6,6 +6,8 @@ export type SearchKind = (typeof SEARCH_KINDS)[number];
 export const SEARCH_LIMIT = { default: 20, max: 50 } as const;
 export const THEME_PAGE_LIMIT = { default: 50, max: 100 } as const;
 export const THEME_MAX_OFFSET = 10_000;
+export const MIN_QUERY_LENGTH = 3;
+export const MIN_PREFIX_LENGTH = 3;
 export const MAX_QUERY_TOKENS = 8;
 export const MAX_TOKEN_LENGTH = 40;
 
@@ -132,7 +134,11 @@ export function searchTokens(query: string): ReadonlyArray<string> {
 }
 
 function parseSearch(release: string, params: URLSearchParams): RouteResult {
-  const tokens = searchTokens(params.get("q") ?? "");
+  const query = (params.get("q") ?? "").trim();
+  if ([...query].length < MIN_QUERY_LENGTH) {
+    return invalid(`q must be at least ${MIN_QUERY_LENGTH} characters after trimming spaces`);
+  }
+  const tokens = searchTokens(query);
   if (tokens.length === 0) return invalid("q must contain at least one letter or digit");
   if (tokens.length > MAX_QUERY_TOKENS) return invalid(`q has more than ${MAX_QUERY_TOKENS} words`);
   if (tokens.some((token) => token.length > MAX_TOKEN_LENGTH)) {

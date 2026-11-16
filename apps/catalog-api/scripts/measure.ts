@@ -15,14 +15,35 @@ interface Sample {
   readonly d1Ms: number | null;
 }
 
-type Endpoint = "search" | "inventory" | "theme-roots" | "theme";
+type Endpoint =
+  | "search"
+  | "search-3-chars"
+  | "search-under-3-chars"
+  | "inventory"
+  | "theme-roots"
+  | "theme";
 
 interface Probe {
   readonly endpoint: Endpoint;
   readonly path: string;
 }
 
-const anchorSearches = ["fire st", "train", "3001", "brick 2 x 4", "9v switch", "assembly sq"];
+const anchorSearches = ["fire sta", "train", "3001", "brick 2 x 4", "9v swi", "assembly squ"];
+const broadestThreeLetterPrefixes = [
+  "pri",
+  "wit",
+  "and",
+  "min",
+  "hea",
+  "bri",
+  "gea",
+  "sta",
+  "sup",
+  "the",
+  "set",
+  "pac",
+];
+const underThreeCharacters = ["a", "s", "1", "st", "9v", "  ab  "];
 const anchorSets = ["60215-1", "10255-1"];
 const anchorThemes = [233, 52];
 
@@ -53,6 +74,10 @@ async function main(): Promise<void> {
     client += 1;
     const url = `${values.base}/v1/catalogs/${release}${probe.path}`;
     const miss = await sample(probe.endpoint, "miss", url, clientAddress(client), {});
+    if (probe.endpoint === "search-under-3-chars") {
+      samples.push(miss);
+      continue;
+    }
     const hit = await sample(probe.endpoint, "hit", url, clientAddress(client), {});
     const revalidate = await sample(probe.endpoint, "revalidate", url, clientAddress(client), {
       "if-none-match": `"${release}"`,
@@ -60,6 +85,7 @@ async function main(): Promise<void> {
     samples.push(miss, hit, revalidate);
   }
   const burst = await burstFromOneClient(values.base, release, Number(values.burst));
+  const file = await releaseFileChecks(`${values.base}/v1/catalogs/${release}/catalog.sqlite`);
   const summary = summarize(samples);
   if (values.out !== undefined) {
     await writeFile(
@@ -69,7 +95,7 @@ async function main(): Promise<void> {
     );
   }
   process.stdout.write(
-    `${JSON.stringify({ release, probes: probes.length, summary, burst }, null, 2)}\n`,
+    `${JSON.stringify({ release, probes: probes.length, summary, burst, file }, null, 2)}\n`,
   );
 }
 
@@ -79,7 +105,7 @@ function stride<T>(rows: ReadonlyArray<T>, count: number): ReadonlyArray<T> {
 }
 
 function plan(db: DatabaseSync, perEndpoint: number): ReadonlyArray<Probe> {
-  const setNames = db
+  const words = db
     .prepare("SELECT name FROM sets WHERE kind = 0 ORDER BY id")
     .all()
     .map(
@@ -87,9 +113,14 @@ function plan(db: DatabaseSync, perEndpoint: number): ReadonlyArray<Probe> {
         String(row["name"])
           .toLowerCase()
           .match(/[\p{L}\p{N}]+/gu) ?? [],
-    )
-    .filter((words) => words.length >= 2)
-    .map((words) => `${words[0]} ${String(words[1]).slice(0, 2)}`);
+    );
+  const setNames = words
+    .filter((name) => name.length >= 2 && String(name[1]).length >= 3)
+    .map((name) => `${name[0]} ${String(name[1]).slice(0, 3)}`);
+  const threeLetterPrefixes = words
+    .map((name) => String(name[0] ?? ""))
+    .filter((word) => word.length >= 3)
+    .map((word) => word.slice(0, 3));
   const inventorySets = db
     .prepare(
       "SELECT s.set_num FROM sets s WHERE EXISTS (SELECT 1 FROM inventory_parts ip WHERE ip.inventory_id = s.id) ORDER BY s.id",
@@ -101,12 +132,24 @@ function plan(db: DatabaseSync, perEndpoint: number): ReadonlyArray<Probe> {
     .all()
     .map((row) => Number(row["id"]));
   const searches = [...anchorSearches, ...stride(setNames, perEndpoint - anchorSearches.length)];
+  const prefixes = [
+    ...broadestThreeLetterPrefixes,
+    ...stride([...new Set(threeLetterPrefixes)], perEndpoint - broadestThreeLetterPrefixes.length),
+  ];
   const sets = [...anchorSets, ...stride(inventorySets, perEndpoint - anchorSets.length)];
   const themeIds = [...anchorThemes, ...stride(themes, perEndpoint - anchorThemes.length)];
   return [
     { endpoint: "theme-roots", path: "/themes" },
     ...[...new Set(searches)].map((query) => ({
       endpoint: "search" as const,
+      path: `/search?${new URLSearchParams({ q: query }).toString()}`,
+    })),
+    ...[...new Set(prefixes)].map((query) => ({
+      endpoint: "search-3-chars" as const,
+      path: `/search?${new URLSearchParams({ q: query }).toString()}`,
+    })),
+    ...underThreeCharacters.map((query) => ({
+      endpoint: "search-under-3-chars" as const,
       path: `/search?${new URLSearchParams({ q: query }).toString()}`,
     })),
     ...[...new Set(sets)].map((set) => ({
@@ -141,6 +184,31 @@ async function sample(
     rowsRead: rows === null ? null : Number(rows),
     d1Ms: timing?.[1] === undefined ? null : Number(timing[1]),
   };
+}
+
+async function releaseFileChecks(url: string): Promise<ReadonlyArray<Record<string, unknown>>> {
+  const checks: ReadonlyArray<readonly [string, Readonly<Record<string, string>>]> = [
+    ["full download", {}],
+    ["full download again", {}],
+    ["range bytes=0-32767", { range: "bytes=0-32767" }],
+    ["range past the end", { range: "bytes=999999999-" }],
+  ];
+  const results: Array<Record<string, unknown>> = [];
+  for (const [label, headers] of checks) {
+    const started = performance.now();
+    const response = await fetch(url, {
+      headers: { "cf-connecting-ip": "198.51.100.2", ...headers },
+    });
+    const body = await response.arrayBuffer();
+    results.push({
+      label,
+      status: response.status,
+      cache: response.headers.get("x-cache"),
+      ms: round(performance.now() - started),
+      bytes: body.byteLength,
+    });
+  }
+  return results;
 }
 
 async function burstFromOneClient(

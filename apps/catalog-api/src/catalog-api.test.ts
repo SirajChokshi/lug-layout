@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,11 +7,15 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestHarness, type TestHarness } from "wrangler";
-import { releaseStatements } from "../scripts/release-sql.ts";
-import { RELEASE_ID_HEX_LENGTH, releaseObjectKey } from "./release-schema.ts";
+import { releaseProblems, releaseStatements } from "../scripts/release-sql.ts";
+import {
+  CURRENT_RELEASE_TABLE,
+  RELEASE_ID_HEX_LENGTH,
+  releaseObjectKey,
+} from "./release-schema.ts";
 
 interface PreparedStatement {
-  readonly __brand?: never;
+  first<T>(): Promise<T | null>;
 }
 
 interface TestEnv {
@@ -50,6 +55,9 @@ const rebrickableSlice = [
   "INSERT INTO inventory_minifigs VALUES (14196, 7968, 1)",
 ];
 
+const syntheticModule =
+  "INSERT INTO sets(id, set_num, name, year, theme_id, num_parts, kind, author) VALUES (27326, 'mod-000001', 'Riverside Fire Station', 2020, 58, 500, 1, 'brickfan')";
+
 const laterSet =
   "INSERT INTO sets(id, set_num, name, year, theme_id, num_parts, kind) VALUES (14082, '60110-1', 'Fire Station', 2016, 58, 919, 0)";
 
@@ -57,6 +65,8 @@ let server: TestHarness;
 let scratch: string;
 let current: LoadedRelease;
 let staged: LoadedRelease;
+let currentPath: string;
+let bindings: TestEnv;
 
 async function buildRelease(name: string, extra: ReadonlyArray<string>): Promise<string> {
   const path = join(scratch, name);
@@ -102,6 +112,16 @@ function fireSetSearch(release: string): string {
   return `/v1/catalogs/${release}/search?q=fire&kind=set`;
 }
 
+function wrangler(args: ReadonlyArray<string>): string {
+  const result = spawnSync(join(packageRoot, "node_modules", ".bin", "wrangler"), args, {
+    cwd: packageRoot,
+    encoding: "utf8",
+    env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
+  });
+  expect({ status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
+  return result.stdout;
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const response = await get(path);
   expect(response.status).toBe(200);
@@ -115,9 +135,10 @@ beforeAll(async () => {
     workers: [{ configPath: "./wrangler.json" }],
   });
   await server.listen();
-  const env = await server.getWorker<TestEnv>().getEnv();
-  current = await loadRelease(env, await buildRelease("current.sqlite", []), true);
-  staged = await loadRelease(env, await buildRelease("staged.sqlite", [laterSet]), false);
+  bindings = await server.getWorker<TestEnv>().getEnv();
+  currentPath = await buildRelease("current.sqlite", []);
+  current = await loadRelease(bindings, currentPath, true);
+  staged = await loadRelease(bindings, await buildRelease("staged.sqlite", [laterSet]), false);
 }, 60_000);
 
 afterAll(async () => {
@@ -140,15 +161,23 @@ describe("catalog API over a loaded release", () => {
     );
   });
 
-  it("finds sets by name prefix and theme path, and parts by number and name", async () => {
-    const fire = await getJson<{ results: { set: Array<{ id: string }>; part: unknown[] } }>(
-      `/v1/catalogs/${current.id}/search?q=fire%20st`,
+  it("matches whole words and a last word of 3 or more letters as a prefix", async () => {
+    const typed = await getJson<{ results: { set: Array<{ id: string }>; part: unknown[] } }>(
+      `/v1/catalogs/${current.id}/search?q=fire%20sta`,
     );
-    expect(fire.results.set.map((set) => set.id).toSorted()).toEqual(["60004-1", "60215-1"]);
-    expect(fire.results.part).toEqual([]);
+    expect(typed.results.set.map((set) => set.id).toSorted()).toEqual(["60004-1", "60215-1"]);
+    expect(typed.results.part).toEqual([]);
+    const shortLast = await getJson<{ results: { set: unknown[] } }>(
+      `/v1/catalogs/${current.id}/search?q=fire%20st&kind=set`,
+    );
+    expect(shortLast.results.set).toEqual([]);
+    const threeLetters = await getJson<{ results: { set: Array<{ id: string }> } }>(
+      `/v1/catalogs/${current.id}/search?q=fir&kind=set`,
+    );
+    expect(threeLetters.results.set).toHaveLength(2);
     const train = await getJson<{
       results: { set: Array<{ id: string; theme: { path: string } }> };
-    }>(`/v1/catalogs/${current.id}/search?q=9v&kind=set`);
+    }>(`/v1/catalogs/${current.id}/search?q=9v%20metro&kind=set`);
     expect(train.results.set.map((set) => [set.id, set.theme.path])).toEqual([
       ["4558-1", "Train > 9V"],
     ]);
@@ -160,6 +189,21 @@ describe("catalog API over a loaded release", () => {
       `/v1/catalogs/${current.id}/search?q=3010&kind=part`,
     );
     expect(byNumber.results.part.map((part) => part.id)).toEqual(["3010"]);
+    const modules = await getJson<{ results: { module: unknown[] } }>(
+      `/v1/catalogs/${current.id}/search?q=fire&kind=module`,
+    );
+    expect(modules.results.module).toEqual([]);
+  });
+
+  it("rejects queries shorter than 3 characters after trimming", async () => {
+    for (const q of ["a", "ab", "%20%20ab%20", "%20%20%20%20", "x%20", ""]) {
+      const response = await get(`/v1/catalogs/${current.id}/search?q=${q}`);
+      expect({ q, status: response.status }).toEqual({ q, status: 400 });
+      expect(await response.json()).toEqual({
+        error: "q must be at least 3 characters after trimming spaces",
+      });
+    }
+    expect((await get(`/v1/catalogs/${current.id}/search?q=%20a%20b%20`)).status).toBe(200);
   });
 
   it("returns a set inventory with colors, spares and minifigs", async () => {
@@ -240,19 +284,95 @@ describe("catalog API over a loaded release", () => {
     expect(revalidated.status).toBe(304);
   });
 
-  it("streams the release SQLite file from R2 with byte ranges", async () => {
-    const response = await get(`/v1/catalogs/${current.id}/catalog.sqlite`, {
-      range: "bytes=0-15",
-    });
-    expect(response.status).toBe(206);
-    expect(response.headers.get("x-content-sha256")).toBe(current.sha256);
-    expect(response.headers.get("content-range")).toMatch(/^bytes 0-15\/\d+$/);
-    expect(Buffer.from(await response.arrayBuffer()).toString("latin1")).toBe("SQLite format 3\0");
+  it("streams the release SQLite file from R2 with byte ranges and preconditions", async () => {
+    const path = `/v1/catalogs/${staged.id}/catalog.sqlite`;
+    const head = await get(path, { range: "bytes=0-15" });
+    expect(head.status).toBe(206);
+    expect(head.headers.get("x-content-sha256")).toBe(staged.sha256);
+    expect(head.headers.get("content-range")).toMatch(/^bytes 0-15\/\d+$/);
+    expect(Buffer.from(await head.arrayBuffer()).toString("latin1")).toBe("SQLite format 3\0");
+    const size = (await readFile(join(scratch, "staged.sqlite"))).byteLength;
+    const beyond = await get(path, { range: `bytes=${size}-` });
+    expect(beyond.status).toBe(416);
+    expect(beyond.headers.get("content-range")).toBe(`bytes */${size}`);
+    const mismatch = await get(path, { "if-match": '"not-this-file"' });
+    expect(mismatch.status).toBe(412);
+    const full = await get(path);
+    expect(
+      createHash("sha256")
+        .update(Buffer.from(await full.arrayBuffer()))
+        .digest("hex"),
+    ).toBe(staged.sha256);
+    expect(full.headers.get("x-cache")).toBe("MISS");
+    const again = await get(path);
+    await again.arrayBuffer();
+    expect(again.headers.get("x-cache")).toBe("HIT");
   });
 
+  it("keeps the current pointer when the current release is reloaded without promotion", async () => {
+    await loadRelease(bindings, currentPath, false);
+    const pointer = await bindings.CATALOG_DB.prepare(
+      `SELECT release_id FROM ${CURRENT_RELEASE_TABLE} WHERE slot = 'current'`,
+    ).first<{ release_id: string }>();
+    expect(pointer?.release_id).toBe(current.id);
+  });
+
+  it("refuses releases that contain module rows", async () => {
+    const path = await buildRelease("with-module.sqlite", [syntheticModule]);
+    const source = new DatabaseSync(path, { readOnly: true });
+    expect(releaseProblems(source)).toEqual([
+      "release has 1 module rows; modules are refused until the release build imports real module data",
+    ]);
+    source.close();
+  });
+
+  it("loads a release through the CLI into local D1 and R2 by file import", () => {
+    const state = join(scratch, "state");
+    const output = spawnSync(
+      process.execPath,
+      [
+        "scripts/load-release.ts",
+        "--sqlite",
+        currentPath,
+        "--source",
+        "rebrickable-db@ad9943cc slice",
+        "--local",
+        "--persist-to",
+        state,
+      ],
+      { cwd: packageRoot, encoding: "utf8" },
+    );
+    expect({ status: output.status, stderr: output.stderr }).toMatchObject({ status: 0 });
+    const rows = JSON.parse(
+      wrangler([
+        "d1",
+        "execute",
+        "CATALOG_DB",
+        "--local",
+        "--persist-to",
+        state,
+        "--json",
+        "--command",
+        `SELECT c.release_id, s.set_num FROM r${current.id}_sets_fts JOIN r${current.id}_sets s ON s.id = r${current.id}_sets_fts.rowid JOIN ${CURRENT_RELEASE_TABLE} c WHERE r${current.id}_sets_fts MATCH '{kind} : "set" AND {name theme} : ("metro"*)'`,
+      ]),
+    ) as Array<{ results: Array<{ release_id: string; set_num: string }> }>;
+    expect(rows[0]?.results).toEqual([{ release_id: current.id, set_num: "4558-1" }]);
+    const header = wrangler([
+      "r2",
+      "object",
+      "get",
+      `brr-catalog-releases/${releaseObjectKey(current.id)}`,
+      "--local",
+      "--persist-to",
+      state,
+      "--pipe",
+    ]);
+    expect(header.startsWith("SQLite format 3")).toBe(true);
+  }, 60_000);
+
   it("rejects malformed queries and rate-limits a client's uncached queries", async () => {
-    expect((await get(`/v1/catalogs/${current.id}/search?q=%20%20`)).status).toBe(400);
-    expect((await get(`/v1/catalogs/${current.id}/search?q=x&limit=500`)).status).toBe(400);
+    expect((await get(`/v1/catalogs/${current.id}/search?q=fire&limit=500`)).status).toBe(400);
+    expect((await get(`/v1/catalogs/${current.id}/search?q=fire&kind=train`)).status).toBe(400);
     const statuses: number[] = [];
     for (let index = 0; index < 101; index += 1) {
       const response = await get(`/v1/catalogs/${current.id}/search?q=limit${index}`, {

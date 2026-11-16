@@ -9,7 +9,7 @@ import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { RELEASE_ID_HEX_LENGTH, releaseObjectKey } from "../src/release-schema.ts";
-import { releaseCounts, releaseStatements, sourceSchemaProblems } from "./release-sql.ts";
+import { releaseCounts, releaseProblems, releaseStatements } from "./release-sql.ts";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(packageRoot, "..", "..");
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
   const bytes = (await stat(sqlitePath)).size;
   const objectKey = releaseObjectKey(id);
   const source = new DatabaseSync(sqlitePath, { readOnly: true });
-  const problems = sourceSchemaProblems(source);
+  const problems = releaseProblems(source);
   if (problems.length > 0) throw new Error(problems.join("\n"));
   await mkdir(sqlCache, { recursive: true });
   const sqlPath = join(sqlCache, `${id}.sql`);
@@ -86,19 +86,23 @@ async function main(): Promise<void> {
   source.close();
   const generated = performance.now();
   const target = values.remote ? ["--remote"] : ["--local", ...persistArgs(values["persist-to"])];
-  wrangler([
-    "r2",
-    "object",
-    "put",
-    `${bucket}/${objectKey}`,
-    "--file",
-    sqlitePath,
-    "--content-type",
-    SQLITE_CONTENT_TYPE,
-    "--cache-control",
-    IMMUTABLE_CACHE,
-    ...target,
-  ]);
+  wrangler(
+    [
+      "r2",
+      "object",
+      "put",
+      `${bucket}/${objectKey}`,
+      "--file",
+      sqlitePath,
+      "--content-type",
+      SQLITE_CONTENT_TYPE,
+      "--cache-control",
+      IMMUTABLE_CACHE,
+      ...target,
+    ],
+    "inherit",
+    process.env["CLOUDFLARE_R2_API_TOKEN"],
+  );
   const uploaded = performance.now();
   wrangler(["d1", "execute", database, "--file", sqlPath, "--yes", ...target], "ignore");
   const loaded = performance.now();
@@ -132,11 +136,19 @@ function persistArgs(persistTo: string | undefined): ReadonlyArray<string> {
   return persistTo === undefined ? [] : ["--persist-to", resolve(persistTo)];
 }
 
-function wrangler(args: ReadonlyArray<string>, stdout: "inherit" | "ignore" = "inherit"): void {
+function wrangler(
+  args: ReadonlyArray<string>,
+  stdout: "inherit" | "ignore" = "inherit",
+  apiToken: string | undefined = undefined,
+): void {
   const result = spawnSync(wranglerBin, args, {
     cwd: packageRoot,
     stdio: ["ignore", stdout, "inherit"],
-    env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
+    env: {
+      ...process.env,
+      WRANGLER_SEND_METRICS: "false",
+      ...(apiToken === undefined ? {} : { CLOUDFLARE_API_TOKEN: apiToken }),
+    },
   });
   if (result.status !== 0) {
     throw new Error(`wrangler ${args.slice(0, 2).join(" ")} failed with status ${result.status}`);
