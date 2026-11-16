@@ -265,6 +265,18 @@
   },
   "catalogSources": [
     {
+      "name": "ldraw-library",
+      "use": "crosswalk",
+      "describes": "The whole LDraw parts library at the bundle's pin, as GitHub's archive of the mirror commit; the crosswalk reads every parts/*.dat header (title, !LDRAW_ORG, !KEYWORDS) and the subfile lines of Shortcut and Alias files",
+      "source": {
+        "kind": "github-archive",
+        "repo": "kulits/ldraw-parts",
+        "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+        "root": "ldraw"
+      },
+      "files": ["ldraw-parts.tar.gz"]
+    },
+    {
       "name": "rebrickable-parts-api",
       "use": "crosswalk",
       "describes": "Rebrickable API v3 /lego/parts/ capture: every part_num with its BrickLink and LDraw external ids (partListUpdater.py in the same repository; categories 17, 24, 42, 43, 48, 50, 57, 58, 62, 63, 64 and 66 left out), committed 2026-04-26",

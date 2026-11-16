@@ -37,11 +37,20 @@ export interface Palette {
 
 export type CatalogSourceUse = "crosswalk" | "inventory-check";
 
+export interface GithubArchive {
+  readonly kind: "github-archive";
+  readonly repo: string;
+  readonly commit: string;
+  readonly root: string;
+}
+
+export type CatalogLocation = Palette["source"] | GithubArchive;
+
 export interface CatalogSource {
   readonly name: string;
   readonly use: CatalogSourceUse;
   readonly describes: string;
-  readonly source: Palette["source"];
+  readonly source: CatalogLocation;
   readonly files: ReadonlyArray<string>;
 }
 

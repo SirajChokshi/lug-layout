@@ -26,11 +26,12 @@ interface UnmappedLine {
   readonly ldrawPart: string;
   readonly ldrawColour: string;
   readonly quantity: number;
+  readonly expandedFrom: string;
 }
 
 interface SetReport {
   readonly setNum: string;
-  readonly ldrawTotal: number;
+  readonly expandedTotal: number;
   readonly unmapped: ReadonlyArray<UnmappedLine>;
   readonly inventory: Omit<SetInventory, "parts">;
   readonly comparison: InventoryComparison;
@@ -53,21 +54,24 @@ async function exportedCounts(path: string): Promise<PartColorCounts> {
   return counts;
 }
 
-async function plainLines(path: string): Promise<{ ldrawTotal: number; unmapped: UnmappedLine[] }> {
-  let ldrawTotal = 0;
+async function plainLines(
+  path: string,
+): Promise<{ expandedTotal: number; unmapped: UnmappedLine[] }> {
+  let expandedTotal = 0;
   const unmapped: UnmappedLine[] = [];
   for (const row of await csvRows(path)) {
     const quantity = Number(row["Quantity"]);
-    ldrawTotal += quantity;
+    expandedTotal += quantity;
     if (row["Rebrickable part"] === "" || row["Rebrickable colour"] === "") {
       unmapped.push({
         ldrawPart: row["LDraw part"] ?? "",
         ldrawColour: row["LDraw colour"] ?? "",
         quantity,
+        expandedFrom: row["Expanded from"] ?? "",
       });
     }
   }
-  return { ldrawTotal, unmapped };
+  return { expandedTotal, unmapped };
 }
 
 function sumPairings(comparison: InventoryComparison, kind: string): number {
@@ -83,7 +87,7 @@ function sumEntries(entries: ReadonlyArray<readonly [string, number]>): number {
 function summaryTable(reports: ReadonlyArray<SetReport>): string {
   const header = [
     "Set",
-    "LDraw parts",
+    "Parts, shortcuts expanded",
     "Exported (Rebrickable CSV)",
     "Unmapped",
     "Inventory (non-spare, minifigs included)",
@@ -96,7 +100,7 @@ function summaryTable(reports: ReadonlyArray<SetReport>): string {
     const { comparison } = report;
     return [
       report.setNum,
-      report.ldrawTotal,
+      report.expandedTotal,
       comparison.exportedTotal,
       sumEntries(report.unmapped.map((line) => [line.ldrawPart, line.quantity] as const)),
       comparison.inventoryTotal,

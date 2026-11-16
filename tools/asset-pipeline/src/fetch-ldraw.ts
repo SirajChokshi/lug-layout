@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { modelStructure, parseLdraw, subfileReferences } from "./ldraw/parse.ts";
-import type { CatalogSource, CatalogSourceUse, Palette, PaletteModel } from "./palette.ts";
+import type {
+  CatalogLocation,
+  CatalogSource,
+  CatalogSourceUse,
+  Palette,
+  PaletteModel,
+} from "./palette.ts";
 
 export interface AuditLock {
   readonly files: Readonly<Record<string, string>>;
@@ -15,7 +21,7 @@ export interface AuditLock {
 
 export interface CatalogSourceLock {
   readonly use: CatalogSourceUse;
-  readonly source: Palette["source"];
+  readonly source: CatalogLocation;
   readonly files: Readonly<Record<string, string>>;
 }
 
@@ -39,11 +45,17 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-async function download(source: Source, path: string): Promise<Uint8Array | undefined> {
+function downloadUrl(source: CatalogLocation, path: string): string {
   const { repo, commit, root } = source;
-  const url = ["https://raw.githubusercontent.com", repo, commit, root, path]
+  if (source.kind === "github-archive")
+    return `https://codeload.github.com/${repo}/tar.gz/${commit}`;
+  return ["https://raw.githubusercontent.com", repo, commit, root, path]
     .filter((segment) => segment !== "")
     .join("/");
+}
+
+async function download(source: CatalogLocation, path: string): Promise<Uint8Array | undefined> {
+  const url = downloadUrl(source, path);
   const response = await fetch(url);
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
@@ -241,7 +253,7 @@ async function hasPinnedBytes(path: string, expected: string): Promise<boolean> 
 }
 
 export async function restoreFiles(
-  source: Source,
+  source: CatalogLocation,
   files: Readonly<Record<string, string>>,
   directory: string,
 ): Promise<RestoreResult> {

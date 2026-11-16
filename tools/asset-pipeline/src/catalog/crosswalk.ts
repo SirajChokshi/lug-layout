@@ -19,9 +19,16 @@ export interface ApiColor {
   >;
 }
 
+export interface LdrawComponent {
+  readonly id: string;
+  readonly color: number;
+}
+
 export interface LdrawPartFacts {
   readonly title: string;
   readonly keywords: ReadonlyArray<string>;
+  readonly ldrawOrg: string;
+  readonly components: ReadonlyArray<LdrawComponent>;
 }
 
 export interface CrosswalkInputs {
@@ -33,7 +40,12 @@ export interface CrosswalkInputs {
   readonly ldrawColors: ReadonlyArray<{ readonly code: number; readonly name: string }>;
 }
 
-export type RebrickableVia = "rebrickable-api" | "ldraw-keyword" | "same-id" | `moved:${string}`;
+export type RebrickableVia =
+  | "rebrickable-api"
+  | "ldraw-keyword"
+  | "bricklink-keyword"
+  | "same-id"
+  | `moved:${string}`;
 export type BrickLinkVia = "rebrickable-api" | "ldraw-keyword";
 
 export interface CrosswalkPart {
@@ -45,6 +57,7 @@ export interface CrosswalkPart {
   };
   readonly rebrickableAlternatives?: ReadonlyArray<string>;
   readonly bricklinkAlternatives?: ReadonlyArray<string>;
+  readonly components?: ReadonlyArray<{ readonly part: string; readonly color: number }>;
 }
 
 export interface CrosswalkColor {
@@ -72,12 +85,19 @@ export interface CrosswalkFile {
   readonly bricklinkColors: Readonly<Record<string, ReadonlyArray<number>>>;
 }
 
+const EXPANDED_ORG_KINDS: ReadonlySet<string> = new Set(["Shortcut", "Alias"]);
+
 function keywordIds(facts: LdrawPartFacts | undefined, system: string): string[] {
   if (!facts) return [];
+  const wanted = system.toLowerCase();
   return facts.keywords.flatMap((keyword) => {
     const [name, id, ...rest] = keyword.split(/\s+/u);
-    return name === system && id !== undefined && rest.length === 0 ? [id] : [];
+    return name?.toLowerCase() === wanted && id !== undefined && rest.length === 0 ? [id] : [];
   });
+}
+
+function expandsToComponents(facts: LdrawPartFacts | undefined): boolean {
+  return (facts?.ldrawOrg.split(/\s+/u) ?? []).some((kind) => EXPANDED_ORG_KINDS.has(kind));
 }
 
 function movedTarget(facts: LdrawPartFacts | undefined): string | undefined {
@@ -101,6 +121,7 @@ function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 class PartResolver {
   private readonly rebrickableByLdraw = new Map<string, string[]>();
   private readonly bricklinkByRebrickable = new Map<string, ReadonlyArray<string>>();
+  private readonly rebrickableByBrickLink = new Map<string, string[]>();
   private readonly inputs: CrosswalkInputs;
 
   constructor(inputs: CrosswalkInputs) {
@@ -108,6 +129,7 @@ class PartResolver {
     for (const part of inputs.apiParts) {
       this.bricklinkByRebrickable.set(part.r, part.b);
       for (const ldraw of part.l) pushTo(this.rebrickableByLdraw, ldraw, part.r);
+      for (const bricklink of part.b) pushTo(this.rebrickableByBrickLink, bricklink, part.r);
     }
   }
 
@@ -122,6 +144,12 @@ class PartResolver {
       this.inputs.rebrickableParts.has(rb),
     );
     if (fromKeyword.length > 0) return { ids: sortedUnique(fromKeyword), via: "ldraw-keyword" };
+    const throughBrickLink = keywordIds(facts, BRICKLINK_KEYWORD).flatMap(
+      (bricklink) => this.rebrickableByBrickLink.get(bricklink) ?? [],
+    );
+    if (throughBrickLink.length > 0) {
+      return { ids: sortedUnique(throughBrickLink), via: "bricklink-keyword" };
+    }
     const target = movedTarget(facts);
     if (target !== undefined && !seen.has(target)) {
       const moved = this.candidates(target, new Set([...seen, target]));
@@ -165,6 +193,24 @@ class PartResolver {
       },
       ...(rebrickableAlternatives.length > 0 ? { rebrickableAlternatives } : {}),
       ...(bricklinkAlternatives.length > 0 ? { bricklinkAlternatives } : {}),
+      ...this.components(id, rebrickable, bricklink),
+    };
+  }
+
+  private components(
+    id: string,
+    rebrickable: string | null,
+    bricklink: string | null,
+  ): { components?: ReadonlyArray<{ part: string; color: number }> } {
+    const facts = this.inputs.ldrawParts.get(id);
+    if (rebrickable !== null || bricklink !== null || !expandsToComponents(facts)) return {};
+    const components = facts?.components ?? [];
+    if (components.length === 0) return {};
+    return {
+      components: components.map(({ id: part, color }) => ({
+        part: LDRAW_NAMESPACE + part,
+        color,
+      })),
     };
   }
 }
@@ -277,7 +323,11 @@ export function deriveCrosswalk(
   const resolver = new PartResolver(inputs);
   const ldrawIds = [...inputs.ldrawParts.keys(), ...inputs.apiParts.flatMap((part) => part.l)];
   const parts = Object.fromEntries(
-    sortedUnique(ldrawIds).map((id) => [LDRAW_NAMESPACE + id, resolver.resolve(id)]),
+    sortedUnique(ldrawIds).flatMap((id) => {
+      const part = resolver.resolve(id);
+      const mapped = part.rebrickable !== null || part.bricklink !== null || part.components;
+      return mapped ? [[LDRAW_NAMESPACE + id, part] as const] : [];
+    }),
   );
   const colors = deriveColors(inputs);
   const reverse = reverseBrickLinkParts(inputs);

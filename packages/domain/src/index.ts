@@ -6,6 +6,8 @@ export {
   type PlacementRegion,
 } from "./bom/count-placements.ts";
 export {
+  INHERITED_COLOR,
+  resolveLines,
   toCatalog,
   totalQuantity,
   type CatalogBom,
@@ -14,7 +16,9 @@ export {
   type ColorCrosswalkEntry,
   type Crosswalk,
   type MissingMapping,
+  type PartComponent,
   type PartCrosswalkEntry,
+  type ResolvedLine,
   type UnmappedLine,
 } from "./bom/catalog-ids.ts";
 export { brickLinkWantedListXml, plainBomCsv, rebrickableCsv } from "./bom/export-formats.ts";

@@ -119,9 +119,15 @@ export interface CompiledPartGlb {
   readonly glb: Uint8Array;
 }
 
+export interface CatalogPartComponent {
+  readonly part: string;
+  readonly color: number;
+}
+
 export interface CatalogPartIds {
   readonly rebrickable: string | null;
   readonly bricklink: string | null;
+  readonly components?: ReadonlyArray<CatalogPartComponent>;
 }
 
 export interface CatalogColorIds {

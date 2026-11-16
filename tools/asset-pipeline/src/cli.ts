@@ -216,12 +216,7 @@ async function bundleCommand(): Promise<void> {
   const lock = await readLock();
   const catalog = catalogLock(lock);
   const crosswalk = deriveCrosswalk(
-    await readCrosswalkInputs(
-      catalog,
-      catalogRoot,
-      { directory: ldrawRoot, files: lock.files },
-      lock.audit === undefined ? undefined : { directory: auditRoot, files: lock.audit.files },
-    ),
+    await readCrosswalkInputs(catalog, catalogRoot, lock.source, ldrawRoot),
     crosswalkSources(catalog),
   );
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);

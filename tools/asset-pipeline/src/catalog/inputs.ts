@@ -1,22 +1,27 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { catalogSourceDirectory, type CatalogLock } from "../fetch-ldraw.ts";
-import { keywords, parseLdraw } from "../ldraw/parse.ts";
+import { normalizeReference } from "../ldraw/parse.ts";
 import { readGzipCsv } from "./csv.ts";
+import { readTarGz } from "./tar.ts";
 import type {
   ApiColor,
   ApiPart,
   CrosswalkInputs,
   CrosswalkSourcePin,
+  LdrawComponent,
   LdrawPartFacts,
 } from "./crosswalk.ts";
 
-const TOP_LEVEL_PART = /^parts\/([^/]+)\.dat$/iu;
 const LDCONFIG = "LDConfig.ldr";
+const LDRAW_ARCHIVE_SOURCE = "ldraw-library";
+const SUBFILE_REFERENCE_TOKEN = 14;
+const PART_REFERENCE = /^([^/]+)\.dat$/u;
 
-export interface PinnedLdraw {
-  readonly directory: string;
-  readonly files: Readonly<Record<string, string>>;
+export interface LdrawPin {
+  readonly repo: string;
+  readonly commit: string;
+  readonly root: string;
 }
 
 function sourceFile(lock: CatalogLock, catalogRoot: string, name: string, file: string): string {
@@ -38,19 +43,69 @@ export function crosswalkSources(lock: CatalogLock): Record<string, CrosswalkSou
   );
 }
 
-async function ldrawPartFacts(
-  pinned: ReadonlyArray<PinnedLdraw>,
-): Promise<Map<string, LdrawPartFacts>> {
-  const facts = new Map<string, LdrawPartFacts>();
-  for (const { directory, files } of pinned) {
-    for (const path of Object.keys(files)) {
-      const id = TOP_LEVEL_PART.exec(path)?.[1];
-      if (id === undefined || facts.has(id)) continue;
-      const file = parseLdraw(await readFile(join(directory, path), "utf8"));
-      facts.set(id, { title: file.header.title, keywords: keywords(file) });
+interface ScannedPart {
+  readonly title: string;
+  readonly keywords: ReadonlyArray<string>;
+  readonly ldrawOrg: string;
+  readonly references: ReadonlyArray<LdrawComponent>;
+}
+
+function scanPart(text: string): ScannedPart {
+  let title: string | undefined;
+  let ldrawOrg = "";
+  const keywords: string[] = [];
+  const references: LdrawComponent[] = [];
+  for (const raw of text.split(/\r?\n/u)) {
+    const line = raw.trim();
+    if (line === "") continue;
+    const tokens = line.split(/\s+/u);
+    if (tokens[0] === "0") {
+      if (title === undefined) title = tokens.slice(1).join(" ");
+      else if (tokens[1] === "!LDRAW_ORG") ldrawOrg = tokens.slice(2).join(" ");
+      else if (tokens[1] === "!KEYWORDS") {
+        keywords.push(
+          ...tokens
+            .slice(2)
+            .join(" ")
+            .split(",")
+            .map((keyword) => keyword.trim())
+            .filter((keyword) => keyword !== ""),
+        );
+      }
+    } else if (tokens[0] === "1" && tokens.length > SUBFILE_REFERENCE_TOKEN) {
+      const reference = normalizeReference(tokens.slice(SUBFILE_REFERENCE_TOKEN).join(" "));
+      const id = PART_REFERENCE.exec(reference)?.[1];
+      if (id !== undefined) references.push({ id, color: Number(tokens[1]) });
     }
   }
-  return facts;
+  return { title: title ?? "", keywords, ldrawOrg, references };
+}
+
+async function ldrawPartFacts(
+  archive: string,
+  pin: LdrawPin,
+): Promise<Map<string, LdrawPartFacts>> {
+  const topLevelPart = new RegExp(`^[^/]+/${pin.root}/parts/([^/]+)\\.dat$`, "u");
+  const scanned = new Map<string, ScannedPart>();
+  await readTarGz(
+    archive,
+    (path) => topLevelPart.test(path),
+    (path, bytes) => {
+      const id = topLevelPart.exec(path)?.[1];
+      if (id !== undefined) scanned.set(id.toLowerCase(), scanPart(bytes.toString("utf8")));
+    },
+  );
+  return new Map(
+    [...scanned].map(([id, part]) => [
+      id,
+      {
+        title: part.title,
+        keywords: part.keywords,
+        ldrawOrg: part.ldrawOrg,
+        components: part.references.filter((reference) => scanned.has(reference.id)),
+      },
+    ]),
+  );
 }
 
 function ldconfigColors(source: string): Array<{ code: number; name: string }> {
@@ -66,9 +121,17 @@ function ldconfigColors(source: string): Array<{ code: number; name: string }> {
 export async function readCrosswalkInputs(
   lock: CatalogLock,
   catalogRoot: string,
-  ldraw: PinnedLdraw,
-  audit: PinnedLdraw | undefined,
+  pin: LdrawPin,
+  ldrawDirectory: string,
 ): Promise<CrosswalkInputs> {
+  const archive = lock[LDRAW_ARCHIVE_SOURCE];
+  if (archive?.source.repo !== pin.repo || archive.source.commit !== pin.commit) {
+    throw new Error(
+      `catalog ${LDRAW_ARCHIVE_SOURCE} must be the LDraw pin ${pin.repo}@${pin.commit}`,
+    );
+  }
+  const [archiveFile] = Object.keys(archive.files);
+  if (archiveFile === undefined) throw new Error(`catalog ${LDRAW_ARCHIVE_SOURCE} pins no file`);
   const apiParts = JSON.parse(
     await readFile(sourceFile(lock, catalogRoot, "rebrickable-parts-api", "partList.json"), "utf8"),
   ) as ReadonlyArray<ApiPart>;
@@ -96,7 +159,10 @@ export async function readCrosswalkInputs(
     apiColors,
     rebrickableParts: new Set(parts.map((part) => part["part_num"] ?? "")),
     elementCounts,
-    ldrawParts: await ldrawPartFacts(audit ? [ldraw, audit] : [ldraw]),
-    ldrawColors: ldconfigColors(await readFile(join(ldraw.directory, LDCONFIG), "utf8")),
+    ldrawParts: await ldrawPartFacts(
+      sourceFile(lock, catalogRoot, LDRAW_ARCHIVE_SOURCE, archiveFile),
+      pin,
+    ),
+    ldrawColors: ldconfigColors(await readFile(join(ldrawDirectory, LDCONFIG), "utf8")),
   };
 }

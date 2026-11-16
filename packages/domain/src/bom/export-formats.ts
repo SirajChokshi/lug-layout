@@ -1,5 +1,5 @@
 import type { BomLine } from "./bom-counter.ts";
-import type { CatalogLine, Crosswalk } from "./catalog-ids.ts";
+import { resolveLines, type CatalogLine, type Crosswalk } from "./catalog-ids.ts";
 
 const CSV_SPECIAL = /[",\r\n]/u;
 const BRICKLINK_PART_ITEM_TYPE = "P";
@@ -57,8 +57,9 @@ export function plainBomCsv(lines: ReadonlyArray<BomLine>, crosswalk: Crosswalk)
       "Rebrickable colour",
       "BrickLink part",
       "BrickLink colour",
+      "Expanded from",
     ],
-    ...lines.map((line) => {
+    ...resolveLines(lines, crosswalk).map((line) => {
       const part = crosswalk.parts.get(line.part);
       const color = crosswalk.colors.get(line.ldrawColor);
       return [
@@ -69,6 +70,7 @@ export function plainBomCsv(lines: ReadonlyArray<BomLine>, crosswalk: Crosswalk)
         color?.rebrickable ?? null,
         part?.bricklink ?? null,
         color?.bricklink ?? null,
+        line.expandedFrom,
       ];
     }),
   ]);

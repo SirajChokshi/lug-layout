@@ -152,11 +152,17 @@ function isNullableInteger(value: unknown): value is number | null {
   return value === null || Number.isInteger(value);
 }
 
+function isPartComponent(value: unknown): boolean {
+  return isRecord(value) && typeof value["part"] === "string" && Number.isInteger(value["color"]);
+}
+
 function isCatalogPartIds(value: unknown): value is CatalogPartIds {
   return (
     isRecord(value) &&
     isNullableString(value["rebrickable"]) &&
-    isNullableString(value["bricklink"])
+    isNullableString(value["bricklink"]) &&
+    (value["components"] === undefined ||
+      (Array.isArray(value["components"]) && value["components"].every(isPartComponent)))
   );
 }
 
@@ -194,7 +200,11 @@ export function crosswalkMaps(file: CrosswalkFile): CatalogCrosswalk {
     parts: new Map(
       Object.entries(file.parts).map(([id, ids]) => [
         id,
-        { rebrickable: ids.rebrickable, bricklink: ids.bricklink },
+        {
+          rebrickable: ids.rebrickable,
+          bricklink: ids.bricklink,
+          ...(ids.components ? { components: ids.components } : {}),
+        },
       ]),
     ),
     colors: new Map(

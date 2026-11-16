@@ -2205,6 +2205,18 @@
     }
   },
   "catalog": {
+    "ldraw-library": {
+      "use": "crosswalk",
+      "source": {
+        "kind": "github-archive",
+        "repo": "kulits/ldraw-parts",
+        "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+        "root": "ldraw"
+      },
+      "files": {
+        "ldraw-parts.tar.gz": "31a407b5b251d3b6c37497d19459ea2b1c58858b7682c38ba97f4afd9a33d2d2"
+      }
+    },
     "rebrickable-parts-api": {
       "use": "crosswalk",
       "source": {

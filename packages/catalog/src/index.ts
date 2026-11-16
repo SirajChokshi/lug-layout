@@ -9,6 +9,7 @@ export type {
   BundleModelEntry,
   BundleSource,
   CatalogColorIds,
+  CatalogPartComponent,
   CatalogCrosswalk,
   CatalogPartIds,
   ColorGroup,
