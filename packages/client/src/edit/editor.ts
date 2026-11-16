@@ -165,7 +165,7 @@ export interface TrackSolveStats {
   readonly maxMs: number;
 }
 
-export type TrackCommitResult = "laid" | "joined" | "refused";
+export type TrackCommitResult = "laid" | "joined" | "refused-impossible" | "refused-limit";
 
 export interface TrackView {
   readonly pieces: number;
@@ -753,7 +753,7 @@ export class Editor implements IEditor {
         report: { chunks: commit.chunks.length, instances, studs },
       };
     }
-    if (commit.refused) this.lastTrackCommit = "refused";
+    if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.update({ track: this.trackView() });
   }

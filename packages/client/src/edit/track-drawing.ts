@@ -5,6 +5,7 @@ import {
   runMoves,
   solveClosure,
   solveDrag,
+  NO_END,
   TrackGraph,
   TrackLayout,
   type DrawingKit,
@@ -20,6 +21,7 @@ import {
   chunkOf,
   normalizeHeading16,
   pose16,
+  pose16Equals,
   zeta16,
   zeta16ToStuds,
   type Pose16,
@@ -35,6 +37,8 @@ const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
+const CLOSURE_BUDGET_MS = 30;
+const GHOST_SCRATCH_PIECES = 64;
 
 export interface KitPart {
   readonly catalogIndex: number;
@@ -45,7 +49,8 @@ export interface KitPart {
   readonly yLdu: number;
 }
 
-export type ClosureState = "exact" | "refused" | null;
+export type ClosureState = "exact" | "impossible" | "limit" | null;
+export type TrackRefusal = "impossible" | "limit";
 
 export interface TrackDragView {
   readonly pieces: number;
@@ -60,7 +65,7 @@ export interface TrackDragView {
 export interface TrackCommit {
   readonly laid: number;
   readonly joined: boolean;
-  readonly refused: boolean;
+  readonly refusal: TrackRefusal | null;
   readonly chunks: ReadonlyArray<number>;
 }
 
@@ -78,6 +83,7 @@ interface Drag {
   previousKey: string | null;
   moves: ReadonlyArray<TrackMove>;
   closure: ClosureState;
+  goal: Pose16 | null;
   missStuds: number;
   target: number | null;
 }
@@ -154,6 +160,9 @@ export class TrackDrawing {
   private ends: Pose16[] = [];
   private drag: Drag | null = null;
   private lastSolveMs = 0;
+  private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
+  private ghostColors = new Uint16Array(GHOST_SCRATCH_PIECES);
+  private ghostMatrices = new Float32Array(GHOST_SCRATCH_PIECES * INSTANCE_MATRIX_FLOATS);
   readonly solveSamplesMs: number[] = [];
 
   constructor(
@@ -262,6 +271,7 @@ export class TrackDrawing {
       previousKey: null,
       moves: [],
       closure: null,
+      goal: null,
       missStuds: 0,
       target: null,
     };
@@ -297,11 +307,15 @@ export class TrackDrawing {
     const target = this.endNear(hitX, hitZ, drag.fromEnd);
     const goal = target === null ? undefined : this.ends[target];
     drag.target = target;
+    drag.goal = goal ?? null;
     if (goal) {
-      const run = solveClosure(this.kit, start, goal);
-      drag.closure = run ? "exact" : "refused";
-      if (run) {
-        drag.moves = runMoves(this.kit, run);
+      const result = solveClosure(this.kit, start, goal, {
+        now: () => performance.now(),
+        limitMs: CLOSURE_BUDGET_MS,
+      });
+      drag.closure = result.kind;
+      if (result.kind === "exact") {
+        drag.moves = runMoves(this.kit, result.run);
         drag.missStuds = 0;
         this.recordSolve(began);
         return;
@@ -352,9 +366,10 @@ export class TrackDrawing {
     if (!drag?.start || drag.moves.length === 0) return null;
     const { placed } = layMoves(drag.start, drag.moves);
     const count = placed.length;
-    const partIndex = new Uint16Array(count);
-    const colorIndex = new Uint16Array(count);
-    const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
+    this.growGhostScratch(count);
+    const partIndex = this.ghostParts.subarray(0, count);
+    const colorIndex = this.ghostColors.subarray(0, count);
+    const matrices = this.ghostMatrices.subarray(0, count * INSTANCE_MATRIX_FLOATS);
     const origin = zeta16ToStuds(drag.start.position);
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
@@ -374,6 +389,14 @@ export class TrackDrawing {
     };
   }
 
+  private growGhostScratch(count: number): void {
+    if (count <= this.ghostParts.length) return;
+    const capacity = Math.max(count, this.ghostParts.length * 2);
+    this.ghostParts = new Uint16Array(capacity);
+    this.ghostColors = new Uint16Array(capacity);
+    this.ghostMatrices = new Float32Array(capacity * INSTANCE_MATRIX_FLOATS);
+  }
+
   cancelDrag(): void {
     this.drag = null;
   }
@@ -382,9 +405,11 @@ export class TrackDrawing {
     const drag = this.drag;
     this.drag = null;
     if (!drag?.start || drag.moves.length === 0) {
-      return { laid: 0, joined: false, refused: false, chunks: [] };
+      return { laid: 0, joined: false, refusal: null, chunks: [] };
     }
-    if (drag.closure === "refused") return { laid: 0, joined: false, refused: true, chunks: [] };
+    if (drag.closure === "impossible" || drag.closure === "limit") {
+      return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
+    }
     const { placed } = layMoves(drag.start, drag.moves);
     const touched = new Set<number>();
     placed.forEach((piece, i) => {
@@ -402,10 +427,23 @@ export class TrackDrawing {
     this.recomputeEnds();
     return {
       laid: placed.length,
-      joined: drag.closure === "exact",
-      refused: false,
+      joined: drag.goal !== null && this.graphJoins(drag.goal),
+      refusal: null,
       chunks: [...touched],
     };
+  }
+
+  private graphJoins(end: Pose16): boolean {
+    const graph = this.graph;
+    for (let e = 0; e < graph.endCount; e++) {
+      if ((graph.endPartner[e] ?? NO_END) === NO_END) continue;
+      const pose = this.layout.connectorPose(
+        graph.endPlacement[e] ?? 0,
+        graph.endConnector[e] ?? 0,
+      );
+      if (pose16Equals(pose, end)) return true;
+    }
+    return false;
   }
 
   private recomputeEnds(): void {

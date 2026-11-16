@@ -126,7 +126,7 @@ function closureRun(
   return { segments, pieces };
 }
 
-export function solveClosure(
+export function closureWithinTurns(
   kit: DrawingKit,
   start: Pose16,
   goal: Pose16,
