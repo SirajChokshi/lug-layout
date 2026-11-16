@@ -15,6 +15,8 @@ import {
   isRot90,
   rot90Cos,
   rot90Sin,
+  superChunkKey,
+  superChunkOf,
 } from "@brr/math";
 import {
   INSTANCE_MATRIX_FLOATS,
@@ -30,6 +32,13 @@ import {
   FOOTPRINT_NONE,
   type Placeable,
 } from "./placeable.ts";
+import type { PlacedVoxels } from "../lod/placed-voxels.ts";
+import {
+  SuperChunkLod,
+  type ChunkResidency,
+  type SuperChunkLodStats,
+  type VoxelPlacement,
+} from "../lod/super-chunk-lod.ts";
 
 export interface PlacedModel {
   readonly placement: PlacementRef;
@@ -252,7 +261,8 @@ function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: Lat
   return yPlates;
 }
 
-class PlacedEntry implements PlacedModel {
+class PlacedEntry implements PlacedModel, VoxelPlacement {
+  farModelShown = false;
   readonly partKeys: Float64Array;
   readonly studKeys: Float64Array;
   readonly studCellX: Int32Array;
@@ -441,6 +451,18 @@ class PlacedEntry implements PlacedModel {
     return keys;
   }
 
+  get voxels(): PlacedVoxels | null {
+    return this.placeable.voxels;
+  }
+
+  get yPlates(): number {
+    return this.handle.yPlates;
+  }
+
+  get rot(): number {
+    return this.handle.rot;
+  }
+
   rebuildKeys(): Set<number> {
     return new Set([...this.contributions.keys(), ...this.footprintKeys]);
   }
@@ -626,7 +648,7 @@ function inWorldOrder(entries: ReadonlySet<PlacedEntry>): PlacedEntry[] {
   return [...entries].toSorted(byPlacementValue);
 }
 
-export class PlacedChunks {
+export class PlacedChunks implements ChunkResidency {
   private readonly entries: PlacedEntry[] = [];
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
@@ -634,11 +656,17 @@ export class PlacedChunks {
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private readonly occupancy = new OccupancyGrid();
+  private readonly chunksBySuper = new Map<number, Set<number>>();
+  private readonly liveChunks = new Set<number>();
+  private readonly lod: SuperChunkLod;
   private nextId = 0;
   private readonly tongued: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
+  placedParts = 0;
 
-  constructor(private readonly backend: ISceneBackend) {}
+  constructor(private readonly backend: ISceneBackend) {
+    this.lod = new SuperChunkLod(backend, this);
+  }
 
   models(): ReadonlyArray<PlacedModel> {
     return this.entries;
@@ -658,6 +686,66 @@ export class PlacedChunks {
       added.push(entry);
     }
     return { added, report: this.rebuild(touched) };
+  }
+
+  get lodStats(): SuperChunkLodStats {
+    return this.lod.stats;
+  }
+
+  get liveChunkCount(): number {
+    return this.liveChunks.size;
+  }
+
+  get settled(): boolean {
+    return this.lod.settled;
+  }
+
+  setSuperChunkLod(enabled: boolean): void {
+    this.lod.setEnabled(enabled);
+  }
+
+  buildMeshes(deadlineMs: number): void {
+    this.lod.work(deadlineMs);
+  }
+
+  update(eyeX: number, eyeY: number, eyeZ: number, deadlineMs: number): void {
+    this.lod.update(eyeX, eyeY, eyeZ, deadlineMs);
+  }
+
+  loadSuperChunk(superKey: number, deadlineMs: number): boolean {
+    const chunks = this.chunksBySuper.get(superKey);
+    if (!chunks) return true;
+    for (const key of chunks) {
+      if (this.liveChunks.has(key)) continue;
+      if (performance.now() >= deadlineMs) return false;
+      this.rebuildChunk(key);
+    }
+    return true;
+  }
+
+  unloadSuperChunk(superKey: number): void {
+    const chunks = this.chunksBySuper.get(superKey);
+    if (!chunks) return;
+    for (const key of chunks) this.retire(key);
+  }
+
+  private superOfChunk(key: number): number {
+    const origin = this.chunkOrigins.get(key);
+    if (!origin) throw new Error(`chunk ${key} has no recorded origin`);
+    return superChunkKey(superChunkOf(origin[0]), superChunkOf(origin[1]));
+  }
+
+  private trackChunk(key: number, entry: PlacedEntry): void {
+    if (!this.byChunk.has(key)) {
+      const superKey = this.superOfChunk(key);
+      let chunks = this.chunksBySuper.get(superKey);
+      if (!chunks) {
+        chunks = new Set();
+        this.chunksBySuper.set(superKey, chunks);
+      }
+      chunks.add(key);
+    }
+    addTo(this.byChunk, key, entry);
   }
 
   restingHeight(
@@ -772,14 +860,13 @@ export class PlacedChunks {
   ): PlacedEntry {
     const entry = new PlacedEntry(this.nextId++, placement, handle, placeable, this.chunkOrigins);
     this.entries.push(entry);
-    if (placeable.farModel !== null) {
-      this.backend.setFarModel(entry.id, entry.farModelPlacement(placeable.farModel));
-    }
-    for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
+    this.placedParts += placeable.parts.count;
+    for (const key of entry.contributions.keys()) this.trackChunk(key, entry);
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
     if (entry.tongueBoxes.length > 0) this.tongued.push(entry);
     entry.stampColumns(this.occupancy, null);
+    this.lod.add(entry);
     return entry;
   }
 
@@ -788,14 +875,47 @@ export class PlacedChunks {
     const entry = this.entries[index];
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
-    this.backend.setFarModel(entry.id, null);
+    this.placedParts -= entry.placeable.parts.count;
+    if (entry.farModelShown) this.backend.setFarModel(entry.id, null);
+    entry.farModelShown = false;
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
     for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
     const tongued = this.tongued.indexOf(entry);
     if (tongued >= 0) this.tongued.splice(tongued, 1);
     this.restamp(entry.columnKeys, null);
+    this.lod.remove(entry);
     return entry;
+  }
+
+  private syncFarModels(key: number): void {
+    const entries = this.byChunk.get(key);
+    if (!entries) return;
+    for (const entry of entries) {
+      const farModel = entry.placeable.farModel;
+      if (farModel === null) continue;
+      let live = false;
+      for (const chunk of entry.contributions.keys()) {
+        if (this.liveChunks.has(chunk)) live = true;
+      }
+      if (live === entry.farModelShown) continue;
+      entry.farModelShown = live;
+      this.backend.setFarModel(entry.id, live ? entry.farModelPlacement(farModel) : null);
+    }
+  }
+
+  private retire(key: number): void {
+    this.chunkStuds.delete(key);
+    if (!this.liveChunks.delete(key)) return;
+    this.backend.deleteChunk(key);
+    this.syncFarModels(key);
+  }
+
+  private forgetIfEmpty(key: number): void {
+    if ((this.byChunk.get(key)?.size ?? 0) > 0) return;
+    this.retire(key);
+    this.byChunk.delete(key);
+    this.chunksBySuper.get(this.superOfChunk(key))?.delete(key);
   }
 
   private rebuild(keys: Iterable<number>): RebuildReport {
@@ -803,6 +923,10 @@ export class PlacedChunks {
     let instances = 0;
     let studs = 0;
     for (const key of keys) {
+      if (!this.lod.isResident(this.superOfChunk(key))) {
+        this.forgetIfEmpty(key);
+        continue;
+      }
       const built = this.rebuildChunk(key);
       chunks++;
       instances += built.count;
@@ -846,8 +970,8 @@ export class PlacedChunks {
       },
     };
     if (partCount === 0 && studCount === 0) {
-      this.backend.deleteChunk(key);
-      this.chunkStuds.delete(key);
+      this.retire(key);
+      this.forgetIfEmpty(key);
       return chunk;
     }
     const selectedParts = new Uint32Array(partCount);
@@ -894,6 +1018,8 @@ export class PlacedChunks {
       }
     }
     this.backend.setChunk(key, chunk);
+    this.liveChunks.add(key);
+    this.syncFarModels(key);
     return chunk;
   }
 }

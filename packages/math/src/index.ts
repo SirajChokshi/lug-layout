@@ -8,7 +8,7 @@ export {
   lduFromMm,
   mmFromLdu,
 } from "./units.ts";
-export { isRot90, rot90Cos, rot90Sin } from "./rot90.ts";
+export { isRot90, rot90Cos, rot90Sin, type Rot90 } from "./rot90.ts";
 export { isLatticePose } from "./lattice.ts";
 export { zeta16FloorStuds, type FloorStuds } from "./zeta16-floor.ts";
 export { chunkKey, chunkOf } from "./chunk-key.ts";
@@ -37,3 +37,4 @@ export {
   posesJoin16,
   type Pose16,
 } from "./pose16.ts";
+export { SUPER_CHUNK_CHUNKS, SUPER_CHUNK_LDU, superChunkKey, superChunkOf } from "./super-chunk.ts";

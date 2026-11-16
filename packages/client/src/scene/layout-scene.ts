@@ -22,6 +22,7 @@ import {
   type PlanOverlay,
   type RebaseEvent,
   type SceneBackendConfig,
+  type SuperChunkMesh,
   type TrackEndMarker,
   type WorldBox,
 } from "@brr/render";
@@ -119,6 +120,18 @@ class ChunkCapture implements ISceneBackend {
   deleteChunk(key: number): void {
     this.chunks.delete(key);
     this.inner.deleteChunk(key);
+  }
+  setSuperChunk(key: number, mesh: SuperChunkMesh): void {
+    this.inner.setSuperChunk(key, mesh);
+  }
+  setSuperChunkVisible(key: number, visible: boolean): void {
+    this.inner.setSuperChunkVisible(key, visible);
+  }
+  deleteSuperChunk(key: number): void {
+    this.inner.deleteSuperChunk(key);
+  }
+  studPitchPx(distanceLdu: number): number {
+    return this.inner.studPitchPx(distanceLdu);
   }
   forceTier(tier: ChunkTier | null): void {
     this.inner.forceTier(tier);
@@ -309,6 +322,7 @@ export class LayoutScene implements ILayoutScene {
     }
     return partPlaceable(
       part,
+      null,
       palette.indexOf(part.id),
       color.code,
       color.name,
@@ -350,6 +364,7 @@ export class LayoutScene implements ILayoutScene {
           palette.parts,
           colors,
           farModel,
+          null,
         ),
       );
     }

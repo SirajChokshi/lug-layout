@@ -18,6 +18,12 @@ class IssueBoxBackend implements ISceneBackend {
   setPalette(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setSuperChunk(): void {}
+  setSuperChunkVisible(): void {}
+  deleteSuperChunk(): void {}
+  studPitchPx(): number {
+    return 0;
+  }
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}

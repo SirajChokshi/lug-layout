@@ -102,6 +102,12 @@ class TopDownBackend implements ISceneBackend {
   setPalette(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setSuperChunk(): void {}
+  setSuperChunkVisible(): void {}
+  deleteSuperChunk(): void {}
+  studPitchPx(): number {
+    return Number.POSITIVE_INFINITY;
+  }
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
@@ -142,7 +148,14 @@ async function startEditor(): Promise<IEditor> {
     clientHeight: 480,
     dataset: {},
   } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  await editor.start(canvas, {
+    api: "webgl2",
+    pixelRatio: 1,
+    look: NO_LOOK,
+    tier: null,
+    superChunkLod: true,
+    measuredFrames: 60,
+  });
   return editor;
 }
 

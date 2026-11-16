@@ -9,6 +9,8 @@ import {
   type ModuleIssueView,
   type RoadIssueView,
   type ShellCommandId,
+  type EditorStats,
+  type FrameMeasurement,
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
 import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
@@ -17,6 +19,36 @@ import { isCompactLayout } from "./use-compact-layout.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
+const BYTES_PER_MIB = 1024 * 1024;
+
+function mib(bytes: number | null): string {
+  return bytes === null ? "not reported" : `${(bytes / BYTES_PER_MIB).toFixed(1)} MiB`;
+}
+
+function superChunkRows(stats: EditorStats): Array<readonly [string, string]> {
+  return [
+    ["Live chunks", integer.format(stats.liveChunks)],
+    [
+      "Super-chunks (mesh / resident / all)",
+      `${stats.meshedSuperChunks} / ${stats.residentSuperChunks} / ${stats.superChunks}`,
+    ],
+    ["Super-chunk mesh triangles", integer.format(stats.superChunkTriangles)],
+    [
+      "Super-chunk mesh: edit to screen (last / max), last build CPU",
+      stats.superChunkBuilds === 0
+        ? "none yet"
+        : `${stats.lastSuperChunkStaleMs.toFixed(0)} / ${stats.maxSuperChunkStaleMs.toFixed(0)} ms, ${stats.lastSuperChunkBuildCpuMs.toFixed(0)} ms (${stats.superChunkBuilds} builds, ${stats.staleSuperChunks} stale)`,
+    ],
+    ["Placed parts", integer.format(stats.placedParts)],
+    ["JS heap", mib(stats.jsHeapBytes)],
+    ["GPU buffers", mib(stats.gpuBufferBytes)],
+  ];
+}
+
+function measuredText(m: FrameMeasurement): string {
+  const settle = m.settled ? `settled in ${m.settleMs.toFixed(0)} ms` : "not settled";
+  return `median ${m.medianFrameMs.toFixed(1)} ms, p95 ${m.p95FrameMs.toFixed(1)} ms, max ${m.maxFrameMs.toFixed(1)} ms over ${m.frames} frames; ${integer.format(m.placements)} placements, ${integer.format(m.placedParts)} parts, super-chunk LOD ${m.superChunkLod ? "on" : "off"}, ${settle}`;
+}
 
 function ldu(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -490,15 +522,13 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
         : [["Far tier", `unavailable: ${snapshot.farTierError}`] as const]),
       ["Chunk tiers near/mid/far", `${stats.nearChunks} / ${stats.midChunks} / ${stats.farChunks}`],
       ["Projected stud pitch, nearest chunk", `${stats.nearestStudPitchPx.toFixed(1)} px`],
+      ...superChunkRows(stats),
     );
   }
   const measured = snapshot.measurement;
   if (snapshot.measuring) rows.push(["Frame time (M)", "measuring…"]);
   else if (measured) {
-    rows.push([
-      "Frame time (M), GPU-synced",
-      `median ${measured.medianFrameMs.toFixed(1)} ms, p95 ${measured.p95FrameMs.toFixed(1)} ms over ${measured.frames} frames`,
-    ]);
+    rows.push(["Frame time (M), GPU-synced", measuredText(measured)]);
   }
   return (
     <details
