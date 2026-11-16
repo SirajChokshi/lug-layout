@@ -1,0 +1,557 @@
+# Brick Railroad: architecture and phased roadmap
+
+This is a browser sandbox for laying out LEGO cities from real models, with rail, roads, baseplates and MILS modules. You build with whole imported modules, connect track and roads exactly, run trains, and export a parts list you can buy.
+
+It serves two jobs on one engine:
+- **a boundless sandbox world** that you can extend in any direction, where rules are advisory;
+- **a practical planner for a real layout**: draw your room and tables to scale, plan inside that footprint, and get a full parts list and a "buildable as planned" check before you buy or build anything.
+
+Sources: [part-data.md](research/part-data.md), [engine-stack.md](research/engine-stack.md), [connection-rules.md](research/connection-rules.md), [product-scope.md](research/product-scope.md). Facts the reports could not confirm are collected in §11 and must be checked before anyone relies on them.
+
+## 0. Owner decisions already made
+
+| # | Decision | Effect on this plan |
+|---|---|---|
+| D1 | **The project is non-commercial.** | BrickLink API use and share-alike (CC BY-SA) connectivity data are now acceptable in principle. We import the LDCad shadow library directly and publish our connectivity dataset under CC BY-SA 4.0 (§3.4, §10). LEGO trademark rules and the ban on redistributing `OfficialNonCA` parts still apply in full. |
+| D2 | **Users work with whole modules and models; we don't do brick-level modeling.** Users build in Studio, LDCad or LeoCAD and import the result. | The editor places imported models, OMR sets, modules, baseplates, track and road pieces. A model is immutable once imported, and users fix bricks in their own tool and re-import. Brick-level structural checks become import badges, never live editing rules. Renderer and storage work at model granularity (§4, §6, §9). |
+| D3 | **Third-party track (BrickTracks, TrixBrix, ME Models) is out of scope for now, but adding it must be easy later.** | Parts come from pluggable *part sources*, each with provenance and license. Track rules live in *track profiles*. Exact track arithmetic is generic over the angle step. Everything third-party is flagged in the BOM. Only official LEGO track ships (§3.5, §5.4). |
+| D4 | **It must be both a boundless sandbox and a solid tool for planning a real layout:** real table and room footprint, a parts list, buildable as planned. | **One world model in two modes.** The world is an unbounded, sparse chunk map, stored and streamed per super-chunk (§6, §9). **Plan regions** are bounded areas tied to a physical footprint (room, tables, obstacles, aisles) in millimetres. Inside a plan region the rules are strict, and the region gets its own complete BOM (including baseplates and module substructure), an "own vs buy" view, printable plans, and a **"Buildable as planned"** status (§7.3). Outside plan regions the rules only warn. Planning features move into the MVP. |
+
+## 1. One-paragraph architecture
+
+An **offline data pipeline** (Rust plus scripts, run in CI) compiles the LDraw CA parts library, Rebrickable dumps, the LDraw OMR and the LDCad shadow library into a versioned, content-addressed **asset bundle** on a static CDN. That bundle holds part meshes with studs extracted, a connector database, the catalog, element-existence tables, verified set models and attribution. In the browser, a **TypeScript app** has five parts:
+- a React UI shell;
+- an **import worker**, the same Rust crate built for WASM, that parses `.ldr`, `.mpd` and plain-ZIP `.io` files, resolves parts and colors, computes badges, and bakes models;
+- a **layout core** that holds the unbounded world of placements, exact track and road joins, plan regions with their physical footprints, and validation;
+- a **sim worker** that runs trains on a derived track graph at a fixed timestep;
+- a **renderer**: three.js `WebGPURenderer` with automatic WebGL2 fallback, drawing instanced and merged *models* with LODs, culled studs, SSAO and outlines.
+
+A world is a manifest plus one JSON shard of placements per super-chunk, stored in IndexedDB and exported as a file. Plan regions export separately, together with their BOMs and printable plans. The MVP has no backend. Accounts, cloud saves and sharing come in P1.
+
+## 2. How the reports' conflicts are resolved
+
+| Topic | Conflict | Resolution |
+|---|---|---|
+| Scale target | Engine stack plans for 1M to 10M parts. Product scope plans for about 50k. | **MVP target: 250k parts *loaded near the camera* at 60 fps on an integrated GPU (Tier A) at 1080p. Stretch: 1M.** That covers a club layout of about 100 MILS modules at roughly 2k parts each. The boundless world (D4) can hold far more, so whole-world size is limited by streaming and far LOD, not by the frame budget: chunks beyond the near radius exist only as far-LOD meshes or aren't loaded at all. D2 makes models static, so per-model merging and instancing reach this without a GPU-driven pipeline. Engine stack's 10M-parts target is dropped as a frame budget; very large worlds are handled by streaming instead. |
+| Renderer | Engine stack wants a custom WebGPU-only renderer with compute culling. Product scope and part data want three.js, instancing and `BatchedMesh`. | **Start with three.js `WebGPURenderer`, with automatic WebGL2 fallback, behind a thin `SceneBackend` interface** that takes model instances, not parts. Milestone M0 benchmarks it. A custom GPU-driven WebGPU backend becomes a P2 option, built only if the 250k/1M gates fail. Engine stack's domain techniques are kept either way: stud extraction, covered-stud culling, voxel far LOD, 32×32 chunks. |
+| Runtime asset format | Part data proposes per-part glTF with meshopt. Engine stack proposes a custom `.lpa` binary atlas. | **GLB with `KHR_mesh_quantization` and `EXT_meshopt_compression`, packed into palette bundles.** Stud positions and connectors go in `extras` and sidecar tables. three.js loads this natively. A custom atlas waits for the custom backend. The pipeline already produces renderer-agnostic data either way. |
+| Threads and isolation | Engine stack wants SharedArrayBuffer, WASM threads and COOP/COEP headers. | **Not in the MVP.** Heavy compilation happens offline. Import baking runs in single-threaded workers. That avoids cross-origin-isolation constraints on embeds and OAuth until a measured need appears. |
+| Persistence | Engine stack wants OPFS, an op log and content-addressed chunks. Product scope wants IndexedDB and a JSON file. | **IndexedDB holding a JSON world split into one shard per super-chunk.** Placements are small, but D4 makes worlds unbounded, so they load per shard and never as one document. Imported model blobs are content-addressed in IndexedDB. OPFS is used only as an asset cache. The op log arrives with multiplayer in P2. |
+| Studio `.io` | Part data says read plain ZIP and reject encrypted files. Product scope says MVP should rely on LDraw export from Studio. | **Read plain-ZIP `.io` in the MVP**, because D2 makes import the main workflow. Encrypted legacy files are rejected with an instruction to re-save. **We never ship the password**: anti-circumvention law doesn't depend on being commercial. LDraw export stays the documented fallback. |
+| Connectivity source | Part data says generate our own data to avoid share-alike. Engine stack and product scope suggest LDCad data. | **With D1 settled, import the LDCad shadow library directly** and fill gaps by primitive inference. The connectivity dataset ships as a separate CC BY-SA 4.0 package, so the app code's license is unaffected. |
+| BrickLink | Part data says avoid it beyond crosswalks. Product scope says Wanted List XML now, API later. | **Rebrickable stays the catalog backbone.** Wanted List XML export ships in the MVP and needs no API. BrickLink's API, for the price guide only, is a P1 option once its terms have been read for non-commercial use (D1 makes this likely but not certain). |
+| Track gauge | Product scope says "6-stud internal gauge". Connection rules say "about 37.5 mm inside the rails, rail centers about 5 studs apart". | Unresolved; measure from LDraw 53401 (§11). Snapping doesn't depend on it because track ends are matched by pose. Only wheel-placement visuals do. |
+| Validation level | Part data proposes levels 1 to 5, including structural checks while editing. Connection rules require every connection to be exact. | Under D2, **validation splits in two.** *Model badges* are computed at import and never block. *Layout rules* run live, are exact and zero-tolerance, and decide whether a layout is "Valid". See §7. |
+| Rotation | Product scope allows 15° and free rotation. Connection rules allow only 90° steps on studs. | Models sit on studs with **90° rotations only.** Off-grid angles exist only for track (22.5° steps through connections) and for parts held by track. There's no free rotation; that would break "no fudging". |
+
+## 3. Data pipeline (offline, in CI)
+
+### 3.1 Inputs, by part source
+Every part and model comes through a **`PartSource`** plugin. Each source declares an id, provenance, a per-item license, redistribution rights and a priority used when resolving.
+
+| Source id | Provenance | Content | License or terms | Shipped |
+|---|---|---|---|---|
+| `ldraw-official` | `official` | LDraw `complete.zip`, filtered to CA parts | CC BY 2.0 / CC BY 4.0, with attribution | Yes |
+| `ldraw-unofficial` | `unofficial` | `ldrawunf.zip`, specific parts by allowlist only | Per part | Opt-in, badged |
+| `user-inline` | `custom` | Inline `0 FILE` parts or Studio CustomParts found in an import | User's own | Stays in the user's model only |
+| `omr` | `official` model | OMR `.mpd` sets | CC BY 2.0 | Yes, after verification |
+| `ldcad-shadow` | connectivity | `!LDCAD SNAP_*` metadata | CC BY-SA 4.0 | Yes, as a separate data package |
+| `rebrickable` | catalog | Daily CSV dumps, plus nightly API crosswalks | Any use, attribution requested | Yes, derived tables |
+| *(later)* `thirdparty-<vendor>` | `thirdParty` | Vendor track geometry and connectors | Per vendor, needs clearance | **No (D3)** |
+
+### 3.2 Pipeline stages
+1. **Fetch and pin.** Download the inputs, record versions and hashes, and fail if any input changes without a version bump.
+2. **License gate.** Read the `!LICENSE` header of every LDraw file. **The build fails if any `OfficialNonCA` part, or a part without a license, enters the bundle.** Write `attribution.json` (part to authors, license, history and a "modified" note) and a generated credits page.
+3. **Catalog database.** Load the Rebrickable CSVs into SQLite at build time, then emit static, sharded, compressed outputs:
+   - `colors`, `parts`, `part_relationships` and the crosswalks to LDraw and BrickLink;
+   - an **element-existence table** of (part, color) pairs, as a compact sorted array or bitset that loads lazily;
+   - set metadata and inventories (latest version by default; the others kept);
+   - a color table merged from LDConfig (render values) and Rebrickable (canonical ids). Rebrickable color ids are the canonical key.
+4. **Part compiler** (Rust crate `brick-compile`):
+   1. Flatten sub-files, tracking BFC winding through the matrix determinant and `INVERTNEXT`.
+   2. Keep colors 16 and 24 as placeholders.
+   3. Weld vertices (ε ≈ 0.05 LDU) and smooth normals using type-2 lines as hard edges and type-5 lines as soft edges.
+   4. **Extract studs** (`stud*.dat`) into stud records holding position, type and a cover-test cell.
+   5. Extract the underside (tubes and anti-studs) into a submesh.
+   6. Build LODs: **LOD0** from `p/48` primitives plus a small bevel on hero parts; **LOD1** from standard primitives; **LOD2** from `p/8` primitives with the underside dropped, simplified with meshoptimizer.
+   7. Emit GLB palette bundles plus optional edge-line data for an instruction-style look.
+   8. Never substitute logo studs.
+5. **Connector build.** Merge LDCad `SNAP_*` metadata over the parts, then add connectors inferred from primitives (`stud*`, tubes, Technic `peghole`/`axlehole`/`connect*`). Convert everything to our schema (§5). Hand-curate the **city palette**: track, road plates, baseplates, train bases and bogies, Technic bricks for module joins. Run the track field-membership test (§5.3) on every track part.
+6. **OMR ingest.** Parse each set, match it to its Rebrickable set by number, run model badges L1 and L2 (§7.1), and bake the model (§3.3). Sets that pass L1 and L2 exactly become "Real set" catalog entries.
+7. **Publish.** Upload a content-addressed CDN bundle with a manifest (`bundleVersion`, input versions, per-source license summary).
+
+### 3.3 Model bake
+The browser import worker and the OMR ingest share the same code.
+1. Unpack and parse the file. For `.io`, prefer `modelv2.ldr`, then `model2.ldr`, then `model.ldr`.
+2. Resolve each part in order: our library, then aliases, then the Rebrickable crosswalk, then inline definitions. Parts that can't be resolved become box placeholders and get a badge.
+3. Map colors. Unknown Studio colors snap to the nearest canonical color, with a warning.
+4. Build the **instance list**: part id, color id and a 4×3 matrix in LDU. Keep the **submodel tree**, because bogies and vehicles need it.
+5. Build the **BOM**, normalized through aliases and `part_relationships`.
+6. **Remove covered studs inside the model**: a stud with an anti-stud or solid underside directly above it is dropped.
+7. Derive the **base footprint**: the set of bottom-facing anti-stud cells on the lattice, plus flat-bottom regions. Layout placement uses this for support checks.
+8. Compute the 2.5D occupancy (a voxel column per stud cell) and the AABB.
+9. Build **merged LOD meshes** per material class: mid LOD from LOD1 parts merged; far LOD as a voxel greedy mesh at 1 stud × 1 stud × 1 plate resolution.
+10. Detect vehicles by part signatures (train motors, wheels, magnetic couplers) and propose a vehicle sidecar.
+11. Store the original file unchanged so it can be re-exported.
+
+### 3.4 Attribution and licenses in shipped assets
+- Part GLBs carry `extras.ldraw = {name, authors, license}`.
+- The credits page covers LDraw, the OMR authors of each model, Rebrickable and LDCad.
+- The connectivity package carries its own CC BY-SA 4.0 notice and an attribution to Roland Melkert.
+- The trademark disclaimer appears in the footer, the about page and every export.
+
+### 3.5 Extension points for third-party parts (D3)
+These are built now and used later:
+- `PartSource` plugins with a `provenance` field. The BOM, the badges and the catalog filter all read it.
+- Each `TrackProfile` declares a track system, a gauge class and an **angle step N**, where N = 16 for 22.5° steps and N = 32 for 11.25° steps (§5.3).
+- A layout-level `allowThirdParty` flag that is off and hidden today. Validation refuses `thirdParty` parts unless the flag is on, and the BOM flags them.
+- Catalog ids are namespaced (`ldraw:53401`, `bt:R56-curve`), so vendor packs can never collide with LDraw numbers.
+
+Adding a vendor later means writing a source adapter, the vendor's connector data, and a profile with N = 32 if any of its pieces needs 11.25° steps. No core code changes.
+
+## 4. System components (runtime)
+
+| Component | Runs in | Tech | Responsibility |
+|---|---|---|---|
+| UI shell | main thread | TypeScript, React | Catalog browser, placement tools, inspector, BOM panel, Build and Run modes, import report |
+| Layout core | main thread, pure TS module | TypeScript | World document (sparse chunks), placement poses, joins, undo/redo command stack, live validation. Headless and unit-tested. |
+| Planner | main thread, pure TS module | TypeScript | Plan regions and physical footprints (room, tables, obstacles, aisles, in mm), footprint-fit and reach rules, the BOM for each plan (models, baseplates, track, road plates, module substructure), "own vs buy", printable plan export (SVG, then PDF) |
+| Import worker | Web Worker | Rust → WASM (`brick-compile`, `import` feature) | Parse and bake models (§3.3), compute badges L1, L2 and (P1) L3 |
+| Asset loader | worker | TypeScript | Fetches CDN bundles and caches them in OPFS and the HTTP cache. Lazy element table. |
+| Sim worker | Web Worker | TypeScript | Fixed-timestep simulation of track and road graphs, consists and routing. Headless-testable. |
+| Renderer | main thread for the MVP; OffscreenCanvas worker in P1 if the main thread misses its budget | three.js `WebGPURenderer` behind `SceneBackend` | Chunked scene, model instancing, LOD, stud handling, look |
+| Persistence | main thread and worker | IndexedDB | Layouts, imported model blobs and bakes (content-addressed), settings |
+| Backend (P1+) | server | Small API plus object storage | Accounts, cloud layouts, share links, model blob storage |
+
+## 5. Connector and placement schema
+
+Positions are in **integer LDU**. x and z are the plan axes and y points up. Layout heights are counted in **plates above the top surface of the baseplate**. Floats appear only in rendering, and in imported models' internal matrices, which are never used for joins.
+
+### 5.1 Part record (connector database)
+```ts
+type Provenance = "official" | "unofficial" | "custom" | "thirdParty";
+
+interface PartRecord {
+  id: string;                 // namespaced: "ldraw:53401"
+  source: string;             // PartSource id
+  provenance: Provenance;
+  license: string;            // SPDX-like
+  cityRole?: "track" | "road" | "baseplate" | "moduleJoin" | "bogie" | "motor" | "wheel";
+  footprint: { poly: [number, number][]; yMin: number; yMax: number }; // LDU
+  keepOut?: Volume[];         // switch levers, motors: solid for collision
+  connectors: Connector[];
+  trackPaths?: TrackPath[];   // sim geometry per route (switches: 2)
+  roadLanes?: Lane[];         // lane centerlines, direction, turn links
+  bomFlags?: ("power9V" | "powerPlastic" | "thirdParty")[];
+}
+
+type Connector =
+  | { kind: "stud" | "antiStud"; pos: Vec3i; grid: 20 }
+  | { kind: "trackEnd"; pose: TrackPose; system: string /* "lego-9v-plastic" */; gauge: string }
+  | { kind: "roadEdge"; pos: Vec3i; heading: Rot90; lanePattern: string }
+  | { kind: "moduleEdge"; profile: string; edge: "N" | "E" | "S" | "W"; slots: Vec3i[] }
+  | { kind: "technicHole" | "technicPin"; pos: Vec3i; axis: Vec3i };
+
+type TrackPath =
+  | { kind: "straight"; from: number; to: number; length: Exact }         // connector indices
+  | { kind: "arc"; from: number; to: number; radius: Exact; turn: number /* steps of 360/N */ };
+```
+
+### 5.2 Placement poses (layout)
+```ts
+type Rot90 = 0 | 1 | 2 | 3;
+type LatticePose = { kind: "lattice"; x: number; z: number; yPlates: number; rot: Rot90 }; // x,z in LDU, multiples of 20 (10 where half-stud allowed)
+type TrackPose  = { kind: "track"; n: 16 | 32; coeffs: bigint[] /* length n/2, studs */; heading: number /* 0..n-1 */; yPlates: number };
+type Placement  = { id: string; ref: CatalogRef | ModelHash; pose: LatticePose | TrackPose; layer: Layer; locked?: boolean };
+```
+- **The world is unbounded.** Coordinates are signed integers in LDU. Plan coordinates need int32, which spans ±859 km, but the sandbox allows int53 (JS safe integers). Chunk key = `floor(x/640), floor(z/640)`. The renderer and validators always work relative to a chunk origin, so floats never carry large world coordinates.
+- Models, baseplates and road plates always use `LatticePose`.
+- Track pieces use `TrackPose`. A track piece whose pose lands on the lattice (only the ζ⁰ and ζ^(n/4) coefficients are non-zero, and both are whole numbers of studs) may also claim stud support.
+
+### 5.3 Exact track arithmetic
+This comes from connection rules §4.3, generalized for D3.
+- Positions live in ℤ[ζ_N] with N = 16 today. Each position is stored as N/2 integer coefficients in studs, and each heading as k ∈ ℤ_N.
+- A straight adds 16·ζᵏ. An R40 curve adds the exact arc chord in the field.
+- Two track ends **join if and only if their coefficient vectors are identical and their headings differ by N/2.** There is no epsilon.
+- When a layout mixes N = 16 and N = 32, poses embed into ℤ[ζ₃₂] through ζ₁₆ = ζ₃₂², so adding fan track later doesn't migrate existing layouts.
+- Parts whose poses fall outside the field get an exact algebraic pose from their data, compared with ε = 1e-6 LDU to absorb representation error only. Some switches may fall in this group, and flex track does (P1+).
+- Every track part's connector poses are **imported from data and tested against the field at build time. Nothing is hand-coded.**
+
+### 5.4 Profiles
+`TrackProfile` holds the system, gauge class, angle step N, minimum radius, parallel spacing, clearance envelope and flags.
+
+`ModuleProfile` holds module size, surface height in plates, edge connector slots, track centre from the edge, sidewalk depth, lane width, and ballast width and height.
+
+Each `ModuleProfile` also carries a **substructure recipe**: the parts needed under one module (for MILS, the raising bricks, cover plates and Technic join bricks, per 32×32). The plan BOM includes these parts, so "buildable as planned" counts the hidden parts too.
+
+The MVP ships three module profiles: `free`, `lego-modular` and `mils`. Numbers are filled in only once their verification item in §11 is cleared; until then a profile's rules show as "unverified" warnings. Third-party track arrives later as an extra `TrackProfile` plus a `PartSource` (§3.5).
+
+## 6. Renderer
+
+**Scene model.** The world is a **sparse, unbounded hash map of 32×32-stud chunks**, one per baseplate or MILS module, grouped into 8×8 super-chunks. Each chunk holds placements. The renderer draws **model instances**: a model placed 20 times is drawn instanced, and every track and road piece is instanced too.
+
+**Streaming (D4).** The camera chooses a tier for each chunk. Near chunks load fully. Mid and far chunks load only their merged or voxel model meshes. Super-chunks beyond the far radius stay unloaded and show as a super-chunk far LOD, or as a flat ground color until that exists. Super-chunk shards load from IndexedDB on demand, so a world's total size doesn't affect frame time. Super-chunk far LOD moves from P1 into M6.
+
+**Plan overlay.** Plan regions draw their room walls, table tops (with their real heights as optional plinths), obstacles, aisles and reach zones as translucent overlays, with mm/cm/inch rulers. An optional "real table" view hides everything outside the region.
+
+**LOD per model**, chosen by screen size:
+| Tier | Geometry | Studs |
+|---|---|---|
+| Near | Per-part instancing (`BatchedMesh` per material class), LOD0 or LOD1 parts | Instanced stud stream, covered studs removed |
+| Mid | Merged model mesh built from LOD1 or LOD2 parts | 8-segment studs without logo, or a normal map |
+| Far | Voxel greedy mesh of the model (1 stud × 1 stud × 1 plate) | A procedural pattern computed from `worldPos mod 20` |
+| Very far (M6; impostors P1) | Voxel greedy mesh of the whole super-chunk, then impostors | none |
+
+**Studs.**
+- Studs inside a model are culled when the model is baked.
+- Baseplate and road-plate studs under a placed model's base footprint are culled at placement time, using a per-chunk occupancy grid.
+- We never draw a logo.
+
+**Look.**
+- A plastic material: roughness about 0.25, a clearcoat lobe and calibrated LDConfig colors.
+- IBL lighting, SSAO or GTAO, and an outline pass driven by instance id, normal and depth (the default).
+- A bevel-normal shader trick for rounded edges, plus optional baked bevels on LOD0.
+- One cascaded shadow map rendered from the mid tier.
+- Weighted blended OIT for transparent parts.
+- Optional instruction-style edge lines on the near tier.
+
+**Picking.** GPU id picking at model granularity. Under D2 nothing below model level is ever picked, except switch levers and vehicles.
+
+**Budgets** (Tier A: Iris Xe, Apple M1 or Radeon 680M at 1080p and 60 fps):
+- GPU ≤ 12 ms and main-thread render CPU ≤ 4 ms.
+- ≤ 5M visible triangles.
+- ≤ 1 GB GPU memory.
+- Placing a model shows up in ≤ 50 ms; rebuilding the far LOD takes ≤ 1 s and runs asynchronously.
+- A 250k-part layout is interactive in ≤ 10 s cold and ≤ 3 s warm.
+
+**Upgrade path.** `SceneBackend` takes chunked lists of model and part instances. If M0 or M6 fails the gates, a custom WebGPU backend can replace three.js underneath it without touching the data model. That backend would use compute culling, Hi-Z occlusion and vertex-pulling indirect draws (engine stack §4).
+
+## 7. Validation (scoped by D2)
+
+### 7.1 Model badges (computed at import, never blocking)
+| Badge | Check | Needed for |
+|---|---|---|
+| L1 Real elements | Every (part, color) pair is in the element-existence table | "Real set", "Verified model" |
+| L2 Matches set N | Normalized BOM diff against the Rebrickable inventory: *exact*, or *buildable from* the set (combined inventories for multi-set builds). Prints relaxed by default. | "Real set" |
+| L3 Structure (P1) | Connection graph from the LDCad and inferred connectors: no floating parts, no interpenetration outside connection zones | "Verified model" |
+| Provenance | The model contains unofficial, custom or placeholder parts | Shown as a warning |
+
+Failing a badge never blocks placement. Users fix their bricks in their own CAD tool and re-import. Stability analysis is out of scope.
+
+### 7.2 Layout rules (live and exact; they decide whether a layout is "Valid")
+1. **Real catalog items only.** `thirdParty` parts are refused unless `allowThirdParty` is on, which it isn't in this release.
+2. **Lattice placement.** Models, plates and baseplates sit on the 20-LDU lattice with 90° rotations, at whole plate heights.
+3. **Support.** A placed model's base footprint engages at least one stud of what lies beneath it, or rests fully on a flat area at one height.
+4. **No overlap.** Placements' occupancy and keep-out volumes don't intersect, except at declared connectors.
+5. **Track.** Ends join exactly (§5.3). Open ends are errors unless capped by a buffer part or marked open by the user. Track at an angle off the lattice can't claim stud support and must rest on flat support. A connected run stays at one height (the MVP is flat).
+6. **Clearance.** The profile's parallel spacing is respected, and the swept envelope of the widest and longest consist placed on a layout is checked along curves and switches. S-curves without a straight between them get a warning.
+7. **Roads.** Road edges that meet have equal lane and curb patterns. Level crossings must use real crossing parts.
+8. **Modules** (when a profile is active): modules are on the 32-stud grid, edge connectors are present and aligned, and the surface height matches the profile.
+9. **BOM flags.** Third-party parts, mixed 9V and plastic track in a powered loop, and any use of the optional "real-world play" tolerance mode (off by default and never counted as Valid).
+
+Layouts can always be saved in an invalid state. They then show as **Draft** with a list of issues.
+
+**How strictly rules apply depends on the mode (D4).**
+- In the **sandbox** (outside plan regions), rules 1 to 9 show as warnings. Building never stops.
+- Inside a **plan region**, the same rules are errors, and a region can only reach "Buildable as planned" (§7.3) with zero errors.
+
+### 7.3 Plan regions and "Buildable as planned"
+A plan region is a polygon in the world, aligned to the 32-stud grid, linked to a **physical footprint**:
+- the room outline, doors and obstacles;
+- tables: polygon, height and seams;
+- access aisles;
+- a maximum reach depth.
+
+These are drawn in mm and snapped to the stud grid at 8 mm per stud. Room scans or imported floor plans come later.
+
+Extra plan rules:
+1. **Fits the footprint.** Every placement in the region lies on a table top, and nothing overhangs a table edge beyond the profile's limit (0 by default).
+2. **Reach.** Every point of the layout is within the maximum reach depth from an aisle or table edge you can access. The default depth is an owner decision (§12).
+3. **Seams.** Table seams fall on module boundaries, with a warning for any track that crosses a seam off a module edge.
+4. **Complete BOM.** Every part is mapped to Rebrickable and BrickLink ids. Nothing is a placeholder. Substructure, baseplates, track and road plates are all counted.
+5. **Real elements.** Every placed model has badge L1. Models claiming to be sets have badge L2, either exact or "buildable from".
+6. All layout rules from §7.2 pass with zero errors.
+
+**Plan outputs:**
+- a BOM for the region and for each module, in two views: "whole sets vs loose parts" and "own vs buy" (using an imported Rebrickable collection or CSV);
+- Wanted List XML for the shortfall;
+- a printable plan: a dimensioned top view on the tables, module numbering, track piece positions, switch ids, and one sheet per module listing its pieces and models;
+- the plan exported as an LDraw `.mpd`.
+
+## 8. Simulation
+
+- **Where it runs.** A fixed timestep of 60 Hz in a worker. Simulation state is kept separate from render state, so it can run headless in tests.
+- **Track graph.** Derived from track-end joins. Nodes are the joined ends, each with a pose. Edges are the part's `trackPaths` (straight or arc, with exact length). A switch is a node with one entry, two exits and a state. Each physical edge gives two directed edges, so reversing loops and wyes work.
+- **Trains.** A consist is an ordered list of vehicles. Each vehicle has a length, bogie offsets, coupler points, max speed, acceleration and braking, a power system (9V, PF, PU or none; cosmetic) and discrete power steps.
+  - A train's position is (directed edge, offset). Cars are placed by walking back along the path, and bogies pivot.
+  - Control is manual throttle plus "go to": A* over the directed graph, throwing switches automatically.
+  - The MVP prevents collisions by stopping a train on occupancy. Fixed-block signals come in P1.
+- **Vehicle data.** A sidecar file attached to the model hash holds the kind, bogies, couplers, axles, length and suggested minimum radius. It can optionally round-trip as `0 !BRKRR VEHICLE ...` metas in the LDraw file.
+  - Bogies must be separate submodels. When they aren't, the user re-exports from their CAD tool.
+  - A metadata-only "designate parts as bogie" tool is P1. It groups parts and doesn't edit any.
+- **Roads (P1).** Lanes are directed edges with turn connectors at intersections. Cars use IDM-lite car-following. Intersections start with first-come or stop-sign rules, with traffic lights later, plus ambient traffic.
+- **Out of scope.** Physics, derailment, grades and power draw, pedestrians, economy, and timetables before P1.
+
+## 9. Storage and formats
+
+| Data | Format | Location |
+|---|---|---|
+| Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and OPFS |
+| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists, vehicle sidecars) plus one shard per super-chunk (placements, switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
+| Plan export | `*.brrplan.zip`: the region's placements, its footprint and the models it references, so it reopens on its own | File |
+| Collection | An imported Rebrickable collection or CSV of what the user owns | IndexedDB |
+| Printable plan | SVG in the MVP, PDF in P1 | Download |
+| Imported model | Original file plus the bake (instance list, BOM, footprint, LOD meshes, badges), keyed by content hash | IndexedDB; P1 object storage |
+| Shareable package | `*.brr.zip`: the world (or `*.brrplan.zip` for a single plan) plus the original files of the models it references | File (MVP), share link (P1) |
+| BOM export | BrickLink Wanted List XML, Rebrickable CSV, plain CSV | Download |
+| Interchange | Export the layout as one LDraw `.mpd` (each model a submodel, placed); glTF export in P2 | Download |
+
+Layouts reference catalog items by namespaced id and imported models by hash, and they pin `bundleVersion`. A migration step remaps ids when part aliases change.
+
+## 10. Licensing and IP posture (non-commercial)
+
+- **We can use:**
+  - LDraw CA parts and OMR models, with attribution and a "modified from LDraw" note.
+  - Rebrickable data and set, part and minifig images (hotlinking allowed; MOC images never).
+  - The LDCad shadow library, imported directly. Our derived connectivity dataset is published under **CC BY-SA 4.0** as a separate package.
+  - BrickLink Wanted List XML export.
+  - The BrickLink API price guide, as a **P1 option only after reading its terms** for a free, non-commercial site.
+- **Still prohibited, whatever D1 says:**
+  - redistributing `OfficialNonCA` parts or Studio's part library;
+  - shipping the legacy `.io` password;
+  - the LEGO logo or stud logo, red-square branding, LEGO fonts or trade dress, the minifigure as a mascot or icon;
+  - box art and instruction images;
+  - featuring licensed themes in marketing;
+  - scraping BrickLink or LEGO.com.
+- **Non-commercial means:** no ads, no paid tier and no affiliate links (§12 decides donations). The disclaimer appears on every page and export. If the site accepts user uploads (P1), it needs a DMCA process.
+
+## 11. Unverified facts to check
+
+**Blocking for M0 and M1.**
+1. **The license of every city-palette part:** track 53400, 53401, 2865 and 2867, the switches and crossings, the road plates (60304 set pieces) and the baseplates must all be CA, not `OfficialNonCA`. If any is NonCA, we can't ship it and need a replacement plan.
+2. The current LDraw parts count and the CC BY 2.0 / CC BY 4.0 license split.
+3. **Whether the LDCad shadow library covers** track, road plates, baseplates and Technic bricks, and that it really is CC BY-SA 4.0.
+4. The exact connector poses for both switches (the diverging end), the 90° crossing and the R40 curve, extracted from data and run through the field test.
+5. Track gauge and rail spacing (the "6-stud" vs "about 37.5 mm" conflict), and the official track part numbers.
+6. Baseplate thickness, which sets the height datum.
+7. Road plate geometry: size, clip connectors, lane and sidewalk widths, and stud zones.
+8. The OMR's current set count and how well it covers Town and Train sets.
+9. Three.js `WebGPURenderer` with `BatchedMesh`: performance and WebGL2 fallback behavior at 250k parts.
+10. Browser WebGPU coverage today: Safari 26, Firefox on platforms other than Windows, Linux Chrome.
+
+**Needed before M5 (plan mode) or P1.**
+11. The MILS spec: layer stack, the "4 plates above the baseplate" surface height, connector and corner positions.
+12. Modular-building sidewalk depth and Technic hole positions.
+13. A ballast or Train-tech module standard, if one is adopted.
+14. BrickLink API terms for non-commercial use.
+15. The Rebrickable API rate limit (about 1 request/s?) and how complete its LDraw crosswalk is for our palette.
+16. `.io` internals: whether `modelv2.ldr` contains non-standard line types, Studio's `PE_TEX_*` texture meta names, and its color table differences.
+17. The `ldr_tools` license, if we vendor it.
+18. The train motor part numbers (PF 88002, PU 88011) and the Rebrickable categories for vehicle signatures.
+19. Flex track link length and maximum joint angle.
+20. Size of the element-existence table once compressed.
+21. The MILS substructure part list per module (needed for the plan BOM), and the overhang and reach norms clubs use for layout tables (reach is often quoted as 60 to 80 cm, unconfirmed).
+22. The Rebrickable collection export format (CSV columns and the API endpoints for a user's parts and sets).
+
+**Later.**
+23. Fan-track segment angles per radius (BrickTracks R56 to R120 and others), and whether any needs 11.25° steps (D3).
+24. The Powered Up BLE protocol and the state of Web Bluetooth.
+25. Memory64 and multi-draw-indirect status, which matter only for a custom backend.
+26. Current wording of the LEGO Fair Play policy.
+27. Whether Studio is Unity-based (background only).
+
+**Code architecture (check in M0).**
+28. Whether Inversify (current major version) works with explicit `@inject(TOKEN)` parameter decorators when compiled by Vite's esbuild and Vitest with `experimentalDecorators` on and `emitDecoratorMetadata` off, and whether it still needs the `reflect-metadata` polyfill at runtime. If parameter decorators cause trouble, fall back to `toDynamicValue` factory bindings (§14.3).
+29. Whether Turborepo's `boundaries` check is mature enough to enforce package layers. If not, use dependency-cruiser (§14.2).
+
+## 12. Owner decisions still open (recommended default first)
+
+1. **Definition of "real."** Default: official LDraw CA parts, in colors produced in at least one real element. Imports that fail get badges, not blocks; "Real set" and "Verified" need badges to pass.
+2. **Layout validity.** Default: exact, zero-tolerance rules decide "Valid". Draft layouts can always be saved. A "real-world play" tolerance mode is off and never counts as Valid.
+3. **Scale target.** Default: 250k parts loaded near the camera at 60 fps on an integrated GPU (MVP), 1M as a stretch. Total sandbox world size is unlimited, handled by streaming. Phones and tablets are view-only after the MVP.
+4. **Renderer path.** Default: three.js `WebGPURenderer` with WebGL2 fallback, behind `SceneBackend`. A custom WebGPU backend only if the M0 or M6 gates fail.
+5. **Unofficial and custom parts in imports.** Default: allowed and rendered from inline geometry, with a badge. They exclude a model from "Real set" and "Verified".
+6. **MILS variant.** Default: get the published MILS spec and adopt it as the `mils` profile. Also ship `lego-modular` and `free`.
+7. **Simulation ambition.** Default: a cozy toy for the MVP (throttle, A* routing, occupancy stop). Block signals and stations come in P1, timetables after that.
+8. **Audience and accounts.** Default: adult fans and LUG planners on desktop. No accounts in the MVP, which avoids COPPA and moderation; P1 accounts are 13+ with a DMCA process.
+9. **BOM economics.** Default: file exports only. Price estimates in P1 only if BrickLink's terms allow non-commercial use. No affiliate links, and an optional donation link if you want one.
+10. **Power systems.** Default: cosmetic attribute only. Mixed 9V and plastic loops get a BOM flag, not an error.
+11. **Starter content.** Default: OMR City and Train sets, stations and a few modular buildings that pass L1 and L2, plus the official track and road palette.
+12. **Name.** Default: keep "Brick Railroad" and check the domain and handles. No "LEGO" in the name.
+13. **Real-hardware twin (Powered Up over Bluetooth).** Default: out of scope until P2 or later.
+14. **How strict the sandbox is.** Default: rules only warn outside plan regions, and inside a plan they're errors. The alternative is one strict mode everywhere.
+15. **Plan defaults.** Default: metric units with an inch toggle, a 70 cm reach depth, no overhang allowed past a table edge, and table seams required on module boundaries. All of these can be changed per plan.
+16. **Collection source for "own vs buy".** Default: Rebrickable collection CSV import in the MVP, with Rebrickable API sync (the user's own key) in P1. No BrickLink store-inventory import.
+
+## 13. Phased roadmap
+
+### Phase 0: prototype milestones (de-risk before building the product)
+| Milestone | Build | Exit criteria |
+|---|---|---|
+| **M0 Verify and spike** | Clear §11 items 1 to 10. Compile about 500 city parts to GLB with studs extracted. Load Rebrickable into SQLite. Run a three.js benchmark scene of procedurally generated modules at 100k, 250k and 1M parts. | Every palette part is CA-licensed, or there's a replacement plan. Every track pose passes the field test. Benchmark figures are recorded for Tier A. **Gate:** 250k parts at ≥ 60 fps on Tier A, or a decision to bring the custom backend forward. |
+| **M1 Static city** | Asset bundle v0 on the CDN. **Unbounded sparse chunk world** with super-chunk shards in IndexedDB. Place 10 baked OMR sets with lattice snapping and 90° rotation. Near, mid and far LODs, covered-stud culling, the look pass, save and export, credits page and disclaimer. | A 50-module scene "reads as LEGO" in side-by-side screenshots. Placement shows up in ≤ 50 ms. A world spread across far-apart coordinates (±10 km) renders without jitter. A world survives save, reload and export. |
+| **M2 Track and roads** | Official track palette with exact `TrackPose` joins. Drag-to-draw track (straights and R40 curves). Live open-end and overlap warnings. Road plates with road-edge snapping. Layout rules 1 to 5 and 7. | A loop with two switches closes exactly. Deliberately broken joins are rejected. A rule test suite runs headless in CI. |
+
+### MVP: "Plan, build and run your real train layout, inside an endless sandbox"
+| Milestone | Build | Exit criteria |
+|---|---|---|
+| **M3 Import** | Import worker for `.ldr`, `.mpd` and plain-ZIP `.io`. Import report (missing parts, colors, provenance). Badges L1 and L2. "My models" library. BOM panel with Wanted List XML and Rebrickable CSV export. | 20 real Studio exports import without crashing. The L2 result for OMR sets matches Rebrickable. The exported Wanted List uploads to BrickLink. |
+| **M4 Run** | Track graph and sim worker. Consist builder with vehicle auto-detection and sidecar. Throttle, "go to" with A* and automatic switches, occupancy stop. Build and Run modes. | Three trains run on a layout with reversing loops without colliding. The sim tests pass headless. |
+| **M5 Plan mode** | Plan regions with a room, tables, obstacles and aisles drawn in mm. Fit, reach and seam rules (§7.3). Strict rules inside the plan, warnings outside it. Substructure recipes in profiles. BOM per plan and per module. Rebrickable collection import for "own vs buy". Shortfall Wanted List. Printable SVG plan. `.brrplan.zip` export. | A real test case: a measured 2.4 m × 1.2 m table with a planned loop, station and two modules reaches "Buildable as planned". Its BOM matches a hand count. A real build from the printout needs no extra parts and no forced joints. |
+| **M6 Hardening and scale** | 250k-part club layout benchmark. Super-chunk far LOD and shard streaming for large sandbox worlds. Clearance envelopes (rule 6). Undo/redo. Shareable `.brr.zip`. | Performance budgets met on Tier A near the camera. A world of 2,000+ modules opens in ≤ 3 s warm, and frame time stays flat however many modules are loaded. A loaded world is bit-identical after a round trip. |
+
+### P1: "Living city and clubs"
+- Road vehicle simulation, block signals and stations.
+- `mils` and `lego-modular` profile validators (needs §11 items 11 and 12).
+- L3 structure badge.
+- The "designate bogie" metadata tool.
+- Rebrickable API collection sync, plus BrickLink price estimates and a cost total per plan (if the terms allow).
+- Planner extras: PDF plans, build-phase splits ("stage 1 needs these parts"), import of floor plans or room photos for tracing, a moving and storage view (which modules fit in which boxes).
+- Elevation with grade parts.
+- Flex track.
+- Accounts, cloud saves, share links (including shared plans) and a read-only embed.
+- An OffscreenCanvas render worker and impostors for very far views, if measurements need them.
+
+### P2: "Club platform"
+- Multiplayer: a server-authoritative op log per chunk group, ids as (client, counter), last write wins per placement.
+- Custom WebGPU GPU-driven backend, if needed.
+- `.lxf` import, glTF export.
+- Club layout planning: combine several members' plans into one event layout, with module ownership in the BOM.
+- Powered Up digital twin (if chosen).
+
+### Later, unscheduled (D3)
+**Third-party track packs.** Each needs a `thirdparty-<vendor>` source, vendor connectors, a `TrackProfile` with N = 32 if any piece needs it, a UI toggle for `allowThirdParty`, BOM flags and vendor license clearance. No core changes are expected thanks to §3.5 and §5.3.
+
+### Cross-cutting rules
+- Every rule and simulation module stays headless-testable.
+- Asset builds are reproducible from pinned inputs.
+- The license gate fails the build.
+- Benchmarks run on real Tier A hardware before each phase gate.
+
+## 14. Code architecture
+
+### 14.1 Repository layout
+This is a **Turborepo** monorepo using pnpm workspaces, plus a Cargo workspace for the Rust compiler. The web app is built with **Vite**. Tests run under Vitest; end-to-end smoke tests (Playwright) start in M3. Package scope is `@brr/*`.
+
+```
+apps/
+  web/                    Vite + React app; main-thread composition root
+packages/
+  math/                   exact ℤ[ζ_N] arithmetic, lattice poses, Rot90, SoA vector helpers
+  schema/                 file-format types, runtime validators, versioned migrations (world, plan, part record, profile, bundle manifest)
+  domain/                 world/chunk store, placements, joins, track and road graph derivation, layout and plan rules, BOM engine, profiles
+  sim/                    fixed-timestep simulation core (consists, routing, occupancy, later IDM-lite)
+  catalog/                asset-bundle client: manifest, part records, connector tables, element-existence table, GLB loading
+  import/                 import pipeline orchestration around compile-wasm: resolve, badges, bake
+  compile-wasm/           generated wasm-bindgen output of crates/brick-compile (build artifact, not hand-written)
+  render/                 SceneBackend interface, three.js backend, GPU buffer pools, look/post passes, plan overlay
+  storage/                IndexedDB/OPFS repositories (world shards, model blobs, collections, settings)
+  rpc/                    typed worker message protocol, transferable typed-array envelopes, proxy helpers
+  client/                 application services (OOP, Inversify): commands/undo, selection, tools, plan, BOM export, sim/import proxies; no React
+  workers/
+    import-worker/        worker entry + its own container
+    sim-worker/           worker entry + its own container
+    render-worker/        (P1) OffscreenCanvas entry + its own container
+  ui/                     React components, hooks, design tokens; talks only to client service interfaces
+  test-fixtures/          LDraw/.io samples, golden worlds and plans, benchmark scenes
+  config/                 shared tsconfig and vitest presets (lint and format: oxlint and oxfmt at the root)
+crates/
+  brick-compile/          Rust: LDraw parse/flatten, BFC, normals, stud extraction, LODs, bake (lib)
+  brick-compile-cli/      offline pipeline entry
+  brick-compile-wasm/     wasm-bindgen wrapper → packages/compile-wasm
+tools/
+  asset-pipeline/         Node CLI: fetch/pin inputs, license gate, Rebrickable → SQLite → shards, connector merge, OMR ingest, publish
+```
+
+### 14.2 Dependency direction
+Dependencies only point downward; nothing imports a package from its own layer or a layer above.
+
+```
+L6  apps/web
+L5  ui                                   workers/*  (entry points)
+L4  client
+L3  sim · import
+L2  domain · catalog · render · storage · rpc
+L1  schema
+L0  math
+```
+
+| Package | May depend on |
+|---|---|
+| `math` | nothing |
+| `schema` | math |
+| `domain` | math, schema |
+| `catalog` | math, schema, inversify |
+| `render` | math, schema, catalog (asset formats), inversify — **not** domain; client adapts domain data into render buffers |
+| `storage` | schema, inversify |
+| `rpc` | schema, inversify |
+| `sim` | math, schema, domain (graph types) |
+| `import` | math, schema, domain, catalog, compile-wasm |
+| `client` | domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) |
+| `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify |
+| `ui` | client (service interfaces, tokens, view models), schema types |
+| `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries) |
+| `tools/asset-pipeline` | math, schema, domain, catalog, the brick-compile CLI; never imported by apps |
+
+**Enforced rules:**
+- `math`, `schema`, `domain` and `sim` are **pure**: no DOM, no three.js, no IndexedDB, no workers and no Inversify. They run unchanged in Node tests, in workers and in the pipeline.
+- Only `client`, `workers/*`, `apps/web` and the L2 adapter packages `storage`, `render`, `catalog` and `rpc` import `inversify` (owner decision, 2026-11-16). Only `apps/web` and each worker entry **create containers**; they are the composition roots.
+- `ui` never imports `domain`, `render` or `storage` directly. It goes through `client`.
+- CI checks the boundaries: Turborepo `boundaries` if it proves mature, otherwise dependency-cruiser (§11 item 29), alongside `tsc --build` project references that mirror the table above.
+- Turbo tasks: `build`, `typecheck`, `lint`, `test`, `bench`, `wasm` (cached and keyed on `crates/**`). `apps/web#build` depends on `^build` and `compile-wasm#wasm`.
+
+### 14.3 Services and dependency injection
+- Application logic lives in **OOP service classes behind interfaces** (`ILayoutService`, `IPlanService`, `IBomService`, `ISimClient`, `IImportClient`, `ISceneBackend`, `IWorldRepository`, …). Pure engines from `domain` and `sim` are plain classes with constructor parameters, wrapped by services.
+- **Every binding uses an explicit, typed symbol token.** Each package exports a `tokens.ts`:
+
+```ts
+import type { ServiceIdentifier } from "inversify";
+export const LAYOUT_SERVICE: ServiceIdentifier<ILayoutService> = Symbol.for("brr.client.LayoutService");
+export const WORLD_REPOSITORY: ServiceIdentifier<IWorldRepository> = Symbol.for("brr.storage.WorldRepository");
+```
+
+```ts
+@injectable()
+export class LayoutService implements ILayoutService {
+  constructor(
+    @inject(WORLD_REPOSITORY) private readonly repo: IWorldRepository,
+    @inject(RULE_ENGINE) private readonly rules: RuleEngine,
+  ) {}
+}
+```
+
+- tsconfig sets `experimentalDecorators: true` and **`emitDecoratorMetadata: false`**. Vite's esbuild can't emit decorator metadata anyway, so nothing may depend on type reflection. A lint rule rejects `@inject()` without a token and rejects class-as-identifier bindings. Classes from pure packages are bound with `toDynamicValue(ctx => new RuleEngine(ctx.get(PROFILE_REGISTRY)))`, which needs no decorators. This is also the fallback for every binding if §11 item 28 finds problems.
+- Bindings are grouped into one `ContainerModule` per package (`clientModule`, `storageModule`, `renderModule`, …). Composition roots load the modules they need, and tests load modules with fakes substituted.
+- Services are singletons by default and are resolved once at startup or when a tool activates. **Nothing is resolved from a container in a hot path.**
+
+### 14.4 Per-worker containers
+- Each thread owns **its own Inversify container**, built in its worker entry from that worker's modules. No singletons and no service instances are shared across threads.
+  - **Main thread:** client, render (MVP), storage and ui-facing modules. Remote engines are bound to **proxy implementations** from `rpc`: `SIM_CLIENT → SimWorkerProxy`, `IMPORT_CLIENT → ImportWorkerProxy`.
+  - **Sim worker:** `sim` engine, a track/road graph snapshot and a clock. It exposes `ISimEngine` over `rpc`.
+  - **Import worker:** `import`, `catalog` (read-only) and compile-wasm. It exposes `IImportEngine`.
+  - **Render worker (P1):** `render`, `catalog` and the OffscreenCanvas. The main thread then binds `SCENE_BACKEND → RenderWorkerProxy`.
+- Cross-thread traffic only goes through `rpc` messages:
+  - typed request and response unions;
+  - versioned;
+  - bulk data sent as **transferable typed arrays**, with SharedArrayBuffer rings reserved for when COOP/COEP is adopted.
+- The same service interface has a local and a remote implementation, so moving an engine between threads only changes bindings.
+
+### 14.5 Hot-path data rule
+**Per-part, per-stud, per-instance and per-vehicle-car data never becomes a JS object.** It lives in typed arrays or GPU buffers, and code refers to it by integer handles.
+
+| Data | Representation |
+|---|---|
+| Chunk placements | struct-of-arrays per chunk: `Int32Array` x/z, `Int16Array` yPlates, `Uint8Array` rot, `Uint32Array` refId, `Uint8Array` flags, a free-list for slots |
+| Model instance lists (bake output) | `Uint32Array` partId, `Uint16Array` colorId, `Float32Array` 12-float matrices |
+| Stud visibility | `Uint32Array` bitsets per model and per chunk |
+| Occupancy | `Uint16Array` or `Uint8Array` column grids per chunk |
+| Render instances | GPU buffers written straight from those arrays through pooled pages; CPU mirrors are typed arrays only |
+| Sim state | `Float64Array` edge offsets and speeds, `Int32Array` edge ids per car, consist index ranges |
+| Track graph | CSR adjacency in `Int32Array`s; exact `bigint` poses kept only on the edit-time join and validation path, never per frame |
+| Element-existence table | a sorted `Uint32Array` of packed (part, color) keys, searched with binary search |
+
+**Rules:**
+- Zero allocations per frame and per sim tick. That means no closures, no iterators and no `Map`s keyed by part on those paths.
+- The domain API hands out **views** (`ChunkView`, `PlacementHandle`) over the arrays. Objects are fine for cold data: catalog metadata, profiles, plan footprints, UI view models, and a single facade for the current selection.
+- Exact `bigint` arithmetic runs only when editing or validating. The sim and the renderer use float64 or float32 data derived from exact poses.
+- Enforced by review checklists and `bench` tasks: a frame and tick allocation probe, plus the camera-path benchmarks. Those run in CI, and the benchmarks gate each phase.
