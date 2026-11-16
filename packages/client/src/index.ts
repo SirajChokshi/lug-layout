@@ -42,4 +42,37 @@ export type {
   LatencySample,
   SelectionView,
 } from "./edit/editor.ts";
-export { CITY_SCENE, CREDITS, EDITOR, MODEL_SCENE, PART_DISPLAY_SCENE } from "./tokens.ts";
+export { MM_PER_STUD } from "@brr/math";
+export {
+  DEFAULT_MAX_OVERHANG_MM,
+  PLAN_GRID_MM,
+  type IPlanService,
+  type NewPlan,
+  type ObstacleInput,
+  type PlacedForPlan,
+  type PlanPatch,
+  type PlanSnapshot,
+  type TableInput,
+} from "./plan/plan-service.ts";
+export type {
+  IssueSeverity,
+  LduRect,
+  MmRect,
+  PlacementKey,
+  PlanCheck,
+  PlanIssue,
+  PlanObstacle,
+  PlanPlacement,
+  PlanRegion,
+  PlanRuleId,
+  PlanTable,
+  TableTop,
+} from "@brr/domain";
+export {
+  CITY_SCENE,
+  CREDITS,
+  EDITOR,
+  MODEL_SCENE,
+  PART_DISPLAY_SCENE,
+  PLAN_SERVICE,
+} from "./tokens.ts";

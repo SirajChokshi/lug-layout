@@ -5,6 +5,7 @@ import {
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
+  PLAN_SERVICE,
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
@@ -76,6 +77,7 @@ function root(): ReactNode {
     return (
       <EditorApp
         editor={container.get(EDITOR)}
+        plans={container.get(PLAN_SERVICE)}
         options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
         disclaimer={TRADEMARK_DISCLAIMER}
         showState={params.showEditState}
