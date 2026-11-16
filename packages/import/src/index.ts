@@ -15,6 +15,7 @@ export {
 export {
   BricklinkPartsCrosswalk,
   mapStudioParts,
+  type BricklinkIdSource,
   type BricklinkToLdraw,
   type LdrawPartExists,
   type StudioColor,

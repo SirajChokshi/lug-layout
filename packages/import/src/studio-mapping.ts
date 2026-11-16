@@ -15,9 +15,12 @@ export type StudioPartOutcome =
   | { readonly kind: "ambiguous"; readonly candidates: ReadonlyArray<string> }
   | { readonly kind: "custom" };
 
+export type BricklinkIdSource = "studioMetadata" | "fileName";
+
 export interface StudioPart {
   readonly studio: string;
   readonly bricklinkId: string;
+  readonly bricklinkIdSource: BricklinkIdSource;
   readonly instances: number;
   readonly outcome: StudioPartOutcome;
 }
@@ -81,13 +84,20 @@ function withExtension(id: string): string {
   return id.endsWith(PART_EXTENSION) ? id : `${id}${PART_EXTENSION}`;
 }
 
-function bricklinkIdOf(reference: string, archive: StudioArchive): string {
-  const recorded = archive.bricklinkIds[reference];
-  if (recorded !== undefined) return recorded;
-  const name = stem(reference);
-  return name.startsWith(STUDIO_BRICKLINK_PREFIX)
-    ? name.slice(STUDIO_BRICKLINK_PREFIX.length)
-    : name;
+function withoutStudioPrefix(reference: string): string {
+  return reference.startsWith(STUDIO_BRICKLINK_PREFIX)
+    ? reference.slice(STUDIO_BRICKLINK_PREFIX.length)
+    : reference;
+}
+
+function bricklinkIdOf(
+  reference: string,
+  archive: StudioArchive,
+): { readonly id: string; readonly source: BricklinkIdSource } {
+  const recorded =
+    archive.bricklinkIds[reference] ?? archive.bricklinkIds[withoutStudioPrefix(reference)];
+  if (recorded !== undefined) return { id: recorded, source: "studioMetadata" };
+  return { id: withoutStudioPrefix(stem(reference)), source: "fileName" };
 }
 
 interface SubfileLine {
@@ -165,10 +175,11 @@ export async function mapStudioParts(
   }
   const parts = await Promise.all(
     [...instances].map(async ([reference, count]): Promise<StudioPart> => {
-      const bricklinkId = bricklinkIdOf(reference, archive);
+      const { id: bricklinkId, source } = bricklinkIdOf(reference, archive);
       return {
         studio: reference,
         bricklinkId,
+        bricklinkIdSource: source,
         instances: count,
         outcome: await decide(reference, bricklinkId, archive, crosswalk, exists),
       };

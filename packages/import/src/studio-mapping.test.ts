@@ -9,9 +9,10 @@ const crosswalk = new BricklinkPartsCrosswalk({
   "3001": ["ldraw:3556", "ldraw:72841"],
   "60219": ["ldraw:60219b"],
   "7302": ["ldraw:7302a"],
+  "7674": ["ldraw:7674"],
 });
 
-const officialParts = new Set(["3001.dat", "60219.dat", "4162d02.dat", "4070d01.dat"]);
+const officialParts = new Set(["3001.dat", "60219.dat", "4162d02.dat", "4070d01.dat", "7674.dat"]);
 const exists: LdrawPartExists = { isLdrawPart: async (reference) => officialParts.has(reference) };
 
 const MATRIX = "0 0 0 1 0 0 0 1 0 0 0 1";
@@ -24,7 +25,7 @@ function archive(lines: ReadonlyArray<string>): StudioArchive {
     studioVersion: "2.24.4_4",
     convertedLines: lines.length,
     unconvertedLines: [],
-    bricklinkIds: { "92338c01.dat": "92338" },
+    bricklinkIds: { "92338c01.dat": "92338", "7674.dat": "7674" },
     customParts: ["legleftredbrown.dat"],
   };
 }
@@ -39,6 +40,7 @@ describe("mapStudioParts", () => {
         `1 15 ${MATRIX} 4162pb028a.dat`,
         `1 14 ${MATRIX} 4070pb04l.dat`,
         `1 4 ${MATRIX} 7302.dat`,
+        `1 4 ${MATRIX} bl_7674.dat`,
         `1 4 ${MATRIX} 92338c01.dat`,
         `1 4 ${MATRIX} 3001.dat`,
         `1 4 ${MATRIX} 60219.dat`,
@@ -50,12 +52,13 @@ describe("mapStudioParts", () => {
       exists,
       new Set([4, 14, 15, 16]),
     );
-    expect(mapping.ldraw.split("\n").slice(3, 6)).toEqual([
+    expect(mapping.ldraw.split("\n").slice(3, 7)).toEqual([
       `1 15 ${MATRIX} 4162d02.dat`,
       `1 14 ${MATRIX} 4070d01.dat`,
       `1 4 ${MATRIX} 7302.dat`,
+      `1 4 ${MATRIX} 7674.dat`,
     ]);
-    expect(mapping.ldraw.split("\n").slice(6)).toEqual([
+    expect(mapping.ldraw.split("\n").slice(7)).toEqual([
       `1 4 ${MATRIX} 92338c01.dat`,
       `1 4 ${MATRIX} 3001.dat`,
       `1 4 ${MATRIX} 60219.dat`,
@@ -71,7 +74,17 @@ describe("mapStudioParts", () => {
       "7302.dat": { kind: "crosswalkTargetMissing", ldraw: "7302a" },
       "60219.dat": { kind: "kept" },
       "92338c01.dat": { kind: "ambiguous", candidates: ["92338-f1", "92338-f2"] },
+      "bl_7674.dat": { kind: "bricklinkCrosswalk", ldraw: "7674" },
       "legleftredbrown.dat": { kind: "custom" },
+    });
+    expect(
+      Object.fromEntries(
+        mapping.parts.map((p) => [p.studio, `${p.bricklinkId} ${p.bricklinkIdSource}`]),
+      ),
+    ).toMatchObject({
+      "bl_7674.dat": "7674 studioMetadata",
+      "92338c01.dat": "92338 studioMetadata",
+      "4079b.dat": "4079b fileName",
     });
     expect(mapping.unknownColors).toEqual([{ code: 100241, instances: 1 }]);
     expect(mapping.flexibleSections).toEqual([

@@ -51,7 +51,10 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
 }
 
 function studioReason(part: StudioPart): string {
-  const id = `Studio's BrickLink id ${part.bricklinkId}`;
+  const id =
+    part.bricklinkIdSource === "studioMetadata"
+      ? `Studio's BrickLink id ${part.bricklinkId}`
+      : `BrickLink id ${part.bricklinkId}, read from Studio's file name`;
   switch (part.outcome.kind) {
     case "kept":
       return `${id} has no LDraw part in the crosswalk.`;
