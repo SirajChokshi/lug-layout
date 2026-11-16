@@ -7,6 +7,7 @@ import {
   Inspector,
   PlacementToolbar,
 } from "./editor-panels.tsx";
+import { TrackPanel } from "./track-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 
 interface EditorAppProps {
@@ -44,6 +45,7 @@ export function EditorApp({ editor, options, disclaimer, showState }: EditorAppP
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} />
         <CatalogList editor={editor} snapshot={snapshot} />
+        <TrackPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
       </div>
       {showState && <EditorState editor={editor} />}

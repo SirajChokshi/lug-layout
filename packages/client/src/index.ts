@@ -47,6 +47,10 @@ export type {
   IEditor,
   LatencySample,
   SelectionView,
+  TrackBomLine,
+  TrackCommitResult,
+  TrackSolveStats,
+  TrackView,
 } from "./edit/editor.ts";
 export {
   CITY_SCENE,
@@ -56,3 +60,5 @@ export {
   PART_DISPLAY_SCENE,
   TRACK_SCENE,
 } from "./tokens.ts";
+export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
