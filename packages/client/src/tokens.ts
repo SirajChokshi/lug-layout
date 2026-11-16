@@ -1,10 +1,13 @@
+import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { ICityScene } from "./scene/city-scene.ts";
 import type { IModelScene } from "./scene/model-scene.ts";
+import type { IRunScene } from "./scene/run-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
 import type { IViewerScene } from "./scene/viewer-scene.ts";
+import type { ISimClient } from "./sim/sim-client.ts";
 
 export const PART_DISPLAY_SCENE: ServiceIdentifier<IViewerScene> = Symbol.for(
   "brr.client.PartDisplayScene",
@@ -14,3 +17,6 @@ export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.clien
 export const CITY_SCENE: ServiceIdentifier<ICityScene> = Symbol.for("brr.client.CityScene");
 export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
+export const RUN_SCENE: ServiceIdentifier<IRunScene> = Symbol.for("brr.client.RunScene");
+export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
+export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");

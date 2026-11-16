@@ -89,6 +89,8 @@ export interface ISceneBackend {
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
   setSelectionBox(box: WorldBox | null): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
+  setVehicle(vehicle: number, model: ChunkInstances): void;
+  setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void;
   setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void;
   resize(width: number, height: number): void;
   renderFrame(out: FrameStats): void;

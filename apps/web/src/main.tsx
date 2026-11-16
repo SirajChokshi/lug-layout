@@ -5,7 +5,9 @@ import {
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
+  RUN_SCENE,
   TRACK_SCENE,
+  type IRunScene,
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
@@ -24,13 +26,18 @@ if (!rootElement) throw new Error("Missing #root element");
 const container = new Container();
 const bundleBaseUrl = new URL(import.meta.env.VITE_BUNDLE_BASE_URL ?? "bundle/", document.baseURI)
   .href;
-container.load(...mainThreadModules({ bundleBaseUrl }));
+const startSimWorker = (): Worker =>
+  new Worker(new URL("@brr/sim-worker/entry", import.meta.url), { type: "module" });
+container.load(...mainThreadModules({ bundleBaseUrl, startSimWorker }));
 const params = readViewerParams(location.search);
 
-function viewerScene(viewer: ViewerParams): {
+interface ViewerChoice {
   readonly scene: IViewerScene;
   readonly placements: (() => PlacementDump) | null;
-} {
+  readonly run: IRunScene | null;
+}
+
+function viewerScene(viewer: ViewerParams): ViewerChoice {
   switch (viewer.mode) {
     case "city": {
       const city = container.get(CITY_SCENE);
@@ -41,20 +48,36 @@ function viewerScene(viewer: ViewerParams): {
         originChunkX: viewer.originChunkX,
         originChunkZ: viewer.originChunkZ,
       });
-      return { scene: city, placements: viewer.dumpWorld ? () => city.placementDump() : null };
+      return {
+        scene: city,
+        placements: viewer.dumpWorld ? () => city.placementDump() : null,
+        run: null,
+      };
     }
     case "model": {
       const modelScene = container.get(MODEL_SCENE);
       modelScene.selectModel(viewer.model ?? "");
-      return { scene: modelScene, placements: null };
+      return { scene: modelScene, placements: null, run: null };
     }
     case "track": {
       const trackScene = container.get(TRACK_SCENE);
       trackScene.selectPlan(viewer.track ?? "");
-      return { scene: trackScene, placements: null };
+      return { scene: trackScene, placements: null, run: null };
+    }
+    case "run": {
+      const runScene = container.get(RUN_SCENE);
+      runScene.configure({
+        plan: viewer.track ?? "",
+        model: viewer.trainModel,
+        trains: viewer.trains,
+        speedLduPerS: viewer.speedLduPerS,
+        accelerationLduPerS2: viewer.accelerationLduPerS2,
+        brakingLduPerS2: viewer.brakingLduPerS2,
+      });
+      return { scene: runScene, placements: null, run: runScene };
     }
     case "parts":
-      return { scene: container.get(PART_DISPLAY_SCENE), placements: null };
+      return { scene: container.get(PART_DISPLAY_SCENE), placements: null, run: null };
     case "edit":
       throw new Error("the editor is not a viewer scene");
     default: {
@@ -88,8 +111,8 @@ function root(): ReactNode {
       />
     );
   }
-  const { scene, placements } = viewerScene(params);
-  return <App scene={scene} params={params} placements={placements} />;
+  const { scene, placements, run } = viewerScene(params);
+  return <App scene={scene} params={params} placements={placements} run={run} />;
 }
 
 createRoot(rootElement).render(<StrictMode>{root()}</StrictMode>);

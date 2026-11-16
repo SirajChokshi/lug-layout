@@ -194,6 +194,18 @@ class ChunkRecord {
   }
 }
 
+class VehicleRecord {
+  x = 0;
+  y = 0;
+  z = 0;
+  yaw = 0;
+
+  constructor(
+    readonly group: Group,
+    readonly body: ChunkRecord,
+  ) {}
+}
+
 @injectable()
 export class ThreeSceneBackend implements ISceneBackend {
   private renderer: WebGPURenderer | undefined;
@@ -220,6 +232,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   private farLevel: LevelGeometries = EMPTY_LEVEL;
   private linearColors = new Float32Array(0);
   private readonly chunks = new Map<number, ChunkRecord>();
+  private readonly vehicles = new Map<number, VehicleRecord>();
   private chunkList: ChunkRecord[] = [];
   private tiered = false;
   private readonly bufferTally = new GpuBufferTally();
@@ -371,6 +384,50 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.scene.add(record.group);
   }
 
+  setVehicle(vehicle: number, model: ChunkInstances): void {
+    this.removeVehicle(vehicle);
+    const body = this.buildChunk({
+      ...model,
+      originX: this.renderOriginX,
+      originZ: this.renderOriginZ,
+    });
+    const group = new Group();
+    group.add(body.group);
+    const record = new VehicleRecord(group, body);
+    this.vehicles.set(vehicle, record);
+    this.scene.add(group);
+    this.placeVehicle(record);
+  }
+
+  setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void {
+    const record = this.vehicles.get(vehicle);
+    if (!record) throw new Error(`vehicle ${vehicle} has no model`);
+    record.x = x;
+    record.y = y;
+    record.z = z;
+    record.yaw = yaw;
+    this.placeVehicle(record);
+  }
+
+  private placeVehicle(record: VehicleRecord): void {
+    record.group.position.set(
+      record.x - this.renderOriginX,
+      record.y,
+      record.z - this.renderOriginZ,
+    );
+    record.group.rotation.y = -record.yaw;
+  }
+
+  private removeVehicle(vehicle: number): void {
+    const existing = this.vehicles.get(vehicle);
+    if (!existing) return;
+    this.scene.remove(existing.group);
+    disposeInstancedChildren(existing.body.detailed);
+    disposeInstancedChildren(existing.body.shellBodies);
+    disposeInstancedChildren(existing.body.coarseStuds);
+    this.vehicles.delete(vehicle);
+  }
+
   deleteChunk(key: number): void {
     this.removeChunk(key);
   }
@@ -444,6 +501,7 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   private clearChunks(): void {
     for (const key of this.chunks.keys()) this.removeChunk(key);
+    for (const vehicle of this.vehicles.keys()) this.removeVehicle(vehicle);
   }
 
   private buildChunk(chunk: ChunkInstances): ChunkRecord {
@@ -679,6 +737,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     );
     this.selection.updateMatrix();
     this.selection.updateMatrixWorld(true);
+    for (const record of this.vehicles.values()) this.placeVehicle(record);
     this.rebases.push({
       frame: this.frame,
       chunkX,

@@ -48,11 +48,17 @@ export type {
   LatencySample,
   SelectionView,
 } from "./edit/editor.ts";
+export type { IRunScene, RunRequest, RunStatus, TrainRequest } from "./scene/run-scene.ts";
+export type { ISimClient, SimLogSnapshot, SimTickCost } from "./sim/sim-client.ts";
+export type { RpcPort } from "@brr/rpc";
+export type { SimBenchResult } from "@brr/sim";
 export {
   CITY_SCENE,
   CREDITS,
   EDITOR,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
+  RUN_SCENE,
+  SIM_CLIENT,
   TRACK_SCENE,
 } from "./tokens.ts";

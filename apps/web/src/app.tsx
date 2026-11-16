@@ -1,4 +1,4 @@
-import type { IViewerScene, PlacementDump, TrackSummary } from "@brr/client";
+import type { IRunScene, IViewerScene, PlacementDump, RunStatus, TrackSummary } from "@brr/client";
 import { CreditLinks, partsCreditText } from "@brr/ui";
 import { useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
@@ -15,6 +15,69 @@ interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
   readonly placements: (() => PlacementDump) | null;
+  readonly run: IRunScene | null;
+}
+
+const MICROSECONDS_PER_MS = 1000;
+const THROTTLE_STEP_LDU_PER_S = 50;
+
+function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, string]> {
+  if (!status) return [];
+  const { tickCost } = status;
+  const perTick = tickCost.ticks > 0 ? (tickCost.stepMs / tickCost.ticks) * MICROSECONDS_PER_MS : 0;
+  const speeds = status.trainSpeedLduPerS.map((speed) => speed.toFixed(0)).join(", ");
+  const rows: Array<readonly [string, string]> = [
+    ["Sim tick (60 Hz, worker)", integer.format(status.tick)],
+    ["Sim state hash", status.stateHash.toString(16).padStart(8, "0")],
+    [
+      "Sim step cost (live, worker clock)",
+      `${perTick.toFixed(2)} µs/tick over ${integer.format(tickCost.ticks)} ticks`,
+    ],
+    ["Trains (speed LDU/s)", `${status.trains} (${speeds})`],
+    ["Train edges", status.trainEdge.join(", ")],
+  ];
+  if (status.vehicle) {
+    const { lengthLdu, frontBogieLdu, rearBogieLdu } = status.vehicle;
+    rows.push([
+      "Vehicle (LDU)",
+      `length ${lengthLdu.toFixed(1)}, bogies at ${frontBogieLdu.toFixed(1)} and ${rearBogieLdu.toFixed(1)} from ${status.wheelsets} wheelsets`,
+    ]);
+  }
+  rows.push([
+    "Route path end vs exact end",
+    `${status.maxEndResidualLdu.toExponential(1)} LDU, ${status.maxEndHeadingResidualRadians.toExponential(1)} rad`,
+  ]);
+  return rows;
+}
+
+function useTrainKeys(run: IRunScene | null, startSpeed: number): void {
+  useEffect(() => {
+    if (!run) return;
+    let speed = startSpeed;
+    const switchStates = new Map<number, number>();
+    const onKey = (event: KeyboardEvent): void => {
+      const send = (command: Parameters<IRunScene["sim"]["command"]>[0]): void => {
+        void run.sim.command(command);
+      };
+      const trains = run.status()?.trains ?? 0;
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        const step = event.key === "ArrowUp" ? THROTTLE_STEP_LDU_PER_S : -THROTTLE_STEP_LDU_PER_S;
+        speed = Math.max(0, speed + step);
+        for (let train = 0; train < trains; train++) {
+          send({ kind: "throttle", train, speedLduPerS: speed });
+        }
+      } else if (event.key === "r") {
+        for (let train = 0; train < trains; train++) send({ kind: "reverse", train });
+      } else if (/^[1-9]$/u.test(event.key)) {
+        const switchIndex = Number(event.key) - 1;
+        const state = switchStates.get(switchIndex) === 1 ? 0 : 1;
+        switchStates.set(switchIndex, state);
+        send({ kind: "switch", switchIndex, state });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [run, startSpeed]);
 }
 
 function mebibytes(bytes: number): string {
@@ -130,12 +193,14 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params, placements }: AppProps) {
+export function App({ scene, params, placements, run }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const [report, setReport] = useState<ViewerReport | null>(null);
   const [result, setResult] = useState<ViewerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useTrainKeys(run, params.speedLduPerS);
+  const runStatus = run?.status() ?? null;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -153,7 +218,7 @@ export function App({ scene, params, placements }: AppProps) {
         {error && <p className="error">{error}</p>}
         {report && !error && (
           <dl>
-            {hudRows(report).map(([label, value]) => (
+            {[...hudRows(report), ...runRows(runStatus)].map(([label, value]) => (
               <div key={label}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>
@@ -161,6 +226,7 @@ export function App({ scene, params, placements }: AppProps) {
             ))}
           </dl>
         )}
+        {runStatus && !error && <pre id="sim">{JSON.stringify(runStatus)}</pre>}
         {result && !error && (
           <pre id="result" data-done="1">
             {JSON.stringify(result)}
