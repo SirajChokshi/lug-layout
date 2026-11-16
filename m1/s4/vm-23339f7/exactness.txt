@@ -1,0 +1,2 @@
+{"run": "dump-far", "placements": 20090, "offsetLdu": [25000320, 25000320], "mismatches": 0, "allIntegers": true, "xRange": [24999360, 25002190], "zRange": [24999090, 25002190], "originXRange": [-960, 1870]}
+{"run": "dump-farneg", "placements": 20090, "offsetLdu": [-25000320, 25000320], "mismatches": 0, "allIntegers": true, "xRange": [-25001280, -24998450], "zRange": [24999090, 25002190], "originXRange": [-960, 1870]}
