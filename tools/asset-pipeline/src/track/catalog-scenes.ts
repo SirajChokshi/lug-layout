@@ -40,6 +40,8 @@ interface Placed {
 
 export interface LayoutCheck {
   readonly name: string;
+  readonly status: CatalogPiece["status"];
+  readonly unverifiedPieces: ReadonlyArray<string>;
   readonly pieces: number;
   readonly connectors: number;
   readonly exactJoins: number;
@@ -202,10 +204,17 @@ export function catalogScene(
     (item) => [ldrawPartOf(item.piece.part), roundedAffine(ldrawPlacement(item))] as const,
   );
   const { gaps, headingErrors } = measuredGaps(library, markers, placements);
+  const unverifiedPieces = [
+    ...new Set(
+      placed.filter((item) => item.piece.status !== "certified").map((item) => item.piece.id),
+    ),
+  ];
   return {
     ldraw: toLdraw(spec, placements),
     check: {
       name: spec.name,
+      status: unverifiedPieces.length === 0 ? "certified" : "unverified",
+      unverifiedPieces,
       pieces: placed.length,
       connectors: total,
       exactJoins: joins,

@@ -1134,6 +1134,8 @@
   "layouts": [
     {
       "name": "passing-loop",
+      "status": "certified",
+      "unverifiedPieces": [],
       "pieces": 34,
       "connectors": 70,
       "exactJoins": 35,
@@ -1146,6 +1148,8 @@
     },
     {
       "name": "figure-eight",
+      "status": "certified",
+      "unverifiedPieces": [],
       "pieces": 33,
       "connectors": 68,
       "exactJoins": 34,
@@ -1158,6 +1162,10 @@
     },
     {
       "name": "plastic-oval",
+      "status": "unverified",
+      "unverifiedPieces": [
+        "ldraw:53400"
+      ],
       "pieces": 24,
       "connectors": 48,
       "exactJoins": 24,
