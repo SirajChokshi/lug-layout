@@ -1,0 +1,103 @@
+Archive:  Plan-1.brrplan.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+     2717  1980-01-01 00:00   manifest.json
+    79011  1980-01-01 00:00   plan.svg
+    26768  1980-01-01 00:00   parts.csv
+    80389  1980-01-01 00:00   bricklink.xml
+     7956  1980-01-01 00:00   rebrickable.csv
+      943  1980-01-01 00:00   CREDITS.txt
+---------                     -------
+   197784                     6 files
+No errors detected in compressed data of Plan-1.brrplan.zip.
+{
+  "format": "brrplan",
+  "version": 1,
+  "bundleVersion": "4434fd607a7302ee",
+  "plan": {
+    "name": "Plan 1",
+    "originChunkX": 0,
+    "originChunkZ": 0,
+    "maxOverhangMm": 0,
+    "footprint": {
+      "roomWidthMm": 5600,
+      "roomDepthMm": 3000,
+      "tables": [
+        {
+          "id": "table-2",
+          "name": "Table 1",
+          "rect": {
+            "x": 1536,
+            "z": 256,
+            "width": 2400,
+            "depth": 1200
+          },
+          "heightMm": 750
+        }
+      ],
+      "obstacles": []
+    }
+  },
+  "settings": {
+    "profile": "lego-modular",
+    "maxReachMm": 700
+  },
+  "placements": [
+    {
+      "ref": "ldraw:3811",
+      "x": 4160,
+      "z": 960,
+      "rot": 0
+    },
+    {
+      "ref": "ldraw:3811",
+      "x": 4800,
+      "z": 960,
+      "rot": 0
+    },
+    {
+      "ref": "ldraw:44336p04",
+      "x": 5440,
+      "z": 960,
+      "rot": 0
+    },
+    {
+      "ref": "ldraw:44336p04",
+      "x": 5440,
+      "z": 1600,
+      "rot": 0
+    },
+    {
+      "ref": "omr:10185-1",
+      "x": 6720,
+      "z": 1600,
+      "rot": 0
+    },
+    {
+      "ref": "omr:10218-1",
+      "x": 6720,
+      "z": 2240,
+      "rot": 0
+    },
+    {
+      "ref": "omr:10133-1",
+      "x": 4800,
+      "z": 2860,
+      "rot": 0
+    }
+  ],
+  "models": [
+    {
+      "ref": "omr:10185-1",
+      "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10185-1.mpd",
+      "authors": [
+        "Max Martin Richt
+placements 7 models ['omr:10185-1', 'omr:10218-1', 'omr:10133-1'] files ['plan.svg', 'parts.csv', 'bricklink.xml', 'rebrickable.csv', 'CREDITS.txt'] {'verdict': 'draft', 'errors': 2, 'warnings': 0, 'totalParts': 4912}
+Plan 1: a Brick Railroad plan
+
+omr:10185-1: Max Martin Richter [MMR1988] (Redistributable under CCAL version 2.0 : see CAreadme.txt); https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10185-1.mpd
+omr:10218-1: Stefan Frenz (smf), Stefan Frenz (smf) with LDCad, Stefan Frenz, Stefan Frenz [smf] (Redistributable under CCAL version 2.0 : see CAreadme.txt); https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10218-1.mpd
+omr:10133-1: TotalyWicked [TotalyWicked] (Redistributable under CCAL version 2.0 : see CAreadme.txt); https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10133-1.mpd
+
+Parts: LDraw parts library (CC BY 4.0 / CC BY 2.0 and CC BY 4.0), modified from LDraw: flattened, studs extracted.
+LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.
