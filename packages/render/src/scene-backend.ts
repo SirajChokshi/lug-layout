@@ -51,6 +51,15 @@ export interface FrameStats {
   nearChunks: number;
   midChunks: number;
   farChunks: number;
+  renderOriginChunkX: number;
+  renderOriginChunkZ: number;
+  rebaseCount: number;
+}
+
+export interface RebaseEvent {
+  readonly frame: number;
+  readonly chunkX: number;
+  readonly chunkZ: number;
 }
 
 export interface BufferMemory {
@@ -67,6 +76,7 @@ export interface ISceneBackend {
   renderFrame(out: FrameStats): void;
   waitForGpu(): Promise<void>;
   bufferMemory(): BufferMemory;
+  rebaseLog(): ReadonlyArray<RebaseEvent>;
 }
 
 export const INSTANCE_MATRIX_FLOATS = 12;

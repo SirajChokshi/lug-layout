@@ -23,9 +23,11 @@ import {
   type FrameStats,
   type ISceneBackend,
   type PartPalette,
+  type RebaseEvent,
   type SceneBackendConfig,
   type StudInstances,
 } from "../scene-backend.ts";
+import { CHUNK_LDU, chunkOf } from "@brr/math";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { fixedColorGeometry, inheritBodyGeometry, primitiveGeometry } from "./part-geometry.ts";
 
@@ -45,6 +47,7 @@ const TIER_NEAR = 0;
 const TIER_MID = 1;
 const TIER_FAR = 2;
 const TIER_UNSET = 255;
+const REBASE_DISTANCE_CHUNKS = 8;
 
 function writeMatrix4(
   source: Float32Array,
@@ -137,6 +140,8 @@ class ChunkRecord {
     readonly detailed: Group,
     readonly shellBodies: Group,
     readonly coarseStuds: Group,
+    readonly originX: number,
+    readonly originZ: number,
     readonly minX: number,
     readonly maxX: number,
     readonly minZ: number,
@@ -179,6 +184,13 @@ export class ThreeSceneBackend implements ISceneBackend {
   private tiered = false;
   private readonly bufferTally = new GpuBufferTally();
   private focalLengthPx = 1;
+  private renderOriginX = 0;
+  private renderOriginZ = 0;
+  private eyeX = 0;
+  private eyeY = 0;
+  private eyeZ = 0;
+  private frame = 0;
+  private readonly rebases: RebaseEvent[] = [];
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
   private failure: string | undefined;
@@ -333,7 +345,7 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   private buildChunk(chunk: ChunkInstances): ChunkRecord {
     const group = new Group();
-    group.position.set(chunk.originX, 0, chunk.originZ);
+    group.position.set(chunk.originX - this.renderOriginX, 0, chunk.originZ - this.renderOriginZ);
     group.matrixAutoUpdate = false;
     group.updateMatrix();
     const detailed = new Group();
@@ -375,6 +387,8 @@ export class ThreeSceneBackend implements ISceneBackend {
       detailed,
       shellBodies,
       coarseStuds,
+      chunk.originX,
+      chunk.originZ,
       minX,
       maxX,
       minZ,
@@ -495,9 +509,42 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void {
-    this.camera.position.set(eyeX, eyeY, eyeZ);
-    this.camera.lookAt(atX, atY, atZ);
+    this.eyeX = eyeX;
+    this.eyeY = eyeY;
+    this.eyeZ = eyeZ;
+    this.rebaseIfFar();
+    this.camera.position.set(eyeX - this.renderOriginX, eyeY, eyeZ - this.renderOriginZ);
+    this.camera.lookAt(atX - this.renderOriginX, atY, atZ - this.renderOriginZ);
     this.camera.updateMatrixWorld();
+  }
+
+  private rebaseIfFar(): void {
+    const chunkX = chunkOf(this.eyeX);
+    const chunkZ = chunkOf(this.eyeZ);
+    const originChunkX = this.renderOriginX / CHUNK_LDU;
+    const originChunkZ = this.renderOriginZ / CHUNK_LDU;
+    const nearOrigin =
+      Math.abs(chunkX - originChunkX) <= REBASE_DISTANCE_CHUNKS &&
+      Math.abs(chunkZ - originChunkZ) <= REBASE_DISTANCE_CHUNKS;
+    if (this.rebases.length > 0 && nearOrigin) return;
+    this.renderOriginX = chunkX * CHUNK_LDU;
+    this.renderOriginZ = chunkZ * CHUNK_LDU;
+    for (let i = 0; i < this.chunkList.length; i++) {
+      const record = this.chunkList[i];
+      if (!record) continue;
+      record.group.position.set(
+        record.originX - this.renderOriginX,
+        0,
+        record.originZ - this.renderOriginZ,
+      );
+      record.group.updateMatrix();
+      record.group.updateMatrixWorld(true);
+    }
+    this.rebases.push({ frame: this.frame, chunkX, chunkZ });
+  }
+
+  rebaseLog(): ReadonlyArray<RebaseEvent> {
+    return this.rebases;
   }
 
   resize(width: number, height: number): void {
@@ -515,16 +562,15 @@ export class ThreeSceneBackend implements ISceneBackend {
       out.farChunks = 0;
       return;
     }
-    const eye = this.camera.position;
     let near = 0;
     let mid = 0;
     let far = 0;
     for (let i = 0; i < this.chunkList.length; i++) {
       const record = this.chunkList[i];
       if (!record) continue;
-      const dx = Math.max(record.minX - eye.x, 0, eye.x - record.maxX);
-      const dz = Math.max(record.minZ - eye.z, 0, eye.z - record.maxZ);
-      const distance = Math.max(Math.hypot(dx, eye.y, dz), CAMERA_NEAR_LDU);
+      const dx = Math.max(record.minX - this.eyeX, 0, this.eyeX - record.maxX);
+      const dz = Math.max(record.minZ - this.eyeZ, 0, this.eyeZ - record.maxZ);
+      const distance = Math.max(Math.hypot(dx, this.eyeY, dz), CAMERA_NEAR_LDU);
       const studPitchPx = (STUD_PITCH_LDU * this.focalLengthPx) / distance;
       if (studPitchPx >= NEAR_MIN_STUD_PITCH_PX) {
         record.applyTier(TIER_NEAR);
@@ -555,6 +601,10 @@ export class ThreeSceneBackend implements ISceneBackend {
     renderer.render(this.scene, this.camera);
     out.drawCalls = renderer.info.render.drawCalls;
     out.triangles = renderer.info.render.triangles;
+    out.renderOriginChunkX = this.renderOriginX / CHUNK_LDU;
+    out.renderOriginChunkZ = this.renderOriginZ / CHUNK_LDU;
+    out.rebaseCount = this.rebases.length;
+    this.frame++;
   }
 
   async waitForGpu(): Promise<void> {

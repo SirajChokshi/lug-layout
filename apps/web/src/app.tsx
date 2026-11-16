@@ -30,6 +30,13 @@ function memoryText(memory: MemoryReport): string {
   return `vertex+index ${mebibytes(memory.vertexIndexBytes)}, other ${mebibytes(memory.otherBytes)}, JS heap ${heap}`;
 }
 
+function renderOriginText(report: ViewerReport): string {
+  const { frame, rebases } = report;
+  const last = rebases.at(-1);
+  const lastText = last ? `, last at frame ${last.frame}` : "";
+  return `(${frame.renderOriginChunkX}, ${frame.renderOriginChunkZ}); ${frame.rebaseCount} rebases${lastText}`;
+}
+
 function percent(fraction: number): string {
   return `${(fraction * 100).toFixed(0)}%`;
 }
@@ -56,6 +63,7 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ["Scene triangles", integer.format(summary.bodyTriangles + summary.studTriangles)],
     ["Load", `${integer.format(report.loadMs)} ms`],
     ["GPU buffers allocated so far, JS heap", memoryText(report.memory)],
+    ["Render origin (chunks), rebases", renderOriginText(report)],
   ];
   if (timings) {
     rows.push(

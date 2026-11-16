@@ -4,6 +4,7 @@ import {
   type BufferMemory,
   type ChunkInstances,
   type ISceneBackend,
+  type RebaseEvent,
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -37,6 +38,9 @@ class RecordingBackend implements ISceneBackend {
   resize(): void {}
   renderFrame(): void {}
   async waitForGpu(): Promise<void> {}
+  rebaseLog(): ReadonlyArray<RebaseEvent> {
+    return [];
+  }
   bufferMemory(): BufferMemory {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }

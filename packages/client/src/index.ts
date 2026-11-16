@@ -4,6 +4,7 @@ export type {
   BufferMemory,
   FrameStats,
   GraphicsApi,
+  RebaseEvent,
   SceneBackendConfig,
 } from "@brr/render";
 export { mainThreadModules, type MainThreadConfig } from "./client.module.ts";
