@@ -35,8 +35,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -60,8 +59,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -108,8 +106,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -133,8 +130,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0.0008645520407216006,
             "bound": 16,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 3.5937
+            "solutionsAtBound": 1
           },
           "fieldCertified": false,
           "coefficients": null
@@ -185,8 +181,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -210,8 +205,7 @@
           "fieldSearch": {
             "bestResidualLdu": 7.837739514543061e-14,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -258,8 +252,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -283,8 +276,7 @@
           "fieldSearch": {
             "bestResidualLdu": 7.741948029150472e-7,
             "bound": 64,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.2146689
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -344,8 +336,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -369,8 +360,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 8,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0004913
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -394,8 +384,7 @@
           "fieldSearch": {
             "bestResidualLdu": 8.921174634225937e-7,
             "bound": 64,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.2146689
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -449,8 +438,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -474,8 +462,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 8,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0004913
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -499,8 +486,7 @@
           "fieldSearch": {
             "bestResidualLdu": 8.921173213213257e-7,
             "bound": 64,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.2146689
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -561,8 +547,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -586,8 +571,7 @@
           "fieldSearch": {
             "bestResidualLdu": 1.7763568394002505e-14,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -611,8 +595,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -636,8 +619,7 @@
           "fieldSearch": {
             "bestResidualLdu": 0,
             "bound": 4,
-            "solutionsAtBound": 1,
-            "expectedChanceHitsPerAxis": 0.0000729
+            "solutionsAtBound": 1
           },
           "fieldCertified": true,
           "coefficients": [
@@ -687,8 +669,8 @@
       ],
       "exactDerivation": "75541-f1 diverging + ζ^15 · mirror(74747 exit), both certified",
       "measuredXStuds": 48.00000008256953,
-      "measuredZStuds": -16.000000007100425,
-      "measuredResidualToExactLdu": 0.0000016574852045663477
+      "measuredZStuds": -16.00000000710044,
+      "measuredResidualToExactLdu": 0.0000016574852289172643
     },
     {
       "via": [
@@ -763,6 +745,14 @@
       "bodyBottomY": 4,
       "thicknessLdu": 4,
       "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
       "widthLdu": 640,
       "depthLdu": 640
     },
@@ -772,6 +762,14 @@
       "bodyBottomY": 4,
       "thicknessLdu": 4,
       "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -160,
+        "to": 160
+      },
       "widthLdu": 640,
       "depthLdu": 320
     },
@@ -781,6 +779,14 @@
       "bodyBottomY": 4,
       "thicknessLdu": 4,
       "studTopY": -4,
+      "xExtent": {
+        "from": -160,
+        "to": 160
+      },
+      "zExtent": {
+        "from": -160,
+        "to": 160
+      },
       "widthLdu": 320,
       "depthLdu": 320
     },
@@ -790,6 +796,14 @@
       "bodyBottomY": 4,
       "thicknessLdu": 4,
       "studTopY": -4,
+      "xExtent": {
+        "from": -480,
+        "to": 480
+      },
+      "zExtent": {
+        "from": -480,
+        "to": 480
+      },
       "widthLdu": 960,
       "depthLdu": 960
     },
@@ -799,6 +813,14 @@
       "bodyBottomY": 4,
       "thicknessLdu": 4,
       "studTopY": -4,
+      "xExtent": {
+        "from": -500,
+        "to": 500
+      },
+      "zExtent": {
+        "from": -500,
+        "to": 500
+      },
       "widthLdu": 1000,
       "depthLdu": 1000
     },
@@ -808,6 +830,48 @@
       "bodyBottomY": 4,
       "thicknessLdu": 4,
       "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    },
+    {
+      "part": "2358",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    },
+    {
+      "part": "610",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
       "widthLdu": 640,
       "depthLdu": 640
     },
@@ -817,6 +881,31 @@
       "bodyBottomY": 4,
       "thicknessLdu": 4,
       "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    },
+    {
+      "part": "30225b",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
       "widthLdu": 640,
       "depthLdu": 640
     }
@@ -1234,19 +1323,40 @@
   "roadMarkings": [
     {
       "part": "44336p01",
-      "fullLengthBandsByColor": [
+      "markingBandsByColor": [
+        {
+          "color": 7,
+          "acrossBands": [
+            {
+              "from": -192,
+              "to": -157
+            },
+            {
+              "from": 157,
+              "to": 192
+            }
+          ],
+          "alongExtent": {
+            "from": -270,
+            "to": 270
+          }
+        },
         {
           "color": 8,
-          "bands": [
+          "acrossBands": [
             {
               "from": -198,
               "to": 198
             }
-          ]
+          ],
+          "alongExtent": {
+            "from": -320,
+            "to": 320
+          }
         },
         {
           "color": 14,
-          "bands": [
+          "acrossBands": [
             {
               "from": -192,
               "to": -182
@@ -1255,25 +1365,33 @@
               "from": 182,
               "to": 192
             }
-          ]
+          ],
+          "alongExtent": {
+            "from": -310,
+            "to": 310
+          }
         },
         {
           "color": 15,
-          "bands": [
+          "acrossBands": [
             {
               "from": -6,
               "to": 6
             }
-          ]
+          ],
+          "alongExtent": {
+            "from": -291,
+            "to": 291
+          }
         }
       ]
     },
     {
       "part": "44336p04",
-      "fullLengthBandsByColor": [
+      "markingBandsByColor": [
         {
           "color": 15,
-          "bands": [
+          "acrossBands": [
             {
               "from": -192,
               "to": -182
@@ -1286,7 +1404,28 @@
               "from": 182,
               "to": 192
             }
-          ]
+          ],
+          "alongExtent": {
+            "from": -310,
+            "to": 310
+          }
+        },
+        {
+          "color": 71,
+          "acrossBands": [
+            {
+              "from": -192,
+              "to": -157
+            },
+            {
+              "from": 157,
+              "to": 192
+            }
+          ],
+          "alongExtent": {
+            "from": -270,
+            "to": 270
+          }
         }
       ]
     }

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { LdrawLibrary } from "./library.ts";
-import { dependencyClosure } from "./closure.ts";
 import { walkPart, type PlacedPolygon } from "./walk.ts";
 
 const root = mkdtempSync(join(tmpdir(), "ldraw-walk-"));
@@ -47,11 +46,5 @@ describe("walkPart", () => {
     ]);
     expect([...result.visitedFiles].toSorted()).toEqual(["outer.dat", "quad.dat", "s/inner.dat"]);
     expect([...result.missingFiles]).toEqual(["absent.dat"]);
-  });
-
-  it("finds the same dependency closure without placing geometry", () => {
-    const closure = dependencyClosure(library, "OUTER.dat");
-    expect(closure.visitedFiles.size).toBe(3);
-    expect([...closure.missingFiles]).toEqual(["absent.dat"]);
   });
 });

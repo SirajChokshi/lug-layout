@@ -1,12 +1,12 @@
 export const ZETA16_ORDER = 16;
-export const ZETA16_COEFFICIENT_COUNT = ZETA16_ORDER / 2;
+const ZETA16_COEFFICIENT_COUNT = ZETA16_ORDER / 2;
 
-const STEP = (2 * Math.PI) / ZETA16_ORDER;
+export const ZETA16_STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const SEARCH_BOUNDS = [4, 8, 16, 32, 64] as const;
 
 export type Zeta16Coefficients = ReadonlyArray<bigint>;
 
-export interface PlanePoint {
+interface PlanePoint {
   readonly x: number;
   readonly y: number;
 }
@@ -16,7 +16,6 @@ export interface FieldRepresentation {
   readonly residual: number;
   readonly bound: number;
   readonly solutionsAtBound: number;
-  readonly expectedChanceHitsPerAxis: number;
 }
 
 interface AxisHit {
@@ -31,8 +30,8 @@ export function zeta16ToPlane(coefficients: Zeta16Coefficients): PlanePoint {
   let x = 0;
   let y = 0;
   coefficients.forEach((coefficient, power) => {
-    x += Number(coefficient) * Math.cos(power * STEP);
-    y += Number(coefficient) * Math.sin(power * STEP);
+    x += Number(coefficient) * Math.cos(power * ZETA16_STEP_RADIANS);
+    y += Number(coefficient) * Math.sin(power * ZETA16_STEP_RADIANS);
   });
   return { x, y };
 }
@@ -115,8 +114,16 @@ export function findZeta16Representation(
   point: PlanePoint,
   tolerance: number,
 ): FieldRepresentation | undefined {
-  const realBasis = [Math.cos(STEP), Math.cos(2 * STEP), Math.cos(3 * STEP)] as const;
-  const imaginaryBasis = [Math.sin(STEP), Math.sin(2 * STEP), Math.sin(3 * STEP)] as const;
+  const realBasis = [
+    Math.cos(ZETA16_STEP_RADIANS),
+    Math.cos(2 * ZETA16_STEP_RADIANS),
+    Math.cos(3 * ZETA16_STEP_RADIANS),
+  ] as const;
+  const imaginaryBasis = [
+    Math.sin(ZETA16_STEP_RADIANS),
+    Math.sin(2 * ZETA16_STEP_RADIANS),
+    Math.sin(3 * ZETA16_STEP_RADIANS),
+  ] as const;
   for (const bound of SEARCH_BOUNDS) {
     const realHits = axisHits(point.x, realBasis, bound, tolerance);
     const imaginaryHits = axisHits(point.y, imaginaryBasis, bound, tolerance);
@@ -135,7 +142,6 @@ export function findZeta16Representation(
       residual: Math.hypot(exact.x - point.x, exact.y - point.y),
       bound,
       solutionsAtBound: solutions.length,
-      expectedChanceHitsPerAxis: (2 * bound + 1) ** 3 * 2 * tolerance,
     };
   }
   return undefined;

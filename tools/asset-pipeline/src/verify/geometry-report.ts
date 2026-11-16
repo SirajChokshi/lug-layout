@@ -1,34 +1,38 @@
 import type { LdrawLibrary } from "../ldraw/library.ts";
+import { ZETA16_ORDER } from "../track/cyclotomic.ts";
 import { loadTrackEndMarkers, type RelativeTrackEnd } from "../track/track-ends.ts";
 import {
   composeDivergingWithCurve,
   crossCheckLdcadTrackSnaps,
   measureBaseplate,
   measureFlexBend,
-  measureFullLengthMarkings,
+  measureMarkingBands,
   measureRails,
   measureStudZones,
   reportTrackEnds,
   type TrackEndReport,
 } from "./geometry.ts";
 
-export interface GeometryLibraries {
+interface GeometryLibraries {
   readonly official: LdrawLibrary;
   readonly shadow: LdrawLibrary;
 }
 
 const OFFICIAL_TRACK = ["53401", "53400", "74746", "74747", "75541-f1", "75542-f1", "32087"];
 const LDCAD_TRACK = ["53400", "32087"];
-const ENTRY_HEADING_STEPS = 8;
+const ENTRY_HEADING_STEPS = ZETA16_ORDER / 2;
 const STRAIGHT_HEADING_STEPS = 0;
 const RAIL_SECTION_X = 20;
-const BASEPLATES = ["3811", "3857", "3867", "4186", "782", "44336", "606"];
+const BASEPLATES = ["3811", "3857", "3867", "4186", "782", "44336", "2358", "610", "606", "30225b"];
 const ROAD_STUD_ZONES = ["44336", "44341", "44342", "44343", "2358", "610", "606", "30225b"];
 const ROAD_MARKINGS = ["44336p01", "44336p04"];
 const FLEX = ["64022c01", "64022c02"];
 const FLEX_MOVING_HALF = "88493.dat";
 
-function compose(switchPart: TrackEndReport | undefined, curve: TrackEndReport | undefined) {
+function composeSwitchWithCurve(
+  switchPart: TrackEndReport | undefined,
+  curve: TrackEndReport | undefined,
+) {
   return composeDivergingWithCurve(turningEnd(switchPart), turningEnd(curve), [
     switchPart?.part ?? "",
     curve?.part ?? "",
@@ -61,8 +65,8 @@ export function buildGeometryReport(libraries: GeometryLibraries) {
       ),
     ),
     switchThenReverseCurve: [
-      compose(official.get("75541-f1"), official.get("74747")),
-      compose(official.get("75542-f1"), official.get("74747")),
+      composeSwitchWithCurve(official.get("75541-f1"), official.get("74747")),
+      composeSwitchWithCurve(official.get("75542-f1"), official.get("74747")),
     ],
     rails: [
       measureRails(libraries.official, "74746", RAIL_SECTION_X),
@@ -72,7 +76,7 @@ export function buildGeometryReport(libraries: GeometryLibraries) {
     roadStudZones: ROAD_STUD_ZONES.map((part) => measureStudZones(libraries.official, part)),
     roadMarkings: ROAD_MARKINGS.map((part) => ({
       part,
-      fullLengthBandsByColor: measureFullLengthMarkings(libraries.official, part),
+      markingBandsByColor: measureMarkingBands(libraries.official, part),
     })),
     flex: FLEX.map((part) => measureFlexBend(libraries.official, part, FLEX_MOVING_HALF)),
   };

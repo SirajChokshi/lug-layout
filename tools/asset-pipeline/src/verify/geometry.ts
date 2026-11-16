@@ -1,13 +1,14 @@
 import { applyToPoint, type Vec3 } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import { metaValues, subfilePlacement } from "../ldraw/parse.ts";
-import type { PlacedPolygon } from "../ldraw/walk.ts";
-import { walkPart } from "../ldraw/walk.ts";
+import { isStudPrimitive, LDCAD_META, metaValues, subfilePlacement } from "../ldraw/parse.ts";
+import { INHERIT_COLOR, walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
 import {
   addZeta16,
   mirrorZeta16,
   rotateZeta16,
   zeta16ToPlane,
+  ZETA16_ORDER,
+  ZETA16_STEP_RADIANS,
   type Zeta16Coefficients,
 } from "../track/cyclotomic.ts";
 import {
@@ -20,17 +21,12 @@ import {
 } from "../track/track-ends.ts";
 
 const LDU_IN_MM = 0.4;
-const STUD_PRIMITIVE = /^stud\d*a?\.dat$/;
 const TRAIN_TRACK_SNAP = /\[group=traintrk\].*\[pos=(\S+) (\S+) (\S+)\]/;
 const FLAT_EPSILON = 1e-6;
-const HEADING_STEP_DEGREES = 22.5;
-const PLATE_STUDS = 32;
-const FULL_LENGTH_SHARE = 0.9;
 const HELP_META = "!HELP";
-const LDCAD_META = "!LDCAD";
 const HELP_ROTATION_POINT = /rotation point is at (\S+)\/(\S+)\/(\S+)/i;
 
-export interface Interval {
+interface Interval {
   readonly from: number;
   readonly to: number;
 }
@@ -63,7 +59,7 @@ function mergeIntervals(intervals: ReadonlyArray<Interval>): ReadonlyArray<Inter
 function collectPolygons(library: LdrawLibrary, part: string, skipStuds: boolean): PlacedPolygon[] {
   const polygons: PlacedPolygon[] = [];
   walkPart(library, `${part}.dat`, {
-    reference: (placed) => (skipStuds && STUD_PRIMITIVE.test(placed.file) ? "skip" : "descend"),
+    reference: (placed) => (skipStuds && isStudPrimitive(placed.file) ? "skip" : "descend"),
     polygon: (placed) => polygons.push(placed),
   });
   return polygons;
@@ -81,7 +77,7 @@ function extent(polygons: ReadonlyArray<PlacedPolygon>, axis: 0 | 1 | 2): Interv
   return { from, to };
 }
 
-export interface RailMeasurement {
+interface RailMeasurement {
   readonly part: string;
   readonly sectionX: number;
   readonly railTopY: number;
@@ -137,6 +133,8 @@ export interface BaseplateMeasurement {
   readonly bodyBottomY: number;
   readonly thicknessLdu: number;
   readonly studTopY: number;
+  readonly xExtent: Interval;
+  readonly zExtent: Interval;
   readonly widthLdu: number;
   readonly depthLdu: number;
 }
@@ -151,12 +149,14 @@ export function measureBaseplate(library: LdrawLibrary, part: string): Baseplate
     bodyBottomY: vertical.to,
     thicknessLdu: vertical.to - vertical.from,
     studTopY: extent(all, 1).from,
+    xExtent: extent(body, 0),
+    zExtent: extent(body, 2),
     widthLdu: extent(body, 0).to - extent(body, 0).from,
     depthLdu: extent(body, 2).to - extent(body, 2).from,
   };
 }
 
-export interface StudZones {
+interface StudZones {
   readonly part: string;
   readonly studCount: number;
   readonly studY: ReadonlyArray<number>;
@@ -168,22 +168,26 @@ export function measureStudZones(library: LdrawLibrary, part: string): StudZones
   const studs: Vec3[] = [];
   walkPart(library, `${part}.dat`, {
     reference: (placed) => {
-      if (!STUD_PRIMITIVE.test(placed.file)) return "descend";
+      if (!isStudPrimitive(placed.file)) return "descend";
       studs.push(applyToPoint(placed.world, [0, 0, 0]));
       return "skip";
     },
   });
-  const half = (PLATE_STUDS * LDU_PER_STUD) / 2;
-  const cell = (value: number): number => Math.floor((value + half) / LDU_PER_STUD);
-  const occupied = new Set(studs.map(([x, , z]) => `${cell(x)},${cell(z)}`));
-  const map = Array.from({ length: PLATE_STUDS }, (_row, row) =>
-    Array.from({ length: PLATE_STUDS }, (_column, column) =>
-      occupied.has(`${column},${row}`) ? "o" : ".",
+  const body = collectPolygons(library, part, true);
+  const xExtent = extent(body, 0);
+  const zExtent = extent(body, 2);
+  const columnCount = Math.round((xExtent.to - xExtent.from) / LDU_PER_STUD);
+  const rowCount = Math.round((zExtent.to - zExtent.from) / LDU_PER_STUD);
+  const column = (x: number): number => Math.floor((x - xExtent.from) / LDU_PER_STUD);
+  const row = (z: number): number => Math.floor((z - zExtent.from) / LDU_PER_STUD);
+  const occupied = new Set(studs.map(([x, , z]) => `${column(x)},${row(z)}`));
+  const map = Array.from({ length: rowCount }, (_row, rowIndex) =>
+    Array.from({ length: columnCount }, (_column, columnIndex) =>
+      occupied.has(`${columnIndex},${rowIndex}`) ? "o" : ".",
     ).join(""),
   );
-  const columns = new Set(studs.map(([x]) => cell(x)));
   const studdedColumns = mergeIntervals(
-    [...columns].map((column) => ({ from: column, to: column + 1 })),
+    [...new Set(studs.map(([x]) => column(x)))].map((index) => ({ from: index, to: index + 1 })),
   );
   return {
     part,
@@ -194,44 +198,36 @@ export function measureStudZones(library: LdrawLibrary, part: string): StudZones
   };
 }
 
-export interface MarkingBand {
+interface MarkingBand {
   readonly color: number;
-  readonly bands: ReadonlyArray<Interval>;
+  readonly acrossBands: ReadonlyArray<Interval>;
+  readonly alongExtent: Interval;
 }
 
-export function measureFullLengthMarkings(
+export function measureMarkingBands(
   library: LdrawLibrary,
   part: string,
 ): ReadonlyArray<MarkingBand> {
-  const plateLength = PLATE_STUDS * LDU_PER_STUD;
-  const byColor = new Map<number, Interval[]>();
-  const lengthByColor = new Map<number, Interval>();
+  const byColor = new Map<number, PlacedPolygon[]>();
   for (const polygon of collectPolygons(library, part, true)) {
-    if (polygon.color === 16 || !isFlatHorizontal(polygon)) continue;
-    const xs = polygon.vertices.map((vertex) => vertex[0]);
-    const zs = polygon.vertices.map((vertex) => vertex[2]);
-    const list = byColor.get(polygon.color) ?? [];
-    list.push({ from: Math.min(...xs), to: Math.max(...xs) });
-    byColor.set(polygon.color, list);
-    const span = lengthByColor.get(polygon.color) ?? {
-      from: Number.POSITIVE_INFINITY,
-      to: Number.NEGATIVE_INFINITY,
-    };
-    lengthByColor.set(polygon.color, {
-      from: Math.min(span.from, ...zs),
-      to: Math.max(span.to, ...zs),
-    });
+    if (polygon.color === INHERIT_COLOR || !isFlatHorizontal(polygon)) continue;
+    byColor.set(polygon.color, [...(byColor.get(polygon.color) ?? []), polygon]);
   }
   return [...byColor.entries()]
-    .filter(([color]) => {
-      const span = lengthByColor.get(color);
-      return span !== undefined && span.to - span.from >= plateLength * FULL_LENGTH_SHARE;
-    })
-    .map(([color, intervals]) => ({ color, bands: mergeIntervals(intervals) }))
-    .toSorted((a, b) => a.color - b.color);
+    .map(([color, polygons]) => ({
+      color,
+      acrossBands: mergeIntervals(
+        polygons.map((polygon) => {
+          const xs = polygon.vertices.map((vertex) => vertex[0]);
+          return { from: Math.min(...xs), to: Math.max(...xs) };
+        }),
+      ),
+      alongExtent: extent(polygons, 2),
+    }))
+    .toSorted((p, q) => p.color - q.color);
 }
 
-export interface ArcFromEnds {
+interface ArcFromEnds {
   readonly chordLdu: number;
   readonly turnSteps: number;
   readonly radiusFromChordLdu: number;
@@ -255,7 +251,7 @@ function helpRotationPoint(help: ReadonlyArray<string>): Vec3 | null {
   return null;
 }
 
-export function arcFromEnds(
+function arcFromEnds(
   ends: ReadonlyArray<TrackEnd>,
   relative: ReadonlyArray<RelativeTrackEnd>,
   help: ReadonlyArray<string>,
@@ -268,7 +264,7 @@ export function arcFromEnds(
   const turnSteps = exit.headingSteps > 8 ? exit.headingSteps - 16 : exit.headingSteps;
   if (turnSteps === 0) return null;
   const chordLdu = Math.hypot(second.x - first.x, second.z - first.z);
-  const halfTurn = (Math.abs(turnSteps) * HEADING_STEP_DEGREES * Math.PI) / 360;
+  const halfTurn = (Math.abs(turnSteps) * ZETA16_STEP_RADIANS) / 2;
   const pivot = helpRotationPoint(help);
   return {
     chordLdu,
@@ -302,7 +298,7 @@ export function reportTrackEnds(
   };
 }
 
-export interface LdcadSnapCheck {
+interface LdcadSnapCheck {
   readonly part: string;
   readonly snapPairs: number;
   readonly maxMidpointToNearestEndLdu: number | null;
@@ -344,7 +340,7 @@ export function crossCheckLdcadTrackSnaps(
   };
 }
 
-export interface ComposedPose {
+interface ComposedPose {
   readonly via: ReadonlyArray<string>;
   readonly headingSteps: number;
   readonly exactCoefficients: Zeta16Coefficients | null;
@@ -359,14 +355,16 @@ export function composeDivergingWithCurve(
   curveEnd: RelativeTrackEnd,
   names: ReadonlyArray<string>,
 ): ComposedPose {
-  const turn = (switchEnd.headingSteps * HEADING_STEP_DEGREES * Math.PI) / 180;
+  const turn = switchEnd.headingSteps * ZETA16_STEP_RADIANS;
   const mirrored = switchEnd.headingSteps === curveEnd.headingSteps;
   const sign = mirrored ? -1 : 1;
   const cx = curveEnd.xStuds;
   const cz = curveEnd.zStuds * sign;
   const measuredXStuds = switchEnd.xStuds + cx * Math.cos(turn) - cz * Math.sin(turn);
   const measuredZStuds = switchEnd.zStuds + cx * Math.sin(turn) + cz * Math.cos(turn);
-  const headingSteps = (((switchEnd.headingSteps + sign * curveEnd.headingSteps) % 16) + 16) % 16;
+  const headingSteps =
+    (((switchEnd.headingSteps + sign * curveEnd.headingSteps) % ZETA16_ORDER) + ZETA16_ORDER) %
+    ZETA16_ORDER;
   const [switchName = "", curveName = ""] = names;
   if (switchEnd.coefficients === null || curveEnd.coefficients === null) {
     return {
@@ -397,7 +395,7 @@ export function composeDivergingWithCurve(
   };
 }
 
-export interface FlexBend {
+interface FlexBend {
   readonly part: string;
   readonly help: ReadonlyArray<string>;
   readonly measuredBendDegrees: number | null;

@@ -4,15 +4,16 @@ import type { LdrawLibrary } from "../ldraw/library.ts";
 import { walkPart } from "../ldraw/walk.ts";
 import {
   findZeta16Representation,
+  ZETA16_ORDER,
+  ZETA16_STEP_RADIANS,
   type FieldRepresentation,
   type Zeta16Coefficients,
 } from "./cyclotomic.ts";
 
 export const LDU_PER_STUD = 20;
 const UNROUNDED_TOLERANCE_LDU = 1e-6;
-const HEADING_STEP = Math.PI / 8;
-const PART_FRAME_HEADING_GRID = HEADING_STEP / 2;
-const CERTIFY_CHANCE_HITS_LIMIT = 0.25;
+export const PART_FRAME_HEADING_GRID = ZETA16_STEP_RADIANS / 2;
+const CERTIFIED_RESIDUAL_LIMIT_LDU = 0.0005;
 const MARKERS_PATH = fileURLToPath(new URL("./track-end-markers.json", import.meta.url));
 
 export interface TrackEndMarker {
@@ -40,11 +41,10 @@ export interface RelativeTrackEnd {
   readonly coefficients: Zeta16Coefficients | null;
 }
 
-export interface FieldSearchSummary {
+interface FieldSearchSummary {
   readonly bestResidualLdu: number;
   readonly bound: number;
   readonly solutionsAtBound: number;
-  readonly expectedChanceHitsPerAxis: number;
 }
 
 function summarize(field: FieldRepresentation): FieldSearchSummary {
@@ -52,7 +52,6 @@ function summarize(field: FieldRepresentation): FieldSearchSummary {
     bestResidualLdu: field.residual * LDU_PER_STUD,
     bound: field.bound,
     solutionsAtBound: field.solutionsAtBound,
-    expectedChanceHitsPerAxis: field.expectedChanceHitsPerAxis,
   };
 }
 
@@ -127,20 +126,20 @@ export function relativeToEntry(ends: ReadonlyArray<TrackEnd>): ReadonlyArray<Re
     const dz = end.z - entry.z;
     const xStuds = (dx * cos - dz * sin) / LDU_PER_STUD;
     const zStuds = (dx * sin + dz * cos) / LDU_PER_STUD;
-    const steps = normalizeAngle(end.outward - inward) / HEADING_STEP;
-    const headingSteps = Math.round(steps) % 16;
+    const steps = normalizeAngle(end.outward - inward) / ZETA16_STEP_RADIANS;
+    const headingSteps = Math.round(steps) % ZETA16_ORDER;
     const toleranceLdu = Math.max(end.toleranceLdu, entry.toleranceLdu);
     const field = findZeta16Representation({ x: xStuds, y: zStuds }, toleranceLdu / LDU_PER_STUD);
     const certified =
       field !== undefined &&
       field.solutionsAtBound === 1 &&
-      field.expectedChanceHitsPerAxis < CERTIFY_CHANCE_HITS_LIMIT;
+      field.residual * LDU_PER_STUD <= CERTIFIED_RESIDUAL_LIMIT_LDU;
     return {
       marker: end.marker,
       xStuds,
       zStuds,
       headingSteps,
-      headingResidualDegrees: ((steps - Math.round(steps)) * HEADING_STEP * 180) / Math.PI,
+      headingResidualDegrees: ((steps - Math.round(steps)) * ZETA16_STEP_RADIANS * 180) / Math.PI,
       toleranceLdu,
       fieldSearch: field === undefined ? null : summarize(field),
       fieldCertified: certified,

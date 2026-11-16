@@ -6,13 +6,12 @@ import {
   type Affine,
   type Vec3,
 } from "./affine.ts";
-import type { WalkResult } from "./closure.ts";
 import type { LdrawLibrary } from "./library.ts";
 import { polygonVertices, subfilePlacement } from "./parse.ts";
 
-const INHERIT_COLOR = 16;
+export const INHERIT_COLOR = 16;
 
-export interface PlacedReference {
+interface PlacedReference {
   readonly file: string;
   readonly color: number;
   readonly world: Affine;
@@ -25,9 +24,14 @@ export interface PlacedPolygon {
   readonly vertices: ReadonlyArray<Vec3>;
 }
 
-export interface WalkVisitor {
+interface WalkVisitor {
   readonly reference?: (placed: PlacedReference) => "descend" | "skip";
   readonly polygon?: (placed: PlacedPolygon) => void;
+}
+
+interface WalkResult {
+  readonly visitedFiles: ReadonlySet<string>;
+  readonly missingFiles: ReadonlySet<string>;
 }
 
 function resolveColor(own: number, inherited: number): number {
@@ -81,4 +85,15 @@ export function walkPart(
     rotationTolerance: 0,
   });
   return { visitedFiles, missingFiles };
+}
+
+export function dependencyClosure(library: LdrawLibrary, fileName: string): WalkResult {
+  const seen = new Set<string>();
+  return walkPart(library, fileName, {
+    reference: (placed) => {
+      if (seen.has(placed.file)) return "skip";
+      seen.add(placed.file);
+      return "descend";
+    },
+  });
 }

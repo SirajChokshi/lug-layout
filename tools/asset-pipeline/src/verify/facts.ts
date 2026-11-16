@@ -3,7 +3,6 @@ import { dirname, join } from "node:path";
 import type { AuditLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import type { Palette } from "../palette.ts";
-import { trackPartPoses } from "../track/track-end-poses.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
@@ -31,7 +30,7 @@ function bigintAsString(_key: string, value: unknown): unknown {
   return typeof value === "bigint" ? value.toString() : value;
 }
 
-export function asJson(value: unknown): string {
+function asJson(value: unknown): string {
   return `${JSON.stringify(value, bigintAsString, 2)}\n`;
 }
 
@@ -55,51 +54,27 @@ export function licenseAuditReport(inputs: LicenseAuditInputs): FactReport {
   };
 }
 
+const ROAD_SCENE_PLATES = ["44336", "2358", "610", "606", "30225b"];
+
 export function geometryReports(
   source: InputLock["source"],
   library: LdrawLibrary,
   shadowLibrary: LdrawLibrary,
 ): ReadonlyArray<FactReport> {
+  const geometry = buildGeometryReport({ official: library, shadow: shadowLibrary });
+  const roadPlates = ROAD_SCENE_PLATES.map((part) => {
+    const plate = geometry.baseplates.find((measured) => measured.part === part);
+    if (plate === undefined) throw new Error(`road scene plate ${part} was not measured`);
+    return plate;
+  });
   return [
-    {
-      fileName: "geometry.json",
-      render: () =>
-        asJson({ source, ...buildGeometryReport({ official: library, shadow: shadowLibrary }) }),
-    },
+    { fileName: "geometry.json", render: () => asJson({ source, ...geometry }) },
     {
       fileName: "scenes/switch-then-reversed-curve.ldr",
       render: () => switchParallelScene(library, loadTrackEndMarkers()),
     },
-    { fileName: "scenes/road-baseplates.ldr", render: () => roadBaseplateScene() },
+    { fileName: "scenes/road-baseplates.ldr", render: () => roadBaseplateScene(roadPlates) },
   ];
-}
-
-const TRACK_POSE_PARTS = [
-  "53401",
-  "53400",
-  "74746",
-  "74747",
-  "75541-f1",
-  "75541-f2",
-  "75542-f1",
-  "75542-f2",
-  "32087",
-];
-
-export function trackEndsReport(source: InputLock["source"], library: LdrawLibrary): FactReport {
-  return {
-    fileName: "track-ends.json",
-    render: () => {
-      const markers = loadTrackEndMarkers();
-      return asJson({
-        schemaVersion: 1,
-        source,
-        angleSteps: 16,
-        frame: "LDraw part frame (-Y up), LDU; x maps to Re and z to Im of the plane",
-        parts: TRACK_POSE_PARTS.map((id) => trackPartPoses(library, markers, id)),
-      });
-    },
-  };
 }
 
 export async function readSources(

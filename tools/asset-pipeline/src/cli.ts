@@ -14,13 +14,7 @@ import {
 } from "./fetch-ldraw.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
 import { readPalette } from "./palette.ts";
-import {
-  geometryReports,
-  licenseAuditReport,
-  readSources,
-  trackEndsReport,
-  writeReports,
-} from "./verify/facts.ts";
+import { geometryReports, licenseAuditReport, readSources, writeReports } from "./verify/facts.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -98,13 +92,7 @@ async function factsCommand(check: boolean): Promise<void> {
     }),
     ...geometryReports(lock.source, auditLibrary, shadowLibrary),
   ];
-  const docsDrifted = await writeReports(reports, verifiedFactsRoot, check);
-  const posesDrifted = await writeReports(
-    [trackEndsReport(lock.source, auditLibrary)],
-    toolRoot,
-    check,
-  );
-  if (docsDrifted || posesDrifted) process.exitCode = 1;
+  if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
 
 const BUNDLE_LODS = ["standard", "low"] as const;

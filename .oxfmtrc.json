@@ -11,7 +11,6 @@
     "README.md",
     "packages/test-fixtures/**",
     "tools/asset-pipeline/ldraw.lock.json",
-    "target/**",
-    "tools/asset-pipeline/track-ends.json"
+    "target/**"
   ]
 }

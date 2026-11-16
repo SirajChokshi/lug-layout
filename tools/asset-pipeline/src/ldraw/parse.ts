@@ -114,6 +114,14 @@ export function modelPartReferences(source: string): string[] {
   return [...parts].toSorted();
 }
 
+export const LDCAD_META = "!LDCAD";
+
+const STUD_PRIMITIVE = /^stud\d*a?\.dat$/u;
+
+export function isStudPrimitive(reference: string): boolean {
+  return STUD_PRIMITIVE.test(reference);
+}
+
 export function metaValues(file: LdrawFile, key: string): string[] {
   const values: string[] = [];
   for (const line of file.lines) {
@@ -129,10 +137,10 @@ export function keywords(file: LdrawFile): string[] {
     .filter((keyword) => keyword !== "");
 }
 
-export type SubfileLine = Extract<LdrawLine, { kind: "subfile" }>;
-export type GeometryLine = Extract<LdrawLine, { kind: "geometry" }>;
+type SubfileLine = Extract<LdrawLine, { kind: "subfile" }>;
+type GeometryLine = Extract<LdrawLine, { kind: "geometry" }>;
 
-export interface SubfilePlacement {
+interface SubfilePlacement {
   readonly color: number;
   readonly transform: Affine;
   readonly translationUnit: number;

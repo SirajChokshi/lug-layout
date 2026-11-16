@@ -1,14 +1,17 @@
 import { applyToPoint, IDENTITY, type Affine } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import { findTrackEnds, type TrackEnd, type TrackEndMarker } from "../track/track-ends.ts";
+import type { BaseplateMeasurement } from "./geometry.ts";
+import {
+  findTrackEnds,
+  PART_FRAME_HEADING_GRID,
+  type TrackEnd,
+  type TrackEndMarker,
+} from "../track/track-ends.ts";
 
 const MAIN_COLOR = 16;
-const ROAD_PLATE_PITCH_LDU = 720;
 const DECIMALS = 6;
-const SCENE_AUTHOR = "Brick Railroad tools/asset-pipeline (cli.ts facts, from measured end poses)";
+const SCENE_AUTHOR = "Brick Railroad tools/asset-pipeline (cli.ts facts)";
 const STRAIGHTS_AFTER_SWITCH = 2;
-const PLACEMENT_ANGLE_GRID = Math.PI / 16;
-const ROAD_STRAIGHTS = ["44336", "2358", "610", "606", "30225b"];
 
 interface ScenePlacement {
   readonly part: string;
@@ -38,7 +41,7 @@ function attachByEnd(ends: ReadonlyArray<TrackEnd>, joinEnd: number, target: Tra
   const end = ends[joinEnd];
   if (end === undefined) throw new Error(`no end ${joinEnd}`);
   const angle = target.outward + Math.PI - end.outward;
-  const rotation = rotationY(Math.round(angle / PLACEMENT_ANGLE_GRID) * PLACEMENT_ANGLE_GRID);
+  const rotation = rotationY(Math.round(angle / PART_FRAME_HEADING_GRID) * PART_FRAME_HEADING_GRID);
   const [x, , z] = applyToPoint(rotation, [end.x, 0, end.z]);
   return translated(rotation, target.x - x, target.z - z);
 }
@@ -48,7 +51,7 @@ function formatNumber(value: number): string {
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
-function toLdraw(title: string, placements: ReadonlyArray<ScenePlacement>): string {
+function toLdraw(title: string, method: string, placements: ReadonlyArray<ScenePlacement>): string {
   const lines = placements.map(({ part, transform }) => {
     const [a, b, c, d, e, f, g, h, i, x, y, z] = transform;
     return [1, MAIN_COLOR, x, y, z, a, b, c, d, e, f, g, h, i]
@@ -59,7 +62,7 @@ function toLdraw(title: string, placements: ReadonlyArray<ScenePlacement>): stri
   return [
     `0 ${title}`,
     `0 Name: ${title.toLowerCase().replaceAll(" ", "-")}.ldr`,
-    `0 Author: ${SCENE_AUTHOR}`,
+    `0 Author: ${SCENE_AUTHOR}, ${method}`,
     ...lines,
     "",
   ].join("\n");
@@ -101,15 +104,21 @@ export function switchParallelScene(
     tip = farthestEnd(placedEnds(straightEnds, straight), tip);
   }
   placements.push({ part: "74746", transform: attachByEnd(straightEnds, 0, curveExit) });
-  return toLdraw("Switch Then Reversed Curve", placements);
+  return toLdraw("Switch Then Reversed Curve", "placed from measured track-end poses", placements);
 }
 
-export function roadBaseplateScene(): string {
+export function roadBaseplateScene(plates: ReadonlyArray<BaseplateMeasurement>): string {
+  const placements: ScenePlacement[] = [];
+  let edge = 0;
+  for (const plate of plates) {
+    const z = edge - plate.zExtent.from;
+    const x = -(plate.xExtent.from + plate.xExtent.to) / 2;
+    placements.push({ part: plate.part, transform: translated(IDENTITY, x, z) });
+    edge = z + plate.zExtent.to;
+  }
   return toLdraw(
     "Road Baseplates",
-    ROAD_STRAIGHTS.map((part, index) => ({
-      part,
-      transform: translated(IDENTITY, 0, index * ROAD_PLATE_PITCH_LDU),
-    })),
+    "abutted edge to edge using measured plate extents",
+    placements,
   );
 }
