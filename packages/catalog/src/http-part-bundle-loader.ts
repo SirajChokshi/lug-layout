@@ -8,8 +8,11 @@ import {
   type ManifestPart,
 } from "./manifest.ts";
 import type {
+  BundleCredit,
   BundleLod,
+  CompiledPartGlb,
   IAssetFetcher,
+  ImportContext,
   IPartBundleLoader,
   ModelBundle,
   PartAsset,
@@ -20,6 +23,7 @@ import type {
 import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
+const COMPILED_PART_ROLE = "model";
 const MAX_CONCURRENT_FETCHES = 32;
 
 async function mapConcurrently<T, R>(
@@ -43,8 +47,12 @@ async function mapConcurrently<T, R>(
 export class HttpAssetFetcher implements IAssetFetcher {
   constructor(@inject(BUNDLE_BASE_URL) private readonly baseUrl: string) {}
 
+  url(path: string): string {
+    return `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
+  }
+
   private async get(path: string): Promise<Response> {
-    const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
+    const url = this.url(path);
     const response = await fetch(url);
     if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
     return response;
@@ -75,27 +83,88 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return loading;
   }
 
+  private studPrimitives(
+    lod: BundleLod,
+    manifest: BundleManifest,
+  ): Promise<ReadonlyArray<StudPrimitiveAsset>> {
+    return Promise.all(
+      manifest.studPrimitives.map(async (primitive): Promise<StudPrimitiveAsset> => {
+        const glb = parseGlb(await this.fetcher.bytes(`${lod}/${primitive.file}`));
+        return { mesh: readInheritColorMesh(glb, primitive.name) };
+      }),
+    );
+  }
+
   private async bundle(
     lod: BundleLod,
     manifest: BundleManifest,
     parts: ReadonlyArray<ManifestPart>,
   ): Promise<PartBundle> {
     const studPrimitiveNames = manifest.studPrimitives.map((primitive) => primitive.name);
-    const studPrimitives = await Promise.all(
-      manifest.studPrimitives.map(async (primitive): Promise<StudPrimitiveAsset> => {
-        const glb = parseGlb(await this.fetcher.bytes(`${lod}/${primitive.file}`));
-        return { mesh: readInheritColorMesh(glb, primitive.name) };
-      }),
-    );
-    const assets = await mapConcurrently(parts, MAX_CONCURRENT_FETCHES, async (part) =>
-      toPartAsset(part, await this.fetcher.bytes(`${lod}/${part.file}`), studPrimitiveNames),
-    );
+    const [studPrimitives, assets] = await Promise.all([
+      this.studPrimitives(lod, manifest),
+      mapConcurrently(parts, MAX_CONCURRENT_FETCHES, async (part) =>
+        toPartAsset(part, await this.fetcher.bytes(`${lod}/${part.file}`), studPrimitiveNames),
+      ),
+    ]);
     return {
       bundleVersion: manifest.bundleVersion,
       parts: assets,
       studPrimitives,
       colors: manifest.colors,
       credits: manifest.credits,
+      models: manifest.models,
+    };
+  }
+
+  async importContext(lod: BundleLod): Promise<ImportContext> {
+    const manifest = await this.manifest(lod);
+    if (!manifest.compiler) throw new Error(`bundle ${manifest.bundleVersion} ships no compiler`);
+    return {
+      bundleVersion: manifest.bundleVersion,
+      source: manifest.source,
+      compilerUrl: this.fetcher.url(`${lod}/${manifest.compiler.file}`),
+      unofficialAllowlist: manifest.compiler.unofficialAllowlist,
+      studPrimitiveNames: manifest.studPrimitives.map((primitive) => primitive.name),
+      partIds: manifest.parts.map((part) => part.id),
+      ldconfigCodes: manifest.colors.map((color) => color.code),
+    };
+  }
+
+  async loadPartSet(
+    lod: BundleLod,
+    partIds: ReadonlyArray<string>,
+    compiled: ReadonlyArray<CompiledPartGlb>,
+  ): Promise<PartBundle> {
+    const manifest = await this.manifest(lod);
+    const manifestParts = new Map(manifest.parts.map((part) => [part.id, part]));
+    const compiledParts = new Map(compiled.map((part) => [part.partId, part.glb]));
+    const studPrimitiveNames = manifest.studPrimitives.map((primitive) => primitive.name);
+    const compiledCredits: BundleCredit[] = [];
+    const [studPrimitives, assets] = await Promise.all([
+      this.studPrimitives(lod, manifest),
+      mapConcurrently(partIds, MAX_CONCURRENT_FETCHES, async (id): Promise<PartAsset> => {
+        const glb = compiledParts.get(id);
+        if (glb) {
+          const asset = compiledPartAsset(id, glb, studPrimitiveNames);
+          compiledCredits.push(...asset.credits);
+          return asset.part;
+        }
+        const part = manifestParts.get(id);
+        if (!part) throw new Error(`part ${id} is neither in the bundle nor compiled`);
+        return toPartAsset(
+          part,
+          await this.fetcher.bytes(`${lod}/${part.file}`),
+          studPrimitiveNames,
+        );
+      }),
+    ]);
+    return {
+      bundleVersion: manifest.bundleVersion,
+      parts: assets,
+      studPrimitives,
+      colors: manifest.colors,
+      credits: [...manifest.credits, ...compiledCredits],
       models: manifest.models,
     };
   }
@@ -135,6 +204,21 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       },
     };
   }
+}
+
+function compiledPartAsset(
+  id: string,
+  glb: Uint8Array,
+  studPrimitiveNames: ReadonlyArray<string>,
+): { part: PartAsset; credits: ReadonlyArray<BundleCredit> } {
+  const bytes = glb.slice().buffer;
+  const extras = parsePartExtras(parseGlb(bytes).document.extras, id);
+  if (!extras.bounds) throw new Error(`${id}: compiled GLB carries no bounds`);
+  const part: ManifestPart = { id, role: COMPILED_PART_ROLE, file: "", bounds: extras.bounds };
+  return {
+    part: toPartAsset(part, bytes, studPrimitiveNames),
+    credits: (extras.sources ?? []).map((source) => ({ license: source.license })),
+  };
 }
 
 function toPartAsset(

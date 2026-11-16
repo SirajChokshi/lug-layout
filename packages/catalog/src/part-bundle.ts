@@ -98,12 +98,40 @@ export interface ModelBundle {
   readonly model: PartModel;
 }
 
+export interface BundleSource {
+  readonly repo: string;
+  readonly commit: string;
+  readonly root: string;
+}
+
+export interface ImportContext {
+  readonly bundleVersion: string;
+  readonly source: BundleSource;
+  readonly compilerUrl: string;
+  readonly unofficialAllowlist: ReadonlyArray<string>;
+  readonly studPrimitiveNames: ReadonlyArray<string>;
+  readonly partIds: ReadonlyArray<string>;
+  readonly ldconfigCodes: ReadonlyArray<number>;
+}
+
+export interface CompiledPartGlb {
+  readonly partId: string;
+  readonly glb: Uint8Array;
+}
+
 export interface IPartBundleLoader {
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
+  importContext(lod: BundleLod): Promise<ImportContext>;
+  loadPartSet(
+    lod: BundleLod,
+    partIds: ReadonlyArray<string>,
+    compiled: ReadonlyArray<CompiledPartGlb>,
+  ): Promise<PartBundle>;
 }
 
 export interface IAssetFetcher {
+  url(path: string): string;
   bytes(path: string): Promise<ArrayBuffer>;
   text(path: string): Promise<string>;
 }

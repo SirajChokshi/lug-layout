@@ -1,5 +1,12 @@
-import type { IViewerScene, PlacementDump } from "@brr/client";
+import type {
+  IImportScene,
+  IViewerScene,
+  ImportedModule,
+  PlacementDump,
+  SceneSummary,
+} from "@brr/client";
 import { useEffect, useRef, useState } from "react";
+import { ImportPanel } from "./import-panel.tsx";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
 import type { MemoryReport } from "./viewer/memory-report.ts";
@@ -15,6 +22,7 @@ interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
   readonly placements: (() => PlacementDump) | null;
+  readonly importScene: IImportScene | null;
 }
 
 function mebibytes(bytes: number): string {
@@ -109,10 +117,13 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params, placements }: AppProps) {
+export function App({ scene, params, placements, importScene }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
-  const [report, setReport] = useState<ViewerReport | null>(null);
+  const [viewerReport, setReport] = useState<ViewerReport | null>(null);
+  const [importedSummary, setImportedSummary] = useState<SceneSummary | null>(null);
+  const report =
+    viewerReport && importedSummary ? { ...viewerReport, summary: importedSummary } : viewerReport;
   const [result, setResult] = useState<ViewerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,6 +157,12 @@ export function App({ scene, params, placements }: AppProps) {
           </pre>
         )}
       </aside>
+      {importScene && (
+        <ImportPanel
+          scene={importScene}
+          onImported={(module: ImportedModule) => setImportedSummary(module.summary)}
+        />
+      )}
       <footer>
         {report && modelCredit(report)}
         {report &&

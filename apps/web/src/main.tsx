@@ -1,8 +1,10 @@
 import {
   CITY_SCENE,
+  IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
+  type IImportScene,
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
@@ -18,10 +20,13 @@ if (!rootElement) throw new Error("Missing #root element");
 const container = new Container();
 const bundleBaseUrl = new URL(import.meta.env.VITE_BUNDLE_BASE_URL ?? "bundle/", document.baseURI)
   .href;
-container.load(...mainThreadModules({ bundleBaseUrl }));
+const createImportWorker = (): Worker =>
+  new Worker(new URL("@brr/import-worker/entry", import.meta.url), { type: "module" });
+container.load(...mainThreadModules({ bundleBaseUrl, createImportWorker }));
 const params = readViewerParams(location.search);
 
 let placements: (() => PlacementDump) | null = null;
+let importScene: IImportScene | null = null;
 
 function chooseScene(): IViewerScene {
   if (params.city) {
@@ -36,6 +41,10 @@ function chooseScene(): IViewerScene {
     if (params.dumpWorld) placements = () => city.placementDump();
     return city;
   }
+  if (params.importer) {
+    importScene = container.get(IMPORT_SCENE);
+    return importScene;
+  }
   if (params.model !== null) {
     const modelScene = container.get(MODEL_SCENE);
     modelScene.selectModel(params.model);
@@ -48,6 +57,6 @@ const scene = chooseScene();
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App scene={scene} params={params} placements={placements} />
+    <App scene={scene} params={params} placements={placements} importScene={importScene} />
   </StrictMode>,
 );

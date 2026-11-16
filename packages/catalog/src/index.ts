@@ -1,12 +1,16 @@
 export { catalogModule } from "./catalog.module.ts";
+export { directColorSrgb, isDirectColor } from "./colors.ts";
 export { INHERIT_COLOR } from "./part-bundle.ts";
 export type {
   BundleColor,
   BundleCredit,
   BundleLod,
   BundleModelEntry,
+  BundleSource,
   ColorGroup,
+  CompiledPartGlb,
   IAssetFetcher,
+  ImportContext,
   IPartBundleLoader,
   MeshArrays,
   ModelBundle,

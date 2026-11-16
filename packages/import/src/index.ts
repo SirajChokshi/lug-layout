@@ -15,3 +15,22 @@ export {
   type MirrorStats,
 } from "./ldraw-mirror.ts";
 export { runWasiCommand, type WasiResult } from "./wasi-command.ts";
+export {
+  bundlePartId,
+  ModelImportEngine,
+  type ColorIssue,
+  type CompiledGlb,
+  type ImportResult,
+  type ImportJob,
+  type ImportReport,
+  type ImportTimings,
+  type PartResolution,
+  type PartResolutionKind,
+} from "./model-import.ts";
+export {
+  transferablesOf,
+  type ImportInput,
+  type ImportWorkerRequest,
+  type ImportWorkerResponse,
+  type LdrawTextInput,
+} from "./worker-protocol.ts";

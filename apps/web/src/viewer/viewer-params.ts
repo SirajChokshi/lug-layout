@@ -5,6 +5,7 @@ export interface ViewerParams {
   readonly lod: BundleLod;
   readonly model: string | null;
   readonly city: boolean;
+  readonly importer: boolean;
   readonly parts: number;
   readonly seed: number;
   readonly camera: CityCamera;
@@ -45,6 +46,7 @@ export function readViewerParams(search: string): ViewerParams {
     lod: params.get("lod") === "low" ? "low" : "standard",
     model: params.get("model"),
     city: params.get("scene") === "city",
+    importer: params.get("scene") === "import",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",
