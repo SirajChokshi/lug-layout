@@ -1,7 +1,6 @@
 import type {
   BundleColor,
   BundleCredit,
-  BundleLod,
   BundleModelEntry,
   ModelSection,
   PartRole,
@@ -12,9 +11,8 @@ export interface ManifestPart {
   readonly id: string;
   readonly role: PartRole;
   readonly file: string;
-  readonly title: string;
   readonly bounds: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
-  readonly displayColor?: { readonly ldraw: number; readonly source: string };
+  readonly displayColor?: { readonly ldraw: number };
 }
 
 export interface ManifestStudPrimitive {
@@ -23,7 +21,6 @@ export interface ManifestStudPrimitive {
 }
 
 export interface BundleManifest {
-  readonly lod: BundleLod;
   readonly unit: "LDU";
   readonly upAxis: "+Y";
   readonly parts: ReadonlyArray<ManifestPart>;
@@ -50,7 +47,6 @@ export interface StudExtra {
 }
 
 export interface PartExtras {
-  readonly ldraw: { readonly file: string; readonly note: string };
   readonly studs: ReadonlyArray<StudExtra>;
 }
 
@@ -100,12 +96,7 @@ function isStudExtra(value: unknown): value is StudExtra {
 }
 
 export function parsePartExtras(value: unknown, label: string): PartExtras {
-  if (
-    !isRecord(value) ||
-    !isRecord(value["ldraw"]) ||
-    !Array.isArray(value["studs"]) ||
-    !value["studs"].every(isStudExtra)
-  ) {
+  if (!isRecord(value) || !Array.isArray(value["studs"]) || !value["studs"].every(isStudExtra)) {
     throw new Error(`${label}: GLB extras do not match the M0 bundle format`);
   }
   return value as unknown as PartExtras;

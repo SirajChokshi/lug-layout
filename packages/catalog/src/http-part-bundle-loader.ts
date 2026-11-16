@@ -54,7 +54,6 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       ),
     );
     return {
-      lod,
       parts,
       studPrimitives,
       colors: manifest.colors,
@@ -99,7 +98,6 @@ function toPartAsset(
   return {
     id: part.id,
     role: part.role,
-    title: part.title,
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,
     boundsMax: part.bounds.max,

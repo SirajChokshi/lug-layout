@@ -24,7 +24,6 @@ export interface PartMesh {
 export interface PartAsset {
   readonly id: string;
   readonly role: PartRole;
-  readonly title: string;
   readonly boundsMin: Vec3Tuple;
   readonly boundsMax: Vec3Tuple;
   readonly producedColor: number | undefined;
@@ -43,19 +42,14 @@ export interface BundleColor {
   readonly code: number;
   readonly name: string;
   readonly rgb: string;
-  readonly alpha: number;
 }
 
 export interface BundleCredit {
-  readonly path: string;
-  readonly title: string;
-  readonly author: string;
   readonly license: string | null;
 }
 
 export interface ModelSection {
   readonly name: string;
-  readonly title: string;
   readonly author: string;
   readonly license: string | null;
 }
@@ -63,7 +57,6 @@ export interface ModelSection {
 export interface BundleModelEntry {
   readonly name: string;
   readonly file: string;
-  readonly sections: ReadonlyArray<ModelSection>;
 }
 
 export interface PartModel {
@@ -75,7 +68,6 @@ export interface PartModel {
 }
 
 export interface PartBundle {
-  readonly lod: BundleLod;
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
   readonly colors: ReadonlyArray<BundleColor>;

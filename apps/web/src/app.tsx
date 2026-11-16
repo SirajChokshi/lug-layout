@@ -23,7 +23,7 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ["Adapter", backend.adapter],
     [
       "Drawing buffer",
-      `${report.drawingBuffer.width}×${report.drawingBuffer.height} px (devicePixelRatio ${report.drawingBuffer.devicePixelRatio})`,
+      `${report.drawingBuffer.width}×${report.drawingBuffer.height} px (devicePixelRatio ${Number(report.drawingBuffer.devicePixelRatio.toFixed(2))})`,
     ],
     ["Parts", integer.format(summary.parts)],
     ["Modules", integer.format(summary.modules)],
