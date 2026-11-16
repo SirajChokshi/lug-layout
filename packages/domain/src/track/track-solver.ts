@@ -50,8 +50,8 @@ export function runMoves(kit: DrawingKit, run: TrackRun): ReadonlyArray<TrackMov
         break;
       }
       default: {
-        const _exhaustive: never = segment;
-        throw new Error(`unhandled segment ${String(_exhaustive)}`);
+        const unhandled: never = segment;
+        throw new Error(`unhandled segment ${String(unhandled)}`);
       }
     }
   }
@@ -98,7 +98,7 @@ function closureRun(
     heading = normalizeHeading16(heading + m);
     headings.push(heading);
   }
-  const counts = new Array<number>(headings.length).fill(0);
+  const counts = Array.from({ length: headings.length }, () => 0);
   for (let i = 0; i < ZETA16_COEFFICIENT_COUNT; i++) {
     const value = residual[i] ?? 0n;
     if (value === 0n) continue;
