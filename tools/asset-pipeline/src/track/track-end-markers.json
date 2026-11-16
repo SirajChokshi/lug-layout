@@ -1,0 +1,12 @@
+{
+  "markers": [
+    { "file": "s/2865as01.dat", "outward": "+x" },
+    { "file": "s/2867as03.dat", "outward": "+x" },
+    { "file": "s/2867as04.dat", "outward": "-x" },
+    { "file": "s/2859s02.dat", "outward": "-x" },
+    { "file": "s/2865s04.dat", "outward": "-x" },
+    { "file": "s/53401s02.dat", "outward": "-x" },
+    { "file": "s/53400s03.dat", "outward": "-x" },
+    { "file": "s/53400s04.dat", "outward": "+x" }
+  ]
+}
