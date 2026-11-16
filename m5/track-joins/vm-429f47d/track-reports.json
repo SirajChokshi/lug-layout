@@ -1,0 +1,405 @@
+{
+ "01-9v-oval-closed": {
+  "report": {
+   "regionId": "plan-1",
+   "profile": "free",
+   "verdict": "buildable",
+   "errors": 0,
+   "warnings": 0,
+   "issues": [],
+   "bom": {
+    "lines": [
+     {
+      "part": "ldraw:74746",
+      "ldrawColor": 72,
+      "quantity": 10,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "74746",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "2865c01",
+       "color": 85
+      }
+     },
+     {
+      "part": "ldraw:74747",
+      "ldrawColor": 72,
+      "quantity": 16,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "74747",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "2867c01",
+       "color": 85
+      }
+     }
+    ],
+    "placements": [],
+    "totalParts": 26
+   }
+  },
+  "track": "TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 26 | ldraw:74746 Train Track 9V Straight | × 10 | ldraw:74747 Train Track 9V Curved | × 16 | Exact joins | 26 | Open ends | 0 | Coincident ends not joined | 0 | Last release | laid and joined exactly | Solver per pointer move | median 0.50 ms, p95 1.40 ms, max 5.40 ms (184 moves)"
+ },
+ "02-open-run": {
+  "report": {
+   "regionId": "plan-1",
+   "profile": "free",
+   "verdict": "draft",
+   "errors": 2,
+   "warnings": 0,
+   "issues": [
+    {
+     "rule": "trackOpenEnd",
+     "severity": "error",
+     "placements": [],
+     "trackPieces": [
+      26
+     ],
+     "message": "Open track end at (1360 mm, 1344 mm) on 74746 Train Track 9V Straight #27: nothing joins it and no buffer caps it.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    },
+    {
+     "rule": "trackOpenEnd",
+     "severity": "error",
+     "placements": [],
+     "trackPieces": [
+      29
+     ],
+     "message": "Open track end at (1872 mm, 1344 mm) on 74746 Train Track 9V Straight #30: nothing joins it and no buffer caps it.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    }
+   ],
+   "bom": {
+    "lines": [
+     {
+      "part": "ldraw:74746",
+      "ldrawColor": 72,
+      "quantity": 14,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "74746",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "2865c01",
+       "color": 85
+      }
+     },
+     {
+      "part": "ldraw:74747",
+      "ldrawColor": 72,
+      "quantity": 16,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "74747",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "2867c01",
+       "color": 85
+      }
+     }
+    ],
+    "placements": [],
+    "totalParts": 30
+   }
+  },
+  "track": "TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 30 | ldraw:74746 Train Track 9V Straight | × 14 | ldraw:74747 Train Track 9V Curved | × 16 | Exact joins | 29 | Open ends | 2 | Coincident ends not joined | 0 | Last release | laid with an open end | Solver per pointer move | median 0.50 ms, p95 1.20 ms, max 5.40 ms (203 moves)"
+ },
+ "03-run-off-the-table": {
+  "report": {
+   "regionId": "plan-1",
+   "profile": "free",
+   "verdict": "draft",
+   "errors": 6,
+   "warnings": 0,
+   "issues": [
+    {
+     "rule": "trackOpenEnd",
+     "severity": "error",
+     "placements": [],
+     "trackPieces": [
+      26
+     ],
+     "message": "Open track end at (1360 mm, 1344 mm) on 74746 Train Track 9V Straight #27: nothing joins it and no buffer caps it.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    },
+    {
+     "rule": "trackOpenEnd",
+     "severity": "error",
+     "placements": [],
+     "trackPieces": [
+      29
+     ],
+     "message": "Open track end at (1872 mm, 1344 mm) on 74746 Train Track 9V Straight #30: nothing joins it and no buffer caps it.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    },
+    {
+     "rule": "trackOpenEnd",
+     "severity": "error",
+     "placements": [],
+     "trackPieces": [
+      30
+     ],
+     "message": "Open track end at (2560 mm, 1200 mm) on 74746 Train Track 9V Straight #31: nothing joins it and no buffer caps it.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    },
+    {
+     "rule": "trackOpenEnd",
+     "severity": "error",
+     "placements": [],
+     "trackPieces": [
+      32
+     ],
+     "message": "Open track end at (2560 mm, 1584 mm) on 74746 Train Track 9V Straight #33: nothing joins it and no buffer caps it.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    },
+    {
+     "rule": "trackFit",
+     "severity": "error",
+     "placements": [],
+     "trackPieces": [
+      31
+     ],
+     "message": "74746 Train Track 9V Straight #32 hangs 20 mm past the table edge (limit 0 mm).",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    },
+    {
+     "rule": "trackFit",
+     "severity": "error",
+     "placements": [],
+     "trackPieces": [
+      32
+     ],
+     "message": "74746 Train Track 9V Straight #33 hangs 148 mm past the table edge (limit 0 mm).",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    }
+   ],
+   "bom": {
+    "lines": [
+     {
+      "part": "ldraw:74746",
+      "ldrawColor": 72,
+      "quantity": 17,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "74746",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "2865c01",
+       "color": 85
+      }
+     },
+     {
+      "part": "ldraw:74747",
+      "ldrawColor": 72,
+      "quantity": 16,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "74747",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "2867c01",
+       "color": 85
+      }
+     }
+    ],
+    "placements": [],
+    "totalParts": 33
+   }
+  },
+  "track": "TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 33 | ldraw:74746 Train Track 9V Straight | × 17 | ldraw:74747 Train Track 9V Curved | × 16 | Exact joins | 31 | Open ends | 4 | Coincident ends not joined | 0 | Last release | laid with an open end | Solver per pointer move | median 0.50 ms, p95 1.10 ms, max 5.40 ms (222 moves)"
+ },
+ "04-plastic-oval-unverified": {
+  "report": {
+   "regionId": "plan-1",
+   "profile": "free",
+   "verdict": "draft",
+   "errors": 0,
+   "warnings": 1,
+   "issues": [
+    {
+     "rule": "trackUnverified",
+     "severity": "warning",
+     "placements": [],
+     "trackPieces": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+     ],
+     "message": "16 × 53400 Train Track 6 Studs Wide Curved: unverified connector poses. Its LDraw file has 3-decimal coordinates, too coarse for the unique ℤ[ζ₁₆] identification (§5.3), so its poses come from its !HELP rotation point; 16 of these pieces have joins that are exact in the model but not certified from the part data.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    }
+   ],
+   "bom": {
+    "lines": [
+     {
+      "part": "ldraw:53400",
+      "ldrawColor": 72,
+      "quantity": 16,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "53400",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "53400",
+       "color": 85
+      }
+     },
+     {
+      "part": "ldraw:53401",
+      "ldrawColor": 72,
+      "quantity": 10,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "53401",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "53401",
+       "color": 85
+      }
+     }
+    ],
+    "placements": [],
+    "totalParts": 26
+   }
+  },
+  "track": "TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 26 | ldraw:53401 Train Track 6 Studs Wide Straight | × 10 | ldraw:53400 Train Track 6 Studs Wide Curved | × 16 | Exact joins | 26 | Open ends | 0 | Coincident ends not joined | 0 | Last release | laid and joined exactly | Solver per pointer move | median 0.50 ms, p95 0.80 ms, max 9.60 ms (184 moves)"
+ },
+ "05-seam-off-module-grid": {
+  "report": {
+   "regionId": "plan-1",
+   "profile": "free",
+   "verdict": "draft",
+   "errors": 0,
+   "warnings": 3,
+   "issues": [
+    {
+     "rule": "trackUnverified",
+     "severity": "warning",
+     "placements": [],
+     "trackPieces": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+     ],
+     "message": "16 × 53400 Train Track 6 Studs Wide Curved: unverified connector poses. Its LDraw file has 3-decimal coordinates, too coarse for the unique ℤ[ζ₁₆] identification (§5.3), so its poses come from its !HELP rotation point; 16 of these pieces have joins that are exact in the model but not certified from the part data.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    },
+    {
+     "rule": "trackSeam",
+     "severity": "warning",
+     "placements": [],
+     "trackPieces": [
+      3
+     ],
+     "message": "53401 Train Track 6 Studs Wide Straight #4 crosses a table seam that isn't on a 32-stud module edge.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    },
+    {
+     "rule": "trackSeam",
+     "severity": "warning",
+     "placements": [],
+     "trackPieces": [
+      14
+     ],
+     "message": "53401 Train Track 6 Studs Wide Straight #15 crosses a table seam that isn't on a 32-stud module edge.",
+     "overhangMm": 0,
+     "nearestTableMm": 0,
+     "offTableMm2": 0
+    }
+   ],
+   "bom": {
+    "lines": [
+     {
+      "part": "ldraw:53400",
+      "ldrawColor": 72,
+      "quantity": 16,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "53400",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "53400",
+       "color": 85
+      }
+     },
+     {
+      "part": "ldraw:53401",
+      "ldrawColor": 72,
+      "quantity": 10,
+      "substructure": 0,
+      "rebrickable": {
+       "part": "53401",
+       "color": 72
+      },
+      "bricklink": {
+       "part": "53401",
+       "color": 85
+      }
+     }
+    ],
+    "placements": [],
+    "totalParts": 26
+   }
+  },
+  "track": "TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 26 | ldraw:53401 Train Track 6 Studs Wide Straight | × 10 | ldraw:53400 Train Track 6 Studs Wide Curved | × 16 | Exact joins | 26 | Open ends | 0 | Coincident ends not joined | 0 | Last release | laid and joined exactly | Solver per pointer move | median 0.50 ms, p95 0.80 ms, max 9.60 ms (184 moves)"
+ }
+}
