@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<INVENTORY>
+  <ITEM>
+    <ITEMTYPE>P</ITEMTYPE>
+    <ITEMID>2377</ITEMID>
+    <COLOR>4</COLOR>
+    <MINQTY>1</MINQTY>
+  </ITEM>
+  <ITEM>
+    <ITEMTYPE>P</ITEMTYPE>
+    <ITEMID>3811</ITEMID>
+    <COLOR>6</COLOR>
+    <MINQTY>2</MINQTY>
+  </ITEM>
+</INVENTORY>

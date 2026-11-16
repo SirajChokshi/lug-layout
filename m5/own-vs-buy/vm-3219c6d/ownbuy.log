@@ -1,0 +1,32 @@
+verdict buildable parts 421 lines 117
+whole plan files /opt/cursor/artifacts/m5-own-buy/Plan-1.rebrickable.csv /opt/cursor/artifacts/m5-own-buy/Plan-1.bricklink.xml
+owned file: 2377 colour 25 reduced from 6 to 5
+own vs buy {"collection":"418","own":"418","buy":"3","text":"owned-from-plan-minus-3811-and-one-part.csv: 418 parts in 116 lines. This plan uses 418 of them; 3 parts to buy. Clear"}
+shortfall rebrickable csv:
+Part,Color,Quantity
+2377,25,1
+3811,2,2
+
+shortfall wanted list:
+<?xml version="1.0" encoding="UTF-8"?>
+<INVENTORY>
+  <ITEM>
+    <ITEMTYPE>P</ITEMTYPE>
+    <ITEMID>2377</ITEMID>
+    <COLOR>4</COLOR>
+    <MINQTY>1</MINQTY>
+  </ITEM>
+  <ITEM>
+    <ITEMTYPE>P</ITEMTYPE>
+    <ITEMID>3811</ITEMID>
+    <COLOR>6</COLOR>
+    <MINQTY>2</MINQTY>
+  </ITEM>
+</INVENTORY>
+
+plain csv rows with buy > 0:
+LDraw part,LDraw colour,Need,Own,Buy,Rebrickable part,Rebrickable colour,BrickLink part,BrickLink colour
+ldraw:2377,25,6,5,1,2377,25,2377,4
+ldraw:3811,2,2,0,2,3811,2,3811,6
+
+OWNBUY_DONE
