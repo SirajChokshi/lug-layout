@@ -1,0 +1,5 @@
+pnpm --filter @brr/asset-pipeline build at d697e5d's code with the e9f3b11 palette (10251-1 and 10278-1 still listed):
+brick-compile: 10251-1.mpd: inline part 15500.dat draws different geometry from official 15500.dat (max vertex distance 4.3080 LDU)
+
+Same, with 10251-1 removed from palette.json (local edit, not committed):
+brick-compile: 10278-1.mpd: inline part 10278 - 11055.dat draws different geometry from official 11055.dat (max vertex distance 1.5936 LDU)
