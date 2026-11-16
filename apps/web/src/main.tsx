@@ -16,7 +16,9 @@ const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing #root element");
 
 const container = new Container();
-container.load(...mainThreadModules({ bundleBaseUrl: new URL("bundle/", document.baseURI).href }));
+const bundleBaseUrl = new URL(import.meta.env.VITE_BUNDLE_BASE_URL ?? "bundle/", document.baseURI)
+  .href;
+container.load(...mainThreadModules({ bundleBaseUrl }));
 const params = readViewerParams(location.search);
 
 let placements: (() => PlacementDump) | null = null;

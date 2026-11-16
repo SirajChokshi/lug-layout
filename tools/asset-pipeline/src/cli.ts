@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,7 @@ import {
 } from "./fetch-ldraw.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
 import { readPalette, type Palette } from "./palette.ts";
+import { publishBundle, type BundleInputs } from "./publish.ts";
 import { geometryReports, licenseAuditReport, readSources, writeReports } from "./verify/facts.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,8 +39,14 @@ async function readLock(): Promise<InputLock> {
 }
 
 async function restoreModels(palette: Palette): Promise<void> {
-  const { present, downloaded } = await restoreFiles(palette.omrSource, omrFiles(palette), omrRoot);
-  process.stdout.write(`OMR models: ${present} present, ${downloaded} downloaded\n`);
+  const { present, downloaded, pruned } = await restoreFiles(
+    palette.omrSource,
+    omrFiles(palette),
+    omrRoot,
+  );
+  process.stdout.write(
+    `OMR models: ${present} present, ${downloaded} downloaded, ${pruned} pruned\n`,
+  );
 }
 
 async function fetchCommand(): Promise<void> {
@@ -83,8 +91,10 @@ async function restoreCommand(): Promise<void> {
         ]),
   ];
   for (const { name, source, files, directory } of targets) {
-    const { present, downloaded } = await restoreFiles(source, files, directory);
-    process.stdout.write(`${name}: ${present} present, ${downloaded} downloaded\n`);
+    const { present, downloaded, pruned } = await restoreFiles(source, files, directory);
+    process.stdout.write(
+      `${name}: ${present} present, ${downloaded} downloaded, ${pruned} pruned\n`,
+    );
   }
   await restoreModels(await readPalette(palettePath));
 }
@@ -144,10 +154,23 @@ function runCargo(args: ReadonlyArray<string>): void {
   if (result.status !== 0) throw new Error(`cargo ${args.join(" ")} exited with ${result.status}`);
 }
 
+async function fileSha256(path: string): Promise<string> {
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
+}
+
 async function bundleCommand(): Promise<void> {
   await restoreCommand();
   await verifyCommand();
   if (process.exitCode) return;
+  const palette = await readPalette(palettePath);
+  const inputs: BundleInputs = {
+    ldraw: palette.source,
+    omr: palette.omrSource,
+    lockSha256: await fileSha256(lockPath),
+    paletteSha256: await fileSha256(palettePath),
+  };
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
   for (const lod of BUNDLE_LODS) {
     const out = join(toolRoot, "dist", "bundle", lod);
@@ -174,7 +197,10 @@ async function bundleCommand(): Promise<void> {
       "--lod",
       lod,
     ]);
-    process.stdout.write(`bundle ${lod} written to ${out}\n`);
+    const { bundleVersion, files } = await publishBundle(out, inputs);
+    process.stdout.write(
+      `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
+    );
   }
 }
 
