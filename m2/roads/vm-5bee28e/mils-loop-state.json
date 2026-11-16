@@ -9,7 +9,7 @@
    "joined": 0,
    "open": 48,
    "mismatch": 0,
-   "checkMs": 4.7
+   "checkMs": 1.3
   },
   {
    "item": "generated:mils-road-curve",
@@ -20,7 +20,7 @@
    "joined": 32,
    "open": 48,
    "mismatch": 0,
-   "checkMs": 3
+   "checkMs": 1.6
   },
   {
    "item": "generated:mils-road-curve",
@@ -31,7 +31,7 @@
    "joined": 64,
    "open": 48,
    "mismatch": 0,
-   "checkMs": 9
+   "checkMs": 2.6
   },
   {
    "item": "generated:mils-road-crosswalk",
@@ -64,7 +64,7 @@
    "joined": 224,
    "open": 16,
    "mismatch": 0,
-   "checkMs": 9.4
+   "checkMs": 11.6
   },
   {
    "item": "generated:mils-road-straight",
@@ -75,7 +75,7 @@
    "joined": 256,
    "open": 16,
    "mismatch": 0,
-   "checkMs": 4.8
+   "checkMs": 6.6
   }
  ],
  "refusal": {

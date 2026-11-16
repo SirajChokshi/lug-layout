@@ -3,9 +3,9 @@ Brick Railroad credits
 LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.
 
 Asset bundle versions:
-  standard: 58550249823f8f4d
-  low: 65134385804e63fe
-  far: e00dca959b6ab53e
+  standard: 59380c5094d6478d
+  low: 6de172bbcc472d37
+  far: 62a8810f567793b1
 
 LDraw parts library
 Source: github.com/kulits/ldraw-parts at commit c70360d1c588be894997b2168c61909bc8058c4d (ldraw/)
@@ -14,15 +14,15 @@ Modified from LDraw, per bundle level of detail:
   standard: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up
   low: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up, 8-segment p/8 primitives used where LDraw provides them
   far: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up, 8-segment p/8 primitives used where LDraw provides them, triangles hidden from above removed
-1799 LDraw files credited.
+1806 LDraw files credited.
 
-License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
+License: Licensed under CC BY 4.0 : see CAreadme.txt (1686 files)
   Authors:
     James Jessiman (316 files)
     Magnus Forsberg [MagFors] (166 files)
     Philippe Hurbain [Philo] (166 files)
     Willy Tschager [Holly-Wood] (129 files)
-    Max Martin Richter [MMR1988] (125 files)
+    Max Martin Richter [MMR1988] (127 files)
     Steffen [Steffen] (59 files)
     Michael Heidemann [mikeheide] (57 files)
     Chris Dee [cwdee] (54 files)
@@ -50,6 +50,7 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
     Evert-Jan Boer [ejboer] (8 files)
     Nils Schmidt [BlackBrick89] (8 files)
     Rene Rechthaler [Blechtaler] (8 files)
+    Ludo Soete [ludo] (6 files)
     Max Murtazin [SwampKryakwa] (6 files)
     Sylvain Sauvage [SLS] (6 files)
     Ulrich Röder [UR] (5 files)
@@ -66,7 +67,6 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
     Deanna Earley [DeannaEarley] (2 files)
     Lee Gaiteri [LummoxJR] (2 files)
     Leonardo Zide [leozide] (2 files)
-    Ludo Soete [ludo] (2 files)
     Marc Giraudet [Mad_Marc] (2 files)
     Tony Hafner [hafhead] (2 files)
     Bernd Munding (1 file)
@@ -943,6 +943,7 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
     parts/32059.dat: Plate 4 x 6 without Corners, by Steve Bliss [sbliss]
     parts/32062.dat: Technic Axle 2 Notched, by Steve Bliss [sbliss]
     parts/32073.dat: Technic Axle 5, by Magnus Forsberg [MagFors]
+    parts/32087.dat: Train Track 9V Crossing, by Ludo Soete [ludo]
     parts/32123a.dat: Technic Bush 1/2 Smooth with Axle Hole Reduced, by Steve Bliss [sbliss]
     parts/32123b.dat: Technic Bush 1/2 Smooth with Axle Hole Semi-Reduced, by J.C. Tchang [tchang]
     parts/32124.dat: Technic Rotor 2 Blade with 4 Studs, by Rene Rechthaler [Blechtaler]
@@ -1332,7 +1333,9 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
     parts/74747.dat: Train Track 9V Curved, by Willy Tschager [Holly-Wood]
     parts/750.dat: Hose Flexible End 1 x 1 x 0.667 with Tabs, by Steve Bliss [sbliss]
     parts/75535.dat: Technic Pin Joiner Round, by James Jessiman
+    parts/75541-f1.dat: Train Track 9V Switch Right Straight, by Max Martin Richter [MMR1988]
     parts/75541-f2.dat: Train Track 9V Switch Right Branching, by Steffen [Steffen]
+    parts/75542-f1.dat: Train Track 9V Switch Left Straight, by Max Martin Richter [MMR1988]
     parts/75542-f2.dat: Train Track 9V Switch Left Branching, by Steffen [Steffen]
     parts/85080.dat: Brick 2 x 2 Corner Round with Stud Notch and Reinforced Underside, by Max Martin Richter [MMR1988]
     parts/85861.dat: Plate 1 x 1 Round with Open Stud, by Magnus Forsberg [MagFors]
@@ -1469,6 +1472,7 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
     parts/s/2865as09.dat: ~Train Track 9V Straight - Plastic Part, Rail Reinforcement, by Max Martin Richter [MMR1988]
     parts/s/2865as10.dat: ~Train Track 9V Straight - Plastic Part, Common Rail Side Clamp Cutout, by Max Martin Richter [MMR1988]
     parts/s/2865as11.dat: ~Train Track 9V Straight - Plastic Part, End Sleeper Adapter, by Max Martin Richter [MMR1988]
+    parts/s/2865s06.dat: ~Train Track 9V Metal Rail Interlocking End, by Ludo Soete [ludo]
     parts/s/2867as01.dat: ~Train Track 9V Curved - Half, by Willy Tschager [Holly-Wood]
     parts/s/2867as02.dat: ~Train Track 9V Curved - Plastic Part, Centre Sleeper, by Max Martin Richter [MMR1988]
     parts/s/2867as03.dat: ~Train Track 9V Curved - Plastic Part, Right End Sleeper, by Max Martin Richter [MMR1988]
@@ -1516,6 +1520,8 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
     parts/s/3069p80a.dat: ~Pattern 1 x 2 28-Key 'QERYUIOP' Keyboard, by Willy Tschager [Holly-Wood]
     parts/s/3070bs01.dat: ~Tile 1 x 1 with Groove without Top Face, by Chris Dee [cwdee]
     parts/s/32039s01.dat: ~Technic Connector (Axle/Bush) without Inner Wall, by Philippe Hurbain [Philo]
+    parts/s/32087s01.dat: ~Train Track 9V Crossing - Metal Rail Parts, by Ludo Soete [ludo]
+    parts/s/32087s02.dat: ~Train Track 9V Crossing - Approach Track, by Ludo Soete [ludo]
     parts/s/32124s01.dat: ~Technic Rotor 2 Blade with 4 Studs - Quarter, by Rene Rechthaler [Blechtaler]
     parts/s/3228s01.dat: ~Train Track Rail Straight 4 Teeth, by Tore Eriksson [Tore_Eriksson]
     parts/s/32474s01.dat: ~Technic Ball Joint with Axlehole Blind Interior, by Philippe Hurbain [Philo]
@@ -1760,7 +1766,7 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
     parts/u9634.dat: ~Train Track 9V Switch Right - Curved Internal Wire, by Max Martin Richter [MMR1988]
     parts/u9635.dat: ~Train Track 9V Switch Right - Curved Metal Rail, Start Section of Main Rail, by Max Martin Richter [MMR1988]
 
-License: Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt (118 files)
+License: Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt (119 files)
   Authors:
     Guy Vivan [guyvivan] (15 files)
     John Van Zwieten [jvan] (13 files)
@@ -1775,10 +1781,10 @@ License: Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt (118 files)
     Remco Braak [remco1974] (4 files)
     Brent Jackson [bjackson] (3 files)
     Heather Patey (3 files)
+    Manfred Moolhuysen (3 files)
     Mark Chittenden [mdublade] (3 files)
     Stan Isachenko [angmarec] (3 files)
     Luis E. Fernandez [lfernand] (2 files)
-    Manfred Moolhuysen (2 files)
     Adam Howard [Whist] (1 file)
     Alex Forencich [aforencich] (1 file)
     Alex Seeley [alex] (1 file)
@@ -1902,6 +1908,7 @@ License: Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt (118 files)
     parts/s/2454s01.dat: ~Brick 1 x 2 x 5 without Front Face (Obsolete), by Thomas Burger [grapeape]
     parts/s/2585s01.dat: ~Hose Reel 2 x 2 (Teeth Segment), by William Howard [WilliamH]
     parts/s/2585s02.dat: ~Hose Reel 2 x 2 (String Hole), by William Howard [WilliamH]
+    parts/s/2865s04.dat: ~Train Track 9V Sleeper Interlocking End Section, by Manfred Moolhuysen
     parts/s/30363s01.dat: ~Slope Brick 18 4 x 2 without Top Face, by John Riley [jriley]
     parts/s/30364s01.dat: ~Hinge Brick 1 x 2 Locking 30364/30365 Common Region, by John Van Zwieten [jvan]
     parts/s/3038s01.dat: ~Slope Brick 45 2 x 3 without Front Face, by Mark Chittenden [mdublade]
@@ -2002,6 +2009,9 @@ Generated scenes
   road-baseplates: Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents. generated by tools/asset-pipeline `cli.ts facts`: plates abutted edge to edge using the measured plate extents in docs/verified-facts/geometry.json
   r40-circle-9v: Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math). generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json)
   oval-passing-siding-9v: Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math). generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json)
+  passing-loop: Brick Railroad tools/asset-pipeline (cli.ts facts), placed from the track catalog's exact ℤ[ζ₁₆] connector poses. generated by tools/asset-pipeline `cli.ts facts`: track pieces placed from the exact connector poses in docs/verified-facts/track-catalog.json
+  figure-eight: Brick Railroad tools/asset-pipeline (cli.ts facts), placed from the track catalog's exact ℤ[ζ₁₆] connector poses. generated by tools/asset-pipeline `cli.ts facts`: track pieces placed from the exact connector poses in docs/verified-facts/track-catalog.json
+  plastic-oval: Brick Railroad tools/asset-pipeline (cli.ts facts), placed from the track catalog's exact ℤ[ζ₁₆] connector poses. generated by tools/asset-pipeline `cli.ts facts`: track pieces placed from the exact connector poses in docs/verified-facts/track-catalog.json
   mils-road-straight: Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents. generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)
   mils-road-crosswalk: Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents. generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)
   mils-road-curve: Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents. generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)
