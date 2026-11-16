@@ -1,0 +1,28 @@
+room 5000 x 3600 mm, table 2400 x 1200 x 750 mm at 1600, 1000 mm: 300 x 150 studs, surface {"minX":4000,"minZ":2500,"maxX":10000,"maxZ":5500} LDU
+nine baseplates along the front edge: 0 errors
+tenth baseplate:
+  [35184502112260:0] 3811 baseplate 32×32 at 10080, 2820 overhangs the tables: it reaches 160 mm past the nearest table edge along x or z (limit 0 mm), with 40960 mm² of its footprint off the table tops.
+limit 100 mm:
+  [35184502112260:0] 3811 baseplate 32×32 at 10080, 2820 overhangs the tables: it reaches 160 mm past the nearest table edge along x or z (limit 100 mm), with 40960 mm² of its footprint off the table tops.
+limit 160 mm: 0 fit errors
+column five deep:
+  [35184502112260:0] 3811 baseplate 32×32 at 10080, 2820 overhangs the tables: it reaches 160 mm past the nearest table edge along x or z (limit 0 mm), with 40960 mm² of its footprint off the table tops.
+  [35184426614792:0] 3811 baseplate 32×32 at 4320, 5380 overhangs the tables: it reaches 80 mm past the nearest table edge along x or z (limit 0 mm), with 20480 mm² of its footprint off the table tops.
+10264-1 mid-table and 10185-1 on the front row:
+  [35184502112260:0] 3811 baseplate 32×32 at 10080, 2820 overhangs the tables: it reaches 160 mm past the nearest table edge along x or z (limit 0 mm), with 40960 mm² of its footprint off the table tops.
+  [35184426614792:0] 3811 baseplate 32×32 at 4320, 5380 overhangs the tables: it reaches 80 mm past the nearest table edge along x or z (limit 0 mm), with 20480 mm² of its footprint off the table tops.
+  [35184460169220:1] 10185-1 at 6880, 2820 overhangs the tables: it reaches 8 mm past the nearest table edge along x or z (limit 0 mm), with 2048 mm² of its footprint off the table tops.
+4554-1 rotated 90 degrees across the back edge:
+  [35184502112260:0] 3811 baseplate 32×32 at 10080, 2820 overhangs the tables: it reaches 160 mm past the nearest table edge along x or z (limit 0 mm), with 40960 mm² of its footprint off the table tops.
+  [35184426614792:0] 3811 baseplate 32×32 at 4320, 5380 overhangs the tables: it reaches 80 mm past the nearest table edge along x or z (limit 0 mm), with 20480 mm² of its footprint off the table tops.
+  [35184460169220:1] 10185-1 at 6880, 2820 overhangs the tables: it reaches 8 mm past the nearest table edge along x or z (limit 0 mm), with 2048 mm² of its footprint off the table tops.
+  [35184493723656:0] 4554-1 at 9300, 5500 overhangs the tables: it reaches 264 mm past the nearest table edge along x or z (limit 0 mm), with 55676 mm² of its footprint off the table tops.
+baseplate 672 mm right of the table:
+  [35184502112260:0] 3811 baseplate 32×32 at 10080, 2820 overhangs the tables: it reaches 160 mm past the nearest table edge along x or z (limit 0 mm), with 40960 mm² of its footprint off the table tops.
+  [35184426614792:0] 3811 baseplate 32×32 at 4320, 5380 overhangs the tables: it reaches 80 mm past the nearest table edge along x or z (limit 0 mm), with 20480 mm² of its footprint off the table tops.
+  [35184460169220:1] 10185-1 at 6880, 2820 overhangs the tables: it reaches 8 mm past the nearest table edge along x or z (limit 0 mm), with 2048 mm² of its footprint off the table tops.
+  [35184493723656:0] 4554-1 at 9300, 5500 overhangs the tables: it reaches 264 mm past the nearest table edge along x or z (limit 0 mm), with 55676 mm² of its footprint off the table tops.
+  [35184527278086:0] 3811 baseplate 32×32 at 12000, 4000 overhangs the tables: it reaches 928 mm past the nearest table edge along x or z (limit 0 mm), with 65536 mm² of its footprint off the table tops. It is entirely off the tables, 672 mm from the nearest one.
+baseplate outside the room: sandbox [{"chunkKey":35184451780605,"slot":0}], plan errors 5
+pillar moved onto the table: Table "Table 1" overlaps obstacle "Obstacle 1".
+
