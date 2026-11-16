@@ -13,7 +13,7 @@ import {
   type EditKind,
   type HistoryStep,
 } from "@brr/domain";
-import { STUD_LDU, chunkOf } from "@brr/math";
+import { STUD_LDU, chunkOf, isRot90, type Rot90 } from "@brr/math";
 import {
   CAMERA_FOV_DEGREES,
   RAY_FLOATS,
@@ -36,6 +36,15 @@ import {
 } from "./placed-chunks.ts";
 import { itemSpecOf } from "./item-specs.ts";
 import { modelPlaceable, platePlaceable, type Placeable } from "./placeable.ts";
+import {
+  parsePlanArchiveManifest,
+  placementId,
+  planArchiveManifest,
+  regionOriginX,
+  regionOriginZ,
+  type ArchivedModel,
+} from "@brr/domain";
+import { readStoredZip, storedZip, type ZipEntry } from "../plan/stored-zip.ts";
 import { BUILDABLE_SERVICE, PLAN_SERVICE } from "../tokens.ts";
 import type { IBuildableService } from "../plan/buildable-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
@@ -150,12 +159,15 @@ export interface IEditor {
   planOriginHere(): { readonly chunkX: number; readonly chunkZ: number };
   viewPlanFromAbove(planId: string): void;
   dump(): EditorDump;
+  planArchive(planId: string, disclaimer: string): Uint8Array | null;
+  openPlanArchive(bytes: Uint8Array): string;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
 const BASEPLATE_ID = "ldraw:3811";
 const BASEPLATE_COLOR_NAME = "Green";
 const QUARTER_TURNS = 4;
+const ZERO_TURN: Rot90 = 0;
 const STATS_INTERVAL_MS = 500;
 
 interface PendingAction {
@@ -216,6 +228,7 @@ export class Editor implements IEditor {
     rebaseCount: 0,
   };
   private placeables: Placeable[] = [];
+  private bundleVersion = "";
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
@@ -268,6 +281,7 @@ export class Editor implements IEditor {
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
+      this.bundleVersion = bundle.bundleVersion;
       this.plans.setTableTopY(this.baseplateBottomY());
       const crosswalk = await this.loader.loadCrosswalk("standard");
       this.buildable.setCatalog(
@@ -663,6 +677,137 @@ export class Editor implements IEditor {
       aspect,
     );
     this.camera.apply(this.backend);
+  }
+
+  planArchive(planId: string, disclaimer: string): Uint8Array | null {
+    const planState = this.plans.snapshot();
+    const index = planState.plans.findIndex((plan) => plan.id === planId);
+    const region = planState.plans[index];
+    const check = planState.checks[index];
+    const buildable = this.buildable.snapshot();
+    const report = buildable.reports.find((r) => r.regionId === planId);
+    const purchase = buildable.purchases.find((p) => p.regionId === planId);
+    const settings = buildable.settings[planId];
+    const svg = this.buildable.printablePlan(planId, disclaimer);
+    if (!region || !check || !report || !purchase || !settings || svg === null) return null;
+    const encoder = new TextEncoder();
+    const files: ZipEntry[] = [
+      { name: "plan.svg", bytes: encoder.encode(svg) },
+      { name: "parts.csv", bytes: encoder.encode(purchase.files.plainCsv) },
+      { name: "bricklink.xml", bytes: encoder.encode(purchase.files.brickLinkXml) },
+      { name: "rebrickable.csv", bytes: encoder.encode(purchase.files.rebrickableCsv) },
+    ];
+    const models: ArchivedModel[] = this.placeables.flatMap((placeable) =>
+      placeable.credit
+        ? [
+            {
+              ref: placeable.id,
+              source: placeable.credit.source,
+              authors: [...new Set(placeable.credit.sections.map((s) => s.author))],
+              licenses: [...new Set(placeable.credit.sections.map((s) => s.license ?? "none"))],
+            },
+          ]
+        : [],
+    );
+    const placements = this.placed.models().map((model) => {
+      const rot = model.handle.rot;
+      return {
+        key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
+        ref: model.placeable.id,
+        label: model.placeable.label,
+        box: model.box,
+        x: model.handle.x,
+        z: model.handle.z,
+        rot: isRot90(rot) ? rot : ZERO_TURN,
+      };
+    });
+    const insideIds = new Set(check.inside.map(placementId));
+    const credits = [
+      `${region.name}: a Brick Railroad plan`,
+      "",
+      ...models
+        .filter((model) =>
+          placements.some((p) => p.ref === model.ref && insideIds.has(placementId(p.key))),
+        )
+        .map(
+          (model) =>
+            `${model.ref}: ${model.authors.join(", ")} (${model.licenses.join(", ")}); ${model.source}`,
+        ),
+      "",
+      "Parts: LDraw parts library (CC BY 4.0 / CC BY 2.0 and CC BY 4.0), modified from LDraw: flattened, studs extracted.",
+      disclaimer,
+      "",
+    ].join("\n");
+    files.push({ name: "CREDITS.txt", bytes: encoder.encode(credits) });
+    const manifest = planArchiveManifest({
+      bundleVersion: this.bundleVersion,
+      region,
+      settings,
+      placements,
+      inside: check.inside,
+      models,
+      report,
+      files: files.map((file) => file.name),
+      disclaimer,
+    });
+    return storedZip([
+      { name: "manifest.json", bytes: encoder.encode(`${JSON.stringify(manifest, null, 2)}\n`) },
+      ...files,
+    ]);
+  }
+
+  openPlanArchive(bytes: Uint8Array): string {
+    const entries = readStoredZip(bytes);
+    const manifestEntry = entries.find((entry) => entry.name === "manifest.json");
+    if (!manifestEntry) throw new Error("the archive has no manifest.json");
+    const manifest = parsePlanArchiveManifest(
+      JSON.parse(new TextDecoder().decode(manifestEntry.bytes)),
+    );
+    if (typeof manifest === "string") throw new Error(manifest);
+    const missing = manifest.placements.filter(
+      (placement) => !this.placeables.some((p) => p.id === placement.ref),
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `bundle ${this.bundleVersion} has no ${[...new Set(missing.map((p) => p.ref))].join(", ")} (the plan was saved with bundle ${manifest.bundleVersion})`,
+      );
+    }
+    const { plan } = manifest;
+    const planId = this.plans.createPlan({
+      name: plan.name,
+      roomWidthMm: plan.footprint.roomWidthMm,
+      roomDepthMm: plan.footprint.roomDepthMm,
+      originChunkX: plan.originChunkX,
+      originChunkZ: plan.originChunkZ,
+    });
+    this.plans.updatePlan(planId, { maxOverhangMm: plan.maxOverhangMm });
+    for (const table of plan.footprint.tables) {
+      this.plans.addTable(planId, { name: table.name, rect: table.rect, heightMm: table.heightMm });
+    }
+    for (const obstacle of plan.footprint.obstacles) {
+      this.plans.addObstacle(planId, { name: obstacle.name, rect: obstacle.rect });
+    }
+    this.buildable.setProfile(planId, manifest.settings.profile);
+    this.buildable.setMaxReach(planId, manifest.settings.maxReachMm);
+    const region = this.plans.snapshot().plans.find((p) => p.id === planId);
+    if (!region) throw new Error(`plan ${planId} was not created`);
+    for (const placement of manifest.placements) {
+      const placeable = this.placeables.find((p) => p.id === placement.ref);
+      if (!placeable) continue;
+      const edit = this.history.place({
+        refId: this.placeables.indexOf(placeable),
+        colorId: placeable.worldColor,
+        x: regionOriginX(region) + placement.x,
+        z: regionOriginZ(region) + placement.z,
+        yPlates: 0,
+        rot: placement.rot,
+      });
+      this.placed.apply(edit, (refId) => this.placeableAt(refId));
+    }
+    this.update({ placements: this.world.size });
+    this.syncPlan();
+    this.viewPlanFromAbove(planId);
+    return planId;
   }
 
   dump(): EditorDump {
