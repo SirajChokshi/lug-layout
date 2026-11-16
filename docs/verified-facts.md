@@ -8,11 +8,11 @@ There is one LDraw pin, the one the bundle ships: `palette.json` `source`, which
 
 `pnpm --filter @brr/asset-pipeline fetch-ldraw` downloads, with the one fetcher (`src/fetch-ldraw.ts`):
 
-- the bundle closure (palette parts plus every part the `models` reference) into `packages/test-fixtures/ldraw`;
+- the bundle closure (palette parts plus every part the `models` reference) into `.cache/ldraw`;
 - the closure of every part in `palette.json` `audit` into `.cache/ldraw-audit`;
 - the matching LDCad patches into `.cache/ldcad-shadow`.
 
-Every file is pinned by SHA-256 in `ldraw.lock.json`: `files` for the bundle and `audit` for the rest. `facts` re-checks those hashes and writes `docs/verified-facts/license-audit.json`; `facts --check` reports drift instead. `library.ldraw.org`, Rebrickable and the MILS site are blocked from the verification environment.
+Every file is pinned by SHA-256 in `ldraw.lock.json`: `files` for the bundle and `audit` for the rest. None of them is committed; `restore-ldraw` downloads exactly the pinned files (checking each hash) without re-resolving anything. `facts` re-checks those hashes and writes `docs/verified-facts/license-audit.json`; `facts --check` reports drift instead. `library.ldraw.org`, Rebrickable and the MILS site are blocked from the verification environment.
 
 ## Facts
 
@@ -37,7 +37,7 @@ Every file is pinned by SHA-256 in `ldraw.lock.json`: `files` for the bundle and
 
 ## Geometry
 
-All geometry is measured at the bundle's pin, from the `audit` closure that `run fetch` pins, by `tools/asset-pipeline/src/verify/geometry.ts` (run through `cli.ts facts`). The full output is in `docs/verified-facts/geometry.json`. Values are **as modelled in LDraw**, in the LDraw part frame (−Y up, 1 LDU = 0.4 mm), before any y-up conversion.
+All geometry is measured at the bundle's pin, from the `audit` closure that `fetch-ldraw` pins, by `tools/asset-pipeline/src/verify/geometry.ts` (run through `cli.ts facts`). The full output is in `docs/verified-facts/geometry.json`. Values are **as modelled in LDraw**, in the LDraw part frame (−Y up, 1 LDU = 0.4 mm), before any y-up conversion.
 
 Track ends are the origins of the end-sleeper sub-files listed in `tools/asset-pipeline/src/track/track-end-markers.json`, with the outward direction taken from each placement's matrix. The report checks every declared outward direction against the part's bounds (all agree), and the LDCad `traintrk` snaps against the marker origins (they coincide).
 

@@ -7,6 +7,7 @@ import {
   fetchClosure,
   renderAttribution,
   renderModelAttribution,
+  restoreFiles,
   verifyAuditInputs,
   verifyClosure,
   verifyModels,
@@ -21,7 +22,7 @@ const repoRoot = join(toolRoot, "..", "..");
 const palettePath = join(toolRoot, "palette.json");
 const lockPath = join(toolRoot, "ldraw.lock.json");
 const fixturesRoot = join(repoRoot, "packages", "test-fixtures");
-const ldrawRoot = join(fixturesRoot, "ldraw");
+const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
@@ -49,6 +50,33 @@ async function fetchCommand(): Promise<void> {
   process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
 }
 
+async function restoreCommand(): Promise<void> {
+  const lock = await readLock();
+  const targets = [
+    { name: "bundle closure", source: lock.source, files: lock.files, directory: ldrawRoot },
+    ...(lock.audit === undefined
+      ? []
+      : [
+          {
+            name: "audit closure",
+            source: lock.source,
+            files: lock.audit.files,
+            directory: auditRoot,
+          },
+          {
+            name: "LDCad patches",
+            source: lock.audit.connectivity.source,
+            files: lock.audit.connectivity.files,
+            directory: connectivityRoot,
+          },
+        ]),
+  ];
+  for (const { name, source, files, directory } of targets) {
+    const { present, downloaded } = await restoreFiles(source, files, directory);
+    process.stdout.write(`${name}: ${present} present, ${downloaded} downloaded\n`);
+  }
+}
+
 async function verifyCommand(): Promise<void> {
   const palette = await readPalette(palettePath);
   const problems = [
@@ -73,7 +101,9 @@ async function factsCommand(check: boolean): Promise<void> {
     ...(await verifyAuditInputs(audit, auditRoot, connectivityRoot)),
   ];
   if (problems.length > 0) {
-    process.stderr.write(`${problems.join("\n")}\nrun fetch-ldraw to restore the pinned inputs\n`);
+    process.stderr.write(
+      `${problems.join("\n")}\nrun restore-ldraw to download the pinned inputs\n`,
+    );
     process.exitCode = 1;
     return;
   }
@@ -103,6 +133,7 @@ function runCargo(args: ReadonlyArray<string>): void {
 }
 
 async function bundleCommand(): Promise<void> {
+  await restoreCommand();
   await verifyCommand();
   if (process.exitCode) return;
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
@@ -136,6 +167,9 @@ switch (command) {
   case "fetch":
     await fetchCommand();
     break;
+  case "restore":
+    await restoreCommand();
+    break;
   case "verify":
     await verifyCommand();
     break;
@@ -146,6 +180,6 @@ switch (command) {
     await factsCommand(process.argv.includes("--check"));
     break;
   default:
-    process.stderr.write("usage: cli.ts fetch|verify|bundle|facts [--check]\n");
+    process.stderr.write("usage: cli.ts fetch|restore|verify|bundle|facts [--check]\n");
     process.exitCode = 2;
 }

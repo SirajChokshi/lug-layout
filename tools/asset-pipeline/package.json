@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "fetch-ldraw": "node src/cli.ts fetch",
+    "restore-ldraw": "node src/cli.ts restore",
     "verify-ldraw": "node src/cli.ts verify",
     "build": "node src/cli.ts bundle",
     "typecheck": "tsc -p tsconfig.json",

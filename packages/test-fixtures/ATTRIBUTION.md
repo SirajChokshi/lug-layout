@@ -1,9 +1,11 @@
 # Test fixture attribution
 
-LDraw files under `ldraw/` are unmodified copies from the LDraw parts library, fetched from the
+The LDraw files listed below are unmodified copies from the LDraw parts library, fetched from the
 GitHub mirror `kulits/ldraw-parts` at commit `c70360d1c588be894997b2168c61909bc8058c4d` (`ldraw`) and pinned by SHA-256 in
-`tools/asset-pipeline/ldraw.lock.json`. LDraw parts are © their authors and redistributed under
-the license named in each file's `!LICENSE` header. See https://www.ldraw.org/ for the library.
+`tools/asset-pipeline/ldraw.lock.json`. They aren't committed: `pnpm --filter @brr/asset-pipeline
+restore-ldraw` downloads them into `.cache/ldraw` and checks every hash. LDraw parts are © their
+authors and redistributed under the license named in each file's `!LICENSE` header. See
+https://www.ldraw.org/ for the library.
 
 LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.
 

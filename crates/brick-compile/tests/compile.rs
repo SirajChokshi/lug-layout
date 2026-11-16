@@ -26,11 +26,13 @@ const CA: &str = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt";
 const NON_CA: &str = "0 !LICENSE Not redistributable : see NonCAreadme.txt";
 
 fn fixture_library() -> MemoryLibrary {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/test-fixtures/ldraw");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.cache/ldraw");
     let mut files = HashMap::new();
     let mut stack = vec![root.clone()];
     while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir).expect("fixture directory is readable") {
+        for entry in fs::read_dir(&dir)
+            .expect("pinned LDraw inputs are restored; run `pnpm --filter @brr/asset-pipeline restore-ldraw`")
+        {
             let path = entry.expect("fixture entry").path();
             if path.is_dir() {
                 stack.push(path);
