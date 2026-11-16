@@ -1,0 +1,24 @@
+2026-11-16T18:03:27.957Z window {
+  left: 0,
+  top: 39,
+  width: 1800,
+  height: 1130,
+  windowState: 'maximized'
+}
+2026-11-16T18:03:27.992Z run city-250000-webgpu-aerial-origin http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T18:03:33.322Z city-250000-webgpu-aerial-origin done true 5s  [] {}
+2026-11-16T18:03:33.351Z run city-250000-webgpu-aerial-far http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=aerial&origin=39063,39063&measure=1&warmup=10&frames=120
+2026-11-16T18:03:38.453Z city-250000-webgpu-aerial-far done true 5s  [] {}
+2026-11-16T18:03:38.501Z run city-250000-webgpu-street-origin http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T18:03:42.232Z city-250000-webgpu-street-origin done true 4s  [] {}
+2026-11-16T18:03:42.279Z run city-250000-webgpu-street-far http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=street&origin=39063,39063&measure=1&warmup=10&frames=120
+2026-11-16T18:03:45.959Z city-250000-webgpu-street-far done true 4s  [] {}
+2026-11-16T18:03:45.986Z run city-250000-webgl2-aerial-origin http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T18:03:49.949Z city-250000-webgl2-aerial-origin done true 3s  [] {}
+2026-11-16T18:03:49.983Z run city-250000-webgl2-aerial-far http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=aerial&origin=39063,39063&measure=1&warmup=10&frames=120
+2026-11-16T18:03:54.161Z city-250000-webgl2-aerial-far done true 4s  [] {}
+2026-11-16T18:03:54.217Z run city-250000-webgl2-street-origin http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T18:03:56.856Z city-250000-webgl2-street-origin done true 2s  [] {}
+2026-11-16T18:03:56.903Z run city-250000-webgl2-street-far http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=street&origin=39063,39063&measure=1&warmup=10&frames=120
+2026-11-16T18:04:00.520Z city-250000-webgl2-street-far done true 3s  [] {}
+2026-11-16T18:04:04.584Z finished

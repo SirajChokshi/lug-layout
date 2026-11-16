@@ -1,0 +1,4 @@
+{"camera": "street", "side": "origin", "runs": 5, "medianFrameMsPerRun": [1000.8, 1122.6, 957.4, 910.5, 1038.6], "medianOfMedians": 1000.8, "medianP95": 1586.5, "medianCpuSubmit": 6}
+{"camera": "street", "side": "far", "runs": 5, "medianFrameMsPerRun": [905.3, 964, 959.5, 994.7, 1049.9], "medianOfMedians": 964, "medianP95": 1553.4, "medianCpuSubmit": 6.2}
+{"camera": "aerial", "side": "origin", "runs": 5, "medianFrameMsPerRun": [1353.9, 1571, 1631.8, 1356.8, 1309], "medianOfMedians": 1356.8, "medianP95": 1776.2, "medianCpuSubmit": 13.6}
+{"camera": "aerial", "side": "far", "runs": 5, "medianFrameMsPerRun": [1661.9, 1468.7, 1431.9, 1506.3, 1259.5], "medianOfMedians": 1468.7, "medianP95": 1962.7, "medianCpuSubmit": 13.8}

@@ -1,0 +1,16 @@
+{
+  "url": "http://localhost:4173/?scene=city&parts=20000&api=webgpu&camera=street&origin=39063,39063",
+  "seconds": 10,
+  "recordingStartedUtc": "2026-11-16T18:04:11.101Z",
+  "windowBounds": {
+    "left": 0,
+    "top": 39,
+    "width": 1800,
+    "height": 1130,
+    "windowState": "maximized"
+  },
+  "chrome": "Chrome/157.0.8103.52",
+  "hudBefore": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nDrawing buffer\n3600×2086 px (devicePixelRatio 2)\nParts\n20,090\nModules\n25\nStud instances (drawn of total)\n34,145 of 120,037\nScene triangles\n5,493,920\nLoad\n183 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.0 MiB, other 0.0 MiB, JS heap 37.4 MiB\nRender origin (chunks), rebases\n(0, 0); 0 rebases\nChunk tiers near/mid/far\n0 / 0 / 0\nDraw calls\n0\nDrawn triangles\n0",
+  "hudAfter": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nDrawing buffer\n3600×2086 px (devicePixelRatio 2)\nParts\n20,090\nModules\n25\nStud instances (drawn of total)\n34,145 of 120,037\nScene triangles\n5,493,920\nLoad\n183 ms\nGPU buffers allocated so far, JS heap\nvertex+index 2.6 MiB, other 0.0 MiB, JS heap 21.7 MiB\nRender origin (chunks), rebases\n(39061, 39060); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n25 / 0 / 0\nDraw calls\n79\nDrawn triangles\n2,232,549\nScene coverage\n64%\nFrame rate (rAF)\n120.0 fps",
+  "hudError": null
+}

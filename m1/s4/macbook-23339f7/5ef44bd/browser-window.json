@@ -1,0 +1,25 @@
+{
+  "chromeVersion": "Chrome/157.0.8103.52",
+  "windowBounds": {
+    "left": 0,
+    "top": 39,
+    "width": 1800,
+    "height": 1130,
+    "windowState": "maximized"
+  },
+  "runs": {
+    "city-250000-webgpu-street-far": {
+      "url": "http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=street&origin=39063,39063&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 4,
+      "error": null,
+      "gpu": {
+        "pids": [],
+        "footprints": {}
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    }
+  }
+}

@@ -1,0 +1,21 @@
+2026-11-16T18:07:34.877Z window {
+  left: 0,
+  top: 39,
+  width: 1800,
+  height: 1130,
+  windowState: 'maximized'
+}
+2026-11-16T18:07:34.923Z run city-250000-webgpu-aerial-origin http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T18:07:40.097Z city-250000-webgpu-aerial-origin done true 5s  [] {}
+2026-11-16T18:07:40.169Z run city-250000-webgpu-street-origin http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T18:07:43.893Z city-250000-webgpu-street-origin done true 4s  [] {}
+file:///private/tmp/srcdl/bench3.mjs:38
+  setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error(`timeout ${method}`)); } }, timeoutMs);
+                                                                       ^
+
+Error: timeout Runtime.evaluate
+    at Timeout._onTimeout (file:///private/tmp/srcdl/bench3.mjs:38:72)
+    at listOnTimeout (node:internal/timers:685:17)
+    at process.processTimers (node:internal/timers:618:7)
+
+Node.js v26.9.0

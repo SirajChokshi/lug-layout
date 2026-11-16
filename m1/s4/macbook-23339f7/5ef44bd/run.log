@@ -1,0 +1,10 @@
+2026-11-16T18:05:13.549Z window {
+  left: 0,
+  top: 39,
+  width: 1800,
+  height: 1130,
+  windowState: 'maximized'
+}
+2026-11-16T18:05:13.588Z run city-250000-webgpu-street-far http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=street&origin=39063,39063&measure=1&warmup=10&frames=120
+2026-11-16T18:05:17.746Z city-250000-webgpu-street-far done true 4s  [] {}
+2026-11-16T18:05:21.789Z finished
