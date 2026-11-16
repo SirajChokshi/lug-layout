@@ -19,7 +19,7 @@ import {
   type RoadModule,
 } from "./procedural-city.ts";
 import { withStuds } from "./stud-stream.ts";
-import type { BomInput, BomScope, IBomSource } from "../bom/bom-service.ts";
+import { sceneRegion, type BomInput, type BomScope, type IBomSource } from "../bom/bom-service.ts";
 import { straightRunPitchStuds } from "./straight-track.ts";
 import {
   ColorTable,
@@ -212,12 +212,7 @@ export class CityScene implements ICityScene {
     const contents: PlacementContents = {
       addTo: (target, refId, colorId) => target.add(refId, tables.colors.codeAt(colorId), 1),
     };
-    const placements = countPlacements(
-      this.world,
-      contents,
-      counter,
-      scope.kind === "region" ? scope.region : null,
-    );
+    const placements = countPlacements(this.world, contents, counter, sceneRegion(scope));
     return {
       name: `city-${this.request.seed}-${this.request.targetParts}`,
       lod: tables.lod,

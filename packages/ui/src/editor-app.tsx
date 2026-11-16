@@ -1,4 +1,5 @@
-import type { EditorOptions, IEditor } from "@brr/client";
+import type { EditorOptions, IBomService, IEditor } from "@brr/client";
+import { BomPanel } from "./bom-panel.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CatalogList,
@@ -11,6 +12,7 @@ import { useEditorSnapshot } from "./use-editor.ts";
 
 interface EditorAppProps {
   readonly editor: IEditor;
+  readonly bomService: IBomService;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -29,7 +31,7 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
   );
 }
 
-export function EditorApp({ editor, options, disclaimer, showState }: EditorAppProps) {
+export function EditorApp({ editor, bomService, options, disclaimer, showState }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   return (
     <div
@@ -45,6 +47,14 @@ export function EditorApp({ editor, options, disclaimer, showState }: EditorAppP
         <PlacementToolbar editor={editor} snapshot={snapshot} />
         <CatalogList editor={editor} snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
+        {snapshot.status === "ready" && (
+          <BomPanel
+            service={bomService}
+            source={editor}
+            region={null}
+            selectionLabel={snapshot.selection?.item ?? null}
+          />
+        )}
       </div>
       {showState && <EditorState editor={editor} />}
       <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />

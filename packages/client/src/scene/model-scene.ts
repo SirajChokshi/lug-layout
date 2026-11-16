@@ -3,7 +3,7 @@ import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/
 import { BomCounter } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import { chunkKey } from "@brr/math";
-import type { BomInput, BomScope, IBomSource } from "../bom/bom-service.ts";
+import { sceneRegion, type BomInput, type BomScope, type IBomSource } from "../bom/bom-service.ts";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 import { withStuds } from "./stud-stream.ts";
 
@@ -90,12 +90,13 @@ export class ModelScene implements IModelScene {
     const loaded = this.loaded;
     if (!loaded) throw new Error("the model scene has not loaded a model");
     const counter = new BomCounter(loaded.partIds, loaded.ldrawColors);
+    const region = sceneRegion(scope);
     const included =
-      scope.kind === "world" ||
-      (MODEL_ORIGIN >= scope.region.minX &&
-        MODEL_ORIGIN < scope.region.maxX &&
-        MODEL_ORIGIN >= scope.region.minZ &&
-        MODEL_ORIGIN < scope.region.maxZ);
+      region === null ||
+      (MODEL_ORIGIN >= region.minX &&
+        MODEL_ORIGIN < region.maxX &&
+        MODEL_ORIGIN >= region.minZ &&
+        MODEL_ORIGIN < region.maxZ);
     if (included) {
       counter.addInstances(loaded.partIndex, loaded.ldrawColor, loaded.instanceCount, 1);
     }

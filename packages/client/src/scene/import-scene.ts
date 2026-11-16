@@ -11,7 +11,7 @@ import type { ImportResult } from "@brr/import";
 import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
-import type { BomInput, BomScope, IBomSource } from "../bom/bom-service.ts";
+import { sceneRegion, type BomInput, type BomScope, type IBomSource } from "../bom/bom-service.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { withStuds } from "./stud-stream.ts";
@@ -214,12 +214,7 @@ export class ImportScene implements IImportScene {
         target.addInstances(slotIndex, module.result.ldrawColor, module.result.instanceCount, 1);
       },
     };
-    const placements = countPlacements(
-      this.world,
-      contents,
-      counter,
-      scope.kind === "region" ? scope.region : null,
-    );
+    const placements = countPlacements(this.world, contents, counter, sceneRegion(scope));
     return { name: IMPORTED_WORLD_NAME, lod: this.lod, placements, counter };
   }
 

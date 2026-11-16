@@ -14,6 +14,7 @@ interface BomPanelProps {
   readonly service: IBomService;
   readonly source: IBomSource;
   readonly region: PlacementRegion | null;
+  readonly selectionLabel: string | null;
 }
 
 interface Download {
@@ -70,9 +71,19 @@ function regionOf(draft: RegionDraft): PlacementRegion | string {
 
 function fileStem(bom: BillOfMaterials): string {
   const { scope } = bom;
-  if (scope.kind === "world") return bom.name;
-  const { minX, minZ, maxX, maxZ } = scope.region;
-  return `${bom.name}.region_${minX}_${minZ}_${maxX}_${maxZ}`;
+  switch (scope.kind) {
+    case "world":
+    case "selection":
+      return bom.name;
+    case "region": {
+      const { minX, minZ, maxX, maxZ } = scope.region;
+      return `${bom.name}.region_${minX}_${minZ}_${maxX}_${maxZ}`;
+    }
+    default: {
+      const unhandled: never = scope;
+      throw new Error(`unhandled scope ${String(unhandled)}`);
+    }
+  }
 }
 
 function save(bom: BillOfMaterials, download: Download): void {
@@ -90,7 +101,7 @@ function catalogText(catalog: CatalogBom): string {
   return `${integer.format(parts)} parts in ${integer.format(catalog.lines.length)} lots, ${integer.format(unmapped)} unmapped`;
 }
 
-export function BomPanel({ service, source, region }: BomPanelProps) {
+export function BomPanel({ service, source, region, selectionLabel }: BomPanelProps) {
   const [scopeKind, setScopeKind] = useState<BomScope["kind"]>(region ? "region" : "world");
   const [draft, setDraft] = useState<RegionDraft>(() => draftOf(region));
   const [bom, setBom] = useState<BillOfMaterials | null>(null);
@@ -98,7 +109,7 @@ export function BomPanel({ service, source, region }: BomPanelProps) {
 
   const build = (): void => {
     setError(null);
-    let scope: BomScope = { kind: "world" };
+    let scope: BomScope = { kind: scopeKind === "selection" ? "selection" : "world" };
     if (scopeKind === "region") {
       const parsed = regionOf(draft);
       if (typeof parsed === "string") {
@@ -134,6 +145,18 @@ export function BomPanel({ service, source, region }: BomPanelProps) {
           />
           Region (LDU, placement origins)
         </label>
+        {selectionLabel !== null && (
+          <label>
+            <input
+              type="radio"
+              name="bom-scope"
+              value="selection"
+              checked={scopeKind === "selection"}
+              onChange={() => setScopeKind("selection")}
+            />
+            Selection ({selectionLabel})
+          </label>
+        )}
       </div>
       {scopeKind === "region" && (
         <div className="bom-region">

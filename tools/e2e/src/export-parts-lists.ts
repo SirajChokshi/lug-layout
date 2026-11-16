@@ -8,6 +8,11 @@ const LOAD_TIMEOUT_MS = 600_000;
 const DEFAULT_CHROME = "/usr/local/bin/google-chrome";
 const DOWNLOAD_BUTTONS = ["Rebrickable CSV", "BrickLink XML", "Plain CSV"] as const;
 const REGION_HALF_WIDTH_LDU = 10;
+const EDITOR_SETS = ["10264-1", "7936-1"] as const;
+const EDITOR_CLICKS = [
+  [0.35, 0.55],
+  [0.6, 0.55],
+] as const;
 
 interface Placement {
   readonly module: number;
@@ -78,6 +83,30 @@ async function setRegion(page: Page, placement: Placement): Promise<void> {
   }
 }
 
+async function placeInEditor(page: Page): Promise<string> {
+  const canvas = page.locator("canvas").first();
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("the editor canvas has no layout box");
+  for (const [index, set] of EDITOR_SETS.entries()) {
+    const [fx, fy] = EDITOR_CLICKS[index] ?? [0.5, 0.5];
+    await page.locator(`[data-item="omr:${set}"]`).click();
+    await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy);
+    await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+    await page.waitForSelector(`#edit-state[data-placements="${index + 1}"]`, {
+      timeout: LOAD_TIMEOUT_MS,
+      state: "attached",
+    });
+  }
+  await page.keyboard.press("Escape");
+  const [fx, fy] = EDITOR_CLICKS[0];
+  await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+  await page.waitForSelector(".editor:not([data-selection=''])", {
+    timeout: LOAD_TIMEOUT_MS,
+    state: "attached",
+  });
+  return (await page.locator(".editor").getAttribute("data-selection")) ?? "";
+}
+
 async function importAll(page: Page, files: ReadonlyArray<string>): Promise<Placement[]> {
   for (const [index, file] of files.entries()) {
     await page.setInputFiles(".import-panel input[type=file]", file);
@@ -107,7 +136,7 @@ const browser = await chromium.launch({
   args: ["--enable-unsafe-webgpu"],
 });
 try {
-  for (const file of values.stage === "import" ? [] : positionals) {
+  for (const file of values.stage === "all" || values.stage === "models" ? positionals : []) {
     const set = basename(file).replace(/\.[^.]+$/u, "");
     const page = await open(browser, `model=${encodeURIComponent(set)}`);
     panels[`model/${set}`] = await buildAndDownload(page, join(out, "model"));
@@ -115,7 +144,21 @@ try {
     process.stdout.write(`model ${set}: exported\n`);
     await page.context().close();
   }
-  if (values.stage !== "models") {
+  if (values.stage === "all" || values.stage === "editor") {
+    const page = await open(browser, "state=1");
+    const selected = await placeInEditor(page);
+    panels["editor/world"] = await buildAndDownload(page, join(out, "editor"));
+    await page.locator('input[name="bom-scope"][value="selection"]').check();
+    panels[`editor/selection-${selected}`] = await buildAndDownload(page, join(out, "editor"));
+    await page.screenshot({ path: join(out, "editor-selection.png") });
+    writeFileSync(
+      join(out, "editor-state.json"),
+      `${(await page.locator("#edit-state").textContent()) ?? ""}\n`,
+    );
+    process.stdout.write(`editor: world and selection (${selected}) exported\n`);
+    await page.context().close();
+  }
+  if (values.stage === "all" || values.stage === "import") {
     const page = await open(browser, "scene=import");
     const placements = await importAll(page, positionals);
     panels["import/world"] = await buildAndDownload(page, join(out, "import"));

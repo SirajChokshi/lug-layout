@@ -92,6 +92,7 @@ function root(): ReactNode {
     return (
       <EditorApp
         editor={container.get(EDITOR)}
+        bomService={container.get(BOM_SERVICE)}
         options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
         disclaimer={TRADEMARK_DISCLAIMER}
         showState={params.showEditState}
