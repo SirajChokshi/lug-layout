@@ -1,7 +1,4 @@
 {
   "extends": "@brr/config/tsconfig.lib.json",
-  "compilerOptions": {
-    "lib": ["ES2023"]
-  },
   "include": ["src"]
 }

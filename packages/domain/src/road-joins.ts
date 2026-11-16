@@ -151,48 +151,56 @@ interface EdgeCell {
   readonly status: RoadCellStatus;
 }
 
+interface EdgeRun {
+  readonly first: EdgeCell;
+  readonly along: Set<number>;
+  min: number;
+  max: number;
+}
+
+function runKey(cell: EdgeCell): string {
+  return `${cell.placement}|${cell.side}|${cell.line}|${cell.status}|${cell.topLdu}`;
+}
+
 function mergeSegments(cells: ReadonlyArray<EdgeCell>): ReadonlyArray<RoadEdgeSegment> {
-  const sorted = cells.toSorted(
-    (a, b) =>
-      a.placement - b.placement ||
-      a.side.localeCompare(b.side) ||
-      a.line - b.line ||
-      a.status.localeCompare(b.status) ||
-      a.topLdu - b.topLdu ||
-      a.along - b.along,
-  );
-  const segments: RoadEdgeSegment[] = [];
-  let run: { first: EdgeCell; last: number } | null = null;
-  const close = (): void => {
-    if (!run) return;
-    const { first, last } = run;
-    segments.push({
-      placement: first.placement,
-      side: first.side,
-      line: first.line,
-      from: first.along * STUD_LDU,
-      to: (last + 1) * STUD_LDU,
-      topLdu: first.topLdu,
-      status: first.status,
-    });
-  };
-  for (const cell of sorted) {
-    const continues =
-      run !== null &&
-      run.first.placement === cell.placement &&
-      run.first.side === cell.side &&
-      run.first.line === cell.line &&
-      run.first.status === cell.status &&
-      run.first.topLdu === cell.topLdu &&
-      run.last + 1 === cell.along;
-    if (continues && run) {
-      run.last = cell.along;
+  const runs = new Map<string, EdgeRun>();
+  for (const cell of cells) {
+    const key = runKey(cell);
+    const run = runs.get(key);
+    if (!run) {
+      runs.set(key, {
+        first: cell,
+        along: new Set([cell.along]),
+        min: cell.along,
+        max: cell.along,
+      });
       continue;
     }
-    close();
-    run = { first: cell, last: cell.along };
+    run.along.add(cell.along);
+    run.min = Math.min(run.min, cell.along);
+    run.max = Math.max(run.max, cell.along);
   }
-  close();
+  const segments: RoadEdgeSegment[] = [];
+  for (const { first, along, min, max } of runs.values()) {
+    let from: number | null = null;
+    for (let index = min; index <= max + 1; index++) {
+      if (along.has(index)) {
+        from ??= index;
+        continue;
+      }
+      if (from === null) continue;
+      segments.push({
+        placement: first.placement,
+        side: first.side,
+        line: first.line,
+        from: from * STUD_LDU,
+        to: index * STUD_LDU,
+        topLdu: first.topLdu,
+        status: first.status,
+      });
+      from = null;
+    }
+  }
   return segments;
 }
 
