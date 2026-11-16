@@ -220,7 +220,7 @@
       "path": "(^|/)node_modules/"
     },
     "exclude": {
-      "path": "(\\.test\\.ts$|(^|/)vitest\\.config\\.ts$|(^|/)vite\\.config\\.ts$|^(apps|packages|tools)/[^/]+/dist/)"
+      "path": "(\\.(test|bench)\\.ts$|(^|/)vitest\\.config\\.ts$|(^|/)vite\\.config\\.ts$|^(apps|packages|tools)/[^/]+/dist/)"
     },
     "parser": "swc",
     "tsPreCompilationDeps": true,
