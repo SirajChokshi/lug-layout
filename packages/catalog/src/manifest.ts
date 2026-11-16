@@ -2,6 +2,11 @@ import type {
   BundleColor,
   BundleCredit,
   BundleModelEntry,
+  BundleModuleStandards,
+  BundleSource,
+  CatalogColorIds,
+  CatalogCrosswalk,
+  CatalogPartIds,
   ModelSection,
   PartRole,
   TrackEnd,
@@ -25,10 +30,9 @@ export interface ManifestStudPrimitive {
   readonly file: string;
 }
 
-export interface BundleSource {
-  readonly repo: string;
-  readonly commit: string;
-  readonly root: string;
+export interface BundleCompiler {
+  readonly file: string;
+  readonly unofficialAllowlist: ReadonlyArray<string>;
 }
 
 export interface BundleInputs {
@@ -38,6 +42,8 @@ export interface BundleInputs {
 
 export interface BundleManifest {
   readonly bundleVersion: string;
+  readonly source: BundleSource;
+  readonly compiler: BundleCompiler | null;
   readonly unit: "LDU";
   readonly upAxis: "+Y";
   readonly parts: ReadonlyArray<ManifestPart>;
@@ -49,6 +55,15 @@ export interface BundleManifest {
   readonly disclaimer: string;
   readonly inputs: BundleInputs;
   readonly trackCatalog: TrackCatalog;
+  readonly moduleStandards: BundleModuleStandards;
+  readonly crosswalk: { readonly file: string };
+}
+
+export interface CrosswalkFile {
+  readonly parts: Readonly<Record<string, CatalogPartIds>>;
+  readonly colors: Readonly<Record<string, CatalogColorIds>>;
+  readonly bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>;
+  readonly bricklinkColors: Readonly<Record<string, ReadonlyArray<number>>>;
 }
 
 export interface ModelFileLattice {
@@ -73,8 +88,17 @@ export interface StudExtra {
   readonly matrix: ReadonlyArray<number>;
 }
 
+export interface SourceExtra {
+  readonly path: string;
+  readonly title: string;
+  readonly author: string;
+  readonly license: string | null;
+}
+
 export interface PartExtras {
   readonly studs: ReadonlyArray<StudExtra>;
+  readonly sources?: ReadonlyArray<SourceExtra>;
+  readonly bounds?: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -121,9 +145,71 @@ function isBundleModelEntry(value: unknown): value is BundleModelEntry {
   );
 }
 
-function isSource(value: unknown): boolean {
+function isStringList(value: unknown): value is ReadonlyArray<string> {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isBomLine(value: unknown): boolean {
   return (
-    isRecord(value) && typeof value["repo"] === "string" && typeof value["commit"] === "string"
+    isRecord(value) &&
+    typeof value["part"] === "string" &&
+    (value["ldrawColor"] === null || typeof value["ldrawColor"] === "number") &&
+    typeof value["quantity"] === "number"
+  );
+}
+
+function isCellRange(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 2 && value.every((v) => typeof v === "number");
+}
+
+function isModuleRecipe(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value["groundPart"] === "string" &&
+    Array.isArray(value["edgeJoinCells"]) &&
+    value["edgeJoinCells"].every(isCellRange) &&
+    typeof value["surfacePlates"] === "number" &&
+    Array.isArray(value["substructure"]) &&
+    value["substructure"].every(isBomLine)
+  );
+}
+
+function isModuleProfile(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value["id"] === "lego-modular" || value["id"] === "mils") &&
+    typeof value["moduleStuds"] === "number" &&
+    isStringList(value["joinParts"]) &&
+    typeof value["joinLevelPlates"] === "number" &&
+    (value["recipe"] === null || isModuleRecipe(value["recipe"])) &&
+    typeof value["source"] === "string"
+  );
+}
+
+function isModuleStandards(value: unknown): value is BundleModuleStandards {
+  return (
+    isRecord(value) &&
+    isStringList(value["groundParts"]) &&
+    Array.isArray(value["profiles"]) &&
+    value["profiles"].every(isModuleProfile)
+  );
+}
+
+function isBundleSource(value: unknown): value is BundleSource {
+  return (
+    isRecord(value) &&
+    typeof value["repo"] === "string" &&
+    typeof value["commit"] === "string" &&
+    typeof value["root"] === "string"
+  );
+}
+
+function isCompiler(value: unknown): value is BundleCompiler {
+  return (
+    isRecord(value) &&
+    typeof value["file"] === "string" &&
+    Array.isArray(value["unofficialAllowlist"]) &&
+    value["unofficialAllowlist"].every((entry) => typeof entry === "string")
   );
 }
 
@@ -141,17 +227,99 @@ export function parseManifest(value: unknown): BundleManifest {
     !value["credits"].every(isCredit) ||
     !Array.isArray(value["models"]) ||
     !value["models"].every(isBundleModelEntry) ||
+    !isModuleStandards(value["moduleStandards"]) ||
+    !isBundleSource(value["source"]) ||
+    !(
+      value["compiler"] === null ||
+      value["compiler"] === undefined ||
+      isCompiler(value["compiler"])
+    ) ||
+    !isRecord(value["crosswalk"]) ||
+    typeof value["crosswalk"]["file"] !== "string" ||
     typeof value["modified"] !== "string" ||
     typeof value["disclaimer"] !== "string" ||
     !isRecord(value["inputs"]) ||
-    !isSource(value["inputs"]["ldraw"]) ||
-    !isSource(value["inputs"]["omr"])
+    !isBundleSource(value["inputs"]["ldraw"]) ||
+    !isBundleSource(value["inputs"]["omr"])
   ) {
     throw new Error("bundle manifest does not match the M1 bundle format");
   }
   return {
     ...(value as unknown as Omit<BundleManifest, "trackCatalog">),
     trackCatalog: parseTrackCatalog(value["trackCatalog"]),
+    compiler: isCompiler(value["compiler"]) ? value["compiler"] : null,
+  };
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNullableInteger(value: unknown): value is number | null {
+  return value === null || Number.isInteger(value);
+}
+
+function isPartComponent(value: unknown): boolean {
+  return isRecord(value) && typeof value["part"] === "string" && Number.isInteger(value["color"]);
+}
+
+function isCatalogPartIds(value: unknown): value is CatalogPartIds {
+  return (
+    isRecord(value) &&
+    isNullableString(value["rebrickable"]) &&
+    isNullableString(value["bricklink"]) &&
+    (value["components"] === undefined ||
+      (Array.isArray(value["components"]) && value["components"].every(isPartComponent)))
+  );
+}
+
+function isCatalogColorIds(value: unknown): value is CatalogColorIds {
+  return (
+    isRecord(value) &&
+    isNullableInteger(value["rebrickable"]) &&
+    isNullableInteger(value["bricklink"])
+  );
+}
+
+function isIntegerArray(value: unknown): value is ReadonlyArray<number> {
+  return Array.isArray(value) && value.every((v) => Number.isInteger(v));
+}
+
+export function parseCrosswalkFile(value: unknown, label: string): CrosswalkFile {
+  if (
+    !isRecord(value) ||
+    !isRecord(value["parts"]) ||
+    !isRecord(value["colors"]) ||
+    !isRecord(value["bricklinkParts"]) ||
+    !isRecord(value["bricklinkColors"]) ||
+    !Object.values(value["parts"]).every(isCatalogPartIds) ||
+    !Object.values(value["colors"]).every(isCatalogColorIds) ||
+    !Object.values(value["bricklinkParts"]).every(isStringArray) ||
+    !Object.values(value["bricklinkColors"]).every(isIntegerArray)
+  ) {
+    throw new Error(`${label}: crosswalk does not match the bundle format`);
+  }
+  return value as unknown as CrosswalkFile;
+}
+
+export function crosswalkMaps(file: CrosswalkFile): CatalogCrosswalk {
+  return {
+    parts: new Map(
+      Object.entries(file.parts).map(([id, ids]) => [
+        id,
+        {
+          rebrickable: ids.rebrickable,
+          bricklink: ids.bricklink,
+          ...(ids.components ? { components: ids.components } : {}),
+        },
+      ]),
+    ),
+    colors: new Map(
+      Object.entries(file.colors).map(([code, ids]) => [
+        Number(code),
+        { rebrickable: ids.rebrickable, bricklink: ids.bricklink },
+      ]),
+    ),
   };
 }
 

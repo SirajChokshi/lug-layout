@@ -40,7 +40,14 @@ class IssueBoxBackend implements ISceneBackend {
 
 it("keeps the plan current when a float model box hangs off a table far from world zero", () => {
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+  container.load(
+    ...mainThreadModules({
+      bundleBaseUrl: "unused",
+      createImportWorker: () => {
+        throw new Error("not used");
+      },
+    }),
+  );
   const backend = new IssueBoxBackend();
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const plans = container.get(PLAN_SERVICE);
@@ -58,7 +65,15 @@ it("keeps the plan current when a float model box hangs off a table far from wor
   });
   const box = { minX: 3680, minY: 0, minZ: -1180, maxX: 4320, maxY: 836, maxZ: -509.9517464892578 };
   plans.setPlacements([
-    { key: { chunkKey: 5, slot: 2 }, ref: "omr:10185-1", label: "10185-1", box },
+    {
+      key: { chunkKey: 5, slot: 2 },
+      ref: "omr:10185-1",
+      label: "10185-1",
+      box,
+      x: 4000,
+      z: -845,
+      rot: 0,
+    },
   ]);
 
   const [check] = plans.snapshot().checks;

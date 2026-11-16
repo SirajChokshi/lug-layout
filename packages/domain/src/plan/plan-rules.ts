@@ -12,7 +12,18 @@ import {
   type StudRect,
 } from "./plan-region.ts";
 
-export type PlanRuleId = "footprint" | "fit" | "crossesRegion" | "unchecked";
+export type PlanRuleId =
+  | "footprint"
+  | "fit"
+  | "crossesRegion"
+  | "overlap"
+  | "seam"
+  | "reach"
+  | "moduleGrid"
+  | "moduleJoin"
+  | "roadJoin"
+  | "bomMapping"
+  | "unchecked";
 export const FLOAT_BOX_TOLERANCE_LDU = 0.1;
 const MICRO_MM = 1e6;
 export type IssueSeverity = "error" | "warning";
