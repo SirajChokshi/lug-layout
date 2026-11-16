@@ -1,4 +1,7 @@
+import type { BundleManifest } from "./manifest.ts";
+
 export type BundleLod = "standard" | "low" | "far";
+export const BUNDLE_LODS: ReadonlyArray<BundleLod> = ["standard", "low", "far"];
 export type PartRole = "ground" | "road" | "track" | "wall" | "roof" | "detail" | "model";
 export type Vec3Tuple = readonly [number, number, number];
 
@@ -53,6 +56,9 @@ export interface BundleColor {
 }
 
 export interface BundleCredit {
+  readonly path: string;
+  readonly title: string;
+  readonly author: string;
   readonly license: string | null;
 }
 
@@ -64,11 +70,28 @@ export interface ModelSection {
 
 export type ModelOrigin = "omr" | "generated";
 
+export interface ModelSet {
+  readonly name: string;
+  readonly year: number;
+  readonly source: string;
+}
+
 export interface BundleModelEntry {
   readonly name: string;
   readonly file: string;
   readonly origin: ModelOrigin;
+  readonly set: ModelSet | null;
   readonly source: string;
+  readonly authors: ReadonlyArray<string>;
+  readonly licenses: ReadonlyArray<string>;
+  readonly sections: ReadonlyArray<ModelSection>;
+  readonly inlinePartsResolvedToOfficial: ReadonlyArray<InlinePartResolution>;
+  readonly instances: number;
+}
+
+export interface InlinePartResolution {
+  readonly inline: string;
+  readonly official: string;
 }
 
 export interface ModelLattice {
@@ -110,6 +133,7 @@ export interface ModelBundle {
 }
 
 export interface IPartBundleLoader {
+  loadManifest(lod: BundleLod): Promise<BundleManifest>;
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
 }

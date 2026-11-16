@@ -5,8 +5,10 @@ use std::process::ExitCode;
 
 use brick_compile::affine::Vec3;
 use brick_compile::colors::parse_ldconfig;
+use brick_compile::compile::modified_note;
 use brick_compile::inline::inline_part_distance;
 use brick_compile::lattice::{model_lattice, LatticeInstance};
+use brick_compile::ldraw::{parse as parse_ldraw, Header};
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::bake_model;
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
@@ -117,17 +119,31 @@ fn part_shape(part: &CompiledPart) -> PartShape {
     }
 }
 
+fn credit(path: &str, header: &Header) -> Value {
+    json!({
+        "path": path,
+        "title": header.title,
+        "author": header.author,
+        "license": header.license,
+    })
+}
+
 fn record_credits(credits: &mut BTreeMap<String, Value>, part: &CompiledPart) {
     for file in &part.flattened_files {
-        credits.entry(file.path.clone()).or_insert_with(|| {
-            json!({
-                "path": file.path,
-                "title": file.header.title,
-                "author": file.header.author,
-                "license": file.header.license,
-            })
-        });
+        credits
+            .entry(file.path.clone())
+            .or_insert_with(|| credit(&file.path, &file.header));
     }
+}
+
+fn distinct<'a>(values: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut seen = Vec::new();
+    for value in values {
+        if !value.is_empty() && !seen.contains(&value) {
+            seen.push(value);
+        }
+    }
+    seen
 }
 
 fn compile_entry(
@@ -146,6 +162,7 @@ fn compile_entry(
     let header = &compiled.flattened_files[0].header;
     let mut summary = part_summary(&compiled);
     summary["id"] = json!(format!("ldraw:{id}"));
+    summary["path"] = json!(compiled.path);
     summary["role"] = role.clone();
     summary["file"] = json!(file);
     summary["title"] = json!(header.title);
@@ -199,6 +216,7 @@ fn run(args: &Args) -> Result<(), String> {
         record_credits(&mut credits, &compiled);
         let mut summary = part_summary(&compiled);
         summary["name"] = json!(name);
+        summary["path"] = json!(compiled.path);
         summary["file"] = json!(file);
         primitives.push(summary);
     }
@@ -350,11 +368,16 @@ fn run(args: &Args) -> Result<(), String> {
             serde_json::to_string(&model).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
+        let authors = distinct(baked.sections.iter().map(|h| h.author.as_str()));
+        let licenses = distinct(baked.sections.iter().filter_map(|h| h.license.as_deref()));
         models.push(json!({
             "name": name,
             "file": model_file,
             "origin": entry["origin"],
+            "set": entry["set"],
             "source": entry["source"],
+            "authors": authors,
+            "licenses": licenses,
             "sections": sections,
             "inlinePartsResolvedToOfficial": inline_parts,
             "instances": baked.instances.len(),
@@ -362,10 +385,15 @@ fn run(args: &Args) -> Result<(), String> {
         }));
     }
 
-    let colors: Vec<Value> = library
+    let ldconfig = library
         .source(LDCONFIG)
-        .map(parse_ldconfig)
-        .unwrap_or_default()
+        .ok_or("LDConfig.ldr is missing from the LDraw library")?;
+    let ldconfig_header = parse_ldraw(ldconfig).header;
+    credits.insert(
+        LDCONFIG.to_string(),
+        credit(&ldconfig_header.name, &ldconfig_header),
+    );
+    let colors: Vec<Value> = parse_ldconfig(ldconfig)
         .into_iter()
         .map(|c| {
             json!({
@@ -390,6 +418,7 @@ fn run(args: &Args) -> Result<(), String> {
         "studPrimitives": primitives,
         "colors": colors,
         "credits": credits.into_values().collect::<Vec<_>>(),
+        "modified": modified_note(args.lod),
         "disclaimer": DISCLAIMER,
     });
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;

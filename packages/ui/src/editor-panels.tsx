@@ -5,6 +5,7 @@ import type {
   IEditor,
   LatencySample,
 } from "@brr/client";
+import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
@@ -242,8 +243,8 @@ export function CreditsFooter({
   return (
     <footer>
       {credits &&
-        `Models from the LDraw Official Model Repository: ${modelCredits(credits)}. Parts: LDraw parts library, ${credits.partFiles} files (${credits.partLicenses.join(", ")}), modified from LDraw: flattened, studs extracted. Colours: LDraw LDConfig.ldr. `}
-      {disclaimer}
+        `Models from the LDraw Official Model Repository: ${modelCredits(credits)}. ${partsCreditText(credits.partFiles, credits.partFilesLod)}`}
+      {disclaimer} <CreditLinks />
     </footer>
   );
 }

@@ -12,6 +12,21 @@ export type { IViewerScene, ModelCredit, SceneSummary } from "./scene/viewer-sce
 export type { CityCamera, CityRequest, ICityScene } from "./scene/city-scene.ts";
 export type { PlacementDump } from "./scene/placements.ts";
 export type { IModelScene } from "./scene/model-scene.ts";
+export type { ICredits } from "./credits/credits-service.ts";
+export {
+  licenseText,
+  setTitle,
+  sourceText,
+  type AuthorCredit,
+  type BundleBuild,
+  type CreditCounts,
+  type CreditedFile,
+  type CreditsView,
+  type DataSourceCredit,
+  type GeneratedModelCredit,
+  type LicenseGroup,
+  type SetCredit,
+} from "./credits/credits-view.ts";
 export type {
   CatalogItemView,
   EditAction,
@@ -26,4 +41,4 @@ export type {
   LatencySample,
   SelectionView,
 } from "./edit/editor.ts";
-export { CITY_SCENE, EDITOR, MODEL_SCENE, PART_DISPLAY_SCENE } from "./tokens.ts";
+export { CITY_SCENE, CREDITS, EDITOR, MODEL_SCENE, PART_DISPLAY_SCENE } from "./tokens.ts";

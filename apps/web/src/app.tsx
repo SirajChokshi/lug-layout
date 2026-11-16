@@ -1,10 +1,11 @@
 import type { IViewerScene, PlacementDump } from "@brr/client";
+import { CreditLinks, partsCreditText } from "@brr/ui";
 import { useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
 import type { MemoryReport } from "./viewer/memory-report.ts";
-import { TRADEMARK_DISCLAIMER } from "./disclaimer.ts";
 import { runViewer, type ViewerReport, type ViewerResult } from "./viewer/run-viewer.ts";
+import { TRADEMARK_DISCLAIMER } from "./disclaimer.ts";
 import type { ViewerParams } from "./viewer/viewer-params.ts";
 
 const BYTES_PER_MEBIBYTE = 1024 * 1024;
@@ -147,9 +148,8 @@ export function App({ scene, params, placements }: AppProps) {
       </aside>
       <footer>
         {report && modelCredit(report)}
-        {report &&
-          `Parts: LDraw parts library, ${report.summary.creditedFiles} files (${report.summary.creditedLicenses.join(", ")}), modified from LDraw: flattened, studs extracted. Colours: LDraw LDConfig.ldr. `}
-        {TRADEMARK_DISCLAIMER}
+        {report && partsCreditText(report.summary.creditedFiles, params.lod)}
+        {TRADEMARK_DISCLAIMER} <CreditLinks />
       </footer>
     </>
   );

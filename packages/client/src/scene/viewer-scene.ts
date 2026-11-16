@@ -17,7 +17,6 @@ export interface SceneSummary {
   readonly bodyTriangles: number;
   readonly studTriangles: number;
   readonly creditedFiles: number;
-  readonly creditedLicenses: ReadonlyArray<string>;
   readonly model: ModelCredit | null;
 }
 
@@ -138,7 +137,6 @@ function summarize(
     bodyTriangles,
     studTriangles,
     creditedFiles: bundle.credits.length,
-    creditedLicenses: [...new Set(bundle.credits.map((c) => c.license ?? "none"))],
     model,
   };
 }
