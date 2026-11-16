@@ -1,0 +1,68 @@
+setup: goto
+setup: ready
+setup: plan 0 0
+calibrated a 639 417
+calibrated b 924 417
+calibrated u1 1017 445
+calibrated u2 1067 542
+calibrated u3 1024 660
+calibrated c 924 702
+calibrated d 639 702
+calibrated w1 549 674
+calibrated w2 499 577
+calibrated w3 542 460
+calibrated p0 674 785
+calibrated p1 889 785
+calibrated q0 1210 720
+calibrated q1 1210 917
+drag a b
+drag b u1 u2 u3 c
+drag c d
+drag d w1 w2 w3 a
+== 01-9v-oval-closed: buildable errors=0 warnings=0 parts=26
+   track panel: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 26 | ldraw:74746 Train Track 9V Straight | × 10 | ldraw:74747 Train Track 9V Curved | × 16 | Exact joins | 26 | Open ends | 0 | Coincident ends not joined | 0 | Last release | laid and joined exactly | Solver per pointer move | median 0.50 ms, p95 0.90 ms, max 6.30 ms (184 moves)
+drag p0 p1
+== 02-open-run: draft errors=2 warnings=0 parts=30
+   track panel: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 30 | ldraw:74746 Train Track 9V Straight | × 14 | ldraw:74747 Train Track 9V Curved | × 16 | Exact joins | 29 | Open ends | 2 | Coincident ends not joined | 0 | Last release | laid with an open end | Solver per pointer move | median 0.50 ms, p95 0.90 ms, max 6.30 ms (203 moves)
+   [trackOpenEnd/error] Open track end at (1360 mm, 1344 mm) on 74746 Train Track 9V Straight #27: nothing joins it and no buffer caps it.
+   [trackOpenEnd/error] Open track end at (1872 mm, 1344 mm) on 74746 Train Track 9V Straight #30: nothing joins it and no buffer caps it.
+drag q0 q1
+== 03-run-off-the-table: draft errors=6 warnings=0 parts=33
+   track panel: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 33 | ldraw:74746 Train Track 9V Straight | × 17 | ldraw:74747 Train Track 9V Curved | × 16 | Exact joins | 31 | Open ends | 4 | Coincident ends not joined | 0 | Last release | laid with an open end | Solver per pointer move | median 0.50 ms, p95 0.90 ms, max 6.30 ms (222 moves)
+   [trackOpenEnd/error] Open track end at (1360 mm, 1344 mm) on 74746 Train Track 9V Straight #27: nothing joins it and no buffer caps it.
+   [trackOpenEnd/error] Open track end at (1872 mm, 1344 mm) on 74746 Train Track 9V Straight #30: nothing joins it and no buffer caps it.
+   [trackOpenEnd/error] Open track end at (2560 mm, 1200 mm) on 74746 Train Track 9V Straight #31: nothing joins it and no buffer caps it.
+   [trackOpenEnd/error] Open track end at (2560 mm, 1584 mm) on 74746 Train Track 9V Straight #33: nothing joins it and no buffer caps it.
+   [trackFit/error] 74746 Train Track 9V Straight #32 hangs 20 mm past the table edge (limit 0 mm).
+   [trackFit/error] 74746 Train Track 9V Straight #33 hangs 148 mm past the table edge (limit 0 mm).
+setup: goto
+setup: ready
+setup: plan 0 0
+calibrated a 639 417
+calibrated b 924 417
+calibrated u1 1017 445
+calibrated u2 1067 542
+calibrated u3 1024 660
+calibrated c 924 702
+calibrated d 639 702
+calibrated w1 549 674
+calibrated w2 499 577
+calibrated w3 542 460
+calibrated p0 674 785
+calibrated p1 889 785
+calibrated q0 1210 720
+calibrated q1 1210 917
+drag a b
+drag b u1 u2 u3 c
+drag c d
+drag d w1 w2 w3 a
+== 04-plastic-oval-unverified: draft errors=0 warnings=1 parts=26
+   track panel: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 26 | ldraw:53401 Train Track 6 Studs Wide Straight | × 10 | ldraw:53400 Train Track 6 Studs Wide Curved | × 16 | Exact joins | 26 | Open ends | 0 | Coincident ends not joined | 0 | Last release | laid and joined exactly | Solver per pointer move | median 0.50 ms, p95 1.00 ms, max 4.70 ms (184 moves)
+   [trackUnverified/warning] 16 × 53400 Train Track 6 Studs Wide Curved: unverified connector poses. Its LDraw file has 3-decimal coordinates, too coarse for the unique ℤ[ζ₁₆] identification (§5.3), so its poses come from its !HELP rotation point; 16 of these pieces have joins that are ex
+== 05-seam-off-module-grid: draft errors=0 warnings=3 parts=26
+   track panel: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 26 | ldraw:53401 Train Track 6 Studs Wide Straight | × 10 | ldraw:53400 Train Track 6 Studs Wide Curved | × 16 | Exact joins | 26 | Open ends | 0 | Coincident ends not joined | 0 | Last release | laid and joined exactly | Solver per pointer move | median 0.50 ms, p95 1.00 ms, max 4.70 ms (184 moves)
+   [trackUnverified/warning] 16 × 53400 Train Track 6 Studs Wide Curved: unverified connector poses. Its LDraw file has 3-decimal coordinates, too coarse for the unique ℤ[ζ₁₆] identification (§5.3), so its poses come from its !HELP rotation point; 16 of these pieces have joins that are ex
+   [trackSeam/warning] 53401 Train Track 6 Studs Wide Straight #4 crosses a table seam that isn't on a 32-stud module edge.
+   [trackSeam/warning] 53401 Train Track 6 Studs Wide Straight #15 crosses a table seam that isn't on a 32-stud module edge.
+
+TRACK_DONE
