@@ -91,7 +91,12 @@
       "file": "7936-1.mpd",
       "sha256": "f26bc3b65089335753e0b0d5d77c1b048dd7f2475cafd177a4c44ff440a4fd10",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/7936-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Level Crossing",
+        "year": 2010,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10264-1",
@@ -99,7 +104,12 @@
       "file": "10264-1.mpd",
       "sha256": "e5168c0451039eef6dc26dcd52da2c8310b48e057ebd39ca146c83bab4a4f8b9",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10264-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Corner Garage",
+        "year": 2019,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10185-1",
@@ -107,7 +117,12 @@
       "file": "10185-1.mpd",
       "sha256": "59c1cacc8b01ff909c811b99e169184bb2847ffddedda8a2ddb467a3da33a59e",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10185-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Green Grocer",
+        "year": 2008,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10190-1",
@@ -115,7 +130,12 @@
       "file": "10190-1.mpd",
       "sha256": "33cadb0b8514e80512bbfcda352b4381e4593f981b868b6b79bc03b63350db9e",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10190-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Market Street",
+        "year": 2007,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10218-1",
@@ -123,7 +143,12 @@
       "file": "10218-1.mpd",
       "sha256": "30fd5ec2bc4ad6a7e875dfc4aaf69929edc9c7fd086d5ddfca55cc2cf5cf9e9a",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10218-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Pet Shop",
+        "year": 2011,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "2150-1",
@@ -131,7 +156,12 @@
       "file": "2150-1.mpd",
       "sha256": "1633ac12ac0a76d5c56225fb7302720b198a81fd805b7ee6620a323305327d11",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/2150-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Train Station",
+        "year": 1996,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "4554-1",
@@ -139,7 +169,12 @@
       "file": "4554-1.mpd",
       "sha256": "583767c8d0e52be3d024c32b70491e2a3d8ea2de4b3df39cfc3cf2d38ada92c8",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/4554-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Metro Station",
+        "year": 1991,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "4555-1",
@@ -147,7 +182,12 @@
       "file": "4555-1.mpd",
       "sha256": "c88e189b54d1a85e4e26d45634c4ead13186b2a8dbb001096e80e4c30460f024",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/4555-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Cargo Station",
+        "year": 1995,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10128-1",
@@ -155,7 +195,12 @@
       "file": "10128-1.mpd",
       "sha256": "7928f4e259455ec49cc02c62acb1653f7a002824c789f099845936d0a2e8a0b9",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10128-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Train Level Crossing",
+        "year": 2003,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10133-1",
@@ -163,7 +208,12 @@
       "file": "10133-1.mpd",
       "sha256": "184552fadb29ed3659bca6004c5ab87b2a0c2cdadcf15ff07026dde4265ec9b1",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10133-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "set": {
+        "name": "Burlington Northern Santa Fe Locomotive",
+        "year": 2004,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "switch-then-reversed-curve",

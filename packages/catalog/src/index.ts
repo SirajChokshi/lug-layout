@@ -1,5 +1,6 @@
 export { catalogModule } from "./catalog.module.ts";
-export { INHERIT_COLOR } from "./part-bundle.ts";
+export { BUNDLE_LODS, INHERIT_COLOR } from "./part-bundle.ts";
+export type { BundleInputs, BundleManifest, BundleSource } from "./manifest.ts";
 export type {
   BundleColor,
   BundleCredit,
@@ -13,6 +14,7 @@ export type {
   ModelLattice,
   ModelOrigin,
   ModelSection,
+  ModelSet,
   PartAsset,
   PartBundle,
   PartFilter,

@@ -1,5 +1,6 @@
 import {
   CITY_SCENE,
+  CREDITS,
   EDITOR,
   mainThreadModules,
   MODEL_SCENE,
@@ -7,12 +8,13 @@ import {
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
-import { EditorApp } from "@brr/ui";
+import { AboutPage, CreditsPage, EditorApp } from "@brr/ui";
 import { Container } from "inversify";
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
 import { TRADEMARK_DISCLAIMER } from "./disclaimer.ts";
+import { readSitePage } from "./site-page.ts";
 import { readViewerParams, type ViewerParams } from "./viewer/viewer-params.ts";
 
 const rootElement = document.getElementById("root");
@@ -57,6 +59,19 @@ function viewerScene(viewer: ViewerParams): {
 }
 
 function root(): ReactNode {
+  const page = readSitePage(location.search);
+  switch (page) {
+    case "credits":
+      return <CreditsPage credits={container.get(CREDITS)} disclaimer={TRADEMARK_DISCLAIMER} />;
+    case "about":
+      return <AboutPage credits={container.get(CREDITS)} disclaimer={TRADEMARK_DISCLAIMER} />;
+    case "app":
+      break;
+    default: {
+      const unhandled: never = page;
+      throw new Error(`unhandled page ${String(unhandled)}`);
+    }
+  }
   if (params.mode === "edit") {
     return (
       <EditorApp

@@ -10,6 +10,17 @@ use crate::occlusion;
 pub const MODIFIED_NOTE: &str =
     "Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up";
 
+pub fn modified_note(lod: Lod) -> String {
+    const LOW_PRIMITIVES: &str = "8-segment p/8 primitives used where LDraw provides them";
+    match lod {
+        Lod::Standard => MODIFIED_NOTE.to_string(),
+        Lod::Low => format!("{MODIFIED_NOTE}, {LOW_PRIMITIVES}"),
+        Lod::Far => {
+            format!("{MODIFIED_NOTE}, {LOW_PRIMITIVES}, triangles hidden from above removed")
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompileError {
     Flatten(FlattenError),

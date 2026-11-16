@@ -207,3 +207,115 @@ footer {
   color: #556;
   font-size: 11px;
 }
+
+footer a {
+  color: inherit;
+}
+
+.site-page {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  background: #f4f7fa;
+  color: #1b2a34;
+}
+
+.site-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid #d5dee6;
+  background: #fff;
+}
+
+.site-header h1 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.site-links {
+  display: flex;
+  gap: 16px;
+}
+
+.site-main {
+  flex: 1 0 auto;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 8px 24px 64px;
+}
+
+.site-main h2 {
+  margin: 28px 0 8px;
+  font-size: 16px;
+}
+
+.site-main h3 {
+  margin: 18px 0 6px;
+  font-size: 14px;
+}
+
+.site-main .lead {
+  font-size: 14px;
+}
+
+.site-main .muted {
+  color: #667;
+  font-weight: normal;
+}
+
+.site-main .error {
+  color: #b40000;
+}
+
+.site-main table {
+  border-collapse: collapse;
+}
+
+.site-main th,
+.site-main td {
+  padding: 3px 10px 3px 0;
+  border-bottom: 1px solid #e3e9ee;
+  text-align: left;
+  vertical-align: top;
+}
+
+.site-main .counts td {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.site-main .authors {
+  columns: 3 240px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.site-main .files {
+  font-size: 12px;
+}
+
+.site-main .facts dt {
+  margin-top: 8px;
+  color: #556;
+}
+
+.site-main .facts dd {
+  margin: 0;
+}
+
+.site-footer {
+  position: sticky;
+  bottom: 0;
+  padding: 6px 24px;
+  border-top: 1px solid #d5dee6;
+  background: #fff;
+  color: #334;
+  font-size: 12px;
+}

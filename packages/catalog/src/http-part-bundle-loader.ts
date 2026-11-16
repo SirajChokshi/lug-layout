@@ -65,7 +65,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
 
   constructor(@inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher) {}
 
-  private manifest(lod: BundleLod): Promise<BundleManifest> {
+  loadManifest(lod: BundleLod): Promise<BundleManifest> {
     const cached = this.manifests.get(lod);
     if (cached) return cached;
     const loading = this.fetcher
@@ -101,12 +101,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
-    const manifest = await this.manifest(lod);
+    const manifest = await this.loadManifest(lod);
     return this.bundle(lod, manifest, manifest.parts.filter(include));
   }
 
   async loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
-    const manifest = await this.manifest(lod);
+    const manifest = await this.loadManifest(lod);
     const entry = manifest.models.find((model) => model.name === name);
     if (!entry) {
       const available = manifest.models.map((model) => model.name).join(", ");
