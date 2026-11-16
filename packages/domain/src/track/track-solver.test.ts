@@ -122,10 +122,8 @@ describe("solveClosure", () => {
       const reference = randomRun(random);
       const goal = openEndFacing(endOf(start, reference));
       const run = solveClosure(kit, start, goal);
-      expect(run).not.toBeNull();
-      if (!run) continue;
-      expect(posesJoin16(endOf(start, run), goal)).toBe(true);
-      expect(run.pieces).toBeLessThanOrEqual(reference.pieces);
+      expect(run !== null && posesJoin16(endOf(start, run), goal)).toBe(true);
+      expect(run?.pieces ?? Infinity).toBeLessThanOrEqual(reference.pieces);
     }
   });
 
@@ -143,7 +141,7 @@ describe("solveClosure", () => {
     const back = pose16(start.position, start.heading + 8);
     const run = solveClosure(kit, end, back);
     expect(run?.pieces).toBe(8);
-    if (run) expect(posesJoin16(endOf(end, run), back)).toBe(true);
+    expect(run !== null && posesJoin16(endOf(end, run), back)).toBe(true);
   });
 
   it("refuses a gap that is one stud off any reachable pose", () => {
