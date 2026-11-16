@@ -15,6 +15,12 @@ export type TrackGraphTopology = Pick<
   | "successorStart"
   | "successors"
   | "edgeSwitch"
+  | "placementCount"
+  | "edgePlacement"
+  | "edgeRoute"
+  | "endPlacement"
+  | "endPartner"
+  | "switchEnd"
 >;
 
 const HEADING_STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;

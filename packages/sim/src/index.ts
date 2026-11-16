@@ -37,11 +37,12 @@ export {
   SIM_TICK_SECONDS,
   Simulation,
   type SimCapacity,
+  type SimRailway,
   type TrainPlacement,
   type TrainSpec,
   type VehicleSpec,
 } from "./simulation.ts";
-export { BlockMap, NO_BLOCK } from "./blocks/block-map.ts";
+export { BlockMap, NO_BLOCK, type BlockTopology } from "./blocks/block-map.ts";
 export {
   ARRIVAL_WINDOW_LDU,
   BLOCK_CLEARANCE_LDU,

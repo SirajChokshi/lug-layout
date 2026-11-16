@@ -1,7 +1,7 @@
 import { NO_EDGE, NO_SWITCH } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
 import { RoutePlanner } from "../routing/route-planner.ts";
-import { NO_BLOCK, type BlockMap } from "./block-map.ts";
+import { NO_BLOCK, nextEdge, reverseEdge, type BlockMap } from "./block-map.ts";
 
 export const NO_TRAIN = -1;
 export const BLOCK_CLEARANCE_LDU = STUD_LDU;
@@ -75,9 +75,9 @@ export class BlockKeeper {
     let covered = frontOffsetLdu;
     body[count++] = edge;
     while (covered < lengthLdu) {
-      const behind = graph.successor(graph.reverse(edge), switchStates);
+      const behind = nextEdge(graph, reverseEdge(edge), switchStates);
       if (behind === NO_EDGE) throw new Error(`train ${train} would hang off an open end`);
-      edge = graph.reverse(behind);
+      edge = reverseEdge(behind);
       body[count++] = edge;
       covered += edgeLengthLdu[edge] ?? 0;
     }
@@ -100,6 +100,13 @@ export class BlockKeeper {
       startS += edgeLengthLdu[held] ?? 0;
     }
     this.frontSeq[train] = (this.ringNext[train] ?? 1) - 1;
+  }
+
+  remove(train: number): void {
+    while ((this.ringNext[train] ?? 0) > (this.ringHead[train] ?? 0)) this.dropOldest(train);
+    this.placed[train] = 0;
+    this.mode[train] = MODE_MANUAL;
+    this.targetBlock[train] = NO_BLOCK;
   }
 
   goTo(train: number, block: number): void {
@@ -222,7 +229,7 @@ export class BlockKeeper {
     let endS = this.heldEndS(train);
     while (endS < untilS) {
       const last = this.ringEdge[this.slot(train, (this.ringNext[train] ?? 1) - 1)] ?? 0;
-      const next = graph.successor(last, switchStates);
+      const next = nextEdge(graph, last, switchStates);
       if (next === NO_EDGE) return;
       const owner = this.blockOwner[this.blocks.edgeBlock(next)] ?? NO_TRAIN;
       if (owner !== NO_TRAIN && owner !== train) return;

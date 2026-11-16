@@ -8,6 +8,7 @@ export interface SimLoad {
   readonly routeSegments: ReadonlyArray<ReadonlyArray<SimPathSegment>>;
   readonly capacity: SimCapacity;
   readonly trains: ReadonlyArray<SimTrainLoad>;
+  readonly autopilotSeed: number | null;
 }
 
 export interface SimLoaded {

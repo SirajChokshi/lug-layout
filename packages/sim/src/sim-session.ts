@@ -3,6 +3,7 @@ import {
   POSE_FLOATS_PER_VEHICLE,
   Simulation,
   type SimCapacity,
+  type SimRailway,
   type TrainPlacement,
   type TrainSpec,
 } from "./simulation.ts";
@@ -10,7 +11,8 @@ import {
 export type SimCommand =
   | { readonly kind: "throttle"; readonly train: number; readonly speedLduPerS: number }
   | { readonly kind: "switch"; readonly switchIndex: number; readonly state: number }
-  | { readonly kind: "reverse"; readonly train: number };
+  | { readonly kind: "reverse"; readonly train: number }
+  | { readonly kind: "goTo"; readonly train: number; readonly placement: number };
 
 export interface SimLogEntry {
   readonly tick: number;
@@ -26,7 +28,10 @@ export interface SimScenario {
   readonly track: SimTrack;
   readonly capacity: SimCapacity;
   readonly trains: ReadonlyArray<SimTrainLoad>;
+  readonly railway?: SimRailway;
 }
+
+const ROUTE_STATE_CODES = { manual: 0, waiting: 1, routed: 2, arrived: 3 } as const;
 
 export interface SimFrameLayout {
   readonly poseFloatsPerVehicle: number;
@@ -38,6 +43,11 @@ export interface SimFrameLayout {
   readonly trainOffsetStart: number;
   readonly trainSpeedStart: number;
   readonly switchStart: number;
+  readonly arrivalsStart: number;
+  readonly routeStateStart: number;
+  readonly sharedPieceTicksIndex: number;
+  readonly minBogieSeparationIndex: number;
+  readonly checkedTicksIndex: number;
   readonly floats: number;
 }
 
@@ -47,6 +57,11 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
   const trainOffsetStart = trainEdgeStart + trains;
   const trainSpeedStart = trainOffsetStart + trains;
   const switchStart = trainSpeedStart + trains;
+  const arrivalsStart = switchStart + switches;
+  const routeStateStart = arrivalsStart + trains;
+  const sharedPieceTicksIndex = routeStateStart + trains;
+  const minBogieSeparationIndex = sharedPieceTicksIndex + 1;
+  const checkedTicksIndex = minBogieSeparationIndex + 1;
   return {
     poseFloatsPerVehicle: POSE_FLOATS_PER_VEHICLE,
     vehicles,
@@ -57,7 +72,12 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
     trainOffsetStart,
     trainSpeedStart,
     switchStart,
-    floats: switchStart + switches,
+    arrivalsStart,
+    routeStateStart,
+    sharedPieceTicksIndex,
+    minBogieSeparationIndex,
+    checkedTicksIndex,
+    floats: checkedTicksIndex + 1,
   };
 }
 
@@ -70,7 +90,7 @@ export class SimSession {
 
   constructor(scenario: SimScenario) {
     this.scenario = scenario;
-    this.simulation = new Simulation(scenario.track, scenario.capacity);
+    this.simulation = new Simulation(scenario.track, scenario.capacity, scenario.railway ?? null);
     for (const train of scenario.trains) this.simulation.addTrain(train.spec, train.placement);
     this.layout = simFrameLayout(
       this.simulation.vehicles,
@@ -101,6 +121,15 @@ export class SimSession {
     for (let s = 0; s < layout.switches; s++) {
       out[layout.switchStart + s] = sim.switchStates[s] ?? 0;
     }
+    const blocks = sim.blocks;
+    for (let t = 0; t < layout.trains; t++) {
+      out[layout.arrivalsStart + t] = blocks?.arrivals[t] ?? 0;
+      out[layout.routeStateStart + t] = blocks ? ROUTE_STATE_CODES[blocks.routeState(t)] : 0;
+    }
+    const separation = sim.separationCounters;
+    out[layout.sharedPieceTicksIndex] = separation[0] ?? 0;
+    out[layout.minBogieSeparationIndex] = separation[1] ?? 0;
+    out[layout.checkedTicksIndex] = separation[2] ?? 0;
   }
 }
 
@@ -110,8 +139,9 @@ function applyCommand(simulation: Simulation, command: SimCommand): boolean {
       simulation.setThrottle(command.train, command.speedLduPerS);
       return true;
     case "switch":
-      simulation.setSwitch(command.switchIndex, command.state);
-      return true;
+      return simulation.setSwitch(command.switchIndex, command.state);
+    case "goTo":
+      return simulation.goTo(command.train, command.placement);
     case "reverse":
       return simulation.reverse(command.train);
     default: {

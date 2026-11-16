@@ -1,6 +1,34 @@
-import { NO_END, NO_SWITCH, type TrackGraph } from "@brr/domain";
+import { NO_EDGE, NO_END, NO_SWITCH, type TrackGraph } from "@brr/domain";
 
 export const NO_BLOCK = -1;
+
+export type BlockTopology = Pick<
+  TrackGraph,
+  | "placementCount"
+  | "edgeCount"
+  | "switchCount"
+  | "edgePlacement"
+  | "edgeRoute"
+  | "endPlacement"
+  | "endPartner"
+  | "switchEnd"
+  | "successorStart"
+  | "successors"
+  | "edgeSwitch"
+>;
+
+export function reverseEdge(edge: number): number {
+  return edge ^ 1;
+}
+
+export function nextEdge(graph: BlockTopology, edge: number, switchStates: Uint8Array): number {
+  const start = graph.successorStart[edge] ?? 0;
+  const count = (graph.successorStart[edge + 1] ?? start) - start;
+  if (count === 0) return NO_EDGE;
+  const control = graph.edgeSwitch[edge] ?? NO_SWITCH;
+  const choice = control === NO_SWITCH ? 0 : (switchStates[control] ?? 0);
+  return graph.successors[start + (choice < count ? choice : 0)] ?? NO_EDGE;
+}
 
 function findRoot(parent: Int32Array, node: number): number {
   let root = node;
@@ -22,7 +50,7 @@ export class BlockMap {
   readonly blockLengthLdu: Float64Array;
 
   constructor(
-    readonly graph: TrackGraph,
+    readonly graph: BlockTopology,
     readonly edgeLengthLdu: Float64Array,
   ) {
     const placements = graph.placementCount;
@@ -34,7 +62,7 @@ export class BlockMap {
     const junction = (placement: number): boolean => (routeCount[placement] ?? 0) > 1;
     const parent = new Int32Array(placements);
     for (let p = 0; p < placements; p++) parent[p] = p;
-    for (let end = 0; end < graph.endCount; end++) {
+    for (let end = 0; end < graph.endPlacement.length; end++) {
       const partner = graph.endPartner[end] ?? NO_END;
       if (partner === NO_END || partner < end) continue;
       const a = graph.endPlacement[end] ?? 0;
