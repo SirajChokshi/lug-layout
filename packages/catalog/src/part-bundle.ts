@@ -1,4 +1,5 @@
 import type { BundleManifest } from "./manifest.ts";
+import type { TrackCatalog } from "./track-catalog.ts";
 
 export type BundleLod = "standard" | "low" | "far";
 export const BUNDLE_LODS: ReadonlyArray<BundleLod> = ["standard", "low", "far"];
@@ -117,6 +118,7 @@ export interface PartBundle {
   readonly colors: ReadonlyArray<BundleColor>;
   readonly credits: ReadonlyArray<BundleCredit>;
   readonly models: ReadonlyArray<BundleModelEntry>;
+  readonly trackCatalog: TrackCatalog;
 }
 
 export interface PartSummary {

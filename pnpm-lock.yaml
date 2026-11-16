@@ -75,6 +75,9 @@ importers:
 
   packages/catalog:
     dependencies:
+      '@brr/math':
+        specifier: workspace:*
+        version: link:../math
       inversify:
         specifier: 8.3.0
         version: 8.3.0(reflect-metadata@0.2.2)

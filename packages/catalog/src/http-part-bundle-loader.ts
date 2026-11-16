@@ -105,6 +105,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       colors: manifest.colors,
       credits: manifest.credits,
       models: manifest.models,
+      trackCatalog: manifest.trackCatalog,
     };
   }
 
