@@ -148,6 +148,14 @@ async function factsCommand(check: boolean): Promise<void> {
 }
 
 const BUNDLE_LODS = ["standard", "low", "far"] as const;
+const COMPILER_TARGET = "wasm32-wasip1";
+const compilerWasm = join(
+  repoRoot,
+  "target",
+  COMPILER_TARGET,
+  "release",
+  "brick-compile-wasm.wasm",
+);
 
 function runCargo(args: ReadonlyArray<string>): void {
   const result = spawnSync("cargo", args, { cwd: repoRoot, stdio: "inherit" });
@@ -172,6 +180,15 @@ async function bundleCommand(): Promise<void> {
     paletteSha256: await fileSha256(palettePath),
   };
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
+  runCargo([
+    "build",
+    "--release",
+    "--quiet",
+    "--target",
+    COMPILER_TARGET,
+    "-p",
+    "brick-compile-wasm",
+  ]);
   for (const lod of BUNDLE_LODS) {
     const out = join(toolRoot, "dist", "bundle", lod);
     await rm(out, { recursive: true, force: true });
@@ -196,6 +213,8 @@ async function bundleCommand(): Promise<void> {
       out,
       "--lod",
       lod,
+      "--compiler",
+      compilerWasm,
     ]);
     const { bundleVersion, files } = await publishBundle(out, inputs);
     process.stdout.write(

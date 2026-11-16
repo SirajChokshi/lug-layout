@@ -142,6 +142,15 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  packages/import:
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../config
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   packages/math:
     devDependencies:
       '@brr/config':
