@@ -1,5 +1,6 @@
 import type { EditorOptions, IBuildableService, IEditor, IPlanService } from "@brr/client";
 import { BuildablePanel, BuildableState } from "./buildable-panel.tsx";
+import { PlanArchiveControls } from "./plan-archive-controls.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CatalogList,
@@ -74,6 +75,7 @@ export function EditorApp({
         <Inspector snapshot={snapshot} />
       </div>
       <div className="buildable-dock">
+        <PlanArchiveControls editor={editor} plans={plans} disclaimer={disclaimer} />
         <BuildablePanel plans={plans} buildable={buildable} disclaimer={disclaimer} />
       </div>
       {showState && <EditorState editor={editor} />}
