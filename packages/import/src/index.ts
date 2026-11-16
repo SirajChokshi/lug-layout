@@ -13,6 +13,7 @@ export {
   type StudioRejectionKind,
 } from "./brick-compiler.ts";
 export {
+  BricklinkPartsCrosswalk,
   mapStudioParts,
   type BricklinkToLdraw,
   type LdrawPartExists,
