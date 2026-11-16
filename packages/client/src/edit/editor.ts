@@ -27,9 +27,11 @@ import {
   type RebuildReport,
   type ViewUpdate,
 } from "./placed-chunks.ts";
-import { baseplatePlaceable, modelPlaceable, type Placeable } from "./placeable.ts";
+import { itemSpecOf } from "./item-specs.ts";
+import { modelPlaceable, platePlaceable, type Placeable } from "./placeable.ts";
 import { roomRect } from "@brr/domain";
-import { PLAN_SERVICE } from "../tokens.ts";
+import { BUILDABLE_SERVICE, PLAN_SERVICE } from "../tokens.ts";
+import type { IBuildableService } from "../plan/buildable-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
@@ -224,6 +226,7 @@ export class Editor implements IEditor {
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
+    @inject(BUILDABLE_SERVICE) private readonly buildable: IBuildableService,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -252,11 +255,23 @@ export class Editor implements IEditor {
         pixelRatio: options.pixelRatio,
         antialias: true,
       });
-      const bundle = await this.loader.load(EDITOR_LOD, (part) => part.id === BASEPLATE_ID);
+      const bundle = await this.loader.load(
+        EDITOR_LOD,
+        (part) => part.id === BASEPLATE_ID || part.role === "road",
+      );
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
       this.plans.setTableTopY(this.baseplateBottomY());
+      const crosswalk = await this.loader.loadCrosswalk("standard");
+      this.buildable.setCatalog(
+        this.placeables.map((placeable) =>
+          itemSpecOf(placeable, palette.parts, bundle.moduleStandards),
+        ),
+        bundle.moduleStandards,
+        crosswalk,
+        Object.fromEntries(bundle.colors.map((color) => [color.code, color.name])),
+      );
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -302,6 +317,9 @@ export class Editor implements IEditor {
         ref: model.placeable.id,
         label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
         box: model.box,
+        x: model.handle.x,
+        z: model.handle.z,
+        rot: model.handle.rot,
       })),
     );
   }
@@ -320,8 +338,28 @@ export class Editor implements IEditor {
     const loaded = await Promise.all(
       sets.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
+    const roads = bundle.parts.filter((part) => part.role === "road");
     return [
-      baseplatePlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
+      platePlaceable(
+        baseplate,
+        baseplateIndex,
+        baseplateColor.code,
+        { kind: "baseplate", label: `${BASEPLATE_ID.replace("ldraw:", "")} baseplate 32×32` },
+        palette.parts,
+        colors,
+      ),
+      ...roads.map((road) => {
+        const color = road.producedColor;
+        if (color === undefined) throw new Error(`${road.id} has no produced display colour`);
+        return platePlaceable(
+          road,
+          palette.indexOf(road.id),
+          color,
+          { kind: "road", label: `${road.id.replace("ldraw:", "")} road plate 32×32` },
+          palette.parts,
+          colors,
+        );
+      }),
       ...loaded.map(({ bundle: modelBundle, entry, model }) =>
         modelPlaceable(
           entry.name,

@@ -12,7 +12,17 @@ import {
   type StudRect,
 } from "./plan-region.ts";
 
-export type PlanRuleId = "footprint" | "fit" | "crossesRegion";
+export type PlanRuleId =
+  | "footprint"
+  | "fit"
+  | "crossesRegion"
+  | "overlap"
+  | "seam"
+  | "reach"
+  | "moduleGrid"
+  | "moduleJoin"
+  | "roadJoin"
+  | "bomMapping";
 export type IssueSeverity = "error" | "warning";
 
 export interface PlacementKey {

@@ -18,6 +18,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "brick-compile-wasm"
+version = "0.1.0"
+dependencies = [
+ "brick-compile",
+ "serde_json",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"

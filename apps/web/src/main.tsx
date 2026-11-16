@@ -1,11 +1,16 @@
 import {
+  BOM_SERVICE,
+  BUILDABLE_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
+  IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
   PLAN_SERVICE,
+  type IBomSource,
+  type IImportScene,
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
@@ -24,13 +29,19 @@ if (!rootElement) throw new Error("Missing #root element");
 const container = new Container();
 const bundleBaseUrl = new URL(import.meta.env.VITE_BUNDLE_BASE_URL ?? "bundle/", document.baseURI)
   .href;
-container.load(...mainThreadModules({ bundleBaseUrl }));
+const createImportWorker = (): Worker =>
+  new Worker(new URL("@brr/import-worker/entry", import.meta.url), { type: "module" });
+container.load(...mainThreadModules({ bundleBaseUrl, createImportWorker }));
 const params = readViewerParams(location.search);
 
-function viewerScene(viewer: ViewerParams): {
+interface ViewerChoice {
   readonly scene: IViewerScene;
   readonly placements: (() => PlacementDump) | null;
-} {
+  readonly importScene: IImportScene | null;
+  readonly bomSource: IBomSource | null;
+}
+
+function viewerScene(viewer: ViewerParams): ViewerChoice {
   switch (viewer.mode) {
     case "city": {
       const city = container.get(CITY_SCENE);
@@ -41,15 +52,29 @@ function viewerScene(viewer: ViewerParams): {
         originChunkX: viewer.originChunkX,
         originChunkZ: viewer.originChunkZ,
       });
-      return { scene: city, placements: viewer.dumpWorld ? () => city.placementDump() : null };
+      return {
+        scene: city,
+        placements: viewer.dumpWorld ? () => city.placementDump() : null,
+        importScene: null,
+        bomSource: city,
+      };
+    }
+    case "import": {
+      const importScene = container.get(IMPORT_SCENE);
+      return { scene: importScene, placements: null, importScene, bomSource: importScene };
     }
     case "model": {
       const modelScene = container.get(MODEL_SCENE);
       modelScene.selectModel(viewer.model ?? "");
-      return { scene: modelScene, placements: null };
+      return { scene: modelScene, placements: null, importScene: null, bomSource: modelScene };
     }
     case "parts":
-      return { scene: container.get(PART_DISPLAY_SCENE), placements: null };
+      return {
+        scene: container.get(PART_DISPLAY_SCENE),
+        placements: null,
+        importScene: null,
+        bomSource: null,
+      };
     case "edit":
       throw new Error("the editor is not a viewer scene");
     default: {
@@ -78,14 +103,24 @@ function root(): ReactNode {
       <EditorApp
         editor={container.get(EDITOR)}
         plans={container.get(PLAN_SERVICE)}
+        buildable={container.get(BUILDABLE_SERVICE)}
         options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
         disclaimer={TRADEMARK_DISCLAIMER}
         showState={params.showEditState}
       />
     );
   }
-  const { scene, placements } = viewerScene(params);
-  return <App scene={scene} params={params} placements={placements} />;
+  const { scene, placements, importScene, bomSource } = viewerScene(params);
+  const bom = bomSource ? { service: container.get(BOM_SERVICE), source: bomSource } : null;
+  return (
+    <App
+      scene={scene}
+      params={params}
+      placements={placements}
+      importScene={importScene}
+      bom={bom}
+    />
+  );
 }
 
 createRoot(rootElement).render(<StrictMode>{root()}</StrictMode>);

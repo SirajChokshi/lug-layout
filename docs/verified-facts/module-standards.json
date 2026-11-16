@@ -1,0 +1,55 @@
+{
+  "profiles": [
+    {
+      "id": "lego-modular",
+      "moduleStuds": 32,
+      "joinParts": [
+        "3700"
+      ],
+      "joinLevelPlates": 0,
+      "recipe": null,
+      "source": "docs/verified-facts.md, Module standards: LEGO modular-building Technic join positions (S16, all five OMR modular buildings flattened): 1x2 Technic bricks 3700 on the first course at stud cells 9-10 and 21-22 of each joining edge, 32x32 footprint. Join positions are read from each placed model's own instances, not from this file."
+    },
+    {
+      "id": "mils",
+      "moduleStuds": 32,
+      "joinParts": [
+        "3701"
+      ],
+      "joinLevelPlates": 0,
+      "recipe": {
+        "groundPart": "3811",
+        "edgeJoinCells": [
+          [
+            2,
+            5
+          ],
+          [
+            26,
+            29
+          ]
+        ],
+        "surfacePlates": 4,
+        "substructure": [
+          {
+            "part": "3003",
+            "quantity": 4
+          },
+          {
+            "part": "3701",
+            "quantity": 8
+          },
+          {
+            "part": "3001",
+            "quantity": 8
+          },
+          {
+            "part": "91405",
+            "quantity": 4
+          }
+        ]
+      },
+      "source": "docs/verified-facts.md, Module standards: MILS module size, surface height and corner and connector positions (S1: each corner keeps 2 studs free on each side, then a 1x4 Technic brick on either side, 8 per module; surface 4 plates above the baseplate), MILS minimal substructure (S5: a 32x32 baseplate, 4 bricks 2x2, 8 Technic bricks 1x4, 8 bricks 2x4 and 4 plates 16x16, 25 parts; baseplate, one brick course, one plate course). Part numbers at the pin: 3811 Baseplate 32 x 32, 3003 Brick 2 x 2, 3701 Technic Brick 1 x 4 with Holes, 3001 Brick 2 x 4, 91405 Plate 16 x 16 with Underside Ribs."
+    }
+  ]
+}

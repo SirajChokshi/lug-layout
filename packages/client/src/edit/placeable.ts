@@ -5,7 +5,7 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
 
-export type PlaceableKind = "baseplate" | "model";
+export type PlaceableKind = "baseplate" | "road" | "model";
 
 export interface LocalBox {
   readonly min: Vec3Tuple;
@@ -18,6 +18,7 @@ export interface Placeable {
   readonly kind: PlaceableKind;
   readonly worldColor: number;
   readonly parts: ChunkPartInstances;
+  readonly ldrawColors: Uint16Array;
   readonly studs: StudInstances;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
@@ -120,6 +121,7 @@ export function modelPlaceable(
     kind: "model",
     worldColor: 0,
     parts: local,
+    ldrawColors: model.ldrawColor,
     studs: withStuds(local, parts, colors, undefined).studs,
     box: shiftedBox(model.lattice.aabbMin, model.lattice.aabbMax, shift),
     partBoxes: instanceBoxes(local, parts),
@@ -130,10 +132,16 @@ export function modelPlaceable(
 
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 
-export function baseplatePlaceable(
+export interface PlateKind {
+  readonly kind: Exclude<PlaceableKind, "model">;
+  readonly label: string;
+}
+
+export function platePlaceable(
   part: PartAsset,
   partIndex: number,
   ldrawColor: number,
+  plate: PlateKind,
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
 ): Placeable {
@@ -148,10 +156,11 @@ export function baseplatePlaceable(
   const noShift: Vec3Tuple = [0, 0, 0];
   return {
     id: part.id,
-    label: `${part.id.replace("ldraw:", "")} baseplate 32×32`,
-    kind: "baseplate",
+    label: plate.label,
+    kind: plate.kind,
     worldColor: ldrawColor,
     parts: local,
+    ldrawColors: Uint16Array.of(ldrawColor),
     studs: withStuds(local, parts, colors, undefined).studs,
     box: shiftedBox(part.boundsMin, part.boundsMax, noShift),
     partBoxes: instanceBoxes(local, parts),
