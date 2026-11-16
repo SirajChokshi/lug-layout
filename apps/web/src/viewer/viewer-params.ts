@@ -3,6 +3,7 @@ import type { BundleLod, GraphicsApi } from "@brr/client";
 export interface ViewerParams {
   readonly api: GraphicsApi;
   readonly lod: BundleLod;
+  readonly model: string | null;
   readonly measure: boolean;
   readonly warmupFrames: number;
   readonly measuredFrames: number;
@@ -23,6 +24,7 @@ export function readViewerParams(search: string): ViewerParams {
   return {
     api: params.get("api") === "webgl2" ? "webgl2" : "webgpu",
     lod: params.get("lod") === "low" ? "low" : "standard",
+    model: params.get("model"),
     measure: params.get("measure") === "1",
     warmupFrames: positiveNumber(params.get("warmup"), DEFAULT_WARMUP_FRAMES),
     measuredFrames: positiveNumber(params.get("frames"), DEFAULT_MEASURED_FRAMES),

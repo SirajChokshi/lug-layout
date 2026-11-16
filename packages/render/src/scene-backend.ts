@@ -19,6 +19,7 @@ export interface PartPalette {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
   readonly colorsSrgb: Uint8Array;
+  readonly ldrawColorsSrgb: ReadonlyMap<number, number>;
 }
 
 export interface ChunkInstances {

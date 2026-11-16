@@ -34,7 +34,7 @@ class RecordingBackend implements ISceneBackend {
   async waitForGpu(): Promise<void> {}
 }
 
-it("shows every compiled bundle part on the integer lattice when resolved through the real modules", async () => {
+it("shows every palette part on the integer lattice when resolved through the real modules", async () => {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   const backend = new RecordingBackend();
@@ -43,7 +43,7 @@ it("shows every compiled bundle part on the integer lattice when resolved throug
 
   const summary = await container.get(PART_DISPLAY_SCENE).load("standard");
 
-  expect(summary.usage.filter((u) => u.instances === 0)).toEqual([]);
+  expect(summary.usage.filter((u) => u.role !== "model" && u.instances === 0)).toEqual([]);
   for (const chunk of backend.chunks) {
     for (let i = 0; i < chunk.count; i++) {
       expect(Number.isInteger(chunk.matrices[i * 12 + 3])).toBe(true);

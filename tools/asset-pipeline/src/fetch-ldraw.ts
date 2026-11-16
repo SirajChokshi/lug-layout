@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { parseLdraw, subfileReferences } from "./ldraw/parse.ts";
+import {
+  modelPartReferences,
+  parseLdraw,
+  splitMultiPart,
+  subfileReferences,
+} from "./ldraw/parse.ts";
 import type { Palette } from "./palette.ts";
 
 export interface InputLock {
@@ -37,11 +42,18 @@ async function resolveReference(
   return undefined;
 }
 
-export async function fetchClosure(palette: Palette, outDirectory: string): Promise<InputLock> {
+export async function fetchClosure(
+  palette: Palette,
+  outDirectory: string,
+  modelSources: ReadonlyArray<string>,
+): Promise<InputLock> {
   const files: Record<string, string> = {};
   const queue: string[] = [
-    ...palette.parts.map((part) => `${part.id}.dat`),
-    ...palette.studPrimitives,
+    ...new Set([
+      ...palette.parts.map((part) => `${part.id}.dat`),
+      ...palette.studPrimitives,
+      ...modelSources.flatMap(modelPartReferences),
+    ]),
   ];
   const seen = new Set<string>(queue);
 
@@ -106,6 +118,40 @@ export async function verifyClosure(lock: InputLock, directory: string): Promise
   }
   for (const extra of present) problems.push(`unpinned file ${extra}`);
   return problems;
+}
+
+export async function verifyModels(palette: Palette, fixturesRoot: string): Promise<string[]> {
+  const problems: string[] = [];
+  for (const model of palette.models) {
+    const actual = sha256(await readFile(join(fixturesRoot, model.file)));
+    if (actual !== model.sha256) problems.push(`hash mismatch ${model.file}`);
+  }
+  return problems;
+}
+
+export async function renderModelAttribution(
+  palette: Palette,
+  fixturesRoot: string,
+): Promise<string> {
+  const rows: string[] = [];
+  for (const model of palette.models) {
+    for (const section of splitMultiPart(await readFile(join(fixturesRoot, model.file), "utf8"))) {
+      const { header } = parseLdraw(section.source);
+      rows.push(
+        `| \`${model.file}\` | ${header.name} | ${header.author} | ${header.license} | ${model.source} (retrieved ${model.retrieved}) |`,
+      );
+    }
+  }
+  return [
+    "## OMR models",
+    "",
+    "Unmodified files from the LDraw Official Model Repository, pinned by SHA-256 in `tools/asset-pipeline/palette.json`.",
+    "",
+    "| File | Sub-file | Author | License | Source |",
+    "|---|---|---|---|---|",
+    ...rows,
+    "",
+  ].join("\n");
 }
 
 export async function renderAttribution(lock: InputLock, directory: string): Promise<string> {

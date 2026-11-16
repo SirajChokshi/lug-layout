@@ -1,4 +1,12 @@
-import type { BundleColor, BundleCredit, BundleLod, PartRole, Vec3Tuple } from "./part-bundle.ts";
+import type {
+  BundleColor,
+  BundleCredit,
+  BundleLod,
+  BundleModelEntry,
+  ModelSection,
+  PartRole,
+  Vec3Tuple,
+} from "./part-bundle.ts";
 
 export interface ManifestPart {
   readonly id: string;
@@ -23,7 +31,19 @@ export interface BundleManifest {
   readonly studPrimitives: ReadonlyArray<ManifestStudPrimitive>;
   readonly colors: ReadonlyArray<BundleColor>;
   readonly credits: ReadonlyArray<BundleCredit>;
+  readonly models: ReadonlyArray<BundleModelEntry>;
   readonly disclaimer: string;
+}
+
+export interface ModelFile {
+  readonly name: string;
+  readonly source: string;
+  readonly sections: ReadonlyArray<ModelSection>;
+  readonly instances: {
+    readonly part: ReadonlyArray<number>;
+    readonly color: ReadonlyArray<number>;
+    readonly matrix: ReadonlyArray<number>;
+  };
 }
 
 export interface StudExtra {
@@ -64,7 +84,8 @@ export function parseManifest(value: unknown): BundleManifest {
     !Array.isArray(value["parts"]) ||
     !value["parts"].every(isManifestPart) ||
     !Array.isArray(value["studPrimitives"]) ||
-    !Array.isArray(value["colors"])
+    !Array.isArray(value["colors"]) ||
+    !Array.isArray(value["models"])
   ) {
     throw new Error("bundle manifest does not match the M0 bundle format");
   }
@@ -91,4 +112,27 @@ export function parsePartExtras(value: unknown, label: string): PartExtras {
     throw new Error(`${label}: GLB extras do not match the M0 bundle format`);
   }
   return value as unknown as PartExtras;
+}
+
+const MATRIX_FLOATS = 12;
+
+function isNumberArray(value: unknown): value is ReadonlyArray<number> {
+  return Array.isArray(value) && value.every((v) => typeof v === "number");
+}
+
+export function parseModelFile(value: unknown): ModelFile {
+  if (!isRecord(value) || !isRecord(value["instances"]) || typeof value["name"] !== "string") {
+    throw new Error("model file does not match the M0 bundle format");
+  }
+  const { part, color, matrix } = value["instances"];
+  if (
+    !isNumberArray(part) ||
+    !isNumberArray(color) ||
+    !isNumberArray(matrix) ||
+    part.length !== color.length ||
+    matrix.length !== part.length * MATRIX_FLOATS
+  ) {
+    throw new Error(`model ${value["name"]}: instance arrays are inconsistent`);
+  }
+  return value as unknown as ModelFile;
 }

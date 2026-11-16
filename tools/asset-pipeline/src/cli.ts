@@ -2,7 +2,14 @@ import { spawnSync } from "node:child_process";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fetchClosure, renderAttribution, verifyClosure, type InputLock } from "./fetch-ldraw.ts";
+import {
+  fetchClosure,
+  renderAttribution,
+  renderModelAttribution,
+  verifyClosure,
+  verifyModels,
+  type InputLock,
+} from "./fetch-ldraw.ts";
 import { readPalette } from "./palette.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,14 +25,27 @@ async function readLock(): Promise<InputLock> {
 
 async function fetchCommand(): Promise<void> {
   const palette = await readPalette(palettePath);
-  const lock = await fetchClosure(palette, ldrawRoot);
+  const modelProblems = await verifyModels(palette, fixturesRoot);
+  if (modelProblems.length > 0) throw new Error(modelProblems.join("\n"));
+  const modelSources = await Promise.all(
+    palette.models.map((model) => readFile(join(fixturesRoot, model.file), "utf8")),
+  );
+  const lock = await fetchClosure(palette, ldrawRoot, modelSources);
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
-  await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), await renderAttribution(lock, ldrawRoot));
+  const attribution = [
+    await renderAttribution(lock, ldrawRoot),
+    await renderModelAttribution(palette, fixturesRoot),
+  ].join("\n");
+  await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
   process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
 }
 
 async function verifyCommand(): Promise<void> {
-  const problems = await verifyClosure(await readLock(), ldrawRoot);
+  const palette = await readPalette(palettePath);
+  const problems = [
+    ...(await verifyClosure(await readLock(), ldrawRoot)),
+    ...(await verifyModels(palette, fixturesRoot)),
+  ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
     process.exitCode = 1;
@@ -57,6 +77,8 @@ async function bundleCommand(): Promise<void> {
       "--",
       "--ldraw",
       ldrawRoot,
+      "--fixtures",
+      fixturesRoot,
       "--palette",
       palettePath,
       "--out",

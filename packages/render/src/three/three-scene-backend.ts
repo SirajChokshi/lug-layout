@@ -23,7 +23,7 @@ import {
   type PartPalette,
   type SceneBackendConfig,
 } from "../scene-backend.ts";
-import { geometryFromMesh, studClusterGeometry } from "./part-geometry.ts";
+import { fixedColorGeometry, inheritBodyGeometry, inheritStudGeometry } from "./part-geometry.ts";
 
 const MATRIX4_FLOATS = 16;
 const CAMERA_FOV_DEGREES = 40;
@@ -75,6 +75,20 @@ function webGl2Context(backend: unknown): WebGL2RenderingContext | undefined {
     : undefined;
 }
 
+interface PartGeometries {
+  readonly body: BufferGeometry | undefined;
+  readonly studs: BufferGeometry | undefined;
+  readonly fixed: BufferGeometry | undefined;
+}
+
+function disposeAll(geometries: ReadonlyArray<PartGeometries>): void {
+  for (const part of geometries) {
+    part.body?.dispose();
+    part.studs?.dispose();
+    part.fixed?.dispose();
+  }
+}
+
 @injectable()
 export class ThreeSceneBackend implements ISceneBackend {
   private renderer: WebGPURenderer | undefined;
@@ -89,8 +103,12 @@ export class ThreeSceneBackend implements ISceneBackend {
     roughness: PLASTIC_ROUGHNESS,
     metalness: 0,
   });
-  private bodyGeometries: BufferGeometry[] = [];
-  private studGeometries: Array<BufferGeometry | undefined> = [];
+  private readonly fixedColorMaterial = new MeshStandardNodeMaterial({
+    roughness: PLASTIC_ROUGHNESS,
+    metalness: 0,
+    vertexColors: true,
+  });
+  private partGeometries: ReadonlyArray<PartGeometries> = [];
   private linearColors = new Float32Array(0);
   private readonly chunkGroups = new Map<number, Group>();
   private readonly scratchColor = new Color();
@@ -146,12 +164,20 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   setPalette(palette: PartPalette): void {
     this.clearChunks();
-    for (const geometry of this.bodyGeometries) geometry.dispose();
-    for (const geometry of this.studGeometries) geometry?.dispose();
-    this.bodyGeometries = palette.parts.map((part) => geometryFromMesh(part.body));
-    this.studGeometries = palette.parts.map((part) =>
-      studClusterGeometry(part, palette.studPrimitives),
-    );
+    disposeAll(this.partGeometries);
+    const linearColor = (code: number, out: Float32Array): void => {
+      const srgb = palette.ldrawColorsSrgb.get(code);
+      if (srgb === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
+      this.scratchColor.setHex(srgb, SRGBColorSpace);
+      out[0] = this.scratchColor.r;
+      out[1] = this.scratchColor.g;
+      out[2] = this.scratchColor.b;
+    };
+    this.partGeometries = palette.parts.map((part) => ({
+      body: inheritBodyGeometry(part),
+      studs: inheritStudGeometry(part, palette.studPrimitives),
+      fixed: fixedColorGeometry(part, palette.studPrimitives, linearColor),
+    }));
     const colorCount = palette.colorsSrgb.length / COLOR_CHANNELS;
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
     for (let c = 0; c < colorCount; c++) {
@@ -194,7 +220,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     group.position.set(chunk.originX, 0, chunk.originZ);
     group.matrixAutoUpdate = false;
     group.updateMatrix();
-    const partCount = this.bodyGeometries.length;
+    const partCount = this.partGeometries.length;
     const counts = new Uint32Array(partCount);
     for (let i = 0; i < chunk.count; i++) {
       const part = chunk.partIndex[i] ?? 0;
@@ -202,8 +228,8 @@ export class ThreeSceneBackend implements ISceneBackend {
     }
     for (let p = 0; p < partCount; p++) {
       const count = counts[p] ?? 0;
-      const body = this.bodyGeometries[p];
-      if (count === 0 || !body) continue;
+      const geometries = this.partGeometries[p];
+      if (count === 0 || !geometries) continue;
       const matrices = new Float32Array(count * MATRIX4_FLOATS);
       const colors = new Float32Array(count * COLOR_CHANNELS);
       let slot = 0;
@@ -218,9 +244,15 @@ export class ThreeSceneBackend implements ISceneBackend {
       }
       const matrixAttribute = new InstancedBufferAttribute(matrices, MATRIX4_FLOATS);
       const colorAttribute = new InstancedBufferAttribute(colors, COLOR_CHANNELS);
-      group.add(this.instancedMesh(body, count, matrixAttribute, colorAttribute));
-      const studs = this.studGeometries[p];
-      if (studs) group.add(this.instancedMesh(studs, count, matrixAttribute, colorAttribute));
+      const { body, studs, fixed } = geometries;
+      if (body)
+        group.add(this.instancedMesh(body, this.material, count, matrixAttribute, colorAttribute));
+      if (studs)
+        group.add(this.instancedMesh(studs, this.material, count, matrixAttribute, colorAttribute));
+      if (fixed)
+        group.add(
+          this.instancedMesh(fixed, this.fixedColorMaterial, count, matrixAttribute, undefined),
+        );
     }
     for (const child of group.children) child.updateMatrixWorld(true);
     return group;
@@ -228,13 +260,14 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   private instancedMesh(
     geometry: BufferGeometry,
+    material: MeshStandardNodeMaterial,
     count: number,
     matrices: InstancedBufferAttribute,
-    colors: InstancedBufferAttribute,
+    colors: InstancedBufferAttribute | undefined,
   ): InstancedMesh {
-    const mesh = new InstancedMesh(geometry, this.material, count);
+    const mesh = new InstancedMesh(geometry, material, count);
     mesh.instanceMatrix = matrices;
-    mesh.instanceColor = colors;
+    if (colors) mesh.instanceColor = colors;
     mesh.matrixAutoUpdate = false;
     mesh.computeBoundingSphere();
     return mesh;

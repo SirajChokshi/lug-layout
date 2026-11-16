@@ -9,10 +9,16 @@ import {
 import { inject, injectable } from "inversify";
 import { buildPartDisplay } from "./part-display.ts";
 import { CHUNK_LDU, placementsToInstances } from "./placements.ts";
-import { ColorTable, summarize, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
+import {
+  ColorTable,
+  partPalette,
+  summarize,
+  type IViewerScene,
+  type SceneSummary,
+} from "./viewer-scene.ts";
 
-const ORBIT_RADIUS_LDU = 760;
-const ORBIT_HEIGHT_LDU = 420;
+const ORBIT_RADIUS_LDU = 1050;
+const ORBIT_HEIGHT_LDU = 560;
 const LOOK_AT_HEIGHT_LDU = 30;
 
 @injectable()
@@ -28,20 +34,16 @@ export class PartDisplayScene implements IViewerScene {
 
   async load(lod: BundleLod): Promise<SceneSummary> {
     const bundle = await this.loader.load(lod);
-    const colors = new ColorTable();
+    const colors = new ColorTable(bundle);
     const chunks = buildPartDisplay(bundle, colors);
-    this.backend.setPalette({
-      parts: bundle.parts,
-      studPrimitives: bundle.studPrimitives,
-      colorsSrgb: colors.toSrgb(bundle),
-    });
+    this.backend.setPalette(partPalette(bundle, colors));
     for (const chunk of chunks) this.backend.setChunk(chunk.key, placementsToInstances(chunk));
-    return summarize(bundle, chunks);
+    return summarize(bundle, chunks, []);
   }
 
   setCamera(t: number): void {
     const angle = t * 2 * Math.PI;
-    const centreX = CHUNK_LDU * 0.8;
+    const centreX = CHUNK_LDU * 1.25;
     const centreZ = CHUNK_LDU / 2;
     this.backend.setView(
       centreX + ORBIT_RADIUS_LDU * Math.cos(angle),

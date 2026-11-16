@@ -1,14 +1,20 @@
 export { catalogModule } from "./catalog.module.ts";
+export { INHERIT_COLOR } from "./part-bundle.ts";
 export type {
   BundleColor,
   BundleCredit,
   BundleLod,
+  BundleModelEntry,
+  ColorGroup,
   IAssetFetcher,
   IPartBundleLoader,
   LdrawAttribution,
   MeshArrays,
+  ModelSection,
   PartAsset,
   PartBundle,
+  PartMesh,
+  PartModel,
   PartRole,
   StudPrimitiveAsset,
   Vec3Tuple,

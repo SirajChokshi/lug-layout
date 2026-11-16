@@ -1,17 +1,18 @@
 import { inject, injectable } from "inversify";
-import { parseGlb, readInheritColorMesh } from "./glb.ts";
-import { parseManifest, parsePartExtras, type ManifestPart } from "./manifest.ts";
+import { parseGlb, readInheritColorMesh, readPartMesh } from "./glb.ts";
+import { parseManifest, parseModelFile, parsePartExtras, type ManifestPart } from "./manifest.ts";
 import type {
   BundleLod,
+  BundleModelEntry,
   IAssetFetcher,
   IPartBundleLoader,
   PartAsset,
   PartBundle,
+  PartModel,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
 
-const INHERIT_COLOR = 16;
 const MATRIX_FLOATS = 12;
 
 @injectable()
@@ -58,7 +59,22 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       studPrimitives,
       colors: manifest.colors,
       credits: manifest.credits,
+      models: manifest.models,
       disclaimer: manifest.disclaimer,
+    };
+  }
+
+  async loadModel(lod: BundleLod, entry: BundleModelEntry): Promise<PartModel> {
+    const model = parseModelFile(JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`)));
+    const count = model.instances.part.length;
+    return {
+      name: model.name,
+      source: model.source,
+      sections: model.sections,
+      instanceCount: count,
+      partIndex: Uint16Array.from(model.instances.part),
+      ldrawColor: Uint16Array.from(model.instances.color),
+      matrices: Float32Array.from(model.instances.matrix),
     };
   }
 }
@@ -72,15 +88,15 @@ function toPartAsset(
   const extras = parsePartExtras(glb.document.extras, part.id);
   const studCount = extras.studs.length;
   const studPrimitiveIndex = new Uint8Array(studCount);
+  const studColors = new Uint16Array(studCount);
   const studMatrices = new Float32Array(studCount * MATRIX_FLOATS);
   for (let i = 0; i < studCount; i++) {
     const stud = extras.studs[i];
     if (!stud) continue;
     const primitive = studPrimitiveNames.indexOf(stud.primitive);
     if (primitive < 0) throw new Error(`${part.id}: unknown stud primitive ${stud.primitive}`);
-    if (stud.color !== INHERIT_COLOR)
-      throw new Error(`${part.id}: fixed-color studs are not supported by the M0 bundle reader`);
     studPrimitiveIndex[i] = primitive;
+    studColors[i] = stud.color;
     studMatrices.set(stud.matrix, i * MATRIX_FLOATS);
   }
   return {
@@ -96,9 +112,10 @@ function toPartAsset(
     },
     boundsMin: part.bounds.min,
     boundsMax: part.bounds.max,
-    body: readInheritColorMesh(glb, part.id),
+    mesh: readPartMesh(glb, part.id),
     studPrimitiveNames,
     studPrimitiveIndex,
+    studColors,
     studMatrices,
   };
 }

@@ -1,11 +1,24 @@
 export type BundleLod = "standard" | "low";
-export type PartRole = "ground" | "road" | "track" | "wall" | "roof" | "detail";
+export type PartRole = "ground" | "road" | "track" | "wall" | "roof" | "detail" | "model";
 export type Vec3Tuple = readonly [number, number, number];
 
 export interface MeshArrays {
   readonly positions: Float32Array;
   readonly normals: Float32Array;
   readonly indices: Uint32Array;
+}
+
+export const INHERIT_COLOR = 16;
+
+export interface ColorGroup {
+  readonly ldrawColor: number;
+  readonly indices: Uint32Array;
+}
+
+export interface PartMesh {
+  readonly positions: Float32Array;
+  readonly normals: Float32Array;
+  readonly groups: ReadonlyArray<ColorGroup>;
 }
 
 export interface LdrawAttribution {
@@ -23,9 +36,10 @@ export interface PartAsset {
   readonly attribution: LdrawAttribution;
   readonly boundsMin: Vec3Tuple;
   readonly boundsMax: Vec3Tuple;
-  readonly body: MeshArrays;
+  readonly mesh: PartMesh;
   readonly studPrimitiveNames: ReadonlyArray<string>;
   readonly studPrimitiveIndex: Uint8Array;
+  readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
 }
 
@@ -48,17 +62,42 @@ export interface BundleCredit {
   readonly license: string | null;
 }
 
+export interface ModelSection {
+  readonly name: string;
+  readonly title: string;
+  readonly author: string;
+  readonly license: string | null;
+}
+
+export interface BundleModelEntry {
+  readonly name: string;
+  readonly file: string;
+  readonly sections: ReadonlyArray<ModelSection>;
+}
+
+export interface PartModel {
+  readonly name: string;
+  readonly source: string;
+  readonly sections: ReadonlyArray<ModelSection>;
+  readonly instanceCount: number;
+  readonly partIndex: Uint16Array;
+  readonly ldrawColor: Uint16Array;
+  readonly matrices: Float32Array;
+}
+
 export interface PartBundle {
   readonly lod: BundleLod;
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
   readonly colors: ReadonlyArray<BundleColor>;
   readonly credits: ReadonlyArray<BundleCredit>;
+  readonly models: ReadonlyArray<BundleModelEntry>;
   readonly disclaimer: string;
 }
 
 export interface IPartBundleLoader {
   load(lod: BundleLod): Promise<PartBundle>;
+  loadModel(lod: BundleLod, entry: BundleModelEntry): Promise<PartModel>;
 }
 
 export interface IAssetFetcher {

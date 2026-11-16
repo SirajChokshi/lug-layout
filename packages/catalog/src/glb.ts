@@ -1,4 +1,4 @@
-import type { MeshArrays } from "./part-bundle.ts";
+import { INHERIT_COLOR, type ColorGroup, type MeshArrays, type PartMesh } from "./part-bundle.ts";
 
 const GLB_MAGIC = 0x46546c67;
 const CHUNK_JSON = 0x4e4f534a;
@@ -7,7 +7,6 @@ const HEADER_BYTES = 12;
 const CHUNK_HEADER_BYTES = 8;
 const COMPONENT_FLOAT = 5126;
 const COMPONENT_UNSIGNED_INT = 5125;
-const INHERIT_COLOR = 16;
 
 interface GltfAccessor {
   readonly bufferView: number;
@@ -87,5 +86,28 @@ export function readInheritColorMesh(glb: ParsedGlb, label: string): MeshArrays 
     positions: floatVec3(glb, primitive.attributes.POSITION),
     normals: floatVec3(glb, primitive.attributes.NORMAL),
     indices: uint32Scalar(glb, primitive.indices),
+  };
+}
+
+export function readPartMesh(glb: ParsedGlb, label: string): PartMesh {
+  const primitives = glb.document.meshes[0]?.primitives ?? [];
+  const [first] = primitives;
+  if (!first) throw new Error(`${label}: GLB has no primitives`);
+  const groups: ColorGroup[] = primitives.map((primitive) => {
+    if (
+      primitive.attributes.POSITION !== first.attributes.POSITION ||
+      primitive.attributes.NORMAL !== first.attributes.NORMAL
+    ) {
+      throw new Error(`${label}: colour groups must share one vertex buffer`);
+    }
+    return {
+      ldrawColor: primitive.extras.ldrawColor,
+      indices: uint32Scalar(glb, primitive.indices),
+    };
+  });
+  return {
+    positions: floatVec3(glb, first.attributes.POSITION),
+    normals: floatVec3(glb, first.attributes.NORMAL),
+    groups,
   };
 }

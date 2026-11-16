@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::colors::parse_ldconfig;
+use brick_compile::model::bake_model;
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
 use serde_json::{json, Value};
 
@@ -44,6 +45,7 @@ fn collect(root: &Path, dir: &Path, files: &mut HashMap<String, String>) -> std:
 
 struct Args {
     ldraw: PathBuf,
+    fixtures: PathBuf,
     palette: PathBuf,
     out: PathBuf,
     lod: Lod,
@@ -64,6 +66,7 @@ fn parse_args() -> Result<Args, String> {
     };
     Ok(Args {
         ldraw: take("--ldraw")?.into(),
+        fixtures: take("--fixtures")?.into(),
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
         lod,
@@ -83,6 +86,43 @@ fn part_summary(part: &CompiledPart) -> Value {
         "bounds": { "min": min, "max": max },
         "colors": part.mesh.groups.iter().map(|g| g.color).collect::<Vec<_>>(),
     })
+}
+
+fn record_credits(credits: &mut BTreeMap<String, Value>, part: &CompiledPart) {
+    for file in &part.flattened_files {
+        credits.entry(file.path.clone()).or_insert_with(|| {
+            json!({
+                "path": file.path,
+                "title": file.header.title,
+                "author": file.header.author,
+                "license": file.header.license,
+            })
+        });
+    }
+}
+
+fn compile_entry(
+    library: &FsLibrary,
+    reference: &str,
+    role: &Value,
+    options: &CompileOptions,
+    out: &Path,
+    credits: &mut BTreeMap<String, Value>,
+) -> Result<Value, String> {
+    let compiled = compile_part(library, reference, options).map_err(|e| e.to_string())?;
+    let id = stem(reference);
+    let file = format!("{id}.glb");
+    fs::write(out.join(&file), compiled.to_glb()).map_err(|e| e.to_string())?;
+    record_credits(credits, &compiled);
+    let header = &compiled.flattened_files[0].header;
+    let mut summary = part_summary(&compiled);
+    summary["id"] = json!(format!("ldraw:{id}"));
+    summary["role"] = role.clone();
+    summary["file"] = json!(file);
+    summary["title"] = json!(header.title);
+    summary["author"] = json!(header.author);
+    summary["license"] = json!(header.license);
+    Ok(summary)
 }
 
 fn run(args: &Args) -> Result<(), String> {
@@ -120,18 +160,6 @@ fn run(args: &Args) -> Result<(), String> {
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
 
     let mut credits: BTreeMap<String, Value> = BTreeMap::new();
-    let mut record_credits = |part: &CompiledPart| {
-        for file in &part.flattened_files {
-            credits.entry(file.path.clone()).or_insert_with(|| {
-                json!({
-                    "path": file.path,
-                    "title": file.header.title,
-                    "author": file.header.author,
-                    "license": file.header.license,
-                })
-            });
-        }
-    };
 
     let mut primitives = Vec::new();
     for name in &stud_primitives {
@@ -139,7 +167,7 @@ fn run(args: &Args) -> Result<(), String> {
             compile_part(&library, name, &primitive_options).map_err(|e| e.to_string())?;
         let file = format!("stud-primitive-{}.glb", stem(name));
         fs::write(args.out.join(&file), compiled.to_glb()).map_err(|e| e.to_string())?;
-        record_credits(&compiled);
+        record_credits(&mut credits, &compiled);
         let mut summary = part_summary(&compiled);
         summary["name"] = json!(name);
         summary["file"] = json!(file);
@@ -147,25 +175,83 @@ fn run(args: &Args) -> Result<(), String> {
     }
 
     let mut parts = Vec::new();
+    let mut part_index: HashMap<String, usize> = HashMap::new();
     for entry in palette["parts"]
         .as_array()
         .ok_or("palette.parts must be an array")?
     {
         let id = entry["id"].as_str().ok_or("part id must be a string")?;
-        let compiled = compile_part(&library, &format!("{id}.dat"), &part_options)
-            .map_err(|e| e.to_string())?;
-        let file = format!("{}.glb", stem(id));
-        fs::write(args.out.join(&file), compiled.to_glb()).map_err(|e| e.to_string())?;
-        record_credits(&compiled);
-        let header = &compiled.flattened_files[0].header;
-        let mut summary = part_summary(&compiled);
-        summary["id"] = json!(format!("ldraw:{id}"));
-        summary["role"] = entry["role"].clone();
-        summary["file"] = json!(file);
-        summary["title"] = json!(header.title);
-        summary["author"] = json!(header.author);
-        summary["license"] = json!(header.license);
+        let reference = format!("{id}.dat");
+        let summary = compile_entry(
+            &library,
+            &reference,
+            &entry["role"],
+            &part_options,
+            &args.out,
+            &mut credits,
+        )?;
+        part_index.insert(reference, parts.len());
         parts.push(summary);
+    }
+
+    let mut models = Vec::new();
+    for entry in palette["models"].as_array().cloned().unwrap_or_default() {
+        let name = entry["name"]
+            .as_str()
+            .ok_or("model name must be a string")?;
+        let file = entry["file"]
+            .as_str()
+            .ok_or("model file must be a string")?;
+        let path = args.fixtures.join(file);
+        let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let baked =
+            bake_model(&String::from_utf8_lossy(&source)).map_err(|e| format!("{file}: {e}"))?;
+        let mut instance_parts = Vec::with_capacity(baked.instances.len());
+        let mut instance_colors = Vec::with_capacity(baked.instances.len());
+        let mut instance_matrices = Vec::with_capacity(baked.instances.len() * 12);
+        for instance in &baked.instances {
+            let index = match part_index.get(&instance.part) {
+                Some(&index) => index,
+                None => {
+                    let summary = compile_entry(
+                        &library,
+                        &instance.part,
+                        &json!("model"),
+                        &part_options,
+                        &args.out,
+                        &mut credits,
+                    )
+                    .map_err(|e| format!("{file}: {e}"))?;
+                    part_index.insert(instance.part.clone(), parts.len());
+                    parts.push(summary);
+                    parts.len() - 1
+                }
+            };
+            instance_parts.push(index);
+            instance_colors.push(instance.color);
+            instance_matrices.extend(instance.matrix.m.map(|v| v as f32));
+        }
+        let model_file = format!("model-{}.json", stem(name));
+        let sections: Vec<Value> = baked
+            .sections
+            .iter()
+            .map(|h| json!({ "name": h.name, "title": h.title, "author": h.author, "license": h.license, "ldrawOrg": h.ldraw_org }))
+            .collect();
+        let model = json!({
+            "name": name,
+            "file": file,
+            "source": entry["source"],
+            "retrieved": entry["retrieved"],
+            "sha256": entry["sha256"],
+            "sections": sections,
+            "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
+        });
+        fs::write(
+            args.out.join(&model_file),
+            serde_json::to_string(&model).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        models.push(json!({ "name": name, "file": model_file, "sections": sections, "instances": baked.instances.len() }));
     }
 
     let colors: Vec<Value> = library
@@ -192,6 +278,7 @@ fn run(args: &Args) -> Result<(), String> {
         "lod": match args.lod { Lod::Standard => "standard", Lod::Low => "low" },
         "source": palette["source"],
         "parts": parts,
+        "models": models,
         "studPrimitives": primitives,
         "colors": colors,
         "credits": credits.into_values().collect::<Vec<_>>(),

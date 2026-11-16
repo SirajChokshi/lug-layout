@@ -14,7 +14,11 @@
       "role": "ground"
     },
     {
-      "id": "44336",
+      "id": "44336p04",
+      "role": "road"
+    },
+    {
+      "id": "44336p01",
       "role": "road"
     },
     {
@@ -64,6 +68,15 @@
     {
       "id": "3068b",
       "role": "detail"
+    }
+  ],
+  "models": [
+    {
+      "name": "7936-1",
+      "file": "omr/7936-1.mpd",
+      "sha256": "f26bc3b65089335753e0b0d5d77c1b048dd7f2475cafd177a4c44ff440a4fd10",
+      "source": "https://library.ldraw.org/media/omr_models/1311/7936-1.mpd?v=1758937645",
+      "retrieved": "2026-11-16T03:38:57Z"
     }
   ]
 }

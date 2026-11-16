@@ -81,3 +81,33 @@ export function subfileReferences(file: LdrawFile): string[] {
   }
   return references;
 }
+
+export interface MultiPartSection {
+  readonly name: string;
+  readonly source: string;
+}
+
+const FILE_META = /^0\s+FILE\s+(.+)$/u;
+
+export function splitMultiPart(source: string): MultiPartSection[] {
+  const sections: Array<{ name: string; lines: string[] }> = [];
+  for (const raw of source.split(/\r?\n/u)) {
+    const match = FILE_META.exec(raw.trim());
+    if (match?.[1]) sections.push({ name: normalizeReference(match[1]), lines: [] });
+    else if (sections.length === 0) sections.push({ name: "", lines: [raw] });
+    else sections.at(-1)?.lines.push(raw);
+  }
+  return sections.map(({ name, lines }) => ({ name, source: lines.join("\n") }));
+}
+
+export function modelPartReferences(source: string): string[] {
+  const sections = splitMultiPart(source);
+  const submodels = new Set(sections.map((section) => section.name));
+  const parts = new Set<string>();
+  for (const section of sections) {
+    for (const reference of subfileReferences(parseLdraw(section.source))) {
+      if (!submodels.has(reference)) parts.add(reference);
+    }
+  }
+  return [...parts].toSorted();
+}

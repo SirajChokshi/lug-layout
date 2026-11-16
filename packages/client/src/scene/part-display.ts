@@ -46,14 +46,14 @@ export function buildPartDisplay(bundle: PartBundle, colors: ColorTable): ChunkP
   const studded = new PlacementWriter();
   studded.push(
     partWithRole(bundle, "ground"),
-    colors.indexOf(DISPLAY_COLORS.ground),
+    colors.indexOfName(DISPLAY_COLORS.ground),
     half,
     half,
     0,
     0,
   );
 
-  const trackColor = colors.indexOf(DISPLAY_COLORS.track);
+  const trackColor = colors.indexOfName(DISPLAY_COLORS.track);
   let trackRow = 0;
   bundle.parts.forEach((part, index) => {
     if (part.role !== "track") return;
@@ -73,11 +73,23 @@ export function buildPartDisplay(bundle: PartBundle, colors: ColorTable): ChunkP
     const z = slotOrigin(1 + row * SLOT_CELLS, brick.depthStuds);
     for (let layer = 0; layer < STACK_LAYERS; layer++) {
       const color = DISPLAY_COLORS.bricks[(slot + layer) % DISPLAY_COLORS.bricks.length] ?? "Red";
-      studded.push(brick.index, colors.indexOf(color), x, z, (layer + 1) * brick.heightPlates, 0);
+      studded.push(
+        brick.index,
+        colors.indexOfName(color),
+        x,
+        z,
+        (layer + 1) * brick.heightPlates,
+        0,
+      );
     }
   });
 
-  const road = new PlacementWriter();
-  road.push(partWithRole(bundle, "road"), colors.indexOf(DISPLAY_COLORS.road), half, half, 0, 0);
-  return [studded.finish(0, 0), road.finish(1, 0)];
+  const chunks = [studded.finish(0, 0)];
+  bundle.parts.forEach((part, index) => {
+    if (part.role !== "road") return;
+    const road = new PlacementWriter();
+    road.push(index, colors.indexOfName(DISPLAY_COLORS.road), half, half, 0, 0);
+    chunks.push(road.finish(chunks.length, 0));
+  });
+  return chunks;
 }

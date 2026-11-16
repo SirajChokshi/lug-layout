@@ -1,14 +1,15 @@
-import type { BundleLod, PartBundle } from "@brr/catalog";
+import type { BundleLod, ModelSection, PartBundle, PartRole } from "@brr/catalog";
 import {
   COLOR_CHANNELS,
   type BackendInfo,
   type FrameStats,
+  type PartPalette,
   type SceneBackendConfig,
 } from "@brr/render";
-import type { ChunkPlacements } from "./placements.ts";
 
 export interface PartUsage {
   readonly id: string;
+  readonly role: PartRole;
   readonly title: string;
   readonly instances: number;
   readonly trianglesPerInstance: number;
@@ -23,7 +24,13 @@ export interface SceneSummary {
   readonly usage: ReadonlyArray<PartUsage>;
   readonly creditedFiles: number;
   readonly creditedLicenses: ReadonlyArray<string>;
+  readonly modelSections: ReadonlyArray<ModelSection>;
   readonly disclaimer: string;
+}
+
+export interface InstanceList {
+  readonly count: number;
+  readonly partIndex: Uint16Array;
 }
 
 export interface IViewerScene {
@@ -36,27 +43,50 @@ export interface IViewerScene {
 }
 
 export class ColorTable {
-  private readonly names: string[] = [];
+  private readonly codes: number[] = [];
 
-  indexOf(name: string): number {
-    const existing = this.names.indexOf(name);
+  constructor(private readonly bundle: PartBundle) {}
+
+  indexOfCode(code: number): number {
+    const existing = this.codes.indexOf(code);
     if (existing >= 0) return existing;
-    this.names.push(name);
-    return this.names.length - 1;
+    if (!this.bundle.colors.some((c) => c.code === code)) {
+      throw new Error(`LDraw colour ${code} is not in LDConfig`);
+    }
+    this.codes.push(code);
+    return this.codes.length - 1;
   }
 
-  toSrgb(bundle: PartBundle): Uint8Array {
-    const srgb = new Uint8Array(this.names.length * COLOR_CHANNELS);
-    this.names.forEach((name, i) => {
-      const entry = bundle.colors.find((c) => c.name === name);
-      if (!entry) throw new Error(`LDConfig colour ${name} is missing from the bundle`);
-      const value = Number.parseInt(entry.rgb.slice(1), 16);
+  indexOfName(name: string): number {
+    const entry = this.bundle.colors.find((c) => c.name === name);
+    if (!entry) throw new Error(`LDConfig colour ${name} is missing from the bundle`);
+    return this.indexOfCode(entry.code);
+  }
+
+  toSrgb(): Uint8Array {
+    const lookup = ldrawColorsSrgb(this.bundle);
+    const srgb = new Uint8Array(this.codes.length * COLOR_CHANNELS);
+    this.codes.forEach((code, i) => {
+      const value = lookup.get(code) ?? 0;
       srgb[i * COLOR_CHANNELS] = (value >> 16) & 0xff;
       srgb[i * COLOR_CHANNELS + 1] = (value >> 8) & 0xff;
       srgb[i * COLOR_CHANNELS + 2] = value & 0xff;
     });
     return srgb;
   }
+}
+
+export function ldrawColorsSrgb(bundle: PartBundle): ReadonlyMap<number, number> {
+  return new Map(bundle.colors.map((c) => [c.code, Number.parseInt(c.rgb.slice(1), 16)]));
+}
+
+export function partPalette(bundle: PartBundle, colors: ColorTable): PartPalette {
+  return {
+    parts: bundle.parts,
+    studPrimitives: bundle.studPrimitives,
+    colorsSrgb: colors.toSrgb(),
+    ldrawColorsSrgb: ldrawColorsSrgb(bundle),
+  };
 }
 
 function studTriangles(bundle: PartBundle, partIndex: number): number {
@@ -71,7 +101,8 @@ function studTriangles(bundle: PartBundle, partIndex: number): number {
 
 export function summarize(
   bundle: PartBundle,
-  chunks: ReadonlyArray<ChunkPlacements>,
+  chunks: ReadonlyArray<InstanceList>,
+  modelSections: ReadonlyArray<ModelSection>,
 ): SceneSummary {
   const instances = new Float64Array(bundle.parts.length);
   for (const chunk of chunks) {
@@ -86,13 +117,20 @@ export function summarize(
   let studTriangleTotal = 0;
   const usage = bundle.parts.map((part, p): PartUsage => {
     const count = instances[p] ?? 0;
-    const body = part.body.indices.length / 3;
+    let body = 0;
+    for (const group of part.mesh.groups) body += group.indices.length / 3;
     const studs = studTriangles(bundle, p);
     parts += count;
     studInstances += count * part.studPrimitiveIndex.length;
     bodyTriangles += count * body;
     studTriangleTotal += count * studs;
-    return { id: part.id, title: part.title, instances: count, trianglesPerInstance: body + studs };
+    return {
+      id: part.id,
+      role: part.role,
+      title: part.title,
+      instances: count,
+      trianglesPerInstance: body + studs,
+    };
   });
   return {
     parts,
@@ -103,6 +141,7 @@ export function summarize(
     usage,
     creditedFiles: bundle.credits.length,
     creditedLicenses: [...new Set(bundle.credits.map((c) => c.license ?? "none"))],
+    modelSections,
     disclaimer: bundle.disclaimer,
   };
 }

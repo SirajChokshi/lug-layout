@@ -40,6 +40,13 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
   return rows;
 }
 
+function modelCredit(report: ViewerReport): string {
+  const [main] = report.summary.modelSections;
+  if (!main) return "";
+  const authors = [...new Set(report.summary.modelSections.map((s) => s.author))].join(", ");
+  return `Model: ${main.name} by ${authors}, LDraw Official Model Repository (${main.license ?? "no license"}). `;
+}
+
 export function App({ scene, params }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
@@ -79,6 +86,7 @@ export function App({ scene, params }: AppProps) {
         )}
       </aside>
       <footer>
+        {report && modelCredit(report)}
         {report &&
           `Parts: LDraw parts library, ${report.summary.creditedFiles} files (${report.summary.creditedLicenses.join(", ")}), modified from LDraw: flattened, studs extracted. Colours: LDraw LDConfig.ldr. `}
         {TRADEMARK_DISCLAIMER}
