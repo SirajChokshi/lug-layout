@@ -24,6 +24,7 @@ export {
   type StudioPartOutcome,
 } from "./studio-mapping.ts";
 export {
+  importStudioFile,
   MirrorPartExists,
   prepareStudioImport,
   type StudioPrepared,
@@ -54,4 +55,5 @@ export {
   type ImportWorkerRequest,
   type ImportWorkerResponse,
   type LdrawTextInput,
+  type StudioFileInput,
 } from "./worker-protocol.ts";

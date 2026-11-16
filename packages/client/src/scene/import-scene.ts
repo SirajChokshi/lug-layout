@@ -38,6 +38,7 @@ export interface ImportedModule {
 
 export interface IImportScene extends IViewerScene {
   importText(fileName: string, text: string): Promise<ImportedModule>;
+  importStudio(fileName: string, bytes: Uint8Array): Promise<ImportedModule>;
   placements(): ReadonlyArray<ModulePlacement>;
 }
 
@@ -137,9 +138,17 @@ export class ImportScene implements IImportScene {
     return showChunks(this.backend, bundle, undefined, new ColorTable(bundle), [], null);
   }
 
-  async importText(fileName: string, text: string): Promise<ImportedModule> {
+  importText(fileName: string, text: string): Promise<ImportedModule> {
+    return this.place(() => this.importer.importText(fileName, text, this.lod));
+  }
+
+  importStudio(fileName: string, bytes: Uint8Array): Promise<ImportedModule> {
+    return this.place(() => this.importer.importStudio(fileName, bytes, this.lod));
+  }
+
+  private async place(load: () => Promise<ImportResult>): Promise<ImportedModule> {
     const started = performance.now();
-    const result = await this.importer.importText(fileName, text, this.lod);
+    const result = await load();
     const imported = performance.now();
     for (const id of result.partIds) {
       if (this.partSlots.has(id)) continue;

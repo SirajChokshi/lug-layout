@@ -5,7 +5,14 @@ export interface LdrawTextInput {
   readonly job: ImportJob;
 }
 
-export type ImportInput = LdrawTextInput;
+export interface StudioFileInput {
+  readonly kind: "studio";
+  readonly job: Omit<ImportJob, "text">;
+  readonly bytes: Uint8Array;
+  readonly bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>;
+}
+
+export type ImportInput = LdrawTextInput | StudioFileInput;
 
 export interface ImportWorkerRequest {
   readonly id: number;
