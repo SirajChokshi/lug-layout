@@ -150,6 +150,9 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5))
 
   packages/render:
     dependencies:
@@ -182,6 +185,10 @@ importers:
   packages/test-fixtures: {}
 
   tools/asset-pipeline:
+    dependencies:
+      '@brr/math':
+        specifier: workspace:*
+        version: link:../../packages/math
     devDependencies:
       '@brr/config':
         specifier: workspace:*

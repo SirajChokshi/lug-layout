@@ -1,0 +1,287 @@
+{
+  "method": "Every piece is placed by attaching one of its ends to the previous open end. exactJoin composes the certified ℤ[ζ₁₆] poses (@brr/math attachPose16/composePose16) and tests posesJoin16: equal coefficients and headings 8 steps apart, no tolerance. float64Measured chains the measured LDraw decimals (positions and unrounded headings) in float64. float64Certified and float32Certified evaluate the same certified poses with cos/sin in float64 and float32. Gaps are in LDU at the closing joint.",
+  "layouts": {
+    "r40-circle-9v": {
+      "pieces": {
+        "74747": 16
+      },
+      "exactJoins": {
+        "ends": 32,
+        "joins": 16,
+        "openEnds": 0,
+        "endsWithSeveralPartners": 0
+      },
+      "closures": [
+        {
+          "label": "after 1 lap(s), the last curve meets the first",
+          "exactJoin": true,
+          "exactOpenEnd": {
+            "position": [
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0"
+            ],
+            "heading": 0
+          },
+          "float64Measured": {
+            "gapLdu": 0.0317,
+            "headingErrorDegrees": 0.00227
+          },
+          "float64Certified": {
+            "gapLdu": 6.39e-11,
+            "headingErrorDegrees": 4.07e-12
+          },
+          "float32Certified": {
+            "gapLdu": 0.0078,
+            "headingErrorDegrees": 0.000446
+          }
+        }
+      ]
+    },
+    "oval-passing-siding-9v": {
+      "pieces": {
+        "74746": 14,
+        "74747": 18,
+        "75541-f2": 1,
+        "75542-f2": 1
+      },
+      "exactJoins": {
+        "ends": 70,
+        "joins": 35,
+        "openEnds": 0,
+        "endsWithSeveralPartners": 0
+      },
+      "closures": [
+        {
+          "label": "main line meets the second switch's straight route",
+          "exactJoin": true,
+          "exactOpenEnd": {
+            "position": [
+              "96",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0"
+            ],
+            "heading": 0
+          },
+          "float64Measured": {
+            "gapLdu": 0.00492,
+            "headingErrorDegrees": 0.000403
+          },
+          "float64Certified": {
+            "gapLdu": 1.36e-14,
+            "headingErrorDegrees": 0
+          },
+          "float32Certified": {
+            "gapLdu": 0.000263,
+            "headingErrorDegrees": 0.00000137
+          }
+        },
+        {
+          "label": "loop returns to the first switch's entry",
+          "exactJoin": true,
+          "exactOpenEnd": {
+            "position": [
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0"
+            ],
+            "heading": 0
+          },
+          "float64Measured": {
+            "gapLdu": 0.0511,
+            "headingErrorDegrees": 0.00186
+          },
+          "float64Certified": {
+            "gapLdu": 1.12e-10,
+            "headingErrorDegrees": 4.89e-12
+          },
+          "float32Certified": {
+            "gapLdu": 0.0143,
+            "headingErrorDegrees": 0.000739
+          }
+        }
+      ]
+    }
+  },
+  "driftProbe": {
+    "74747 x16": {
+      "pieces": {
+        "74747": 16
+      },
+      "closures": [
+        {
+          "label": "after 1 lap(s), the last curve meets the first",
+          "exactJoin": true,
+          "exactOpenEnd": {
+            "position": [
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0"
+            ],
+            "heading": 0
+          },
+          "float64Measured": {
+            "gapLdu": 0.0317,
+            "headingErrorDegrees": 0.00227
+          },
+          "float64Certified": {
+            "gapLdu": 6.39e-11,
+            "headingErrorDegrees": 4.07e-12
+          },
+          "float32Certified": {
+            "gapLdu": 0.0078,
+            "headingErrorDegrees": 0.000446
+          }
+        }
+      ]
+    },
+    "74747 x160": {
+      "pieces": {
+        "74747": 160
+      },
+      "closures": [
+        {
+          "label": "after 10 lap(s), the last curve meets the first",
+          "exactJoin": true,
+          "exactOpenEnd": {
+            "position": [
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0"
+            ],
+            "heading": 0
+          },
+          "float64Measured": {
+            "gapLdu": 0.317,
+            "headingErrorDegrees": 0.0227
+          },
+          "float64Certified": {
+            "gapLdu": 2.61e-9,
+            "headingErrorDegrees": 1.89e-10
+          },
+          "float32Certified": {
+            "gapLdu": 0.648,
+            "headingErrorDegrees": 0.0412
+          }
+        }
+      ]
+    },
+    "74747 x1600": {
+      "pieces": {
+        "74747": 1600
+      },
+      "closures": [
+        {
+          "label": "after 100 lap(s), the last curve meets the first",
+          "exactJoin": true,
+          "exactOpenEnd": {
+            "position": [
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0"
+            ],
+            "heading": 0
+          },
+          "float64Measured": {
+            "gapLdu": 3.17,
+            "headingErrorDegrees": 0.227
+          },
+          "float64Certified": {
+            "gapLdu": 1.1e-7,
+            "headingErrorDegrees": 7.82e-9
+          },
+          "float32Certified": {
+            "gapLdu": 74.2,
+            "headingErrorDegrees": 5.28
+          }
+        }
+      ]
+    },
+    "74747 x16000": {
+      "pieces": {
+        "74747": 16000
+      },
+      "closures": [
+        {
+          "label": "after 1000 lap(s), the last curve meets the first",
+          "exactJoin": true,
+          "exactOpenEnd": {
+            "position": [
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0",
+              "0"
+            ],
+            "heading": 0
+          },
+          "float64Measured": {
+            "gapLdu": 31.7,
+            "headingErrorDegrees": 2.27
+          },
+          "float64Certified": {
+            "gapLdu": 0.0000114,
+            "headingErrorDegrees": 8.15e-7
+          },
+          "float32Certified": {
+            "gapLdu": 1380,
+            "headingErrorDegrees": 120
+          }
+        }
+      ]
+    }
+  },
+  "uncertified": {
+    "53400-circle": {
+      "pieces": {
+        "53400": 16
+      },
+      "certifiedEnds": [
+        false,
+        false
+      ],
+      "candidatesPerEnd": [
+        4225,
+        3781
+      ],
+      "exact": "refused: no certified ℤ[ζ₁₆] pose, so no exact join can be claimed",
+      "float64Measured": {
+        "gapLdu": 0.0058,
+        "headingErrorDegrees": 0.000415
+      }
+    }
+  }
+}
