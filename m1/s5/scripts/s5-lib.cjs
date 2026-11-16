@@ -59,14 +59,14 @@ async function waitSamples(page, count) {
 async function hoverAt(page, sx, sy) {
   await page.mouse.move(sx, sy);
   await page.evaluate(
-    () => new Promise((resolve) => setTimeout(() => setTimeout(resolve, 0), 0)),
+    () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))),
   );
   return hover(page);
 }
 
 const pointer = { x: 0, y: 0 };
 
-async function moveToLattice(page, x, z) {
+async function searchLattice(page, x, z) {
   const size = page.viewportSize();
   const left = 450;
   const right = size.width - 330;
@@ -106,7 +106,19 @@ async function moveToLattice(page, x, z) {
     sx = Math.min(Math.max(sx, left), right);
     sy = Math.min(Math.max(sy, top), bottom);
   }
-  throw new Error(`could not put the cursor on lattice point (${x}, ${z})`);
+  return null;
+}
+
+const SEARCH_ATTEMPTS = 3;
+
+async function moveToLattice(page, x, z) {
+  for (let attempt = 0; attempt < SEARCH_ATTEMPTS; attempt++) {
+    const found = await searchLattice(page, x, z);
+    if (found) return found;
+    pointer.x = 0;
+    pointer.y = 0;
+  }
+  throw new Error(`could not put the cursor on lattice point (${x}, ${z}) in ${SEARCH_ATTEMPTS} attempts`);
 }
 
 async function chooseItem(page, id) {
