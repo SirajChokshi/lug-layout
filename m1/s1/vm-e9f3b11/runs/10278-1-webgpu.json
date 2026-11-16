@@ -1,0 +1,645 @@
+{
+  "url": "http://localhost:4173/?model=10278-1&api=webgpu&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Parts | 2,958 | Modules | 1 | Stud instances (drawn of total) | 9,401 of 9,401 | Scene triangles | 1,368,913 | Load | 451 ms | GPU buffers allocated so far, JS heap | vertex+index 7.7 MiB, other 0.0 MiB, JS heap 47.0 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 288 | Drawn triangles (median) | 1,368,914 | Scene coverage (sampled frames) | 21%, 26%, 26%, 24%, 25%, 21%, 26%, 28%, 27% | Median frame (GPU-synced) | 924.3 ms | p95 frame | 944.9 ms | Median CPU submit | 4.1 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "10278-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "google / swiftshader"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "parts": 2958,
+      "modules": 1,
+      "studInstances": 9401,
+      "visibleStudInstances": 9401,
+      "bodyTriangles": 891121,
+      "studTriangles": 477792,
+      "creditedFiles": 1886,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "10278-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10278-1.mpd",
+        "sections": [
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 1stfloor.ldr",
+            "title": "1stfloor"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - stairs.ldr",
+            "title": "stairs"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - shopowner.ldr",
+            "title": "shopowner"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - waterdistributor.ldr",
+            "title": "waterdistributor"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - awning.ldr",
+            "title": "awning"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - stairs2.ldr",
+            "title": "stairs2"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - stairs3.ldr",
+            "title": "stairs3"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - desk.ldr",
+            "title": "desk"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - constable.ldr",
+            "title": "constable"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - wall.ldr",
+            "title": "wall"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - walljail.ldr",
+            "title": "walljail"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - pediment.ldr",
+            "title": "pediment"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - doorcolumn.ldr",
+            "title": "doorcolumn"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - doorcolumn2.ldr",
+            "title": "doorcolumn2"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - doorlight.ldr",
+            "title": "doorlight"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - doorcolumn3.ldr",
+            "title": "doorcolumn3"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - doorcolumn3a.ldr",
+            "title": "doorcolumn3a"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - doorcolumn4.ldr",
+            "title": "doorcolumn4"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - prisondoor.ldr",
+            "title": "prisondoor"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - newsstand.ldr",
+            "title": "newsstand"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - newsstandroof.ldr",
+            "title": "newsstandroof"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - plant.ldr",
+            "title": "plant"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - newsstandop.ldr",
+            "title": "newsstandop"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 2ndfloor.ldr",
+            "title": "2ndfloor"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - hifi.ldr",
+            "title": "hifi"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - bed.ldr",
+            "title": "bed"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 2fwindow1.ldr",
+            "title": "2fwindow1"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 2fwindowside1.ldr",
+            "title": "2fwindowside1"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 2fwindowside2.ldr",
+            "title": "2fwindowside2"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - cupboard.ldr",
+            "title": "cupboard"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - sink.ldr",
+            "title": "sink"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - oven.ldr",
+            "title": "oven"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - veteran.ldr",
+            "title": "veteran"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - desk2f1.ldr",
+            "title": "desk2f1"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - desk2f2.ldr",
+            "title": "desk2f2"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - wallmap.ldr",
+            "title": "wallmap"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - rubberBandRound-1.ldr",
+            "title": "rubberBandRound-1"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - windowsill2f.ldr",
+            "title": "windowsill2f"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - windowsill2f2.ldr",
+            "title": "windowsill2f2"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - windowsill2f3.ldr",
+            "title": "windowsill2f3"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - windowtop2f.ldr",
+            "title": "windowtop2f"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - doorcolumn2f.ldr",
+            "title": "doorcolumn2f"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 3rdfloor.ldr",
+            "title": "3rdfloor"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - drawer3f.ldr",
+            "title": "drawer3f"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - chief.ldr",
+            "title": "chief"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - wall3f.ldr",
+            "title": "wall3f"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - roof3f.ldr",
+            "title": "roof3f"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - doorcolumn3f.ldr",
+            "title": "doorcolumn3f"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - roof.ldr",
+            "title": "roof"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - antennas.ldr",
+            "title": "antennas"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - tanksupport.ldr",
+            "title": "tanksupport"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - tank.ldr",
+            "title": "tank"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - billboard.ldr",
+            "title": "billboard"
+          },
+          {
+            "author": "Vincent Messenet [Cheenzo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 28621.dat",
+            "title": "28621"
+          },
+          {
+            "author": "Gerald Lasser [GeraldLasser]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 70681.dat",
+            "title": "70681"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 15535p05.dat",
+            "title": "15535p05"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 15535p04.dat",
+            "title": "15535p04"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 3626cp7b.dat",
+            "title": "3626cp7b"
+          },
+          {
+            "author": "Gerald Lasser [GeraldLasser]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 51283.dat",
+            "title": "51283"
+          },
+          {
+            "author": "Bertrand Lequy [Berth]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 11055.dat",
+            "title": "11055"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 61332.dat",
+            "title": "61332"
+          },
+          {
+            "author": "LDCad",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - ldcRubberBandRndSeg.dat",
+            "title": "ldcRubberBandRndSeg"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - 43967.dat",
+            "title": "43967"
+          },
+          {
+            "author": "Vincent Messenet [Cheenzo]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\10278 - 28621s01.dat",
+            "title": "28621s01"
+          },
+          {
+            "author": "Vincent Messenet [Cheenzo]",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - filstud2.dat",
+            "title": "filstud2"
+          },
+          {
+            "author": "Gerald Lasser [GeraldLasser]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\10278 - 51283s01.dat",
+            "title": "51283s01"
+          },
+          {
+            "author": "Gerald Lasser [GeraldLasser]",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - stud16a.dat",
+            "title": "stud16a"
+          },
+          {
+            "author": "Bertrand Lequy [Berth]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\10278 - 11055s01.dat",
+            "title": "11055s01"
+          },
+          {
+            "author": "Bertrand Lequy [Berth]",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - clip16.dat",
+            "title": "clip16"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - confricrib1.dat",
+            "title": "confricrib1"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - confricrib2.dat",
+            "title": "confricrib2"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - connectcollar5.dat",
+            "title": "connectcollar5"
+          },
+          {
+            "author": "LDCad",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - ldcCyli8.dat",
+            "title": "ldcCyli8"
+          },
+          {
+            "author": "LDCad",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10278 - ldcConRing8.dat",
+            "title": "ldcConRing8"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\10278 - 43967s01.dat",
+            "title": "43967s01"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\10278 - 43967s00.dat",
+            "title": "43967s00"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\10278 - 3626cp7bs01.dat",
+            "title": "3626cp7bs01"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\10278 - 3626cp7bs02.dat",
+            "title": "3626cp7bs02"
+          },
+          {
+            "author": "Vincent Messenet [Cheenzo]",
+            "ldrawOrg": "Unofficial_8_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "8\\10278 - 3-8tang.dat",
+            "title": "Lo-Res Disc Negative Tangent 0.375"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 8068688,
+      "otherBytes": 46352,
+      "jsHeapBytes": 49314209
+    },
+    "loadMs": 450.90000000037253,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 924.3000000007451,
+      "p95FrameMs": 944.9000000003725,
+      "meanFrameMs": 926.5,
+      "medianCpuSubmitMs": 4.099999999627471,
+      "fpsFromMedian": 1.0818998160761593,
+      "medianDrawCalls": 288,
+      "medianDrawnTriangles": 1368914,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.2087673611111111,
+        0.2591145833333333,
+        0.2573784722222222,
+        0.24479166666666666,
+        0.25390625,
+        0.2087673611111111,
+        0.2612847222222222,
+        0.2786458333333333,
+        0.2743055555555556
+      ]
+    },
+    "drawCalls": 288,
+    "drawnTriangles": 1368914,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}

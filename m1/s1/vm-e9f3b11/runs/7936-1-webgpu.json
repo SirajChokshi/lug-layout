@@ -1,0 +1,120 @@
+{
+  "url": "http://localhost:4173/?model=7936-1&api=webgpu&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Parts | 147 | Modules | 1 | Stud instances (drawn of total) | 622 of 622 | Scene triangles | 140,603 | Load | 455 ms | GPU buffers allocated so far, JS heap | vertex+index 1.9 MiB, other 0.0 MiB, JS heap 44.7 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 72 | Drawn triangles (median) | 140,604 | Scene coverage (sampled frames) | 16%, 15%, 15%, 14%, 16%, 16%, 17%, 16%, 15% | Median frame (GPU-synced) | 175.3 ms | p95 frame | 180.7 ms | Median CPU submit | 2.6 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "7936-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "google / swiftshader"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "parts": 147,
+      "modules": 1,
+      "studInstances": 622,
+      "visibleStudInstances": 622,
+      "bodyTriangles": 108923,
+      "studTriangles": 31680,
+      "creditedFiles": 1886,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "7936-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/7936-1.mpd",
+        "sections": [
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Main.ldr",
+            "title": "Main"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Crossing.ldr",
+            "title": "Crossing"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Crane.ldr",
+            "title": "Crane"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Track.ldr",
+            "title": "Track"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Worker.ldr",
+            "title": "Worker"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 2018644,
+      "otherBytes": 11792,
+      "jsHeapBytes": 46844076
+    },
+    "loadMs": 455.09999999962747,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 175.30000000074506,
+      "p95FrameMs": 180.69999999925494,
+      "meanFrameMs": 175.30000000037253,
+      "medianCpuSubmitMs": 2.599999999627471,
+      "fpsFromMedian": 5.704506560158299,
+      "medianDrawCalls": 72,
+      "medianDrawnTriangles": 140604,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.15711805555555555,
+        0.1519097222222222,
+        0.1506076388888889,
+        0.13585069444444445,
+        0.1605902777777778,
+        0.1605902777777778,
+        0.1714409722222222,
+        0.16493055555555555,
+        0.15364583333333334
+      ]
+    },
+    "drawCalls": 72,
+    "drawnTriangles": 140604,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}

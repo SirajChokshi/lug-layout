@@ -1,0 +1,10 @@
+7936-1 147 66 72 baked 147 multiset equal
+10251-1 2392 227 432 baked 2392 multiset equal
+10264-1 2567 308 570 baked 2567 multiset equal
+10278-1 2958 261 592 baked 2958 multiset equal
+10185-1 2405 183 330 baked 2405 multiset equal
+2150-1 625 130 198 baked 625 multiset equal
+4554-1 617 125 182 baked 617 multiset equal
+4555-1 390 119 163 baked 390 multiset equal
+10128-1 336 111 138 baked 336 multiset equal
+10133-1 419 78 116 baked 419 multiset equal

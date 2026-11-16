@@ -1,0 +1,190 @@
+{
+  "url": "http://localhost:4173/?model=4554-1&api=webgpu&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Parts | 617 | Modules | 1 | Stud instances (drawn of total) | 2,447 of 2,447 | Scene triangles | 404,253 | Load | 402 ms | GPU buffers allocated so far, JS heap | vertex+index 3.2 MiB, other 0.0 MiB, JS heap 47.8 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 150 | Drawn triangles (median) | 404,254 | Scene coverage (sampled frames) | 10%, 13%, 14%, 14%, 13%, 10%, 10%, 12%, 12% | Median frame (GPU-synced) | 267.9 ms | p95 frame | 273.1 ms | Median CPU submit | 3.7 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "4554-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "google / swiftshader"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "parts": 617,
+      "modules": 1,
+      "studInstances": 2447,
+      "visibleStudInstances": 2447,
+      "bodyTriangles": 283389,
+      "studTriangles": 120864,
+      "creditedFiles": 1886,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "4554-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/4554-1.mpd",
+        "sections": [
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - main.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - station with platform.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - station building.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - streat lamp.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - bench.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - luggage car 1.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - luggage car 2.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 1.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 2.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 3.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 4.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 5.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 6.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 7.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 8.ldr"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 3345880,
+      "otherBytes": 24272,
+      "jsHeapBytes": 50156130
+    },
+    "loadMs": 402.2999999988824,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 267.90000000037253,
+      "p95FrameMs": 273.09999999962747,
+      "meanFrameMs": 268.1400000002235,
+      "medianCpuSubmitMs": 3.700000001117587,
+      "fpsFromMedian": 3.7327360955528537,
+      "medianDrawCalls": 150,
+      "medianDrawnTriangles": 404254,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.0954861111111111,
+        0.1267361111111111,
+        0.1362847222222222,
+        0.1371527777777778,
+        0.12760416666666666,
+        0.09635416666666667,
+        0.1032986111111111,
+        0.11588541666666667,
+        0.11762152777777778
+      ]
+    },
+    "drawCalls": 150,
+    "drawnTriangles": 404254,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}

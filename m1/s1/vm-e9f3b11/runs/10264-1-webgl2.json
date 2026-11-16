@@ -1,0 +1,1569 @@
+{
+  "url": "http://localhost:4173/?model=10264-1&api=webgl2&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Parts | 2,567 | Modules | 1 | Stud instances (drawn of total) | 7,489 of 7,489 | Scene triangles | 1,222,336 | Load | 469 ms | GPU buffers allocated so far, JS heap | vertex+index 7.6 MiB, other 0.1 MiB, JS heap 53.3 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 334 | Drawn triangles (median) | 1,222,337 | Scene coverage (sampled frames) | 15%, 17%, 17%, 16%, 18%, 19%, 21%, 17%, 16% | Median frame (GPU-synced) | 203.6 ms | p95 frame | 214.2 ms | Median CPU submit | 4.0 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgl2",
+      "lod": "standard",
+      "model": "10264-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgl2",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgl2",
+      "adapter": "Google Inc. (Mesa) / ANGLE (Mesa, llvmpipe (LLVM 20.1.2 256 bits), OpenGL 4.5)"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "parts": 2567,
+      "modules": 1,
+      "studInstances": 7489,
+      "visibleStudInstances": 7489,
+      "bodyTriangles": 834352,
+      "studTriangles": 387984,
+      "creditedFiles": 1886,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "10264-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10264-1.mpd",
+        "sections": [
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 10.ldr",
+            "title": "10"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 11.ldr",
+            "title": "11"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 12.ldr",
+            "title": "12"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 14.ldr",
+            "title": "14"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 15-a.ldr",
+            "title": "15-a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 15-b.ldr",
+            "title": "15-b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 17.ldr",
+            "title": "17"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 18-a.ldr",
+            "title": "18-a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 18-b.ldr",
+            "title": "18-b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 19.ldr",
+            "title": "19"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 21.ldr",
+            "title": "21"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 22.ldr",
+            "title": "22"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 22-5.ldr",
+            "title": "22-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 22-6.ldr",
+            "title": "22-6"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 23.ldr",
+            "title": "23"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 24-29.ldr",
+            "title": "24-29"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 27.ldr",
+            "title": "27"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 31-38.ldr",
+            "title": "31-38"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 32.ldr",
+            "title": "32"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 36.ldr",
+            "title": "36"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 37.ldr",
+            "title": "37"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig1.ldr",
+            "title": "minifig1"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig1-pose.ldr",
+            "title": "minifig1-pose"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t1.ldr",
+            "title": "t1"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 40.ldr",
+            "title": "40"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 41.ldr",
+            "title": "41"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 41-5.ldr",
+            "title": "41-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 42.ldr",
+            "title": "42"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 43.ldr",
+            "title": "43"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig2.ldr",
+            "title": "minifig2"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t2.ldr",
+            "title": "t2"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - helmet.ldr",
+            "title": "helmet"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - scooter.ldr",
+            "title": "scooter"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 46.ldr",
+            "title": "46"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 47-52.ldr",
+            "title": "47-52"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 50.ldr",
+            "title": "50"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 51.ldr",
+            "title": "51"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 54.ldr",
+            "title": "54"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 55.ldr",
+            "title": "55"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 56.ldr",
+            "title": "56"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 57.ldr",
+            "title": "57"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 57a.ldr",
+            "title": "57a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 58.ldr",
+            "title": "58"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 59.ldr",
+            "title": "59"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 61.ldr",
+            "title": "61"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 62a.ldr",
+            "title": "62a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 62b.ldr",
+            "title": "62b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 63.ldr",
+            "title": "63"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 64a.ldr",
+            "title": "64a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 64b.ldr",
+            "title": "64b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 65-67.ldr",
+            "title": "65-67"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 70a.ldr",
+            "title": "70a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 70b.ldr",
+            "title": "70b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 71.ldr",
+            "title": "71"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 73.ldr",
+            "title": "73"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 74.ldr",
+            "title": "74"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 75-.ldr",
+            "title": "75-"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 76.ldr",
+            "title": "76"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 77.ldr",
+            "title": "77"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 78.ldr",
+            "title": "78"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 80.ldr",
+            "title": "80"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 79.ldr",
+            "title": "79"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 81.ldr",
+            "title": "81"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 82.ldr",
+            "title": "82"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 87-94.ldr",
+            "title": "87-94"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 91.ldr",
+            "title": "91"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 98-101.ldr",
+            "title": "98-101"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 101.ldr",
+            "title": "101"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 103.ldr",
+            "title": "103"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig3.ldr",
+            "title": "minifig3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 104.ldr",
+            "title": "104"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 108.ldr",
+            "title": "108"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111.ldr",
+            "title": "111"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111-4.ldr",
+            "title": "111-4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111-5.ldr",
+            "title": "111-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111-5a.ldr",
+            "title": "111-5a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 111-9.ldr",
+            "title": "111-9"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 112.ldr",
+            "title": "112"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig3-pose.ldr",
+            "title": "minifig3-pose"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 113-131.ldr",
+            "title": "113-131"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 117.ldr",
+            "title": "117"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 121.ldr",
+            "title": "121"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 128.ldr",
+            "title": "128"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 128-4.ldr",
+            "title": "128-4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 129.ldr",
+            "title": "129"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 131.ldr",
+            "title": "131"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 133.ldr",
+            "title": "133"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 133-3.ldr",
+            "title": "133-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 133-5.ldr",
+            "title": "133-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 134.ldr",
+            "title": "134"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 135.ldr",
+            "title": "135"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 135-3.ldr",
+            "title": "135-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck.ldr",
+            "title": "truck"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck12.ldr",
+            "title": "truck12"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck13.ldr",
+            "title": "truck13"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck17.ldr",
+            "title": "truck17"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck20.ldr",
+            "title": "truck20"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifigChainStuds-1.ldr",
+            "title": "minifigChainStuds-1"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck22.ldr",
+            "title": "truck22"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck23.ldr",
+            "title": "truck23"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck23-3.ldr",
+            "title": "truck23-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck24.ldr",
+            "title": "truck24"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck25-32.ldr",
+            "title": "truck25-32"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck28.ldr",
+            "title": "truck28"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck29.ldr",
+            "title": "truck29"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck30.ldr",
+            "title": "truck30"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck31.ldr",
+            "title": "truck31"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck34.ldr",
+            "title": "truck34"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck36.ldr",
+            "title": "truck36"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck37.ldr",
+            "title": "truck37"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - truck38.ldr",
+            "title": "truck38"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 137-210.ldr",
+            "title": "137-210"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 148.ldr",
+            "title": "148"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig4.ldr",
+            "title": "minifig4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t3.ldr",
+            "title": "t3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t4.ldr",
+            "title": "t4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig5.ldr",
+            "title": "minifig5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 149.ldr",
+            "title": "149"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 151.ldr",
+            "title": "151"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 152a.ldr",
+            "title": "152a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 152b.ldr",
+            "title": "152b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 154.ldr",
+            "title": "154"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 157.ldr",
+            "title": "157"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 158.ldr",
+            "title": "158"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 160.ldr",
+            "title": "160"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 160-5.ldr",
+            "title": "160-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 161.ldr",
+            "title": "161"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 162.ldr",
+            "title": "162"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 163.ldr",
+            "title": "163"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 164.ldr",
+            "title": "164"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 166.ldr",
+            "title": "166"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 167.ldr",
+            "title": "167"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 170a.ldr",
+            "title": "170a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 170b.ldr",
+            "title": "170b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 171-178.ldr",
+            "title": "171-178"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 173.ldr",
+            "title": "173"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 174a.ldr",
+            "title": "174a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 174b.ldr",
+            "title": "174b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 177.ldr",
+            "title": "177"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 180.ldr",
+            "title": "180"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 181a.ldr",
+            "title": "181a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 181b.ldr",
+            "title": "181b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 182.ldr",
+            "title": "182"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 183.ldr",
+            "title": "183"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 184.ldr",
+            "title": "184"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 187.ldr",
+            "title": "187"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 187-5.ldr",
+            "title": "187-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 187-7.ldr",
+            "title": "187-7"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 188.ldr",
+            "title": "188"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 188-2.ldr",
+            "title": "188-2"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 189.ldr",
+            "title": "189"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 190a.ldr",
+            "title": "190a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 190b.ldr",
+            "title": "190b"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 190c.ldr",
+            "title": "190c"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 191.ldr",
+            "title": "191"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 192.ldr",
+            "title": "192"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 193.ldr",
+            "title": "193"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 194.ldr",
+            "title": "194"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 194-5.ldr",
+            "title": "194-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 195.ldr",
+            "title": "195"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 196.ldr",
+            "title": "196"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 197.ldr",
+            "title": "197"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 198.ldr",
+            "title": "198"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 199-205.ldr",
+            "title": "199-205"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 204.ldr",
+            "title": "204"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 205.ldr",
+            "title": "205"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 207.ldr",
+            "title": "207"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - minifig6.ldr",
+            "title": "minifig6"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - t5.ldr",
+            "title": "t5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 211-261.ldr",
+            "title": "211-261"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 222.ldr",
+            "title": "222"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 223.ldr",
+            "title": "223"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 225.ldr",
+            "title": "225"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 226.ldr",
+            "title": "226"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 233.ldr",
+            "title": "233"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 234.ldr",
+            "title": "234"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 235.ldr",
+            "title": "235"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 237.ldr",
+            "title": "237"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 237-3.ldr",
+            "title": "237-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 238.ldr",
+            "title": "238"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 238-3.ldr",
+            "title": "238-3"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 238-5.ldr",
+            "title": "238-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 239.ldr",
+            "title": "239"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 240.ldr",
+            "title": "240"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 242.ldr",
+            "title": "242"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 242-5.ldr",
+            "title": "242-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 245.ldr",
+            "title": "245"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 245-4.ldr",
+            "title": "245-4"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 245-5.ldr",
+            "title": "245-5"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 249.ldr",
+            "title": "249"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 250.ldr",
+            "title": "250"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 251.ldr",
+            "title": "251"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 256.ldr",
+            "title": "256"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 257.ldr",
+            "title": "257"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 263-293.ldr",
+            "title": "263-293"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 273.ldr",
+            "title": "273"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 276.ldr",
+            "title": "276"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 278.ldr",
+            "title": "278"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 279.ldr",
+            "title": "279"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 280.ldr",
+            "title": "280"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 287.ldr",
+            "title": "287"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 289.ldr",
+            "title": "289"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 292a.ldr",
+            "title": "292a"
+          },
+          {
+            "author": "Jaco van der Molen [Jaco van der Molen]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 292b.ldr",
+            "title": "292b"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 13971.dat",
+            "title": "13971"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10264 - 34173.dat",
+            "title": "34173"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\10264 - 13971s01.dat",
+            "title": "13971s01"
+          },
+          {
+            "author": "Bjoern Sigve Storesund [Storesund]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "3960p0e.dat",
+            "title": "3960p0e"
+          },
+          {
+            "author": "Bjoern Sigve Storesund [Storesund]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\3960p0es01.dat",
+            "title": "3960p0es01"
+          },
+          {
+            "author": "Bjoern Sigve Storesund [Storesund]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\3960p0es02.dat",
+            "title": "3960p0es02"
+          },
+          {
+            "author": "Gerald Lasser [GeraldLasser]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\3960s05.dat",
+            "title": "3960s05"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 7946688,
+      "otherBytes": 59056,
+      "jsHeapBytes": 55881185
+    },
+    "loadMs": 469.30000000074506,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 203.59999999962747,
+      "p95FrameMs": 214.19999999925494,
+      "meanFrameMs": 202.71999999955295,
+      "medianCpuSubmitMs": 4,
+      "fpsFromMedian": 4.911591355608201,
+      "medianDrawCalls": 334,
+      "medianDrawnTriangles": 1222337,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.14713541666666666,
+        0.1697048611111111,
+        0.17491319444444445,
+        0.15711805555555555,
+        0.17578125,
+        0.1931423611111111,
+        0.21223958333333334,
+        0.17317708333333334,
+        0.1558159722222222
+      ]
+    },
+    "drawCalls": 334,
+    "drawnTriangles": 1222337,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}

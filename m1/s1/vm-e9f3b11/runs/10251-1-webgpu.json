@@ -1,0 +1,400 @@
+{
+  "url": "http://localhost:4173/?model=10251-1&api=webgpu&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Parts | 2,392 | Modules | 1 | Stud instances (drawn of total) | 6,525 of 6,525 | Scene triangles | 977,822 | Load | 466 ms | GPU buffers allocated so far, JS heap | vertex+index 4.9 MiB, other 0.0 MiB, JS heap 46.3 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 239 | Drawn triangles (median) | 977,823 | Scene coverage (sampled frames) | 24%, 25%, 23%, 23%, 26%, 25%, 28%, 25%, 27% | Median frame (GPU-synced) | 671.2 ms | p95 frame | 688.1 ms | Median CPU submit | 4.3 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "10251-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "google / swiftshader"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "parts": 2392,
+      "modules": 1,
+      "studInstances": 6525,
+      "visibleStudInstances": 6525,
+      "bodyTriangles": 645854,
+      "studTriangles": 331968,
+      "creditedFiles": 1886,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "10251-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10251-1.mpd",
+        "sections": [
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Brick Bank.ldr",
+            "title": "Brick Bank"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Ground Floor.ldr",
+            "title": "Ground Floor"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Vault Door.ldr",
+            "title": "Vault Door"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Vault Door Lock.ldr",
+            "title": "Vault Door Lock"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Stair 1.ldr",
+            "title": "Stair 1"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Vault Roof.ldr",
+            "title": "Vault Roof"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Washing Machines.ldr",
+            "title": "Washing Machines"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Money Counter.ldr",
+            "title": "Money Counter"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Air-Vent.ldr",
+            "title": "Air-Vent"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Air-Vent Flap.ldr",
+            "title": "Air-Vent Flap"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - First Floor.ldr",
+            "title": "First Floor"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Desk.ldr",
+            "title": "Desk"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Desk Chair.ldr",
+            "title": "Desk Chair"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Coffee Machine.ldr",
+            "title": "Coffee Machine"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Table.ldr",
+            "title": "Table"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Clock.ldr",
+            "title": "Clock"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Roof.ldr",
+            "title": "Roof"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Chandelier.ldr",
+            "title": "Chandelier"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Bench.ldr",
+            "title": "Bench"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Tree.ldr",
+            "title": "Tree"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Ladder.ldr",
+            "title": "Ladder"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Minifig - Bank Teller.ldr",
+            "title": "Minifig - Bank Teller"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Minifig - Mom.ldr",
+            "title": "Minifig - Mom"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Minifig - Child.ldr",
+            "title": "Minifig - Child"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Minifig - Bank Manager.ldr",
+            "title": "Minifig - Bank Manager"
+          },
+          {
+            "author": "Merlijn Wissink [Legolijntje]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10251 - Minifig - Bank Secretary.ldr",
+            "title": "Minifig - Bank Secretary"
+          },
+          {
+            "author": "Owen Burgoyne [C3POwen]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "22385.dat",
+            "title": "22385"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "60616a.dat",
+            "title": "60616a"
+          },
+          {
+            "author": "Owen Burgoyne [C3POwen]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "22885.dat",
+            "title": "22885"
+          },
+          {
+            "author": "Philippe Hurbain [Philo]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "11100.dat",
+            "title": "11100"
+          },
+          {
+            "author": "Heiko Jelnikar [KlotzKiste]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "19121.dat",
+            "title": "19121"
+          },
+          {
+            "author": "Owen Burgoyne [C3POwen]",
+            "ldrawOrg": "Unofficial_Shortcut",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "60797c02.dat",
+            "title": "60797c02"
+          },
+          {
+            "author": "Gerald Lasser [GeraldLasser]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "20310.dat",
+            "title": "20310"
+          },
+          {
+            "author": "<AuthorRealName> [<AuthorLDrawName>]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "19118.dat",
+            "title": "19118"
+          },
+          {
+            "author": "<AuthorRealName> [<AuthorLDrawName>]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "15500.dat",
+            "title": "15500"
+          },
+          {
+            "author": "<AuthorRealName> [<AuthorLDrawName>]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "20877.dat",
+            "title": "20877"
+          },
+          {
+            "author": "<AuthorRealName> [<AuthorLDrawName>]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "87990.dat",
+            "title": "87990"
+          },
+          {
+            "author": "<AuthorRealName> [<AuthorLDrawName>]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "99930.dat",
+            "title": "99930"
+          },
+          {
+            "author": "Owen Burgoyne [C3POwen]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\22385s01.dat",
+            "title": "22385s01"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\60616s01.dat",
+            "title": "60616s01"
+          },
+          {
+            "author": "Steffen [Steffen]",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "stud2-logo5.dat",
+            "title": "stud2-logo5"
+          },
+          {
+            "author": "Magnus Forsberg [MagFors]",
+            "ldrawOrg": "Unofficial_Primitive",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "logo5.dat",
+            "title": "logo5"
+          },
+          {
+            "author": "Owen Burgoyne [C3POwen]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "u9086.dat",
+            "title": "u9086"
+          },
+          {
+            "author": "Owen Burgoyne [C3POwen]",
+            "ldrawOrg": "Unofficial_Part",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "u9087.dat",
+            "title": "u9087"
+          },
+          {
+            "author": "Gerald Lasser [GeraldLasser]",
+            "ldrawOrg": "Unofficial_Subpart",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "s\\20310s01.dat",
+            "title": "20310s01"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 5135812,
+      "otherBytes": 38512,
+      "jsHeapBytes": 48580597
+    },
+    "loadMs": 465.5,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 671.1999999992549,
+      "p95FrameMs": 688.1000000014901,
+      "meanFrameMs": 668.5400000002235,
+      "medianCpuSubmitMs": 4.299999998882413,
+      "fpsFromMedian": 1.4898688915391984,
+      "medianDrawCalls": 239,
+      "medianDrawnTriangles": 977823,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.23741319444444445,
+        0.25,
+        0.2348090277777778,
+        0.22960069444444445,
+        0.26171875,
+        0.2465277777777778,
+        0.2751736111111111,
+        0.2543402777777778,
+        0.2673611111111111
+      ]
+    },
+    "drawCalls": 239,
+    "drawnTriangles": 977823,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}

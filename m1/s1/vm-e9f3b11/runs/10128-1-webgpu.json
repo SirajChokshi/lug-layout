@@ -1,0 +1,155 @@
+{
+  "url": "http://localhost:4173/?model=10128-1&api=webgpu&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Parts | 336 | Modules | 1 | Stud instances (drawn of total) | 2,137 of 2,137 | Scene triangles | 322,238 | Load | 401 ms | GPU buffers allocated so far, JS heap | vertex+index 3.2 MiB, other 0.0 MiB, JS heap 47.0 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 124 | Drawn triangles (median) | 322,239 | Scene coverage (sampled frames) | 12%, 13%, 13%, 14%, 16%, 15%, 14%, 13%, 13% | Median frame (GPU-synced) | 232.0 ms | p95 frame | 236.1 ms | Median CPU submit | 3.1 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "10128-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "google / swiftshader"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "parts": 336,
+      "modules": 1,
+      "studInstances": 2137,
+      "visibleStudInstances": 2137,
+      "bodyTriangles": 215822,
+      "studTriangles": 106416,
+      "creditedFiles": 1886,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "10128-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10128-1.mpd",
+        "sections": [
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - level crossing.ldr",
+            "title": "level crossing"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - level crossing - barrier.ldr",
+            "title": "level crossing - barrier"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - car.ldr",
+            "title": "car"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - car - subpart 1.ldr",
+            "title": "car - subpart 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - car - subpart 2.ldr",
+            "title": "car - subpart 2"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - car - subpart 2a.ldr",
+            "title": "car - subpart 2a"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - minifig 1.ldr",
+            "title": "minifig 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - minifig 2.ldr",
+            "title": "minifig 2"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Unofficial_Shortcut",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10128 - 30178c02.dat",
+            "title": "Door 1 x 4 x 6 with 3 Panes with TransBlack Glass"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 3334036,
+      "otherBytes": 20112,
+      "jsHeapBytes": 49295533
+    },
+    "loadMs": 401.30000000074506,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 232,
+      "p95FrameMs": 236.10000000149012,
+      "meanFrameMs": 231.1,
+      "medianCpuSubmitMs": 3.099999999627471,
+      "fpsFromMedian": 4.310344827586207,
+      "medianDrawCalls": 124,
+      "medianDrawnTriangles": 322239,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.12065972222222222,
+        0.12803819444444445,
+        0.1332465277777778,
+        0.1362847222222222,
+        0.16145833333333334,
+        0.15494791666666666,
+        0.1388888888888889,
+        0.12586805555555555,
+        0.12890625
+      ]
+    },
+    "drawCalls": 124,
+    "drawnTriangles": 322239,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}

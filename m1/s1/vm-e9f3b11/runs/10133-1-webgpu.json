@@ -1,0 +1,113 @@
+{
+  "url": "http://localhost:4173/?model=10133-1&api=webgpu&measure=1&warmup=2&frames=5",
+  "hud": "Brick Railroad | API | webgpu | Adapter | google / swiftshader | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Parts | 419 | Modules | 1 | Stud instances (drawn of total) | 1,396 of 1,396 | Scene triangles | 208,440 | Load | 399 ms | GPU buffers allocated so far, JS heap | vertex+index 1.8 MiB, other 0.0 MiB, JS heap 44.3 MiB | Chunk tiers near/mid/far (median) | 1 / 0 / 0 | Draw calls (median) | 87 | Drawn triangles (median) | 208,441 | Scene coverage (sampled frames) | 8%, 13%, 13%, 14%, 12%, 8%, 13%, 17%, 17% | Median frame (GPU-synced) | 200.8 ms | p95 frame | 216.2 ms | Median CPU submit | 2.1 ms | Measured frames | 5",
+  "result": {
+    "params": {
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "10133-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 5,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "google / swiftshader"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "parts": 419,
+      "modules": 1,
+      "studInstances": 1396,
+      "visibleStudInstances": 1396,
+      "bodyTriangles": 139464,
+      "studTriangles": 68976,
+      "creditedFiles": 1886,
+      "creditedLicenses": [
+        "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+      ],
+      "model": {
+        "name": "10133-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10133-1.mpd",
+        "sections": [
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10133 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10133 - locomotive.ldr",
+            "title": "locomotive"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10133 - minifig 1.ldr",
+            "title": "minifig 1"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10133 - minifig 2.ldr",
+            "title": "minifig 2"
+          }
+        ]
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 1934520,
+      "otherBytes": 14192,
+      "jsHeapBytes": 46408370
+    },
+    "loadMs": 398.59999999962747,
+    "timings": {
+      "frames": 5,
+      "medianFrameMs": 200.7999999988824,
+      "p95FrameMs": 216.2000000011176,
+      "meanFrameMs": 200.6800000000745,
+      "medianCpuSubmitMs": 2.100000001490116,
+      "fpsFromMedian": 4.980079681302618,
+      "medianDrawCalls": 87,
+      "medianDrawnTriangles": 208441,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.08289930555555555,
+        0.1310763888888889,
+        0.1345486111111111,
+        0.1384548611111111,
+        0.12369791666666667,
+        0.08159722222222222,
+        0.12760416666666666,
+        0.1714409722222222,
+        0.17100694444444445
+      ]
+    },
+    "drawCalls": 87,
+    "drawnTriangles": 208441,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36"
+  },
+  "logs": []
+}
