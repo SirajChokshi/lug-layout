@@ -1,4 +1,4 @@
-import type { IViewerScene, PlacementDump } from "@brr/client";
+import type { IViewerScene, PlacementDump, TrackSummary } from "@brr/client";
 import { CreditLinks, partsCreditText } from "@brr/ui";
 import { useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
@@ -41,6 +41,26 @@ function percent(fraction: number): string {
   return `${(fraction * 100).toFixed(0)}%`;
 }
 
+function trackRows(track: TrackSummary | null): ReadonlyArray<readonly [string, string]> {
+  if (!track) return [];
+  const unverified =
+    track.unverifiedPlacements > 0
+      ? [["Unverified track poses", `${track.unverifiedPlacements} placements`] as const]
+      : [];
+  return [
+    ["Track placements", integer.format(track.placements)],
+    ["Exact joins", `${integer.format(track.joins)} of ${integer.format(track.ends)} ends paired`],
+    ["Open ends", integer.format(track.openEnds)],
+    ["Coincident ends not joined", integer.format(track.coincidentNotJoined)],
+    ["Switches", integer.format(track.switches)],
+    [
+      "Directed edges (reachable from edge 0)",
+      `${integer.format(track.directedEdges)} (${integer.format(track.reachableFromFirstEdge)})`,
+    ],
+    ...unverified,
+  ];
+}
+
 function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]> {
   const { backend, summary, frame, timings, liveFps } = report;
   const api =
@@ -65,6 +85,7 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ["Load", `${integer.format(report.loadMs)} ms`],
     ["GPU buffers allocated so far, JS heap", memoryText(report.memory)],
     ["Render origin (chunks), rebases", renderOriginText(report)],
+    ...trackRows(summary.track),
   ];
   if (timings) {
     rows.push(

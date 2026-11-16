@@ -7,7 +7,10 @@ import {
   type Pose16,
 } from "@brr/math";
 
-export type TrackRoute = readonly [number, number];
+export interface TrackRoute {
+  readonly from: number;
+  readonly to: number;
+}
 
 export interface TrackPieceSpec {
   readonly connectors: ReadonlyArray<Pose16>;
@@ -27,7 +30,7 @@ const INT16_MAX = 2 ** 15 - 1;
 function checkPiece(spec: TrackPieceSpec, index: number): void {
   const connectorCount = spec.connectors.length;
   if (connectorCount === 0) throw new Error(`track piece ${index} has no connectors`);
-  for (const [from, to] of spec.routes) {
+  for (const { from, to } of spec.routes) {
     const valid =
       Number.isInteger(from) &&
       Number.isInteger(to) &&

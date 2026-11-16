@@ -18,6 +18,20 @@ export interface SceneSummary {
   readonly studTriangles: number;
   readonly creditedFiles: number;
   readonly model: ModelCredit | null;
+  readonly track: TrackSummary | null;
+}
+
+export interface TrackSummary {
+  readonly plan: string;
+  readonly placements: number;
+  readonly ends: number;
+  readonly joins: number;
+  readonly openEnds: number;
+  readonly coincidentNotJoined: number;
+  readonly switches: number;
+  readonly directedEdges: number;
+  readonly reachableFromFirstEdge: number;
+  readonly unverifiedPlacements: number;
 }
 
 export interface ModelCredit {
@@ -138,6 +152,7 @@ function summarize(
     studTriangles,
     creditedFiles: bundle.credits.length,
     model,
+    track: null,
   };
 }
 

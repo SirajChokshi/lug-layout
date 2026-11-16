@@ -107,7 +107,7 @@ export class TrackGraph {
     for (let p = 0; p < placementCount; p++) {
       const first = endStart[p] ?? 0;
       const routes = layout.pieces[layout.piece(p)]?.routes ?? [];
-      routes.forEach(([from, to], route) => {
+      routes.forEach(({ from, to }, route) => {
         for (const [a, b] of [
           [from, to],
           [to, from],

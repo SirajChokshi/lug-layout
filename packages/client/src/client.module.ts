@@ -6,7 +6,15 @@ import { Editor } from "./edit/editor.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
 import { PartDisplayScene } from "./scene/part-display-scene.ts";
-import { CITY_SCENE, CREDITS, EDITOR, MODEL_SCENE, PART_DISPLAY_SCENE } from "./tokens.ts";
+import { TrackScene } from "./scene/track-scene.ts";
+import {
+  CITY_SCENE,
+  CREDITS,
+  EDITOR,
+  MODEL_SCENE,
+  PART_DISPLAY_SCENE,
+  TRACK_SCENE,
+} from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
   bind(PART_DISPLAY_SCENE).to(PartDisplayScene).inSingletonScope();
@@ -14,6 +22,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(CITY_SCENE).to(CityScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();
+  bind(TRACK_SCENE).to(TrackScene).inSingletonScope();
 });
 
 export interface MainThreadConfig {

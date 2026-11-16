@@ -5,6 +5,7 @@ import {
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
+  TRACK_SCENE,
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
@@ -46,6 +47,11 @@ function viewerScene(viewer: ViewerParams): {
       const modelScene = container.get(MODEL_SCENE);
       modelScene.selectModel(viewer.model ?? "");
       return { scene: modelScene, placements: null };
+    }
+    case "track": {
+      const trackScene = container.get(TRACK_SCENE);
+      trackScene.selectPlan(viewer.track ?? "");
+      return { scene: trackScene, placements: null };
     }
     case "parts":
       return { scene: container.get(PART_DISPLAY_SCENE), placements: null };
