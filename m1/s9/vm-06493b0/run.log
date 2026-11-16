@@ -1,0 +1,27 @@
+profile /tmp/s9-profile-ZSuEYL
+chrome 157.0.8103.50
+fresh profile opened: World 1 Saved · 0 placements · 0 shards
+placed 3811 and 7936-1 at (-2560, -640) rot 0
+placed 3811 and 10264-1 at (-1280, -640) rot 1
+placed 3811 and 10185-1 at (0, -640) rot 2
+placed 3811 and 10190-1 at (1280, -640) rot 3
+placed 3811 and 10218-1 at (2560, -640) rot 0
+placed 3811 and 2150-1 at (-2560, 640) rot 1
+placed 3811 and 4554-1 at (-1280, 640) rot 2
+placed 3811 and 4555-1 at (0, 640) rot 3
+placed 3811 and 10128-1 at (1280, 640) rot 0
+placed 3811 and 10133-1 at (2560, 640) rot 1
+placed 3811 and 10133-1 at (25000000, -25000000) rot 0
+placed 3811 and 7936-1 at (25001280, -25000000) rot 1
+built 24 placements in 953 s: Two clusters Saved · 24 placements · 6 shards
+reload origin: {"label":"origin","pixels":{"width":1600,"height":900,"differing":0,"maxDelta":0},"placementsBefore":24,"placementsAfter":24,"chunkCountsEqual":true,"placementsEqual":true}
+reload far: {"label":"far","pixels":{"width":1600,"height":900,"differing":0,"maxDelta":0},"placementsBefore":24,"placementsAfter":24,"chunkCountsEqual":true,"placementsEqual":true}
+IndexedDB databases: brr-world-43fbdad3-8a53-4c80-a7f2-f176254f53c5, brr-world-c9a6714e-6970-4503-ba74-8e951ac8ebd5, brr-worlds
+  brr-world-43fbdad3-8a53-4c80-a7f2-f176254f53c5 "World 1" manifest 355 B, shards: none
+  brr-world-c9a6714e-6970-4503-ba74-8e951ac8ebd5 "Two clusters" manifest 622 B, shards: -1_-1 (4 placements, 318 B); -1_0 (4 placements, 312 B); 0_-1 (6 placements, 427 B); 0_0 (6 placements, 419 B); 4882_-4883 (2 placements, 219 B); 4883_-4883 (2 placements, 218 B)
+exported A.brr.zip (suggested Two-clusters.brr.zip)
+wiped IndexedDB: before brr-world-43fbdad3-8a53-4c80-a7f2-f176254f53c5, brr-world-c9a6714e-6970-4503-ba74-8e951ac8ebd5, brr-worlds; after []
+after wipe the app opened: World 1 Saved · 0 placements · 0 shards
+imported A: Two clusters Saved · 24 placements · 6 shards
+exported B.brr.zip (suggested Two-clusters.brr.zip)
+round trip: {"a":{"bytes":161885,"sha256":"203cf9414048fcb65f46e045cd175098d5bc1fb65daa141d613242c04c05f66c"},"b":{"bytes":161885,"sha256":"203cf9414048fcb65f46e045cd175098d5bc1fb65daa141d613242c04c05f66c"},"identical":true}

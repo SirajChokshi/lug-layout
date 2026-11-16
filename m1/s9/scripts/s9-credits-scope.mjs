@@ -23,4 +23,12 @@ await page.waitForFunction(() => (document.querySelector(".world-name")?.textCon
 const [download] = await Promise.all([page.waitForEvent("download"), page.click("text=Export .brr.zip")]);
 await download.saveAs(out);
 console.log("saved", out, download.suggestedFilename());
+await page.keyboard.press("Control+z");
+await page.waitForFunction(() => (document.querySelector(".world-name")?.textContent ?? "").includes("Saved · 1 placement"), null, { timeout: 120000 });
+console.log("after undo:", await page.locator(".world-name").innerText());
+await page.reload();
+await page.waitForSelector('.editor[data-status="ready"]', { state: "attached", timeout: 600000 });
+await page.waitForFunction(() => document.querySelector(".editor-hud")?.textContent?.includes("First world frame"), null, { timeout: 600000 });
+const hud = (await page.locator(".editor-hud").innerText()).split("\n");
+console.log("after reload:", await page.locator(".world-name").innerText(), "| HUD placements", hud[hud.indexOf("Placements") + 1]);
 await context.close();
