@@ -5,7 +5,7 @@ import {
   type PartBundle,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
-import { World } from "@brr/domain";
+import { EditHistory, World, type AppliedEdit, type EditKind, type HistoryStep } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
 import {
   RAY_FLOATS,
@@ -20,11 +20,16 @@ import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
-import { PlacedChunks, type PlacedModel, type RebuildReport } from "./placed-chunks.ts";
+import {
+  PlacedChunks,
+  type PlacedModel,
+  type RebuildReport,
+  type ViewUpdate,
+} from "./placed-chunks.ts";
 import { baseplatePlaceable, modelPlaceable, type Placeable } from "./placeable.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
-export type EditAction = "place" | "rotate" | "delete";
+export type EditAction = EditKind;
 export type EditorMode = "place" | "select";
 
 export interface CatalogItemView {
@@ -37,6 +42,7 @@ export interface CatalogItemView {
 }
 
 export interface LatencySample {
+  readonly step: HistoryStep;
   readonly action: EditAction;
   readonly item: string;
   readonly rot: number;
@@ -63,6 +69,13 @@ export interface SelectionView {
   readonly box: WorldBox;
 }
 
+export interface HistoryView {
+  readonly undo: EditAction | null;
+  readonly redo: EditAction | null;
+  readonly undoDepth: number;
+  readonly redoDepth: number;
+}
+
 export interface EditorStats {
   readonly fps: number;
   readonly drawCalls: number;
@@ -81,6 +94,7 @@ export interface EditorSnapshot {
   readonly hover: { readonly x: number; readonly z: number } | null;
   readonly selection: SelectionView | null;
   readonly placements: number;
+  readonly history: HistoryView;
   readonly lastLatency: LatencySample | null;
   readonly latencies: ReadonlyArray<LatencySample>;
   readonly stats: EditorStats | null;
@@ -114,6 +128,8 @@ export interface IEditor {
   click(ndcX: number, ndcY: number, eventTimeMs: number): void;
   rotate(eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
+  undo(eventTimeMs: number): void;
+  redo(eventTimeMs: number): void;
   orbit(dxPx: number, dyPx: number): void;
   pan(dxPx: number, dyPx: number): void;
   zoom(wheelDelta: number): void;
@@ -129,6 +145,7 @@ const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
 
 interface PendingAction {
+  readonly step: HistoryStep;
   readonly action: EditAction;
   readonly item: string;
   readonly rot: number;
@@ -164,12 +181,14 @@ export class Editor implements IEditor {
     hover: null,
     selection: null,
     placements: 0,
+    history: { undo: null, redo: null, undoDepth: 0, redoDepth: 0 },
     lastLatency: null,
     latencies: [],
     stats: null,
     credits: null,
   };
   private readonly world = new World();
+  private readonly history = new EditHistory(this.world);
   private readonly camera = new OrbitCamera();
   private readonly ray = new Float64Array(RAY_FLOATS);
   private readonly frameStats: FrameStats = {
@@ -342,6 +361,7 @@ export class Editor implements IEditor {
 
   private recordLatency(pending: PendingAction, frame: FrameTimes): void {
     const sample: LatencySample = {
+      step: pending.step,
       action: pending.action,
       item: pending.item,
       rot: pending.rot,
@@ -403,7 +423,7 @@ export class Editor implements IEditor {
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
-      this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, "place", eventTimeMs);
+      this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
       return;
     }
     this.backend.rayThrough(ndcX, ndcY, this.ray);
@@ -424,24 +444,54 @@ export class Editor implements IEditor {
     x: number,
     z: number,
     rot: number,
-    action: EditAction,
     eventTimeMs: number,
-  ): PlacedModel {
-    const refId = this.placeables.indexOf(placeable);
-    const handle = this.world.add(refId, placeable.worldColor, x, z, 0, rot);
-    const { placed, report } = this.placed.add(handle, placeable);
-    this.pending = {
-      action,
-      item: placeable.id,
-      rot,
-      x,
-      z,
-      startMs: eventTimeMs,
-      rebuiltMs: performance.now(),
-      report,
-    };
-    this.update({ placements: this.world.size });
-    return placed;
+  ): void {
+    this.show(
+      this.history.place({
+        refId: this.placeables.indexOf(placeable),
+        colorId: placeable.worldColor,
+        x,
+        z,
+        yPlates: 0,
+        rot,
+      }),
+      eventTimeMs,
+    );
+  }
+
+  private placeableAt(refId: number): Placeable {
+    const placeable = this.placeables[refId];
+    if (!placeable) throw new Error(`no catalog item has ref id ${refId}`);
+    return placeable;
+  }
+
+  private show(edit: AppliedEdit, eventTimeMs: number): ViewUpdate {
+    const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
+    const primary = edit.changes[0];
+    const pose = primary?.to ?? primary?.from ?? null;
+    if (pose) {
+      this.pending = {
+        step: edit.step,
+        action: edit.kind,
+        item: this.placeableAt(pose.refId).id,
+        rot: pose.rot,
+        x: pose.x,
+        z: pose.z,
+        startMs: eventTimeMs,
+        rebuiltMs: performance.now(),
+        report: view.report,
+      };
+    }
+    this.update({
+      placements: this.world.size,
+      history: {
+        undo: this.history.nextUndo(),
+        redo: this.history.nextRedo(),
+        undoDepth: this.history.undoDepth,
+        redoDepth: this.history.redoDepth,
+      },
+    });
+    return view;
   }
 
   private select(model: PlacedModel | null): void {
@@ -472,53 +522,31 @@ export class Editor implements IEditor {
     }
     const model = this.selected;
     if (!model) return;
-    const { x, z } = model.handle;
-    const rot = (model.handle.rot + 1) % QUARTER_TURNS;
-    this.world.remove(model.handle);
-    const handle = this.world.add(
-      this.placeables.indexOf(model.placeable),
-      model.placeable.worldColor,
-      x,
-      z,
-      0,
-      rot,
-    );
-    const { placed, report } = this.placed.replace(model, handle);
-    this.pending = {
-      action: "rotate",
-      item: model.placeable.id,
-      rot,
-      x,
-      z,
-      startMs: eventTimeMs,
-      rebuiltMs: performance.now(),
-      report,
-    };
-    this.select(placed);
-  }
-
-  private removeModel(model: PlacedModel): RebuildReport {
-    this.world.remove(model.handle);
-    return this.placed.remove(model);
+    this.select(this.show(this.history.rotate(model.placement), eventTimeMs).added[0] ?? null);
   }
 
   deleteSelection(eventTimeMs: number): void {
     const model = this.selected;
     if (!model) return;
-    const { x, z, rot } = model.handle;
-    const report = this.removeModel(model);
-    this.pending = {
-      action: "delete",
-      item: model.placeable.id,
-      rot,
-      x,
-      z,
-      startMs: eventTimeMs,
-      rebuiltMs: performance.now(),
-      report,
-    };
+    this.show(this.history.remove(model.placement), eventTimeMs);
     this.select(null);
-    this.update({ placements: this.world.size });
+  }
+
+  undo(eventTimeMs: number): void {
+    this.replay(this.history.undo(), eventTimeMs);
+  }
+
+  redo(eventTimeMs: number): void {
+    this.replay(this.history.redo(), eventTimeMs);
+  }
+
+  private replay(edit: AppliedEdit | null, eventTimeMs: number): void {
+    if (!edit) return;
+    const selected = this.selected;
+    const restored = this.show(edit, eventTimeMs).added.at(-1);
+    if (this.active) return;
+    if (restored) this.select(restored);
+    else if (selected && !selected.handle.live) this.select(null);
   }
 
   orbit(dxPx: number, dyPx: number): void {

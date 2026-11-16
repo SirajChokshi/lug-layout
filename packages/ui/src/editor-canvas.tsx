@@ -32,6 +32,15 @@ function ndc(canvas: HTMLCanvasElement, event: PointerEvent): readonly [number, 
   ];
 }
 
+function historyShortcut(editor: IEditor, event: KeyboardEvent): void {
+  if (event.altKey) return;
+  const key = event.key.toLowerCase();
+  if (key === "z" && !event.shiftKey) editor.undo(event.timeStamp);
+  else if (key === "z" || key === "y") editor.redo(event.timeStamp);
+  else return;
+  event.preventDefault();
+}
+
 interface EditorCanvasProps {
   readonly editor: IEditor;
   readonly options: EditorOptions;
@@ -119,6 +128,10 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.target instanceof HTMLInputElement) return;
+      if (event.ctrlKey || event.metaKey) {
+        historyShortcut(editor, event);
+        return;
+      }
       switch (event.key) {
         case "r":
         case "R":

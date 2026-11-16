@@ -1,4 +1,4 @@
-import type { PlacementHandle } from "@brr/domain";
+import type { AppliedEdit, PlacementHandle, PlacementRef } from "@brr/domain";
 import { CHUNK_LDU, PLATE_LDU, chunkKey, chunkOf, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import {
   INSTANCE_MATRIX_FLOATS,
@@ -9,6 +9,7 @@ import {
 import { BOX_FLOATS, type Placeable } from "./placeable.ts";
 
 export interface PlacedModel {
+  readonly placement: PlacementRef;
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
   readonly box: WorldBox;
@@ -67,6 +68,7 @@ class PlacedEntry implements PlacedModel {
   readonly sin: number;
 
   constructor(
+    readonly placement: PlacementRef,
     readonly handle: PlacementHandle,
     readonly placeable: Placeable,
     chunkOrigins: Map<number, readonly [number, number]>,
@@ -220,8 +222,8 @@ export interface RebuildReport {
   readonly studs: number;
 }
 
-export interface PlacementChange {
-  readonly placed: PlacedModel;
+export interface ViewUpdate {
+  readonly added: ReadonlyArray<PlacedModel>;
   readonly report: RebuildReport;
 }
 
@@ -236,24 +238,28 @@ export class PlacedChunks {
     return this.entries;
   }
 
-  add(handle: PlacementHandle, placeable: Placeable): PlacementChange {
-    const entry = this.insert(handle, placeable);
-    return { placed: entry, report: this.rebuild(entry.contributions.keys()) };
+  apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
+    const touched = new Set<number>();
+    for (const change of edit.changes) {
+      if (!change.removed) continue;
+      for (const key of this.detach(change.removed).contributions.keys()) touched.add(key);
+    }
+    const added: PlacedModel[] = [];
+    for (const change of edit.changes) {
+      if (!change.added || !change.to) continue;
+      const entry = this.insert(change.placement, change.added, placeableOf(change.to.refId));
+      for (const key of entry.contributions.keys()) touched.add(key);
+      added.push(entry);
+    }
+    return { added, report: this.rebuild(touched) };
   }
 
-  remove(model: PlacedModel): RebuildReport {
-    return this.rebuild(this.detach(model).contributions.keys());
-  }
-
-  replace(model: PlacedModel, handle: PlacementHandle): PlacementChange {
-    const removed = this.detach(model);
-    const entry = this.insert(handle, removed.placeable);
-    const keys = new Set([...removed.contributions.keys(), ...entry.contributions.keys()]);
-    return { placed: entry, report: this.rebuild(keys) };
-  }
-
-  private insert(handle: PlacementHandle, placeable: Placeable): PlacedEntry {
-    const entry = new PlacedEntry(handle, placeable, this.chunkOrigins);
+  private insert(
+    placement: PlacementRef,
+    handle: PlacementHandle,
+    placeable: Placeable,
+  ): PlacedEntry {
+    const entry = new PlacedEntry(placement, handle, placeable, this.chunkOrigins);
     this.entries.push(entry);
     for (const key of entry.contributions.keys()) {
       let set = this.byChunk.get(key);
@@ -266,10 +272,10 @@ export class PlacedChunks {
     return entry;
   }
 
-  private detach(model: PlacedModel): PlacedEntry {
-    const index = this.entries.findIndex((entry) => entry === model);
+  private detach(handle: PlacementHandle): PlacedEntry {
+    const index = this.entries.findIndex((entry) => entry.handle === handle);
     const entry = this.entries[index];
-    if (!entry) throw new Error("placed model is not in this world view");
+    if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
     return entry;
