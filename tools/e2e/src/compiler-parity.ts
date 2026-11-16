@@ -20,13 +20,16 @@ const GLB_HEADER_BYTES = 12;
 const MATRIX_FLOATS = 12;
 const CHUNK_HEADER_BYTES = 8;
 const LIBRARY_PREFIXES = ["parts/", "p/"] as const;
-const LODS: ReadonlyArray<CompileLod> = ["standard", "low", "far"];
+const ALL_LODS: ReadonlyArray<CompileLod> = ["standard", "low", "far"];
 
 const { values } = parseArgs({
   options: {
     bundle: { type: "string", default: "../asset-pipeline/dist/bundle" },
     ldraw: { type: "string", default: "../../.cache/ldraw" },
     omr: { type: "string", default: "../../.cache/omr" },
+    fixtures: { type: "string", default: "../../packages/test-fixtures" },
+    palette: { type: "string", default: "../asset-pipeline/palette.json" },
+    lods: { type: "string", default: ALL_LODS.join(",") },
   },
 });
 
@@ -61,10 +64,11 @@ function referenceOf(file: string): string {
   return prefix ? file.slice(prefix.length) : file;
 }
 
+const lods = ALL_LODS.filter((lod) => values.lods.split(",").includes(lod));
 const files = await libraryFiles(values.ldraw);
 let total = 0;
 let identical = 0;
-for (const lod of LODS) {
+for (const lod of lods) {
   const directory = join(values.bundle, lod);
   const manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8")) as Manifest;
   const compiler = new BrickCompiler(
@@ -134,6 +138,19 @@ function bundlePartId(reference: string): string {
   return `ldraw:${reference.replace(/(\.dat)+$/u, "").replaceAll("/", "-")}`;
 }
 
+interface PaletteModel {
+  readonly name: string;
+  readonly origin: "omr" | "generated";
+  readonly file: string;
+}
+
+const palette = JSON.parse(await readFile(values.palette, "utf8")) as {
+  readonly models: ReadonlyArray<PaletteModel>;
+};
+const modelRoots: Record<PaletteModel["origin"], string> = {
+  omr: values.omr,
+  generated: values.fixtures,
+};
 const standard = join(values.bundle, "standard");
 const standardManifest = JSON.parse(
   await readFile(join(standard, "manifest.json"), "utf8"),
@@ -143,7 +160,11 @@ const baker = new BrickCompiler(
 );
 for (const model of standardManifest.models) {
   const bundled = JSON.parse(await readFile(join(standard, model.file), "utf8")) as ModelFile;
-  const baked = await baker.bake(await readFile(join(values.omr, `${model.name}.mpd`), "utf8"));
+  const source = palette.models.find((entry) => entry.name === model.name);
+  if (!source) throw new Error(`bundle model ${model.name} is not in the palette`);
+  const baked = await baker.bake(
+    await readFile(join(modelRoots[source.origin], source.file), "utf8"),
+  );
   const count = baked.instances.part.length;
   let differing = 0;
   for (let i = 0; i < Math.max(count, bundled.instances.part.length); i++) {
