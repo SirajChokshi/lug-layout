@@ -15,7 +15,13 @@ export interface SceneSummary {
   readonly studTriangles: number;
   readonly creditedFiles: number;
   readonly creditedLicenses: ReadonlyArray<string>;
-  readonly modelSections: ReadonlyArray<ModelSection>;
+  readonly model: ModelCredit | null;
+}
+
+export interface ModelCredit {
+  readonly name: string;
+  readonly source: string;
+  readonly sections: ReadonlyArray<ModelSection>;
 }
 
 export interface InstanceList {
@@ -92,7 +98,7 @@ function studTriangles(bundle: PartBundle, partIndex: number): number {
 export function summarize(
   bundle: PartBundle,
   chunks: ReadonlyArray<InstanceList>,
-  modelSections: ReadonlyArray<ModelSection>,
+  model: ModelCredit | null,
 ): SceneSummary {
   const instances = new Float64Array(bundle.parts.length);
   for (const chunk of chunks) {
@@ -123,6 +129,6 @@ export function summarize(
     studTriangles: studTriangleTotal,
     creditedFiles: bundle.credits.length,
     creditedLicenses: [...new Set(bundle.credits.map((c) => c.license ?? "none"))],
-    modelSections,
+    model,
   };
 }

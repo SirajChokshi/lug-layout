@@ -12,14 +12,16 @@ import {
   type SceneBackendConfig,
 } from "@brr/render";
 import { inject, injectable } from "inversify";
-import { footprintOf, type PartFootprint } from "./part-footprint.ts";
+import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
 import { CHUNK_LDU, CHUNK_STUDS, placementsToInstances } from "./placements.ts";
 import {
   generateCity,
   type CityColors,
   type CityParts,
+  type RailModule,
   type RoadModule,
 } from "./procedural-city.ts";
+import { straightRunPitchStuds } from "./straight-track.ts";
 import {
   ColorTable,
   partPalette,
@@ -49,6 +51,7 @@ const AERIAL_HEIGHT_FACTOR = 0.6;
 
 const CITY_COLOR_NAMES = {
   ground: "Green",
+  track: "Dark_Bluish_Grey",
   roof: "Dark_Bluish_Grey",
   walls: [
     "Red",
@@ -73,7 +76,17 @@ function cityParts(bundle: PartBundle, colors: ColorTable): CityParts {
   const walls: PartFootprint[] = [];
   const detailParts: PartFootprint[] = [];
   const roads: RoadModule[] = [];
+  let rail: RailModule | undefined;
   bundle.parts.forEach((part, index) => {
+    const pitchStuds = part.role === "track" ? straightRunPitchStuds(part) : undefined;
+    if (pitchStuds !== undefined && !rail) {
+      rail = {
+        track: index,
+        color: colors.indexOfName(CITY_COLOR_NAMES.track),
+        pitchStuds,
+        yPlates: plateDepthBelowOrigin(part),
+      };
+    }
     if (part.role === "road") {
       if (part.producedColor === undefined)
         throw new Error(`${part.id}: road plate has no sourced produced colour`);
@@ -94,6 +107,9 @@ function cityParts(bundle: PartBundle, colors: ColorTable): CityParts {
   const thinWall = walls.filter((f) => f.depthStuds === 1);
   const thickWall = walls.filter((f) => f.depthStuds === 2);
   const details = detailParts.filter((f) => f.widthStuds === 1 && f.depthStuds === 1);
+  const railRun: RailModule | undefined = rail;
+  if (!railRun)
+    throw new Error("bundle has no straight track with certified end poses for rail runs");
   if (
     !ground ||
     roads.length === 0 ||
@@ -104,7 +120,7 @@ function cityParts(bundle: PartBundle, colors: ColorTable): CityParts {
   ) {
     throw new Error("bundle lacks the part roles the city needs");
   }
-  return { ground, roads, roofPlates, thinWall, thickWall, details };
+  return { ground, roads, rail: railRun, roofPlates, thinWall, thickWall, details };
 }
 
 function cityColors(colors: ColorTable): CityColors {
@@ -157,7 +173,7 @@ export class CityScene implements ICityScene {
     const middleRoad =
       layout.roadColumns[Math.floor(layout.roadColumns.length / 2)] ?? layout.firstChunk;
     this.streetX = middleRoad * CHUNK_LDU + CHUNK_LDU / 2;
-    return summarize(bundle, layout.chunks, []);
+    return summarize(bundle, layout.chunks, null);
   }
 
   setCamera(t: number): void {

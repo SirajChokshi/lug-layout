@@ -10,16 +10,26 @@ const MAX_LAYERS = 64;
 const FLOOR_EVERY_LAYERS = 4;
 const ROOF_DETAILS_PER_BUILDING = 4;
 const SEGMENT_SCRATCH = 64;
-const ROAD_COLUMN_EVERY = 3;
+const COLUMN_PATTERN_LENGTH = 6;
+const ROAD_COLUMN_PHASE = 0;
+const RAIL_COLUMN_PHASE = 3;
 
 export interface RoadModule {
   readonly part: number;
   readonly color: number;
 }
 
+export interface RailModule {
+  readonly track: number;
+  readonly color: number;
+  readonly pitchStuds: number;
+  readonly yPlates: number;
+}
+
 export interface CityParts {
   readonly ground: PartFootprint;
   readonly roads: ReadonlyArray<RoadModule>;
+  readonly rail: RailModule;
   readonly roofPlates: ReadonlyArray<PartFootprint>;
   readonly thinWall: ReadonlyArray<PartFootprint>;
   readonly thickWall: ReadonlyArray<PartFootprint>;
@@ -289,13 +299,40 @@ function roadModule(chunkX: number, chunkZ: number, road: RoadModule): ChunkPlac
   return out.finish(chunkX, chunkZ);
 }
 
-function isRoadColumn(column: number): boolean {
-  return column % ROAD_COLUMN_EVERY === 0;
+function railModule(
+  chunkX: number,
+  chunkZ: number,
+  parts: CityParts,
+  colors: CityColors,
+): ChunkPlacements {
+  const out = new PlacementWriter();
+  const half = (CHUNK_STUDS * STUD_LDU) / 2;
+  out.push(parts.ground.index, colors.ground, half, half, 0, 0);
+  const { rail } = parts;
+  if (CHUNK_STUDS % rail.pitchStuds !== 0) {
+    throw new Error(
+      `a ${rail.pitchStuds}-stud straight does not tile a ${CHUNK_STUDS}-stud module`,
+    );
+  }
+  const pitch = rail.pitchStuds * STUD_LDU;
+  for (let z = pitch / 2; z < CHUNK_STUDS * STUD_LDU; z += pitch) {
+    out.push(rail.track, rail.color, half, z, rail.yPlates, 1);
+  }
+  return out.finish(chunkX, chunkZ);
+}
+
+type ColumnKind = "road" | "rail" | "building";
+
+function columnKind(column: number): ColumnKind {
+  const phase = column % COLUMN_PATTERN_LENGTH;
+  if (phase === ROAD_COLUMN_PHASE) return "road";
+  if (phase === RAIL_COLUMN_PHASE) return "rail";
+  return "building";
 }
 
 function buildingCellsFor(side: number): number {
   let columns = 0;
-  for (let c = 0; c < side; c++) if (!isRoadColumn(c)) columns++;
+  for (let c = 0; c < side; c++) if (columnKind(c) === "building") columns++;
   return columns * side;
 }
 
@@ -305,7 +342,7 @@ export function generateCity(
   colors: CityColors,
 ): CityLayout {
   const wantedBuildings = Math.max(1, Math.ceil(options.targetParts / options.partsPerModule));
-  let side = 2;
+  let side = 4;
   while (buildingCellsFor(side) < wantedBuildings) side++;
   const buildingCells = buildingCellsFor(side);
   const perModule = Math.ceil(options.targetParts / buildingCells);
@@ -316,7 +353,13 @@ export function generateCity(
   let roadOrdinal = 0;
   for (let column = 0; column < side; column++) {
     const chunkX = firstChunk + column;
-    if (isRoadColumn(column)) {
+    const kind = columnKind(column);
+    if (kind === "rail") {
+      for (let row = 0; row < side; row++)
+        chunks.push(railModule(chunkX, firstChunk + row, parts, colors));
+      continue;
+    }
+    if (kind === "road") {
       const road = parts.roads[roadOrdinal % parts.roads.length];
       if (!road) throw new Error("city needs at least one road module");
       roadOrdinal++;

@@ -38,7 +38,7 @@ export class PartDisplayScene implements IViewerScene {
     const chunks = buildPartDisplay(bundle, colors);
     this.backend.setPalette(partPalette(bundle, colors));
     for (const chunk of chunks) this.backend.setChunk(chunk.key, placementsToInstances(chunk));
-    return summarize(bundle, chunks, []);
+    return summarize(bundle, chunks, null);
   }
 
   setCamera(t: number): void {

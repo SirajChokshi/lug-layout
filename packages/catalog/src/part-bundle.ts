@@ -21,12 +21,21 @@ export interface PartMesh {
   readonly groups: ReadonlyArray<ColorGroup>;
 }
 
+export interface TrackEnd {
+  readonly xStuds: number;
+  readonly zStuds: number;
+  readonly headingSteps: number;
+  readonly fieldCertified: boolean;
+  readonly coefficients: ReadonlyArray<string> | null;
+}
+
 export interface PartAsset {
   readonly id: string;
   readonly role: PartRole;
   readonly boundsMin: Vec3Tuple;
   readonly boundsMax: Vec3Tuple;
   readonly producedColor: number | undefined;
+  readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
   readonly mesh: PartMesh;
   readonly studPrimitiveIndex: Uint8Array;
   readonly studColors: Uint16Array;
@@ -56,6 +65,7 @@ export interface ModelSection {
 export interface BundleModelEntry {
   readonly name: string;
   readonly file: string;
+  readonly source: string;
 }
 
 export interface PartModel {

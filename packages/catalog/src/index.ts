@@ -16,6 +16,7 @@ export type {
   PartModel,
   PartRole,
   StudPrimitiveAsset,
+  TrackEnd,
   Vec3Tuple,
 } from "./part-bundle.ts";
 export { ASSET_FETCHER, BUNDLE_BASE_URL, PART_BUNDLE_LOADER } from "./tokens.ts";

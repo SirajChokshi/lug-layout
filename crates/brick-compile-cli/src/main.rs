@@ -45,6 +45,7 @@ fn collect(root: &Path, dir: &Path, files: &mut HashMap<String, String>) -> std:
 
 struct Args {
     ldraw: PathBuf,
+    geometry: PathBuf,
     fixtures: PathBuf,
     palette: PathBuf,
     out: PathBuf,
@@ -67,6 +68,7 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         ldraw: take("--ldraw")?.into(),
         fixtures: take("--fixtures")?.into(),
+        geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
         lod,
@@ -197,6 +199,23 @@ fn run(args: &Args) -> Result<(), String> {
         parts.push(summary);
     }
 
+    let geometry: Value = serde_json::from_slice(
+        &fs::read(&args.geometry).map_err(|e| format!("{}: {e}", args.geometry.display()))?,
+    )
+    .map_err(|e| e.to_string())?;
+    for entry in geometry["trackEnds"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
+        let Some(id) = entry["part"].as_str() else {
+            continue;
+        };
+        if let Some(&index) = part_index.get(&format!("{id}.dat")) {
+            parts[index]["trackEnds"] = entry["relative"].clone();
+        }
+    }
+
     let mut models = Vec::new();
     for entry in palette["models"].as_array().cloned().unwrap_or_default() {
         let name = entry["name"]
@@ -254,7 +273,13 @@ fn run(args: &Args) -> Result<(), String> {
             serde_json::to_string(&model).map_err(|e| e.to_string())?,
         )
         .map_err(|e| e.to_string())?;
-        models.push(json!({ "name": name, "file": model_file, "sections": sections, "instances": baked.instances.len() }));
+        models.push(json!({
+            "name": name,
+            "file": model_file,
+            "source": entry["source"],
+            "sections": sections,
+            "instances": baked.instances.len(),
+        }));
     }
 
     let colors: Vec<Value> = library

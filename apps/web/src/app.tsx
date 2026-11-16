@@ -47,10 +47,13 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
 }
 
 function modelCredit(report: ViewerReport): string {
-  const [main] = report.summary.modelSections;
-  if (!main) return "";
-  const authors = [...new Set(report.summary.modelSections.map((s) => s.author))].join(", ");
-  return `Model: ${main.name} by ${authors}, LDraw Official Model Repository (${main.license ?? "no license"}). `;
+  const { model } = report.summary;
+  if (!model) return "";
+  const authors = [...new Set(model.sections.map((s) => s.author).filter((a) => a !== ""))];
+  const licenses = [...new Set(model.sections.flatMap((s) => (s.license ? [s.license] : [])))];
+  const by = authors.length > 0 ? ` by ${authors.join(", ")}` : "";
+  const license = licenses.length > 0 ? `, ${licenses.join("; ")}` : "";
+  return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
 export function App({ scene, params }: AppProps) {
