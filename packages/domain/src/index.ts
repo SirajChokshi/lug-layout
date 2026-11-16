@@ -9,3 +9,17 @@ export {
   type PlacementRef,
   type PlacementRequest,
 } from "./edit-history.ts";
+export {
+  TrackLayout,
+  type TrackEndRef,
+  type TrackPieceSpec,
+  type TrackRoute,
+} from "./track/track-layout.ts";
+export {
+  NO_EDGE,
+  NO_END,
+  NO_SWITCH,
+  TrackGraph,
+  type CoincidentEndsIssue,
+  type TrackGraphIssue,
+} from "./track/track-graph.ts";
