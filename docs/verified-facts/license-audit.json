@@ -22,19 +22,24 @@
     "unofficial": []
   },
   "auditClosure": {
-    "files": 372,
+    "files": 382,
     "licenses": {
       "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 3,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 369
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 379
     },
     "withoutLicense": [],
     "nonCaLicense": [],
     "unofficial": []
   },
   "absentFromPin": [
+    "2824",
+    "2827",
+    "28740",
     "53404",
     "53407",
     "53834",
+    "7389",
+    "7442",
     "88002",
     "88011"
   ],
@@ -499,6 +504,46 @@
     {
       "id": "53834",
       "group": "track-6-wide-plastic",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "7389",
+      "group": "track-powered-up-2025",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "2827",
+      "group": "track-powered-up-2025",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "2824",
+      "group": "track-powered-up-2025",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "7442",
+      "group": "track-powered-up-2025",
       "status": "absent",
       "header": null,
       "dependencyFiles": null,
@@ -1102,6 +1147,90 @@
       }
     },
     {
+      "id": "69958",
+      "group": "road-plate-recessed",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 16 x 16 x 0.667 with Cutouts and Recessed Studs",
+        "author": "Gerald Lasser [GeraldLasser]",
+        "ldrawOrg": "Part UPDATE 2022-06",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "road",
+          "Street"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 33,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "71772",
+      "group": "road-plate-recessed",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 8 x 16 x 0.667 with Cutouts and Recessed Studs",
+        "author": "Gerald Lasser [GeraldLasser]",
+        "ldrawOrg": "Part UPDATE 2022-06",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "road",
+          "Street"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 33,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "71772p01",
+      "group": "road-plate-recessed",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 8 x 16 x 0.667 with Cutouts and Recessed Studs with Crosswalk Pattern",
+        "author": "Gerald Lasser [GeraldLasser]",
+        "ldrawOrg": "Part UPDATE 2022-06",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "Bricklink 71772pb01",
+          "Rebrickable 71772pr0001",
+          "road",
+          "Set 60292",
+          "set 60304",
+          "Set 60306",
+          "Street",
+          "Zebra Crossing"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 33,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
       "id": "3811",
       "group": "baseplate",
       "status": "officialCA",
@@ -1378,6 +1507,16 @@
     },
     {
       "id": "88011",
+      "group": "train-motor",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "28740",
       "group": "train-motor",
       "status": "absent",
       "header": null,

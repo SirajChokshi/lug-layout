@@ -120,7 +120,7 @@ async function factsCommand(check: boolean): Promise<void> {
       auditLibrary,
       shadowLibrary,
     }),
-    ...geometryReports(lock.source, auditLibrary, shadowLibrary),
+    ...geometryReports(lock.source, auditLibrary, shadowLibrary, palette.studPrimitives),
   ];
   if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }

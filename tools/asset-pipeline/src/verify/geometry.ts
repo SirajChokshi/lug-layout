@@ -1,7 +1,7 @@
 import { applyToPoint, type Vec3 } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { isStudPrimitive, LDCAD_META, metaValues, subfilePlacement } from "../ldraw/parse.ts";
-import { INHERIT_COLOR, walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
+import { dependencyClosure, INHERIT_COLOR, walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
 import {
   addZeta16,
   mirrorZeta16,
@@ -420,5 +420,165 @@ export function measureFlexBend(library: LdrawLibrary, part: string, movingHalf:
     measuredBendDegrees:
       transform === undefined ? null : (Math.atan2(transform[6], transform[0]) * 180) / Math.PI,
     lengthLdu: extent(polygons, 0).to - extent(polygons, 0).from,
+  };
+}
+
+interface CellGroup {
+  readonly columns: number;
+  readonly rows: number;
+  readonly cells: number;
+  readonly openEdges: ReadonlyArray<"minX" | "maxX" | "minZ" | "maxZ">;
+}
+
+interface RecessedPlate {
+  readonly part: string;
+  readonly widthLdu: number;
+  readonly depthLdu: number;
+  readonly bodyTopY: number;
+  readonly bodyBottomY: number;
+  readonly thicknessLdu: number;
+  readonly studCount: number;
+  readonly studBaseBelowTopLdu: ReadonlyArray<number>;
+  readonly studGroups: ReadonlyArray<CellGroup>;
+  readonly recessFloorBelowTopLdu: number | null;
+  readonly recessGroups: ReadonlyArray<CellGroup>;
+  readonly studMap: ReadonlyArray<string>;
+  readonly dependencyFiles: number;
+  readonly clipFiles: ReadonlyArray<string>;
+}
+
+const CLIP_TITLE = /\bclip\b/i;
+
+function insidePolygonXZ(polygon: PlacedPolygon, x: number, z: number): boolean {
+  let inside = false;
+  const { vertices } = polygon;
+  for (let i = 0, j = vertices.length - 1; i < vertices.length; j = i, i += 1) {
+    const a = vertices[i];
+    const b = vertices[j];
+    if (a === undefined || b === undefined) continue;
+    if (a[2] > z !== b[2] > z && x < ((b[0] - a[0]) * (z - a[2])) / (b[2] - a[2]) + a[0]) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function cellGroups(
+  cells: ReadonlySet<string>,
+  columnCount: number,
+  rowCount: number,
+): CellGroup[] {
+  const seen = new Set<string>();
+  const groups: CellGroup[] = [];
+  for (const start of cells) {
+    if (seen.has(start)) continue;
+    const members: Array<readonly [number, number]> = [];
+    const pending = [start];
+    seen.add(start);
+    for (let key = pending.pop(); key !== undefined; key = pending.pop()) {
+      const [column = 0, row = 0] = key.split(",").map(Number);
+      members.push([column, row]);
+      for (const [dc, dr] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const next = `${column + dc},${row + dr}`;
+        if (cells.has(next) && !seen.has(next)) {
+          seen.add(next);
+          pending.push(next);
+        }
+      }
+    }
+    const columns = members.map(([column]) => column);
+    const rows = members.map(([, row]) => row);
+    const openEdges: Array<"minX" | "maxX" | "minZ" | "maxZ"> = [];
+    if (Math.min(...columns) === 0) openEdges.push("minX");
+    if (Math.max(...columns) === columnCount - 1) openEdges.push("maxX");
+    if (Math.min(...rows) === 0) openEdges.push("minZ");
+    if (Math.max(...rows) === rowCount - 1) openEdges.push("maxZ");
+    groups.push({
+      columns: Math.max(...columns) - Math.min(...columns) + 1,
+      rows: Math.max(...rows) - Math.min(...rows) + 1,
+      cells: members.length,
+      openEdges,
+    });
+  }
+  return groups.toSorted(
+    (p, q) =>
+      p.columns - q.columns ||
+      p.rows - q.rows ||
+      p.openEdges.join().localeCompare(q.openEdges.join()),
+  );
+}
+
+export function measureRecessedPlate(
+  library: LdrawLibrary,
+  part: string,
+  topStudPrimitives: ReadonlyArray<string>,
+): RecessedPlate {
+  const body = collectPolygons(library, part, true);
+  const xExtent = extent(body, 0);
+  const yExtent = extent(body, 1);
+  const zExtent = extent(body, 2);
+  const studs: Vec3[] = [];
+  walkPart(library, `${part}.dat`, {
+    reference: (placed) => {
+      if (!isStudPrimitive(placed.file)) return "descend";
+      if (topStudPrimitives.includes(placed.file))
+        studs.push(applyToPoint(placed.world, [0, 0, 0]));
+      return "skip";
+    },
+  });
+  const columnCount = Math.round((xExtent.to - xExtent.from) / LDU_PER_STUD);
+  const rowCount = Math.round((zExtent.to - zExtent.from) / LDU_PER_STUD);
+  const column = (x: number): number => Math.floor((x - xExtent.from) / LDU_PER_STUD);
+  const row = (z: number): number => Math.floor((z - zExtent.from) / LDU_PER_STUD);
+  const studCells = new Set(studs.map(([x, , z]) => `${column(x)},${row(z)}`));
+  const studBaseBelowTopLdu = [...new Set(studs.map(([, y]) => y - yExtent.from))].toSorted(
+    (a, b) => a - b,
+  );
+  const [floorDepth] = studBaseBelowTopLdu;
+  const floorY = floorDepth === undefined ? null : yExtent.from + floorDepth;
+  const floorFaces =
+    floorY === null
+      ? []
+      : body.filter(
+          (polygon) =>
+            isFlatHorizontal(polygon) &&
+            Math.abs((polygon.vertices[0]?.[1] ?? NaN) - floorY) < FLAT_EPSILON,
+        );
+  const recessCells = new Set<string>();
+  for (let c = 0; c < columnCount; c += 1) {
+    for (let r = 0; r < rowCount; r += 1) {
+      const x = xExtent.from + (c + 0.5) * LDU_PER_STUD;
+      const z = zExtent.from + (r + 0.5) * LDU_PER_STUD;
+      if (floorFaces.some((polygon) => insidePolygonXZ(polygon, x, z)))
+        recessCells.add(`${c},${r}`);
+    }
+  }
+  const closure = dependencyClosure(library, `${part}.dat`);
+  return {
+    part,
+    widthLdu: xExtent.to - xExtent.from,
+    depthLdu: zExtent.to - zExtent.from,
+    bodyTopY: yExtent.from,
+    bodyBottomY: yExtent.to,
+    thicknessLdu: yExtent.to - yExtent.from,
+    studCount: studs.length,
+    studBaseBelowTopLdu,
+    studGroups: cellGroups(studCells, columnCount, rowCount),
+    recessFloorBelowTopLdu: floorDepth ?? null,
+    recessGroups: cellGroups(recessCells, columnCount, rowCount),
+    studMap: Array.from({ length: rowCount }, (_row, r) =>
+      Array.from({ length: columnCount }, (_column, c) =>
+        studCells.has(`${c},${r}`) ? "o" : recessCells.has(`${c},${r}`) ? "_" : ".",
+      ).join(""),
+    ),
+    dependencyFiles: closure.visitedFiles.size,
+    clipFiles: [...closure.visitedFiles]
+      .filter((name) => CLIP_TITLE.test(library.load(name)?.header.title ?? ""))
+      .toSorted(),
   };
 }

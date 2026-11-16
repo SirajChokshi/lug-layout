@@ -185,7 +185,16 @@ This comes from connection rules §4.3, generalized for D3.
 
 Each `ModuleProfile` also carries a **substructure recipe**: the parts needed under one module (for MILS, the raising bricks, cover plates and Technic join bricks, per 32×32). The plan BOM includes these parts, so "buildable as planned" counts the hidden parts too.
 
-The MVP ships three module profiles: `free`, `lego-modular` and `mils`. Numbers are filled in only once their verification item in §11 is cleared; until then a profile's rules show as "unverified" warnings. Third-party track arrives later as an extra `TrackProfile` plus a `PartSource` (§3.5).
+The MVP ships four module profiles: `free`, `lego-modular`, `mils` and `club-road`. Numbers are filled in only once their verification item in §11 is cleared; until then a profile's rules show as "unverified" warnings. The cleared numbers, with sources, are in `docs/verified-facts.md` (Module standards):
+
+- **`mils`** is MILS core only, as published in HispaBrick Magazine I–IX. It has 32×32 modules with the ground 4 plates above the baseplate (edge tolerance one plate). Each corner keeps a free 2×2, then a 1×4 Technic brick along each adjoining edge (8 per module). Paved roads are 16 studs wide, centred, with the surface at 5 plates. Paths are 4 studs and earth tracks 8 studs, both at 4 plates. Rivers are 8 studs, with water at 2 plates. Road and river curves are single 90° elements. The substructure recipe is the published minimal module: a 32×32 baseplate, 4 bricks 2×2, 8 Technic bricks 1×4, 8 bricks 2×4 and 4 plates 16×16 (25 parts).
+- **`club-road`** is separate from `mils`, not a parameter of it, because club road systems are incompatible with MILS roads and with each other. Its defaults are L-Gauge MultiRoad: streets at 6 plates and walkways at 8 plates above the baseplate, against 5 plates for a MILS paved road. The sidewalk width is set per club (4, 5 or 6 studs are all in use), and there's no shared standard.
+- **`lego-modular`** has a 32×32 footprint, joined by 1×2 Technic bricks on the first course at stud cells 9–10 and 21–22 of each joining edge, as modelled in the LEGO modular-building OMR files. Sidewalk depth isn't standardised. Its joins don't line up with MILS's corner joins, so mixing the two needs an adapter rule.
+- **Track on modules:** MILS publishes no City or Train rules and no ballast standard, so track on `mils` modules needs a project decision. The one firm convention is 16-stud spacing between parallel track centres, which the 9V switch plus a reversed R40 curve gives exactly.
+
+**Road plates.** The current LEGO road system (set 60304 and later) is official in LDraw as 69958 (16×16) and 71772/71772p01 (8×16). These are 2-plate-thick plates, not 32×32 baseplates. Their studs stand in pockets 1 plate below the top face, lane markings are separate 2×4 tiles laid in those pockets, and there are no clips. A 32×32 road chunk is four 69958s. The road layer therefore needs a "plates plus inlay tiles" model, and the stud-occupancy grid must handle studs below the top face. The classic 32×32 road baseplates stay supported.
+
+Third-party track arrives later as an extra `TrackProfile` plus a `PartSource` (§3.5).
 
 ## 6. Renderer
 
@@ -343,10 +352,10 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 2. The current LDraw parts count and the CC BY 2.0 / CC BY 4.0 license split. *Cleared 2026-11-16 (manual read of the pinned tarball):* update 2026-10 has 37,151 files, 35,140 CC BY 4.0 and 2,011 dual-licensed.
 3. **Whether the LDCad shadow library covers** track, road plates, baseplates and Technic bricks, and that it really is CC BY-SA 4.0. *Cleared 2026-11-16:* it is CC BY-SA 4.0. Coverage is partial: track snaps exist only for 53400 and 32087, baseplates have stud primitives only, and Technic bricks are covered.
 4. The exact connector poses for both switches (the diverging end), the 90° crossing and the R40 curve, extracted from data and run through the field test. *Cleared 2026-11-16 for 9V track:* the R40 curve exit is 40ζ³ − 40ζ⁴ and the switch diverging end is 48 − 40ζ³ + 24ζ⁴ studs (mirrored for the left switch), both in ℤ[ζ₁₆]. A switch plus a reversed R40 gives a parallel track 16 studs over (48 − 16ζ⁴, derived exactly from the two certified parts). The 3-decimal plastic 53400 agrees within 1e-3 LDU but can't be certified, and the plastic switches aren't in the official library. **Project decision (delegated by the owner, 2026-11-16; see §5.3):** an imported pose is certified iff its residual to the unique ℤ[ζ₁₆] candidate is ≤ 0.0005 LDU, half the last decimal of 3-decimal LDraw data.
-5. Track gauge and rail spacing (the "6-stud" vs "about 37.5 mm" conflict), and the official track part numbers. *Cleared 2026-11-16:* the 53401 inner gauge is 37.52 mm with rail centres 5 studs apart, and the track is 8 studs wide, so "6-stud internal gauge" is refuted. The 9V parts are 74746/74747/75541/75542/32087 (2865/2867 are moved stubs).
+5. Track gauge and rail spacing (the "6-stud" vs "about 37.5 mm" conflict), and the official track part numbers. *Cleared 2026-11-16:* the 53401 inner gauge is 37.52 mm with rail centres 5 studs apart, and the track is 8 studs wide, so "6-stud internal gauge" is refuted. The 9V parts are 74746/74747/75541/75542/32087 (2865/2867 are moved stubs). RC and Powered Up sets used 53401/53400 until 2024; the 2025–2026 train sets use 7389, 2827, 2824 and 7442, **none of which is in LDraw**.
 6. Baseplate thickness, which sets the height datum. *Cleared 2026-11-16:* 4 LDU (half a plate) as modelled; the top face is y = 0 in the part frame.
-7. Road plate geometry: size, clip connectors, lane and sidewalk widths, and stud zones. *Partly cleared 2026-11-16:* the classic 32×32 road baseplates have studless roadways of 20, 18, 16 and 14 studs (6-, 7-, 8- and 9-stud verges), and printed 44336 lanes are 176 LDU between lines. The 60304-era plates with clips aren't in LDraw.
-8. The OMR's current set count and how well it covers Town and Train sets.
+7. Road plate geometry: size, clip connectors, lane and sidewalk widths, and stud zones. *Partly cleared 2026-11-16:* the classic 32×32 road baseplates have studless roadways of 20, 18, 16 and 14 studs (6-, 7-, 8- and 9-stud verges), and printed 44336 lanes are 176 LDU between lines. *Updated 2026-11-16:* the 60304-era plates are official LDraw parts 69958, 71772 and 71772p01. Measured at the pin, they're 16 LDU (2 plates) thick with every stud recessed 8 LDU (1 plate) below the top face, in 1×4 edge strips and 2×4 centre pockets, and they have no clips (see §5.4, Road plates). Their lane and sidewalk widths come from tile placement, so the plates don't fix them.
+8. The OMR's current set count and how well it covers Town and Train sets. *2026-11-16:* the OMR lists 1,470 sets; Town and Train coverage is still open.
 9. Three.js `WebGPURenderer` with `BatchedMesh`: performance and WebGL2 fallback behavior at 250k parts.
    *Closed 2026-11-16 at 250k (M0 slices 2 and 3, PR #15 and #16):* `WebGPURenderer` with chunked `InstancedMesh`, not `BatchedMesh`, renders the 250,665-part city on a MacBook Pro M4 Max at 3600×2086. Measured at `0b81a76`, aerial medians are 12.1 ms on WebGPU and 13.3 ms on the WebGL2 fallback, and street medians are 7.2 and 8.6 ms, with identical counts on both APIs.
    - **Tiering:** the 250k aerial view ran **every chunk at the mid tier** (0/196/0): far-LOD shells with 8-segment studs, 10.7M of 63.4M scene triangles drawn, and 76% of studs culled as covered.
@@ -357,18 +366,18 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 10. Browser WebGPU coverage today: Safari 26, Firefox on platforms other than Windows, Linux Chrome.
 
 **Needed before M5 (plan mode) or P1.**
-11. The MILS spec: layer stack, the "4 plates above the baseplate" surface height, connector and corner positions. *2026-11-16:* blocked, because the spec site isn't reachable from the verification environment.
-12. Modular-building sidewalk depth and Technic hole positions.
-13. A ballast or Train-tech module standard, if one is adopted.
+11. The MILS spec: layer stack, the "4 plates above the baseplate" surface height, connector and corner positions. *Cleared 2026-11-16 from HispaBrick Magazine MILS I–IX:* the surface is 4 plates above the baseplate; each corner has a free 2×2 and a 1×4 Technic brick on each side; paved roads are 16 studs at 5 plates. MILS has no City or Train rules. Club road systems (MultiRoad at 6 plates) are a separate `club-road` profile (§5.4).
+12. Modular-building sidewalk depth and Technic hole positions. *2026-11-16:* the Technic joins are 1×2 Technic bricks at stud cells 9–10 and 21–22 per joining edge (all five OMR modular buildings checked). Sidewalk depth has no standard: clubs use 4, 5 or 6 studs, and the LEGO models vary.
+13. A ballast or Train-tech module standard, if one is adopted. *2026-11-16:* none exists in MILS, and ballast dimensions appear only as club practice. 16-stud parallel track spacing is the one widely adopted convention.
 14. BrickLink API terms for non-commercial use.
-15. The Rebrickable API rate limit (about 1 request/s?) and how complete its LDraw crosswalk is for our palette.
+15. The Rebrickable API rate limit (about 1 request/s?) and how complete its LDraw crosswalk is for our palette. *2026-11-16:* the limit is one request per second on average with a small burst allowance; Rebrickable asks for the CSV dumps instead where possible. The API filters parts by `ldraw_id`; measuring coverage needs an API key.
 16. `.io` internals: whether `modelv2.ldr` contains non-standard line types, Studio's `PE_TEX_*` texture meta names, and its color table differences.
 17. The `ldr_tools` license, if we vendor it. *Cleared 2026-11-16:* MIT.
-18. The train motor part numbers (PF 88002, PU 88011; *2026-11-16:* LDraw has the PF motor as 87574 and no PU train motor) and the Rebrickable categories for vehicle signatures.
+18. The train motor part numbers (PF 88002, PU 88011) and the Rebrickable categories for vehicle signatures. *Cleared 2026-11-16:* 88002 and 88011 are product numbers. Their motors are parts 87574 (in LDraw) and 28740 (**not in LDraw**). Track and train parts are Rebrickable category 36, and motors and hubs category 45.
 19. Flex track link length and maximum joint angle. *2026-11-16:* the joint angle is ±5.625° (stated and modelled); the link pitch is still open.
 20. Size of the element-existence table once compressed.
-21. The MILS substructure part list per module (needed for the plan BOM), and the overhang and reach norms clubs use for layout tables (reach is often quoted as 60 to 80 cm, unconfirmed).
-22. The Rebrickable collection export format (CSV columns and the API endpoints for a user's parts and sets).
+21. The MILS substructure part list per module (needed for the plan BOM), and the overhang and reach norms clubs use for layout tables (reach is often quoted as 60 to 80 cm, unconfirmed). *2026-11-16:* the published minimal module is 25 parts (§5.4). No source gives reach or overhang norms.
+22. The Rebrickable collection export format (CSV columns and the API endpoints for a user's parts and sets). *2026-11-16:* the API endpoints are documented (user token, then `/users/{user_token}/sets/`, `/parts/`, `/allparts/` and others). The collection CSV columns are still open, because the help pages sit behind a Cloudflare challenge.
 
 **Later.**
 23. Fan-track segment angles per radius (BrickTracks R56 to R120 and others), and whether any needs 11.25° steps (D3).
@@ -389,7 +398,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 3. **Scale target.** Default: 250k parts loaded near the camera at 60 fps on an integrated GPU (MVP), 1M as a stretch. Total sandbox world size is unlimited, handled by streaming. Phones and tablets are view-only after the MVP.
 4. **Renderer path.** Default: three.js `WebGPURenderer` with WebGL2 fallback, behind `SceneBackend`. A custom WebGPU backend only if the M0 or M6 gates fail.
 5. **Unofficial and custom parts in imports.** Default: allowed and rendered from inline geometry, with a badge. They exclude a model from "Real set" and "Verified".
-6. **MILS variant.** Default: get the published MILS spec and adopt it as the `mils` profile. Also ship `lego-modular` and `free`.
+6. **MILS variant.** Default: adopt MILS core as published in HispaBrick Magazine I–IX as the `mils` profile. Ship club road systems (MultiRoad first) as a separate `club-road` profile, and also ship `lego-modular` and `free`.
 7. **Simulation ambition.** Default: a cozy toy for the MVP (throttle, A* routing, occupancy stop). Block signals and stations come in P1, timetables after that.
 8. **Audience and accounts.** Default: adult fans and LUG planners on desktop. No accounts in the MVP, which avoids COPPA and moderation; P1 accounts are 13+ with a DMCA process.
 9. **BOM economics.** Default: file exports only. Price estimates in P1 only if BrickLink's terms allow non-commercial use. No affiliate links, and an optional donation link if you want one.
@@ -420,7 +429,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 
 ### P1: "Living city and clubs"
 - Road vehicle simulation, block signals and stations.
-- `mils` and `lego-modular` profile validators (needs §11 items 11 and 12).
+- `mils`, `club-road` and `lego-modular` profile validators (§11 items 11 and 12 are cleared; see §5.4).
 - L3 structure badge.
 - The "designate bogie" metadata tool.
 - Rebrickable API collection sync, plus BrickLink price estimates and a cost total per plan (if the terms allow).

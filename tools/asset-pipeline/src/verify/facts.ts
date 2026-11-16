@@ -60,8 +60,12 @@ export function geometryReports(
   source: InputLock["source"],
   library: LdrawLibrary,
   shadowLibrary: LdrawLibrary,
+  topStudPrimitives: ReadonlyArray<string>,
 ): ReadonlyArray<FactReport> {
-  const geometry = buildGeometryReport({ official: library, shadow: shadowLibrary });
+  const geometry = buildGeometryReport(
+    { official: library, shadow: shadowLibrary },
+    topStudPrimitives,
+  );
   const roadPlates = ROAD_SCENE_PLATES.map((part) => {
     const plate = geometry.baseplates.find((measured) => measured.part === part);
     if (plate === undefined) throw new Error(`road scene plate ${part} was not measured`);
