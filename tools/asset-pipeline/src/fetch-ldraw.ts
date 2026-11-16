@@ -1,13 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import {
-  modelPartReferences,
-  parseLdraw,
-  splitMultiPart,
-  subfileReferences,
-} from "./ldraw/parse.ts";
-import type { Palette } from "./palette.ts";
+import { modelStructure, parseLdraw, subfileReferences } from "./ldraw/parse.ts";
+import type { Palette, PaletteModel } from "./palette.ts";
 
 export interface AuditLock {
   readonly files: Readonly<Record<string, string>>;
@@ -68,7 +63,10 @@ export async function fetchClosure(
     ...new Set([
       ...palette.parts.map((part) => `${part.id}.dat`),
       ...palette.studPrimitives,
-      ...modelSources.flatMap(modelPartReferences),
+      ...modelSources.flatMap((source) => {
+        const structure = modelStructure(source);
+        return [...structure.parts, ...structure.inlinePartReferences];
+      }),
     ]),
   ];
   const seen = new Set<string>(queue);
@@ -259,34 +257,59 @@ export async function verifyClosure(lock: InputLock, directory: string): Promise
   return problems;
 }
 
-export async function verifyModels(palette: Palette, fixturesRoot: string): Promise<string[]> {
+export interface ModelRoots {
+  readonly omr: string;
+  readonly generated: string;
+}
+
+export function modelPath(model: PaletteModel, roots: ModelRoots): string {
+  switch (model.origin) {
+    case "omr":
+      return join(roots.omr, model.file);
+    case "generated":
+      return join(roots.generated, model.file);
+    default: {
+      const unknown: never = model.origin;
+      throw new Error(`unknown model origin ${String(unknown)}`);
+    }
+  }
+}
+
+export function omrFiles(palette: Palette): Record<string, string> {
+  return Object.fromEntries(
+    palette.models.filter((model) => model.origin === "omr").map((m) => [m.file, m.sha256]),
+  );
+}
+
+export async function verifyModels(palette: Palette, roots: ModelRoots): Promise<string[]> {
   const problems: string[] = [];
   for (const model of palette.models) {
-    const actual = sha256(await readFile(join(fixturesRoot, model.file)));
-    if (actual !== model.sha256) problems.push(`hash mismatch ${model.file}`);
+    const path = modelPath(model, roots);
+    const actual = await readFile(path).then(sha256, () => undefined);
+    if (actual === undefined) problems.push(`missing ${path}`);
+    else if (actual !== model.sha256) problems.push(`hash mismatch ${path}`);
   }
   return problems;
 }
 
-export async function renderModelAttribution(
-  palette: Palette,
-  fixturesRoot: string,
-): Promise<string> {
+function distinct(values: ReadonlyArray<string>): string {
+  return [...new Set(values.filter((value) => value !== ""))].toSorted().join("; ");
+}
+
+export async function renderModelAttribution(palette: Palette, roots: ModelRoots): Promise<string> {
   const rows: string[] = [];
   for (const model of palette.models) {
-    for (const section of splitMultiPart(await readFile(join(fixturesRoot, model.file), "utf8"))) {
-      const { header } = parseLdraw(section.source);
-      rows.push(
-        `| \`${model.file}\` | ${header.name} | ${header.author} | ${header.license} | ${model.source} (retrieved ${model.retrieved}) |`,
-      );
-    }
+    const headers = modelStructure(await readFile(modelPath(model, roots), "utf8")).modelSections;
+    rows.push(
+      `| ${model.name} | ${headers.length} | ${distinct(headers.map((h) => h.author))} | ${distinct(headers.map((h) => h.license))} | ${model.source} (retrieved ${model.retrieved}) |`,
+    );
   }
   return [
     "## Models",
     "",
-    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json`. OMR files are unmodified downloads; the Source column says where each model came from.",
+    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json`. OMR models are unmodified files from the LDraw Official Model Repository, restored into `.cache/omr` by `restore-ldraw`; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.",
     "",
-    "| File | Sub-file | Author | License | Source |",
+    "| Model | Sections | Authors | Licenses | Source |",
     "|---|---|---|---|---|",
     ...rows,
     "",

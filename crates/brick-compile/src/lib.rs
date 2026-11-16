@@ -3,6 +3,7 @@ pub mod colors;
 pub mod compile;
 pub mod flatten;
 pub mod glb;
+pub mod inline;
 pub mod ldraw;
 pub mod license;
 pub mod mesh;

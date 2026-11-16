@@ -14,6 +14,24 @@ import type {
 import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
+const MAX_CONCURRENT_FETCHES = 32;
+
+async function mapConcurrently<T, R>(
+  items: ReadonlyArray<T>,
+  limit: number,
+  map: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    for (let index = next++; index < items.length; index = next++) {
+      const item = items[index];
+      if (item !== undefined) results[index] = await map(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 @injectable()
 export class HttpAssetFetcher implements IAssetFetcher {
@@ -48,10 +66,8 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         return { mesh: readInheritColorMesh(glb, primitive.name) };
       }),
     );
-    const parts = await Promise.all(
-      manifest.parts.map(async (part) =>
-        toPartAsset(part, await this.fetcher.bytes(`${lod}/${part.file}`), studPrimitiveNames),
-      ),
+    const parts = await mapConcurrently(manifest.parts, MAX_CONCURRENT_FETCHES, async (part) =>
+      toPartAsset(part, await this.fetcher.bytes(`${lod}/${part.file}`), studPrimitiveNames),
     );
     return {
       parts,

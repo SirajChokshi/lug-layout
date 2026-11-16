@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::colors::parse_ldconfig;
+use brick_compile::inline::inline_part_distance;
+use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::bake_model;
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
 use serde_json::{json, Value};
@@ -47,6 +49,7 @@ struct Args {
     ldraw: PathBuf,
     geometry: PathBuf,
     fixtures: PathBuf,
+    omr: PathBuf,
     palette: PathBuf,
     out: PathBuf,
     lod: Lod,
@@ -69,6 +72,7 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         ldraw: take("--ldraw")?.into(),
         fixtures: take("--fixtures")?.into(),
+        omr: take("--omr")?.into(),
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
@@ -225,10 +229,15 @@ fn run(args: &Args) -> Result<(), String> {
         let file = entry["file"]
             .as_str()
             .ok_or("model file must be a string")?;
-        let path = args.fixtures.join(file);
+        let root = match entry["origin"].as_str() {
+            Some("omr") => &args.omr,
+            Some("generated") => &args.fixtures,
+            other => return Err(format!("{file}: unknown model origin {other:?}")),
+        };
+        let path = root.join(file);
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let baked =
-            bake_model(&String::from_utf8_lossy(&source)).map_err(|e| format!("{file}: {e}"))?;
+        let text = String::from_utf8_lossy(&source);
+        let baked = bake_model(&text).map_err(|e| format!("{file}: {e}"))?;
         let mut instance_parts = Vec::with_capacity(baked.instances.len());
         let mut instance_colors = Vec::with_capacity(baked.instances.len());
         let mut instance_matrices = Vec::with_capacity(baked.instances.len() * 12);
@@ -260,6 +269,18 @@ fn run(args: &Args) -> Result<(), String> {
             .iter()
             .map(|h| json!({ "name": h.name, "title": h.title, "author": h.author, "license": h.license, "ldrawOrg": h.ldraw_org }))
             .collect();
+        let mut inline_parts: Vec<Value> = Vec::new();
+        for part in &baked.inline_parts {
+            let distance = inline_part_distance(&library, &text, &part.inline, &part.official)
+                .map_err(|e| format!("{file}: {}: {e:?}", part.inline))?;
+            if distance > WELD_EPSILON_LDU {
+                return Err(format!(
+                    "{file}: inline part {} draws different geometry from official {} (max vertex distance {distance:.4} LDU)",
+                    part.inline, part.official
+                ));
+            }
+            inline_parts.push(json!({ "inline": part.inline, "official": part.official, "maxVertexDistanceLdu": distance }));
+        }
         let model = json!({
             "name": name,
             "file": file,
@@ -267,6 +288,7 @@ fn run(args: &Args) -> Result<(), String> {
             "retrieved": entry["retrieved"],
             "sha256": entry["sha256"],
             "sections": sections,
+            "inlinePartsResolvedToOfficial": inline_parts,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
         });
         fs::write(
@@ -279,6 +301,7 @@ fn run(args: &Args) -> Result<(), String> {
             "file": model_file,
             "source": entry["source"],
             "sections": sections,
+            "inlinePartsResolvedToOfficial": inline_parts,
             "instances": baked.instances.len(),
         }));
     }
