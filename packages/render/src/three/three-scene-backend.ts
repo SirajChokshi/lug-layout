@@ -1,0 +1,421 @@
+import { injectable } from "inversify";
+import {
+  BatchedMesh,
+  Color,
+  DirectionalLight,
+  Group,
+  HemisphereLight,
+  InstancedBufferAttribute,
+  InstancedMesh,
+  Matrix4,
+  MeshStandardNodeMaterial,
+  PerspectiveCamera,
+  Scene,
+  SRGBColorSpace,
+  WebGPURenderer,
+  type BufferGeometry,
+} from "three/webgpu";
+import {
+  COLOR_CHANNELS,
+  INSTANCE_MATRIX_FLOATS,
+  type BackendInfo,
+  type ChunkInstances,
+  type FrameStats,
+  type ISceneBackend,
+  type InstancingStrategy,
+  type PartPalette,
+  type SceneBackendConfig,
+} from "../scene-backend.ts";
+import { geometryFromMesh, studClusterGeometry } from "./part-geometry.ts";
+
+const CHUNK_LDU = 640;
+const SUPER_CHUNK_CHUNKS = 8;
+const SUPER_CHUNK_LDU = CHUNK_LDU * SUPER_CHUNK_CHUNKS;
+const MATRIX4_FLOATS = 16;
+const CAMERA_FOV_DEGREES = 40;
+const CAMERA_NEAR_LDU = 20;
+const CAMERA_FAR_LDU = 400_000;
+const PLASTIC_ROUGHNESS = 0.3;
+const SKY_COLOR = 0xd9e6f2;
+const GROUND_BOUNCE_COLOR = 0x4a4a40;
+const HEMISPHERE_INTENSITY = 1.4;
+const SUN_INTENSITY = 2.4;
+
+interface PartBatch {
+  readonly mesh: BatchedMesh;
+  readonly geometryIds: Int32Array;
+}
+
+interface SuperChunk {
+  readonly originX: number;
+  readonly originZ: number;
+  readonly chunks: Map<number, ChunkInstances>;
+  group: Group | undefined;
+  dirty: boolean;
+}
+
+type MatrixTarget = { [index: number]: number };
+
+function writeMatrix4(
+  source: Float32Array,
+  sourceIndex: number,
+  target: MatrixTarget,
+  targetIndex: number,
+  offsetX: number,
+  offsetZ: number,
+): void {
+  const s = sourceIndex * INSTANCE_MATRIX_FLOATS;
+  const t = targetIndex * MATRIX4_FLOATS;
+  target[t] = source[s] ?? 0;
+  target[t + 1] = source[s + 4] ?? 0;
+  target[t + 2] = source[s + 8] ?? 0;
+  target[t + 3] = 0;
+  target[t + 4] = source[s + 1] ?? 0;
+  target[t + 5] = source[s + 5] ?? 0;
+  target[t + 6] = source[s + 9] ?? 0;
+  target[t + 7] = 0;
+  target[t + 8] = source[s + 2] ?? 0;
+  target[t + 9] = source[s + 6] ?? 0;
+  target[t + 10] = source[s + 10] ?? 0;
+  target[t + 11] = 0;
+  target[t + 12] = (source[s + 3] ?? 0) + offsetX;
+  target[t + 13] = source[s + 7] ?? 0;
+  target[t + 14] = (source[s + 11] ?? 0) + offsetZ;
+  target[t + 15] = 1;
+}
+
+function webGpuDevice(backend: unknown): GPUDevice | undefined {
+  if (typeof backend !== "object" || backend === null || !("device" in backend)) return undefined;
+  const device: unknown = backend.device;
+  return typeof GPUDevice !== "undefined" && device instanceof GPUDevice ? device : undefined;
+}
+
+function webGl2Context(backend: unknown): WebGL2RenderingContext | undefined {
+  if (typeof backend !== "object" || backend === null || !("gl" in backend)) return undefined;
+  const gl: unknown = backend.gl;
+  return typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext
+    ? gl
+    : undefined;
+}
+
+@injectable()
+export class ThreeSceneBackend implements ISceneBackend {
+  private renderer: WebGPURenderer | undefined;
+  private readonly scene = new Scene();
+  private readonly camera = new PerspectiveCamera(
+    CAMERA_FOV_DEGREES,
+    1,
+    CAMERA_NEAR_LDU,
+    CAMERA_FAR_LDU,
+  );
+  private readonly material = new MeshStandardNodeMaterial({
+    roughness: PLASTIC_ROUGHNESS,
+    metalness: 0,
+  });
+  private strategy: InstancingStrategy = "instanced";
+  private bodyGeometries: BufferGeometry[] = [];
+  private studGeometries: Array<BufferGeometry | undefined> = [];
+  private linearColors = new Float32Array(0);
+  private readonly chunkGroups = new Map<number, Group>();
+  private readonly superChunks = new Map<string, SuperChunk>();
+  private readonly dirtySuperChunks: SuperChunk[] = [];
+  private readonly scratchMatrix = new Matrix4();
+  private readonly scratchColor = new Color();
+  private readonly readbackPixel = new Uint8Array(4);
+
+  async init(config: SceneBackendConfig): Promise<BackendInfo> {
+    this.strategy = config.strategy;
+    const renderer = new WebGPURenderer({
+      canvas: config.canvas,
+      antialias: config.antialias,
+      forceWebGL: config.api === "webgl2",
+    });
+    await renderer.init();
+    renderer.setPixelRatio(config.pixelRatio);
+    renderer.setSize(config.canvas.clientWidth, config.canvas.clientHeight, false);
+    this.renderer = renderer;
+    this.scene.background = new Color(SKY_COLOR);
+    this.scene.add(new HemisphereLight(SKY_COLOR, GROUND_BOUNCE_COLOR, HEMISPHERE_INTENSITY));
+    const sun = new DirectionalLight(0xffffff, SUN_INTENSITY);
+    sun.position.set(0.45, 1, 0.3);
+    this.scene.add(sun);
+    this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
+    return {
+      requestedApi: config.api,
+      activeApi: this.isWebGpu(renderer) ? "webgpu" : "webgl2",
+      adapter: this.describeAdapter(renderer),
+      strategy: this.strategy,
+    };
+  }
+
+  private isWebGpu(renderer: WebGPURenderer): boolean {
+    return webGpuDevice(renderer.backend) !== undefined;
+  }
+
+  private describeAdapter(renderer: WebGPURenderer): string {
+    const device = webGpuDevice(renderer.backend);
+    if (device) {
+      const info = device.adapterInfo;
+      return [info.vendor, info.architecture, info.device, info.description]
+        .filter((s) => s !== "")
+        .join(" / ");
+    }
+    const gl = webGl2Context(renderer.backend);
+    if (!gl) return "unknown WebGL2 context";
+    const debug = gl.getExtension("WEBGL_debug_renderer_info");
+    const vendor = debug
+      ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL)
+      : gl.getParameter(gl.VENDOR);
+    const name = debug
+      ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)
+      : gl.getParameter(gl.RENDERER);
+    return `${String(vendor)} / ${String(name)}`;
+  }
+
+  setPalette(palette: PartPalette): void {
+    this.clearChunks();
+    for (const geometry of this.bodyGeometries) geometry.dispose();
+    for (const geometry of this.studGeometries) geometry?.dispose();
+    this.bodyGeometries = palette.parts.map((part) => geometryFromMesh(part.body));
+    this.studGeometries = palette.parts.map((part) =>
+      studClusterGeometry(part, palette.studPrimitives),
+    );
+    const colorCount = palette.colorsSrgb.length / COLOR_CHANNELS;
+    this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
+    for (let c = 0; c < colorCount; c++) {
+      const o = c * COLOR_CHANNELS;
+      this.scratchColor.setRGB(
+        (palette.colorsSrgb[o] ?? 0) / 255,
+        (palette.colorsSrgb[o + 1] ?? 0) / 255,
+        (palette.colorsSrgb[o + 2] ?? 0) / 255,
+        SRGBColorSpace,
+      );
+      this.linearColors[o] = this.scratchColor.r;
+      this.linearColors[o + 1] = this.scratchColor.g;
+      this.linearColors[o + 2] = this.scratchColor.b;
+    }
+  }
+
+  setChunk(key: number, chunk: ChunkInstances): void {
+    if (this.strategy === "instanced") {
+      this.removeChunkGroup(key);
+      const group = this.buildInstancedChunk(chunk);
+      this.chunkGroups.set(key, group);
+      this.scene.add(group);
+      return;
+    }
+    const superX = Math.floor(chunk.originX / SUPER_CHUNK_LDU);
+    const superZ = Math.floor(chunk.originZ / SUPER_CHUNK_LDU);
+    const superKey = `${superX},${superZ}`;
+    let superChunk = this.superChunks.get(superKey);
+    if (!superChunk) {
+      superChunk = {
+        originX: superX * SUPER_CHUNK_LDU,
+        originZ: superZ * SUPER_CHUNK_LDU,
+        chunks: new Map(),
+        group: undefined,
+        dirty: true,
+      };
+      this.superChunks.set(superKey, superChunk);
+      this.dirtySuperChunks.push(superChunk);
+    }
+    superChunk.chunks.set(key, chunk);
+    if (!superChunk.dirty) this.dirtySuperChunks.push(superChunk);
+    superChunk.dirty = true;
+  }
+
+  private removeChunkGroup(key: number): void {
+    const existing = this.chunkGroups.get(key);
+    if (!existing) return;
+    this.scene.remove(existing);
+    for (const child of existing.children) {
+      if (child instanceof InstancedMesh || child instanceof BatchedMesh) child.dispose();
+    }
+    this.chunkGroups.delete(key);
+  }
+
+  private clearChunks(): void {
+    for (const key of this.chunkGroups.keys()) this.removeChunkGroup(key);
+    for (const superChunk of this.superChunks.values()) {
+      if (!superChunk.group) continue;
+      this.scene.remove(superChunk.group);
+      for (const child of superChunk.group.children) {
+        if (child instanceof BatchedMesh) child.dispose();
+      }
+    }
+    this.superChunks.clear();
+    this.dirtySuperChunks.length = 0;
+  }
+
+  private buildInstancedChunk(chunk: ChunkInstances): Group {
+    const group = new Group();
+    group.position.set(chunk.originX, 0, chunk.originZ);
+    group.matrixAutoUpdate = false;
+    group.updateMatrix();
+    const partCount = this.bodyGeometries.length;
+    const counts = new Uint32Array(partCount);
+    for (let i = 0; i < chunk.count; i++) {
+      const part = chunk.partIndex[i] ?? 0;
+      counts[part] = (counts[part] ?? 0) + 1;
+    }
+    for (let p = 0; p < partCount; p++) {
+      const count = counts[p] ?? 0;
+      const body = this.bodyGeometries[p];
+      if (count === 0 || !body) continue;
+      const matrices = new Float32Array(count * MATRIX4_FLOATS);
+      const colors = new Float32Array(count * COLOR_CHANNELS);
+      let slot = 0;
+      for (let i = 0; i < chunk.count; i++) {
+        if (chunk.partIndex[i] !== p) continue;
+        writeMatrix4(chunk.matrices, i, matrices, slot, 0, 0);
+        const c = (chunk.colorIndex[i] ?? 0) * COLOR_CHANNELS;
+        colors[slot * 3] = this.linearColors[c] ?? 0;
+        colors[slot * 3 + 1] = this.linearColors[c + 1] ?? 0;
+        colors[slot * 3 + 2] = this.linearColors[c + 2] ?? 0;
+        slot++;
+      }
+      const matrixAttribute = new InstancedBufferAttribute(matrices, MATRIX4_FLOATS);
+      const colorAttribute = new InstancedBufferAttribute(colors, COLOR_CHANNELS);
+      group.add(this.instancedMesh(body, count, matrixAttribute, colorAttribute));
+      const studs = this.studGeometries[p];
+      if (studs) group.add(this.instancedMesh(studs, count, matrixAttribute, colorAttribute));
+    }
+    for (const child of group.children) child.updateMatrixWorld(true);
+    return group;
+  }
+
+  private instancedMesh(
+    geometry: BufferGeometry,
+    count: number,
+    matrices: InstancedBufferAttribute,
+    colors: InstancedBufferAttribute,
+  ): InstancedMesh {
+    const mesh = new InstancedMesh(geometry, this.material, count);
+    mesh.instanceMatrix = matrices;
+    mesh.instanceColor = colors;
+    mesh.matrixAutoUpdate = false;
+    mesh.computeBoundingSphere();
+    return mesh;
+  }
+
+  private rebuildSuperChunk(superChunk: SuperChunk): void {
+    if (superChunk.group) {
+      this.scene.remove(superChunk.group);
+      for (const child of superChunk.group.children) {
+        if (child instanceof BatchedMesh) child.dispose();
+      }
+    }
+    const group = new Group();
+    group.position.set(superChunk.originX, 0, superChunk.originZ);
+    group.matrixAutoUpdate = false;
+    group.updateMatrix();
+    const partCount = this.bodyGeometries.length;
+    const used = new Uint8Array(partCount);
+    let instanceTotal = 0;
+    for (const chunk of superChunk.chunks.values()) {
+      instanceTotal += chunk.count;
+      for (let i = 0; i < chunk.count; i++) used[chunk.partIndex[i] ?? 0] = 1;
+    }
+    const body = this.batchedMesh(used, this.bodyGeometries, instanceTotal);
+    const studs = this.batchedMesh(used, this.studGeometries, instanceTotal);
+    for (const chunk of superChunk.chunks.values()) {
+      const offsetX = chunk.originX - superChunk.originX;
+      const offsetZ = chunk.originZ - superChunk.originZ;
+      for (let i = 0; i < chunk.count; i++) {
+        const part = chunk.partIndex[i] ?? 0;
+        writeMatrix4(chunk.matrices, i, this.scratchMatrix.elements, 0, offsetX, offsetZ);
+        const c = (chunk.colorIndex[i] ?? 0) * COLOR_CHANNELS;
+        this.scratchColor.setRGB(
+          this.linearColors[c] ?? 0,
+          this.linearColors[c + 1] ?? 0,
+          this.linearColors[c + 2] ?? 0,
+        );
+        this.addBatchInstance(body, part);
+        this.addBatchInstance(studs, part);
+      }
+    }
+    for (const batch of [body, studs]) {
+      batch.mesh.sortObjects = false;
+      batch.mesh.matrixAutoUpdate = false;
+      batch.mesh.computeBoundingSphere();
+      group.add(batch.mesh);
+    }
+    for (const child of group.children) child.updateMatrixWorld(true);
+    superChunk.group = group;
+    superChunk.dirty = false;
+    this.scene.add(group);
+  }
+
+  private addBatchInstance(batch: PartBatch, part: number): void {
+    const geometryId = batch.geometryIds[part] ?? -1;
+    if (geometryId < 0) return;
+    const instance = batch.mesh.addInstance(geometryId);
+    batch.mesh.setMatrixAt(instance, this.scratchMatrix);
+    batch.mesh.setColorAt(instance, this.scratchColor);
+  }
+
+  private batchedMesh(
+    used: Uint8Array,
+    geometries: ReadonlyArray<BufferGeometry | undefined>,
+    instanceTotal: number,
+  ): PartBatch {
+    let vertexTotal = 0;
+    let indexTotal = 0;
+    for (let p = 0; p < geometries.length; p++) {
+      const geometry = geometries[p];
+      if (!used[p] || !geometry) continue;
+      vertexTotal += geometry.getAttribute("position").count;
+      indexTotal += geometry.getIndex()?.count ?? 0;
+    }
+    const mesh = new BatchedMesh(
+      Math.max(instanceTotal, 1),
+      Math.max(vertexTotal, 1),
+      Math.max(indexTotal, 1),
+      this.material,
+    );
+    const geometryIds = new Int32Array(geometries.length).fill(-1);
+    for (let p = 0; p < geometries.length; p++) {
+      const geometry = geometries[p];
+      if (!used[p] || !geometry) continue;
+      geometryIds[p] = mesh.addGeometry(geometry);
+    }
+    return { mesh, geometryIds };
+  }
+
+  setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void {
+    this.camera.position.set(eyeX, eyeY, eyeZ);
+    this.camera.lookAt(atX, atY, atZ);
+    this.camera.updateMatrixWorld();
+  }
+
+  resize(width: number, height: number): void {
+    this.renderer?.setSize(width, height, false);
+    this.camera.aspect = width / Math.max(height, 1);
+    this.camera.updateProjectionMatrix();
+  }
+
+  renderFrame(out: FrameStats): void {
+    const renderer = this.renderer;
+    if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
+    for (let i = 0; i < this.dirtySuperChunks.length; i++) {
+      const superChunk = this.dirtySuperChunks[i];
+      if (superChunk) this.rebuildSuperChunk(superChunk);
+    }
+    this.dirtySuperChunks.length = 0;
+    renderer.render(this.scene, this.camera);
+    out.drawCalls = renderer.info.render.drawCalls;
+    out.triangles = renderer.info.render.triangles;
+  }
+
+  async waitForGpu(): Promise<void> {
+    const renderer = this.renderer;
+    if (!renderer) return;
+    const device = webGpuDevice(renderer.backend);
+    if (device) {
+      await device.queue.onSubmittedWorkDone();
+      return;
+    }
+    const gl = webGl2Context(renderer.backend);
+    gl?.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.readbackPixel);
+  }
+}

@@ -42,12 +42,10 @@ export interface ISceneBackend {
   init(config: SceneBackendConfig): Promise<BackendInfo>;
   setPalette(palette: PartPalette): void;
   setChunk(key: number, chunk: ChunkInstances): void;
-  clearChunks(): void;
   setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void;
   resize(width: number, height: number): void;
   renderFrame(out: FrameStats): void;
   waitForGpu(): Promise<void>;
-  dispose(): void;
 }
 
 export const INSTANCE_MATRIX_FLOATS = 12;

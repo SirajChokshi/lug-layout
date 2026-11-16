@@ -10,10 +10,13 @@
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",
-    "inversify": "8.3.0"
+    "inversify": "8.3.0",
+    "three": "0.187.0"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",
+    "@types/three": "0.187.0",
+    "@webgpu/types": "0.1.74",
     "typescript": "7.0.2"
   }
 }

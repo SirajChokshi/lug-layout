@@ -25,6 +25,13 @@
       ],
       "outputs": ["dist/**"],
       "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]
+    },
+    "@brr/client#test": {
+      "dependsOn": ["^build", "@brr/asset-pipeline#build"]
+    },
+    "@brr/web#build": {
+      "dependsOn": ["^build", "@brr/asset-pipeline#build"],
+      "outputs": ["dist/**"]
     }
   }
 }

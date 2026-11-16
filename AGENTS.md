@@ -39,7 +39,8 @@ docs/                   architecture.md, verified-facts.md
 - `pnpm format` / `pnpm format:check` run oxfmt (there's no ESLint or Prettier)
 - `pnpm typecheck`, `pnpm test`, `pnpm build` run through Turborepo (add `--filter=@brr/<pkg>...` to scope)
 - `pnpm check` runs everything CI runs
-- `pnpm --filter @brr/web dev`
+- `pnpm --filter @brr/web dev`; the render spike lives at `/bench.html` (`?parts=&api=webgpu|webgl2&strategy=instanced|batched&lod=standard|low&camera=aerial|street`, `&measure=1` for GPU-synced frame timing)
+- `pnpm --filter @brr/web bench` drives `bench.html?measure=1` in Playwright's Chromium over a parts × API × strategy matrix against `vite preview` and writes JSON plus screenshots (`npx playwright-core install chromium` once; needs a display for WebGPU)
 - `pnpm lint:rust` (no comments in `crates/`) and `pnpm check:rust` (fmt, clippy `-D warnings`, `cargo test`)
 - `pnpm --filter @brr/asset-pipeline fetch` re-pins LDraw inputs (network); `verify` checks them offline; `build` compiles the bundle
 - Later: `turbo run bench`, `turbo run wasm`, and the package-boundary check (dependency-cruiser or Turborepo `boundaries`)
