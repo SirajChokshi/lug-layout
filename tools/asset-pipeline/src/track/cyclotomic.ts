@@ -1,7 +1,10 @@
-import { ZETA16_ORDER, zeta16, zeta16ToStuds, type Zeta16 } from "@brr/math";
+export const ZETA16_ORDER = 16;
+const ZETA16_COEFFICIENT_COUNT = ZETA16_ORDER / 2;
 
 export const ZETA16_STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 export const COEFFICIENT_BOUND = 64;
+
+export type Zeta16Coefficients = ReadonlyArray<bigint>;
 
 interface PlanePoint {
   readonly x: number;
@@ -9,7 +12,7 @@ interface PlanePoint {
 }
 
 export interface FieldRepresentation {
-  readonly coefficients: Zeta16;
+  readonly coefficients: Zeta16Coefficients;
   readonly residual: number;
   readonly solutionCount: number;
 }
@@ -20,6 +23,36 @@ interface AxisHit {
   readonly second: number;
   readonly third: number;
   readonly residual: number;
+}
+
+export function zeta16ToPlane(coefficients: Zeta16Coefficients): PlanePoint {
+  let x = 0;
+  let y = 0;
+  coefficients.forEach((coefficient, power) => {
+    x += Number(coefficient) * Math.cos(power * ZETA16_STEP_RADIANS);
+    y += Number(coefficient) * Math.sin(power * ZETA16_STEP_RADIANS);
+  });
+  return { x, y };
+}
+
+export function addZeta16(a: Zeta16Coefficients, b: Zeta16Coefficients): Zeta16Coefficients {
+  return a.map((value, power) => value + (b[power] ?? 0n));
+}
+
+export function rotateZeta16(coefficients: Zeta16Coefficients, steps: number): Zeta16Coefficients {
+  const turns = ((steps % ZETA16_ORDER) + ZETA16_ORDER) % ZETA16_ORDER;
+  let rotated = [...coefficients];
+  for (let step = 0; step < turns; step += 1) {
+    const top = rotated[ZETA16_COEFFICIENT_COUNT - 1] ?? 0n;
+    rotated = [-top, ...rotated.slice(0, ZETA16_COEFFICIENT_COUNT - 1)];
+  }
+  return rotated;
+}
+
+export function mirrorZeta16(coefficients: Zeta16Coefficients): Zeta16Coefficients {
+  return coefficients.map((_value, power) =>
+    power === 0 ? (coefficients[0] ?? 0n) : -(coefficients[ZETA16_COEFFICIENT_COUNT - power] ?? 0n),
+  );
 }
 
 function axisHits(
@@ -52,7 +85,7 @@ function half(value: number): bigint {
   return BigInt(value / 2);
 }
 
-function combine(real: AxisHit, imaginary: AxisHit): Zeta16 | undefined {
+function combine(real: AxisHit, imaginary: AxisHit): Zeta16Coefficients | undefined {
   if (
     !sameParity(real.first, imaginary.first) ||
     !sameParity(real.second, imaginary.second) ||
@@ -60,7 +93,7 @@ function combine(real: AxisHit, imaginary: AxisHit): Zeta16 | undefined {
   ) {
     return undefined;
   }
-  return zeta16([
+  return [
     BigInt(real.rational),
     half(real.first + imaginary.first),
     half(real.second + imaginary.second),
@@ -69,10 +102,10 @@ function combine(real: AxisHit, imaginary: AxisHit): Zeta16 | undefined {
     half(imaginary.third - real.third),
     half(imaginary.second - real.second),
     half(imaginary.first - real.first),
-  ]);
+  ];
 }
 
-function l1Norm(coefficients: Zeta16): bigint {
+function l1Norm(coefficients: Zeta16Coefficients): bigint {
   return coefficients.reduce((sum, value) => sum + (value < 0n ? -value : value), 0n);
 }
 
@@ -92,7 +125,7 @@ export function findZeta16Representation(
   ] as const;
   const realHits = axisHits(point.x, realBasis, COEFFICIENT_BOUND, tolerance);
   const imaginaryHits = axisHits(point.y, imaginaryBasis, COEFFICIENT_BOUND, tolerance);
-  const solutions: Zeta16[] = [];
+  const solutions: Zeta16Coefficients[] = [];
   for (const real of realHits) {
     for (const imaginary of imaginaryHits) {
       const coefficients = combine(real, imaginary);
@@ -101,10 +134,10 @@ export function findZeta16Representation(
   }
   const best = solutions.toSorted((p, q) => Number(l1Norm(p) - l1Norm(q)))[0];
   if (best === undefined) return undefined;
-  const exact = zeta16ToStuds(best);
+  const exact = zeta16ToPlane(best);
   return {
     coefficients: best,
-    residual: Math.hypot(exact.x - point.x, exact.z - point.y),
+    residual: Math.hypot(exact.x - point.x, exact.y - point.y),
     solutionCount: solutions.length,
   };
 }
