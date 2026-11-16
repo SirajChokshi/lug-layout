@@ -911,6 +911,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/32059.dat` | Plate 4 x 6 without Corners | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32062.dat` | Technic Axle 2 Notched | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32073.dat` | Technic Axle 5 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/32087.dat` | Train Track 9V Crossing | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32123a.dat` | Technic Bush 1/2 Smooth with Axle Hole Reduced | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32123b.dat` | Technic Bush 1/2 Smooth with Axle Hole Semi-Reduced | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32124.dat` | Technic Rotor 2 Blade with 4 Studs | Rene Rechthaler [Blechtaler] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1341,7 +1342,9 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/750.dat` | Hose Flexible End 1 x 1 x 0.667 with Tabs | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/755.dat` | ~Hose Flexible Segment End Section | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/75535.dat` | Technic Pin Joiner Round | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/75541-f1.dat` | Train Track 9V Switch Right Straight | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/75541-f2.dat` | Train Track 9V Switch Right Branching | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/75542-f1.dat` | Train Track 9V Switch Left Straight | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/75542-f2.dat` | Train Track 9V Switch Left Branching | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/756.dat` | ~Hose Flexible Segment Center Section | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/77.dat` | ~Technic Flex-System Hose Segment | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
@@ -1495,6 +1498,8 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/2865as09.dat` | ~Train Track 9V Straight - Plastic Part, Rail Reinforcement | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2865as10.dat` | ~Train Track 9V Straight - Plastic Part, Common Rail Side Clamp Cutout | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2865as11.dat` | ~Train Track 9V Straight - Plastic Part, End Sleeper Adapter | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865s04.dat` | ~Train Track 9V Sleeper Interlocking End Section | Manfred Moolhuysen | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2865s06.dat` | ~Train Track 9V Metal Rail Interlocking End | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2867as01.dat` | ~Train Track 9V Curved - Half | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2867as02.dat` | ~Train Track 9V Curved - Plastic Part, Centre Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2867as03.dat` | ~Train Track 9V Curved - Plastic Part, Right End Sleeper | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1545,6 +1550,8 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/3069p80a.dat` | ~Pattern 1 x 2 28-Key 'QERYUIOP' Keyboard | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3070bs01.dat` | ~Tile 1 x 1 with Groove without Top Face | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32039s01.dat` | ~Technic Connector (Axle/Bush) without Inner Wall | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/32087s01.dat` | ~Train Track 9V Crossing - Metal Rail Parts | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/32087s02.dat` | ~Train Track 9V Crossing - Approach Track | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32124s01.dat` | ~Technic Rotor 2 Blade with 4 Studs - Quarter | Rene Rechthaler [Blechtaler] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3228s01.dat` | ~Train Track Rail Straight 4 Teeth | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32474s01.dat` | ~Technic Ball Joint with Axlehole Blind Interior | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
