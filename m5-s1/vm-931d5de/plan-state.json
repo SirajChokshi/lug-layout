@@ -1,0 +1,546 @@
+{
+ "plans": [
+  {
+   "id": "plan-1",
+   "name": "Plan 1",
+   "originChunkX": 0,
+   "originChunkZ": 0,
+   "footprint": {
+    "roomWidthMm": 5000,
+    "roomDepthMm": 3600,
+    "tables": [
+     {
+      "name": "Table 1",
+      "rect": {
+       "x": 1600,
+       "z": 1000,
+       "width": 2400,
+       "depth": 1200
+      },
+      "heightMm": 750,
+      "id": "table-2"
+     }
+    ],
+    "obstacles": [
+     {
+      "name": "Obstacle 1",
+      "rect": {
+       "x": 4300,
+       "z": 1600,
+       "width": 300,
+       "depth": 300
+      },
+      "id": "obstacle-3"
+     }
+    ]
+   },
+   "maxOverhangMm": 0
+  }
+ ],
+ "checks": [
+  {
+   "regionId": "plan-1",
+   "room": {
+    "minX": 0,
+    "minZ": 0,
+    "maxX": 12500,
+    "maxZ": 9000
+   },
+   "tables": [
+    {
+     "id": "table-2",
+     "name": "Table 1",
+     "heightMm": 750,
+     "surface": {
+      "minX": 4000,
+      "minZ": 2500,
+      "maxX": 10000,
+      "maxZ": 5500
+     },
+     "studs": {
+      "rect": {
+       "minX": 4000,
+       "minZ": 2500,
+       "maxX": 10000,
+       "maxZ": 5500
+      },
+      "studsWide": 300,
+      "studsDeep": 150
+     }
+    }
+   ],
+   "obstacles": [
+    {
+     "minX": 10750,
+     "minZ": 4000,
+     "maxX": 11500,
+     "maxZ": 4750
+    }
+   ],
+   "inside": [
+    {
+     "chunkKey": 35184426614788,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184435003396,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184443392004,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184451780612,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184460169220,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184468557828,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184476946436,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184485335044,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184493723652,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184502112260,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184426614789,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184426614790,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184426614791,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184426614792,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184468557830,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184460169220,
+     "slot": 1
+    },
+    {
+     "chunkKey": 35184493723656,
+     "slot": 0
+    },
+    {
+     "chunkKey": 35184527278086,
+     "slot": 0
+    }
+   ],
+   "issues": [
+    {
+     "rule": "fit",
+     "severity": "error",
+     "placements": [
+      {
+       "chunkKey": 35184502112260,
+       "slot": 0
+      }
+     ],
+     "message": "3811 baseplate 32×32 at 10080, 2820 overhangs the tables: it reaches 160 mm past the nearest table edge along x or z (limit 0 mm), with 40960 mm² of its footprint off the table tops.",
+     "overhangMm": 160,
+     "nearestTableMm": 0,
+     "entirelyOffTables": false,
+     "offTableMm2": 40960
+    },
+    {
+     "rule": "fit",
+     "severity": "error",
+     "placements": [
+      {
+       "chunkKey": 35184426614792,
+       "slot": 0
+      }
+     ],
+     "message": "3811 baseplate 32×32 at 4320, 5380 overhangs the tables: it reaches 80 mm past the nearest table edge along x or z (limit 0 mm), with 20480 mm² of its footprint off the table tops.",
+     "overhangMm": 80,
+     "nearestTableMm": 0,
+     "entirelyOffTables": false,
+     "offTableMm2": 20480
+    },
+    {
+     "rule": "fit",
+     "severity": "error",
+     "placements": [
+      {
+       "chunkKey": 35184460169220,
+       "slot": 1
+      }
+     ],
+     "message": "10185-1 at 6880, 2820 overhangs the tables: it reaches 8 mm past the nearest table edge along x or z (limit 0 mm), with 2048 mm² of its footprint off the table tops.",
+     "overhangMm": 8,
+     "nearestTableMm": 0,
+     "entirelyOffTables": false,
+     "offTableMm2": 2048
+    },
+    {
+     "rule": "fit",
+     "severity": "error",
+     "placements": [
+      {
+       "chunkKey": 35184493723656,
+       "slot": 0
+      }
+     ],
+     "message": "4554-1 at 9300, 5500 overhangs the tables: it reaches 264 mm past the nearest table edge along x or z (limit 0 mm), with 55677 mm² of its footprint off the table tops.",
+     "overhangMm": 264,
+     "nearestTableMm": 0,
+     "entirelyOffTables": false,
+     "offTableMm2": 55676.33279999994
+    },
+    {
+     "rule": "fit",
+     "severity": "error",
+     "placements": [
+      {
+       "chunkKey": 35184527278086,
+       "slot": 0
+      }
+     ],
+     "message": "3811 baseplate 32×32 at 12000, 4000 overhangs the tables: it reaches 928 mm past the nearest table edge along x or z (limit 0 mm), with 65536 mm² of its footprint off the table tops. It is entirely off the tables, 672 mm from the nearest one along x or z (the larger of the two axis gaps).",
+     "overhangMm": 928,
+     "nearestTableMm": 672,
+     "entirelyOffTables": true,
+     "offTableMm2": 65536
+    }
+   ]
+  }
+ ],
+ "placements": [
+  {
+   "key": {
+    "chunkKey": 35184426614788,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 4320, 2820",
+   "box": {
+    "minX": 4000,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 4640,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184435003396,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 4960, 2820",
+   "box": {
+    "minX": 4640,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 5280,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184443392004,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 5600, 2820",
+   "box": {
+    "minX": 5280,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 5920,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184451780612,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 6240, 2820",
+   "box": {
+    "minX": 5920,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 6560,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184460169220,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 6880, 2820",
+   "box": {
+    "minX": 6560,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 7200,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184468557828,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 7520, 2820",
+   "box": {
+    "minX": 7200,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 7840,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184476946436,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 8160, 2820",
+   "box": {
+    "minX": 7840,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 8480,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184485335044,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 8800, 2820",
+   "box": {
+    "minX": 8480,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 9120,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184493723652,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 9440, 2820",
+   "box": {
+    "minX": 9120,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 9760,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184502112260,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 10080, 2820",
+   "box": {
+    "minX": 9760,
+    "minY": -4,
+    "minZ": 2500,
+    "maxX": 10400,
+    "maxY": 0,
+    "maxZ": 3140
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184426614789,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 4320, 3460",
+   "box": {
+    "minX": 4000,
+    "minY": -4,
+    "minZ": 3140,
+    "maxX": 4640,
+    "maxY": 0,
+    "maxZ": 3780
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184426614790,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 4320, 4100",
+   "box": {
+    "minX": 4000,
+    "minY": -4,
+    "minZ": 3780,
+    "maxX": 4640,
+    "maxY": 0,
+    "maxZ": 4420
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184426614791,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 4320, 4740",
+   "box": {
+    "minX": 4000,
+    "minY": -4,
+    "minZ": 4420,
+    "maxX": 4640,
+    "maxY": 0,
+    "maxZ": 5060
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184426614792,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 4320, 5380",
+   "box": {
+    "minX": 4000,
+    "minY": -4,
+    "minZ": 5060,
+    "maxX": 4640,
+    "maxY": 0,
+    "maxZ": 5700
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184468557830,
+    "slot": 0
+   },
+   "ref": "omr:10264-1",
+   "label": "10264-1 at 7600, 4400",
+   "box": {
+    "minX": 7120,
+    "minY": 0,
+    "minZ": 4060,
+    "maxX": 8084.48,
+    "maxY": 800,
+    "maxZ": 4720
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184460169220,
+    "slot": 1
+   },
+   "ref": "omr:10185-1",
+   "label": "10185-1 at 6880, 2820",
+   "box": {
+    "minX": 6560,
+    "minY": 0,
+    "minZ": 2480,
+    "maxX": 7200,
+    "maxY": 840,
+    "maxZ": 3150.048253510742
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184493723656,
+    "slot": 0
+   },
+   "ref": "omr:4554-1",
+   "label": "4554-1 at 9300, 5500",
+   "box": {
+    "minX": 9040,
+    "minY": 0,
+    "minZ": 4840,
+    "maxX": 9567.238,
+    "maxY": 576,
+    "maxZ": 6160
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184527278086,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 12000, 4000",
+   "box": {
+    "minX": 11680,
+    "minY": -4,
+    "minZ": 3680,
+    "maxX": 12320,
+    "maxY": 0,
+    "maxZ": 4320
+   }
+  },
+  {
+   "key": {
+    "chunkKey": 35184451780605,
+    "slot": 0
+   },
+   "ref": "ldraw:3811",
+   "label": "3811 baseplate 32×32 at 6000, -1600",
+   "box": {
+    "minX": 5680,
+    "minY": -4,
+    "minZ": -1920,
+    "maxX": 6320,
+    "maxY": 0,
+    "maxZ": -1280
+   }
+  }
+ ],
+ "sandboxPlacements": [
+  {
+   "chunkKey": 35184451780605,
+   "slot": 0
+  }
+ ],
+ "tableTopY": -4
+}
