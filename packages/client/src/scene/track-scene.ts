@@ -1,5 +1,4 @@
 import {
-  INHERIT_COLOR,
   PART_BUNDLE_LOADER,
   type BundleLod,
   type IPartBundleLoader,
@@ -53,6 +52,9 @@ function partPlacement(
   const part = bundle.parts.findIndex((asset) => asset.id === piece.part);
   const asset = bundle.parts[part];
   if (!asset) throw new Error(`track part ${piece.part} is not in the bundle`);
+  if (asset.producedColor === undefined) {
+    throw new Error(`${asset.id}: track parts need a sourced produced colour in palette.json`);
+  }
   const pose = layout.pose(placement);
   const origin = zeta16ToStuds(pose.position);
   const heading = pose.heading * STEP_RADIANS;
@@ -61,7 +63,7 @@ function partPlacement(
   const { xLdu, zLdu, headingHalfSteps } = piece.partFrame;
   return {
     part,
-    color: colors.indexOfCode(asset.producedColor ?? INHERIT_COLOR),
+    color: colors.indexOfCode(asset.producedColor),
     x: origin.x * STUD_LDU + xLdu * cos - zLdu * sin,
     y: (layout.yPlates(placement) + plateDepthBelowOrigin(asset)) * PLATE_LDU,
     z: origin.z * STUD_LDU + xLdu * sin + zLdu * cos,

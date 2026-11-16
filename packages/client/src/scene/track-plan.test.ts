@@ -1,7 +1,9 @@
 import {
   ASSET_FETCHER,
+  INHERIT_COLOR,
   PART_BUNDLE_LOADER,
   type IAssetFetcher,
+  type PartAsset,
   type TrackCatalog,
 } from "@brr/catalog";
 import { NO_EDGE, NO_SWITCH, TrackGraph, TrackLayout } from "@brr/domain";
@@ -38,13 +40,17 @@ const DOGBONE = [
 ].join(", ");
 
 let catalog: TrackCatalog;
+let trackParts: ReadonlyArray<PartAsset>;
 
 beforeAll(async () => {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-  const bundle = await container.get(PART_BUNDLE_LOADER).load("standard", () => false);
+  const bundle = await container
+    .get(PART_BUNDLE_LOADER)
+    .load("standard", (part) => part.role === "track");
   catalog = bundle.trackCatalog;
+  trackParts = bundle.parts;
 });
 
 describe("track graph from catalog pieces", () => {
@@ -92,5 +98,15 @@ describe("track graph from catalog pieces", () => {
     layout.place(piece, POSE16_IDENTITY, 0);
     const graph = new TrackGraph(layout);
     expect([graph.joinCount, graph.openEnds.length, graph.issues.length]).toEqual([0, 4, 2]);
+  });
+
+  it("gives every catalog track piece a sourced produced colour, never the inherited placeholder", () => {
+    const uncoloured = catalog.pieces
+      .filter((piece) => {
+        const colour = trackParts.find((asset) => asset.id === piece.part)?.producedColor;
+        return colour === undefined || colour === INHERIT_COLOR;
+      })
+      .map((piece) => piece.part);
+    expect(uncoloured).toEqual([]);
   });
 });
