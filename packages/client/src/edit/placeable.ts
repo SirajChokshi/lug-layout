@@ -1,16 +1,14 @@
-import type { ModelLattice, PartAsset, PartModel, Vec3Tuple } from "@brr/catalog";
-import { STUD_LDU } from "@brr/math";
+import type { ModelLattice, ModelRole, PartAsset, PartModel, Vec3Tuple } from "@brr/catalog";
+import type { RoadSurface } from "@brr/domain";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
+import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
+import { roadSurface } from "./road-surface.ts";
 
-export type PlaceableKind = "baseplate" | "model";
-
-export interface LocalBox {
-  readonly min: Vec3Tuple;
-  readonly max: Vec3Tuple;
-}
+export type PlaceableKind = "baseplate" | "road-plate" | "road-module" | "model";
 
 export interface Placeable {
   readonly id: string;
@@ -23,10 +21,10 @@ export interface Placeable {
   readonly partBoxes: Float32Array;
   readonly frameShift: Vec3Tuple;
   readonly credit: ModelCredit | null;
+  readonly road: RoadSurface | null;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
-export const BOX_FLOATS = 6;
 
 function instanceBoxes(
   instances: ChunkPartInstances,
@@ -64,16 +62,12 @@ export function pivotOnStudCorner(centre: number): number {
   return Math.round(centre / STUD_LDU) * STUD_LDU;
 }
 
-export function modelFrameShift(lattice: ModelLattice): Vec3Tuple {
+export function modelFrameShift(lattice: ModelLattice, restingOn: number): Vec3Tuple {
   const shiftX = phaseShift(lattice.phaseX);
   const shiftZ = phaseShift(lattice.phaseZ);
   const centreX = (lattice.aabbMin[0] + lattice.aabbMax[0]) / 2 + shiftX;
   const centreZ = (lattice.aabbMin[2] + lattice.aabbMax[2]) / 2 + shiftZ;
-  return [
-    shiftX - pivotOnStudCorner(centreX),
-    -lattice.aabbMin[1],
-    shiftZ - pivotOnStudCorner(centreZ),
-  ];
+  return [shiftX - pivotOnStudCorner(centreX), -restingOn, shiftZ - pivotOnStudCorner(centreZ)];
 }
 
 function shifted(matrices: Float32Array, count: number, shift: Vec3Tuple): Float32Array {
@@ -94,8 +88,43 @@ function shiftedBox(min: Vec3Tuple, max: Vec3Tuple, shift: Vec3Tuple): LocalBox 
   };
 }
 
+function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | null {
+  const boxes = instanceBoxes(
+    {
+      originX: 0,
+      originZ: 0,
+      count: model.instanceCount,
+      partIndex: model.partIndex,
+      colorIndex: new Uint16Array(model.instanceCount),
+      matrices: model.matrices,
+    },
+    parts,
+  );
+  let top: number | null = null;
+  for (let i = 0; i < model.instanceCount; i++) {
+    if (parts[model.partIndex[i] ?? 0]?.role !== "ground") continue;
+    const y = boxes[i * BOX_FLOATS + 4] ?? 0;
+    top = top === null ? y : Math.max(top, y);
+  }
+  return top;
+}
+
+function restingY(
+  model: PartModel,
+  lattice: ModelLattice,
+  parts: ReadonlyArray<PartAsset>,
+  role: ModelRole | undefined,
+): number {
+  if (role !== "road-module") return lattice.aabbMin[1];
+  const top = groundTop(model, parts);
+  if (top === null) throw new Error("a road module needs its own baseplate to stand on");
+  return top;
+}
+
 export function modelPlaceable(
   name: string,
+  label: string,
+  role: ModelRole | undefined,
   model: PartModel,
   credit: ModelCredit,
   parts: ReadonlyArray<PartAsset>,
@@ -105,7 +134,7 @@ export function modelPlaceable(
   if (lattice === null) {
     throw new Error(`model ${name} has no stud lattice from the bake, so it cannot be placed`);
   }
-  const shift = modelFrameShift(lattice);
+  const shift = modelFrameShift(lattice, restingY(model, lattice, parts, role));
   const colorIndex = new Uint16Array(model.instanceCount);
   for (let i = 0; i < model.instanceCount; i++) {
     colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
@@ -118,48 +147,60 @@ export function modelPlaceable(
     colorIndex,
     matrices: shifted(model.matrices, model.instanceCount, shift),
   };
+  const box = shiftedBox(lattice.aabbMin, lattice.aabbMax, shift);
+  const partBoxes = instanceBoxes(local, parts);
+  const isRoad = role === "road-module";
   return {
-    id: `omr:${name}`,
-    label: name,
-    kind: "model",
+    id: isRoad ? `generated:${name}` : `omr:${name}`,
+    label,
+    kind: isRoad ? "road-module" : "model",
     worldColor: 0,
     parts: local,
     studs: withStuds(local, parts, colors, undefined).studs,
-    box: shiftedBox(lattice.aabbMin, lattice.aabbMax, shift),
-    partBoxes: instanceBoxes(local, parts),
+    box,
+    partBoxes,
     frameShift: shift,
-    credit,
+    credit: isRoad ? null : credit,
+    road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
   };
 }
 
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 
-export function baseplatePlaceable(
+function isBaseplate(part: PartAsset): boolean {
+  return part.boundsMax[1] - part.boundsMin[1] < PLATE_LDU;
+}
+
+export function partPlaceable(
   part: PartAsset,
   partIndex: number,
   ldrawColor: number,
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
 ): Placeable {
+  const shift: Vec3Tuple = [0, isBaseplate(part) ? 0 : -part.boundsMin[1], 0];
   const local: ChunkPartInstances = {
     originX: 0,
     originZ: 0,
     count: 1,
     partIndex: Uint16Array.of(partIndex),
     colorIndex: Uint16Array.of(colors.indexOfCode(ldrawColor)),
-    matrices: IDENTITY_MATRIX,
+    matrices: shifted(IDENTITY_MATRIX, 1, shift),
   };
-  const noShift: Vec3Tuple = [0, 0, 0];
+  const box = shiftedBox(part.boundsMin, part.boundsMax, shift);
+  const partBoxes = instanceBoxes(local, parts);
+  const isRoad = part.role === "road";
   return {
     id: part.id,
-    label: `${part.id.replace("ldraw:", "")} baseplate 32×32`,
-    kind: "baseplate",
+    label: `${part.id.replace("ldraw:", "")} ${part.title}`,
+    kind: isRoad ? "road-plate" : "baseplate",
     worldColor: ldrawColor,
     parts: local,
     studs: withStuds(local, parts, colors, undefined).studs,
-    box: shiftedBox(part.boundsMin, part.boundsMax, noShift),
-    partBoxes: instanceBoxes(local, parts),
-    frameShift: noShift,
+    box,
+    partBoxes,
+    frameShift: shift,
     credit: null,
+    road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
   };
 }

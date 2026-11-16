@@ -1,3 +1,15 @@
+export {
+  NO_STUD,
+  RoadNetwork,
+  placedCells,
+  type RoadCellStatus,
+  type RoadEdgeSegment,
+  type RoadFit,
+  type RoadJoinReport,
+  type RoadPlacement,
+  type RoadSide,
+  type RoadSurface,
+} from "./road-joins.ts";
 export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
   EditHistory,

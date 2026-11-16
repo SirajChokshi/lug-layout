@@ -1,4 +1,6 @@
 export type {
+  EdgeMarker,
+  MarkerKind,
   BackendInfo,
   BufferMemory,
   ChunkInstances,

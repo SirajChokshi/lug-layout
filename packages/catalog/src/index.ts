@@ -13,6 +13,7 @@ export type {
   ModelBundle,
   ModelLattice,
   ModelOrigin,
+  ModelRole,
   ModelSection,
   ModelSet,
   PartAsset,

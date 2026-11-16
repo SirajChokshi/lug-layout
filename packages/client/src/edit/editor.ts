@@ -5,12 +5,23 @@ import {
   type PartBundle,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
-import { EditHistory, World, type AppliedEdit, type EditKind, type HistoryStep } from "@brr/domain";
-import { STUD_LDU } from "@brr/math";
+import {
+  EditHistory,
+  RoadNetwork,
+  World,
+  type AppliedEdit,
+  type EditKind,
+  type HistoryStep,
+  type RoadEdgeSegment,
+  type RoadJoinReport,
+  type RoadPlacement,
+} from "@brr/domain";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import {
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
+  type EdgeMarker,
   type FrameStats,
   type GraphicsApi,
   type ISceneBackend,
@@ -26,7 +37,8 @@ import {
   type RebuildReport,
   type ViewUpdate,
 } from "./placed-chunks.ts";
-import { baseplatePlaceable, modelPlaceable, type Placeable } from "./placeable.ts";
+import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
+import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind;
@@ -76,6 +88,30 @@ export interface HistoryView {
   readonly redoDepth: number;
 }
 
+export interface RoadIssueView {
+  readonly status: "open" | "mismatch";
+  readonly item: string;
+  readonly side: RoadEdgeSegment["side"];
+  readonly line: number;
+  readonly from: number;
+  readonly to: number;
+  readonly topLdu: number;
+}
+
+export interface RoadJoinView {
+  readonly checkMs: number;
+  readonly placements: number;
+  readonly joinedCells: number;
+  readonly openCells: number;
+  readonly mismatchedCells: number;
+  readonly overlaps: number;
+  readonly issues: ReadonlyArray<RoadIssueView>;
+}
+
+export interface RoadSnapView {
+  readonly joinedCells: number;
+}
+
 export interface EditorStats {
   readonly fps: number;
   readonly drawCalls: number;
@@ -99,6 +135,10 @@ export interface EditorSnapshot {
   readonly latencies: ReadonlyArray<LatencySample>;
   readonly stats: EditorStats | null;
   readonly credits: EditorCredits | null;
+  readonly roads: RoadJoinView;
+  readonly showJoins: boolean;
+  readonly snapRoads: boolean;
+  readonly snap: RoadSnapView | null;
 }
 
 export interface EditorCredits {
@@ -107,10 +147,21 @@ export interface EditorCredits {
   readonly models: ReadonlyArray<ModelCredit>;
 }
 
+export interface RoadPlacementDump {
+  readonly id: number;
+  readonly item: string;
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly rot: number;
+}
+
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
   readonly placements: PlacementDump;
+  readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
+  readonly roads: RoadJoinReport;
 }
 
 export interface EditorOptions {
@@ -135,6 +186,8 @@ export interface IEditor {
   zoom(wheelDelta: number): void;
   focusSelection(): void;
   centreOnCursor(): void;
+  setShowJoins(show: boolean): void;
+  setSnapRoads(snap: boolean): void;
   dump(): EditorDump;
 }
 
@@ -143,6 +196,66 @@ const BASEPLATE_ID = "ldraw:3811";
 const BASEPLATE_COLOR_NAME = "Green";
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
+const MARKER_WIDTH_LDU = 6;
+const MARKER_LIFT_LDU = 1;
+const MARKER_HEIGHT_LDU = 2;
+const LISTED_ROAD_ISSUES = 12;
+const EMPTY_ROADS: RoadJoinView = {
+  checkMs: 0,
+  placements: 0,
+  joinedCells: 0,
+  openCells: 0,
+  mismatchedCells: 0,
+  overlaps: 0,
+  issues: [],
+};
+
+function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
+  const minY = segment.topLdu + MARKER_LIFT_LDU;
+  const maxY = minY + MARKER_HEIGHT_LDU;
+  switch (segment.side) {
+    case "minX":
+      return {
+        minX: segment.line,
+        maxX: segment.line + MARKER_WIDTH_LDU,
+        minY,
+        maxY,
+        minZ: segment.from,
+        maxZ: segment.to,
+      };
+    case "maxX":
+      return {
+        minX: segment.line - MARKER_WIDTH_LDU,
+        maxX: segment.line,
+        minY,
+        maxY,
+        minZ: segment.from,
+        maxZ: segment.to,
+      };
+    case "minZ":
+      return {
+        minX: segment.from,
+        maxX: segment.to,
+        minY,
+        maxY,
+        minZ: segment.line,
+        maxZ: segment.line + MARKER_WIDTH_LDU,
+      };
+    case "maxZ":
+      return {
+        minX: segment.from,
+        maxX: segment.to,
+        minY,
+        maxY,
+        minZ: segment.line - MARKER_WIDTH_LDU,
+        maxZ: segment.line,
+      };
+    default: {
+      const unhandled: never = segment.side;
+      throw new Error(`unhandled side ${String(unhandled)}`);
+    }
+  }
+}
 
 interface PendingAction {
   readonly step: HistoryStep;
@@ -186,6 +299,10 @@ export class Editor implements IEditor {
     latencies: [],
     stats: null,
     credits: null,
+    roads: EMPTY_ROADS,
+    showJoins: true,
+    snapRoads: true,
+    snap: null,
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -210,6 +327,10 @@ export class Editor implements IEditor {
   private hoverZ = 0;
   private hovering = false;
   private pending: PendingAction | null = null;
+  private roadModels: ReadonlyArray<PlacedModel> = [];
+  private roadExtents: ReadonlyArray<CellExtent> = [];
+  private roadNetwork = new RoadNetwork([]);
+  private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private canvas: HTMLCanvasElement | null = null;
   private framesSinceStats = 0;
   private statsSince = 0;
@@ -245,7 +366,10 @@ export class Editor implements IEditor {
         pixelRatio: options.pixelRatio,
         antialias: true,
       });
-      const bundle = await this.loader.load(EDITOR_LOD, (part) => part.id === BASEPLATE_ID);
+      const bundle = await this.loader.load(
+        EDITOR_LOD,
+        (part) => part.id === BASEPLATE_ID || part.role === "road",
+      );
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
@@ -291,15 +415,33 @@ export class Editor implements IEditor {
     if (!baseplate) throw new Error(`the bundle has no ${BASEPLATE_ID} baseplate`);
     const baseplateColor = bundle.colors.find((c) => c.name === BASEPLATE_COLOR_NAME);
     if (!baseplateColor) throw new Error(`LDConfig colour ${BASEPLATE_COLOR_NAME} is missing`);
-    const sets = bundle.models.filter((entry) => entry.origin === "omr");
+    const roadParts = bundle.parts.filter((part) => part.role === "road");
+    const placeableModels = [
+      ...bundle.models.filter((entry) => entry.role === "road-module"),
+      ...bundle.models.filter((entry) => entry.origin === "omr"),
+    ];
     const loaded = await Promise.all(
-      sets.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
+      placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
     return [
-      baseplatePlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
+      partPlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
+      ...roadParts.map((part) => {
+        if (part.producedColor === undefined) {
+          throw new Error(`${part.id} has no produced colour in the bundle`);
+        }
+        return partPlaceable(
+          part,
+          palette.indexOf(part.id),
+          part.producedColor,
+          palette.parts,
+          colors,
+        );
+      }),
       ...loaded.map(({ bundle: modelBundle, entry, model }) =>
         modelPlaceable(
           entry.name,
+          entry.role === "road-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
+          entry.role,
           palette.remap(model, modelBundle.parts),
           { name: entry.name, source: entry.source, sections: model.sections },
           palette.parts,
@@ -408,10 +550,29 @@ export class Editor implements IEditor {
     this.backend.placeGhost(this.hoverX, 0, this.hoverZ, this.ghostRot);
   }
 
+  private snapGhostToRoad(): RoadSnapView | null {
+    const surface = this.active?.road;
+    if (!surface || !this.hovering || !this.state.snapRoads) return null;
+    const snap = snapToRoadEdge(
+      this.roadNetwork,
+      this.roadExtents,
+      surface,
+      this.ghostRot,
+      0,
+      this.hoverX,
+      this.hoverZ,
+    );
+    if (!snap) return null;
+    this.hoverX = snap.x;
+    this.hoverZ = snap.z;
+    return { joinedCells: snap.joinedCells };
+  }
+
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
+    const snap = this.snapGhostToRoad();
     this.placeGhost();
-    this.update({ hover: this.hovering ? { x: this.hoverX, z: this.hoverZ } : null });
+    this.update({ hover: this.hovering ? { x: this.hoverX, z: this.hoverZ } : null, snap });
   }
 
   pointerLeave(): void {
@@ -423,6 +584,7 @@ export class Editor implements IEditor {
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
+      this.snapGhostToRoad();
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
       return;
     }
@@ -482,6 +644,7 @@ export class Editor implements IEditor {
         report: view.report,
       };
     }
+    this.refreshRoads();
     this.update({
       placements: this.world.size,
       history: {
@@ -492,6 +655,80 @@ export class Editor implements IEditor {
       },
     });
     return view;
+  }
+
+  private roadPlacements(): ReadonlyArray<RoadPlacement> {
+    const placements: RoadPlacement[] = [];
+    for (let id = 0; id < this.roadModels.length; id++) {
+      const model = this.roadModels[id];
+      const surface = model?.placeable.road;
+      if (!model || !surface) continue;
+      placements.push({
+        id,
+        x: model.handle.x,
+        z: model.handle.z,
+        yLdu: model.handle.yPlates * PLATE_LDU,
+        rot: model.handle.rot,
+        surface,
+      });
+    }
+    return placements;
+  }
+
+  private refreshRoads(): void {
+    const started = performance.now();
+    this.roadModels = this.placed.models().filter((model) => model.placeable.road !== null);
+    const placements = this.roadPlacements();
+    this.roadNetwork = new RoadNetwork(placements);
+    this.roadExtents = placements.map(cellExtent);
+    this.roadReport = this.roadNetwork.report();
+    const checkMs = performance.now() - started;
+    this.showRoadMarkers();
+    const report = this.roadReport;
+    const issues: RoadIssueView[] = [];
+    for (const segment of report.segments) {
+      if (segment.status === "joined" || issues.length >= LISTED_ROAD_ISSUES) continue;
+      issues.push({
+        status: segment.status,
+        item: this.roadModels[segment.placement]?.placeable.id ?? "",
+        side: segment.side,
+        line: segment.line,
+        from: segment.from,
+        to: segment.to,
+        topLdu: segment.topLdu,
+      });
+    }
+    this.update({
+      roads: {
+        checkMs,
+        placements: report.placements,
+        joinedCells: report.joinedCells,
+        openCells: report.openCells,
+        mismatchedCells: report.mismatchedCells,
+        overlaps: report.overlaps.length,
+        issues,
+      },
+    });
+  }
+
+  private showRoadMarkers(): void {
+    this.backend.setMarkers(
+      this.state.showJoins
+        ? this.roadReport.segments.map((segment) => ({
+            box: markerBox(segment),
+            kind: segment.status,
+          }))
+        : [],
+    );
+  }
+
+  setShowJoins(show: boolean): void {
+    this.update({ showJoins: show });
+    this.showRoadMarkers();
+  }
+
+  setSnapRoads(snap: boolean): void {
+    this.update({ snapRoads: snap, snap: null });
   }
 
   private select(model: PlacedModel | null): void {
@@ -581,6 +818,15 @@ export class Editor implements IEditor {
       refs: this.placeables.map((p) => p.id),
       frameShifts: this.placeables.map((p) => p.frameShift),
       placements: dumpPlacements(this.world),
+      roadPlacements: this.roadModels.map((model, id) => ({
+        id,
+        item: model.placeable.id,
+        x: model.handle.x,
+        z: model.handle.z,
+        yPlates: model.handle.yPlates,
+        rot: model.handle.rot,
+      })),
+      roads: this.roadReport,
     };
   }
 }

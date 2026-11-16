@@ -6,7 +6,8 @@ import {
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
-import { BOX_FLOATS, type Placeable } from "./placeable.ts";
+import { BOX_FLOATS } from "./local-box.ts";
+import type { Placeable } from "./placeable.ts";
 
 export interface PlacedModel {
   readonly placement: PlacementRef;

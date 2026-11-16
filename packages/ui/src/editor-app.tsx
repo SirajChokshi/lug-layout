@@ -6,6 +6,7 @@ import {
   EditorHud,
   Inspector,
   PlacementToolbar,
+  RoadJoins,
 } from "./editor-panels.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 
@@ -38,6 +39,10 @@ export function EditorApp({ editor, options, disclaimer, showState }: EditorAppP
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
       data-selection={snapshot.selection?.item ?? ""}
       data-ghost-rot={snapshot.ghostRot}
+      data-snap={snapshot.snap ? snapshot.snap.joinedCells : ""}
+      data-road-joined={snapshot.roads.joinedCells}
+      data-road-open={snapshot.roads.openCells}
+      data-road-mismatch={snapshot.roads.mismatchedCells}
     >
       <EditorCanvas editor={editor} options={options} />
       <EditorHud snapshot={snapshot} />
@@ -45,6 +50,7 @@ export function EditorApp({ editor, options, disclaimer, showState }: EditorAppP
         <PlacementToolbar editor={editor} snapshot={snapshot} />
         <CatalogList editor={editor} snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
+        <RoadJoins editor={editor} snapshot={snapshot} />
       </div>
       {showState && <EditorState editor={editor} />}
       <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />
