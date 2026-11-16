@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::process::ExitCode;
 
 use brick_compile::flatten::FlattenError;
-use brick_compile::inline::inline_part_distance;
+use brick_compile::inline::compare_inline_part;
 use brick_compile::ldraw::Header;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::bake_model;
@@ -46,8 +46,9 @@ fn bake(request: &Value) -> Result<Vec<u8>, String> {
     let mut colors = Vec::with_capacity(baked.instances.len());
     let mut matrices = Vec::with_capacity(baked.instances.len() * 12);
     for instance in &baked.instances {
-        let index = *part_index.entry(&instance.part).or_insert_with(|| {
-            part_ids.push(&instance.part);
+        let key = instance.inline.as_deref().unwrap_or(&instance.part);
+        let index = *part_index.entry(key).or_insert_with(|| {
+            part_ids.push(key);
             part_ids.len() - 1
         });
         parts.push(index);
@@ -62,6 +63,11 @@ fn bake(request: &Value) -> Result<Vec<u8>, String> {
             .inline_parts
             .iter()
             .map(|p| json!({ "inline": p.inline, "official": p.official }))
+            .collect::<Vec<_>>(),
+        "looseGeometry": baked
+            .loose_geometry
+            .iter()
+            .map(|g| json!({ "section": g.section, "triangles": g.triangles, "quads": g.quads, "occurrences": g.occurrences }))
             .collect::<Vec<_>>(),
     });
     serde_json::to_vec(&response).map_err(|e| e.to_string())
@@ -167,14 +173,18 @@ fn compile(request: &Value) -> Result<Vec<u8>, String> {
         else {
             continue;
         };
-        let result = inline_part_distance(&library, model, inline_name, official);
+        let result = compare_inline_part(&library, model, inline_name, official);
         let requested = library.take_requested();
         let mut entry = match result {
             _ if !requested.is_empty() => need(requested),
-            Ok(distance) => json!({
+            Ok(comparison) => json!({
                 "status": "measured",
-                "maxVertexDistanceLdu": distance,
-                "withinWeld": distance <= WELD_EPSILON_LDU,
+                "maxVertexDistanceLdu": comparison.max_vertex_distance,
+                "maxFaceDistanceLdu": comparison.max_face_distance,
+                "inlineColors": comparison.inline_colors,
+                "officialColors": comparison.official_colors,
+                "colorsMatch": comparison.colors_match(),
+                "withinWeld": comparison.equivalent_within(WELD_EPSILON_LDU),
             }),
             Err(error) => flatten_failure(&error),
         };

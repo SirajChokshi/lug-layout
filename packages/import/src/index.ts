@@ -34,3 +34,4 @@ export {
   type ImportWorkerResponse,
   type LdrawTextInput,
 } from "./worker-protocol.ts";
+export type { LooseGeometry } from "./brick-compiler.ts";

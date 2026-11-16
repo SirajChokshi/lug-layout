@@ -2,9 +2,11 @@ import type {
   BakeOutput,
   BrickCompiler,
   CompileLod,
+  Failure,
   InlineOutcome,
   InlinePart,
   LdrawHeader,
+  LooseGeometry,
   PartOutcome,
 } from "./brick-compiler.ts";
 import { isDirectColor } from "@brr/catalog/colors";
@@ -23,6 +25,7 @@ export interface ImportJob {
 
 interface Counted {
   readonly reference: string;
+  readonly official: string;
   readonly instances: number;
 }
 
@@ -45,8 +48,11 @@ export type PartResolution =
     })
   | (Counted & {
       readonly kind: "inlineDiffers";
-      readonly inline: string;
+      readonly colorsMatch: boolean;
+      readonly inlineColors: ReadonlyArray<number>;
+      readonly officialColors: ReadonlyArray<number>;
       readonly maxVertexDistanceLdu: number;
+      readonly maxFaceDistanceLdu: number;
       readonly weldEpsilonLdu: number;
     })
   | (Counted & { readonly kind: "failed"; readonly message: string });
@@ -73,6 +79,7 @@ export interface ImportReport {
   readonly drawnInstanceCount: number;
   readonly parts: ReadonlyArray<PartResolution>;
   readonly inlineParts: ReadonlyArray<InlinePart>;
+  readonly looseGeometry: ReadonlyArray<LooseGeometry>;
   readonly unknownColors: ReadonlyArray<ColorIssue>;
   readonly directColors: ReadonlyArray<number>;
   readonly compileRounds: number;
@@ -122,13 +129,19 @@ export class ModelImportEngine {
     const baked = await this.compiler.bake(job.text);
     const bakedAt = this.now();
     const bundleIds = new Set(job.bundlePartIds);
-    const outside = baked.parts.filter((reference) => !bundleIds.has(bundlePartId(reference)));
+    const officialOf = new Map(baked.inlineParts.map((part) => [part.inline, part.official]));
+    const officials = new Set(baked.parts.map((key) => officialOf.get(key) ?? key));
+    const outside = [...officials].filter((reference) => !bundleIds.has(bundlePartId(reference)));
     const outcomes = await this.resolveOutside(job, outside, baked.inlineParts);
     const resolvedAt = this.now();
     const counts = instanceCounts(baked);
-    const parts = baked.parts.map((reference, index) =>
-      resolution(reference, counts[index] ?? 0, bundleIds, baked.inlineParts, outcomes),
-    );
+    const parts = baked.parts.map((key, index) => {
+      const official = officialOf.get(key);
+      const instances = counts[index] ?? 0;
+      return official === undefined
+        ? officialResolution({ reference: key, official: key, instances }, bundleIds, outcomes)
+        : inlineResolution({ reference: key, official, instances }, bundleIds, outcomes);
+    });
     return assemble(job, baked, parts, outcomes, this.mirror.stats(), {
       bakeMs: bakedAt - started,
       resolveMs: resolvedAt - bakedAt,
@@ -202,91 +215,93 @@ function instanceCounts(baked: BakeOutput): Uint32Array {
   return counts;
 }
 
-function inlineMismatch(
-  reference: string,
-  inlineParts: ReadonlyArray<InlinePart>,
-  outcomes: Outcomes,
-): { inline: string; maxVertexDistanceLdu: number } | undefined {
-  for (const part of inlineParts) {
-    if (part.official !== reference) continue;
-    const outcome = outcomes.inline.get(part.inline);
-    if (outcome?.status === "measured" && !outcome.withinWeld) {
-      return { inline: part.inline, maxVertexDistanceLdu: outcome.maxVertexDistanceLdu };
+function failureResolution(
+  counted: Counted,
+  failure: Failure,
+  definedInline: boolean,
+): PartResolution {
+  switch (failure.kind) {
+    case "unresolved":
+      if (failure.from === "" || failure.from === undefined) {
+        return { kind: "notInLibrary", ...counted, definedInline };
+      }
+      return {
+        kind: "missingSubfile",
+        ...counted,
+        missing: failure.missing ?? "",
+        from: failure.from,
+      };
+    case "license":
+    case "unofficial":
+      return {
+        kind: "rejected",
+        ...counted,
+        gate: failure.kind,
+        path: failure.path ?? counted.official,
+        message: failure.message,
+      };
+    case "tooDeep":
+      return { kind: "failed", ...counted, message: failure.message };
+    default: {
+      const unhandled: never = failure.kind;
+      throw new Error(`unhandled failure ${String(unhandled)}`);
     }
   }
-  return undefined;
 }
 
-function resolution(
-  reference: string,
-  instances: number,
+function officialResolution(
+  counted: Counted,
   bundleIds: ReadonlySet<string>,
-  inlineParts: ReadonlyArray<InlinePart>,
   outcomes: Outcomes,
 ): PartResolution {
-  const mismatch = inlineMismatch(reference, inlineParts, outcomes);
-  if (mismatch) {
-    return {
-      kind: "inlineDiffers",
-      reference,
-      instances,
-      ...mismatch,
-      weldEpsilonLdu: outcomes.weldEpsilonLdu,
-    };
-  }
-  const partId = bundlePartId(reference);
-  if (bundleIds.has(partId)) return { kind: "bundle", reference, instances, partId };
-  const outcome = outcomes.parts.get(reference);
-  if (!outcome) throw new Error(`no compile outcome for ${reference}`);
+  const partId = bundlePartId(counted.official);
+  if (bundleIds.has(partId)) return { kind: "bundle", ...counted, partId };
+  const outcome = outcomes.parts.get(counted.official);
+  if (!outcome) throw new Error(`no compile outcome for ${counted.official}`);
   switch (outcome.status) {
     case "compiled":
       return {
         kind: "compiled",
-        reference,
-        instances,
+        ...counted,
         partId,
         file: outcome.file,
         header: outcome.header,
         sourceFiles: outcome.files,
       };
     case "failed":
-      switch (outcome.kind) {
-        case "unresolved":
-          if (outcome.from === "" || outcome.from === undefined) {
-            return {
-              kind: "notInLibrary",
-              reference,
-              instances,
-              definedInline: inlineParts.some((part) => part.official === reference),
-            };
-          }
-          return {
-            kind: "missingSubfile",
-            reference,
-            instances,
-            missing: outcome.missing ?? "",
-            from: outcome.from,
-          };
-        case "license":
-        case "unofficial":
-          return {
-            kind: "rejected",
-            reference,
-            instances,
-            gate: outcome.kind,
-            path: outcome.path ?? reference,
-            message: outcome.message,
-          };
-        case "tooDeep":
-          return { kind: "failed", reference, instances, message: outcome.message };
-        default: {
-          const unhandled: never = outcome.kind;
-          throw new Error(`unhandled failure ${String(unhandled)}`);
-        }
-      }
+      return failureResolution(counted, outcome, counted.reference !== counted.official);
     default: {
       const unhandled: never = outcome;
       throw new Error(`unhandled outcome ${String(unhandled)}`);
+    }
+  }
+}
+
+function inlineResolution(
+  counted: Counted,
+  bundleIds: ReadonlySet<string>,
+  outcomes: Outcomes,
+): PartResolution {
+  const check = outcomes.inline.get(counted.reference);
+  if (!check) throw new Error(`no inline comparison for ${counted.reference}`);
+  switch (check.status) {
+    case "measured":
+      if (check.withinWeld) return officialResolution(counted, bundleIds, outcomes);
+      return {
+        kind: "inlineDiffers",
+        ...counted,
+        colorsMatch: check.colorsMatch,
+        inlineColors: check.inlineColors,
+        officialColors: check.officialColors,
+        maxVertexDistanceLdu: check.maxVertexDistanceLdu,
+        maxFaceDistanceLdu: check.maxFaceDistanceLdu,
+        weldEpsilonLdu: outcomes.weldEpsilonLdu,
+      };
+    case "failed":
+      return failureResolution(counted, check, true);
+    default: {
+      const unhandled: never = check;
+      throw new Error(`unhandled inline outcome ${String(unhandled)}`);
     }
   }
 }
@@ -308,7 +323,7 @@ function assemble(
   const ldconfig = new Set(job.ldconfigCodes);
   const unknownColors = new Map<number, number>();
   const directColors = new Set<number>();
-  const localIndex = new Map<number, number>();
+  const localIndex = new Map<string, number>();
   const partIds: string[] = [];
   const { part, color, matrix } = baked.instances;
   const total = part.length;
@@ -327,10 +342,10 @@ function assemble(
       unknownColors.set(code, (unknownColors.get(code) ?? 0) + 1);
       continue;
     }
-    let local = localIndex.get(source);
+    let local = localIndex.get(resolved.partId);
     if (local === undefined) {
       local = partIds.length;
-      localIndex.set(source, local);
+      localIndex.set(resolved.partId, local);
       partIds.push(resolved.partId);
     }
     partIndex[drawn] = local;
@@ -341,13 +356,14 @@ function assemble(
     drawn++;
   }
   const compiled: CompiledGlb[] = [];
+  const compiledIds = new Set<string>();
   for (const resolved of parts) {
-    if (resolved.kind !== "compiled" || !localIndex.has(baked.parts.indexOf(resolved.reference))) {
-      continue;
-    }
-    const outcome = outcomes.parts.get(resolved.reference);
-    if (outcome?.status === "compiled")
-      compiled.push({ partId: resolved.partId, glb: outcome.glb });
+    if (resolved.kind !== "compiled" || compiledIds.has(resolved.partId)) continue;
+    if (!localIndex.has(resolved.partId)) continue;
+    const outcome = outcomes.parts.get(resolved.official);
+    if (outcome?.status !== "compiled") continue;
+    compiledIds.add(resolved.partId);
+    compiled.push({ partId: resolved.partId, glb: outcome.glb });
   }
   return {
     report: {
@@ -359,6 +375,7 @@ function assemble(
       drawnInstanceCount: drawn,
       parts,
       inlineParts: baked.inlineParts,
+      looseGeometry: baked.looseGeometry,
       unknownColors: [...unknownColors].map(([code, instances]) => ({ code, instances })),
       directColors: [...directColors],
       compileRounds: outcomes.rounds,

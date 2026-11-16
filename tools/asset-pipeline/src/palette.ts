@@ -11,6 +11,7 @@ export interface PaletteModel {
   readonly sha256: string;
   readonly source: string;
   readonly retrieved: string;
+  readonly notDrawn?: ReadonlyArray<{ readonly section: string; readonly reason: string }>;
 }
 
 export interface Palette {

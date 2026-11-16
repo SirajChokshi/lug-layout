@@ -26,7 +26,10 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
     case "rejected":
       return `Rejected by the ${part.gate === "license" ? "license" : "unofficial-part"} gate: ${part.path}.`;
     case "inlineDiffers":
-      return `The file's inline copy ${part.inline} differs from the official part by up to ${part.maxVertexDistanceLdu.toFixed(3)} LDU (weld tolerance ${part.weldEpsilonLdu} LDU).`;
+      if (!part.colorsMatch) {
+        return `The file's inline copy uses colours ${part.inlineColors.join(", ")} where official ${part.official} uses ${part.officialColors.join(", ")}.`;
+      }
+      return `The file's inline copy differs from official ${part.official} by up to ${Math.max(part.maxVertexDistanceLdu, part.maxFaceDistanceLdu).toFixed(3)} LDU (weld tolerance ${part.weldEpsilonLdu} LDU).`;
     case "failed":
       return part.message;
     default: {
@@ -49,6 +52,7 @@ function ModuleReport({ module }: { readonly module: ImportedModule }) {
     return reason === null ? [] : [{ part, reason }];
   });
   const notDrawnInstances = notDrawn.reduce((sum, { part }) => sum + part.instances, 0);
+  const hasLooseGeometry = report.looseGeometry.length > 0;
   const title = report.sections[0]?.title ?? report.fileName;
   return (
     <section className="module-report" data-file={report.fileName}>
@@ -92,16 +96,23 @@ function ModuleReport({ module }: { readonly module: ImportedModule }) {
           </dd>
         </div>
       </dl>
-      {(notDrawn.length > 0 || report.unknownColors.length > 0) && (
+      {(notDrawn.length > 0 || report.unknownColors.length > 0 || hasLooseGeometry) && (
         <>
           <h3>
             Not drawn: {integer.format(notDrawnInstances)} instances of {notDrawn.length} parts
             {report.unknownColors.length > 0 ? ", plus unknown colours" : ""}
+            {hasLooseGeometry ? ", plus loose geometry" : ""}
           </h3>
           <ul className="not-drawn">
             {notDrawn.map(({ part, reason }) => (
               <li key={part.reference} data-kind={part.kind}>
                 <code>{part.reference}</code> ×{part.instances}: {reason}
+              </li>
+            ))}
+            {report.looseGeometry.map((loose) => (
+              <li key={`loose-${loose.section}`} data-kind="looseGeometry">
+                <code>{loose.section}</code> ×{loose.occurrences}: {loose.triangles} triangles and{" "}
+                {loose.quads} quads drawn directly in a model section, outside any part.
               </li>
             ))}
             {report.unknownColors.map((color) => (

@@ -123,7 +123,13 @@
       "file": "10218-1.mpd",
       "sha256": "30fd5ec2bc4ad6a7e875dfc4aaf69929edc9c7fd086d5ddfca55cc2cf5cf9e9a",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10218-1.mpd",
-      "retrieved": "2026-11-16T17:20:00Z"
+      "retrieved": "2026-11-16T17:20:00Z",
+      "notDrawn": [
+        {
+          "section": "10218 - rigidHoseD9.ldr",
+          "reason": "LDCad-generated rigid hose: a custom mesh of 176 quads defined in the file, not an LDraw part at the pin"
+        }
+      ]
     },
     {
       "name": "2150-1",

@@ -19,6 +19,14 @@ export interface BakeOutput {
     readonly matrix: ReadonlyArray<number>;
   };
   readonly inlineParts: ReadonlyArray<InlinePart>;
+  readonly looseGeometry: ReadonlyArray<LooseGeometry>;
+}
+
+export interface LooseGeometry {
+  readonly section: string;
+  readonly triangles: number;
+  readonly quads: number;
+  readonly occurrences: number;
 }
 
 export interface InlinePart {
@@ -67,6 +75,10 @@ export type PartOutcome = (CompiledPartOutput | Need | Failure) & { readonly ref
 export interface InlineMeasured {
   readonly status: "measured";
   readonly maxVertexDistanceLdu: number;
+  readonly maxFaceDistanceLdu: number;
+  readonly inlineColors: ReadonlyArray<number>;
+  readonly officialColors: ReadonlyArray<number>;
+  readonly colorsMatch: boolean;
   readonly withinWeld: boolean;
 }
 
@@ -108,7 +120,8 @@ function isBakeOutput(value: unknown): value is BakeOutput {
     Array.isArray(value["sections"]) &&
     Array.isArray(value["parts"]) &&
     isRecord(value["instances"]) &&
-    Array.isArray(value["inlineParts"])
+    Array.isArray(value["inlineParts"]) &&
+    Array.isArray(value["looseGeometry"])
   );
 }
 

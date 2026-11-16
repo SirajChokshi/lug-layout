@@ -6,12 +6,15 @@ use crate::ldraw::{self, Header, Line};
 
 const MAX_SUBMODEL_DEPTH: usize = 32;
 const MODEL_ORG: &str = "model";
+const UNOFFICIAL_PREFIX: &str = "unofficial_";
+const PART_FILE_EXTENSION: &str = ".dat";
 const SUBPART_DIRECTORY: &str = "s/";
 const OMR_SET_SEPARATOR: &str = " - ";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModelInstance {
     pub part: String,
+    pub inline: Option<String>,
     pub color: u32,
     pub matrix: Affine,
 }
@@ -21,6 +24,15 @@ pub struct BakedModel {
     pub sections: Vec<Header>,
     pub instances: Vec<ModelInstance>,
     pub inline_parts: Vec<InlinePart>,
+    pub loose_geometry: Vec<LooseGeometry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LooseGeometry {
+    pub section: String,
+    pub triangles: usize,
+    pub quads: usize,
+    pub occurrences: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -45,17 +57,39 @@ impl std::fmt::Display for ModelError {
 }
 
 struct Section {
+    name: String,
     header: Header,
     lines: Vec<Line>,
 }
 
 impl Section {
+    fn has_geometry(&self) -> bool {
+        self.lines
+            .iter()
+            .any(|line| matches!(line, Line::Triangle { .. } | Line::Quad { .. }))
+    }
+
     fn is_part(&self) -> bool {
-        self.header
+        let declared = self
+            .header
             .ldraw_org
             .as_deref()
             .and_then(|org| org.split_whitespace().next())
-            .is_some_and(|kind| !kind.eq_ignore_ascii_case(MODEL_ORG))
+            .map(str::to_ascii_lowercase);
+        match declared {
+            Some(kind) => kind.trim_start_matches(UNOFFICIAL_PREFIX) != MODEL_ORG,
+            None => self.name.ends_with(PART_FILE_EXTENSION) || self.has_geometry(),
+        }
+    }
+
+    fn loose_geometry(&self) -> (usize, usize) {
+        self.lines
+            .iter()
+            .fold((0, 0), |(triangles, quads), line| match line {
+                Line::Triangle { .. } => (triangles + 1, quads),
+                Line::Quad { .. } => (triangles, quads + 1),
+                _ => (triangles, quads),
+            })
     }
 }
 
@@ -116,11 +150,13 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
     if names.is_empty() {
         return Err(ModelError::Empty);
     }
-    let sections: Vec<Section> = bodies
+    let sections: Vec<Section> = names
         .iter()
-        .map(|body| {
+        .zip(&bodies)
+        .map(|(name, body)| {
             let file = ldraw::parse(body);
             Section {
+                name: name.clone(),
                 header: file.header,
                 lines: file.lines,
             }
@@ -148,6 +184,7 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
         mut instances,
         inline_parts,
         reached,
+        loose,
     } = out;
     for instance in &mut instances {
         instance.matrix = Affine {
@@ -156,15 +193,27 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
     }
     Ok(BakedModel {
         sections: sections
-            .into_iter()
+            .iter()
             .enumerate()
             .filter(|(index, _)| reached.contains(index))
-            .map(|(_, section)| section.header)
+            .map(|(_, section)| section.header.clone())
             .collect(),
         instances,
         inline_parts: inline_parts
             .into_iter()
             .map(|(inline, official)| InlinePart { inline, official })
+            .collect(),
+        loose_geometry: loose
+            .into_iter()
+            .map(|(index, occurrences)| {
+                let (triangles, quads) = sections[index].loose_geometry();
+                LooseGeometry {
+                    section: names[index].clone(),
+                    triangles,
+                    quads,
+                    occurrences,
+                }
+            })
             .collect(),
     })
 }
@@ -174,6 +223,7 @@ struct WalkOutput {
     instances: Vec<ModelInstance>,
     inline_parts: BTreeMap<String, String>,
     reached: BTreeSet<usize>,
+    loose: BTreeMap<usize, usize>,
 }
 
 struct Walk<'a> {
@@ -194,6 +244,9 @@ fn walk(
         return Ok(());
     };
     out.reached.insert(section);
+    if current.has_geometry() {
+        *out.loose.entry(section).or_default() += 1;
+    }
     if depth > MAX_SUBMODEL_DEPTH {
         return Err(ModelError::SubmodelCycle {
             name: current.header.name.clone(),
@@ -221,6 +274,7 @@ fn walk(
                     .insert(model.names[child].clone(), official.clone());
                 out.instances.push(ModelInstance {
                     part: official,
+                    inline: Some(model.names[child].clone()),
                     color: child_color,
                     matrix: child_matrix,
                 });
@@ -228,10 +282,96 @@ fn walk(
             Some(&child) => walk(model, child, &child_matrix, child_color, depth + 1, out)?,
             None => out.instances.push(ModelInstance {
                 part: reference.clone(),
+                inline: None,
                 color: child_color,
                 matrix: child_matrix,
             }),
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CRITIC_GAP_PROBE: &str = "0 FILE critic-gap.ldr
+0 Critic gap probe
+0 Name: critic-gap.ldr
+0 Author: critic
+0 !LDRAW_ORG Model
+1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat
+1 2 120 0 0 1 0 0 0 1 0 0 0 1 mycustom.dat
+1 14 240 0 0 1 0 0 0 1 0 0 0 1 mycustom2.dat
+1 1 0 0 120 1 0 0 0 1 0 0 0 1 9999-1 - 3001.dat
+4 2 -40 -40 60 40 -40 60 40 -40 120 -40 -40 120
+0 NOFILE
+0 FILE mycustom.dat
+0 My custom part without LDRAW_ORG header
+0 Name: mycustom.dat
+1 16 0 0 0 10 0 0 0 1 0 0 0 10 4-4cyli.dat
+3 16 0 -24 0 30 -60 0 -30 -60 0
+0 NOFILE
+0 FILE mycustom2.dat
+0 My custom part with header
+0 Name: mycustom2.dat
+0 !LDRAW_ORG Unofficial_Part
+1 16 0 0 0 10 0 0 0 1 0 0 0 10 4-4cyli.dat
+3 16 0 -24 0 30 -60 0 -30 -60 0
+0 NOFILE
+0 FILE 9999-1 - 3001.dat
+0 Brick  2 x  4 recoloured copy
+0 Name: 9999-1 - 3001.dat
+0 !LDRAW_ORG Unofficial_Part
+1 4 0 0 0 1 0 0 0 1 0 0 0 1 s\\3001s01.dat
+4 14 -40 0 -20 -40 24 -20 40 24 -20 40 0 -20
+4 14 40 0 20 40 24 20 -40 24 20 -40 0 20
+0 NOFILE
+";
+
+    fn baked_probe() -> BakedModel {
+        bake_model(CRITIC_GAP_PROBE).unwrap_or_else(|e| panic!("probe bakes: {e}"))
+    }
+
+    #[test]
+    fn a_headerless_dat_section_is_an_inline_part_and_its_primitives_never_leak_as_parts() {
+        let baked = baked_probe();
+        let parts: Vec<(&str, Option<&str>)> = baked
+            .instances
+            .iter()
+            .map(|i| (i.part.as_str(), i.inline.as_deref()))
+            .collect();
+        assert_eq!(
+            parts,
+            vec![
+                ("3001.dat", None),
+                ("mycustom.dat", Some("mycustom.dat")),
+                ("mycustom2.dat", Some("mycustom2.dat")),
+                ("3001.dat", Some("9999-1 - 3001.dat")),
+            ]
+        );
+    }
+
+    #[test]
+    fn geometry_outside_parts_is_reported_per_model_section() {
+        assert_eq!(
+            baked_probe().loose_geometry,
+            vec![LooseGeometry {
+                section: "critic-gap.ldr".into(),
+                triangles: 0,
+                quads: 1,
+                occurrences: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn headerless_ldr_submodels_and_unofficial_models_are_walked_as_models() {
+        let source = "0 FILE main.ldr\n0 !LDRAW_ORG Model\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 sub.ldr\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 draft.ldr\n0 FILE sub.ldr\n1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n0 FILE draft.ldr\n0 !LDRAW_ORG Unofficial_Model\n1 1 0 0 0 1 0 0 0 1 0 0 0 1 3003.dat\n";
+        let baked = bake_model(source).unwrap_or_else(|e| panic!("bakes: {e}"));
+        let parts: Vec<&str> = baked.instances.iter().map(|i| i.part.as_str()).collect();
+        assert_eq!(parts, vec!["3001.dat", "3003.dat"]);
+        assert!(baked.inline_parts.is_empty());
+        assert!(baked.loose_geometry.is_empty());
+    }
 }

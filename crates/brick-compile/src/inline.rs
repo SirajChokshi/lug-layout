@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::affine::Vec3;
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod};
@@ -25,14 +25,55 @@ impl<L: Library> Library for SectionsFirst<'_, L> {
     }
 }
 
-fn vertices(flattened: &Flattened) -> Vec<Vec3> {
-    let mut seen = HashSet::new();
-    flattened
-        .triangles
-        .iter()
-        .flat_map(|triangle| triangle.points)
-        .filter(|p| seen.insert(p.map(|v| (v / VERTEX_GRID_LDU).round() as i64)))
-        .collect()
+#[derive(Clone, Debug, PartialEq)]
+pub struct InlineComparison {
+    pub max_vertex_distance: f64,
+    pub max_face_distance: f64,
+    pub inline_colors: Vec<u32>,
+    pub official_colors: Vec<u32>,
+}
+
+impl InlineComparison {
+    pub fn colors_match(&self) -> bool {
+        self.inline_colors == self.official_colors
+    }
+
+    pub fn max_distance(&self) -> f64 {
+        self.max_vertex_distance.max(self.max_face_distance)
+    }
+
+    pub fn equivalent_within(&self, epsilon: f64) -> bool {
+        self.colors_match() && self.max_distance() <= epsilon
+    }
+}
+
+struct ColoredGeometry {
+    vertices: BTreeMap<u32, Vec<Vec3>>,
+    centroids: BTreeMap<u32, Vec<Vec3>>,
+}
+
+fn grid_key(point: Vec3) -> [i64; 3] {
+    point.map(|v| (v / VERTEX_GRID_LDU).round() as i64)
+}
+
+fn colored_geometry(flattened: &Flattened) -> ColoredGeometry {
+    let mut seen: HashSet<(u32, [i64; 3])> = HashSet::new();
+    let mut vertices: BTreeMap<u32, Vec<Vec3>> = BTreeMap::new();
+    let mut centroids: BTreeMap<u32, Vec<Vec3>> = BTreeMap::new();
+    for triangle in &flattened.triangles {
+        for point in triangle.points {
+            if seen.insert((triangle.color, grid_key(point))) {
+                vertices.entry(triangle.color).or_default().push(point);
+            }
+        }
+        let centroid =
+            [0, 1, 2].map(|axis| triangle.points.iter().map(|p| p[axis]).sum::<f64>() / 3.0);
+        centroids.entry(triangle.color).or_default().push(centroid);
+    }
+    ColoredGeometry {
+        vertices,
+        centroids,
+    }
 }
 
 fn directed_distance(from: &[Vec3], to: &[Vec3]) -> f64 {
@@ -50,21 +91,37 @@ pub fn max_vertex_distance(a: &[Vec3], b: &[Vec3]) -> f64 {
     directed_distance(a, b).max(directed_distance(b, a))
 }
 
-pub fn inline_part_distance<L: Library>(
+fn per_color_distance(a: &BTreeMap<u32, Vec<Vec3>>, b: &BTreeMap<u32, Vec<Vec3>>) -> f64 {
+    a.iter()
+        .filter_map(|(color, points)| Some(max_vertex_distance(points, b.get(color)?)))
+        .fold(0.0, f64::max)
+}
+
+pub fn compare_inline_part<L: Library>(
     library: &L,
     model_source: &str,
     inline: &str,
     official: &str,
-) -> Result<f64, FlattenError> {
+) -> Result<InlineComparison, FlattenError> {
     let sections_first = SectionsFirst {
         sections: mpd_sections(model_source),
         library,
     };
-    let inline_geometry = Flattener::new(&sections_first, Lod::Standard, &[]).flatten(inline)?;
-    let official_geometry =
-        Flattener::new(library, Lod::Standard, &[]).flatten(&format!("parts/{official}"))?;
-    Ok(max_vertex_distance(
-        &vertices(&inline_geometry),
-        &vertices(&official_geometry),
-    ))
+    let inline_geometry =
+        colored_geometry(&Flattener::new(&sections_first, Lod::Standard, &[]).flatten(inline)?);
+    let official_geometry = colored_geometry(
+        &Flattener::new(library, Lod::Standard, &[]).flatten(&format!("parts/{official}"))?,
+    );
+    Ok(InlineComparison {
+        max_vertex_distance: per_color_distance(
+            &inline_geometry.vertices,
+            &official_geometry.vertices,
+        ),
+        max_face_distance: per_color_distance(
+            &inline_geometry.centroids,
+            &official_geometry.centroids,
+        ),
+        inline_colors: inline_geometry.vertices.keys().copied().collect(),
+        official_colors: official_geometry.vertices.keys().copied().collect(),
+    })
 }

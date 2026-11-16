@@ -142,6 +142,7 @@ interface PaletteModel {
   readonly name: string;
   readonly origin: "omr" | "generated";
   readonly file: string;
+  readonly notDrawn?: ReadonlyArray<{ readonly section: string }>;
 }
 
 const palette = JSON.parse(await readFile(values.palette, "utf8")) as {
@@ -165,22 +166,29 @@ for (const model of standardManifest.models) {
   const baked = await baker.bake(
     await readFile(join(modelRoots[source.origin], source.file), "utf8"),
   );
-  const count = baked.instances.part.length;
+  const officialOf = new Map(baked.inlineParts.map((part) => [part.inline, part.official]));
+  const acknowledged = new Set((source.notDrawn ?? []).map((entry) => entry.section.toLowerCase()));
+  const kept: number[] = [];
+  baked.instances.part.forEach((key, i) => {
+    if (!acknowledged.has(baked.parts[key] ?? "")) kept.push(i);
+  });
   let differing = 0;
-  for (let i = 0; i < Math.max(count, bundled.instances.part.length); i++) {
+  for (let n = 0; n < Math.max(kept.length, bundled.instances.part.length); n++) {
+    const i = kept[n] ?? -1;
+    const key = baked.parts[baked.instances.part[i] ?? -1] ?? "";
     const samePart =
-      bundlePartId(baked.parts[baked.instances.part[i] ?? -1] ?? "") ===
-      bundled.parts[bundled.instances.part[i] ?? -1];
-    const sameColor = baked.instances.color[i] === bundled.instances.color[i];
+      bundlePartId(officialOf.get(key) ?? key) === bundled.parts[bundled.instances.part[n] ?? -1];
+    const sameColor = baked.instances.color[i] === bundled.instances.color[n];
     let sameMatrix = true;
     for (let k = 0; k < MATRIX_FLOATS; k++) {
       const bakedValue = Math.fround(baked.instances.matrix[i * MATRIX_FLOATS + k] ?? Number.NaN);
-      if (bakedValue !== bundled.instances.matrix[i * MATRIX_FLOATS + k]) sameMatrix = false;
+      if (bakedValue !== bundled.instances.matrix[n * MATRIX_FLOATS + k]) sameMatrix = false;
     }
     if (!samePart || !sameColor || !sameMatrix) differing++;
   }
+  const skipped = baked.instances.part.length - kept.length;
   process.stdout.write(
-    `bake ${model.name}: ${count} instances, bundle ${bundled.instances.part.length}, ${differing} differing (part, colour, float32 matrix)\n`,
+    `bake ${model.name}: ${kept.length} instances (${skipped} acknowledged not drawn), bundle ${bundled.instances.part.length}, ${differing} differing (part, colour, float32 matrix)\n`,
   );
   if (differing > 0) process.exitCode = 1;
 }
