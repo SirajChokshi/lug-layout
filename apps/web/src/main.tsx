@@ -47,6 +47,7 @@ function chooseScene(): IViewerScene {
   }
   if (params.importer) {
     importScene = container.get(IMPORT_SCENE);
+    bomSource = importScene;
     return importScene;
   }
   if (params.model !== null) {

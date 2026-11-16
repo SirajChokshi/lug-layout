@@ -4,11 +4,12 @@ import {
   type IPartBundleLoader,
   type PartBundle,
 } from "@brr/catalog";
-import { World } from "@brr/domain";
+import { BomCounter, countPlacements, World, type PlacementContents } from "@brr/domain";
 import type { ImportResult } from "@brr/import";
 import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
+import type { BomInput, BomScope, IBomSource } from "../bom/bom-service.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { withStuds } from "./stud-stream.ts";
@@ -36,7 +37,7 @@ export interface ImportedModule {
   readonly sceneMs: number;
 }
 
-export interface IImportScene extends IViewerScene {
+export interface IImportScene extends IViewerScene, IBomSource {
   importText(fileName: string, text: string): Promise<ImportedModule>;
   placements(): ReadonlyArray<ModulePlacement>;
 }
@@ -65,6 +66,7 @@ const NO_COLOR = 0;
 const GROUND_PLATES = 0;
 const NO_TURN = 0;
 const EMPTY_WORLD_EYE_LDU = { x: 800, y: 600, z: 800 } as const;
+const IMPORTED_WORLD_NAME = "imported-world";
 
 function emptyBounds(): Bounds {
   return {
@@ -124,6 +126,7 @@ export class ImportScene implements IImportScene {
   private readonly compiled = new Map<string, Uint8Array>();
   private nextX = 0;
   private view = emptyBounds();
+  private ldconfigCodes: ReadonlyArray<number> = [];
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -134,6 +137,7 @@ export class ImportScene implements IImportScene {
   async load(lod: BundleLod): Promise<SceneSummary> {
     this.lod = lod;
     const bundle = await this.loader.loadPartSet(lod, [], []);
+    this.ldconfigCodes = bundle.colors.map((color) => color.code);
     return showChunks(this.backend, bundle, undefined, new ColorTable(bundle), [], null);
   }
 
@@ -184,6 +188,30 @@ export class ImportScene implements IImportScene {
       }
     }
     return out.toSorted((a, b) => a.module - b.module);
+  }
+
+  bomInput(scope: BomScope): BomInput {
+    const codes = new Set(this.ldconfigCodes);
+    for (const { result } of this.modules) {
+      for (let i = 0; i < result.instanceCount; i++) codes.add(result.ldrawColor[i] ?? 0);
+    }
+    const counter = new BomCounter(this.partIds, [...codes]);
+    const contents: PlacementContents = {
+      addTo: (target, refId) => {
+        const module = this.modules[refId];
+        if (!module) throw new Error(`world holds unknown module ${refId}`);
+        const slots = module.result.partIds.map((id) => this.partSlots.get(id) ?? -1);
+        const slotIndex = Uint32Array.from(module.result.partIndex, (local) => slots[local] ?? -1);
+        target.addInstances(slotIndex, module.result.ldrawColor, module.result.instanceCount, 1);
+      },
+    };
+    const placements = countPlacements(
+      this.world,
+      contents,
+      counter,
+      scope.kind === "region" ? scope.region : null,
+    );
+    return { name: IMPORTED_WORLD_NAME, lod: this.lod, placements, counter };
   }
 
   private show(bundle: PartBundle, latest: ImportResult): SceneSummary {

@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deriveCrosswalk } from "./catalog/crosswalk.ts";
 import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
+import { bomCheck } from "./catalog/bom-check.ts";
 import {
   catalogSourceDirectory,
   fetchAuditInputs,
@@ -282,10 +283,35 @@ switch (command) {
   case "bundle":
     await bundleCommand();
     break;
+  case "bom-check": {
+    const exportDirectory = process.argv[3];
+    const outIndex = process.argv.indexOf("--out");
+    const out = outIndex > 0 ? process.argv[outIndex + 1] : undefined;
+    if (exportDirectory === undefined || out === undefined) {
+      process.stderr.write("usage: cli.ts bom-check <export-directory> --out <report.json>\n");
+      process.exitCode = 2;
+      break;
+    }
+    const lock = await readLock();
+    await restoreCatalog(lock, "inventory-check");
+    const problems = await verifyCatalogSources(catalogLock(lock), catalogRoot, "inventory-check");
+    if (problems.length > 0) throw new Error(problems.join("\n"));
+    process.stdout.write(
+      await bomCheck({
+        exportDirectory,
+        out,
+        inventoryDirectory: catalogSourceDirectory(catalogRoot, "rebrickable-inventories"),
+        partsCsv: join(catalogSourceDirectory(catalogRoot, "rebrickable-dump"), "parts.csv.gz"),
+      }),
+    );
+    break;
+  }
   case "facts":
     await factsCommand(process.argv.includes("--check"));
     break;
   default:
-    process.stderr.write("usage: cli.ts fetch|restore|verify|bundle|facts [--check]\n");
+    process.stderr.write(
+      "usage: cli.ts fetch|restore|verify|bundle|facts [--check]|bom-check <dir> --out <file>\n",
+    );
     process.exitCode = 2;
 }

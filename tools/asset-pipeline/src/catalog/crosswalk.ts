@@ -43,16 +43,16 @@ export interface CrosswalkPart {
     readonly rebrickable: RebrickableVia | null;
     readonly bricklink: BrickLinkVia | null;
   };
-  readonly rebrickableAlternatives: ReadonlyArray<string>;
-  readonly bricklinkAlternatives: ReadonlyArray<string>;
+  readonly rebrickableAlternatives?: ReadonlyArray<string>;
+  readonly bricklinkAlternatives?: ReadonlyArray<string>;
 }
 
 export interface CrosswalkColor {
   readonly name: string;
   readonly rebrickable: number | null;
   readonly bricklink: number | null;
-  readonly rebrickableAlternatives: ReadonlyArray<number>;
-  readonly bricklinkAlternatives: ReadonlyArray<number>;
+  readonly rebrickableAlternatives?: ReadonlyArray<number>;
+  readonly bricklinkAlternatives?: ReadonlyArray<number>;
 }
 
 export interface CrosswalkSourcePin {
@@ -151,6 +151,10 @@ class PartResolver {
       bricklinkCandidates.find((candidate) => keywordBrickLink.includes(candidate)) ??
       bricklinkCandidates[0] ??
       null;
+    const rebrickableAlternatives = (found?.ids ?? []).filter((other) => other !== rebrickable);
+    const bricklinkAlternatives = sortedUnique(bricklinkCandidates).filter(
+      (other) => other !== bricklink,
+    );
     return {
       rebrickable,
       bricklink,
@@ -159,10 +163,8 @@ class PartResolver {
         bricklink:
           bricklink === null ? null : apiBrickLink.length > 0 ? "rebrickable-api" : "ldraw-keyword",
       },
-      rebrickableAlternatives: (found?.ids ?? []).filter((candidate) => candidate !== rebrickable),
-      bricklinkAlternatives: sortedUnique(bricklinkCandidates).filter(
-        (candidate) => candidate !== bricklink,
-      ),
+      ...(rebrickableAlternatives.length > 0 ? { rebrickableAlternatives } : {}),
+      ...(bricklinkAlternatives.length > 0 ? { bricklinkAlternatives } : {}),
     };
   }
 }
@@ -187,8 +189,8 @@ function deriveColors(inputs: CrosswalkInputs): Record<string, CrosswalkColor> {
       name,
       rebrickable: only?.id ?? null,
       bricklink: bricklink.length === 1 ? (bricklink[0] ?? null) : null,
-      rebrickableAlternatives: matches.length > 1 ? matches.map((m) => m.id) : [],
-      bricklinkAlternatives: bricklink.length > 1 ? bricklink : [],
+      ...(matches.length > 1 ? { rebrickableAlternatives: matches.map((m) => m.id) } : {}),
+      ...(bricklink.length > 1 ? { bricklinkAlternatives: bricklink } : {}),
     };
   }
   return colors;
@@ -273,11 +275,9 @@ export function deriveCrosswalk(
   sources: Readonly<Record<string, CrosswalkSourcePin>>,
 ): CrosswalkFile {
   const resolver = new PartResolver(inputs);
+  const ldrawIds = [...inputs.ldrawParts.keys(), ...inputs.apiParts.flatMap((part) => part.l)];
   const parts = Object.fromEntries(
-    sortedUnique(inputs.ldrawParts.keys()).map((id) => [
-      LDRAW_NAMESPACE + id,
-      resolver.resolve(id),
-    ]),
+    sortedUnique(ldrawIds).map((id) => [LDRAW_NAMESPACE + id, resolver.resolve(id)]),
   );
   const colors = deriveColors(inputs);
   const reverse = reverseBrickLinkParts(inputs);
