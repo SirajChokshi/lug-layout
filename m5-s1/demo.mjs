@@ -1,5 +1,7 @@
-import { chromium } from "playwright-core";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+
+const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
