@@ -119,6 +119,21 @@ export interface CompiledPartGlb {
   readonly glb: Uint8Array;
 }
 
+export interface CatalogPartIds {
+  readonly rebrickable: string | null;
+  readonly bricklink: string | null;
+}
+
+export interface CatalogColorIds {
+  readonly rebrickable: number | null;
+  readonly bricklink: number | null;
+}
+
+export interface CatalogCrosswalk {
+  readonly parts: ReadonlyMap<string, CatalogPartIds>;
+  readonly colors: ReadonlyMap<number, CatalogColorIds>;
+}
+
 export interface IPartBundleLoader {
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
@@ -128,6 +143,7 @@ export interface IPartBundleLoader {
     partIds: ReadonlyArray<string>,
     compiled: ReadonlyArray<CompiledPartGlb>,
   ): Promise<PartBundle>;
+  loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
 }
 
 export interface IAssetFetcher {

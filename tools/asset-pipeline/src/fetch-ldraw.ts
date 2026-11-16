@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { modelStructure, parseLdraw, subfileReferences } from "./ldraw/parse.ts";
-import type { Palette, PaletteModel } from "./palette.ts";
+import type { CatalogSource, CatalogSourceUse, Palette, PaletteModel } from "./palette.ts";
 
 export interface AuditLock {
   readonly files: Readonly<Record<string, string>>;
@@ -13,10 +13,19 @@ export interface AuditLock {
   };
 }
 
+export interface CatalogSourceLock {
+  readonly use: CatalogSourceUse;
+  readonly source: Palette["source"];
+  readonly files: Readonly<Record<string, string>>;
+}
+
+export type CatalogLock = Readonly<Record<string, CatalogSourceLock>>;
+
 export interface InputLock {
   readonly source: Palette["source"];
   readonly files: Readonly<Record<string, string>>;
   readonly audit?: AuditLock;
+  readonly catalog?: CatalogLock;
 }
 
 type Source = Palette["source"];
@@ -161,6 +170,42 @@ export async function fetchAuditInputs(
     absentParts: absentParts.toSorted(),
     connectivity: { source: palette.connectivitySource, files: sortedRecord(connectivity) },
   };
+}
+
+export async function fetchCatalogSources(
+  sources: ReadonlyArray<CatalogSource>,
+  catalogDirectory: string,
+): Promise<CatalogLock> {
+  const lock: Record<string, CatalogSourceLock> = {};
+  for (const { name, use, source, files } of sources) {
+    const pinned: Record<string, string> = {};
+    for (const path of files) {
+      const bytes = await download(source, path);
+      if (!bytes) throw new Error(`catalog source ${name}: ${path} is missing from ${source.repo}`);
+      await storeInto(catalogSourceDirectory(catalogDirectory, name), pinned, path, bytes);
+    }
+    lock[name] = { use, source, files: sortedRecord(pinned) };
+  }
+  return lock;
+}
+
+export function catalogSourceDirectory(catalogDirectory: string, name: string): string {
+  return join(catalogDirectory, name);
+}
+
+export async function verifyCatalogSources(
+  catalog: CatalogLock,
+  catalogDirectory: string,
+  use: CatalogSourceUse,
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const [name, entry] of Object.entries(catalog)) {
+    if (entry.use !== use) continue;
+    problems.push(
+      ...(await hashProblems(entry.files, catalogSourceDirectory(catalogDirectory, name))),
+    );
+  }
+  return problems;
 }
 
 async function hashProblems(

@@ -3,6 +3,9 @@ import type {
   BundleCredit,
   BundleModelEntry,
   BundleSource,
+  CatalogColorIds,
+  CatalogCrosswalk,
+  CatalogPartIds,
   ModelSection,
   PartRole,
   TrackEnd,
@@ -39,6 +42,12 @@ export interface BundleManifest {
   readonly colors: ReadonlyArray<BundleColor>;
   readonly credits: ReadonlyArray<BundleCredit>;
   readonly models: ReadonlyArray<BundleModelEntry>;
+  readonly crosswalk: { readonly file: string };
+}
+
+export interface CrosswalkFile {
+  readonly parts: Readonly<Record<string, CatalogPartIds>>;
+  readonly colors: Readonly<Record<string, CatalogColorIds>>;
 }
 
 export interface ModelFile {
@@ -121,13 +130,66 @@ export function parseManifest(value: unknown): BundleManifest {
       value["compiler"] === null ||
       value["compiler"] === undefined ||
       isCompiler(value["compiler"])
-    )
+    ) ||
+    !isRecord(value["crosswalk"]) ||
+    typeof value["crosswalk"]["file"] !== "string"
   ) {
     throw new Error("bundle manifest does not match the M1 bundle format");
   }
   return {
     ...(value as unknown as BundleManifest),
     compiler: isCompiler(value["compiler"]) ? value["compiler"] : null,
+  };
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNullableInteger(value: unknown): value is number | null {
+  return value === null || Number.isInteger(value);
+}
+
+function isCatalogPartIds(value: unknown): value is CatalogPartIds {
+  return (
+    isRecord(value) &&
+    isNullableString(value["rebrickable"]) &&
+    isNullableString(value["bricklink"])
+  );
+}
+
+function isCatalogColorIds(value: unknown): value is CatalogColorIds {
+  return (
+    isRecord(value) &&
+    isNullableInteger(value["rebrickable"]) &&
+    isNullableInteger(value["bricklink"])
+  );
+}
+
+export function parseCrosswalk(value: unknown, label: string): CatalogCrosswalk {
+  if (
+    !isRecord(value) ||
+    !isRecord(value["parts"]) ||
+    !isRecord(value["colors"]) ||
+    !Object.values(value["parts"]).every(isCatalogPartIds) ||
+    !Object.values(value["colors"]).every(isCatalogColorIds)
+  ) {
+    throw new Error(`${label}: crosswalk does not match the bundle format`);
+  }
+  const file = value as unknown as CrosswalkFile;
+  return {
+    parts: new Map(
+      Object.entries(file.parts).map(([id, ids]) => [
+        id,
+        { rebrickable: ids.rebrickable, bricklink: ids.bricklink },
+      ]),
+    ),
+    colors: new Map(
+      Object.entries(file.colors).map(([code, ids]) => [
+        Number(code),
+        { rebrickable: ids.rebrickable, bricklink: ids.bricklink },
+      ]),
+    ),
   };
 }
 

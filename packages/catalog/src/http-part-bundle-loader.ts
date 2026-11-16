@@ -1,6 +1,7 @@
 import { inject, injectable } from "inversify";
 import { parseGlb, readInheritColorMesh, readPartMesh } from "./glb.ts";
 import {
+  parseCrosswalk,
   parseManifest,
   parseModelFile,
   parsePartExtras,
@@ -11,6 +12,7 @@ import type {
   BundleCredit,
   BundleLod,
   CompiledPartGlb,
+  CatalogCrosswalk,
   IAssetFetcher,
   ImportContext,
   IPartBundleLoader,
@@ -172,6 +174,14 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
     const manifest = await this.manifest(lod);
     return this.bundle(lod, manifest, manifest.parts.filter(include));
+  }
+
+  async loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {
+    const { crosswalk } = await this.manifest(lod);
+    return parseCrosswalk(
+      JSON.parse(await this.fetcher.text(`${lod}/${crosswalk.file}`)),
+      crosswalk.file,
+    );
   }
 
   async loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {

@@ -15,9 +15,19 @@ export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-
 export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
 export type { ImportReport, ImportResult, PartResolution, PartResolutionKind } from "@brr/import";
 export {
+  BOM_SERVICE,
   CITY_SCENE,
   IMPORT_SCENE,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
 } from "./tokens.ts";
+export type {
+  BillOfMaterials,
+  BomFiles,
+  BomInput,
+  BomScope,
+  IBomService,
+  IBomSource,
+} from "./bom/bom-service.ts";
+export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";

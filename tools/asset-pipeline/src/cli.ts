@@ -3,8 +3,12 @@ import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { deriveCrosswalk } from "./catalog/crosswalk.ts";
+import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
 import {
+  catalogSourceDirectory,
   fetchAuditInputs,
+  fetchCatalogSources,
   fetchClosure,
   modelPath,
   omrFiles,
@@ -12,14 +16,17 @@ import {
   renderModelAttribution,
   restoreFiles,
   verifyAuditInputs,
+  verifyCatalogSources,
   verifyClosure,
   verifyModels,
+  type CatalogLock,
   type InputLock,
   type ModelRoots,
 } from "./fetch-ldraw.ts";
+import type { CatalogSourceUse } from "./palette.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
 import { readPalette, type Palette } from "./palette.ts";
-import { publishBundle, type BundleInputs } from "./publish.ts";
+import { attachCrosswalk, publishBundle, type BundleInputs } from "./publish.ts";
 import { geometryReports, licenseAuditReport, readSources, writeReports } from "./verify/facts.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,6 +38,7 @@ const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
 const omrRoot = join(repoRoot, ".cache", "omr");
+const catalogRoot = join(repoRoot, ".cache", "catalog");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
 
@@ -59,7 +67,8 @@ async function fetchCommand(): Promise<void> {
   );
   const closure = await fetchClosure(palette, ldrawRoot, modelSources);
   const audit = await fetchAuditInputs(palette, auditRoot, connectivityRoot);
-  const lock: InputLock = { ...closure, audit };
+  const catalog = await fetchCatalogSources(palette.catalogSources, catalogRoot);
+  const lock: InputLock = { ...closure, audit, catalog };
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
@@ -67,6 +76,27 @@ async function fetchCommand(): Promise<void> {
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
   process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
+}
+
+function catalogLock(lock: InputLock): CatalogLock {
+  if (lock.catalog === undefined) {
+    throw new Error("ldraw.lock.json has no catalog sources; run fetch-ldraw");
+  }
+  return lock.catalog;
+}
+
+async function restoreCatalog(lock: InputLock, use: CatalogSourceUse): Promise<void> {
+  for (const [name, entry] of Object.entries(catalogLock(lock))) {
+    if (entry.use !== use) continue;
+    const { present, downloaded, pruned } = await restoreFiles(
+      entry.source,
+      entry.files,
+      catalogSourceDirectory(catalogRoot, name),
+    );
+    process.stdout.write(
+      `catalog ${name}: ${present} present, ${downloaded} downloaded, ${pruned} pruned\n`,
+    );
+  }
 }
 
 async function restoreCommand(): Promise<void> {
@@ -97,13 +127,16 @@ async function restoreCommand(): Promise<void> {
     );
   }
   await restoreModels(await readPalette(palettePath));
+  await restoreCatalog(lock, "crosswalk");
 }
 
 async function verifyCommand(): Promise<void> {
   const palette = await readPalette(palettePath);
+  const lock = await readLock();
   const problems = [
-    ...(await verifyClosure(await readLock(), ldrawRoot)),
+    ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyModels(palette, modelRoots)),
+    ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
   ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
@@ -179,6 +212,17 @@ async function bundleCommand(): Promise<void> {
     lockSha256: await fileSha256(lockPath),
     paletteSha256: await fileSha256(palettePath),
   };
+  const lock = await readLock();
+  const catalog = catalogLock(lock);
+  const crosswalk = deriveCrosswalk(
+    await readCrosswalkInputs(
+      catalog,
+      catalogRoot,
+      { directory: ldrawRoot, files: lock.files },
+      lock.audit === undefined ? undefined : { directory: auditRoot, files: lock.audit.files },
+    ),
+    crosswalkSources(catalog),
+  );
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
   runCargo([
     "build",
@@ -216,6 +260,7 @@ async function bundleCommand(): Promise<void> {
       "--compiler",
       compilerWasm,
     ]);
+    await attachCrosswalk(out, crosswalk);
     const { bundleVersion, files } = await publishBundle(out, inputs);
     process.stdout.write(
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,

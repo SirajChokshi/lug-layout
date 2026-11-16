@@ -2,11 +2,13 @@ import { BUNDLE_BASE_URL, catalogModule } from "@brr/catalog";
 import { renderModule } from "@brr/render";
 import { ContainerModule } from "inversify";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
+import { BomService } from "./bom/bom-service.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ImportScene } from "./scene/import-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
 import { PartDisplayScene } from "./scene/part-display-scene.ts";
 import {
+  BOM_SERVICE,
   CITY_SCENE,
   IMPORT_SCENE,
   IMPORT_WORKER_FACTORY,
@@ -21,6 +23,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(CITY_SCENE).to(CityScene).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
+  bind(BOM_SERVICE).to(BomService).inSingletonScope();
 });
 
 export interface MainThreadConfig {
