@@ -60,6 +60,8 @@ export interface RebaseEvent {
   readonly frame: number;
   readonly chunkX: number;
   readonly chunkZ: number;
+  readonly chunks: number;
+  readonly ms: number;
 }
 
 export interface BufferMemory {
@@ -67,10 +69,26 @@ export interface BufferMemory {
   readonly otherBytes: number;
 }
 
+export interface WorldBox {
+  readonly minX: number;
+  readonly minY: number;
+  readonly minZ: number;
+  readonly maxX: number;
+  readonly maxY: number;
+  readonly maxZ: number;
+}
+
+export const RAY_FLOATS = 6;
+
 export interface ISceneBackend {
   init(config: SceneBackendConfig): Promise<BackendInfo>;
   setPalette(palette: PartPalette): void;
   setChunk(key: number, chunk: ChunkInstances): void;
+  deleteChunk(key: number): void;
+  setGhost(model: ChunkInstances | null): void;
+  placeGhost(x: number, yLdu: number, z: number, rot: number): void;
+  setSelectionBox(box: WorldBox | null): void;
+  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
   setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void;
   resize(width: number, height: number): void;
   renderFrame(out: FrameStats): void;

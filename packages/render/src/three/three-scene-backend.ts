@@ -1,15 +1,20 @@
 import { injectable } from "inversify";
 import {
+  BoxGeometry,
   Color,
   DirectionalLight,
+  EdgesGeometry,
   Group,
   HemisphereLight,
   InstancedBufferAttribute,
   InstancedMesh,
+  LineBasicNodeMaterial,
+  LineSegments,
   MeshStandardNodeMaterial,
   PerspectiveCamera,
   Scene,
   SRGBColorSpace,
+  Vector3,
   WebGPURenderer,
   type BufferGeometry,
 } from "three/webgpu";
@@ -26,6 +31,7 @@ import {
   type RebaseEvent,
   type SceneBackendConfig,
   type StudInstances,
+  type WorldBox,
 } from "../scene-backend.ts";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
@@ -48,6 +54,9 @@ const TIER_MID = 1;
 const TIER_FAR = 2;
 const TIER_UNSET = 255;
 const REBASE_DISTANCE_CHUNKS = 8;
+const GHOST_OPACITY = 0.55;
+const SELECTION_COLOR = 0xff8c00;
+const QUARTER_TURN_RADIANS = Math.PI / 2;
 
 function writeMatrix4(
   source: Float32Array,
@@ -118,6 +127,34 @@ function assertSameParts(detailed: GeometrySet, other: GeometrySet): void {
   }
 }
 
+interface InstanceMaterials {
+  readonly body: MeshStandardNodeMaterial;
+  readonly fixed: MeshStandardNodeMaterial;
+}
+
+function plasticMaterials(ghost: boolean): InstanceMaterials {
+  const translucent = ghost ? { transparent: true, opacity: GHOST_OPACITY, depthWrite: false } : {};
+  return {
+    body: new MeshStandardNodeMaterial({
+      roughness: PLASTIC_ROUGHNESS,
+      metalness: 0,
+      ...translucent,
+    }),
+    fixed: new MeshStandardNodeMaterial({
+      roughness: PLASTIC_ROUGHNESS,
+      metalness: 0,
+      vertexColors: true,
+      ...translucent,
+    }),
+  };
+}
+
+function disposeInstancedChildren(layer: Group): void {
+  for (const child of layer.children) {
+    if (child instanceof InstancedMesh) child.dispose();
+  }
+}
+
 interface InstanceAttributes {
   readonly matrices: InstancedBufferAttribute;
   readonly colors: InstancedBufferAttribute;
@@ -167,15 +204,18 @@ export class ThreeSceneBackend implements ISceneBackend {
     CAMERA_NEAR_LDU,
     CAMERA_FAR_LDU,
   );
-  private readonly material = new MeshStandardNodeMaterial({
-    roughness: PLASTIC_ROUGHNESS,
-    metalness: 0,
-  });
-  private readonly fixedColorMaterial = new MeshStandardNodeMaterial({
-    roughness: PLASTIC_ROUGHNESS,
-    metalness: 0,
-    vertexColors: true,
-  });
+  private readonly solid = plasticMaterials(false);
+  private readonly ghostMaterials = plasticMaterials(true);
+  private ghost: Group | undefined;
+  private ghostX = 0;
+  private ghostZ = 0;
+  private readonly selection = new LineSegments(
+    new EdgesGeometry(new BoxGeometry(1, 1, 1)),
+    new LineBasicNodeMaterial({ color: SELECTION_COLOR, depthTest: false }),
+  );
+  private selectionCentreX = 0;
+  private selectionCentreZ = 0;
+  private readonly rayPoint = new Vector3();
   private detailedLevel: LevelGeometries = EMPTY_LEVEL;
   private farLevel: LevelGeometries = EMPTY_LEVEL;
   private linearColors = new Float32Array(0);
@@ -213,6 +253,10 @@ export class ThreeSceneBackend implements ISceneBackend {
     const sun = new DirectionalLight(0xffffff, SUN_INTENSITY);
     sun.position.set(0.45, 1, 0.3);
     this.scene.add(sun);
+    this.selection.visible = false;
+    this.selection.matrixAutoUpdate = false;
+    this.selection.renderOrder = 1;
+    this.scene.add(this.selection);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -281,6 +325,7 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   setPalette(palette: PartPalette): void {
     this.clearChunks();
+    this.setGhost(null);
     disposeLevel(this.detailedLevel);
     disposeLevel(this.farLevel);
     if (palette.far) assertSameParts(palette.detailed, palette.far);
@@ -326,17 +371,75 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.scene.add(record.group);
   }
 
+  deleteChunk(key: number): void {
+    this.removeChunk(key);
+  }
+
   private removeChunk(key: number): void {
     const existing = this.chunks.get(key);
     if (!existing) return;
     this.scene.remove(existing.group);
-    for (const layer of [existing.detailed, existing.shellBodies, existing.coarseStuds]) {
-      for (const child of layer.children) {
-        if (child instanceof InstancedMesh) child.dispose();
-      }
-    }
+    disposeInstancedChildren(existing.detailed);
+    disposeInstancedChildren(existing.shellBodies);
+    disposeInstancedChildren(existing.coarseStuds);
     this.chunks.delete(key);
     this.chunkList = this.chunkList.filter((record) => record !== existing);
+  }
+
+  setGhost(model: ChunkInstances | null): void {
+    if (this.ghost) {
+      this.scene.remove(this.ghost);
+      disposeInstancedChildren(this.ghost);
+      this.ghost = undefined;
+    }
+    if (!model) return;
+    const ghost = new Group();
+    ghost.matrixAutoUpdate = false;
+    ghost.visible = false;
+    this.addInstances(ghost, undefined, undefined, model, this.ghostMaterials);
+    this.ghost = ghost;
+    this.scene.add(ghost);
+  }
+
+  placeGhost(x: number, yLdu: number, z: number, rot: number): void {
+    const ghost = this.ghost;
+    if (!ghost) return;
+    this.ghostX = x;
+    this.ghostZ = z;
+    ghost.position.set(x - this.renderOriginX, yLdu, z - this.renderOriginZ);
+    ghost.rotation.set(0, rot * QUARTER_TURN_RADIANS, 0);
+    ghost.updateMatrix();
+    ghost.updateMatrixWorld(true);
+    ghost.visible = true;
+  }
+
+  setSelectionBox(box: WorldBox | null): void {
+    if (!box) {
+      this.selection.visible = false;
+      return;
+    }
+    this.selectionCentreX = (box.minX + box.maxX) / 2;
+    this.selectionCentreZ = (box.minZ + box.maxZ) / 2;
+    this.selection.position.set(
+      this.selectionCentreX - this.renderOriginX,
+      (box.minY + box.maxY) / 2,
+      this.selectionCentreZ - this.renderOriginZ,
+    );
+    this.selection.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
+    this.selection.updateMatrix();
+    this.selection.updateMatrixWorld(true);
+    this.selection.visible = true;
+  }
+
+  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
+    const camera = this.camera;
+    this.rayPoint.set(ndcX, ndcY, 0.5).unproject(camera).sub(camera.position).normalize();
+    out[0] = camera.position.x + this.renderOriginX;
+    out[1] = camera.position.y;
+    out[2] = camera.position.z + this.renderOriginZ;
+    out[3] = this.rayPoint.x;
+    out[4] = this.rayPoint.y;
+    out[5] = this.rayPoint.z;
   }
 
   private clearChunks(): void {
@@ -352,23 +455,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     const shellBodies = new Group();
     const coarseStuds = new Group();
     group.add(detailed, shellBodies, coarseStuds);
-    const partCount = this.detailedLevel.parts.length;
-    const counts = countBy(chunk.partIndex, chunk.count, partCount);
-    for (let p = 0; p < partCount; p++) {
-      const count = counts[p] ?? 0;
-      if (count === 0) continue;
-      const attributes = this.instanceAttributes(
-        chunk.partIndex,
-        chunk.count,
-        p,
-        count,
-        chunk.matrices,
-        chunk.colorIndex,
-      );
-      this.addPartMeshes(detailed, this.detailedLevel.parts[p], count, attributes);
-      this.addPartMeshes(shellBodies, this.farLevel.parts[p], count, attributes);
-    }
-    this.addStudMeshes(chunk.studs, detailed, coarseStuds);
+    this.addInstances(detailed, shellBodies, coarseStuds, chunk, this.solid);
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let minZ = Number.POSITIVE_INFINITY;
@@ -396,6 +483,34 @@ export class ThreeSceneBackend implements ISceneBackend {
     );
     record.applyTier(TIER_NEAR);
     return record;
+  }
+
+  private addInstances(
+    detailed: Group,
+    shellBodies: Group | undefined,
+    coarseStuds: Group | undefined,
+    chunk: ChunkInstances,
+    materials: InstanceMaterials,
+  ): void {
+    const partCount = this.detailedLevel.parts.length;
+    const counts = countBy(chunk.partIndex, chunk.count, partCount);
+    for (let p = 0; p < partCount; p++) {
+      const count = counts[p] ?? 0;
+      if (count === 0) continue;
+      const attributes = this.instanceAttributes(
+        chunk.partIndex,
+        chunk.count,
+        p,
+        count,
+        chunk.matrices,
+        chunk.colorIndex,
+      );
+      this.addPartMeshes(detailed, this.detailedLevel.parts[p], count, attributes, materials);
+      if (shellBodies) {
+        this.addPartMeshes(shellBodies, this.farLevel.parts[p], count, attributes, materials);
+      }
+    }
+    this.addStudMeshes(chunk.studs, detailed, coarseStuds, materials.body);
   }
 
   private instanceAttributes(
@@ -429,12 +544,13 @@ export class ThreeSceneBackend implements ISceneBackend {
     geometries: PartGeometries | undefined,
     count: number,
     attributes: InstanceAttributes,
+    materials: InstanceMaterials,
   ): void {
     if (geometries?.body) {
       layer.add(
         this.instancedMesh(
           geometries.body,
-          this.material,
+          materials.body,
           count,
           attributes.matrices,
           attributes.colors,
@@ -445,7 +561,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       layer.add(
         this.instancedMesh(
           geometries.fixed,
-          this.fixedColorMaterial,
+          materials.fixed,
           count,
           attributes.matrices,
           undefined,
@@ -454,7 +570,12 @@ export class ThreeSceneBackend implements ISceneBackend {
     }
   }
 
-  private addStudMeshes(studs: StudInstances, detailed: Group, coarse: Group): void {
+  private addStudMeshes(
+    studs: StudInstances,
+    detailed: Group,
+    coarse: Group | undefined,
+    material: MeshStandardNodeMaterial,
+  ): void {
     const primitiveCount = this.detailedLevel.studs.length;
     const counts = countBy(studs.primitiveIndex, studs.count, primitiveCount);
     for (let k = 0; k < primitiveCount; k++) {
@@ -472,18 +593,18 @@ export class ThreeSceneBackend implements ISceneBackend {
       detailed.add(
         this.instancedMesh(
           detailedGeometry,
-          this.material,
+          material,
           count,
           attributes.matrices,
           attributes.colors,
         ),
       );
       const coarseGeometry = this.farLevel.studs[k];
-      if (coarseGeometry) {
+      if (coarse && coarseGeometry) {
         coarse.add(
           this.instancedMesh(
             coarseGeometry,
-            this.material,
+            material,
             count,
             attributes.matrices,
             attributes.colors,
@@ -527,6 +648,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       Math.abs(chunkX - originChunkX) <= REBASE_DISTANCE_CHUNKS &&
       Math.abs(chunkZ - originChunkZ) <= REBASE_DISTANCE_CHUNKS;
     if (this.rebases.length > 0 && nearOrigin) return;
+    const started = performance.now();
     this.renderOriginX = chunkX * CHUNK_LDU;
     this.renderOriginZ = chunkZ * CHUNK_LDU;
     for (let i = 0; i < this.chunkList.length; i++) {
@@ -540,7 +662,30 @@ export class ThreeSceneBackend implements ISceneBackend {
       record.group.updateMatrix();
       record.group.updateMatrixWorld(true);
     }
-    this.rebases.push({ frame: this.frame, chunkX, chunkZ });
+    const ghost = this.ghost;
+    if (ghost) {
+      ghost.position.set(
+        this.ghostX - this.renderOriginX,
+        ghost.position.y,
+        this.ghostZ - this.renderOriginZ,
+      );
+      ghost.updateMatrix();
+      ghost.updateMatrixWorld(true);
+    }
+    this.selection.position.set(
+      this.selectionCentreX - this.renderOriginX,
+      this.selection.position.y,
+      this.selectionCentreZ - this.renderOriginZ,
+    );
+    this.selection.updateMatrix();
+    this.selection.updateMatrixWorld(true);
+    this.rebases.push({
+      frame: this.frame,
+      chunkX,
+      chunkZ,
+      chunks: this.chunkList.length,
+      ms: performance.now() - started,
+    });
   }
 
   rebaseLog(): ReadonlyArray<RebaseEvent> {

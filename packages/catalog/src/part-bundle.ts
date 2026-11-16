@@ -62,14 +62,25 @@ export interface ModelSection {
   readonly license: string | null;
 }
 
+export type ModelOrigin = "omr" | "generated";
+
 export interface BundleModelEntry {
   readonly name: string;
   readonly file: string;
+  readonly origin: ModelOrigin;
   readonly source: string;
+}
+
+export interface ModelLattice {
+  readonly phaseX: number;
+  readonly phaseZ: number;
+  readonly aabbMin: Vec3Tuple;
+  readonly aabbMax: Vec3Tuple;
 }
 
 export interface PartModel {
   readonly sections: ReadonlyArray<ModelSection>;
+  readonly lattice: ModelLattice;
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint16Array;
