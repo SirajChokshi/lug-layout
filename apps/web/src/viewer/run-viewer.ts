@@ -81,6 +81,7 @@ export async function runViewer(
     midChunks: 0,
     farChunks: 0,
     nearestStudPitchPx: 0,
+    superChunks: 0,
     renderOriginChunkX: 0,
     renderOriginChunkZ: 0,
     rebaseCount: 0,

@@ -139,6 +139,8 @@ function root(): ReactNode {
           pixelRatio: window.devicePixelRatio,
           look: params.look,
           tier: params.tier,
+          superChunkLod: params.superChunkLod,
+          measuredFrames: params.measuredFrames,
         }}
         disclaimer={TRADEMARK_DISCLAIMER}
         showState={params.showEditState}

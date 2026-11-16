@@ -143,6 +143,12 @@ class HeadlessBackend implements ISceneBackend {
   setPalette(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setSuperChunk(): void {}
+  setSuperChunkVisible(): void {}
+  deleteSuperChunk(): void {}
+  studPitchPx(): number {
+    return 0;
+  }
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
@@ -200,7 +206,14 @@ async function startEditor(
     dataset: {},
   } as unknown as HTMLCanvasElement;
 
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  await editor.start(canvas, {
+    api: "webgl2",
+    pixelRatio: 1,
+    look: NO_LOOK,
+    tier: null,
+    superChunkLod: true,
+    measuredFrames: 60,
+  });
   return { editor, backend, manifest: await realLoader.loadManifest("standard") };
 }
 
@@ -413,7 +426,14 @@ async function editorWithFailingSaves() {
     clientHeight: 480,
     dataset: {},
   } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  await editor.start(canvas, {
+    api: "webgl2",
+    pixelRatio: 1,
+    look: NO_LOOK,
+    tier: null,
+    superChunkLod: true,
+    measuredFrames: 60,
+  });
   expect(editor.snapshot().status).toBe("ready");
 
   editor.chooseItem(BASEPLATE);

@@ -35,6 +35,7 @@ export interface IEditorCamera {
   resize(widthPx: number, heightPx: number): void;
   setSafeArea(leftPx: number, topPx: number, rightPx: number, bottomPx: number): void;
   frame(nowMs: number): void;
+  eye(out: Float64Array): void;
   orbit(dxPx: number, dyPx: number): void;
   pan(fromNdcX: number, fromNdcY: number, toNdcX: number, toNdcY: number): void;
   panBy(dxPx: number, dyPx: number): void;
@@ -144,6 +145,10 @@ export class EditorCamera implements IEditorCamera {
   frame(nowMs: number): void {
     this.view.step(nowMs);
     this.view.apply(this.backend);
+  }
+
+  eye(out: Float64Array): void {
+    this.view.eye(out);
   }
 
   orbit(dxPx: number, dyPx: number): void {

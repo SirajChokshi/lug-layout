@@ -20,6 +20,7 @@ export type {
   StudInstances,
   TrackEndKind,
   TrackEndMarker,
+  SuperChunkMesh,
   WorldBox,
 } from "./scene-backend.ts";
 export {

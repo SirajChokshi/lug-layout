@@ -4,6 +4,7 @@ import {
   type IPartBundleLoader,
   type ModelBundle,
   type PartAsset,
+  type ModelVoxels,
   type PartBundle,
   type PartMesh,
   type FilterablePart,
@@ -236,6 +237,19 @@ export interface EditorStats {
   readonly midChunks: number;
   readonly farChunks: number;
   readonly nearestStudPitchPx: number;
+  readonly liveChunks: number;
+  readonly superChunks: number;
+  readonly residentSuperChunks: number;
+  readonly meshedSuperChunks: number;
+  readonly staleSuperChunks: number;
+  readonly superChunkTriangles: number;
+  readonly lastSuperChunkStaleMs: number;
+  readonly lastSuperChunkBuildCpuMs: number;
+  readonly maxSuperChunkStaleMs: number;
+  readonly superChunkBuilds: number;
+  readonly placedParts: number;
+  readonly jsHeapBytes: number | null;
+  readonly gpuBufferBytes: number;
 }
 
 export type SaveState = "saved" | "saving" | "failed" | "off";
@@ -267,6 +281,20 @@ export interface FrameMeasurement {
   readonly midChunks: number;
   readonly farChunks: number;
   readonly nearestStudPitchPx: number;
+  readonly maxFrameMs: number;
+  readonly frameMs: ReadonlyArray<number>;
+  readonly placements: number;
+  readonly placedParts: number;
+  readonly superChunkLod: boolean;
+  readonly settled: boolean;
+  readonly settleMs: number;
+  readonly liveChunks: number;
+  readonly superChunksDrawn: number;
+  readonly superChunks: number;
+  readonly residentSuperChunks: number;
+  readonly jsHeapBytes: number | null;
+  readonly gpuVertexIndexBytes: number;
+  readonly gpuOtherBytes: number;
 }
 
 export interface SkippedCatalogModel {
@@ -293,6 +321,7 @@ interface FarTier {
   readonly palette: MergedParts;
   readonly meshes: ReadonlyArray<PartMesh>;
   readonly meshIndex: ReadonlyMap<string, number>;
+  readonly modelVoxels: ReadonlyMap<string, ModelVoxels>;
 }
 
 export interface TrackBomLine {
@@ -432,6 +461,8 @@ export interface EditorOptions {
   readonly pixelRatio: number;
   readonly look: LookSettings;
   readonly tier: ChunkTier | null;
+  readonly superChunkLod: boolean;
+  readonly measuredFrames: number;
 }
 
 export interface IEditor {
@@ -491,7 +522,16 @@ const EDGE_KIND_NAMES: Readonly<Record<ModuleEdgeKind, string>> = {
 };
 const STATS_INTERVAL_MS = 500;
 const MEASURE_WARMUP_FRAMES = 5;
-const MEASURED_FRAMES = 60;
+const LOD_BUDGET_MS = 6;
+const SETTLE_BUDGET_MS = 50;
+const SETTLE_LIMIT_MS = 60_000;
+
+function chromeJsHeapBytes(): number | null {
+  const memory: unknown = Reflect.get(performance, "memory");
+  if (typeof memory !== "object" || memory === null) return null;
+  const used: unknown = Reflect.get(memory, "usedJSHeapSize");
+  return typeof used === "number" ? used : null;
+}
 const TIER_CYCLE: ReadonlyArray<ChunkTier | null> = [null, "near", "mid", "far"];
 
 const MARKER_WIDTH_LDU = 6;
@@ -730,6 +770,7 @@ export class Editor implements IEditor {
     midChunks: 0,
     farChunks: 0,
     nearestStudPitchPx: 0,
+    superChunks: 0,
     renderOriginChunkX: 0,
     renderOriginChunkZ: 0,
     rebaseCount: 0,
@@ -760,9 +801,14 @@ export class Editor implements IEditor {
   private moduleGhost: ModuleCandidate | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private framesSinceStats = 0;
+  private readonly eye = new Float64Array(3);
+  private superChunkLod = true;
+  private settleStartMs = -1;
+  private settleMs = 0;
+  private settled = false;
   private measureFrame = -1;
-  private readonly measuredFrameMs = new Float64Array(MEASURED_FRAMES);
-  private readonly measuredCpuMs = new Float64Array(MEASURED_FRAMES);
+  private measuredFrameMs = new Float64Array(0);
+  private measuredCpuMs = new Float64Array(0);
   private statsSince = 0;
 
   constructor(
@@ -796,6 +842,10 @@ export class Editor implements IEditor {
     try {
       const started = performance.now();
       this.canvas = canvas;
+      this.superChunkLod = options.superChunkLod;
+      this.placed.setSuperChunkLod(options.superChunkLod);
+      this.measuredFrameMs = new Float64Array(options.measuredFrames);
+      this.measuredCpuMs = new Float64Array(options.measuredFrames);
       const backend = await this.backend.init({
         canvas,
         api: options.api,
@@ -908,14 +958,16 @@ export class Editor implements IEditor {
       const palette = new MergedParts(bundle.parts);
       const meshes: PartMesh[] = [];
       const meshIndex = new Map<string, number>();
+      const modelVoxels = new Map<string, ModelVoxels>();
       for (const far of models) {
         palette.remap(far.model, far.bundle.parts);
         if (far.farMesh) {
           meshIndex.set(far.entry.name, meshes.length);
           meshes.push(far.farMesh.mesh);
+          modelVoxels.set(far.entry.name, far.farMesh.voxels);
         }
       }
-      return { bundle, palette, meshes, meshIndex };
+      return { bundle, palette, meshes, meshIndex, modelVoxels };
     } catch (error) {
       this.update({ farTierError: errorText(error) });
       return null;
@@ -933,6 +985,8 @@ export class Editor implements IEditor {
       .filter((part) => part.role === "ground")
       .toSorted((a, b) => footprintArea(b) - footprintArea(a));
     const roadParts = bundle.parts.filter((part) => part.role === "road");
+    const farVoxels = (id: string): ModelVoxels | null =>
+      far?.bundle.parts.find((part) => part.id === id)?.farVoxels ?? null;
     const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
       if (part.producedColors.length === 0) {
         throw new Error(`${part.id} has no produced colour in the bundle`);
@@ -940,6 +994,7 @@ export class Editor implements IEditor {
       return part.producedColors.map((code) =>
         partPlaceable(
           part,
+          farVoxels(part.id),
           palette.indexOf(part.id),
           code,
           colorOf(bundle.colors, code).name,
@@ -960,6 +1015,7 @@ export class Editor implements IEditor {
           palette.parts,
           colors,
           far?.meshIndex.get(entry.name) ?? null,
+          far?.modelVoxels.get(entry.name) ?? null,
         ),
       );
     }
@@ -976,7 +1032,15 @@ export class Editor implements IEditor {
       const startMs = performance.now();
       this.camera.frame(startMs);
       this.watchView();
+      this.camera.eye(this.eye);
+      this.placed.update(
+        this.eye[0] ?? 0,
+        this.eye[1] ?? 0,
+        this.eye[2] ?? 0,
+        startMs + LOD_BUDGET_MS,
+      );
       this.backend.renderFrame(this.frameStats);
+      if (this.settleStartMs >= 0) this.settleStep();
       const pending = this.pending;
       if (pending) {
         this.pending = null;
@@ -1016,6 +1080,8 @@ export class Editor implements IEditor {
     const now = performance.now();
     const elapsed = now - this.statsSince;
     if (elapsed < STATS_INTERVAL_MS) return;
+    const lod = this.placed.lodStats;
+    const buffers = this.backend.bufferMemory();
     this.update({
       stats: {
         fps: (this.framesSinceStats * 1000) / elapsed,
@@ -1028,6 +1094,19 @@ export class Editor implements IEditor {
         midChunks: this.frameStats.midChunks,
         farChunks: this.frameStats.farChunks,
         nearestStudPitchPx: this.frameStats.nearestStudPitchPx,
+        liveChunks: this.placed.liveChunkCount,
+        superChunks: lod.superChunks,
+        residentSuperChunks: lod.residentSuperChunks,
+        meshedSuperChunks: lod.meshedSuperChunks,
+        staleSuperChunks: lod.staleSuperChunks,
+        superChunkTriangles: lod.meshTriangles,
+        lastSuperChunkStaleMs: lod.lastStaleMs,
+        lastSuperChunkBuildCpuMs: lod.lastBuildCpuMs,
+        maxSuperChunkStaleMs: lod.maxStaleMs,
+        superChunkBuilds: lod.builds,
+        placedParts: this.placed.placedParts,
+        jsHeapBytes: chromeJsHeapBytes(),
+        gpuBufferBytes: buffers.vertexIndexBytes + buffers.otherBytes,
       },
     });
     this.framesSinceStats = 0;
@@ -1041,9 +1120,19 @@ export class Editor implements IEditor {
   }
 
   measureFrames(): void {
-    if (this.measureFrame >= 0 || this.state.status !== "ready") return;
-    this.measureFrame = 0;
+    if (this.state.measuring || this.state.status !== "ready") return;
+    this.settleStartMs = performance.now();
     this.update({ measuring: true });
+  }
+
+  private settleStep(): void {
+    this.placed.buildMeshes(performance.now() + SETTLE_BUDGET_MS);
+    const elapsed = performance.now() - this.settleStartMs;
+    this.settled = this.placed.settled;
+    if (!this.settled && elapsed < SETTLE_LIMIT_MS) return;
+    this.settleMs = elapsed;
+    this.settleStartMs = -1;
+    this.measureFrame = 0;
   }
 
   private recordMeasuredFrame(startMs: number, submittedMs: number, presentedMs: number): void {
@@ -1052,15 +1141,31 @@ export class Editor implements IEditor {
     if (index < 0) return;
     this.measuredFrameMs[index] = presentedMs - startMs;
     this.measuredCpuMs[index] = submittedMs - startMs;
-    if (index < MEASURED_FRAMES - 1) return;
+    if (index < this.measuredFrameMs.length - 1) return;
     this.measureFrame = -1;
     const frames = this.measuredFrameMs.toSorted();
     const cpu = this.measuredCpuMs.toSorted();
     const stats = this.frameStats;
+    const lod = this.placed.lodStats;
+    const buffers = this.backend.bufferMemory();
     this.update({
       measuring: false,
       measurement: {
-        frames: MEASURED_FRAMES,
+        frames: frames.length,
+        maxFrameMs: frames[frames.length - 1] ?? Number.NaN,
+        frameMs: Array.from(this.measuredFrameMs),
+        placements: this.world.size,
+        placedParts: this.placed.placedParts,
+        superChunkLod: this.superChunkLod,
+        settled: this.settled,
+        settleMs: this.settleMs,
+        liveChunks: this.placed.liveChunkCount,
+        superChunksDrawn: stats.superChunks,
+        superChunks: lod.superChunks,
+        residentSuperChunks: lod.residentSuperChunks,
+        jsHeapBytes: chromeJsHeapBytes(),
+        gpuVertexIndexBytes: buffers.vertexIndexBytes,
+        gpuOtherBytes: buffers.otherBytes,
         medianFrameMs: quantileOfSorted(frames, 0.5),
         p95FrameMs: quantileOfSorted(frames, P95),
         medianCpuSubmitMs: quantileOfSorted(cpu, 0.5),

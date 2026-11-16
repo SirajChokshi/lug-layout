@@ -19,6 +19,7 @@ export type MeasurePace = "frame" | "tight";
 export interface ViewerParams {
   readonly mode: AppMode;
   readonly showEditState: boolean;
+  readonly superChunkLod: boolean;
   readonly api: GraphicsApi;
   readonly lod: BundleLod;
   readonly model: string | null;
@@ -216,6 +217,7 @@ export function readViewerParams(search: string): ViewerParams {
   return {
     mode: appMode(params),
     showEditState: params.get("state") === "1",
+    superChunkLod: params.get("superchunks") !== "0",
     api: params.get("api") === "webgl2" ? "webgl2" : "webgpu",
     lod: params.get("lod") === "low" ? "low" : "standard",
     model: params.get("model"),
