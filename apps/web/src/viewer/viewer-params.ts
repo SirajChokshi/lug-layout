@@ -17,6 +17,7 @@ export interface ViewerParams {
   readonly brakingLduPerS2: number;
   readonly follow: boolean;
   readonly simBenchTicks: number;
+  readonly hud: boolean;
   readonly city: boolean;
   readonly parts: number;
   readonly seed: number;
@@ -102,6 +103,7 @@ export function readViewerParams(search: string): ViewerParams {
     brakingLduPerS2: positiveNumber(params.get("brake"), DEFAULT_BRAKING_LDU_PER_S2),
     follow: params.get("view") === "follow",
     simBenchTicks: positiveNumber(params.get("simBench"), 0),
+    hud: params.get("hud") !== "0",
     city: params.get("scene") === "city",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),

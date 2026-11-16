@@ -61,7 +61,7 @@ function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, stri
     const { lengthLdu, frontBogieLdu, rearBogieLdu } = status.vehicle;
     rows.push([
       "Vehicle (LDU)",
-      `length ${lengthLdu.toFixed(1)}, bogies at ${frontBogieLdu.toFixed(1)} and ${rearBogieLdu.toFixed(1)} from ${status.wheelsets} wheelsets`,
+      `length ${lengthLdu.toFixed(1)}, bogies at ${frontBogieLdu.toFixed(1)} and ${rearBogieLdu.toFixed(1)} from ${status.wheelsets} wheelsets; ${status.vehicleInstances} parts touch the wheels, ${status.excludedInstances} stand apart and stay off the train`,
     ]);
   }
   rows.push([
@@ -235,7 +235,7 @@ export function App({ scene, params, placements, run }: AppProps) {
   return (
     <>
       <canvas ref={canvasRef} className="scene" />
-      <aside className="hud">
+      <aside className="hud" hidden={!params.hud}>
         <h1>Brick Railroad</h1>
         {error && <p className="error">{error}</p>}
         {report && !error && (

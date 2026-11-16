@@ -44,6 +44,8 @@ export interface RunStatus {
   readonly tickCost: SimTickCost;
   readonly vehicle: ModelVehicle["spec"] | null;
   readonly wheelsets: number;
+  readonly vehicleInstances: number;
+  readonly excludedInstances: number;
   readonly maxEndResidualLdu: number;
   readonly maxEndHeadingResidualRadians: number;
 }
@@ -136,17 +138,19 @@ export class RunScene implements IRunScene {
     });
     const model = modelBundle.model;
     const partOffset = trackBundle.parts.length;
-    const partIndex = new Uint16Array(model.instanceCount);
-    const colorIndex = new Uint16Array(model.instanceCount);
-    for (let i = 0; i < model.instanceCount; i++) {
-      partIndex[i] = (model.partIndex[i] ?? 0) + partOffset;
-      colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
+    const count = vehicle.instances.length;
+    const partIndex = new Uint16Array(count);
+    const colorIndex = new Uint16Array(count);
+    for (let slot = 0; slot < count; slot++) {
+      const i = vehicle.instances[slot] ?? 0;
+      partIndex[slot] = (model.partIndex[i] ?? 0) + partOffset;
+      colorIndex[slot] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
     }
     const body = withStuds(
       {
         originX: 0,
         originZ: 0,
-        count: model.instanceCount,
+        count,
         partIndex,
         colorIndex,
         matrices: vehicle.matrices,
@@ -190,7 +194,7 @@ export class RunScene implements IRunScene {
     this.sim.run(true);
     return {
       ...summary,
-      parts: summary.parts + model.instanceCount * request.trains.length,
+      parts: summary.parts + count * request.trains.length,
       track: summarizeTrack(request.plan, graph, layout, catalogPieces),
     };
   }
@@ -233,6 +237,8 @@ export class RunScene implements IRunScene {
       tickCost: this.sim.tickCost(),
       vehicle: this.vehicle?.spec ?? null,
       wheelsets: this.vehicle?.wheelsets ?? 0,
+      vehicleInstances: this.vehicle?.instances.length ?? 0,
+      excludedInstances: this.vehicle?.excludedInstances ?? 0,
       maxEndResidualLdu: loaded.maxEndResidualLdu,
       maxEndHeadingResidualRadians: loaded.maxEndHeadingResidualRadians,
     };
