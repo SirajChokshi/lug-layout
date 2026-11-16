@@ -336,14 +336,6 @@
       }
     },
     {
-      "name": "10170-1",
-      "origin": "omr",
-      "file": "10170-1.mpd",
-      "sha256": "7a6cebbae04e8d36798c71401e0239e732243420930626eb110ff17c054bf929",
-      "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10170-1.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
-    },
-    {
       "name": "10014-1",
       "origin": "omr",
       "file": "10014-1.mpd",
@@ -509,6 +501,13 @@
       "retrieved": "2026-11-16"
     }
   ],
+  "vehicleParts": {
+    "bogiePivots": ["4092a.dat", "4092b.dat"],
+    "pivotPins": ["connect4.dat"],
+    "wheelsets": ["2878c01.dat"],
+    "wheels": ["2879.dat"],
+    "couplers": ["73092.dat", "2959c01.dat"]
+  },
   "audit": [
     {
       "group": "track-9v",
