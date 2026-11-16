@@ -92,8 +92,7 @@ function pieceSpec(piece: TrackPiece): TrackPieceSpec {
 }
 
 function partForPiece(piece: TrackPiece, parts: ReadonlyArray<PartAsset>): number {
-  const ids = [piece.id, `ldraw:${piece.part}`, piece.part];
-  const index = parts.findIndex((part) => ids.includes(part.id));
+  const index = parts.findIndex((part) => part.id === piece.part);
   if (index < 0) throw new Error(`${piece.id}: track part ${piece.part} is not in the bundle`);
   return index;
 }
