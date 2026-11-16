@@ -1,0 +1,35 @@
+Brick Railroad
+API
+webgpu
+Adapter
+apple / metal-3
+Drawing buffer
+3600×2086 px (devicePixelRatio 2)
+Parts
+250,665
+Modules
+196
+Stud instances (drawn of total)
+325,871 of 1,391,563
+Scene triangles
+63,398,368
+Load
+253 ms
+Buffers (accounted) and JS heap
+geometry 6.1 MB, instances 41.8 MB, JS heap 80.2 MB
+Chunk tiers near/mid/far (median)
+147 / 49 / 0
+Draw calls (median)
+442
+Drawn triangles (median)
+17,206,927
+Scene coverage (sampled frames)
+94%, 94%, 93%, 93%, 92%, 92%, 90%, 84%, 62%
+Median frame (GPU-synced)
+7.6 ms
+p95 frame
+11.0 ms
+Median CPU submit
+1.7 ms
+Measured frames
+120

@@ -1,0 +1,41 @@
+2026-11-16T06:01:38.780Z window {
+  left: 0,
+  top: 39,
+  width: 1800,
+  height: 1130,
+  windowState: 'maximized'
+}
+2026-11-16T06:01:38.820Z run city-100000-aerial-webgpu http://localhost:4173/?scene=city&parts=100000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T06:01:41.956Z city-100000-aerial-webgpu done true 3s  [{"pid":"73480","rssKiB":169792}] {"73480":"1968 MB"}
+2026-11-16T06:01:41.983Z run city-100000-aerial-webgl2 http://localhost:4173/?scene=city&parts=100000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T06:01:44.454Z city-100000-aerial-webgl2 done true 2s  [{"pid":"73480","rssKiB":194384}] {"73480":"1914 MB"}
+2026-11-16T06:01:44.481Z run city-100000-street-webgpu http://localhost:4173/?scene=city&parts=100000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T06:01:47.332Z city-100000-street-webgpu done true 3s  [{"pid":"73480","rssKiB":183104}] {"73480":"2766 MB"}
+2026-11-16T06:01:47.359Z run city-100000-street-webgl2 http://localhost:4173/?scene=city&parts=100000&api=webgl2&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T06:01:49.256Z city-100000-street-webgl2 done true 2s  [{"pid":"73480","rssKiB":190864}] {"73480":"2016 MB"}
+2026-11-16T06:01:49.283Z run city-250000-aerial-webgpu http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T06:01:53.418Z city-250000-aerial-webgpu done true 4s  [{"pid":"73480","rssKiB":223712}] {"73480":"3112 MB"}
+2026-11-16T06:01:53.451Z run city-250000-aerial-webgl2 http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T06:01:56.884Z city-250000-aerial-webgl2 done true 3s  [{"pid":"73480","rssKiB":238768}] {"73480":"2262 MB"}
+2026-11-16T06:01:56.904Z run city-250000-street-webgpu http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T06:01:59.752Z city-250000-street-webgpu done true 3s  [{"pid":"73480","rssKiB":219552}] {"73480":"3358 MB"}
+2026-11-16T06:01:59.782Z run city-250000-street-webgl2 http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T06:02:02.191Z city-250000-street-webgl2 done true 2s  [{"pid":"73480","rssKiB":225600}] {"73480":"2366 MB"}
+2026-11-16T06:02:02.213Z run city-500000-aerial-webgpu http://localhost:4173/?scene=city&parts=500000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T06:02:08.574Z city-500000-aerial-webgpu done true 6s  [{"pid":"73480","rssKiB":225040}] {"73480":"3478 MB"}
+2026-11-16T06:02:08.596Z run city-500000-aerial-webgl2 http://localhost:4173/?scene=city&parts=500000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T06:02:13.844Z city-500000-aerial-webgl2 done true 5s  [{"pid":"73480","rssKiB":323616}] {"73480":"2491 MB"}
+2026-11-16T06:02:13.873Z run city-500000-street-webgpu http://localhost:4173/?scene=city&parts=500000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T06:02:17.738Z city-500000-street-webgpu done true 4s  [{"pid":"73480","rssKiB":219616}] {"73480":"3542 MB"}
+2026-11-16T06:02:17.775Z run city-500000-street-webgl2 http://localhost:4173/?scene=city&parts=500000&api=webgl2&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T06:02:20.845Z city-500000-street-webgl2 done true 3s  [{"pid":"73480","rssKiB":277248}] {"73480":"2454 MB"}
+2026-11-16T06:02:20.874Z run city-1000000-aerial-webgpu http://localhost:4173/?scene=city&parts=1000000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T06:02:29.345Z city-1000000-aerial-webgpu done true 8s  [{"pid":"73480","rssKiB":287808}] {"73480":"3677 MB"}
+2026-11-16T06:02:29.371Z run city-1000000-aerial-webgl2 http://localhost:4173/?scene=city&parts=1000000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120
+2026-11-16T06:02:38.027Z city-1000000-aerial-webgl2 done true 8s  [{"pid":"73480","rssKiB":435552}] {"73480":"2537 MB"}
+2026-11-16T06:02:38.057Z run city-1000000-street-webgpu http://localhost:4173/?scene=city&parts=1000000&api=webgpu&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T06:02:42.991Z city-1000000-street-webgpu done true 5s  [{"pid":"73480","rssKiB":317968}] {"73480":"3666 MB"}
+2026-11-16T06:02:43.022Z run city-1000000-street-webgl2 http://localhost:4173/?scene=city&parts=1000000&api=webgl2&camera=street&measure=1&warmup=10&frames=120
+2026-11-16T06:02:48.516Z city-1000000-street-webgl2 done true 5s  [{"pid":"73480","rssKiB":404272}] {"73480":"2503 MB"}
+2026-11-16T06:02:52.549Z finished
+EXIT=0

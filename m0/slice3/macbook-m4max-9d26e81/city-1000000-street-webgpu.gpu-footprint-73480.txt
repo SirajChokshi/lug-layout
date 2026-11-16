@@ -1,0 +1,46 @@
+======================================================================
+Google Chrome Helper (Aperitif) [73480]: 64-bit    Footprint: 3666 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+2204 MB        0 B          0 B      17654    Owned physical footprint (unmapped)
+1020 MB        0 B          0 B       2111    Owned physical footprint (unmapped) (graphics)
+ 227 MB        0 B          0 B        290    IOSurface
+  80 MB        0 B      6656 KB        719    IOAccelerator (graphics)
+  62 MB        0 B          0 B         99    untagged (VM_ALLOCATE)
+  59 MB        0 B        62 MB       2568    app-specific tag 14
+4960 KB        0 B          0 B        104    IOAccelerator
+3840 KB        0 B          0 B          6    MALLOC_SMALL
+1520 KB        0 B          0 B         38    stack
+1226 KB     240 KB          0 B        957    __DATA
+1058 KB        0 B          0 B          1    page table
+1024 KB        0 B          0 B         11    MALLOC metadata
+ 796 KB        0 B          0 B        863    __DATA_DIRTY
+ 448 KB        0 B          0 B          1    libdispatch
+ 256 KB        0 B          0 B         11    Mach message
+ 120 KB        0 B          0 B       2501    unused dyld shared cache area
+ 112 KB        0 B          0 B          1    MALLOC_TINY
+ 112 KB        0 B          0 B       1007    __AUTH_CONST
+  96 KB        0 B          0 B          7    IOKit
+  80 KB        0 B          0 B          2    __TPRO_CONST
+  66 KB        0 B          0 B        621    __AUTH
+  64 KB        0 B          0 B          2    ColorSync
+  48 KB    1584 KB          0 B       1016    __DATA_CONST
+  16 KB        0 B          0 B          1    Activity Tracing
+  16 KB        0 B          0 B          1    tag 22
+  16 KB        0 B          0 B          1    os_alloc_once
+  16 KB        0 B          0 B          1    CoreGraphics
+    0 B      51 MB          0 B       1037    __TEXT
+    0 B    3104 KB          0 B         12    mapped file
+    0 B     160 KB          0 B          6    __LINKEDIT
+    0 B        0 B          0 B          1    __FONT_DATA
+    0 B        0 B          0 B          1    PROTECTED_MEMORY
+    0 B        0 B          0 B          1    __CTF
+    ---        ---          ---        ---    ---
+3666 MB      56 MB        68 MB      31654    TOTAL
+
+Auxiliary data:
+    phys_footprint: 3666 MB
+    phys_footprint_peak: 3713 MB
+

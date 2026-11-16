@@ -1,0 +1,332 @@
+{
+  "chromeVersion": "Chrome/157.0.8103.52",
+  "windowBounds": {
+    "left": 0,
+    "top": 39,
+    "width": 1800,
+    "height": 1130,
+    "windowState": "maximized"
+  },
+  "runs": {
+    "city-100000-aerial-webgpu": {
+      "url": "http://localhost:4173/?scene=city&parts=100000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 3,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 169792
+          }
+        ],
+        "footprints": {
+          "73480": "1968 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-100000-aerial-webgl2": {
+      "url": "http://localhost:4173/?scene=city&parts=100000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 194384
+          }
+        ],
+        "footprints": {
+          "73480": "1914 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-100000-street-webgpu": {
+      "url": "http://localhost:4173/?scene=city&parts=100000&api=webgpu&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 3,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 183104
+          }
+        ],
+        "footprints": {
+          "73480": "2766 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-100000-street-webgl2": {
+      "url": "http://localhost:4173/?scene=city&parts=100000&api=webgl2&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 190864
+          }
+        ],
+        "footprints": {
+          "73480": "2016 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-250000-aerial-webgpu": {
+      "url": "http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 4,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 223712
+          }
+        ],
+        "footprints": {
+          "73480": "3112 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-250000-aerial-webgl2": {
+      "url": "http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 3,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 238768
+          }
+        ],
+        "footprints": {
+          "73480": "2262 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-250000-street-webgpu": {
+      "url": "http://localhost:4173/?scene=city&parts=250000&api=webgpu&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 3,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 219552
+          }
+        ],
+        "footprints": {
+          "73480": "3358 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-250000-street-webgl2": {
+      "url": "http://localhost:4173/?scene=city&parts=250000&api=webgl2&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 225600
+          }
+        ],
+        "footprints": {
+          "73480": "2366 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-500000-aerial-webgpu": {
+      "url": "http://localhost:4173/?scene=city&parts=500000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 6,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 225040
+          }
+        ],
+        "footprints": {
+          "73480": "3478 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-500000-aerial-webgl2": {
+      "url": "http://localhost:4173/?scene=city&parts=500000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 5,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 323616
+          }
+        ],
+        "footprints": {
+          "73480": "2491 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-500000-street-webgpu": {
+      "url": "http://localhost:4173/?scene=city&parts=500000&api=webgpu&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 4,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 219616
+          }
+        ],
+        "footprints": {
+          "73480": "3542 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-500000-street-webgl2": {
+      "url": "http://localhost:4173/?scene=city&parts=500000&api=webgl2&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 3,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 277248
+          }
+        ],
+        "footprints": {
+          "73480": "2454 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-1000000-aerial-webgpu": {
+      "url": "http://localhost:4173/?scene=city&parts=1000000&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 8,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 287808
+          }
+        ],
+        "footprints": {
+          "73480": "3677 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-1000000-aerial-webgl2": {
+      "url": "http://localhost:4173/?scene=city&parts=1000000&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 8,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 435552
+          }
+        ],
+        "footprints": {
+          "73480": "2537 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-1000000-street-webgpu": {
+      "url": "http://localhost:4173/?scene=city&parts=1000000&api=webgpu&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 5,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 317968
+          }
+        ],
+        "footprints": {
+          "73480": "3666 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    },
+    "city-1000000-street-webgl2": {
+      "url": "http://localhost:4173/?scene=city&parts=1000000&api=webgl2&camera=street&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 5,
+      "error": null,
+      "gpu": {
+        "pids": [
+          {
+            "pid": "73480",
+            "rssKiB": 404272
+          }
+        ],
+        "footprints": {
+          "73480": "2503 MB"
+        }
+      },
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "devicePixelRatio": 2
+    }
+  }
+}
