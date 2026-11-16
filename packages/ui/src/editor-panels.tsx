@@ -336,7 +336,9 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   rows.push(
     [
       "Mode",
-      snapshot.mode === "place" ? `place ${itemLabel(snapshot, snapshot.activeItem)}` : "select",
+      snapshot.mode === "select"
+        ? "select"
+        : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
     ],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
     ["Road-edge snap", snapText(snapshot)],
