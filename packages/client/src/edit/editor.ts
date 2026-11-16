@@ -2,6 +2,7 @@ import {
   PART_BUNDLE_LOADER,
   type BundleLod,
   type IPartBundleLoader,
+  type PartAsset,
   type PartBundle,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
@@ -33,6 +34,7 @@ import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
+import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
 import {
   PlacedChunks,
   type PlacedModel,
@@ -45,13 +47,13 @@ import { PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
-export type EditAction = EditKind;
-export type EditorMode = "place" | "select";
+export type EditAction = EditKind | "track";
+export type EditorMode = "place" | "select" | "track";
 
 export interface CatalogItemView {
   readonly id: string;
   readonly label: string;
-  readonly kind: Placeable["kind"];
+  readonly kind: Placeable["kind"] | "track";
   readonly parts: number;
   readonly studsWide: number;
   readonly studsDeep: number;
@@ -150,6 +152,31 @@ interface LoadedCatalog {
   readonly skipped: ReadonlyArray<SkippedModel>;
 }
 
+export interface TrackBomLine {
+  readonly piece: string;
+  readonly title: string;
+  readonly count: number;
+}
+
+export interface TrackSolveStats {
+  readonly samples: number;
+  readonly medianMs: number;
+  readonly p95Ms: number;
+  readonly maxMs: number;
+}
+
+export type TrackCommitResult = "laid" | "joined" | "refused";
+
+export interface TrackView {
+  readonly pieces: number;
+  readonly bom: ReadonlyArray<TrackBomLine>;
+  readonly openEnds: number;
+  readonly joins: number;
+  readonly drag: TrackDragView | null;
+  readonly lastCommit: TrackCommitResult | null;
+  readonly solve: TrackSolveStats | null;
+}
+
 export interface EditorSnapshot {
   readonly status: EditorStatus;
   readonly error: string | null;
@@ -174,6 +201,7 @@ export interface EditorSnapshot {
   readonly snap: RoadSnapView | null;
   readonly refusedClicks: number;
   readonly lastRefusal: RefusedClick | null;
+  readonly track: TrackView | null;
 }
 
 export interface EditorCredits {
@@ -212,6 +240,9 @@ export interface IEditor {
   pointerMove(ndcX: number, ndcY: number): void;
   pointerLeave(): void;
   click(ndcX: number, ndcY: number, eventTimeMs: number): void;
+  dragStart(ndcX: number, ndcY: number): boolean;
+  dragMove(ndcX: number, ndcY: number): void;
+  dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
   rotate(eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
@@ -231,6 +262,11 @@ export interface IEditor {
 const EDITOR_LOD: BundleLod = "standard";
 const BASEPLATE_ID = "ldraw:3811";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
+export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
+const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
+const END_MARKER_HALF_LDU = 30;
+const END_MARKER_HEIGHT_LDU = 40;
+const P95 = 0.95;
 const BASEPLATE_COLOR_NAME = "Green";
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
@@ -344,6 +380,7 @@ export class Editor implements IEditor {
     snap: null,
     refusedClicks: 0,
     lastRefusal: null,
+    track: null,
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -367,6 +404,10 @@ export class Editor implements IEditor {
   private hoverX = 0;
   private hoverZ = 0;
   private hovering = false;
+  private hitX = 0;
+  private hitZ = 0;
+  private track: TrackDrawing | null = null;
+  private lastTrackCommit: TrackCommitResult | null = null;
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -410,13 +451,14 @@ export class Editor implements IEditor {
       });
       const bundle = await this.loader.load(
         EDITOR_LOD,
-        (part) => part.id === BASEPLATE_ID || part.role === "road",
+        (part) => part.id === BASEPLATE_ID || part.role === "road" || part.role === "track",
       );
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       const { placeables, skipped } = await this.loadPlaceables(bundle, palette, colors);
       this.placeables = placeables;
       this.plans.setTableTopY(this.baseplateBottomY());
+      this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -426,15 +468,19 @@ export class Editor implements IEditor {
         status: "ready",
         loadMs: performance.now() - started,
         backend,
-        catalog: this.placeables.map((placeable) => ({
-          id: placeable.id,
-          label: placeable.label,
-          kind: placeable.kind,
-          parts: placeable.parts.count,
-          studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
-          studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
-        })),
+        catalog: [
+          ...this.placeables.map((placeable) => ({
+            id: placeable.id,
+            label: placeable.label,
+            kind: placeable.kind,
+            parts: placeable.parts.count,
+            studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
+            studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+          })),
+          this.trackItem(this.track, palette.parts),
+        ],
         catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
+        track: this.trackView(),
         credits: {
           partFiles: bundle.credits.length,
           partFilesLod: EDITOR_LOD,
@@ -595,7 +641,136 @@ export class Editor implements IEditor {
     this.update({ lastLatency: sample, latencies: [...this.state.latencies, sample] });
   }
 
+  private trackItem(track: TrackDrawing, parts: ReadonlyArray<PartAsset>): CatalogItemView {
+    const straight = track.kitParts().find((k) => k.piece.kind === "straight");
+    const part = straight ? parts[straight.partIndex] : undefined;
+    return {
+      id: TRACK_ITEM_ID,
+      label: TRACK_ITEM_LABEL,
+      kind: "track",
+      parts: track.kitParts().length,
+      studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
+      studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+    };
+  }
+
+  private trackView(): TrackView | null {
+    const track = this.track;
+    if (!track) return null;
+    const samples = track.solveSamplesMs.toSorted((a, b) => a - b);
+    const at = (q: number): number =>
+      samples[Math.min(samples.length - 1, Math.floor(q * samples.length))] ?? 0;
+    return {
+      pieces: track.pieceCount,
+      bom: track.kitParts().map((k) => ({
+        piece: k.piece.id,
+        title: k.piece.title,
+        count: track.countOf(k.piece.id),
+      })),
+      openEnds: track.openEnds().length,
+      joins: track.joinedPairs(),
+      drag: track.dragView(),
+      lastCommit: this.lastTrackCommit,
+      solve:
+        samples.length === 0
+          ? null
+          : {
+              samples: samples.length,
+              medianMs: at(0.5),
+              p95Ms: at(P95),
+              maxMs: samples.at(-1) ?? 0,
+            },
+    };
+  }
+
+  private showEndMarker(end: { readonly xLdu: number; readonly zLdu: number } | null): void {
+    this.backend.setSelectionBox(
+      end
+        ? {
+            minX: end.xLdu - END_MARKER_HALF_LDU,
+            minY: 0,
+            minZ: end.zLdu - END_MARKER_HALF_LDU,
+            maxX: end.xLdu + END_MARKER_HALF_LDU,
+            maxY: END_MARKER_HEIGHT_LDU,
+            maxZ: end.zLdu + END_MARKER_HALF_LDU,
+          }
+        : null,
+    );
+  }
+
+  private showTrackGhost(track: TrackDrawing): void {
+    const ghost = track.ghost();
+    this.backend.setGhost(ghost ? ghost.instances : null);
+    if (ghost) this.backend.placeGhost(ghost.x, 0, ghost.z, 0);
+  }
+
+  dragStart(ndcX: number, ndcY: number): boolean {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track) return false;
+    if (!this.groundHit(ndcX, ndcY)) return false;
+    track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
+    this.update({ track: this.trackView() });
+    return true;
+  }
+
+  dragMove(ndcX: number, ndcY: number): void {
+    const track = this.track;
+    if (!track || !this.groundHit(ndcX, ndcY)) return;
+    track.moveDrag(this.hitX, this.hitZ);
+    this.showTrackGhost(track);
+    this.showEndMarker(track.dragTarget());
+    this.update({ track: this.trackView() });
+  }
+
+  dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    const track = this.track;
+    if (!track) return;
+    if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
+    const commit = track.endDrag();
+    this.backend.setGhost(null);
+    this.showEndMarker(null);
+    let instances = 0;
+    let studs = 0;
+    for (const key of commit.chunks) {
+      const chunk = track.chunkInstances(key);
+      if (!chunk) continue;
+      this.backend.setChunk(key, chunk);
+      instances += chunk.count;
+      studs += chunk.studs.count;
+    }
+    if (commit.laid > 0) {
+      this.pending = {
+        step: "do",
+        action: "track",
+        item: TRACK_ITEM_ID,
+        rot: 0,
+        x: this.hoverX,
+        z: this.hoverZ,
+        startMs: eventTimeMs,
+        rebuiltMs: performance.now(),
+        report: { chunks: commit.chunks.length, instances, studs },
+      };
+    }
+    if (commit.refused) this.lastTrackCommit = "refused";
+    else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    this.update({ track: this.trackView() });
+  }
+
   chooseItem(id: string | null): void {
+    if (id === TRACK_ITEM_ID && this.track) {
+      this.active = null;
+      this.backend.setGhost(null);
+      this.select(null);
+      this.update({ mode: "track", activeItem: TRACK_ITEM_ID });
+      return;
+    }
+    if (this.state.mode === "track") {
+      this.track?.cancelDrag();
+      this.backend.setGhost(null);
+      this.showEndMarker(null);
+      this.update({ mode: "select", activeItem: null, track: this.trackView() });
+      if (id === null) return;
+    }
     if (id === null && !this.active) {
       this.select(null);
       return;
@@ -614,8 +789,10 @@ export class Editor implements IEditor {
     const directionY = this.ray[4] ?? 0;
     if (directionY >= 0) return false;
     const t = -originY / directionY;
-    this.hoverX = snapToLattice((this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t);
-    this.hoverZ = snapToLattice((this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t);
+    this.hitX = (this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t;
+    this.hitZ = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
+    this.hoverX = snapToLattice(this.hitX);
+    this.hoverZ = snapToLattice(this.hitZ);
     return true;
   }
 
@@ -661,6 +838,11 @@ export class Editor implements IEditor {
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
     const snap = this.snapGhostToRoad();
+    const track = this.track;
+    if (this.state.mode === "track" && track && !track.dragView()) {
+      const end = this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null;
+      this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
+    }
     this.placeGhost();
     this.update({ hover: this.hovering ? { x: this.hoverX, z: this.hoverZ } : null, snap });
   }
@@ -671,6 +853,7 @@ export class Editor implements IEditor {
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.state.mode === "track") return;
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;

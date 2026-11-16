@@ -54,6 +54,10 @@ export type {
   RoadSnapView,
   SelectionView,
   SkippedCatalogModel,
+  TrackBomLine,
+  TrackCommitResult,
+  TrackSolveStats,
+  TrackView,
 } from "./edit/editor.ts";
 export type {
   IRunScene,
@@ -103,3 +107,5 @@ export {
   TRACK_SCENE,
   PLAN_SERVICE,
 } from "./tokens.ts";
+export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
