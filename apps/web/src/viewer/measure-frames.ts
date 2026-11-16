@@ -15,6 +15,9 @@ export interface FrameTimings {
   readonly medianDrawnTriangles: number;
   readonly medianChunkTiers: ChunkTiers;
   readonly sceneCoverage: ReadonlyArray<number>;
+  readonly firstMeasuredFrame: number;
+  readonly frameMs: ReadonlyArray<number>;
+  readonly cpuSubmitMs: ReadonlyArray<number>;
 }
 
 export interface ChunkTiers {
@@ -113,5 +116,8 @@ export async function measureFrames(
       far: median(farChunks, frames),
     },
     sceneCoverage,
+    firstMeasuredFrame: params.warmupFrames,
+    frameMs: Array.from(frameMs.subarray(0, frames)),
+    cpuSubmitMs: Array.from(cpuMs.subarray(0, frames)),
   };
 }

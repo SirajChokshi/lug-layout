@@ -123,11 +123,18 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       return part;
     });
     const count = file.instances.part.length;
+    const [phaseX, phaseZ] = file.lattice.phase;
     return {
       bundle: await this.bundle(lod, manifest, parts),
       entry,
       model: {
         sections: file.sections,
+        lattice: {
+          phaseX,
+          phaseZ,
+          aabbMin: file.lattice.aabb.min,
+          aabbMax: file.lattice.aabb.max,
+        },
         instanceCount: count,
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),

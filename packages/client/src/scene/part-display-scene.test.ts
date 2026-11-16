@@ -35,6 +35,11 @@ class RecordingBackend implements ISceneBackend {
   setChunk(_key: number, chunk: ChunkInstances): void {
     this.chunks.push(chunk);
   }
+  deleteChunk(): void {}
+  setGhost(): void {}
+  placeGhost(): void {}
+  setSelectionBox(): void {}
+  rayThrough(): void {}
   setView(): void {}
   resize(): void {}
   renderFrame(): void {}

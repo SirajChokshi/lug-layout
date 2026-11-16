@@ -1,4 +1,4 @@
-import { type ChunkView, type World } from "@brr/domain";
+import { SLOT_LIVE, type ChunkView, type World } from "@brr/domain";
 import { CHUNK_LDU, PLATE_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances } from "@brr/render";
 
@@ -27,17 +27,21 @@ export class ModuleWriter {
 }
 
 export function chunkInstances(view: ChunkView): ChunkPartInstances {
-  const partIndex = new Uint16Array(view.count);
-  const matrices = new Float32Array(view.count * INSTANCE_MATRIX_FLOATS);
+  const partIndex = new Uint16Array(view.liveCount);
+  const colorIndex = new Uint16Array(view.liveCount);
+  const matrices = new Float32Array(view.liveCount * INSTANCE_MATRIX_FLOATS);
+  let n = 0;
   for (let i = 0; i < view.count; i++) {
+    if (((view.flags[i] ?? 0) & SLOT_LIVE) === 0) continue;
     const part = view.refId[i] ?? 0;
     if (part > MAX_PART_INDEX) throw new Error(`part index ${part} does not fit a render instance`);
-    partIndex[i] = part;
+    partIndex[n] = part;
+    colorIndex[n] = view.colorId[i] ?? 0;
     const turn = view.rot[i] ?? 0;
     if (!isRot90(turn)) throw new Error(`rotation ${turn} is not a quarter turn 0-3`);
     const cos = rot90Cos(turn);
     const sin = rot90Sin(turn);
-    const o = i * INSTANCE_MATRIX_FLOATS;
+    const o = n * INSTANCE_MATRIX_FLOATS;
     matrices[o] = cos;
     matrices[o + 1] = 0;
     matrices[o + 2] = sin;
@@ -50,13 +54,44 @@ export function chunkInstances(view: ChunkView): ChunkPartInstances {
     matrices[o + 9] = 0;
     matrices[o + 10] = cos;
     matrices[o + 11] = (view.z[i] ?? 0) - view.originZ;
+    n++;
   }
   return {
     originX: view.originX,
     originZ: view.originZ,
-    count: view.count,
+    count: n,
     partIndex,
-    colorIndex: view.colorId,
+    colorIndex,
     matrices,
   };
+}
+
+export interface PlacementDump {
+  readonly refId: ReadonlyArray<number>;
+  readonly colorId: ReadonlyArray<number>;
+  readonly x: ReadonlyArray<number>;
+  readonly z: ReadonlyArray<number>;
+  readonly yPlates: ReadonlyArray<number>;
+  readonly rot: ReadonlyArray<number>;
+}
+
+export function dumpPlacements(world: World): PlacementDump {
+  const refId: number[] = [];
+  const colorId: number[] = [];
+  const x: number[] = [];
+  const z: number[] = [];
+  const yPlates: number[] = [];
+  const rot: number[] = [];
+  for (const chunk of world.chunks()) {
+    for (let i = 0; i < chunk.count; i++) {
+      if (((chunk.flags[i] ?? 0) & SLOT_LIVE) === 0) continue;
+      refId.push(chunk.refId[i] ?? 0);
+      colorId.push(chunk.colorId[i] ?? 0);
+      x.push(chunk.x[i] ?? 0);
+      z.push(chunk.z[i] ?? 0);
+      yPlates.push(chunk.yPlates[i] ?? 0);
+      rot.push(chunk.rot[i] ?? 0);
+    }
+  }
+  return { refId, colorId, x, z, yPlates, rot };
 }
