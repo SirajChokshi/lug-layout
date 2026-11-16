@@ -79,6 +79,15 @@ export interface WorldBox {
 }
 
 export const RAY_FLOATS = 6;
+export const CAMERA_FOV_DEGREES = 40;
+
+export interface PlanOverlay {
+  readonly room: WorldBox;
+  readonly tables: ReadonlyArray<WorldBox>;
+  readonly obstacles: ReadonlyArray<WorldBox>;
+  readonly gridStepLdu: number;
+  readonly active: boolean;
+}
 
 export interface ISceneBackend {
   init(config: SceneBackendConfig): Promise<BackendInfo>;
@@ -88,6 +97,8 @@ export interface ISceneBackend {
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
   setSelectionBox(box: WorldBox | null): void;
+  setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;
+  setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
   setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void;
   resize(width: number, height: number): void;

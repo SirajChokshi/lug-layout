@@ -3,10 +3,18 @@ import { renderModule } from "@brr/render";
 import { ContainerModule } from "inversify";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
+import { PlanService } from "./plan/plan-service.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
 import { PartDisplayScene } from "./scene/part-display-scene.ts";
-import { CITY_SCENE, CREDITS, EDITOR, MODEL_SCENE, PART_DISPLAY_SCENE } from "./tokens.ts";
+import {
+  CITY_SCENE,
+  CREDITS,
+  EDITOR,
+  MODEL_SCENE,
+  PART_DISPLAY_SCENE,
+  PLAN_SERVICE,
+} from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
   bind(PART_DISPLAY_SCENE).to(PartDisplayScene).inSingletonScope();
@@ -14,6 +22,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(CITY_SCENE).to(CityScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();
+  bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
 });
 
 export interface MainThreadConfig {
