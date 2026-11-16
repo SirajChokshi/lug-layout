@@ -1,7 +1,9 @@
 import { injectable } from "inversify";
 import {
   BoxGeometry,
+  BufferGeometry as LineGeometry,
   Color,
+  Float32BufferAttribute,
   DirectionalLight,
   EdgesGeometry,
   Group,
@@ -10,6 +12,7 @@ import {
   InstancedMesh,
   LineBasicNodeMaterial,
   LineSegments,
+  Mesh,
   MeshStandardNodeMaterial,
   PerspectiveCamera,
   Scene,
@@ -19,6 +22,7 @@ import {
   type BufferGeometry,
 } from "three/webgpu";
 import {
+  CAMERA_FOV_DEGREES,
   COLOR_CHANNELS,
   INSTANCE_MATRIX_FLOATS,
   type BackendInfo,
@@ -28,6 +32,7 @@ import {
   type FrameStats,
   type ISceneBackend,
   type PartPalette,
+  type PlanOverlay,
   type RebaseEvent,
   type SceneBackendConfig,
   type StudInstances,
@@ -38,7 +43,6 @@ import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { fixedColorGeometry, inheritBodyGeometry, primitiveGeometry } from "./part-geometry.ts";
 
 const MATRIX4_FLOATS = 16;
-const CAMERA_FOV_DEGREES = 40;
 const CAMERA_NEAR_LDU = 20;
 const CAMERA_FAR_LDU = 400_000;
 const PLASTIC_ROUGHNESS = 0.3;
@@ -57,6 +61,78 @@ const REBASE_DISTANCE_CHUNKS = 8;
 const GHOST_OPACITY = 0.55;
 const SELECTION_COLOR = 0xff8c00;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
+const FLOOR_COLOR = 0xd8d2c8;
+const INACTIVE_FLOOR_COLOR = 0xe6e2dc;
+const ROOM_OUTLINE_COLOR = 0x3a3a3a;
+const TABLE_COLOR = 0xb58b5a;
+const TABLE_GRID_COLOR = 0x6b4f2e;
+const OBSTACLE_COLOR = 0xc0392b;
+const OBSTACLE_OPACITY = 0.45;
+const ISSUE_COLOR = 0xe0115f;
+const FLOOR_THICKNESS_LDU = 10;
+const GRID_LIFT_LDU = 0.5;
+
+interface Anchored {
+  readonly object: Group | LineSegments;
+  readonly x: number;
+  readonly z: number;
+}
+
+function gridLines(
+  table: WorldBox,
+  anchorX: number,
+  anchorZ: number,
+  gridOriginX: number,
+  gridOriginZ: number,
+  step: number,
+): number[] {
+  const out: number[] = [];
+  const y = table.maxY + GRID_LIFT_LDU;
+  const firstX = gridOriginX + Math.ceil((table.minX - gridOriginX) / step) * step;
+  for (let x = firstX; x <= table.maxX; x += step) {
+    out.push(x - anchorX, y, table.minZ - anchorZ, x - anchorX, y, table.maxZ - anchorZ);
+  }
+  const firstZ = gridOriginZ + Math.ceil((table.minZ - gridOriginZ) / step) * step;
+  for (let z = firstZ; z <= table.maxZ; z += step) {
+    out.push(table.minX - anchorX, y, z - anchorZ, table.maxX - anchorX, y, z - anchorZ);
+  }
+  return out;
+}
+
+function lineSegments(positions: number[], color: number): LineSegments {
+  const geometry = new LineGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  return new LineSegments(geometry, new LineBasicNodeMaterial({ color }));
+}
+
+function boxMesh(
+  box: WorldBox,
+  anchorX: number,
+  anchorZ: number,
+  material: MeshStandardNodeMaterial,
+): Mesh {
+  const mesh = new Mesh(
+    new BoxGeometry(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ),
+    material,
+  );
+  mesh.position.set(
+    (box.minX + box.maxX) / 2 - anchorX,
+    (box.minY + box.maxY) / 2,
+    (box.minZ + box.maxZ) / 2 - anchorZ,
+  );
+  return mesh;
+}
+
+function disposeTree(root: Group | LineSegments): void {
+  root.traverse((child) => {
+    if (child instanceof Mesh || child instanceof LineSegments) {
+      child.geometry.dispose();
+      const material: unknown = child.material;
+      if (material instanceof MeshStandardNodeMaterial || material instanceof LineBasicNodeMaterial)
+        material.dispose();
+    }
+  });
+}
 
 function writeMatrix4(
   source: Float32Array,
@@ -215,6 +291,13 @@ export class ThreeSceneBackend implements ISceneBackend {
   );
   private selectionCentreX = 0;
   private selectionCentreZ = 0;
+  private planObjects: Anchored[] = [];
+  private issueObjects: Anchored[] = [];
+  private readonly issueEdges = new EdgesGeometry(new BoxGeometry(1, 1, 1));
+  private readonly issueMaterial = new LineBasicNodeMaterial({
+    color: ISSUE_COLOR,
+    depthTest: false,
+  });
   private readonly rayPoint = new Vector3();
   private detailedLevel: LevelGeometries = EMPTY_LEVEL;
   private farLevel: LevelGeometries = EMPTY_LEVEL;
@@ -429,6 +512,113 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.selection.updateMatrix();
     this.selection.updateMatrixWorld(true);
     this.selection.visible = true;
+  }
+
+  setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
+    for (const anchored of this.planObjects) {
+      this.scene.remove(anchored.object);
+      disposeTree(anchored.object);
+    }
+    this.planObjects = overlays.map((overlay) => this.planGroup(overlay));
+    for (const anchored of this.planObjects) {
+      this.positionAnchored(anchored);
+      this.scene.add(anchored.object);
+    }
+  }
+
+  private planGroup(overlay: PlanOverlay): Anchored {
+    const { room } = overlay;
+    const x = room.minX;
+    const z = room.minZ;
+    const group = new Group();
+    group.matrixAutoUpdate = false;
+    const floor = boxMesh(
+      { ...room, minY: room.minY - FLOOR_THICKNESS_LDU },
+      x,
+      z,
+      new MeshStandardNodeMaterial({
+        color: overlay.active ? FLOOR_COLOR : INACTIVE_FLOOR_COLOR,
+        roughness: 1,
+      }),
+    );
+    const outlineY = room.maxY + GRID_LIFT_LDU;
+    const w = room.maxX - x;
+    const d = room.maxZ - z;
+    group.add(
+      floor,
+      lineSegments(
+        [
+          0,
+          outlineY,
+          0,
+          w,
+          outlineY,
+          0,
+          w,
+          outlineY,
+          0,
+          w,
+          outlineY,
+          d,
+          w,
+          outlineY,
+          d,
+          0,
+          outlineY,
+          d,
+          0,
+          outlineY,
+          d,
+          0,
+          outlineY,
+          0,
+        ],
+        ROOM_OUTLINE_COLOR,
+      ),
+    );
+    const tableMaterial = new MeshStandardNodeMaterial({ color: TABLE_COLOR, roughness: 0.8 });
+    const grid: number[] = [];
+    for (const table of overlay.tables) {
+      group.add(boxMesh(table, x, z, tableMaterial));
+      grid.push(...gridLines(table, x, z, room.minX, room.minZ, overlay.gridStepLdu));
+    }
+    if (grid.length > 0) group.add(lineSegments(grid, TABLE_GRID_COLOR));
+    const obstacleMaterial = new MeshStandardNodeMaterial({
+      color: OBSTACLE_COLOR,
+      transparent: true,
+      opacity: OBSTACLE_OPACITY,
+      depthWrite: false,
+    });
+    for (const obstacle of overlay.obstacles) group.add(boxMesh(obstacle, x, z, obstacleMaterial));
+    for (const child of group.children) child.updateMatrix();
+    return { object: group, x, z };
+  }
+
+  setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
+    for (const anchored of this.issueObjects) this.scene.remove(anchored.object);
+    this.issueObjects = boxes.map((box) => {
+      const lines = new LineSegments(this.issueEdges, this.issueMaterial);
+      lines.matrixAutoUpdate = false;
+      lines.renderOrder = 2;
+      lines.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
+      lines.position.y = (box.minY + box.maxY) / 2;
+      return { object: lines, x: (box.minX + box.maxX) / 2, z: (box.minZ + box.maxZ) / 2 };
+    });
+    for (const anchored of this.issueObjects) {
+      this.positionAnchored(anchored);
+      this.scene.add(anchored.object);
+    }
+  }
+
+  private positionAnchored(anchored: Anchored): void {
+    const { object } = anchored;
+    object.position.set(
+      anchored.x - this.renderOriginX,
+      object.position.y,
+      anchored.z - this.renderOriginZ,
+    );
+    object.updateMatrix();
+    object.updateMatrixWorld(true);
   }
 
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
@@ -679,6 +869,8 @@ export class ThreeSceneBackend implements ISceneBackend {
     );
     this.selection.updateMatrix();
     this.selection.updateMatrixWorld(true);
+    for (const anchored of this.planObjects) this.positionAnchored(anchored);
+    for (const anchored of this.issueObjects) this.positionAnchored(anchored);
     this.rebases.push({
       frame: this.frame,
       chunkX,

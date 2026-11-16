@@ -11,6 +11,10 @@ const FOCUS_DISTANCE_FACTOR = 2.2;
 const INITIAL_DISTANCE_LDU = 2_600;
 const INITIAL_YAW = Math.PI / 4;
 const INITIAL_PITCH = 0.75;
+const TOP_DOWN_PITCH = Math.PI / 2 - 1e-6;
+const TOP_DOWN_YAW = Math.PI / 2;
+const TOP_DOWN_MARGIN = 1.08;
+const MAX_TOP_DOWN_DISTANCE_LDU = 300_000;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -21,6 +25,7 @@ export class OrbitCamera {
   private targetY = 0;
   private targetZ = 0;
   private distance = INITIAL_DISTANCE_LDU;
+  private maxDistance = MAX_DISTANCE_LDU;
   private yaw = INITIAL_YAW;
   private pitch = INITIAL_PITCH;
 
@@ -43,7 +48,7 @@ export class OrbitCamera {
     this.distance = clamp(
       this.distance * Math.exp(wheelDelta * ZOOM_PER_WHEEL_UNIT),
       MIN_DISTANCE_LDU,
-      MAX_DISTANCE_LDU,
+      this.maxDistance,
     );
   }
 
@@ -53,6 +58,26 @@ export class OrbitCamera {
     this.targetZ = (box.minZ + box.maxZ) / 2;
     const extent = Math.max(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
     this.distance = clamp(extent * FOCUS_DISTANCE_FACTOR, MIN_DISTANCE_LDU, MAX_DISTANCE_LDU);
+  }
+
+  topDown(box: WorldBox, fovYRadians: number, aspect: number): void {
+    const halfTan = Math.tan(fovYRadians / 2);
+    const fitDepth = (box.maxZ - box.minZ) / 2 / halfTan;
+    const fitWidth = (box.maxX - box.minX) / 2 / (halfTan * Math.max(aspect, 1e-3));
+    this.targetX = (box.minX + box.maxX) / 2;
+    this.targetY = box.maxY;
+    this.targetZ = (box.minZ + box.maxZ) / 2;
+    this.yaw = TOP_DOWN_YAW;
+    this.pitch = TOP_DOWN_PITCH;
+    this.maxDistance = MAX_TOP_DOWN_DISTANCE_LDU;
+    this.distance = Math.min(
+      Math.max(fitDepth, fitWidth) * TOP_DOWN_MARGIN,
+      MAX_TOP_DOWN_DISTANCE_LDU,
+    );
+  }
+
+  targetXZ(): readonly [number, number] {
+    return [this.targetX, this.targetZ];
   }
 
   centreOn(x: number, z: number): void {
