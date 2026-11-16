@@ -120,26 +120,60 @@ function isPartSection(file: LdrawFile): boolean {
   return kind !== "" && kind.toLowerCase() !== MODEL_ORG;
 }
 
-export function modelPartReferences(source: string): string[] {
+export interface ModelStructure {
+  readonly parts: ReadonlyArray<string>;
+  readonly inlinePartReferences: ReadonlyArray<string>;
+  readonly modelSections: ReadonlyArray<LdrawHeader>;
+}
+
+function inlinePartReferences(
+  sections: ReadonlyMap<string, LdrawFile>,
+  inlineParts: ReadonlyArray<string>,
+): string[] {
+  const references = new Set<string>();
+  const visited = new Set<string>();
+  const pending = [...inlineParts];
+  for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+    const file = sections.get(name);
+    if (visited.has(name) || file === undefined) continue;
+    visited.add(name);
+    for (const reference of subfileReferences(file)) {
+      if (sections.has(reference)) pending.push(reference);
+      else references.add(reference);
+    }
+  }
+  return [...references].toSorted();
+}
+
+export function modelStructure(source: string): ModelStructure {
   const sections = new Map(
     splitMultiPart(source).map((section) => [section.name, parseLdraw(section.source)]),
   );
   const [root] = sections.keys();
   const parts = new Set<string>();
+  const inlineParts = new Set<string>();
+  const modelSections: LdrawHeader[] = [];
   const visited = new Set<string>();
   const pending = root === undefined ? [] : [root];
   for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
     const file = sections.get(name);
     if (visited.has(name) || file === undefined) continue;
     visited.add(name);
+    modelSections.push(file.header);
     for (const reference of subfileReferences(file)) {
       const section = sections.get(reference);
       if (section === undefined) parts.add(reference);
-      else if (isPartSection(section)) parts.add(officialReference(reference));
-      else pending.push(reference);
+      else if (isPartSection(section)) {
+        parts.add(officialReference(reference));
+        inlineParts.add(reference);
+      } else pending.push(reference);
     }
   }
-  return [...parts].toSorted();
+  return {
+    parts: [...parts].toSorted(),
+    inlinePartReferences: inlinePartReferences(sections, [...inlineParts]),
+    modelSections,
+  };
 }
 
 export const LDCAD_META = "!LDCAD";

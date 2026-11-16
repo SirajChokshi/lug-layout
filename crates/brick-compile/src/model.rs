@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::affine::Affine;
 use crate::flatten::INHERIT_COLOR;
@@ -106,6 +106,11 @@ fn split_sections(source: &str) -> (Vec<String>, Vec<String>) {
     (names, bodies)
 }
 
+pub fn mpd_sections(source: &str) -> HashMap<String, String> {
+    let (names, bodies) = split_sections(source);
+    names.into_iter().zip(bodies).collect()
+}
+
 pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
     let (names, bodies) = split_sections(source);
     if names.is_empty() {
@@ -126,8 +131,7 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
         .enumerate()
         .map(|(i, name)| (name.as_str(), i))
         .collect();
-    let mut instances = Vec::new();
-    let mut inline_parts = BTreeMap::new();
+    let mut out = WalkOutput::default();
     walk(
         &Walk {
             sections: &sections,
@@ -138,22 +142,38 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
         &Affine::IDENTITY,
         INHERIT_COLOR,
         0,
-        &mut instances,
-        &mut inline_parts,
+        &mut out,
     )?;
+    let WalkOutput {
+        mut instances,
+        inline_parts,
+        reached,
+    } = out;
     for instance in &mut instances {
         instance.matrix = Affine {
             m: instance.matrix.ldraw_to_y_up().m.map(|v| v + 0.0),
         };
     }
     Ok(BakedModel {
-        sections: sections.into_iter().map(|s| s.header).collect(),
+        sections: sections
+            .into_iter()
+            .enumerate()
+            .filter(|(index, _)| reached.contains(index))
+            .map(|(_, section)| section.header)
+            .collect(),
         instances,
         inline_parts: inline_parts
             .into_iter()
             .map(|(inline, official)| InlinePart { inline, official })
             .collect(),
     })
+}
+
+#[derive(Default)]
+struct WalkOutput {
+    instances: Vec<ModelInstance>,
+    inline_parts: BTreeMap<String, String>,
+    reached: BTreeSet<usize>,
 }
 
 struct Walk<'a> {
@@ -168,12 +188,12 @@ fn walk(
     matrix: &Affine,
     color: u32,
     depth: usize,
-    out: &mut Vec<ModelInstance>,
-    inline_parts: &mut BTreeMap<String, String>,
+    out: &mut WalkOutput,
 ) -> Result<(), ModelError> {
     let Some(current) = model.sections.get(section) else {
         return Ok(());
     };
+    out.reached.insert(section);
     if depth > MAX_SUBMODEL_DEPTH {
         return Err(ModelError::SubmodelCycle {
             name: current.header.name.clone(),
@@ -197,23 +217,16 @@ fn walk(
         match model.index.get(reference.as_str()) {
             Some(&child) if model.sections[child].is_part() => {
                 let official = official_reference(&model.names[child]);
-                inline_parts.insert(model.names[child].clone(), official.clone());
-                out.push(ModelInstance {
+                out.inline_parts
+                    .insert(model.names[child].clone(), official.clone());
+                out.instances.push(ModelInstance {
                     part: official,
                     color: child_color,
                     matrix: child_matrix,
                 });
             }
-            Some(&child) => walk(
-                model,
-                child,
-                &child_matrix,
-                child_color,
-                depth + 1,
-                out,
-                inline_parts,
-            )?,
-            None => out.push(ModelInstance {
+            Some(&child) => walk(model, child, &child_matrix, child_color, depth + 1, out)?,
+            None => out.instances.push(ModelInstance {
                 part: reference.clone(),
                 color: child_color,
                 matrix: child_matrix,
