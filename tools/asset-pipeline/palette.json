@@ -31,39 +31,75 @@
     },
     {
       "id": "53401",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "53401 element 4279714 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "53400",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "53400 element 4279717 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "74746",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "74746 element 4235339 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "74747",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "74747 element 4235341 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "75541-f1",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "75541 element 4493796 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "75541-f2",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "75541 element 4493796 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "75542-f1",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "75542 element 4493797 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "75542-f2",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "75542 element 4493797 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "32087",
-      "role": "track"
+      "role": "track",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "32087 element 4493794 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     },
     {
       "id": "3001",

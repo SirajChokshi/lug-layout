@@ -1,6 +1,6 @@
 import type { BundleLod, CityCamera, GraphicsApi } from "@brr/client";
 
-export type AppMode = "edit" | "parts" | "model" | "city";
+export type AppMode = "edit" | "parts" | "model" | "city" | "track";
 
 export interface ViewerParams {
   readonly mode: AppMode;
@@ -8,6 +8,7 @@ export interface ViewerParams {
   readonly api: GraphicsApi;
   readonly lod: BundleLod;
   readonly model: string | null;
+  readonly track: string | null;
   readonly city: boolean;
   readonly parts: number;
   readonly seed: number;
@@ -51,6 +52,7 @@ function originChunks(value: string | null): readonly [number, number] {
 function appMode(params: URLSearchParams): AppMode {
   const scene = params.get("scene");
   if (scene === "city") return "city";
+  if (params.get("track") !== null) return "track";
   if (params.get("model") !== null) return "model";
   if (scene === "parts") return "parts";
   return "edit";
@@ -65,6 +67,7 @@ export function readViewerParams(search: string): ViewerParams {
     api: params.get("api") === "webgl2" ? "webgl2" : "webgpu",
     lod: params.get("lod") === "low" ? "low" : "standard",
     model: params.get("model"),
+    track: params.get("track"),
     city: params.get("scene") === "city",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
