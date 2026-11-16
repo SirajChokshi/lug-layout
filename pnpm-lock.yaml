@@ -64,20 +64,6 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5))
 
-  packages/test-fixtures: {}
-
-  tools/asset-pipeline:
-    devDependencies:
-      '@brr/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@types/node':
-        specifier: 22.20.5
-        version: 22.20.5
-      typescript:
-        specifier: 7.0.2
-        version: 7.0.2
-
   tools/oxlint-plugin:
     dependencies:
       '@oxlint/plugins':
@@ -93,21 +79,6 @@ importers:
       oxlint:
         specifier: 1.93.0
         version: 1.93.0
-      typescript:
-        specifier: 7.0.2
-        version: 7.0.2
-      vitest:
-        specifier: 5.1.0
-        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5))
-
-  tools/rust-comment-check:
-    devDependencies:
-      '@brr/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@types/node':
-        specifier: 22.20.5
-        version: 22.20.5
       typescript:
         specifier: 7.0.2
         version: 7.0.2
