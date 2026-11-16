@@ -33,7 +33,12 @@ export interface RunRequest {
   readonly brakingLduPerS2: number;
   readonly follow: boolean;
   readonly start: boolean;
+  readonly autopilotSeed: number | null;
 }
+
+export type TrainRouteStatus = "manual" | "waiting" | "routed" | "arrived";
+
+const ROUTE_STATUSES: ReadonlyArray<TrainRouteStatus> = ["manual", "waiting", "routed", "arrived"];
 
 export interface RunStatus {
   readonly tick: number;
@@ -44,6 +49,11 @@ export interface RunStatus {
   readonly trainOffsetLdu: ReadonlyArray<number>;
   readonly trainSpeedLduPerS: ReadonlyArray<number>;
   readonly bogiePointsLdu: ReadonlyArray<number>;
+  readonly arrivals: ReadonlyArray<number>;
+  readonly routeStates: ReadonlyArray<TrainRouteStatus>;
+  readonly sharedPieceTicks: number;
+  readonly minBogieSeparationLdu: number;
+  readonly checkedTicks: number;
   readonly tickCost: SimTickCost;
   readonly vehicle: ModelVehicle["spec"] | null;
   readonly wheelsets: number;
@@ -181,6 +191,12 @@ export class RunScene implements IRunScene {
         successorStart: graph.successorStart,
         successors: graph.successors,
         edgeSwitch: graph.edgeSwitch,
+        placementCount: graph.placementCount,
+        edgePlacement: graph.edgePlacement,
+        edgeRoute: graph.edgeRoute,
+        endPlacement: graph.endPlacement,
+        endPartner: graph.endPartner,
+        switchEnd: graph.switchEnd,
       },
       routeSegments: routeSegments(graph, layout, catalogPieces),
       capacity: { trains: request.trains.length, vehicles: request.trains.length },
@@ -188,11 +204,14 @@ export class RunScene implements IRunScene {
         spec,
         placement: { edge: train.edge, offsetLdu: train.offsetLdu },
       })),
+      autopilotSeed: request.autopilotSeed,
     };
     this.loaded = await this.sim.load(load);
     this.frameLayout = this.loaded.layout;
-    for (let t = 0; t < request.trains.length; t++) {
-      await this.sim.command({ kind: "throttle", train: t, speedLduPerS: request.speedLduPerS });
+    if (request.autopilotSeed === null) {
+      for (let t = 0; t < request.trains.length; t++) {
+        await this.sim.command({ kind: "throttle", train: t, speedLduPerS: request.speedLduPerS });
+      }
     }
     if (request.start) {
       const firstFrame = this.sim.nextFrame();
@@ -248,6 +267,11 @@ export class RunScene implements IRunScene {
           layout.poseStart + layout.vehicles * layout.poseFloatsPerVehicle,
         ),
       ),
+      arrivals: pick(layout.arrivalsStart),
+      routeStates: pick(layout.routeStateStart).map((code) => ROUTE_STATUSES[code] ?? "manual"),
+      sharedPieceTicks: frame.data[layout.sharedPieceTicksIndex] ?? 0,
+      minBogieSeparationLdu: frame.data[layout.minBogieSeparationIndex] ?? 0,
+      checkedTicks: frame.data[layout.checkedTicksIndex] ?? 0,
       tickCost: this.sim.tickCost(),
       vehicle: this.vehicle?.spec ?? null,
       wheelsets: this.vehicle?.wheelsets ?? 0,

@@ -58,6 +58,12 @@ function straightLine(): SimLoad {
       successorStart: graph.successorStart,
       successors: graph.successors,
       edgeSwitch: graph.edgeSwitch,
+      placementCount: graph.placementCount,
+      edgePlacement: graph.edgePlacement,
+      edgeRoute: graph.edgeRoute,
+      endPlacement: graph.endPlacement,
+      endPartner: graph.endPartner,
+      switchEnd: graph.switchEnd,
     },
     routeSegments: Array.from({ length: PIECES }, () => [straight]),
     capacity: { trains: 1, vehicles: 1 },
@@ -72,6 +78,7 @@ function straightLine(): SimLoad {
         placement: { edge: 8, offsetLdu: 100 },
       },
     ],
+    autopilotSeed: null,
   };
 }
 

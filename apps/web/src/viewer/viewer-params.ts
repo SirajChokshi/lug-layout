@@ -19,6 +19,7 @@ export interface ViewerParams {
   readonly simBenchTicks: number;
   readonly hud: boolean;
   readonly start: boolean;
+  readonly autopilotSeed: number | null;
   readonly city: boolean;
   readonly parts: number;
   readonly seed: number;
@@ -42,6 +43,7 @@ const DEFAULT_TRAINS = "0@0";
 const DEFAULT_SPEED_LDU_PER_S = 400;
 const DEFAULT_ACCELERATION_LDU_PER_S2 = 150;
 const DEFAULT_BRAKING_LDU_PER_S2 = 300;
+const MAX_AUTOPILOT_SEED = 2 ** 32 - 1;
 const TRAIN_POSITION = /^(?<edge>\d+)@(?<offset>\d+(?:\.\d+)?)$/u;
 
 function trainRequests(value: string): TrainRequest[] {
@@ -54,6 +56,15 @@ function trainRequests(value: string): TrainRequest[] {
     }
     return { edge: Number(groups["edge"]), offsetLdu: Number(groups["offset"]) };
   });
+}
+
+function autopilotSeed(value: string | null): number | null {
+  if (value === null) return null;
+  const seed = Number(value);
+  if (!Number.isInteger(seed) || seed < 1 || seed > MAX_AUTOPILOT_SEED) {
+    throw new Error(`autopilot=${value} is not a seed from 1 to ${MAX_AUTOPILOT_SEED}`);
+  }
+  return seed;
 }
 
 function positiveNumber(value: string | null, fallback: number): number {
@@ -106,6 +117,7 @@ export function readViewerParams(search: string): ViewerParams {
     simBenchTicks: positiveNumber(params.get("simBench"), 0),
     hud: params.get("hud") !== "0",
     start: params.get("start") !== "0",
+    autopilotSeed: autopilotSeed(params.get("autopilot")),
     city: params.get("scene") === "city",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
