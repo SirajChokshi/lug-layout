@@ -2,6 +2,7 @@ import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
+import type { IPlanService } from "./plan/plan-service.ts";
 import type { ICityScene } from "./scene/city-scene.ts";
 import type { IModelScene } from "./scene/model-scene.ts";
 import type { IRunScene } from "./scene/run-scene.ts";
@@ -20,3 +21,4 @@ export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credi
 export const RUN_SCENE: ServiceIdentifier<IRunScene> = Symbol.for("brr.client.RunScene");
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
+export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");

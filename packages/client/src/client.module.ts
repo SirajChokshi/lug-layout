@@ -4,6 +4,7 @@ import type { RpcPort } from "@brr/rpc";
 import { ContainerModule } from "inversify";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
+import { PlanService } from "./plan/plan-service.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
 import { PartDisplayScene } from "./scene/part-display-scene.ts";
@@ -20,6 +21,7 @@ import {
   SIM_CLIENT,
   SIM_WORKER_PORT,
   TRACK_SCENE,
+  PLAN_SERVICE,
 } from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
@@ -31,6 +33,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(TRACK_SCENE).to(TrackScene).inSingletonScope();
   bind(RUN_SCENE).to(RunScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
+  bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
 });
 
 export interface MainThreadConfig {
