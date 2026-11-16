@@ -9,7 +9,6 @@ export interface FrameTimings {
   readonly meanFrameMs: number;
   readonly medianCpuSubmitMs: number;
   readonly fpsFromMedian: number;
-  readonly jsHeapGrowthPerFrameBytes: number | null;
 }
 
 export interface BenchResult {
@@ -50,7 +49,6 @@ export async function measureFrames(
   }
   const frameMs = new Float64Array(params.measuredFrames);
   const cpuMs = new Float64Array(params.measuredFrames);
-  const heapBefore = jsHeapUsed();
   const started = performance.now();
   let frames = 0;
   while (frames < params.measuredFrames && performance.now() - started < params.maxMeasureMs) {
@@ -64,7 +62,6 @@ export async function measureFrames(
     frameMs[frames] = t2 - t0;
     frames++;
   }
-  const heapAfter = jsHeapUsed();
   const frameSorted = frameMs.slice(0, frames).toSorted();
   const cpuSorted = cpuMs.slice(0, frames).toSorted();
   let total = 0;
@@ -77,10 +74,6 @@ export async function measureFrames(
     meanFrameMs: total / Math.max(frames, 1),
     medianCpuSubmitMs: percentile(cpuSorted, 0.5),
     fpsFromMedian: 1000 / median,
-    jsHeapGrowthPerFrameBytes:
-      heapBefore === null || heapAfter === null
-        ? null
-        : (heapAfter - heapBefore) / Math.max(frames, 1),
   };
 }
 

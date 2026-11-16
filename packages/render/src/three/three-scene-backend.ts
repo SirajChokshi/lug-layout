@@ -131,6 +131,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       forceWebGL: config.api === "webgl2",
     });
     await renderer.init();
+    renderer.info.autoReset = false;
     renderer.setPixelRatio(config.pixelRatio);
     renderer.setSize(config.canvas.clientWidth, config.canvas.clientHeight, false);
     this.renderer = renderer;
@@ -402,6 +403,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       if (superChunk) this.rebuildSuperChunk(superChunk);
     }
     this.dirtySuperChunks.length = 0;
+    renderer.info.reset();
     renderer.render(this.scene, this.camera);
     out.drawCalls = renderer.info.render.drawCalls;
     out.triangles = renderer.info.render.triangles;
