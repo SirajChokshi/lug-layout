@@ -2,6 +2,7 @@ import type { BundleLod, ModelSection, PartBundle } from "@brr/catalog";
 import {
   COLOR_CHANNELS,
   type BackendInfo,
+  type BufferMemory,
   type FrameStats,
   type PartPalette,
   type SceneBackendConfig,
@@ -11,6 +12,7 @@ export interface SceneSummary {
   readonly parts: number;
   readonly modules: number;
   readonly studInstances: number;
+  readonly visibleStudInstances: number;
   readonly bodyTriangles: number;
   readonly studTriangles: number;
   readonly creditedFiles: number;
@@ -29,6 +31,11 @@ export interface InstanceList {
   readonly partIndex: Uint16Array;
 }
 
+export interface StudList {
+  readonly count: number;
+  readonly primitiveIndex: Uint8Array;
+}
+
 export interface IViewerScene {
   attach(config: SceneBackendConfig): Promise<BackendInfo>;
   load(lod: BundleLod): Promise<SceneSummary>;
@@ -36,6 +43,7 @@ export interface IViewerScene {
   resize(width: number, height: number): void;
   renderFrame(out: FrameStats): void;
   waitForGpu(): Promise<void>;
+  bufferMemory(): BufferMemory;
 }
 
 export class ColorTable {
@@ -76,28 +84,19 @@ export function ldrawColorsSrgb(bundle: PartBundle): ReadonlyMap<number, number>
   return new Map(bundle.colors.map((c) => [c.code, Number.parseInt(c.rgb.slice(1), 16)]));
 }
 
-export function partPalette(bundle: PartBundle, colors: ColorTable): PartPalette {
+export function partPalette(bundle: PartBundle, far: PartBundle, colors: ColorTable): PartPalette {
   return {
-    parts: bundle.parts,
-    studPrimitives: bundle.studPrimitives,
+    detailed: { parts: bundle.parts, studPrimitives: bundle.studPrimitives },
+    far: { parts: far.parts, studPrimitives: far.studPrimitives },
     colorsSrgb: colors.toSrgb(),
     ldrawColorsSrgb: ldrawColorsSrgb(bundle),
   };
 }
 
-function studTriangles(bundle: PartBundle, partIndex: number): number {
-  const part = bundle.parts[partIndex];
-  if (!part) return 0;
-  let total = 0;
-  for (let s = 0; s < part.studPrimitiveIndex.length; s++) {
-    total += (bundle.studPrimitives[part.studPrimitiveIndex[s] ?? 0]?.mesh.indices.length ?? 0) / 3;
-  }
-  return total;
-}
-
 export function summarize(
   bundle: PartBundle,
   chunks: ReadonlyArray<InstanceList>,
+  studs: ReadonlyArray<StudList>,
   model: ModelCredit | null,
 ): SceneSummary {
   const instances = new Float64Array(bundle.parts.length);
@@ -110,23 +109,32 @@ export function summarize(
   let parts = 0;
   let studInstances = 0;
   let bodyTriangles = 0;
-  let studTriangleTotal = 0;
   bundle.parts.forEach((part, p) => {
     const count = instances[p] ?? 0;
     let body = 0;
     for (const group of part.mesh.groups) body += group.indices.length / 3;
-    const studs = studTriangles(bundle, p);
     parts += count;
     studInstances += count * part.studPrimitiveIndex.length;
     bodyTriangles += count * body;
-    studTriangleTotal += count * studs;
   });
+  const primitiveTriangles = bundle.studPrimitives.map(
+    (primitive) => primitive.mesh.indices.length / 3,
+  );
+  let visibleStudInstances = 0;
+  let studTriangles = 0;
+  for (const list of studs) {
+    visibleStudInstances += list.count;
+    for (let s = 0; s < list.count; s++) {
+      studTriangles += primitiveTriangles[list.primitiveIndex[s] ?? 0] ?? 0;
+    }
+  }
   return {
     parts,
     modules: chunks.length,
     studInstances,
+    visibleStudInstances,
     bodyTriangles,
-    studTriangles: studTriangleTotal,
+    studTriangles,
     creditedFiles: bundle.credits.length,
     creditedLicenses: [...new Set(bundle.credits.map((c) => c.license ?? "none"))],
     model,

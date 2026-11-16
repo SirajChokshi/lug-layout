@@ -1,6 +1,7 @@
 import type { BackendInfo, FrameStats, IViewerScene, SceneSummary } from "@brr/client";
 import { FrameCoverage } from "./frame-coverage.ts";
 import { measureFrames, type FrameTimings } from "./measure-frames.ts";
+import { memoryReport, type MemoryReport } from "./memory-report.ts";
 import type { ViewerParams } from "./viewer-params.ts";
 
 const ORBIT_PERIOD_MS = 40_000;
@@ -16,6 +17,7 @@ export interface ViewerReport {
   readonly backend: BackendInfo;
   readonly drawingBuffer: DrawingBuffer;
   readonly summary: SceneSummary;
+  readonly memory: MemoryReport;
   readonly loadMs: number;
   readonly liveFps: number | null;
   readonly liveSceneCoverage: number | null;
@@ -28,6 +30,7 @@ export interface ViewerResult {
   readonly backend: BackendInfo;
   readonly drawingBuffer: DrawingBuffer;
   readonly summary: SceneSummary;
+  readonly memory: MemoryReport;
   readonly loadMs: number;
   readonly timings: FrameTimings;
   readonly drawCalls: number;
@@ -58,13 +61,21 @@ export async function runViewer(
   const loadStart = performance.now();
   const summary = await scene.load(params.lod);
   const loadMs = performance.now() - loadStart;
-  const frame: FrameStats = { drawCalls: 0, triangles: 0 };
+  const frame: FrameStats = {
+    drawCalls: 0,
+    triangles: 0,
+    nearChunks: 0,
+    midChunks: 0,
+    farChunks: 0,
+  };
+  const memory = (): MemoryReport => memoryReport(scene.bufferMemory());
   window.addEventListener("resize", () => scene.resize(canvas.clientWidth, canvas.clientHeight));
   const coverage = new FrameCoverage(backend.backgroundSrgb);
   onReport({
     backend,
     drawingBuffer: drawingBuffer(),
     summary,
+    memory: memory(),
     loadMs,
     liveFps: null,
     liveSceneCoverage: null,
@@ -78,6 +89,7 @@ export async function runViewer(
       backend,
       drawingBuffer: drawingBuffer(),
       summary,
+      memory: memory(),
       loadMs,
       liveFps: null,
       liveSceneCoverage: null,
@@ -89,6 +101,7 @@ export async function runViewer(
       backend,
       drawingBuffer: drawingBuffer(),
       summary,
+      memory: memory(),
       loadMs,
       timings,
       drawCalls: timings.medianDrawCalls,
@@ -116,6 +129,7 @@ export async function runViewer(
         backend,
         drawingBuffer: drawingBuffer(),
         summary,
+        memory: memory(),
         loadMs,
         liveFps,
         liveSceneCoverage: coverage.sceneFraction(canvas),

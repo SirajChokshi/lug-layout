@@ -17,13 +17,16 @@ import {
   COLOR_CHANNELS,
   INSTANCE_MATRIX_FLOATS,
   type BackendInfo,
+  type BufferMemory,
   type ChunkInstances,
+  type GeometrySet,
   type FrameStats,
   type ISceneBackend,
   type PartPalette,
   type SceneBackendConfig,
+  type StudInstances,
 } from "../scene-backend.ts";
-import { fixedColorGeometry, inheritBodyGeometry, inheritStudGeometry } from "./part-geometry.ts";
+import { fixedColorGeometry, inheritBodyGeometry, primitiveGeometry } from "./part-geometry.ts";
 
 const MATRIX4_FLOATS = 16;
 const CAMERA_FOV_DEGREES = 40;
@@ -34,6 +37,13 @@ const SKY_COLOR = 0xd9e6f2;
 const GROUND_BOUNCE_COLOR = 0x4a4a40;
 const HEMISPHERE_INTENSITY = 1.4;
 const SUN_INTENSITY = 2.4;
+const STUD_PITCH_LDU = 20;
+const NEAR_MIN_STUD_PITCH_PX = 12;
+const MID_MIN_STUD_PITCH_PX = 3;
+const TIER_NEAR = 0;
+const TIER_MID = 1;
+const TIER_FAR = 2;
+const TIER_UNSET = 255;
 
 function writeMatrix4(
   source: Float32Array,
@@ -77,15 +87,70 @@ function webGl2Context(backend: unknown): WebGL2RenderingContext | undefined {
 
 interface PartGeometries {
   readonly body: BufferGeometry | undefined;
-  readonly studs: BufferGeometry | undefined;
   readonly fixed: BufferGeometry | undefined;
 }
 
-function disposeAll(geometries: ReadonlyArray<PartGeometries>): void {
-  for (const part of geometries) {
+interface LevelGeometries {
+  readonly parts: ReadonlyArray<PartGeometries>;
+  readonly studs: ReadonlyArray<BufferGeometry>;
+}
+
+const EMPTY_LEVEL: LevelGeometries = { parts: [], studs: [] };
+
+function geometryBytes(geometry: BufferGeometry | undefined): number {
+  if (!geometry) return 0;
+  let bytes = geometry.index?.array.byteLength ?? 0;
+  for (const name of Object.keys(geometry.attributes)) {
+    bytes += geometry.getAttribute(name).array.byteLength;
+  }
+  return bytes;
+}
+
+function levelBytes(level: LevelGeometries): number {
+  let bytes = 0;
+  for (const part of level.parts) bytes += geometryBytes(part.body) + geometryBytes(part.fixed);
+  for (const stud of level.studs) bytes += geometryBytes(stud);
+  return bytes;
+}
+
+function disposeLevel(level: LevelGeometries): void {
+  for (const part of level.parts) {
     part.body?.dispose();
-    part.studs?.dispose();
     part.fixed?.dispose();
+  }
+  for (const stud of level.studs) stud.dispose();
+}
+
+function assertSameParts(detailed: GeometrySet, other: GeometrySet): void {
+  const sameParts =
+    detailed.parts.length === other.parts.length &&
+    detailed.parts.every((part, i) => part.id === other.parts[i]?.id);
+  if (!sameParts || detailed.studPrimitives.length !== other.studPrimitives.length) {
+    throw new Error("the palette's geometry sets do not list the same parts and studs");
+  }
+}
+
+class ChunkRecord {
+  tier = TIER_UNSET;
+
+  constructor(
+    readonly group: Group,
+    readonly detailed: Group,
+    readonly shellBodies: Group,
+    readonly coarseStuds: Group,
+    readonly minX: number,
+    readonly maxX: number,
+    readonly minZ: number,
+    readonly maxZ: number,
+    readonly instanceBytes: number,
+  ) {}
+
+  applyTier(tier: number): void {
+    if (tier === this.tier) return;
+    this.tier = tier;
+    this.detailed.visible = tier === TIER_NEAR;
+    this.shellBodies.visible = tier !== TIER_NEAR;
+    this.coarseStuds.visible = tier === TIER_MID;
   }
 }
 
@@ -108,9 +173,14 @@ export class ThreeSceneBackend implements ISceneBackend {
     metalness: 0,
     vertexColors: true,
   });
-  private partGeometries: ReadonlyArray<PartGeometries> = [];
+  private detailedLevel: LevelGeometries = EMPTY_LEVEL;
+  private farLevel: LevelGeometries = EMPTY_LEVEL;
+  private paletteGeometryBytes = 0;
   private linearColors = new Float32Array(0);
-  private readonly chunkGroups = new Map<number, Group>();
+  private readonly chunks = new Map<number, ChunkRecord>();
+  private chunkList: ChunkRecord[] = [];
+  private chunkInstanceBytes = 0;
+  private focalLengthPx = 1;
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
   private failure: string | undefined;
@@ -190,7 +260,9 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   setPalette(palette: PartPalette): void {
     this.clearChunks();
-    disposeAll(this.partGeometries);
+    disposeLevel(this.detailedLevel);
+    disposeLevel(this.farLevel);
+    assertSameParts(palette.detailed, palette.far);
     const linearColor = (code: number, out: Float32Array): void => {
       const srgb = palette.ldrawColorsSrgb.get(code);
       if (srgb === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
@@ -199,11 +271,16 @@ export class ThreeSceneBackend implements ISceneBackend {
       out[1] = this.scratchColor.g;
       out[2] = this.scratchColor.b;
     };
-    this.partGeometries = palette.parts.map((part) => ({
-      body: inheritBodyGeometry(part),
-      studs: inheritStudGeometry(part, palette.studPrimitives),
-      fixed: fixedColorGeometry(part, palette.studPrimitives, linearColor),
-    }));
+    const level = (set: GeometrySet): LevelGeometries => ({
+      parts: set.parts.map((part) => ({
+        body: inheritBodyGeometry(part),
+        fixed: fixedColorGeometry(part, linearColor),
+      })),
+      studs: set.studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh)),
+    });
+    this.detailedLevel = level(palette.detailed);
+    this.farLevel = level(palette.far);
+    this.paletteGeometryBytes = levelBytes(this.detailedLevel) + levelBytes(this.farLevel);
     const colorCount = palette.colorsSrgb.length / COLOR_CHANNELS;
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
     for (let c = 0; c < colorCount; c++) {
@@ -221,32 +298,43 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setChunk(key: number, chunk: ChunkInstances): void {
-    this.removeChunkGroup(key);
-    const group = this.buildInstancedChunk(chunk);
-    this.chunkGroups.set(key, group);
-    this.scene.add(group);
+    this.removeChunk(key);
+    const record = this.buildChunk(chunk);
+    this.chunks.set(key, record);
+    this.chunkList.push(record);
+    this.chunkInstanceBytes += record.instanceBytes;
+    this.scene.add(record.group);
   }
 
-  private removeChunkGroup(key: number): void {
-    const existing = this.chunkGroups.get(key);
+  private removeChunk(key: number): void {
+    const existing = this.chunks.get(key);
     if (!existing) return;
-    this.scene.remove(existing);
-    for (const child of existing.children) {
-      if (child instanceof InstancedMesh) child.dispose();
+    this.scene.remove(existing.group);
+    for (const layer of [existing.detailed, existing.shellBodies, existing.coarseStuds]) {
+      for (const child of layer.children) {
+        if (child instanceof InstancedMesh) child.dispose();
+      }
     }
-    this.chunkGroups.delete(key);
+    this.chunks.delete(key);
+    this.chunkList = this.chunkList.filter((record) => record !== existing);
+    this.chunkInstanceBytes -= existing.instanceBytes;
   }
 
   private clearChunks(): void {
-    for (const key of this.chunkGroups.keys()) this.removeChunkGroup(key);
+    for (const key of this.chunks.keys()) this.removeChunk(key);
   }
 
-  private buildInstancedChunk(chunk: ChunkInstances): Group {
+  private buildChunk(chunk: ChunkInstances): ChunkRecord {
     const group = new Group();
     group.position.set(chunk.originX, 0, chunk.originZ);
     group.matrixAutoUpdate = false;
     group.updateMatrix();
-    const partCount = this.partGeometries.length;
+    const detailed = new Group();
+    const shellBodies = new Group();
+    const coarseStuds = new Group();
+    group.add(detailed, shellBodies, coarseStuds);
+    let instanceBytes = 0;
+    const partCount = this.detailedLevel.parts.length;
     const counts = new Uint32Array(partCount);
     for (let i = 0; i < chunk.count; i++) {
       const part = chunk.partIndex[i] ?? 0;
@@ -254,34 +342,120 @@ export class ThreeSceneBackend implements ISceneBackend {
     }
     for (let p = 0; p < partCount; p++) {
       const count = counts[p] ?? 0;
-      const geometries = this.partGeometries[p];
-      if (count === 0 || !geometries) continue;
+      if (count === 0) continue;
       const matrices = new Float32Array(count * MATRIX4_FLOATS);
       const colors = new Float32Array(count * COLOR_CHANNELS);
       let slot = 0;
       for (let i = 0; i < chunk.count; i++) {
         if (chunk.partIndex[i] !== p) continue;
         writeMatrix4(chunk.matrices, i, matrices, slot);
-        const c = (chunk.colorIndex[i] ?? 0) * COLOR_CHANNELS;
-        colors[slot * 3] = this.linearColors[c] ?? 0;
-        colors[slot * 3 + 1] = this.linearColors[c + 1] ?? 0;
-        colors[slot * 3 + 2] = this.linearColors[c + 2] ?? 0;
+        this.writeColor(chunk.colorIndex[i] ?? 0, colors, slot);
         slot++;
       }
+      instanceBytes += matrices.byteLength + colors.byteLength;
       const matrixAttribute = new InstancedBufferAttribute(matrices, MATRIX4_FLOATS);
       const colorAttribute = new InstancedBufferAttribute(colors, COLOR_CHANNELS);
-      const { body, studs, fixed } = geometries;
-      if (body)
-        group.add(this.instancedMesh(body, this.material, count, matrixAttribute, colorAttribute));
-      if (studs)
-        group.add(this.instancedMesh(studs, this.material, count, matrixAttribute, colorAttribute));
-      if (fixed)
-        group.add(
-          this.instancedMesh(fixed, this.fixedColorMaterial, count, matrixAttribute, undefined),
-        );
+      this.addPartMeshes(
+        detailed,
+        this.detailedLevel.parts[p],
+        count,
+        matrixAttribute,
+        colorAttribute,
+      );
+      this.addPartMeshes(
+        shellBodies,
+        this.farLevel.parts[p],
+        count,
+        matrixAttribute,
+        colorAttribute,
+      );
     }
-    for (const child of group.children) child.updateMatrixWorld(true);
-    return group;
+    instanceBytes += this.addStudMeshes(chunk.studs, detailed, coarseStuds);
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < chunk.count; i++) {
+      const x = chunk.originX + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0);
+      const z = chunk.originZ + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    group.updateMatrixWorld(true);
+    const record = new ChunkRecord(
+      group,
+      detailed,
+      shellBodies,
+      coarseStuds,
+      minX,
+      maxX,
+      minZ,
+      maxZ,
+      instanceBytes,
+    );
+    record.applyTier(TIER_NEAR);
+    return record;
+  }
+
+  private writeColor(colorIndex: number, target: Float32Array, slot: number): void {
+    const c = colorIndex * COLOR_CHANNELS;
+    target[slot * COLOR_CHANNELS] = this.linearColors[c] ?? 0;
+    target[slot * COLOR_CHANNELS + 1] = this.linearColors[c + 1] ?? 0;
+    target[slot * COLOR_CHANNELS + 2] = this.linearColors[c + 2] ?? 0;
+  }
+
+  private addPartMeshes(
+    layer: Group,
+    geometries: PartGeometries | undefined,
+    count: number,
+    matrices: InstancedBufferAttribute,
+    colors: InstancedBufferAttribute,
+  ): void {
+    if (geometries?.body) {
+      layer.add(this.instancedMesh(geometries.body, this.material, count, matrices, colors));
+    }
+    if (geometries?.fixed) {
+      layer.add(
+        this.instancedMesh(geometries.fixed, this.fixedColorMaterial, count, matrices, undefined),
+      );
+    }
+  }
+
+  private addStudMeshes(studs: StudInstances, detailed: Group, coarse: Group): number {
+    let bytes = 0;
+    const primitiveCount = this.detailedLevel.studs.length;
+    const counts = new Uint32Array(primitiveCount);
+    for (let s = 0; s < studs.count; s++) {
+      const k = studs.primitiveIndex[s] ?? 0;
+      counts[k] = (counts[k] ?? 0) + 1;
+    }
+    for (let k = 0; k < primitiveCount; k++) {
+      const count = counts[k] ?? 0;
+      const detailedGeometry = this.detailedLevel.studs[k];
+      const coarseGeometry = this.farLevel.studs[k];
+      if (count === 0 || !detailedGeometry || !coarseGeometry) continue;
+      const matrices = new Float32Array(count * MATRIX4_FLOATS);
+      const colors = new Float32Array(count * COLOR_CHANNELS);
+      let slot = 0;
+      for (let s = 0; s < studs.count; s++) {
+        if (studs.primitiveIndex[s] !== k) continue;
+        writeMatrix4(studs.matrices, s, matrices, slot);
+        this.writeColor(studs.colorIndex[s] ?? 0, colors, slot);
+        slot++;
+      }
+      bytes += matrices.byteLength + colors.byteLength;
+      const matrixAttribute = new InstancedBufferAttribute(matrices, MATRIX4_FLOATS);
+      const colorAttribute = new InstancedBufferAttribute(colors, COLOR_CHANNELS);
+      detailed.add(
+        this.instancedMesh(detailedGeometry, this.material, count, matrixAttribute, colorAttribute),
+      );
+      coarse.add(
+        this.instancedMesh(coarseGeometry, this.material, count, matrixAttribute, colorAttribute),
+      );
+    }
+    return bytes;
   }
 
   private instancedMesh(
@@ -309,12 +483,47 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.renderer?.setSize(width, height, false);
     this.camera.aspect = width / Math.max(height, 1);
     this.camera.updateProjectionMatrix();
+    const bufferHeight = this.renderer?.domElement.height ?? height;
+    this.focalLengthPx = bufferHeight / (2 * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360));
+  }
+
+  private assignTiers(out: FrameStats): void {
+    const eye = this.camera.position;
+    let near = 0;
+    let mid = 0;
+    let far = 0;
+    for (let i = 0; i < this.chunkList.length; i++) {
+      const record = this.chunkList[i];
+      if (!record) continue;
+      const dx = Math.max(record.minX - eye.x, 0, eye.x - record.maxX);
+      const dz = Math.max(record.minZ - eye.z, 0, eye.z - record.maxZ);
+      const distance = Math.max(Math.hypot(dx, eye.y, dz), CAMERA_NEAR_LDU);
+      const studPitchPx = (STUD_PITCH_LDU * this.focalLengthPx) / distance;
+      if (studPitchPx >= NEAR_MIN_STUD_PITCH_PX) {
+        record.applyTier(TIER_NEAR);
+        near++;
+      } else if (studPitchPx >= MID_MIN_STUD_PITCH_PX) {
+        record.applyTier(TIER_MID);
+        mid++;
+      } else {
+        record.applyTier(TIER_FAR);
+        far++;
+      }
+    }
+    out.nearChunks = near;
+    out.midChunks = mid;
+    out.farChunks = far;
+  }
+
+  bufferMemory(): BufferMemory {
+    return { geometryBytes: this.paletteGeometryBytes, instanceBytes: this.chunkInstanceBytes };
   }
 
   renderFrame(out: FrameStats): void {
     const renderer = this.renderer;
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
     this.throwIfFailed();
+    this.assignTiers(out);
     renderer.info.reset();
     renderer.render(this.scene, this.camera);
     out.drawCalls = renderer.info.render.drawCalls;

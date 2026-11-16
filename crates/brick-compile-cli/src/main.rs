@@ -63,6 +63,7 @@ fn parse_args() -> Result<Args, String> {
     let lod = match values.get("--lod").map(String::as_str) {
         None | Some("standard") => Lod::Standard,
         Some("low") => Lod::Low,
+        Some("far") => Lod::Far,
         Some(other) => return Err(format!("unknown --lod {other}")),
     };
     Ok(Args {
@@ -303,7 +304,7 @@ fn run(args: &Args) -> Result<(), String> {
     let manifest = json!({
         "unit": "LDU",
         "upAxis": "+Y",
-        "lod": match args.lod { Lod::Standard => "standard", Lod::Low => "low" },
+        "lod": match args.lod { Lod::Standard => "standard", Lod::Low => "low", Lod::Far => "far" },
         "source": palette["source"],
         "parts": parts,
         "models": models,

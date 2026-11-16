@@ -3,6 +3,7 @@ import {
   INSTANCE_MATRIX_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
+  type BufferMemory,
   type FrameStats,
   type ISceneBackend,
   type SceneBackendConfig,
@@ -16,6 +17,7 @@ import {
   type IViewerScene,
   type SceneSummary,
 } from "./viewer-scene.ts";
+import { withStuds } from "./stud-stream.ts";
 
 export interface IModelScene extends IViewerScene {
   selectModel(name: string): void;
@@ -47,7 +49,7 @@ export class ModelScene implements IModelScene {
   }
 
   async load(lod: BundleLod): Promise<SceneSummary> {
-    const bundle = await this.loader.load(lod);
+    const [bundle, far] = await Promise.all([this.loader.load(lod), this.loader.load("far")]);
     const entry = bundle.models.find((model) => model.name === this.modelName);
     if (!entry) {
       const available = bundle.models.map((model) => model.name).join(", ");
@@ -60,16 +62,22 @@ export class ModelScene implements IModelScene {
       colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
     }
     this.frame(model.matrices, model.instanceCount);
-    this.backend.setPalette(partPalette(bundle, colors));
-    this.backend.setChunk(chunkKey(0, 0), {
-      originX: 0,
-      originZ: 0,
-      count: model.instanceCount,
-      partIndex: model.partIndex,
-      colorIndex,
-      matrices: model.matrices,
-    });
-    return summarize(bundle, [{ count: model.instanceCount, partIndex: model.partIndex }], {
+    const chunk = withStuds(
+      {
+        originX: 0,
+        originZ: 0,
+        count: model.instanceCount,
+        partIndex: model.partIndex,
+        colorIndex,
+        matrices: model.matrices,
+      },
+      bundle.parts,
+      colors,
+      undefined,
+    );
+    this.backend.setPalette(partPalette(bundle, far, colors));
+    this.backend.setChunk(chunkKey(0, 0), chunk);
+    return summarize(bundle, [chunk], [chunk.studs], {
       name: entry.name,
       source: entry.source,
       sections: model.sections,
@@ -121,5 +129,9 @@ export class ModelScene implements IModelScene {
 
   waitForGpu(): Promise<void> {
     return this.backend.waitForGpu();
+  }
+
+  bufferMemory(): BufferMemory {
+    return this.backend.bufferMemory();
   }
 }

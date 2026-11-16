@@ -2,6 +2,7 @@ import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr
 import {
   SCENE_BACKEND,
   type BackendInfo,
+  type BufferMemory,
   type FrameStats,
   type ISceneBackend,
   type SceneBackendConfig,
@@ -9,6 +10,7 @@ import {
 import { inject, injectable } from "inversify";
 import { buildPartDisplay } from "./part-display.ts";
 import { CHUNK_LDU, placementsToInstances } from "./placements.ts";
+import { withStuds } from "./stud-stream.ts";
 import {
   ColorTable,
   partPalette,
@@ -33,12 +35,23 @@ export class PartDisplayScene implements IViewerScene {
   }
 
   async load(lod: BundleLod): Promise<SceneSummary> {
-    const bundle = await this.loader.load(lod);
+    const [bundle, far] = await Promise.all([this.loader.load(lod), this.loader.load("far")]);
     const colors = new ColorTable(bundle);
     const chunks = buildPartDisplay(bundle, colors);
-    this.backend.setPalette(partPalette(bundle, colors));
-    for (const chunk of chunks) this.backend.setChunk(chunk.key, placementsToInstances(chunk));
-    return summarize(bundle, chunks, null);
+    const instances = chunks.map((chunk) =>
+      withStuds(placementsToInstances(chunk), bundle.parts, colors, undefined),
+    );
+    this.backend.setPalette(partPalette(bundle, far, colors));
+    chunks.forEach((chunk, i) => {
+      const built = instances[i];
+      if (built) this.backend.setChunk(chunk.key, built);
+    });
+    return summarize(
+      bundle,
+      chunks,
+      instances.map((chunk) => chunk.studs),
+      null,
+    );
   }
 
   setCamera(t: number): void {
@@ -65,5 +78,9 @@ export class PartDisplayScene implements IViewerScene {
 
   waitForGpu(): Promise<void> {
     return this.backend.waitForGpu();
+  }
+
+  bufferMemory(): BufferMemory {
+    return this.backend.bufferMemory();
   }
 }

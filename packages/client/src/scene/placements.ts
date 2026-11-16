@@ -1,5 +1,7 @@
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances } from "@brr/render";
 
+export type ChunkPartInstances = Omit<ChunkInstances, "studs">;
+
 export const STUD_LDU = 20;
 export const PLATE_LDU = 8;
 export const CHUNK_STUDS = 32;
@@ -87,7 +89,7 @@ export class PlacementWriter {
   }
 }
 
-export function placementsToInstances(chunk: ChunkPlacements): ChunkInstances {
+export function placementsToInstances(chunk: ChunkPlacements): ChunkPartInstances {
   const matrices = new Float32Array(chunk.count * INSTANCE_MATRIX_FLOATS);
   for (let i = 0; i < chunk.count; i++) {
     const turn = (chunk.rot[i] ?? 0) & 3;

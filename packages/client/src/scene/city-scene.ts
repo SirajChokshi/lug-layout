@@ -3,10 +3,12 @@ import {
   type BundleLod,
   type IPartBundleLoader,
   type PartBundle,
+  type PartRole,
 } from "@brr/catalog";
 import {
   SCENE_BACKEND,
   type BackendInfo,
+  type BufferMemory,
   type FrameStats,
   type ISceneBackend,
   type SceneBackendConfig,
@@ -21,6 +23,7 @@ import {
   type RailModule,
   type RoadModule,
 } from "./procedural-city.ts";
+import { withStuds } from "./stud-stream.ts";
 import { straightRunPitchStuds } from "./straight-track.ts";
 import {
   ColorTable,
@@ -43,6 +46,7 @@ export interface ICityScene extends IViewerScene {
 }
 
 const PARTS_PER_BUILDING_MODULE = 2_000;
+const COVERING_ROLES: ReadonlySet<PartRole> = new Set<PartRole>(["wall", "roof", "detail"]);
 const STREET_EYE_HEIGHT_LDU = 120;
 const STREET_LOOK_AHEAD_LDU = 900;
 const STREET_LOOK_DOWN_FACTOR = 0.5;
@@ -153,7 +157,7 @@ export class CityScene implements ICityScene {
   }
 
   async load(lod: BundleLod): Promise<SceneSummary> {
-    const bundle = await this.loader.load(lod);
+    const [bundle, far] = await Promise.all([this.loader.load(lod), this.loader.load("far")]);
     const colors = new ColorTable(bundle);
     const parts = cityParts(bundle, colors);
     const layout = generateCity(
@@ -165,15 +169,25 @@ export class CityScene implements ICityScene {
       parts,
       cityColors(colors),
     );
-    this.backend.setPalette(partPalette(bundle, colors));
-    for (const chunk of layout.chunks)
-      this.backend.setChunk(chunk.key, placementsToInstances(chunk));
+    const instances = layout.chunks.map((chunk) =>
+      withStuds(placementsToInstances(chunk), bundle.parts, colors, COVERING_ROLES),
+    );
+    this.backend.setPalette(partPalette(bundle, far, colors));
+    layout.chunks.forEach((chunk, i) => {
+      const built = instances[i];
+      if (built) this.backend.setChunk(chunk.key, built);
+    });
     this.minX = layout.firstChunk * CHUNK_LDU;
     this.extent = layout.side * CHUNK_LDU;
     const middleRoad =
       layout.roadColumns[Math.floor(layout.roadColumns.length / 2)] ?? layout.firstChunk;
     this.streetX = middleRoad * CHUNK_LDU + CHUNK_LDU / 2;
-    return summarize(bundle, layout.chunks, null);
+    return summarize(
+      bundle,
+      layout.chunks,
+      instances.map((chunk) => chunk.studs),
+      null,
+    );
   }
 
   setCamera(t: number): void {
@@ -213,5 +227,9 @@ export class CityScene implements ICityScene {
 
   waitForGpu(): Promise<void> {
     return this.backend.waitForGpu();
+  }
+
+  bufferMemory(): BufferMemory {
+    return this.backend.bufferMemory();
   }
 }

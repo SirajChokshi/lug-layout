@@ -16,11 +16,23 @@ export interface BackendInfo {
   readonly backgroundSrgb: number;
 }
 
-export interface PartPalette {
+export interface GeometrySet {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
+}
+
+export interface PartPalette {
+  readonly detailed: GeometrySet;
+  readonly far: GeometrySet;
   readonly colorsSrgb: Uint8Array;
   readonly ldrawColorsSrgb: ReadonlyMap<number, number>;
+}
+
+export interface StudInstances {
+  readonly count: number;
+  readonly primitiveIndex: Uint8Array;
+  readonly colorIndex: Uint16Array;
+  readonly matrices: Float32Array;
 }
 
 export interface ChunkInstances {
@@ -30,11 +42,20 @@ export interface ChunkInstances {
   readonly partIndex: Uint16Array;
   readonly colorIndex: Uint16Array;
   readonly matrices: Float32Array;
+  readonly studs: StudInstances;
 }
 
 export interface FrameStats {
   drawCalls: number;
   triangles: number;
+  nearChunks: number;
+  midChunks: number;
+  farChunks: number;
+}
+
+export interface BufferMemory {
+  readonly geometryBytes: number;
+  readonly instanceBytes: number;
 }
 
 export interface ISceneBackend {
@@ -45,6 +66,7 @@ export interface ISceneBackend {
   resize(width: number, height: number): void;
   renderFrame(out: FrameStats): void;
   waitForGpu(): Promise<void>;
+  bufferMemory(): BufferMemory;
 }
 
 export const INSTANCE_MATRIX_FLOATS = 12;

@@ -1,5 +1,10 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
-import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";
+import {
+  SCENE_BACKEND,
+  type BufferMemory,
+  type ChunkInstances,
+  type ISceneBackend,
+} from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
@@ -32,6 +37,9 @@ class RecordingBackend implements ISceneBackend {
   resize(): void {}
   renderFrame(): void {}
   async waitForGpu(): Promise<void> {}
+  bufferMemory(): BufferMemory {
+    return { geometryBytes: 0, instanceBytes: 0 };
+  }
 }
 
 it("shows every palette part on the integer lattice when resolved through the real modules", async () => {
