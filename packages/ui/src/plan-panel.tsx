@@ -243,7 +243,9 @@ function IssueList({ check }: { readonly check: PlanCheck | undefined }) {
           className={issues.length === 0 ? "plan-ok" : "plan-errors"}
           data-plan-errors={issues.length}
         >
-          {issues.length === 0 ? "no errors" : `${issues.length} errors`}
+          {issues.length === 0
+            ? "no errors"
+            : `${issues.length} ${issues.length === 1 ? "error" : "errors"}`}
         </span>
       </h3>
       <p className="plan-meta">
