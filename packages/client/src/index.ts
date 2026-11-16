@@ -22,6 +22,7 @@ export type {
   EditorSnapshot,
   EditorStats,
   EditorStatus,
+  HistoryView,
   IEditor,
   LatencySample,
   SelectionView,
