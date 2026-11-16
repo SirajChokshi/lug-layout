@@ -1,0 +1,284 @@
+{
+ "files": {
+  "import/imported-world.rebrickable.csv": {
+   "rebrickableLots": 1550,
+   "rebrickableParts": 10864,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 1546,
+   "bricklinkParts": 10865,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "10020stk01",
+    "973pb0631",
+    "973pb1396"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_190_-10_210_10.rebrickable.csv": {
+   "rebrickableLots": 70,
+   "rebrickableParts": 145,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 70,
+   "bricklinkParts": 145,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_1930_-10_1950_10.rebrickable.csv": {
+   "rebrickableLots": 325,
+   "rebrickableParts": 2408,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 325,
+   "bricklinkParts": 2408,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_2630_-90_2650_-70.rebrickable.csv": {
+   "rebrickableLots": 202,
+   "rebrickableParts": 1260,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 201,
+   "bricklinkParts": 1259,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_3250_-10_3270_10.rebrickable.csv": {
+   "rebrickableLots": 387,
+   "rebrickableParts": 2071,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 389,
+   "bricklinkParts": 2073,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "973pb0631",
+    "973pb1396"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_4130_70_4150_90.rebrickable.csv": {
+   "rebrickableLots": 196,
+   "rebrickableParts": 629,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 196,
+   "bricklinkParts": 629,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_5470_70_5490_90.rebrickable.csv": {
+   "rebrickableLots": 178,
+   "rebrickableParts": 618,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 178,
+   "bricklinkParts": 618,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_6790_-410_6810_-390.rebrickable.csv": {
+   "rebrickableLots": 162,
+   "rebrickableParts": 390,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 162,
+   "bricklinkParts": 390,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_7470_-150_7490_-130.rebrickable.csv": {
+   "rebrickableLots": 136,
+   "rebrickableParts": 330,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 136,
+   "bricklinkParts": 330,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_8650_-90_8670_-70.rebrickable.csv": {
+   "rebrickableLots": 116,
+   "rebrickableParts": 419,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 116,
+   "bricklinkParts": 419,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "10020stk01"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_990_-10_1010_10.rebrickable.csv": {
+   "rebrickableLots": 575,
+   "rebrickableParts": 2594,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 575,
+   "bricklinkParts": 2594,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10128-1.rebrickable.csv": {
+   "rebrickableLots": 136,
+   "rebrickableParts": 330,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 136,
+   "bricklinkParts": 330,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10133-1.rebrickable.csv": {
+   "rebrickableLots": 116,
+   "rebrickableParts": 419,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 116,
+   "bricklinkParts": 419,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "10020stk01"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10185-1.rebrickable.csv": {
+   "rebrickableLots": 325,
+   "rebrickableParts": 2408,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 325,
+   "bricklinkParts": 2408,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10190-1.rebrickable.csv": {
+   "rebrickableLots": 202,
+   "rebrickableParts": 1260,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 201,
+   "bricklinkParts": 1259,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10218-1.rebrickable.csv": {
+   "rebrickableLots": 387,
+   "rebrickableParts": 2071,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 389,
+   "bricklinkParts": 2073,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "973pb0631",
+    "973pb1396"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10264-1.rebrickable.csv": {
+   "rebrickableLots": 575,
+   "rebrickableParts": 2594,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 575,
+   "bricklinkParts": 2594,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/2150-1.rebrickable.csv": {
+   "rebrickableLots": 196,
+   "rebrickableParts": 629,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 196,
+   "bricklinkParts": 629,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/4554-1.rebrickable.csv": {
+   "rebrickableLots": 178,
+   "rebrickableParts": 618,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 178,
+   "bricklinkParts": 618,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/4555-1.rebrickable.csv": {
+   "rebrickableLots": 162,
+   "rebrickableParts": 390,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 162,
+   "bricklinkParts": 390,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/7936-1.rebrickable.csv": {
+   "rebrickableLots": 70,
+   "rebrickableParts": 145,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 70,
+   "bricklinkParts": 145,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  }
+ },
+ "importWorld": {
+  "equalsSumOfModelExports": true,
+  "parts": 10864
+ },
+ "regions": {
+  "7936-1": {
+   "region": "imported-world.region_190_-10_210_10",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10264-1": {
+   "region": "imported-world.region_990_-10_1010_10",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10185-1": {
+   "region": "imported-world.region_1930_-10_1950_10",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10190-1": {
+   "region": "imported-world.region_2630_-90_2650_-70",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10218-1": {
+   "region": "imported-world.region_3250_-10_3270_10",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "2150-1": {
+   "region": "imported-world.region_4130_70_4150_90",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "4554-1": {
+   "region": "imported-world.region_5470_70_5490_90",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "4555-1": {
+   "region": "imported-world.region_6790_-410_6810_-390",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10128-1": {
+   "region": "imported-world.region_7470_-150_7490_-130",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10133-1": {
+   "region": "imported-world.region_8650_-90_8670_-70",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  }
+ }
+}
