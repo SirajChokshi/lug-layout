@@ -74,7 +74,7 @@ export function EditorApp({
         <Inspector snapshot={snapshot} />
       </div>
       <div className="buildable-dock">
-        <BuildablePanel plans={plans} buildable={buildable} />
+        <BuildablePanel plans={plans} buildable={buildable} disclaimer={disclaimer} />
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <BuildableState buildable={buildable} />}

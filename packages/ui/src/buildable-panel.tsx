@@ -247,9 +247,19 @@ function BomTable({
 interface BuildablePanelProps {
   readonly plans: IPlanService;
   readonly buildable: IBuildableService;
+  readonly disclaimer: string;
 }
 
-export function BuildablePanel({ plans, buildable }: BuildablePanelProps) {
+function savePrintablePlan(svg: string, planName: string): void {
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${planName.trim().replaceAll(/[^A-Za-z0-9-]+/gu, "-")}.plan.svg`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export function BuildablePanel({ plans, buildable, disclaimer }: BuildablePanelProps) {
   const planState = usePlans(plans);
   const state = useBuildable(buildable);
   const planId = planState.activePlanId;
@@ -303,6 +313,17 @@ export function BuildablePanel({ plans, buildable }: BuildablePanelProps) {
           }}
         />
       </label>
+      <button
+        type="button"
+        className="printable-plan"
+        data-download="plan.svg"
+        onClick={() => {
+          const svg = buildable.printablePlan(planId, disclaimer);
+          if (svg) savePrintablePlan(svg, region.name);
+        }}
+      >
+        Printable plan (SVG)
+      </button>
       <IssueList issues={report.issues} />
       <OwnVsBuy buildable={buildable} state={state} purchase={purchase} planName={region.name} />
       <BomTable report={report} colorNames={state.colorNames} ownBuy={purchase?.ownBuy ?? null} />

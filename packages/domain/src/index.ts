@@ -102,3 +102,4 @@ export {
   type PartsCollection,
   type PlanFiles,
 } from "./plan/own-vs-buy.ts";
+export { planSvg, type PlanSvgInput } from "./plan/plan-svg.ts";
