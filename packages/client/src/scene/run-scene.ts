@@ -134,11 +134,6 @@ export class RunScene implements IRunScene {
     const vehicle = vehicleFromModel(modelBundle.model, modelBundle.bundle.parts);
     this.vehicle = vehicle;
     this.railY = railTopY(layout, catalogPieces, bundle);
-    const summary = showChunks(this.backend, bundle, undefined, colors, chunks, {
-      name: modelBundle.entry.name,
-      source: modelBundle.entry.source,
-      sections: modelBundle.model.sections,
-    });
     const model = modelBundle.model;
     const partOffset = trackBundle.parts.length;
     const count = vehicle.instances.length;
@@ -162,6 +157,11 @@ export class RunScene implements IRunScene {
       colors,
       undefined,
     );
+    const summary = showChunks(this.backend, bundle, undefined, colors, chunks, {
+      name: modelBundle.entry.name,
+      source: modelBundle.entry.source,
+      sections: modelBundle.model.sections,
+    });
     for (let t = 0; t < request.trains.length; t++) this.backend.setVehicle(t, body);
     const spec: TrainSpec = {
       vehicles: [vehicle.spec],
