@@ -49,12 +49,15 @@ export interface CityOptions {
   readonly targetParts: number;
   readonly partsPerModule: number;
   readonly seed: number;
+  readonly originChunkX: number;
+  readonly originChunkZ: number;
 }
 
 export interface CityLayout {
   readonly world: World;
   readonly side: number;
-  readonly firstChunk: number;
+  readonly firstChunkX: number;
+  readonly firstChunkZ: number;
   readonly roadColumns: ReadonlyArray<number>;
 }
 
@@ -336,17 +339,18 @@ export function generateCity(
   while (buildingCellsFor(side) < wantedBuildings) side++;
   const buildingCells = buildingCellsFor(side);
   const perModule = Math.ceil(options.targetParts / buildingCells);
-  const firstChunk = -Math.floor(side / 2);
+  const firstChunkX = options.originChunkX - Math.floor(side / 2);
+  const firstChunkZ = options.originChunkZ - Math.floor(side / 2);
   const random = new SeededRandom(options.seed);
   const world = new World();
   const roadColumns: number[] = [];
   let roadOrdinal = 0;
   for (let column = 0; column < side; column++) {
-    const chunkX = firstChunk + column;
+    const chunkX = firstChunkX + column;
     const kind = columnKind(column);
     if (kind === "rail") {
       for (let row = 0; row < side; row++)
-        railModule(new ModuleWriter(world, chunkX, firstChunk + row), parts, colors);
+        railModule(new ModuleWriter(world, chunkX, firstChunkZ + row), parts, colors);
       continue;
     }
     if (kind === "road") {
@@ -355,13 +359,13 @@ export function generateCity(
       roadOrdinal++;
       roadColumns.push(chunkX);
       for (let row = 0; row < side; row++) {
-        roadModule(new ModuleWriter(world, chunkX, firstChunk + row), road);
+        roadModule(new ModuleWriter(world, chunkX, firstChunkZ + row), road);
       }
       continue;
     }
     for (let row = 0; row < side; row++) {
       buildingModule(
-        new ModuleWriter(world, chunkX, firstChunk + row),
+        new ModuleWriter(world, chunkX, firstChunkZ + row),
         perModule,
         parts,
         colors,
@@ -369,5 +373,5 @@ export function generateCity(
       );
     }
   }
-  return { world, side, firstChunk, roadColumns };
+  return { world, side, firstChunkX, firstChunkZ, roadColumns };
 }

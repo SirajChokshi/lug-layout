@@ -6,6 +6,7 @@ import {
   type PartRole,
 } from "@brr/catalog";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
+import { World } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
 import { CHUNK_LDU, CHUNK_STUDS } from "@brr/math";
@@ -27,10 +28,22 @@ export interface CityRequest {
   readonly targetParts: number;
   readonly seed: number;
   readonly camera: CityCamera;
+  readonly originChunkX: number;
+  readonly originChunkZ: number;
+}
+
+export interface PlacementDump {
+  readonly refId: ReadonlyArray<number>;
+  readonly colorId: ReadonlyArray<number>;
+  readonly x: ReadonlyArray<number>;
+  readonly z: ReadonlyArray<number>;
+  readonly yPlates: ReadonlyArray<number>;
+  readonly rot: ReadonlyArray<number>;
 }
 
 export interface ICityScene extends IViewerScene {
   configure(request: CityRequest): void;
+  placementDump(): PlacementDump;
 }
 
 const PARTS_PER_BUILDING_MODULE = 2_000;
@@ -126,8 +139,16 @@ function cityColors(colors: ColorTable): CityColors {
 
 @injectable()
 export class CityScene implements ICityScene {
-  private request: CityRequest = { targetParts: 20_000, seed: 1, camera: "aerial" };
+  private request: CityRequest = {
+    targetParts: 20_000,
+    seed: 1,
+    camera: "aerial",
+    originChunkX: 0,
+    originChunkZ: 0,
+  };
+  private world = new World();
   private minX = 0;
+  private minZ = 0;
   private extent = CHUNK_LDU;
   private streetX = CHUNK_LDU / 2;
 
@@ -149,39 +170,62 @@ export class CityScene implements ICityScene {
         targetParts: this.request.targetParts,
         partsPerModule: PARTS_PER_BUILDING_MODULE,
         seed: this.request.seed,
+        originChunkX: this.request.originChunkX,
+        originChunkZ: this.request.originChunkZ,
       },
       parts,
       cityColors(colors),
     );
+    this.world = layout.world;
     const chunks = layout.world.chunks().map((chunk) => ({
       key: chunk.key,
       instances: withStuds(chunkInstances(chunk), bundle.parts, colors, COVERING_ROLES),
     }));
-    this.minX = layout.firstChunk * CHUNK_LDU;
+    this.minX = layout.firstChunkX * CHUNK_LDU;
+    this.minZ = layout.firstChunkZ * CHUNK_LDU;
     this.extent = layout.side * CHUNK_LDU;
     const middleRoad =
-      layout.roadColumns[Math.floor(layout.roadColumns.length / 2)] ?? layout.firstChunk;
+      layout.roadColumns[Math.floor(layout.roadColumns.length / 2)] ?? layout.firstChunkX;
     this.streetX = middleRoad * CHUNK_LDU + CHUNK_LDU / 2;
     return showChunks(this.backend, bundle, far, colors, chunks, null);
   }
 
+  placementDump(): PlacementDump {
+    const refId: number[] = [];
+    const colorId: number[] = [];
+    const x: number[] = [];
+    const z: number[] = [];
+    const yPlates: number[] = [];
+    const rot: number[] = [];
+    for (const chunk of this.world.chunks()) {
+      refId.push(...chunk.refId);
+      colorId.push(...chunk.colorId);
+      x.push(...chunk.x);
+      z.push(...chunk.z);
+      yPlates.push(...chunk.yPlates);
+      rot.push(...chunk.rot);
+    }
+    return { refId, colorId, x, z, yPlates, rot };
+  }
+
   setCamera(t: number): void {
-    const centre = this.minX + this.extent / 2;
+    const centreX = this.minX + this.extent / 2;
+    const centreZ = this.minZ + this.extent / 2;
     if (this.request.camera === "aerial") {
       const angle = t * 2 * Math.PI;
       const radius = this.extent * AERIAL_RADIUS_FACTOR;
       this.backend.setView(
-        centre + radius * Math.cos(angle),
+        centreX + radius * Math.cos(angle),
         this.extent * AERIAL_HEIGHT_FACTOR,
-        centre + radius * Math.sin(angle),
-        centre,
+        centreZ + radius * Math.sin(angle),
+        centreX,
         0,
-        centre,
+        centreZ,
       );
       return;
     }
     const drivableLength = Math.max(this.extent - STREET_LOOK_AHEAD_LDU, 0);
-    const z = this.minX + drivableLength * t;
+    const z = this.minZ + drivableLength * t;
     this.backend.setView(
       this.streetX,
       STREET_EYE_HEIGHT_LDU,

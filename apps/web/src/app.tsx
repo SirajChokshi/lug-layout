@@ -1,4 +1,4 @@
-import type { IViewerScene } from "@brr/client";
+import type { IViewerScene, PlacementDump } from "@brr/client";
 import { useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
@@ -14,6 +14,7 @@ const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
+  readonly placements: (() => PlacementDump) | null;
 }
 
 function mebibytes(bytes: number): string {
@@ -99,7 +100,7 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params }: AppProps) {
+export function App({ scene, params, placements }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const [report, setReport] = useState<ViewerReport | null>(null);
@@ -111,8 +112,8 @@ export function App({ scene, params }: AppProps) {
     if (!canvas || started.current) return;
     started.current = true;
     const showError = (e: unknown): void => setError(String(e));
-    runViewer(scene, canvas, params, setReport, setResult, showError).catch(showError);
-  }, [scene, params]);
+    runViewer(scene, canvas, params, placements, setReport, setResult, showError).catch(showError);
+  }, [scene, params, placements]);
 
   return (
     <>

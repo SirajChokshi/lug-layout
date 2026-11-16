@@ -8,6 +8,9 @@ export interface ViewerParams {
   readonly parts: number;
   readonly seed: number;
   readonly camera: CityCamera;
+  readonly originChunkX: number;
+  readonly originChunkZ: number;
+  readonly dumpWorld: boolean;
   readonly measure: boolean;
   readonly warmupFrames: number;
   readonly measuredFrames: number;
@@ -25,8 +28,18 @@ function positiveNumber(value: string | null, fallback: number): number {
   return value !== null && Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function originChunks(value: string | null): readonly [number, number] {
+  if (value === null) return [0, 0];
+  const [x, z] = value.split(",").map(Number);
+  if (x === undefined || z === undefined || !Number.isInteger(x) || !Number.isInteger(z)) {
+    throw new Error(`origin=${value} is not two integer chunk coordinates "x,z"`);
+  }
+  return [x, z];
+}
+
 export function readViewerParams(search: string): ViewerParams {
   const params = new URLSearchParams(search);
+  const [originChunkX, originChunkZ] = originChunks(params.get("origin"));
   return {
     api: params.get("api") === "webgl2" ? "webgl2" : "webgpu",
     lod: params.get("lod") === "low" ? "low" : "standard",
@@ -35,6 +48,9 @@ export function readViewerParams(search: string): ViewerParams {
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",
+    originChunkX,
+    originChunkZ,
+    dumpWorld: params.get("dumpWorld") === "1",
     measure: params.get("measure") === "1",
     warmupFrames: positiveNumber(params.get("warmup"), DEFAULT_WARMUP_FRAMES),
     measuredFrames: positiveNumber(params.get("frames"), DEFAULT_MEASURED_FRAMES),
