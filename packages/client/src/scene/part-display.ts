@@ -13,7 +13,6 @@ const TRACK_SPACING_Z_LDU = 220;
 
 const DISPLAY_COLORS = {
   ground: "Green",
-  road: "Dark_Bluish_Grey",
   track: "Dark_Bluish_Grey",
   bricks: [
     "Red",
@@ -87,8 +86,11 @@ export function buildPartDisplay(bundle: PartBundle, colors: ColorTable): ChunkP
   const chunks = [studded.finish(0, 0)];
   bundle.parts.forEach((part, index) => {
     if (part.role !== "road") return;
+    if (part.producedColor === undefined) {
+      throw new Error(`${part.id}: road plates need a sourced produced colour in palette.json`);
+    }
     const road = new PlacementWriter();
-    road.push(index, colors.indexOfName(DISPLAY_COLORS.road), half, half, 0, 0);
+    road.push(index, colors.indexOfCode(part.producedColor), half, half, 0, 0);
     chunks.push(road.finish(chunks.length, 0));
   });
   return chunks;

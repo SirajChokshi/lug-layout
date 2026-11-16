@@ -16,6 +16,7 @@ export interface ManifestPart {
   readonly author: string;
   readonly license: string;
   readonly bounds: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
+  readonly displayColor?: { readonly ldraw: number; readonly source: string };
 }
 
 export interface ManifestStudPrimitive {

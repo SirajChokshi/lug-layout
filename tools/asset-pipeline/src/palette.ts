@@ -20,7 +20,11 @@ export interface Palette {
   readonly config: ReadonlyArray<string>;
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
-  readonly parts: ReadonlyArray<{ readonly id: string; readonly role: PartRole }>;
+  readonly parts: ReadonlyArray<{
+    readonly id: string;
+    readonly role: PartRole;
+    readonly displayColor?: { readonly ldraw: number; readonly source: string };
+  }>;
   readonly models: ReadonlyArray<PaletteModel>;
 }
 

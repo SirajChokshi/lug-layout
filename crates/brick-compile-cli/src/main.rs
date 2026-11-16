@@ -182,7 +182,7 @@ fn run(args: &Args) -> Result<(), String> {
     {
         let id = entry["id"].as_str().ok_or("part id must be a string")?;
         let reference = format!("{id}.dat");
-        let summary = compile_entry(
+        let mut summary = compile_entry(
             &library,
             &reference,
             &entry["role"],
@@ -190,6 +190,9 @@ fn run(args: &Args) -> Result<(), String> {
             &args.out,
             &mut credits,
         )?;
+        if !entry["displayColor"].is_null() {
+            summary["displayColor"] = entry["displayColor"].clone();
+        }
         part_index.insert(reference, parts.len());
         parts.push(summary);
     }

@@ -36,6 +36,7 @@ export interface PartAsset {
   readonly attribution: LdrawAttribution;
   readonly boundsMin: Vec3Tuple;
   readonly boundsMax: Vec3Tuple;
+  readonly producedColor: number | undefined;
   readonly mesh: PartMesh;
   readonly studPrimitiveNames: ReadonlyArray<string>;
   readonly studPrimitiveIndex: Uint8Array;

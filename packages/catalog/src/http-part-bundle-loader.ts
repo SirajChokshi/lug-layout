@@ -111,6 +111,7 @@ function toPartAsset(
       note: extras.ldraw.note,
     },
     boundsMin: part.bounds.min,
+    producedColor: part.displayColor?.ldraw,
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
     studPrimitiveNames,
