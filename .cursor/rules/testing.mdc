@@ -17,4 +17,5 @@ alwaysApply: false
 - **No network, wall clock or randomness** in tests. Inject a clock and seed every RNG.
 - **Rust:** unit tests in-module, integration tests in `crates/*/tests` against fixture `.dat`/`.ldr` files. WASM output is checked from TypeScript in `@brr/import` tests.
 - **E2E (Playwright)** starts in M3: import → place → BOM export smoke tests.
-- A bug fix comes with a test that fails before the fix.
+- A bug fix comes with a test that fails before the fix, at the owning boundary. When fixing forward, don't add overly specific tests that only pin the exact failure you hit.
+- Tests never count as merge evidence (see `merge-evidence.mdc`).
