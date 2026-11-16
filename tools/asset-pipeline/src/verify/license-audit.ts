@@ -1,6 +1,13 @@
-import { dependencyClosure } from "../ldraw/closure.ts";
+import { dependencyClosure } from "../ldraw/walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import { keywords, metaValues, parseLdraw, type LdrawFile } from "../ldraw/parse.ts";
+import {
+  isStudPrimitive,
+  keywords,
+  LDCAD_META,
+  metaValues,
+  parseLdraw,
+  type LdrawFile,
+} from "../ldraw/parse.ts";
 import type { AuditGroup } from "../palette.ts";
 
 export const CA_LICENSE_LINES: ReadonlyArray<string> = [
@@ -11,10 +18,8 @@ export const CA_LICENSE_LINES: ReadonlyArray<string> = [
 
 const UNOFFICIAL_PREFIX = "Unofficial_";
 const MOVED_PREFIX = "~Moved to ";
-const LDCAD_META = "!LDCAD";
 const SNAP_PREFIX = "SNAP_";
 const TRAIN_TRACK_SNAP_GROUP = "[group=traintrk]";
-const STUD_PRIMITIVE = /^stud\d*a?\.dat$/;
 
 export type PartStatus = "officialCA" | "notShippable" | "absent";
 
@@ -86,7 +91,7 @@ function ldcadCoverage(shadow: LdrawLibrary, files: ReadonlySet<string>): LdcadC
     trainTrackSnapLines: patchedFiles
       .flatMap((name) => snapLines(shadow.load(name)))
       .filter((line) => line.includes(TRAIN_TRACK_SNAP_GROUP)).length,
-    studPrimitiveOnly: patchedFiles.every((name) => STUD_PRIMITIVE.test(name)),
+    studPrimitiveOnly: patchedFiles.every((name) => isStudPrimitive(name)),
   };
 }
 

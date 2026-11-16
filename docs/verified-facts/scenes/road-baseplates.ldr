@@ -1,0 +1,8 @@
+0 Road Baseplates
+0 Name: road-baseplates.ldr
+0 Author: Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents
+1 16 0 0 320 1 0 0 0 1 0 0 0 1 44336.dat
+1 16 0 0 960 1 0 0 0 1 0 0 0 1 2358.dat
+1 16 0 0 1600 1 0 0 0 1 0 0 0 1 610.dat
+1 16 0 0 2240 1 0 0 0 1 0 0 0 1 606.dat
+1 16 0 0 2880 1 0 0 0 1 0 0 0 1 30225b.dat

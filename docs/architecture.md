@@ -175,6 +175,7 @@ This comes from connection rules §4.3, generalized for D3.
 - Two track ends **join if and only if their coefficient vectors are identical and their headings differ by N/2.** There is no epsilon.
 - When a layout mixes N = 16 and N = 32, poses embed into ℤ[ζ₃₂] through ζ₁₆ = ζ₃₂², so adding fan track later doesn't migrate existing layouts.
 - Parts whose poses fall outside the field get an exact algebraic pose from their data, compared with ε = 1e-6 LDU to absorb representation error only. Some switches may fall in this group, and flex track does (P1+).
+- **Importing poses from LDraw decimals (project decision, delegated by the owner, 2026-11-16).** LDraw prints connector poses with 3 to 6 decimals, so a pose read from a file is identified with a field element when its residual to the unique ℤ[ζ₁₆] candidate is ≤ 0.0005 LDU, half the last decimal of 3-decimal data. The candidate must be the only one in the search box (|c₀|, |c₄| ≤ 64 and |cₖ ± c₈₋ₖ| ≤ 64) within the file's printed precision. This is a data-identification tolerance used once, at import. It isn't physical slack and isn't the join ε: joins still compare the exact coefficients.
 - Every track part's connector poses are **imported from data and tested against the field at build time. Nothing is hand-coded.**
 
 ### 5.4 Profiles
@@ -332,16 +333,16 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
    *Status 2026-11-16 (`docs/verified-facts.md`, at the bundle's pin):* the 9V straight, curve, switches (75541/75542) and crossing (32087), the 6-wide plastic straight and curve (53401/53400), the classic road baseplates and the baseplates are all CA and official. **Not cleared:** the 6-wide plastic switches 53404/53407 aren't in the official library. No 6-wide plastic crossing and no 60304-style road plate exists in LDraw under any title we could find, and identifying them needs Rebrickable, which is blocked. These need a replacement plan.
 2. The current LDraw parts count and the CC BY 2.0 / CC BY 4.0 license split. *Cleared 2026-11-16 (manual read of the pinned tarball):* update 2026-10 has 37,151 files, 35,140 CC BY 4.0 and 2,011 dual-licensed.
 3. **Whether the LDCad shadow library covers** track, road plates, baseplates and Technic bricks, and that it really is CC BY-SA 4.0. *Cleared 2026-11-16:* it is CC BY-SA 4.0. Coverage is partial: track snaps exist only for 53400 and 32087, baseplates have stud primitives only, and Technic bricks are covered.
-4. The exact connector poses for both switches (the diverging end), the 90° crossing and the R40 curve, extracted from data and run through the field test.
-5. Track gauge and rail spacing (the "6-stud" vs "about 37.5 mm" conflict), and the official track part numbers.
-6. Baseplate thickness, which sets the height datum.
-7. Road plate geometry: size, clip connectors, lane and sidewalk widths, and stud zones.
+4. The exact connector poses for both switches (the diverging end), the 90° crossing and the R40 curve, extracted from data and run through the field test. *Cleared 2026-11-16 for 9V track:* the R40 curve exit is 40ζ³ − 40ζ⁴ and the switch diverging end is 48 − 40ζ³ + 24ζ⁴ studs (mirrored for the left switch), both in ℤ[ζ₁₆]. A switch plus a reversed R40 gives a parallel track 16 studs over (48 − 16ζ⁴, derived exactly from the two certified parts). The 3-decimal plastic 53400 agrees within 1e-3 LDU but can't be certified, and the plastic switches aren't in the official library. **Project decision (delegated by the owner, 2026-11-16; see §5.3):** an imported pose is certified iff its residual to the unique ℤ[ζ₁₆] candidate is ≤ 0.0005 LDU, half the last decimal of 3-decimal LDraw data.
+5. Track gauge and rail spacing (the "6-stud" vs "about 37.5 mm" conflict), and the official track part numbers. *Cleared 2026-11-16:* the 53401 inner gauge is 37.52 mm with rail centres 5 studs apart, and the track is 8 studs wide, so "6-stud internal gauge" is refuted. The 9V parts are 74746/74747/75541/75542/32087 (2865/2867 are moved stubs).
+6. Baseplate thickness, which sets the height datum. *Cleared 2026-11-16:* 4 LDU (half a plate) as modelled; the top face is y = 0 in the part frame.
+7. Road plate geometry: size, clip connectors, lane and sidewalk widths, and stud zones. *Partly cleared 2026-11-16:* the classic 32×32 road baseplates have studless roadways of 20, 18, 16 and 14 studs (6-, 7-, 8- and 9-stud verges), and printed 44336 lanes are 176 LDU between lines. The 60304-era plates with clips aren't in LDraw.
 8. The OMR's current set count and how well it covers Town and Train sets.
 9. Three.js `WebGPURenderer` with `BatchedMesh`: performance and WebGL2 fallback behavior at 250k parts.
 10. Browser WebGPU coverage today: Safari 26, Firefox on platforms other than Windows, Linux Chrome.
 
 **Needed before M5 (plan mode) or P1.**
-11. The MILS spec: layer stack, the "4 plates above the baseplate" surface height, connector and corner positions.
+11. The MILS spec: layer stack, the "4 plates above the baseplate" surface height, connector and corner positions. *2026-11-16:* blocked, because the spec site isn't reachable from the verification environment.
 12. Modular-building sidewalk depth and Technic hole positions.
 13. A ballast or Train-tech module standard, if one is adopted.
 14. BrickLink API terms for non-commercial use.
@@ -349,7 +350,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 16. `.io` internals: whether `modelv2.ldr` contains non-standard line types, Studio's `PE_TEX_*` texture meta names, and its color table differences.
 17. The `ldr_tools` license, if we vendor it. *Cleared 2026-11-16:* MIT.
 18. The train motor part numbers (PF 88002, PU 88011; *2026-11-16:* LDraw has the PF motor as 87574 and no PU train motor) and the Rebrickable categories for vehicle signatures.
-19. Flex track link length and maximum joint angle.
+19. Flex track link length and maximum joint angle. *2026-11-16:* the joint angle is ±5.625° (stated and modelled); the link pitch is still open.
 20. Size of the element-existence table once compressed.
 21. The MILS substructure part list per module (needed for the plan BOM), and the overhang and reach norms clubs use for layout tables (reach is often quoted as 60 to 80 cm, unconfirmed).
 22. The Rebrickable collection export format (CSV columns and the API endpoints for a user's parts and sets).

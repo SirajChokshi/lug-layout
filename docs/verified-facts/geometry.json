@@ -1,0 +1,1426 @@
+{
+  "source": {
+    "kind": "github-mirror",
+    "repo": "kulits/ldraw-parts",
+    "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+    "root": "ldraw"
+  },
+  "trackEnds": [
+    {
+      "part": "53401",
+      "ends": [
+        {
+          "marker": "s/53401s02.dat",
+          "x": -160,
+          "z": 0,
+          "outward": -3.141592653589793,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/53401s02.dat",
+          "x": 160,
+          "z": 0,
+          "outward": 0,
+          "toleranceLdu": 0.000001
+        }
+      ],
+      "relative": [
+        {
+          "marker": "s/53401s02.dat",
+          "xStuds": 0,
+          "zStuds": 0,
+          "headingSteps": 8,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/53401s02.dat",
+          "xStuds": 16,
+          "zStuds": 0,
+          "headingSteps": 0,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "16",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      ],
+      "outwardPointsAwayFromCentre": true,
+      "arc": null
+    },
+    {
+      "part": "53400",
+      "ends": [
+        {
+          "marker": "s/53400s03.dat",
+          "x": -156.073,
+          "z": -15.372,
+          "outward": -2.9452433738652415,
+          "toleranceLdu": 0.001
+        },
+        {
+          "marker": "s/53400s04.dat",
+          "x": 156.073,
+          "z": -15.372,
+          "outward": -0.1963502551799944,
+          "toleranceLdu": 0.001
+        }
+      ],
+      "relative": [
+        {
+          "marker": "s/53400s03.dat",
+          "xStuds": 0,
+          "zStuds": 0,
+          "headingSteps": 8,
+          "headingResidualDegrees": -0.000014961349579234453,
+          "toleranceLdu": 0.001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 4225
+          },
+          "fieldCertified": false,
+          "coefficients": null
+        },
+        {
+          "marker": "s/53400s04.dat",
+          "xStuds": 15.307410106837338,
+          "zStuds": -3.0448331828023187,
+          "headingSteps": 15,
+          "headingResidualDegrees": -0.000040928130404793706,
+          "toleranceLdu": 0.001,
+          "fieldSearch": {
+            "bestResidualLdu": 0.0006368255631849181,
+            "solutionCount": 3781
+          },
+          "fieldCertified": false,
+          "coefficients": null
+        }
+      ],
+      "outwardPointsAwayFromCentre": true,
+      "arc": {
+        "chordLdu": 312.146,
+        "turnSteps": -1,
+        "radiusFromChordLdu": 800.0038053507203,
+        "helpRotationPoint": [
+          0,
+          0,
+          -800
+        ],
+        "endDistancesToHelpRotationPointLdu": [
+          799.9999248206216,
+          799.9999248206216
+        ]
+      }
+    },
+    {
+      "part": "74746",
+      "ends": [
+        {
+          "marker": "s/2865as01.dat",
+          "x": -160,
+          "z": 0,
+          "outward": 3.141592653589793,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "x": 160,
+          "z": 0,
+          "outward": 0,
+          "toleranceLdu": 0.000001
+        }
+      ],
+      "relative": [
+        {
+          "marker": "s/2865as01.dat",
+          "xStuds": 0,
+          "zStuds": 0,
+          "headingSteps": 8,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "xStuds": 16,
+          "zStuds": 3.91886975727153e-15,
+          "headingSteps": 0,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 7.837739514543061e-14,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "16",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      ],
+      "outwardPointsAwayFromCentre": true,
+      "arc": null
+    },
+    {
+      "part": "74747",
+      "ends": [
+        {
+          "marker": "s/2867as04.dat",
+          "x": -156.072258,
+          "z": -15.371776,
+          "outward": -2.945244349311117,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2867as03.dat",
+          "x": 156.072258,
+          "z": -15.371776,
+          "outward": -0.19634830427867614,
+          "toleranceLdu": 0.000001
+        }
+      ],
+      "relative": [
+        {
+          "marker": "s/2867as04.dat",
+          "xStuds": 0,
+          "zStuds": 0,
+          "headingSteps": 8,
+          "headingResidualDegrees": -0.0000708502813617784,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2867as03.dat",
+          "xStuds": 15.307337332569535,
+          "zStuds": -3.0448187071004247,
+          "headingSteps": 15,
+          "headingResidualDegrees": 0.00007085028140174643,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 7.741948029150472e-7,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "40",
+            "-40",
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      ],
+      "outwardPointsAwayFromCentre": true,
+      "arc": {
+        "chordLdu": 312.144516,
+        "turnSteps": -1,
+        "radiusFromChordLdu": 800.0000019841958,
+        "helpRotationPoint": null,
+        "endDistancesToHelpRotationPointLdu": null
+      }
+    },
+    {
+      "part": "75541-f1",
+      "ends": [
+        {
+          "marker": "s/2859s02.dat",
+          "x": -320,
+          "z": 0,
+          "outward": -3.141592653589793,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "x": 320,
+          "z": 0,
+          "outward": 0,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2867as04.dat",
+          "x": 333.853255,
+          "z": -259.103626,
+          "outward": -0.39270012692920675,
+          "toleranceLdu": 0.000001
+        }
+      ],
+      "relative": [
+        {
+          "marker": "s/2859s02.dat",
+          "xStuds": 0,
+          "zStuds": 0,
+          "headingSteps": 8,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "xStuds": 32,
+          "zStuds": 0,
+          "headingSteps": 0,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "32",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2867as04.dat",
+          "xStuds": 32.69266275,
+          "zStuds": -12.955181300000001,
+          "headingSteps": 15,
+          "headingResidualDegrees": -0.00005988729524286641,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 8.921174634225937e-7,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "48",
+            "0",
+            "0",
+            "-40",
+            "24",
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      ],
+      "outwardPointsAwayFromCentre": true,
+      "arc": null
+    },
+    {
+      "part": "75542-f1",
+      "ends": [
+        {
+          "marker": "s/2859s02.dat",
+          "x": -320,
+          "z": 0,
+          "outward": -3.141592653589793,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "x": 320,
+          "z": 0,
+          "outward": 0,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2867as03.dat",
+          "x": 333.853255,
+          "z": 259.103626,
+          "outward": 0.39270012692920675,
+          "toleranceLdu": 0.000001
+        }
+      ],
+      "relative": [
+        {
+          "marker": "s/2859s02.dat",
+          "xStuds": 0,
+          "zStuds": 0,
+          "headingSteps": 8,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2865as01.dat",
+          "xStuds": 32,
+          "zStuds": 0,
+          "headingSteps": 0,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "32",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2867as03.dat",
+          "xStuds": 32.69266275,
+          "zStuds": 12.955181300000001,
+          "headingSteps": 1,
+          "headingResidualDegrees": 0.000059887295247862404,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 8.921173213213257e-7,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "48",
+            "0",
+            "0",
+            "0",
+            "-24",
+            "40",
+            "0",
+            "0"
+          ]
+        }
+      ],
+      "outwardPointsAwayFromCentre": true,
+      "arc": null
+    },
+    {
+      "part": "32087",
+      "ends": [
+        {
+          "marker": "s/2865s04.dat",
+          "x": -160,
+          "z": 0,
+          "outward": -3.141592653589793,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "x": 0,
+          "z": -160,
+          "outward": -1.5707963267948966,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "x": 0,
+          "z": 160,
+          "outward": 1.5707963267948966,
+          "toleranceLdu": 0.000001
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "x": 160,
+          "z": 0,
+          "outward": 0,
+          "toleranceLdu": 0.000001
+        }
+      ],
+      "relative": [
+        {
+          "marker": "s/2865s04.dat",
+          "xStuds": 0,
+          "zStuds": 0,
+          "headingSteps": 8,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "xStuds": 8,
+          "zStuds": -8,
+          "headingSteps": 12,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 1.7763568394002505e-14,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "8",
+            "0",
+            "0",
+            "0",
+            "-8",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "xStuds": 8,
+          "zStuds": 8,
+          "headingSteps": 4,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "8",
+            "0",
+            "0",
+            "0",
+            "8",
+            "0",
+            "0",
+            "0"
+          ]
+        },
+        {
+          "marker": "s/2865s04.dat",
+          "xStuds": 16,
+          "zStuds": 0,
+          "headingSteps": 0,
+          "headingResidualDegrees": 0,
+          "toleranceLdu": 0.000001,
+          "fieldSearch": {
+            "bestResidualLdu": 0,
+            "solutionCount": 1
+          },
+          "fieldCertified": true,
+          "coefficients": [
+            "16",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0"
+          ]
+        }
+      ],
+      "outwardPointsAwayFromCentre": true,
+      "arc": null
+    }
+  ],
+  "ldcadTrackSnapCrossCheck": [
+    {
+      "part": "53400",
+      "snapPairs": 2,
+      "maxMidpointToNearestEndLdu": 1.7763568394002505e-15
+    },
+    {
+      "part": "32087",
+      "snapPairs": 4,
+      "maxMidpointToNearestEndLdu": 0
+    }
+  ],
+  "switchThenReverseCurve": [
+    {
+      "via": [
+        "75541-f1",
+        "74747"
+      ],
+      "headingSteps": 0,
+      "exactCoefficients": [
+        "48",
+        "0",
+        "0",
+        "0",
+        "-16",
+        "0",
+        "0",
+        "0"
+      ],
+      "exactDerivation": "75541-f1 diverging + ζ^15 · mirror(74747 exit), both certified",
+      "measuredXStuds": 48.00000008256953,
+      "measuredZStuds": -16.00000000710044,
+      "measuredResidualToExactLdu": 0.0000016574852289172643
+    },
+    {
+      "via": [
+        "75542-f1",
+        "74747"
+      ],
+      "headingSteps": 0,
+      "exactCoefficients": [
+        "48",
+        "0",
+        "0",
+        "0",
+        "16",
+        "0",
+        "0",
+        "0"
+      ],
+      "exactDerivation": "75542-f1 diverging + ζ^1 · (74747 exit), both certified",
+      "measuredXStuds": 48.00000008256953,
+      "measuredZStuds": 16.00000000710043,
+      "measuredResidualToExactLdu": 0.0000016574852106540724
+    }
+  ],
+  "rails": [
+    {
+      "part": "74746",
+      "sectionX": 20,
+      "railTopY": -16,
+      "railHeads": [
+        {
+          "from": -53.625,
+          "to": -47.375
+        },
+        {
+          "from": 47.375,
+          "to": 53.625
+        }
+      ],
+      "railCentreSpacingLdu": 101,
+      "innerGaugeLdu": 94.75,
+      "innerGaugeMm": 37.9,
+      "railHeadWidthLdu": 6.25,
+      "trackWidthLdu": 160,
+      "railTopAboveUndersideLdu": 24
+    },
+    {
+      "part": "53401",
+      "sectionX": 20,
+      "railTopY": -16,
+      "railHeads": [
+        {
+          "from": -53.1,
+          "to": -46.9
+        },
+        {
+          "from": 46.9,
+          "to": 53.1
+        }
+      ],
+      "railCentreSpacingLdu": 100,
+      "innerGaugeLdu": 93.8,
+      "innerGaugeMm": 37.52,
+      "railHeadWidthLdu": 6.200000000000003,
+      "trackWidthLdu": 160,
+      "railTopAboveUndersideLdu": 24
+    }
+  ],
+  "baseplates": [
+    {
+      "part": "3811",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    },
+    {
+      "part": "3857",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -160,
+        "to": 160
+      },
+      "widthLdu": 640,
+      "depthLdu": 320
+    },
+    {
+      "part": "3867",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -160,
+        "to": 160
+      },
+      "zExtent": {
+        "from": -160,
+        "to": 160
+      },
+      "widthLdu": 320,
+      "depthLdu": 320
+    },
+    {
+      "part": "4186",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -480,
+        "to": 480
+      },
+      "zExtent": {
+        "from": -480,
+        "to": 480
+      },
+      "widthLdu": 960,
+      "depthLdu": 960
+    },
+    {
+      "part": "782",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -500,
+        "to": 500
+      },
+      "zExtent": {
+        "from": -500,
+        "to": 500
+      },
+      "widthLdu": 1000,
+      "depthLdu": 1000
+    },
+    {
+      "part": "44336",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    },
+    {
+      "part": "2358",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    },
+    {
+      "part": "610",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    },
+    {
+      "part": "606",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    },
+    {
+      "part": "30225b",
+      "bodyTopY": 0,
+      "bodyBottomY": 4,
+      "thicknessLdu": 4,
+      "studTopY": -4,
+      "xExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "zExtent": {
+        "from": -320,
+        "to": 320
+      },
+      "widthLdu": 640,
+      "depthLdu": 640
+    }
+  ],
+  "roadStudZones": [
+    {
+      "part": "44336",
+      "studCount": 384,
+      "studY": [
+        0
+      ],
+      "studdedColumns": [
+        {
+          "from": 0,
+          "to": 6
+        },
+        {
+          "from": 26,
+          "to": 32
+        }
+      ],
+      "map": [
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo"
+      ]
+    },
+    {
+      "part": "44341",
+      "studCount": 264,
+      "studY": [
+        0
+      ],
+      "studdedColumns": [
+        {
+          "from": 0,
+          "to": 6
+        },
+        {
+          "from": 26,
+          "to": 32
+        }
+      ],
+      "map": [
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo..........................",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo"
+      ]
+    },
+    {
+      "part": "44342",
+      "studCount": 501,
+      "studY": [
+        0
+      ],
+      "studdedColumns": [
+        {
+          "from": 0,
+          "to": 32
+        }
+      ],
+      "map": [
+        "oooooo....................oooooo",
+        "ooooo.....................oooooo",
+        "ooooo.....................oooooo",
+        "oooo......................oooooo",
+        "ooo.......................oooooo",
+        "o.........................oooooo",
+        "..........................oooooo",
+        ".........................ooooooo",
+        ".........................ooooooo",
+        ".........................ooooooo",
+        "........................oooooooo",
+        "........................oooooooo",
+        ".......................ooooooooo",
+        ".......................ooooooooo",
+        "......................oooooooooo",
+        ".....................ooooooooooo",
+        ".....................ooooooooooo",
+        "....................oooooooooooo",
+        "...................ooooooooooooo",
+        "..................oooooooooooooo",
+        ".................ooooooooooooooo",
+        "...............ooooooooooooooooo",
+        "..............oooooooooooooooooo",
+        "............oooooooooooooooooooo",
+        "..........oooooooooooooooooooooo",
+        ".......ooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooo",
+        "oooooooooooooooooooooooooooooooo"
+      ]
+    },
+    {
+      "part": "44343",
+      "studCount": 144,
+      "studY": [
+        0
+      ],
+      "studdedColumns": [
+        {
+          "from": 0,
+          "to": 6
+        },
+        {
+          "from": 26,
+          "to": 32
+        }
+      ],
+      "map": [
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo",
+        "oooooo....................oooooo"
+      ]
+    },
+    {
+      "part": "2358",
+      "studCount": 448,
+      "studY": [
+        0
+      ],
+      "studdedColumns": [
+        {
+          "from": 0,
+          "to": 7
+        },
+        {
+          "from": 25,
+          "to": 32
+        }
+      ],
+      "map": [
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo",
+        "ooooooo..................ooooooo"
+      ]
+    },
+    {
+      "part": "610",
+      "studCount": 512,
+      "studY": [
+        0
+      ],
+      "studdedColumns": [
+        {
+          "from": 0,
+          "to": 8
+        },
+        {
+          "from": 24,
+          "to": 32
+        }
+      ],
+      "map": [
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo",
+        "oooooooo................oooooooo"
+      ]
+    },
+    {
+      "part": "606",
+      "studCount": 576,
+      "studY": [
+        0
+      ],
+      "studdedColumns": [
+        {
+          "from": 0,
+          "to": 9
+        },
+        {
+          "from": 23,
+          "to": 32
+        }
+      ],
+      "map": [
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo",
+        "ooooooooo..............ooooooooo"
+      ]
+    },
+    {
+      "part": "30225b",
+      "studCount": 512,
+      "studY": [
+        0
+      ],
+      "studdedColumns": [
+        {
+          "from": 0,
+          "to": 7
+        },
+        {
+          "from": 15,
+          "to": 17
+        },
+        {
+          "from": 25,
+          "to": 32
+        }
+      ],
+      "map": [
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo",
+        "ooooooo........oo........ooooooo"
+      ]
+    }
+  ],
+  "roadMarkings": [
+    {
+      "part": "44336p01",
+      "markingBandsByColor": [
+        {
+          "color": 7,
+          "acrossBands": [
+            {
+              "from": -192,
+              "to": -157
+            },
+            {
+              "from": 157,
+              "to": 192
+            }
+          ],
+          "alongExtent": {
+            "from": -270,
+            "to": 270
+          }
+        },
+        {
+          "color": 8,
+          "acrossBands": [
+            {
+              "from": -198,
+              "to": 198
+            }
+          ],
+          "alongExtent": {
+            "from": -320,
+            "to": 320
+          }
+        },
+        {
+          "color": 14,
+          "acrossBands": [
+            {
+              "from": -192,
+              "to": -182
+            },
+            {
+              "from": 182,
+              "to": 192
+            }
+          ],
+          "alongExtent": {
+            "from": -310,
+            "to": 310
+          }
+        },
+        {
+          "color": 15,
+          "acrossBands": [
+            {
+              "from": -6,
+              "to": 6
+            }
+          ],
+          "alongExtent": {
+            "from": -291,
+            "to": 291
+          }
+        }
+      ]
+    },
+    {
+      "part": "44336p04",
+      "markingBandsByColor": [
+        {
+          "color": 15,
+          "acrossBands": [
+            {
+              "from": -192,
+              "to": -182
+            },
+            {
+              "from": -6,
+              "to": 6
+            },
+            {
+              "from": 182,
+              "to": 192
+            }
+          ],
+          "alongExtent": {
+            "from": -310,
+            "to": 310
+          }
+        },
+        {
+          "color": 71,
+          "acrossBands": [
+            {
+              "from": -192,
+              "to": -157
+            },
+            {
+              "from": 157,
+              "to": 192
+            }
+          ],
+          "alongExtent": {
+            "from": -270,
+            "to": 270
+          }
+        }
+      ]
+    }
+  ],
+  "flex": [
+    {
+      "part": "64022c01",
+      "help": [
+        "Bend angle: 5.625 degrees,",
+        "Curve radius 814.2 LDU at middle of track"
+      ],
+      "measuredBendDegrees": 5.6251896037593765,
+      "lengthLdu": 105.027575
+    },
+    {
+      "part": "64022c02",
+      "help": [
+        "Bend angle: 5.625 degrees",
+        "Curve radius 814.2 LDU at middle of track"
+      ],
+      "measuredBendDegrees": -5.6251896037593765,
+      "lengthLdu": 104.83643599999999
+    }
+  ]
+}

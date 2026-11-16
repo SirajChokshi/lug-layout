@@ -7,11 +7,13 @@
     "verify-ldraw": "node src/cli.ts verify",
     "build": "node src/cli.ts bundle",
     "typecheck": "tsc -p tsconfig.json",
-    "facts": "node src/cli.ts facts"
+    "facts": "node src/cli.ts facts",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",
     "@types/node": "22.20.5",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
   }
 }

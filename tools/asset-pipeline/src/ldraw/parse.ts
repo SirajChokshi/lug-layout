@@ -1,3 +1,5 @@
+import { affineFromLdraw, type Affine, type Vec3 } from "./affine.ts";
+
 export interface LdrawHeader {
   readonly title: string;
   readonly name: string;
@@ -112,6 +114,14 @@ export function modelPartReferences(source: string): string[] {
   return [...parts].toSorted();
 }
 
+export const LDCAD_META = "!LDCAD";
+
+const STUD_PRIMITIVE = /^stud\d*a?\.dat$/u;
+
+export function isStudPrimitive(reference: string): boolean {
+  return STUD_PRIMITIVE.test(reference);
+}
+
 export function metaValues(file: LdrawFile, key: string): string[] {
   const values: string[] = [];
   for (const line of file.lines) {
@@ -125,4 +135,47 @@ export function keywords(file: LdrawFile): string[] {
     .flatMap((value) => value.split(","))
     .map((keyword) => keyword.trim())
     .filter((keyword) => keyword !== "");
+}
+
+type SubfileLine = Extract<LdrawLine, { kind: "subfile" }>;
+type GeometryLine = Extract<LdrawLine, { kind: "geometry" }>;
+
+interface SubfilePlacement {
+  readonly color: number;
+  readonly transform: Affine;
+  readonly translationUnit: number;
+  readonly rotationUnit: number;
+}
+
+function lastPrintedUnit(tokens: ReadonlyArray<string>): number {
+  let unit = 0;
+  for (const token of tokens) {
+    const dot = token.indexOf(".");
+    if (dot < 0 || Number(token) === Math.trunc(Number(token))) continue;
+    unit = Math.max(unit, 10 ** -(token.length - dot - 1));
+  }
+  return unit;
+}
+
+export function subfilePlacement(line: SubfileLine): SubfilePlacement {
+  const numbers = line.tokens.slice(1, SUBFILE_NUMBER_COUNT);
+  return {
+    color: Number(line.color),
+    transform: affineFromLdraw(numbers.map(Number)),
+    translationUnit: lastPrintedUnit(numbers.slice(0, 3)),
+    rotationUnit: lastPrintedUnit(numbers.slice(3)),
+  };
+}
+
+export function polygonVertices(line: GeometryLine): ReadonlyArray<Vec3> {
+  const vertices: Vec3[] = [];
+  for (let index = 0; index < line.type; index += 1) {
+    const offset = 1 + index * 3;
+    vertices.push([
+      Number(line.tokens[offset]),
+      Number(line.tokens[offset + 1]),
+      Number(line.tokens[offset + 2]),
+    ]);
+  }
+  return vertices;
 }
