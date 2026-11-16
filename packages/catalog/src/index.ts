@@ -5,6 +5,7 @@ export type {
   BundleColor,
   BundleCredit,
   BundleLod,
+  BricklinkPartCandidates,
   BundleModelEntry,
   BundleSource,
   CatalogColorIds,

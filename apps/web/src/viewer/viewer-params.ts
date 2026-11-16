@@ -1,4 +1,4 @@
-import type { BundleLod, CityCamera, GraphicsApi } from "@brr/client";
+import type { BundleLod, CityCamera, GraphicsApi, PlacementRegion } from "@brr/client";
 
 export interface ViewerParams {
   readonly api: GraphicsApi;
@@ -12,6 +12,7 @@ export interface ViewerParams {
   readonly originChunkX: number;
   readonly originChunkZ: number;
   readonly dumpWorld: boolean;
+  readonly region: PlacementRegion | null;
   readonly measure: boolean;
   readonly warmupFrames: number;
   readonly measuredFrames: number;
@@ -38,6 +39,25 @@ function originChunks(value: string | null): readonly [number, number] {
   return [x, z];
 }
 
+function placementRegion(value: string | null): PlacementRegion | null {
+  if (value === null) return null;
+  const bounds = value.split(",").map(Number);
+  const [minX, minZ, maxX, maxZ] = bounds;
+  if (
+    bounds.length !== 4 ||
+    minX === undefined ||
+    minZ === undefined ||
+    maxX === undefined ||
+    maxZ === undefined ||
+    !bounds.every(Number.isInteger) ||
+    minX >= maxX ||
+    minZ >= maxZ
+  ) {
+    throw new Error(`region=${value} is not integer LDU bounds "minX,minZ,maxX,maxZ"`);
+  }
+  return { minX, minZ, maxX, maxZ };
+}
+
 export function readViewerParams(search: string): ViewerParams {
   const params = new URLSearchParams(search);
   const [originChunkX, originChunkZ] = originChunks(params.get("origin"));
@@ -53,6 +73,7 @@ export function readViewerParams(search: string): ViewerParams {
     originChunkX,
     originChunkZ,
     dumpWorld: params.get("dumpWorld") === "1",
+    region: placementRegion(params.get("region")),
     measure: params.get("measure") === "1",
     warmupFrames: positiveNumber(params.get("warmup"), DEFAULT_WARMUP_FRAMES),
     measuredFrames: positiveNumber(params.get("frames"), DEFAULT_MEASURED_FRAMES),

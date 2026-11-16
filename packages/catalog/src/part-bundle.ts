@@ -134,6 +134,8 @@ export interface CatalogCrosswalk {
   readonly colors: ReadonlyMap<number, CatalogColorIds>;
 }
 
+export type BricklinkPartCandidates = Readonly<Record<string, ReadonlyArray<string>>>;
+
 export interface IPartBundleLoader {
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
@@ -144,6 +146,7 @@ export interface IPartBundleLoader {
     compiled: ReadonlyArray<CompiledPartGlb>,
   ): Promise<PartBundle>;
   loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
+  loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
 }
 
 export interface IAssetFetcher {

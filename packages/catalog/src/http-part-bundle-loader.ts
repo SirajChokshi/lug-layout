@@ -1,15 +1,18 @@
 import { inject, injectable } from "inversify";
 import { parseGlb, readInheritColorMesh, readPartMesh } from "./glb.ts";
 import {
-  parseCrosswalk,
+  crosswalkMaps,
+  parseCrosswalkFile,
   parseManifest,
   parseModelFile,
   parsePartExtras,
   type BundleManifest,
+  type CrosswalkFile,
   type ManifestPart,
 } from "./manifest.ts";
 import type {
   BundleCredit,
+  BricklinkPartCandidates,
   BundleLod,
   CompiledPartGlb,
   CatalogCrosswalk,
@@ -72,6 +75,7 @@ export class HttpAssetFetcher implements IAssetFetcher {
 @injectable()
 export class HttpPartBundleLoader implements IPartBundleLoader {
   private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
+  private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
 
   constructor(@inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher) {}
 
@@ -176,12 +180,25 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return this.bundle(lod, manifest, manifest.parts.filter(include));
   }
 
-  async loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {
-    const { crosswalk } = await this.manifest(lod);
-    return parseCrosswalk(
-      JSON.parse(await this.fetcher.text(`${lod}/${crosswalk.file}`)),
-      crosswalk.file,
+  private crosswalkFile(lod: BundleLod): Promise<CrosswalkFile> {
+    const cached = this.crosswalks.get(lod);
+    if (cached) return cached;
+    const loading = this.manifest(lod).then(async ({ crosswalk }) =>
+      parseCrosswalkFile(
+        JSON.parse(await this.fetcher.text(`${lod}/${crosswalk.file}`)),
+        crosswalk.file,
+      ),
     );
+    this.crosswalks.set(lod, loading);
+    return loading;
+  }
+
+  async loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {
+    return crosswalkMaps(await this.crosswalkFile(lod));
+  }
+
+  async loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
+    return (await this.crosswalkFile(lod)).bricklinkParts;
   }
 
   async loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {

@@ -68,6 +68,7 @@ export interface CrosswalkFile {
   readonly parts: Readonly<Record<string, CrosswalkPart>>;
   readonly colors: Readonly<Record<string, CrosswalkColor>>;
   readonly bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>;
+  readonly bricklinkPartVariants: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly bricklinkColors: Readonly<Record<string, ReadonlyArray<number>>>;
 }
 
@@ -193,24 +194,65 @@ function deriveColors(inputs: CrosswalkInputs): Record<string, CrosswalkColor> {
   return colors;
 }
 
-function reverseBrickLinkParts(inputs: CrosswalkInputs): Record<string, string[]> {
-  const reverse = new Map<string, string[]>();
+type LdrawFileKind = "canonical" | "alias" | "obsolete" | "physical-colour";
+
+const FILE_KIND_PREFIXES: ReadonlyArray<readonly [string, LdrawFileKind]> = [
+  ["=", "alias"],
+  ["~", "obsolete"],
+  ["_", "physical-colour"],
+];
+
+function fileKind(facts: LdrawPartFacts | undefined): LdrawFileKind {
+  const title = facts?.title ?? "";
+  return FILE_KIND_PREFIXES.find(([prefix]) => title.startsWith(prefix))?.[1] ?? "canonical";
+}
+
+function canonicalTarget(id: string, ldrawParts: ReadonlyMap<string, LdrawPartFacts>): string {
+  const seen = new Set([id]);
+  let current = id;
+  for (
+    let target = movedTarget(ldrawParts.get(current));
+    target !== undefined && !seen.has(target);
+    target = movedTarget(ldrawParts.get(current))
+  ) {
+    seen.add(target);
+    current = target;
+  }
+  return current;
+}
+
+interface ReverseParts {
+  readonly candidates: Record<string, string[]>;
+  readonly variants: Record<string, string[]>;
+}
+
+function reverseBrickLinkParts(inputs: CrosswalkInputs): ReverseParts {
+  const reverse = new Map<string, Set<string>>();
+  const add = (bricklink: string, ldraw: string): void => {
+    const target = canonicalTarget(ldraw, inputs.ldrawParts);
+    const set = reverse.get(bricklink) ?? new Set<string>();
+    set.add(target);
+    reverse.set(bricklink, set);
+  };
   for (const part of inputs.apiParts) {
-    for (const bricklink of part.b) {
-      for (const ldraw of part.l) pushTo(reverse, bricklink, LDRAW_NAMESPACE + ldraw);
-    }
+    for (const bricklink of part.b) for (const ldraw of part.l) add(bricklink, ldraw);
   }
   for (const [ldraw, facts] of inputs.ldrawParts) {
-    for (const bricklink of keywordIds(facts, BRICKLINK_KEYWORD)) {
-      pushTo(reverse, bricklink, LDRAW_NAMESPACE + ldraw);
+    for (const bricklink of keywordIds(facts, BRICKLINK_KEYWORD)) add(bricklink, ldraw);
+  }
+  const candidates: Record<string, string[]> = {};
+  const variants: Record<string, string[]> = {};
+  for (const bricklink of sortedUnique(reverse.keys())) {
+    const ids = sortedUnique(reverse.get(bricklink) ?? []);
+    const canonical = ids.filter((id) => fileKind(inputs.ldrawParts.get(id)) === "canonical");
+    const others = ids.filter((id) => !canonical.includes(id));
+    const chosen = canonical.length > 0 ? canonical : others;
+    candidates[bricklink] = chosen.map((id) => LDRAW_NAMESPACE + id);
+    if (canonical.length > 0 && others.length > 0) {
+      variants[bricklink] = others.map((id) => LDRAW_NAMESPACE + id);
     }
   }
-  return Object.fromEntries(
-    sortedUnique(reverse.keys()).map((bricklink) => [
-      bricklink,
-      sortedUnique(reverse.get(bricklink) ?? []),
-    ]),
-  );
+  return { candidates, variants };
 }
 
 function reverseBrickLinkColors(colors: Record<string, CrosswalkColor>): Record<string, number[]> {
@@ -238,12 +280,14 @@ export function deriveCrosswalk(
     ]),
   );
   const colors = deriveColors(inputs);
+  const reverse = reverseBrickLinkParts(inputs);
   return {
     format: CROSSWALK_FORMAT,
     sources,
     parts,
     colors,
-    bricklinkParts: reverseBrickLinkParts(inputs),
+    bricklinkParts: reverse.candidates,
+    bricklinkPartVariants: reverse.variants,
     bricklinkColors: reverseBrickLinkColors(colors),
   };
 }

@@ -162,3 +162,33 @@ footer {
 .import-panel pre {
   display: none;
 }
+
+.bom {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(0 0 0 / 0.12);
+}
+
+.bom h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.bom-controls,
+.bom-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.bom details {
+  max-height: 160px;
+  overflow: auto;
+}
+
+.bom ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}

@@ -1,10 +1,12 @@
 import {
+  BOM_SERVICE,
   CITY_SCENE,
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
   type IImportScene,
+  type IBomSource,
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
@@ -27,6 +29,7 @@ const params = readViewerParams(location.search);
 
 let placements: (() => PlacementDump) | null = null;
 let importScene: IImportScene | null = null;
+let bomSource: IBomSource | null = null;
 
 function chooseScene(): IViewerScene {
   if (params.city) {
@@ -39,6 +42,7 @@ function chooseScene(): IViewerScene {
       originChunkZ: params.originChunkZ,
     });
     if (params.dumpWorld) placements = () => city.placementDump();
+    bomSource = city;
     return city;
   }
   if (params.importer) {
@@ -48,15 +52,23 @@ function chooseScene(): IViewerScene {
   if (params.model !== null) {
     const modelScene = container.get(MODEL_SCENE);
     modelScene.selectModel(params.model);
+    bomSource = modelScene;
     return modelScene;
   }
   return container.get(PART_DISPLAY_SCENE);
 }
 
 const scene = chooseScene();
+const bom = bomSource ? { service: container.get(BOM_SERVICE), source: bomSource } : null;
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App scene={scene} params={params} placements={placements} importScene={importScene} />
+    <App
+      scene={scene}
+      params={params}
+      placements={placements}
+      importScene={importScene}
+      bom={bom}
+    />
   </StrictMode>,
 );

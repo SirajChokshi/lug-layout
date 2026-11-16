@@ -48,6 +48,8 @@ export interface BundleManifest {
 export interface CrosswalkFile {
   readonly parts: Readonly<Record<string, CatalogPartIds>>;
   readonly colors: Readonly<Record<string, CatalogColorIds>>;
+  readonly bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>;
+  readonly bricklinkColors: Readonly<Record<string, ReadonlyArray<number>>>;
 }
 
 export interface ModelFile {
@@ -166,17 +168,28 @@ function isCatalogColorIds(value: unknown): value is CatalogColorIds {
   );
 }
 
-export function parseCrosswalk(value: unknown, label: string): CatalogCrosswalk {
+function isIntegerArray(value: unknown): value is ReadonlyArray<number> {
+  return Array.isArray(value) && value.every((v) => Number.isInteger(v));
+}
+
+export function parseCrosswalkFile(value: unknown, label: string): CrosswalkFile {
   if (
     !isRecord(value) ||
     !isRecord(value["parts"]) ||
     !isRecord(value["colors"]) ||
+    !isRecord(value["bricklinkParts"]) ||
+    !isRecord(value["bricklinkColors"]) ||
     !Object.values(value["parts"]).every(isCatalogPartIds) ||
-    !Object.values(value["colors"]).every(isCatalogColorIds)
+    !Object.values(value["colors"]).every(isCatalogColorIds) ||
+    !Object.values(value["bricklinkParts"]).every(isStringArray) ||
+    !Object.values(value["bricklinkColors"]).every(isIntegerArray)
   ) {
     throw new Error(`${label}: crosswalk does not match the bundle format`);
   }
-  const file = value as unknown as CrosswalkFile;
+  return value as unknown as CrosswalkFile;
+}
+
+export function crosswalkMaps(file: CrosswalkFile): CatalogCrosswalk {
   return {
     parts: new Map(
       Object.entries(file.parts).map(([id, ids]) => [
