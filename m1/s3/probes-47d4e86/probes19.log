@@ -1,0 +1,73 @@
+== P1 the original four violations
+  error web-composes-ui-client-workers: apps/web/src/main.tsx → @brr/render
+  error render-never-imports-domain: packages/render/src/index.ts → @brr/domain
+  error no-unresolvable-import: packages/render/src/index.ts → @brr/domain
+  error no-unresolvable-import: packages/math/src/index.ts → inversify
+  error no-unresolvable-import: apps/web/src/main.tsx → @brr/render
+  error math-depends-on-nothing: packages/math/src/index.ts → inversify
+x 6 dependency violations (6 errors, 0 warnings). 70 modules, 190 dependencies cruised.
+  exit=6
+== P2 client: import type from sim (allowed by the table)
+✔ no dependency violations found (69 modules, 187 dependencies cruised)
+  exit=0
+== P2b client: import type from @brr/sim through the workspace specifier (allowed)
+✔ no dependency violations found (69 modules, 187 dependencies cruised)
+  exit=0
+== P3 client: value import from sim (forbidden)
+  error client-takes-only-types-from-sim-and-import: packages/client/src/sim-probe.ts → packages/sim/src/index.ts
+x 1 dependency violations (1 errors, 0 warnings). 69 modules, 187 dependencies cruised.
+  exit=1
+== P4 ui imports inversify and three, dependencies unlinked (forbidden)
+  error ui-goes-through-client: packages/ui/src/index.ts → node_modules/.pnpm/three@0.187.0/node_modules/three/build/three.module.js
+  error ui-goes-through-client: packages/ui/src/index.ts → node_modules/.pnpm/inversify@8.3.0_reflect-metadata@0.2.2/node_modules/inversify/lib/index.js
+  error three-only-in-render: packages/ui/src/index.ts → node_modules/.pnpm/three@0.187.0/node_modules/three/build/three.module.js
+  error inversify-only-in-di-packages: packages/ui/src/index.ts → node_modules/.pnpm/inversify@8.3.0_reflect-metadata@0.2.2/node_modules/inversify/lib/index.js
+x 4 dependency violations (4 errors, 0 warnings). 69 modules, 188 dependencies cruised.
+  exit=4
+== P4b ui imports inversify and three with both declared and linked (forbidden)
+  error ui-goes-through-client: packages/ui/src/index.ts → node_modules/.pnpm/three@0.187.0/node_modules/three/build/three.module.js
+  error ui-goes-through-client: packages/ui/src/index.ts → node_modules/.pnpm/inversify@8.3.0_reflect-metadata@0.2.2/node_modules/inversify/lib/index.js
+  error three-only-in-render: packages/ui/src/index.ts → node_modules/.pnpm/three@0.187.0/node_modules/three/build/three.module.js
+  error inversify-only-in-di-packages: packages/ui/src/index.ts → node_modules/.pnpm/inversify@8.3.0_reflect-metadata@0.2.2/node_modules/inversify/lib/index.js
+x 4 dependency violations (4 errors, 0 warnings). 69 modules, 188 dependencies cruised.
+  exit=4
+== P4c ui imports client and react (allowed)
+✔ no dependency violations found (68 modules, 188 dependencies cruised)
+  exit=0
+== P5 render: dynamic import and relative path into domain
+  error render-never-imports-domain: packages/render/src/domain-probe.ts → packages/domain/src/index.ts
+x 1 dependency violations (1 errors, 0 warnings). 68 modules, 187 dependencies cruised.
+  exit=1
+== P6 catalog imports domain (forbidden)
+  error catalog-depends-on-math-schema-inversify: packages/catalog/src/domain-probe.ts → packages/domain/src/index.ts
+x 1 dependency violations (1 errors, 0 warnings). 68 modules, 187 dependencies cruised.
+  exit=1
+== P7 domain imports a node builtin (pure package)
+  error domain-depends-on-math-and-schema: packages/domain/src/fs-probe.ts → fs
+x 1 dependency violations (1 errors, 0 warnings). 68 modules, 187 dependencies cruised.
+  exit=1
+== P8 tools/asset-pipeline imports render (forbidden)
+  error asset-pipeline-depends-on-pure-packages-and-catalog: tools/asset-pipeline/src/render-probe.ts → packages/render/src/index.ts
+x 1 dependency violations (1 errors, 0 warnings). 68 modules, 187 dependencies cruised.
+  exit=1
+== P9 client imports three (forbidden)
+  error three-only-in-render: packages/client/src/three-probe.ts → node_modules/.pnpm/three@0.187.0/node_modules/three/build/three.module.js
+  error client-depends-on-math-l2-and-sim-import-types: packages/client/src/three-probe.ts → node_modules/.pnpm/three@0.187.0/node_modules/three/build/three.module.js
+x 2 dependency violations (2 errors, 0 warnings). 69 modules, 187 dependencies cruised.
+  exit=2
+== P10 domain imports inversify, declared and linked (forbidden)
+  error inversify-only-in-di-packages: packages/domain/src/index.ts → node_modules/.pnpm/inversify@8.3.0_reflect-metadata@0.2.2/node_modules/inversify/lib/index.js
+  error domain-depends-on-math-and-schema: packages/domain/src/index.ts → node_modules/.pnpm/inversify@8.3.0_reflect-metadata@0.2.2/node_modules/inversify/lib/index.js
+x 2 dependency violations (2 errors, 0 warnings). 67 modules, 187 dependencies cruised.
+  exit=2
+== P11 tools/asset-pipeline imports an npm module (forbidden)
+  error asset-pipeline-imports-no-npm-modules: tools/asset-pipeline/src/npm-probe.ts → node_modules/.pnpm/vitest@5.1.0_@types+node@22.20.5_vite@8.3.8_@types+node@22.20.5_/node_modules/vitest/dist/index.js
+x 1 dependency violations (1 errors, 0 warnings). 69 modules, 187 dependencies cruised.
+  exit=1
+== P12 client imports math (allowed after the §14.2 amendment)
+✔ no dependency violations found (67 modules, 187 dependencies cruised)
+  exit=0
+== P13 apps/web imports math (forbidden)
+  error web-composes-ui-client-workers: apps/web/src/main.tsx → packages/math/src/index.ts
+x 1 dependency violations (1 errors, 0 warnings). 67 modules, 187 dependencies cruised.
+  exit=1
