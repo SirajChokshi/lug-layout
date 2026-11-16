@@ -203,6 +203,8 @@ The MVP ships three module profiles: `free`, `lego-modular` and `mils`. Numbers 
 | Far | Voxel greedy mesh of the model (1 stud × 1 stud × 1 plate) | A procedural pattern computed from `worldPos mod 20` |
 | Very far (M6; impostors P1) | Voxel greedy mesh of the whole super-chunk, then impostors | none |
 
+*M0 status (2026-11-16, slice 3):* tiers are chosen per 32×32 chunk every frame from the projected stud pitch (near ≥ 12 px, mid ≥ 3 px, else far). Near draws the standard parts and the standard stud stream. Mid and far draw a far LOD instead of merged or voxel meshes. The far LOD is the `p/8` part triangles minus those the part itself hides from every upward and horizontal direction, so a 2×4 brick keeps its 10 outer triangles. Mid adds 8-segment studs, and far drops studs. Covered studs are culled per chunk in the city only. The voxel and super-chunk meshes and impostors aren't built yet.
+
 **Studs.**
 - Studs inside a model are culled when the model is baked.
 - Baseplate and road-plate studs under a placed model's base footprint are culled at placement time, using a per-chunk occupancy grid.
@@ -339,7 +341,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 7. Road plate geometry: size, clip connectors, lane and sidewalk widths, and stud zones. *Partly cleared 2026-11-16:* the classic 32×32 road baseplates have studless roadways of 20, 18, 16 and 14 studs (6-, 7-, 8- and 9-stud verges), and printed 44336 lanes are 176 LDU between lines. The 60304-era plates with clips aren't in LDraw.
 8. The OMR's current set count and how well it covers Town and Train sets.
 9. Three.js `WebGPURenderer` with `BatchedMesh`: performance and WebGL2 fallback behavior at 250k parts.
-   *Status 2026-11-16 (M0 slice 2, PR #15):* answered up to 100k parts; **250k is still open for slice 3.** Chunked `InstancedMesh` (one per part per 32×32 chunk) is the chosen near-tier strategy. `BatchedMesh` (one per 8×8 super-chunk and geometry class) was the measured alternative and was removed after it lost on both APIs. On a MacBook Pro M4 Max at 3600×2086, the 100k-part city took 13.9 ms median instanced against 42.7 ms batched on WebGPU, where batched issued 133,947 draws against 1,117. On WebGL2 the figures were 17.5 ms against 117.6 ms, and at 2k parts on WebGL2 the two were within 0.4 ms. The WebGL2 fallback renders the same scenes with identical counts.
+   *Closed 2026-11-16 at 250k (M0 slices 2 and 3, PR #15 and the slice 3 PR):* `WebGPURenderer` with chunked `InstancedMesh`, not `BatchedMesh`, renders the 250,665-part city on a MacBook Pro M4 Max at 3600×2086. Aerial medians are 11.5 ms on WebGPU and 13.2 ms on the WebGL2 fallback; street medians are 7.6 and 8.4 ms. Both APIs draw the same counts: 1,557 draws and 10.6M triangles aerial. `BatchedMesh` lost to chunked instancing on both APIs up to 100k in slice 2 and was removed. Past 250k, frame time grows with draw calls. At 500k the aerial medians are 24.2 and 23.9 ms (3,144 draws). **At 1M, aerial is about 40 ms** (39.7 ms WebGPU, 38.0 ms WebGL2, 5,670 draws, 13.5 ms CPU submit), and street is 15.7 and 15.4 ms. Accounted GPU buffers are 175 MiB at 1M. These are M4 Max figures, much faster than Tier A.
 10. Browser WebGPU coverage today: Safari 26, Firefox on platforms other than Windows, Linux Chrome.
 
 **Needed before M5 (plan mode) or P1.**
