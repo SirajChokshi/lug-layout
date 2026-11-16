@@ -348,11 +348,11 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 7. Road plate geometry: size, clip connectors, lane and sidewalk widths, and stud zones. *Partly cleared 2026-11-16:* the classic 32×32 road baseplates have studless roadways of 20, 18, 16 and 14 studs (6-, 7-, 8- and 9-stud verges), and printed 44336 lanes are 176 LDU between lines. The 60304-era plates with clips aren't in LDraw.
 8. The OMR's current set count and how well it covers Town and Train sets.
 9. Three.js `WebGPURenderer` with `BatchedMesh`: performance and WebGL2 fallback behavior at 250k parts.
-   *Closed 2026-11-16 at 250k (M0 slices 2 and 3, PR #15 and #16):* `WebGPURenderer` with chunked `InstancedMesh`, not `BatchedMesh`, renders the 250,665-part city on a MacBook Pro M4 Max at 3600×2086. Measured at `9d26e81`, aerial medians are 11.5 ms on WebGPU and 13.2 ms on the WebGL2 fallback, and street medians are 7.6 and 8.4 ms, with identical counts on both APIs.
-   - **Tiering:** the 250k aerial view ran **every chunk at the mid tier** (0/196/0): far-LOD shells with 8-segment studs, 10.6M of 63.4M scene triangles drawn, and 76% of studs culled as covered.
+   *Closed 2026-11-16 at 250k (M0 slices 2 and 3, PR #15 and #16):* `WebGPURenderer` with chunked `InstancedMesh`, not `BatchedMesh`, renders the 250,665-part city on a MacBook Pro M4 Max at 3600×2086. Measured at `0b81a76`, aerial medians are 12.1 ms on WebGPU and 13.3 ms on the WebGL2 fallback, and street medians are 7.2 and 8.6 ms, with identical counts on both APIs.
+   - **Tiering:** the 250k aerial view ran **every chunk at the mid tier** (0/196/0): far-LOD shells with 8-segment studs, 10.7M of 63.4M scene triangles drawn, and 76% of studs culled as covered.
    - **`BatchedMesh`:** it lost to chunked instancing on both APIs up to 100k in slice 2 and was removed.
-   - **Past 250k:** frame time grows with draw calls. At 500k, aerial is 24 ms (3,144 draws). **At 1M, aerial is about 40 ms** (39.7 ms WebGPU, 38.0 ms WebGL2, 5,670 draws, 13.5 ms CPU submit); street is about 15.5 ms.
-   - **Memory:** GPU vertex and index buffers actually allocated through WebGL2 `bufferData` and WebGPU `createBuffer` are 72.8 MiB after the 1M aerial run. Allocation is lazy, so it depends on what has been drawn.
+   - **Past 250k:** frame time grows with draw calls. At 500k, aerial is about 24 ms (3,144 draws). **At 1M, aerial is about 40 ms** (40.6 ms WebGPU, 38.9 ms WebGL2, 5,670 draws, 14–15 ms CPU submit); street is 15.3 and 16.1 ms.
+   - **Memory:** GPU vertex and index buffers actually allocated through WebGL2 `bufferData` and WebGPU `createBuffer` are 41.9 MiB at 250k aerial and 168.8 MiB at 1M aerial. The figure depends on resolution because allocation is lazy and follows the tiers. At 1920×1081 every 1M chunk stays far and only 72.8 MiB is allocated; at 3600×2086, 376 chunks reach mid and also upload the 1.33M-stud stud stream (96 MiB).
    - **Hardware:** these are M4 Max figures, much faster than Tier A.
 10. Browser WebGPU coverage today: Safari 26, Firefox on platforms other than Windows, Linux Chrome.
 
