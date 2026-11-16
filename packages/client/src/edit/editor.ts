@@ -354,6 +354,10 @@ export class Editor implements IEditor {
   }
 
   chooseItem(id: string | null): void {
+    if (id === null && !this.active) {
+      this.select(null);
+      return;
+    }
     const placeable = id === null ? null : (this.placeables.find((p) => p.id === id) ?? null);
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
