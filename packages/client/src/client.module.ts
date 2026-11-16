@@ -4,11 +4,13 @@ import { ContainerModule } from "inversify";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
+import { BomService } from "./bom/bom-service.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ImportScene } from "./scene/import-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
 import { PartDisplayScene } from "./scene/part-display-scene.ts";
 import {
+  BOM_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -27,6 +29,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();
+  bind(BOM_SERVICE).to(BomService).inSingletonScope();
 });
 
 export interface MainThreadConfig {

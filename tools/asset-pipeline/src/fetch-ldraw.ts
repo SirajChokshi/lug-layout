@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { modelStructure, parseLdraw, subfileReferences } from "./ldraw/parse.ts";
-import type { Palette, PaletteModel } from "./palette.ts";
+import type {
+  CatalogLocation,
+  CatalogSource,
+  CatalogSourceUse,
+  Palette,
+  PaletteModel,
+} from "./palette.ts";
 
 export interface AuditLock {
   readonly files: Readonly<Record<string, string>>;
@@ -13,10 +19,19 @@ export interface AuditLock {
   };
 }
 
+export interface CatalogSourceLock {
+  readonly use: CatalogSourceUse;
+  readonly source: CatalogLocation;
+  readonly files: Readonly<Record<string, string>>;
+}
+
+export type CatalogLock = Readonly<Record<string, CatalogSourceLock>>;
+
 export interface InputLock {
   readonly source: Palette["source"];
   readonly files: Readonly<Record<string, string>>;
   readonly audit?: AuditLock;
+  readonly catalog?: CatalogLock;
 }
 
 type Source = Palette["source"];
@@ -30,11 +45,17 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-async function download(source: Source, path: string): Promise<Uint8Array | undefined> {
+function downloadUrl(source: CatalogLocation, path: string): string {
   const { repo, commit, root } = source;
-  const url = ["https://raw.githubusercontent.com", repo, commit, root, path]
+  if (source.kind === "github-archive")
+    return `https://codeload.github.com/${repo}/tar.gz/${commit}`;
+  return ["https://raw.githubusercontent.com", repo, commit, root, path]
     .filter((segment) => segment !== "")
     .join("/");
+}
+
+async function download(source: CatalogLocation, path: string): Promise<Uint8Array | undefined> {
+  const url = downloadUrl(source, path);
   const response = await fetch(url);
   if (response.status === 404) return undefined;
   if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
@@ -163,6 +184,42 @@ export async function fetchAuditInputs(
   };
 }
 
+export async function fetchCatalogSources(
+  sources: ReadonlyArray<CatalogSource>,
+  catalogDirectory: string,
+): Promise<CatalogLock> {
+  const lock: Record<string, CatalogSourceLock> = {};
+  for (const { name, use, source, files } of sources) {
+    const pinned: Record<string, string> = {};
+    for (const path of files) {
+      const bytes = await download(source, path);
+      if (!bytes) throw new Error(`catalog source ${name}: ${path} is missing from ${source.repo}`);
+      await storeInto(catalogSourceDirectory(catalogDirectory, name), pinned, path, bytes);
+    }
+    lock[name] = { use, source, files: sortedRecord(pinned) };
+  }
+  return lock;
+}
+
+export function catalogSourceDirectory(catalogDirectory: string, name: string): string {
+  return join(catalogDirectory, name);
+}
+
+export async function verifyCatalogSources(
+  catalog: CatalogLock,
+  catalogDirectory: string,
+  use: CatalogSourceUse,
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const [name, entry] of Object.entries(catalog)) {
+    if (entry.use !== use) continue;
+    problems.push(
+      ...(await hashProblems(entry.files, catalogSourceDirectory(catalogDirectory, name))),
+    );
+  }
+  return problems;
+}
+
 async function hashProblems(
   files: Readonly<Record<string, string>>,
   directory: string,
@@ -196,7 +253,7 @@ async function hasPinnedBytes(path: string, expected: string): Promise<boolean> 
 }
 
 export async function restoreFiles(
-  source: Source,
+  source: CatalogLocation,
   files: Readonly<Record<string, string>>,
   directory: string,
 ): Promise<RestoreResult> {

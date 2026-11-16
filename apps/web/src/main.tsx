@@ -1,4 +1,5 @@
 import {
+  BOM_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -6,6 +7,7 @@ import {
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
+  type IBomSource,
   type IImportScene,
   type IViewerScene,
   type PlacementDump,
@@ -34,6 +36,7 @@ function viewerScene(viewer: ViewerParams): {
   readonly scene: IViewerScene;
   readonly placements: (() => PlacementDump) | null;
   readonly importScene?: IImportScene;
+  readonly bomSource?: IBomSource;
 } {
   switch (viewer.mode) {
     case "city": {
@@ -45,18 +48,22 @@ function viewerScene(viewer: ViewerParams): {
         originChunkX: viewer.originChunkX,
         originChunkZ: viewer.originChunkZ,
       });
-      return { scene: city, placements: viewer.dumpWorld ? () => city.placementDump() : null };
+      return {
+        scene: city,
+        placements: viewer.dumpWorld ? () => city.placementDump() : null,
+        bomSource: city,
+      };
     }
     case "model": {
       const modelScene = container.get(MODEL_SCENE);
       modelScene.selectModel(viewer.model ?? "");
-      return { scene: modelScene, placements: null };
+      return { scene: modelScene, placements: null, bomSource: modelScene };
     }
     case "parts":
       return { scene: container.get(PART_DISPLAY_SCENE), placements: null };
     case "import": {
       const importScene = container.get(IMPORT_SCENE);
-      return { scene: importScene, placements: null, importScene };
+      return { scene: importScene, placements: null, importScene, bomSource: importScene };
     }
     case "edit":
       throw new Error("the editor is not a viewer scene");
@@ -91,9 +98,16 @@ function root(): ReactNode {
       />
     );
   }
-  const { scene, placements, importScene } = viewerScene(params);
+  const { scene, placements, importScene, bomSource } = viewerScene(params);
+  const bom = bomSource ? { service: container.get(BOM_SERVICE), source: bomSource } : null;
   return (
-    <App scene={scene} params={params} placements={placements} importScene={importScene ?? null} />
+    <App
+      scene={scene}
+      params={params}
+      placements={placements}
+      importScene={importScene ?? null}
+      bom={bom}
+    />
   );
 }
 

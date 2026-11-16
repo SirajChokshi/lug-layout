@@ -2,6 +2,7 @@ import type { ServiceIdentifier } from "inversify";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
+import type { IBomService } from "./bom/bom-service.ts";
 import type { ICityScene } from "./scene/city-scene.ts";
 import type { IImportScene } from "./scene/import-scene.ts";
 import type { IModelScene } from "./scene/model-scene.ts";
@@ -21,3 +22,4 @@ export const MODEL_IMPORTER: ServiceIdentifier<IModelImporter> = Symbol.for(
   "brr.client.ModelImporter",
 );
 export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.client.ImportScene");
+export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");

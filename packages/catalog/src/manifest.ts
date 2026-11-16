@@ -2,6 +2,9 @@ import type {
   BundleColor,
   BundleCredit,
   BundleModelEntry,
+  CatalogColorIds,
+  CatalogCrosswalk,
+  CatalogPartIds,
   ModelSection,
   PartRole,
   TrackEnd,
@@ -56,6 +59,14 @@ export interface BundleManifest {
   readonly disclaimer: string;
   readonly inputs: BundleInputs;
   readonly trackCatalog: TrackCatalog;
+  readonly crosswalk: { readonly file: string };
+}
+
+export interface CrosswalkFile {
+  readonly parts: Readonly<Record<string, CatalogPartIds>>;
+  readonly colors: Readonly<Record<string, CatalogColorIds>>;
+  readonly bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>;
+  readonly bricklinkColors: Readonly<Record<string, ReadonlyArray<number>>>;
 }
 
 export interface ModelFileLattice {
@@ -184,7 +195,9 @@ export function parseManifest(value: unknown): BundleManifest {
     typeof value["disclaimer"] !== "string" ||
     !isRecord(value["inputs"]) ||
     !isSource(value["inputs"]["ldraw"]) ||
-    !isSource(value["inputs"]["omr"])
+    !isSource(value["inputs"]["omr"]) ||
+    !isRecord(value["crosswalk"]) ||
+    typeof value["crosswalk"]["file"] !== "string"
   ) {
     throw new Error("bundle manifest does not match the M1 bundle format");
   }
@@ -192,6 +205,78 @@ export function parseManifest(value: unknown): BundleManifest {
     ...(value as unknown as Omit<BundleManifest, "trackCatalog" | "compiler">),
     compiler: isCompiler(value["compiler"]) ? value["compiler"] : null,
     trackCatalog: parseTrackCatalog(value["trackCatalog"]),
+  };
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNullableInteger(value: unknown): value is number | null {
+  return value === null || Number.isInteger(value);
+}
+
+function isPartComponent(value: unknown): boolean {
+  return isRecord(value) && typeof value["part"] === "string" && Number.isInteger(value["color"]);
+}
+
+function isCatalogPartIds(value: unknown): value is CatalogPartIds {
+  return (
+    isRecord(value) &&
+    isNullableString(value["rebrickable"]) &&
+    isNullableString(value["bricklink"]) &&
+    (value["components"] === undefined ||
+      (Array.isArray(value["components"]) && value["components"].every(isPartComponent)))
+  );
+}
+
+function isCatalogColorIds(value: unknown): value is CatalogColorIds {
+  return (
+    isRecord(value) &&
+    isNullableInteger(value["rebrickable"]) &&
+    isNullableInteger(value["bricklink"])
+  );
+}
+
+function isIntegerArray(value: unknown): value is ReadonlyArray<number> {
+  return Array.isArray(value) && value.every((v) => Number.isInteger(v));
+}
+
+export function parseCrosswalkFile(value: unknown, label: string): CrosswalkFile {
+  if (
+    !isRecord(value) ||
+    !isRecord(value["parts"]) ||
+    !isRecord(value["colors"]) ||
+    !isRecord(value["bricklinkParts"]) ||
+    !isRecord(value["bricklinkColors"]) ||
+    !Object.values(value["parts"]).every(isCatalogPartIds) ||
+    !Object.values(value["colors"]).every(isCatalogColorIds) ||
+    !Object.values(value["bricklinkParts"]).every(isStringArray) ||
+    !Object.values(value["bricklinkColors"]).every(isIntegerArray)
+  ) {
+    throw new Error(`${label}: crosswalk does not match the bundle format`);
+  }
+  return value as unknown as CrosswalkFile;
+}
+
+export function crosswalkMaps(file: CrosswalkFile): CatalogCrosswalk {
+  return {
+    parts: new Map(
+      Object.entries(file.parts).map(([id, ids]) => [
+        id,
+        {
+          rebrickable: ids.rebrickable,
+          bricklink: ids.bricklink,
+          ...(ids.components ? { components: ids.components } : {}),
+        },
+      ]),
+    ),
+    colors: new Map(
+      Object.entries(file.colors).map(([code, ids]) => [
+        Number(code),
+        { rebrickable: ids.rebrickable, bricklink: ids.bricklink },
+      ]),
+    ),
   };
 }
 

@@ -64,6 +64,12 @@ export class ColorTable {
     return this.codes.length - 1;
   }
 
+  codeAt(index: number): number {
+    const code = this.codes[index];
+    if (code === undefined) throw new RangeError(`colour index ${index} is not in the table`);
+    return code;
+  }
+
   indexOfName(name: string): number {
     const entry = this.bundle.colors.find((c) => c.name === name);
     if (!entry) throw new Error(`LDConfig colour ${name} is missing from the bundle`);
