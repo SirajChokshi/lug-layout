@@ -69,8 +69,25 @@ const SIDES: ReadonlyArray<readonly [RoadSide, number, number]> = [
 ];
 const HALF_STUD = STUD_LDU / 2;
 
-function key(cellX: number, cellZ: number): string {
-  return `${cellX},${cellZ}`;
+class CellMap<T> {
+  private readonly columns = new Map<number, Map<number, T>>();
+
+  get(cellX: number, cellZ: number): T | undefined {
+    return this.columns.get(cellX)?.get(cellZ);
+  }
+
+  has(cellX: number, cellZ: number): boolean {
+    return this.columns.get(cellX)?.has(cellZ) ?? false;
+  }
+
+  set(cellX: number, cellZ: number, value: T): void {
+    let column = this.columns.get(cellX);
+    if (!column) {
+      column = new Map();
+      this.columns.set(cellX, column);
+    }
+    column.set(cellZ, value);
+  }
 }
 
 function sameSurface(a: Cell, b: Cell): boolean {
@@ -180,7 +197,7 @@ function mergeSegments(cells: ReadonlyArray<EdgeCell>): ReadonlyArray<RoadEdgeSe
 }
 
 export class RoadNetwork {
-  private readonly cells = new Map<string, Cell>();
+  private readonly cells = new CellMap<Cell>();
   private readonly placed: ReadonlyArray<ReadonlyArray<PlacedCell>>;
   private readonly overlapPairs = new Set<string>();
 
@@ -188,15 +205,14 @@ export class RoadNetwork {
     this.placed = placements.map(placedCells);
     for (const cells of this.placed) {
       for (const cell of cells) {
-        const cellKey = key(cell.cellX, cell.cellZ);
-        const existing = this.cells.get(cellKey);
+        const existing = this.cells.get(cell.cellX, cell.cellZ);
         if (existing && existing.placement !== cell.placement) {
           const low = Math.min(existing.placement, cell.placement);
           const high = Math.max(existing.placement, cell.placement);
           this.overlapPairs.add(`${low},${high}`);
           continue;
         }
-        this.cells.set(cellKey, cell);
+        this.cells.set(cell.cellX, cell.cellZ, cell);
       }
     }
   }
@@ -209,7 +225,7 @@ export class RoadNetwork {
     for (const cells of this.placed) {
       for (const cell of cells) {
         for (const [side, dx, dz] of SIDES) {
-          const neighbour = this.cells.get(key(cell.cellX + dx, cell.cellZ + dz));
+          const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
           if (neighbour?.placement === cell.placement) continue;
           let status: RoadCellStatus;
           if (!neighbour) {
@@ -249,16 +265,16 @@ export class RoadNetwork {
 
   fit(candidate: RoadPlacement): RoadFit {
     const cells = placedCells(candidate);
-    const own = new Set(cells.map((cell) => key(cell.cellX, cell.cellZ)));
+    const own = new CellMap<boolean>();
+    for (const cell of cells) own.set(cell.cellX, cell.cellZ, true);
     let joinedCells = 0;
     let mismatchedCells = 0;
     let overlappingCells = 0;
     for (const cell of cells) {
-      if (this.cells.has(key(cell.cellX, cell.cellZ))) overlappingCells++;
+      if (this.cells.has(cell.cellX, cell.cellZ)) overlappingCells++;
       for (const [, dx, dz] of SIDES) {
-        const neighbourKey = key(cell.cellX + dx, cell.cellZ + dz);
-        if (own.has(neighbourKey)) continue;
-        const neighbour = this.cells.get(neighbourKey);
+        if (own.has(cell.cellX + dx, cell.cellZ + dz)) continue;
+        const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
         if (!neighbour) continue;
         if (sameSurface(cell, neighbour)) joinedCells++;
         else mismatchedCells++;
