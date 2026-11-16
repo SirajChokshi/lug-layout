@@ -5,10 +5,12 @@ import {
   runMoves,
   solveClosure,
   solveDrag,
-  connectorPose,
+  TrackGraph,
+  TrackLayout,
   type DrawingKit,
   type TrackMove,
   type TrackPieceDef,
+  type TrackPieceSpec,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -18,7 +20,6 @@ import {
   chunkOf,
   normalizeHeading16,
   pose16,
-  posesJoin16,
   zeta16,
   zeta16ToStuds,
   type Pose16,
@@ -33,9 +34,10 @@ const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
 const MIN_START_DRAG_LDU = STUD_LDU;
-const ENDS_PER_JOIN = 2;
+const GROUND_PLATES = 0;
 
 export interface KitPart {
+  readonly catalogIndex: number;
   readonly piece: TrackPiece;
   readonly def: TrackPieceDef;
   readonly partIndex: number;
@@ -83,6 +85,10 @@ interface Drag {
 interface Placed {
   readonly part: KitPart;
   readonly placement: Pose16;
+}
+
+function pieceSpec(piece: TrackPiece): TrackPieceSpec {
+  return { connectors: piece.connectors.map((c) => c.pose), routes: piece.routes };
 }
 
 function partForPiece(piece: TrackPiece, parts: ReadonlyArray<PartAsset>): number {
@@ -142,7 +148,9 @@ export function trackChunkKey(chunkX: number, chunkZ: number): number {
 export class TrackDrawing {
   readonly kit: DrawingKit;
   private readonly byDef = new Map<string, KitPart>();
-  private readonly placed: Placed[] = [];
+  private readonly byCatalogIndex = new Map<number, KitPart>();
+  private readonly layout: TrackLayout;
+  private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
   private drag: Drag | null = null;
@@ -154,13 +162,14 @@ export class TrackDrawing {
     private readonly parts: ReadonlyArray<PartAsset>,
     private readonly colors: ColorTable,
   ) {
-    const kitPieces = catalog.pieces.filter(
-      (p) =>
-        p.system === TRACK_SYSTEM &&
-        p.status === "certified" &&
-        (p.kind === "straight" || p.kind === "curve"),
-    );
-    for (const piece of kitPieces) {
+    this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
+    this.graph = new TrackGraph(this.layout);
+    catalog.pieces.forEach((piece, catalogIndex) => {
+      const inKit =
+        piece.system === TRACK_SYSTEM &&
+        piece.status === "certified" &&
+        (piece.kind === "straight" || piece.kind === "curve");
+      if (!inKit) return;
       const partIndex = partForPiece(piece, parts);
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
@@ -168,14 +177,17 @@ export class TrackDrawing {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
       }
       const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
-      this.byDef.set(piece.id, {
+      const kitPart: KitPart = {
+        catalogIndex,
         piece,
         def,
         partIndex,
         color: colors.indexOfCode(part.producedColor),
         yLdu: -part.boundsMin[1],
-      });
-    }
+      };
+      this.byDef.set(piece.id, kitPart);
+      this.byCatalogIndex.set(catalogIndex, kitPart);
+    });
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
     if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
     this.kit = result.kit;
@@ -186,11 +198,26 @@ export class TrackDrawing {
   }
 
   get pieceCount(): number {
-    return this.placed.length;
+    return this.layout.count;
   }
 
   countOf(pieceId: string): number {
-    return this.placed.filter((p) => p.part.piece.id === pieceId).length;
+    const part = this.byDef.get(pieceId);
+    let count = 0;
+    for (let p = 0; p < this.layout.count; p++) {
+      if (part && this.layout.piece(p) === part.catalogIndex) count++;
+    }
+    return count;
+  }
+
+  coincidentEndIssues(): number {
+    return this.graph.issues.length;
+  }
+
+  private placedAt(placement: number): Placed {
+    const part = this.byCatalogIndex.get(this.layout.piece(placement));
+    if (!part) throw new Error(`placement ${placement} is not a drawing-kit piece`);
+    return { part, placement: this.layout.pose(placement) };
   }
 
   openEnds(): ReadonlyArray<TrackEndView> {
@@ -201,9 +228,7 @@ export class TrackDrawing {
   }
 
   joinedPairs(): number {
-    let all = 0;
-    for (const placed of this.placed) all += placed.part.def.connectors.length;
-    return (all - this.ends.length) / 2;
+    return this.graph.joinCount;
   }
 
   private kitPart(move: TrackMove): KitPart {
@@ -367,7 +392,7 @@ export class TrackDrawing {
       const move = drag.moves[i];
       if (!move) return;
       const entry: Placed = { part: this.kitPart(move), placement: piece.placement };
-      const index = this.placed.push(entry) - 1;
+      const index = this.layout.place(entry.part.catalogIndex, piece.placement, GROUND_PLATES);
       const centre = partCentre(entry);
       const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
       const members = this.chunkMembers.get(key) ?? [];
@@ -385,39 +410,20 @@ export class TrackDrawing {
   }
 
   private recomputeEnds(): void {
-    const all: Pose16[] = [];
-    for (const piece of this.placed) {
-      for (let c = 0; c < piece.part.def.connectors.length; c++) {
-        all.push(connectorPose({ piece: piece.part.def, placement: piece.placement }, c));
-      }
+    this.graph = new TrackGraph(this.layout);
+    const ends: Pose16[] = [];
+    for (const end of this.graph.openEnds) {
+      const placement = this.graph.endPlacement[end] ?? 0;
+      const connector = this.graph.endConnector[end] ?? 0;
+      ends.push(this.layout.connectorPose(placement, connector));
     }
-    const byPosition = new Map<string, number[]>();
-    all.forEach((end, index) => {
-      const key = end.position.join(",");
-      const list = byPosition.get(key) ?? [];
-      list.push(index);
-      byPosition.set(key, list);
-    });
-    const open: Pose16[] = [];
-    for (const list of byPosition.values()) {
-      const [a, b] = list;
-      const first = a === undefined ? undefined : all[a];
-      const second = b === undefined ? undefined : all[b];
-      if (list.length === ENDS_PER_JOIN && first && second && posesJoin16(first, second)) continue;
-      for (const index of list) {
-        const end = all[index];
-        if (end) open.push(end);
-      }
-    }
-    this.ends = open;
+    this.ends = ends;
   }
 
   chunkInstances(key: number): ChunkInstances | null {
     const members = this.chunkMembers.get(key);
     if (!members || members.length === 0) return null;
-    const first = this.placed[members[0] ?? 0];
-    if (!first) return null;
-    const centre = partCentre(first);
+    const centre = partCentre(this.placedAt(members[0] ?? 0));
     const originX = chunkOf(centre.x) * CHUNK_LDU;
     const originZ = chunkOf(centre.z) * CHUNK_LDU;
     const count = members.length;
@@ -425,8 +431,7 @@ export class TrackDrawing {
     const colorIndex = new Uint16Array(count);
     const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
     members.forEach((member, i) => {
-      const piece = this.placed[member];
-      if (!piece) return;
+      const piece = this.placedAt(member);
       partIndex[i] = piece.part.partIndex;
       colorIndex[i] = piece.part.color;
       writeMatrix(
@@ -441,9 +446,5 @@ export class TrackDrawing {
     });
     const base: ChunkPartInstances = { originX, originZ, count, partIndex, colorIndex, matrices };
     return withStuds(base, this.parts, this.colors, undefined);
-  }
-
-  exactEnds(): ReadonlyArray<Pose16> {
-    return this.ends;
   }
 }
