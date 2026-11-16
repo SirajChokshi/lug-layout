@@ -261,7 +261,8 @@ function arcFromEnds(
   if (ends.length !== 2 || first === undefined || second === undefined || exit === undefined) {
     return null;
   }
-  const turnSteps = exit.headingSteps > 8 ? exit.headingSteps - 16 : exit.headingSteps;
+  const turnSteps =
+    exit.headingSteps > ZETA16_ORDER / 2 ? exit.headingSteps - ZETA16_ORDER : exit.headingSteps;
   if (turnSteps === 0) return null;
   const chordLdu = Math.hypot(second.x - first.x, second.z - first.z);
   const halfTurn = (Math.abs(turnSteps) * ZETA16_STEP_RADIANS) / 2;

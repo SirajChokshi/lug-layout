@@ -43,15 +43,13 @@ export interface RelativeTrackEnd {
 
 interface FieldSearchSummary {
   readonly bestResidualLdu: number;
-  readonly bound: number;
-  readonly solutionsAtBound: number;
+  readonly solutionCount: number;
 }
 
 function summarize(field: FieldRepresentation): FieldSearchSummary {
   return {
     bestResidualLdu: field.residual * LDU_PER_STUD,
-    bound: field.bound,
-    solutionsAtBound: field.solutionsAtBound,
+    solutionCount: field.solutionCount,
   };
 }
 
@@ -132,7 +130,7 @@ export function relativeToEntry(ends: ReadonlyArray<TrackEnd>): ReadonlyArray<Re
     const field = findZeta16Representation({ x: xStuds, y: zStuds }, toleranceLdu / LDU_PER_STUD);
     const certified =
       field !== undefined &&
-      field.solutionsAtBound === 1 &&
+      field.solutionCount === 1 &&
       field.residual * LDU_PER_STUD <= CERTIFIED_RESIDUAL_LIMIT_LDU;
     return {
       marker: end.marker,

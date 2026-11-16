@@ -2,7 +2,7 @@ export const ZETA16_ORDER = 16;
 const ZETA16_COEFFICIENT_COUNT = ZETA16_ORDER / 2;
 
 export const ZETA16_STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
-const SEARCH_BOUNDS = [4, 8, 16, 32, 64] as const;
+export const COEFFICIENT_BOUND = 64;
 
 export type Zeta16Coefficients = ReadonlyArray<bigint>;
 
@@ -14,8 +14,7 @@ interface PlanePoint {
 export interface FieldRepresentation {
   readonly coefficients: Zeta16Coefficients;
   readonly residual: number;
-  readonly bound: number;
-  readonly solutionsAtBound: number;
+  readonly solutionCount: number;
 }
 
 interface AxisHit {
@@ -69,7 +68,7 @@ function axisHits(
       for (let third = -bound; third <= bound; third += 1) {
         const irrational = first * b1 + second * b2 + third * b3;
         const rational = Math.round(target - irrational);
-        if (Math.abs(rational) > bound * 4) continue;
+        if (Math.abs(rational) > bound) continue;
         const residual = Math.abs(target - irrational - rational);
         if (residual <= tolerance) hits.push({ rational, first, second, third, residual });
       }
@@ -124,25 +123,21 @@ export function findZeta16Representation(
     Math.sin(2 * ZETA16_STEP_RADIANS),
     Math.sin(3 * ZETA16_STEP_RADIANS),
   ] as const;
-  for (const bound of SEARCH_BOUNDS) {
-    const realHits = axisHits(point.x, realBasis, bound, tolerance);
-    const imaginaryHits = axisHits(point.y, imaginaryBasis, bound, tolerance);
-    const solutions: Zeta16Coefficients[] = [];
-    for (const real of realHits) {
-      for (const imaginary of imaginaryHits) {
-        const coefficients = combine(real, imaginary);
-        if (coefficients !== undefined) solutions.push(coefficients);
-      }
+  const realHits = axisHits(point.x, realBasis, COEFFICIENT_BOUND, tolerance);
+  const imaginaryHits = axisHits(point.y, imaginaryBasis, COEFFICIENT_BOUND, tolerance);
+  const solutions: Zeta16Coefficients[] = [];
+  for (const real of realHits) {
+    for (const imaginary of imaginaryHits) {
+      const coefficients = combine(real, imaginary);
+      if (coefficients !== undefined) solutions.push(coefficients);
     }
-    const best = solutions.toSorted((a, b) => Number(l1Norm(a) - l1Norm(b)))[0];
-    if (best === undefined) continue;
-    const exact = zeta16ToPlane(best);
-    return {
-      coefficients: best,
-      residual: Math.hypot(exact.x - point.x, exact.y - point.y),
-      bound,
-      solutionsAtBound: solutions.length,
-    };
   }
-  return undefined;
+  const best = solutions.toSorted((p, q) => Number(l1Norm(p) - l1Norm(q)))[0];
+  if (best === undefined) return undefined;
+  const exact = zeta16ToPlane(best);
+  return {
+    coefficients: best,
+    residual: Math.hypot(exact.x - point.x, exact.y - point.y),
+    solutionCount: solutions.length,
+  };
 }
