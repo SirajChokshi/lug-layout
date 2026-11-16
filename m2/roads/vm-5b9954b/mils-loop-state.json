@@ -9,7 +9,7 @@
    "joined": 0,
    "open": 48,
    "mismatch": 0,
-   "checkMs": 1.8
+   "checkMs": 4.7
   },
   {
    "item": "generated:mils-road-curve",
@@ -20,7 +20,7 @@
    "joined": 32,
    "open": 48,
    "mismatch": 0,
-   "checkMs": 2.8
+   "checkMs": 3
   },
   {
    "item": "generated:mils-road-curve",
@@ -31,7 +31,7 @@
    "joined": 64,
    "open": 48,
    "mismatch": 0,
-   "checkMs": 1.2
+   "checkMs": 9
   },
   {
    "item": "generated:mils-road-crosswalk",
@@ -53,7 +53,7 @@
    "joined": 160,
    "open": 48,
    "mismatch": 0,
-   "checkMs": 7.7
+   "checkMs": 5.2
   },
   {
    "item": "generated:mils-road-curve",
@@ -64,7 +64,7 @@
    "joined": 224,
    "open": 16,
    "mismatch": 0,
-   "checkMs": 6.2
+   "checkMs": 9.4
   },
   {
    "item": "generated:mils-road-straight",
@@ -75,7 +75,7 @@
    "joined": 256,
    "open": 16,
    "mismatch": 0,
-   "checkMs": 4.2
+   "checkMs": 4.8
   }
  ],
  "refusal": {

@@ -31,7 +31,7 @@
    "joined": 0,
    "open": 0,
    "mismatch": 0,
-   "checkMs": 0.1
+   "checkMs": 0
   },
   {
    "item": "ldraw:3811",
@@ -53,7 +53,7 @@
    "joined": 0,
    "open": 64,
    "mismatch": 0,
-   "checkMs": 0.9
+   "checkMs": 1
   },
   {
    "item": "ldraw:69958",
@@ -64,7 +64,7 @@
    "joined": 16,
    "open": 96,
    "mismatch": 0,
-   "checkMs": 1
+   "checkMs": 0.6
   },
   {
    "item": "ldraw:71772p01",
@@ -75,7 +75,7 @@
    "joined": 32,
    "open": 112,
    "mismatch": 0,
-   "checkMs": 0.6
+   "checkMs": 0.4
   },
   {
    "item": "ldraw:69958",
@@ -86,7 +86,7 @@
    "joined": 48,
    "open": 144,
    "mismatch": 0,
-   "checkMs": 0.5
+   "checkMs": 1.8
   },
   {
    "item": "ldraw:71772",
@@ -97,7 +97,7 @@
    "joined": 64,
    "open": 160,
    "mismatch": 0,
-   "checkMs": 0.5
+   "checkMs": 0.4
   },
   {
    "item": "ldraw:69958",
@@ -108,7 +108,7 @@
    "joined": 80,
    "open": 192,
    "mismatch": 0,
-   "checkMs": 0.5
+   "checkMs": 0.6
   },
   {
    "item": "ldraw:44336p04",
@@ -119,7 +119,7 @@
    "joined": 80,
    "open": 232,
    "mismatch": 0,
-   "checkMs": 2.7
+   "checkMs": 1
   },
   {
    "item": "ldraw:44341p02",
@@ -130,7 +130,7 @@
    "joined": 112,
    "open": 252,
    "mismatch": 0,
-   "checkMs": 3.4
+   "checkMs": 1.4
   },
   {
    "item": "ldraw:44336p04",
@@ -141,7 +141,7 @@
    "joined": 144,
    "open": 252,
    "mismatch": 0,
-   "checkMs": 5.6
+   "checkMs": 1.1
   },
   {
    "item": "ldraw:44342p02",
@@ -152,7 +152,7 @@
    "joined": 176,
    "open": 252,
    "mismatch": 0,
-   "checkMs": 2.1
+   "checkMs": 1.1
   },
   {
    "item": "ldraw:69958",
@@ -163,7 +163,7 @@
    "joined": 187,
    "open": 286,
    "mismatch": 4,
-   "checkMs": 9.6
+   "checkMs": 3.5
   },
   {
    "item": "ldraw:30225b",

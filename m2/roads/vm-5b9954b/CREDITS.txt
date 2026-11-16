@@ -3,9 +3,9 @@ Brick Railroad credits
 LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.
 
 Asset bundle versions:
-  standard: 35278f6e6699b005
-  low: 9523ada942005104
-  far: 94efa65d3fc9eae3
+  standard: 58550249823f8f4d
+  low: 65134385804e63fe
+  far: e00dca959b6ab53e
 
 LDraw parts library
 Source: github.com/kulits/ldraw-parts at commit c70360d1c588be894997b2168c61909bc8058c4d (ldraw/)
@@ -14,17 +14,17 @@ Modified from LDraw, per bundle level of detail:
   standard: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up
   low: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up, 8-segment p/8 primitives used where LDraw provides them
   far: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up, 8-segment p/8 primitives used where LDraw provides them, triangles hidden from above removed
-1788 LDraw files credited.
+1799 LDraw files credited.
 
-License: Licensed under CC BY 4.0 : see CAreadme.txt (1669 files)
+License: Licensed under CC BY 4.0 : see CAreadme.txt (1680 files)
   Authors:
     James Jessiman (316 files)
     Magnus Forsberg [MagFors] (166 files)
     Philippe Hurbain [Philo] (166 files)
     Willy Tschager [Holly-Wood] (129 files)
-    Max Martin Richter [MMR1988] (116 files)
+    Max Martin Richter [MMR1988] (125 files)
+    Steffen [Steffen] (59 files)
     Michael Heidemann [mikeheide] (57 files)
-    Steffen [Steffen] (57 files)
     Chris Dee [cwdee] (54 files)
     Alex Taylor [anathema] (44 files)
     Steve Bliss [sbliss] (43 files)
@@ -832,6 +832,10 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1669 files)
     parts/2859c00.dat: ~Train Track 9V Switch Right - Plastic Part with Underside Cover Plate and Metal Elements, by Max Martin Richter [MMR1988]
     parts/2860a.dat: ~Train Track 9V Switch Tongue Right - Plastic Part, by Max Martin Richter [MMR1988]
     parts/2860ac01.dat: ~Train Track 9V Switch Tongue Right, by Steffen [Steffen]
+    parts/2861.dat: ~Train Track 9V Switch Left - Plastic Part, by Max Martin Richter [MMR1988]
+    parts/2861c00.dat: ~Train Track 9V Switch Left - Plastic Part with Underside Cover Plate and Metal Elements, by Max Martin Richter [MMR1988]
+    parts/2862a.dat: ~Train Track 9V Switch Tongue Left - Plastic Part, by Max Martin Richter [MMR1988]
+    parts/2862ac01.dat: ~Train Track 9V Switch Tongue Left, by Steffen [Steffen]
     parts/2863.dat: ~Train Track 9V Bottom Plate Right, by Max Martin Richter [MMR1988]
     parts/2864.dat: ~Train Track 9V Switch Command Rod, by Max Martin Richter [MMR1988]
     parts/2864c01.dat: ~Train Track 9V Switch Command Rod with Metal Plate, by Ludo Soete [ludo]
@@ -850,6 +854,7 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1669 files)
     parts/2921.dat: Brick 1 x 1 with Handle, by James Jessiman
     parts/2926.dat: Plate 1 x 4 with 2 Wheel Pins, by James Jessiman
     parts/2927.dat: Train Wheel Tiny, by James Jessiman
+    parts/2939.dat: ~Train Track 9V Bottom Plate Left, by Max Martin Richter [MMR1988]
     parts/2959.dat: ~Magnet Cylindrical Casing (Obsolete), by Chris Dee [cwdee]
     parts/2959c01.dat: ~Magnet Cylindrical in Casing (Complete) (Obsolete), by Chris Dee [cwdee]
     parts/3001.dat: Brick 2 x 4, by James Jessiman
@@ -1328,6 +1333,7 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1669 files)
     parts/750.dat: Hose Flexible End 1 x 1 x 0.667 with Tabs, by Steve Bliss [sbliss]
     parts/75535.dat: Technic Pin Joiner Round, by James Jessiman
     parts/75541-f2.dat: Train Track 9V Switch Right Branching, by Steffen [Steffen]
+    parts/75542-f2.dat: Train Track 9V Switch Left Branching, by Steffen [Steffen]
     parts/85080.dat: Brick 2 x 2 Corner Round with Stud Notch and Reinforced Underside, by Max Martin Richter [MMR1988]
     parts/85861.dat: Plate 1 x 1 Round with Open Stud, by Magnus Forsberg [MagFors]
     parts/85943.dat: Technic Brick 1 x 2 with Two Liftarms, by Magnus Forsberg [MagFors]
@@ -1740,6 +1746,11 @@ License: Licensed under CC BY 4.0 : see CAreadme.txt (1669 files)
     parts/u9173.dat: ~Train Track 9V Switch - Internal Contact Plate for Switch Function, by Max Martin Richter [MMR1988]
     parts/u9240.dat: ~Train Track 9V Switch Tongue Right - Metal Rail, by Max Martin Richter [MMR1988]
     parts/u9309.dat: ~Train Track 9V Switch Right - Straight Metal Rail, by Max Martin Richter [MMR1988]
+    parts/u9508.dat: ~Train Track 9V Switch Left - Curved Metal Rail, Start Section of Main Rail, by Max Martin Richter [MMR1988]
+    parts/u9509.dat: ~Train Track 9V Switch Left - Curved Metal Rail, End Section of Main Rail, by Max Martin Richter [MMR1988]
+    parts/u9541.dat: ~Train Track 9V Switch Left - Curved Metal Rail, Closure Rail, by Max Martin Richter [MMR1988]
+    parts/u9544.dat: ~Train Track 9V Switch Left - Curved Metal Rail, Frog Rail, by Max Martin Richter [MMR1988]
+    parts/u9545.dat: ~Train Track 9V Switch Tongue Left - Metal Rail, by Max Martin Richter [MMR1988]
     parts/u9610.dat: ~Train Track 9V Curved - Inner Metal Rail, by Max Martin Richter [MMR1988]
     parts/u9611.dat: ~Train Track 9V Straight - Metal Rail, by Max Martin Richter [MMR1988]
     parts/u9621.dat: ~Train Track 9V Curved - Outer Metal Rail, by Max Martin Richter [MMR1988]
@@ -1989,6 +2000,8 @@ Source: github.com/anteloc/ldraw-lib at commit 606be1421f6c353d9f23f6c467e0be181
 Generated scenes
   switch-then-reversed-curve: Brick Railroad tools/asset-pipeline (cli.ts facts), placed from measured track-end poses. generated by tools/asset-pipeline `cli.ts facts`: parts placed from the measured track-end poses in docs/verified-facts/geometry.json
   road-baseplates: Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents. generated by tools/asset-pipeline `cli.ts facts`: plates abutted edge to edge using the measured plate extents in docs/verified-facts/geometry.json
+  r40-circle-9v: Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math). generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json)
+  oval-passing-siding-9v: Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math). generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json)
   mils-road-straight: Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents. generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)
   mils-road-crosswalk: Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents. generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)
   mils-road-curve: Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents. generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)
