@@ -17,6 +17,7 @@ pub enum Lod {
     #[default]
     Standard,
     Low,
+    Far,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -83,7 +84,7 @@ impl<'a, L: Library> Flattener<'a, L> {
         let reference = ldraw::normalize_reference(reference);
         let low = format!("p/8/{reference}");
         let candidates = [
-            (self.lod == Lod::Low).then_some(low),
+            (self.lod != Lod::Standard).then_some(low),
             Some(format!("parts/{reference}")),
             Some(format!("p/{reference}")),
             Some(reference.clone()),

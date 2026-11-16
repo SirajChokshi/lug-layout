@@ -5,6 +5,7 @@ use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudRefer
 use crate::glb;
 use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
+use crate::occlusion;
 
 pub const MODIFIED_NOTE: &str =
     "Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up";
@@ -104,6 +105,9 @@ pub fn compile_part<L: Library>(
     license_gate(&flattened, &options.unofficial_allowlist)?;
     for triangle in &mut flattened.triangles {
         triangle.points = triangle.points.map(to_y_up);
+    }
+    if options.lod == Lod::Far {
+        occlusion::drop_hidden_from_above(&mut flattened.triangles);
     }
     for edge in &mut flattened.hard_edges {
         *edge = edge.map(to_y_up);

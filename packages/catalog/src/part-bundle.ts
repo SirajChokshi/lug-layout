@@ -1,4 +1,4 @@
-export type BundleLod = "standard" | "low";
+export type BundleLod = "standard" | "low" | "far";
 export type PartRole = "ground" | "road" | "track" | "wall" | "roof" | "detail" | "model";
 export type Vec3Tuple = readonly [number, number, number];
 

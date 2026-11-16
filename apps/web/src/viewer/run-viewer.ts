@@ -1,6 +1,7 @@
 import type { BackendInfo, FrameStats, IViewerScene, SceneSummary } from "@brr/client";
 import { FrameCoverage } from "./frame-coverage.ts";
 import { measureFrames, type FrameTimings } from "./measure-frames.ts";
+import { memoryReport, type MemoryReport } from "./memory-report.ts";
 import type { ViewerParams } from "./viewer-params.ts";
 
 const ORBIT_PERIOD_MS = 40_000;
@@ -16,6 +17,7 @@ export interface ViewerReport {
   readonly backend: BackendInfo;
   readonly drawingBuffer: DrawingBuffer;
   readonly summary: SceneSummary;
+  readonly memory: MemoryReport;
   readonly loadMs: number;
   readonly liveFps: number | null;
   readonly liveSceneCoverage: number | null;
@@ -28,6 +30,7 @@ export interface ViewerResult {
   readonly backend: BackendInfo;
   readonly drawingBuffer: DrawingBuffer;
   readonly summary: SceneSummary;
+  readonly memory: MemoryReport;
   readonly loadMs: number;
   readonly timings: FrameTimings;
   readonly drawCalls: number;
@@ -44,7 +47,7 @@ export async function runViewer(
   onError: (error: unknown) => void,
 ): Promise<void> {
   const devicePixelRatio = window.devicePixelRatio;
-  const backend = await scene.attach({
+  const backend = await scene.backend.init({
     canvas,
     api: params.api,
     pixelRatio: devicePixelRatio,
@@ -58,13 +61,23 @@ export async function runViewer(
   const loadStart = performance.now();
   const summary = await scene.load(params.lod);
   const loadMs = performance.now() - loadStart;
-  const frame: FrameStats = { drawCalls: 0, triangles: 0 };
-  window.addEventListener("resize", () => scene.resize(canvas.clientWidth, canvas.clientHeight));
+  const frame: FrameStats = {
+    drawCalls: 0,
+    triangles: 0,
+    nearChunks: 0,
+    midChunks: 0,
+    farChunks: 0,
+  };
+  const memory = (): MemoryReport => memoryReport(scene.backend.bufferMemory());
+  window.addEventListener("resize", () =>
+    scene.backend.resize(canvas.clientWidth, canvas.clientHeight),
+  );
   const coverage = new FrameCoverage(backend.backgroundSrgb);
   onReport({
     backend,
     drawingBuffer: drawingBuffer(),
     summary,
+    memory: memory(),
     loadMs,
     liveFps: null,
     liveSceneCoverage: null,
@@ -78,6 +91,7 @@ export async function runViewer(
       backend,
       drawingBuffer: drawingBuffer(),
       summary,
+      memory: memory(),
       loadMs,
       liveFps: null,
       liveSceneCoverage: null,
@@ -89,6 +103,7 @@ export async function runViewer(
       backend,
       drawingBuffer: drawingBuffer(),
       summary,
+      memory: memory(),
       loadMs,
       timings,
       drawCalls: timings.medianDrawCalls,
@@ -104,7 +119,7 @@ export async function runViewer(
   const tick = (now: number): void => {
     scene.setCamera(((now - startedAt) % ORBIT_PERIOD_MS) / ORBIT_PERIOD_MS);
     try {
-      scene.renderFrame(frame);
+      scene.backend.renderFrame(frame);
     } catch (error) {
       onError(error);
       return;
@@ -116,6 +131,7 @@ export async function runViewer(
         backend,
         drawingBuffer: drawingBuffer(),
         summary,
+        memory: memory(),
         loadMs,
         liveFps,
         liveSceneCoverage: coverage.sceneFraction(canvas),

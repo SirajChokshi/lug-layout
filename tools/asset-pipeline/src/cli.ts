@@ -125,7 +125,7 @@ async function factsCommand(check: boolean): Promise<void> {
   if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
 
-const BUNDLE_LODS = ["standard", "low"] as const;
+const BUNDLE_LODS = ["standard", "low", "far"] as const;
 
 function runCargo(args: ReadonlyArray<string>): void {
   const result = spawnSync("cargo", args, { cwd: repoRoot, stdio: "inherit" });

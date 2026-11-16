@@ -1,16 +1,32 @@
 import type { IViewerScene } from "@brr/client";
 import { useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
+import type { ChunkTiers } from "./viewer/measure-frames.ts";
+import type { MemoryReport } from "./viewer/memory-report.ts";
 import { runViewer, type ViewerReport, type ViewerResult } from "./viewer/run-viewer.ts";
 import type { ViewerParams } from "./viewer/viewer-params.ts";
 
 const TRADEMARK_DISCLAIMER =
   "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.";
+const BYTES_PER_MEBIBYTE = 1024 * 1024;
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
+}
+
+function mebibytes(bytes: number): string {
+  return `${(bytes / BYTES_PER_MEBIBYTE).toFixed(1)} MiB`;
+}
+
+function tierText(tiers: ChunkTiers): string {
+  return `${tiers.near} / ${tiers.mid} / ${tiers.far}`;
+}
+
+function memoryText(memory: MemoryReport): string {
+  const heap = memory.jsHeapBytes === null ? "not reported" : mebibytes(memory.jsHeapBytes);
+  return `vertex+index ${mebibytes(memory.vertexIndexBytes)}, other ${mebibytes(memory.otherBytes)}, JS heap ${heap}`;
 }
 
 function percent(fraction: number): string {
@@ -32,18 +48,27 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ],
     ["Parts", integer.format(summary.parts)],
     ["Modules", integer.format(summary.modules)],
-    ["Stud instances", integer.format(summary.studInstances)],
+    [
+      "Stud instances (drawn of total)",
+      `${integer.format(summary.visibleStudInstances)} of ${integer.format(summary.studInstances)}`,
+    ],
     ["Scene triangles", integer.format(summary.bodyTriangles + summary.studTriangles)],
     ["Load", `${integer.format(report.loadMs)} ms`],
+    ["GPU buffers allocated so far, JS heap", memoryText(report.memory)],
   ];
   if (timings) {
     rows.push(
+      ["Chunk tiers near/mid/far (median)", tierText(timings.medianChunkTiers)],
       ["Draw calls (median)", integer.format(timings.medianDrawCalls)],
       ["Drawn triangles (median)", integer.format(timings.medianDrawnTriangles)],
       ["Scene coverage (sampled frames)", timings.sceneCoverage.map(percent).join(", ")],
     );
   } else {
     rows.push(
+      [
+        "Chunk tiers near/mid/far",
+        tierText({ near: frame.nearChunks, mid: frame.midChunks, far: frame.farChunks }),
+      ],
       ["Draw calls", integer.format(frame.drawCalls)],
       ["Drawn triangles", integer.format(frame.triangles)],
     );
