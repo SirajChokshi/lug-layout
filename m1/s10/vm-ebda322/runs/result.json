@@ -1,0 +1,188 @@
+{
+  "base": "http://localhost:4173/",
+  "bundleVersions": {
+    "standard": "351e7503d83e10bc",
+    "low": "e6dacc3d814d94e3",
+    "far": "6ef2f01b467bbaa6"
+  },
+  "livePage": {
+    "countsTable": {
+      "bundlePartFiles": "707",
+      "creditedPartFiles": "707",
+      "creditedLdrawFiles": "1766",
+      "bundledOmrModels": "10",
+      "creditedOmrModels": "10"
+    },
+    "creditedFileRows": 1766,
+    "distinctCreditedFileRows": 1766,
+    "licenseGroups": [
+      {
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "files": 1648,
+        "authors": 60
+      },
+      {
+        "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+        "files": 117,
+        "authors": 36
+      },
+      {
+        "license": "No !LICENSE line in the file",
+        "files": 1,
+        "authors": 1
+      }
+    ],
+    "omrSetRows": 10,
+    "sets": [
+      {
+        "set": "7936-1",
+        "cells": [
+          "7936-1 Level Crossing (2010)",
+          "Marc Giraudet [Mad_Marc]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "5",
+          "147",
+          "0"
+        ]
+      },
+      {
+        "set": "10264-1",
+        "cells": [
+          "10264-1 Corner Garage (2019)",
+          "Jaco van der Molen [Jaco van der Molen]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "203",
+          "2,567",
+          "3"
+        ]
+      },
+      {
+        "set": "10185-1",
+        "cells": [
+          "10185-1 Green Grocer (2008)",
+          "Max Martin Richter [MMR1988]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "156",
+          "2,405",
+          "0"
+        ]
+      },
+      {
+        "set": "10190-1",
+        "cells": [
+          "10190-1 Market Street (2007)",
+          "Max Martin Richter [MMR1988]; Willy Tschager [Holly-Wood]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "57",
+          "1,484",
+          "0"
+        ]
+      },
+      {
+        "set": "10218-1",
+        "cells": [
+          "10218-1 Pet Shop (2011)",
+          "Stefan Frenz (smf); Stefan Frenz (smf) with LDCad; Stefan Frenz; Stefan Frenz [smf]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "17",
+          "2,042",
+          "0"
+        ]
+      },
+      {
+        "set": "2150-1",
+        "cells": [
+          "2150-1 Train Station (1996)",
+          "Robert Paciorek [bercik]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "15",
+          "625",
+          "0"
+        ]
+      },
+      {
+        "set": "4554-1",
+        "cells": [
+          "4554-1 Metro Station (1991)",
+          "Robert Paciorek [bercik]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "15",
+          "617",
+          "0"
+        ]
+      },
+      {
+        "set": "4555-1",
+        "cells": [
+          "4555-1 Cargo Station (1995)",
+          "Robert Paciorek [bercik]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "14",
+          "390",
+          "0"
+        ]
+      },
+      {
+        "set": "10128-1",
+        "cells": [
+          "10128-1 Train Level Crossing (2003)",
+          "Robert Paciorek [bercik]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "9",
+          "336",
+          "1"
+        ]
+      },
+      {
+        "set": "10133-1",
+        "cells": [
+          "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
+          "TotalyWicked [TotalyWicked]",
+          "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+          "4",
+          "419",
+          "0"
+        ]
+      }
+    ],
+    "footer": "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.",
+    "modifiedNotes": [
+      "standard: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up",
+      "low: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up, 8-segment p/8 primitives used where LDraw provides them",
+      "far: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up, 8-segment p/8 primitives used where LDraw provides them, triangles hidden from above removed"
+    ],
+    "dataSources": [
+      "44336pr0004 element 4277471 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)Used for: display colour of ldraw:44336p04",
+      "44336pr0001 elements 4179968, 4219946 in Green; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)Used for: display colour of ldraw:44336p01",
+      "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)Used for: name and year of set 7936-1, name and year of set 10264-1, name and year of set 10185-1, name and year of set 10190-1, name and year of set 10218-1, name and year of set 2150-1, name and year of set 4554-1, name and year of set 4555-1, name and year of set 10128-1, name and year of set 10133-1"
+    ]
+  },
+  "manifests": {
+    "distinctPartFilePaths": 707,
+    "partFilePathsCreditedOnPage": 707,
+    "distinctCreditPaths": 1766,
+    "omrModels": 10,
+    "omrModelsWithAPageRow": 10
+  },
+  "glbExtras": {
+    "glbFilesRead": 2115,
+    "distinctSourcePaths": 1765,
+    "plusLdconfig": 1766,
+    "onPageNotInGlbSourcesOrLdconfig": [],
+    "inGlbSourcesNotOnPage": []
+  },
+  "creditsTxt": {
+    "bytes": 157189,
+    "sha256": "3af1b57e86164ae564f47c98bd4b7ff7e3b42bb3639b4306ebf9c88ca532b04f",
+    "disclaimerOccurrences": 2,
+    "pageFilesMissingFromTxt": 0,
+    "setLinesPresent": 10
+  },
+  "manifestDisclaimer": {
+    "standard": "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.",
+    "low": "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.",
+    "far": "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project."
+  },
+  "aboutFooter": "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.",
+  "viewerCreditsLinkNavigatedTo": "http://localhost:4173/?page=credits"
+}
