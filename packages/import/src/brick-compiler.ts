@@ -72,6 +72,27 @@ export interface InlineMeasured {
 
 export type InlineOutcome = (InlineMeasured | Need | Failure) & InlinePart;
 
+export interface StudioArchive {
+  readonly status: "read";
+  readonly entry: string;
+  readonly ldraw: string;
+  readonly studioVersion: string | null;
+  readonly convertedLines: number;
+  readonly unconvertedLines: ReadonlyArray<number>;
+  readonly bricklinkIds: Readonly<Record<string, string>>;
+  readonly customParts: ReadonlyArray<string>;
+}
+
+export type StudioRejectionKind = "notZip" | "encrypted" | "noModel";
+
+export interface StudioRejection {
+  readonly status: "rejected";
+  readonly kind: StudioRejectionKind;
+  readonly message: string;
+}
+
+export type StudioRead = StudioArchive | StudioRejection;
+
 export interface CompileOutput {
   readonly parts: ReadonlyArray<PartOutcome>;
   readonly inline: ReadonlyArray<InlineOutcome>;
@@ -112,6 +133,30 @@ function isBakeOutput(value: unknown): value is BakeOutput {
   );
 }
 
+function isStudioRead(value: unknown): value is StudioRead {
+  if (!isRecord(value)) return false;
+  if (value["status"] === "rejected") {
+    return typeof value["kind"] === "string" && typeof value["message"] === "string";
+  }
+  return (
+    value["status"] === "read" &&
+    typeof value["entry"] === "string" &&
+    typeof value["ldraw"] === "string" &&
+    isRecord(value["bricklinkIds"]) &&
+    Array.isArray(value["customParts"]) &&
+    Array.isArray(value["unconvertedLines"])
+  );
+}
+
+function framed(header: Record<string, unknown>, payload: Uint8Array): Uint8Array {
+  const json = new TextEncoder().encode(JSON.stringify(header));
+  const out = new Uint8Array(HEADER_LENGTH_BYTES + json.length + payload.length);
+  new DataView(out.buffer).setUint32(0, json.length, true);
+  out.set(json, HEADER_LENGTH_BYTES);
+  out.set(payload, HEADER_LENGTH_BYTES + json.length);
+  return out;
+}
+
 function isCompileHeader(value: unknown): value is RawCompileHeader {
   return (
     isRecord(value) &&
@@ -125,7 +170,10 @@ export class BrickCompiler {
   constructor(private readonly module: WebAssembly.Module) {}
 
   private async run(request: Record<string, unknown>): Promise<Uint8Array> {
-    const stdin = new TextEncoder().encode(JSON.stringify(request));
+    return this.runBytes(new TextEncoder().encode(JSON.stringify(request)));
+  }
+
+  private async runBytes(stdin: Uint8Array): Promise<Uint8Array> {
     const result = await runWasiCommand(this.module, stdin);
     if (result.exitCode !== 0) {
       throw new Error(result.stderr.trim() || `brick-compile exited with ${result.exitCode}`);
@@ -138,6 +186,14 @@ export class BrickCompiler {
       new TextDecoder().decode(await this.run({ op: "bake", source })),
     );
     if (!isBakeOutput(parsed)) throw new Error("brick-compile bake output is malformed");
+    return parsed;
+  }
+
+  async readStudio(io: Uint8Array): Promise<StudioRead> {
+    const parsed: unknown = JSON.parse(
+      new TextDecoder().decode(await this.runBytes(framed({ op: "readStudio" }, io))),
+    );
+    if (!isStudioRead(parsed)) throw new Error("brick-compile readStudio output is malformed");
     return parsed;
   }
 

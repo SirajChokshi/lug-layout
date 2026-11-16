@@ -9,6 +9,8 @@ pub mod license;
 pub mod mesh;
 pub mod model;
 pub mod occlusion;
+pub mod studio;
+pub mod zip;
 
 pub use compile::{compile_part, CompileError, CompileOptions, CompiledPart};
 pub use flatten::{Library, Lod};
