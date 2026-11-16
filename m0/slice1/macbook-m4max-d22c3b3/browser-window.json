@@ -1,0 +1,98 @@
+{
+  "chromeVersion": "Chrome/157.0.8103.52",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "windowBounds": {
+    "left": 0,
+    "top": 39,
+    "width": 1800,
+    "height": 1130,
+    "windowState": "maximized"
+  },
+  "runs": {
+    "webgpu-default": {
+      "url": "http://localhost:4173/?api=webgpu&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?api=webgpu&measure=1&warmup=10&frames=120"
+    },
+    "webgl2-default": {
+      "url": "http://localhost:4173/?api=webgl2&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?api=webgl2&measure=1&warmup=10&frames=120"
+    },
+    "webgpu-low": {
+      "url": "http://localhost:4173/?api=webgpu&lod=low&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?api=webgpu&lod=low&measure=1&warmup=10&frames=120"
+    },
+    "webgpu-7936-1": {
+      "url": "http://localhost:4173/?api=webgpu&model=7936-1&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?api=webgpu&model=7936-1&measure=1&warmup=10&frames=120"
+    },
+    "webgl2-7936-1": {
+      "url": "http://localhost:4173/?api=webgl2&model=7936-1&measure=1&warmup=10&frames=120",
+      "completed": true,
+      "waitedSeconds": 2,
+      "innerWidth": 1800,
+      "innerHeight": 1043,
+      "outerWidth": 1800,
+      "outerHeight": 1130,
+      "devicePixelRatio": 2,
+      "screen": {
+        "width": 1800,
+        "height": 1169,
+        "availWidth": 1800,
+        "availHeight": 1130
+      },
+      "href": "http://localhost:4173/?api=webgl2&model=7936-1&measure=1&warmup=10&frames=120"
+    }
+  }
+}
