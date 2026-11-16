@@ -13,6 +13,7 @@ export interface BackendInfo {
   readonly requestedApi: GraphicsApi;
   readonly activeApi: GraphicsApi;
   readonly adapter: string;
+  readonly backgroundSrgb: number;
 }
 
 export interface PartPalette {

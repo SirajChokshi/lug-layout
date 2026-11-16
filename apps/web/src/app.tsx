@@ -1,5 +1,6 @@
 import type { IViewerScene } from "@brr/client";
 import { useEffect, useRef, useState } from "react";
+import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import { runViewer, type ViewerReport, type ViewerResult } from "./viewer/run-viewer.ts";
 import type { ViewerParams } from "./viewer/viewer-params.ts";
 
@@ -10,6 +11,10 @@ const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
+}
+
+function percent(fraction: number): string {
+  return `${(fraction * 100).toFixed(0)}%`;
 }
 
 function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]> {
@@ -30,9 +35,23 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ["Stud instances", integer.format(summary.studInstances)],
     ["Scene triangles", integer.format(summary.bodyTriangles + summary.studTriangles)],
     ["Load", `${integer.format(report.loadMs)} ms`],
-    ["Draw calls", integer.format(frame.drawCalls)],
-    ["Drawn triangles", integer.format(frame.triangles)],
   ];
+  if (timings) {
+    rows.push(
+      ["Draw calls (median)", integer.format(timings.medianDrawCalls)],
+      ["Drawn triangles (median)", integer.format(timings.medianDrawnTriangles)],
+      ["Scene coverage (sampled frames)", timings.sceneCoverage.map(percent).join(", ")],
+    );
+  } else {
+    rows.push(
+      ["Draw calls", integer.format(frame.drawCalls)],
+      ["Drawn triangles", integer.format(frame.triangles)],
+    );
+  }
+  if (report.liveSceneCoverage !== null) {
+    const empty = report.liveSceneCoverage < MIN_SCENE_COVERAGE ? " (essentially empty frame)" : "";
+    rows.push(["Scene coverage", `${percent(report.liveSceneCoverage)}${empty}`]);
+  }
   if (liveFps !== null) rows.push(["Frame rate (rAF)", `${liveFps.toFixed(1)} fps`]);
   if (timings) {
     rows.push(
@@ -46,10 +65,13 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
 }
 
 function modelCredit(report: ViewerReport): string {
-  const [main] = report.summary.modelSections;
-  if (!main) return "";
-  const authors = [...new Set(report.summary.modelSections.map((s) => s.author))].join(", ");
-  return `Model: ${main.name} by ${authors}, LDraw Official Model Repository (${main.license ?? "no license"}). `;
+  const { model } = report.summary;
+  if (!model) return "";
+  const authors = [...new Set(model.sections.map((s) => s.author).filter((a) => a !== ""))];
+  const licenses = [...new Set(model.sections.flatMap((s) => (s.license ? [s.license] : [])))];
+  const by = authors.length > 0 ? ` by ${authors.join(", ")}` : "";
+  const license = licenses.length > 0 ? `, ${licenses.join("; ")}` : "";
+  return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
 export function App({ scene, params }: AppProps) {

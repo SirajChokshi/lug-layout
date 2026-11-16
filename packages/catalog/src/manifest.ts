@@ -4,6 +4,7 @@ import type {
   BundleModelEntry,
   ModelSection,
   PartRole,
+  TrackEnd,
   Vec3Tuple,
 } from "./part-bundle.ts";
 
@@ -13,6 +14,7 @@ export interface ManifestPart {
   readonly file: string;
   readonly bounds: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
   readonly displayColor?: { readonly ldraw: number };
+  readonly trackEnds?: ReadonlyArray<TrackEnd>;
 }
 
 export interface ManifestStudPrimitive {

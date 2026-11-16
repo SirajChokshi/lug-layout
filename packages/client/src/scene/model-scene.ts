@@ -69,11 +69,11 @@ export class ModelScene implements IModelScene {
       colorIndex,
       matrices: model.matrices,
     });
-    return summarize(
-      bundle,
-      [{ count: model.instanceCount, partIndex: model.partIndex }],
-      model.sections,
-    );
+    return summarize(bundle, [{ count: model.instanceCount, partIndex: model.partIndex }], {
+      name: entry.name,
+      source: entry.source,
+      sections: model.sections,
+    });
   }
 
   private frame(matrices: Float32Array, count: number): void {

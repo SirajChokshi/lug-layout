@@ -135,6 +135,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
+      backgroundSrgb: SKY_COLOR,
       activeApi: this.isWebGpu(renderer) ? "webgpu" : "webgl2",
       adapter: this.describeAdapter(renderer),
     };

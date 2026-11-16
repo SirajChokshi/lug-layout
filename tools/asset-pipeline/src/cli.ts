@@ -151,6 +151,8 @@ async function bundleCommand(): Promise<void> {
       ldrawRoot,
       "--fixtures",
       fixturesRoot,
+      "--geometry",
+      join(repoRoot, "docs", "verified-facts", "geometry.json"),
       "--palette",
       palettePath,
       "--out",

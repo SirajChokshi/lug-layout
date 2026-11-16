@@ -103,6 +103,7 @@ function toPartAsset(
     role: part.role,
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,
+    trackEnds: part.trackEnds,
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
     studPrimitiveIndex,
