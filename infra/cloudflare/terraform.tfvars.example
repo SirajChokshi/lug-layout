@@ -1,0 +1,7 @@
+account_id = "0123456789abcdef0123456789abcdef"
+
+d1_primary_location_hint = "wnam"
+r2_location              = "wnam"
+
+zone_id       = null
+route_pattern = null

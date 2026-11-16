@@ -16,6 +16,7 @@ Sources: [part-data.md](research/part-data.md), [engine-stack.md](research/engin
 | D2 | **Users work with whole modules and models; we don't do brick-level modeling.** Users build in Studio, LDCad or LeoCAD and import the result. | The editor places imported models, OMR sets, modules, baseplates, track and road pieces. A model is immutable once imported, and users fix bricks in their own tool and re-import. Brick-level structural checks become import badges, never live editing rules. Renderer and storage work at model granularity (§4, §6, §9). |
 | D3 | **Third-party track (BrickTracks, TrixBrix, ME Models) is out of scope for now, but adding it must be easy later.** | Parts come from pluggable *part sources*, each with provenance and license. Track rules live in *track profiles*. Exact track arithmetic is generic over the angle step. Everything third-party is flagged in the BOM. Only official LEGO track ships (§3.5, §5.4). |
 | D4 | **It must be both a boundless sandbox and a solid tool for planning a real layout:** real table and room footprint, a parts list, buildable as planned. | **One world model in two modes.** The world is an unbounded, sparse chunk map, stored and streamed per super-chunk (§6, §9). **Plan regions** are bounded areas tied to a physical footprint (room, tables, obstacles, aisles) in millimetres. Inside a plan region the rules are strict, and the region gets its own complete BOM (including baseplates and module substructure), an "own vs buy" view, printable plans, and a **"Buildable as planned"** status (§7.3). Outside plan regions the rules only warn. Planning features move into the MVP. |
+| D5 | **Catalog search is served from the server, on Cloudflare** (owner decision, 2026-11-16). | `apps/catalog-api` is a Worker that answers search, set inventory and theme browse from D1. Every catalog release is a content-addressed SQLite file kept in R2 as the source of truth and offline fallback. URLs name the release, so responses are immutable and edge-cached. `infra/cloudflare` provisions the Worker, D1 and R2 with Terraform. Search needs at least 3 characters (owner decision, 2026-11-16). |
 
 ## 1. One-paragraph architecture
 
@@ -472,6 +473,7 @@ This is a **Turborepo** monorepo using pnpm workspaces, plus a Cargo workspace f
 ```
 apps/
   web/                    Vite + React app; main-thread composition root
+  catalog-api/            Cloudflare Worker: catalog search, set inventory and theme browse over D1; release files from R2 (D5)
 packages/
   math/                   exact ℤ[ζ_N] arithmetic, lattice poses, Rot90, SoA vector helpers
   schema/                 file-format types, runtime validators, versioned migrations (world, plan, part record, profile, bundle manifest)
@@ -497,13 +499,15 @@ crates/
   brick-compile-wasm/     wasm-bindgen wrapper → packages/compile-wasm
 tools/
   asset-pipeline/         Node CLI: fetch/pin inputs, license gate, Rebrickable → SQLite → shards, connector merge, OMR ingest, publish
+infra/
+  cloudflare/             Terraform for the catalog Worker, its D1 database and its R2 release bucket (D5)
 ```
 
 ### 14.2 Dependency direction
 Dependencies only point downward; nothing imports a package from its own layer or a layer above.
 
 ```
-L6  apps/web
+L6  apps/web                             apps/catalog-api (server; imports no @brr/* package)
 L5  ui                                   workers/*  (entry points)
 L4  client
 L3  sim · import
@@ -528,6 +532,7 @@ L0  math
 | `ui` | client (service interfaces, tokens, view models), schema types |
 | `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries) |
 | `tools/asset-pipeline` | math, schema, domain, catalog, the brick-compile CLI; never imported by apps |
+| `apps/catalog-api` | no `@brr/*` package at runtime or in tests; only `@brr/config` presets as dev tooling. Nothing imports it. |
 
 **Enforced rules:**
 - `math`, `schema`, `domain` and `sim` are **pure**: no DOM, no three.js, no IndexedDB, no workers and no Inversify. They run unchanged in Node tests, in workers and in the pipeline.
