@@ -4,8 +4,6 @@ const INITIAL_CHUNK_CAPACITY = 1024;
 
 export interface ChunkView {
   readonly key: number;
-  readonly chunkX: number;
-  readonly chunkZ: number;
   readonly originX: number;
   readonly originZ: number;
   readonly count: number;
@@ -35,11 +33,17 @@ class Chunk {
   private yPlates = new Int16Array(INITIAL_CHUNK_CAPACITY);
   private rot = new Uint8Array(INITIAL_CHUNK_CAPACITY);
 
+  private readonly originX: number;
+  private readonly originZ: number;
+
   constructor(
-    readonly key: number,
-    readonly chunkX: number,
-    readonly chunkZ: number,
-  ) {}
+    private readonly key: number,
+    chunkX: number,
+    chunkZ: number,
+  ) {
+    this.originX = chunkX * CHUNK_LDU;
+    this.originZ = chunkZ * CHUNK_LDU;
+  }
 
   private grow(): void {
     this.capacity *= 2;
@@ -66,10 +70,8 @@ class Chunk {
     const n = this.count;
     return {
       key: this.key,
-      chunkX: this.chunkX,
-      chunkZ: this.chunkZ,
-      originX: this.chunkX * CHUNK_LDU,
-      originZ: this.chunkZ * CHUNK_LDU,
+      originX: this.originX,
+      originZ: this.originZ,
       count: n,
       refId: this.refId.subarray(0, n),
       colorId: this.colorId.subarray(0, n),
@@ -87,7 +89,9 @@ export class World {
 
   add(refId: number, colorId: number, x: number, z: number, yPlates: number, rot: number): void {
     if (!isLatticePose(x, z, yPlates)) {
-      throw new Error(`placement (${x}, ${yPlates}, ${z}) is off the integer LDU lattice`);
+      throw new RangeError(
+        `placement (${x}, ${yPlates}, ${z}) is not an integer pose within int32 x/z and int16 yPlates`,
+      );
     }
     if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
     const chunkX = chunkOf(x);

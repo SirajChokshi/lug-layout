@@ -1,6 +1,7 @@
 import type { PartBundle, PartRole } from "@brr/catalog";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
-import { CHUNK_LDU, STUD_LDU, World } from "@brr/domain";
+import { World } from "@brr/domain";
+import { CHUNK_LDU, STUD_LDU } from "@brr/math";
 import { ModuleWriter } from "./placements.ts";
 import type { ColorTable } from "./viewer-scene.ts";
 

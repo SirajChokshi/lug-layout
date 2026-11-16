@@ -1,7 +1,7 @@
 import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr/catalog";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
-import { chunkKey } from "@brr/domain";
+import { chunkKey } from "@brr/math";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 import { withStuds } from "./stud-stream.ts";
 

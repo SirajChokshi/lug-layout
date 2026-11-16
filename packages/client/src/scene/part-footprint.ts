@@ -1,5 +1,5 @@
 import type { PartAsset } from "@brr/catalog";
-import { PLATE_LDU, STUD_LDU } from "@brr/domain";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 
 export interface PartFootprint {
   readonly index: number;

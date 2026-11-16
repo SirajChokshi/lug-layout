@@ -2,7 +2,7 @@ import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import { buildPartDisplay } from "./part-display.ts";
-import { CHUNK_LDU } from "@brr/domain";
+import { CHUNK_LDU } from "@brr/math";
 import { chunkInstances } from "./placements.ts";
 import { withStuds } from "./stud-stream.ts";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";

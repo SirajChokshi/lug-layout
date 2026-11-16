@@ -1,12 +1,5 @@
-import {
-  CHUNK_LDU,
-  PLATE_LDU,
-  isRot90,
-  rot90Cos,
-  rot90Sin,
-  type ChunkView,
-  type World,
-} from "@brr/domain";
+import { type ChunkView, type World } from "@brr/domain";
+import { CHUNK_LDU, PLATE_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances } from "@brr/render";
 
 export type ChunkPartInstances = Omit<ChunkInstances, "studs">;

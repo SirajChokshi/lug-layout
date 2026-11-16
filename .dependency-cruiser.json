@@ -4,42 +4,86 @@
       "name": "no-unresolvable-import",
       "severity": "error",
       "from": {},
-      "to": { "couldNotResolve": true }
+      "to": {
+        "couldNotResolve": true
+      }
     },
     {
       "name": "nothing-imports-tools",
       "severity": "error",
-      "from": { "pathNot": "^tools/" },
-      "to": { "path": "^tools/" }
+      "from": {
+        "pathNot": "^tools/"
+      },
+      "to": {
+        "path": "^tools/"
+      }
+    },
+    {
+      "name": "inversify-only-in-di-packages",
+      "severity": "error",
+      "from": {
+        "pathNot": "^(packages/(client|workers|storage|render|catalog|rpc)|apps/web)/"
+      },
+      "to": {
+        "path": "(^|/)node_modules/inversify/"
+      }
+    },
+    {
+      "name": "three-only-in-render",
+      "severity": "error",
+      "from": {
+        "pathNot": "^packages/render/"
+      },
+      "to": {
+        "path": "(^|/)node_modules/three/"
+      }
     },
     {
       "name": "math-depends-on-nothing",
       "severity": "error",
-      "from": { "path": "^packages/math/" },
-      "to": { "pathNot": "^packages/math/" }
+      "from": {
+        "path": "^packages/math/"
+      },
+      "to": {
+        "pathNot": "^packages/math/"
+      }
     },
     {
       "name": "schema-depends-on-math",
       "severity": "error",
-      "from": { "path": "^packages/schema/" },
-      "to": { "pathNot": "^packages/(math|schema)/" }
+      "from": {
+        "path": "^packages/schema/"
+      },
+      "to": {
+        "pathNot": "^packages/(math|schema)/"
+      }
     },
     {
       "name": "domain-depends-on-math-and-schema",
       "severity": "error",
-      "from": { "path": "^packages/domain/" },
-      "to": { "pathNot": "^packages/(math|schema|domain)/" }
+      "from": {
+        "path": "^packages/domain/"
+      },
+      "to": {
+        "pathNot": "^packages/(math|schema|domain)/"
+      }
     },
     {
       "name": "sim-depends-on-math-schema-domain",
       "severity": "error",
-      "from": { "path": "^packages/sim/" },
-      "to": { "pathNot": "^packages/(math|schema|domain|sim)/" }
+      "from": {
+        "path": "^packages/sim/"
+      },
+      "to": {
+        "pathNot": "^packages/(math|schema|domain|sim)/"
+      }
     },
     {
       "name": "catalog-depends-on-math-schema-inversify",
       "severity": "error",
-      "from": { "path": "^packages/catalog/" },
+      "from": {
+        "path": "^packages/catalog/"
+      },
       "to": {
         "pathNot": ["^packages/(math|schema|catalog)/", "(^|/)node_modules/inversify/"]
       }
@@ -47,7 +91,9 @@
     {
       "name": "render-never-imports-domain",
       "severity": "error",
-      "from": { "path": "^packages/render/" },
+      "from": {
+        "path": "^packages/render/"
+      },
       "to": {
         "pathNot": [
           "^packages/(math|schema|catalog|render)/",
@@ -58,7 +104,9 @@
     {
       "name": "storage-and-rpc-depend-on-schema-inversify",
       "severity": "error",
-      "from": { "path": "^packages/(storage|rpc)/" },
+      "from": {
+        "path": "^packages/(storage|rpc)/"
+      },
       "to": {
         "pathNot": ["^packages/(schema|storage|rpc)/", "(^|/)node_modules/inversify/"]
       }
@@ -66,16 +114,22 @@
     {
       "name": "import-depends-on-its-engines",
       "severity": "error",
-      "from": { "path": "^packages/import/" },
-      "to": { "pathNot": "^packages/(math|schema|domain|catalog|compile-wasm|import)/" }
+      "from": {
+        "path": "^packages/import/"
+      },
+      "to": {
+        "pathNot": "^packages/(math|schema|domain|catalog|compile-wasm|import)/"
+      }
     },
     {
-      "name": "client-depends-on-l2-adapters",
+      "name": "client-depends-on-math-l2-and-sim-import-types",
       "severity": "error",
-      "from": { "path": "^packages/client/" },
+      "from": {
+        "path": "^packages/client/"
+      },
       "to": {
         "pathNot": [
-          "^packages/(domain|catalog|render|storage|rpc|client)/",
+          "^packages/(math|domain|catalog|render|storage|rpc|sim|import|client)/",
           "(^|/)node_modules/inversify/"
         ]
       }
@@ -83,13 +137,20 @@
     {
       "name": "client-takes-only-types-from-sim-and-import",
       "severity": "error",
-      "from": { "path": "^packages/client/" },
-      "to": { "path": "^packages/(sim|import)/", "dependencyTypesNot": ["type-only"] }
+      "from": {
+        "path": "^packages/client/"
+      },
+      "to": {
+        "path": "^packages/(sim|import)/",
+        "dependencyTypesNot": ["type-only"]
+      }
     },
     {
       "name": "workers-depend-on-rpc-and-their-engine",
       "severity": "error",
-      "from": { "path": "^packages/workers/" },
+      "from": {
+        "path": "^packages/workers/"
+      },
       "to": {
         "pathNot": [
           "^packages/(rpc|sim|import|render|math|schema|domain|catalog|compile-wasm|workers)/",
@@ -100,19 +161,30 @@
     {
       "name": "ui-goes-through-client",
       "severity": "error",
-      "from": { "path": "^packages/ui/" },
-      "to": { "path": "^packages/(domain|render|storage|catalog|rpc|math|sim|import)/" }
+      "from": {
+        "path": "^packages/ui/"
+      },
+      "to": {
+        "pathNot": ["^packages/(client|schema|ui)/", "(^|/)node_modules/(react|react-dom)/"]
+      }
     },
     {
       "name": "ui-takes-only-types-from-schema",
       "severity": "error",
-      "from": { "path": "^packages/ui/" },
-      "to": { "path": "^packages/schema/", "dependencyTypesNot": ["type-only"] }
+      "from": {
+        "path": "^packages/ui/"
+      },
+      "to": {
+        "path": "^packages/schema/",
+        "dependencyTypesNot": ["type-only"]
+      }
     },
     {
       "name": "web-composes-ui-client-workers",
       "severity": "error",
-      "from": { "path": "^apps/web/" },
+      "from": {
+        "path": "^apps/web/"
+      },
       "to": {
         "pathNot": [
           "^apps/web/",
@@ -124,14 +196,31 @@
     {
       "name": "asset-pipeline-depends-on-pure-packages-and-catalog",
       "severity": "error",
-      "from": { "path": "^tools/asset-pipeline/" },
-      "to": { "path": "^packages/", "pathNot": "^packages/(math|schema|domain|catalog)/" }
+      "from": {
+        "path": "^tools/asset-pipeline/"
+      },
+      "to": {
+        "path": "^packages/",
+        "pathNot": "^packages/(math|schema|domain|catalog)/"
+      }
+    },
+    {
+      "name": "asset-pipeline-imports-no-npm-modules",
+      "severity": "error",
+      "from": {
+        "path": "^tools/asset-pipeline/"
+      },
+      "to": {
+        "path": "(^|/)node_modules/"
+      }
     }
   ],
   "options": {
-    "doNotFollow": { "path": "(^|/)node_modules/" },
+    "doNotFollow": {
+      "path": "(^|/)node_modules/"
+    },
     "exclude": {
-      "path": "(\\.test\\.ts$|(^|/)vitest\\.config\\.ts$|(^|/)vite\\.config\\.ts$|(^|/)dist/)"
+      "path": "(\\.test\\.ts$|(^|/)vitest\\.config\\.ts$|(^|/)vite\\.config\\.ts$|^(apps|packages|tools)/[^/]+/dist/)"
     },
     "parser": "swc",
     "tsPreCompilationDeps": true,

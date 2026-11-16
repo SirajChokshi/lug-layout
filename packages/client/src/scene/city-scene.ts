@@ -8,7 +8,7 @@ import {
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
-import { CHUNK_LDU, CHUNK_STUDS } from "@brr/domain";
+import { CHUNK_LDU, CHUNK_STUDS } from "@brr/math";
 import { chunkInstances } from "./placements.ts";
 import {
   generateCity,

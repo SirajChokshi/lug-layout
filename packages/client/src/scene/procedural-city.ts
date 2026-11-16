@@ -1,5 +1,6 @@
 import type { PartFootprint } from "./part-footprint.ts";
-import { CHUNK_STUDS, STUD_LDU, World } from "@brr/domain";
+import { World } from "@brr/domain";
+import { CHUNK_STUDS, STUD_LDU } from "@brr/math";
 import { ModuleWriter } from "./placements.ts";
 
 const LOTS_PER_SIDE = 3;

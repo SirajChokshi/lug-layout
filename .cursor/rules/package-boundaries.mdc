@@ -27,7 +27,7 @@ L0 math
 | storage, rpc | schema, inversify |
 | sim | math, schema, domain |
 | import | math, schema, domain, catalog, compile-wasm |
-| client | domain, catalog, render, storage, rpc, inversify; **`import type` only** from sim and import |
+| client | math, domain, catalog, render, storage, rpc, inversify; **`import type` only** from sim and import |
 | workers/* | rpc, their engine (sim / import / later render) and its deps, inversify |
 | ui | client (interfaces, tokens, view models), `import type` from schema |
 | apps/web | ui, client, inversify, workers (only as `new Worker(new URL(..., import.meta.url), { type: "module" })`) |
