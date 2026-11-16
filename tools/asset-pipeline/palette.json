@@ -117,6 +117,10 @@
       ]
     },
     {
+      "group": "road-baseplate-printed",
+      "parts": ["44336p01", "44336p04"]
+    },
+    {
       "group": "baseplate",
       "parts": ["3811", "3857", "3867", "4186", "782"]
     },

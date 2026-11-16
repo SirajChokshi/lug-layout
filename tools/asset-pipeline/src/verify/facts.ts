@@ -3,7 +3,10 @@ import { dirname, join } from "node:path";
 import type { AuditLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import type { Palette } from "../palette.ts";
+import { loadTrackEndMarkers } from "../track/track-ends.ts";
+import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
+import { roadBaseplateScene, switchParallelScene } from "./scenes.ts";
 
 export interface FactReport {
   readonly fileName: string;
@@ -49,6 +52,25 @@ export function licenseAuditReport(inputs: LicenseAuditInputs): FactReport {
         parts: auditGroups(inputs.auditLibrary, inputs.shadowLibrary, inputs.palette.audit),
       }),
   };
+}
+
+export function geometryReports(
+  source: InputLock["source"],
+  library: LdrawLibrary,
+  shadowLibrary: LdrawLibrary,
+): ReadonlyArray<FactReport> {
+  return [
+    {
+      fileName: "geometry.json",
+      render: () =>
+        asJson({ source, ...buildGeometryReport({ official: library, shadow: shadowLibrary }) }),
+    },
+    {
+      fileName: "scenes/switch-then-reversed-curve.ldr",
+      render: () => switchParallelScene(library, loadTrackEndMarkers()),
+    },
+    { fileName: "scenes/road-baseplates.ldr", render: () => roadBaseplateScene() },
+  ];
 }
 
 export async function readSources(

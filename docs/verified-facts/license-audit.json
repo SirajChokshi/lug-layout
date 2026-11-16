@@ -21,10 +21,10 @@
     "unofficial": []
   },
   "auditClosure": {
-    "files": 369,
+    "files": 372,
     "licenses": {
-      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 2,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 367
+      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 3,
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 369
     },
     "withoutLicense": [],
     "nonCaLicense": [],
@@ -1033,6 +1033,63 @@
         "movedTo": null
       },
       "dependencyFiles": 18,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "44336p01",
+      "group": "road-baseplate-printed",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 6-Stud Straight with Yellow Road Edge Pattern",
+        "author": "William Howard [WilliamH]",
+        "ldrawOrg": "Part UPDATE 2018-02",
+        "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 44336pb01",
+          "Rebrickable 44336pr0001",
+          "roadplate",
+          "Set 10128",
+          "Straight"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 12,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "44336p04",
+      "group": "road-baseplate-printed",
+      "status": "officialCA",
+      "header": {
+        "title": "Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern",
+        "author": "Sylvain Sauvage [SLS]",
+        "ldrawOrg": "Part UPDATE 2018-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 44336px4",
+          "Rebrickable 44336pr0004",
+          "roadplate",
+          "Set 60236"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 17,
       "missingDependencies": [],
       "unofficialDependencies": [],
       "ldcad": {
