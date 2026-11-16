@@ -1,0 +1,69 @@
+{
+  "source": {
+    "kind": "github-mirror",
+    "repo": "kulits/ldraw-parts",
+    "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+    "root": "ldraw"
+  },
+  "config": ["LDConfig.ldr"],
+  "studPrimitives": ["stud.dat", "stud2.dat"],
+  "unofficialAllowlist": [],
+  "parts": [
+    {
+      "id": "3811",
+      "role": "ground"
+    },
+    {
+      "id": "44336",
+      "role": "road"
+    },
+    {
+      "id": "53401",
+      "role": "track"
+    },
+    {
+      "id": "53400",
+      "role": "track"
+    },
+    {
+      "id": "3001",
+      "role": "wall"
+    },
+    {
+      "id": "3003",
+      "role": "wall"
+    },
+    {
+      "id": "3004",
+      "role": "wall"
+    },
+    {
+      "id": "3009",
+      "role": "wall"
+    },
+    {
+      "id": "3010",
+      "role": "wall"
+    },
+    {
+      "id": "3020",
+      "role": "roof"
+    },
+    {
+      "id": "3022",
+      "role": "roof"
+    },
+    {
+      "id": "3024",
+      "role": "detail"
+    },
+    {
+      "id": "3062b",
+      "role": "detail"
+    },
+    {
+      "id": "3068b",
+      "role": "detail"
+    }
+  ]
+}

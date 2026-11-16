@@ -1,0 +1,134 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
+import { parseLdraw, subfileReferences } from "./ldraw/parse.ts";
+import type { Palette } from "./palette.ts";
+
+export interface InputLock {
+  readonly source: Palette["source"];
+  readonly files: Readonly<Record<string, string>>;
+}
+
+const SEARCH_DIRECTORIES = ["parts/", "p/"] as const;
+const LOW_RESOLUTION_DIRECTORY = "p/8/";
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function download(palette: Palette, path: string): Promise<Uint8Array | undefined> {
+  const { repo, commit, root } = palette.source;
+  const url = `https://raw.githubusercontent.com/${repo}/${commit}/${root}/${path}`;
+  const response = await fetch(url);
+  if (response.status === 404) return undefined;
+  if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function resolveReference(
+  palette: Palette,
+  reference: string,
+): Promise<{ path: string; bytes: Uint8Array } | undefined> {
+  for (const directory of SEARCH_DIRECTORIES) {
+    const path = directory + reference;
+    const bytes = await download(palette, path);
+    if (bytes) return { path, bytes };
+  }
+  return undefined;
+}
+
+export async function fetchClosure(palette: Palette, outDirectory: string): Promise<InputLock> {
+  const files: Record<string, string> = {};
+  const queue: string[] = [
+    ...palette.parts.map((part) => `${part.id}.dat`),
+    ...palette.studPrimitives,
+  ];
+  const seen = new Set<string>(queue);
+
+  async function store(path: string, bytes: Uint8Array): Promise<void> {
+    const target = join(outDirectory, path);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, bytes);
+    files[path] = sha256(bytes);
+  }
+
+  for (const configFile of palette.config) {
+    const bytes = await download(palette, configFile);
+    if (!bytes) throw new Error(`missing config file ${configFile}`);
+    await store(configFile, bytes);
+  }
+
+  while (queue.length > 0) {
+    const reference = queue.shift();
+    if (reference === undefined) break;
+    const resolved = await resolveReference(palette, reference);
+    if (!resolved) throw new Error(`unresolved LDraw reference ${reference}`);
+    await store(resolved.path, resolved.bytes);
+    const children = subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes)));
+    if (resolved.path.startsWith("p/") && !resolved.path.startsWith(LOW_RESOLUTION_DIRECTORY)) {
+      const lowResolution = await download(palette, LOW_RESOLUTION_DIRECTORY + reference);
+      if (lowResolution) {
+        await store(LOW_RESOLUTION_DIRECTORY + reference, lowResolution);
+        children.push(...subfileReferences(parseLdraw(new TextDecoder().decode(lowResolution))));
+      }
+    }
+    for (const child of children) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
+  }
+
+  const sorted = Object.fromEntries(
+    Object.entries(files).toSorted(([a], [b]) => a.localeCompare(b)),
+  );
+  return { source: palette.source, files: sorted };
+}
+
+async function listFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { recursive: true, withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(directory, join(entry.parentPath, entry.name)).replaceAll("\\", "/"));
+}
+
+export async function verifyClosure(lock: InputLock, directory: string): Promise<string[]> {
+  const problems: string[] = [];
+  const present = new Set(await listFiles(directory));
+  for (const [path, expected] of Object.entries(lock.files)) {
+    if (!present.has(path)) {
+      problems.push(`missing ${path}`);
+      continue;
+    }
+    const actual = sha256(await readFile(join(directory, path)));
+    if (actual !== expected) problems.push(`hash mismatch ${path}`);
+    present.delete(path);
+  }
+  for (const extra of present) problems.push(`unpinned file ${extra}`);
+  return problems;
+}
+
+export async function renderAttribution(lock: InputLock, directory: string): Promise<string> {
+  const rows: string[] = [];
+  for (const path of Object.keys(lock.files)) {
+    const { header } = parseLdraw(await readFile(join(directory, path), "utf8"));
+    const license = header.license === "" ? "(no !LICENSE line)" : header.license;
+    rows.push(`| \`${path}\` | ${header.title} | ${header.author} | ${license} |`);
+  }
+  const { repo, commit, root } = lock.source;
+  return [
+    "# Test fixture attribution",
+    "",
+    "LDraw files under `ldraw/` are unmodified copies from the LDraw parts library, fetched from the",
+    `GitHub mirror \`${repo}\` at commit \`${commit}\` (\`${root}\`) and pinned by SHA-256 in`,
+    "`tools/asset-pipeline/ldraw.lock.json`. LDraw parts are © their authors and redistributed under",
+    "the license named in each file's `!LICENSE` header. See https://www.ldraw.org/ for the library.",
+    "",
+    "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.",
+    "",
+    "| File | Title | Author | License |",
+    "|---|---|---|---|",
+    ...rows,
+    "",
+  ].join("\n");
+}

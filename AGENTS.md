@@ -26,9 +26,10 @@ packages/
   client                L4: OOP services (Inversify), no React (planned)
   ui  workers/*         L5 (planned)
   compile-wasm          generated from crates/brick-compile-wasm. Never hand-edit.
-crates/                 brick-compile (lib), -cli, -wasm (planned)
+crates/                 brick-compile (lib), brick-compile-cli; -wasm (planned)
 tools/oxlint-plugin     repo-specific oxlint rules (brr/no-comments)
-tools/asset-pipeline    offline Node CLI (planned). Apps never import it.
+tools/asset-pipeline    offline Node CLI: fetch and pin LDraw inputs, build the part bundle. Apps never import it.
+tools/rust-comment-check  no-comments check for Rust sources
 docs/                   architecture.md, verified-facts.md
 ```
 
@@ -39,13 +40,16 @@ docs/                   architecture.md, verified-facts.md
 - `pnpm typecheck`, `pnpm test`, `pnpm build` run through Turborepo (add `--filter=@brr/<pkg>...` to scope)
 - `pnpm check` runs everything CI runs
 - `pnpm --filter @brr/web dev`
-- Later: `turbo run bench`, `turbo run wasm`, `cargo test --workspace`, and the package-boundary check (dependency-cruiser or Turborepo `boundaries`)
+- `pnpm lint:rust` (no comments in `crates/`) and `pnpm check:rust` (fmt, clippy `-D warnings`, `cargo test`)
+- `pnpm --filter @brr/asset-pipeline fetch` re-pins LDraw inputs (network); `verify` checks them offline; `build` compiles the bundle that `apps/web` serves at `/bundle/`
+- The app's viewer takes `?api=webgpu|webgl2&lod=standard|low`, and `&measure=1` for GPU-synced frame timing
+- Later: `turbo run bench`, `turbo run wasm`, and the package-boundary check (dependency-cruiser or Turborepo `boundaries`)
 
 Before you finish: `pnpm check` is green.
 
 ## Conventions
 - TypeScript style: `.cursor/rules/typescript-style.mdc`. Tests: `.cursor/rules/testing.mdc` and `.cursor/skills/test-audit`.
-- Rust (when crates land): stable toolchain, `clippy -D warnings`, no comments (a check will be added with the first crate), and `brick-compile` stays free of I/O so it builds for WASM.
+- Rust: stable toolchain pinned in `rust-toolchain.toml`, `clippy -D warnings`, no comments (`pnpm lint:rust`), and `brick-compile` stays free of I/O so it builds for WASM.
 - Units: integer LDU (1 LDU = 0.4 mm; stud = 20, plate = 8, brick = 24). Layout heights are in plates above the top face of the baseplate. LDraw −Y-up data converts to y-up exactly once, at the compile and import boundary.
 - Facts listed in §11 as unverified must not be hard-coded from memory. Verify them with `.cursor/skills/verify-ldraw-facts` and record them in `docs/verified-facts.md`.
 

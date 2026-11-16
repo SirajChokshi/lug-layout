@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/brick-compile", "crates/brick-compile-cli"]
+
+[workspace.package]
+edition = "2021"
+publish = false
+
+[workspace.dependencies]
+serde_json = "1.0.133"
+brick-compile = { path = "crates/brick-compile" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
