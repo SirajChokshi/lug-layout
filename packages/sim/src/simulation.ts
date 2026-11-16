@@ -1,3 +1,6 @@
+import { Autopilot } from "./blocks/autopilot.ts";
+import { BlockKeeper } from "./blocks/block-keeper.ts";
+import { BlockMap, NO_BLOCK, type BlockTopology } from "./blocks/block-map.ts";
 import { trackPoint, type SimTrack } from "./sim-track.ts";
 
 export const SIM_TICK_HZ = 60;
@@ -30,6 +33,15 @@ export interface SimCapacity {
   readonly vehicles: number;
 }
 
+export interface SimRailway {
+  readonly topology: BlockTopology;
+  readonly autopilotSeed: number | null;
+}
+
+const AUTOPILOT_DWELL_SECONDS = 3;
+const AUTOPILOT_RETRY_SECONDS = 2;
+const NOBODY = -1;
+
 export class Simulation {
   private tickCount = 0;
   private trainCount = 0;
@@ -57,10 +69,45 @@ export class Simulation {
 
   readonly track: SimTrack;
   readonly capacity: SimCapacity;
+  readonly blockMap: BlockMap | null;
+  readonly blocks: BlockKeeper | null;
+  private readonly autopilot: Autopilot | null;
+  private readonly edgePlacement: Int32Array | null;
+  private readonly placementTrain: Int32Array;
+  private readonly placementTick: Int32Array;
+  private readonly poseScratch: Float64Array;
+  readonly separationCounters = Float64Array.of(0, Number.POSITIVE_INFINITY, 0);
 
-  constructor(track: SimTrack, capacity: SimCapacity) {
+  constructor(track: SimTrack, capacity: SimCapacity, railway: SimRailway | null = null) {
     this.track = track;
     this.capacity = capacity;
+    if (railway) {
+      const map = new BlockMap(railway.topology, track.edgeLength);
+      const keeper = new BlockKeeper(map, capacity.trains);
+      this.blockMap = map;
+      this.blocks = keeper;
+      this.autopilot =
+        railway.autopilotSeed === null
+          ? null
+          : new Autopilot(
+              map,
+              keeper,
+              railway.autopilotSeed,
+              capacity.trains,
+              AUTOPILOT_DWELL_SECONDS * SIM_TICK_HZ,
+              AUTOPILOT_RETRY_SECONDS * SIM_TICK_HZ,
+            );
+      this.edgePlacement = railway.topology.edgePlacement;
+    } else {
+      this.blockMap = null;
+      this.blocks = null;
+      this.autopilot = null;
+      this.edgePlacement = null;
+    }
+    const placements = railway?.topology.placementCount ?? 0;
+    this.placementTrain = new Int32Array(placements);
+    this.placementTick = new Int32Array(placements).fill(NOBODY);
+    this.poseScratch = new Float64Array(capacity.vehicles * POSE_FLOATS_PER_VEHICLE);
     this.switchStates = new Uint8Array(track.switchCount);
     this.trainEdge = new Int32Array(capacity.trains);
     this.trainOffset = new Float64Array(capacity.trains);
@@ -150,21 +197,49 @@ export class Simulation {
       this.vehicleCount = firstVehicle;
       throw new Error(`a ${length} LDU train does not fit behind (${edge}, ${offsetLdu})`);
     }
+    this.blocks?.place(train, edge, offsetLdu, this.bodyLengthLdu(train), this.switchStates);
     this.trainCount++;
     return train;
   }
 
   setThrottle(train: number, speedLduPerS: number): void {
     this.assertTrain(train);
+    this.blocks?.drive(train);
+    this.applyThrottle(train, speedLduPerS);
+  }
+
+  goTo(train: number, placement: number): boolean {
+    this.assertTrain(train);
+    const map = this.blockMap;
+    const keeper = this.blocks;
+    if (!map || !keeper) return false;
+    const block = map.placementBlock[placement] ?? NO_BLOCK;
+    if (block === NO_BLOCK || map.blockIsJunction[block] === 1) return false;
+    keeper.goTo(train, block);
+    this.driveAtTopSpeed(train);
+    return true;
+  }
+
+  driveAtTopSpeed(train: number): void {
+    this.applyThrottle(train, this.trainMaxSpeed[train] ?? 0);
+  }
+
+  bodyLengthLdu(train: number): number {
+    return this.trainLength[train] ?? 0;
+  }
+
+  private applyThrottle(train: number, speedLduPerS: number): void {
     const max = this.trainMaxSpeed[train] ?? 0;
     this.trainThrottle[train] = Math.min(Math.max(speedLduPerS, 0), max);
   }
 
-  setSwitch(switchIndex: number, state: number): void {
+  setSwitch(switchIndex: number, state: number): boolean {
     if (switchIndex < 0 || switchIndex >= this.switchStates.length) {
       throw new Error(`switch ${switchIndex} is not on this track`);
     }
+    if (this.blocks && !this.blocks.canThrow(switchIndex)) return false;
     this.switchStates[switchIndex] = state;
+    return true;
   }
 
   reverse(train: number): boolean {
@@ -196,12 +271,27 @@ export class Simulation {
     this.trainEdge[train] = this.track.reverseEdge[tailEdge] ?? 0;
     this.trainOffset[train] = (this.track.edgeLength[tailEdge] ?? 0) - tailOffset;
     this.trainReversed[train] = this.trainReversed[train] === 1 ? 0 : 1;
+    this.blocks?.reseat(
+      train,
+      this.trainEdge[train] ?? 0,
+      this.trainOffset[train] ?? 0,
+      this.bodyLengthLdu(train),
+      this.switchStates,
+    );
     return true;
   }
 
   step(): void {
+    this.autopilot?.update(this);
+    const blocks = this.blocks;
+    if (blocks) {
+      for (let t = 0; t < this.trainCount; t++) {
+        if (blocks.routeState(t) === "reversing" && this.trainSpeed[t] === 0) this.reverse(t);
+      }
+    }
     for (let t = 0; t < this.trainCount; t++) this.advanceTrain(t);
     this.tickCount++;
+    if (this.edgePlacement) this.measureSeparation(this.edgePlacement);
   }
 
   successor(edge: number): number {
@@ -314,16 +404,29 @@ export class Simulation {
     const acceleration = this.trainAcceleration[train] ?? 0;
     let speed = this.trainSpeed[train] ?? 0;
     const stoppingDistance = (speed * speed) / (2 * braking) + speed * SIM_TICK_SECONDS;
-    const clear = this.clearDistanceAhead(train, stoppingDistance);
+    const clear = this.blocks
+      ? this.blocks.clearDistanceAhead(
+          train,
+          this.trainEdge[train] ?? 0,
+          this.trainOffset[train] ?? 0,
+          speed,
+          braking,
+          this.bodyLengthLdu(train),
+          this.switchStates,
+        )
+      : this.clearDistanceAhead(train, stoppingDistance);
     const stopCap = Math.sqrt(2 * braking * clear);
     const target = Math.min(this.trainThrottle[train] ?? 0, stopCap);
     if (speed < target) speed = Math.min(target, speed + acceleration * SIM_TICK_SECONDS);
     else speed = Math.max(target, speed - braking * SIM_TICK_SECONDS);
     let edge = this.trainEdge[train] ?? 0;
-    let offset = (this.trainOffset[train] ?? 0) + speed * SIM_TICK_SECONDS;
+    const travel = speed * SIM_TICK_SECONDS;
+    let offset = (this.trainOffset[train] ?? 0) + (this.blocks && travel > clear ? clear : travel);
     let length = this.track.edgeLength[edge] ?? 0;
     while (offset > length) {
-      const next = this.successor(edge);
+      const next = this.blocks
+        ? this.blocks.heldSuccessor(train, edge, this.switchStates)
+        : this.successor(edge);
       if (next === NO_EDGE) {
         offset = length;
         speed = 0;
@@ -353,5 +456,59 @@ export class Simulation {
       used++;
     }
     trackPoint(this.track, edge, Math.max(offset, 0), out, outIndex);
+  }
+
+  private measureSeparation(edgePlacement: Int32Array): void {
+    const tick = this.tickCount;
+    let shared = false;
+    for (let t = 0; t < this.trainCount; t++) {
+      const base = t * PATH_CAPACITY;
+      const count = this.pathCount[t] ?? 0;
+      const length = this.bodyLengthLdu(t);
+      let slot = this.pathTop[t] ?? 0;
+      let covered = this.trainOffset[t] ?? 0;
+      let used = 1;
+      shared =
+        this.markPiece(edgePlacement[this.pathEdges[base + slot] ?? 0] ?? 0, t, tick) || shared;
+      while (covered < length && used < count) {
+        slot = (slot + PATH_CAPACITY - 1) % PATH_CAPACITY;
+        const edge = this.pathEdges[base + slot] ?? 0;
+        shared = this.markPiece(edgePlacement[edge] ?? 0, t, tick) || shared;
+        covered += this.track.edgeLength[edge] ?? 0;
+        used++;
+      }
+    }
+    const counters = this.separationCounters;
+    if (shared) counters[0] = (counters[0] ?? 0) + 1;
+    let nearest = counters[1] ?? Number.POSITIVE_INFINITY;
+    this.writeVehiclePoses(this.poseScratch);
+    const poses = this.poseScratch;
+    for (let t = 0; t < this.trainCount; t++) {
+      const firstA = this.trainVehicleStart[t] ?? 0;
+      const endA = firstA + (this.trainVehicleCount[t] ?? 0);
+      for (let u = t + 1; u < this.trainCount; u++) {
+        const firstB = this.trainVehicleStart[u] ?? 0;
+        const endB = firstB + (this.trainVehicleCount[u] ?? 0);
+        for (let a = firstA * 2; a < endA * 2; a++) {
+          const ax = poses[a * 2] ?? 0;
+          const az = poses[a * 2 + 1] ?? 0;
+          for (let b = firstB * 2; b < endB * 2; b++) {
+            const d = Math.hypot((poses[b * 2] ?? 0) - ax, (poses[b * 2 + 1] ?? 0) - az);
+            if (d < nearest) nearest = d;
+          }
+        }
+      }
+    }
+    counters[1] = nearest;
+    counters[2] = (counters[2] ?? 0) + 1;
+  }
+
+  private markPiece(placement: number, train: number, tick: number): boolean {
+    if (this.placementTick[placement] === tick && this.placementTrain[placement] !== train) {
+      return true;
+    }
+    this.placementTick[placement] = tick;
+    this.placementTrain[placement] = train;
+    return false;
   }
 }

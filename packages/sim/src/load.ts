@@ -15,6 +15,7 @@ export function loadSession(load: SimLoad): LoadedSession {
     track: built.track,
     capacity: load.capacity,
     trains: load.trains,
+    railway: { topology: load.graph, autopilotSeed: load.autopilotSeed },
   };
   const session = new SimSession(scenario);
   return {

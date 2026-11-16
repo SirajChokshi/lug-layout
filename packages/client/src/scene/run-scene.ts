@@ -8,10 +8,11 @@ import {
 import { TrackGraph, type TrackLayout } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
-import type { SimFrameLayout, SimLoad, SimLoaded, SimPathSegment, TrainSpec } from "@brr/sim";
+import type { SimFrameLayout, SimLoad, SimLoaded, TrainSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import { vehicleFromModel, type ModelVehicle } from "../sim/model-vehicle.ts";
 import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
+import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { SIM_CLIENT } from "../tokens.ts";
 import { plateDepthBelowOrigin } from "./part-footprint.ts";
 import { withStuds } from "./stud-stream.ts";
@@ -33,7 +34,18 @@ export interface RunRequest {
   readonly brakingLduPerS2: number;
   readonly follow: boolean;
   readonly start: boolean;
+  readonly autopilotSeed: number | null;
 }
+
+export type TrainRouteStatus = "manual" | "waiting" | "routed" | "arrived" | "reversing";
+
+const ROUTE_STATUSES: ReadonlyArray<TrainRouteStatus> = [
+  "manual",
+  "waiting",
+  "routed",
+  "arrived",
+  "reversing",
+];
 
 export interface RunStatus {
   readonly tick: number;
@@ -44,6 +56,11 @@ export interface RunStatus {
   readonly trainOffsetLdu: ReadonlyArray<number>;
   readonly trainSpeedLduPerS: ReadonlyArray<number>;
   readonly bogiePointsLdu: ReadonlyArray<number>;
+  readonly arrivals: ReadonlyArray<number>;
+  readonly routeStates: ReadonlyArray<TrainRouteStatus>;
+  readonly sharedPieceTicks: number;
+  readonly minBogieSeparationLdu: number;
+  readonly checkedTicks: number;
   readonly tickCost: SimTickCost;
   readonly vehicle: ModelVehicle["spec"] | null;
   readonly wheelsets: number;
@@ -68,22 +85,6 @@ const FOLLOW_SWING_RADIANS = 0.9;
 
 function mergedBundle(track: PartBundle, model: PartBundle): PartBundle {
   return { ...track, parts: [...track.parts, ...model.parts] };
-}
-
-function routeSegments(
-  graph: TrackGraph,
-  layout: TrackLayout,
-  pieces: ReadonlyArray<TrackPiece>,
-): SimPathSegment[][] {
-  const segments: SimPathSegment[][] = [];
-  for (let edge = 0; edge < graph.edgeCount; edge += 2) {
-    const placement = graph.edgePlacement[edge] ?? 0;
-    const piece = pieces[layout.piece(placement)];
-    const route = piece?.routes[graph.edgeRoute[edge] ?? 0];
-    if (!route) throw new Error(`edge ${edge} has no catalog route`);
-    segments.push([...route.segments]);
-  }
-  return segments;
 }
 
 function railTopY(
@@ -170,29 +171,21 @@ export class RunScene implements IRunScene {
       brakingLduPerS2: request.brakingLduPerS2,
     };
     const load: SimLoad = {
-      graph: {
-        edgeCount: graph.edgeCount,
-        switchCount: graph.switchCount,
-        endXLdu: graph.endXLdu,
-        endZLdu: graph.endZLdu,
-        endHeading: graph.endHeading,
-        edgeFromEnd: graph.edgeFromEnd,
-        edgeToEnd: graph.edgeToEnd,
-        successorStart: graph.successorStart,
-        successors: graph.successors,
-        edgeSwitch: graph.edgeSwitch,
-      },
+      graph: simTopology(graph),
       routeSegments: routeSegments(graph, layout, catalogPieces),
       capacity: { trains: request.trains.length, vehicles: request.trains.length },
       trains: request.trains.map((train) => ({
         spec,
         placement: { edge: train.edge, offsetLdu: train.offsetLdu },
       })),
+      autopilotSeed: request.autopilotSeed,
     };
     this.loaded = await this.sim.load(load);
     this.frameLayout = this.loaded.layout;
-    for (let t = 0; t < request.trains.length; t++) {
-      await this.sim.command({ kind: "throttle", train: t, speedLduPerS: request.speedLduPerS });
+    if (request.autopilotSeed === null) {
+      for (let t = 0; t < request.trains.length; t++) {
+        await this.sim.command({ kind: "throttle", train: t, speedLduPerS: request.speedLduPerS });
+      }
     }
     if (request.start) {
       const firstFrame = this.sim.nextFrame();
@@ -248,6 +241,11 @@ export class RunScene implements IRunScene {
           layout.poseStart + layout.vehicles * layout.poseFloatsPerVehicle,
         ),
       ),
+      arrivals: pick(layout.arrivalsStart),
+      routeStates: pick(layout.routeStateStart).map((code) => ROUTE_STATUSES[code] ?? "manual"),
+      sharedPieceTicks: frame.data[layout.sharedPieceTicksIndex] ?? 0,
+      minBogieSeparationLdu: frame.data[layout.minBogieSeparationIndex] ?? 0,
+      checkedTicks: frame.data[layout.checkedTicksIndex] ?? 0,
       tickCost: this.sim.tickCost(),
       vehicle: this.vehicle?.spec ?? null,
       wheelsets: this.vehicle?.wheelsets ?? 0,

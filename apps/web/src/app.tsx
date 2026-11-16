@@ -60,6 +60,18 @@ function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, stri
     ],
     ["Trains (speed LDU/s)", `${status.trains} (${speeds})`],
     ["Train edges", status.trainEdge.join(", ")],
+    ["Train routes", status.routeStates.join(", ")],
+    ["Arrivals per train", status.arrivals.join(", ")],
+    [
+      "Ticks with two trains on one track piece",
+      `${integer.format(status.sharedPieceTicks)} of ${integer.format(status.checkedTicks)}`,
+    ],
+    [
+      "Closest bogies of different trains",
+      Number.isFinite(status.minBogieSeparationLdu)
+        ? `${integer.format(status.minBogieSeparationLdu)} LDU`
+        : "none yet",
+    ],
   ];
   if (status.vehicle) {
     const { lengthLdu, frontBogieLdu, rearBogieLdu } = status.vehicle;
