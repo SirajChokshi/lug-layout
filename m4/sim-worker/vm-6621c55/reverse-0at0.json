@@ -1,0 +1,79 @@
+{
+ "url": "http://127.0.0.1:5173/?api=webgl2&lod=low&run=1&start=0&view=follow&trains=0@0&track=ldraw%3A75541-f1%2C%20ldraw%3A74746%2C%20ldraw%3A74747.1%2A3%2C%20ldraw%3A74747%2A7%2C%20ldraw%3A74746%2C%20ldraw%3A74747%2A5%2C%20ldraw%3A74746%2A5%2C%20/%2C%20ldraw%3A74746%2A2%2C%20ldraw%3A75541-f1%2C%20ldraw%3A74746%2A8%2C%20ldraw%3A75542-f1.1%2C%20ldraw%3A74746%2A2%2C%20ldraw%3A75541-f1%2C%20ldraw%3A74746%2C%20ldraw%3A74747.1%2A3%2C%20ldraw%3A74747%2A7%2C%20ldraw%3A74746%2C%20ldraw%3A74747%2A5%2C%20ldraw%3A74746%2A5%2C%20/%2C%20ldraw%3A74747%2C%20ldraw%3A74746%2A6%2C%20ldraw%3A74747",
+ "before": {
+  "tick": 0,
+  "stateHash": 3378408302,
+  "trains": 1,
+  "switches": 4,
+  "trainEdge": [
+   0
+  ],
+  "trainOffsetLdu": [
+   0
+  ],
+  "trainSpeedLduPerS": [
+   0
+  ],
+  "bogiePointsLdu": [
+   -183,
+   5.6333752760778294e-15,
+   -523,
+   1.0531962472667242e-14
+  ],
+  "tickCost": {
+   "ticks": 0,
+   "stepMs": 0,
+   "frames": 2
+  },
+  "vehicle": {
+   "lengthLdu": 706,
+   "frontBogieLdu": 183,
+   "rearBogieLdu": 523
+  },
+  "wheelsets": 4,
+  "vehicleInstances": 398,
+  "excludedInstances": 21,
+  "maxEndResidualLdu": 9.713407672867936e-13,
+  "maxEndHeadingResidualRadians": 0
+ },
+ "after": {
+  "tick": 0,
+  "stateHash": 3073547673,
+  "trains": 1,
+  "switches": 4,
+  "trainEdge": [
+   52
+  ],
+  "trainOffsetLdu": [
+   66
+  ],
+  "trainSpeedLduPerS": [
+   0
+  ],
+  "bogiePointsLdu": [
+   -183,
+   2.2411036424396564e-14,
+   -523,
+   2.486033002269127e-14
+  ],
+  "tickCost": {
+   "ticks": 0,
+   "stepMs": 0,
+   "frames": 3
+  },
+  "vehicle": {
+   "lengthLdu": 706,
+   "frontBogieLdu": 183,
+   "rearBogieLdu": 523
+  },
+  "wheelsets": 4,
+  "vehicleInstances": 398,
+  "excludedInstances": 21,
+  "maxEndResidualLdu": 9.713407672867936e-13,
+  "maxEndHeadingResidualRadians": 0
+ },
+ "errors": [],
+ "hudError": null,
+ "hudBefore": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1280×720 px (devicePixelRatio 1)\nBundle\n0ab83549abdd1bc0\nParts\n466\nModules\n40\nStud instances (drawn of total)\n3,520 of 3,520\nScene triangles\n591,640\nLoad\n142 ms\nGPU buffers allocated so far, JS heap\nvertex+index 3.2 MiB, other 0.0 MiB, JS heap 59.4 MiB\nRender origin (chunks), rebases\n(-3, 0); 1 rebases, last at frame 0\nTrack placements\n68\nExact joins\n70 of 140 ends paired\nOpen ends\n0\nCoincident ends not joined\n0\nSwitches\n4\nDirected edges (reachable from edge 0)\n144 (144)\nChunk tiers near/mid/far\n40 / 0 / 0\nDraw calls\n130\nDrawn triangles\n378,283\nScene coverage\n16%\nFrame rate (rAF)\n4.4 fps\nSim tick (60 Hz, worker)\n0\nSim state hash\nc95e6b6e\nSim step cost (live, worker clock)\n0.00 µs/tick over 0 ticks\nTrains (speed LDU/s)\n1 (0)\nTrain edges\n0\nVehicle (LDU)\nlength 706.0, bogies at 183.0 and 523.0 from 4 wheelsets; 398 parts touch the wheels, 21 stand apart and stay off the train\nBogie centres apart (LDU, per vehicle)\n340.000000\nRoute path end vs exact end\n9.7e-13 LDU, 0.0e+0 rad",
+ "hudAfter": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1280×720 px (devicePixelRatio 1)\nBundle\n0ab83549abdd1bc0\nParts\n466\nModules\n40\nStud instances (drawn of total)\n3,520 of 3,520\nScene triangles\n591,640\nLoad\n142 ms\nGPU buffers allocated so far, JS heap\nvertex+index 3.2 MiB, other 0.0 MiB, JS heap 51.0 MiB\nRender origin (chunks), rebases\n(-3, 0); 1 rebases, last at frame 0\nTrack placements\n68\nExact joins\n70 of 140 ends paired\nOpen ends\n0\nCoincident ends not joined\n0\nSwitches\n4\nDirected edges (reachable from edge 0)\n144 (144)\nChunk tiers near/mid/far\n40 / 0 / 0\nDraw calls\n116\nDrawn triangles\n317,645\nScene coverage\n18%\nFrame rate (rAF)\n4.9 fps\nSim tick (60 Hz, worker)\n0\nSim state hash\nb7329d99\nSim step cost (live, worker clock)\n0.00 µs/tick over 0 ticks\nTrains (speed LDU/s)\n1 (0)\nTrain edges\n52\nVehicle (LDU)\nlength 706.0, bogies at 183.0 and 523.0 from 4 wheelsets; 398 parts touch the wheels, 21 stand apart and stay off the train\nBogie centres apart (LDU, per vehicle)\n340.000000\nRoute path end vs exact end\n9.7e-13 LDU, 0.0e+0 rad"
+}

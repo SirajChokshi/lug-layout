@@ -1,0 +1,23 @@
+import { chromium } from "playwright-core";
+import { writeFileSync } from "node:fs";
+const [url, out] = process.argv.slice(2);
+const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/local/bin/google-chrome", headless: false, args: ["--ignore-gpu-blocklist"] });
+const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+await page.addInitScript(() => {
+  const Original = window.Worker;
+  window.__simLoad = null;
+  window.Worker = class extends Original {
+    postMessage(message, transfer) {
+      if (message?.body?.kind === "load") {
+        const plain = (value) => ArrayBuffer.isView(value) ? Array.from(value) : Array.isArray(value) ? value.map(plain) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, plain(v)])) : value;
+        window.__simLoad = JSON.stringify(plain(message.body.load));
+      }
+      return super.postMessage(message, transfer);
+    }
+  };
+});
+await page.goto(url);
+await page.waitForFunction(() => window.__simLoad !== null, null, { timeout: 120000 });
+writeFileSync(out, await page.evaluate(() => window.__simLoad));
+await browser.close();
+console.log("captured", out);

@@ -1,0 +1,86 @@
+import { readFileSync } from "node:fs";
+import { loadSession, SimSession, trackPoint } from "./src/index.ts";
+
+const raw = JSON.parse(readFileSync(process.argv[2], "utf8"));
+const typed = (ctor, values) => ctor.from(values);
+const g = raw.graph;
+const load = {
+  ...raw,
+  graph: {
+    edgeCount: g.edgeCount,
+    switchCount: g.switchCount,
+    endXLdu: typed(Float64Array, g.endXLdu),
+    endZLdu: typed(Float64Array, g.endZLdu),
+    endHeading: typed(Uint8Array, g.endHeading),
+    edgeFromEnd: typed(Int32Array, g.edgeFromEnd),
+    edgeToEnd: typed(Int32Array, g.edgeToEnd),
+    successorStart: typed(Int32Array, g.successorStart),
+    successors: typed(Int32Array, g.successors),
+    edgeSwitch: typed(Int32Array, g.edgeSwitch),
+  },
+};
+const { scenario } = loadSession(load);
+const track = scenario.track;
+const spec = raw.trains[0].spec;
+const vehicle = spec.vehicles[0];
+const behind = [vehicle.frontBogieLdu, vehicle.rearBogieLdu];
+const fractions = [0, 0.25, 0.5, 0.75, 1];
+const out = new Float64Array(4);
+const expected = new Float64Array(2);
+
+function successor(sim, edge) {
+  return sim.successor(edge);
+}
+
+function walkBack(sim, edge, offset, distance) {
+  let e = track.reverseEdge[edge];
+  let s = track.edgeLength[edge] - offset;
+  let d = distance;
+  while (s + d > track.edgeLength[e]) {
+    d -= track.edgeLength[e] - s;
+    e = successor(sim, e);
+    s = 0;
+  }
+  trackPoint(track, e, s + d, expected, 0);
+  return [expected[0], expected[1]];
+}
+
+let placements = 0;
+let wrong = 0;
+let worst = 0;
+let worstAt = "";
+let reverseFailures = 0;
+let reverseWorst = 0;
+for (let edge = 0; edge < track.edgeCount; edge++) {
+  for (const f of fractions) {
+    const offsetLdu = f * track.edgeLength[edge];
+    const session = new SimSession({ ...scenario, trains: [{ spec, placement: { edge, offsetLdu } }] });
+    const sim = session.simulation;
+    sim.writeVehiclePoses(out);
+    placements++;
+    let error = 0;
+    behind.forEach((distance, i) => {
+      const [x, z] = walkBack(sim, edge, offsetLdu, distance);
+      error = Math.max(error, Math.hypot(out[2 * i] - x, out[2 * i + 1] - z));
+    });
+    if (error > 1e-6) wrong++;
+    if (error > worst) {
+      worst = error;
+      worstAt = `${edge}@${offsetLdu.toFixed(3)}`;
+    }
+    const before = Float64Array.from(out);
+    let reversed = false;
+    try {
+      reversed = sim.reverse(0);
+    } catch {
+      reversed = false;
+    }
+    if (!reversed) {
+      reverseFailures++;
+      continue;
+    }
+    sim.writeVehiclePoses(out);
+    for (let i = 0; i < 4; i++) reverseWorst = Math.max(reverseWorst, Math.abs(out[i] - before[i]));
+  }
+}
+console.log(JSON.stringify({ placements, wrongOver1e6: wrong, worstErrorLdu: worst, worstAt, reverseFailures, reverseMaxBogieMoveLdu: reverseWorst }));
