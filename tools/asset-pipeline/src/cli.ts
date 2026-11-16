@@ -39,8 +39,14 @@ async function readLock(): Promise<InputLock> {
 }
 
 async function restoreModels(palette: Palette): Promise<void> {
-  const { present, downloaded } = await restoreFiles(palette.omrSource, omrFiles(palette), omrRoot);
-  process.stdout.write(`OMR models: ${present} present, ${downloaded} downloaded\n`);
+  const { present, downloaded, pruned } = await restoreFiles(
+    palette.omrSource,
+    omrFiles(palette),
+    omrRoot,
+  );
+  process.stdout.write(
+    `OMR models: ${present} present, ${downloaded} downloaded, ${pruned} pruned\n`,
+  );
 }
 
 async function fetchCommand(): Promise<void> {
@@ -85,8 +91,10 @@ async function restoreCommand(): Promise<void> {
         ]),
   ];
   for (const { name, source, files, directory } of targets) {
-    const { present, downloaded } = await restoreFiles(source, files, directory);
-    process.stdout.write(`${name}: ${present} present, ${downloaded} downloaded\n`);
+    const { present, downloaded, pruned } = await restoreFiles(source, files, directory);
+    process.stdout.write(
+      `${name}: ${present} present, ${downloaded} downloaded, ${pruned} pruned\n`,
+    );
   }
   await restoreModels(await readPalette(palettePath));
 }

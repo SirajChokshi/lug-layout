@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { modelStructure, parseLdraw, subfileReferences } from "./ldraw/parse.ts";
 import type { Palette, PaletteModel } from "./palette.ts";
@@ -184,6 +184,7 @@ async function hashProblems(
 export interface RestoreResult {
   readonly present: number;
   readonly downloaded: number;
+  readonly pruned: number;
 }
 
 async function hasPinnedBytes(path: string, expected: string): Promise<boolean> {
@@ -220,7 +221,9 @@ export async function restoreFiles(
     }
   };
   await Promise.all(Array.from({ length: RESTORE_CONCURRENCY }, worker));
-  return { present, downloaded };
+  const unpinned = (await listFiles(directory)).filter((path) => !(path in files));
+  await Promise.all(unpinned.map((path) => rm(join(directory, path))));
+  return { present, downloaded, pruned: unpinned.length };
 }
 
 export async function verifyAuditInputs(
