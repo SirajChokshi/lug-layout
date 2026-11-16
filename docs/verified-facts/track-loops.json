@@ -33,12 +33,12 @@
             "headingErrorDegrees": 0.00227
           },
           "float64Certified": {
-            "gapLdu": 6.39e-11,
-            "headingErrorDegrees": 4.07e-12
+            "gapLdu": 5.79e-12,
+            "headingErrorDegrees": 4.07e-13
           },
           "float32Certified": {
-            "gapLdu": 0.0078,
-            "headingErrorDegrees": 0.000446
+            "gapLdu": 0.00155,
+            "headingErrorDegrees": 0.000135
           }
         }
       ]
@@ -78,12 +78,12 @@
             "headingErrorDegrees": 0.000403
           },
           "float64Certified": {
-            "gapLdu": 1.36e-14,
-            "headingErrorDegrees": 0
+            "gapLdu": 2.41e-13,
+            "headingErrorDegrees": 2.54e-14
           },
           "float32Certified": {
-            "gapLdu": 0.000263,
-            "headingErrorDegrees": 0.00000137
+            "gapLdu": 0.000456,
+            "headingErrorDegrees": 0.00000865
           }
         },
         {
@@ -107,12 +107,12 @@
             "headingErrorDegrees": 0.00186
           },
           "float64Certified": {
-            "gapLdu": 1.12e-10,
-            "headingErrorDegrees": 4.89e-12
+            "gapLdu": 1.14e-11,
+            "headingErrorDegrees": 4.07e-13
           },
           "float32Certified": {
-            "gapLdu": 0.0143,
-            "headingErrorDegrees": 0.000739
+            "gapLdu": 0.00283,
+            "headingErrorDegrees": 0.000135
           }
         }
       ]
@@ -145,12 +145,12 @@
             "headingErrorDegrees": 0.00227
           },
           "float64Certified": {
-            "gapLdu": 6.39e-11,
-            "headingErrorDegrees": 4.07e-12
+            "gapLdu": 5.79e-12,
+            "headingErrorDegrees": 4.07e-13
           },
           "float32Certified": {
-            "gapLdu": 0.0078,
-            "headingErrorDegrees": 0.000446
+            "gapLdu": 0.00155,
+            "headingErrorDegrees": 0.000135
           }
         }
       ]
@@ -181,12 +181,12 @@
             "headingErrorDegrees": 0.0227
           },
           "float64Certified": {
-            "gapLdu": 2.61e-9,
-            "headingErrorDegrees": 1.89e-10
+            "gapLdu": 5.9e-11,
+            "headingErrorDegrees": 4.07e-12
           },
           "float32Certified": {
-            "gapLdu": 0.648,
-            "headingErrorDegrees": 0.0412
+            "gapLdu": 0.00854,
+            "headingErrorDegrees": 0.00112
           }
         }
       ]
@@ -217,12 +217,12 @@
             "headingErrorDegrees": 0.227
           },
           "float64Certified": {
-            "gapLdu": 1.1e-7,
-            "headingErrorDegrees": 7.82e-9
+            "gapLdu": 5.89e-10,
+            "headingErrorDegrees": 4.07e-11
           },
           "float32Certified": {
-            "gapLdu": 74.2,
-            "headingErrorDegrees": 5.28
+            "gapLdu": 0.081,
+            "headingErrorDegrees": 0.011
           }
         }
       ]
@@ -253,12 +253,12 @@
             "headingErrorDegrees": 2.27
           },
           "float64Certified": {
-            "gapLdu": 0.0000114,
-            "headingErrorDegrees": 8.15e-7
+            "gapLdu": 5.87e-9,
+            "headingErrorDegrees": 4.07e-10
           },
           "float32Certified": {
-            "gapLdu": 1380,
-            "headingErrorDegrees": 120
+            "gapLdu": 0.804,
+            "headingErrorDegrees": 0.109
           }
         }
       ]

@@ -34,6 +34,7 @@ const RETURN_EXTRA_STRAIGHTS = 6;
 const DRIFT_LAPS = [1, 10, 100, 1000];
 const SIGNIFICANT_DIGITS = 3;
 const DEGREES_PER_RADIAN = 180 / Math.PI;
+const FULL_TURN = 2 * Math.PI;
 
 interface MeasuredPiece {
   readonly part: string;
@@ -146,6 +147,7 @@ function floatAlgebra(round: Rounding, source: "measured" | "certified"): PoseAl
     const sin = round(Math.sin(angle));
     return [round(round(cos * x) - round(sin * z)), round(round(sin * x) + round(cos * z))];
   };
+  const wrap = (angle: number): number => round(angle - FULL_TURN * Math.round(angle / FULL_TURN));
   const localEnd = (end: RelativeTrackEnd): FloatPose => {
     if (source === "measured") {
       return {
@@ -168,7 +170,7 @@ function floatAlgebra(round: Rounding, source: "measured" | "certified"): PoseAl
     identity: { x: 0, z: 0, angle: 0 },
     ends: (piece) => piece.relative.map(localEnd),
     attach: (local, target) => {
-      const angle = round(round(target.angle + Math.PI) - local.angle);
+      const angle = wrap(round(round(target.angle + Math.PI) - local.angle));
       const [dx, dz] = rotate(angle, local.x, local.z);
       return { x: round(target.x - dx), z: round(target.z - dz), angle };
     },
@@ -177,7 +179,7 @@ function floatAlgebra(round: Rounding, source: "measured" | "certified"): PoseAl
       return {
         x: round(frame.x + dx),
         z: round(frame.z + dz),
-        angle: round(frame.angle + local.angle),
+        angle: wrap(round(frame.angle + local.angle)),
       };
     },
   };
@@ -260,9 +262,8 @@ function floatClosureError(closure: Closure<FloatPose>): {
   readonly gapLdu: number;
   readonly headingErrorDegrees: number;
 } {
-  const turn = 2 * Math.PI;
   const mismatch = closure.open.angle - closure.target.angle - Math.PI;
-  const wrapped = mismatch - turn * Math.round(mismatch / turn);
+  const wrapped = mismatch - FULL_TURN * Math.round(mismatch / FULL_TURN);
   return {
     gapLdu: significant(
       Math.hypot(closure.open.x - closure.target.x, closure.open.z - closure.target.z) * STUD_LDU,
