@@ -21,6 +21,7 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
   const rows: Array<readonly [string, string]> = [
     ["API", api],
     ["Adapter", backend.adapter],
+    ["Strategy", backend.strategy],
     [
       "Drawing buffer",
       `${report.drawingBuffer.width}×${report.drawingBuffer.height} px (devicePixelRatio ${Number(report.drawingBuffer.devicePixelRatio.toFixed(2))})`,

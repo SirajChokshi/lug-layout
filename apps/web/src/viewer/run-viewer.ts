@@ -45,6 +45,7 @@ export async function runViewer(
   const backend = await scene.attach({
     canvas,
     api: params.api,
+    strategy: params.strategy,
     pixelRatio: devicePixelRatio,
     antialias: true,
   });

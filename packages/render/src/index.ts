@@ -4,6 +4,7 @@ export type {
   FrameStats,
   GraphicsApi,
   ISceneBackend,
+  InstancingStrategy,
   PartPalette,
   SceneBackendConfig,
 } from "./scene-backend.ts";
