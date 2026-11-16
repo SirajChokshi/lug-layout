@@ -21,7 +21,9 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/1-16edge.dat` | Circle 0.0625 | Marc Klein [marckl] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-16ndis.dat` | Disc Negative 0.0625 | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-16ring2.dat` | Ring 2 x 0.0625 | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/1-16ring3.dat` | Ring 3 x 0.0625 | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-16ring4.dat` | Ring 4 x 0.0625 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/1-16stud4.dat` | Stud Tube Open 0.0625 | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-16tang.dat` | Disc Negative Tangent 0.0625 | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-16tndis.dat` | Disc Negative Truncated 0.0625 | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4chrd.dat` | Chord 0.25 | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -53,6 +55,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/1-4ring20.dat` | Ring 20 x 0.25 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring3.dat` | Ring 3 x 0.25 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring4.dat` | Ring 4 x 0.25 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/1-4ring5.dat` | Ring 5 x 0.25 | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring6.dat` | Ring 6 x 0.25 | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring7.dat` | Ring 7 x 0.25 | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring8.dat` | Ring 8 x 0.25 | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -105,6 +108,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/2-4edge.dat` | Circle 0.5 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/2-4ndis.dat` | Disc Negative 0.5 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/2-4ring1.dat` | Ring 1 x 0.5 | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/2-4ring11.dat` | Ring 11 x 0.5 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/2-4ring13.dat` | Ring 13 x 0.5 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/2-4ring14.dat` | Ring 14 x 0.5 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/2-4ring17.dat` | Ring 17 x 0.5 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -127,6 +131,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/3-16cylo.dat` | Cylinder Open 0.1875 | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16cyls.dat` | Cylinder Sloped 0.1875 | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16cys2.dat` | Cylinder Sloped 0.1875 Convex | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/3-16disc.dat` | Disc 0.1875 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16edge.dat` | Circle 0.1875 | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16ndis.dat` | Disc Negative 0.1875 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/3-16rin5.dat` | ~Ring 5 x 0.1875 (Obsolete) | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -220,6 +225,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/4-4ring29.dat` | Ring 29 x 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ring3.dat` | Ring 3 x 1.0 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ring34.dat` | Ring 34 x 1.0 | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/4-4ring38.dat` | Ring 38 x 1.0 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ring39.dat` | Ring 39 x 1.0 | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ring4.dat` | Ring 4 x 1.0 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/4-4ring40.dat` | Ring 40 x 1.0 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -236,6 +242,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/48/1-12edge.dat` | Hi-Res Circle 0.0833 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-12ring39.dat` | Hi-Res Ring 39 x 0.0833 | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-16cyli.dat` | Hi-Res Cylinder 0.0625 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/1-16cylo.dat` | Hi-Res Cylinder Open 0.0625 | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-16edge.dat` | Hi-Res Circle 0.0625 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-24chrd.dat` | Hi-Res Chord 0.0417 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-24cyli.dat` | Hi-Res Cylinder 0.0417 | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -259,7 +266,11 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/48/1-4edge.dat` | Hi-Res Circle 0.25 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-4ndis.dat` | Hi-Res Disc Negative 0.25 | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-4ring14.dat` | Hi-Res Ring 14 x 0.25 | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/1-4ring18.dat` | Hi-Res Ring 18 x 0.25 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-4ring3.dat` | Hi-Res Ring 3 x 0.25 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/1-4ring39.dat` | Hi-Res Ring 39 x 0.25 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/1-4ring5.dat` | Hi-Res Ring 5 x 0.25 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/1-4ring51.dat` | Hi-Res Ring 51 x 0.25 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-4ring6.dat` | Hi-Res Ring 6 x 0.25 | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-4ring9.dat` | Hi-Res Ring 9 x 0.25 | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/1-6chrd.dat` | Hi-Res Chord 0.1667 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -290,6 +301,13 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/48/3-16edge.dat` | Hi-Res Circle 0.1875 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/3-4edge.dat` | Hi-Res Circle 0.75 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/4-4aring.dat` | Adapter Ring Hi-Res to Normal 1.0 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/4-4con1.dat` | Hi-Res Cone 1 x 1.0 | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/4-4con16.dat` | Hi-Res Cone 16 x 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/4-4con2.dat` | Hi-Res Cone 2 x 1.0 | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/4-4con23.dat` | Hi-Res Cone 23 x 1.0 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/4-4con3.dat` | Hi-Res Cone 3 x 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/4-4con4.dat` | Hi-Res Cone 4 x 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/4-4con5.dat` | Hi-Res Cone 5 x 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/4-4cyli.dat` | Hi-Res Cylinder 1.0 | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/4-4cylo.dat` | Hi-Res Cylinder Open 1.0 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/4-4disc.dat` | Hi-Res Disc 1.0 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -331,6 +349,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/7-16edge.dat` | Circle 0.4375 | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/7-16ndis.dat` | Disc Negative 0.4375 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/7-16ring3.dat` | Ring 3 x 0.4375 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/7-16ring4.dat` | Ring 4 x 0.4375 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/7-8cyli.dat` | Cylinder 0.875 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/7-8edge.dat` | Circle 0.875 | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/8-8sphe.dat` | Sphere 1.0 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -431,6 +450,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/axlehol8.dat` | Technic Axle Perimeter | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/axlehol9.dat` | Technic Axle Inner Edges | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/axlehole.dat` | Technic Axle Hole Closed | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/beamhol2.dat` | Technic Beam Hole 0.5 with Adjacent Hole Negative | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box.dat` | Box 6 (six faces) | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box0.dat` | Box with 0 Faces and All Edges | Santeri Piippo [arezey] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box2-11.dat` | Box with 2 Faces without 11 Edges | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -443,6 +463,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/box3-7a.dat` | Box with 3 Adjacent Faces without 7 Adjacent Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3-9a.dat` | Box with 3 Adjacent Faces without 9 Adjacent Edges | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3u10p.dat` | Box with 3 Faces without 10 Parallel Edges | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box3u12.dat` | Box with 3 Parallel Faces without Any Edges | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3u2p.dat` | Box with 3 Faces without 2 Parallel Edges | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3u4a.dat` | Box with 3 Faces without 4 Adjacent Edges | Niels Karsdorp [nielsk] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box3u4p.dat` | Box with 3 Faces without 4 Parallel Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -532,6 +553,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/phandle1.dat` | Bar Handle Attachment with Open Side | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/phandle2.dat` | Bar Handle Attachment with 2 Open Sides | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/r04o1000.dat` | Torus Outside 1 x 1.0000 x 0.25 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/r04o1500.dat` | Torus Outside 1 x 1.5000 x 0.25 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/rect.dat` | Rectangle | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/rect1.dat` | Rectangle with 1 Edge | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/rect2a.dat` | Rectangle with 2 Adjacent Edges | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -719,8 +741,12 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/24307.dat` | Wing 2 x 2 Right | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2431.dat` | Tile 1 x 4 with Groove | Santeri Piippo [arezey] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/24316.dat` | Technic Axle 3 with Stop | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2431p12.dat` | Tile 1 x 4 with Radar Pattern | Thomas Burger [grapeape] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/2431p27.dat` | Tile 1 x 4 with Entwined Snakes Pattern | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2431p52.dat` | Tile 1 x 4 with Black Danger Stripes Type 2 Pattern | Marc Giraudet [Mad_Marc] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2431pc0.dat` | Tile 1 x 4 with Train Controls Pattern | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2431pc1.dat` | Tile 1 x 4 with Control Panel Pattern | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2431pt2.dat` | Tile 1 x 4 with "Octan" Text Pattern | Thomas Burger [grapeape] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/2432.dat` | Tile 1 x 2 with Handle | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2434.dat` | Brick 2 x 4 x 2 with Studs on Sides | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2436a.dat` | Bracket 1 x 2 - 1 x 4 with Square Corners | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -826,6 +852,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/30133.dat` | Minifig Bandana | Mark Chittenden [mdublade] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/30134.dat` | Staircase 7 x 4 x 6 Open | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30136.dat` | Brick 1 x 2 Log | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/30145.dat` | Brick 2 x 2 x 3 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30150.dat` | Container Adventurers Chest | Jaco van der Molen [Jaco] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30154.dat` | Minifig Sextant | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30162.dat` | Minifig Binoculars with Round Eyepiece | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -852,6 +879,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/30274.dat` | Brick 2 x 3 x 3 with Lion's Head Carving and Cutout | Andy Westrate [westrate] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3028.dat` | Plate 6 x 12 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3029.dat` | Plate 4 x 12 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3030.dat` | Plate 4 x 10 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3031.dat` | Plate 4 x 4 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3032.dat` | Plate 4 x 6 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3033.dat` | Plate 6 x 10 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -862,6 +890,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/3036.dat` | Plate 6 x 8 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30363.dat` | Slope Brick 18 4 x 2 | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/30365.dat` | Hinge Brick 1 x 2 Locking with Dual Finger On End | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/30367a.dat` | Cylinder 2 x 2 with Dome Top with Blocked Stud | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3037.dat` | Slope Brick 45 2 x 4 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30374.dat` | Bar 4L Lightsaber Blade | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30377.dat` | Minifig Mechanical Arm with Clips Parallel | Nathan Wright | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
@@ -875,10 +904,12 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/30394.dat` | Excavator Bucket 6 x 3 with Click Hinge 2-Finger with 9 Teeth | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30395.dat` | Hook with Towball | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30396.dat` | Hinge 1 x 2 Locking with 2 Fingers and Towball Socket, 9 Teeth | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3039p05.dat` | Slope Brick 45 2 x 2 with Black Grille Pattern | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3039p12.dat` | Slope Brick 45 2 x 2 with White Phone Pattern | John Riley [jriley] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/3039p23.dat` | Slope Brick 45 2 x 2 with Computer Screen Pattern | Thomas Burger [grapeape] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/3039p34.dat` | Slope Brick 45 2 x 2 with Computer Panel Pattern | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3040b.dat` | Slope Brick 45 2 x 1 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3040p04.dat` | Slope Brick 45 2 x 1 with 5 White Red Green Controls Pattern | Tony Hafner [hafhead] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30414.dat` | Brick 1 x 4 with Studs on Side | R. M. Rodinsky [dublar] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/3045.dat` | Slope Brick 45 2 x 2 Double Convex | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3046.dat` | Slope Brick 45 2 x 2 Double Concave | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -887,17 +918,23 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/30503.dat` | Plate 4 x 4 without Corner | Ronald Scott Moody [rmoody] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/30504.dat` | Plate 8 x 8 without Corner | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30505.dat` | Brick 3 x 3 without Corner | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/30562.dat` | Panel 4 x 4 x 6 Corner Round | Mark Chittenden [mdublade] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/30565.dat` | Plate 4 x 4 with Corner Round | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30586.dat` | Plate 2 x 8 with Door Rail | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/3062b.dat` | Brick 1 x 1 Round with Hollow Stud | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3063b.dat` | Brick 2 x 2 Corner Round with Stud Notch | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3065.dat` | Brick 1 x 2 without Centre Stud | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30663.dat` | Car Steering Wheel 2L | Vincent Messenet [Cheenzo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3068a.dat` | Tile 2 x 2 without Groove | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3068b.dat` | Tile 2 x 2 with Groove | Takeshi Takahashi [RainbowDolphin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3068bp70.dat` | Tile 2 x 2 with Gauges Pattern | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3068bpt3.dat` | Tile 2 x 2 with Newspaper 'THE LEGO NEWS' Pattern | Bertrand Lequy [Berth] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3069b.dat` | Tile 1 x 2 with Groove | Santeri Piippo [arezey] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3069bp01.dat` | Tile 1 x 2 with Letter Pattern | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3069bp08.dat` | Tile 1 x 2 with Digital Clock Pattern | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/3069bp0a.dat` | Tile 1 x 2 with Partial White Stripes Pattern | Tim Gould [timgould] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3069bp0c.dat` | Tile 1 x 2 with Letter and Seal Pattern | Andy Westrate [westrate] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3069bp68.dat` | Tile 1 x 2 with Red & Yellow Controls Pattern | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/3069bp80.dat` | Tile 1 x 2 with 28-Key 'QERYUIOP' Keyboard Pattern | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3069bpw2.dat` | Tile 1 x 2 with "100" Money Pattern | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3070a.dat` | Tile 1 x 1 without Groove | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -908,19 +945,26 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/3082.dat` | ~Window 1 x 2 x 2 Classic Glass | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3176.dat` | Plate 3 x 2 with Hole | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3185.dat` | Fence Lattice 1 x 4 x 2 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3188.dat` | Door 1 x 3 x 2 Right | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3189.dat` | Door 1 x 3 x 2 Left | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/32000.dat` | Technic Brick 1 x 2 with Holes | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32002.dat` | Technic Pin 3/4 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32028.dat` | Plate 1 x 2 with Door Rail | Remco Braak [remco1974] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/32039.dat` | Technic Connector (Axle/Bush) Type 1 | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/32054.dat` | Technic Pin Long with Stop Bush | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/32059.dat` | Plate 4 x 6 without Corners | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32062.dat` | Technic Axle 2 Notched | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/32064a.dat` | Technic Brick 1 x 2 with Axlehole with Open Sides and Stud Blocker | Lutz Uhlmann [El-Lutzo] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/32073.dat` | Technic Axle 5 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/32083.dat` | Slope Brick 45 6 x 4 Double | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32087.dat` | Train Track 9V Crossing | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32123a.dat` | Technic Bush 1/2 Smooth with Axle Hole Reduced | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32123b.dat` | Technic Bush 1/2 Smooth with Axle Hole Semi-Reduced | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32124.dat` | Technic Rotor 2 Blade with 4 Studs | Rene Rechthaler [Blechtaler] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32270.dat` | Technic Gear 12 Tooth Double Bevel | Marc Klein [marckl] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3228b.dat` | Train Track Rail Slotted Straight | Manfred Moolhuysen | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/32449.dat` | Technic Beam 4 x 0.5 Liftarm | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/3245b.dat` | Brick 1 x 2 x 2 with Inside Axle Holder | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32474.dat` | Technic Ball Joint with Axlehole Blind | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32530.dat` | Technic Tile 1 x 2 with Two Holes | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/32556.dat` | ~Moved to 32556a | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1071,6 +1115,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/3958.dat` | Plate 6 x 6 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3960.dat` | Dish 4 x 4 Inverted | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3960p0e.dat` | Dish 4 x 4 Inverted with Stripes Red/Blue/Yellow/Lime Pattern | Bjoern Sigve Storesund [Storesund] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3961.dat` | Dish 8 x 8 Inverted with Solid Studs | Lutz Uhlmann [El-Lutzo] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/3962b.dat` | Minifig Radio with Long Handle | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3963.dat` | Brick 2 x 1 with Positioning Rockets | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4006.dat` | Minifig Tool Spanner/Screwdriver | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
@@ -1089,6 +1134,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/4085c.dat` | Plate 1 x 1 with Clip Vertical (Thick U-Clip) | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4092a.dat` | Train Bogie Plate with Long Pin | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4093b.dat` | Train Base 6 x 28 with 15 Holes | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4093c.dat` | Train Base 6 x 28 with 8 Holes | Matthew J. Chiles [mchiles] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4095.dat` | Bar 6.6L with Stop | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/40996.dat` | Brick 1 x 4 with Sloped Ends and Two Top Studs | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/4106.dat` | ~=Magnet Cylindrical Casing (Obsolete) | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1098,6 +1144,8 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/4150ps4.dat` | Tile 2 x 2 Round with Black and Dark Bluish Grey Grid Pattern | Matt Schild [mschild] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/41532.dat` | Hinge Arm Locking with Single Finger and Friction Pin | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/41539.dat` | Plate 8 x 8 | Martin G Cormier | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/4159998b.dat` | Sticker 2.6 x 3.8 with Silver "317" and Rivets and Frame on Black Background | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4159998c.dat` | Sticker 2.2 x 1.8 with Silver Frame and Rivets on Black Background | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4161.dat` | Slope Brick 33 3 x 3 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4162.dat` | Tile 1 x 8 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/41677.dat` | Technic Beam 2 x 0.5 Liftarm | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1108,13 +1156,21 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/41750.dat` | Slope Brick Round 3 x 8 x 2 Left | Brent Jackson [bjackson] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/41770.dat` | ~Moved to 41770a | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/41770a.dat` | Wing 2 x 4 Left without Chamfer | Takeshi Takahashi [RainbowDolphin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4181.dat` | Train Door 1 x 4 x 5 Left | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4182.dat` | Train Door 1 x 4 x 5 Right | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4183.dat` | Glass for Train Door | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/41879a.dat` | Minifig Hips and Legs Short without Hole | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/41879b.dat` | Minifig Hips and Legs Short with Hole | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4188571a.dat` | Sticker 1.9 x 1.9 with American Indian Head and Santa Fe Super Chief Logo | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4188571b.dat` | Sticker 1.0 x 9.9 with Black "SANTA FE" | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4188571f.dat` | Sticker 0.9 x 3.9 with Black "606" | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4188571k.dat` | Sticker 0.9 x 3.9 with Black "2417" | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/42022.dat` | Slope Brick Curved 6 x 1 | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4211.dat` | Car Base 4 x 5 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4213.dat` | Hinge Car Roof 4 x 4 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4214.dat` | Hinge Car Roof Holder 1 x 4 x 2 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4215a.dat` | Panel 1 x 4 x 3 | Bernd Broich [bbroich] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4215b.dat` | Panel 1 x 4 x 3 with Hollow Studs | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4216.dat` | Brick 1 x 2 with Groove | Christian M. Angele [cma_1971] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/4218b.dat` | Roller Door Normal | Jaco van der Molen [Jaco] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4219b.dat` | Roller Door with Handle | Jaco van der Molen [Jaco] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1129,12 +1185,14 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/4287a.dat` | Slope Brick 33 3 x 1 Inverted with Notch and Thick Front | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/43093.dat` | Technic Axle Pin with Friction | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4315.dat` | Hinge Plate 1 x 4 with Car Roof Holder | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4328.dat` | Minifig Pipe Wrench (Needs Work) | Stan Isachenko [angmarec] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/4343.dat` | ~Door 1 x 4 x 5 Frame | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4344.dat` | ~Door 1 x 4 x 5 Glass | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4345ap03.dat` | Container Box 2 x 2 x 2 Solid Studs with Mailbox Pattern | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4345b.dat` | Container Box 2 x 2 x 2 with Hollow Studs | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4346.dat` | Container Box 2 x 2 x 2 Door with Slot | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4346p03.dat` | Container Box 2 x 2 x 2 Door with Slot and Mailbox Pattern | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4349.dat` | Minifig Loudhailer | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/43722.dat` | ~Moved to 43722a | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/43722a.dat` | Wing 2 x 3 Right without Chamfer | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/43888.dat` | Brick 1 x 1 x 6 Round with Square Base | Stig-Erik Blomqvist [stigge72] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
@@ -1169,6 +1227,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/4509.dat` | Slope Brick 33 6 x 6 Double | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4510.dat` | Plate 1 x 8 with Door Rail | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4515.dat` | Slope Brick 10 6 x 8 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4519.dat` | Technic Axle 3 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4521703u.dat` | Sticker 3.5 x 3.9 with "LEGO TOWN" Map | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4522.dat` | ~Minifig Tool Mallet (Obsolete) | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/4523.dat` | Minifig Container D-Basket | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1188,6 +1247,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/4599a.dat` | Tap 1 x 1 with Hole in Spout | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4599b.dat` | Tap 1 x 1 without Hole in Spout | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4600.dat` | Plate 2 x 2 with 2 Wheel Pins | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4623.dat` | Plate 1 x 2 with Vertical Bar on Long Side and Long Arm | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4624.dat` | Wheel Rim 6.4 x 8 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4697b.dat` | Technic Pneumatic T-Piece - Type 2 | Marc Klein [marckl] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4716.dat` | Technic Worm Gear 2L | Remco Braak [remco1974] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
@@ -1204,6 +1264,8 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/4862.dat` | Glass for Window 1 x 2 x 2 Plane | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4863.dat` | Window 1 x 4 x 2 Plane | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4864b.dat` | Panel 1 x 2 x 2 with Hollow Studs | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4864bp12.dat` | Panel 1 x 2 x 2 with Grey Porthole Pattern | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4864bp13.dat` | Panel 1 x 2 x 2 with Red Porthole Pattern | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4865a.dat` | Panel 1 x 2 x 1 with Square Corners | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4865b.dat` | Panel 1 x 2 x 1 with Rounded Corners | Rolf Osterthun [Rolf] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4865d01.dat` | Panel 1 x 2 x 1 with Black Train Logo Sticker | Thomas Burger [grapeape] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
@@ -1332,6 +1394,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/6576.dat` | Plate 4 x 8 with Studs in Centre | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/6583.dat` | Plate 1 x 6 with Train Wagon End | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/6584.dat` | Train Base 6 x 24 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/6587.dat` | Technic Axle 3 with Stud | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/6628.dat` | Technic Pin Towball with Friction | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/6632.dat` | Technic Beam 3 x 0.5 Liftarm | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/6636.dat` | Tile 1 x 6 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1458,6 +1521,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/18920s01.dat` | ~Minifig Tool Scissors | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2039s01.dat` | ~Lamppost 2 x 2 x 7 - Upper Column | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2039s02.dat` | ~Lamppost 2 x 2 x 7 - Lower Column | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/22888s02.dat` | ~Plate 4 x 8 Round 1/8 - Common Geometry | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2335s01.dat` | ~Flag 2 x 2 without Main Faces | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2358s01.dat` | ~Baseplate 32 x 32 Road 7-Stud Straight without Top Surface | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2362s01.dat` | ~Panel 1 x 2 x 3 without Front Face and Studs | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1467,6 +1531,12 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/2424s01.dat` | ~Crane Basket 2 x 3 x 2 without Back Panel | Greg Teft [gregteft] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2424s02.dat` | ~Crane Basket 2 x 3 x 2 Clip and Back Panel Right Side | Greg Teft [gregteft] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/s/24299s01.dat` | ~Wing 2 x 2 Left without Studs and Top Surface | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2431p02s01.dat` | ~Tile 1 x 4 with Danger Stripes Red Pattern - Zig | Marc Giraudet [Mad_Marc] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2431p02s02.dat` | ~Tile 1 x 4 with Danger Stripes Red Pattern - Zag | Marc Giraudet [Mad_Marc] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2431p02s03.dat` | ~Tile 1 x 4 with Red Danger Stripes Pattern - Half Border | Marc Giraudet [Mad_Marc] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2431pt2a.dat` | ~Tile 1 x 4 with "Octan" Pattern - Text & Surround | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2431pt2b.dat` | ~Tile 1 x 4 with "Octan" Pattern - Border for "Oc" | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/2431pt2c.dat` | ~Tile 1 x 4 with "Octan" Pattern - Border for "tan" | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2431s01.dat` | ~Tile 1 x 4 with Groove without Top Face | Santeri Piippo [arezey] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2446s01.dat` | ~Minifig Helmet Standard Structure (Obsolete) | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/2446s02.dat` | ~Minifig Helmet Standard Patternable Area Half (Obsolete) | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1531,6 +1601,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/30126s01.dat` | ~Minifig Feathers | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30126s02.dat` | ~Minifig Feathers without Patternable Areas | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30126s03.dat` | ~Minifig Feathers Patternable Areas | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/30145s01.dat` | ~Brick 2 x 4 x 3 without Front and Back Faces | Chris Böhnke [KnightOfTarenta] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30225bs1.dat` | ~Baseplate 32 x 32 Road 8-Stud Dual without Top Surface | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3023bs01.dat` | ~Plate 1 x 2 without Front Face | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3024s01.dat` | ~Plate 1 x 1 without Front Face | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1539,6 +1610,8 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/30340s02.dat` | ~Minifig Life Ring Subpart 2 | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30363s01.dat` | ~Slope Brick 18 4 x 2 without Top Face | John Riley [jriley] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30364s01.dat` | ~Hinge Brick 1 x 2 Locking 30364/30365 Common Region | John Van Zwieten [jvan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/s/30367as01.dat` | ~Cylinder 2 x 2 with Dome Top with Blocked Stud | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/30367s01.dat` | ~Cylinder 2 x 2 with Dome Top Subpart - Quarter | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3037s01.dat` | ~Slope Brick 45 2 x 4 Without Front Face | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30386s01.dat` | ~Hinge Brick 1 x 2 Locking Double - without Two Finger End | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30387s01.dat` | ~Hinge Brick 1 x 4 Locking Double, Two Finger End with 9 Teeth without Front and Back Faces | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1551,6 +1624,8 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/30396s01.dat` | ~Hinge 1 x 2 Locking with Towball Socket | Marc Giraudet [Mad_Marc] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3039s01.dat` | ~Slope Brick 45 2 x 2 without Front Face | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3040s01.dat` | ~Slope Brick 45 2 x 1 without Front Face | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/30562s01.dat` | ~Panel 4 x 4 x 6 Corner Round without Outer Face | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/30565s01.dat` | ~Plate 4 x 4 Round 1/8 | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3062bs01.dat` | ~Brick 1 x 1 Round with Hollow Stud without Outer Surface | Takeshi Takahashi [RainbowDolphin] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3065s01.dat` | ~Brick 1 x 2 without Centre Stud without Front | Rene Rechthaler [Blechtaler] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/30663s01.dat` | ~Car Steering Wheel 2L - Half | Vincent Messenet [Cheenzo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1560,11 +1635,15 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/3069bs01.dat` | ~Tile 1 x 2 with Groove without Top Face | Santeri Piippo [arezey] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3069p80a.dat` | ~Pattern 1 x 2 28-Key 'QERYUIOP' Keyboard | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3070bs01.dat` | ~Tile 1 x 1 with Groove without Top Face | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/3189s01.dat` | ~Door 1 x 3 x 2 Right without Stud | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32039s01.dat` | ~Technic Connector (Axle/Bush) without Inner Wall | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/32064s01.dat` | ~Technic Brick 1 x 2 with Axlehole | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32087s01.dat` | ~Train Track 9V Crossing - Metal Rail Parts | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32087s02.dat` | ~Train Track 9V Crossing - Approach Track | Ludo Soete [ludo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32124s01.dat` | ~Technic Rotor 2 Blade with 4 Studs - Quarter | Rene Rechthaler [Blechtaler] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3228s01.dat` | ~Train Track Rail Straight 4 Teeth | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/3245bs01.dat` | ~Brick 1 x 2 x 2 with Inside Axle Holder without Front Face | Takeshi Takahashi [RainbowDolphin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/3245bs02.dat` | ~Brick 1 x 2 x 2 with Inside Axleholder without Side Surfaces | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32474s01.dat` | ~Technic Ball Joint with Axlehole Blind Interior | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32474s02.dat` | ~Technic Ball Joint with Axlehole Blind Quarter Bottom Sphere Trunck | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/32606s01.dat` | ~Plant Flower with 7 Alternate Petals Petal High Half | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1639,6 +1718,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/3960s03.dat` | ~Dish 4 x 4 Inverted - Dish Surface | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3960s04.dat` | ~Dish 4 x 4 Slice 30 Degrees at 45 Degrees without Condlines | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/3960s05.dat` | ~Dish 4 x 4 Inverted - Conditional Lines | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/3961s01.dat` | ~Dish 8 x 8 Inverted without Top Surface | Orion Pobursky [OrionP] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/40232s01.dat` | ~Animal Owl - Half | Andy Westrate [westrate] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4032s01.dat` | ~Plate 2 x 2 Round with Axlehole - Quarter | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4035s01.dat` | ~Train Window 1 x 2 x 3 without bottom front surface | Vincent Messenet [Cheenzo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1648,9 +1728,13 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/4161s01.dat` | ~Slope Brick 33 3 x 3 without Front Face | Takeshi Takahashi [RainbowDolphin] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4162s01.dat` | ~Tile 1 x 8 without Top Face | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/41770as01.dat` | ~Wing 2 x 4 Left without Chamfer without Studs | Takeshi Takahashi [RainbowDolphin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/4181s00.dat` | ~Train Door 1 x 4 x 5 Left without Front | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/4181s01.dat` | ~Train Door 1 x 4 x 5 Left without Lower Front | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/4181s02.dat` | ~Train Door 1 x 4 x 5 Left Stripe | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/41879s01.dat` | ~Minifig Hips and Legs Short without Sides and Feet Surfaces | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/42022s01.dat` | ~Slope Brick Curved 6 x 1 without Top Surface | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4215as01.dat` | ~Panel 1 x 4 x 3 without Front Face | Bernd Broich [bbroich] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/4215bs01.dat` | ~Panel 1 x 4 x 3 with Hollow Studs without Front Face | Andrew Ananjev [woozle] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4218s01.dat` | ~Roller Door Side, Half | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/425s01.dat` | ~Baseplate 32 x 32 Road 9-Stud Layby without Top Surface | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4286s01.dat` | ~Slope Brick 33 3 x 1 without Front and Side Faces | Chris Böhnke [KnightOfTarenta] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1660,6 +1744,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/4346s01.dat` | ~Container Box 2 x 2 x 2 Door with Slot without Front Face | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/43722as01.dat` | ~Wing 2 x 3 Right without Chamfer without Studs and Top Face | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/43822as1.dat` | ~Sticker Train Fan Segment | Tony Hafner [hafhead] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/43967s00.dat` | ~Train Door 1 x 4 x 5 Left Common Geometry | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/44301s01.dat` | ~Hinge Plate 1 x 2 Locking with Single Finger on End Vertical - Common Geometry | Vincent Messenet [Cheenzo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/44336s01.dat` | ~Baseplate 32 x 32 Road 6-Stud Straight without Top Surface | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/44341s02.dat` | ~Road 6-Stud Crossing Pattern | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
@@ -1680,6 +1765,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/4720s01.dat` | ~Spokes for Wheel Minifig Bicycle | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4740s01.dat` | ~Dish 2 x 2 Inverted without Convex Surface | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/483s01.dat` | ~Hinge Arm Locking Ridge Segment Quarter | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/4864bp12s01.dat` | ~Panel 1 x 2 x 2 with Porthole Pattern | Rene Rechthaler [Blechtaler] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4864s01.dat` | ~Panel 1 x 2 x 2 without Front Face and Studs | Mark Kennedy [mkennedy] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4865as01.dat` | ~Panel 1 x 2 x 1 without Front Face | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4865bs01.dat` | ~Panel 1 x 2 x 1 with Rounded Corners without Front Face | Damien Roux [Darats] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1784,6 +1870,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/98138s02.dat` | ~Tile 1 x 1 Round with Groove without Complete Top Face | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/98585s01.dat` | ~Technic Connector Circular w/ 2 Pin Holes & 3 Axle Holes - 1/4 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/99206s01.dat` | ~Plate 2 x 2 x 0.667 with Two Studs On Side and Two Raised - Common Area | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/stickerback018x022.dat` | ~Sticker Back 1.8 x 2.2 | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/u9074s01.dat` | ~Train Track 9V Switch Command Rod Conductor Plate, Half | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/u9097s01.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, End Section of Main Rail without End Connector | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/u9099s01.dat` | ~Train Track 9V Switch Right - Curved Metal Rail, Frog Rail without End Connector | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1835,6 +1922,14 @@ Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json`. OMR models
 | 4555-1 | 14 | Robert Paciorek [bercik] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/4555-1.mpd (retrieved 2026-11-16T17:20:00Z) |
 | 10128-1 | 9 | Robert Paciorek [bercik] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10128-1.mpd (retrieved 2026-11-16T17:20:00Z) |
 | 10133-1 | 4 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10133-1.mpd (retrieved 2026-11-16T17:20:00Z) |
+| 10014-1 | 2 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10014-1.mpd (retrieved 2026-11-16T20:31:00Z) |
+| 10020-1 | 4 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10020-1.mpd (retrieved 2026-11-16T20:31:00Z) |
+| 10022-1_Dining-Car | 3 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10022-1_Dining-Car.mpd (retrieved 2026-11-16T20:31:00Z) |
+| 10025-1_Baggage-Car | 3 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10025-1_Baggage-Car.mpd (retrieved 2026-11-16T20:31:00Z) |
+| 10205-1 | 3 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10205-1.mpd (retrieved 2026-11-16T20:31:00Z) |
+| 10013-1 | 6 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10013-1.mpd (retrieved 2026-11-16T20:31:00Z) |
+| 10016-1 | 3 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10016-1.mpd (retrieved 2026-11-16T20:31:00Z) |
+| 10017-1 | 3 | TotalyWicked [TotalyWicked] | Redistributable under CCAL version 2.0 : see CAreadme.txt | https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10017-1.mpd (retrieved 2026-11-16T20:31:00Z) |
 | switch-then-reversed-curve | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from measured track-end poses |  | generated by tools/asset-pipeline `cli.ts facts`: parts placed from the measured track-end poses in docs/verified-facts/geometry.json (retrieved 2026-11-16) |
 | road-baseplates | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents |  | generated by tools/asset-pipeline `cli.ts facts`: plates abutted edge to edge using the measured plate extents in docs/verified-facts/geometry.json (retrieved 2026-11-16) |
 | r40-circle-9v | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math) |  | generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json) (retrieved 2026-11-16) |
