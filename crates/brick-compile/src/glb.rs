@@ -13,7 +13,7 @@ const TARGET_ELEMENT_ARRAY_BUFFER: u32 = 34963;
 const MODE_TRIANGLES: u32 = 4;
 
 fn pad_to_four(bytes: &mut Vec<u8>, fill: u8) {
-    while bytes.len() % 4 != 0 {
+    while !bytes.len().is_multiple_of(4) {
         bytes.push(fill);
     }
 }
