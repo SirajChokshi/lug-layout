@@ -1,0 +1,29 @@
+verdict draft errors 2 parts 4912 issues bomMapping,bomMapping
+svg /opt/cursor/artifacts/m5-svg-restack/Plan-1.plan.svg 78136 bytes, sha256 ace7067a8db7910558dc3e8590df7c344e0bb67a234e0a3233552844d73a7deb
+svg header: <svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="2970mm" viewBox="0 0 420 2970" font-family="Helvetica, Arial, sans-serif">
+  found: drawn at 1:15
+  found: <rect x="1536" y="256" width="2400" height="1200" fill="#ead9bd" stroke="#8a6d3b" stroke-width="5.25"/>
+  found: >2400 mm<
+  found: >1200 mm<
+  module numbers: 1 2 3 4 5 6 7
+  sheets: 1/1 1/1 1/1 1/1 1/2 2/2 1/2 2/2 1/1
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+page.screenshot: Clipped area is either empty or outside the resulting image
+Call log:
+  - taking page screenshot
+  - waiting for fonts to load...
+  - fonts loaded
+
+    at /tmp/pw/svg.mjs:44:16 {
+  log: [
+    '  - taking page screenshot',
+    '  - waiting for fonts to load...',
+    '  - fonts loaded'
+  ],
+  name: 'Error'
+}
+
+Node.js v22.23.4

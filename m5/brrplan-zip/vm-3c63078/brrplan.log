@@ -1,0 +1,10 @@
+verdict draft errors 2 parts 4912 issues bomMapping,bomMapping
+saved /opt/cursor/artifacts/m5-brrplan-restack/Plan-1.brrplan.zip 198400 bytes, sha256 bac46ed42a24a946dd807cf1d0145ee5f0e7eb1455e99e922d0f21d7b4e0ca67
+after reload: placements 0 plans 0
+reopened verdict draft errors 2 parts 4912 message Opened Plan-1.brrplan.zip
+placements identical: true
+plan footprint identical (ignoring generated ids): true
+report identical: true
+saved again 198400 bytes, sha256 bac46ed42a24a946dd807cf1d0145ee5f0e7eb1455e99e922d0f21d7b4e0ca67 identical: true
+
+ALL_DONE
