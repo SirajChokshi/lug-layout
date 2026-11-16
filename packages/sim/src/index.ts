@@ -41,3 +41,12 @@ export {
   type TrainSpec,
   type VehicleSpec,
 } from "./simulation.ts";
+export { BlockMap, NO_BLOCK } from "./blocks/block-map.ts";
+export {
+  ARRIVAL_WINDOW_LDU,
+  BLOCK_CLEARANCE_LDU,
+  BlockKeeper,
+  NO_TRAIN,
+  type TrainRouteState,
+} from "./blocks/block-keeper.ts";
+export { RoutePlanner } from "./routing/route-planner.ts";
