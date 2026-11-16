@@ -1,4 +1,11 @@
-import type { BundleLod, ModelSection, PartBundle, PartFilter } from "@brr/catalog";
+import {
+  directColorSrgb,
+  isDirectColor,
+  type BundleLod,
+  type ModelSection,
+  type PartBundle,
+  type PartFilter,
+} from "@brr/catalog";
 import {
   COLOR_CHANNELS,
   type ChunkInstances,
@@ -64,11 +71,17 @@ export class ColorTable {
   indexOfCode(code: number): number {
     const existing = this.codes.indexOf(code);
     if (existing >= 0) return existing;
-    if (!this.bundle.colors.some((c) => c.code === code)) {
+    if (!isDirectColor(code) && !this.bundle.colors.some((c) => c.code === code)) {
       throw new Error(`LDraw colour ${code} is not in LDConfig`);
     }
     this.codes.push(code);
     return this.codes.length - 1;
+  }
+
+  codeAt(index: number): number {
+    const code = this.codes[index];
+    if (code === undefined) throw new RangeError(`colour index ${index} is not in the table`);
+    return code;
   }
 
   indexOfName(name: string): number {
@@ -81,7 +94,7 @@ export class ColorTable {
     const lookup = ldrawColorsSrgb(this.bundle);
     const srgb = new Uint8Array(this.codes.length * COLOR_CHANNELS);
     this.codes.forEach((code, i) => {
-      const value = lookup.get(code) ?? 0;
+      const value = isDirectColor(code) ? directColorSrgb(code) : (lookup.get(code) ?? 0);
       srgb[i * COLOR_CHANNELS] = (value >> 16) & 0xff;
       srgb[i * COLOR_CHANNELS + 1] = (value >> 8) & 0xff;
       srgb[i * COLOR_CHANNELS + 2] = value & 0xff;
@@ -91,7 +104,15 @@ export class ColorTable {
 }
 
 export function ldrawColorsSrgb(bundle: PartBundle): ReadonlyMap<number, number> {
-  return new Map(bundle.colors.map((c) => [c.code, Number.parseInt(c.rgb.slice(1), 16)]));
+  const colors = new Map(bundle.colors.map((c) => [c.code, Number.parseInt(c.rgb.slice(1), 16)]));
+  for (const part of bundle.parts) {
+    for (const group of part.mesh.groups) {
+      if (isDirectColor(group.ldrawColor)) {
+        colors.set(group.ldrawColor, directColorSrgb(group.ldrawColor));
+      }
+    }
+  }
+  return colors;
 }
 
 function partPalette(

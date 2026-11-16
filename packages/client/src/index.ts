@@ -52,13 +52,71 @@ export type {
   TrackSolveStats,
   TrackView,
 } from "./edit/editor.ts";
+export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
+export { MM_PER_STUD } from "@brr/math";
 export {
+  DEFAULT_MAX_OVERHANG_MM,
+  PLAN_GRID_MM,
+  type IPlanService,
+  type NewPlan,
+  type ObstacleInput,
+  type PlacedForPlan,
+  type PlanPatch,
+  type PlanSnapshot,
+  type TableInput,
+} from "./plan/plan-service.ts";
+export type {
+  IssueSeverity,
+  LduRect,
+  MmRect,
+  PlacementKey,
+  PlanCheck,
+  PlanIssue,
+  PlanObstacle,
+  PlanPlacement,
+  PlanRegion,
+  PlanRuleId,
+  PlanTable,
+  TableTop,
+} from "@brr/domain";
+export {
+  DEFAULT_MODULE_PROFILE,
+  type BuildableSnapshot,
+  type IBuildableService,
+  type PlanSettings,
+} from "./plan/buildable-service.ts";
+export type {
+  PartCount,
+  BuildableReport,
+  BuildableVerdict,
+  ModuleProfileId,
+  PlacementBom,
+  PlanBom,
+  PlanBomEntry,
+} from "@brr/domain";
+export {
+  BOM_SERVICE,
+  BUILDABLE_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
+  PLAN_SERVICE,
   TRACK_SCENE,
+  IMPORT_SCENE,
+  MODEL_IMPORTER,
 } from "./tokens.ts";
-export { TRACK_ITEM_ID } from "./edit/editor.ts";
-export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
+export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
+export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
+export type { ImportReport, ImportResult, PartResolution, PartResolutionKind } from "@brr/import";
+export type {
+  BillOfMaterials,
+  BomFiles,
+  BomInput,
+  BomScope,
+  IBomService,
+  IBomSource,
+} from "./bom/bom-service.ts";
+export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";

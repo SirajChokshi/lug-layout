@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 const DISCLAIMER: &str =
     "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.";
 const LDCONFIG: &str = "ldconfig.ldr";
+const COMPILER_FILE: &str = "brick-compile.wasm";
 
 struct FsLibrary {
     files: HashMap<String, String>,
@@ -57,6 +58,7 @@ struct Args {
     palette: PathBuf,
     out: PathBuf,
     lod: Lod,
+    compiler: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -81,6 +83,7 @@ fn parse_args() -> Result<Args, String> {
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
         lod,
+        compiler: values.get("--compiler").map(PathBuf::from),
     })
 }
 
@@ -197,6 +200,15 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+    };
+    let compiler = match &args.compiler {
+        Some(path) => {
+            fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
+            fs::copy(path, args.out.join(COMPILER_FILE))
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            json!({ "file": COMPILER_FILE, "unofficialAllowlist": unofficial_allowlist })
+        }
+        None => Value::Null,
     };
     let part_options = CompileOptions {
         lod: args.lod,
@@ -423,6 +435,7 @@ fn run(args: &Args) -> Result<(), String> {
         "credits": credits.into_values().collect::<Vec<_>>(),
         "modified": modified_note(args.lod),
         "disclaimer": DISCLAIMER,
+        "compiler": compiler,
     });
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(args.out.join("manifest.json"), text + "\n").map_err(|e| e.to_string())?;

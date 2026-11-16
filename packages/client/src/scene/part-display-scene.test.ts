@@ -16,6 +16,10 @@ import { PALETTE_PARTS } from "./viewer-scene.ts";
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
 class BundleDirectoryFetcher implements IAssetFetcher {
+  url(path: string): string {
+    return new URL(path, bundleRoot).href;
+  }
+
   async bytes(path: string): Promise<ArrayBuffer> {
     const buffer = await readFile(new URL(path, bundleRoot));
     return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -39,6 +43,8 @@ class RecordingBackend implements ISceneBackend {
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
+  setPlanOverlays(): void {}
+  setIssueBoxes(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -54,7 +60,14 @@ class RecordingBackend implements ISceneBackend {
 
 it("shows every palette part on the integer lattice when resolved through the real modules", async () => {
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+  container.load(
+    ...mainThreadModules({
+      bundleBaseUrl: "unused",
+      createImportWorker: () => {
+        throw new Error("not used");
+      },
+    }),
+  );
   const backend = new RecordingBackend();
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());

@@ -17,6 +17,10 @@ import { buildTrackPlan } from "./track-plan.ts";
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
 class BundleDirectoryFetcher implements IAssetFetcher {
+  url(path: string): string {
+    return new URL(path, bundleRoot).href;
+  }
+
   async bytes(path: string): Promise<ArrayBuffer> {
     const buffer = await readFile(new URL(path, bundleRoot));
     return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -44,7 +48,14 @@ let trackParts: ReadonlyArray<PartAsset>;
 
 beforeAll(async () => {
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+  container.load(
+    ...mainThreadModules({
+      bundleBaseUrl: "unused",
+      createImportWorker: () => {
+        throw new Error("not used");
+      },
+    }),
+  );
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const bundle = await container
     .get(PART_BUNDLE_LOADER)

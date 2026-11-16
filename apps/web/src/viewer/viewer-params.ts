@@ -1,6 +1,6 @@
-import type { BundleLod, CityCamera, GraphicsApi } from "@brr/client";
+import type { BundleLod, CityCamera, GraphicsApi, PlacementRegion } from "@brr/client";
 
-export type AppMode = "edit" | "parts" | "model" | "city" | "track";
+export type AppMode = "edit" | "parts" | "model" | "city" | "import" | "track";
 
 export interface ViewerParams {
   readonly mode: AppMode;
@@ -10,12 +10,14 @@ export interface ViewerParams {
   readonly model: string | null;
   readonly track: string | null;
   readonly city: boolean;
+  readonly importer: boolean;
   readonly parts: number;
   readonly seed: number;
   readonly camera: CityCamera;
   readonly originChunkX: number;
   readonly originChunkZ: number;
   readonly dumpWorld: boolean;
+  readonly region: PlacementRegion | null;
   readonly measure: boolean;
   readonly warmupFrames: number;
   readonly measuredFrames: number;
@@ -52,10 +54,30 @@ function originChunks(value: string | null): readonly [number, number] {
 function appMode(params: URLSearchParams): AppMode {
   const scene = params.get("scene");
   if (scene === "city") return "city";
+  if (scene === "import") return "import";
   if (params.get("track") !== null) return "track";
   if (params.get("model") !== null) return "model";
   if (scene === "parts") return "parts";
   return "edit";
+}
+
+function placementRegion(value: string | null): PlacementRegion | null {
+  if (value === null) return null;
+  const bounds = value.split(",").map(Number);
+  const [minX, minZ, maxX, maxZ] = bounds;
+  if (
+    bounds.length !== 4 ||
+    minX === undefined ||
+    minZ === undefined ||
+    maxX === undefined ||
+    maxZ === undefined ||
+    !bounds.every(Number.isInteger) ||
+    minX >= maxX ||
+    minZ >= maxZ
+  ) {
+    throw new Error(`region=${value} is not integer LDU bounds "minX,minZ,maxX,maxZ"`);
+  }
+  return { minX, minZ, maxX, maxZ };
 }
 
 export function readViewerParams(search: string): ViewerParams {
@@ -69,12 +91,14 @@ export function readViewerParams(search: string): ViewerParams {
     model: params.get("model"),
     track: params.get("track"),
     city: params.get("scene") === "city",
+    importer: params.get("scene") === "import",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",
     originChunkX,
     originChunkZ,
     dumpWorld: params.get("dumpWorld") === "1",
+    region: placementRegion(params.get("region")),
     measure: params.get("measure") === "1",
     warmupFrames: positiveNumber(params.get("warmup"), DEFAULT_WARMUP_FRAMES),
     measuredFrames: positiveNumber(params.get("frames"), DEFAULT_MEASURED_FRAMES),

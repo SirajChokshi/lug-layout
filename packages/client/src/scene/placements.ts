@@ -67,6 +67,8 @@ export function chunkInstances(view: ChunkView): ChunkPartInstances {
 }
 
 export interface PlacementDump {
+  readonly chunkKey: ReadonlyArray<number>;
+  readonly slot: ReadonlyArray<number>;
   readonly refId: ReadonlyArray<number>;
   readonly colorId: ReadonlyArray<number>;
   readonly x: ReadonlyArray<number>;
@@ -76,6 +78,8 @@ export interface PlacementDump {
 }
 
 export function dumpPlacements(world: World): PlacementDump {
+  const chunkKey: number[] = [];
+  const slot: number[] = [];
   const refId: number[] = [];
   const colorId: number[] = [];
   const x: number[] = [];
@@ -85,6 +89,8 @@ export function dumpPlacements(world: World): PlacementDump {
   for (const chunk of world.chunks()) {
     for (let i = 0; i < chunk.count; i++) {
       if (((chunk.flags[i] ?? 0) & SLOT_LIVE) === 0) continue;
+      chunkKey.push(chunk.key);
+      slot.push(i);
       refId.push(chunk.refId[i] ?? 0);
       colorId.push(chunk.colorId[i] ?? 0);
       x.push(chunk.x[i] ?? 0);
@@ -93,5 +99,5 @@ export function dumpPlacements(world: World): PlacementDump {
       rot.push(chunk.rot[i] ?? 0);
     }
   }
-  return { refId, colorId, x, z, yPlates, rot };
+  return { chunkKey, slot, refId, colorId, x, z, yPlates, rot };
 }

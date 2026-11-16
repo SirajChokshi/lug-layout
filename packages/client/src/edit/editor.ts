@@ -7,8 +7,9 @@ import {
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
 import { EditHistory, World, type AppliedEdit, type EditKind, type HistoryStep } from "@brr/domain";
-import { STUD_LDU } from "@brr/math";
+import { STUD_LDU, chunkOf } from "@brr/math";
 import {
+  CAMERA_FOV_DEGREES,
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
@@ -28,7 +29,12 @@ import {
   type RebuildReport,
   type ViewUpdate,
 } from "./placed-chunks.ts";
-import { baseplatePlaceable, modelPlaceable, type Placeable } from "./placeable.ts";
+import { itemSpecOf } from "./item-specs.ts";
+import { modelPlaceable, platePlaceable, type Placeable } from "./placeable.ts";
+import { roomRect } from "@brr/domain";
+import { BUILDABLE_SERVICE, PLAN_SERVICE } from "../tokens.ts";
+import type { IBuildableService } from "../plan/buildable-service.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
@@ -167,6 +173,8 @@ export interface IEditor {
   zoom(wheelDelta: number): void;
   focusSelection(): void;
   centreOnCursor(): void;
+  planOriginHere(): { readonly chunkX: number; readonly chunkZ: number };
+  viewPlanFromAbove(planId: string): void;
   dump(): EditorDump;
 }
 
@@ -259,6 +267,8 @@ export class Editor implements IEditor {
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
+    @inject(PLAN_SERVICE) private readonly plans: IPlanService,
+    @inject(BUILDABLE_SERVICE) private readonly buildable: IBuildableService,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -289,12 +299,22 @@ export class Editor implements IEditor {
       });
       const bundle = await this.loader.load(
         EDITOR_LOD,
-        (part) => part.id === BASEPLATE_ID || part.role === "track",
+        (part) => part.id === BASEPLATE_ID || part.role === "road" || part.role === "track",
       );
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
       this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+      this.plans.setTableTopY(this.baseplateBottomY());
+      const crosswalk = await this.loader.loadCrosswalk("standard");
+      this.buildable.setCatalog(
+        this.placeables.map((placeable) =>
+          itemSpecOf(placeable, palette.parts, bundle.moduleStandards),
+        ),
+        bundle.moduleStandards,
+        crosswalk,
+        Object.fromEntries(bundle.colors.map((color) => [color.code, color.name])),
+      );
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -331,6 +351,26 @@ export class Editor implements IEditor {
     }
   }
 
+  private baseplateBottomY(): number {
+    const baseplate = this.placeables.find((p) => p.kind === "baseplate");
+    if (!baseplate) throw new Error(`the bundle has no ${BASEPLATE_ID} baseplate`);
+    return baseplate.box.min[1];
+  }
+
+  private syncPlan(): void {
+    this.plans.setPlacements(
+      this.placed.models().map((model) => ({
+        key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
+        ref: model.placeable.id,
+        label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
+        box: model.box,
+        x: model.handle.x,
+        z: model.handle.z,
+        rot: model.handle.rot,
+      })),
+    );
+  }
+
   private async loadPlaceables(
     bundle: PartBundle,
     palette: MergedParts,
@@ -345,8 +385,28 @@ export class Editor implements IEditor {
     const loaded = await Promise.all(
       sets.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
+    const roads = bundle.parts.filter((part) => part.role === "road");
     return [
-      baseplatePlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
+      platePlaceable(
+        baseplate,
+        baseplateIndex,
+        baseplateColor.code,
+        { kind: "baseplate", label: `${BASEPLATE_ID.replace("ldraw:", "")} baseplate 32×32` },
+        palette.parts,
+        colors,
+      ),
+      ...roads.map((road) => {
+        const color = road.producedColor;
+        if (color === undefined) throw new Error(`${road.id} has no produced display colour`);
+        return platePlaceable(
+          road,
+          palette.indexOf(road.id),
+          color,
+          { kind: "road", label: `${road.id.replace("ldraw:", "")} road plate 32×32` },
+          palette.parts,
+          colors,
+        );
+      }),
       ...loaded.map(({ bundle: modelBundle, entry, model }) =>
         modelPlaceable(
           entry.name,
@@ -679,6 +739,7 @@ export class Editor implements IEditor {
         redoDepth: this.history.redoDepth,
       },
     });
+    this.syncPlan();
     return view;
   }
 
@@ -761,6 +822,25 @@ export class Editor implements IEditor {
   centreOnCursor(): void {
     if (!this.hovering) return;
     this.camera.centreOn(this.hoverX, this.hoverZ);
+    this.camera.apply(this.backend);
+  }
+
+  planOriginHere(): { readonly chunkX: number; readonly chunkZ: number } {
+    const [x, z] = this.camera.targetXZ();
+    return { chunkX: chunkOf(x), chunkZ: chunkOf(z) };
+  }
+
+  viewPlanFromAbove(planId: string): void {
+    const plan = this.plans.snapshot().plans.find((p) => p.id === planId);
+    if (!plan) return;
+    const room = roomRect(plan);
+    const canvas = this.canvas;
+    const aspect = canvas ? canvas.clientWidth / Math.max(canvas.clientHeight, 1) : 1;
+    this.camera.topDown(
+      { ...room, minY: 0, maxY: 0 },
+      (CAMERA_FOV_DEGREES * Math.PI) / 180,
+      aspect,
+    );
     this.camera.apply(this.backend);
   }
 
