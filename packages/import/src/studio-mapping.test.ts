@@ -92,3 +92,22 @@ describe("mapStudioParts", () => {
     ]);
   });
 });
+
+describe("a sole BrickLink candidate", () => {
+  it("is reported missing, never renamed, when it is absent from the pin, whether or not it equals Studio's name", async () => {
+    const soleCandidates = new BricklinkPartsCrosswalk({
+      "3005": ["ldraw:3005"],
+      "6141": ["ldraw:4073"],
+      "3004": ["ldraw:3004"],
+    });
+    const pinned: LdrawPartExists = { isLdrawPart: async (reference) => reference === "3004.dat" };
+    const lines = [`1 4 ${MATRIX} 3005.dat`, `1 4 ${MATRIX} 6141.dat`, `1 4 ${MATRIX} 3004.dat`];
+    const mapping = await mapStudioParts(archive(lines), soleCandidates, pinned, new Set([4]));
+    expect(mapping.ldraw).toBe(lines.join("\n"));
+    expect(Object.fromEntries(mapping.parts.map((p) => [p.studio, p.outcome]))).toEqual({
+      "3004.dat": { kind: "kept" },
+      "3005.dat": { kind: "crosswalkTargetMissing", ldraw: "3005" },
+      "6141.dat": { kind: "crosswalkTargetMissing", ldraw: "4073" },
+    });
+  });
+});

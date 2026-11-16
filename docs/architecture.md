@@ -85,7 +85,7 @@ Every part and model comes through a **`PartSource`** plugin. Each source declar
 The browser import worker and the OMR ingest share the same code.
 1. Unpack and parse the file. For `.io`, prefer `modelv2.ldr`, then `model2.ldr`, then `model.ldr`.
 2. Resolve each part in order: our library, then aliases, then the Rebrickable crosswalk, then inline definitions. Parts that can't be resolved become box placeholders and get a badge.
-3. Map colors. Unknown Studio colors snap to the nearest canonical color, with a warning.
+3. Map colors. Instances in an unknown colour, including Studio-only codes, are skipped and reported, never snapped to a nearby colour.
 4. Build the **instance list**: part id, color id and a 4×3 matrix in LDU. Keep the **submodel tree**, because bogies and vehicles need it.
 5. Build the **BOM**, normalized through aliases and `part_relationships`.
 6. **Remove covered studs inside the model**: a stud with an anti-stud or solid underside directly above it is dropped.

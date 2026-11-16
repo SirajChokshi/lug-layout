@@ -135,13 +135,11 @@ async function decide(
   if (archive.customParts.includes(reference)) return { kind: "custom" };
   const name = stem(reference);
   const candidates = [...new Set(crosswalk.ldrawCandidates(bricklinkId).map(stem))].toSorted();
-  if (candidates.length === 0 || (candidates.length === 1 && candidates[0] === name)) {
-    return { kind: "kept" };
-  }
+  if (candidates.length === 0) return { kind: "kept" };
   if (await exists.isLdrawPart(reference)) return { kind: "kept" };
   const [only] = candidates;
   if (candidates.length === 1 && only !== undefined) {
-    return (await exists.isLdrawPart(withExtension(only)))
+    return only !== name && (await exists.isLdrawPart(withExtension(only)))
       ? { kind: "bricklinkCrosswalk", ldraw: only }
       : { kind: "crosswalkTargetMissing", ldraw: only };
   }

@@ -54,18 +54,24 @@ pub struct ZipArchive<'a> {
     entries: Vec<ZipEntry>,
 }
 
-fn u16_at(bytes: &[u8], offset: usize) -> Result<u16, ZipError> {
+fn add(base: usize, delta: usize) -> Result<usize, ZipError> {
+    base.checked_add(delta).ok_or(ZipError::Truncated)
+}
+
+fn span(bytes: &[u8], start: usize, length: usize) -> Result<&[u8], ZipError> {
     bytes
-        .get(offset..offset + 2)
-        .map(|b| u16::from_le_bytes([b[0], b[1]]))
+        .get(start..add(start, length)?)
         .ok_or(ZipError::Truncated)
 }
 
-fn u32_at(bytes: &[u8], offset: usize) -> Result<u32, ZipError> {
-    bytes
-        .get(offset..offset + 4)
-        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .ok_or(ZipError::Truncated)
+fn u16_at(bytes: &[u8], base: usize, field: usize) -> Result<u16, ZipError> {
+    let b = span(bytes, add(base, field)?, 2)?;
+    Ok(u16::from_le_bytes([b[0], b[1]]))
+}
+
+fn u32_at(bytes: &[u8], base: usize, field: usize) -> Result<u32, ZipError> {
+    let b = span(bytes, add(base, field)?, 4)?;
+    Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
 }
 
 fn size(value: u32) -> Result<usize, ZipError> {
@@ -83,37 +89,38 @@ fn end_record_offset(bytes: &[u8]) -> Result<usize, ZipError> {
     let first = last.saturating_sub(MAX_ARCHIVE_COMMENT_BYTES);
     (first..=last)
         .rev()
-        .find(|&offset| u32_at(bytes, offset) == Ok(END_OF_CENTRAL_DIRECTORY))
+        .find(|&offset| u32_at(bytes, offset, 0) == Ok(END_OF_CENTRAL_DIRECTORY))
         .ok_or(ZipError::NotZip)
 }
 
 impl<'a> ZipArchive<'a> {
     pub fn parse(bytes: &'a [u8]) -> Result<Self, ZipError> {
         let end = end_record_offset(bytes)?;
-        let count = usize::from(u16_at(bytes, end + 10)?);
-        let mut offset = size(u32_at(bytes, end + 16)?)?;
+        let count = usize::from(u16_at(bytes, end, 10)?);
+        let mut offset = size(u32_at(bytes, end, 16)?)?;
         let mut entries = Vec::with_capacity(count);
         for _ in 0..count {
-            if u32_at(bytes, offset)? != CENTRAL_DIRECTORY_ENTRY {
+            if u32_at(bytes, offset, 0)? != CENTRAL_DIRECTORY_ENTRY {
                 return Err(ZipError::NotZip);
             }
-            let flags = u16_at(bytes, offset + 8)?;
-            let name_length = usize::from(u16_at(bytes, offset + 28)?);
-            let extra_length = usize::from(u16_at(bytes, offset + 30)?);
-            let comment_length = usize::from(u16_at(bytes, offset + 32)?);
-            let name_start = offset + CENTRAL_ENTRY_FIXED_BYTES;
-            let name = bytes
-                .get(name_start..name_start + name_length)
-                .ok_or(ZipError::Truncated)?;
+            let flags = u16_at(bytes, offset, 8)?;
+            let name_length = usize::from(u16_at(bytes, offset, 28)?);
+            let extra_length = usize::from(u16_at(bytes, offset, 30)?);
+            let comment_length = usize::from(u16_at(bytes, offset, 32)?);
+            let name_start = add(offset, CENTRAL_ENTRY_FIXED_BYTES)?;
+            let name = span(bytes, name_start, name_length)?;
             entries.push(ZipEntry {
                 name: String::from_utf8_lossy(name).replace('\\', "/"),
                 encrypted: flags & ENCRYPTED_FLAG != 0,
-                method: u16_at(bytes, offset + 10)?,
-                compressed_size: size(u32_at(bytes, offset + 20)?)?,
-                uncompressed_size: size(u32_at(bytes, offset + 24)?)?,
-                local_header_offset: size(u32_at(bytes, offset + 42)?)?,
+                method: u16_at(bytes, offset, 10)?,
+                compressed_size: size(u32_at(bytes, offset, 20)?)?,
+                uncompressed_size: size(u32_at(bytes, offset, 24)?)?,
+                local_header_offset: size(u32_at(bytes, offset, 42)?)?,
             });
-            offset = name_start + name_length + extra_length + comment_length;
+            offset = add(
+                add(add(name_start, name_length)?, extra_length)?,
+                comment_length,
+            )?;
         }
         Ok(ZipArchive { bytes, entries })
     }
@@ -138,16 +145,16 @@ impl<'a> ZipArchive<'a> {
             });
         }
         let header = entry.local_header_offset;
-        if u32_at(self.bytes, header)? != LOCAL_FILE_HEADER {
+        if u32_at(self.bytes, header, 0)? != LOCAL_FILE_HEADER {
             return Err(ZipError::NotZip);
         }
-        let name_length = usize::from(u16_at(self.bytes, header + 26)?);
-        let extra_length = usize::from(u16_at(self.bytes, header + 28)?);
-        let start = header + LOCAL_HEADER_FIXED_BYTES + name_length + extra_length;
-        let data = self
-            .bytes
-            .get(start..start + entry.compressed_size)
-            .ok_or(ZipError::Truncated)?;
+        let name_length = usize::from(u16_at(self.bytes, header, 26)?);
+        let extra_length = usize::from(u16_at(self.bytes, header, 28)?);
+        let start = add(
+            add(add(header, LOCAL_HEADER_FIXED_BYTES)?, name_length)?,
+            extra_length,
+        )?;
+        let data = span(self.bytes, start, entry.compressed_size)?;
         match entry.method {
             METHOD_STORED => Ok(data.to_vec()),
             METHOD_DEFLATED => {

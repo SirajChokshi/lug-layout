@@ -1,7 +1,7 @@
 import type { BrickCompiler, StudioRejection } from "./brick-compiler.ts";
 import type { StudioFileInput } from "./worker-protocol.ts";
 import type { LdrawMirror } from "./ldraw-mirror.ts";
-import { ModelImportEngine, type ImportResult } from "./model-import.ts";
+import { bundlePartId, ModelImportEngine, type ImportResult } from "./model-import.ts";
 import {
   BricklinkPartsCrosswalk,
   mapStudioParts,
@@ -35,9 +35,13 @@ export type StudioPrepared =
 const LIBRARY_PART_DIRECTORY = "parts/";
 
 export class MirrorPartExists implements LdrawPartExists {
-  constructor(private readonly mirror: LdrawMirror) {}
+  constructor(
+    private readonly mirror: LdrawMirror,
+    private readonly bundlePartIds: ReadonlySet<string>,
+  ) {}
 
   async isLdrawPart(reference: string): Promise<boolean> {
+    if (this.bundlePartIds.has(bundlePartId(reference))) return true;
     return (await this.mirror.file(`${LIBRARY_PART_DIRECTORY}${reference}`)) !== undefined;
   }
 }
@@ -81,7 +85,7 @@ export async function importStudioFile(
     input.job.fileName,
     input.bytes,
     new BricklinkPartsCrosswalk(input.bricklinkParts),
-    new MirrorPartExists(mirror),
+    new MirrorPartExists(mirror, new Set(input.job.bundlePartIds)),
     new Set(input.job.ldconfigCodes),
   );
   if (prepared.kind === "rejected") throw new Error(prepared.rejection.message);
