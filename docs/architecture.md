@@ -362,7 +362,6 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 
 **Code architecture (check in M0).**
 28. Whether Inversify (current major version) works with explicit `@inject(TOKEN)` parameter decorators when compiled by Vite's esbuild and Vitest with `experimentalDecorators` on and `emitDecoratorMetadata` off, and whether it still needs the `reflect-metadata` polyfill at runtime. If parameter decorators cause trouble, fall back to `toDynamicValue` factory bindings (§14.3).
-    **Cleared 2026-11-16 (M0).** Inversify 8.3.0 works. Vite 8.3.8 now transforms with Oxc instead of esbuild. It reads `experimentalDecorators` from tsconfig and emits the legacy `__decorate`/`__decorateParam` helpers, with no `design:*` metadata. A production build in Chrome 157 and Vitest 5.1 on Node both resolve `@injectable` classes through `@inject(TOKEN)` parameters, with singleton scope intact. TypeScript 7.0.2 typechecks the decorators. The app needs no `reflect-metadata` import: Inversify 8 stores its own metadata through the `Reflect` metadata API and imports `reflect-metadata/lite` itself from `@inversifyjs/container`, with `reflect-metadata` 0.2.2 as a peer. No fallback to `toDynamicValue` is needed.
 29. Whether Turborepo's `boundaries` check is mature enough to enforce package layers. If not, use dependency-cruiser (§14.2).
 
 ## 12. Owner decisions still open (recommended default first)
