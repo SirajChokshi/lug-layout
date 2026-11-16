@@ -1,5 +1,5 @@
 import type { IViewerScene, PlacementDump } from "@brr/client";
-import { ABOUT_HREF, CREDITS_HREF } from "@brr/ui";
+import { CreditLinks, partsCreditText } from "@brr/ui";
 import { useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
@@ -148,9 +148,8 @@ export function App({ scene, params, placements }: AppProps) {
       </aside>
       <footer>
         {report && modelCredit(report)}
-        {report &&
-          `Parts and colours: LDraw parts library, ${report.summary.creditedFiles} files, modified from LDraw: flattened, studs extracted. `}
-        {TRADEMARK_DISCLAIMER} <a href={CREDITS_HREF}>Credits</a> · <a href={ABOUT_HREF}>About</a>
+        {report && partsCreditText(report.summary.creditedFiles, params.lod)}
+        {TRADEMARK_DISCLAIMER} <CreditLinks />
       </footer>
     </>
   );

@@ -1,4 +1,9 @@
-import { PART_BUNDLE_LOADER, type IPartBundleLoader, type PartBundle } from "@brr/catalog";
+import {
+  PART_BUNDLE_LOADER,
+  type BundleLod,
+  type IPartBundleLoader,
+  type PartBundle,
+} from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
 import { World } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
@@ -84,7 +89,7 @@ export interface EditorSnapshot {
 
 export interface EditorCredits {
   readonly partFiles: number;
-  readonly partLicenses: ReadonlyArray<string>;
+  readonly partFilesLod: BundleLod;
   readonly models: ReadonlyArray<ModelCredit>;
 }
 
@@ -117,6 +122,7 @@ export interface IEditor {
   dump(): EditorDump;
 }
 
+const EDITOR_LOD: BundleLod = "standard";
 const BASEPLATE_ID = "ldraw:3811";
 const BASEPLATE_COLOR_NAME = "Green";
 const QUARTER_TURNS = 4;
@@ -220,7 +226,7 @@ export class Editor implements IEditor {
         pixelRatio: options.pixelRatio,
         antialias: true,
       });
-      const bundle = await this.loader.load("standard", (part) => part.id === BASEPLATE_ID);
+      const bundle = await this.loader.load(EDITOR_LOD, (part) => part.id === BASEPLATE_ID);
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
@@ -243,7 +249,7 @@ export class Editor implements IEditor {
         })),
         credits: {
           partFiles: bundle.credits.length,
-          partLicenses: [...new Set(bundle.credits.map((c) => c.license ?? "none"))],
+          partFilesLod: EDITOR_LOD,
           models: this.placeables.flatMap((p) => (p.credit ? [p.credit] : [])),
         },
       });
@@ -268,7 +274,7 @@ export class Editor implements IEditor {
     if (!baseplateColor) throw new Error(`LDConfig colour ${BASEPLATE_COLOR_NAME} is missing`);
     const sets = bundle.models.filter((entry) => entry.origin === "omr");
     const loaded = await Promise.all(
-      sets.map((entry) => this.loader.loadModel("standard", entry.name)),
+      sets.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
     return [
       baseplatePlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),

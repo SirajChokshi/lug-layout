@@ -1,9 +1,22 @@
+import type { BundleLod } from "@brr/client";
 import type { ReactNode } from "react";
 import type { CreditsState } from "./use-credits.ts";
 
 export const CREDITS_HREF = "?page=credits";
 export const ABOUT_HREF = "?page=about";
 export const EDITOR_HREF = "./";
+
+export function partsCreditText(files: number, lod: BundleLod): string {
+  return `Parts and colours: LDraw parts library, ${files} files credited for the ${lod}-detail bundle (every level of detail is on the Credits page), modified from LDraw: flattened, studs extracted. `;
+}
+
+export function CreditLinks() {
+  return (
+    <>
+      <a href={CREDITS_HREF}>Credits</a> · <a href={ABOUT_HREF}>About</a>
+    </>
+  );
+}
 
 interface SitePageProps {
   readonly title: string;
