@@ -1,0 +1,59 @@
+Brick Railroad
+API
+webgl2
+Adapter
+Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)
+Drawing buffer
+960×600 px (devicePixelRatio 1)
+Bundle
+0ab83549abdd1bc0
+Parts
+1,325
+Modules
+40
+Stud instances (drawn of total)
+3,520 of 3,520
+Scene triangles
+591,640
+Load
+245 ms
+GPU buffers allocated so far, JS heap
+vertex+index 5.1 MiB, other 0.1 MiB, JS heap 24.6 MiB
+Render origin (chunks), rebases
+(-5, -2); 6 rebases, last at frame 190
+Track placements
+68
+Exact joins
+70 of 140 ends paired
+Open ends
+0
+Coincident ends not joined
+0
+Switches
+4
+Directed edges (reachable from edge 0)
+144 (144)
+Chunk tiers near/mid/far
+40 / 0 / 0
+Draw calls
+107
+Drawn triangles
+223,661
+Scene coverage
+11%
+Frame rate (rAF)
+4.7 fps
+Sim tick (60 Hz, worker)
+4,816
+Sim state hash
+05bfc7f8
+Sim step cost (live, worker clock)
+2.91 µs/tick over 4,816 ticks
+Trains (speed LDU/s)
+3 (400, 400, 400)
+Train edges
+100, 52, 72
+Vehicle (LDU)
+length 706.0, bogies at 183.0 and 523.0 from 4 wheelsets
+Route path end vs exact end
+9.7e-13 LDU, 0.0e+0 rad

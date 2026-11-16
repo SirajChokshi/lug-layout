@@ -1,0 +1,926 @@
+{
+ "url": "http://localhost:4182/?api=webgl2&lod=low&run=1&autopilot=1&trains=70@300;30@100;110@100&track=ldraw%3A75541-f1%2Cldraw%3A74746%2Cldraw%3A74747.1*3%2Cldraw%3A74747*7%2Cldraw%3A74746%2Cldraw%3A74747*5%2Cldraw%3A74746*5%2C%2F%2Cldraw%3A74746*2%2Cldraw%3A75541-f1%2Cldraw%3A74746*8%2Cldraw%3A75542-f1.1%2Cldraw%3A74746*2%2Cldraw%3A75541-f1%2Cldraw%3A74746%2Cldraw%3A74747.1*3%2Cldraw%3A74747*7%2Cldraw%3A74746%2Cldraw%3A74747*5%2Cldraw%3A74746*5%2C%2F%2Cldraw%3A74747%2Cldraw%3A74746*6%2Cldraw%3A74747",
+ "errors": [],
+ "samples": [
+  {
+   "tick": 3828,
+   "stateHash": 755140709,
+   "trains": 3,
+   "trainEdge": [
+    129,
+    124,
+    0
+   ],
+   "trainOffsetLdu": [
+    294.15926535897927,
+    248.83517757169983,
+    349.99999999999915
+   ],
+   "trainSpeedLduPerS": [
+    0,
+    400,
+    400
+   ],
+   "arrivals": [
+    2,
+    1,
+    1
+   ],
+   "routeStates": [
+    "arrived",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.946370838867,
+   "checkedTicks": 3828,
+   "tickCost": {
+    "ticks": 3828,
+    "stepMs": 97.39999983878806,
+    "frames": 3828
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 7543,
+   "stateHash": 2253510580,
+   "trains": 3,
+   "trainEdge": [
+    57,
+    50,
+    102
+   ],
+   "trainOffsetLdu": [
+    300.00000000000074,
+    241.22415795638966,
+    34.6167017512204
+   ],
+   "trainSpeedLduPerS": [
+    0,
+    400,
+    400
+   ],
+   "arrivals": [
+    4,
+    4,
+    3
+   ],
+   "routeStates": [
+    "waiting",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388666,
+   "checkedTicks": 7543,
+   "tickCost": {
+    "ticks": 7543,
+    "stepMs": 164.69999970588833,
+    "frames": 7543
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 11202,
+   "stateHash": 2022622896,
+   "trains": 3,
+   "trainEdge": [
+    76,
+    59,
+    42
+   ],
+   "trainOffsetLdu": [
+    74.55749128971645,
+    154.55749128972374,
+    164.2776862819722
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    400,
+    400
+   ],
+   "arrivals": [
+    6,
+    6,
+    5
+   ],
+   "routeStates": [
+    "routed",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388666,
+   "checkedTicks": 11202,
+   "tickCost": {
+    "ticks": 11202,
+    "stepMs": 209.2999995853752,
+    "frames": 11201
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 14918,
+   "stateHash": 1909211848,
+   "trains": 3,
+   "trainEdge": [
+    18,
+    129,
+    83
+   ],
+   "trainOffsetLdu": [
+    245.04440784612052,
+    294.159265358973,
+    391.25000000000347
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    0,
+    350
+   ],
+   "arrivals": [
+    8,
+    9,
+    8
+   ],
+   "routeStates": [
+    "routed",
+    "waiting",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388664,
+   "checkedTicks": 14918,
+   "tickCost": {
+    "ticks": 14918,
+    "stepMs": 255.0999994496815,
+    "frames": 14917
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 18558,
+   "stateHash": 3215432281,
+   "trains": 3,
+   "trainEdge": [
+    116,
+    53,
+    135
+   ],
+   "trainOffsetLdu": [
+    102.99444293066911,
+    220.7499999999963,
+    178.28905055380085
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    267.5,
+    400
+   ],
+   "arrivals": [
+    10,
+    11,
+    10
+   ],
+   "routeStates": [
+    "routed",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388664,
+   "checkedTicks": 18558,
+   "tickCost": {
+    "ticks": 18558,
+    "stepMs": 305.09999931883067,
+    "frames": 18557
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 22175,
+   "stateHash": 3179610696,
+   "trains": 3,
+   "trainEdge": [
+    46,
+    89,
+    57
+   ],
+   "trainOffsetLdu": [
+    299.99999999999534,
+    160.39822593074615,
+    299.9999999999941
+   ],
+   "trainSpeedLduPerS": [
+    0,
+    400,
+    0
+   ],
+   "arrivals": [
+    13,
+    13,
+    13
+   ],
+   "routeStates": [
+    "arrived",
+    "routed",
+    "waiting"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388664,
+   "checkedTicks": 22175,
+   "tickCost": {
+    "ticks": 22175,
+    "stepMs": 344.59999921452254,
+    "frames": 22174
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 25762,
+   "stateHash": 3535533258,
+   "trains": 3,
+   "trainEdge": [
+    72,
+    26,
+    129
+   ],
+   "trainOffsetLdu": [
+    161.2241579563905,
+    95.07401307686578,
+    294.1592653589779
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    400,
+    0
+   ],
+   "arrivals": [
+    15,
+    15,
+    15
+   ],
+   "routeStates": [
+    "routed",
+    "routed",
+    "waiting"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388664,
+   "checkedTicks": 25762,
+   "tickCost": {
+    "ticks": 25762,
+    "stepMs": 387.19999910425395,
+    "frames": 25761
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 29377,
+   "stateHash": 2484273684,
+   "trains": 3,
+   "trainEdge": [
+    129,
+    122,
+    49
+   ],
+   "trainOffsetLdu": [
+    137.93955652292334,
+    122.16851090503096,
+    143.33333333333536
+   ],
+   "trainSpeedLduPerS": [
+    311.890575452609,
+    400,
+    400
+   ],
+   "arrivals": [
+    17,
+    17,
+    17
+   ],
+   "routeStates": [
+    "routed",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 29377,
+   "tickCost": {
+    "ticks": 29377,
+    "stepMs": 428.79999898700044,
+    "frames": 29376
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 32996,
+   "stateHash": 3467481581,
+   "trains": 3,
+   "trainEdge": [
+    57,
+    3,
+    94
+   ],
+   "trainOffsetLdu": [
+    300.0000000000003,
+    186.2499999999905,
+    204.5870965204685
+   ],
+   "trainSpeedLduPerS": [
+    0,
+    247.5,
+    400
+   ],
+   "arrivals": [
+    20,
+    20,
+    19
+   ],
+   "routeStates": [
+    "waiting",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 32996,
+   "tickCost": {
+    "ticks": 32996,
+    "stepMs": 479.19999887188897,
+    "frames": 32995
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 36597,
+   "stateHash": 1540379255,
+   "trains": 3,
+   "trainEdge": [
+    129,
+    69,
+    32
+   ],
+   "trainOffsetLdu": [
+    294.15926535899894,
+    281.2241579563854,
+    193.42214902558047
+   ],
+   "trainSpeedLduPerS": [
+    0,
+    400,
+    400
+   ],
+   "arrivals": [
+    22,
+    22,
+    21
+   ],
+   "routeStates": [
+    "waiting",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 36597,
+   "tickCost": {
+    "ticks": 36597,
+    "stepMs": 524.599998746533,
+    "frames": 36596
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 40217,
+   "stateHash": 1477091095,
+   "trains": 3,
+   "trainEdge": [
+    4,
+    129,
+    126
+   ],
+   "trainOffsetLdu": [
+    256.66666666666043,
+    294.1592653589981,
+    299.9999999999937
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    0,
+    0
+   ],
+   "arrivals": [
+    24,
+    25,
+    24
+   ],
+   "routeStates": [
+    "routed",
+    "arrived",
+    "arrived"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 40217,
+   "tickCost": {
+    "ticks": 40217,
+    "stepMs": 569.3999986392446,
+    "frames": 40216
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 43849,
+   "stateHash": 1809085418,
+   "trains": 3,
+   "trainEdge": [
+    102,
+    57,
+    50
+   ],
+   "trainOffsetLdu": [
+    141.2833684179055,
+    299.9999999999938,
+    241.22415795640194
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    0,
+    400
+   ],
+   "arrivals": [
+    26,
+    27,
+    26
+   ],
+   "routeStates": [
+    "routed",
+    "waiting",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 43849,
+   "tickCost": {
+    "ticks": 43849,
+    "stepMs": 626.7999985399656,
+    "frames": 43848
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 47470,
+   "stateHash": 1087259387,
+   "trains": 3,
+   "trainEdge": [
+    40,
+    75,
+    59
+   ],
+   "trainOffsetLdu": [
+    224.27768628196773,
+    650.0000000000155,
+    14.557491289714752
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    400,
+    400
+   ],
+   "arrivals": [
+    28,
+    29,
+    28
+   ],
+   "routeStates": [
+    "routed",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 47470,
+   "tickCost": {
+    "ticks": 47470,
+    "stepMs": 666.5999984364025,
+    "frames": 47469
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 51074,
+   "stateHash": 1562115145,
+   "trains": 3,
+   "trainEdge": [
+    126,
+    12,
+    129
+   ],
+   "trainOffsetLdu": [
+    300.87500000001427,
+    187.52220392305247,
+    294.1592653589901
+   ],
+   "trainSpeedLduPerS": [
+    15,
+    400,
+    0
+   ],
+   "arrivals": [
+    31,
+    31,
+    31
+   ],
+   "routeStates": [
+    "routed",
+    "routed",
+    "waiting"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 51074,
+   "tickCost": {
+    "ticks": 51074,
+    "stepMs": 709.4999983124435,
+    "frames": 51073
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 54719,
+   "stateHash": 130615745,
+   "trains": 3,
+   "trainEdge": [
+    141,
+    110,
+    57
+   ],
+   "trainOffsetLdu": [
+    164.95571722047066,
+    192.13890567429388,
+    299.99999999998886
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    400,
+    0
+   ],
+   "arrivals": [
+    33,
+    33,
+    33
+   ],
+   "routeStates": [
+    "routed",
+    "routed",
+    "waiting"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 54719,
+   "tickCost": {
+    "ticks": 54719,
+    "stepMs": 752.7999981897883,
+    "frames": 54718
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 58322,
+   "stateHash": 1233654181,
+   "trains": 3,
+   "trainEdge": [
+    57,
+    46,
+    80
+   ],
+   "trainOffsetLdu": [
+    299.9999999999858,
+    283.41382563079503,
+    487.89082462306476
+   ],
+   "trainSpeedLduPerS": [
+    0,
+    111.77876484361838,
+    400
+   ],
+   "arrivals": [
+    36,
+    35,
+    35
+   ],
+   "routeStates": [
+    "arrived",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 58322,
+   "tickCost": {
+    "ticks": 58322,
+    "stepMs": 803.6999980779365,
+    "frames": 58321
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 61932,
+   "stateHash": 1659746879,
+   "trains": 3,
+   "trainEdge": [
+    129,
+    79,
+    20
+   ],
+   "trainOffsetLdu": [
+    294.15926535898075,
+    7.8908246230636605,
+    130.8851424871295
+   ],
+   "trainSpeedLduPerS": [
+    0,
+    400,
+    400
+   ],
+   "arrivals": [
+    38,
+    38,
+    37
+   ],
+   "routeStates": [
+    "waiting",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.9463708388663,
+   "checkedTicks": 61932,
+   "tickCost": {
+    "ticks": 61932,
+    "stepMs": 853.2999979620799,
+    "frames": 61931
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 65574,
+   "stateHash": 2222445586,
+   "trains": 3,
+   "trainEdge": [
+    53,
+    133,
+    118
+   ],
+   "trainOffsetLdu": [
+    379.6249999999732,
+    64.95571722049647,
+    148.8351775717301
+   ],
+   "trainSpeedLduPerS": [
+    345,
+    400,
+    400
+   ],
+   "arrivals": [
+    40,
+    40,
+    39
+   ],
+   "routeStates": [
+    "routed",
+    "routed",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.94637083886425,
+   "checkedTicks": 65574,
+   "tickCost": {
+    "ticks": 65574,
+    "stepMs": 910.7999978256412,
+    "frames": 65573
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 69182,
+   "stateHash": 3990688292,
+   "trains": 3,
+   "trainEdge": [
+    91,
+    57,
+    46
+   ],
+   "trainOffsetLdu": [
+    139.57229390511247,
+    299.9999999999798,
+    300.000000000026
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    0,
+    0
+   ],
+   "arrivals": [
+    42,
+    43,
+    42
+   ],
+   "routeStates": [
+    "routed",
+    "waiting",
+    "arrived"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.94637083886425,
+   "checkedTicks": 69182,
+   "tickCost": {
+    "ticks": 69182,
+    "stepMs": 958.1999977161177,
+    "frames": 69181
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  },
+  {
+   "tick": 72805,
+   "stateHash": 2911893830,
+   "trains": 3,
+   "trainEdge": [
+    28,
+    129,
+    71
+   ],
+   "trainOffsetLdu": [
+    161.74067974352548,
+    294.1592653590076,
+    61.22415795636959
+   ],
+   "trainSpeedLduPerS": [
+    400,
+    0,
+    400
+   ],
+   "arrivals": [
+    44,
+    45,
+    44
+   ],
+   "routeStates": [
+    "routed",
+    "waiting",
+    "routed"
+   ],
+   "sharedPieceTicks": 0,
+   "minBogieSeparationLdu": 305.94637083886425,
+   "checkedTicks": 72805,
+   "tickCost": {
+    "ticks": 72805,
+    "stepMs": 1004.9999975962564,
+    "frames": 72804
+   },
+   "vehicle": {
+    "lengthLdu": 706,
+    "frontBogieLdu": 183,
+    "rearBogieLdu": 523
+   },
+   "wheelsets": 4,
+   "maxEndResidualLdu": 9.713407672867936e-13,
+   "maxEndHeadingResidualRadians": 0
+  }
+ ]
+}
