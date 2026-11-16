@@ -8,6 +8,9 @@
     "docs/**",
     ".cursor/**",
     "AGENTS.md",
-    "README.md"
+    "README.md",
+    "packages/test-fixtures/**",
+    "tools/asset-pipeline/ldraw.lock.json",
+    "target/**"
   ]
 }
