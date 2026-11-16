@@ -56,6 +56,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
     ]),
     ["Exact joins", integer.format(track.joins)],
     ["Open ends", integer.format(track.openEnds)],
+    ["Coincident ends not joined", integer.format(track.coincidentEndIssues)],
     ["Last release", commitText(track)],
   ];
   if (track.drag) rows.push(...dragRows(track.drag));
