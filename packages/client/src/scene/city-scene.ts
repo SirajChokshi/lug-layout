@@ -8,7 +8,8 @@ import {
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
-import { CHUNK_LDU, CHUNK_STUDS, placementsToInstances } from "./placements.ts";
+import { CHUNK_LDU, CHUNK_STUDS } from "@brr/math";
+import { chunkInstances } from "./placements.ts";
 import {
   generateCity,
   type CityColors,
@@ -152,9 +153,9 @@ export class CityScene implements ICityScene {
       parts,
       cityColors(colors),
     );
-    const chunks = layout.chunks.map((chunk) => ({
+    const chunks = layout.world.chunks().map((chunk) => ({
       key: chunk.key,
-      instances: withStuds(placementsToInstances(chunk), bundle.parts, colors, COVERING_ROLES),
+      instances: withStuds(chunkInstances(chunk), bundle.parts, colors, COVERING_ROLES),
     }));
     this.minX = layout.firstChunk * CHUNK_LDU;
     this.extent = layout.side * CHUNK_LDU;

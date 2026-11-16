@@ -1,6 +1,8 @@
 import type { PartBundle, PartRole } from "@brr/catalog";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
-import { CHUNK_LDU, PlacementWriter, STUD_LDU, type ChunkPlacements } from "./placements.ts";
+import { World } from "@brr/domain";
+import { CHUNK_LDU, STUD_LDU } from "@brr/math";
+import { ModuleWriter } from "./placements.ts";
 import type { ColorTable } from "./viewer-scene.ts";
 
 const SLOT_CELLS = 6;
@@ -40,9 +42,10 @@ function partWithRole(bundle: PartBundle, role: PartRole): number {
   return index;
 }
 
-export function buildPartDisplay(bundle: PartBundle, colors: ColorTable): ChunkPlacements[] {
+export function buildPartDisplay(bundle: PartBundle, colors: ColorTable): World {
   const half = CHUNK_LDU / 2;
-  const studded = new PlacementWriter();
+  const world = new World();
+  const studded = new ModuleWriter(world, 0, 0);
   studded.push(
     partWithRole(bundle, "ground"),
     colors.indexOfName(DISPLAY_COLORS.ground),
@@ -83,15 +86,15 @@ export function buildPartDisplay(bundle: PartBundle, colors: ColorTable): ChunkP
     }
   });
 
-  const chunks = [studded.finish(0, 0)];
+  let roadChunk = 1;
   bundle.parts.forEach((part, index) => {
     if (part.role !== "road") return;
     if (part.producedColor === undefined) {
       throw new Error(`${part.id}: road plates need a sourced produced colour in palette.json`);
     }
-    const road = new PlacementWriter();
+    const road = new ModuleWriter(world, roadChunk, 0);
     road.push(index, colors.indexOfCode(part.producedColor), half, half, 0, 0);
-    chunks.push(road.finish(chunks.length, 0));
+    roadChunk++;
   });
-  return chunks;
+  return world;
 }

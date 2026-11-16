@@ -1,5 +1,7 @@
 import type { PartFootprint } from "./part-footprint.ts";
-import { CHUNK_STUDS, PlacementWriter, STUD_LDU, type ChunkPlacements } from "./placements.ts";
+import { World } from "@brr/domain";
+import { CHUNK_STUDS, STUD_LDU } from "@brr/math";
+import { ModuleWriter } from "./placements.ts";
 
 const LOTS_PER_SIDE = 3;
 const LOT_CELLS = 10;
@@ -50,7 +52,7 @@ export interface CityOptions {
 }
 
 export interface CityLayout {
-  readonly chunks: ReadonlyArray<ChunkPlacements>;
+  readonly world: World;
   readonly side: number;
   readonly firstChunk: number;
   readonly roadColumns: ReadonlyArray<number>;
@@ -137,7 +139,7 @@ function cellCentre(startCell: number, spanCells: number): number {
 }
 
 function emitRun(
-  out: PlacementWriter,
+  out: ModuleWriter,
   b: Building,
   alongX: boolean,
   fixed: number,
@@ -157,7 +159,7 @@ function emitRun(
   }
 }
 
-function emitLayer(out: PlacementWriter, b: Building): void {
+function emitLayer(out: ModuleWriter, b: Building): void {
   const yPlates = (b.layers + 1) * b.layerPlates;
   const xFull = b.layers % 2 === 0;
   const stagger = b.layers % 4 >= 2;
@@ -173,7 +175,7 @@ function emitLayer(out: PlacementWriter, b: Building): void {
 }
 
 function emitPlates(
-  out: PlacementWriter,
+  out: ModuleWriter,
   plates: ReadonlyArray<PartFootprint>,
   x0: number,
   z0: number,
@@ -206,7 +208,7 @@ function roofPlateCount(b: Building, roof: ReadonlyArray<PartFootprint>): number
 }
 
 function emitRoof(
-  out: PlacementWriter,
+  out: ModuleWriter,
   b: Building,
   parts: CityParts,
   colors: CityColors,
@@ -231,14 +233,12 @@ function emitRoof(
 }
 
 function buildingModule(
-  chunkX: number,
-  chunkZ: number,
+  out: ModuleWriter,
   target: number,
   parts: CityParts,
   colors: CityColors,
   random: SeededRandom,
-): ChunkPlacements {
-  const out = new PlacementWriter();
+): void {
   const half = (CHUNK_STUDS * STUD_LDU) / 2;
   out.push(parts.ground.index, colors.ground, half, half, 0, 0);
   const inner = LOT_CELLS - 2 * LOT_MARGIN_CELLS;
@@ -289,23 +289,14 @@ function buildingModule(
     }
   }
   for (const b of buildings) emitRoof(out, b, parts, colors, random);
-  return out.finish(chunkX, chunkZ);
 }
 
-function roadModule(chunkX: number, chunkZ: number, road: RoadModule): ChunkPlacements {
-  const out = new PlacementWriter();
+function roadModule(out: ModuleWriter, road: RoadModule): void {
   const half = (CHUNK_STUDS * STUD_LDU) / 2;
   out.push(road.part, road.color, half, half, 0, 0);
-  return out.finish(chunkX, chunkZ);
 }
 
-function railModule(
-  chunkX: number,
-  chunkZ: number,
-  parts: CityParts,
-  colors: CityColors,
-): ChunkPlacements {
-  const out = new PlacementWriter();
+function railModule(out: ModuleWriter, parts: CityParts, colors: CityColors): void {
   const half = (CHUNK_STUDS * STUD_LDU) / 2;
   out.push(parts.ground.index, colors.ground, half, half, 0, 0);
   const { rail } = parts;
@@ -318,7 +309,6 @@ function railModule(
   for (let z = pitch / 2; z < CHUNK_STUDS * STUD_LDU; z += pitch) {
     out.push(rail.track, rail.color, half, z, rail.yPlates, 1);
   }
-  return out.finish(chunkX, chunkZ);
 }
 
 type ColumnKind = "road" | "rail" | "building";
@@ -348,7 +338,7 @@ export function generateCity(
   const perModule = Math.ceil(options.targetParts / buildingCells);
   const firstChunk = -Math.floor(side / 2);
   const random = new SeededRandom(options.seed);
-  const chunks: ChunkPlacements[] = [];
+  const world = new World();
   const roadColumns: number[] = [];
   let roadOrdinal = 0;
   for (let column = 0; column < side; column++) {
@@ -356,7 +346,7 @@ export function generateCity(
     const kind = columnKind(column);
     if (kind === "rail") {
       for (let row = 0; row < side; row++)
-        chunks.push(railModule(chunkX, firstChunk + row, parts, colors));
+        railModule(new ModuleWriter(world, chunkX, firstChunk + row), parts, colors);
       continue;
     }
     if (kind === "road") {
@@ -364,12 +354,20 @@ export function generateCity(
       if (!road) throw new Error("city needs at least one road module");
       roadOrdinal++;
       roadColumns.push(chunkX);
-      for (let row = 0; row < side; row++) chunks.push(roadModule(chunkX, firstChunk + row, road));
+      for (let row = 0; row < side; row++) {
+        roadModule(new ModuleWriter(world, chunkX, firstChunk + row), road);
+      }
       continue;
     }
     for (let row = 0; row < side; row++) {
-      chunks.push(buildingModule(chunkX, firstChunk + row, perModule, parts, colors, random));
+      buildingModule(
+        new ModuleWriter(world, chunkX, firstChunk + row),
+        perModule,
+        parts,
+        colors,
+        random,
+      );
     }
   }
-  return { chunks, side, firstChunk, roadColumns };
+  return { world, side, firstChunk, roadColumns };
 }

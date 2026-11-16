@@ -1,6 +1,7 @@
 import { INHERIT_COLOR, type PartAsset, type PartRole } from "@brr/catalog";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type StudInstances } from "@brr/render";
-import { STUD_LDU, type ChunkPartInstances } from "./placements.ts";
+import { STUD_LDU } from "@brr/math";
+import type { ChunkPartInstances } from "./placements.ts";
 import type { ColorTable } from "./viewer-scene.ts";
 
 interface PartInstances {

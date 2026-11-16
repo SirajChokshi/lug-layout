@@ -2,7 +2,8 @@ import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import { buildPartDisplay } from "./part-display.ts";
-import { CHUNK_LDU, placementsToInstances } from "./placements.ts";
+import { CHUNK_LDU } from "@brr/math";
+import { chunkInstances } from "./placements.ts";
 import { withStuds } from "./stud-stream.ts";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 
@@ -20,10 +21,12 @@ export class PartDisplayScene implements IViewerScene {
   async load(lod: BundleLod): Promise<SceneSummary> {
     const bundle = await this.loader.load(lod);
     const colors = new ColorTable(bundle);
-    const chunks = buildPartDisplay(bundle, colors).map((chunk) => ({
-      key: chunk.key,
-      instances: withStuds(placementsToInstances(chunk), bundle.parts, colors, undefined),
-    }));
+    const chunks = buildPartDisplay(bundle, colors)
+      .chunks()
+      .map((chunk) => ({
+        key: chunk.key,
+        instances: withStuds(chunkInstances(chunk), bundle.parts, colors, undefined),
+      }));
     return showChunks(this.backend, bundle, undefined, colors, chunks, null);
   }
 

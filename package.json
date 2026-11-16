@@ -9,12 +9,15 @@
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "check": "pnpm --filter @brr/asset-pipeline restore-ldraw && pnpm lint && pnpm lint:rust && pnpm format:check && pnpm check:rust && turbo run typecheck test build",
+    "check": "pnpm --filter @brr/asset-pipeline restore-ldraw && pnpm lint && pnpm lint:boundaries && pnpm lint:rust && pnpm format:check && pnpm check:rust && turbo run typecheck test build",
     "lint:rust": "node tools/rust-comment-check/src/cli.ts crates",
-    "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace"
+    "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+    "lint:boundaries": "depcruise --config .dependency-cruiser.json packages apps tools/asset-pipeline/src"
   },
   "devDependencies": {
     "@brr/oxlint-plugin": "workspace:*",
+    "@swc/core": "1.16.22",
+    "dependency-cruiser": "18.7.2",
     "oxfmt": "0.78.0",
     "oxlint": "1.93.0",
     "turbo": "2.11.11",

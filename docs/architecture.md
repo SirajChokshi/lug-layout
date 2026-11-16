@@ -390,6 +390,12 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 28. Whether Inversify (current major version) works with explicit `@inject(TOKEN)` parameter decorators when compiled by Vite's esbuild and Vitest with `experimentalDecorators` on and `emitDecoratorMetadata` off, and whether it still needs the `reflect-metadata` polyfill at runtime. If parameter decorators cause trouble, fall back to `toDynamicValue` factory bindings (§14.3).
     **Cleared 2026-11-16 (M0).** Inversify 8.3.0 works. Vite 8.3.8 transforms with Oxc instead of esbuild; Oxc reads `experimentalDecorators` from tsconfig and emits the legacy `__decorate`/`__decorateParam` helpers, with no `design:*` metadata. The production build in Chromium 159 and Vitest 5.1 on Node both resolve `@injectable` classes through `@inject(TOKEN)` parameters, with singleton scope intact. TypeScript 7.0.2 typechecks the decorators. The app needs no `reflect-metadata` import: Inversify 8 keeps its own metadata through the `Reflect` metadata API and imports `reflect-metadata/lite` itself from `@inversifyjs/container`, with `reflect-metadata` 0.2.2 as a peer. No `toDynamicValue` fallback is needed.
 29. Whether Turborepo's `boundaries` check is mature enough to enforce package layers. If not, use dependency-cruiser (§14.2).
+   *Closed 2026-11-16 (M1 slice S3):* dependency-cruiser 18.7.2 enforces the §14.2 table in CI (`pnpm lint:boundaries`, `.dependency-cruiser.json`). Turborepo `boundaries` is still experimental and lacks exact allowed-edge rules.
+   - **Per-package allow-lists:** every package has a rule listing the packages and third-party modules it may import. The table's "types only" edges (`client` → `sim`/`import`, `ui` → `schema`) are checked as type-only.
+   - **Third-party rules:** only `client`, `workers/*`, `apps/web`, `storage`, `render`, `catalog` and `rpc` may import `inversify`, and only `render` may import `three`.
+   - **Unresolvable imports fail.**
+   - **Scratch probes** in a throwaway worktree confirm that allowed edges pass (a type-only `client → sim`, `ui → client` plus React, `client → math`) and that forbidden ones fail. The forbidden cases were `ui` → `inversify`/`three` with both linked, a value `client → sim`, `client → three`, `domain → inversify`, `render → domain` (including dynamic and relative imports), `catalog → domain`, a Node built-in in `domain`, `tools/asset-pipeline → render` or an npm module, and `apps/web → math`.
+   - **TypeScript 7:** it publishes no compiler API, so dependency-cruiser parses with SWC (`@swc/core`).
 
 ## 12. Owner decisions still open (recommended default first)
 
@@ -514,7 +520,7 @@ L0  math
 | `rpc` | schema, inversify |
 | `sim` | math, schema, domain (graph types) |
 | `import` | math, schema, domain, catalog, compile-wasm |
-| `client` | domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) |
+| `client` | math, domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) |
 | `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify |
 | `ui` | client (service interfaces, tokens, view models), schema types |
 | `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries) |
@@ -524,7 +530,7 @@ L0  math
 - `math`, `schema`, `domain` and `sim` are **pure**: no DOM, no three.js, no IndexedDB, no workers and no Inversify. They run unchanged in Node tests, in workers and in the pipeline.
 - Only `client`, `workers/*`, `apps/web` and the L2 adapter packages `storage`, `render`, `catalog` and `rpc` import `inversify` (owner decision, 2026-11-16). Only `apps/web` and each worker entry **create containers**; they are the composition roots.
 - `ui` never imports `domain`, `render` or `storage` directly. It goes through `client`.
-- CI checks the boundaries: Turborepo `boundaries` if it proves mature, otherwise dependency-cruiser (§11 item 29), alongside `tsc --build` project references that mirror the table above.
+- CI checks the boundaries with dependency-cruiser (§11 item 29, closed): one allow-list rule per package covering packages and third-party modules, global rules restricting `inversify` to the DI packages and `three` to `render`, and a rule failing any unresolvable import. `tsc --build` project references that mirror the table are still to come.
 - Turbo tasks: `build`, `typecheck`, `lint`, `test`, `bench`, `wasm` (cached and keyed on `crates/**`). `apps/web#build` depends on `^build` and `compile-wasm#wasm`.
 
 ### 14.3 Services and dependency injection
