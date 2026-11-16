@@ -21,7 +21,6 @@
         "$TURBO_ROOT$/Cargo.toml",
         "$TURBO_ROOT$/Cargo.lock",
         "$TURBO_ROOT$/rust-toolchain.toml",
-        "$TURBO_ROOT$/packages/test-fixtures/omr/**",
         "$TURBO_ROOT$/docs/verified-facts/scenes/**",
         "$TURBO_ROOT$/docs/verified-facts/geometry.json"
       ],

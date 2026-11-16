@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import {
   fetchAuditInputs,
   fetchClosure,
+  modelPath,
+  omrFiles,
   renderAttribution,
   renderModelAttribution,
   restoreFiles,
@@ -12,9 +14,10 @@ import {
   verifyClosure,
   verifyModels,
   type InputLock,
+  type ModelRoots,
 } from "./fetch-ldraw.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
-import { readPalette } from "./palette.ts";
+import { readPalette, type Palette } from "./palette.ts";
 import { geometryReports, licenseAuditReport, readSources, writeReports } from "./verify/facts.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,18 +28,26 @@ const fixturesRoot = join(repoRoot, "packages", "test-fixtures");
 const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
+const omrRoot = join(repoRoot, ".cache", "omr");
+const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(lockPath, "utf8")) as InputLock;
 }
 
+async function restoreModels(palette: Palette): Promise<void> {
+  const { present, downloaded } = await restoreFiles(palette.omrSource, omrFiles(palette), omrRoot);
+  process.stdout.write(`OMR models: ${present} present, ${downloaded} downloaded\n`);
+}
+
 async function fetchCommand(): Promise<void> {
   const palette = await readPalette(palettePath);
-  const modelProblems = await verifyModels(palette, fixturesRoot);
+  await restoreModels(palette);
+  const modelProblems = await verifyModels(palette, modelRoots);
   if (modelProblems.length > 0) throw new Error(modelProblems.join("\n"));
   const modelSources = await Promise.all(
-    palette.models.map((model) => readFile(join(fixturesRoot, model.file), "utf8")),
+    palette.models.map((model) => readFile(modelPath(model, modelRoots), "utf8")),
   );
   const closure = await fetchClosure(palette, ldrawRoot, modelSources);
   const audit = await fetchAuditInputs(palette, auditRoot, connectivityRoot);
@@ -44,7 +55,7 @@ async function fetchCommand(): Promise<void> {
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
-    await renderModelAttribution(palette, fixturesRoot),
+    await renderModelAttribution(palette, modelRoots),
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
   process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
@@ -75,13 +86,14 @@ async function restoreCommand(): Promise<void> {
     const { present, downloaded } = await restoreFiles(source, files, directory);
     process.stdout.write(`${name}: ${present} present, ${downloaded} downloaded\n`);
   }
+  await restoreModels(await readPalette(palettePath));
 }
 
 async function verifyCommand(): Promise<void> {
   const palette = await readPalette(palettePath);
   const problems = [
     ...(await verifyClosure(await readLock(), ldrawRoot)),
-    ...(await verifyModels(palette, fixturesRoot)),
+    ...(await verifyModels(palette, modelRoots)),
   ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
@@ -151,6 +163,8 @@ async function bundleCommand(): Promise<void> {
       ldrawRoot,
       "--fixtures",
       fixturesRoot,
+      "--omr",
+      omrRoot,
       "--geometry",
       join(repoRoot, "docs", "verified-facts", "geometry.json"),
       "--palette",

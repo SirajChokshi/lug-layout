@@ -9,7 +9,7 @@ export interface IModelScene extends IViewerScene {
   selectModel(name: string): void;
 }
 
-const ORBIT_DISTANCE_FACTOR = 2.2;
+const ORBIT_DISTANCE_FACTOR = 2.8;
 const ORBIT_ELEVATION_FACTOR = 0.9;
 const MIN_ORBIT_RADIUS_LDU = 200;
 
@@ -72,23 +72,26 @@ export class ModelScene implements IModelScene {
   }
 
   private frame(matrices: Float32Array, count: number): void {
-    let sumX = 0;
-    let sumY = 0;
-    let sumZ = 0;
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
     for (let i = 0; i < count; i++) {
-      sumX += matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0;
-      sumY += matrices[i * INSTANCE_MATRIX_FLOATS + 7] ?? 0;
-      sumZ += matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0;
+      for (let axis = 0; axis < 3; axis++) {
+        const value = matrices[i * INSTANCE_MATRIX_FLOATS + 3 + axis * 4] ?? 0;
+        min[axis] = Math.min(min[axis] ?? value, value);
+        max[axis] = Math.max(max[axis] ?? value, value);
+      }
     }
-    const n = Math.max(count, 1);
-    this.centreX = sumX / n;
-    this.centreY = sumY / n;
-    this.centreZ = sumZ / n;
+    const centre = (axis: number): number =>
+      count > 0 ? ((min[axis] ?? 0) + (max[axis] ?? 0)) / 2 : 0;
+    this.centreX = centre(0);
+    this.centreY = centre(1);
+    this.centreZ = centre(2);
     let furthest = 0;
     for (let i = 0; i < count; i++) {
       const dx = (matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0) - this.centreX;
+      const dy = (matrices[i * INSTANCE_MATRIX_FLOATS + 7] ?? 0) - this.centreY;
       const dz = (matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0) - this.centreZ;
-      furthest = Math.max(furthest, Math.hypot(dx, dz));
+      furthest = Math.max(furthest, Math.hypot(dx, dy, dz));
     }
     this.radius = Math.max(furthest, MIN_ORBIT_RADIUS_LDU);
   }

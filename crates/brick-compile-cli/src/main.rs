@@ -47,6 +47,7 @@ struct Args {
     ldraw: PathBuf,
     geometry: PathBuf,
     fixtures: PathBuf,
+    omr: PathBuf,
     palette: PathBuf,
     out: PathBuf,
     lod: Lod,
@@ -69,6 +70,7 @@ fn parse_args() -> Result<Args, String> {
     Ok(Args {
         ldraw: take("--ldraw")?.into(),
         fixtures: take("--fixtures")?.into(),
+        omr: take("--omr")?.into(),
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
@@ -225,7 +227,12 @@ fn run(args: &Args) -> Result<(), String> {
         let file = entry["file"]
             .as_str()
             .ok_or("model file must be a string")?;
-        let path = args.fixtures.join(file);
+        let root = match entry["origin"].as_str() {
+            Some("omr") => &args.omr,
+            Some("generated") => &args.fixtures,
+            other => return Err(format!("{file}: unknown model origin {other:?}")),
+        };
+        let path = root.join(file);
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let baked =
             bake_model(&String::from_utf8_lossy(&source)).map_err(|e| format!("{file}: {e}"))?;
@@ -260,6 +267,11 @@ fn run(args: &Args) -> Result<(), String> {
             .iter()
             .map(|h| json!({ "name": h.name, "title": h.title, "author": h.author, "license": h.license, "ldrawOrg": h.ldraw_org }))
             .collect();
+        let inline_parts: Vec<Value> = baked
+            .inline_parts
+            .iter()
+            .map(|p| json!({ "inline": p.inline, "official": p.official }))
+            .collect();
         let model = json!({
             "name": name,
             "file": file,
@@ -267,6 +279,7 @@ fn run(args: &Args) -> Result<(), String> {
             "retrieved": entry["retrieved"],
             "sha256": entry["sha256"],
             "sections": sections,
+            "inlinePartsResolvedToOfficial": inline_parts,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
         });
         fs::write(
@@ -279,6 +292,7 @@ fn run(args: &Args) -> Result<(), String> {
             "file": model_file,
             "source": entry["source"],
             "sections": sections,
+            "inlinePartsResolvedToOfficial": inline_parts,
             "instances": baked.instances.len(),
         }));
     }

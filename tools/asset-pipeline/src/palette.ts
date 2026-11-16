@@ -2,8 +2,11 @@ import { readFile } from "node:fs/promises";
 
 export type PartRole = "ground" | "road" | "track" | "wall" | "roof" | "detail";
 
+export type ModelOrigin = "omr" | "generated";
+
 export interface PaletteModel {
   readonly name: string;
+  readonly origin: ModelOrigin;
   readonly file: string;
   readonly sha256: string;
   readonly source: string;
@@ -25,6 +28,7 @@ export interface Palette {
     readonly role: PartRole;
     readonly displayColor?: { readonly ldraw: number; readonly source: string };
   }>;
+  readonly omrSource: Palette["source"];
   readonly models: ReadonlyArray<PaletteModel>;
   readonly audit: ReadonlyArray<AuditGroup>;
   readonly connectivitySource: Palette["source"];
@@ -49,6 +53,7 @@ function isPalette(value: unknown): value is Palette {
     Array.isArray(candidate["config"]) &&
     Array.isArray(candidate["studPrimitives"]) &&
     Array.isArray(candidate["parts"]) &&
+    typeof candidate["omrSource"] === "object" &&
     Array.isArray(candidate["models"]) &&
     Array.isArray(candidate["audit"]) &&
     typeof candidate["connectivitySource"] === "object"

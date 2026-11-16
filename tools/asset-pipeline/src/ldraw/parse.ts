@@ -102,13 +102,41 @@ export function splitMultiPart(source: string): MultiPartSection[] {
   return sections.map(({ name, lines }) => ({ name, source: lines.join("\n") }));
 }
 
+const MODEL_ORG = "model";
+const SUBPART_DIRECTORY = "s/";
+const OMR_SET_SEPARATOR = " - ";
+const OMR_SET_NUMBER = /^\d+(?:-\d+)?$/u;
+
+export function officialReference(inlineName: string): string {
+  const directory = inlineName.startsWith(SUBPART_DIRECTORY) ? SUBPART_DIRECTORY : "";
+  const name = inlineName.slice(directory.length);
+  const separator = name.indexOf(OMR_SET_SEPARATOR);
+  if (separator < 0 || !OMR_SET_NUMBER.test(name.slice(0, separator))) return inlineName;
+  return directory + name.slice(separator + OMR_SET_SEPARATOR.length);
+}
+
+function isPartSection(file: LdrawFile): boolean {
+  const kind = file.header.ldrawOrg.split(/\s+/u)[0] ?? "";
+  return kind !== "" && kind.toLowerCase() !== MODEL_ORG;
+}
+
 export function modelPartReferences(source: string): string[] {
-  const sections = splitMultiPart(source);
-  const submodels = new Set(sections.map((section) => section.name));
+  const sections = new Map(
+    splitMultiPart(source).map((section) => [section.name, parseLdraw(section.source)]),
+  );
+  const [root] = sections.keys();
   const parts = new Set<string>();
-  for (const section of sections) {
-    for (const reference of subfileReferences(parseLdraw(section.source))) {
-      if (!submodels.has(reference)) parts.add(reference);
+  const visited = new Set<string>();
+  const pending = root === undefined ? [] : [root];
+  for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+    const file = sections.get(name);
+    if (visited.has(name) || file === undefined) continue;
+    visited.add(name);
+    for (const reference of subfileReferences(file)) {
+      const section = sections.get(reference);
+      if (section === undefined) parts.add(reference);
+      else if (isPartSection(section)) parts.add(officialReference(reference));
+      else pending.push(reference);
     }
   }
   return [...parts].toSorted();
