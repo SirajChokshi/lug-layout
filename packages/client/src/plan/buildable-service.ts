@@ -12,6 +12,7 @@ import {
   ownVsBuy,
   parsePartsCsv,
   planFiles,
+  planSvg,
   type OwnBuy,
   type PartsCollection,
   type PlanFiles,
@@ -58,6 +59,7 @@ export interface IBuildableService {
   setProfile(planId: string, profile: ModuleProfileId): void;
   setMaxReach(planId: string, maxReachMm: number): void;
   importCollection(name: string, csv: string): void;
+  printablePlan(planId: string, disclaimer: string): string | null;
   clearCollection(): void;
 }
 
@@ -154,6 +156,25 @@ export class BuildableService implements IBuildableService {
     this.collection = parsed.collection;
     this.collectionProblems = parsed.problems;
     this.recompute();
+  }
+
+  printablePlan(planId: string, disclaimer: string): string | null {
+    const catalog = this.catalog;
+    const plan = this.plans.snapshot();
+    const index = plan.plans.findIndex((region) => region.id === planId);
+    const region = plan.plans[index];
+    const check = plan.checks[index];
+    const report = this.state.reports.find((r) => r.regionId === planId);
+    if (!catalog || !region || !check || !report) return null;
+    return planSvg({
+      region,
+      check,
+      report,
+      placements: buildablePlacements(plan),
+      catalog,
+      colorNames: this.colorNames,
+      disclaimer,
+    });
   }
 
   clearCollection(): void {
