@@ -7,6 +7,7 @@ import {
   measureBaseplate,
   measureFlexBend,
   measureMarkingBands,
+  measureRecessedPlate,
   measureRails,
   measureStudZones,
   reportTrackEnds,
@@ -26,6 +27,7 @@ const RAIL_SECTION_X = 20;
 const BASEPLATES = ["3811", "3857", "3867", "4186", "782", "44336", "2358", "610", "606", "30225b"];
 const ROAD_STUD_ZONES = ["44336", "44341", "44342", "44343", "2358", "610", "606", "30225b"];
 const ROAD_MARKINGS = ["44336p01", "44336p04"];
+const RECESSED_ROAD_PLATES = ["69958", "71772", "71772p01"];
 const FLEX = ["64022c01", "64022c02"];
 const FLEX_MOVING_HALF = "88493.dat";
 
@@ -49,7 +51,10 @@ function turningEnd(report: TrackEndReport | undefined): RelativeTrackEnd {
   return end;
 }
 
-export function buildGeometryReport(libraries: GeometryLibraries) {
+export function buildGeometryReport(
+  libraries: GeometryLibraries,
+  topStudPrimitives: ReadonlyArray<string>,
+) {
   const markers = loadTrackEndMarkers();
   const official = new Map(
     OFFICIAL_TRACK.map((part) => [part, reportTrackEnds(libraries.official, part, markers)]),
@@ -73,11 +78,16 @@ export function buildGeometryReport(libraries: GeometryLibraries) {
       measureRails(libraries.official, "53401", RAIL_SECTION_X),
     ],
     baseplates: BASEPLATES.map((part) => measureBaseplate(libraries.official, part)),
-    roadStudZones: ROAD_STUD_ZONES.map((part) => measureStudZones(libraries.official, part)),
+    roadStudZones: ROAD_STUD_ZONES.map((part) =>
+      measureStudZones(libraries.official, part, topStudPrimitives),
+    ),
     roadMarkings: ROAD_MARKINGS.map((part) => ({
       part,
       markingBandsByColor: measureMarkingBands(libraries.official, part),
     })),
+    recessedRoadPlates: RECESSED_ROAD_PLATES.map((part) =>
+      measureRecessedPlate(libraries.official, part, topStudPrimitives),
+    ),
     flex: FLEX.map((part) => measureFlexBend(libraries.official, part, FLEX_MOVING_HALF)),
   };
 }
