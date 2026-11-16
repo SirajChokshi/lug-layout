@@ -1,0 +1,346 @@
+[
+  {
+    "view": "street",
+    "tier": "auto",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/street-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n400, -400\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n45.0 fps\nDraw calls\n4,909\nDrawn triangles\n8,048,936\nTier (T)\nauto\nChunk tiers near/mid/far\n116 / 93 / 6\nProjected stud pitch, nearest chunk\n101.8 px",
+    "stats": {
+      "fps": 45.03622480632461,
+      "drawCalls": 4909,
+      "triangles": 8048936,
+      "nearChunks": 116,
+      "midChunks": 93,
+      "farChunks": 6,
+      "nearestStudPitchPx": 101.75761096085087
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 37.89999985694885,
+      "p95FrameMs": 39.60000014305115,
+      "medianCpuSubmitMs": 15.299999952316284,
+      "drawCalls": 4909,
+      "triangles": 8048936,
+      "nearChunks": 116,
+      "midChunks": 93,
+      "farChunks": 6,
+      "nearestStudPitchPx": 101.75761096085087
+    }
+  },
+  {
+    "view": "street",
+    "tier": "near",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/street-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n400, -400\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n53.4 fps\nDraw calls\n4,663\nDrawn triangles\n12,542,939\nTier (T)\nnear\nChunk tiers near/mid/far\n215 / 0 / 0\nProjected stud pitch, nearest chunk\n101.8 px",
+    "stats": {
+      "fps": 53.42303125228568,
+      "drawCalls": 4663,
+      "triangles": 12542939,
+      "nearChunks": 215,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 101.75761096085087
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 41.299999952316284,
+      "p95FrameMs": 46.60000014305115,
+      "medianCpuSubmitMs": 16.600000143051147,
+      "drawCalls": 4663,
+      "triangles": 12542939,
+      "nearChunks": 215,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 101.75761096085087
+    }
+  },
+  {
+    "view": "street",
+    "tier": "mid",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/street-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n400, -400\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n57.5 fps\nDraw calls\n4,977\nDrawn triangles\n5,490,063\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 215 / 0\nProjected stud pitch, nearest chunk\n101.8 px",
+    "stats": {
+      "fps": 57.53968253968254,
+      "drawCalls": 4977,
+      "triangles": 5490063,
+      "nearChunks": 0,
+      "midChunks": 215,
+      "farChunks": 0,
+      "nearestStudPitchPx": 101.75761096085087
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 36.30000019073486,
+      "p95FrameMs": 38.5,
+      "medianCpuSubmitMs": 15.799999952316284,
+      "drawCalls": 4977,
+      "triangles": 5490063,
+      "nearChunks": 0,
+      "midChunks": 215,
+      "farChunks": 0,
+      "nearestStudPitchPx": 101.75761096085087
+    }
+  },
+  {
+    "view": "street",
+    "tier": "far",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/street-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n400, -400\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n59.3 fps\nDraw calls\n34\nDrawn triangles\n136,267\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 215\nProjected stud pitch, nearest chunk\n101.8 px",
+    "stats": {
+      "fps": 59.347181008902076,
+      "drawCalls": 34,
+      "triangles": 136267,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 101.75761096085087
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 5.400000095367432,
+      "p95FrameMs": 7.5,
+      "medianCpuSubmitMs": 3.299999952316284,
+      "drawCalls": 34,
+      "triangles": 136267,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 101.75761096085087
+    }
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "auto",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/transition-near-mid-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n18.5 fps\nDraw calls\n12,873\nDrawn triangles\n13,280,385\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 205 / 10\nProjected stud pitch, nearest chunk\n11.3 px",
+    "stats": {
+      "fps": 18.453589219856298,
+      "drawCalls": 12873,
+      "triangles": 13280385,
+      "nearChunks": 0,
+      "midChunks": 205,
+      "farChunks": 10,
+      "nearestStudPitchPx": 11.332996896225783
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "near",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/transition-near-mid-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n19.8 fps\nDraw calls\n12,673\nDrawn triangles\n30,849,338\nTier (T)\nnear\nChunk tiers near/mid/far\n215 / 0 / 0\nProjected stud pitch, nearest chunk\n11.3 px",
+    "stats": {
+      "fps": 19.837691614066728,
+      "drawCalls": 12673,
+      "triangles": 30849338,
+      "nearChunks": 215,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 11.332996896225783
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "mid",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/transition-near-mid-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n15.8 fps\nDraw calls\n13,464\nDrawn triangles\n13,882,952\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 215 / 0\nProjected stud pitch, nearest chunk\n11.3 px",
+    "stats": {
+      "fps": 15.757337008565356,
+      "drawCalls": 13464,
+      "triangles": 13882952,
+      "nearChunks": 0,
+      "midChunks": 215,
+      "farChunks": 0,
+      "nearestStudPitchPx": 11.332996896225783
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "far",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/transition-near-mid-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n59.7 fps\nDraw calls\n97\nDrawn triangles\n323,723\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 215\nProjected stud pitch, nearest chunk\n11.3 px",
+    "stats": {
+      "fps": 59.68961399017376,
+      "drawCalls": 97,
+      "triangles": 323723,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 11.332996896225783
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "auto",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/transition-mid-far-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n58.8 fps\nDraw calls\n101\nDrawn triangles\n329,191\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 0 / 215\nProjected stud pitch, nearest chunk\n2.7 px",
+    "stats": {
+      "fps": 58.811997631027005,
+      "drawCalls": 101,
+      "triangles": 329191,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 2.7357850771755263
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "near",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/transition-mid-far-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n19.5 fps\nDraw calls\n13,093\nDrawn triangles\n31,516,476\nTier (T)\nnear\nChunk tiers near/mid/far\n215 / 0 / 0\nProjected stud pitch, nearest chunk\n2.7 px",
+    "stats": {
+      "fps": 19.48178453327287,
+      "drawCalls": 13093,
+      "triangles": 31516476,
+      "nearChunks": 215,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 2.7357850771755263
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "mid",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/transition-mid-far-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n16.8 fps\nDraw calls\n13,929\nDrawn triangles\n14,202,746\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 215 / 0\nProjected stud pitch, nearest chunk\n2.7 px",
+    "stats": {
+      "fps": 16.79417802276997,
+      "drawCalls": 13929,
+      "triangles": 14202746,
+      "nearChunks": 0,
+      "midChunks": 215,
+      "farChunks": 0,
+      "nearestStudPitchPx": 2.7357850771755263
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "far",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/transition-mid-far-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n101\nDrawn triangles\n329,191\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 215\nProjected stud pitch, nearest chunk\n2.7 px",
+    "stats": {
+      "fps": 59.97600961903142,
+      "drawCalls": 101,
+      "triangles": 329191,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 2.7357850771755263
+    },
+    "measurement": null
+  },
+  {
+    "view": "aerial",
+    "tier": "auto",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/aerial-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.1 fps\nDraw calls\n101\nDrawn triangles\n329,191\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 0 / 215\nProjected stud pitch, nearest chunk\n1.0 px",
+    "stats": {
+      "fps": 60.06587871677645,
+      "drawCalls": 101,
+      "triangles": 329191,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 1.0318803630552662
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 6.700000047683716,
+      "p95FrameMs": 8.799999952316284,
+      "medianCpuSubmitMs": 4.299999952316284,
+      "drawCalls": 101,
+      "triangles": 329191,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 1.0318803630552662
+    }
+  },
+  {
+    "view": "aerial",
+    "tier": "near",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/aerial-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n15.8 fps\nDraw calls\n13,093\nDrawn triangles\n31,516,476\nTier (T)\nnear\nChunk tiers near/mid/far\n215 / 0 / 0\nProjected stud pitch, nearest chunk\n1.0 px",
+    "stats": {
+      "fps": 15.770106884962367,
+      "drawCalls": 13093,
+      "triangles": 31516476,
+      "nearChunks": 215,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.0318803630552662
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 93.29999995231628,
+      "p95FrameMs": 105.09999990463257,
+      "medianCpuSubmitMs": 31.399999856948853,
+      "drawCalls": 13093,
+      "triangles": 31516476,
+      "nearChunks": 215,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.0318803630552662
+    }
+  },
+  {
+    "view": "aerial",
+    "tier": "mid",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/aerial-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n17.8 fps\nDraw calls\n13,929\nDrawn triangles\n14,202,746\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 215 / 0\nProjected stud pitch, nearest chunk\n1.0 px",
+    "stats": {
+      "fps": 17.80063290635601,
+      "drawCalls": 13929,
+      "triangles": 14202746,
+      "nearChunks": 0,
+      "midChunks": 215,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.0318803630552662
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 94.89999985694885,
+      "p95FrameMs": 98.70000004768372,
+      "medianCpuSubmitMs": 30.200000047683716,
+      "drawCalls": 13929,
+      "triangles": 14202746,
+      "nearChunks": 0,
+      "midChunks": 215,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.0318803630552662
+    }
+  },
+  {
+    "view": "aerial",
+    "tier": "far",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene50-webgpu/aerial-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nLoad\n847 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\noff the ground\nPlacements\n100\nHistory (undo, redo)\n100, 0\nLast edit latency\n107.5 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n101\nDrawn triangles\n329,191\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 215\nProjected stud pitch, nearest chunk\n1.0 px",
+    "stats": {
+      "fps": 60.01936108422072,
+      "drawCalls": 101,
+      "triangles": 329191,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 1.0318803630552662
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 6.8999998569488525,
+      "p95FrameMs": 8.599999904632568,
+      "medianCpuSubmitMs": 4.3999998569488525,
+      "drawCalls": 101,
+      "triangles": 329191,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 1.0318803630552662
+    }
+  }
+]

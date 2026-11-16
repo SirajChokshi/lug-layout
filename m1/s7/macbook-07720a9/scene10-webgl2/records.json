@@ -1,0 +1,346 @@
+[
+  {
+    "view": "street",
+    "tier": "auto",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/street-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.1 fps\nDraw calls\n1,136\nDrawn triangles\n3,729,007\nTier (T)\nauto\nChunk tiers near/mid/far\n39 / 0 / 2\nProjected stud pitch, nearest chunk\n122.5 px",
+    "stats": {
+      "fps": 60.13579049466537,
+      "drawCalls": 1136,
+      "triangles": 3729007,
+      "nearChunks": 39,
+      "midChunks": 0,
+      "farChunks": 2,
+      "nearestStudPitchPx": 122.45215238912623
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 11.099999904632568,
+      "p95FrameMs": 17.5,
+      "medianCpuSubmitMs": 3.8000001907348633,
+      "drawCalls": 1136,
+      "triangles": 3729007,
+      "nearChunks": 39,
+      "midChunks": 0,
+      "farChunks": 2,
+      "nearestStudPitchPx": 122.45215238912623
+    }
+  },
+  {
+    "view": "street",
+    "tier": "near",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/street-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n1,136\nDrawn triangles\n3,729,007\nTier (T)\nnear\nChunk tiers near/mid/far\n41 / 0 / 0\nProjected stud pitch, nearest chunk\n122.5 px",
+    "stats": {
+      "fps": 60,
+      "drawCalls": 1136,
+      "triangles": 3729007,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 122.45215238912623
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 13.799999952316284,
+      "p95FrameMs": 14.799999952316284,
+      "medianCpuSubmitMs": 3.700000047683716,
+      "drawCalls": 1136,
+      "triangles": 3729007,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 122.45215238912623
+    }
+  },
+  {
+    "view": "street",
+    "tier": "mid",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/street-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n1,228\nDrawn triangles\n1,755,467\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 41 / 0\nProjected stud pitch, nearest chunk\n122.5 px",
+    "stats": {
+      "fps": 59.99612927644506,
+      "drawCalls": 1228,
+      "triangles": 1755467,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 122.45215238912623
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 11.799999952316284,
+      "p95FrameMs": 12.799999952316284,
+      "medianCpuSubmitMs": 3.799999952316284,
+      "drawCalls": 1228,
+      "triangles": 1755467,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 122.45215238912623
+    }
+  },
+  {
+    "view": "street",
+    "tier": "far",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/street-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n13\nDrawn triangles\n48,357\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n122.5 px",
+    "stats": {
+      "fps": 59.964021592762954,
+      "drawCalls": 13,
+      "triangles": 48357,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 122.45215238912623
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 3.4000000953674316,
+      "p95FrameMs": 5.199999809265137,
+      "medianCpuSubmitMs": 0.8000001907348633,
+      "drawCalls": 13,
+      "triangles": 48357,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 122.45215238912623
+    }
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "auto",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/transition-near-mid-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n58.5 fps\nDraw calls\n2,547\nDrawn triangles\n2,843,840\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 39 / 2\nProjected stud pitch, nearest chunk\n11.2 px",
+    "stats": {
+      "fps": 58.513750753190195,
+      "drawCalls": 2547,
+      "triangles": 2843840,
+      "nearChunks": 0,
+      "midChunks": 39,
+      "farChunks": 2,
+      "nearestStudPitchPx": 11.237627539686283
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "near",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/transition-near-mid-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.1 fps\nDraw calls\n2,399\nDrawn triangles\n6,303,296\nTier (T)\nnear\nChunk tiers near/mid/far\n41 / 0 / 0\nProjected stud pitch, nearest chunk\n11.2 px",
+    "stats": {
+      "fps": 60.0658786890283,
+      "drawCalls": 2399,
+      "triangles": 6303296,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 11.237627539686283
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "mid",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/transition-near-mid-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n2,548\nDrawn triangles\n2,840,550\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 41 / 0\nProjected stud pitch, nearest chunk\n11.2 px",
+    "stats": {
+      "fps": 60.00774294564999,
+      "drawCalls": 2548,
+      "triangles": 2840550,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 11.237627539686283
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "far",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/transition-near-mid-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n58.6 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n11.2 px",
+    "stats": {
+      "fps": 58.59375,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 11.237627539686283
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "auto",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/transition-mid-far-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n2.8 px",
+    "stats": {
+      "fps": 60.04261089068963,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 2.831515699290195
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "near",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/transition-mid-far-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.1 fps\nDraw calls\n2,399\nDrawn triangles\n6,303,296\nTier (T)\nnear\nChunk tiers near/mid/far\n41 / 0 / 0\nProjected stud pitch, nearest chunk\n2.8 px",
+    "stats": {
+      "fps": 60.07751937984496,
+      "drawCalls": 2399,
+      "triangles": 6303296,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 2.831515699290195
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "mid",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/transition-mid-far-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.1 fps\nDraw calls\n2,548\nDrawn triangles\n2,840,550\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 41 / 0\nProjected stud pitch, nearest chunk\n2.8 px",
+    "stats": {
+      "fps": 60.07751937984496,
+      "drawCalls": 2548,
+      "triangles": 2840550,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 2.831515699290195
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "far",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/transition-mid-far-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n2.8 px",
+    "stats": {
+      "fps": 60.03098375016945,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 2.831515699290195
+    },
+    "measurement": null
+  },
+  {
+    "view": "aerial",
+    "tier": "auto",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/aerial-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.0 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n1.3 px",
+    "stats": {
+      "fps": 59.98800241095961,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 1.3087023868180527
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 3.5,
+      "p95FrameMs": 5.099999904632568,
+      "medianCpuSubmitMs": 0.9000000953674316,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 1.3087023868180527
+    }
+  },
+  {
+    "view": "aerial",
+    "tier": "near",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/aerial-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.1 fps\nDraw calls\n2,399\nDrawn triangles\n6,303,296\nTier (T)\nnear\nChunk tiers near/mid/far\n41 / 0 / 0\nProjected stud pitch, nearest chunk\n1.3 px",
+    "stats": {
+      "fps": 60.05424253610304,
+      "drawCalls": 2399,
+      "triangles": 6303296,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.3087023868180527
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 15.900000095367432,
+      "p95FrameMs": 19.299999952316284,
+      "medianCpuSubmitMs": 6.5,
+      "drawCalls": 2399,
+      "triangles": 6303296,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.3087023868180527
+    }
+  },
+  {
+    "view": "aerial",
+    "tier": "mid",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/aerial-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n60.1 fps\nDraw calls\n2,548\nDrawn triangles\n2,840,550\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 41 / 0\nProjected stud pitch, nearest chunk\n1.3 px",
+    "stats": {
+      "fps": 60.05424253610304,
+      "drawCalls": 2548,
+      "triangles": 2840550,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.3087023868180527
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 16.799999952316284,
+      "p95FrameMs": 18.90000009536743,
+      "medianCpuSubmitMs": 6.299999952316284,
+      "drawCalls": 2548,
+      "triangles": 2840550,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.3087023868180527
+    }
+  },
+  {
+    "view": "aerial",
+    "tier": "far",
+    "screenshot": "/Users/siraj/brr-s7/repo/s7-macbook-07720a9/scene10-webgl2/aerial-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nLoad\n493 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n28.2 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n59.2 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n1.3 px",
+    "stats": {
+      "fps": 59.20663113711626,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 1.3087023868180527
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 3.5,
+      "p95FrameMs": 8,
+      "medianCpuSubmitMs": 1,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 1.3087023868180527
+    }
+  }
+]

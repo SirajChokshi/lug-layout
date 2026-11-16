@@ -1,0 +1,220 @@
+{
+  "url": "http://localhost:4173/?model=2150-1&api=webgl2&tier=near&measure=1&warmup=1&frames=3",
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1280×801 px (devicePixelRatio 1)\nBundle\nc040b2122ae7cf55\nParts\n625\nModules\n1\nStud instances (drawn of total)\n2,449 of 2,449\nScene triangles\n410,477\nLoad\n186 ms\nGPU buffers allocated so far, JS heap\nvertex+index 3.3 MiB, other 0.0 MiB, JS heap 32.9 MiB\nRender origin (chunks), rebases\n(3, -1); 1 rebases, last at frame 0\nTier\nnear\nProjected stud pitch, nearest chunk\n12.4 px\nVoxel far mesh\n11,464 voxels of 20×8×20 LDU, 5,088 triangles\nChunk tiers near/mid/far (median)\n1 / 0 / 0\nDraw calls (median)\n157\nDrawn triangles (median)\n410,478\nScene coverage (sampled frames)\n10%, 12%, 13%, 14%, 13%, 12%, 10%, 10%, 11%\nMedian frame (GPU-synced)\n274.9 ms\np95 frame\n285.5 ms\nMedian CPU submit\n3.8 ms\nMeasured frames\n3",
+  "result": {
+    "params": {
+      "mode": "model",
+      "showEditState": false,
+      "api": "webgl2",
+      "lod": "standard",
+      "model": "2150-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "tier": "near",
+      "distanceLdu": null,
+      "zoom": false,
+      "originChunkX": 0,
+      "originChunkZ": 0,
+      "dumpWorld": false,
+      "measure": true,
+      "warmupFrames": 1,
+      "measuredFrames": 3,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgl2",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgl2",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "bundleVersion": "c040b2122ae7cf55",
+      "parts": 625,
+      "modules": 1,
+      "studInstances": 2449,
+      "visibleStudInstances": 2449,
+      "bodyTriangles": 289517,
+      "studTriangles": 120960,
+      "creditedFiles": 1742,
+      "model": {
+        "name": "2150-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/2150-1.mpd",
+        "sections": [
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - station with platform.ldr",
+            "title": "station with platform"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - station building.ldr",
+            "title": "station building"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - streat lamp.ldr",
+            "title": "streat lamp"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - bench.ldr",
+            "title": "bench"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - luggage car 1.ldr",
+            "title": "luggage car 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - luggage car 2.ldr",
+            "title": "luggage car 2"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 1.ldr",
+            "title": "minifig 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 2.ldr",
+            "title": "minifig 2"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 3.ldr",
+            "title": "minifig 3"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 4.ldr",
+            "title": "minifig 4"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 5.ldr",
+            "title": "minifig 5"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 6.ldr",
+            "title": "minifig 6"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 7.ldr",
+            "title": "minifig 7"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "2150 - minifig 8.ldr",
+            "title": "minifig 8"
+          }
+        ]
+      },
+      "farModel": {
+        "voxels": 11464,
+        "triangles": 5088
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 3481712,
+      "otherBytes": 27904,
+      "jsHeapBytes": 34540469
+    },
+    "loadMs": 186.10000000149012,
+    "timings": {
+      "frames": 3,
+      "medianFrameMs": 274.90000000037253,
+      "p95FrameMs": 285.5,
+      "meanFrameMs": 276.766666666915,
+      "medianCpuSubmitMs": 3.799999998882413,
+      "fpsFromMedian": 3.6376864314246813,
+      "medianDrawCalls": 157,
+      "medianDrawnTriangles": 410478,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.0954861111111111,
+        0.12152777777777778,
+        0.1310763888888889,
+        0.13932291666666666,
+        0.1332465277777778,
+        0.1232638888888889,
+        0.0959201388888889,
+        0.1032986111111111,
+        0.11284722222222222
+      ],
+      "firstMeasuredFrame": 1,
+      "frameMs": [
+        274.90000000037253,
+        269.90000000037253,
+        285.5
+      ],
+      "cpuSubmitMs": [
+        6.599999999627471,
+        3.5,
+        3.799999998882413
+      ]
+    },
+    "drawCalls": 157,
+    "drawnTriangles": 410478,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    "worldPlacements": null,
+    "rebases": [
+      {
+        "frame": 0,
+        "chunkX": 3,
+        "chunkZ": -1,
+        "chunks": 1,
+        "ms": 0.40000000037252903
+      }
+    ]
+  },
+  "logs": []
+}

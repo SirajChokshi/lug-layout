@@ -1,0 +1,31 @@
+placed omr:10264-1 at (-3200, -800) rot 0
+placed omr:2150-1 at (-3200, 800) rot 1
+placed omr:10185-1 at (-1600, -800) rot 1
+placed omr:4554-1 at (-1600, 800) rot 2
+placed omr:10190-1 at (0, -800) rot 2
+placed omr:10128-1 at (0, 800) rot 3
+placed omr:10218-1 at (1600, -800) rot 3
+placed omr:7936-1 at (1600, 800) rot 0
+placed omr:4555-1 at (3200, -800) rot 0
+placed omr:10133-1 at (3200, 800) rot 1
+street view: stud pitch 122.5 px
+street auto {"fps":60.13579049466537,"drawCalls":1136,"triangles":3729007,"nearChunks":39,"midChunks":0,"farChunks":2,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":11.099999904632568,"p95FrameMs":17.5,"medianCpuSubmitMs":3.8000001907348633,"drawCalls":1136,"triangles":3729007,"nearChunks":39,"midChunks":0,"farChunks":2,"nearestStudPitchPx":122.45215238912623}
+street near {"fps":60,"drawCalls":1136,"triangles":3729007,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":13.799999952316284,"p95FrameMs":14.799999952316284,"medianCpuSubmitMs":3.700000047683716,"drawCalls":1136,"triangles":3729007,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":122.45215238912623}
+street mid {"fps":59.99612927644506,"drawCalls":1228,"triangles":1755467,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":11.799999952316284,"p95FrameMs":12.799999952316284,"medianCpuSubmitMs":3.799999952316284,"drawCalls":1228,"triangles":1755467,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":122.45215238912623}
+street far {"fps":59.964021592762954,"drawCalls":13,"triangles":48357,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":3.4000000953674316,"p95FrameMs":5.199999809265137,"medianCpuSubmitMs":0.8000001907348633,"drawCalls":13,"triangles":48357,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":122.45215238912623}
+near/mid transition at step 27: 11.2 px
+transition-near-mid auto {"fps":58.513750753190195,"drawCalls":2547,"triangles":2843840,"nearChunks":0,"midChunks":39,"farChunks":2,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid near {"fps":60.0658786890283,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid mid {"fps":60.00774294564999,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid far {"fps":58.59375,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":11.237627539686283} 
+mid/far transition at step 45: 2.8 px
+transition-mid-far auto {"fps":60.04261089068963,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":2.831515699290195} 
+transition-mid-far near {"fps":60.07751937984496,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":2.831515699290195} 
+transition-mid-far mid {"fps":60.07751937984496,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":2.831515699290195} 
+transition-mid-far far {"fps":60.03098375016945,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":2.831515699290195} 
+aerial view: stud pitch 1.3 px
+aerial auto {"fps":59.98800241095961,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":1.3087023868180527} {"frames":60,"medianFrameMs":3.5,"p95FrameMs":5.099999904632568,"medianCpuSubmitMs":0.9000000953674316,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":1.3087023868180527}
+aerial near {"fps":60.05424253610304,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":1.3087023868180527} {"frames":60,"medianFrameMs":15.900000095367432,"p95FrameMs":19.299999952316284,"medianCpuSubmitMs":6.5,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":1.3087023868180527}
+aerial mid {"fps":60.05424253610304,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":1.3087023868180527} {"frames":60,"medianFrameMs":16.799999952316284,"p95FrameMs":18.90000009536743,"medianCpuSubmitMs":6.299999952316284,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":1.3087023868180527}
+aerial far {"fps":59.20663113711626,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":1.3087023868180527} {"frames":60,"medianFrameMs":3.5,"p95FrameMs":8,"medianCpuSubmitMs":1,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":1.3087023868180527}
+EXIT=0

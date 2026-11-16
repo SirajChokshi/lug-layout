@@ -1,6 +1,14 @@
 # M1 S7 evidence: per-model voxel far LODs
 
-Code: branch `siraj/m1-model-lods-134d`, stacked on S5 (#23, `siraj/m1-placement-b86f` at `0e701da`). The VM runs below used the build at `a025cd1`.
+Code: branch `siraj/m1-model-lods-134d`, PR #52.
+- `vm-07720a9/`: the PR head, rebased onto `main` at `cd2b742`. This is the current evidence.
+  - `voxcheck.json`
+  - `models/`
+  - `city-vs-main/`
+  - `editor-near-vs-main/`
+  - `scene10/` and `scene50/`
+- `macbook-07720a9/`: the M4 Max run of `s7-macbook.sh` at the PR head. Its `results.md` has the method, focus handling and tables.
+- The earlier capture of the same S7 code on S5 at `0e701da` is in this branch's history at `70ee0dc` (`vm-a025cd1/`).
 
 ## VM setup
 - **Server:** the real app's production build (`pnpm --filter @brr/web build`), served by `vite preview` on port 4173, with the bundle built by `pnpm --filter @brr/asset-pipeline build`.

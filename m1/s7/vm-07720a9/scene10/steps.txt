@@ -1,0 +1,14 @@
+2026-11-16T23:16:53.973Z placed omr:10264-1 at (-3200, -800) rot 0
+2026-11-16T23:17:09.765Z placed omr:2150-1 at (-3200, 800) rot 1
+2026-11-16T23:18:21.236Z placed omr:10185-1 at (-1600, -800) rot 1
+2026-11-16T23:18:38.296Z placed omr:4554-1 at (-1600, 800) rot 2
+2026-11-16T23:19:14.921Z placed omr:10190-1 at (0, -800) rot 2
+2026-11-16T23:19:32.441Z placed omr:10128-1 at (0, 800) rot 3
+2026-11-16T23:20:16.513Z placed omr:10218-1 at (1600, -800) rot 3
+2026-11-16T23:20:35.308Z placed omr:7936-1 at (1600, 800) rot 0
+2026-11-16T23:21:29.885Z placed omr:4555-1 at (3200, -800) rot 0
+2026-11-16T23:21:59.226Z placed omr:10133-1 at (3200, 800) rot 1
+2026-11-16T23:22:55.123Z street view: stud pitch 61.6 px
+2026-11-16T23:33:33.209Z near/mid transition at step 19: 11.7 px
+2026-11-16T23:38:43.946Z mid/far transition at step 36: 2.8 px
+2026-11-16T23:39:57.144Z aerial view: stud pitch 1.2 px

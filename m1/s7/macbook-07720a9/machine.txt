@@ -1,0 +1,15 @@
+commit 07720a9a1c0c213461b4fd79ca7b1505a46d7c61
+ProductName:		macOS
+ProductVersion:		26.6.2
+BuildVersion:		25G83
+Apple M4 Max
+68719476736
+ powermode            2
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=22610019)	100%; charged; 0:00 remaining present: true
+15:12  up 45 days,  2:03, 11 users, load averages: 28.26 18.44 12.46
+Google Chrome 157.0.8103.52 
+== resume 2026-11-16 15:25:04 PST
+Now drawing from 'AC Power'
+load { 8.72 10.39 10.87 }
+15:35  up 45 days,  2:25, 11 users, load averages: 9.09 9.90 10.45

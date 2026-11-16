@@ -1,0 +1,155 @@
+{
+  "url": "http://localhost:4173/?model=7936-1&api=webgl2&tier=near&measure=1&warmup=1&frames=3",
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1280×801 px (devicePixelRatio 1)\nBundle\nc040b2122ae7cf55\nParts\n147\nModules\n1\nStud instances (drawn of total)\n622 of 622\nScene triangles\n140,603\nLoad\n186 ms\nGPU buffers allocated so far, JS heap\nvertex+index 1.9 MiB, other 0.0 MiB, JS heap 21.8 MiB\nRender origin (chunks), rebases\n(1, 0); 1 rebases, last at frame 0\nTier\nnear\nProjected stud pitch, nearest chunk\n26.8 px\nVoxel far mesh\n3,012 voxels of 20×8×20 LDU, 1,958 triangles\nChunk tiers near/mid/far (median)\n1 / 0 / 0\nDraw calls (median)\n72\nDrawn triangles (median)\n140,604\nScene coverage (sampled frames)\n16%, 15%, 15%, 15%, 15%, 16%, 16%, 17%, 17%\nMedian frame (GPU-synced)\n173.0 ms\np95 frame\n174.0 ms\nMedian CPU submit\n3.5 ms\nMeasured frames\n3",
+  "result": {
+    "params": {
+      "mode": "model",
+      "showEditState": false,
+      "api": "webgl2",
+      "lod": "standard",
+      "model": "7936-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "tier": "near",
+      "distanceLdu": null,
+      "zoom": false,
+      "originChunkX": 0,
+      "originChunkZ": 0,
+      "dumpWorld": false,
+      "measure": true,
+      "warmupFrames": 1,
+      "measuredFrames": 3,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgl2",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgl2",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "bundleVersion": "c040b2122ae7cf55",
+      "parts": 147,
+      "modules": 1,
+      "studInstances": 622,
+      "visibleStudInstances": 622,
+      "bodyTriangles": 108923,
+      "studTriangles": 31680,
+      "creditedFiles": 1742,
+      "model": {
+        "name": "7936-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/7936-1.mpd",
+        "sections": [
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Main.ldr",
+            "title": "Main"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Crossing.ldr",
+            "title": "Crossing"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Crane.ldr",
+            "title": "Crane"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Track.ldr",
+            "title": "Track"
+          },
+          {
+            "author": "Marc Giraudet [Mad_Marc]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "7936 - Worker.ldr",
+            "title": "Worker"
+          }
+        ]
+      },
+      "farModel": {
+        "voxels": 3012,
+        "triangles": 1958
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 2018644,
+      "otherBytes": 12944,
+      "jsHeapBytes": 22833150
+    },
+    "loadMs": 185.69999999925494,
+    "timings": {
+      "frames": 3,
+      "medianFrameMs": 173,
+      "p95FrameMs": 174,
+      "meanFrameMs": 172.60000000024834,
+      "medianCpuSubmitMs": 3.5,
+      "fpsFromMedian": 5.780346820809249,
+      "medianDrawCalls": 72,
+      "medianDrawnTriangles": 140604,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.15711805555555555,
+        0.15147569444444445,
+        0.1501736111111111,
+        0.14583333333333334,
+        0.1462673611111111,
+        0.1566840277777778,
+        0.1605902777777778,
+        0.17100694444444445,
+        0.1701388888888889
+      ],
+      "firstMeasuredFrame": 1,
+      "frameMs": [
+        170.80000000074506,
+        174,
+        173
+      ],
+      "cpuSubmitMs": [
+        3.599999999627471,
+        2.199999999254942,
+        3.5
+      ]
+    },
+    "drawCalls": 72,
+    "drawnTriangles": 140604,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    "worldPlacements": null,
+    "rebases": [
+      {
+        "frame": 0,
+        "chunkX": 1,
+        "chunkZ": 0,
+        "chunks": 1,
+        "ms": 0.19999999925494194
+      }
+    ]
+  },
+  "logs": [
+    "warning: [.WebGL-0x2374001d2a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "warning: [.WebGL-0x2374001d2a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "warning: [.WebGL-0x2374001d2a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "warning: [.WebGL-0x2374001d2a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+  ]
+}

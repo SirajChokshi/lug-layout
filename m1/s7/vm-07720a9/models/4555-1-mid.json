@@ -1,0 +1,213 @@
+{
+  "url": "http://localhost:4173/?model=4555-1&api=webgl2&tier=mid&measure=1&warmup=1&frames=3",
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1280×801 px (devicePixelRatio 1)\nBundle\nc040b2122ae7cf55\nParts\n390\nModules\n1\nStud instances (drawn of total)\n2,996 of 2,996\nScene triangles\n382,200\nLoad\n161 ms\nGPU buffers allocated so far, JS heap\nvertex+index 1.7 MiB, other 0.0 MiB, JS heap 32.8 MiB\nRender origin (chunks), rebases\n(2, 0); 1 rebases, last at frame 0\nTier\nmid\nProjected stud pitch, nearest chunk\n14.7 px\nVoxel far mesh\n8,820 voxels of 20×8×20 LDU, 4,826 triangles\nChunk tiers near/mid/far (median)\n0 / 1 / 0\nDraw calls (median)\n145\nDrawn triangles (median)\n161,432\nScene coverage (sampled frames)\n17%, 19%, 17%, 14%, 15%, 16%, 15%, 18%, 20%\nMedian frame (GPU-synced)\n184.6 ms\np95 frame\n185.4 ms\nMedian CPU submit\n3.6 ms\nMeasured frames\n3",
+  "result": {
+    "params": {
+      "mode": "model",
+      "showEditState": false,
+      "api": "webgl2",
+      "lod": "standard",
+      "model": "4555-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "tier": "mid",
+      "distanceLdu": null,
+      "zoom": false,
+      "originChunkX": 0,
+      "originChunkZ": 0,
+      "dumpWorld": false,
+      "measure": true,
+      "warmupFrames": 1,
+      "measuredFrames": 3,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgl2",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgl2",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "bundleVersion": "c040b2122ae7cf55",
+      "parts": 390,
+      "modules": 1,
+      "studInstances": 2996,
+      "visibleStudInstances": 2996,
+      "bodyTriangles": 231192,
+      "studTriangles": 151008,
+      "creditedFiles": 1742,
+      "model": {
+        "name": "4555-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/4555-1.mpd",
+        "sections": [
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - main.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - building.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - gantry.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - gantry - lift.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - train car.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - train car - wheels.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - car.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - small car.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - container 1.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - container 2.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - container 3.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - minifig 1.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - minifig 2.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "4555 - minifig 3.ldr",
+            "title": "!LEOCAD MODEL BACKGROUND GRADIENT 0 0 0.74902 1 1 1"
+          }
+        ]
+      },
+      "farModel": {
+        "voxels": 8820,
+        "triangles": 4826
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 1765460,
+      "otherBytes": 25792,
+      "jsHeapBytes": 34409376
+    },
+    "loadMs": 161,
+    "timings": {
+      "frames": 3,
+      "medianFrameMs": 184.59999999962747,
+      "p95FrameMs": 185.40000000037253,
+      "meanFrameMs": 184.3000000001242,
+      "medianCpuSubmitMs": 3.599999999627471,
+      "fpsFromMedian": 5.417118093185363,
+      "medianDrawCalls": 145,
+      "medianDrawnTriangles": 161432,
+      "medianChunkTiers": {
+        "near": 0,
+        "mid": 1,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.17100694444444445,
+        0.1853298611111111,
+        0.16883680555555555,
+        0.1427951388888889,
+        0.15494791666666666,
+        0.16015625,
+        0.14973958333333334,
+        0.17838541666666666,
+        0.19791666666666666
+      ],
+      "firstMeasuredFrame": 1,
+      "frameMs": [
+        184.59999999962747,
+        182.90000000037253,
+        185.40000000037253
+      ],
+      "cpuSubmitMs": [
+        4.199999999254942,
+        3.300000000745058,
+        3.599999999627471
+      ]
+    },
+    "drawCalls": 145,
+    "drawnTriangles": 161432,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    "worldPlacements": null,
+    "rebases": [
+      {
+        "frame": 0,
+        "chunkX": 2,
+        "chunkZ": 0,
+        "chunks": 1,
+        "ms": 0.2999999988824129
+      }
+    ]
+  },
+  "logs": []
+}

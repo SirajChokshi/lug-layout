@@ -1,0 +1,244 @@
+From https://github.com/SirajChokshi/lug-layout
+ * branch            siraj/m1-model-lods-134d -> FETCH_HEAD
+ * branch            siraj/m1-s7-evidence-134d -> FETCH_HEAD
+ * [new branch]      siraj/m1-model-lods-134d -> origin/siraj/m1-model-lods-134d
+Previous HEAD position was 702cd0b M2 S1: exact ℤ[ζ₁₆] track poses in @brr/math; real 9V loops close exactly (#30)
+HEAD is now at 07720a9 Describe backend-level far-model placements in the S7 status note
+Scope: all 13 workspace projects
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +118
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Progress: resolved 118, reused 118, downloaded 0, added 118, done
+
+devDependencies:
++ @brr/oxlint-plugin <- tools/oxlint-plugin
++ @swc/core 1.16.22
++ dependency-cruiser 18.7.2
++ oxfmt 0.78.0
++ oxlint 1.93.0
++ turbo 2.11.11
++ typescript 7.0.2
+
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: @swc/core@1.16.22.                                  │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Done in 793ms using pnpm v10.33.4
+
+> @brr/asset-pipeline@ build /Users/siraj/brr-s7/repo/tools/asset-pipeline
+> node src/cli.ts bundle
+
+bundle closure: 1767 present, 18 downloaded, 0 pruned
+audit closure: 382 present, 0 downloaded, 0 pruned
+LDCad patches: 22 present, 0 downloaded, 0 pruned
+OMR models: 10 present, 0 downloaded, 0 pruned
+LDraw inputs match ldraw.lock.json
+bundle standard c040b2122ae7cf55: 726 content-addressed files in /Users/siraj/brr-s7/repo/tools/asset-pipeline/dist/bundle/standard
+bundle low 1eddf5307208c5e2: 726 content-addressed files in /Users/siraj/brr-s7/repo/tools/asset-pipeline/dist/bundle/low
+bundle far 0c3659a23512c6a4: 742 content-addressed files in /Users/siraj/brr-s7/repo/tools/asset-pipeline/dist/bundle/far
+
+> @brr/web@ build /Users/siraj/brr-s7/repo/apps/web
+> vite build
+
+vite v8.3.8 building client environment for production...
+transforming...
+✓ 337 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                     0.43 kB │ gzip:   0.28 kB
+dist/assets/index-CRPh27JU.css      3.34 kB │ gzip:   1.18 kB
+dist/assets/index-B6KVTEtd.js   1,228.37 kB │ gzip: 343.61 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 1.66s
+{"set":"7936-1","tier":"near","parts":147,"voxels":3012,"farMeshTriangles":1958,"drawCalls":72,"drawnTriangles":140604,"medianFrameMs":1.2999999523162842,"p95FrameMs":1.7999999523162842,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"7936-1","tier":"mid","parts":147,"voxels":3012,"farMeshTriangles":1958,"drawCalls":77,"drawnTriangles":66708,"medianFrameMs":1.2000000476837158,"p95FrameMs":1.7000000476837158,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"7936-1","tier":"far","parts":147,"voxels":3012,"farMeshTriangles":1958,"drawCalls":2,"drawnTriangles":1959,"medianFrameMs":1,"p95FrameMs":1.4000000953674316,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10264-1","tier":"near","parts":2567,"voxels":23239,"farMeshTriangles":13964,"drawCalls":334,"drawnTriangles":1222337,"medianFrameMs":2.3999998569488525,"p95FrameMs":4.5,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10264-1","tier":"mid","parts":2567,"voxels":23239,"farMeshTriangles":13964,"drawCalls":400,"drawnTriangles":599174,"medianFrameMs":2.200000047683716,"p95FrameMs":2.700000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10264-1","tier":"far","parts":2567,"voxels":23239,"farMeshTriangles":13964,"drawCalls":2,"drawnTriangles":13965,"medianFrameMs":0.5,"p95FrameMs":1.2999999523162842,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10185-1","tier":"near","parts":2405,"voxels":20753,"farMeshTriangles":9590,"drawCalls":195,"drawnTriangles":1036407,"medianFrameMs":2.5,"p95FrameMs":2.9000000953674316,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10185-1","tier":"mid","parts":2405,"voxels":20753,"farMeshTriangles":9590,"drawCalls":215,"drawnTriangles":446089,"medianFrameMs":2,"p95FrameMs":2.6000001430511475,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10185-1","tier":"far","parts":2405,"voxels":20753,"farMeshTriangles":9590,"drawCalls":2,"drawnTriangles":9591,"medianFrameMs":0.6000001430511475,"p95FrameMs":1.2999999523162842,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10190-1","tier":"near","parts":1484,"voxels":13272,"farMeshTriangles":6636,"drawCalls":146,"drawnTriangles":747071,"medianFrameMs":2.0999999046325684,"p95FrameMs":2.6000001430511475,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10190-1","tier":"mid","parts":1484,"voxels":13272,"farMeshTriangles":6636,"drawCalls":157,"drawnTriangles":361274,"medianFrameMs":1.7999999523162842,"p95FrameMs":2.299999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10190-1","tier":"far","parts":1484,"voxels":13272,"farMeshTriangles":6636,"drawCalls":2,"drawnTriangles":6637,"medianFrameMs":1,"p95FrameMs":1.5,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10218-1","tier":"near","parts":2042,"voxels":18940,"farMeshTriangles":9770,"drawCalls":222,"drawnTriangles":936913,"medianFrameMs":3,"p95FrameMs":3.299999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10218-1","tier":"mid","parts":2042,"voxels":18940,"farMeshTriangles":9770,"drawCalls":241,"drawnTriangles":366987,"medianFrameMs":2.5,"p95FrameMs":3.1000001430511475,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10218-1","tier":"far","parts":2042,"voxels":18940,"farMeshTriangles":9770,"drawCalls":2,"drawnTriangles":9771,"medianFrameMs":0.5,"p95FrameMs":1.2999999523162842,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"2150-1","tier":"near","parts":625,"voxels":11464,"farMeshTriangles":5088,"drawCalls":157,"drawnTriangles":410478,"medianFrameMs":1.8000001907348633,"p95FrameMs":2.200000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"2150-1","tier":"mid","parts":625,"voxels":11464,"farMeshTriangles":5088,"drawCalls":163,"drawnTriangles":168720,"medianFrameMs":1.7000000476837158,"p95FrameMs":2.200000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"2150-1","tier":"far","parts":625,"voxels":11464,"farMeshTriangles":5088,"drawCalls":2,"drawnTriangles":5089,"medianFrameMs":0.9000000953674316,"p95FrameMs":1.2999999523162842,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"4554-1","tier":"near","parts":617,"voxels":11494,"farMeshTriangles":5012,"drawCalls":150,"drawnTriangles":404254,"medianFrameMs":1.2999999523162842,"p95FrameMs":2.4000000953674316,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"4554-1","tier":"mid","parts":617,"voxels":11494,"farMeshTriangles":5012,"drawCalls":155,"drawnTriangles":166914,"medianFrameMs":1.6000001430511475,"p95FrameMs":2.200000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"4554-1","tier":"far","parts":617,"voxels":11494,"farMeshTriangles":5012,"drawCalls":2,"drawnTriangles":5013,"medianFrameMs":0.7999999523162842,"p95FrameMs":1.5,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"4555-1","tier":"near","parts":390,"voxels":8820,"farMeshTriangles":4826,"drawCalls":141,"drawnTriangles":382201,"medianFrameMs":1.8999998569488525,"p95FrameMs":2.3999998569488525,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"4555-1","tier":"mid","parts":390,"voxels":8820,"farMeshTriangles":4826,"drawCalls":145,"drawnTriangles":161432,"medianFrameMs":1.5,"p95FrameMs":2.0999999046325684,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"4555-1","tier":"far","parts":390,"voxels":8820,"farMeshTriangles":4826,"drawCalls":2,"drawnTriangles":4827,"medianFrameMs":0.5,"p95FrameMs":1.4000000953674316,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10128-1","tier":"near","parts":336,"voxels":7715,"farMeshTriangles":5918,"drawCalls":124,"drawnTriangles":322239,"medianFrameMs":1.6000001430511475,"p95FrameMs":2.1999998092651367,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10128-1","tier":"mid","parts":336,"voxels":7715,"farMeshTriangles":5918,"drawCalls":130,"drawnTriangles":158824,"medianFrameMs":1.4000000953674316,"p95FrameMs":2,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10128-1","tier":"far","parts":336,"voxels":7715,"farMeshTriangles":5918,"drawCalls":2,"drawnTriangles":5919,"medianFrameMs":0.7999999523162842,"p95FrameMs":1.2999999523162842,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10133-1","tier":"near","parts":419,"voxels":4422,"farMeshTriangles":2696,"drawCalls":87,"drawnTriangles":208441,"medianFrameMs":1.4000000953674316,"p95FrameMs":2.0999999046325684,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10133-1","tier":"mid","parts":419,"voxels":4422,"farMeshTriangles":2696,"drawCalls":99,"drawnTriangles":98297,"medianFrameMs":0.9000000953674316,"p95FrameMs":1.8999998569488525,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+{"set":"10133-1","tier":"far","parts":419,"voxels":4422,"farMeshTriangles":2696,"drawCalls":2,"drawnTriangles":2697,"medianFrameMs":1,"p95FrameMs":1.5,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"apple / metal-3","activeApi":"webgpu"}
+placed omr:10264-1 at (-3200, -800) rot 0
+placed omr:2150-1 at (-3200, 800) rot 1
+placed omr:10185-1 at (-1600, -800) rot 1
+placed omr:4554-1 at (-1600, 800) rot 2
+placed omr:10190-1 at (0, -800) rot 2
+placed omr:10128-1 at (0, 800) rot 3
+placed omr:10218-1 at (1600, -800) rot 3
+placed omr:7936-1 at (1600, 800) rot 0
+placed omr:4555-1 at (3200, -800) rot 0
+placed omr:10133-1 at (3200, 800) rot 1
+street view: stud pitch 122.5 px
+street auto {"fps":59.988002382360825,"drawCalls":1136,"triangles":3729007,"nearChunks":39,"midChunks":0,"farChunks":2,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":12,"p95FrameMs":13.299999952316284,"medianCpuSubmitMs":3.700000047683716,"drawCalls":1136,"triangles":3729007,"nearChunks":39,"midChunks":0,"farChunks":2,"nearestStudPitchPx":122.45215238912623}
+street near {"fps":59.952038357878756,"drawCalls":1136,"triangles":3729007,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":12,"p95FrameMs":16,"medianCpuSubmitMs":3.8999998569488525,"drawCalls":1136,"triangles":3729007,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":122.45215238912623}
+street mid {"fps":60,"drawCalls":1228,"triangles":1755467,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":10.699999809265137,"p95FrameMs":13.700000047683716,"medianCpuSubmitMs":3.9000000953674316,"drawCalls":1228,"triangles":1755467,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":122.45215238912623}
+street far {"fps":60,"drawCalls":13,"triangles":48357,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":2.799999952316284,"p95FrameMs":4.1000001430511475,"medianCpuSubmitMs":0.6000001430511475,"drawCalls":13,"triangles":48357,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":122.45215238912623}
+near/mid transition at step 27: 11.2 px
+transition-near-mid auto {"fps":59.976009590444065,"drawCalls":2547,"triangles":2843840,"nearChunks":0,"midChunks":39,"farChunks":2,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid near {"fps":58.6051963164895,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid mid {"fps":59.988002382360825,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid far {"fps":59.868289745431596,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":11.237627539686283} 
+mid/far transition at step 45: 2.8 px
+transition-mid-far auto {"fps":60.08916455566864,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":2.831515699290195} 
+transition-mid-far near {"fps":59.86828977391635,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":2.831515699290195} 
+transition-mid-far mid {"fps":59.89219403930572,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":2.831515699290195} 
+transition-mid-far far {"fps":58.582308153850505,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":2.831515699290195} 
+aerial view: stud pitch 1.3 px
+aerial auto {"fps":58.77742948355834,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":1.3087023868180527} {"frames":60,"medianFrameMs":2.5999999046325684,"p95FrameMs":3.0999999046325684,"medianCpuSubmitMs":0.7000000476837158,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":1.3087023868180527}
+aerial near {"fps":58.570870748159166,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":1.3087023868180527} {"frames":60,"medianFrameMs":18.899999856948853,"p95FrameMs":20.09999990463257,"medianCpuSubmitMs":6.200000047683716,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":1.3087023868180527}
+aerial mid {"fps":59.976009590444065,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":1.3087023868180527} {"frames":60,"medianFrameMs":16.799999952316284,"p95FrameMs":17.299999952316284,"medianCpuSubmitMs":5.799999952316284,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":1.3087023868180527}
+aerial far {"fps":60.007742917955525,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":1.3087023868180527} {"frames":60,"medianFrameMs":2.5999999046325684,"p95FrameMs":2.799999952316284,"medianCpuSubmitMs":0.5999999046325684,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":1.3087023868180527}
+placed omr:10264-1 at (-7200, -3200) rot 0
+placed omr:10264-1 at (-7200, -1600) rot 1
+placed omr:10264-1 at (-7200, 0) rot 2
+placed omr:10264-1 at (-7200, 1600) rot 3
+placed omr:10264-1 at (-7200, 3200) rot 0
+placed omr:10185-1 at (-5600, -3200) rot 1
+placed omr:10185-1 at (-5600, -1600) rot 2
+placed omr:10185-1 at (-5600, 0) rot 3
+placed omr:10185-1 at (-5600, 1600) rot 0
+placed omr:10185-1 at (-5600, 3200) rot 1
+placed omr:10190-1 at (-4000, -3200) rot 2
+placed omr:10190-1 at (-4000, -1600) rot 3
+placed omr:10190-1 at (-4000, 0) rot 0
+placed omr:10190-1 at (-4000, 1600) rot 1
+placed omr:10190-1 at (-4000, 3200) rot 2
+placed omr:10218-1 at (-2400, -3200) rot 3
+placed omr:10218-1 at (-2400, -1600) rot 0
+placed omr:10218-1 at (-2400, 0) rot 1
+placed omr:10218-1 at (-2400, 1600) rot 2
+placed omr:10218-1 at (-2400, 3200) rot 3
+placed omr:4555-1 at (-800, -3200) rot 0
+placed omr:4555-1 at (-800, -1600) rot 1
+placed omr:4555-1 at (-800, 0) rot 2
+placed omr:4555-1 at (-800, 1600) rot 3
+placed omr:4555-1 at (-800, 3200) rot 0
+placed omr:2150-1 at (800, -3200) rot 1
+placed omr:2150-1 at (800, -1600) rot 2
+placed omr:2150-1 at (800, 0) rot 3
+placed omr:2150-1 at (800, 1600) rot 0
+placed omr:2150-1 at (800, 3200) rot 1
+placed omr:4554-1 at (2400, -3200) rot 2
+placed omr:4554-1 at (2400, -1600) rot 3
+placed omr:4554-1 at (2400, 0) rot 0
+placed omr:4554-1 at (2400, 1600) rot 1
+placed omr:4554-1 at (2400, 3200) rot 2
+placed omr:10128-1 at (4000, -3200) rot 3
+placed omr:10128-1 at (4000, -1600) rot 0
+placed omr:10128-1 at (4000, 0) rot 1
+placed omr:10128-1 at (4000, 1600) rot 2
+placed omr:10128-1 at (4000, 3200) rot 3
+placed omr:7936-1 at (5600, -3200) rot 0
+placed omr:7936-1 at (5600, -1600) rot 1
+placed omr:7936-1 at (5600, 0) rot 2
+placed omr:7936-1 at (5600, 1600) rot 3
+placed omr:7936-1 at (5600, 3200) rot 0
+placed omr:10133-1 at (7200, -3200) rot 1
+placed omr:10133-1 at (7200, -1600) rot 2
+placed omr:10133-1 at (7200, 0) rot 3
+placed omr:10133-1 at (7200, 1600) rot 0
+placed omr:10133-1 at (7200, 3200) rot 1
+street view: stud pitch 101.8 px
+street auto {"fps":45.03622480632461,"drawCalls":4909,"triangles":8048936,"nearChunks":116,"midChunks":93,"farChunks":6,"nearestStudPitchPx":101.75761096085087} {"frames":60,"medianFrameMs":37.89999985694885,"p95FrameMs":39.60000014305115,"medianCpuSubmitMs":15.299999952316284,"drawCalls":4909,"triangles":8048936,"nearChunks":116,"midChunks":93,"farChunks":6,"nearestStudPitchPx":101.75761096085087}
+street near {"fps":53.42303125228568,"drawCalls":4663,"triangles":12542939,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":101.75761096085087} {"frames":60,"medianFrameMs":41.299999952316284,"p95FrameMs":46.60000014305115,"medianCpuSubmitMs":16.600000143051147,"drawCalls":4663,"triangles":12542939,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":101.75761096085087}
+street mid {"fps":57.53968253968254,"drawCalls":4977,"triangles":5490063,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":101.75761096085087} {"frames":60,"medianFrameMs":36.30000019073486,"p95FrameMs":38.5,"medianCpuSubmitMs":15.799999952316284,"drawCalls":4977,"triangles":5490063,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":101.75761096085087}
+street far {"fps":59.347181008902076,"drawCalls":34,"triangles":136267,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":101.75761096085087} {"frames":60,"medianFrameMs":5.400000095367432,"p95FrameMs":7.5,"medianCpuSubmitMs":3.299999952316284,"drawCalls":34,"triangles":136267,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":101.75761096085087}
+near/mid transition at step 33: 11.3 px
+transition-near-mid auto {"fps":18.453589219856298,"drawCalls":12873,"triangles":13280385,"nearChunks":0,"midChunks":205,"farChunks":10,"nearestStudPitchPx":11.332996896225783} 
+transition-near-mid near {"fps":19.837691614066728,"drawCalls":12673,"triangles":30849338,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":11.332996896225783} 
+transition-near-mid mid {"fps":15.757337008565356,"drawCalls":13464,"triangles":13882952,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":11.332996896225783} 
+transition-near-mid far {"fps":59.68961399017376,"drawCalls":97,"triangles":323723,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":11.332996896225783} 
+mid/far transition at step 48: 2.7 px
+transition-mid-far auto {"fps":58.811997631027005,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":2.7357850771755263} 
+transition-mid-far near {"fps":19.48178453327287,"drawCalls":13093,"triangles":31516476,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":2.7357850771755263} 
+transition-mid-far mid {"fps":16.79417802276997,"drawCalls":13929,"triangles":14202746,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":2.7357850771755263} 
+transition-mid-far far {"fps":59.97600961903142,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":2.7357850771755263} 
+aerial view: stud pitch 1 px
+aerial auto {"fps":60.06587871677645,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":1.0318803630552662} {"frames":60,"medianFrameMs":6.700000047683716,"p95FrameMs":8.799999952316284,"medianCpuSubmitMs":4.299999952316284,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":1.0318803630552662}
+aerial near {"fps":15.770106884962367,"drawCalls":13093,"triangles":31516476,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":1.0318803630552662} {"frames":60,"medianFrameMs":93.29999995231628,"p95FrameMs":105.09999990463257,"medianCpuSubmitMs":31.399999856948853,"drawCalls":13093,"triangles":31516476,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":1.0318803630552662}
+aerial mid {"fps":17.80063290635601,"drawCalls":13929,"triangles":14202746,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":1.0318803630552662} {"frames":60,"medianFrameMs":94.89999985694885,"p95FrameMs":98.70000004768372,"medianCpuSubmitMs":30.200000047683716,"drawCalls":13929,"triangles":14202746,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":1.0318803630552662}
+aerial far {"fps":60.01936108422072,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":1.0318803630552662} {"frames":60,"medianFrameMs":6.8999998569488525,"p95FrameMs":8.599999904632568,"medianCpuSubmitMs":4.3999998569488525,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":1.0318803630552662}
+{"set":"7936-1","tier":"near","parts":147,"voxels":3012,"farMeshTriangles":1958,"drawCalls":72,"drawnTriangles":140604,"medianFrameMs":1.5999999046325684,"p95FrameMs":2.299999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"7936-1","tier":"mid","parts":147,"voxels":3012,"farMeshTriangles":1958,"drawCalls":77,"drawnTriangles":66708,"medianFrameMs":1.6000001430511475,"p95FrameMs":2.9000000953674316,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"7936-1","tier":"far","parts":147,"voxels":3012,"farMeshTriangles":1958,"drawCalls":2,"drawnTriangles":1959,"medianFrameMs":2.299999952316284,"p95FrameMs":2.5999999046325684,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10264-1","tier":"near","parts":2567,"voxels":23239,"farMeshTriangles":13964,"drawCalls":334,"drawnTriangles":1222337,"medianFrameMs":3.799999952316284,"p95FrameMs":6.299999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10264-1","tier":"mid","parts":2567,"voxels":23239,"farMeshTriangles":13964,"drawCalls":400,"drawnTriangles":599174,"medianFrameMs":3.5,"p95FrameMs":5.200000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10264-1","tier":"far","parts":2567,"voxels":23239,"farMeshTriangles":13964,"drawCalls":2,"drawnTriangles":13965,"medianFrameMs":1.2000000476837158,"p95FrameMs":2.6000001430511475,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10185-1","tier":"near","parts":2405,"voxels":20753,"farMeshTriangles":9590,"drawCalls":195,"drawnTriangles":1036407,"medianFrameMs":2.5,"p95FrameMs":3.4000000953674316,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10185-1","tier":"mid","parts":2405,"voxels":20753,"farMeshTriangles":9590,"drawCalls":215,"drawnTriangles":446089,"medianFrameMs":2.299999952316284,"p95FrameMs":4.3999998569488525,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10185-1","tier":"far","parts":2405,"voxels":20753,"farMeshTriangles":9590,"drawCalls":2,"drawnTriangles":9591,"medianFrameMs":1.2000000476837158,"p95FrameMs":2.299999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10190-1","tier":"near","parts":1484,"voxels":13272,"farMeshTriangles":6636,"drawCalls":146,"drawnTriangles":747071,"medianFrameMs":4,"p95FrameMs":4.400000095367432,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10190-1","tier":"mid","parts":1484,"voxels":13272,"farMeshTriangles":6636,"drawCalls":157,"drawnTriangles":361274,"medianFrameMs":2.299999952316284,"p95FrameMs":3.700000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10190-1","tier":"far","parts":1484,"voxels":13272,"farMeshTriangles":6636,"drawCalls":2,"drawnTriangles":6637,"medianFrameMs":1.2000000476837158,"p95FrameMs":2.200000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10218-1","tier":"near","parts":2042,"voxels":18940,"farMeshTriangles":9770,"drawCalls":222,"drawnTriangles":936913,"medianFrameMs":5.3999998569488525,"p95FrameMs":5.700000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10218-1","tier":"mid","parts":2042,"voxels":18940,"farMeshTriangles":9770,"drawCalls":241,"drawnTriangles":366987,"medianFrameMs":4.299999952316284,"p95FrameMs":5,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10218-1","tier":"far","parts":2042,"voxels":18940,"farMeshTriangles":9770,"drawCalls":2,"drawnTriangles":9771,"medianFrameMs":1.2999999523162842,"p95FrameMs":1.7000000476837158,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"2150-1","tier":"near","parts":625,"voxels":11464,"farMeshTriangles":5088,"drawCalls":157,"drawnTriangles":410478,"medianFrameMs":3.299999952316284,"p95FrameMs":3.799999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"2150-1","tier":"mid","parts":625,"voxels":11464,"farMeshTriangles":5088,"drawCalls":163,"drawnTriangles":168720,"medianFrameMs":1.8000001907348633,"p95FrameMs":2.3000001907348633,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"2150-1","tier":"far","parts":625,"voxels":11464,"farMeshTriangles":5088,"drawCalls":2,"drawnTriangles":5089,"medianFrameMs":1.3000001907348633,"p95FrameMs":1.7999999523162842,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"4554-1","tier":"near","parts":617,"voxels":11494,"farMeshTriangles":5012,"drawCalls":150,"drawnTriangles":404254,"medianFrameMs":2.1000001430511475,"p95FrameMs":3.5999999046325684,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"4554-1","tier":"mid","parts":617,"voxels":11494,"farMeshTriangles":5012,"drawCalls":155,"drawnTriangles":166914,"medianFrameMs":1.7999999523162842,"p95FrameMs":3.3999998569488525,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"4554-1","tier":"far","parts":617,"voxels":11494,"farMeshTriangles":5012,"drawCalls":2,"drawnTriangles":5013,"medianFrameMs":1.3000001907348633,"p95FrameMs":2.6000001430511475,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"4555-1","tier":"near","parts":390,"voxels":8820,"farMeshTriangles":4826,"drawCalls":141,"drawnTriangles":382201,"medianFrameMs":3.200000047683716,"p95FrameMs":3.799999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"4555-1","tier":"mid","parts":390,"voxels":8820,"farMeshTriangles":4826,"drawCalls":145,"drawnTriangles":161432,"medianFrameMs":1.7000000476837158,"p95FrameMs":3.1999998092651367,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"4555-1","tier":"far","parts":390,"voxels":8820,"farMeshTriangles":4826,"drawCalls":2,"drawnTriangles":4827,"medianFrameMs":1.1999998092651367,"p95FrameMs":2.700000047683716,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10128-1","tier":"near","parts":336,"voxels":7715,"farMeshTriangles":5918,"drawCalls":124,"drawnTriangles":322239,"medianFrameMs":3.3000001907348633,"p95FrameMs":3.799999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10128-1","tier":"mid","parts":336,"voxels":7715,"farMeshTriangles":5918,"drawCalls":130,"drawnTriangles":158824,"medianFrameMs":1.6999998092651367,"p95FrameMs":2.8999998569488525,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10128-1","tier":"far","parts":336,"voxels":7715,"farMeshTriangles":5918,"drawCalls":2,"drawnTriangles":5919,"medianFrameMs":1.2000000476837158,"p95FrameMs":2.299999952316284,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10133-1","tier":"near","parts":419,"voxels":4422,"farMeshTriangles":2696,"drawCalls":87,"drawnTriangles":208441,"medianFrameMs":3.0999999046325684,"p95FrameMs":3.5,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10133-1","tier":"mid","parts":419,"voxels":4422,"farMeshTriangles":2696,"drawCalls":99,"drawnTriangles":98297,"medianFrameMs":1.5,"p95FrameMs":2.9000000953674316,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+{"set":"10133-1","tier":"far","parts":419,"voxels":4422,"farMeshTriangles":2696,"drawCalls":2,"drawnTriangles":2697,"medianFrameMs":1.1000001430511475,"p95FrameMs":2.1000001430511475,"drawingBuffer":{"width":2560,"height":1600,"devicePixelRatio":2},"adapter":"Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)","activeApi":"webgl2"}
+placed omr:10264-1 at (-3200, -800) rot 0
+placed omr:2150-1 at (-3200, 800) rot 1
+placed omr:10185-1 at (-1600, -800) rot 1
+placed omr:4554-1 at (-1600, 800) rot 2
+placed omr:10190-1 at (0, -800) rot 2
+placed omr:10128-1 at (0, 800) rot 3
+placed omr:10218-1 at (1600, -800) rot 3
+placed omr:7936-1 at (1600, 800) rot 0
+placed omr:4555-1 at (3200, -800) rot 0
+placed omr:10133-1 at (3200, 800) rot 1
+street view: stud pitch 122.5 px
+street auto {"fps":59.90415333181747,"drawCalls":1136,"triangles":3729007,"nearChunks":39,"midChunks":0,"farChunks":2,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":13.299999952316284,"p95FrameMs":14,"medianCpuSubmitMs":3.200000047683716,"drawCalls":1136,"triangles":3729007,"nearChunks":39,"midChunks":0,"farChunks":2,"nearestStudPitchPx":122.45215238912623}
+street near {"fps":59.964021592762954,"drawCalls":1136,"triangles":3729007,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":13.200000047683716,"p95FrameMs":13.700000047683716,"medianCpuSubmitMs":3.0999999046325684,"drawCalls":1136,"triangles":3729007,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":122.45215238912623}
+street mid {"fps":59.964021592762954,"drawCalls":1228,"triangles":1755467,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":11.299999952316284,"p95FrameMs":11.700000047683716,"medianCpuSubmitMs":3.299999952316284,"drawCalls":1228,"triangles":1755467,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":122.45215238912623}
+street far {"fps":59.880239520958085,"drawCalls":13,"triangles":48357,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":122.45215238912623} {"frames":60,"medianFrameMs":5.099999904632568,"p95FrameMs":5.300000190734863,"medianCpuSubmitMs":0.5999999046325684,"drawCalls":13,"triangles":48357,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":122.45215238912623}
+near/mid transition at step 27: 11.2 px
+transition-near-mid auto {"fps":59.880239520958085,"drawCalls":2547,"triangles":2843840,"nearChunks":0,"midChunks":39,"farChunks":2,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid near {"fps":59.80861245156259,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid mid {"fps":59.868289745431596,"drawCalls":2548,"triangles":2840550,"nearChunks":0,"midChunks":41,"farChunks":0,"nearestStudPitchPx":11.237627539686283} 
+transition-near-mid far {"fps":59.928086307860944,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":11.237627539686283} 
+mid/far transition at step 45: 2.8 px
+transition-mid-far auto {"fps":61.41045959375649,"drawCalls":21,"triangles":65839,"nearChunks":0,"midChunks":0,"farChunks":41,"nearestStudPitchPx":2.831515699290195} 
+transition-mid-far near {"fps":59.89219403930572,"drawCalls":2399,"triangles":6303296,"nearChunks":41,"midChunks":0,"farChunks":0,"nearestStudPitchPx":2.831515699290195} 

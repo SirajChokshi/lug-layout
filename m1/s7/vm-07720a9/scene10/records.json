@@ -1,0 +1,302 @@
+[
+  {
+    "view": "street",
+    "tier": "auto",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/street-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.8 fps\nDraw calls\n1,220\nDrawn triangles\n2,372,851\nTier (T)\nauto\nChunk tiers near/mid/far\n19 / 20 / 2\nProjected stud pitch, nearest chunk\n61.6 px",
+    "stats": {
+      "fps": 0.8032128514056225,
+      "drawCalls": 1220,
+      "triangles": 2372851,
+      "nearChunks": 19,
+      "midChunks": 20,
+      "farChunks": 2,
+      "nearestStudPitchPx": 61.59530808391697
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 1132,
+      "p95FrameMs": 1199,
+      "medianCpuSubmitMs": 9.5,
+      "drawCalls": 1220,
+      "triangles": 2372851,
+      "nearChunks": 19,
+      "midChunks": 20,
+      "farChunks": 2,
+      "nearestStudPitchPx": 61.59530808391697
+    }
+  },
+  {
+    "view": "street",
+    "tier": "near",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/street-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.6 fps\nDraw calls\n1,140\nDrawn triangles\n3,736,300\nTier (T)\nnear\nChunk tiers near/mid/far\n41 / 0 / 0\nProjected stud pitch, nearest chunk\n61.6 px",
+    "stats": {
+      "fps": 0.6480041472268551,
+      "drawCalls": 1140,
+      "triangles": 3736300,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 61.59530808391697
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 1541.800000000745,
+      "p95FrameMs": 1583.5999999996275,
+      "medianCpuSubmitMs": 8.899999998509884,
+      "drawCalls": 1140,
+      "triangles": 3736300,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 61.59530808391697
+    }
+  },
+  {
+    "view": "street",
+    "tier": "mid",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/street-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n1.0 fps\nDraw calls\n1,232\nDrawn triangles\n1,759,264\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 41 / 0\nProjected stud pitch, nearest chunk\n61.6 px",
+    "stats": {
+      "fps": 1.0029084344603085,
+      "drawCalls": 1232,
+      "triangles": 1759264,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 61.59530808391697
+    },
+    "measurement": null
+  },
+  {
+    "view": "street",
+    "tier": "far",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/street-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n4.0 fps\nDraw calls\n13\nDrawn triangles\n48,357\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n61.6 px",
+    "stats": {
+      "fps": 3.965107057902277,
+      "drawCalls": 13,
+      "triangles": 48357,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 61.59530808391697
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "auto",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/transition-near-mid-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.8 fps\nDraw calls\n2,176\nDrawn triangles\n2,565,281\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 39 / 2\nProjected stud pitch, nearest chunk\n11.7 px",
+    "stats": {
+      "fps": 0.8670019074039162,
+      "drawCalls": 2176,
+      "triangles": 2565281,
+      "nearChunks": 0,
+      "midChunks": 39,
+      "farChunks": 2,
+      "nearestStudPitchPx": 11.748932366797236
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "near",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/transition-near-mid-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.5 fps\nDraw calls\n2,043\nDrawn triangles\n5,681,564\nTier (T)\nnear\nChunk tiers near/mid/far\n41 / 0 / 0\nProjected stud pitch, nearest chunk\n11.7 px",
+    "stats": {
+      "fps": 0.4766217053525464,
+      "drawCalls": 2043,
+      "triangles": 5681564,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 11.748932366797236
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "mid",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/transition-near-mid-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.8 fps\nDraw calls\n2,176\nDrawn triangles\n2,565,281\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 41 / 0\nProjected stud pitch, nearest chunk\n11.7 px",
+    "stats": {
+      "fps": 0.8194034742704808,
+      "drawCalls": 2176,
+      "triangles": 2565281,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 11.748932366797236
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-near-mid",
+    "tier": "far",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/transition-near-mid-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n4.9 fps\nDraw calls\n18\nDrawn triangles\n58,279\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n11.7 px",
+    "stats": {
+      "fps": 4.817729243622273,
+      "drawCalls": 18,
+      "triangles": 58279,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 11.748932366797236
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "auto",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/transition-mid-far-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n5.4 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n2.8 px",
+    "stats": {
+      "fps": 5.568962316696026,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 2.792300279985726
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "near",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/transition-mid-far-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.5 fps\nDraw calls\n2,399\nDrawn triangles\n6,303,296\nTier (T)\nnear\nChunk tiers near/mid/far\n41 / 0 / 0\nProjected stud pitch, nearest chunk\n2.8 px",
+    "stats": {
+      "fps": 0.4496605063176548,
+      "drawCalls": 2399,
+      "triangles": 6303296,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 2.792300279985726
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "mid",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/transition-mid-far-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.8 fps\nDraw calls\n2,548\nDrawn triangles\n2,840,550\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 41 / 0\nProjected stud pitch, nearest chunk\n2.8 px",
+    "stats": {
+      "fps": 0.8014104824498283,
+      "drawCalls": 2548,
+      "triangles": 2840550,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 2.792300279985726
+    },
+    "measurement": null
+  },
+  {
+    "view": "transition-mid-far",
+    "tier": "far",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/transition-mid-far-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n5.1 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n2.8 px",
+    "stats": {
+      "fps": 5.054759898904802,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 2.792300279985726
+    },
+    "measurement": null
+  },
+  {
+    "view": "aerial",
+    "tier": "auto",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/aerial-auto.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n5.7 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nauto\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n1.2 px",
+    "stats": {
+      "fps": 5.553498704172147,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 1.2311089192464073
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 165.19999999925494,
+      "p95FrameMs": 182.30000000074506,
+      "medianCpuSubmitMs": 1.800000000745058,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 1.2311089192464073
+    }
+  },
+  {
+    "view": "aerial",
+    "tier": "near",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/aerial-near.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.4 fps\nDraw calls\n2,399\nDrawn triangles\n6,303,296\nTier (T)\nnear\nChunk tiers near/mid/far\n41 / 0 / 0\nProjected stud pitch, nearest chunk\n1.2 px",
+    "stats": {
+      "fps": 0.44035404465182787,
+      "drawCalls": 2399,
+      "triangles": 6303296,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.2311089192464073
+    },
+    "measurement": {
+      "frames": 60,
+      "medianFrameMs": 2220.800000000745,
+      "p95FrameMs": 2421.7000000011176,
+      "medianCpuSubmitMs": 15.700000001117587,
+      "drawCalls": 2399,
+      "triangles": 6303296,
+      "nearChunks": 41,
+      "midChunks": 0,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.2311089192464073
+    }
+  },
+  {
+    "view": "aerial",
+    "tier": "mid",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/aerial-mid.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n0.8 fps\nDraw calls\n2,548\nDrawn triangles\n2,840,550\nTier (T)\nmid\nChunk tiers near/mid/far\n0 / 41 / 0\nProjected stud pitch, nearest chunk\n1.2 px",
+    "stats": {
+      "fps": 0.7937137868094156,
+      "drawCalls": 2548,
+      "triangles": 2840550,
+      "nearChunks": 0,
+      "midChunks": 41,
+      "farChunks": 0,
+      "nearestStudPitchPx": 1.2311089192464073
+    },
+    "measurement": null
+  },
+  {
+    "view": "aerial",
+    "tier": "far",
+    "screenshot": "/tmp/ev/s7/vm-10-07720a9/aerial-far.png",
+    "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n1,484 ms\nMode\nselect\nGhost rotation\n90°\nCursor on lattice (LDU)\n-400, -400\nPlacements\n20\nHistory (undo, redo)\n20, 0\nLast edit latency\n1138.3 ms (place 10133-1, 90°)\nRebuilt for it\n4 chunks, 420 parts, 2,420 studs\nFrame rate (rAF)\n5.4 fps\nDraw calls\n21\nDrawn triangles\n65,839\nTier (T)\nfar\nChunk tiers near/mid/far\n0 / 0 / 41\nProjected stud pitch, nearest chunk\n1.2 px",
+    "stats": {
+      "fps": 5.427899402938382,
+      "drawCalls": 21,
+      "triangles": 65839,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 41,
+      "nearestStudPitchPx": 1.2311089192464073
+    },
+    "measurement": null
+  }
+]

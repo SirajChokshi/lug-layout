@@ -1,0 +1,220 @@
+{
+  "url": "http://localhost:4173/?model=4554-1&api=webgl2&tier=mid&measure=1&warmup=1&frames=3",
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1280×801 px (devicePixelRatio 1)\nBundle\nc040b2122ae7cf55\nParts\n617\nModules\n1\nStud instances (drawn of total)\n2,447 of 2,447\nScene triangles\n404,253\nLoad\n152 ms\nGPU buffers allocated so far, JS heap\nvertex+index 1.6 MiB, other 0.0 MiB, JS heap 31.2 MiB\nRender origin (chunks), rebases\n(3, -1); 1 rebases, last at frame 0\nTier\nmid\nProjected stud pitch, nearest chunk\n12.3 px\nVoxel far mesh\n11,494 voxels of 20×8×20 LDU, 5,012 triangles\nChunk tiers near/mid/far (median)\n0 / 1 / 0\nDraw calls (median)\n155\nDrawn triangles (median)\n166,914\nScene coverage (sampled frames)\n10%, 12%, 13%, 14%, 13%, 12%, 10%, 10%, 11%\nMedian frame (GPU-synced)\n169.4 ms\np95 frame\n171.1 ms\nMedian CPU submit\n3.9 ms\nMeasured frames\n3",
+  "result": {
+    "params": {
+      "mode": "model",
+      "showEditState": false,
+      "api": "webgl2",
+      "lod": "standard",
+      "model": "4554-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "tier": "mid",
+      "distanceLdu": null,
+      "zoom": false,
+      "originChunkX": 0,
+      "originChunkZ": 0,
+      "dumpWorld": false,
+      "measure": true,
+      "warmupFrames": 1,
+      "measuredFrames": 3,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgl2",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgl2",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "bundleVersion": "c040b2122ae7cf55",
+      "parts": 617,
+      "modules": 1,
+      "studInstances": 2447,
+      "visibleStudInstances": 2447,
+      "bodyTriangles": 283389,
+      "studTriangles": 120864,
+      "creditedFiles": 1742,
+      "model": {
+        "name": "4554-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/4554-1.mpd",
+        "sections": [
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - main.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - station with platform.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - station building.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - streat lamp.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - bench.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - luggage car 1.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - luggage car 2.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 1.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 2.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 3.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 4.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 5.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 6.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 7.ldr"
+          },
+          {
+            "author": "Robert Paciorek [bercik]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "",
+            "title": "Name: 4554 - minifig 8.ldr"
+          }
+        ]
+      },
+      "farModel": {
+        "voxels": 11494,
+        "triangles": 5012
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 1694584,
+      "otherBytes": 27552,
+      "jsHeapBytes": 32679733
+    },
+    "loadMs": 152.2000000011176,
+    "timings": {
+      "frames": 3,
+      "medianFrameMs": 169.39999999850988,
+      "p95FrameMs": 171.10000000149012,
+      "meanFrameMs": 167.76666666629413,
+      "medianCpuSubmitMs": 3.900000000372529,
+      "fpsFromMedian": 5.9031877214214665,
+      "medianDrawCalls": 155,
+      "medianDrawnTriangles": 166914,
+      "medianChunkTiers": {
+        "near": 0,
+        "mid": 1,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.0954861111111111,
+        0.12065972222222222,
+        0.1306423611111111,
+        0.1410590277777778,
+        0.13368055555555555,
+        0.1228298611111111,
+        0.09635416666666667,
+        0.10026041666666667,
+        0.11197916666666667
+      ],
+      "firstMeasuredFrame": 1,
+      "frameMs": [
+        162.7999999988824,
+        169.39999999850988,
+        171.10000000149012
+      ],
+      "cpuSubmitMs": [
+        4.400000000372529,
+        3.299999998882413,
+        3.900000000372529
+      ]
+    },
+    "drawCalls": 155,
+    "drawnTriangles": 166914,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    "worldPlacements": null,
+    "rebases": [
+      {
+        "frame": 0,
+        "chunkX": 3,
+        "chunkZ": -1,
+        "chunks": 1,
+        "ms": 0.40000000037252903
+      }
+    ]
+  },
+  "logs": []
+}

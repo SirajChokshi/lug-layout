@@ -179,6 +179,8 @@ def phase_of(instances):
             if px != int(px) or pz != int(pz):
                 continue
             layers[round(y * 1000)][(int(px), int(pz))] += 1
+    if not layers:
+        return None
     low = min(layers)
     phases = layers[low]
     best = max(phases.values())
@@ -191,6 +193,8 @@ def phase_of(instances):
 def voxelize(name, path):
     instances = model_instances(path)
     phase = phase_of(instances)
+    if phase is None:
+        return name, None, {}, 0, len(instances)
     areas = defaultdict(lambda: defaultdict(float))
     triangles = 0
     for part, color, m in instances:
@@ -247,6 +251,8 @@ def check(args):
     translucent = translucent_codes()
     manifest = json.load(open(f"{FAR}/manifest.json"))
     entry = next(m for m in manifest["models"] if m["name"] == name)
+    if phase is None:
+        return dict(model=name, parts=parts, studless=True, bakedFarMeshIsNull=entry.get("farMesh") is None)
     meta, cells, colors = read_glb(f"{FAR}/{entry['farMesh']['file']}")
     origin = np.array(meta["origin"])
     dims = meta["dims"]

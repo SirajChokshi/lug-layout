@@ -1,0 +1,628 @@
+{
+  "url": "http://localhost:4173/?model=10190-1&api=webgpu&tier=near&measure=1&warmup=5&frames=60",
+  "hud": "Brick Railroad\nAPI\nwebgpu\nAdapter\napple / metal-3\nDrawing buffer\n2560×1600 px (devicePixelRatio 2)\nBundle\nc040b2122ae7cf55\nParts\n1,484\nModules\n1\nStud instances (drawn of total)\n5,127 of 5,127\nScene triangles\n747,070\nLoad\n115 ms\nGPU buffers allocated so far, JS heap\nvertex+index 3.9 MiB, other 0.0 MiB, JS heap 20.7 MiB\nRender origin (chunks), rebases\n(2, 0); 1 rebases, last at frame 0\nTier\nnear\nProjected stud pitch, nearest chunk\n29.0 px\nVoxel far mesh\n13,272 voxels of 20×8×20 LDU, 6,636 triangles\nChunk tiers near/mid/far (median)\n1 / 0 / 0\nDraw calls (median)\n146\nDrawn triangles (median)\n747,071\nScene coverage (sampled frames)\n21%, 22%, 19%, 20%, 19%, 23%, 24%, 24%, 20%\nMedian frame (GPU-synced)\n2.1 ms\np95 frame\n2.6 ms\nMedian CPU submit\n0.3 ms\nMeasured frames\n60",
+  "result": {
+    "params": {
+      "mode": "model",
+      "showEditState": false,
+      "api": "webgpu",
+      "lod": "standard",
+      "model": "10190-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "tier": "near",
+      "distanceLdu": null,
+      "zoom": false,
+      "originChunkX": 0,
+      "originChunkZ": 0,
+      "dumpWorld": false,
+      "measure": true,
+      "warmupFrames": 5,
+      "measuredFrames": 60,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgpu",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgpu",
+      "adapter": "apple / metal-3"
+    },
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "summary": {
+      "bundleVersion": "c040b2122ae7cf55",
+      "parts": 1484,
+      "modules": 1,
+      "studInstances": 5127,
+      "visibleStudInstances": 5127,
+      "bodyTriangles": 496222,
+      "studTriangles": 250848,
+      "creditedFiles": 1742,
+      "model": {
+        "name": "10190-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10190-1.mpd",
+        "sections": [
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Main model.ldr",
+            "title": "Main model"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Minifig 1.ldr",
+            "title": "Minifig 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Minifig 2.ldr",
+            "title": "Minifig 2"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Minifig 3.ldr",
+            "title": "Minifig 3"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port.ldr",
+            "title": "Car port"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Cabage.ldr",
+            "title": "Car port - Cabage"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Cherries.ldr",
+            "title": "Car port - Cherries"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Wall element 1.ldr",
+            "title": "Car port - Wall element 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Gate right.ldr",
+            "title": "Car port - Gate right"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Gate left.ldr",
+            "title": "Car port - Gate left"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Wall element 2.ldr",
+            "title": "Car port - Wall element 2"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Lamp.ldr",
+            "title": "Car port - Lamp"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Flag.ldr",
+            "title": "Car port - Flag"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Arch.ldr",
+            "title": "Car port - Arch"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Arch decoration.ldr",
+            "title": "Car port - Arch decoration"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Roof.ldr",
+            "title": "Car port - Roof"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Chimey detail.ldr",
+            "title": "Car port - Chimey detail"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Roof decoration.ldr",
+            "title": "Car port - Roof decoration"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor.ldr",
+            "title": "Ground Floor"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor - Side Window.ldr",
+            "title": "Ground Floor - Side Window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor - Central Window.ldr",
+            "title": "Ground Floor - Central Window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor - First Staircase Module.ldr",
+            "title": "Ground Floor - First Staircase Module"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor - Staircase Module.ldr",
+            "title": "Ground Floor - Staircase Module"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor - Balcony.ldr",
+            "title": "Ground Floor - Balcony"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor - Balcony Protection.ldr",
+            "title": "Ground Floor - Balcony Protection"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor - Lamppost.ldr",
+            "title": "Ground Floor - Lamppost"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Ground Floor - Flower.ldr",
+            "title": "Ground Floor - Flower"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - First Floor.ldr",
+            "title": "First Floor"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - First Floor - Door.ldr",
+            "title": "First Floor - Door"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - First Floor - Staircase.ldr",
+            "title": "First Floor - Staircase"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - First Floor - Window.ldr",
+            "title": "First Floor - Window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - First Floor - Awning Long.ldr",
+            "title": "First Floor - Awning Long"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - First Floor - Awning Short.ldr",
+            "title": "First Floor - Awning Short"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - First Floor - Sign.ldr",
+            "title": "First Floor - Sign"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor.ldr",
+            "title": "Second Floor"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - 2x Plate 1x2 Medium_Blue.ldr",
+            "title": "Second Floor - 2x Plate 1x2 Medium_Blue"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - 2x Plate 1x1 Medium_Blue.ldr",
+            "title": "Second Floor - 2x Plate 1x1 Medium_Blue"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - Window.ldr",
+            "title": "Second Floor - Window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - Awning.ldr",
+            "title": "Second Floor - Awning"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - Awning Fabric.ldr",
+            "title": "Second Floor - Awning Fabric"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - Wall Element 1.ldr",
+            "title": "Second Floor - Wall Element 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - Staircase.ldr",
+            "title": "Second Floor - Staircase"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - Flagpost.ldr",
+            "title": "Second Floor - Flagpost"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - Balcony.ldr",
+            "title": "Second Floor - Balcony"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Second Floor - Balcony Protection.ldr",
+            "title": "Second Floor - Balcony Protection"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor.ldr",
+            "title": "Third Floor"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - Turnable.ldr",
+            "title": "Third Floor - Turnable"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - Window with Pane Lattice Diamond.ldr",
+            "title": "Third Floor - Window with Pane Lattice Diamond"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - Window.ldr",
+            "title": "Third Floor - Window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - Roof Element 1.ldr",
+            "title": "Third Floor - Roof Element 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - 2x Plate 1x6 Medium_Blue.ldr",
+            "title": "Third Floor - 2x Plate 1x6 Medium_Blue"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - Roof Element.ldr",
+            "title": "Third Floor - Roof Element"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - Balcony.ldr",
+            "title": "Third Floor - Balcony"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - Balcony Protection.ldr",
+            "title": "Third Floor - Balcony Protection"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Third Floor - Chimny.ldr",
+            "title": "Third Floor - Chimny"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Basket1.ldr",
+            "title": "Car port - Basket1"
+          },
+          {
+            "author": "Willy Tschager [Holly-Wood]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10190 - Car port - Basket2.ldr",
+            "title": "Car port - Basket2"
+          }
+        ]
+      },
+      "farModel": {
+        "voxels": 13272,
+        "triangles": 6636
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 4128536,
+      "otherBytes": 23632,
+      "jsHeapBytes": 21738795
+    },
+    "loadMs": 115,
+    "timings": {
+      "frames": 60,
+      "medianFrameMs": 2.0999999046325684,
+      "p95FrameMs": 2.6000001430511475,
+      "meanFrameMs": 2.1849999984105426,
+      "medianCpuSubmitMs": 0.2999999523162842,
+      "fpsFromMedian": 476.1904978157451,
+      "medianDrawCalls": 146,
+      "medianDrawnTriangles": 747071,
+      "medianChunkTiers": {
+        "near": 1,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.20616319444444445,
+        0.2204861111111111,
+        0.18836805555555555,
+        0.2048611111111111,
+        0.1875,
+        0.234375,
+        0.23567708333333334,
+        0.24131944444444445,
+        0.20008680555555555
+      ],
+      "firstMeasuredFrame": 5,
+      "frameMs": [
+        2.700000047683716,
+        2.5,
+        2.0999999046325684,
+        2.4000000953674316,
+        2.299999952316284,
+        2.0999999046325684,
+        2.1000001430511475,
+        2.3999998569488525,
+        2.3000001907348633,
+        2.299999952316284,
+        2.5999999046325684,
+        2.4000000953674316,
+        2,
+        2.3999998569488525,
+        3.3000001907348633,
+        2.799999952316284,
+        2.200000047683716,
+        2.0999999046325684,
+        2.200000047683716,
+        2,
+        2,
+        2.299999952316284,
+        2.299999952316284,
+        2.200000047683716,
+        2,
+        2,
+        2,
+        1.9000000953674316,
+        2.3999998569488525,
+        1.9000000953674316,
+        2,
+        2.299999952316284,
+        2.0999999046325684,
+        2.3000001907348633,
+        2,
+        1.8999998569488525,
+        2.1000001430511475,
+        2,
+        2,
+        2,
+        2,
+        2.299999952316284,
+        1.8999998569488525,
+        2.1000001430511475,
+        2.200000047683716,
+        2,
+        2.1999998092651367,
+        1.9000000953674316,
+        2.4000000953674316,
+        2,
+        2,
+        2,
+        2.0999999046325684,
+        2,
+        2.0999999046325684,
+        2.200000047683716,
+        2.6000001430511475,
+        2.0999999046325684,
+        2,
+        2.0999999046325684
+      ],
+      "cpuSubmitMs": [
+        0.7000000476837158,
+        0.5999999046325684,
+        0.39999985694885254,
+        0.5,
+        0.39999985694885254,
+        0.2999999523162842,
+        0.3000001907348633,
+        0.2999999523162842,
+        0.20000004768371582,
+        0.39999985694885254,
+        0.2999999523162842,
+        0.40000009536743164,
+        0.20000004768371582,
+        0.39999985694885254,
+        0.6000001430511475,
+        0.5999999046325684,
+        0.39999985694885254,
+        0.39999985694885254,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.39999985694885254,
+        0.2999999523162842,
+        0.20000004768371582,
+        0.20000004768371582,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.40000009536743164,
+        0.2999999523162842,
+        0.39999985694885254,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.20000004768371582,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.19999980926513672,
+        0.19999980926513672,
+        0.2999999523162842,
+        0.20000004768371582,
+        0.40000009536743164,
+        0.5,
+        0.39999985694885254,
+        0.5,
+        0.3000001907348633,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.39999985694885254,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.40000009536743164,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.2999999523162842,
+        0.5
+      ]
+    },
+    "drawCalls": 146,
+    "drawnTriangles": 747071,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    "worldPlacements": null,
+    "rebases": [
+      {
+        "frame": 0,
+        "chunkX": 2,
+        "chunkZ": 0,
+        "chunks": 1,
+        "ms": 0.10000014305114746
+      }
+    ]
+  },
+  "logs": []
+}

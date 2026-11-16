@@ -1,0 +1,542 @@
+[
+  {
+    "set": "7936-1",
+    "tier": "near",
+    "parts": 147,
+    "voxels": 3012,
+    "farMeshTriangles": 1958,
+    "drawCalls": 72,
+    "drawnTriangles": 140604,
+    "medianFrameMs": 1.5999999046325684,
+    "p95FrameMs": 2.299999952316284,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "7936-1",
+    "tier": "mid",
+    "parts": 147,
+    "voxels": 3012,
+    "farMeshTriangles": 1958,
+    "drawCalls": 77,
+    "drawnTriangles": 66708,
+    "medianFrameMs": 1.6000001430511475,
+    "p95FrameMs": 2.9000000953674316,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "7936-1",
+    "tier": "far",
+    "parts": 147,
+    "voxels": 3012,
+    "farMeshTriangles": 1958,
+    "drawCalls": 2,
+    "drawnTriangles": 1959,
+    "medianFrameMs": 2.299999952316284,
+    "p95FrameMs": 2.5999999046325684,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10264-1",
+    "tier": "near",
+    "parts": 2567,
+    "voxels": 23239,
+    "farMeshTriangles": 13964,
+    "drawCalls": 334,
+    "drawnTriangles": 1222337,
+    "medianFrameMs": 3.799999952316284,
+    "p95FrameMs": 6.299999952316284,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10264-1",
+    "tier": "mid",
+    "parts": 2567,
+    "voxels": 23239,
+    "farMeshTriangles": 13964,
+    "drawCalls": 400,
+    "drawnTriangles": 599174,
+    "medianFrameMs": 3.5,
+    "p95FrameMs": 5.200000047683716,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10264-1",
+    "tier": "far",
+    "parts": 2567,
+    "voxels": 23239,
+    "farMeshTriangles": 13964,
+    "drawCalls": 2,
+    "drawnTriangles": 13965,
+    "medianFrameMs": 1.2000000476837158,
+    "p95FrameMs": 2.6000001430511475,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10185-1",
+    "tier": "near",
+    "parts": 2405,
+    "voxels": 20753,
+    "farMeshTriangles": 9590,
+    "drawCalls": 195,
+    "drawnTriangles": 1036407,
+    "medianFrameMs": 2.5,
+    "p95FrameMs": 3.4000000953674316,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10185-1",
+    "tier": "mid",
+    "parts": 2405,
+    "voxels": 20753,
+    "farMeshTriangles": 9590,
+    "drawCalls": 215,
+    "drawnTriangles": 446089,
+    "medianFrameMs": 2.299999952316284,
+    "p95FrameMs": 4.3999998569488525,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10185-1",
+    "tier": "far",
+    "parts": 2405,
+    "voxels": 20753,
+    "farMeshTriangles": 9590,
+    "drawCalls": 2,
+    "drawnTriangles": 9591,
+    "medianFrameMs": 1.2000000476837158,
+    "p95FrameMs": 2.299999952316284,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10190-1",
+    "tier": "near",
+    "parts": 1484,
+    "voxels": 13272,
+    "farMeshTriangles": 6636,
+    "drawCalls": 146,
+    "drawnTriangles": 747071,
+    "medianFrameMs": 4,
+    "p95FrameMs": 4.400000095367432,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10190-1",
+    "tier": "mid",
+    "parts": 1484,
+    "voxels": 13272,
+    "farMeshTriangles": 6636,
+    "drawCalls": 157,
+    "drawnTriangles": 361274,
+    "medianFrameMs": 2.299999952316284,
+    "p95FrameMs": 3.700000047683716,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10190-1",
+    "tier": "far",
+    "parts": 1484,
+    "voxels": 13272,
+    "farMeshTriangles": 6636,
+    "drawCalls": 2,
+    "drawnTriangles": 6637,
+    "medianFrameMs": 1.2000000476837158,
+    "p95FrameMs": 2.200000047683716,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10218-1",
+    "tier": "near",
+    "parts": 2042,
+    "voxels": 18940,
+    "farMeshTriangles": 9770,
+    "drawCalls": 222,
+    "drawnTriangles": 936913,
+    "medianFrameMs": 5.3999998569488525,
+    "p95FrameMs": 5.700000047683716,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10218-1",
+    "tier": "mid",
+    "parts": 2042,
+    "voxels": 18940,
+    "farMeshTriangles": 9770,
+    "drawCalls": 241,
+    "drawnTriangles": 366987,
+    "medianFrameMs": 4.299999952316284,
+    "p95FrameMs": 5,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10218-1",
+    "tier": "far",
+    "parts": 2042,
+    "voxels": 18940,
+    "farMeshTriangles": 9770,
+    "drawCalls": 2,
+    "drawnTriangles": 9771,
+    "medianFrameMs": 1.2999999523162842,
+    "p95FrameMs": 1.7000000476837158,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "2150-1",
+    "tier": "near",
+    "parts": 625,
+    "voxels": 11464,
+    "farMeshTriangles": 5088,
+    "drawCalls": 157,
+    "drawnTriangles": 410478,
+    "medianFrameMs": 3.299999952316284,
+    "p95FrameMs": 3.799999952316284,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "2150-1",
+    "tier": "mid",
+    "parts": 625,
+    "voxels": 11464,
+    "farMeshTriangles": 5088,
+    "drawCalls": 163,
+    "drawnTriangles": 168720,
+    "medianFrameMs": 1.8000001907348633,
+    "p95FrameMs": 2.3000001907348633,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "2150-1",
+    "tier": "far",
+    "parts": 625,
+    "voxels": 11464,
+    "farMeshTriangles": 5088,
+    "drawCalls": 2,
+    "drawnTriangles": 5089,
+    "medianFrameMs": 1.3000001907348633,
+    "p95FrameMs": 1.7999999523162842,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "4554-1",
+    "tier": "near",
+    "parts": 617,
+    "voxels": 11494,
+    "farMeshTriangles": 5012,
+    "drawCalls": 150,
+    "drawnTriangles": 404254,
+    "medianFrameMs": 2.1000001430511475,
+    "p95FrameMs": 3.5999999046325684,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "4554-1",
+    "tier": "mid",
+    "parts": 617,
+    "voxels": 11494,
+    "farMeshTriangles": 5012,
+    "drawCalls": 155,
+    "drawnTriangles": 166914,
+    "medianFrameMs": 1.7999999523162842,
+    "p95FrameMs": 3.3999998569488525,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "4554-1",
+    "tier": "far",
+    "parts": 617,
+    "voxels": 11494,
+    "farMeshTriangles": 5012,
+    "drawCalls": 2,
+    "drawnTriangles": 5013,
+    "medianFrameMs": 1.3000001907348633,
+    "p95FrameMs": 2.6000001430511475,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "4555-1",
+    "tier": "near",
+    "parts": 390,
+    "voxels": 8820,
+    "farMeshTriangles": 4826,
+    "drawCalls": 141,
+    "drawnTriangles": 382201,
+    "medianFrameMs": 3.200000047683716,
+    "p95FrameMs": 3.799999952316284,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "4555-1",
+    "tier": "mid",
+    "parts": 390,
+    "voxels": 8820,
+    "farMeshTriangles": 4826,
+    "drawCalls": 145,
+    "drawnTriangles": 161432,
+    "medianFrameMs": 1.7000000476837158,
+    "p95FrameMs": 3.1999998092651367,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "4555-1",
+    "tier": "far",
+    "parts": 390,
+    "voxels": 8820,
+    "farMeshTriangles": 4826,
+    "drawCalls": 2,
+    "drawnTriangles": 4827,
+    "medianFrameMs": 1.1999998092651367,
+    "p95FrameMs": 2.700000047683716,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10128-1",
+    "tier": "near",
+    "parts": 336,
+    "voxels": 7715,
+    "farMeshTriangles": 5918,
+    "drawCalls": 124,
+    "drawnTriangles": 322239,
+    "medianFrameMs": 3.3000001907348633,
+    "p95FrameMs": 3.799999952316284,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10128-1",
+    "tier": "mid",
+    "parts": 336,
+    "voxels": 7715,
+    "farMeshTriangles": 5918,
+    "drawCalls": 130,
+    "drawnTriangles": 158824,
+    "medianFrameMs": 1.6999998092651367,
+    "p95FrameMs": 2.8999998569488525,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10128-1",
+    "tier": "far",
+    "parts": 336,
+    "voxels": 7715,
+    "farMeshTriangles": 5918,
+    "drawCalls": 2,
+    "drawnTriangles": 5919,
+    "medianFrameMs": 1.2000000476837158,
+    "p95FrameMs": 2.299999952316284,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10133-1",
+    "tier": "near",
+    "parts": 419,
+    "voxels": 4422,
+    "farMeshTriangles": 2696,
+    "drawCalls": 87,
+    "drawnTriangles": 208441,
+    "medianFrameMs": 3.0999999046325684,
+    "p95FrameMs": 3.5,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10133-1",
+    "tier": "mid",
+    "parts": 419,
+    "voxels": 4422,
+    "farMeshTriangles": 2696,
+    "drawCalls": 99,
+    "drawnTriangles": 98297,
+    "medianFrameMs": 1.5,
+    "p95FrameMs": 2.9000000953674316,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  },
+  {
+    "set": "10133-1",
+    "tier": "far",
+    "parts": 419,
+    "voxels": 4422,
+    "farMeshTriangles": 2696,
+    "drawCalls": 2,
+    "drawnTriangles": 2697,
+    "medianFrameMs": 1.1000001430511475,
+    "p95FrameMs": 2.1000001430511475,
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+    "activeApi": "webgl2"
+  }
+]

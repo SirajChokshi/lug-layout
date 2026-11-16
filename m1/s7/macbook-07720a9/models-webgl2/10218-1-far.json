@@ -1,0 +1,348 @@
+{
+  "url": "http://localhost:4173/?model=10218-1&api=webgl2&tier=far&measure=1&warmup=5&frames=60",
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)\nDrawing buffer\n2560×1600 px (devicePixelRatio 2)\nBundle\nc040b2122ae7cf55\nParts\n2,042\nModules\n1\nStud instances (drawn of total)\n7,040 of 7,040\nScene triangles\n936,912\nLoad\n76 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.8 MiB, other 0.0 MiB, JS heap 27.3 MiB\nRender origin (chunks), rebases\n(2, -1); 1 rebases, last at frame 0\nTier\nfar\nProjected stud pitch, nearest chunk\n30.5 px\nVoxel far mesh\n18,940 voxels of 20×8×20 LDU, 9,770 triangles\nChunk tiers near/mid/far (median)\n0 / 0 / 1\nDraw calls (median)\n2\nDrawn triangles (median)\n9,771\nScene coverage (sampled frames)\n27%, 28%, 22%, 29%, 31%, 30%, 21%, 26%, 27%\nMedian frame (GPU-synced)\n1.3 ms\np95 frame\n1.7 ms\nMedian CPU submit\n0.1 ms\nMeasured frames\n60",
+  "result": {
+    "params": {
+      "mode": "model",
+      "showEditState": false,
+      "api": "webgl2",
+      "lod": "standard",
+      "model": "10218-1",
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "tier": "far",
+      "distanceLdu": null,
+      "zoom": false,
+      "originChunkX": 0,
+      "originChunkZ": 0,
+      "dumpWorld": false,
+      "measure": true,
+      "warmupFrames": 5,
+      "measuredFrames": 60,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgl2",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgl2",
+      "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)"
+    },
+    "drawingBuffer": {
+      "width": 2560,
+      "height": 1600,
+      "devicePixelRatio": 2
+    },
+    "summary": {
+      "bundleVersion": "c040b2122ae7cf55",
+      "parts": 2042,
+      "modules": 1,
+      "studInstances": 7040,
+      "visibleStudInstances": 7040,
+      "bodyTriangles": 585936,
+      "studTriangles": 350976,
+      "creditedFiles": 1742,
+      "model": {
+        "name": "10218-1",
+        "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10218-1.mpd",
+        "sections": [
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Stefan Frenz (smf) with LDCad",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - rigidHoseD9.ldr",
+            "title": "rigidHoseD9"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 1 Basement.ldr",
+            "title": "Brown House 1 Basement"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 2 Downstairs.ldr",
+            "title": "Brown House 2 Downstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 3 Upstairs.ldr",
+            "title": "Brown House 3 Upstairs"
+          },
+          {
+            "author": "Stefan Frenz",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 4 Roof.ldr",
+            "title": "Brown House 4 Roof"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Corkskrew Stair.ldr",
+            "title": "Corkskrew Stair"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 1 Basement.ldr",
+            "title": "Blue House 1 Basement"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 2 Downstairs.ldr",
+            "title": "Blue House 2 Downstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 3 Upstairs.ldr",
+            "title": "Blue House 3 Upstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 4 Roof.ldr",
+            "title": "Blue House 4 Roof"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig1.ldr",
+            "title": "MiniFig1"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig2.ldr",
+            "title": "MiniFig2"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig3.ldr",
+            "title": "MiniFig3"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig4.ldr",
+            "title": "MiniFig4"
+          },
+          {
+            "author": "Stefan Frenz [smf]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House.ldr",
+            "title": "Brown House"
+          },
+          {
+            "author": "Stefan Frenz [smf]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House.ldr",
+            "title": "Blue House"
+          }
+        ]
+      },
+      "farModel": {
+        "voxels": 18940,
+        "triangles": 9770
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 820716,
+      "otherBytes": 624,
+      "jsHeapBytes": 28664212
+    },
+    "loadMs": 76.09999990463257,
+    "timings": {
+      "frames": 60,
+      "medianFrameMs": 1.2999999523162842,
+      "p95FrameMs": 1.7000000476837158,
+      "meanFrameMs": 1.3383333325386046,
+      "medianCpuSubmitMs": 0.10000014305114746,
+      "fpsFromMedian": 769.2307974459867,
+      "medianDrawCalls": 2,
+      "medianDrawnTriangles": 9771,
+      "medianChunkTiers": {
+        "near": 0,
+        "mid": 0,
+        "far": 1
+      },
+      "sceneCoverage": [
+        0.2703993055555556,
+        0.2803819444444444,
+        0.2183159722222222,
+        0.2903645833333333,
+        0.3146701388888889,
+        0.3016493055555556,
+        0.21354166666666666,
+        0.2647569444444444,
+        0.2717013888888889
+      ],
+      "firstMeasuredFrame": 5,
+      "frameMs": [
+        2.6000001430511475,
+        2.3999998569488525,
+        2,
+        1.6000001430511475,
+        1.5,
+        1.1999998092651367,
+        1.6000001430511475,
+        1.2999999523162842,
+        1.2999999523162842,
+        1.2999999523162842,
+        1.2000000476837158,
+        1.2999999523162842,
+        1.2000000476837158,
+        1.5,
+        1.2999999523162842,
+        1.2000000476837158,
+        1.1000001430511475,
+        1.2999999523162842,
+        1.2999999523162842,
+        1.0999999046325684,
+        1.3000001907348633,
+        1.1999998092651367,
+        1.2000000476837158,
+        1.2000000476837158,
+        1.2999999523162842,
+        1.1000001430511475,
+        1.1999998092651367,
+        1.3000001907348633,
+        1.0999999046325684,
+        1.2999999523162842,
+        1.2000000476837158,
+        1.2000000476837158,
+        1.2999999523162842,
+        1.2000000476837158,
+        1.0999999046325684,
+        1.2999999523162842,
+        1.3000001907348633,
+        1.2999999523162842,
+        1.2999999523162842,
+        1.4000000953674316,
+        1.2999999523162842,
+        1.2999999523162842,
+        1.2999999523162842,
+        1.7000000476837158,
+        1.4000000953674316,
+        1.1999998092651367,
+        1.2000000476837158,
+        1.2999999523162842,
+        1.3000001907348633,
+        1.2999999523162842,
+        1.2000000476837158,
+        1.1999998092651367,
+        1.3000001907348633,
+        1.1999998092651367,
+        1.3000001907348633,
+        1.1999998092651367,
+        1.3000001907348633,
+        1.5999999046325684,
+        1.4000000953674316,
+        1.1999998092651367
+      ],
+      "cpuSubmitMs": [
+        0.5,
+        0.39999985694885254,
+        0.2999999523162842,
+        0.40000009536743164,
+        0.2999999523162842,
+        0.09999990463256836,
+        0.20000004768371582,
+        0.20000004768371582,
+        0.20000004768371582,
+        0.10000014305114746,
+        0.20000004768371582,
+        0.20000004768371582,
+        0.10000014305114746,
+        0,
+        0.20000004768371582,
+        0.10000014305114746,
+        0.10000014305114746,
+        0.09999990463256836,
+        0.20000004768371582,
+        0,
+        0.20000004768371582,
+        0.09999990463256836,
+        0.10000014305114746,
+        0.20000004768371582,
+        0.09999990463256836,
+        0,
+        0.09999990463256836,
+        0.10000014305114746,
+        0,
+        0.20000004768371582,
+        0.10000014305114746,
+        0.09999990463256836,
+        0.09999990463256836,
+        0.09999990463256836,
+        0,
+        0.10000014305114746,
+        0.20000004768371582,
+        0.09999990463256836,
+        0.20000004768371582,
+        0.20000004768371582,
+        0.09999990463256836,
+        0.20000004768371582,
+        0.20000004768371582,
+        0.5,
+        0.20000004768371582,
+        0.09999990463256836,
+        0.10000014305114746,
+        0.10000014305114746,
+        0.20000004768371582,
+        0.19999980926513672,
+        0.20000004768371582,
+        0.19999980926513672,
+        0.20000004768371582,
+        0.09999990463256836,
+        0.20000004768371582,
+        0.09999990463256836,
+        0.10000014305114746,
+        0.19999980926513672,
+        0.20000004768371582,
+        0.09999990463256836
+      ]
+    },
+    "drawCalls": 2,
+    "drawnTriangles": 9771,
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    "worldPlacements": null,
+    "rebases": [
+      {
+        "frame": 0,
+        "chunkX": 2,
+        "chunkZ": -1,
+        "chunks": 1,
+        "ms": 0.2999999523162842
+      }
+    ]
+  },
+  "logs": []
+}

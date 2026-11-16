@@ -1,0 +1,70 @@
+placed omr:10264-1 at (-7200, -3200) rot 0
+placed omr:10264-1 at (-7200, -1600) rot 1
+placed omr:10264-1 at (-7200, 0) rot 2
+placed omr:10264-1 at (-7200, 1600) rot 3
+placed omr:10264-1 at (-7200, 3200) rot 0
+placed omr:10185-1 at (-5600, -3200) rot 1
+placed omr:10185-1 at (-5600, -1600) rot 2
+placed omr:10185-1 at (-5600, 0) rot 3
+placed omr:10185-1 at (-5600, 1600) rot 0
+placed omr:10185-1 at (-5600, 3200) rot 1
+placed omr:10190-1 at (-4000, -3200) rot 2
+placed omr:10190-1 at (-4000, -1600) rot 3
+placed omr:10190-1 at (-4000, 0) rot 0
+placed omr:10190-1 at (-4000, 1600) rot 1
+placed omr:10190-1 at (-4000, 3200) rot 2
+placed omr:10218-1 at (-2400, -3200) rot 3
+placed omr:10218-1 at (-2400, -1600) rot 0
+placed omr:10218-1 at (-2400, 0) rot 1
+placed omr:10218-1 at (-2400, 1600) rot 2
+placed omr:10218-1 at (-2400, 3200) rot 3
+placed omr:4555-1 at (-800, -3200) rot 0
+placed omr:4555-1 at (-800, -1600) rot 1
+placed omr:4555-1 at (-800, 0) rot 2
+placed omr:4555-1 at (-800, 1600) rot 3
+placed omr:4555-1 at (-800, 3200) rot 0
+placed omr:2150-1 at (800, -3200) rot 1
+placed omr:2150-1 at (800, -1600) rot 2
+placed omr:2150-1 at (800, 0) rot 3
+placed omr:2150-1 at (800, 1600) rot 0
+placed omr:2150-1 at (800, 3200) rot 1
+placed omr:4554-1 at (2400, -3200) rot 2
+placed omr:4554-1 at (2400, -1600) rot 3
+placed omr:4554-1 at (2400, 0) rot 0
+placed omr:4554-1 at (2400, 1600) rot 1
+placed omr:4554-1 at (2400, 3200) rot 2
+placed omr:10128-1 at (4000, -3200) rot 3
+placed omr:10128-1 at (4000, -1600) rot 0
+placed omr:10128-1 at (4000, 0) rot 1
+placed omr:10128-1 at (4000, 1600) rot 2
+placed omr:10128-1 at (4000, 3200) rot 3
+placed omr:7936-1 at (5600, -3200) rot 0
+placed omr:7936-1 at (5600, -1600) rot 1
+placed omr:7936-1 at (5600, 0) rot 2
+placed omr:7936-1 at (5600, 1600) rot 3
+placed omr:7936-1 at (5600, 3200) rot 0
+placed omr:10133-1 at (7200, -3200) rot 1
+placed omr:10133-1 at (7200, -1600) rot 2
+placed omr:10133-1 at (7200, 0) rot 3
+placed omr:10133-1 at (7200, 1600) rot 0
+placed omr:10133-1 at (7200, 3200) rot 1
+street view: stud pitch 101.8 px
+street auto {"fps":50,"drawCalls":4909,"triangles":8048936,"nearChunks":116,"midChunks":93,"farChunks":6,"nearestStudPitchPx":101.75761096085087} {"frames":60,"medianFrameMs":33.200000047683716,"p95FrameMs":41.10000014305115,"medianCpuSubmitMs":15.899999856948853,"drawCalls":4909,"triangles":8048936,"nearChunks":116,"midChunks":93,"farChunks":6,"nearestStudPitchPx":101.75761096085087}
+street near {"fps":49.4657696780423,"drawCalls":4663,"triangles":12542939,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":101.75761096085087} {"frames":60,"medianFrameMs":35.90000009536743,"p95FrameMs":44.700000047683716,"medianCpuSubmitMs":16.600000143051147,"drawCalls":4663,"triangles":12542939,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":101.75761096085087}
+street mid {"fps":45.689312686801564,"drawCalls":4977,"triangles":5490063,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":101.75761096085087} {"frames":60,"medianFrameMs":33,"p95FrameMs":40,"medianCpuSubmitMs":16.09999990463257,"drawCalls":4977,"triangles":5490063,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":101.75761096085087}
+street far {"fps":60.04261089068963,"drawCalls":34,"triangles":136267,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":101.75761096085087} {"frames":60,"medianFrameMs":7.8999998569488525,"p95FrameMs":9.700000047683716,"medianCpuSubmitMs":3.700000047683716,"drawCalls":34,"triangles":136267,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":101.75761096085087}
+near/mid transition at step 33: 11.3 px
+transition-near-mid auto {"fps":13.145539906103286,"drawCalls":12873,"triangles":13280385,"nearChunks":0,"midChunks":205,"farChunks":10,"nearestStudPitchPx":11.332996896225783} 
+transition-near-mid near {"fps":15.540015541454945,"drawCalls":12673,"triangles":30849338,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":11.332996896225783} 
+transition-near-mid mid {"fps":14.255167497006878,"drawCalls":13464,"triangles":13882952,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":11.332996896225783} 
+transition-near-mid far {"fps":58.570870748159166,"drawCalls":97,"triangles":323723,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":11.332996896225783} 
+mid/far transition at step 48: 2.7 px
+transition-mid-far auto {"fps":60.47600469326461,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":2.7357850771755263} 
+transition-mid-far near {"fps":14.911463187325257,"drawCalls":13093,"triangles":31516476,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":2.7357850771755263} 
+transition-mid-far mid {"fps":13.282732447817837,"drawCalls":13929,"triangles":14202746,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":2.7357850771755263} 
+transition-mid-far far {"fps":59.97600961903142,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":2.7357850771755263} 
+aerial view: stud pitch 1 px
+aerial auto {"fps":50.08347246294998,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":1.0318803630552662} {"frames":60,"medianFrameMs":8.399999856948853,"p95FrameMs":10.700000047683716,"medianCpuSubmitMs":4,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":1.0318803630552662}
+aerial near {"fps":14.989694583633568,"drawCalls":13093,"triangles":31516476,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":1.0318803630552662} {"frames":60,"medianFrameMs":89.39999985694885,"p95FrameMs":96.79999995231628,"medianCpuSubmitMs":34.69999980926514,"drawCalls":13093,"triangles":31516476,"nearChunks":215,"midChunks":0,"farChunks":0,"nearestStudPitchPx":1.0318803630552662}
+aerial mid {"fps":13.495276651930778,"drawCalls":13929,"triangles":14202746,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":1.0318803630552662} {"frames":60,"medianFrameMs":86.40000009536743,"p95FrameMs":93.10000014305115,"medianCpuSubmitMs":34.89999985694885,"drawCalls":13929,"triangles":14202746,"nearChunks":0,"midChunks":215,"farChunks":0,"nearestStudPitchPx":1.0318803630552662}
+aerial far {"fps":60,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":1.0318803630552662} {"frames":60,"medianFrameMs":7.5,"p95FrameMs":10.799999952316284,"medianCpuSubmitMs":3.3999998569488525,"drawCalls":101,"triangles":329191,"nearChunks":0,"midChunks":0,"farChunks":215,"nearestStudPitchPx":1.0318803630552662}
