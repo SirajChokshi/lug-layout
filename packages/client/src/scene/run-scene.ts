@@ -31,6 +31,7 @@ export interface RunRequest {
   readonly speedLduPerS: number;
   readonly accelerationLduPerS2: number;
   readonly brakingLduPerS2: number;
+  readonly follow: boolean;
 }
 
 export interface RunStatus {
@@ -56,6 +57,9 @@ export interface IRunScene extends IViewerScene {
 const ORBIT_DISTANCE_FACTOR = 0.9;
 const ORBIT_ELEVATION_FACTOR = 1.1;
 const MIN_ORBIT_RADIUS_LDU = 400;
+const FOLLOW_DISTANCE_LDU = 1400;
+const FOLLOW_HEIGHT_LDU = 650;
+const FOLLOW_SWING_RADIANS = 0.9;
 
 function mergedBundle(track: PartBundle, model: PartBundle): PartBundle {
   return { ...track, parts: [...track.parts, ...model.parts] };
@@ -234,6 +238,31 @@ export class RunScene implements IRunScene {
     };
   }
 
+  private followTrain(t: number): boolean {
+    const frame = this.sim.latestFrame();
+    const layout = this.frameLayout;
+    if (!frame || !layout || layout.vehicles === 0) return false;
+    const o = layout.poseStart;
+    const data = frame.data;
+    const fx = data[o] ?? 0;
+    const fz = data[o + 1] ?? 0;
+    const rx = data[o + 2] ?? 0;
+    const rz = data[o + 3] ?? 0;
+    const x = (fx + rx) / 2;
+    const z = (fz + rz) / 2;
+    const angle =
+      Math.atan2(fz - rz, fx - rx) + Math.PI + FOLLOW_SWING_RADIANS * Math.sin(t * 2 * Math.PI);
+    this.backend.setView(
+      x + FOLLOW_DISTANCE_LDU * Math.cos(angle),
+      this.railY + FOLLOW_HEIGHT_LDU,
+      z + FOLLOW_DISTANCE_LDU * Math.sin(angle),
+      x,
+      this.railY,
+      z,
+    );
+    return true;
+  }
+
   private frame(graph: TrackGraph): void {
     if (graph.endCount === 0) return;
     let minX = Number.POSITIVE_INFINITY;
@@ -252,6 +281,7 @@ export class RunScene implements IRunScene {
   }
 
   setCamera(t: number): void {
+    if (this.request?.follow && this.followTrain(t)) return;
     const angle = t * 2 * Math.PI;
     const distance = this.radius * ORBIT_DISTANCE_FACTOR;
     this.backend.setView(

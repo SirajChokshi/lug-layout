@@ -1,4 +1,11 @@
-import type { IRunScene, IViewerScene, PlacementDump, RunStatus, TrackSummary } from "@brr/client";
+import type {
+  IRunScene,
+  IViewerScene,
+  PlacementDump,
+  RunStatus,
+  SimBenchResult,
+  TrackSummary,
+} from "@brr/client";
 import { CreditLinks, partsCreditText } from "@brr/ui";
 import { useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
@@ -16,6 +23,20 @@ interface AppProps {
   readonly params: ViewerParams;
   readonly placements: (() => PlacementDump) | null;
   readonly run: IRunScene | null;
+}
+
+const BENCH_AFTER_MS = 5_000;
+
+function useSimBench(run: IRunScene | null, ticks: number): SimBenchResult | null {
+  const [result, setResult] = useState<SimBenchResult | null>(null);
+  useEffect(() => {
+    if (!run || ticks <= 0) return;
+    const timer = setTimeout(() => {
+      void run.sim.bench(ticks).then(setResult);
+    }, BENCH_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [run, ticks]);
+  return result;
 }
 
 const MICROSECONDS_PER_MS = 1000;
@@ -200,6 +221,7 @@ export function App({ scene, params, placements, run }: AppProps) {
   const [result, setResult] = useState<ViewerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   useTrainKeys(run, params.speedLduPerS);
+  const bench = useSimBench(run, params.simBenchTicks);
   const runStatus = run?.status() ?? null;
 
   useEffect(() => {
@@ -227,6 +249,11 @@ export function App({ scene, params, placements, run }: AppProps) {
           </dl>
         )}
         {runStatus && !error && <pre id="sim">{JSON.stringify(runStatus)}</pre>}
+        {bench && !error && (
+          <pre id="sim-bench" data-done="1">
+            {JSON.stringify(bench)}
+          </pre>
+        )}
         {result && !error && (
           <pre id="result" data-done="1">
             {JSON.stringify(result)}

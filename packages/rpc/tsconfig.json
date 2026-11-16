@@ -2,7 +2,7 @@
   "extends": "@brr/config/tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2024", "DOM"],
-    "types": ["node"]
+    "types": []
   },
-  "include": ["src", "vitest.config.ts"]
+  "include": ["src"]
 }

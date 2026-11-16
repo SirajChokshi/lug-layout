@@ -205,15 +205,9 @@ importers:
       '@brr/config':
         specifier: workspace:*
         version: link:../config
-      '@types/node':
-        specifier: 22.20.5
-        version: 22.20.5
       typescript:
         specifier: 7.0.2
         version: 7.0.2
-      vitest:
-        specifier: 5.1.0
-        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5))
 
   packages/sim:
     dependencies:
