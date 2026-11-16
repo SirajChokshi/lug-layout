@@ -25,7 +25,8 @@ class BundleDirectoryFetcher implements IAssetFetcher {
   }
 }
 
-const BALLOON = "ldraw:74746, ldraw:74747.1*3, ldraw:74747*7, ldraw:74746, ldraw:74747*5, ldraw:74746*5";
+const BALLOON =
+  "ldraw:74746, ldraw:74747.1*3, ldraw:74747*7, ldraw:74746, ldraw:74747*5, ldraw:74746*5";
 const DOGBONE = [
   "ldraw:75541-f1",
   BALLOON,
