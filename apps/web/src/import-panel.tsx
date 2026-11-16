@@ -73,11 +73,11 @@ function studioReason(part: StudioPart): string {
   }
 }
 
-function studioPartFor(reference: string, studio: StudioReport): StudioPart | undefined {
+function studioPartFor(official: string, studio: StudioReport): StudioPart | undefined {
   return studio.parts.find((part) =>
     part.outcome.kind === "bricklinkCrosswalk"
-      ? `${part.outcome.ldraw}.dat` === reference
-      : part.studio === reference,
+      ? `${part.outcome.ldraw}.dat` === official
+      : part.studio === official,
   );
 }
 
@@ -130,10 +130,9 @@ function ModuleReport({ module }: { readonly module: ImportedModule }) {
   const notDrawn = report.parts.flatMap((part) => {
     const reason = notDrawnReason(part, report);
     if (reason === null) return [];
-    const studioPart = studio && studioPartFor(part.reference, studio);
+    const studioPart = studio && studioPartFor(part.official, studio);
     return [{ part, reason: studioPart ? `${reason} ${studioReason(studioPart)}` : reason }];
   });
-  const flexible = studio?.flexibleSections ?? [];
   const notDrawnInstances = notDrawn.reduce((sum, { part }) => sum + part.instances, 0);
   const hasLooseGeometry = report.looseGeometry.length > 0;
   const title = report.sections[0]?.title ?? report.fileName;
@@ -180,10 +179,7 @@ function ModuleReport({ module }: { readonly module: ImportedModule }) {
           </dd>
         </div>
       </dl>
-      {(notDrawn.length > 0 ||
-        report.unknownColors.length > 0 ||
-        hasLooseGeometry ||
-        flexible.length > 0) && (
+      {(notDrawn.length > 0 || report.unknownColors.length > 0 || hasLooseGeometry) && (
         <>
           <h3>
             Not drawn: {integer.format(notDrawnInstances)} instances of {notDrawn.length} parts
@@ -207,12 +203,6 @@ function ModuleReport({ module }: { readonly module: ImportedModule }) {
                 Colour <code>{color.code}</code> ×{color.instances}: not in LDConfig, so these
                 instances are not drawn.
                 {studio ? " It is a Studio colour code and the file carries no RGB for it." : ""}
-              </li>
-            ))}
-            {flexible.map((section) => (
-              <li key={`flexible-${section.name}`} data-kind="studioFlexible">
-                <code>{section.name}</code> ×{section.instances}: Studio-generated flexible geometry
-                with no LDraw part line, so it is not drawn.
               </li>
             ))}
           </ul>

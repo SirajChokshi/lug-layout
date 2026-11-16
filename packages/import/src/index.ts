@@ -19,7 +19,6 @@ export {
   type BricklinkToLdraw,
   type LdrawPartExists,
   type StudioColor,
-  type StudioFlexibleSection,
   type StudioMapping,
   type StudioPart,
   type StudioPartOutcome,

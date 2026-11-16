@@ -35,8 +35,6 @@ describe("mapStudioParts", () => {
     const mapping = await mapStudioParts(
       archive([
         "0 FILE wing",
-        "0 FILE __flexiblesubmodel_rope copy 9",
-        `1 16 ${MATRIX} __flexiblesubmodel_rope copy 9`,
         `1 15 ${MATRIX} 4162pb028a.dat`,
         `1 14 ${MATRIX} 4070pb04l.dat`,
         `1 4 ${MATRIX} 7302.dat`,
@@ -52,13 +50,13 @@ describe("mapStudioParts", () => {
       exists,
       new Set([4, 14, 15, 16]),
     );
-    expect(mapping.ldraw.split("\n").slice(3, 7)).toEqual([
+    expect(mapping.ldraw.split("\n").slice(1, 5)).toEqual([
       `1 15 ${MATRIX} 4162d02.dat`,
       `1 14 ${MATRIX} 4070d01.dat`,
       `1 4 ${MATRIX} 7302.dat`,
       `1 4 ${MATRIX} 7674.dat`,
     ]);
-    expect(mapping.ldraw.split("\n").slice(7)).toEqual([
+    expect(mapping.ldraw.split("\n").slice(5)).toEqual([
       `1 4 ${MATRIX} 92338c01.dat`,
       `1 4 ${MATRIX} 3001.dat`,
       `1 4 ${MATRIX} 60219.dat`,
@@ -87,9 +85,6 @@ describe("mapStudioParts", () => {
       "4079b.dat": "4079b fileName",
     });
     expect(mapping.unknownColors).toEqual([{ code: 100241, instances: 1 }]);
-    expect(mapping.flexibleSections).toEqual([
-      { name: "__flexiblesubmodel_rope copy 9", instances: 1 },
-    ]);
   });
 });
 
