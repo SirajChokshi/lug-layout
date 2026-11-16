@@ -3,8 +3,13 @@ import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { deriveCrosswalk } from "./catalog/crosswalk.ts";
+import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
+import { bomCheck } from "./catalog/bom-check.ts";
 import {
+  catalogSourceDirectory,
   fetchAuditInputs,
+  fetchCatalogSources,
   fetchClosure,
   modelPath,
   omrFiles,
@@ -12,14 +17,17 @@ import {
   renderModelAttribution,
   restoreFiles,
   verifyAuditInputs,
+  verifyCatalogSources,
   verifyClosure,
   verifyModels,
+  type CatalogLock,
   type InputLock,
   type ModelRoots,
 } from "./fetch-ldraw.ts";
+import type { CatalogSourceUse } from "./palette.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
 import { readPalette, type Palette } from "./palette.ts";
-import { MANIFEST_FILE, publishBundle, type BundleInputs } from "./publish.ts";
+import { attachCrosswalk, MANIFEST_FILE, publishBundle, type BundleInputs } from "./publish.ts";
 import {
   geometryReports,
   licenseAuditReport,
@@ -28,6 +36,7 @@ import {
   trackCatalogReports,
   writeReports,
 } from "./verify/facts.ts";
+import { readModuleStandards } from "./module-standards.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -38,8 +47,11 @@ const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
 const omrRoot = join(repoRoot, ".cache", "omr");
+const catalogRoot = join(repoRoot, ".cache", "catalog");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
+const geometryPath = join(verifiedFactsRoot, "geometry.json");
+const moduleStandardsPath = join(verifiedFactsRoot, "module-standards.json");
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(lockPath, "utf8")) as InputLock;
@@ -66,7 +78,8 @@ async function fetchCommand(): Promise<void> {
   );
   const closure = await fetchClosure(palette, ldrawRoot, modelSources);
   const audit = await fetchAuditInputs(palette, auditRoot, connectivityRoot);
-  const lock: InputLock = { ...closure, audit };
+  const catalog = await fetchCatalogSources(palette.catalogSources, catalogRoot);
+  const lock: InputLock = { ...closure, audit, catalog };
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
@@ -74,6 +87,27 @@ async function fetchCommand(): Promise<void> {
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
   process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
+}
+
+function catalogLock(lock: InputLock): CatalogLock {
+  if (lock.catalog === undefined) {
+    throw new Error("ldraw.lock.json has no catalog sources; run fetch-ldraw");
+  }
+  return lock.catalog;
+}
+
+async function restoreCatalog(lock: InputLock, use: CatalogSourceUse): Promise<void> {
+  for (const [name, entry] of Object.entries(catalogLock(lock))) {
+    if (entry.use !== use) continue;
+    const { present, downloaded, pruned } = await restoreFiles(
+      entry.source,
+      entry.files,
+      catalogSourceDirectory(catalogRoot, name),
+    );
+    process.stdout.write(
+      `catalog ${name}: ${present} present, ${downloaded} downloaded, ${pruned} pruned\n`,
+    );
+  }
 }
 
 async function restoreCommand(): Promise<void> {
@@ -104,13 +138,16 @@ async function restoreCommand(): Promise<void> {
     );
   }
   await restoreModels(await readPalette(palettePath));
+  await restoreCatalog(lock, "crosswalk");
 }
 
 async function verifyCommand(): Promise<void> {
   const palette = await readPalette(palettePath);
+  const lock = await readLock();
   const problems = [
-    ...(await verifyClosure(await readLock(), ldrawRoot)),
+    ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyModels(palette, modelRoots)),
+    ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
   ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
@@ -156,6 +193,14 @@ async function factsCommand(check: boolean): Promise<void> {
 }
 
 const BUNDLE_LODS = ["standard", "low", "far"] as const;
+const COMPILER_TARGET = "wasm32-wasip1";
+const compilerWasm = join(
+  repoRoot,
+  "target",
+  COMPILER_TARGET,
+  "release",
+  "brick-compile-wasm.wasm",
+);
 
 function runCargo(args: ReadonlyArray<string>): void {
   const result = spawnSync("cargo", args, { cwd: repoRoot, stdio: "inherit" });
@@ -195,8 +240,25 @@ async function bundleCommand(): Promise<void> {
     omr: palette.omrSource,
     lockSha256: await fileSha256(lockPath),
     paletteSha256: await fileSha256(palettePath),
+    moduleStandardsSha256: await fileSha256(moduleStandardsPath),
   };
+  const moduleStandards = await readModuleStandards(moduleStandardsPath, geometryPath);
+  const lock = await readLock();
+  const catalog = catalogLock(lock);
+  const crosswalk = deriveCrosswalk(
+    await readCrosswalkInputs(catalog, catalogRoot, lock.source, ldrawRoot),
+    crosswalkSources(catalog),
+  );
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
+  runCargo([
+    "build",
+    "--release",
+    "--quiet",
+    "--target",
+    COMPILER_TARGET,
+    "-p",
+    "brick-compile-wasm",
+  ]);
   for (const lod of BUNDLE_LODS) {
     const out = join(toolRoot, "dist", "bundle", lod);
     await rm(out, { recursive: true, force: true });
@@ -214,16 +276,19 @@ async function bundleCommand(): Promise<void> {
       "--omr",
       omrRoot,
       "--geometry",
-      join(repoRoot, "docs", "verified-facts", "geometry.json"),
+      geometryPath,
       "--palette",
       palettePath,
       "--out",
       out,
       "--lod",
       lod,
+      "--compiler",
+      compilerWasm,
     ]);
     await addTrackCatalog(out);
-    const { bundleVersion, files } = await publishBundle(out, inputs);
+    await attachCrosswalk(out, crosswalk);
+    const { bundleVersion, files } = await publishBundle(out, inputs, { moduleStandards });
     process.stdout.write(
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
     );
@@ -244,10 +309,35 @@ switch (command) {
   case "bundle":
     await bundleCommand();
     break;
+  case "bom-check": {
+    const exportDirectory = process.argv[3];
+    const outIndex = process.argv.indexOf("--out");
+    const out = outIndex > 0 ? process.argv[outIndex + 1] : undefined;
+    if (exportDirectory === undefined || out === undefined) {
+      process.stderr.write("usage: cli.ts bom-check <export-directory> --out <report.json>\n");
+      process.exitCode = 2;
+      break;
+    }
+    const lock = await readLock();
+    await restoreCatalog(lock, "inventory-check");
+    const problems = await verifyCatalogSources(catalogLock(lock), catalogRoot, "inventory-check");
+    if (problems.length > 0) throw new Error(problems.join("\n"));
+    process.stdout.write(
+      await bomCheck({
+        exportDirectory,
+        out,
+        inventoryDirectory: catalogSourceDirectory(catalogRoot, "rebrickable-inventories"),
+        partsCsv: join(catalogSourceDirectory(catalogRoot, "rebrickable-dump"), "parts.csv.gz"),
+      }),
+    );
+    break;
+  }
   case "facts":
     await factsCommand(process.argv.includes("--check"));
     break;
   default:
-    process.stderr.write("usage: cli.ts fetch|restore|verify|bundle|facts [--check]\n");
+    process.stderr.write(
+      "usage: cli.ts fetch|restore|verify|bundle|facts [--check]|bom-check <dir> --out <file>\n",
+    );
     process.exitCode = 2;
 }

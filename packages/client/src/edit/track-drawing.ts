@@ -1,4 +1,10 @@
-import type { PartAsset, TrackCatalog, TrackPartFrame, TrackPiece } from "@brr/catalog";
+import type {
+  PartAsset,
+  TrackCatalog,
+  TrackPartFrame,
+  TrackPiece,
+  TrackSystem,
+} from "@brr/catalog";
 import {
   drawingKit,
   layMoves,
@@ -8,8 +14,10 @@ import {
   TrackGraph,
   TrackLayout,
   type DrawingKit,
+  type TrackInput,
   type TrackMove,
   type TrackPieceDef,
+  type TrackPieceInfo,
   type TrackPieceSpec,
 } from "@brr/domain";
 import {
@@ -29,7 +37,7 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 
-export const TRACK_SYSTEM = "lego-9v";
+export const TRACK_SYSTEMS: ReadonlyArray<TrackSystem> = ["lego-9v", "lego-plastic"];
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
@@ -144,10 +152,17 @@ export function trackChunkKey(chunkX: number, chunkZ: number): number {
   return -1 - chunkKey(chunkX, chunkZ);
 }
 
-export class TrackDrawing {
+interface SystemKit {
   readonly kit: DrawingKit;
+  readonly parts: ReadonlyArray<KitPart>;
+}
+
+export class TrackDrawing {
+  private readonly kits = new Map<TrackSystem, SystemKit>();
+  private system: TrackSystem;
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
+  private readonly pieceInfo: ReadonlyArray<TrackPieceInfo | null>;
   private readonly layout: TrackLayout;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
@@ -163,37 +178,82 @@ export class TrackDrawing {
   ) {
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.graph = new TrackGraph(this.layout);
-    catalog.pieces.forEach((piece, catalogIndex) => {
-      const inKit =
-        piece.system === TRACK_SYSTEM &&
-        piece.status === "certified" &&
-        (piece.kind === "straight" || piece.kind === "curve");
-      if (!inKit) return;
-      const partIndex = partForPiece(piece, parts);
-      const part = parts[partIndex];
-      if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
-      if (part.producedColor === undefined) {
-        throw new Error(`${piece.id}: track part has no sourced produced colour`);
-      }
-      const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
-      const kitPart: KitPart = {
-        catalogIndex,
-        piece,
-        def,
-        partIndex,
-        color: colors.indexOfCode(part.producedColor),
-        yLdu: -part.boundsMin[1],
+    this.pieceInfo = catalog.pieces.map((piece) => {
+      const index = parts.findIndex((part) => part.id === piece.part);
+      const part = parts[index];
+      if (!part || part.producedColor === undefined) return null;
+      return {
+        id: piece.id,
+        title: piece.title,
+        part: piece.part,
+        ldrawColor: part.producedColor,
+        status: piece.status,
+        frameXLdu: piece.partFrame.xLdu,
+        frameZLdu: piece.partFrame.zLdu,
+        frameHalfSteps: piece.partFrame.headingHalfSteps,
+        boundsMinX: part.boundsMin[0],
+        boundsMaxX: part.boundsMax[0],
+        boundsMinZ: part.boundsMin[2],
+        boundsMaxZ: part.boundsMax[2],
       };
-      this.byDef.set(piece.id, kitPart);
-      this.byCatalogIndex.set(catalogIndex, kitPart);
     });
-    const result = drawingKit([...this.byDef.values()].map((k) => k.def));
-    if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
-    this.kit = result.kit;
+    for (const system of TRACK_SYSTEMS) {
+      const kitParts: KitPart[] = [];
+      catalog.pieces.forEach((piece, catalogIndex) => {
+        const inKit =
+          piece.system === system && (piece.kind === "straight" || piece.kind === "curve");
+        if (!inKit) return;
+        const partIndex = partForPiece(piece, parts);
+        const part = parts[partIndex];
+        if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
+        if (part.producedColor === undefined) {
+          throw new Error(`${piece.id}: track part has no sourced produced colour`);
+        }
+        const def: TrackPieceDef = {
+          id: piece.id,
+          connectors: piece.connectors.map((c) => c.pose),
+        };
+        const kitPart: KitPart = {
+          catalogIndex,
+          piece,
+          def,
+          partIndex,
+          color: colors.indexOfCode(part.producedColor),
+          yLdu: -part.boundsMin[1],
+        };
+        kitParts.push(kitPart);
+        this.byDef.set(piece.id, kitPart);
+        this.byCatalogIndex.set(catalogIndex, kitPart);
+      });
+      const result = drawingKit(kitParts.map((k) => k.def));
+      if (result.kind !== "kit") throw new Error(`no ${system} drawing kit: ${result.reason}`);
+      this.kits.set(system, { kit: result.kit, parts: kitParts });
+    }
+    this.system = TRACK_SYSTEMS[0] ?? "lego-9v";
   }
 
-  kitParts(): ReadonlyArray<KitPart> {
-    return [...this.byDef.values()];
+  get kit(): DrawingKit {
+    const active = this.kits.get(this.system);
+    if (!active) throw new Error(`no ${this.system} drawing kit`);
+    return active.kit;
+  }
+
+  get activeSystem(): TrackSystem {
+    return this.system;
+  }
+
+  useSystem(system: TrackSystem): void {
+    if (!this.kits.has(system)) throw new Error(`no ${system} drawing kit`);
+    this.cancelDrag();
+    this.system = system;
+  }
+
+  kitParts(system: TrackSystem = this.system): ReadonlyArray<KitPart> {
+    return this.kits.get(system)?.parts ?? [];
+  }
+
+  trackInput(): TrackInput {
+    return { layout: this.layout, graph: this.graph, pieces: this.pieceInfo };
   }
 
   get pieceCount(): number {

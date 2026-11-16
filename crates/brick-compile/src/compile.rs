@@ -152,6 +152,7 @@ impl CompiledPart {
             .map(|f| {
                 json!({
                     "path": f.path,
+                    "title": f.header.title,
                     "author": f.header.author,
                     "license": f.header.license,
                 })

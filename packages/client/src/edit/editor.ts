@@ -7,8 +7,9 @@ import {
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
 import { EditHistory, World, type AppliedEdit, type EditKind, type HistoryStep } from "@brr/domain";
-import { STUD_LDU } from "@brr/math";
+import { STUD_LDU, chunkOf } from "@brr/math";
 import {
+  CAMERA_FOV_DEGREES,
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
@@ -21,14 +22,20 @@ import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
-import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
+import { TRACK_SYSTEMS, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
+import type { TrackSystem } from "@brr/catalog";
 import {
   PlacedChunks,
   type PlacedModel,
   type RebuildReport,
   type ViewUpdate,
 } from "./placed-chunks.ts";
-import { baseplatePlaceable, modelPlaceable, type Placeable } from "./placeable.ts";
+import { itemSpecOf } from "./item-specs.ts";
+import { modelPlaceable, platePlaceable, type Placeable } from "./placeable.ts";
+import { roomRect } from "@brr/domain";
+import { BUILDABLE_SERVICE, PLAN_SERVICE } from "../tokens.ts";
+import type { IBuildableService } from "../plan/buildable-service.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
@@ -167,13 +174,24 @@ export interface IEditor {
   zoom(wheelDelta: number): void;
   focusSelection(): void;
   centreOnCursor(): void;
+  planOriginHere(): { readonly chunkX: number; readonly chunkZ: number };
+  viewPlanFromAbove(planId: string): void;
   dump(): EditorDump;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
 const BASEPLATE_ID = "ldraw:3811";
-export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
-const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
+export const TRACK_ITEM_ID = "track:lego-9v";
+const TRACK_ITEM_PREFIX = "track:";
+const TRACK_ITEM_LABELS: Readonly<Record<TrackSystem, string>> = {
+  "lego-9v": "Track: 9V straights and R40 curves",
+  "lego-plastic": "Track: plastic 53401 straights and 53400 R40 curves",
+};
+
+function trackSystemOf(id: string | null): TrackSystem | null {
+  if (id === null || !id.startsWith(TRACK_ITEM_PREFIX)) return null;
+  return TRACK_SYSTEMS.find((system) => `${TRACK_ITEM_PREFIX}${system}` === id) ?? null;
+}
 const END_MARKER_HALF_LDU = 30;
 const END_MARKER_HEIGHT_LDU = 40;
 const P95 = 0.95;
@@ -259,6 +277,8 @@ export class Editor implements IEditor {
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
+    @inject(PLAN_SERVICE) private readonly plans: IPlanService,
+    @inject(BUILDABLE_SERVICE) private readonly buildable: IBuildableService,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -289,12 +309,24 @@ export class Editor implements IEditor {
       });
       const bundle = await this.loader.load(
         EDITOR_LOD,
-        (part) => part.id === BASEPLATE_ID || part.role === "track",
+        (part) => part.id === BASEPLATE_ID || part.role === "road" || part.role === "track",
       );
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
-      this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+      const track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+      this.track = track;
+      this.plans.setTableTopY(this.baseplateBottomY());
+      const crosswalk = await this.loader.loadCrosswalk("standard");
+      this.buildable.setCatalog(
+        this.placeables.map((placeable) =>
+          itemSpecOf(placeable, palette.parts, bundle.moduleStandards),
+        ),
+        bundle.moduleStandards,
+        crosswalk,
+        Object.fromEntries(bundle.colors.map((color) => [color.code, color.name])),
+      );
+      this.buildable.setTrack(track.trackInput());
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -313,7 +345,7 @@ export class Editor implements IEditor {
             studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
             studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
           })),
-          this.trackItem(this.track, palette.parts),
+          ...TRACK_SYSTEMS.map((system) => this.trackItem(track, system, palette.parts)),
         ],
         track: this.trackView(),
         credits: {
@@ -331,6 +363,26 @@ export class Editor implements IEditor {
     }
   }
 
+  private baseplateBottomY(): number {
+    const baseplate = this.placeables.find((p) => p.kind === "baseplate");
+    if (!baseplate) throw new Error(`the bundle has no ${BASEPLATE_ID} baseplate`);
+    return baseplate.box.min[1];
+  }
+
+  private syncPlan(): void {
+    this.plans.setPlacements(
+      this.placed.models().map((model) => ({
+        key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
+        ref: model.placeable.id,
+        label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
+        box: model.box,
+        x: model.handle.x,
+        z: model.handle.z,
+        rot: model.handle.rot,
+      })),
+    );
+  }
+
   private async loadPlaceables(
     bundle: PartBundle,
     palette: MergedParts,
@@ -345,8 +397,28 @@ export class Editor implements IEditor {
     const loaded = await Promise.all(
       sets.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
+    const roads = bundle.parts.filter((part) => part.role === "road");
     return [
-      baseplatePlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
+      platePlaceable(
+        baseplate,
+        baseplateIndex,
+        baseplateColor.code,
+        { kind: "baseplate", label: `${BASEPLATE_ID.replace("ldraw:", "")} baseplate 32×32` },
+        palette.parts,
+        colors,
+      ),
+      ...roads.map((road) => {
+        const color = road.producedColor;
+        if (color === undefined) throw new Error(`${road.id} has no produced display colour`);
+        return platePlaceable(
+          road,
+          palette.indexOf(road.id),
+          color,
+          { kind: "road", label: `${road.id.replace("ldraw:", "")} road plate 32×32` },
+          palette.parts,
+          colors,
+        );
+      }),
       ...loaded.map(({ bundle: modelBundle, entry, model }) =>
         modelPlaceable(
           entry.name,
@@ -429,14 +501,19 @@ export class Editor implements IEditor {
     this.update({ lastLatency: sample, latencies: [...this.state.latencies, sample] });
   }
 
-  private trackItem(track: TrackDrawing, parts: ReadonlyArray<PartAsset>): CatalogItemView {
-    const straight = track.kitParts().find((k) => k.piece.kind === "straight");
+  private trackItem(
+    track: TrackDrawing,
+    system: TrackSystem,
+    parts: ReadonlyArray<PartAsset>,
+  ): CatalogItemView {
+    const kit = track.kitParts(system);
+    const straight = kit.find((k) => k.piece.kind === "straight");
     const part = straight ? parts[straight.partIndex] : undefined;
     return {
-      id: TRACK_ITEM_ID,
-      label: TRACK_ITEM_LABEL,
+      id: `${TRACK_ITEM_PREFIX}${system}`,
+      label: TRACK_ITEM_LABELS[system],
       kind: "track",
-      parts: track.kitParts().length,
+      parts: kit.length,
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
     };
@@ -531,7 +608,7 @@ export class Editor implements IEditor {
       this.pending = {
         step: "do",
         action: "track",
-        item: TRACK_ITEM_ID,
+        item: `${TRACK_ITEM_PREFIX}${track.activeSystem}`,
         rot: 0,
         x: this.hoverX,
         z: this.hoverZ,
@@ -540,17 +617,20 @@ export class Editor implements IEditor {
         report: { chunks: commit.chunks.length, instances, studs },
       };
     }
+    if (commit.laid > 0) this.buildable.setTrack(track.trackInput());
     if (commit.refused) this.lastTrackCommit = "refused";
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.update({ track: this.trackView() });
   }
 
   chooseItem(id: string | null): void {
-    if (id === TRACK_ITEM_ID && this.track) {
+    const system = trackSystemOf(id);
+    if (system && this.track) {
+      this.track.useSystem(system);
       this.active = null;
       this.backend.setGhost(null);
       this.select(null);
-      this.update({ mode: "track", activeItem: TRACK_ITEM_ID });
+      this.update({ mode: "track", activeItem: id, track: this.trackView() });
       return;
     }
     if (this.state.mode === "track") {
@@ -679,6 +759,7 @@ export class Editor implements IEditor {
         redoDepth: this.history.redoDepth,
       },
     });
+    this.syncPlan();
     return view;
   }
 
@@ -761,6 +842,25 @@ export class Editor implements IEditor {
   centreOnCursor(): void {
     if (!this.hovering) return;
     this.camera.centreOn(this.hoverX, this.hoverZ);
+    this.camera.apply(this.backend);
+  }
+
+  planOriginHere(): { readonly chunkX: number; readonly chunkZ: number } {
+    const [x, z] = this.camera.targetXZ();
+    return { chunkX: chunkOf(x), chunkZ: chunkOf(z) };
+  }
+
+  viewPlanFromAbove(planId: string): void {
+    const plan = this.plans.snapshot().plans.find((p) => p.id === planId);
+    if (!plan) return;
+    const room = roomRect(plan);
+    const canvas = this.canvas;
+    const aspect = canvas ? canvas.clientWidth / Math.max(canvas.clientHeight, 1) : 1;
+    this.camera.topDown(
+      { ...room, minY: 0, maxY: 0 },
+      (CAMERA_FOV_DEGREES * Math.PI) / 180,
+      aspect,
+    );
     this.camera.apply(this.backend);
   }
 
