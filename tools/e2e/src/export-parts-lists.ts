@@ -21,6 +21,7 @@ const { values, positionals } = parseArgs({
     base: { type: "string", default: "http://localhost:4173/" },
     out: { type: "string", default: "parts-lists" },
     api: { type: "string", default: "webgl2" },
+    stage: { type: "string", default: "all" },
   },
 });
 
@@ -106,7 +107,7 @@ const browser = await chromium.launch({
   args: ["--enable-unsafe-webgpu"],
 });
 try {
-  for (const file of positionals) {
+  for (const file of values.stage === "import" ? [] : positionals) {
     const set = basename(file).replace(/\.[^.]+$/u, "");
     const page = await open(browser, `model=${encodeURIComponent(set)}`);
     panels[`model/${set}`] = await buildAndDownload(page, join(out, "model"));
@@ -114,20 +115,22 @@ try {
     process.stdout.write(`model ${set}: exported\n`);
     await page.context().close();
   }
-  const page = await open(browser, "scene=import");
-  const placements = await importAll(page, positionals);
-  panels["import/world"] = await buildAndDownload(page, join(out, "import"));
-  await page.screenshot({ path: join(out, "import-world.png") });
-  for (const placement of placements) {
-    const set = basename(positionals[placement.module] ?? "").replace(/\.[^.]+$/u, "");
-    await setRegion(page, placement);
-    panels[`import/region-${set}`] = await buildAndDownload(page, join(out, "import"));
-    await page.screenshot({ path: join(out, `import-region-${set}.png`) });
-    process.stdout.write(`import region around ${set}: exported\n`);
+  if (values.stage !== "models") {
+    const page = await open(browser, "scene=import");
+    const placements = await importAll(page, positionals);
+    panels["import/world"] = await buildAndDownload(page, join(out, "import"));
+    await page.screenshot({ path: join(out, "import-world.png") });
+    for (const placement of placements) {
+      const set = basename(positionals[placement.module] ?? "").replace(/\.[^.]+$/u, "");
+      await setRegion(page, placement);
+      panels[`import/region-${set}`] = await buildAndDownload(page, join(out, "import"));
+      await page.screenshot({ path: join(out, `import-region-${set}.png`) });
+      process.stdout.write(`import region around ${set}: exported\n`);
+    }
+    writeFileSync(join(out, "placements.json"), `${JSON.stringify(placements, null, 2)}\n`);
+    await page.context().close();
   }
-  writeFileSync(join(out, "placements.json"), `${JSON.stringify(placements, null, 2)}\n`);
-  await page.context().close();
 } finally {
-  writeFileSync(join(out, "panels.json"), `${JSON.stringify(panels, null, 2)}\n`);
+  writeFileSync(join(out, `panels-${values.stage}.json`), `${JSON.stringify(panels, null, 2)}\n`);
   await browser.close();
 }

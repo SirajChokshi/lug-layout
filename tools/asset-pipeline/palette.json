@@ -327,7 +327,8 @@
         "inventories.csv.gz",
         "inventory_parts.csv.gz",
         "inventory_minifigs.csv.gz",
-        "part_relationships.csv.gz"
+        "part_relationships.csv.gz",
+        "part_categories.csv.gz"
       ]
     }
   ]

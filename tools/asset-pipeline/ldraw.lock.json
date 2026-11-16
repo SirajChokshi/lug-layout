@@ -2266,6 +2266,7 @@
         "inventories.csv.gz": "778558d8026cfc68d07feac73c27c3b924e2ec29f55cf2e1cd5c9c124f904279",
         "inventory_minifigs.csv.gz": "05463995e2577811ab74eb7167bef08550a4357898578950bc9183214deccc8f",
         "inventory_parts.csv.gz": "fa61f10a37bb95dcdfb8a181ef2f0b3af297886e74f33ba952c2db0ea6876146",
+        "part_categories.csv.gz": "c29b2b31239d9fadfdaa99a3b24b082991ad49e33197dfc520295c158a682fd8",
         "part_relationships.csv.gz": "dc3a2213bdf761b96a114ba5a3f5da96b1a40c6fa68bd9eb8ed185cc6b7967f3",
         "sets.csv.gz": "f1a170ad535b8c6505b50344b921c141e572be5f7a68dc481975e90314802724"
       }

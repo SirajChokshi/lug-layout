@@ -29,8 +29,15 @@ interface UnmappedLine {
   readonly expandedFrom: string;
 }
 
+interface CategoryResidual {
+  readonly category: string;
+  readonly exportOnly: number;
+  readonly inventoryOnly: number;
+}
+
 interface SetReport {
   readonly setNum: string;
+  readonly residualByCategory: ReadonlyArray<CategoryResidual>;
   readonly expandedTotal: number;
   readonly unmapped: ReadonlyArray<UnmappedLine>;
   readonly inventory: Omit<SetInventory, "parts">;
@@ -117,17 +124,59 @@ function summaryTable(reports: ReadonlyArray<SetReport>): string {
   ].join("\n");
 }
 
-export async function bomCheck(paths: BomCheckPaths): Promise<string> {
-  const [inventories, inventoryParts, inventoryMinifigs, relationships, parts] = await Promise.all(
-    [
-      "inventories.csv.gz",
-      "inventory_parts.csv.gz",
-      "inventory_minifigs.csv.gz",
-      "part_relationships.csv.gz",
-    ]
-      .map((file) => readGzipCsv(join(paths.inventoryDirectory, file)))
-      .concat(readGzipCsv(paths.partsCsv)),
+function residualByCategory(
+  comparison: InventoryComparison,
+  categoryOf: (part: string) => string,
+): CategoryResidual[] {
+  const totals = new Map<string, { exportOnly: number; inventoryOnly: number }>();
+  const add = (key: string, quantity: number, side: "exportOnly" | "inventoryOnly"): void => {
+    const category = categoryOf(key.slice(0, key.lastIndexOf("/")));
+    const entry = totals.get(category) ?? { exportOnly: 0, inventoryOnly: 0 };
+    entry[side] += quantity;
+    totals.set(category, entry);
+  };
+  for (const [key, quantity] of comparison.exportOnly) add(key, quantity, "exportOnly");
+  for (const [key, quantity] of comparison.inventoryOnly) add(key, quantity, "inventoryOnly");
+  return [...totals]
+    .map(([category, entry]) => ({ category, ...entry }))
+    .toSorted((a, b) => b.exportOnly + b.inventoryOnly - (a.exportOnly + a.inventoryOnly));
+}
+
+function categoryTable(reports: ReadonlyArray<SetReport>): string {
+  const totals = new Map<string, { exportOnly: number; inventoryOnly: number }>();
+  for (const report of reports) {
+    for (const row of report.residualByCategory) {
+      const entry = totals.get(row.category) ?? { exportOnly: 0, inventoryOnly: 0 };
+      entry.exportOnly += row.exportOnly;
+      entry.inventoryOnly += row.inventoryOnly;
+      totals.set(row.category, entry);
+    }
+  }
+  const rows = [...totals].toSorted(
+    ([, a], [, b]) => b.exportOnly + b.inventoryOnly - (a.exportOnly + a.inventoryOnly),
   );
+  return [
+    "| Rebrickable part category | Export only | Inventory only |",
+    "|---|---|---|",
+    ...rows.map(
+      ([category, entry]) => `| ${category} | ${entry.exportOnly} | ${entry.inventoryOnly} |`,
+    ),
+  ].join("\n");
+}
+
+export async function bomCheck(paths: BomCheckPaths): Promise<string> {
+  const [inventories, inventoryParts, inventoryMinifigs, relationships, categories, parts] =
+    await Promise.all(
+      [
+        "inventories.csv.gz",
+        "inventory_parts.csv.gz",
+        "inventory_minifigs.csv.gz",
+        "part_relationships.csv.gz",
+        "part_categories.csv.gz",
+      ]
+        .map((file) => readGzipCsv(join(paths.inventoryDirectory, file)))
+        .concat(readGzipCsv(paths.partsCsv)),
+    );
   const index = new InventoryIndex({
     inventories: inventories ?? [],
     inventoryParts: inventoryParts ?? [],
@@ -135,6 +184,10 @@ export async function bomCheck(paths: BomCheckPaths): Promise<string> {
   });
   const relations = new PartRelations(relationships ?? []);
   const names = Object.fromEntries((parts ?? []).map((row) => [row["part_num"], row["name"]]));
+  const categoryNames = new Map((categories ?? []).map((row) => [row["id"], row["name"]]));
+  const partCategory = new Map((parts ?? []).map((row) => [row["part_num"], row["part_cat_id"]]));
+  const categoryOf = (part: string): string =>
+    categoryNames.get(partCategory.get(part) ?? "") ?? "not in Rebrickable parts";
   const files = (await readdir(paths.exportDirectory))
     .filter((file) => file.endsWith(REBRICKABLE_SUFFIX))
     .toSorted();
@@ -144,11 +197,13 @@ export async function bomCheck(paths: BomCheckPaths): Promise<string> {
     const { parts: inventory, ...inventoryFacts } = index.setInventory(setNum);
     const exported = await exportedCounts(join(paths.exportDirectory, file));
     const plain = await plainLines(join(paths.exportDirectory, setNum + PLAIN_SUFFIX));
+    const comparison = compareWithInventory(exported, inventory, relations);
     reports.push({
       setNum,
+      residualByCategory: residualByCategory(comparison, categoryOf),
       ...plain,
       inventory: inventoryFacts,
-      comparison: compareWithInventory(exported, inventory, relations),
+      comparison,
     });
   }
   const differing = new Set(
@@ -164,5 +219,5 @@ export async function bomCheck(paths: BomCheckPaths): Promise<string> {
     [...differing].toSorted().map((part) => [part, names[part] ?? null]),
   );
   await writeFile(paths.out, `${JSON.stringify({ reports, partNames }, null, 1)}\n`);
-  return `${summaryTable(reports)}\n`;
+  return `${summaryTable(reports)}\n\n${categoryTable(reports)}\n`;
 }
