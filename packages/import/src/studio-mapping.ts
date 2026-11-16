@@ -9,9 +9,8 @@ export interface LdrawPartExists {
 }
 
 export type StudioPartOutcome =
-  | { readonly kind: "ldrawName" }
+  | { readonly kind: "kept" }
   | { readonly kind: "bricklinkCrosswalk"; readonly ldraw: string }
-  | { readonly kind: "ldrawNameOverCrosswalk"; readonly candidates: ReadonlyArray<string> }
   | { readonly kind: "ambiguous"; readonly candidates: ReadonlyArray<string> }
   | { readonly kind: "custom" };
 
@@ -27,16 +26,23 @@ export interface StudioColor {
   readonly instances: number;
 }
 
+export interface StudioFlexibleSection {
+  readonly name: string;
+  readonly instances: number;
+}
+
 export interface StudioMapping {
   readonly ldraw: string;
   readonly parts: ReadonlyArray<StudioPart>;
   readonly unknownColors: ReadonlyArray<StudioColor>;
+  readonly flexibleSections: ReadonlyArray<StudioFlexibleSection>;
 }
 
 const SUBFILE_LINE = "1";
 const SUBFILE_REFERENCE_TOKEN = 14;
 const PART_EXTENSION = ".dat";
 const STUDIO_BRICKLINK_PREFIX = "bl_";
+const STUDIO_FLEXIBLE_SECTION_PREFIX = "__flexiblesubmodel_";
 const FILE_META = /^0\s+FILE\s+(.+)$/iu;
 
 function normalize(reference: string): string {
@@ -98,13 +104,9 @@ async function decide(
   const name = stem(reference);
   const candidates = [...new Set(crosswalk.ldrawCandidates(bricklinkId).map(stem))].toSorted();
   if (candidates.length === 0 || (candidates.length === 1 && candidates[0] === name)) {
-    return { kind: "ldrawName" };
+    return { kind: "kept" };
   }
-  if (await exists.isLdrawPart(reference)) {
-    return candidates.includes(name)
-      ? { kind: "ldrawName" }
-      : { kind: "ldrawNameOverCrosswalk", candidates };
-  }
+  if (await exists.isLdrawPart(reference)) return { kind: "kept" };
   const [only] = candidates;
   if (candidates.length === 1 && only !== undefined)
     return { kind: "bricklinkCrosswalk", ldraw: only };
@@ -121,9 +123,16 @@ export async function mapStudioParts(
   const submodels = submodelNames(lines);
   const instances = new Map<string, number>();
   const colors = new Map<number, number>();
+  const flexible = new Map<string, number>();
   for (const line of lines) {
     const subfile = subfileLine(line);
-    if (!subfile || submodels.has(subfile.reference)) continue;
+    if (!subfile) continue;
+    if (submodels.has(subfile.reference)) {
+      if (subfile.reference.startsWith(STUDIO_FLEXIBLE_SECTION_PREFIX)) {
+        flexible.set(subfile.reference, (flexible.get(subfile.reference) ?? 0) + 1);
+      }
+      continue;
+    }
     instances.set(subfile.reference, (instances.get(subfile.reference) ?? 0) + 1);
     if (!knownColors.has(subfile.color)) {
       colors.set(subfile.color, (colors.get(subfile.color) ?? 0) + 1);
@@ -160,5 +169,8 @@ export async function mapStudioParts(
     unknownColors: [...colors]
       .map(([code, count]) => ({ code, instances: count }))
       .toSorted((a, b) => b.instances - a.instances || a.code - b.code),
+    flexibleSections: [...flexible]
+      .map(([name, count]) => ({ name, instances: count }))
+      .toSorted((a, b) => a.name.localeCompare(b.name)),
   };
 }

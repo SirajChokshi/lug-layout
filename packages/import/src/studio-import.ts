@@ -5,6 +5,7 @@ import {
   type BricklinkToLdraw,
   type LdrawPartExists,
   type StudioColor,
+  type StudioFlexibleSection,
   type StudioPart,
 } from "./studio-mapping.ts";
 
@@ -16,6 +17,7 @@ export interface StudioReport {
   readonly unconvertedLines: ReadonlyArray<number>;
   readonly parts: ReadonlyArray<StudioPart>;
   readonly unknownColors: ReadonlyArray<StudioColor>;
+  readonly flexibleSections: ReadonlyArray<StudioFlexibleSection>;
 }
 
 export type StudioPrepared =
@@ -60,6 +62,7 @@ export async function prepareStudioImport(
       unconvertedLines: archive.unconvertedLines,
       parts: mapping.parts,
       unknownColors: mapping.unknownColors,
+      flexibleSections: mapping.flexibleSections,
     },
   };
 }
