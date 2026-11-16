@@ -74,6 +74,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
         accelerationLduPerS2: viewer.accelerationLduPerS2,
         brakingLduPerS2: viewer.brakingLduPerS2,
         follow: viewer.follow,
+        start: viewer.start,
       });
       return { scene: runScene, placements: null, run: runScene };
     }

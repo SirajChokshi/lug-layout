@@ -5,18 +5,11 @@ import type {
   SimFrameMessage,
   SimLoad,
   SimLoaded,
-  SimLogEntry,
   SimReply,
   SimRequest,
 } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import { SIM_WORKER_PORT } from "../tokens.ts";
-
-export interface SimLogSnapshot {
-  readonly tick: number;
-  readonly stateHash: number;
-  readonly entries: ReadonlyArray<SimLogEntry>;
-}
 
 export interface SimTickCost {
   readonly ticks: number;
@@ -31,7 +24,6 @@ export interface ISimClient {
   latestFrame(): SimFrameMessage | null;
   nextFrame(): Promise<SimFrameMessage>;
   tickCost(): SimTickCost;
-  log(): Promise<SimLogSnapshot>;
   bench(ticks: number): Promise<SimBenchResult>;
 }
 
@@ -95,12 +87,6 @@ export class SimWorkerProxy implements ISimClient {
 
   tickCost(): SimTickCost {
     return { ticks: this.ticks, stepMs: this.stepMs, frames: this.frames };
-  }
-
-  async log(): Promise<SimLogSnapshot> {
-    const reply = await this.endpoint.request({ kind: "log" });
-    if (reply.kind !== "log") throw unexpected(reply, "log");
-    return { tick: reply.tick, stateHash: reply.stateHash, entries: reply.entries };
   }
 
   async bench(ticks: number): Promise<SimBenchResult> {

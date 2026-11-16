@@ -32,15 +32,18 @@ export interface RunRequest {
   readonly accelerationLduPerS2: number;
   readonly brakingLduPerS2: number;
   readonly follow: boolean;
+  readonly start: boolean;
 }
 
 export interface RunStatus {
   readonly tick: number;
   readonly stateHash: number;
   readonly trains: number;
+  readonly switches: number;
   readonly trainEdge: ReadonlyArray<number>;
   readonly trainOffsetLdu: ReadonlyArray<number>;
   readonly trainSpeedLduPerS: ReadonlyArray<number>;
+  readonly bogiePointsLdu: ReadonlyArray<number>;
   readonly tickCost: SimTickCost;
   readonly vehicle: ModelVehicle["spec"] | null;
   readonly wheelsets: number;
@@ -191,9 +194,11 @@ export class RunScene implements IRunScene {
     for (let t = 0; t < request.trains.length; t++) {
       await this.sim.command({ kind: "throttle", train: t, speedLduPerS: request.speedLduPerS });
     }
-    const firstFrame = this.sim.nextFrame();
-    this.sim.run(true);
-    await firstFrame;
+    if (request.start) {
+      const firstFrame = this.sim.nextFrame();
+      this.sim.run(true);
+      await firstFrame;
+    }
     return {
       ...summary,
       parts: summary.parts + count * request.trains.length,
@@ -233,9 +238,16 @@ export class RunScene implements IRunScene {
       tick: frame.tick,
       stateHash: frame.stateHash,
       trains: layout.trains,
+      switches: layout.switches,
       trainEdge: pick(layout.trainEdgeStart),
       trainOffsetLdu: pick(layout.trainOffsetStart),
       trainSpeedLduPerS: pick(layout.trainSpeedStart),
+      bogiePointsLdu: Array.from(
+        frame.data.subarray(
+          layout.poseStart,
+          layout.poseStart + layout.vehicles * layout.poseFloatsPerVehicle,
+        ),
+      ),
       tickCost: this.sim.tickCost(),
       vehicle: this.vehicle?.spec ?? null,
       wheelsets: this.vehicle?.wheelsets ?? 0,

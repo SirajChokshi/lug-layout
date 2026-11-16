@@ -237,7 +237,15 @@ export class Simulation {
       hash = this.mixWord(hash, this.trainEdge[t] ?? 0);
       hash = this.mixFloat(hash, this.trainOffset[t] ?? 0);
       hash = this.mixFloat(hash, this.trainSpeed[t] ?? 0);
+      hash = this.mixFloat(hash, this.trainThrottle[t] ?? 0);
       hash = this.mixWord(hash, this.trainReversed[t] ?? 0);
+      const count = this.pathCount[t] ?? 0;
+      let slot = this.pathTop[t] ?? 0;
+      hash = this.mixWord(hash, count);
+      for (let i = 0; i < count; i++) {
+        hash = this.mixWord(hash, this.pathEdges[t * PATH_CAPACITY + slot] ?? 0);
+        slot = (slot + PATH_CAPACITY - 1) % PATH_CAPACITY;
+      }
     }
     for (let s = 0; s < this.switchStates.length; s++) {
       hash = this.mixWord(hash, this.switchStates[s] ?? 0);
@@ -264,7 +272,7 @@ export class Simulation {
     const behind = new Int32Array(PATH_CAPACITY);
     let used = 0;
     let current = this.track.reverseEdge[edge] ?? 0;
-    let remaining = length - ((this.track.edgeLength[edge] ?? 0) - offset);
+    let remaining = length - offset;
     behind[used++] = current;
     while (remaining > 0) {
       const next = this.successor(current);

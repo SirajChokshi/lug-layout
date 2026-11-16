@@ -52,6 +52,7 @@ export class SimWorkerHost {
         this.spareFrames.length = 0;
         this.current = loadSession(request.load);
         this.endpoint.reply(id, { kind: "loaded", loaded: this.current.loaded });
+        this.postFrame(0, 0);
         return;
       }
       case "run":
@@ -61,21 +62,12 @@ export class SimWorkerHost {
         const session = this.loaded().session;
         const accepted = session.apply(request.command);
         this.endpoint.reply(id, { kind: "commanded", accepted, tick: session.simulation.tick });
+        if (!this.stopPump) this.postFrame(0, 0);
         return;
       }
       case "recycle":
         this.spareFrames.push(request.buffer);
         return;
-      case "log": {
-        const sim = this.loaded().session.simulation;
-        this.endpoint.reply(id, {
-          kind: "log",
-          tick: sim.tick,
-          stateHash: sim.stateHash(),
-          entries: this.loaded().session.log,
-        });
-        return;
-      }
       case "bench": {
         const { scenario, session } = this.loaded();
         const live = session.simulation;
@@ -133,13 +125,18 @@ export class SimWorkerHost {
     if (due <= 0) return;
     const start = this.clock.now();
     for (let i = 0; i < due; i++) sim.step();
-    const batchStepMs = this.clock.now() - start;
+    this.postFrame(due, this.clock.now() - start);
+  }
+
+  private postFrame(batchTicks: number, batchStepMs: number): void {
+    const { session } = this.loaded();
+    const sim = session.simulation;
     const data = this.spareFrames.pop() ?? new Float64Array(session.layout.floats);
     session.writeFrame(data);
     this.endpoint.post(
       {
         kind: "frame",
-        frame: { tick: sim.tick, stateHash: sim.stateHash(), batchTicks: due, batchStepMs, data },
+        frame: { tick: sim.tick, stateHash: sim.stateHash(), batchTicks, batchStepMs, data },
       },
       [data.buffer],
     );

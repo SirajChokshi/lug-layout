@@ -1,6 +1,5 @@
 import {
   placeSegments,
-  pointOnSegment,
   reversedSegments,
   segmentsEnd,
   wrapAngle,
@@ -154,38 +153,4 @@ export function trackPoint(
   const turned = h + k * s;
   out[outIndex] = x + (Math.sin(turned) - Math.sin(h)) / k;
   out[outIndex + 1] = z - (Math.cos(turned) - Math.cos(h)) / k;
-}
-
-export function edgeEndPose(track: SimTrack, edge: number): PlanPose {
-  const last = (track.segmentStart[edge + 1] ?? 1) - 1;
-  return pointOnSegment(
-    {
-      x: track.segmentX[last] ?? 0,
-      z: track.segmentZ[last] ?? 0,
-      heading: track.segmentHeading[last] ?? 0,
-      curvature: track.segmentCurvature[last] ?? 0,
-      length: track.segmentLength[last] ?? 0,
-    },
-    track.segmentLength[last] ?? 0,
-  );
-}
-
-export function simTrackBuffers(track: SimTrack): ArrayBuffer[] {
-  return [
-    track.edgeLength,
-    track.reverseEdge,
-    track.successorStart,
-    track.successors,
-    track.switchOfEdge,
-    track.segmentStart,
-    track.segmentX,
-    track.segmentZ,
-    track.segmentHeading,
-    track.segmentCurvature,
-    track.segmentLength,
-  ].map((array) => {
-    if (!(array.buffer instanceof ArrayBuffer))
-      throw new Error("sim track arrays must own plain buffers");
-    return array.buffer;
-  });
 }

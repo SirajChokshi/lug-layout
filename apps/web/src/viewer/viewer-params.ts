@@ -18,6 +18,7 @@ export interface ViewerParams {
   readonly follow: boolean;
   readonly simBenchTicks: number;
   readonly hud: boolean;
+  readonly start: boolean;
   readonly city: boolean;
   readonly parts: number;
   readonly seed: number;
@@ -104,6 +105,7 @@ export function readViewerParams(search: string): ViewerParams {
     follow: params.get("view") === "follow",
     simBenchTicks: positiveNumber(params.get("simBench"), 0),
     hud: params.get("hud") !== "0",
+    start: params.get("start") !== "0",
     city: params.get("scene") === "city",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),

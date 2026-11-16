@@ -7,7 +7,7 @@ import type {
   TrackSummary,
 } from "@brr/client";
 import { CreditLinks, partsCreditText } from "@brr/ui";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
 import type { MemoryReport } from "./viewer/memory-report.ts";
@@ -27,15 +27,19 @@ interface AppProps {
 
 const BENCH_AFTER_MS = 5_000;
 
-function useSimBench(run: IRunScene | null, ticks: number): SimBenchResult | null {
+function useSimBench(
+  run: IRunScene | null,
+  ticks: number,
+  onError: (error: unknown) => void,
+): SimBenchResult | null {
   const [result, setResult] = useState<SimBenchResult | null>(null);
   useEffect(() => {
     if (!run || ticks <= 0) return;
     const timer = setTimeout(() => {
-      void run.sim.bench(ticks).then(setResult);
+      run.sim.bench(ticks).then(setResult, onError);
     }, BENCH_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [run, ticks]);
+  }, [run, ticks, onError]);
   return result;
 }
 
@@ -64,6 +68,12 @@ function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, stri
       `length ${lengthLdu.toFixed(1)}, bogies at ${frontBogieLdu.toFixed(1)} and ${rearBogieLdu.toFixed(1)} from ${status.wheelsets} wheelsets; ${status.vehicleInstances} parts touch the wheels, ${status.excludedInstances} stand apart and stay off the train`,
     ]);
   }
+  const spans: string[] = [];
+  for (let p = 0; p + 3 < status.bogiePointsLdu.length; p += 4) {
+    const [fx = 0, fz = 0, rx = 0, rz = 0] = status.bogiePointsLdu.slice(p, p + 4);
+    spans.push(Math.hypot(fx - rx, fz - rz).toFixed(6));
+  }
+  rows.push(["Bogie centres apart (LDU, per vehicle)", spans.join(", ")]);
   rows.push([
     "Route path end vs exact end",
     `${status.maxEndResidualLdu.toExponential(1)} LDU, ${status.maxEndHeadingResidualRadians.toExponential(1)} rad`,
@@ -71,26 +81,32 @@ function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, stri
   return rows;
 }
 
-function useTrainKeys(run: IRunScene | null, startSpeed: number): void {
+function useTrainKeys(
+  run: IRunScene | null,
+  topSpeed: number,
+  onError: (error: unknown) => void,
+): void {
   useEffect(() => {
     if (!run) return;
-    let speed = startSpeed;
+    let speed = topSpeed;
     const switchStates = new Map<number, number>();
     const onKey = (event: KeyboardEvent): void => {
+      const status = run.status();
+      if (!status) return;
       const send = (command: Parameters<IRunScene["sim"]["command"]>[0]): void => {
-        void run.sim.command(command);
+        run.sim.command(command).catch(onError);
       };
-      const trains = run.status()?.trains ?? 0;
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
         const step = event.key === "ArrowUp" ? THROTTLE_STEP_LDU_PER_S : -THROTTLE_STEP_LDU_PER_S;
-        speed = Math.max(0, speed + step);
-        for (let train = 0; train < trains; train++) {
+        speed = Math.min(Math.max(speed + step, 0), topSpeed);
+        for (let train = 0; train < status.trains; train++) {
           send({ kind: "throttle", train, speedLduPerS: speed });
         }
       } else if (event.key === "r") {
-        for (let train = 0; train < trains; train++) send({ kind: "reverse", train });
+        for (let train = 0; train < status.trains; train++) send({ kind: "reverse", train });
       } else if (/^[1-9]$/u.test(event.key)) {
         const switchIndex = Number(event.key) - 1;
+        if (switchIndex >= status.switches) return;
         const state = switchStates.get(switchIndex) === 1 ? 0 : 1;
         switchStates.set(switchIndex, state);
         send({ kind: "switch", switchIndex, state });
@@ -98,7 +114,7 @@ function useTrainKeys(run: IRunScene | null, startSpeed: number): void {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [run, startSpeed]);
+  }, [run, topSpeed, onError]);
 }
 
 function mebibytes(bytes: number): string {
@@ -220,8 +236,9 @@ export function App({ scene, params, placements, run }: AppProps) {
   const [report, setReport] = useState<ViewerReport | null>(null);
   const [result, setResult] = useState<ViewerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useTrainKeys(run, params.speedLduPerS);
-  const bench = useSimBench(run, params.simBenchTicks);
+  const showRunError = useCallback((e: unknown): void => setError(String(e)), []);
+  useTrainKeys(run, params.speedLduPerS, showRunError);
+  const bench = useSimBench(run, params.simBenchTicks, showRunError);
   const runStatus = run?.status() ?? null;
 
   useEffect(() => {

@@ -3,8 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./entry": "./src/entry.ts",
-    ".": "./src/index.ts"
+    "./entry": "./src/entry.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

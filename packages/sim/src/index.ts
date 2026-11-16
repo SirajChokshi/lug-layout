@@ -24,7 +24,6 @@ export {
   buildSimTrack,
   forwardEdge,
   NO_SWITCH,
-  simTrackBuffers,
   trackPoint,
   type BuiltSimTrack,
   type SimRoute,

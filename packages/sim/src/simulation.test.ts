@@ -113,6 +113,32 @@ describe("Simulation on a closed circle of arcs", () => {
   });
 });
 
+describe("Placing a train", () => {
+  it("puts every bogie at its distance behind the head at tick 0, wherever on the edge the head starts", () => {
+    const arcLength = (2 * Math.PI * RADIUS) / ARC_STEPS;
+    const behindHead = [175, 515, 690 + 80, 690 + 320];
+    for (const offsetLdu of [0, arcLength / 3, arcLength]) {
+      const scenario = circle();
+      const sim = new SimSession({
+        ...scenario,
+        trains: [{ spec: TRAIN, placement: { edge: forwardEdge(4), offsetLdu } }],
+      }).simulation;
+      const poses = new Float64Array(2 * POSE_FLOATS_PER_VEHICLE);
+      sim.writeVehiclePoses(poses);
+      const headAngle = (4 * arcLength + offsetLdu) / RADIUS;
+      behindHead.forEach((distance, i) => {
+        const angle = headAngle - distance / RADIUS;
+        expect(poses[2 * i] ?? 0).toBeCloseTo(RADIUS * Math.sin(angle), 6);
+        expect(poses[2 * i + 1] ?? 0).toBeCloseTo(-RADIUS * Math.cos(angle), 6);
+      });
+      expect(sim.reverse(0)).toBe(true);
+      const reversed = new Float64Array(poses.length);
+      sim.writeVehiclePoses(reversed);
+      for (let i = 0; i < poses.length; i++) expect(reversed[i]).toBeCloseTo(poses[i] ?? 0, 6);
+    }
+  });
+});
+
 describe("Simulation determinism", () => {
   it("replays a command log to the same state hash", () => {
     const live = new SimSession(circle());
