@@ -1,0 +1,1334 @@
+{
+ "url": "http://127.0.0.1:5173/?api=webgl2&lod=low&run=1&hud=0&view=follow&speed=400&trains=60@100&track=ldraw%3A75541-f1%2C%20ldraw%3A74746%2C%20ldraw%3A74747.1%2A3%2C%20ldraw%3A74747%2A7%2C%20ldraw%3A74746%2C%20ldraw%3A74747%2A5%2C%20ldraw%3A74746%2A5%2C%20/%2C%20ldraw%3A74746%2A2%2C%20ldraw%3A75541-f1%2C%20ldraw%3A74746%2A8%2C%20ldraw%3A75542-f1.1%2C%20ldraw%3A74746%2A2%2C%20ldraw%3A75541-f1%2C%20ldraw%3A74746%2C%20ldraw%3A74747.1%2A3%2C%20ldraw%3A74747%2A7%2C%20ldraw%3A74746%2C%20ldraw%3A74747%2A5%2C%20ldraw%3A74746%2A5%2C%20/%2C%20ldraw%3A74747%2C%20ldraw%3A74746%2A6%2C%20ldraw%3A74747",
+ "width": 1280,
+ "height": 720,
+ "actions": [
+  "2:4",
+  "34:ArrowDown",
+  "34:ArrowDown",
+  "34:ArrowDown",
+  "34:ArrowDown",
+  "34:ArrowDown",
+  "34:ArrowDown",
+  "34:ArrowDown",
+  "34:ArrowDown",
+  "40:r",
+  "42:ArrowUp",
+  "42:ArrowUp",
+  "42:ArrowUp",
+  "42:ArrowUp",
+  "42:ArrowUp",
+  "42:ArrowUp",
+  "42:ArrowUp",
+  "42:ArrowUp"
+ ],
+ "errors": [],
+ "bench": null,
+ "hud": "Brick RailroadAPIwebgl2AdapterGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)Drawing buffer1280×720 px (devicePixelRatio 1)Bundle0ab83549abdd1bc0Parts466Modules40Stud instances (drawn of total)3,520 of 3,520Scene triangles591,640Load118 msGPU buffers allocated so far, JS heapvertex+index 4.7 MiB, other 0.0 MiB, JS heap 49.5 MiBRender origin (chunks), rebases(-14, -2); 5 rebases, last at frame 288Track placements68Exact joins70 of 140 ends pairedOpen ends0Coincident ends not joined0Switches4Directed edges (reachable from edge 0)144 (144)Chunk tiers near/mid/far40 / 0 / 0Draw calls93Drawn triangles196,951Scene coverage12%Frame rate (rAF)6.5 fpsSim tick (60 Hz, worker)3,954Sim state hash3500949eSim step cost (live, worker clock)2.83 µs/tick over 3,954 ticksTrains (speed LDU/s)1 (400)Train edges103Vehicle (LDU)length 706.0, bogies at 183.0 and 523.0 from 4 wheelsets; 398 parts touch the wheels, 21 stand apart and stay off the trainRoute path end vs exact end9.7e-13 LDU, 0.0e+0 rad{\"tick\":3954,\"stateHash\":889230494,\"trains\":1,\"trainEdge\":[103],\"trainOffsetLdu\":[114.26672156414797],\"trainSpeedLduPerS\":[400],\"tickCost\":{\"ticks\":3954,\"stepMs\":11.200000004377216,\"frames\":3954},\"vehicle\":{\"lengthLdu\":706,\"frontBogieLdu\":183,\"rearBogieLdu\":523},\"wheelsets\":4,\"vehicleInstances\":398,\"excludedInstances\":21,\"maxEndResidualLdu\":9.713407672867936e-13,\"maxEndHeadingResidualRadians\":0}",
+ "samples": [
+  {
+   "ms": 0,
+   "tick": 168,
+   "hash": 4240089680,
+   "edges": [
+    64
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    50.000000000000036
+   ]
+  },
+  {
+   "ms": 769,
+   "tick": 200,
+   "hash": 344247110,
+   "edges": [
+    64
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    263.33333333333326
+   ]
+  },
+  {
+   "ms": 1278,
+   "tick": 200,
+   "hash": 344247110,
+   "edges": [
+    64
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    263.33333333333326
+   ]
+  },
+  {
+   "ms": 1787,
+   "tick": 276,
+   "hash": 3908295449,
+   "edges": [
+    68
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    130.00000000000017
+   ]
+  },
+  {
+   "ms": 2294,
+   "key": "4"
+  },
+  {
+   "ms": 2294,
+   "tick": 317,
+   "hash": 471516991,
+   "edges": [
+    70
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    83.33333333333354
+   ]
+  },
+  {
+   "ms": 3420,
+   "tick": 344,
+   "hash": 959925318,
+   "edges": [
+    70
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    263.3333333333334
+   ]
+  },
+  {
+   "ms": 4063,
+   "tick": 396,
+   "hash": 1587783289,
+   "edges": [
+    73
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    290.0000000000002
+   ]
+  },
+  {
+   "ms": 4699,
+   "tick": 433,
+   "hash": 3067641295,
+   "edges": [
+    73
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    536.6666666666674
+   ]
+  },
+  {
+   "ms": 5318,
+   "tick": 470,
+   "hash": 711499652,
+   "edges": [
+    76
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    143.33333333333348
+   ]
+  },
+  {
+   "ms": 5937,
+   "tick": 507,
+   "hash": 774626953,
+   "edges": [
+    78
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    70.0000000000002
+   ]
+  },
+  {
+   "ms": 6556,
+   "tick": 545,
+   "hash": 665472855,
+   "edges": [
+    82
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    3.3333333333335986
+   ]
+  },
+  {
+   "ms": 7153,
+   "tick": 580,
+   "hash": 2971225553,
+   "edges": [
+    82
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    236.6666666666668
+   ]
+  },
+  {
+   "ms": 7744,
+   "tick": 614,
+   "hash": 514417647,
+   "edges": [
+    82
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    463.33333333333405
+   ]
+  },
+  {
+   "ms": 8311,
+   "tick": 649,
+   "hash": 1760066628,
+   "edges": [
+    82
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    696.6666666666665
+   ]
+  },
+  {
+   "ms": 8866,
+   "tick": 681,
+   "hash": 4113738181,
+   "edges": [
+    127
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    194.55749128972403
+   ]
+  },
+  {
+   "ms": 9397,
+   "tick": 713,
+   "hash": 646130644,
+   "edges": [
+    125
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    87.89082462305747
+   ]
+  },
+  {
+   "ms": 9942,
+   "tick": 746,
+   "hash": 1843165085,
+   "edges": [
+    125
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    307.8908246230575
+   ]
+  },
+  {
+   "ms": 10484,
+   "tick": 779,
+   "hash": 1638579254,
+   "edges": [
+    123
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    207.89082462305745
+   ]
+  },
+  {
+   "ms": 11025,
+   "tick": 811,
+   "hash": 3481626559,
+   "edges": [
+    121
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    101.22415795639093
+   ]
+  },
+  {
+   "ms": 11569,
+   "tick": 844,
+   "hash": 939867629,
+   "edges": [
+    119
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    1.2241579563909681
+   ]
+  },
+  {
+   "ms": 12092,
+   "tick": 875,
+   "hash": 1093494582,
+   "edges": [
+    119
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    207.89082462305757
+   ]
+  },
+  {
+   "ms": 12771,
+   "tick": 905,
+   "hash": 1495189340,
+   "edges": [
+    117
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    87.8908246230577
+   ]
+  },
+  {
+   "ms": 13395,
+   "tick": 942,
+   "hash": 4114771331,
+   "edges": [
+    115
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    20.398225930745014
+   ]
+  },
+  {
+   "ms": 14034,
+   "tick": 981,
+   "hash": 1598741175,
+   "edges": [
+    115
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    280.39822593074496
+   ]
+  },
+  {
+   "ms": 14629,
+   "tick": 1016,
+   "hash": 787852434,
+   "edges": [
+    113
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    199.57229390509897
+   ]
+  },
+  {
+   "ms": 15217,
+   "tick": 1052,
+   "hash": 108569333,
+   "edges": [
+    111
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    125.41302854611972
+   ]
+  },
+  {
+   "ms": 15822,
+   "tick": 1088,
+   "hash": 1479444965,
+   "edges": [
+    109
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    51.25376318714033
+   ]
+  },
+  {
+   "ms": 16435,
+   "tick": 1125,
+   "hash": 1609202277,
+   "edges": [
+    109
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    297.920429853807
+   ]
+  },
+  {
+   "ms": 17068,
+   "tick": 1163,
+   "hash": 3999149838,
+   "edges": [
+    107
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    237.09449782816085
+   ]
+  },
+  {
+   "ms": 17710,
+   "tick": 1230,
+   "hash": 4261313065,
+   "edges": [
+    103
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    49.60189913584836
+   ]
+  },
+  {
+   "ms": 18343,
+   "tick": 1267,
+   "hash": 782479994,
+   "edges": [
+    103
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    296.268565802515
+   ]
+  },
+  {
+   "ms": 18972,
+   "tick": 1305,
+   "hash": 1398791800,
+   "edges": [
+    101
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    235.4426337768689
+   ]
+  },
+  {
+   "ms": 19609,
+   "tick": 1344,
+   "hash": 1220636439,
+   "edges": [
+    99
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    181.2833684178896
+   ]
+  },
+  {
+   "ms": 20334,
+   "tick": 1374,
+   "hash": 3902649228,
+   "edges": [
+    97
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    67.12410305891026
+   ]
+  },
+  {
+   "ms": 21091,
+   "tick": 1404,
+   "hash": 588757690,
+   "edges": [
+    97
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    267.1241030589102
+   ]
+  },
+  {
+   "ms": 21637,
+   "tick": 1437,
+   "hash": 1216265830,
+   "edges": [
+    95
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    172.96483769993094
+   ]
+  },
+  {
+   "ms": 22154,
+   "tick": 1468,
+   "hash": 3173537520,
+   "edges": [
+    93
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    65.47223900761827
+   ]
+  },
+  {
+   "ms": 22777,
+   "tick": 1505,
+   "hash": 1448384404,
+   "edges": [
+    93
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    312.13890567428496
+   ]
+  },
+  {
+   "ms": 23359,
+   "tick": 1540,
+   "hash": 3778954249,
+   "edges": [
+    90
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    231.31297364863883
+   ]
+  },
+  {
+   "ms": 23936,
+   "tick": 1575,
+   "hash": 2940291153,
+   "edges": [
+    88
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    150.4870416229929
+   ]
+  },
+  {
+   "ms": 24494,
+   "tick": 1608,
+   "hash": 146098996,
+   "edges": [
+    86
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    56.327776264013565
+   ]
+  },
+  {
+   "ms": 25039,
+   "tick": 1641,
+   "hash": 1243932764,
+   "edges": [
+    86
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    276.3277762640135
+   ]
+  },
+  {
+   "ms": 25582,
+   "tick": 1674,
+   "hash": 3483321347,
+   "edges": [
+    85
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    182.16851090503417
+   ]
+  },
+  {
+   "ms": 26146,
+   "tick": 1707,
+   "hash": 1699655660,
+   "edges": [
+    81
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    82.16851090503422
+   ]
+  },
+  {
+   "ms": 26740,
+   "tick": 1743,
+   "hash": 2945949051,
+   "edges": [
+    81
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    322.1685109050342
+   ]
+  },
+  {
+   "ms": 27341,
+   "tick": 1779,
+   "hash": 477308673,
+   "edges": [
+    81
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    562.1685109050345
+   ]
+  },
+  {
+   "ms": 27954,
+   "tick": 1816,
+   "hash": 1373087626,
+   "edges": [
+    79
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    168.83517757170068
+   ]
+  },
+  {
+   "ms": 28538,
+   "tick": 1851,
+   "hash": 495240564,
+   "edges": [
+    77
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    82.16851090503405
+   ]
+  },
+  {
+   "ms": 29122,
+   "tick": 1886,
+   "hash": 933639479,
+   "edges": [
+    77
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    315.50184423836737
+   ]
+  },
+  {
+   "ms": 29706,
+   "tick": 1921,
+   "hash": 1030054321,
+   "edges": [
+    72
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    228.8351775717006
+   ]
+  },
+  {
+   "ms": 30302,
+   "tick": 1957,
+   "hash": 878180085,
+   "edges": [
+    72
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    468.83517757170114
+   ]
+  },
+  {
+   "ms": 30942,
+   "tick": 1995,
+   "hash": 32710042,
+   "edges": [
+    71
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    82.16851090503383
+   ]
+  },
+  {
+   "ms": 31610,
+   "tick": 2035,
+   "hash": 3264928722,
+   "edges": [
+    69
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    28.8351775717005
+   ]
+  },
+  {
+   "ms": 32326,
+   "tick": 2078,
+   "hash": 2257223923,
+   "edges": [
+    69
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    315.50184423836714
+   ]
+  },
+  {
+   "ms": 33058,
+   "tick": 2122,
+   "hash": 1963753502,
+   "edges": [
+    67
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    288.8351775717004
+   ]
+  },
+  {
+   "ms": 33811,
+   "tick": 2197,
+   "hash": 3106601494,
+   "edges": [
+    63
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    148.83517757170048
+   ]
+  },
+  {
+   "ms": 34318,
+   "key": "ArrowDown"
+  },
+  {
+   "ms": 34318,
+   "key": "ArrowDown"
+  },
+  {
+   "ms": 34318,
+   "key": "ArrowDown"
+  },
+  {
+   "ms": 34318,
+   "key": "ArrowDown"
+  },
+  {
+   "ms": 34318,
+   "key": "ArrowDown"
+  },
+  {
+   "ms": 34318,
+   "key": "ArrowDown"
+  },
+  {
+   "ms": 34318,
+   "key": "ArrowDown"
+  },
+  {
+   "ms": 34318,
+   "key": "ArrowDown"
+  },
+  {
+   "ms": 34318,
+   "tick": 2227,
+   "hash": 1939120234,
+   "edges": [
+    61
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    28.8351775717005
+   ]
+  },
+  {
+   "ms": 38840,
+   "tick": 2469,
+   "hash": 1069088519,
+   "edges": [
+    57
+   ],
+   "speeds": [
+    0
+   ],
+   "offsets": [
+    184.66851090503346
+   ]
+  },
+  {
+   "ms": 39548,
+   "tick": 2526,
+   "hash": 22931370,
+   "edges": [
+    57
+   ],
+   "speeds": [
+    0
+   ],
+   "offsets": [
+    184.66851090503346
+   ]
+  },
+  {
+   "ms": 40235,
+   "key": "r"
+  },
+  {
+   "ms": 40235,
+   "tick": 2608,
+   "hash": 3378664588,
+   "edges": [
+    60
+   ],
+   "speeds": [
+    0
+   ],
+   "offsets": [
+    201.3314890949665
+   ]
+  },
+  {
+   "ms": 41401,
+   "tick": 2651,
+   "hash": 3422219769,
+   "edges": [
+    60
+   ],
+   "speeds": [
+    0
+   ],
+   "offsets": [
+    201.3314890949665
+   ]
+  },
+  {
+   "ms": 42118,
+   "key": "ArrowUp"
+  },
+  {
+   "ms": 42118,
+   "key": "ArrowUp"
+  },
+  {
+   "ms": 42118,
+   "key": "ArrowUp"
+  },
+  {
+   "ms": 42118,
+   "key": "ArrowUp"
+  },
+  {
+   "ms": 42118,
+   "key": "ArrowUp"
+  },
+  {
+   "ms": 42118,
+   "key": "ArrowUp"
+  },
+  {
+   "ms": 42118,
+   "key": "ArrowUp"
+  },
+  {
+   "ms": 42118,
+   "key": "ArrowUp"
+  },
+  {
+   "ms": 42118,
+   "tick": 2694,
+   "hash": 1941317690,
+   "edges": [
+    60
+   ],
+   "speeds": [
+    0
+   ],
+   "offsets": [
+    201.3314890949665
+   ]
+  },
+  {
+   "ms": 46288,
+   "tick": 2916,
+   "hash": 2140771142,
+   "edges": [
+    64
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    274.6648224282998
+   ]
+  },
+  {
+   "ms": 46935,
+   "tick": 2969,
+   "hash": 2760333428,
+   "edges": [
+    66
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    307.99815576163326
+   ]
+  },
+  {
+   "ms": 47589,
+   "tick": 3007,
+   "hash": 1963243317,
+   "edges": [
+    68
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    241.3314890949665
+   ]
+  },
+  {
+   "ms": 48223,
+   "tick": 3044,
+   "hash": 342561568,
+   "edges": [
+    70
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    167.99815576163334
+   ]
+  },
+  {
+   "ms": 48840,
+   "tick": 3082,
+   "hash": 3970023768,
+   "edges": [
+    73
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    101.33148909496676
+   ]
+  },
+  {
+   "ms": 49470,
+   "tick": 3120,
+   "hash": 995034415,
+   "edges": [
+    73
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    354.6648224283002
+   ]
+  },
+  {
+   "ms": 50088,
+   "tick": 3156,
+   "hash": 1799625078,
+   "edges": [
+    73
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    594.6648224283002
+   ]
+  },
+  {
+   "ms": 50724,
+   "tick": 3195,
+   "hash": 2143157744,
+   "edges": [
+    76
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    214.66482242829989
+   ]
+  },
+  {
+   "ms": 51389,
+   "tick": 3236,
+   "hash": 6322616,
+   "edges": [
+    78
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    167.99815576163334
+   ]
+  },
+  {
+   "ms": 52083,
+   "tick": 3279,
+   "hash": 3344022482,
+   "edges": [
+    82
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    134.6648224283001
+   ]
+  },
+  {
+   "ms": 52837,
+   "tick": 3324,
+   "hash": 2517489600,
+   "edges": [
+    82
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    434.66482242830045
+   ]
+  },
+  {
+   "ms": 53541,
+   "tick": 3351,
+   "hash": 1149084059,
+   "edges": [
+    82
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    614.6648224283001
+   ]
+  },
+  {
+   "ms": 54111,
+   "tick": 3385,
+   "hash": 3808255331,
+   "edges": [
+    127
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    125.88898038469056
+   ]
+  },
+  {
+   "ms": 54676,
+   "tick": 3419,
+   "hash": 3624550798,
+   "edges": [
+    125
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    32.55564705135724
+   ]
+  },
+  {
+   "ms": 55342,
+   "tick": 3459,
+   "hash": 574740239,
+   "edges": [
+    125
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    299.2223137180239
+   ]
+  },
+  {
+   "ms": 55846,
+   "tick": 3505,
+   "hash": 2525014277,
+   "edges": [
+    123
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    285.88898038469057
+   ]
+  },
+  {
+   "ms": 56390,
+   "tick": 3538,
+   "hash": 615884785,
+   "edges": [
+    121
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    185.88898038469065
+   ]
+  },
+  {
+   "ms": 56922,
+   "tick": 3570,
+   "hash": 2760365898,
+   "edges": [
+    119
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    79.22231371802408
+   ]
+  },
+  {
+   "ms": 57442,
+   "tick": 3601,
+   "hash": 4015192607,
+   "edges": [
+    119
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    285.8889803846907
+   ]
+  },
+  {
+   "ms": 57965,
+   "tick": 3632,
+   "hash": 1142129108,
+   "edges": [
+    117
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    172.55564705135745
+   ]
+  },
+  {
+   "ms": 58470,
+   "tick": 3662,
+   "hash": 2341002688,
+   "edges": [
+    115
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    58.396381692378114
+   ]
+  },
+  {
+   "ms": 59232,
+   "tick": 3708,
+   "hash": 2718025318,
+   "edges": [
+    113
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    50.90378300006544
+   ]
+  },
+  {
+   "ms": 59752,
+   "tick": 3740,
+   "hash": 2283057584,
+   "edges": [
+    113
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    264.23711633339866
+   ]
+  },
+  {
+   "ms": 60392,
+   "tick": 3772,
+   "hash": 4045834979,
+   "edges": [
+    111
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    163.41118430775273
+   ]
+  },
+  {
+   "ms": 60990,
+   "tick": 3807,
+   "hash": 1579523507,
+   "edges": [
+    109
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    82.58525228210675
+   ]
+  },
+  {
+   "ms": 61583,
+   "tick": 3843,
+   "hash": 1326062685,
+   "edges": [
+    107
+   ],
+   "speeds": [
+    400
+   ],
+   "offsets": [
+    8.42598692312735
+   ]
+  }
+ ]
+}

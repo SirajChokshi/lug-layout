@@ -1,0 +1,49 @@
+import { chromium } from "playwright-core";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+
+const [url, out, name, seconds, ...actions] = process.argv.slice(2);
+const width = Number(process.env.W ?? 960);
+const height = Number(process.env.H ?? 540);
+mkdirSync(out, { recursive: true });
+const browser = await chromium.launch({
+  executablePath: process.env.CHROME ?? "/usr/local/bin/google-chrome",
+  headless: false,
+  args: ["--enable-unsafe-webgpu", "--ignore-gpu-blocklist"],
+});
+const context = await browser.newContext({
+  viewport: { width, height },
+  recordVideo: { dir: out, size: { width, height } },
+});
+const page = await context.newPage();
+const errors = [];
+page.on("pageerror", (e) => errors.push(e.message));
+await page.goto(url);
+await page.waitForSelector("#sim", { state: "attached", timeout: 120_000 });
+const samples = [];
+const started = Date.now();
+const pending = actions.map((a) => {
+  const [at, key] = a.split(":");
+  return { at: Number(at) * 1000, key };
+});
+while (Date.now() - started < Number(seconds) * 1000) {
+  const now = Date.now() - started;
+  while (pending.length > 0 && (pending[0]?.at ?? Infinity) <= now) {
+    const action = pending.shift();
+    if (action) {
+      await page.keyboard.press(action.key);
+      samples.push({ ms: now, key: action.key });
+    }
+  }
+  const sim = JSON.parse((await page.locator("#sim").textContent()) ?? "{}");
+  samples.push({ ms: now, tick: sim.tick, hash: sim.stateHash, edges: sim.trainEdge, speeds: sim.trainSpeedLduPerS, offsets: sim.trainOffsetLdu });
+  await page.waitForTimeout(500);
+}
+const bench = await page.locator("#sim-bench").textContent({ timeout: 1000 }).catch(() => null);
+const hud = await page.locator(".hud").innerText();
+await page.screenshot({ path: `${out}/${name}-last.png` });
+const video = page.video();
+await context.close();
+await browser.close();
+if (video) renameSync(await video.path(), `${out}/${name}.webm`);
+writeFileSync(`${out}/${name}.json`, JSON.stringify({ url, width, height, actions, errors, bench: bench ? JSON.parse(bench) : null, hud, samples }, null, 1));
+console.log(name, "errors", errors.length, "bench", bench, "samples", samples.length);
