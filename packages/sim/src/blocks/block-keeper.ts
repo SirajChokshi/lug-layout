@@ -7,13 +7,20 @@ export const NO_TRAIN = -1;
 export const BLOCK_CLEARANCE_LDU = STUD_LDU;
 export const ARRIVAL_WINDOW_LDU = STUD_LDU;
 
-export type TrainRouteState = "manual" | "waiting" | "routed" | "arrived";
+export type TrainRouteState = "manual" | "waiting" | "routed" | "arrived" | "reversing";
 
 const MODE_MANUAL = 0;
 const MODE_WAITING = 1;
 const MODE_ROUTED = 2;
 const MODE_ARRIVED = 3;
-const MODE_NAMES: ReadonlyArray<TrainRouteState> = ["manual", "waiting", "routed", "arrived"];
+const MODE_REVERSING = 4;
+const MODE_NAMES: ReadonlyArray<TrainRouteState> = [
+  "manual",
+  "waiting",
+  "routed",
+  "arrived",
+  "reversing",
+];
 
 export class BlockKeeper {
   readonly blockOwner: Int32Array;
@@ -31,6 +38,7 @@ export class BlockKeeper {
   private readonly mode: Uint8Array;
   private readonly planner: RoutePlanner;
   private readonly route: Int32Array;
+  private readonly reverseRoute: Int32Array;
   private readonly penalty: Float64Array;
   private readonly occupiedPenaltyLdu: number;
 
@@ -54,6 +62,7 @@ export class BlockKeeper {
     this.mode = new Uint8Array(trainCapacity);
     this.planner = new RoutePlanner(blocks);
     this.route = new Int32Array(graph.edgeCount);
+    this.reverseRoute = new Int32Array(graph.edgeCount);
     this.penalty = new Float64Array(blocks.blockCount);
     let total = 0;
     for (let edge = 0; edge < graph.edgeCount; edge++) total += blocks.edgeLengthLdu[edge] ?? 0;
@@ -96,17 +105,20 @@ export class BlockKeeper {
     for (let i = 1; i < count; i++) startS -= edgeLengthLdu[body[i] ?? 0] ?? 0;
     for (let i = count - 1; i >= 0; i--) {
       const held = body[i] ?? 0;
-      this.append(train, held, startS, switchStates);
+      this.append(train, held, startS);
       startS += edgeLengthLdu[held] ?? 0;
     }
     this.frontSeq[train] = (this.ringNext[train] ?? 1) - 1;
   }
 
-  remove(train: number): void {
+  reseat(train: number, frontEdge: number, frontOffsetLdu: number, switchStates: Uint8Array): void {
+    const mode = this.mode[train] ?? MODE_MANUAL;
+    const target = this.targetBlock[train] ?? NO_BLOCK;
     while ((this.ringNext[train] ?? 0) > (this.ringHead[train] ?? 0)) this.dropOldest(train);
     this.placed[train] = 0;
-    this.mode[train] = MODE_MANUAL;
-    this.targetBlock[train] = NO_BLOCK;
+    this.place(train, frontEdge, frontOffsetLdu, this.lengthLdu[train] ?? 0, switchStates);
+    this.targetBlock[train] = target;
+    this.mode[train] = mode === MODE_REVERSING || mode === MODE_ROUTED ? MODE_WAITING : mode;
   }
 
   goTo(train: number, block: number): void {
@@ -125,6 +137,19 @@ export class BlockKeeper {
 
   routeState(train: number): TrainRouteState {
     return MODE_NAMES[this.mode[train] ?? MODE_MANUAL] ?? "manual";
+  }
+
+  heldSuccessor(train: number, edge: number, switchStates: Uint8Array): number {
+    let seq = this.frontSeq[train] ?? 0;
+    const next = this.ringNext[train] ?? 0;
+    while (seq < next && this.ringEdge[this.slot(train, seq)] !== edge) seq++;
+    if (seq + 1 >= next) return NO_EDGE;
+    const following = this.ringEdge[this.slot(train, seq + 1)] ?? NO_EDGE;
+    const switchId = this.blocks.edgeSwitchSetting(following);
+    if (switchId !== NO_SWITCH) {
+      switchStates[switchId] = this.blocks.graph.edgeRoute[following] ?? 0;
+    }
+    return following;
   }
 
   canThrow(switchId: number): boolean {
@@ -148,8 +173,10 @@ export class BlockKeeper {
       const stopping = (speedLduPerS * speedLduPerS) / (2 * brakingLduPerS2);
       this.extendAhead(train, sFront + stopping + 2 * BLOCK_CLEARANCE_LDU, switchStates);
     } else if (mode === MODE_WAITING && speedLduPerS === 0) {
-      this.acquireRoute(train, frontEdge, frontOffsetLdu, sFront, switchStates);
+      this.acquireRoute(train, frontEdge, frontOffsetLdu, sFront);
     }
+    const now = this.mode[train];
+    if ((now === MODE_WAITING || now === MODE_REVERSING) && speedLduPerS === 0) return 0;
     const clear = this.heldEndS(train) - BLOCK_CLEARANCE_LDU - sFront;
     if (this.mode[train] === MODE_ROUTED && speedLduPerS === 0 && clear <= ARRIVAL_WINDOW_LDU) {
       this.mode[train] = MODE_ARRIVED;
@@ -180,7 +207,7 @@ export class BlockKeeper {
     return (this.ringStartS[this.slot(train, seq)] ?? 0) + frontOffsetLdu;
   }
 
-  private append(train: number, edge: number, startS: number, switchStates: Uint8Array): void {
+  private append(train: number, edge: number, startS: number): void {
     const next = this.ringNext[train] ?? 0;
     if (next - (this.ringHead[train] ?? 0) >= this.ringCapacity) {
       throw new RangeError(`train ${train} holds more than ${this.ringCapacity} edges`);
@@ -192,8 +219,6 @@ export class BlockKeeper {
     const block = this.blocks.edgeBlock(edge);
     this.blockOwner[block] = train;
     this.blockHolds[block] = (this.blockHolds[block] ?? 0) + 1;
-    const switchId = this.blocks.edgeSwitchSetting(edge);
-    if (switchId !== NO_SWITCH) switchStates[switchId] = this.blocks.graph.edgeRoute[edge] ?? 0;
   }
 
   private dropOldest(train: number): void {
@@ -233,9 +258,43 @@ export class BlockKeeper {
       if (next === NO_EDGE) return;
       const owner = this.blockOwner[this.blocks.edgeBlock(next)] ?? NO_TRAIN;
       if (owner !== NO_TRAIN && owner !== train) return;
-      this.append(train, next, endS, switchStates);
+      this.append(train, next, endS);
       endS += edgeLengthLdu[next] ?? 0;
     }
+  }
+
+  private routeIsFree(train: number, route: Int32Array, count: number): boolean {
+    if (count === 0) return false;
+    for (let i = 1; i < count; i++) {
+      const owner = this.blockOwner[this.blocks.edgeBlock(route[i] ?? 0)] ?? NO_TRAIN;
+      if (owner !== NO_TRAIN && owner !== train) return false;
+    }
+    return true;
+  }
+
+  private planBehind(train: number, sFront: number, target: number): number {
+    const sTail = sFront - (this.lengthLdu[train] ?? 0);
+    let seq = this.ringHead[train] ?? 0;
+    const front = this.frontSeq[train] ?? 0;
+    while (seq < front) {
+      const at = this.slot(train, seq);
+      const end =
+        (this.ringStartS[at] ?? 0) + (this.blocks.edgeLengthLdu[this.ringEdge[at] ?? 0] ?? 0);
+      if (end > sTail) break;
+      seq++;
+    }
+    const at = this.slot(train, seq);
+    const tailEdge = this.ringEdge[at] ?? 0;
+    const length = this.blocks.edgeLengthLdu[tailEdge] ?? 0;
+    const intoTail = sTail - (this.ringStartS[at] ?? 0);
+    const offset = Math.min(Math.max(length - intoTail, 0), length);
+    return this.planner.plan(
+      reverseEdge(tailEdge),
+      offset,
+      target,
+      this.penalty,
+      this.reverseRoute,
+    );
   }
 
   private acquireRoute(
@@ -243,7 +302,6 @@ export class BlockKeeper {
     frontEdge: number,
     frontOffsetLdu: number,
     sFront: number,
-    switchStates: Uint8Array,
   ): void {
     for (let b = 0; b < this.penalty.length; b++) {
       const owner = this.blockOwner[b] ?? NO_TRAIN;
@@ -251,18 +309,22 @@ export class BlockKeeper {
     }
     const target = this.targetBlock[train] ?? NO_BLOCK;
     const count = this.planner.plan(frontEdge, frontOffsetLdu, target, this.penalty, this.route);
-    if (count === 0) return;
-    for (let i = 1; i < count; i++) {
-      const owner = this.blockOwner[this.blocks.edgeBlock(this.route[i] ?? 0)] ?? NO_TRAIN;
-      if (owner !== NO_TRAIN && owner !== train) return;
+    const ahead = this.routeIsFree(train, this.route, count);
+    const aheadLength = this.planner.lastLengthLdu;
+    const behindCount = this.planBehind(train, sFront, target);
+    const behind = this.routeIsFree(train, this.reverseRoute, behindCount);
+    if (behind && (!ahead || this.planner.lastLengthLdu < aheadLength)) {
+      this.mode[train] = MODE_REVERSING;
+      return;
     }
+    if (!ahead) return;
     while ((this.ringNext[train] ?? 0) - 1 > (this.frontSeq[train] ?? 0)) this.dropNewest(train);
     const frontSlot = this.slot(train, this.frontSeq[train] ?? 0);
     let endS =
       sFront - frontOffsetLdu + (this.blocks.edgeLengthLdu[this.ringEdge[frontSlot] ?? 0] ?? 0);
     for (let i = 1; i < count; i++) {
       const edge = this.route[i] ?? 0;
-      this.append(train, edge, endS, switchStates);
+      this.append(train, edge, endS);
       endS += this.blocks.edgeLengthLdu[edge] ?? 0;
     }
     this.mode[train] = MODE_ROUTED;

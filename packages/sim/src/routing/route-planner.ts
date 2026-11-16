@@ -8,6 +8,7 @@ export class RoutePlanner {
   private readonly heapEdge: Int32Array;
   private readonly heapKey: Float64Array;
   private heapSize = 0;
+  lastLengthLdu = 0;
 
   constructor(private readonly blocks: BlockMap) {
     const edges = blocks.graph.edgeCount;
@@ -57,6 +58,7 @@ export class RoutePlanner {
       }
     }
     if (goal === NO_EDGE) return 0;
+    this.lastLengthLdu = this.distance[goal] ?? 0;
     let count = 0;
     for (let edge = goal; edge !== NO_EDGE; edge = this.previous[edge] ?? NO_EDGE) count++;
     if (count > out.length) throw new RangeError(`route of ${count} edges exceeds ${out.length}`);

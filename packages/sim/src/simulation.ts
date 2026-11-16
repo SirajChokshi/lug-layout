@@ -271,21 +271,23 @@ export class Simulation {
     this.trainEdge[train] = this.track.reverseEdge[tailEdge] ?? 0;
     this.trainOffset[train] = (this.track.edgeLength[tailEdge] ?? 0) - tailOffset;
     this.trainReversed[train] = this.trainReversed[train] === 1 ? 0 : 1;
-    if (this.blocks) {
-      this.blocks.remove(train);
-      this.blocks.place(
-        train,
-        this.trainEdge[train] ?? 0,
-        this.trainOffset[train] ?? 0,
-        length,
-        this.switchStates,
-      );
-    }
+    this.blocks?.reseat(
+      train,
+      this.trainEdge[train] ?? 0,
+      this.trainOffset[train] ?? 0,
+      this.switchStates,
+    );
     return true;
   }
 
   step(): void {
     this.autopilot?.update(this);
+    const blocks = this.blocks;
+    if (blocks) {
+      for (let t = 0; t < this.trainCount; t++) {
+        if (blocks.routeState(t) === "reversing" && this.trainSpeed[t] === 0) this.reverse(t);
+      }
+    }
     for (let t = 0; t < this.trainCount; t++) this.advanceTrain(t);
     this.tickCount++;
     if (this.edgePlacement) this.measureSeparation(this.edgePlacement);
@@ -401,20 +403,16 @@ export class Simulation {
     const acceleration = this.trainAcceleration[train] ?? 0;
     let speed = this.trainSpeed[train] ?? 0;
     const stoppingDistance = (speed * speed) / (2 * braking) + speed * SIM_TICK_SECONDS;
-    const openEndClear = this.clearDistanceAhead(train, stoppingDistance);
     const clear = this.blocks
-      ? Math.min(
-          openEndClear,
-          this.blocks.clearDistanceAhead(
-            train,
-            this.trainEdge[train] ?? 0,
-            this.trainOffset[train] ?? 0,
-            speed,
-            braking,
-            this.switchStates,
-          ),
+      ? this.blocks.clearDistanceAhead(
+          train,
+          this.trainEdge[train] ?? 0,
+          this.trainOffset[train] ?? 0,
+          speed,
+          braking,
+          this.switchStates,
         )
-      : openEndClear;
+      : this.clearDistanceAhead(train, stoppingDistance);
     const stopCap = Math.sqrt(2 * braking * clear);
     const target = Math.min(this.trainThrottle[train] ?? 0, stopCap);
     if (speed < target) speed = Math.min(target, speed + acceleration * SIM_TICK_SECONDS);
@@ -424,7 +422,9 @@ export class Simulation {
     let offset = (this.trainOffset[train] ?? 0) + (this.blocks && travel > clear ? clear : travel);
     let length = this.track.edgeLength[edge] ?? 0;
     while (offset > length) {
-      const next = this.successor(edge);
+      const next = this.blocks
+        ? this.blocks.heldSuccessor(train, edge, this.switchStates)
+        : this.successor(edge);
       if (next === NO_EDGE) {
         offset = length;
         speed = 0;

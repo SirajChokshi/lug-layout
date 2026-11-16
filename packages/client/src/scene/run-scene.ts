@@ -36,9 +36,15 @@ export interface RunRequest {
   readonly autopilotSeed: number | null;
 }
 
-export type TrainRouteStatus = "manual" | "waiting" | "routed" | "arrived";
+export type TrainRouteStatus = "manual" | "waiting" | "routed" | "arrived" | "reversing";
 
-const ROUTE_STATUSES: ReadonlyArray<TrainRouteStatus> = ["manual", "waiting", "routed", "arrived"];
+const ROUTE_STATUSES: ReadonlyArray<TrainRouteStatus> = [
+  "manual",
+  "waiting",
+  "routed",
+  "arrived",
+  "reversing",
+];
 
 export interface RunStatus {
   readonly tick: number;

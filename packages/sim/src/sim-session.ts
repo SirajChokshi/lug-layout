@@ -31,7 +31,7 @@ export interface SimScenario {
   readonly railway?: SimRailway;
 }
 
-const ROUTE_STATE_CODES = { manual: 0, waiting: 1, routed: 2, arrived: 3 } as const;
+const ROUTE_STATE_CODES = { manual: 0, waiting: 1, routed: 2, arrived: 3, reversing: 4 } as const;
 
 export interface SimFrameLayout {
   readonly poseFloatsPerVehicle: number;
