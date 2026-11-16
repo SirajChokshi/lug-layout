@@ -1,0 +1,18 @@
+import { chromium } from "playwright-core";
+const [url, profile] = process.argv.slice(2);
+const context = await chromium.launchPersistentContext(profile, { executablePath: "/usr/local/bin/google-chrome", headless: false, viewport: { width: 1600, height: 900 } });
+const page = context.pages()[0];
+const ready = async () => { await page.waitForSelector('.editor[data-status="ready"]', { state: "attached", timeout: 600000 }); await page.waitForFunction(() => document.querySelector(".editor-hud")?.textContent?.includes("Render origin"), null, { timeout: 600000 }); };
+const origin = async () => { const t = (await page.locator(".editor-hud").innerText()).split("\n"); return t[t.indexOf("Render origin (chunks), rebases") + 1]; };
+await page.goto(url); await ready();
+await page.setInputFiles("input.world-import", "/tmp/s9-final/vm-22e536a/A.brr.zip");
+await page.waitForFunction(() => document.querySelector(".world-name strong")?.textContent === "Two clusters", null, { timeout: 600000 });
+await page.waitForTimeout(8000);
+console.log("opened", await origin());
+await page.fill('input[aria-label="Go to x (LDU)"]', "0"); await page.fill('input[aria-label="Go to z (LDU)"]', "0"); await page.click("text=Go to x, z");
+await page.waitForTimeout(6000); console.log("at 0,0", await origin());
+await page.fill('input[aria-label="Go to x (LDU)"]', "25000640"); await page.fill('input[aria-label="Go to z (LDU)"]', "-25000000"); await page.click("text=Go to x, z");
+await page.mouse.move(800, 450); await page.mouse.wheel(0, 200);
+await page.waitForTimeout(45000); console.log("far before reload", await origin());
+await page.reload(); await ready(); await page.waitForTimeout(6000); console.log("far after reload", await origin());
+await context.close();

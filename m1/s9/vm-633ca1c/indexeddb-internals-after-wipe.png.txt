@@ -1,0 +1,14 @@
+IndexedDB
+Instances in: /tmp/s9-profile-bGSnjI/Default
+Origin: http://localhost:4173
+Storage partition - top level site: http://localhost:80
+Storage key: http://localhost:4173/
+Bucket: _default
+Size: 5370
+Last modified: Mon Nov 16 2026 22:33:11 GMT+0000 (Coordinated Universal Time)
+Open connections: 0
+Paths:
+/tmp/s9-profile-bGSnjI/Default/IndexedDB/http_localhost_4173.indexeddb.leveldb
+/tmp/s9-profile-bGSnjI/Default/IndexedDB/http_localhost_4173.indexeddb.blob
+/tmp/s9-profile-bGSnjI/Default/IndexedDB/http_localhost_4173
+Force close Download Start Recording

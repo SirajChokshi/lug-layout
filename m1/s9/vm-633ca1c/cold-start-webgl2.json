@@ -1,0 +1,55 @@
+{
+  "url": "http://localhost:4173/?api=webgl2",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "runs": 5,
+  "medianWorldOpenMs": 44,
+  "medianFirstWorldFrameMs": 5655,
+  "medianLoadMs": 702,
+  "samples": [
+    {
+      "run": 1,
+      "world": "Two clusters Saved · 24 placements · 6 shards",
+      "load": "1,148 ms",
+      "worldOpen": "46.0 ms",
+      "firstWorldFrame": "6,425 ms after navigation",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "api": "webgl2"
+    },
+    {
+      "run": 2,
+      "world": "Two clusters Saved · 24 placements · 6 shards",
+      "load": "702 ms",
+      "worldOpen": "44.0 ms",
+      "firstWorldFrame": "5,655 ms after navigation",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "api": "webgl2"
+    },
+    {
+      "run": 3,
+      "world": "Two clusters Saved · 24 placements · 6 shards",
+      "load": "720 ms",
+      "worldOpen": "65.3 ms",
+      "firstWorldFrame": "5,697 ms after navigation",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "api": "webgl2"
+    },
+    {
+      "run": 4,
+      "world": "Two clusters Saved · 24 placements · 6 shards",
+      "load": "635 ms",
+      "worldOpen": "38.3 ms",
+      "firstWorldFrame": "5,388 ms after navigation",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "api": "webgl2"
+    },
+    {
+      "run": 5,
+      "world": "Two clusters Saved · 24 placements · 6 shards",
+      "load": "654 ms",
+      "worldOpen": "36.9 ms",
+      "firstWorldFrame": "5,377 ms after navigation",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+      "api": "webgl2"
+    }
+  ]
+}

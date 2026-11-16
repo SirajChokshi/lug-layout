@@ -1,0 +1,52 @@
+{
+  "databases": [
+    "brr-world-5849ab9a-4fb7-4d2f-930f-5650367bf22b",
+    "brr-world-afded969-64b6-43b0-85f7-49f0b1c37eb7",
+    "brr-worlds"
+  ],
+  "worlds": [
+    {
+      "database": "brr-world-5849ab9a-4fb7-4d2f-930f-5650367bf22b",
+      "name": "Two clusters",
+      "manifestBytes": 622,
+      "shards": [
+        {
+          "key": "-1_-1",
+          "placements": 4,
+          "bytes": 318
+        },
+        {
+          "key": "-1_0",
+          "placements": 4,
+          "bytes": 312
+        },
+        {
+          "key": "0_-1",
+          "placements": 6,
+          "bytes": 427
+        },
+        {
+          "key": "0_0",
+          "placements": 6,
+          "bytes": 419
+        },
+        {
+          "key": "4882_-4883",
+          "placements": 2,
+          "bytes": 219
+        },
+        {
+          "key": "4883_-4883",
+          "placements": 2,
+          "bytes": 218
+        }
+      ]
+    },
+    {
+      "database": "brr-world-afded969-64b6-43b0-85f7-49f0b1c37eb7",
+      "name": "World 1",
+      "manifestBytes": 355,
+      "shards": []
+    }
+  ]
+}

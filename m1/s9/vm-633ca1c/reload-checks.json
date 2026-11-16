@@ -1,0 +1,152 @@
+[
+  {
+    "label": "origin",
+    "pixels": {
+      "width": 1600,
+      "height": 900,
+      "differing": 0,
+      "maxDelta": 0
+    },
+    "placementsBefore": 24,
+    "placementsAfter": 24,
+    "chunkCountsEqual": true,
+    "placementsEqual": true,
+    "chunkCounts": [
+      [
+        -4,
+        -1,
+        2
+      ],
+      [
+        -4,
+        1,
+        2
+      ],
+      [
+        -2,
+        -1,
+        2
+      ],
+      [
+        -2,
+        1,
+        2
+      ],
+      [
+        0,
+        -1,
+        2
+      ],
+      [
+        0,
+        1,
+        2
+      ],
+      [
+        2,
+        -1,
+        2
+      ],
+      [
+        2,
+        1,
+        2
+      ],
+      [
+        4,
+        -1,
+        2
+      ],
+      [
+        4,
+        1,
+        2
+      ],
+      [
+        39062,
+        -39063,
+        2
+      ],
+      [
+        39064,
+        -39063,
+        2
+      ]
+    ]
+  },
+  {
+    "label": "far",
+    "pixels": {
+      "width": 1600,
+      "height": 900,
+      "differing": 0,
+      "maxDelta": 0
+    },
+    "placementsBefore": 24,
+    "placementsAfter": 24,
+    "chunkCountsEqual": true,
+    "placementsEqual": true,
+    "chunkCounts": [
+      [
+        -4,
+        -1,
+        2
+      ],
+      [
+        -4,
+        1,
+        2
+      ],
+      [
+        -2,
+        -1,
+        2
+      ],
+      [
+        -2,
+        1,
+        2
+      ],
+      [
+        0,
+        -1,
+        2
+      ],
+      [
+        0,
+        1,
+        2
+      ],
+      [
+        2,
+        -1,
+        2
+      ],
+      [
+        2,
+        1,
+        2
+      ],
+      [
+        4,
+        -1,
+        2
+      ],
+      [
+        4,
+        1,
+        2
+      ],
+      [
+        39062,
+        -39063,
+        2
+      ],
+      [
+        39064,
+        -39063,
+        2
+      ]
+    ]
+  }
+]
