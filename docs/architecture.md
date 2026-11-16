@@ -329,8 +329,9 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 
 **Blocking for M0 and M1.**
 1. **The license of every city-palette part:** track 53400, 53401, 2865 and 2867, the switches and crossings, the road plates (60304 set pieces) and the baseplates must all be CA, not `OfficialNonCA`. If any is NonCA, we can't ship it and need a replacement plan.
-2. The current LDraw parts count and the CC BY 2.0 / CC BY 4.0 license split.
-3. **Whether the LDCad shadow library covers** track, road plates, baseplates and Technic bricks, and that it really is CC BY-SA 4.0.
+   *Status 2026-11-16 (`docs/verified-facts.md`, at the bundle's pin):* the 9V straight, curve, switches (75541/75542) and crossing (32087), the 6-wide plastic straight and curve (53401/53400), the classic road baseplates and the baseplates are all CA and official. **Not cleared:** the 6-wide plastic switches 53404/53407 aren't in the official library. No 6-wide plastic crossing and no 60304-style road plate exists in LDraw under any title we could find, and identifying them needs Rebrickable, which is blocked. These need a replacement plan.
+2. The current LDraw parts count and the CC BY 2.0 / CC BY 4.0 license split. *Cleared 2026-11-16 (manual read of the pinned tarball):* update 2026-10 has 37,151 files, 35,140 CC BY 4.0 and 2,011 dual-licensed.
+3. **Whether the LDCad shadow library covers** track, road plates, baseplates and Technic bricks, and that it really is CC BY-SA 4.0. *Cleared 2026-11-16:* it is CC BY-SA 4.0. Coverage is partial: track snaps exist only for 53400 and 32087, baseplates have stud primitives only, and Technic bricks are covered.
 4. The exact connector poses for both switches (the diverging end), the 90° crossing and the R40 curve, extracted from data and run through the field test.
 5. Track gauge and rail spacing (the "6-stud" vs "about 37.5 mm" conflict), and the official track part numbers.
 6. Baseplate thickness, which sets the height datum.
@@ -346,8 +347,8 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 14. BrickLink API terms for non-commercial use.
 15. The Rebrickable API rate limit (about 1 request/s?) and how complete its LDraw crosswalk is for our palette.
 16. `.io` internals: whether `modelv2.ldr` contains non-standard line types, Studio's `PE_TEX_*` texture meta names, and its color table differences.
-17. The `ldr_tools` license, if we vendor it.
-18. The train motor part numbers (PF 88002, PU 88011) and the Rebrickable categories for vehicle signatures.
+17. The `ldr_tools` license, if we vendor it. *Cleared 2026-11-16:* MIT.
+18. The train motor part numbers (PF 88002, PU 88011; *2026-11-16:* LDraw has the PF motor as 87574 and no PU train motor) and the Rebrickable categories for vehicle signatures.
 19. Flex track link length and maximum joint angle.
 20. Size of the element-existence table once compressed.
 21. The MILS substructure part list per module (needed for the plan BOM), and the overhang and reach norms clubs use for layout tables (reach is often quoted as 60 to 80 cm, unconfirmed).
