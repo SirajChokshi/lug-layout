@@ -1,0 +1,23 @@
+$ planted: .cache/omr/10251-1.mpd, .cache/ldraw/parts/stale-3001-copy.dat, .cache/ldraw-audit/parts/stale.dat, .cache/ldcad-shadow/stale.txt
+$ pnpm --filter @brr/asset-pipeline restore-ldraw
+bundle closure: 1767 present, 0 downloaded, 1 pruned
+audit closure: 382 present, 0 downloaded, 1 pruned
+LDCad patches: 22 present, 0 downloaded, 1 pruned
+OMR models: 10 present, 0 downloaded, 1 pruned
+$ pnpm --filter @brr/asset-pipeline restore-ldraw   # second run
+bundle closure: 1767 present, 0 downloaded, 0 pruned
+audit closure: 382 present, 0 downloaded, 0 pruned
+LDCad patches: 22 present, 0 downloaded, 0 pruned
+OMR models: 10 present, 0 downloaded, 0 pruned
+$ pnpm --filter @brr/asset-pipeline verify-ldraw
+LDraw inputs match ldraw.lock.json
+10128-1.mpd
+10133-1.mpd
+10185-1.mpd
+10190-1.mpd
+10218-1.mpd
+10264-1.mpd
+2150-1.mpd
+4554-1.mpd
+4555-1.mpd
+7936-1.mpd
