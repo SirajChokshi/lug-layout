@@ -41,9 +41,15 @@ export interface BundleManifest {
   readonly models: ReadonlyArray<BundleModelEntry>;
 }
 
+export interface ModelFileLattice {
+  readonly phase: readonly [number, number];
+  readonly aabb: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
+}
+
 export interface ModelFile {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly parts: ReadonlyArray<string>;
+  readonly lattice: ModelFileLattice;
   readonly instances: {
     readonly part: ReadonlyArray<number>;
     readonly color: ReadonlyArray<number>;
@@ -105,6 +111,16 @@ function isCompiler(value: unknown): value is BundleCompiler {
   );
 }
 
+function isBundleModelEntry(value: unknown): value is BundleModelEntry {
+  return (
+    isRecord(value) &&
+    typeof value["name"] === "string" &&
+    typeof value["file"] === "string" &&
+    typeof value["source"] === "string" &&
+    (value["origin"] === "omr" || value["origin"] === "generated")
+  );
+}
+
 export function parseManifest(value: unknown): BundleManifest {
   if (
     !isRecord(value) ||
@@ -121,7 +137,8 @@ export function parseManifest(value: unknown): BundleManifest {
       value["compiler"] === null ||
       value["compiler"] === undefined ||
       isCompiler(value["compiler"])
-    )
+    ) ||
+    !value["models"].every(isBundleModelEntry)
   ) {
     throw new Error("bundle manifest does not match the M1 bundle format");
   }
@@ -158,11 +175,32 @@ function isNumberArray(value: unknown): value is ReadonlyArray<number> {
   return Array.isArray(value) && value.every((v) => typeof v === "number");
 }
 
+const STUD_PHASES = 20;
+
+function isStudPhase(value: unknown): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value < STUD_PHASES;
+}
+
+function isModelFileLattice(value: unknown): value is ModelFileLattice {
+  if (!isRecord(value) || !Array.isArray(value["phase"]) || !isRecord(value["aabb"])) return false;
+  const [phaseX, phaseZ] = value["phase"];
+  return (
+    value["phase"].length === 2 &&
+    isStudPhase(phaseX) &&
+    isStudPhase(phaseZ) &&
+    isVec3(value["aabb"]["min"]) &&
+    isVec3(value["aabb"]["max"])
+  );
+}
+
 export function parseModelFile(value: unknown, label: string): ModelFile {
   if (!isRecord(value) || !isRecord(value["instances"]) || !isStringArray(value["parts"])) {
     throw new Error(`${label}: model file does not match the M1 bundle format`);
   }
   const partCount = value["parts"].length;
+  if (!isModelFileLattice(value["lattice"])) {
+    throw new Error(`${label}: model file has no lattice phase and AABB from the bake`);
+  }
   const { part, color, matrix } = value["instances"];
   if (
     !isNumberArray(part) ||

@@ -14,6 +14,8 @@ export type {
   IPartBundleLoader,
   MeshArrays,
   ModelBundle,
+  ModelLattice,
+  ModelOrigin,
   ModelSection,
   PartAsset,
   PartBundle,

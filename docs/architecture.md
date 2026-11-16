@@ -166,6 +166,7 @@ type Placement  = { id: string; ref: CatalogRef | ModelHash; pose: LatticePose |
 ```
 - **The world is unbounded.** Coordinates are signed integers in LDU. Plan coordinates need int32, which spans ±859 km, but the sandbox allows int53 (JS safe integers). Chunk key = `floor(x/640), floor(z/640)`. The renderer and validators always work relative to a chunk origin, so floats never carry large world coordinates.
 - Models, baseplates and road plates always use `LatticePose`.
+- *M1 S5 status:* a placement is one `World` row (`refId`, x, z, `yPlates`, `rot`); `refId` indexes the editor's catalog (the 3811 baseplate and the ten OMR sets). The model's float matrices never enter the `World`. The bake records each model's lattice phase (the majority integer x and z mod 20 of its lowest stud layer; a tie fails the bake) and its AABB. The client shifts the model so those studs sit at 10 mod 20 like a baseplate's, moves the pivot to the stud corner nearest the footprint centre, and puts the AABB bottom at y = 0. Module placement poses are exact integer lattice poses: x and z at multiples of 20, whole plates, and a quarter turn about that pivot. The model's own matrices are never altered, so any stud deviation from the baseplate lattice comes from the source file and is the same at all four rotations. Several OMR files place parts or submodels a few hundredths of an LDU off the stud grid. Until S6, every model sits on the baseplate top (yPlates 0). Removed slots go on a per-chunk free-list, and a `PlacementHandle` carries a generation so a stale handle is refused.
 - Track pieces use `TrackPose`. A track piece whose pose lands on the lattice (only the ζ⁰ and ζ^(n/4) coefficients are non-zero, and both are whole numbers of studs) may also claim stud support.
 
 ### 5.3 Exact track arithmetic
@@ -236,7 +237,7 @@ The earlier 64-centroid-ray version dropped 122 visible 53401 triangles and all 
 - Weighted blended OIT for transparent parts.
 - Optional instruction-style edge lines on the near tier.
 
-**Picking.** GPU id picking at model granularity. Under D2 nothing below model level is ever picked, except switch levers and vehicles.
+**Picking.** GPU id picking at model granularity. Under D2 nothing below model level is ever picked, except switch levers and vehicles. *M1 S5 status:* the editor picks on the CPU: a ray against the ground plane (y = 0, the baseplate top) for placement, and against each placed model's world AABB for selection. A placed model's part and stud instances go into the render chunk that contains each instance, and only the chunks it touches are rebuilt.
 
 **Budgets** (Tier A: Iris Xe, Apple M1 or Radeon 680M at 1080p and 60 fps):
 - GPU ≤ 12 ms and main-thread render CPU ≤ 4 ms.

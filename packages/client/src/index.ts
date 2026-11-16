@@ -9,13 +9,29 @@ export type {
 } from "@brr/render";
 export { mainThreadModules, type MainThreadConfig } from "./client.module.ts";
 export type { IViewerScene, ModelCredit, SceneSummary } from "./scene/viewer-scene.ts";
-export type { CityCamera, CityRequest, ICityScene, PlacementDump } from "./scene/city-scene.ts";
+export type { CityCamera, CityRequest, ICityScene } from "./scene/city-scene.ts";
+export type { PlacementDump } from "./scene/placements.ts";
 export type { IModelScene } from "./scene/model-scene.ts";
+export type {
+  CatalogItemView,
+  EditAction,
+  EditorCredits,
+  EditorDump,
+  EditorMode,
+  EditorOptions,
+  EditorSnapshot,
+  EditorStats,
+  EditorStatus,
+  IEditor,
+  LatencySample,
+  SelectionView,
+} from "./edit/editor.ts";
 export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
 export type { ImportReport, ImportResult, PartResolution, PartResolutionKind } from "@brr/import";
 export {
   CITY_SCENE,
+  EDITOR,
   IMPORT_SCENE,
   MODEL_IMPORTER,
   MODEL_SCENE,

@@ -38,6 +38,9 @@ importers:
       '@brr/import-worker':
         specifier: workspace:*
         version: link:../../packages/workers/import-worker
+      '@brr/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       inversify:
         specifier: 8.3.0
         version: 8.3.0(reflect-metadata@0.2.2)
@@ -147,6 +150,9 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5))
 
   packages/import:
     dependencies:
@@ -205,6 +211,28 @@ importers:
         version: 7.0.2
 
   packages/test-fixtures: {}
+
+  packages/ui:
+    dependencies:
+      '@brr/client':
+        specifier: workspace:*
+        version: link:../client
+      react:
+        specifier: 19.3.1
+        version: 19.3.1
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@webgpu/types':
+        specifier: 0.1.74
+        version: 0.1.74
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
 
   packages/workers/import-worker:
     dependencies:

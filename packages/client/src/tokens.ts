@@ -1,4 +1,5 @@
 import type { ServiceIdentifier } from "inversify";
+import type { IEditor } from "./edit/editor.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import type { ICityScene } from "./scene/city-scene.ts";
 import type { IImportScene } from "./scene/import-scene.ts";
@@ -10,6 +11,7 @@ export const PART_DISPLAY_SCENE: ServiceIdentifier<IViewerScene> = Symbol.for(
 );
 export const MODEL_SCENE: ServiceIdentifier<IModelScene> = Symbol.for("brr.client.ModelScene");
 export const CITY_SCENE: ServiceIdentifier<ICityScene> = Symbol.for("brr.client.CityScene");
+export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor");
 export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Symbol.for(
   "brr.client.ImportWorkerFactory",
 );

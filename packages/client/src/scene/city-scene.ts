@@ -10,7 +10,7 @@ import { World } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
 import { CHUNK_LDU, CHUNK_STUDS } from "@brr/math";
-import { chunkInstances } from "./placements.ts";
+import { chunkInstances, dumpPlacements, type PlacementDump } from "./placements.ts";
 import {
   generateCity,
   type CityColors,
@@ -36,15 +36,6 @@ export interface CityRequest {
   readonly camera: CityCamera;
   readonly originChunkX: number;
   readonly originChunkZ: number;
-}
-
-export interface PlacementDump {
-  readonly refId: ReadonlyArray<number>;
-  readonly colorId: ReadonlyArray<number>;
-  readonly x: ReadonlyArray<number>;
-  readonly z: ReadonlyArray<number>;
-  readonly yPlates: ReadonlyArray<number>;
-  readonly rot: ReadonlyArray<number>;
 }
 
 export interface ICityScene extends IViewerScene {
@@ -200,21 +191,7 @@ export class CityScene implements ICityScene {
   }
 
   placementDump(): PlacementDump {
-    const refId: number[] = [];
-    const colorId: number[] = [];
-    const x: number[] = [];
-    const z: number[] = [];
-    const yPlates: number[] = [];
-    const rot: number[] = [];
-    for (const chunk of this.world.chunks()) {
-      refId.push(...chunk.refId);
-      colorId.push(...chunk.colorId);
-      x.push(...chunk.x);
-      z.push(...chunk.z);
-      yPlates.push(...chunk.yPlates);
-      rot.push(...chunk.rot);
-    }
-    return { refId, colorId, x, z, yPlates, rot };
+    return dumpPlacements(this.world);
   }
 
   setCamera(t: number): void {

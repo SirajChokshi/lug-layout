@@ -1,11 +1,14 @@
 import type { BundleLod, CityCamera, GraphicsApi } from "@brr/client";
 
+export type AppMode = "edit" | "parts" | "model" | "city" | "import";
+
 export interface ViewerParams {
+  readonly mode: AppMode;
+  readonly showEditState: boolean;
   readonly api: GraphicsApi;
   readonly lod: BundleLod;
   readonly model: string | null;
   readonly city: boolean;
-  readonly importer: boolean;
   readonly parts: number;
   readonly seed: number;
   readonly camera: CityCamera;
@@ -31,22 +34,39 @@ function positiveNumber(value: string | null, fallback: number): number {
 
 function originChunks(value: string | null): readonly [number, number] {
   if (value === null) return [0, 0];
-  const [x, z] = value.split(",").map(Number);
-  if (x === undefined || z === undefined || !Number.isInteger(x) || !Number.isInteger(z)) {
+  const values = value.split(",");
+  const [x, z] = values.map((part) => (part.trim() === "" ? Number.NaN : Number(part)));
+  if (
+    values.length !== 2 ||
+    x === undefined ||
+    z === undefined ||
+    !Number.isInteger(x) ||
+    !Number.isInteger(z)
+  ) {
     throw new Error(`origin=${value} is not two integer chunk coordinates "x,z"`);
   }
   return [x, z];
+}
+
+function appMode(params: URLSearchParams): AppMode {
+  const scene = params.get("scene");
+  if (scene === "city") return "city";
+  if (params.get("model") !== null) return "model";
+  if (scene === "parts") return "parts";
+  if (scene === "import") return "import";
+  return "edit";
 }
 
 export function readViewerParams(search: string): ViewerParams {
   const params = new URLSearchParams(search);
   const [originChunkX, originChunkZ] = originChunks(params.get("origin"));
   return {
+    mode: appMode(params),
+    showEditState: params.get("state") === "1",
     api: params.get("api") === "webgl2" ? "webgl2" : "webgpu",
     lod: params.get("lod") === "low" ? "low" : "standard",
     model: params.get("model"),
     city: params.get("scene") === "city",
-    importer: params.get("scene") === "import",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",

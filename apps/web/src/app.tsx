@@ -10,11 +10,10 @@ import { ImportPanel } from "./import-panel.tsx";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
 import type { MemoryReport } from "./viewer/memory-report.ts";
+import { TRADEMARK_DISCLAIMER } from "./disclaimer.ts";
 import { runViewer, type ViewerReport, type ViewerResult } from "./viewer/run-viewer.ts";
 import type { ViewerParams } from "./viewer/viewer-params.ts";
 
-const TRADEMARK_DISCLAIMER =
-  "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.";
 const BYTES_PER_MEBIBYTE = 1024 * 1024;
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 

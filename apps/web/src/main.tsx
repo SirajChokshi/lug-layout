@@ -1,5 +1,6 @@
 import {
   CITY_SCENE,
+  EDITOR,
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
@@ -8,11 +9,13 @@ import {
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
+import { EditorApp } from "@brr/ui";
 import { Container } from "inversify";
-import { StrictMode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
-import { readViewerParams } from "./viewer/viewer-params.ts";
+import { TRADEMARK_DISCLAIMER } from "./disclaimer.ts";
+import { readViewerParams, type ViewerParams } from "./viewer/viewer-params.ts";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing #root element");
@@ -25,38 +28,58 @@ const createImportWorker = (): Worker =>
 container.load(...mainThreadModules({ bundleBaseUrl, createImportWorker }));
 const params = readViewerParams(location.search);
 
-let placements: (() => PlacementDump) | null = null;
-let importScene: IImportScene | null = null;
-
-function chooseScene(): IViewerScene {
-  if (params.city) {
-    const city = container.get(CITY_SCENE);
-    city.configure({
-      targetParts: params.parts,
-      seed: params.seed,
-      camera: params.camera,
-      originChunkX: params.originChunkX,
-      originChunkZ: params.originChunkZ,
-    });
-    if (params.dumpWorld) placements = () => city.placementDump();
-    return city;
+function viewerScene(viewer: ViewerParams): {
+  readonly scene: IViewerScene;
+  readonly placements: (() => PlacementDump) | null;
+  readonly importScene?: IImportScene;
+} {
+  switch (viewer.mode) {
+    case "city": {
+      const city = container.get(CITY_SCENE);
+      city.configure({
+        targetParts: viewer.parts,
+        seed: viewer.seed,
+        camera: viewer.camera,
+        originChunkX: viewer.originChunkX,
+        originChunkZ: viewer.originChunkZ,
+      });
+      return { scene: city, placements: viewer.dumpWorld ? () => city.placementDump() : null };
+    }
+    case "model": {
+      const modelScene = container.get(MODEL_SCENE);
+      modelScene.selectModel(viewer.model ?? "");
+      return { scene: modelScene, placements: null };
+    }
+    case "parts":
+      return { scene: container.get(PART_DISPLAY_SCENE), placements: null };
+    case "import": {
+      const importScene = container.get(IMPORT_SCENE);
+      return { scene: importScene, placements: null, importScene };
+    }
+    case "edit":
+      throw new Error("the editor is not a viewer scene");
+    default: {
+      const unhandled: never = viewer.mode;
+      throw new Error(`unhandled ${String(unhandled)}`);
+    }
   }
-  if (params.importer) {
-    importScene = container.get(IMPORT_SCENE);
-    return importScene;
-  }
-  if (params.model !== null) {
-    const modelScene = container.get(MODEL_SCENE);
-    modelScene.selectModel(params.model);
-    return modelScene;
-  }
-  return container.get(PART_DISPLAY_SCENE);
 }
 
-const scene = chooseScene();
+function root(): ReactNode {
+  if (params.mode === "edit") {
+    return (
+      <EditorApp
+        editor={container.get(EDITOR)}
+        options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
+        disclaimer={TRADEMARK_DISCLAIMER}
+        showState={params.showEditState}
+      />
+    );
+  }
+  const { scene, placements, importScene } = viewerScene(params);
+  return (
+    <App scene={scene} params={params} placements={placements} importScene={importScene ?? null} />
+  );
+}
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <App scene={scene} params={params} placements={placements} importScene={importScene} />
-  </StrictMode>,
-);
+createRoot(rootElement).render(<StrictMode>{root()}</StrictMode>);

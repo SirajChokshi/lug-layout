@@ -3,8 +3,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use brick_compile::affine::Vec3;
 use brick_compile::colors::parse_ldconfig;
 use brick_compile::inline::inline_part_distance;
+use brick_compile::lattice::{model_lattice, LatticeInstance};
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::bake_model;
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
@@ -98,6 +100,26 @@ fn part_summary(part: &CompiledPart) -> Value {
     })
 }
 
+struct PartShape {
+    studs: Vec<Vec3>,
+    bounds: [Vec3; 2],
+}
+
+fn part_shape(part: &CompiledPart) -> PartShape {
+    PartShape {
+        studs: part
+            .studs
+            .iter()
+            .map(|stud| [stud.matrix.m[3], stud.matrix.m[7], stud.matrix.m[11]])
+            .collect(),
+        bounds: part
+            .mesh
+            .bounds()
+            .unwrap_or([[0.0; 3]; 2])
+            .map(|corner| corner.map(f64::from)),
+    }
+}
+
 fn record_credits(credits: &mut BTreeMap<String, Value>, part: &CompiledPart) {
     for file in &part.flattened_files {
         credits.entry(file.path.clone()).or_insert_with(|| {
@@ -118,7 +140,7 @@ fn compile_entry(
     options: &CompileOptions,
     out: &Path,
     credits: &mut BTreeMap<String, Value>,
-) -> Result<Value, String> {
+) -> Result<(Value, PartShape), String> {
     let compiled = compile_part(library, reference, options).map_err(|e| e.to_string())?;
     let id = stem(reference);
     let file = format!("{id}.glb");
@@ -132,7 +154,7 @@ fn compile_entry(
     summary["title"] = json!(header.title);
     summary["author"] = json!(header.author);
     summary["license"] = json!(header.license);
-    Ok(summary)
+    Ok((summary, part_shape(&compiled)))
 }
 
 fn run(args: &Args) -> Result<(), String> {
@@ -194,6 +216,7 @@ fn run(args: &Args) -> Result<(), String> {
     }
 
     let mut parts = Vec::new();
+    let mut shapes: Vec<PartShape> = Vec::new();
     let mut part_index: HashMap<String, usize> = HashMap::new();
     for entry in palette["parts"]
         .as_array()
@@ -201,7 +224,7 @@ fn run(args: &Args) -> Result<(), String> {
     {
         let id = entry["id"].as_str().ok_or("part id must be a string")?;
         let reference = format!("{id}.dat");
-        let mut summary = compile_entry(
+        let (mut summary, shape) = compile_entry(
             &library,
             &reference,
             &entry["role"],
@@ -214,6 +237,7 @@ fn run(args: &Args) -> Result<(), String> {
         }
         part_index.insert(reference, parts.len());
         parts.push(summary);
+        shapes.push(shape);
     }
 
     let geometry: Value = serde_json::from_slice(
@@ -253,13 +277,14 @@ fn run(args: &Args) -> Result<(), String> {
         let mut model_parts: Vec<Value> = Vec::new();
         let mut model_part_index: HashMap<usize, usize> = HashMap::new();
         let mut instance_parts = Vec::with_capacity(baked.instances.len());
+        let mut instance_global_parts = Vec::with_capacity(baked.instances.len());
         let mut instance_colors = Vec::with_capacity(baked.instances.len());
         let mut instance_matrices = Vec::with_capacity(baked.instances.len() * 12);
         for instance in &baked.instances {
             let index = match part_index.get(&instance.part) {
                 Some(&index) => index,
                 None => {
-                    let summary = compile_entry(
+                    let (summary, shape) = compile_entry(
                         &library,
                         &instance.part,
                         &json!("model"),
@@ -270,6 +295,7 @@ fn run(args: &Args) -> Result<(), String> {
                     .map_err(|e| format!("{file}: {e}"))?;
                     part_index.insert(instance.part.clone(), parts.len());
                     parts.push(summary);
+                    shapes.push(shape);
                     parts.len() - 1
                 }
             };
@@ -278,9 +304,29 @@ fn run(args: &Args) -> Result<(), String> {
                 model_parts.len() - 1
             });
             instance_parts.push(local);
+            instance_global_parts.push(index);
             instance_colors.push(instance.color);
             instance_matrices.extend(instance.matrix.m.map(|v| v as f32));
         }
+        let lattice_instances: Vec<LatticeInstance> = baked
+            .instances
+            .iter()
+            .zip(&instance_global_parts)
+            .map(|(instance, &index)| LatticeInstance {
+                matrix: &instance.matrix,
+                studs: &shapes[index].studs,
+                bounds_min: shapes[index].bounds[0],
+                bounds_max: shapes[index].bounds[1],
+            })
+            .collect();
+        let lattice = model_lattice(&lattice_instances).map_err(|e| format!("{file}: {e}"))?;
+        let lattice_json = json!({
+            "phase": lattice.phase,
+            "phaseLayerY": lattice.phase_layer_y,
+            "phaseLayerStuds": lattice.phase_layer_studs,
+            "phaseLayerAgreeing": lattice.phase_layer_agreeing,
+            "aabb": { "min": lattice.aabb_min, "max": lattice.aabb_max },
+        });
         let model_file = format!("model-{}.json", stem(name));
         let sections: Vec<Value> = baked
             .sections
@@ -308,6 +354,7 @@ fn run(args: &Args) -> Result<(), String> {
             "sections": sections,
             "inlinePartsResolvedToOfficial": inline_parts,
             "parts": model_parts,
+            "lattice": lattice_json,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
         });
         fs::write(
@@ -318,10 +365,12 @@ fn run(args: &Args) -> Result<(), String> {
         models.push(json!({
             "name": name,
             "file": model_file,
+            "origin": entry["origin"],
             "source": entry["source"],
             "sections": sections,
             "inlinePartsResolvedToOfficial": inline_parts,
             "instances": baked.instances.len(),
+            "lattice": lattice_json,
         }));
     }
 
