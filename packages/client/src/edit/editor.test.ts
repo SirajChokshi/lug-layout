@@ -178,6 +178,10 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   expect(ids).not.toContain(`omr:${STUDLESS_SET}`);
   expect(snapshot.catalogSkipped).toEqual([
     { name: STUDLESS_SET, reason: "no stud lattice from the bake" },
+    {
+      name: "3062b Brick 1 x 1 Round with Hollow Stud",
+      reason: "no stud seat or produced colour from the bake",
+    },
   ]);
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
