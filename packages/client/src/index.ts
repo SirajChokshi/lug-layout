@@ -211,9 +211,11 @@ export {
   PALETTE_CATEGORIES,
   PaletteIndex,
   colorDisplayName,
+  itemInColor,
 } from "./catalog/palette-index.ts";
 export type {
   PaletteCategory,
+  PaletteColorChoice,
   PaletteEntry,
   PaletteFilter,
   PaletteHit,

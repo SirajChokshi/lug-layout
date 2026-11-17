@@ -131,6 +131,8 @@ export interface CatalogItemView {
   readonly parts: number;
   readonly studsWide: number;
   readonly studsDeep: number;
+  readonly aliases: ReadonlyArray<string>;
+  readonly elements: ReadonlyArray<string>;
 }
 
 export interface LatencySample {
@@ -647,9 +649,17 @@ function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor 
   return color;
 }
 
-function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): CatalogItemView {
+function catalogItem(
+  placeable: Placeable,
+  colors: ReadonlyArray<BundleColor>,
+  parts: ReadonlyArray<PartAsset>,
+): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
+  const produced = colored
+    ? parts.find((part) => part.id === placeable.group)?.producedColors
+    : undefined;
+  const ldrawNumber = placeable.group.replace(/^ldraw:/u, "");
   return {
     id: placeable.id,
     label: placeable.label,
@@ -660,6 +670,9 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
     parts: placeable.parts.count,
     studsWide: moduleStuds ?? Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
     studsDeep: moduleStuds ?? Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+    aliases: produced && produced.rebrickable !== ldrawNumber ? [produced.rebrickable] : [],
+    elements:
+      produced?.colors.find((color) => color.ldraw === placeable.worldColor)?.elements ?? [],
   };
 }
 
@@ -865,7 +878,9 @@ export class Editor implements IEditor {
         bundleVersion: bundle.bundleVersion,
         backend,
         catalog: [
-          ...this.placeables.map((placeable) => catalogItem(placeable, bundle.colors)),
+          ...this.placeables.map((placeable) =>
+            catalogItem(placeable, bundle.colors, bundle.parts),
+          ),
           this.trackItem(this.track, palette.parts),
           ...this.trackPieceItems(this.track, palette.parts),
         ],
@@ -961,10 +976,11 @@ export class Editor implements IEditor {
       .toSorted((a, b) => footprintArea(b) - footprintArea(a));
     const roadParts = bundle.parts.filter((part) => part.role === "road");
     const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
-      if (part.producedColors.length === 0) {
+      const produced = part.producedColors?.colors ?? [];
+      if (produced.length === 0) {
         throw new Error(`${part.id} has no produced colour in the bundle`);
       }
-      return part.producedColors.map((code) =>
+      return produced.map(({ ldraw: code }) =>
         partPlaceable(
           part,
           palette.indexOf(part.id),
@@ -1134,6 +1150,8 @@ export class Editor implements IEditor {
       parts: track.kitParts().length,
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+      aliases: [],
+      elements: [],
     };
   }
 
@@ -1155,6 +1173,8 @@ export class Editor implements IEditor {
         parts: 1,
         studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
         studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+        aliases: [],
+        elements: [],
       };
     });
   }

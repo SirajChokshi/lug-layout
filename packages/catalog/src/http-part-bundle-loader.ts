@@ -372,7 +372,7 @@ function toPartAsset(
     role: part.role,
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,
-    producedColors: part.producedColors?.colors.map((color) => color.ldraw) ?? [],
+    producedColors: part.producedColors,
     trackEnds: part.trackEnds,
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { CatalogItemView } from "../edit/editor.ts";
-import { PaletteIndex } from "./palette-index.ts";
+import { PaletteIndex, itemInColor } from "./palette-index.ts";
 
 const GREEN = { code: 2, name: "Green", rgb: "#237841" };
 const DARK_GREEN = { code: 288, name: "Dark_Green", rgb: "#184632" };
@@ -14,6 +14,7 @@ function plate(
   kind: "baseplate" | "road-plate",
   studs: number,
   colors: ReadonlyArray<CatalogItemView["color"] & object>,
+  produced: { readonly rebrickable?: string; readonly elements?: Record<number, string[]> } = {},
 ): ReadonlyArray<CatalogItemView> {
   return colors.map((color) => ({
     id: `ldraw:${id}@${color.code}`,
@@ -25,15 +26,23 @@ function plate(
     parts: 1,
     studsWide: studs,
     studsDeep: studs,
+    aliases: produced.rebrickable ? [produced.rebrickable] : [],
+    elements: produced.elements?.[color.code] ?? [],
   }));
 }
 
 const catalog: ReadonlyArray<CatalogItemView> = [
   ...plate("4186", "Baseplate 48 x 48", "baseplate", 48, [GREEN, TAN, LIGHT_GREY]),
-  ...plate("3811", "Baseplate 32 x 32", "baseplate", 32, [GREEN, DARK_GREEN, TAN, DARK_GREY]),
+  ...plate("3811", "Baseplate 32 x 32", "baseplate", 32, [GREEN, DARK_GREEN, TAN, DARK_GREY], {
+    elements: { [GREEN.code]: ["381128", "4219692"], [TAN.code]: ["4106730"] },
+  }),
   ...plate("3867", "Baseplate 16 x 16", "baseplate", 16, [GREEN, DARK_GREY]),
-  ...plate("44336p03", "Baseplate 32 x 32 Road 6-Stud Runway", "road-plate", 32, [DARK_GREY]),
-  ...plate("2358p02", "Baseplate 48 x 48 Road Crossroads", "road-plate", 48, [DARK_GREY]),
+  ...plate("44336p03", "Baseplate 32 x 32 Road 6-Stud Runway", "road-plate", 32, [DARK_GREY], {
+    rebrickable: "44336pr0003",
+  }),
+  ...plate("2358p02", "Baseplate 48 x 48 Road Crossroads", "road-plate", 48, [DARK_GREY], {
+    rebrickable: "2358pr0002",
+  }),
   {
     id: "omr:7938-1",
     label: "7938-1 Passenger Train",
@@ -44,6 +53,8 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     parts: 663,
     studsWide: 8,
     studsDeep: 90,
+    aliases: [],
+    elements: [],
   },
   {
     id: "track:lego-9v",
@@ -55,6 +66,8 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     parts: 2,
     studsWide: 16,
     studsDeep: 8,
+    aliases: [],
+    elements: [],
   },
 ];
 
@@ -77,6 +90,16 @@ it("ranks an exact part number above parts that only contain it", () => {
   expect(keys("3811")[0]).toBe("ldraw:3811");
   expect(keys("44336")).toEqual(["ldraw:44336p03"]);
   expect(keys("2865")).toEqual(["track:lego-9v"]);
+});
+
+it("finds a part by its Rebrickable number and a colour by its LEGO element id, codes exactly", () => {
+  expect(keys("44336pr0003")).toEqual(["ldraw:44336p03"]);
+  expect(keys("44336pr0004")).toEqual([]);
+  expect(keys("2358pr")).toEqual(["ldraw:2358p02"]);
+  expect(colorsOf("4219692", "ldraw:3811")).toEqual(["Green"]);
+  expect(colorsOf("41067", "ldraw:3811")).toEqual(["Tan"]);
+  expect(keys("4219693")).toEqual([]);
+  expect(keys("3812")).toEqual([]);
 });
 
 it("matches a size however it is written, in either order", () => {
@@ -111,7 +134,7 @@ it("reads quoted phrases, minus to exclude, and # for numbers only", () => {
   expect(keys('"road crossroads"')).toEqual(["ldraw:2358p02"]);
   expect(keys('"crossroads road"')).toEqual([]);
   expect(keys("baseplate -road")).toEqual(["ldraw:4186", "ldraw:3811", "ldraw:3867"]);
-  expect(colorsOf("32x32 -dark", "ldraw:3811")).toEqual(["Green", "Tan"]);
+  expect(colorsOf("32x32 -dark", "ldraw:3811")).toEqual(["Tan", "Green"]);
   expect(keys('green -"dark green"')).toContain("ldraw:3811");
   expect(colorsOf('green -"dark green"', "ldraw:3811")).toEqual(["Green"]);
   expect(keys("#7938")).toEqual(["omr:7938-1"]);
@@ -123,4 +146,18 @@ it("searches only the chosen category", () => {
   expect(keys("32", "road")).toEqual(["ldraw:44336p03"]);
   expect(keys("straight", "baseplates")).toEqual([]);
   expect(keys("", "sets")).toEqual(["omr:7938-1"]);
+});
+
+it("offers each colour the parts come in once, with how many parts, colours before greys", () => {
+  const choices = index.colorChoices("baseplates");
+  expect(choices.map(({ color, parts }) => [color.name, parts])).toEqual([
+    ["Tan", 2],
+    ["Green", 3],
+    ["Dark_Green", 1],
+    ["Very_Light_Bluish_Grey", 1],
+    ["Dark_Bluish_Grey", 2],
+  ]);
+  const [sixteen] = index.entries("baseplates").filter((entry) => entry.key === "ldraw:3867");
+  expect(sixteen && itemInColor(sixteen, TAN.code)).toBeUndefined();
+  expect(sixteen && itemInColor(sixteen, GREEN.code)?.id).toBe("ldraw:3867@2");
 });
