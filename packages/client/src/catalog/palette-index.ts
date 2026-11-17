@@ -125,35 +125,30 @@ function isNeutral({ saturation, lightness }: Hsl): boolean {
   return saturation < GREY_SATURATION || lightness < NEAR_BLACK || lightness > NEAR_WHITE;
 }
 
-function colorOrder(a: CatalogColorView, b: CatalogColorView): number {
-  const ha = hslOf(a.rgb);
-  const hb = hslOf(b.rgb);
-  const greyA = isNeutral(ha);
-  const greyB = isNeutral(hb);
-  if (greyA !== greyB) return greyA ? 1 : -1;
-  if (greyA) return hb.lightness - ha.lightness || a.code - b.code;
-  return ha.hue - hb.hue || hb.lightness - ha.lightness || a.code - b.code;
+interface ColorKey {
+  readonly code: number;
+  readonly neutral: boolean;
+  readonly hue: number;
+  readonly lightness: number;
 }
 
-export function colorChoices(
-  entries: ReadonlyArray<PaletteEntry>,
-): ReadonlyArray<PaletteColorChoice> {
-  const choices = new Map<number, { color: CatalogColorView; parts: number }>();
-  for (const entry of entries) {
-    for (const item of entry.items) {
-      if (!item.color) continue;
-      const choice = choices.get(item.color.code);
-      if (choice) choice.parts++;
-      else choices.set(item.color.code, { color: item.color, parts: 1 });
-    }
+function colorKey(color: CatalogColorView): ColorKey {
+  const hsl = hslOf(color.rgb);
+  return { code: color.code, neutral: isNeutral(hsl), hue: hsl.hue, lightness: hsl.lightness };
+}
+
+function byColorKey(a: ColorKey, b: ColorKey): number {
+  if (a.neutral !== b.neutral) return a.neutral ? 1 : -1;
+  if (a.neutral) return b.lightness - a.lightness || a.code - b.code;
+  return a.hue - b.hue || b.lightness - a.lightness || a.code - b.code;
+}
+
+function colorRanks(items: ReadonlyArray<CatalogItemView>): ReadonlyMap<number, number> {
+  const keys = new Map<number, ColorKey>();
+  for (const { color } of items) {
+    if (color && !keys.has(color.code)) keys.set(color.code, colorKey(color));
   }
-  return [...choices.values()].toSorted((a, b) => colorOrder(a.color, b.color));
-}
-
-export function inColorOrder(
-  items: ReadonlyArray<CatalogItemView>,
-): ReadonlyArray<CatalogItemView> {
-  return items.toSorted((a, b) => (a.color && b.color ? colorOrder(a.color, b.color) : 0));
+  return new Map([...keys.values()].toSorted(byColorKey).map((key, rank) => [key.code, rank]));
 }
 
 export function itemInColor(entry: PaletteEntry, code: number): CatalogItemView | undefined {
@@ -322,13 +317,23 @@ function isLatticeSize(word: string): boolean {
 
 export class PaletteIndex {
   private readonly indexed: ReadonlyArray<IndexedEntry>;
+  private readonly ranks: ReadonlyMap<number, number>;
+  private readonly entryCache = new Map<PaletteFilter, ReadonlyArray<PaletteEntry>>();
+  private readonly choiceCache = new Map<PaletteFilter, ReadonlyArray<PaletteColorChoice>>();
 
   constructor(items: ReadonlyArray<CatalogItemView>, extraTerms: ReadonlyArray<PaletteTerms> = []) {
     const extra = new Map<string, string[]>();
     for (const { entryKey, terms } of extraTerms) {
       extra.set(entryKey, [...(extra.get(entryKey) ?? []), ...terms]);
     }
-    this.indexed = groupEntries(items).map((entry, order) => {
+    this.ranks = colorRanks(items);
+    const rankOf = (item: CatalogItemView): number =>
+      item.color ? (this.ranks.get(item.color.code) ?? 0) : 0;
+    const sorted = groupEntries(items).map((entry) => ({
+      ...entry,
+      items: entry.items.toSorted((a, b) => rankOf(a) - rankOf(b)),
+    }));
+    this.indexed = sorted.map((entry, order) => {
       const phrases = [entry.title, CATEGORY_LABEL[entry.category], ...(extra.get(entry.key) ?? [])]
         .map(wordsOf)
         .map(withSpellings);
@@ -351,9 +356,33 @@ export class PaletteIndex {
   }
 
   entries(filter: PaletteFilter): ReadonlyArray<PaletteEntry> {
-    return this.indexed
+    const cached = this.entryCache.get(filter);
+    if (cached) return cached;
+    const entries = this.indexed
       .map(({ entry }) => entry)
       .filter((entry) => filter === "all" || entry.category === filter);
+    this.entryCache.set(filter, entries);
+    return entries;
+  }
+
+  colorChoices(filter: PaletteFilter): ReadonlyArray<PaletteColorChoice> {
+    const cached = this.choiceCache.get(filter);
+    if (cached) return cached;
+    const counts = new Map<number, { color: CatalogColorView; parts: number }>();
+    for (const entry of this.entries(filter)) {
+      for (const { color } of entry.items) {
+        if (!color) continue;
+        const choice = counts.get(color.code);
+        if (choice) choice.parts++;
+        else counts.set(color.code, { color, parts: 1 });
+      }
+    }
+    const rank = (code: number): number => this.ranks.get(code) ?? 0;
+    const choices = [...counts.values()].toSorted(
+      (a, b) => rank(a.color.code) - rank(b.color.code),
+    );
+    this.choiceCache.set(filter, choices);
+    return choices;
   }
 
   search(query: string, filter: PaletteFilter): ReadonlyArray<PaletteHit> {

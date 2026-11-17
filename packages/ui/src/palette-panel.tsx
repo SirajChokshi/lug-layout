@@ -1,13 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import {
   CATEGORY_LABEL,
   PALETTE_CATEGORIES,
   PaletteIndex,
   TRACK_ITEM_ID,
   TRACK_PIECE_PREFIX,
-  colorChoices,
   colorDisplayName,
-  inColorOrder,
   itemInColor,
   type CatalogItemView,
   type EditorSnapshot,
@@ -23,9 +29,30 @@ import { RoadKitList } from "./road-draw-panel.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
+const PALETTE_FIELDS = [
+  "catalog",
+  "catalogSkipped",
+  "activeItem",
+  "mode",
+  "track",
+  "trackNotDrawable",
+  "readOnly",
+  "roadKits",
+  "roadKit",
+] as const satisfies ReadonlyArray<keyof EditorSnapshot>;
+
+type PaletteSnapshot = Pick<EditorSnapshot, (typeof PALETTE_FIELDS)[number]>;
+
 interface PaletteProps {
   readonly editor: IEditor;
-  readonly snapshot: EditorSnapshot;
+  readonly snapshot: PaletteSnapshot;
+}
+
+function samePaletteInputs(before: PaletteProps, after: PaletteProps): boolean {
+  return (
+    before.editor === after.editor &&
+    PALETTE_FIELDS.every((field) => before.snapshot[field] === after.snapshot[field])
+  );
 }
 
 interface Paint {
@@ -74,7 +101,7 @@ function Swatches({
 }) {
   return (
     <div className="palette-swatches" role="group" aria-label={entry.title}>
-      {inColorOrder(items).map((item) => (
+      {items.map((item) => (
         <button
           key={item.id}
           type="button"
@@ -86,10 +113,7 @@ function Swatches({
           title={swatchTitle(item)}
           style={{ background: item.color?.rgb ?? "transparent" }}
           disabled={snapshot.readOnly}
-          onClick={() => {
-            if (item.color) paint.choose(item.color.code);
-            editor.chooseItem(item.id);
-          }}
+          onClick={() => editor.chooseItem(item.id)}
           {...paletteDragProps(editor, item)}
         />
       ))}
@@ -287,15 +311,16 @@ function MilsNotes() {
 function PaintedSection({
   category,
   entries,
+  choices,
   editor,
   snapshot,
   paint,
 }: PaletteProps & {
   readonly category: "baseplates" | "road";
   readonly entries: ReadonlyArray<PaletteEntry>;
+  readonly choices: ReadonlyArray<PaletteColorChoice>;
   readonly paint: Paint;
 }) {
-  const choices = colorChoices(entries);
   const noun = category === "road" ? "road plates" : "baseplates";
   const offered = choices.some((choice) => choice.color.code === paint.current);
   const sectionPaint = offered ? paint : { ...paint, current: null };
@@ -340,12 +365,14 @@ function PaintedSection({
 function CategorySection({
   category,
   entries,
+  choices,
   editor,
   snapshot,
   paint,
 }: PaletteProps & {
   readonly category: PaletteCategory;
   readonly entries: ReadonlyArray<PaletteEntry>;
+  readonly choices: ReadonlyArray<PaletteColorChoice>;
   readonly paint: Paint;
 }) {
   switch (category) {
@@ -357,6 +384,7 @@ function CategorySection({
         <PaintedSection
           category={category}
           entries={entries}
+          choices={choices}
           editor={editor}
           snapshot={snapshot}
           paint={paint}
@@ -459,7 +487,7 @@ function ResultRow({
   );
 }
 
-function trackTerms(track: EditorSnapshot["track"]): ReadonlyArray<string> {
+function trackTerms(track: PaletteSnapshot["track"]): ReadonlyArray<string> {
   return (track?.bom ?? []).flatMap((line) => [line.piece.replace(/^[a-z]+:/u, ""), line.title]);
 }
 
@@ -469,7 +497,7 @@ function filterLabel(filter: PaletteFilter): string {
   return filter === "all" ? "All" : CATEGORY_LABEL[filter].replace(" modules", "");
 }
 
-export function PalettePanel({ editor, snapshot }: PaletteProps) {
+export const PalettePanel = memo(function PalettePanel({ editor, snapshot }: PaletteProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PaletteFilter>("all");
   const [highlight, setHighlight] = useState(0);
@@ -599,6 +627,7 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
             key={category}
             category={category}
             entries={index.entries(category)}
+            choices={index.colorChoices(category)}
             editor={editor}
             snapshot={snapshot}
             paint={paint}
@@ -621,9 +650,9 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
       )}
     </nav>
   );
-}
+}, samePaletteInputs);
 
-function skippedText(snapshot: EditorSnapshot): string {
+function skippedText(snapshot: PaletteSnapshot): string {
   const byReason = new Map<string, string[]>();
   for (const model of snapshot.catalogSkipped) {
     byReason.set(model.reason, [...(byReason.get(model.reason) ?? []), model.name]);
