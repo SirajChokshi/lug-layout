@@ -542,6 +542,10 @@ function tabLabel(tab: Tab): string {
   return CATEGORY_LABEL[tab].replace(" modules", "");
 }
 
+function tabName(tab: Tab): string {
+  return tab === "favorites" ? "Favourites" : tabLabel(tab);
+}
+
 function usePaletteMemory(memory: IPaletteMemory) {
   return useSyncExternalStore(
     (listener) => memory.subscribe(listener),
@@ -755,8 +759,8 @@ export const PalettePanel = memo(function PalettePanel({
         )}
         {searching && hits.length === 0 && (
           <p className="palette-hint" data-no-results>
-            Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabLabel(tab)}`}. Try a part
-            number like 3811, a size like 16x16, or a colour like tan.
+            Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part number
+            like 3811, a size like 16x16, or a colour like tan.
           </p>
         )}
         {!searching && tab === "favorites" && hits.length === 0 && (

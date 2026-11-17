@@ -1,6 +1,7 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import {
   EMPTY_PALETTE_MEMORY,
+  LocalStoragePaletteMemoryStore,
   RECENT_LIMIT,
   readPaletteMemory,
   withFavoriteToggled,
@@ -29,4 +30,35 @@ it("reads a saved record and starts empty from anything it can't trust", () => {
   expect(readPaletteMemory("{not json")).toEqual(EMPTY_PALETTE_MEMORY);
   expect(readPaletteMemory(JSON.stringify({ ...saved, version: 2 }))).toEqual(EMPTY_PALETTE_MEMORY);
   expect(readPaletteMemory(JSON.stringify({ ...saved, extra: 1 }))).toEqual(EMPTY_PALETTE_MEMORY);
+});
+
+afterEach(() => {
+  Reflect.deleteProperty(globalThis, "localStorage");
+});
+
+it("starts empty and keeps working when the browser blocks site data", () => {
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    get() {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    },
+  });
+  const store = new LocalStoragePaletteMemoryStore();
+  expect(store.load()).toEqual(EMPTY_PALETTE_MEMORY);
+  expect(() => store.save(withRecent(EMPTY_PALETTE_MEMORY, "ldraw:3811@2"))).not.toThrow();
+});
+
+it("drops a save the storage refuses, such as a full quota", () => {
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: () => null,
+      setItem: () => {
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      },
+    },
+  });
+  expect(() =>
+    new LocalStoragePaletteMemoryStore().save(withRecent(EMPTY_PALETTE_MEMORY, "a")),
+  ).not.toThrow();
 });

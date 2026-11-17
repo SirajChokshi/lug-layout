@@ -45,15 +45,26 @@ export interface IPaletteMemoryStore {
 
 const STORAGE_KEY = "brr.palette-memory";
 
+function storedPaletteMemory(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 @injectable()
 export class LocalStoragePaletteMemoryStore implements IPaletteMemoryStore {
   load(): PaletteMemory {
-    const storage: Storage | undefined = globalThis.localStorage;
-    return readPaletteMemory(storage ? storage.getItem(STORAGE_KEY) : null);
+    return readPaletteMemory(storedPaletteMemory());
   }
 
   save(memory: PaletteMemory): void {
-    globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(memory));
+    try {
+      globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(memory));
+    } catch {
+      return;
+    }
   }
 }
 
