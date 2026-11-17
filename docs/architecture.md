@@ -333,7 +333,7 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
   - a model fills its baked columns (part AABBs, whole plates), and a first-layer model's baseplate cells reach down to the table;
   - a laid track piece fills [0, its part height) on the cells its mesh silhouette covers.
 - **Overlap is strict:** spans that only touch don't overlap, so a model resting on studs and a baseplate under a model's overhang are both fine.
-- **An upper model lands on whatever its footprint rests on** (the highest span under its base cells) and is never lifted to clear anything else. Anything else in its volume refuses the placement, and the refusal names the placement it would hit, the cell and both spans.
+- **An upper model lands on the stack under the cursor** (the highest non-track span in the cursor's cell, rounded up to a whole plate) and is never lifted to clear anything else. Anything else in its volume refuses the placement, and the refusal names the placement it would hit, the cell and both spans in LDU. Track is never support: its tops count neither for landing nor as a flat top. Rotations, undo and redo are checked at their recorded height.
 - **Track against track** is tested on the pieces' plan silhouettes, only where two pieces share a stud cell. Joined pieces are exempt: their connector tabs interlock. Any other positive-area overlap beyond the 1e-6 LDU representation ε is refused until a real crossing part is used.
 
 ### 7.3 Plan regions and "Buildable as planned"

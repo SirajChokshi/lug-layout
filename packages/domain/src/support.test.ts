@@ -12,6 +12,9 @@ function cells(list: ReadonlyArray<readonly [number, number, 0 | 1]>): BaseCells
 }
 
 const BASEPLATE_OWNER = 1;
+const TRACK_OWNER = 9;
+const keepAll = (): boolean => false;
+const ignoreTrack = (owner: number): boolean => owner === TRACK_OWNER;
 const TABLE_LDU = -4;
 
 function baseplate(
@@ -61,7 +64,15 @@ describe("upperSupport", () => {
     ["a footprint floating above the baseplate studs", [[1, 1, 0]], 1, "no-studs-engaged"],
     ["a model with no base at all", [], 0, "no-base"],
   ] as const)("%s", (_name, list, yPlates, kind) => {
-    expect(upperSupport(cells(list), yPlates, volumes, support).kind).toBe(kind);
+    expect(upperSupport(cells(list), yPlates, volumes, support, keepAll).kind).toBe(kind);
+  });
+
+  it("never counts a track top as a flat top to rest on", () => {
+    const railed = new VolumeIndex();
+    railed.add(TRACK_OWNER, 30, 0, 0, 24);
+    const onRails = cells([[30, 0, 0]]);
+    expect(upperSupport(onRails, 3, railed, support, keepAll).kind).toBe("flat");
+    expect(upperSupport(onRails, 3, railed, support, ignoreTrack).kind).toBe("no-studs-engaged");
   });
 });
 
