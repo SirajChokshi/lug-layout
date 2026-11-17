@@ -359,6 +359,35 @@ footer {
   color: #334;
 }
 
+.palette-thumb {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  background: radial-gradient(circle at 50% 40%, #ffffff, #e9eef4);
+  object-fit: contain;
+}
+
+.palette-row:has(> .palette-thumb) {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 3px;
+  align-items: start;
+}
+
+.palette-row > .palette-thumb {
+  grid-row: span 2;
+}
+
+.catalog-item:has(> .palette-thumb) {
+  align-items: center;
+}
+
+.catalog-item > .palette-thumb + .catalog-name {
+  flex: 1;
+}
+
 .palette-swatches {
   display: flex;
   flex-wrap: wrap;

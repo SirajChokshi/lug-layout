@@ -17,6 +17,7 @@ import {
 import { RoadKitList } from "./road-draw-panel.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const THUMBNAIL_SLOT_PX = 52;
 
 interface PaletteProps {
   readonly editor: IEditor;
@@ -49,6 +50,22 @@ function swatchTitle(item: CatalogItemView): string {
   return item.color
     ? `${colorDisplayName(item.color.name)} (LDraw ${item.color.code})`
     : item.label;
+}
+
+function Thumbnail({ item }: { readonly item: CatalogItemView | undefined }) {
+  if (!item?.thumbnail) return null;
+  return (
+    <img
+      className="palette-thumb"
+      src={item.thumbnail}
+      alt=""
+      width={THUMBNAIL_SLOT_PX}
+      height={THUMBNAIL_SLOT_PX}
+      loading="lazy"
+      decoding="async"
+      data-thumb={item.id}
+    />
+  );
 }
 
 function Swatches({
@@ -89,8 +106,10 @@ function SwatchRow({
   readonly entry: PaletteEntry;
   readonly items: ReadonlyArray<CatalogItemView>;
 }) {
+  const shown = items.find((item) => item.id === snapshot.activeItem) ?? items[0];
   return (
     <li className="palette-row" data-group={entry.key}>
+      <Thumbnail item={shown} />
       <div className="palette-row-label">
         <span className="palette-size">{entry.size}</span>
         <span className="palette-title">{entry.title}</span>
@@ -116,6 +135,7 @@ function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: 
         disabled={snapshot.readOnly}
         onClick={() => editor.chooseItem(item.id)}
       >
+        <Thumbnail item={item} />
         <span className="catalog-name">{item.label}</span>
         <span className="catalog-meta">{itemMeta(item)}</span>
       </button>
