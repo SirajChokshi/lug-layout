@@ -1,9 +1,0 @@
-{
-  "extends": "@brr/config/tsconfig.base.json",
-  "compilerOptions": {
-    "lib": ["ES2024"],
-    "types": ["@cloudflare/workers-types"]
-  },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
-}

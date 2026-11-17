@@ -8,12 +8,3 @@ coverage/
 .env.*
 target/
 .cache/
-.wrangler/
-.dev.vars
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfvars
-*.tfplan
-crash.log
-backend.hcl
