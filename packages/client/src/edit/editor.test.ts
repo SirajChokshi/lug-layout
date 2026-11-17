@@ -9,6 +9,7 @@ import {
   type PartBundle,
   type PartFilter,
 } from "@brr/catalog";
+import { PLATE_LDU } from "@brr/math";
 import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
@@ -28,6 +29,9 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const PLACEABLE_SET = "7936-1";
 const RAY_HEIGHT_LDU = 10_000;
 const STUDLESS_SET = "10016-1";
+const BUILDING_SET = "2150-1";
+const SET_ON_3811 = "10264-1";
+const MILS_SURFACE_PLATES = 4;
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -228,4 +232,43 @@ it("undoes, redoes, rotates and deletes placed MILS modules, keeping the module 
   expect(counts()).toEqual({ placements: 2, joined: 2, open: 6, error: null });
   editor.deleteSelection(0);
   expect(counts()).toEqual({ placements: 1, joined: 0, open: 4, error: null });
+}, 120_000);
+
+type StartedEditor = Awaited<ReturnType<typeof startEditor>>;
+
+function placeAndSelect({ editor, backend }: StartedEditor, item: string, x: number, z: number) {
+  const placedBefore = editor.snapshot().placements;
+  editor.chooseItem(item);
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem(null);
+  editor.click(0, 0, 0);
+  const { placements, selection, lastRefusal } = editor.snapshot();
+  expect({ placements, lastRefusal }).toEqual({ placements: placedBefore + 1, lastRefusal: null });
+  expect(selection?.item).toBe(item);
+  return selection?.box ?? null;
+}
+
+it("rests a building on a MILS module's 4-plate surface, exactly 32 LDU above the baseplate tops", async () => {
+  const started = await startEditor(["mils-plain", BUILDING_SET]);
+
+  const module = placeAndSelect(started, "generated:mils-plain", 320, 320);
+  const building = placeAndSelect(started, `omr:${BUILDING_SET}`, 320, 320);
+
+  expect(module?.maxY).toBe(MILS_SURFACE_PLATES * PLATE_LDU);
+  expect(building?.minY).toBe(MILS_SURFACE_PLATES * PLATE_LDU);
+}, 120_000);
+
+it("seats a set built on a 3811 level with a standalone 3811, and rests a building flush on a 3811's top face", async () => {
+  const started = await startEditor([SET_ON_3811, BUILDING_SET]);
+  const baseplate = started.editor.snapshot().catalog.find((item) => item.group === "ldraw:3811");
+  expect(baseplate).toBeDefined();
+
+  const standalone = placeAndSelect(started, baseplate?.id ?? "", 2_000, 320);
+  const building = placeAndSelect(started, `omr:${BUILDING_SET}`, 2_000, 320);
+  const set = placeAndSelect(started, `omr:${SET_ON_3811}`, 4_000, 320);
+
+  expect(building?.minY).toBe(standalone?.maxY);
+  expect(set?.minY).toBe(standalone?.minY);
 }, 120_000);
