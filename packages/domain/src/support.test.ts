@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { OccupancyGrid } from "./occupancy.ts";
-import {
-  SupportGrid,
-  firstLayerSupport,
-  trackSupport,
-  upperSupport,
-  type BaseCells,
-} from "./support.ts";
+import { SupportGrid, trackSupport, upperSupport, type BaseCells } from "./support.ts";
+import { VolumeIndex } from "./volume-index.ts";
 
 function cells(list: ReadonlyArray<readonly [number, number, 0 | 1]>): BaseCells {
   return {
@@ -17,22 +11,30 @@ function cells(list: ReadonlyArray<readonly [number, number, 0 | 1]>): BaseCells
   };
 }
 
-function baseplate(support: SupportGrid, x0: number, z0: number, size: number): void {
+const BASEPLATE_OWNER = 1;
+const TABLE_LDU = -4;
+
+function baseplate(
+  support: SupportGrid,
+  volumes: VolumeIndex,
+  x0: number,
+  z0: number,
+  size: number,
+): void {
   for (let z = z0; z < z0 + size; z++) {
     for (let x = x0; x < x0 + size; x++) {
       support.markBaseplate(x, z);
       support.raiseStud(x, z, 0);
+      volumes.add(BASEPLATE_OWNER, x, z, TABLE_LDU, 0);
     }
   }
 }
 
 describe("upperSupport", () => {
-  const occupancy = new OccupancyGrid();
+  const volumes = new VolumeIndex();
   const support = new SupportGrid();
-  baseplate(support, 0, 0, 4);
-  occupancy.raise(10, 0, 3);
-  support.cover(10, 0);
-  support.cover(-5, 0);
+  baseplate(support, volumes, 0, 0, 4);
+  volumes.add(2, 10, 0, 0, 24);
 
   it.each([
     ["an anti-stud over a baseplate stud", [[1, 1, 0]], 0, "studs"],
@@ -59,34 +61,16 @@ describe("upperSupport", () => {
     ["a footprint floating above the baseplate studs", [[1, 1, 0]], 1, "no-studs-engaged"],
     ["a model with no base at all", [], 0, "no-base"],
   ] as const)("%s", (_name, list, yPlates, kind) => {
-    expect(upperSupport(cells(list), yPlates, occupancy, support).kind).toBe(kind);
-  });
-});
-
-describe("firstLayerSupport", () => {
-  it("is blocked only where something already stands above the datum on a cell it rises into", () => {
-    const occupancy = new OccupancyGrid();
-    occupancy.raise(2, 2, 0);
-    const plate = cells([
-      [1, 1, 0],
-      [2, 2, 0],
-    ]);
-    expect(firstLayerSupport(plate, occupancy).kind).toBe("on-table");
-    occupancy.raise(2, 2, 2);
-    expect(firstLayerSupport(plate, occupancy)).toEqual({
-      kind: "blocked",
-      cellX: 2,
-      cellZ: 2,
-      topPlates: 2,
-    });
+    expect(upperSupport(cells(list), yPlates, volumes, support).kind).toBe(kind);
   });
 });
 
 describe("trackSupport", () => {
   it("lists exactly the cells with no baseplate under them, never a covered non-baseplate cell", () => {
     const support = new SupportGrid();
-    baseplate(support, -2, -2, 2);
-    support.cover(1, -1);
+    const volumes = new VolumeIndex();
+    baseplate(support, volumes, -2, -2, 2);
+    volumes.add(2, 1, -1, 0, 8);
     const run = cells([
       [-1, -1, 0],
       [0, -1, 0],

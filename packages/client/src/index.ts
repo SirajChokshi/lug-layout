@@ -183,6 +183,7 @@ export type {
 } from "./camera/editor-camera.ts";
 export type {
   ClosureState,
+  RunBlock,
   TrackDragView,
   TrackEndView,
   TrackGapView,
