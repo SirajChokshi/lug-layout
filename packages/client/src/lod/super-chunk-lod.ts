@@ -218,6 +218,7 @@ export class SuperChunkLod implements IdleWork {
     const existing = this.states.get(key);
     if (existing) return existing;
     const state = new SuperChunkState(key, superX, superZ, false);
+    state.dirtySinceMs = performance.now();
     state.wantsChunks = this.wantsDetail(state, this.studPitchPx(state));
     this.states.set(key, state);
     this.stateList.push(state);
