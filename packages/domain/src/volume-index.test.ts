@@ -29,10 +29,12 @@ describe("VolumeIndex", () => {
   it("keeps every span in a cell and reports the highest top and its owner, on both sides of zero", () => {
     const hit = { owner: 0, bottomLdu: 0, topLdu: 0 };
     expect(index.topAt(-1, -1)).toBe(96);
-    expect(index.topOwnerAt(-1, -1, hit)).toBe(true);
+    expect(index.topOwnerAt(-1, -1, keepAll, hit)).toBe(true);
     expect(hit).toEqual({ owner: 3, bottomLdu: 80, topLdu: 96 });
     expect(index.topAt(0, 0)).toBe(NO_TOP);
-    expect(index.topOwnerAt(0, 0, hit)).toBe(false);
+    expect(index.topOwnerAt(0, 0, keepAll, hit)).toBe(false);
+    expect(index.topOwnerAt(-1, -1, (owner) => owner === 3, hit)).toBe(true);
+    expect(hit.owner).toBe(2);
   });
 
   it.each([
