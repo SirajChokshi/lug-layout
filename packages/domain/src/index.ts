@@ -212,6 +212,7 @@ export {
 export {
   HALF_PLANE_FLOATS,
   PLAN_TRIANGLE_FLOATS,
+  packedCellKey,
   placedPlanCells,
   planTriangleCells,
   type PlaneTransform,

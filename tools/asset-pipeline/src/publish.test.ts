@@ -206,6 +206,7 @@ describe("publishBundle", () => {
         triangles: 0,
         vertices: 0,
         baseplate: false,
+        aliasOf: null,
       };
       const shape = { id: part.id, title: part.title, role: part.role, file: part.file };
       bundle.parts.push(part);
