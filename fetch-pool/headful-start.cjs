@@ -1,0 +1,24 @@
+const { chromium } = require("/agent/repos/lug-layout/node_modules/.pnpm/node_modules/playwright-core");
+(async () => {
+  const base = process.argv[2];
+  const label = process.argv[3];
+  const browser = await chromium.launch({ headless: false, executablePath: "/usr/local/bin/google-chrome" });
+  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+  let inFlight = 0, maxInFlight = 0, requests = 0, failed = 0;
+  const failures = new Map();
+  page.on("request", () => { requests++; inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); });
+  page.on("requestfinished", () => { inFlight--; });
+  page.on("requestfailed", (r) => { inFlight--; failed++; const t = r.failure()?.errorText ?? "?"; failures.set(t, (failures.get(t) ?? 0) + 1); });
+  const started = Date.now();
+  await page.goto(`${base}/?api=webgl2`);
+  await page.waitForSelector('.editor[data-status="ready"], .editor[data-status="error"]', { state: "attached", timeout: 600000 });
+  const status = await page.getAttribute(".editor", "data-status");
+  const ms = Date.now() - started;
+  const text = status === "error" ? (await page.locator(".editor").innerText()).split("\n").find((l) => l.includes("couldn't start")) : "";
+  const hud = await page.locator(".hud").innerText().catch(() => "");
+  const far = (hud.match(/Far tier[^\n]*\n?[^\n]*/) || ["far tier ok"])[0].replace(/\n/g, " ");
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: `/tmp/ev/pool/${label}.png` });
+  console.log(JSON.stringify({ label, status, ms, requests, maxInFlight, failed, failures: Object.fromEntries(failures), error: text, far }));
+  await browser.close();
+})().catch((e) => { console.error(e); process.exit(1); });
