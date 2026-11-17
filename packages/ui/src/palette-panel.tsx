@@ -202,6 +202,103 @@ function MilsNotes() {
   );
 }
 
+const BRICK_GROUPS: ReadonlyArray<{ readonly shape: string; readonly label: string }> = [
+  { shape: "brick", label: "Bricks" },
+  { shape: "plate", label: "Plates" },
+  { shape: "tile", label: "Tiles" },
+  { shape: "jumper", label: "Jumpers" },
+];
+
+function brickSize(item: CatalogItemView): string {
+  const short = Math.min(item.studsWide, item.studsDeep);
+  const long = Math.max(item.studsWide, item.studsDeep);
+  return `${short}×${long}`;
+}
+
+function brickButtonLabel(item: CatalogItemView, group: ReadonlyArray<CatalogItemView>): string {
+  const label = brickSize(item);
+  const shared = group.filter((other) => brickSize(other) === label).length > 1;
+  return shared ? `${label} ${item.id.replace(/^[a-z]+:/u, "")}` : label;
+}
+
+function BrickColors({ editor, snapshot }: PaletteProps) {
+  const active = snapshot.catalog.find(
+    (item) => item.kind === "brick" && item.id === snapshot.activeItem,
+  );
+  const chosen = snapshot.brickColor;
+  if (!active?.brick) {
+    return <p className="palette-hint">Pick a part to see the colours it was made in.</p>;
+  }
+  return (
+    <div className="palette-row" data-brick-colors={active.id}>
+      <div className="palette-row-label">
+        <span className="palette-size">{chosen?.name ?? ""}</span>
+        <span className="palette-title">
+          {active.brick.colors.length} produced colours of {active.label}
+        </span>
+      </div>
+      <div className="palette-swatches" role="group" aria-label={`Colours of ${active.label}`}>
+        {active.brick.colors.map((color) => (
+          <button
+            key={color.code}
+            type="button"
+            className="palette-swatch palette-swatch-small"
+            data-color={color.code}
+            aria-pressed={chosen?.code === color.code}
+            aria-label={color.name}
+            title={color.name}
+            style={{ background: color.rgb }}
+            onClick={() => editor.chooseBrickColor(color.code)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BrickSection({
+  items,
+  editor,
+  snapshot,
+}: PaletteProps & { readonly items: ReadonlyArray<CatalogItemView> }) {
+  return (
+    <Section id="bricks" title="Bricks, plates and tiles" count={`${items.length} parts`}>
+      <p className="palette-hint">
+        Click a part, then click any studs. It seats on the stud grid of whatever is under the
+        cursor, at that height; R turns it a quarter.
+      </p>
+      <BrickColors editor={editor} snapshot={snapshot} />
+      {BRICK_GROUPS.map(({ shape, label }) => {
+        const group = items.filter((item) => item.brick?.shape === shape);
+        if (group.length === 0) return null;
+        return (
+          <div key={shape} className="palette-row" data-brick-shape={shape}>
+            <div className="palette-row-label">
+              <span className="palette-title">{label}</span>
+            </div>
+            <div className="palette-bricks" role="group" aria-label={label}>
+              {group.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="palette-brick"
+                  data-item={item.id}
+                  aria-pressed={snapshot.activeItem === item.id}
+                  title={item.label}
+                  disabled={snapshot.readOnly}
+                  onClick={() => editor.chooseItem(item.id)}
+                >
+                  {brickButtonLabel(item, group)}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </Section>
+  );
+}
+
 function CategorySection({
   category,
   entries,
@@ -214,6 +311,14 @@ function CategorySection({
   switch (category) {
     case "track":
       return <TrackSection editor={editor} snapshot={snapshot} />;
+    case "bricks":
+      return (
+        <BrickSection
+          items={entries.flatMap((entry) => entry.items)}
+          editor={editor}
+          snapshot={snapshot}
+        />
+      );
     case "baseplates":
     case "road":
       return (

@@ -38,6 +38,10 @@ describe("upperSupport", () => {
   const support = new SupportGrid();
   baseplate(support, volumes, 0, 0, 4);
   volumes.add(2, 10, 0, 0, 24);
+  volumes.add(3, 12, 0, 0, 8);
+  volumes.add(3, 13, 0, 0, 8);
+  support.raiseOffsetStud(12, 0, 1);
+  support.raiseOffsetStud(13, 0, 1);
 
   it.each([
     ["an anti-stud over a baseplate stud", [[1, 1, 0]], 0, "studs"],
@@ -63,6 +67,16 @@ describe("upperSupport", () => {
     ["a footprint on a stud-free top at its height", [[10, 0, 0]], 3, "flat"],
     ["a footprint floating above the baseplate studs", [[1, 1, 0]], 1, "no-studs-engaged"],
     ["a model with no base at all", [], 0, "no-base"],
+    ["an anti-stud over a jumper's half-offset centre stud", [[12, 0, 0]], 1, "offset-stud"],
+    [
+      "a footprint overhanging a jumper, over one of the two cells its centre stud straddles",
+      [
+        [13, 0, 0],
+        [14, 0, 0],
+      ],
+      1,
+      "offset-stud",
+    ],
   ] as const)("%s", (_name, list, yPlates, kind) => {
     expect(upperSupport(cells(list), yPlates, volumes, support, keepAll).kind).toBe(kind);
   });

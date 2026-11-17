@@ -19,8 +19,19 @@ function cellIndex(cellX: number, cellZ: number): number {
   return z * CHUNK_STUDS + x;
 }
 
+function checkStudBase(basePlates: number): void {
+  if (
+    !Number.isInteger(basePlates) ||
+    basePlates < NO_STUD_TOP + 1 ||
+    basePlates > MAX_STUD_PLATES
+  ) {
+    throw new RangeError(`stud base ${basePlates} plates is outside the int16 grid`);
+  }
+}
+
 interface SupportChunk {
   readonly studTop: Int16Array;
+  readonly offsetStudTop: Int16Array;
   readonly flags: Uint8Array;
 }
 
@@ -30,6 +41,11 @@ export class SupportGrid {
   studTopAt(cellX: number, cellZ: number): number {
     const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
     return chunk ? (chunk.studTop[cellIndex(cellX, cellZ)] ?? NO_STUD_TOP) : NO_STUD_TOP;
+  }
+
+  offsetStudTopAt(cellX: number, cellZ: number): number {
+    const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
+    return chunk ? (chunk.offsetStudTop[cellIndex(cellX, cellZ)] ?? NO_STUD_TOP) : NO_STUD_TOP;
   }
 
   offLatticeTopAt(cellX: number, cellZ: number): boolean {
@@ -53,16 +69,17 @@ export class SupportGrid {
   }
 
   raiseStud(cellX: number, cellZ: number, basePlates: number): void {
-    if (
-      !Number.isInteger(basePlates) ||
-      basePlates < NO_STUD_TOP + 1 ||
-      basePlates > MAX_STUD_PLATES
-    ) {
-      throw new RangeError(`stud base ${basePlates} plates is outside the int16 grid`);
-    }
+    checkStudBase(basePlates);
     const chunk = this.chunkFor(cellX, cellZ);
     const i = cellIndex(cellX, cellZ);
     if (basePlates > (chunk.studTop[i] ?? NO_STUD_TOP)) chunk.studTop[i] = basePlates;
+  }
+
+  raiseOffsetStud(cellX: number, cellZ: number, basePlates: number): void {
+    checkStudBase(basePlates);
+    const chunk = this.chunkFor(cellX, cellZ);
+    const i = cellIndex(cellX, cellZ);
+    if (basePlates > (chunk.offsetStudTop[i] ?? NO_STUD_TOP)) chunk.offsetStudTop[i] = basePlates;
   }
 
   clearChunk(key: number): void {
@@ -80,6 +97,7 @@ export class SupportGrid {
     if (!chunk) {
       chunk = {
         studTop: new Int16Array(CELLS_PER_CHUNK).fill(NO_STUD_TOP),
+        offsetStudTop: new Int16Array(CELLS_PER_CHUNK).fill(NO_STUD_TOP),
         flags: new Uint8Array(CELLS_PER_CHUNK),
       };
       this.byKey.set(key, chunk);
@@ -107,6 +125,7 @@ export type UpperSupport =
       readonly yPlates: number;
     }
   | { readonly kind: "off-lattice-top"; readonly yPlates: number; readonly cells: number }
+  | { readonly kind: "offset-stud"; readonly yPlates: number; readonly cells: number }
   | {
       readonly kind: "no-studs-engaged";
       readonly yPlates: number;
@@ -128,9 +147,14 @@ export function upperSupport(
   let touching = 0;
   let overTable = 0;
   let offLattice = 0;
+  let offsetStuds = 0;
   for (let c = 0; c < base.count; c++) {
     const x = base.cellX[c] ?? 0;
     const z = base.cellZ[c] ?? 0;
+    if (support.offsetStudTopAt(x, z) === yPlates) {
+      offsetStuds++;
+      continue;
+    }
     const top = volumes.topOwnerAt(x, z, ignore, topHit) ? topHit.topLdu : NO_VOLUME_TOP;
     if (top === NO_VOLUME_TOP) {
       if (yPlates === 0) overTable++;
@@ -143,6 +167,7 @@ export function upperSupport(
     else if (support.offLatticeTopAt(x, z)) offLattice++;
     else if (top === yPlates * PLATE_LDU) touching++;
   }
+  if (offsetStuds > 0) return { kind: "offset-stud", yPlates, cells: offsetStuds };
   if (engaged > 0) return { kind: "studs", engaged };
   if (touching === base.count) return { kind: "flat", cells: touching };
   if (overTable === base.count) return { kind: "on-table", cells: overTable };

@@ -37,8 +37,11 @@ import {
   STUD_LDU,
   ZETA16_ORDER,
   composePose16,
+  isRot90,
   pose16,
   posesJoin16,
+  rot90Cos,
+  rot90Sin,
   zeta16,
   zeta16ToStuds,
 } from "@brr/math";
@@ -102,11 +105,14 @@ import {
   type PlacedModel,
   type RebuildReport,
   type StudTotals,
+  type SurfaceHit,
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import { groundGrid, snapToGrid, worldGround, type WorldGround } from "./ground.ts";
+import { BrickCatalog, isBrickPart, type BrickPart, type BrickShape } from "./brick-catalog.ts";
 import {
   modelGround,
+  footprintCentre,
   modelPlaceable,
   partGround,
   partPlaceable,
@@ -149,6 +155,12 @@ export interface CatalogBaseplateView {
   readonly studsDeep: number;
 }
 
+export interface CatalogBrickView {
+  readonly shape: BrickShape;
+  readonly heightPlates: number;
+  readonly colors: ReadonlyArray<CatalogColorView>;
+}
+
 export interface CatalogItemView {
   readonly id: string;
   readonly label: string;
@@ -160,6 +172,7 @@ export interface CatalogItemView {
   readonly studsWide: number;
   readonly studsDeep: number;
   readonly baseplate: CatalogBaseplateView | null;
+  readonly brick: CatalogBrickView | null;
 }
 
 export interface LatencySample {
@@ -406,6 +419,7 @@ export interface EditorSnapshot {
   readonly baseplateGridStuds: number | null;
   readonly mode: EditorMode;
   readonly activeItem: string | null;
+  readonly brickColor: CatalogColorView | null;
   readonly ghostRot: number;
   readonly hover: HoverView | null;
   readonly selection: SelectionView | null;
@@ -478,6 +492,7 @@ export interface IEditor {
   subscribe(listener: () => void): () => void;
   snapshot(): EditorSnapshot;
   chooseItem(id: string | null): void;
+  chooseBrickColor(code: number): void;
   pointerMove(ndcX: number, ndcY: number): void;
   pointerLeave(): void;
   click(ndcX: number, ndcY: number, eventTimeMs: number): void;
@@ -509,6 +524,7 @@ export interface IEditor {
 
 const EDITOR_LOD: BundleLod = "standard";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
+const NO_SEAT_REASON = "no stud seat or produced colour from the bake";
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 export const TRACK_PIECE_PREFIX = "track-piece:";
 const TRACK_PIECE_GROUP = "track-pieces";
@@ -644,7 +660,9 @@ interface FrameTimes {
 }
 
 function isEditorPart(part: FilterablePart): boolean {
-  return part.role === "ground" || part.role === "road" || part.role === "track";
+  return (
+    part.role === "ground" || part.role === "road" || part.role === "track" || isBrickPart(part)
+  );
 }
 
 function quantileOfSorted(sorted: Float64Array, fraction: number): number {
@@ -690,6 +708,32 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
       studsWide: (placeable.ground.maxX - placeable.ground.minX) / STUD_LDU,
       studsDeep: (placeable.ground.maxZ - placeable.ground.minZ) / STUD_LDU,
     },
+    brick: null,
+  };
+}
+
+function brickItem(brick: BrickPart): CatalogItemView {
+  const name = brick.part.id.replace("ldraw:", "");
+  return {
+    id: brick.part.id,
+    label: `${name} ${brick.part.title}`,
+    group: brick.shape,
+    groupLabel: brick.shape,
+    color: null,
+    kind: "brick",
+    parts: 1,
+    studsWide: brick.studsWide,
+    studsDeep: brick.studsDeep,
+    baseplate: null,
+    brick: {
+      shape: brick.shape,
+      heightPlates: brick.heightPlates,
+      colors: brick.colors.map(({ code, name: colorName, rgb }) => ({
+        code,
+        name: colorName.replaceAll("_", " "),
+        rgb,
+      })),
+    },
   };
 }
 
@@ -725,6 +769,7 @@ export class Editor implements IEditor {
     baseplateGridStuds: null,
     mode: "select",
     activeItem: null,
+    brickColor: null,
     ghostRot: 0,
     hover: null,
     selection: null,
@@ -788,6 +833,11 @@ export class Editor implements IEditor {
     rebaseCount: 0,
   };
   private placeables: ReadonlyArray<Placeable> = [];
+  private bricks: BrickCatalog | null = null;
+  private brickColor: number | null = null;
+  private readonly surface: SurfaceHit = { cellX: 0, cellZ: 0, x: 0, z: 0 };
+  private cursorCellX = 0;
+  private cursorCellZ = 0;
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
@@ -880,6 +930,15 @@ export class Editor implements IEditor {
       );
       this.placeables = placeables;
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
+      this.bricks = new BrickCatalog(
+        bundle.parts
+          .filter(isBrickPart)
+          .map((part) => ({ part, partIndex: palette.indexOf(part.id) })),
+        bundle.colors,
+        palette.parts,
+        colors,
+        this.tableY,
+      );
       this.plans.setTableTopY(this.baseplateBottomY());
       this.newTrack = () =>
         new TrackDrawing(bundle.trackCatalog, palette.parts, colors, {
@@ -910,10 +969,17 @@ export class Editor implements IEditor {
         backend,
         catalog: [
           ...this.placeables.map((placeable) => catalogItem(placeable, bundle.colors)),
+          ...this.bricks.parts.map(brickItem),
           this.trackItem(this.track, palette.parts),
           ...this.trackPieceItems(this.track, palette.parts),
         ],
-        catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
+        catalogSkipped: [
+          ...skipped.map(({ name, reason }) => ({ name, reason })),
+          ...this.bricks.unseated.map(({ id, title }) => ({
+            name: `${id} ${title}`,
+            reason: NO_SEAT_REASON,
+          })),
+        ],
         trackNotDrawable: undrawableTrack(bundle.parts, this.track, palette.parts),
         track: this.trackView(),
         credits: {
@@ -1182,6 +1248,7 @@ export class Editor implements IEditor {
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
       baseplate: null,
+      brick: null,
     };
   }
 
@@ -1204,6 +1271,7 @@ export class Editor implements IEditor {
         studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
         studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
         baseplate: null,
+        brick: null,
       };
     });
   }
@@ -1410,7 +1478,7 @@ export class Editor implements IEditor {
       this.select(null);
       return;
     }
-    const placeable = id === null ? null : (this.placeables.find((p) => p.id === id) ?? null);
+    const placeable = id === null ? null : this.placeableFor(id);
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
@@ -1419,7 +1487,7 @@ export class Editor implements IEditor {
     if (!moduleFit) this.showMarkers();
     this.update({
       mode: placeable ? "place" : "select",
-      activeItem: placeable?.id ?? null,
+      activeItem: placeable?.kind === "brick" ? placeable.group : (placeable?.id ?? null),
       moduleFit,
       ghostRot: this.ghostRot,
     });
@@ -1553,8 +1621,32 @@ export class Editor implements IEditor {
     this.showHeldPiece();
   }
 
+  private placeableFor(id: string): Placeable | null {
+    const brick = this.bricks?.find(id) ?? null;
+    if (!brick || !this.bricks) return this.placeables.find((p) => p.id === id) ?? null;
+    const color = this.bricks.colorFor(brick, this.brickColor);
+    this.brickColor = color.code;
+    this.update({
+      brickColor: { code: color.code, name: color.name.replaceAll("_", " "), rgb: color.rgb },
+    });
+    const placeable = this.bricks.placeable(brick, color);
+    if (!this.placeables.includes(placeable)) this.placeables = [...this.placeables, placeable];
+    return placeable;
+  }
+
+  chooseBrickColor(code: number): void {
+    this.brickColor = code;
+    const color = this.state.catalog
+      .flatMap((item) => item.brick?.colors ?? [])
+      .find((c) => c.code === code);
+    if (color) this.update({ brickColor: color });
+    if (this.active?.kind === "brick") this.chooseItem(this.active.group);
+  }
+
   private groundHit(ndcX: number, ndcY: number): boolean {
     this.backend.rayThrough(ndcX, ndcY, this.ray);
+    const active = this.active;
+    if (active?.layer === "upper") return this.surfaceHit(active);
     const originY = this.ray[1] ?? 0;
     const directionY = this.ray[4] ?? 0;
     if (directionY >= 0) return false;
@@ -1563,15 +1655,37 @@ export class Editor implements IEditor {
     this.hitZ = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
     this.hoverX = snapToGrid(this.hitX, STUD_LDU);
     this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
+    this.cursorCellX = Math.floor(this.hitX / STUD_LDU);
+    this.cursorCellZ = Math.floor(this.hitZ / STUD_LDU);
     return true;
   }
 
+  private surfaceHit(active: Placeable): boolean {
+    if (!this.placed.surfaceHit(this.ray, this.surface)) return false;
+    this.hitX = this.surface.x;
+    this.hitZ = this.surface.z;
+    this.cursorCellX = this.surface.cellX;
+    this.cursorCellZ = this.surface.cellZ;
+    this.centreOnCursorCell(active);
+    return true;
+  }
+
+  private centreOnCursorCell(active: Placeable): void {
+    const [localX, localZ] = footprintCentre(active.cells);
+    const rot = this.ghostRot;
+    if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+    const cos = rot90Cos(rot);
+    const sin = rot90Sin(rot);
+    const centreX = cos * localX + sin * localZ;
+    const centreZ = -sin * localX + cos * localZ;
+    const cellCentreX = (this.cursorCellX + 0.5) * STUD_LDU;
+    const cellCentreZ = (this.cursorCellZ + 0.5) * STUD_LDU;
+    this.hoverX = snapToGrid(cellCentreX - centreX, STUD_LDU);
+    this.hoverZ = snapToGrid(cellCentreZ - centreZ, STUD_LDU);
+  }
+
   private cursorLanding(): LandingAt {
-    return {
-      kind: "cursor",
-      cellX: Math.floor(this.hitX / STUD_LDU),
-      cellZ: Math.floor(this.hitZ / STUD_LDU),
-    };
+    return { kind: "cursor", cellX: this.cursorCellX, cellZ: this.cursorCellZ };
   }
 
   private placeGhost(): void {
@@ -2126,6 +2240,7 @@ export class Editor implements IEditor {
     }
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
+      if (this.active.layer === "upper" && this.hovering) this.centreOnCursorCell(this.active);
       const moduleFit = this.snapGhostToModuleGrid();
       this.placeGhost();
       this.update({

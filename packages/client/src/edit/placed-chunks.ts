@@ -69,6 +69,15 @@ export interface PlacementCheck {
   readonly overlap: PlacedOverlap | null;
 }
 
+export interface SurfaceHit {
+  cellX: number;
+  cellZ: number;
+  x: number;
+  z: number;
+}
+
+const MAX_SURFACE_CELLS = 4096;
+
 export interface LostSupport {
   readonly model: PlacedModel;
   readonly support: UpperSupport;
@@ -92,9 +101,15 @@ interface TrackStamp {
 }
 
 const keepEveryOwner: OwnerFilter = () => false;
+const surfaceTop: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
 const PENDING_OWNER = 0;
 
 const HALF_STUD_LDU = STUD_LDU / 2;
+const X0 = 0;
+const X1 = 1;
+const Z0 = 2;
+const Z1 = 3;
+const studCells = new Int32Array(4);
 
 function slab(
   origin: number,
@@ -299,6 +314,8 @@ class PlacedEntry implements PlacedModel {
   readonly studCellX: Int32Array;
   readonly studCellZ: Int32Array;
   readonly studBaseLdu: Int32Array;
+  readonly studWorldX: Int32Array;
+  readonly studWorldZ: Int32Array;
   readonly studCulled: Uint8Array;
   readonly contributions = new Map<number, Contribution>();
   readonly candidate: CandidateCells;
@@ -342,6 +359,8 @@ class PlacedEntry implements PlacedModel {
     this.studCellX = new Int32Array(count);
     this.studCellZ = new Int32Array(count);
     this.studBaseLdu = new Int32Array(count);
+    this.studWorldX = new Int32Array(count);
+    this.studWorldZ = new Int32Array(count);
     this.studCulled = new Uint8Array(count);
     for (let i = 0; i < count; i++) {
       const lx = studs.cellX[i] ?? 0;
@@ -349,6 +368,10 @@ class PlacedEntry implements PlacedModel {
       this.studCellX[i] = this.pose.worldCellX(lx, lz);
       this.studCellZ[i] = this.pose.worldCellZ(lx, lz);
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
+      const cx = studs.centreX[i] ?? 0;
+      const cz = studs.centreZ[i] ?? 0;
+      this.studWorldX[i] = this.x + this.cos * cx + this.sin * cz;
+      this.studWorldZ[i] = this.z - this.sin * cx + this.cos * cz;
     }
     this.candidate = candidateCells(placeable, this.pose);
     this.registerCells(chunkOrigins);
@@ -378,11 +401,28 @@ class PlacedEntry implements PlacedModel {
         }
       }
     }
-    const onLattice = this.placeable.studLattice.onLattice;
+    const { onLattice, offLattice } = this.placeable.studLattice;
     for (let s = 0; s < onLattice.length; s++) {
-      if (onLattice[s] !== 1) continue;
-      this.columnKeys.add(cellChunkKey(this.studCellX[s] ?? 0, this.studCellZ[s] ?? 0));
+      if (onLattice[s] === 1) {
+        this.columnKeys.add(cellChunkKey(this.studCellX[s] ?? 0, this.studCellZ[s] ?? 0));
+      } else if (offLattice[s] === 1) {
+        this.cellsTouching(s);
+        for (let cz = studCells[Z0] ?? 0; cz <= (studCells[Z1] ?? 0); cz++) {
+          for (let cx = studCells[X0] ?? 0; cx <= (studCells[X1] ?? 0); cx++) {
+            this.columnKeys.add(cellChunkKey(cx, cz));
+          }
+        }
+      }
     }
+  }
+
+  private cellsTouching(stud: number): void {
+    const x = this.studWorldX[stud] ?? 0;
+    const z = this.studWorldZ[stud] ?? 0;
+    studCells[X1] = Math.floor(x / STUD_LDU);
+    studCells[Z1] = Math.floor(z / STUD_LDU);
+    studCells[X0] = x % STUD_LDU === 0 ? (studCells[X1] ?? 0) - 1 : (studCells[X1] ?? 0);
+    studCells[Z0] = z % STUD_LDU === 0 ? (studCells[Z1] ?? 0) - 1 : (studCells[Z1] ?? 0);
   }
 
   stampColumns(volumes: VolumeIndex, support: SupportGrid, onlyChunk: number | null): void {
@@ -410,6 +450,18 @@ class PlacedEntry implements PlacedModel {
       const cz = this.studCellZ[s] ?? 0;
       if (onlyChunk !== null && cellChunkKey(cx, cz) !== onlyChunk) continue;
       support.raiseStud(cx, cz, base / PLATE_LDU);
+    }
+    const offLattice = this.placeable.studLattice.offLattice;
+    for (let s = 0; s < offLattice.length; s++) {
+      const base = this.studBaseLdu[s] ?? 0;
+      if (offLattice[s] !== 1 || base % PLATE_LDU !== 0) continue;
+      this.cellsTouching(s);
+      for (let cz = studCells[Z0] ?? 0; cz <= (studCells[Z1] ?? 0); cz++) {
+        for (let cx = studCells[X0] ?? 0; cx <= (studCells[X1] ?? 0); cx++) {
+          if (onlyChunk !== null && cellChunkKey(cx, cz) !== onlyChunk) continue;
+          support.raiseOffsetStud(cx, cz, base / PLATE_LDU);
+        }
+      }
     }
   }
 
@@ -741,6 +793,67 @@ export class PlacedChunks {
         overlap: hit ? this.placedOverlap(hit) : null,
       };
     });
+  }
+
+  surfaceHit(ray: Float64Array, out: SurfaceHit): boolean {
+    const ox = ray[0] ?? 0;
+    const oy = ray[1] ?? 0;
+    const oz = ray[2] ?? 0;
+    const dx = ray[3] ?? 0;
+    const dy = ray[4] ?? 0;
+    const dz = ray[5] ?? 0;
+    if (dy >= 0) return false;
+    const tGround = -oy / dy;
+    let cellX = Math.floor(ox / STUD_LDU);
+    let cellZ = Math.floor(oz / STUD_LDU);
+    const stepX = dx > 0 ? 1 : -1;
+    const stepZ = dz > 0 ? 1 : -1;
+    const deltaX = dx === 0 ? Number.POSITIVE_INFINITY : STUD_LDU / Math.abs(dx);
+    const deltaZ = dz === 0 ? Number.POSITIVE_INFINITY : STUD_LDU / Math.abs(dz);
+    let nextX =
+      dx === 0 ? Number.POSITIVE_INFINITY : ((cellX + (dx > 0 ? 1 : 0)) * STUD_LDU - ox) / dx;
+    let nextZ =
+      dz === 0 ? Number.POSITIVE_INFINITY : ((cellZ + (dz > 0 ? 1 : 0)) * STUD_LDU - oz) / dz;
+    let enter = 0;
+    let fromX = cellX;
+    let fromZ = cellZ;
+    for (let step = 0; step < MAX_SURFACE_CELLS && enter <= tGround; step++) {
+      const exit = Math.min(nextX, nextZ, tGround);
+      if (this.volumes.topOwnerAt(cellX, cellZ, this.isTrack, surfaceTop)) {
+        const top = surfaceTop.topLdu;
+        if (oy + dy * enter <= top) {
+          out.cellX = fromX;
+          out.cellZ = fromZ;
+          out.x = ox + dx * enter;
+          out.z = oz + dz * enter;
+          return true;
+        }
+        const tTop = (top - oy) / dy;
+        if (tTop <= exit) {
+          out.cellX = cellX;
+          out.cellZ = cellZ;
+          out.x = ox + dx * tTop;
+          out.z = oz + dz * tTop;
+          return true;
+        }
+      }
+      fromX = cellX;
+      fromZ = cellZ;
+      if (nextX < nextZ) {
+        cellX += stepX;
+        enter = nextX;
+        nextX += deltaX;
+      } else {
+        cellZ += stepZ;
+        enter = nextZ;
+        nextZ += deltaZ;
+      }
+    }
+    out.x = ox + dx * tGround;
+    out.z = oz + dz * tGround;
+    out.cellX = Math.floor(out.x / STUD_LDU);
+    out.cellZ = Math.floor(out.z / STUD_LDU);
+    return true;
   }
 
   trackOverlap(

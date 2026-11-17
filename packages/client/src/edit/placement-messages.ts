@@ -72,6 +72,11 @@ export function supportRefusal(
         rule: "support",
         message: `${label} would rest on ${support.cells} cells whose top isn't a whole number of plates above the baseplates (a road plate on the table tops out 1.5 plates up), so nothing can rest there yet.`,
       };
+    case "offset-stud":
+      return {
+        rule: "support",
+        message: `${label} would land on a jumper's centre stud ${plates(support.yPlates)} up, over ${support.cells} of its base cells. That stud is half a stud off the grid, so it would push into the anti-studs instead of fitting them.`,
+      };
     case "no-studs-engaged":
       return {
         rule: "support",

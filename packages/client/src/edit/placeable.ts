@@ -18,7 +18,7 @@ import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
 import { modelTrack, type ModelTrack } from "./model-track.ts";
 import { roadSurface } from "./road-surface.ts";
 
-export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
+export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model" | "brick";
 export type PlaceableLayer = "first" | "upper";
 
 export interface PlaceableCells {
@@ -40,8 +40,11 @@ export interface PlaceableCells {
 
 export interface StudLattice {
   readonly onLattice: Uint8Array;
+  readonly offLattice: Uint8Array;
   readonly cellX: Int32Array;
   readonly cellZ: Int32Array;
+  readonly centreX: Int32Array;
+  readonly centreZ: Int32Array;
   readonly baseLdu: Int32Array;
 }
 
@@ -109,23 +112,34 @@ function latticeCell(centre: number): number | null {
 
 function studLattice(studs: StudInstances): StudLattice {
   const onLattice = new Uint8Array(studs.count);
+  const offLattice = new Uint8Array(studs.count);
   const cellX = new Int32Array(studs.count);
   const cellZ = new Int32Array(studs.count);
+  const centreX = new Int32Array(studs.count);
+  const centreZ = new Int32Array(studs.count);
   const baseLdu = new Int32Array(studs.count);
   const m = studs.matrices;
   for (let i = 0; i < studs.count; i++) {
     const o = i * INSTANCE_MATRIX_FLOATS;
     const upright = m[o + 1] === 0 && m[o + 9] === 0 && (m[o + 5] ?? 0) > 0;
-    const x = latticeCell(m[o + 3] ?? 0);
-    const z = latticeCell(m[o + 11] ?? 0);
+    const sx = m[o + 3] ?? 0;
+    const sz = m[o + 11] ?? 0;
     const base = m[o + 7] ?? 0;
-    if (!upright || x === null || z === null || !Number.isInteger(base)) continue;
-    onLattice[i] = 1;
-    cellX[i] = x;
-    cellZ[i] = z;
+    if (!upright || !Number.isInteger(base)) continue;
     baseLdu[i] = base;
+    const x = latticeCell(sx);
+    const z = latticeCell(sz);
+    if (x !== null && z !== null) {
+      onLattice[i] = 1;
+      cellX[i] = x;
+      cellZ[i] = z;
+    } else if (Number.isInteger(sx) && Number.isInteger(sz)) {
+      offLattice[i] = 1;
+      centreX[i] = sx;
+      centreZ[i] = sz;
+    }
   }
-  return { onLattice, cellX, cellZ, baseLdu };
+  return { onLattice, offLattice, cellX, cellZ, centreX, centreZ, baseLdu };
 }
 
 function wholeCells(ldu: number, what: string): number {
@@ -215,6 +229,31 @@ function partCells(part: PartAsset, shift: Vec3, tableY: number): PlaceableCells
     heightPlates,
     offLatticeTop: topY % PLATE_LDU !== 0,
   };
+}
+
+export function footprintCentre(cells: PlaceableCells): readonly [number, number] {
+  let minI = cells.width;
+  let maxI = -1;
+  let minJ = cells.depth;
+  let maxJ = -1;
+  for (let j = 0; j < cells.depth; j++) {
+    for (let i = 0; i < cells.width; i++) {
+      if ((cells.footprint[j * cells.width + i] ?? FOOTPRINT_NONE) === FOOTPRINT_NONE) continue;
+      minI = Math.min(minI, i);
+      maxI = Math.max(maxI, i);
+      minJ = Math.min(minJ, j);
+      maxJ = Math.max(maxJ, j);
+    }
+  }
+  if (maxI < 0)
+    return [
+      (cells.cellX0 + cells.width / 2) * STUD_LDU,
+      (cells.cellZ0 + cells.depth / 2) * STUD_LDU,
+    ];
+  return [
+    (cells.cellX0 + (minI + maxI + 1) / 2) * STUD_LDU,
+    (cells.cellZ0 + (minJ + maxJ + 1) / 2) * STUD_LDU,
+  ];
 }
 
 interface PlanBounds {
@@ -432,6 +471,60 @@ export function modelPlaceable(
 }
 
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
+
+export function brickPlaceable(
+  part: PartAsset,
+  partIndex: number,
+  ldrawColor: number,
+  colorName: string,
+  parts: ReadonlyArray<PartAsset>,
+  colors: ColorTable,
+  tableY: number,
+): Placeable {
+  const seat = part.seat;
+  if (!seat) throw new Error(`${part.id} has no stud seat from the bake, so it cannot be placed`);
+  const lattice: ModelLattice = {
+    phaseX: seat.phaseX,
+    phaseZ: seat.phaseZ,
+    aabbMin: part.boundsMin,
+    aabbMax: part.boundsMax,
+  };
+  const shift = modelFrameShift(lattice, seat.cells, seat.cells.restY);
+  const local: ChunkPartInstances = {
+    originX: 0,
+    originZ: 0,
+    count: 1,
+    partIndex: Uint16Array.of(partIndex),
+    colorIndex: Uint16Array.of(colors.indexOfCode(ldrawColor)),
+    matrices: shifted(IDENTITY_MATRIX, 1, shift),
+  };
+  const box = shiftedBox(part.boundsMin, part.boundsMax, shift);
+  const studs = withStuds(local, parts, colors, undefined).studs;
+  const name = part.id.replace("ldraw:", "");
+  return {
+    id: `${part.id}@${ldrawColor}`,
+    label: `${name} ${part.title}, ${colorName}`,
+    group: part.id,
+    groupLabel: `${name} ${part.title}`,
+    kind: "brick",
+    layer: "upper",
+    worldColor: ldrawColor,
+    parts: local,
+    studs,
+    studLattice: studLattice(studs),
+    bakedCoveredStuds: 0,
+    cells: modelCells(seat.cells, shift, part.id, 0, true, tableY),
+    box,
+    partBoxes: instanceBoxes(local, parts),
+    frameShift: shift,
+    credit: null,
+    road: null,
+    track: null,
+    ground: null,
+    module: null,
+    farModel: null,
+  };
+}
 
 export function isBaseplatePart(part: PartAsset): boolean {
   return part.baseplate;
