@@ -51,7 +51,7 @@ import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import {
   carriesRefusal,
-  supportRefusal,
+  checkRefusal,
   trackCarriedRefusal,
   trackRunRefusal,
   type Refusal,
@@ -201,7 +201,9 @@ export type TrackCommitResult =
   | "joined"
   | "refused-impossible"
   | "refused-limit"
-  | "refused-off-baseplate";
+  | "refused-off-baseplate"
+  | "refused-overlap"
+  | "refused-crosses-track";
 
 export interface TrackView {
   readonly pieces: number;
@@ -576,9 +578,14 @@ export class Editor implements IEditor {
       const { placeables, skipped } = await this.loadPlaceables(bundle, palette, colors);
       this.placeables = placeables;
       this.plans.setTableTopY(this.baseplateBottomY());
-      this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors, (cells) =>
-        this.placed.trackSupport(cells, []),
-      );
+      this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors, {
+        support: (cells) => this.placed.trackSupport(cells, []),
+        overlap: (cells, bottom, top) => this.placed.trackOverlap(cells, bottom, top),
+        neighbours: (cells) => this.placed.trackNeighbours(cells),
+        laid: (piece, pieceId, cells, bottom, top) =>
+          this.placed.addTrackPiece(piece, pieceId, cells, bottom, top),
+        relaid: (pieces) => this.placed.replaceTrackPieces(pieces),
+      });
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -683,6 +690,7 @@ export class Editor implements IEditor {
           credit,
           palette.parts,
           colors,
+          this.tableY,
         ),
       );
     }
@@ -847,7 +855,7 @@ export class Editor implements IEditor {
     track.moveDrag(this.hitX, this.hitZ);
     this.showTrackGhost(track);
     this.showEndMarker(track.dragTarget());
-    this.showRefusalCells(track.dragView()?.offBaseplate?.missing ?? null);
+    this.showRefusalCells(track.dragView()?.blocked?.missing ?? null);
     this.update({ track: this.trackView() });
   }
 
@@ -885,10 +893,8 @@ export class Editor implements IEditor {
       this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
-    this.showRefusalCells(commit.offBaseplate?.missing ?? null);
-    if (commit.offBaseplate) {
-      this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.offBaseplate));
-    }
+    this.showRefusalCells(commit.blocked?.missing ?? null);
+    if (commit.blocked) this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
     this.update({ track: this.trackView() });
   }
 
@@ -940,7 +946,7 @@ export class Editor implements IEditor {
     this.ghostCheck = check;
     this.hoverYPlates = check.yPlates;
     this.update({
-      ghost: { yPlates: check.yPlates, refusal: supportRefusal(this.active.label, check.verdict) },
+      ghost: { yPlates: check.yPlates, refusal: checkRefusal(this.active.label, check) },
     });
     this.backend.placeGhost(
       this.hoverX,
@@ -1022,7 +1028,7 @@ export class Editor implements IEditor {
         return;
       }
       const check = this.ghostCheck;
-      const refusal = check ? supportRefusal(this.active.label, check.verdict) : null;
+      const refusal = check ? checkRefusal(this.active.label, check) : null;
       if (refusal) {
         this.refuse("place", this.active.id, refusal);
         return;
@@ -1207,7 +1213,7 @@ export class Editor implements IEditor {
     const pose = model.handle;
     const rot = (pose.rot + 1) % QUARTER_TURNS;
     const check = this.placed.check(model.placeable, pose.x, pose.z, rot, [model]);
-    const turned = supportRefusal(model.placeable.label, check.verdict);
+    const turned = checkRefusal(model.placeable.label, check);
     if (turned) {
       this.refuse("rotate", model.placeable.id, turned);
       return;
@@ -1324,7 +1330,7 @@ export class Editor implements IEditor {
       if (!to) continue;
       const placeable = this.placeableAt(to.refId);
       const check = this.placed.check(placeable, to.x, to.z, to.rot, removed);
-      const refusal = supportRefusal(placeable.label, check.verdict);
+      const refusal = checkRefusal(placeable.label, check);
       if (refusal) return { ...refusal, item: placeable.id };
       if (check.yPlates !== to.yPlates) {
         return {

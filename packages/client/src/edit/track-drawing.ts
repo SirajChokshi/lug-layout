@@ -10,6 +10,7 @@ import {
   TrackGraph,
   TrackLayout,
   type DrawingKit,
+  planTrianglesOverlap,
   type BaseCells,
   type TrackMove,
   type TrackPieceDef,
@@ -22,9 +23,11 @@ import {
   ZETA16_ORDER,
   chunkKey,
   chunkOf,
+  composePose16,
   normalizeHeading16,
   pose16,
   pose16Equals,
+  posesJoin16,
   zeta16,
   zeta16ToStuds,
   type Pose16,
@@ -33,7 +36,13 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
-import { localPlanTriangles, supportCells, trackPlanTransform } from "./track-footprint.ts";
+import type { PlacedOverlap } from "./placed-chunks.ts";
+import {
+  localPlanTriangles,
+  placedPlan,
+  trackPlanTransform,
+  type PlacedPlan,
+} from "./track-footprint.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -55,10 +64,51 @@ export interface KitPart {
   readonly partIndex: number;
   readonly color: number;
   readonly yLdu: number;
+  readonly heightLdu: number;
   readonly plan: Float64Array;
 }
 
 export type TrackSupportProbe = (cells: BaseCells) => TrackSupport;
+
+export interface LaidTrackPiece {
+  readonly piece: number;
+  readonly pieceId: string;
+  readonly cells: BaseCells;
+  readonly bottomLdu: number;
+  readonly topLdu: number;
+}
+
+export interface TrackHost {
+  support(cells: BaseCells): TrackSupport;
+  overlap(cells: BaseCells, bottomLdu: number, topLdu: number): PlacedOverlap | null;
+  neighbours(cells: BaseCells): ReadonlySet<number>;
+  laid(piece: number, pieceId: string, cells: BaseCells, bottomLdu: number, topLdu: number): void;
+  relaid(pieces: ReadonlyArray<LaidTrackPiece>): void;
+}
+
+interface RunPiece {
+  readonly piece: number;
+  readonly pieceId: string;
+  readonly pieces: number;
+}
+
+export type RunBlock =
+  | (RunPiece & {
+      readonly kind: "off-baseplate";
+      readonly cells: number;
+      readonly missing: BaseCells;
+    })
+  | (RunPiece & {
+      readonly kind: "overlap";
+      readonly with: PlacedOverlap;
+      readonly missing: BaseCells;
+    })
+  | (RunPiece & {
+      readonly kind: "crosses-track";
+      readonly other: number;
+      readonly otherId: string;
+      readonly missing: BaseCells;
+    });
 
 export interface OffBaseplate {
   readonly piece: number;
@@ -69,7 +119,7 @@ export interface OffBaseplate {
 }
 
 export type ClosureState = "exact" | "impossible" | "limit" | null;
-export type TrackRefusal = "impossible" | "limit" | "off-baseplate";
+export type TrackRefusal = "impossible" | "limit" | RunBlock["kind"];
 
 export interface TrackDragView {
   readonly pieces: number;
@@ -79,14 +129,14 @@ export interface TrackDragView {
   readonly closure: ClosureState;
   readonly fromOpenEnd: boolean;
   readonly solveMs: number;
-  readonly offBaseplate: OffBaseplate | null;
+  readonly blocked: RunBlock | null;
 }
 
 export interface TrackCommit {
   readonly laid: number;
   readonly joined: boolean;
   readonly refusal: TrackRefusal | null;
-  readonly offBaseplate: OffBaseplate | null;
+  readonly blocked: RunBlock | null;
   readonly chunks: ReadonlyArray<number>;
 }
 
@@ -114,7 +164,7 @@ interface Drag {
   goal: Pose16 | null;
   missStuds: number;
   target: number | null;
-  offBaseplate: OffBaseplate | null;
+  blocked: RunBlock | null;
 }
 
 interface Placed {
@@ -227,8 +277,8 @@ export class TrackDrawing {
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
-  private pieceCells: BaseCells[] = [];
-  private readonly cellCache = new Map<string, BaseCells>();
+  private piecePlans: PlacedPlan[] = [];
+  private readonly planCache = new Map<string, PlacedPlan>();
   private drag: Drag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -240,7 +290,7 @@ export class TrackDrawing {
     catalog: TrackCatalog,
     private readonly parts: ReadonlyArray<PartAsset>,
     private readonly colors: ColorTable,
-    private readonly probe: TrackSupportProbe,
+    private readonly host: TrackHost,
   ) {
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.graph = new TrackGraph(this.layout);
@@ -266,6 +316,7 @@ export class TrackDrawing {
         partIndex,
         color: colors.indexOfCode(part.producedColor),
         yLdu: -part.boundsMin[1],
+        heightLdu: Math.ceil(part.boundsMax[1] - part.boundsMin[1]),
         plan: localPlanTriangles(part),
       };
       this.byDef.set(piece.id, kitPart);
@@ -349,38 +400,121 @@ export class TrackDrawing {
       goal: null,
       missStuds: 0,
       target: null,
-      offBaseplate: null,
+      blocked: null,
     };
   }
 
-  cellsOf(part: KitPart, placement: Pose16): BaseCells {
+  planOf(part: KitPart, placement: Pose16): PlacedPlan {
     const key = `${part.piece.id}|${placement.heading}|${placement.position.join(",")}`;
-    const cached = this.cellCache.get(key);
+    const cached = this.planCache.get(key);
     if (cached) return cached;
-    const cells = supportCells(part.plan, placement, part.piece.partFrame, part.def.connectors);
-    if (this.cellCache.size >= CELL_CACHE_LIMIT) this.cellCache.clear();
-    this.cellCache.set(key, cells);
-    return cells;
+    const plan = placedPlan(part.plan, placement, part.piece.partFrame, part.def.connectors);
+    if (this.planCache.size >= CELL_CACHE_LIMIT) this.planCache.clear();
+    this.planCache.set(key, plan);
+    return plan;
   }
 
-  private offBaseplate(start: Pose16, moves: ReadonlyArray<TrackMove>): OffBaseplate | null {
+  private connectorPoses(part: KitPart, placement: Pose16): ReadonlyArray<Pose16> {
+    return part.def.connectors.map((local) => composePose16(placement, local));
+  }
+
+  private laidConnectorPoses(piece: number): ReadonlyArray<Pose16> {
+    const spec = this.layout.pieces[this.layout.piece(piece)];
+    return (spec?.connectors ?? []).map((_, c) => this.layout.connectorPose(piece, c));
+  }
+
+  private crosses(
+    a: PlacedPlan,
+    aEnds: ReadonlyArray<Pose16>,
+    b: PlacedPlan,
+    bEnds: ReadonlyArray<Pose16>,
+  ): BaseCells | null {
+    if (aEnds.some((pa) => bEnds.some((pb) => posesJoin16(pa, pb)))) return null;
+    const inB = new Set<string>();
+    for (let c = 0; c < b.cells.count; c++) inB.add(`${b.cells.cellX[c]},${b.cells.cellZ[c]}`);
+    const sharedX: number[] = [];
+    const sharedZ: number[] = [];
+    for (let c = 0; c < a.cells.count; c++) {
+      const x = a.cells.cellX[c] ?? 0;
+      const z = a.cells.cellZ[c] ?? 0;
+      if (!inB.has(`${x},${z}`)) continue;
+      sharedX.push(x);
+      sharedZ.push(z);
+    }
+    if (sharedX.length === 0) return null;
+    const within = {
+      minX: Math.min(...sharedX) * STUD_LDU,
+      minZ: Math.min(...sharedZ) * STUD_LDU,
+      maxX: (Math.max(...sharedX) + 1) * STUD_LDU,
+      maxZ: (Math.max(...sharedZ) + 1) * STUD_LDU,
+    };
+    if (!planTrianglesOverlap(a.triangles, b.triangles, within)) return null;
+    return {
+      count: sharedX.length,
+      cellX: Int32Array.from(sharedX),
+      cellZ: Int32Array.from(sharedZ),
+      flat: new Uint8Array(sharedX.length),
+    };
+  }
+
+  private runBlock(start: Pose16, moves: ReadonlyArray<TrackMove>): RunBlock | null {
     if (moves.length === 0) return null;
     const { placed } = layMoves(start, moves);
+    const plans: PlacedPlan[] = [];
+    const ends: Array<ReadonlyArray<Pose16>> = [];
     for (let i = 0; i < placed.length; i++) {
       const move = moves[i];
       const piece = placed[i];
       if (!move || !piece) continue;
       const part = this.kitPart(move);
-      const support = this.probe(this.cellsOf(part, piece.placement));
+      const plan = this.planOf(part, piece.placement);
+      const at: RunPiece = { piece: i, pieceId: part.piece.id, pieces: placed.length };
+      const support = this.host.support(plan.support);
       if (support.kind === "off-baseplate") {
+        return { ...at, kind: "off-baseplate", cells: support.cells, missing: support.missing };
+      }
+      const overlap = this.host.overlap(plan.cells, 0, part.heightLdu);
+      if (overlap) {
         return {
-          piece: i,
-          pieceId: part.piece.id,
-          pieces: placed.length,
-          cells: support.cells,
-          missing: support.missing,
+          ...at,
+          kind: "overlap",
+          with: overlap,
+          missing: {
+            count: 1,
+            cellX: Int32Array.of(overlap.overlap.cellX),
+            cellZ: Int32Array.of(overlap.overlap.cellZ),
+            flat: new Uint8Array(1),
+          },
         };
       }
+      const pieceEnds = this.connectorPoses(part, piece.placement);
+      for (const other of this.host.neighbours(plan.cells)) {
+        const otherPlan = this.piecePlans[other];
+        if (!otherPlan) continue;
+        const shared = this.crosses(plan, pieceEnds, otherPlan, this.laidConnectorPoses(other));
+        if (shared) {
+          const otherId = this.placedAt(other).part.piece.id;
+          return { ...at, kind: "crosses-track", other, otherId, missing: shared };
+        }
+      }
+      for (let j = 0; j < plans.length; j++) {
+        const earlier = plans[j];
+        const earlierEnds = ends[j];
+        if (!earlier || !earlierEnds) continue;
+        const shared = this.crosses(plan, pieceEnds, earlier, earlierEnds);
+        if (shared) {
+          const earlierId = moves[j]?.piece.id ?? "";
+          return {
+            ...at,
+            kind: "crosses-track",
+            other: -1 - j,
+            otherId: earlierId,
+            missing: shared,
+          };
+        }
+      }
+      plans.push(plan);
+      ends.push(pieceEnds);
     }
     return null;
   }
@@ -388,7 +522,7 @@ export class TrackDrawing {
   unsupportedPieces(probe: TrackSupportProbe): ReadonlyArray<OffBaseplate> {
     const off: OffBaseplate[] = [];
     for (let p = 0; p < this.layout.count; p++) {
-      const cells = this.pieceCells[p];
+      const cells = this.piecePlans[p]?.support;
       if (!cells) continue;
       const support = probe(cells);
       if (support.kind === "on-baseplate") continue;
@@ -443,7 +577,7 @@ export class TrackDrawing {
       if (result.kind === "exact") {
         drag.moves = runMoves(this.kit, result.run);
         drag.missStuds = 0;
-        drag.offBaseplate = this.offBaseplate(start, drag.moves);
+        drag.blocked = this.runBlock(start, drag.moves);
         this.recordSolve(began);
         return;
       }
@@ -459,7 +593,7 @@ export class TrackDrawing {
     drag.previousKey = plan.key;
     drag.moves = runMoves(this.kit, plan);
     drag.missStuds = plan.missStuds;
-    drag.offBaseplate = this.offBaseplate(start, drag.moves);
+    drag.blocked = this.runBlock(start, drag.moves);
     this.recordSolve(began);
   }
 
@@ -480,7 +614,7 @@ export class TrackDrawing {
       closure: drag.closure,
       fromOpenEnd: drag.fromEnd !== null,
       solveMs: this.lastSolveMs,
-      offBaseplate: drag.offBaseplate,
+      blocked: drag.blocked,
     };
   }
 
@@ -534,14 +668,14 @@ export class TrackDrawing {
     const drag = this.drag;
     this.drag = null;
     if (!drag?.start || drag.moves.length === 0) {
-      return { laid: 0, joined: false, refusal: null, offBaseplate: null, chunks: [] };
+      return { laid: 0, joined: false, refusal: null, blocked: null, chunks: [] };
     }
     if (drag.closure === "impossible" || drag.closure === "limit") {
-      return { laid: 0, joined: false, refusal: drag.closure, offBaseplate: null, chunks: [] };
+      return { laid: 0, joined: false, refusal: drag.closure, blocked: null, chunks: [] };
     }
-    const offBaseplate = this.offBaseplate(drag.start, drag.moves);
-    if (offBaseplate) {
-      return { laid: 0, joined: false, refusal: "off-baseplate", offBaseplate, chunks: [] };
+    const blocked = this.runBlock(drag.start, drag.moves);
+    if (blocked) {
+      return { laid: 0, joined: false, refusal: blocked.kind, blocked, chunks: [] };
     }
     const { placed } = layMoves(drag.start, drag.moves);
     const touched = new Set<number>();
@@ -550,7 +684,9 @@ export class TrackDrawing {
       if (!move) return;
       const entry: Placed = { part: this.kitPart(move), placement: piece.placement };
       const index = this.layout.place(entry.part.catalogIndex, piece.placement, GROUND_PLATES);
-      this.pieceCells[index] = this.cellsOf(entry.part, piece.placement);
+      const plan = this.planOf(entry.part, piece.placement);
+      this.piecePlans[index] = plan;
+      this.host.laid(index, entry.part.piece.id, plan.cells, 0, entry.part.heightLdu);
       const centre = partCentre(entry);
       const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
       const members = this.chunkMembers.get(key) ?? [];
@@ -563,7 +699,7 @@ export class TrackDrawing {
       laid: placed.length,
       joined: drag.goal !== null && this.graphJoins(drag.goal),
       refusal: null,
-      offBaseplate: null,
+      blocked: null,
       chunks: [...touched],
     };
   }
@@ -596,7 +732,7 @@ export class TrackDrawing {
     const cellX = Math.floor(xLdu / STUD_LDU);
     const cellZ = Math.floor(zLdu / STUD_LDU);
     for (let p = this.layout.count - 1; p >= 0; p--) {
-      const cells = this.pieceCells[p];
+      const cells = this.piecePlans[p]?.cells;
       if (!cells) continue;
       for (let c = 0; c < cells.count; c++) {
         if (cells.cellX[c] === cellX && cells.cellZ[c] === cellZ) return p;
@@ -615,20 +751,25 @@ export class TrackDrawing {
 
   removePiece(piece: number): ReadonlyArray<number> {
     const kept: Placed[] = [];
-    const keptCells: BaseCells[] = [];
     for (let p = 0; p < this.layout.count; p++) {
-      if (p === piece) continue;
-      kept.push(this.placedAt(p));
-      keptCells.push(
-        this.pieceCells[p] ?? this.cellsOf(this.placedAt(p).part, this.layout.pose(p)),
-      );
+      if (p !== piece) kept.push(this.placedAt(p));
     }
     const touched = new Set(this.chunkMembers.keys());
     this.layout = new TrackLayout(this.layout.pieces);
     this.chunkMembers.clear();
-    this.pieceCells = keptCells;
+    this.piecePlans = [];
+    const relaid: LaidTrackPiece[] = [];
     for (const placed of kept) {
       const index = this.layout.place(placed.part.catalogIndex, placed.placement, GROUND_PLATES);
+      const plan = this.planOf(placed.part, placed.placement);
+      this.piecePlans[index] = plan;
+      relaid.push({
+        piece: index,
+        pieceId: placed.part.piece.id,
+        cells: plan.cells,
+        bottomLdu: 0,
+        topLdu: placed.part.heightLdu,
+      });
       const centre = partCentre(placed);
       const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
       const members = this.chunkMembers.get(key) ?? [];
@@ -636,6 +777,7 @@ export class TrackDrawing {
       this.chunkMembers.set(key, members);
       touched.add(key);
     }
+    this.host.relaid(relaid);
     this.recomputeEnds();
     return [...touched];
   }
