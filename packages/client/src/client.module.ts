@@ -24,6 +24,7 @@ import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
 import { RunScene } from "./scene/run-scene.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
+import { TrainPlay } from "./play/train-play.ts";
 import {
   BOM_SERVICE,
   CITY_SCENE,
@@ -42,6 +43,7 @@ import {
   SIM_CLIENT,
   SIM_WORKER_PORT,
   TRACK_SCENE,
+  TRAIN_PLAY,
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
 } from "./tokens.ts";
@@ -63,6 +65,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
+  bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
 });
 
 export interface MainThreadConfig {

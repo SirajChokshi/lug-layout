@@ -56,6 +56,7 @@ export interface SimFrameLayout {
   readonly vehiclePoseStart: number;
   readonly vehiclePoseFloats: number;
   readonly trainDirectionStart: number;
+  readonly trainFacingStart: number;
   readonly trainDerailSpeedStart: number;
   readonly bogiesOffTrackStart: number;
   readonly floats: number;
@@ -74,7 +75,8 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
   const checkedTicksIndex = minBogieSeparationIndex + 1;
   const vehiclePoseStart = checkedTicksIndex + 1;
   const trainDirectionStart = vehiclePoseStart + vehicles * VEHICLE_POSE_FLOATS;
-  const trainDerailSpeedStart = trainDirectionStart + trains;
+  const trainFacingStart = trainDirectionStart + trains;
+  const trainDerailSpeedStart = trainFacingStart + trains;
   const bogiesOffTrackStart = trainDerailSpeedStart + trains;
   return {
     poseFloatsPerVehicle: POSE_FLOATS_PER_VEHICLE,
@@ -94,6 +96,7 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
     vehiclePoseStart,
     vehiclePoseFloats: VEHICLE_POSE_FLOATS,
     trainDirectionStart,
+    trainFacingStart,
     trainDerailSpeedStart,
     bogiesOffTrackStart,
     floats: bogiesOffTrackStart + vehicles,
@@ -142,6 +145,7 @@ export class SimSession {
       out[layout.trainOffsetStart + t] = sim.trainOffset[t] ?? 0;
       out[layout.trainSpeedStart + t] = sim.trainSpeed[t] ?? 0;
       out[layout.trainDirectionStart + t] = sim.direction(t);
+      out[layout.trainFacingStart + t] = sim.facing(t);
       out[layout.trainDerailSpeedStart + t] = sim.trainDerailSpeed[t] ?? 0;
     }
     sim.writeBogiesOffTrack(out, layout.bogiesOffTrackStart);
@@ -166,8 +170,7 @@ function applyCommand(simulation: Simulation, command: SimCommand): boolean {
       simulation.setThrottle(command.train, command.speedLduPerS);
       return true;
     case "drive":
-      simulation.drive(command.train, command.signedSpeedLduPerS);
-      return true;
+      return simulation.drive(command.train, command.signedSpeedLduPerS);
     case "rerail":
       return simulation.rerail(command.train);
     case "switch":
