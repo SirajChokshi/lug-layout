@@ -1,3 +1,4 @@
+import { BUNDLE_POINTER_FILE } from "@brr/schema/bundle-pointer";
 import type { BundleSearchHit } from "@brr/schema/catalog-api";
 import { Container } from "inversify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,8 +9,10 @@ import { PaletteIndex } from "./palette-index.ts";
 import { paletteResults } from "./palette-results.ts";
 
 const workerBase = "https://catalog.test";
+const bundleBase = "https://bundle.test";
 const manifestKey = "7ad9e66acd1f7b18";
 const keyedManifest = `manifest.${manifestKey}.json`;
+const fallbackManifest = "manifest.0123456789abcdef.json";
 const TAN = { code: 19, name: "Tan", rgb: "#E4CD9E" };
 const GREEN = { code: 2, name: "Green", rgb: "#237841" };
 
@@ -55,11 +58,22 @@ interface Served {
   readonly requests: string[];
 }
 
-function serveWorker(answer: (url: URL) => Response | Promise<Response>): Served {
+function pointerResponse(url: URL, pointedManifest: string | null): Response {
+  return url.pathname === `/${BUNDLE_POINTER_FILE}` && pointedManifest !== null
+    ? new Response(JSON.stringify({ manifestFile: pointedManifest }))
+    : new Response("not found", { status: 404 });
+}
+
+function serveWorker(
+  answer: (url: URL) => Response | Promise<Response>,
+  pointedManifest: string | null = keyedManifest,
+): Served {
   const requests: string[] = [];
   vi.stubGlobal("fetch", async (input: string) => {
+    const url = new URL(input);
+    if (url.origin === bundleBase) return pointerResponse(url, pointedManifest);
     requests.push(input);
-    return answer(new URL(input));
+    return answer(url);
   });
   return { requests };
 }
@@ -68,7 +82,7 @@ function editorWith(config: { readonly manifestFile?: string; readonly baseUrl?:
   const container = new Container();
   container.load(
     ...mainThreadModules({
-      bundleBaseUrl: "unused",
+      bundleBaseUrl: `${bundleBase}/`,
       disclaimer: "unused",
       ...(config.manifestFile === undefined ? {} : { bundleManifestFile: config.manifestFile }),
       ...(config.baseUrl === undefined ? {} : { catalogApiBaseUrl: config.baseUrl }),
@@ -95,7 +109,7 @@ afterEach(() => {
 });
 
 describe("palette search through the catalog Worker", () => {
-  it("asks the Worker once per settled query and merges its hits after the local ones", async () => {
+  it("asks the Worker once per settled query for the manifest current/latest.json names, and merges its hits after the local ones", async () => {
     const served = serveWorker(
       (url) =>
         new Response(
@@ -111,7 +125,7 @@ describe("palette search through the catalog Worker", () => {
           }),
         ),
     );
-    const editor = editorWith({ manifestFile: keyedManifest, baseUrl: `${workerBase}/` });
+    const editor = editorWith({ manifestFile: fallbackManifest, baseUrl: `${workerBase}/` });
 
     await typeAndSettle(editor, "tan 32");
 
@@ -149,7 +163,7 @@ describe("palette search through the catalog Worker", () => {
   });
 
   it("never asks the Worker for short queries, without a base URL, or for an unkeyed manifest", async () => {
-    const served = serveWorker(() => Promise.reject(new Error("no request expected")));
+    const served = serveWorker(() => Promise.reject(new Error("no request expected")), null);
     const cases = [
       { editor: editorWith({ manifestFile: keyedManifest, baseUrl: workerBase }), typed: " ta " },
       { editor: editorWith({ manifestFile: keyedManifest }), typed: "tan" },

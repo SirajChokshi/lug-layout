@@ -1,4 +1,4 @@
-import type { ICatalogApi } from "@brr/catalog";
+import type { ICatalogApi, IPartBundleLoader } from "@brr/catalog";
 import {
   BundleSearchParams,
   bundleManifestKeyOf,
@@ -25,17 +25,16 @@ export const CATALOG_SEARCH_DEBOUNCE_MS = 150;
 const REMOTE_RESULT_LIMIT = "50";
 
 export class CatalogSearch implements ICatalogSearch {
-  private readonly manifestKey: BundleManifestKey | null;
+  private manifestKey: Promise<BundleManifestKey | null> | undefined;
   private readonly listeners = new Set<() => void>();
   private state: CatalogSearchView;
   private pending: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly api: ICatalogApi | null,
-    manifestFile: string,
+    private readonly bundle: Pick<IPartBundleLoader, "loadManifestFile">,
   ) {
-    this.manifestKey = api === null ? null : bundleManifestKeyOf(manifestFile);
-    this.state = { query: "", status: this.manifestKey === null ? "off" : "idle", hits: [] };
+    this.state = { query: "", status: api === null ? "off" : "idle", hits: [] };
   }
 
   view(): CatalogSearchView {
@@ -48,8 +47,7 @@ export class CatalogSearch implements ICatalogSearch {
   }
 
   search(query: string): void {
-    const key = this.manifestKey;
-    if (key === null) return;
+    if (this.state.status === "off") return;
     const trimmed = query.trim();
     if (trimmed === this.state.query) return;
     if (this.pending !== null) clearTimeout(this.pending);
@@ -61,15 +59,25 @@ export class CatalogSearch implements ICatalogSearch {
     this.set({ query: trimmed, status: "searching", hits: [] });
     this.pending = setTimeout(() => {
       this.pending = null;
-      void this.ask(key, trimmed);
+      void this.ask(trimmed);
     }, CATALOG_SEARCH_DEBOUNCE_MS);
   }
 
-  private async ask(key: BundleManifestKey, query: string): Promise<void> {
+  private loadedManifestKey(): Promise<BundleManifestKey | null> {
+    this.manifestKey ??= this.bundle.loadManifestFile().then(bundleManifestKeyOf);
+    return this.manifestKey;
+  }
+
+  private async ask(query: string): Promise<void> {
     const api = this.api;
     if (api === null) return;
     let next: CatalogSearchView;
     try {
+      const key = await this.loadedManifestKey();
+      if (key === null) {
+        this.set({ query, status: "off", hits: [] });
+        return;
+      }
       const response = await api.searchBundle(key, { q: query, limit: REMOTE_RESULT_LIMIT });
       next = { query, status: "ready", hits: response.results };
     } catch {

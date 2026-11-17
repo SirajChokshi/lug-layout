@@ -5,6 +5,7 @@ import {
   CATALOG_API_BASE_URL,
   catalogModule,
   DEFAULT_BUNDLE_MANIFEST_FILE,
+  PART_BUNDLE_LOADER,
 } from "@brr/catalog";
 import { renderModule } from "@brr/render";
 import type { RpcPort } from "@brr/rpc";
@@ -78,7 +79,7 @@ const clientModule = new ContainerModule(({ bind }) => {
           context.get(CATALOG_API_BASE_URL, { optional: true }) === undefined
             ? null
             : context.get(CATALOG_API),
-          context.get(BUNDLE_MANIFEST_FILE),
+          context.get(PART_BUNDLE_LOADER),
         ),
     )
     .inSingletonScope();

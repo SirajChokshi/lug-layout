@@ -195,6 +195,7 @@ export interface CatalogCrosswalk {
 export type BricklinkPartCandidates = Readonly<Record<string, ReadonlyArray<string>>>;
 
 export interface IPartBundleLoader {
+  loadManifestFile(): Promise<string>;
   loadIndex(lod: BundleLod): Promise<BundleIndex>;
   loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>>;
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord>;

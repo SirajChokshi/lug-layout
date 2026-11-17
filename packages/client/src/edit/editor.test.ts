@@ -118,6 +118,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     private readonly models: ReadonlyArray<string>,
   ) {}
 
+  loadManifestFile(): Promise<string> {
+    return this.loader.loadManifestFile();
+  }
+
   async loadIndex(lod: BundleLod): Promise<BundleIndex> {
     const index = await this.loader.loadIndex(lod);
     return { ...index, models: index.models.filter((m) => this.models.includes(m.name)) };
