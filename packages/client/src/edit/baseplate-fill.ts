@@ -23,6 +23,7 @@ export interface FillPlan {
 export interface FillOptions {
   readonly box: LocalBox;
   readonly rot: number;
+  readonly gridLdu: number;
   readonly taken: (rect: LduRect, x: number, z: number) => boolean;
 }
 
@@ -30,11 +31,8 @@ function greatestCommonDivisor(a: number, b: number): number {
   return b === 0 ? Math.abs(a) : greatestCommonDivisor(b, a % b);
 }
 
-export function fillAnchorLdu(tileWidth: number, tileDepth: number): number {
-  return Math.max(
-    STUD_LDU,
-    greatestCommonDivisor(greatestCommonDivisor(tileWidth, tileDepth), CHUNK_LDU),
-  );
+export function baseplateGridLdu(sides: ReadonlyArray<number>): number {
+  return Math.max(STUD_LDU, sides.reduce(greatestCommonDivisor, CHUNK_LDU));
 }
 
 function snapUp(ldu: number, step: number): number {
@@ -49,7 +47,7 @@ interface TileFrame {
   readonly anchor: number;
 }
 
-function tileFrame(box: LocalBox, rot: number): TileFrame {
+function tileFrame({ box, rot, gridLdu }: FillOptions): TileFrame {
   const turned = placedBox(box, 0, 0, 0, rot);
   const width = turned.maxX - turned.minX;
   const depth = turned.maxZ - turned.minZ;
@@ -58,7 +56,7 @@ function tileFrame(box: LocalBox, rot: number): TileFrame {
     depth,
     pivotX: -turned.minX,
     pivotZ: -turned.minZ,
-    anchor: fillAnchorLdu(width, depth),
+    anchor: gridLdu,
   };
 }
 
@@ -109,7 +107,7 @@ export function dragFill(
   endX: number,
   endZ: number,
 ): FillPlan {
-  const frame = tileFrame(options.box, options.rot);
+  const frame = tileFrame(options);
   const anchorX = Math.round(startX / frame.anchor) * frame.anchor + 0;
   const anchorZ = Math.round(startZ / frame.anchor) * frame.anchor + 0;
   const [minX, columns] = span(anchorX, endX, frame.width);
@@ -118,7 +116,7 @@ export function dragFill(
 }
 
 export function packedFill(options: FillOptions, area: LduRect): ReadonlyArray<FillTile> {
-  const frame = tileFrame(options.box, options.rot);
+  const frame = tileFrame(options);
   const chosen: FillTile[] = [];
   for (let z = snapUp(area.minZ, frame.anchor); z + frame.depth <= area.maxZ; z += frame.anchor) {
     for (let x = snapUp(area.minX, frame.anchor); x + frame.width <= area.maxX; x += frame.anchor) {

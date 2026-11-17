@@ -96,6 +96,7 @@ import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import { TableTool } from "./table-tool.ts";
 import {
   MAX_FILL_TILES,
+  baseplateGridLdu,
   dragFill,
   fillCounts,
   fillGuides,
@@ -804,6 +805,7 @@ export class Editor implements IEditor {
     rebaseCount: 0,
   };
   private placeables: ReadonlyArray<Placeable> = [];
+  private baseplateGrid = CHUNK_LDU;
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
@@ -903,6 +905,11 @@ export class Editor implements IEditor {
         colors,
       );
       this.placeables = placeables;
+      this.baseplateGrid = baseplateGridLdu(
+        placeables
+          .filter((placeable) => placeable.kind === "baseplate")
+          .flatMap(({ box }) => [box.max[0] - box.min[0], box.max[2] - box.min[2]]),
+      );
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.plans.setTableTopY(this.baseplateBottomY());
       this.newTrack = () =>
@@ -2087,6 +2094,7 @@ export class Editor implements IEditor {
     return {
       box: placeable.box,
       rot,
+      gridLdu: this.baseplateGrid,
       taken: (rect, x, z) =>
         occupied(rect) ||
         supportRefusal(placeable.label, this.placed.check(placeable, x, z, rot, []).verdict) !==
