@@ -4,8 +4,8 @@ import { defineConfig, loadEnv, type Connect, type Plugin } from "vite";
 
 const appRoot = fileURLToPath(new URL(".", import.meta.url));
 const assetBundleRoot = fileURLToPath(new URL("../../tools/asset-pipeline/dist", import.meta.url));
-const BUNDLE_PATH = /^\/bundle\/[^/]+\/(?<file>[^/]+)$/u;
-const CONTENT_ADDRESSED_FILE = /\.[0-9a-f]{16}\.(?:glb|json|wasm)$/u;
+const BUNDLE_PATH = /^\/bundle\/[^/]+\/(?<file>.+)$/u;
+const CONTENT_ADDRESSED_FILE = /\.[0-9a-f]{16}\.(?:glb|json|wasm|png)$/u;
 const ABSOLUTE_HTTP_URL = /^https?:\/\//u;
 const MANIFEST_FILE = "manifest.json";
 const IMMUTABLE = "public, max-age=31536000, immutable";
