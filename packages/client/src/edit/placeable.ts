@@ -1,6 +1,8 @@
 import {
   EMPTY_COLUMN,
+  INHERIT_COLOR,
   type ModelCells,
+  type ModelVoxels,
   type PartAsset,
   type PartModel,
   type PartModelLattice,
@@ -15,6 +17,7 @@ import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
 import { roadSurface } from "./road-surface.ts";
+import { placedVoxels, type PlacedVoxels } from "../lod/placed-voxels.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
 
@@ -58,6 +61,7 @@ export interface Placeable {
   readonly road: RoadSurface | null;
   readonly module: ModuleSurface | null;
   readonly tongueBoxes: Float32Array | null;
+  readonly voxels: PlacedVoxels | null;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -398,6 +402,7 @@ export function modelPlaceable(
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
   farModel: number | null,
+  voxels: ModelVoxels | null,
 ): Placeable {
   const { lattice, cells } = model;
   if (lattice === null || cells === null) {
@@ -446,6 +451,7 @@ export function modelPlaceable(
     road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
     module,
     tongueBoxes: module ? trackTongueBoxes(local, partBoxes, parts, module) : null,
+    voxels: voxels ? placedVoxels(voxels, shift, (code) => colors.indexOfCode(code)) : null,
   };
 }
 
@@ -457,6 +463,7 @@ function isBaseplate(part: PartAsset): boolean {
 
 export function partPlaceable(
   part: PartAsset,
+  voxels: ModelVoxels | null,
   partIndex: number,
   ldrawColor: number,
   colorName: string,
@@ -496,5 +503,10 @@ export function partPlaceable(
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
     module: null,
     tongueBoxes: null,
+    voxels: voxels
+      ? placedVoxels(voxels, shift, (code) =>
+          colors.indexOfCode(code === INHERIT_COLOR ? ldrawColor : code),
+        )
+      : null,
   };
 }

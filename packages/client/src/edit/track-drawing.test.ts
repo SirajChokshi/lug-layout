@@ -39,6 +39,12 @@ class PlanOnlyBackend implements ISceneBackend {
   setPalette(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setSuperChunk(): void {}
+  setSuperChunkVisible(): void {}
+  deleteSuperChunk(): void {}
+  studPitchesPx(_distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    out.fill(Number.POSITIVE_INFINITY, 0, count);
+  }
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}

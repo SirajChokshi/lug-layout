@@ -22,6 +22,7 @@ import {
   type PlanOverlay,
   type RebaseEvent,
   type SceneBackendConfig,
+  type SuperChunkMesh,
   type TrackEndMarker,
   type WorldBox,
 } from "@brr/render";
@@ -98,12 +99,11 @@ const AERIAL_HEIGHT_FACTOR = 0.6;
 const STREET_RADIUS_FACTOR = 0.45;
 const STREET_EYE_LDU = 260;
 const STREET_TARGET_LDU = 200;
+const LOD_BUDGET_MS = 6;
 const EDITOR_PARTS: PartFilter = (part) =>
   part.role === "ground" || part.role === "road" || part.role === "track";
 
 class ChunkCapture implements ISceneBackend {
-  readonly chunks = new Map<number, ChunkInstances>();
-
   constructor(private readonly inner: ISceneBackend) {}
 
   init(config: SceneBackendConfig): Promise<BackendInfo> {
@@ -113,12 +113,22 @@ class ChunkCapture implements ISceneBackend {
     this.inner.setPalette(palette);
   }
   setChunk(key: number, chunk: ChunkInstances): void {
-    this.chunks.set(key, chunk);
     this.inner.setChunk(key, chunk);
   }
   deleteChunk(key: number): void {
-    this.chunks.delete(key);
     this.inner.deleteChunk(key);
+  }
+  setSuperChunk(key: number, mesh: SuperChunkMesh): void {
+    this.inner.setSuperChunk(key, mesh);
+  }
+  setSuperChunkVisible(key: number, visible: boolean): void {
+    this.inner.setSuperChunkVisible(key, visible);
+  }
+  deleteSuperChunk(key: number): void {
+    this.inner.deleteSuperChunk(key);
+  }
+  studPitchesPx(distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    this.inner.studPitchesPx(distancesLdu, count, out);
   }
   forceTier(tier: ChunkTier | null): void {
     this.inner.forceTier(tier);
@@ -236,12 +246,15 @@ export class LayoutScene implements ILayoutScene {
   private request: LayoutRequest = { camera: "aerial", tiles: 1 };
   private extent = 0;
   private readonly capture: ChunkCapture;
+  private readonly placed: PlacedChunks;
+  private readonly eye = new Float64Array(3);
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) readonly backend: ISceneBackend,
   ) {
     this.capture = new ChunkCapture(backend);
+    this.placed = new PlacedChunks(this.capture);
   }
 
   configure(request: LayoutRequest): void {
@@ -258,7 +271,7 @@ export class LayoutScene implements ILayoutScene {
     const farPalette = new MergedParts(farBundle.parts);
     const farModels: PartMesh[] = [];
     const placeables = await this.loadPlaceables(lod, palette, farPalette, farModels, colors);
-    const baseplate = this.baseplate(bundle, palette, colors);
+    const baseplate = this.baseplate(bundle, farBundle, palette, colors);
     const track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
     this.capture.setPalette({
       detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
@@ -271,7 +284,7 @@ export class LayoutScene implements ILayoutScene {
     this.extent = lengthAlongX(placeableNamed(placeables, MODULE_NAME)) * MODULES_PER_SIDE;
     const world = new World();
     const history = new EditHistory(world);
-    const placed = new PlacedChunks(this.capture);
+    const placed = this.placed;
     const touched = new Set<number>();
     for (let tileZ = 0; tileZ < this.request.tiles; tileZ++) {
       for (let tileX = 0; tileX < this.request.tiles; tileX++) {
@@ -288,8 +301,10 @@ export class LayoutScene implements ILayoutScene {
     const clash = layoutClash(placed.models(), [...trackChunks.values()], palette.parts);
     if (clash) throw new Error(`the bench layout is not buildable: ${clash}`);
     for (const [key, chunk] of trackChunks) this.capture.setChunk(key, chunk);
-    const chunks: KeyedChunk[] = [];
-    for (const [key, instances] of this.capture.chunks) chunks.push({ key, instances });
+    const chunks: KeyedChunk[] = placed
+      .placedInstances()
+      .map((instances, index) => ({ key: index, instances }));
+    for (const [key, instances] of trackChunks) chunks.push({ key, instances });
     return summarizeChunks(
       {
         bundleVersion: bundle.bundleVersion,
@@ -302,7 +317,12 @@ export class LayoutScene implements ILayoutScene {
     );
   }
 
-  private baseplate(bundle: PartBundle, palette: MergedParts, colors: ColorTable): Placeable {
+  private baseplate(
+    bundle: PartBundle,
+    farBundle: PartBundle,
+    palette: MergedParts,
+    colors: ColorTable,
+  ): Placeable {
     const part = bundle.parts.find((p) => p.id === BASEPLATE_ID);
     const color = bundle.colors.find((c) => c.name === BASEPLATE_COLOR_NAME);
     if (!part || !color)
@@ -312,6 +332,7 @@ export class LayoutScene implements ILayoutScene {
     }
     return partPlaceable(
       part,
+      farBundle.parts.find((p) => p.id === part.id)?.farVoxels ?? null,
       palette.indexOf(part.id),
       color.code,
       color.name,
@@ -353,6 +374,7 @@ export class LayoutScene implements ILayoutScene {
           palette.parts,
           colors,
           farModel,
+          far.farMesh?.voxels ?? null,
         ),
       );
     }
@@ -443,7 +465,7 @@ export class LayoutScene implements ILayoutScene {
     const angle = t * 2 * Math.PI;
     if (this.request.camera === "aerial") {
       const radius = side * AERIAL_RADIUS_FACTOR;
-      this.backend.setView(
+      this.look(
         centre + radius * Math.cos(angle),
         side * AERIAL_HEIGHT_FACTOR,
         centre + radius * Math.sin(angle),
@@ -454,13 +476,29 @@ export class LayoutScene implements ILayoutScene {
       return;
     }
     const radius = this.extent * STREET_RADIUS_FACTOR;
-    this.backend.setView(
+    this.look(
       centre + radius * Math.cos(angle),
       STREET_EYE_LDU,
       centre + radius * Math.sin(angle),
       centre,
       STREET_TARGET_LDU,
       centre,
+    );
+  }
+
+  private look(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number) {
+    this.eye[0] = eyeX;
+    this.eye[1] = eyeY;
+    this.eye[2] = eyeZ;
+    this.backend.setView(eyeX, eyeY, eyeZ, atX, atY, atZ);
+  }
+
+  onFrame(): void {
+    this.placed.update(
+      this.eye[0] ?? 0,
+      this.eye[1] ?? 0,
+      this.eye[2] ?? 0,
+      performance.now() + LOD_BUDGET_MS,
     );
   }
 }

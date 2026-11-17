@@ -169,6 +169,11 @@ export function EditorApp({
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
+      {snapshot.measurement && (
+        <pre id="measurement" hidden>
+          {JSON.stringify(snapshot.measurement)}
+        </pre>
+      )}
       <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
       {overlay === "open-palette" && (

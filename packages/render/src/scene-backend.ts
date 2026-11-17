@@ -73,6 +73,17 @@ export interface ChunkInstances {
 
 export type ChunkTier = "near" | "mid" | "far";
 
+export interface SuperChunkMesh {
+  readonly originX: number;
+  readonly originZ: number;
+  readonly vertexCount: number;
+  readonly indexCount: number;
+  readonly positions: Float32Array;
+  readonly normals: Int8Array;
+  readonly colorIndex: Uint16Array;
+  readonly indices: Uint16Array | Uint32Array;
+}
+
 export interface FrameStats {
   drawCalls: number;
   triangles: number;
@@ -80,6 +91,8 @@ export interface FrameStats {
   midChunks: number;
   farChunks: number;
   nearestStudPitchPx: number;
+
+  superChunks: number;
   renderOriginChunkX: number;
   renderOriginChunkZ: number;
   rebaseCount: number;
@@ -140,6 +153,10 @@ export interface ISceneBackend {
   setPalette(palette: PartPalette): void;
   setChunk(key: number, chunk: ChunkInstances): void;
   deleteChunk(key: number): void;
+  setSuperChunk(key: number, mesh: SuperChunkMesh): void;
+  setSuperChunkVisible(key: number, visible: boolean): void;
+  deleteSuperChunk(key: number): void;
+  studPitchesPx(distancesLdu: Float64Array, count: number, out: Float64Array): void;
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
   setSelectionBox(box: WorldBox | null): void;

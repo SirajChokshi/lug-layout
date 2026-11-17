@@ -7,6 +7,7 @@ use brick_compile::affine::{Affine, Vec3};
 use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, MODIFIED_NOTE};
 use brick_compile::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
+use brick_compile::flatten::INHERIT_COLOR;
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
@@ -427,6 +428,37 @@ fn far_mesh(
     })))
 }
 
+fn placeable_part_voxels(
+    inputs: &FarMeshInputs,
+    reference: &str,
+    credits: &mut BTreeMap<String, Value>,
+) -> Result<Value, String> {
+    let compiled =
+        compile_part(inputs.library, reference, &inputs.options).map_err(|e| e.to_string())?;
+    record_credits(credits, &compiled);
+    let sources: Vec<Value> = compiled
+        .flattened_files
+        .iter()
+        .map(|file| json!({ "path": file.path, "author": file.header.author, "license": file.header.license }))
+        .collect();
+    let part = VoxelPart {
+        mesh: &compiled.mesh,
+        studs: &compiled.studs,
+        color: INHERIT_COLOR,
+        matrix: &Affine::IDENTITY,
+    };
+    let grid = voxelize(&[part], &inputs.translucent).map_err(|e| e.to_string())?;
+    Ok(json!({
+        "cellLdu": CELL_LDU,
+        "cellMarginLdu": CELL_MARGIN_LDU,
+        "origin": grid.origin,
+        "dims": grid.dims.map(|d| d as u64),
+        "cellIndex": grid.cells,
+        "ldrawColor": grid.colors,
+        "ldraw": { "note": format!("{MODIFIED_NOTE}; {VOXEL_NOTE}"), "sources": sources },
+    }))
+}
+
 fn translucent_codes(colors: &[Colour]) -> HashSet<u32> {
     colors
         .iter()
@@ -599,6 +631,20 @@ fn run(args: &Args) -> Result<(), String> {
         standard_parts: HashMap::new(),
         out: &args.out,
     });
+    if let Some(inputs) = far_inputs.as_ref() {
+        for entry in palette["parts"].as_array().cloned().unwrap_or_default() {
+            if !matches!(entry["role"].as_str(), Some("ground" | "road")) {
+                continue;
+            }
+            let id = entry["id"].as_str().ok_or("part id must be a string")?;
+            let reference = format!("{id}.dat");
+            let Some(&index) = part_index.get(&reference) else {
+                continue;
+            };
+            parts[index]["farVoxels"] = placeable_part_voxels(inputs, &reference, &mut credits)
+                .map_err(|e| format!("{id}: {e}"))?;
+        }
+    }
 
     let mut models = Vec::new();
     for entry in palette["models"].as_array().cloned().unwrap_or_default() {

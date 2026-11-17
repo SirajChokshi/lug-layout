@@ -36,6 +36,12 @@ class RecordingBackend implements ISceneBackend {
     this.chunks.push(chunk);
   }
   deleteChunk(): void {}
+  setSuperChunk(): void {}
+  setSuperChunkVisible(): void {}
+  deleteSuperChunk(): void {}
+  studPitchesPx(_distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    out.fill(0, 0, count);
+  }
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}

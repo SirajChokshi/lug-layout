@@ -1,4 +1,5 @@
 import {
+  BatchedMesh,
   HalfFloatType,
   InstancedMesh,
   Matrix4,
@@ -16,11 +17,13 @@ import {
 } from "three/webgpu";
 import {
   abs,
+  batchIndirectIndex,
   convertToTexture,
   unpackRGBToNormal,
   packNormalToRGB,
   dot,
   float,
+  Fn,
   getViewPosition,
   instanceIndex,
   max,
@@ -105,6 +108,10 @@ function flag(condition: Node<"bool">): Node<"float"> {
   return select(condition, float(1), float(0));
 }
 
+const partInstance = Fn((builder) =>
+  builder.object instanceof BatchedMesh ? batchIndirectIndex : instanceIndex,
+);
+
 export class LookPipeline {
   private readonly pipeline: RenderPipeline;
   private readonly texel = uniform(new Vector2(1, 1));
@@ -132,13 +139,15 @@ export class LookPipeline {
     const needsGBuffer = look.gtao || look.outlines || look.bevel;
     if (needsGBuffer) {
       const partId = uniform(0).onObjectUpdate(({ object }) =>
-        object instanceof InstancedMesh ? (object.id % ID_MODULUS) + 1 : NOT_A_PART,
+        object instanceof InstancedMesh || object instanceof BatchedMesh
+          ? (object.id % ID_MODULUS) + 1
+          : NOT_A_PART,
       );
       scenePass.setMRT(
         mrt({
           output,
           normal: vec4(packNormalToRGB(normalView), 1),
-          id: vec4(partId, instanceIndex.toFloat().mod(ID_MODULUS), 0, 1),
+          id: vec4(partId, partInstance().toFloat().mod(ID_MODULUS), 0, 1),
         }),
       );
       const normalTexture = scenePass.getTexture("normal");

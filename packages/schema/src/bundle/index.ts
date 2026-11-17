@@ -289,6 +289,32 @@ const CompiledMesh = v.object({
   vertices: Count,
 });
 
+const LdrawSource = v.object({
+  path: v.string(),
+  author: v.string(),
+  license: v.nullable(v.string()),
+});
+
+export const PartFarVoxels = v.pipe(
+  v.object({
+    cellLdu: IntegerVec3,
+    cellMarginLdu: Finite,
+    origin: IntegerVec3,
+    dims: CountVec3,
+    cellIndex: v.array(Count),
+    ldrawColor: v.array(Integer),
+    ldraw: v.object({
+      note: v.string(),
+      sources: v.pipe(v.array(LdrawSource), v.minLength(1)),
+    }),
+  }),
+  v.check(
+    (voxels) => voxels.cellIndex.length === voxels.ldrawColor.length,
+    "every voxel cell must have a colour",
+  ),
+);
+export type PartFarVoxels = v.InferOutput<typeof PartFarVoxels>;
+
 export const ManifestPart = v.object({
   ...CompiledMesh.entries,
   id: v.string(),
@@ -301,6 +327,7 @@ export const ManifestPart = v.object({
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
+  farVoxels: v.optional(PartFarVoxels),
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 
@@ -553,12 +580,6 @@ export const ModelFile = v.pipe(
   ),
 );
 export type ModelFile = v.InferOutput<typeof ModelFile>;
-
-const LdrawSource = v.object({
-  path: v.string(),
-  author: v.string(),
-  license: v.nullable(v.string()),
-});
 
 export const PartExtras = v.object({
   unit: v.literal("LDU"),
