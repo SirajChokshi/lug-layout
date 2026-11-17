@@ -169,25 +169,37 @@ footer {
 }
 
 .catalog-meta {
+  flex-shrink: 0;
+  white-space: nowrap;
   color: #556;
   font-variant-numeric: tabular-nums;
 }
 
-.inspector dl {
+.catalog-group h3 {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: #556;
+}
+
+.inspector dl,
+.road-joins dl {
   margin: 0;
 }
 
-.inspector dl div {
+.inspector dl div,
+.road-joins dl div {
   display: flex;
   justify-content: space-between;
   gap: 12px;
 }
 
-.inspector dt {
+.inspector dt,
+.road-joins dt {
   color: #556;
 }
 
-.inspector dd {
+.inspector dd,
+.road-joins dd {
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -318,4 +330,29 @@ footer a {
   background: #fff;
   color: #334;
   font-size: 12px;
+}
+
+.road-joins-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #445;
+}
+
+.road-issues {
+  margin: 6px 0 0;
+  padding: 0 0 0 14px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+
+.road-issues .open {
+  color: #8a5a00;
+}
+
+.road-issues .mismatch {
+  color: #b0141c;
 }

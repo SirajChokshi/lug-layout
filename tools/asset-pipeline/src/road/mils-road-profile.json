@@ -1,0 +1,64 @@
+{
+  "profile": "mils-road",
+  "frame": "LDraw part frame: -Y up, x and z in LDU, edges named by the LDraw axis they face",
+  "moduleStuds": {
+    "value": 32,
+    "source": "docs/verified-facts.md, Module standards, \"MILS module size\" (S1)"
+  },
+  "roadStuds": {
+    "value": 16,
+    "source": "docs/verified-facts.md, Module standards, \"MILS paths, earth tracks and paved roads\": paved roads 16 studs wide, centred on the edge (S2)"
+  },
+  "surfacePlates": {
+    "value": 4,
+    "source": "docs/verified-facts.md, Module standards, \"MILS surface height\": one baseplate plus 4 plates (S1, S2), built as the minimal substructure of \"MILS minimal substructure\" (S5)"
+  },
+  "streetPlates": {
+    "value": 6,
+    "source": "docs/verified-facts.md, Module standards, \"MultiRoad (L-Gauge road extension) heights\": streets at 6 plates (S7, S8); the MILS paved road is 5 plates and may vary by +1 plate above (S2)"
+  },
+  "walkwayPlates": {
+    "value": 8,
+    "source": "docs/verified-facts.md, Module standards, \"MultiRoad (L-Gauge road extension) heights\": walkways at 8 plates (S7)"
+  },
+  "colorSource": "Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)",
+  "parts": {
+    "baseplate": { "part": "3811", "ldrawColor": 71, "element": "6061048" },
+    "corner": { "part": "3003", "ldrawColor": 71, "element": "4211387" },
+    "edgeJoin": { "part": "3701", "ldrawColor": 71, "element": "4211441" },
+    "seamSupport": { "part": "3001", "ldrawColor": 71, "element": "4211385" },
+    "cover": { "part": "91405", "ldrawColor": 71, "element": "4620130" },
+    "road": { "part": "69958", "ldrawColor": 72, "element": "6325635" },
+    "roadArm": { "part": "71772", "ldrawColor": 72, "element": "6325431" },
+    "crosswalkArm": { "part": "71772p01", "ldrawColor": 72, "element": "6328358" },
+    "walkwayCourse": { "part": "3001", "ldrawColor": 71, "element": "4211385" },
+    "walkwayTile": { "part": "87079", "ldrawColor": 71, "element": "4560183" }
+  },
+  "modules": [
+    {
+      "name": "mils-road-straight",
+      "title": "MILS Road Straight",
+      "arms": { "minX": "roadArm", "maxX": "roadArm" }
+    },
+    {
+      "name": "mils-road-crosswalk",
+      "title": "MILS Road Crosswalk",
+      "arms": { "minX": "crosswalkArm", "maxX": "roadArm" }
+    },
+    {
+      "name": "mils-road-curve",
+      "title": "MILS Road Curve",
+      "arms": { "minX": "roadArm", "maxZ": "roadArm" }
+    },
+    {
+      "name": "mils-road-t-junction",
+      "title": "MILS Road T-Junction",
+      "arms": { "minX": "roadArm", "maxX": "roadArm", "maxZ": "roadArm" }
+    },
+    {
+      "name": "mils-road-crossroads",
+      "title": "MILS Road Crossroads",
+      "arms": { "minX": "roadArm", "maxX": "roadArm", "minZ": "roadArm", "maxZ": "roadArm" }
+    }
+  ]
+}

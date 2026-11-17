@@ -15,6 +15,7 @@ export interface ManifestPart {
   readonly role: PartRole;
   readonly file: string;
   readonly bounds: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
+  readonly title?: string;
   readonly displayColor?: { readonly ldraw: number; readonly source: string };
   readonly trackEnds?: ReadonlyArray<TrackEnd>;
 }
@@ -117,7 +118,8 @@ function isBundleModelEntry(value: unknown): value is BundleModelEntry {
     (value["set"] === null || isRecord(value["set"])) &&
     isStringArray(value["authors"]) &&
     isStringArray(value["licenses"]) &&
-    Array.isArray(value["sections"])
+    Array.isArray(value["sections"]) &&
+    (value["role"] === undefined || value["role"] === "road-module")
   );
 }
 

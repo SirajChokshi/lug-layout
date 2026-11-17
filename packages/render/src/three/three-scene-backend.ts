@@ -10,6 +10,8 @@ import {
   InstancedMesh,
   LineBasicNodeMaterial,
   LineSegments,
+  Mesh,
+  MeshBasicNodeMaterial,
   MeshStandardNodeMaterial,
   PerspectiveCamera,
   Scene,
@@ -24,6 +26,8 @@ import {
   type BackendInfo,
   type BufferMemory,
   type ChunkInstances,
+  type EdgeMarker,
+  type MarkerKind,
   type GeometrySet,
   type FrameStats,
   type ISceneBackend,
@@ -57,6 +61,11 @@ const REBASE_DISTANCE_CHUNKS = 8;
 const GHOST_OPACITY = 0.55;
 const SELECTION_COLOR = 0xff8c00;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
+const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
+  joined: 0x1fbf4a,
+  open: 0xffb000,
+  mismatch: 0xe0202a,
+};
 
 function writeMatrix4(
   source: Float32Array,
@@ -227,6 +236,14 @@ export class ThreeSceneBackend implements ISceneBackend {
   );
   private selectionCentreX = 0;
   private selectionCentreZ = 0;
+  private readonly markerBox = new BoxGeometry(1, 1, 1);
+  private readonly markerMaterials: Readonly<Record<MarkerKind, MeshBasicNodeMaterial>> = {
+    joined: new MeshBasicNodeMaterial({ color: MARKER_COLORS.joined }),
+    open: new MeshBasicNodeMaterial({ color: MARKER_COLORS.open }),
+    mismatch: new MeshBasicNodeMaterial({ color: MARKER_COLORS.mismatch }),
+  };
+  private readonly markerGroup = new Group();
+  private markers: ReadonlyArray<EdgeMarker> = [];
   private readonly rayPoint = new Vector3();
   private detailedLevel: LevelGeometries = EMPTY_LEVEL;
   private farLevel: LevelGeometries = EMPTY_LEVEL;
@@ -270,6 +287,8 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.selection.matrixAutoUpdate = false;
     this.selection.renderOrder = 1;
     this.scene.add(this.selection);
+    this.markerGroup.matrixAutoUpdate = false;
+    this.scene.add(this.markerGroup);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -486,6 +505,35 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.selection.updateMatrix();
     this.selection.updateMatrixWorld(true);
     this.selection.visible = true;
+  }
+
+  setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
+    this.markerGroup.clear();
+    this.markers = markers;
+    for (const marker of markers) {
+      const mesh = new Mesh(this.markerBox, this.markerMaterials[marker.kind]);
+      mesh.matrixAutoUpdate = false;
+      this.markerGroup.add(mesh);
+    }
+    this.positionMarkers();
+  }
+
+  private positionMarkers(): void {
+    const meshes = this.markerGroup.children;
+    for (let i = 0; i < meshes.length; i++) {
+      const mesh = meshes[i];
+      const marker = this.markers[i];
+      if (!mesh || !marker) continue;
+      const { box } = marker;
+      mesh.position.set(
+        (box.minX + box.maxX) / 2 - this.renderOriginX,
+        (box.minY + box.maxY) / 2,
+        (box.minZ + box.maxZ) / 2 - this.renderOriginZ,
+      );
+      mesh.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
+      mesh.updateMatrix();
+    }
+    this.markerGroup.updateMatrixWorld(true);
   }
 
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
@@ -738,6 +786,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.selection.updateMatrix();
     this.selection.updateMatrixWorld(true);
     for (const record of this.vehicles.values()) this.placeVehicle(record);
+    this.positionMarkers();
     this.rebases.push({
       frame: this.frame,
       chunkX,

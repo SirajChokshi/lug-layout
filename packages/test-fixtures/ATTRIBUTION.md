@@ -48,6 +48,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/1-4rin16.dat` | ~Ring 16 x 0.25 (Obsolete) | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring1.dat` | Ring 1 x 0.25 | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring12.dat` | Ring 12 x 0.25 | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/1-4ring13.dat` | Ring 13 x 0.25 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring2.dat` | Ring 2 x 0.25 | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring20.dat` | Ring 20 x 0.25 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/1-4ring3.dat` | Ring 3 x 0.25 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -452,6 +453,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/box3u8p.dat` | Box with 3 Faces and 4 Parallel Edges | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box4-1.dat` | Box with 4 Faces without 1 Edge | Tore Eriksson [Tore_Eriksson] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box4-2p.dat` | Box with 4 Faces without 2 Parallel Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/box4-3p.dat` | Box with 4 Faces without 3 Parallel Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box4-4a.dat` | Box with 4 Faces without 4 Adjacent Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box4-7a.dat` | Box with 4 Faces without 7 Adjacent Edges | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/box4.dat` | Box with 4 Faces (2 Parallel Pairs) and All Edges | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -571,8 +573,10 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/stug-1x2.dat` | Stud Group 1 x 2 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-1x3.dat` | Stud Group 1 x 3 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-1x4.dat` | Stud Group 1 x 4 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug-1x5.dat` | Stud Group 1 x 5 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-1x6.dat` | Stud Group 1 x 6 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-1x8.dat` | Stud Group 1 x 8 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/stug-1x9.dat` | Stud Group 1 x 9 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-2x1.dat` | Stud Group 2 x 1 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-2x2.dat` | Stud Group 2 x 2 | Steffen [Steffen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/stug-3x1.dat` | Stud Group 3 x 1 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1144,6 +1148,9 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/44336.dat` | Baseplate 32 x 32 Road 6-Stud Straight | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/44336p01.dat` | Baseplate 32 x 32 Road 6-Stud Straight with Yellow Road Edge Pattern | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/44336p04.dat` | Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern | Sylvain Sauvage [SLS] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/44341p02.dat` | Baseplate 32 x 32 Road 6-Stud T-Junction with White Road Edge and Pedestrian Crossing Pattern | Sylvain Sauvage [SLS] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/44342p02.dat` | Baseplate 32 x 32 Road 6-Stud Curve with White Road Edge Pattern | Sylvain Sauvage [SLS] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/44343p03.dat` | Baseplate 32 x 32 Road 6-Stud Crossroads with White Road Edge and Pedestrian Crossing Pattern | Sylvain Sauvage [SLS] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4445.dat` | Slope Brick 45 2 x 8 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4449-f1.dat` | Minifig Suitcase (Closed) | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4449.dat` | ~Moved to 4449-f1 | [PTadmin] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1328,9 +1335,12 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/6628.dat` | Technic Pin Towball with Friction | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/6632.dat` | Technic Beam 3 x 0.5 Liftarm | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/6636.dat` | Tile 1 x 6 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/69958.dat` | Plate 16 x 16 x 0.667 with Cutouts and Recessed Studs | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/70023.dat` | ~Magnet Cylindrical (Obsolete) | Chris Dee [cwdee] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/70720.dat` | ~Axle Steel 5 x 112 LDU with Conical Ends | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/70720c01.dat` | ~Axle Steel 5 x 112 LDU with Conical Ends with Two Train Wheels with Open Centres | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/71772.dat` | Plate 8 x 16 x 0.667 with Cutouts and Recessed Studs | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/71772p01.dat` | Plate 8 x 16 x 0.667 with Cutouts and Recessed Studs with Crosswalk Pattern | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/71944k01.dat` | ~Technic Ribbed Hose End Segment | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/71944k02.dat` | ~Technic Ribbed Hose Mid Segment | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/73037.dat` | Winch 2 x 4 x 2 with Light Grey Drum | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1374,6 +1384,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/88704.dat` | Minifig Whip Bent Flexible | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/88930.dat` | Slope Brick Curved 2 x 4 with Underside Studs | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/90258.dat` | Brick 2 x 2 with Slots and Axlehole | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/91405.dat` | Plate 16 x 16 with Underside Ribs | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/91501.dat` | Panel 2 x 2 x 1 Corner with Rounded Corners | Rolf Osterthun [Rolf] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/92099.dat` | Plate 4 x 6 Trap Door with Bars | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/92107.dat` | Plate 6 x 8 Trap Door Frame with Flat Clips | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1651,6 +1662,10 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/43822as1.dat` | ~Sticker Train Fan Segment | Tony Hafner [hafhead] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/44301s01.dat` | ~Hinge Plate 1 x 2 Locking with Single Finger on End Vertical - Common Geometry | Vincent Messenet [Cheenzo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/44336s01.dat` | ~Baseplate 32 x 32 Road 6-Stud Straight without Top Surface | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/44341s02.dat` | ~Road 6-Stud Crossing Pattern | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
+| `parts/s/44341s03.dat` | ~Baseplate 32 x 32 Road 6-Stud T-Junction without Top Surface | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/44341s05.dat` | ~White Road Demarcation Strip | Sylvain Sauvage [SLS] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/44343s01.dat` | ~Baseplate 32 x 32 Road 6-Stud Crossroad without Top Pattern | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/4460s01.dat` | ~Slope Brick 75 2 x 1 x 3 without Top Faces | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/44822s01.dat` | ~Click Lock Hinge Single Finger for Hinge Tile 1 x 4 | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/44822s02.dat` | ~Click Lock Hinge Single Finger for Hinge Tile 1 x 4 - Common | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1725,6 +1740,11 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/6567s01.dat` | ~Windscreen 2 x 6 x 2 with Integral Glass - Transparent Section | Thomas Burger [grapeape] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/s/6567s02.dat` | ~Windscreen 2 x 6 x 2 with Integral Glass - Opaque Section | Deanna Earley [DeannaEarley] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/6636s01.dat` | ~Tile 1 x 6 without Top Face | Takeshi Takahashi [RainbowDolphin] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/69958s01.dat` | ~Plate 16 x 16 x 0.667 with Cutouts and Recessed Studs without Patternable Surface | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/69958s02.dat` | ~Plate 16 x 16 x 0.667 with Cutouts and Recessed Studs - Quarter | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/71772s01.dat` | ~Plate 8 x 16 x 0.667 with Cutouts and Recessed Studs without Patternable Surface | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/71772s02.dat` | ~Plate 8 x 16 x 0.667 with Cutouts and Recessed Studs - 16L Side | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/71772s03.dat` | ~Roadplate Cutout 1 x 4 | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/71944s01.dat` | ~Technic Ribbed Hose Rib | William Howard [WilliamH] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/s/7904s01.dat` | ~Plate 2 x 2 with Corner Round - Half | Vincent Messenet [Cheenzo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/85984s01.dat` | ~Slope Brick 31 1 x 2 x 0.667 without Top Surface | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1735,6 +1755,8 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/s/88293s01.dat` | ~Brick 3 x 3 x 2 Round Corner with Dome Top - Half | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/88704s01.dat` | ~Minifig Whip Bent Flexible Half | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/88930s01.dat` | ~Slope Brick Curved 2 x 4 Underside Stud | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/91405s01.dat` | ~Plate 16 x 16 Rib with 1 Quarter Stud | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/s/91405s02.dat` | ~Plate 16 x 16 Rib with 2 Quarter Studs | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/92262s01.dat` | ~Door 1 x 3 x 2 Left with Hollow Hinge - Main Part with Patternable Area | Rolf Osterthun [Rolf] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/92262s02.dat` | ~Door 1 x 3 x 2 Left with Hollow Hinge - Main Part without Patternable area | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/s/92409s01.dat` | ~Tyre 6.4/ 75 x 8 Shallow Offset Tread with Centre Band - Profile | Massimo Maso [Sirio] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1817,3 +1839,11 @@ Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json`. OMR models
 | road-baseplates | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents |  | generated by tools/asset-pipeline `cli.ts facts`: plates abutted edge to edge using the measured plate extents in docs/verified-facts/geometry.json (retrieved 2026-11-16) |
 | r40-circle-9v | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math) |  | generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json) (retrieved 2026-11-16) |
 | oval-passing-siding-9v | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from exact ℤ[ζ₁₆] track-end poses (@brr/math) |  | generated by tools/asset-pipeline `cli.ts facts`: parts placed from exact ℤ[ζ₁₆] track-end poses composed with @brr/math (docs/verified-facts/track-loops.json) (retrieved 2026-11-16) |
+| passing-loop | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from the track catalog's exact ℤ[ζ₁₆] connector poses |  | generated by tools/asset-pipeline `cli.ts facts`: track pieces placed from the exact connector poses in docs/verified-facts/track-catalog.json (retrieved 2026-11-16) |
+| figure-eight | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from the track catalog's exact ℤ[ζ₁₆] connector poses |  | generated by tools/asset-pipeline `cli.ts facts`: track pieces placed from the exact connector poses in docs/verified-facts/track-catalog.json (retrieved 2026-11-16) |
+| plastic-oval | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from the track catalog's exact ℤ[ζ₁₆] connector poses |  | generated by tools/asset-pipeline `cli.ts facts`: track pieces placed from the exact connector poses in docs/verified-facts/track-catalog.json (retrieved 2026-11-16) |
+| mils-road-straight | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents |  | generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16) (retrieved 2026-11-16) |
+| mils-road-crosswalk | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents |  | generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16) (retrieved 2026-11-16) |
+| mils-road-curve | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents |  | generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16) (retrieved 2026-11-16) |
+| mils-road-t-junction | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents |  | generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16) (retrieved 2026-11-16) |
+| mils-road-crossroads | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents |  | generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16) (retrieved 2026-11-16) |

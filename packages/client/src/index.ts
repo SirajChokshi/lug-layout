@@ -46,6 +46,12 @@ export type {
   HistoryView,
   IEditor,
   LatencySample,
+  RoadIssueView,
+  RoadJoinView,
+  RoadPlacementDump,
+  RefusedClick,
+  RoadSnapState,
+  RoadSnapView,
   SelectionView,
 } from "./edit/editor.ts";
 export type { IRunScene, RunRequest, RunStatus, TrainRequest } from "./scene/run-scene.ts";

@@ -78,6 +78,13 @@ export interface WorldBox {
   readonly maxZ: number;
 }
 
+export type MarkerKind = "joined" | "open" | "mismatch";
+
+export interface EdgeMarker {
+  readonly box: WorldBox;
+  readonly kind: MarkerKind;
+}
+
 export const RAY_FLOATS = 6;
 
 export interface ISceneBackend {
@@ -88,6 +95,7 @@ export interface ISceneBackend {
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
   setSelectionBox(box: WorldBox | null): void;
+  setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
   setVehicle(vehicle: number, model: ChunkInstances): void;
   setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void;

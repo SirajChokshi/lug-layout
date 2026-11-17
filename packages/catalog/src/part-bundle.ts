@@ -35,6 +35,7 @@ export interface TrackEnd {
 
 export interface PartAsset {
   readonly id: string;
+  readonly title: string;
   readonly role: PartRole;
   readonly boundsMin: Vec3Tuple;
   readonly boundsMax: Vec3Tuple;
@@ -65,11 +66,13 @@ export interface BundleCredit {
 
 export interface ModelSection {
   readonly name: string;
+  readonly title?: string;
   readonly author: string;
   readonly license: string | null;
 }
 
 export type ModelOrigin = "omr" | "generated";
+export type ModelRole = "road-module";
 
 export interface ModelSet {
   readonly name: string;
@@ -82,6 +85,7 @@ export interface BundleModelEntry {
   readonly file: string;
   readonly origin: ModelOrigin;
   readonly set: ModelSet | null;
+  readonly role?: ModelRole;
   readonly source: string;
   readonly authors: ReadonlyArray<string>;
   readonly licenses: ReadonlyArray<string>;

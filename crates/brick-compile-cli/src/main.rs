@@ -373,7 +373,7 @@ fn run(args: &Args) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
         let authors = distinct(baked.sections.iter().map(|h| h.author.as_str()));
         let licenses = distinct(baked.sections.iter().filter_map(|h| h.license.as_deref()));
-        models.push(json!({
+        let mut manifest_entry = json!({
             "name": name,
             "file": model_file,
             "origin": entry["origin"],
@@ -385,7 +385,11 @@ fn run(args: &Args) -> Result<(), String> {
             "inlinePartsResolvedToOfficial": inline_parts,
             "instances": baked.instances.len(),
             "lattice": lattice_json,
-        }));
+        });
+        if !entry["role"].is_null() {
+            manifest_entry["role"] = entry["role"].clone();
+        }
+        models.push(manifest_entry);
     }
 
     let ldconfig = library

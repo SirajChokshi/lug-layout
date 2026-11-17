@@ -169,6 +169,7 @@ function toPartAsset(
   }
   return {
     id: part.id,
+    title: part.title ?? part.id,
     role: part.role,
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,
