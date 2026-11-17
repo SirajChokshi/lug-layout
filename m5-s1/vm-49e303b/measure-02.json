@@ -1,0 +1,32 @@
+{
+ "image": "out-webgl2-1800x1000@2/02-nine-fit.png",
+ "size": [
+  3600,
+  2000
+ ],
+ "method": "longest run of table-brown pixels on any row = the 2400 mm table width; longest run of baseplate-green (bridging gaps of up to 3 px where the magenta issue outline crosses it) on any row = the baseplate row; brown-or-green run down the table's centre column = table depth",
+ "tableWidthPx": 1235,
+ "tableRow": 721,
+ "tableX": [
+  1337,
+  2571
+ ],
+ "baseplatesInRow": 9,
+ "baseplateRowPx": 1186,
+ "plateRow": 589,
+ "plateX": [
+  1337,
+  2522
+ ],
+ "tableDepthPx": 617,
+ "depthColumn": 1954,
+ "depthY": [
+  589,
+  1205
+ ],
+ "mmPerPx": 1.9433,
+ "tableDepthMm": 1199,
+ "baseplateRowMm": 2304.8,
+ "oneBaseplateMm": 256.09,
+ "overhangPastTableEdgeMm": -95.2
+}

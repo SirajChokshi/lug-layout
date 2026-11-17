@@ -1,0 +1,10 @@
+camera centred on lattice point 0, -4000
+plan origin chunk 0, -7
+table surface {"minX":2000,"minZ":-4480,"maxX":8000,"maxZ":-1177.5}
+control baseplate on the table: 0 errors, placements 1
+10185-1 at 4000, -840: world placements 1 -> 2; plan-state placements 2; issues ["10185-1 at 4000, -840 overhangs the tables: it reaches 267.1 mm past the nearest table edge along x or z (limit 0 mm), with 68357 mm² of its footprint off the table tops."]
+panel says: 1 error
+after editing table depth to 1400 mm: table maxZ -980, plan-state placements 2, issues ["10185-1 at 4000, -840 overhangs the tables: it reaches 188.1 mm past the nearest table edge along x or z (limit 0 mm), with 48133 mm² of its footprint off the table tops."]
+table depth 1588 mm: table maxZ -510, 10185-1 box maxZ -509.9517464892578, issues ["10185-1 at 4000, -840 overhangs the tables: it reaches 0.1 mm past the nearest table edge along x or z (limit 0 mm), with 5 mm² of its footprint off the table tops."], panel: 1 error
+table depth 1589 mm: table maxZ -507.5, 10185-1 box maxZ -509.9517464892578, issues [], panel: no errors
+
