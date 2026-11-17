@@ -120,10 +120,9 @@ describe("renderThumbnail", () => {
     expect(r).toBeGreaterThan(3 * b);
   });
 
-  it("blends a translucent colour over the background", () => {
+  it("blends the front of a translucent item over the background at its LDConfig alpha", () => {
     const [, , , a = 0] = pixel(renderThumbnail(scene(TRANS_CLEAR), COLORS), centre, centre);
-    expect(a).toBeGreaterThan(128);
-    expect(a).toBeLessThan(255);
+    expect(a).toBe(128);
   });
 
   it("refuses a colour LDConfig does not define", () => {
