@@ -1,13 +1,19 @@
 import type {
+  IBomService,
+  IBomSource,
+  IImportScene,
   IRunScene,
   IViewerScene,
+  ImportedModule,
   PlacementDump,
   RunStatus,
+  SceneSummary,
   SimBenchResult,
   TrackSummary,
 } from "@brr/client";
-import { CreditLinks, partsCreditText } from "@brr/ui";
+import { BomPanel, CreditLinks, partsCreditText } from "@brr/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ImportPanel } from "./import-panel.tsx";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
 import type { MemoryReport } from "./viewer/memory-report.ts";
@@ -23,6 +29,8 @@ interface AppProps {
   readonly params: ViewerParams;
   readonly placements: (() => PlacementDump) | null;
   readonly run: IRunScene | null;
+  readonly importScene: IImportScene | null;
+  readonly bom: { readonly service: IBomService; readonly source: IBomSource } | null;
 }
 
 const BENCH_AFTER_MS = 5_000;
@@ -242,10 +250,13 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params, placements, run }: AppProps) {
+export function App({ scene, params, placements, run, importScene, bom }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
-  const [report, setReport] = useState<ViewerReport | null>(null);
+  const [viewerReport, setReport] = useState<ViewerReport | null>(null);
+  const [importedSummary, setImportedSummary] = useState<SceneSummary | null>(null);
+  const report =
+    viewerReport && importedSummary ? { ...viewerReport, summary: importedSummary } : viewerReport;
   const [result, setResult] = useState<ViewerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const showRunError = useCallback((e: unknown): void => setError(String(e)), []);
@@ -283,12 +294,26 @@ export function App({ scene, params, placements, run }: AppProps) {
             {JSON.stringify(bench)}
           </pre>
         )}
+        {report && !error && bom && (
+          <BomPanel
+            service={bom.service}
+            source={bom.source}
+            region={params.region}
+            selectionLabel={null}
+          />
+        )}
         {result && !error && (
           <pre id="result" data-done="1">
             {JSON.stringify(result)}
           </pre>
         )}
       </aside>
+      {importScene && (
+        <ImportPanel
+          scene={importScene}
+          onImported={(module: ImportedModule) => setImportedSummary(module.summary)}
+        />
+      )}
       <footer>
         {report && modelCredit(report)}
         {report && partsCreditText(report.summary.creditedFiles, params.lod)}

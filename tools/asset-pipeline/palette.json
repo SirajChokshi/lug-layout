@@ -264,6 +264,12 @@
       "sha256": "30fd5ec2bc4ad6a7e875dfc4aaf69929edc9c7fd086d5ddfca55cc2cf5cf9e9a",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10218-1.mpd",
       "retrieved": "2026-11-16T17:20:00Z",
+      "notDrawn": [
+        {
+          "section": "10218 - rigidHoseD9.ldr",
+          "reason": "LDCad-generated rigid hose: a custom mesh of 176 quads defined in the file, not an LDraw part at the pin"
+        }
+      ],
       "set": {
         "name": "Pet Shop",
         "year": 2011,
@@ -592,5 +598,74 @@
     "repo": "RolandMelkert/LDCadShadowLibrary",
     "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
     "root": ""
-  }
+  },
+  "catalogSources": [
+    {
+      "name": "ldraw-library",
+      "use": "crosswalk",
+      "describes": "The whole LDraw parts library at the bundle's pin, as GitHub's archive of the mirror commit; the crosswalk reads every parts/*.dat header (title, !LDRAW_ORG, !KEYWORDS) and the subfile lines of Shortcut and Alias files",
+      "source": {
+        "kind": "github-archive",
+        "repo": "kulits/ldraw-parts",
+        "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+        "root": "ldraw"
+      },
+      "files": ["ldraw-parts.tar.gz"]
+    },
+    {
+      "name": "rebrickable-parts-api",
+      "use": "crosswalk",
+      "describes": "Rebrickable API v3 /lego/parts/ capture: every part_num with its BrickLink and LDraw external ids (partListUpdater.py in the same repository; categories 17, 24, 42, 43, 48, 50, 57, 58, 62, 63, 64 and 66 left out), committed 2026-04-26",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "fjmoeller/flosrocketbricks",
+        "commit": "241feb3bc6bfa7f35d42c8d98e80e8202cf15bb4",
+        "root": "src/assets/ldr/lists"
+      },
+      "files": ["partList.json"]
+    },
+    {
+      "name": "rebrickable-colors-api",
+      "use": "crosswalk",
+      "describes": "Rebrickable API v3 /lego/colors/ response: every colour with its LDraw and BrickLink external ids",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "bkfunk/brickdata",
+        "commit": "ac969ce6f43e46dede7d572cd27c79ebf0302a8b",
+        "root": "data/rebrickable"
+      },
+      "files": ["colors.json"]
+    },
+    {
+      "name": "rebrickable-dump",
+      "use": "crosswalk",
+      "describes": "Rebrickable database export of 2026-07-13 (cdn.rebrickable.com/media/downloads), mirrored unmodified",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "domdfcoding/rebrickable-db",
+        "commit": "ad9943ccaf97ab9043686d6d94a9cfdb944217d4",
+        "root": "rebrickable_db/data"
+      },
+      "files": ["parts.csv.gz"]
+    },
+    {
+      "name": "rebrickable-inventories",
+      "use": "inventory-check",
+      "describes": "Rebrickable database export of 2026-07-13 (cdn.rebrickable.com/media/downloads), mirrored unmodified: set inventories for checking exported parts lists",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "domdfcoding/rebrickable-db",
+        "commit": "ad9943ccaf97ab9043686d6d94a9cfdb944217d4",
+        "root": "rebrickable_db/data"
+      },
+      "files": [
+        "sets.csv.gz",
+        "inventories.csv.gz",
+        "inventory_parts.csv.gz",
+        "inventory_minifigs.csv.gz",
+        "part_relationships.csv.gz",
+        "part_categories.csv.gz"
+      ]
+    }
+  ]
 }

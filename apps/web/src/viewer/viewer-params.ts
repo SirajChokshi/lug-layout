@@ -1,6 +1,13 @@
-import type { BundleLod, CityCamera, ConsistEntry, GraphicsApi, TrainRequest } from "@brr/client";
+import type {
+  BundleLod,
+  CityCamera,
+  ConsistEntry,
+  GraphicsApi,
+  PlacementRegion,
+  TrainRequest,
+} from "@brr/client";
 
-export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run";
+export type AppMode = "edit" | "parts" | "model" | "city" | "import" | "track" | "run";
 
 export interface ViewerParams {
   readonly mode: AppMode;
@@ -28,6 +35,7 @@ export interface ViewerParams {
   readonly originChunkX: number;
   readonly originChunkZ: number;
   readonly dumpWorld: boolean;
+  readonly region: PlacementRegion | null;
   readonly measure: boolean;
   readonly warmupFrames: number;
   readonly measuredFrames: number;
@@ -101,12 +109,32 @@ function originChunks(value: string | null): readonly [number, number] {
   return [x, z];
 }
 
+function placementRegion(value: string | null): PlacementRegion | null {
+  if (value === null) return null;
+  const bounds = value.split(",").map(Number);
+  const [minX, minZ, maxX, maxZ] = bounds;
+  if (
+    bounds.length !== 4 ||
+    minX === undefined ||
+    minZ === undefined ||
+    maxX === undefined ||
+    maxZ === undefined ||
+    !bounds.every(Number.isInteger) ||
+    minX >= maxX ||
+    minZ >= maxZ
+  ) {
+    throw new Error(`region=${value} is not integer LDU bounds "minX,minZ,maxX,maxZ"`);
+  }
+  return { minX, minZ, maxX, maxZ };
+}
+
 function appMode(params: URLSearchParams): AppMode {
   const scene = params.get("scene");
   if (scene === "city") return "city";
   if (params.get("track") !== null) return params.get("run") === "1" ? "run" : "track";
   if (params.get("model") !== null) return "model";
   if (scene === "parts") return "parts";
+  if (scene === "import") return "import";
   return "edit";
 }
 
@@ -139,6 +167,7 @@ export function readViewerParams(search: string): ViewerParams {
     originChunkX,
     originChunkZ,
     dumpWorld: params.get("dumpWorld") === "1",
+    region: placementRegion(params.get("region")),
     measure: params.get("measure") === "1",
     warmupFrames: positiveNumber(params.get("warmup"), DEFAULT_WARMUP_FRAMES),
     measuredFrames: positiveNumber(params.get("frames"), DEFAULT_MEASURED_FRAMES),

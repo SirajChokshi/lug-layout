@@ -19,6 +19,7 @@ jobs:
         with:
           toolchain: 1.100.0
           components: clippy, rustfmt
+          targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -32,6 +33,7 @@ jobs:
             .cache/ldraw-audit
             .cache/ldcad-shadow
             .cache/omr
+            .cache/catalog
           key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
       - run: pnpm --filter @brr/asset-pipeline restore-ldraw
       - run: pnpm lint

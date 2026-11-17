@@ -68,3 +68,58 @@ export {
   type PlanRuleId,
   type TableTop,
 } from "./plan/plan-rules.ts";
+export { BomCounter, byPartThenColor, type BomLine } from "./bom/bom-counter.ts";
+export {
+  countPlacements,
+  type PlacementContents,
+  type PlacementRegion,
+} from "./bom/count-placements.ts";
+export {
+  INHERITED_COLOR,
+  resolveLines,
+  toCatalog,
+  totalQuantity,
+  type CatalogBom,
+  type CatalogLine,
+  type CatalogSystem,
+  type ColorCrosswalkEntry,
+  type Crosswalk,
+  type MissingMapping,
+  type PartComponent,
+  type PartCrosswalkEntry,
+  type ResolvedLine,
+  type UnmappedLine,
+} from "./bom/catalog-ids.ts";
+export {
+  brickLinkWantedListXml,
+  plainBomCsv,
+  rebrickableCsv,
+  type UncountedItem,
+} from "./bom/export-formats.ts";
+export {
+  modelSpec,
+  plateSpec,
+  roadwaysOf,
+  type PartCount,
+  type EdgeFeature,
+  type InstanceBoxes,
+  type ItemSpec,
+  type MilsRecipe,
+  type ModuleProfile,
+  type ModuleProfileId,
+  type ModuleStandards,
+} from "./plan/item-spec.ts";
+export {
+  checkBuildable,
+  DEFAULT_MAX_REACH_MM,
+  placementId,
+  type BuildableCatalog,
+  type BuildablePlacement,
+  type CatalogIds,
+  type BuildableReport,
+  type BuildableSettings,
+  type BuildableVerdict,
+  type PlacementBom,
+  type PlanBom,
+  type PlanBomEntry,
+} from "./plan/buildable.ts";

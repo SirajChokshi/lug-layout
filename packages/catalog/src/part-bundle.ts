@@ -1,3 +1,4 @@
+import type { BundleSource } from "./manifest.ts";
 import type { BundleManifest } from "./manifest.ts";
 import type { BakedVehicle } from "./model-vehicle.ts";
 import type { TrackCatalog } from "./track-catalog.ts";
@@ -93,6 +94,17 @@ export interface BundleModelEntry {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly inlinePartsResolvedToOfficial: ReadonlyArray<InlinePartResolution>;
   readonly instances: number;
+  readonly notDrawn?: ReadonlyArray<NotDrawnSection>;
+}
+
+export interface NotDrawnSection {
+  readonly section: string;
+  readonly kind: string;
+  readonly reason: string;
+  readonly instances?: number;
+  readonly colors?: ReadonlyArray<{ readonly color: number; readonly instances: number }>;
+  readonly triangles?: number;
+  readonly quads?: number;
 }
 
 export interface InlinePartResolution {
@@ -117,8 +129,36 @@ export interface PartModel {
   readonly vehicles: ReadonlyArray<BakedVehicle>;
 }
 
+export interface BundlePartCount {
+  readonly part: string;
+  readonly ldrawColor: number | null;
+  readonly quantity: number;
+}
+
+export interface BundleModuleRecipe {
+  readonly groundPart: string;
+  readonly edgeJoinCells: ReadonlyArray<readonly [number, number]>;
+  readonly surfacePlates: number;
+  readonly substructure: ReadonlyArray<BundlePartCount>;
+}
+
+export interface BundleModuleProfile {
+  readonly id: "lego-modular" | "mils";
+  readonly moduleStuds: number;
+  readonly joinParts: ReadonlyArray<string>;
+  readonly joinLevelPlates: number;
+  readonly recipe: BundleModuleRecipe | null;
+  readonly source: string;
+}
+
+export interface BundleModuleStandards {
+  readonly groundParts: ReadonlyArray<string>;
+  readonly profiles: ReadonlyArray<BundleModuleProfile>;
+}
+
 export interface PartBundle {
   readonly bundleVersion: string;
+  readonly moduleStandards: BundleModuleStandards;
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
   readonly colors: ReadonlyArray<BundleColor>;
@@ -140,13 +180,61 @@ export interface ModelBundle {
   readonly model: PartModel;
 }
 
+export interface ImportContext {
+  readonly bundleVersion: string;
+  readonly source: BundleSource;
+  readonly compilerUrl: string;
+  readonly unofficialAllowlist: ReadonlyArray<string>;
+  readonly studPrimitiveNames: ReadonlyArray<string>;
+  readonly partIds: ReadonlyArray<string>;
+  readonly ldconfigCodes: ReadonlyArray<number>;
+}
+
+export interface CompiledPartGlb {
+  readonly partId: string;
+  readonly glb: Uint8Array;
+}
+
+export interface CatalogPartComponent {
+  readonly part: string;
+  readonly color: number;
+}
+
+export interface CatalogPartIds {
+  readonly rebrickable: string | null;
+  readonly bricklink: string | null;
+  readonly bricklinkFromKeywordOnly?: boolean;
+  readonly components?: ReadonlyArray<CatalogPartComponent>;
+}
+
+export interface CatalogColorIds {
+  readonly rebrickable: number | null;
+  readonly bricklink: number | null;
+}
+
+export interface CatalogCrosswalk {
+  readonly parts: ReadonlyMap<string, CatalogPartIds>;
+  readonly colors: ReadonlyMap<number, CatalogColorIds>;
+}
+
+export type BricklinkPartCandidates = Readonly<Record<string, ReadonlyArray<string>>>;
+
 export interface IPartBundleLoader {
   loadManifest(lod: BundleLod): Promise<BundleManifest>;
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
+  importContext(lod: BundleLod): Promise<ImportContext>;
+  loadPartSet(
+    lod: BundleLod,
+    partIds: ReadonlyArray<string>,
+    compiled: ReadonlyArray<CompiledPartGlb>,
+  ): Promise<PartBundle>;
+  loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
+  loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
 }
 
 export interface IAssetFetcher {
+  url(path: string): string;
   bytes(path: string): Promise<ArrayBuffer>;
   text(path: string): Promise<string>;
 }

@@ -92,13 +92,44 @@ export type {
   TableTop,
 } from "@brr/domain";
 export {
+  BOM_SERVICE,
+  BUILDABLE_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
+  IMPORT_SCENE,
+  MODEL_IMPORTER,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
+  PLAN_SERVICE,
   RUN_SCENE,
   SIM_CLIENT,
   TRACK_SCENE,
-  PLAN_SERVICE,
 } from "./tokens.ts";
+export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
+export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
+export type { ImportReport, ImportResult, PartResolution, PartResolutionKind } from "@brr/import";
+export type {
+  BillOfMaterials,
+  BomFiles,
+  BomInput,
+  BomScope,
+  IBomService,
+  IBomSource,
+} from "./bom/bom-service.ts";
+export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
+export {
+  DEFAULT_MODULE_PROFILE,
+  type BuildableSnapshot,
+  type IBuildableService,
+  type PlanSettings,
+} from "./plan/buildable-service.ts";
+export type {
+  PartCount,
+  BuildableReport,
+  BuildableVerdict,
+  ModuleProfileId,
+  PlacementBom,
+  PlanBom,
+  PlanBomEntry,
+} from "@brr/domain";

@@ -16,6 +16,7 @@ export interface Placeable {
   readonly kind: PlaceableKind;
   readonly worldColor: number;
   readonly parts: ChunkPartInstances;
+  readonly ldrawColors: Uint16Array;
   readonly studs: StudInstances;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
@@ -156,6 +157,7 @@ export function modelPlaceable(
     kind: isRoad ? "road-module" : "model",
     worldColor: 0,
     parts: local,
+    ldrawColors: model.ldrawColor,
     studs: withStuds(local, parts, colors, undefined).studs,
     box,
     partBoxes,
@@ -196,6 +198,7 @@ export function partPlaceable(
     kind: isRoad ? "road-plate" : "baseplate",
     worldColor: ldrawColor,
     parts: local,
+    ldrawColors: Uint16Array.of(ldrawColor),
     studs: withStuds(local, parts, colors, undefined).studs,
     box,
     partBoxes,

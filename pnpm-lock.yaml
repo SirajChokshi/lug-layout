@@ -56,6 +56,9 @@ importers:
       '@brr/client':
         specifier: workspace:*
         version: link:../../packages/client
+      '@brr/import-worker':
+        specifier: workspace:*
+        version: link:../../packages/workers/import-worker
       '@brr/sim-worker':
         specifier: workspace:*
         version: link:../../packages/workers/sim-worker
@@ -121,6 +124,9 @@ importers:
       '@brr/domain':
         specifier: workspace:*
         version: link:../domain
+      '@brr/import':
+        specifier: workspace:*
+        version: link:../import
       '@brr/math':
         specifier: workspace:*
         version: link:../math
@@ -174,6 +180,25 @@ importers:
       '@brr/config':
         specifier: workspace:*
         version: link:../config
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2))
+
+  packages/import:
+    dependencies:
+      '@brr/catalog':
+        specifier: workspace:*
+        version: link:../catalog
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../config
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -276,6 +301,22 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  packages/workers/import-worker:
+    dependencies:
+      '@brr/import':
+        specifier: workspace:*
+        version: link:../../import
+      inversify:
+        specifier: 8.3.0
+        version: 8.3.0(reflect-metadata@0.2.2)
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../../config
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+
   packages/workers/sim-worker:
     dependencies:
       '@brr/rpc':
@@ -325,6 +366,25 @@ importers:
       vitest:
         specifier: 5.1.0
         version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2))
+
+  tools/e2e:
+    dependencies:
+      '@brr/import':
+        specifier: workspace:*
+        version: link:../../packages/import
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      playwright-core:
+        specifier: 1.58.2
+        version: 1.58.2
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
 
   tools/oxlint-plugin:
     dependencies:
@@ -1786,6 +1846,11 @@ packages:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
 
+  playwright-core@1.58.2:
+    resolution: {integrity: sha512-yZkEtftgwS8CsfYo7nm0KE8jsvm6i/PTgVtB8DL726wNf6H2IMsDuxCpJj59KDaxCtSnrWan2AeDqM7JBaultg==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   postcss@8.5.33:
     resolution: {integrity: sha512-RVHEU9/Pp1Fnjr/MpAJsZoADukCKhfIi15OunEYiGktIkYLkPVvC1sioWolGDS7XByMTx9m/IGbro0Js13zhnQ==}
     engines: {node: ^10 || ^12 || >=14}
@@ -3017,6 +3082,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.7: {}
+
+  playwright-core@1.58.2: {}
 
   postcss@8.5.33:
     dependencies:

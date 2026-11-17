@@ -73,6 +73,9 @@ it("commits an unchecked plan, tables kept, when a placement box cannot be read"
     ref: "ldraw:3811",
     label: "3811",
     box: unreadable,
+    x: 320,
+    z: 320,
+    rot: 0,
   };
   plans.setPlacements([placement]);
 

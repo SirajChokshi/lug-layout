@@ -3,7 +3,11 @@ import type { ServiceIdentifier } from "inversify";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
+import type { IBuildableService } from "./plan/buildable-service.ts";
+import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
+import type { IBomService } from "./bom/bom-service.ts";
 import type { ICityScene } from "./scene/city-scene.ts";
+import type { IImportScene } from "./scene/import-scene.ts";
 import type { IModelScene } from "./scene/model-scene.ts";
 import type { IRunScene } from "./scene/run-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
@@ -22,3 +26,14 @@ export const RUN_SCENE: ServiceIdentifier<IRunScene> = Symbol.for("brr.client.Ru
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
+export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Symbol.for(
+  "brr.client.ImportWorkerFactory",
+);
+export const MODEL_IMPORTER: ServiceIdentifier<IModelImporter> = Symbol.for(
+  "brr.client.ModelImporter",
+);
+export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.client.ImportScene");
+export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");
+export const BUILDABLE_SERVICE: ServiceIdentifier<IBuildableService> = Symbol.for(
+  "brr.client.BuildableService",
+);

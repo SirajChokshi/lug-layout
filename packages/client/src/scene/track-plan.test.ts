@@ -17,6 +17,10 @@ import { buildTrackPlan } from "./track-plan.ts";
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
 class BundleDirectoryFetcher implements IAssetFetcher {
+  url(path: string): string {
+    return new URL(path, bundleRoot).href;
+  }
+
   async bytes(path: string): Promise<ArrayBuffer> {
     const buffer = await readFile(new URL(path, bundleRoot));
     return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
