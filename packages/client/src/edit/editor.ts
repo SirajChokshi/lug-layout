@@ -1235,6 +1235,7 @@ export class Editor implements IEditor {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
+    this.showRefusalCells(null);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
     this.update({ track: this.trackView() });
     return true;
@@ -1305,6 +1306,7 @@ export class Editor implements IEditor {
 
   chooseItem(id: string | null): void {
     if (id !== null && this.readOnly) return;
+    this.showRefusalCells(null);
     const track = this.track;
     const pieceIndex = id === null || !track ? null : this.trackPieceIndex(track, id);
     if ((id === TRACK_ITEM_ID || pieceIndex !== null) && track) {
