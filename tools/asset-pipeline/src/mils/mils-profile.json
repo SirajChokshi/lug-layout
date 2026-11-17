@@ -1,130 +1,171 @@
 {
   "profile": "mils",
   "frame": "LDraw part frame: -Y up, x and z in LDU. Module cells are studs counted from the min-x, min-z corner; edges are named by the LDraw axis they face",
-  "moduleStuds": {
-    "value": 32,
-    "source": "docs/verified-facts.md, Module standards, \"MILS module size\": 32x32 studs (S1)"
-  },
-  "surfacePlates": {
-    "value": 4,
-    "source": "docs/verified-facts.md, Module standards, \"MILS surface height\": one baseplate plus 4 plates, the reference height on the sides (S1, S2)"
-  },
-  "features": {
-    "path": {
-      "widthStuds": {
-        "value": 4,
-        "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paths 4 studs wide, centred on the edge (S2)"
-      },
-      "surfacePlates": {
-        "value": 4,
-        "source": "same row: paths at the module surface, 4 plates (S2)"
-      },
-      "finish": "plate",
-      "ldrawColor": 70,
-      "colorSource": "S2 allows brown/reddish brown, dark bluish gray, light bluish gray or tan for paths"
+  "spec": {
+    "moduleStuds": {
+      "value": 32,
+      "source": "docs/verified-facts.md, Module standards, \"MILS module size\": 32x32 studs (S1)"
     },
-    "track": {
-      "widthStuds": {
-        "value": 8,
-        "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": earth tracks 8 studs wide, centred on the edge (S2)"
-      },
-      "surfacePlates": {
-        "value": 4,
-        "source": "same row: earth tracks at the module surface, 4 plates (S2)"
-      },
-      "finish": "plate",
-      "ldrawColor": 19,
-      "colorSource": "S2: earth tracks are built mainly with brown/reddish brown or tan parts"
+    "surfacePlates": {
+      "value": 4,
+      "source": "docs/verified-facts.md, Module standards, \"MILS surface height\": one baseplate plus 4 plates, the reference height on the sides (S1, S2)"
     },
-    "road": {
-      "widthStuds": {
-        "value": 16,
-        "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paved roads 16 studs wide, centred on the edge (S2)"
+    "features": {
+      "path": {
+        "widthStuds": {
+          "value": 4,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paths 4 studs wide, centred on the edge (S2)"
+        },
+        "aboveSurfacePlates": {
+          "min": 0,
+          "max": 0,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paths are integrated at the same height as the rest of the module surface (S2)"
+        },
+        "ldrawColors": {
+          "values": [6, 70, 72, 71, 19],
+          "source": "S2: paths are built with brown/reddish brown, dark bluish gray, light bluish gray or tan parts"
+        }
       },
-      "surfacePlates": {
-        "value": 5,
-        "source": "same row: paved roads are built on top of the module surface, at 5 plates (S2)"
+      "track": {
+        "widthStuds": {
+          "value": 8,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": earth tracks 8 studs wide, centred on the edge (S2)"
+        },
+        "aboveSurfacePlates": {
+          "min": 0,
+          "max": 0,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": earth tracks are integrated at the same height as the rest of the module surface (S2)"
+        },
+        "ldrawColors": {
+          "values": [6, 70, 19],
+          "source": "S2: earth tracks are built mainly with brown/reddish brown or tan parts"
+        }
       },
-      "finish": "tile",
-      "ldrawColor": 72,
-      "colorSource": "S2: paved roads are Dark Bluish Gray tiles"
-    },
-    "river": {
-      "widthStuds": {
-        "value": 8,
-        "source": "docs/verified-facts.md, \"MILS rivers\": 8 studs wide, centred on the edge (S2)"
+      "road": {
+        "widthStuds": {
+          "value": 16,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paved roads 16 studs wide, centred on the edge (S2)"
+        },
+        "aboveSurfacePlates": {
+          "min": 1,
+          "max": 2,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paved roads are built on top of the module surface, at 5 plates, and may vary by 1 plate but only above (S2)"
+        },
+        "ldrawColors": {
+          "values": [72],
+          "source": "S2: paved roads are Dark Bluish Gray tiles"
+        }
       },
-      "surfacePlates": {
-        "value": 2,
-        "source": "same row: water at 2 plates over the baseplate (S2)"
-      },
-      "finish": "tile",
-      "ldrawColor": 33,
-      "colorSource": "S2: Trans Dark Blue tiles over blue plates",
-      "bedLdrawColor": 1,
-      "bankStartPlates": {
-        "value": 2,
-        "source": "docs/verified-facts.md, \"MILS rivers\": the stud adjacent to the river at 2 plates (S2)"
-      },
-      "bankRisePlatesPerStud": {
-        "value": 1,
-        "source": "same row: banks rise 1 plate per stud to the module surface (S2)"
+      "river": {
+        "widthStuds": {
+          "value": 8,
+          "source": "docs/verified-facts.md, \"MILS rivers\": 8 studs wide, centred on the edge (S2)"
+        },
+        "waterPlates": {
+          "value": 2,
+          "source": "docs/verified-facts.md, \"MILS rivers\": water at 2 plates over the baseplate (S2)"
+        },
+        "ldrawColors": {
+          "values": [33],
+          "source": "S2: rivers are covered with Trans Dark Blue tiles"
+        },
+        "bankStartPlates": {
+          "value": 2,
+          "source": "docs/verified-facts.md, \"MILS rivers\": the stud adjacent to the river at 2 plates (S2)"
+        },
+        "bankRisePlatesPerStud": {
+          "value": 1,
+          "source": "same row: banks rise 1 plate per stud to the module surface (S2)"
+        }
       }
+    },
+    "rail": {
+      "source": "Project decision, not MILS: MILS has no train rules (docs/verified-facts.md, \"MILS has City or Train rules\": REFUTED, S5). One 9V straight pair centred on two opposite edges, resting on the 4-plate surface; the piece frame comes from docs/verified-facts/track-catalog.json"
     }
   },
-  "terrainLdrawColor": 2,
-  "structureLdrawColor": 71,
-  "parts": {
-    "baseplate": "3811",
-    "corner": "3003",
-    "edgeJoin": "3701",
-    "edgeCourse": ["2465", "6112", "6111", "3008", "3009", "3010", "3622", "3004", "3005"],
-    "support": ["3001", "3003", "3004", "3005"],
-    "plates": [
-      "91405",
-      "92438",
-      "3027",
-      "3028",
-      "3033",
-      "3036",
-      "3958",
-      "3029",
-      "3030",
-      "3035",
-      "3032",
-      "3031",
-      "2445",
-      "3832",
-      "3034",
-      "3795",
-      "3020",
-      "3021",
-      "3022",
-      "3460",
-      "3666",
-      "3710",
-      "3623",
-      "3024"
-    ],
-    "tiles": [
-      "90498",
-      "10202",
-      "1751",
-      "69729",
-      "87079",
-      "26603",
-      "3068b",
-      "6636",
-      "2431",
-      "63864",
-      "3069b",
-      "3070b"
-    ]
-  },
-  "rail": {
-    "part": "74746",
-    "ldrawColor": 72,
-    "source": "Project decision, not MILS: MILS has no train rules (docs/verified-facts.md, \"MILS has City or Train rules\": REFUTED, S5). One 9V straight pair centred on two opposite edges, resting on the 4-plate surface; the piece frame comes from docs/verified-facts/track-catalog.json"
+  "build": {
+    "terrainLdrawColor": 2,
+    "structureLdrawColor": 71,
+    "parts": {
+      "baseplate": "3811",
+      "corner": "3003",
+      "edgeJoin": "3701",
+      "edgeCourse": ["2465", "6112", "6111", "3008", "3009", "3010", "3622", "3004", "3005"],
+      "support": ["3001", "3003", "3004", "3005"],
+      "plates": [
+        "91405",
+        "92438",
+        "3027",
+        "3028",
+        "3033",
+        "3036",
+        "3958",
+        "3029",
+        "3030",
+        "3035",
+        "3032",
+        "3031",
+        "2445",
+        "3832",
+        "3034",
+        "3795",
+        "3020",
+        "3021",
+        "3022",
+        "3460",
+        "3666",
+        "3710",
+        "3623",
+        "3024"
+      ],
+      "tiles": [
+        "90498",
+        "10202",
+        "1751",
+        "69729",
+        "87079",
+        "26603",
+        "3068b",
+        "6636",
+        "2431",
+        "63864",
+        "3069b",
+        "3070b"
+      ]
+    },
+    "features": {
+      "path": {
+        "widthStuds": 4,
+        "plates": 4,
+        "finish": "plate",
+        "ldrawColor": 70
+      },
+      "track": {
+        "widthStuds": 8,
+        "plates": 4,
+        "finish": "plate",
+        "ldrawColor": 19
+      },
+      "road": {
+        "widthStuds": 16,
+        "plates": 5,
+        "finish": "tile",
+        "ldrawColor": 72
+      },
+      "river": {
+        "widthStuds": 8,
+        "plates": 2,
+        "finish": "tile",
+        "ldrawColor": 33,
+        "bedLdrawColor": 1,
+        "bankStartPlates": 2,
+        "bankRisePlatesPerStud": 1
+      }
+    },
+    "rail": {
+      "part": "74746",
+      "ldrawColor": 72
+    }
   },
   "elementSource": "Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16); keys are part@colour with LDraw colour codes, which equal the Rebrickable colour ids for every colour used here (docs/verified-facts.md, Catalog data)",
   "elements": {

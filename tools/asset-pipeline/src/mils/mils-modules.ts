@@ -1,5 +1,16 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import {
+  MilsProfile,
+  TrackCatalog,
+  type MilsBuildFeature,
+  type MilsBuildRiver,
+  type MilsFinish,
+  type MilsModuleEdge,
+  type MilsTemplate,
+  type TrackPiece,
+} from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import type { Affine } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { measureBaseplate, type BaseplateMeasurement } from "../verify/geometry.ts";
@@ -16,67 +27,24 @@ const QUARTER_TURNS = [
   [1, 0, 0, 0, 1, 0, 0, 0, 1],
   [0, 0, 1, 0, 1, 0, -1, 0, 0],
 ] as const;
-
-export type ModuleEdge = "minX" | "maxX" | "minZ" | "maxZ";
-type SurfaceFeature = "path" | "track" | "road" | "river";
-type Feature = SurfaceFeature | "rail";
-type Finish = "plate" | "tile";
-
-interface CitedValue {
-  readonly value: number;
-  readonly source: string;
-}
-
-interface FeatureSpec {
-  readonly widthStuds: CitedValue;
-  readonly surfacePlates: CitedValue;
-  readonly finish: Finish;
-  readonly ldrawColor: number;
-  readonly bedLdrawColor?: number;
-  readonly bankStartPlates?: CitedValue;
-  readonly bankRisePlatesPerStud?: CitedValue;
-}
-
-interface TemplateSpec {
-  readonly name: string;
-  readonly title: string;
-  readonly feature: Feature | null;
-  readonly edges: ReadonlyArray<ModuleEdge>;
-}
-
-export interface MilsProfile {
-  readonly moduleStuds: CitedValue;
-  readonly surfacePlates: CitedValue;
-  readonly features: Readonly<Record<SurfaceFeature, FeatureSpec>>;
-  readonly terrainLdrawColor: number;
-  readonly structureLdrawColor: number;
-  readonly parts: {
-    readonly baseplate: string;
-    readonly corner: string;
-    readonly edgeJoin: string;
-    readonly edgeCourse: ReadonlyArray<string>;
-    readonly support: ReadonlyArray<string>;
-    readonly plates: ReadonlyArray<string>;
-    readonly tiles: ReadonlyArray<string>;
-  };
-  readonly rail: { readonly part: string; readonly ldrawColor: number; readonly source: string };
-  readonly elementSource: string;
-  readonly elements: Readonly<Record<string, ReadonlyArray<string>>>;
-  readonly templates: ReadonlyArray<TemplateSpec>;
-}
-
-interface TrackPieceFrame {
-  readonly part: string;
-  readonly partFrame: { readonly xLdu: number; readonly zLdu: number };
-  readonly routes: ReadonlyArray<{ readonly lengthLdu: number }>;
-}
+const MODULE_EDGES: ReadonlyArray<MilsModuleEdge> = ["minX", "maxX", "minZ", "maxZ"];
 
 export function loadMilsProfile(): MilsProfile {
-  return JSON.parse(readFileSync(PROFILE_PATH, "utf8")) as MilsProfile;
+  return decodedOrThrow(
+    decode(MilsProfile, JSON.parse(readFileSync(PROFILE_PATH, "utf8"))),
+    PROFILE_PATH,
+  );
+}
+
+export function loadTrackCatalog(): TrackCatalog {
+  return decodedOrThrow(
+    decode(TrackCatalog, JSON.parse(readFileSync(TRACK_CATALOG_PATH, "utf8"))),
+    TRACK_CATALOG_PATH,
+  );
 }
 
 export function milsParts(profile: MilsProfile): ReadonlyArray<string> {
-  const { parts } = profile;
+  const { parts, rail } = profile.build;
   return [
     ...new Set([
       parts.baseplate,
@@ -86,15 +54,12 @@ export function milsParts(profile: MilsProfile): ReadonlyArray<string> {
       ...parts.support,
       ...parts.plates,
       ...parts.tiles,
-      profile.rail.part,
+      rail.part,
     ]),
   ];
 }
 
-function railFrame(part: string): TrackPieceFrame {
-  const catalog = JSON.parse(readFileSync(TRACK_CATALOG_PATH, "utf8")) as {
-    readonly pieces: ReadonlyArray<TrackPieceFrame>;
-  };
+function railPiece(catalog: TrackCatalog, part: string): TrackPiece {
   const piece = catalog.pieces.find((entry) => entry.part === `ldraw:${part}`);
   if (!piece) throw new Error(`track catalog has no piece for ${part}`);
   return piece;
@@ -113,7 +78,7 @@ interface Placement {
 
 interface Column {
   readonly topPlates: number;
-  readonly finish: Finish;
+  readonly finish: MilsFinish;
   readonly color: number;
   readonly fillColor: number;
 }
@@ -133,7 +98,7 @@ class ModuleBuilder {
   constructor(measured: ReadonlyMap<string, BaseplateMeasurement>, profile: MilsProfile) {
     this.measured = measured;
     this.profile = profile;
-    this.halfLdu = (profile.moduleStuds.value * LDU_PER_STUD) / 2;
+    this.halfLdu = (profile.spec.moduleStuds.value * LDU_PER_STUD) / 2;
   }
 
   measure(part: string): BaseplateMeasurement {
@@ -273,7 +238,7 @@ interface Point {
   readonly z: number;
 }
 
-function edgeMidpoint(edge: ModuleEdge, studs: number): Point {
+function edgeMidpoint(edge: MilsModuleEdge, studs: number): Point {
   const half = studs / 2;
   switch (edge) {
     case "minX":
@@ -291,9 +256,12 @@ function edgeMidpoint(edge: ModuleEdge, studs: number): Point {
   }
 }
 
-function isOpposite(a: ModuleEdge, b: ModuleEdge): boolean {
-  const axis = (edge: ModuleEdge) => edge.slice(3);
-  return axis(a) === axis(b);
+function edgeAxis(edge: MilsModuleEdge): string {
+  return edge.slice(3);
+}
+
+function isOpposite(a: MilsModuleEdge, b: MilsModuleEdge): boolean {
+  return edgeAxis(a) === edgeAxis(b);
 }
 
 function distanceToSegment(p: Point, a: Point, b: Point): number {
@@ -303,7 +271,7 @@ function distanceToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - (a.x + t * dx), p.z - (a.z + t * dz));
 }
 
-function centrelineDistance(edges: ReadonlyArray<ModuleEdge>, studs: number) {
+function centrelineDistance(edges: ReadonlyArray<MilsModuleEdge>, studs: number) {
   const centre = { x: studs / 2, z: studs / 2 };
   const [first, second] = edges;
   if (edges.length === 2 && first && second && !isOpposite(first, second)) {
@@ -316,50 +284,56 @@ function centrelineDistance(edges: ReadonlyArray<ModuleEdge>, studs: number) {
   return (p: Point) => Math.min(...ends.map((end) => distanceToSegment(p, centre, end)));
 }
 
-function columnsFor(profile: MilsProfile, template: TemplateSpec): ReadonlyArray<Column> {
-  const studs = profile.moduleStuds.value;
-  const surface = profile.surfacePlates.value;
+function columnsFor(profile: MilsProfile, template: MilsTemplate): ReadonlyArray<Column> {
+  const studs = profile.spec.moduleStuds.value;
   const land: Column = {
-    topPlates: surface,
+    topPlates: profile.spec.surfacePlates.value,
     finish: "plate",
-    color: profile.terrainLdrawColor,
-    fillColor: profile.terrainLdrawColor,
+    color: profile.build.terrainLdrawColor,
+    fillColor: profile.build.terrainLdrawColor,
   };
   const { feature } = template;
-  if (feature === null || feature === "rail")
+  if (feature === null || feature === "rail") {
     return Array.from({ length: studs * studs }, () => land);
-  const spec = profile.features[feature];
-  const halfWidth = spec.widthStuds.value / 2;
+  }
+  const build = profile.build.features[feature];
+  const halfWidth = build.widthStuds / 2;
   const distance = centrelineDistance(template.edges, studs);
   const columns: Column[] = [];
   for (let row = 0; row < studs; row++) {
     for (let column = 0; column < studs; column++) {
       const offset = distance({ x: column + 0.5, z: row + 0.5 });
-      columns.push(featureColumn(profile, spec, land, offset - halfWidth));
+      columns.push(featureColumn(build, land, offset - halfWidth));
     }
   }
   return columns;
 }
 
+function isRiver(build: MilsBuildFeature | MilsBuildRiver): build is MilsBuildRiver {
+  return "bankStartPlates" in build;
+}
+
 function featureColumn(
-  profile: MilsProfile,
-  spec: FeatureSpec,
+  build: MilsBuildFeature | MilsBuildRiver,
   land: Column,
   beyondFeature: number,
 ): Column {
   if (beyondFeature < 0) {
     return {
-      topPlates: spec.surfacePlates.value,
-      finish: spec.finish,
-      color: spec.ldrawColor,
-      fillColor: spec.bedLdrawColor ?? (spec.finish === "plate" ? spec.ldrawColor : land.color),
+      topPlates: build.plates,
+      finish: build.finish,
+      color: build.ldrawColor,
+      fillColor: isRiver(build)
+        ? build.bedLdrawColor
+        : build.finish === "plate"
+          ? build.ldrawColor
+          : land.color,
     };
   }
-  const bankStart = spec.bankStartPlates?.value;
-  const rise = spec.bankRisePlatesPerStud?.value;
-  if (bankStart === undefined || rise === undefined) return land;
-  const bankPlates = bankStart + Math.floor(beyondFeature) * rise;
-  if (bankPlates >= profile.surfacePlates.value) return land;
+  if (!isRiver(build)) return land;
+  const bankPlates =
+    build.bankStartPlates + Math.floor(beyondFeature) * build.bankRisePlatesPerStud;
+  if (bankPlates >= land.topPlates) return land;
   return { topPlates: bankPlates, finish: "plate", color: land.color, fillColor: land.color };
 }
 
@@ -368,9 +342,9 @@ function substructureCells(
   profile: MilsProfile,
   columns: ReadonlyArray<Column>,
 ): { readonly solid: Uint8Array; readonly hollow: Uint8Array } {
-  const studs = profile.moduleStuds.value;
-  const surface = profile.surfacePlates.value;
-  const color = profile.structureLdrawColor;
+  const studs = profile.spec.moduleStuds.value;
+  const surface = profile.spec.surfacePlates.value;
+  const color = profile.build.structureLdrawColor;
   const raised = Uint8Array.from(columns, (column) => (column.topPlates >= surface ? 1 : 0));
   const solid = new Uint8Array(studs * studs);
   const claim = (column: number, row: number, footprint: Footprint) => {
@@ -383,7 +357,7 @@ function substructureCells(
       }
     }
   };
-  const corner = builder.footprint(profile.parts.corner, false);
+  const corner = builder.footprint(profile.build.parts.corner, false);
   const far = studs - corner.columns;
   for (const [column, row] of [
     [0, 0],
@@ -391,9 +365,9 @@ function substructureCells(
     [0, far],
     [far, far],
   ] as const) {
-    claim(column, row, builder.place(profile.parts.corner, color, column, row, false, 0));
+    claim(column, row, builder.place(profile.build.parts.corner, color, column, row, false, 0));
   }
-  const join = builder.footprint(profile.parts.edgeJoin, false);
+  const join = builder.footprint(profile.build.parts.edgeJoin, false);
   const near = corner.columns;
   const farJoin = studs - corner.columns - join.columns;
   const depth = join.rows;
@@ -408,7 +382,7 @@ function substructureCells(
     [studs - depth, farJoin, true],
   ];
   for (const [column, row, turned] of joins) {
-    claim(column, row, builder.place(profile.parts.edgeJoin, color, column, row, turned, 0));
+    claim(column, row, builder.place(profile.build.parts.edgeJoin, color, column, row, turned, 0));
   }
   const ring = new Uint8Array(studs * studs);
   for (let row = 0; row < studs; row++) {
@@ -418,7 +392,7 @@ function substructureCells(
       if (onEdge && raised[index] && !solid[index]) ring[index] = 1;
     }
   }
-  for (const rect of pack(builder, studs, ring, profile.parts.edgeCourse, color, 0)) {
+  for (const rect of pack(builder, studs, ring, profile.build.parts.edgeCourse, color, 0)) {
     claim(rect.column, rect.row, rect.footprint);
   }
   const hollow = Uint8Array.from(raised, (cell, index) => (cell && !solid[index] ? 1 : 0));
@@ -432,8 +406,12 @@ function supportCovers(
   solid: Uint8Array,
   hollow: Uint8Array,
 ): void {
-  const studs = profile.moduleStuds.value;
-  const options = candidates(builder, profile.parts.support, profile.structureLdrawColor);
+  const studs = profile.spec.moduleStuds.value;
+  const options = candidates(
+    builder,
+    profile.build.parts.support,
+    profile.build.structureLdrawColor,
+  );
   for (const cover of covers) {
     for (let fromRow = 0; fromRow < cover.footprint.rows; fromRow += SUPPORT_SPAN_STUDS) {
       for (
@@ -478,14 +456,14 @@ function placeSupport(
   hollow: Uint8Array,
   block: Block,
 ): void {
-  const studs = profile.moduleStuds.value;
+  const studs = profile.spec.moduleStuds.value;
   for (const option of options) {
     const { columns, rows } = option.footprint;
     if (columns > block.columns || rows > block.rows) continue;
     const column = block.column + Math.floor((block.columns - columns) / 2);
     const row = block.row + Math.floor((block.rows - rows) / 2);
     if (!fits(hollow, studs, column, row, option.footprint)) continue;
-    builder.place(option.part, profile.structureLdrawColor, column, row, option.turned, 0);
+    builder.place(option.part, profile.build.structureLdrawColor, column, row, option.turned, 0);
     clear(hollow, studs, column, row, option.footprint);
     for (let z = row; z < row + rows; z++) {
       for (let x = column; x < column + columns; x++) solid[z * studs + x] = 1;
@@ -513,36 +491,186 @@ function layerRegions(
   return regions;
 }
 
-function requireEdges(
-  profile: MilsProfile,
-  template: TemplateSpec,
-  columns: ReadonlyArray<Column>,
-) {
-  const studs = profile.moduleStuds.value;
-  const { feature } = template;
-  if (feature === null || feature === "rail") return;
-  const spec = profile.features[feature];
-  const width = spec.widthStuds.value;
-  const from = (studs - width) / 2;
-  const allEdges: ReadonlyArray<ModuleEdge> = ["minX", "maxX", "minZ", "maxZ"];
-  for (const edge of allEdges) {
-    const carries = template.edges.includes(edge);
-    for (let along = 0; along < studs; along++) {
-      const index = edgeCell(edge, along, studs);
-      const column = columns[index];
-      const isFeature =
-        column?.color === spec.ldrawColor && column.topPlates === spec.surfacePlates.value;
-      const expected = carries && along >= from && along < from + width;
-      if (isFeature !== expected) {
-        throw new Error(
-          `${template.name}: edge ${edge} stud ${along} ${expected ? "lacks" : "has"} the ${feature}`,
-        );
+interface StudRule {
+  readonly minPlates: number;
+  readonly maxPlates: number;
+  readonly colors: ReadonlyArray<number> | null;
+  readonly what: string;
+}
+
+interface MeasuredTops {
+  readonly plates: Float64Array;
+  readonly colors: Int32Array;
+}
+
+function measureTops(
+  measured: ReadonlyMap<string, BaseplateMeasurement>,
+  placements: ReadonlyArray<Placement>,
+  studs: number,
+): MeasuredTops {
+  const half = (studs * LDU_PER_STUD) / 2;
+  const topLdu = new Float64Array(studs * studs).fill(Number.NEGATIVE_INFINITY);
+  const colors = new Int32Array(studs * studs);
+  for (const { part, color, transform } of placements) {
+    const measurement = measured.get(part);
+    if (!measurement) throw new Error(`part ${part} was not measured`);
+    const [a, , c, , , , g, , i, x, y, z] = transform;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    for (const px of [measurement.xExtent.from, measurement.xExtent.to]) {
+      for (const pz of [measurement.zExtent.from, measurement.zExtent.to]) {
+        minX = Math.min(minX, a * px + c * pz + x);
+        maxX = Math.max(maxX, a * px + c * pz + x);
+        minZ = Math.min(minZ, g * px + i * pz + z);
+        maxZ = Math.max(maxZ, g * px + i * pz + z);
+      }
+    }
+    const top = -(y + measurement.bodyTopY);
+    for (let row = 0; row < studs; row++) {
+      const centreZ = -half + (row + 0.5) * LDU_PER_STUD;
+      if (centreZ <= minZ || centreZ >= maxZ) continue;
+      for (let column = 0; column < studs; column++) {
+        const centreX = -half + (column + 0.5) * LDU_PER_STUD;
+        const cell = row * studs + column;
+        if (centreX <= minX || centreX >= maxX || top <= (topLdu[cell] ?? 0)) continue;
+        topLdu[cell] = top;
+        colors[cell] = color;
       }
     }
   }
+  return { plates: topLdu.map((top) => top / LDU_PER_PLATE), colors };
 }
 
-function edgeCell(edge: ModuleEdge, along: number, studs: number): number {
+function centredBand(studs: number, width: number, what: string) {
+  const spare = studs - width;
+  if (spare < 0 || spare % 2 !== 0) throw new Error(`${what} of ${width} studs can't be centred`);
+  return { from: spare / 2, to: spare / 2 + width };
+}
+
+function setBand(
+  rules: StudRule[],
+  rule: StudRule,
+  from: number,
+  to: number,
+): ReadonlyArray<StudRule> {
+  for (let stud = from; stud < to; stud++) rules[stud] = rule;
+  return rules;
+}
+
+function expectedEdge(
+  profile: MilsProfile,
+  template: MilsTemplate,
+  edge: MilsModuleEdge,
+  rail: BaseplateMeasurement,
+): ReadonlyArray<StudRule> {
+  const { spec } = profile;
+  const studs = spec.moduleStuds.value;
+  const surface = spec.surfacePlates.value;
+  const land: StudRule = { minPlates: surface, maxPlates: surface, colors: null, what: "land" };
+  const rules: StudRule[] = Array.from({ length: studs }, () => land);
+  const { feature } = template;
+  if (feature === null || !template.edges.includes(edge)) return rules;
+  if (feature === "rail") {
+    const width = wholeStuds(rail.depthLdu, `${rail.part} width across the track`);
+    const { from, to } = centredBand(studs, width, "the rail");
+    const plates = surface + rail.thicknessLdu / LDU_PER_PLATE;
+    const track = {
+      minPlates: plates,
+      maxPlates: plates,
+      colors: [profile.build.rail.ldrawColor],
+      what: "rail on the surface",
+    };
+    return setBand(rules, track, from, to);
+  }
+  if (feature === "river") {
+    const river = spec.features.river;
+    const { from, to } = centredBand(studs, river.widthStuds.value, "the river");
+    const water = river.waterPlates.value;
+    if (water >= surface)
+      throw new Error(`the cited river level ${water} is not below the surface`);
+    setBand(
+      rules,
+      { minPlates: water, maxPlates: water, colors: river.ldrawColors.values, what: "river water" },
+      from,
+      to,
+    );
+    for (let bank = 0; ; bank++) {
+      const plates = river.bankStartPlates.value + bank * river.bankRisePlatesPerStud.value;
+      if (plates >= surface) break;
+      const rule = {
+        minPlates: plates,
+        maxPlates: plates,
+        colors: null,
+        what: `river bank stud ${bank + 1}`,
+      };
+      if (from - 1 - bank < 0 || to + bank >= studs)
+        throw new Error("the river banks run off the edge");
+      rules[from - 1 - bank] = rule;
+      rules[to + bank] = rule;
+    }
+    return rules;
+  }
+  const level = spec.features[feature];
+  const { from, to } = centredBand(studs, level.widthStuds.value, `the ${feature}`);
+  return setBand(
+    rules,
+    {
+      minPlates: surface + level.aboveSurfacePlates.min,
+      maxPlates: surface + level.aboveSurfacePlates.max,
+      colors: level.ldrawColors.values,
+      what: feature,
+    },
+    from,
+    to,
+  );
+}
+
+function requireSpecEdges(
+  profile: MilsProfile,
+  template: MilsTemplate,
+  tops: MeasuredTops,
+  rail: BaseplateMeasurement,
+): void {
+  const studs = profile.spec.moduleStuds.value;
+  for (const edge of MODULE_EDGES) {
+    expectedEdge(profile, template, edge, rail).forEach((rule, along) => {
+      const cell = edgeCell(edge, along, studs);
+      const plates = tops.plates[cell] ?? Number.NaN;
+      const color = tops.colors[cell] ?? 0;
+      const heightFits = plates >= rule.minPlates && plates <= rule.maxPlates;
+      if (heightFits && (rule.colors === null || rule.colors.includes(color))) return;
+      const range =
+        rule.minPlates === rule.maxPlates
+          ? `${rule.minPlates}`
+          : `${rule.minPlates}–${rule.maxPlates}`;
+      const colors = rule.colors === null ? "" : ` in colour ${rule.colors.join("/")}`;
+      throw new Error(
+        `${template.name}: edge ${edge} stud ${along} measures ${plates} plates in colour ${color}, but the spec needs ${rule.what} at ${range} plates${colors}`,
+      );
+    });
+  }
+}
+
+function edgeRuns(tops: MeasuredTops, studs: number): Readonly<Record<MilsModuleEdge, string>> {
+  const runs = (edge: MilsModuleEdge): string => {
+    const labels = Array.from({ length: studs }, (_, along) => {
+      const cell = edgeCell(edge, along, studs);
+      return `${tops.plates[cell]}:${tops.colors[cell]}`;
+    });
+    const grouped: Array<{ label: string; count: number }> = [];
+    for (const label of labels) {
+      const last = grouped.at(-1);
+      if (last?.label === label) last.count++;
+      else grouped.push({ label, count: 1 });
+    }
+    return grouped.map(({ label, count }) => `${count}@${label}`).join(" ");
+  };
+  return { minX: runs("minX"), maxX: runs("maxX"), minZ: runs("minZ"), maxZ: runs("maxZ") };
+}
+
+function edgeCell(edge: MilsModuleEdge, along: number, studs: number): number {
   switch (edge) {
     case "minX":
       return along * studs;
@@ -576,31 +704,31 @@ function requireThickness(
 function buildModule(
   measured: ReadonlyMap<string, BaseplateMeasurement>,
   profile: MilsProfile,
-  template: TemplateSpec,
+  catalog: TrackCatalog,
+  template: MilsTemplate,
 ): ReadonlyArray<Placement> {
-  const studs = profile.moduleStuds.value;
-  const surface = profile.surfacePlates.value;
+  const studs = profile.spec.moduleStuds.value;
+  const surface = profile.spec.surfacePlates.value;
   const builder = new ModuleBuilder(measured, profile);
-  const baseplate = builder.footprint(profile.parts.baseplate, false);
+  const baseplate = builder.footprint(profile.build.parts.baseplate, false);
   if (baseplate.columns !== studs || baseplate.rows !== studs) {
     throw new Error(`the baseplate is ${baseplate.columns}×${baseplate.rows}, not ${studs} square`);
   }
-  requireThickness(builder, profile.parts.plates, 1, "packing plates");
-  requireThickness(builder, profile.parts.tiles, 1, "packing tiles");
-  const { parts } = profile;
+  requireThickness(builder, profile.build.parts.plates, 1, "packing plates");
+  requireThickness(builder, profile.build.parts.tiles, 1, "packing tiles");
+  const { parts } = profile.build;
   const courseParts = [parts.corner, parts.edgeJoin, ...parts.edgeCourse, ...parts.support];
   requireThickness(builder, courseParts, surface - 1, "substructure bricks");
-  const baseplateThickness = builder.measure(profile.parts.baseplate).thicknessLdu;
+  const baseplateThickness = builder.measure(profile.build.parts.baseplate).thicknessLdu;
   builder.place(
-    profile.parts.baseplate,
-    profile.terrainLdrawColor,
+    profile.build.parts.baseplate,
+    profile.build.terrainLdrawColor,
     0,
     0,
     false,
     -baseplateThickness,
   );
   const columns = columnsFor(profile, template);
-  requireEdges(profile, template, columns);
   const { solid, hollow } = substructureCells(builder, profile, columns);
   const topLevel = Math.max(...columns.map((column) => column.topPlates));
   for (let level = 1; level <= topLevel; level++) {
@@ -612,15 +740,20 @@ function buildModule(
       if (level === surface) supportCovers(builder, profile, packed, solid, hollow);
     }
   }
-  if (template.feature === "rail") placeRail(builder, profile, surface * LDU_PER_PLATE);
+  if (template.feature === "rail") placeRail(builder, profile, catalog, surface * LDU_PER_PLATE);
   return builder.placements;
 }
 
-function placeRail(builder: ModuleBuilder, profile: MilsProfile, restOn: number): void {
-  const { part, ldrawColor } = profile.rail;
-  const frame = railFrame(part);
+function placeRail(
+  builder: ModuleBuilder,
+  profile: MilsProfile,
+  catalog: TrackCatalog,
+  restOn: number,
+): void {
+  const { part, ldrawColor } = profile.build.rail;
+  const frame = railPiece(catalog, part);
   const length = frame.routes[0]?.lengthLdu;
-  const moduleLdu = profile.moduleStuds.value * LDU_PER_STUD;
+  const moduleLdu = profile.spec.moduleStuds.value * LDU_PER_STUD;
   if (length === undefined || moduleLdu % length !== 0) {
     throw new Error(`${part} does not divide the ${moduleLdu} LDU module edge`);
   }
@@ -639,7 +772,7 @@ function formatNumber(value: number): string {
   return String(Object.is(value, -0) ? 0 : value);
 }
 
-function toLdraw(template: TemplateSpec, placements: ReadonlyArray<Placement>): string {
+function toLdraw(template: MilsTemplate, placements: ReadonlyArray<Placement>): string {
   const lines = placements.map(({ part, color, transform }) => {
     const [a, b, c, d, e, f, g, h, i, x, y, z] = transform;
     return [1, color, x, y, z, a, b, c, d, e, f, g, h, i]
@@ -659,15 +792,31 @@ function toLdraw(template: TemplateSpec, placements: ReadonlyArray<Placement>): 
 export interface MilsModule {
   readonly name: string;
   readonly ldraw: string;
+  readonly edges: Readonly<Record<MilsModuleEdge, string>>;
 }
 
-export function milsModules(library: LdrawLibrary): ReadonlyArray<MilsModule> {
-  const profile = loadMilsProfile();
+export function buildMilsModules(
+  library: LdrawLibrary,
+  profile: MilsProfile,
+  catalog: TrackCatalog,
+): ReadonlyArray<MilsModule> {
   const measured = new Map(
     milsParts(profile).map((part) => [part, measureBaseplate(library, part)]),
   );
-  return profile.templates.map((template) => ({
-    name: template.name,
-    ldraw: toLdraw(template, buildModule(measured, profile, template)),
-  }));
+  const rail = measureBaseplate(library, profile.build.rail.part);
+  const studs = profile.spec.moduleStuds.value;
+  return profile.templates.map((template) => {
+    const placements = buildModule(measured, profile, catalog, template);
+    const tops = measureTops(measured, placements, studs);
+    requireSpecEdges(profile, template, tops, rail);
+    return {
+      name: template.name,
+      ldraw: toLdraw(template, placements),
+      edges: edgeRuns(tops, studs),
+    };
+  });
+}
+
+export function milsModules(library: LdrawLibrary): ReadonlyArray<MilsModule> {
+  return buildMilsModules(library, loadMilsProfile(), loadTrackCatalog());
 }

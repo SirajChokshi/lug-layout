@@ -114,7 +114,11 @@ function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | 
 
 function hasRoadPart(instances: ChunkPartInstances, parts: ReadonlyArray<PartAsset>): boolean {
   for (let i = 0; i < instances.count; i++) {
-    if (parts[instances.partIndex[i] ?? 0]?.role === "road") return true;
+    const index = instances.partIndex[i];
+    const part = index === undefined ? undefined : parts[index];
+    if (!part)
+      throw new Error(`instance ${i} names part ${String(index)}, which the palette lacks`);
+    if (part.role === "road") return true;
   }
   return false;
 }
