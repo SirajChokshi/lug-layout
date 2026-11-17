@@ -11,6 +11,7 @@ const LOCAL_SAMPLES_PX = [-12, 0, 12] as const;
 const SEEK_ATTEMPTS = 4;
 const DRAG_STEPS = 10;
 const QUARTER_TURNS = 4;
+const SETTLED_STATUS = /^(?:ready|error)$/u;
 const STUDS_META = /(\d+)×(\d+)/u;
 
 export interface ScreenPoint {
@@ -114,9 +115,13 @@ export class EditorPage {
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("/?api=webgl2&state=1");
     const editor = new EditorPage(page);
-    await expect(editor.root, errors.join("\n")).toHaveAttribute("data-status", "ready", {
+    await expect(editor.root).toHaveAttribute("data-status", SETTLED_STATUS, {
       timeout: READY_TIMEOUT_MS,
     });
+    const shown = await page.locator(".editor .error").allInnerTexts();
+    expect(await editor.root.getAttribute("data-status"), [...shown, ...errors].join("\n")).toBe(
+      "ready",
+    );
     return editor;
   }
 
