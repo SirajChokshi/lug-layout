@@ -1,11 +1,24 @@
 import type { SimTrack } from "../track-path/sim-track.ts";
 import { advanceAlong, clearAhead, clearBehind, type TrainPath } from "./train-path.ts";
 
-export type TrainFit =
-  | { readonly kind: "fits"; readonly edge: number; readonly offsetLdu: number }
-  | { readonly kind: "short"; readonly clearLdu: number };
+export const TRAIN_FIT_FLOATS = 3;
+const FIT_EDGE = 0;
+const FIT_OFFSET = 1;
+const FIT_CLEAR = 2;
 
-const HEAD_FLOATS = 2;
+function standsAt(
+  track: SimTrack,
+  path: TrainPath,
+  edge: number,
+  offset: number,
+  length: number,
+  out: Float64Array,
+): boolean {
+  if (offset > (track.edgeLength[edge] ?? 0) || !path.stand(edge, offset, length)) return false;
+  out[FIT_EDGE] = edge;
+  out[FIT_OFFSET] = offset;
+  return true;
+}
 
 export function fitTrain(
   track: SimTrack,
@@ -13,35 +26,32 @@ export function fitTrain(
   edge: number,
   offset: number,
   length: number,
-): TrainFit {
+  out: Float64Array,
+): boolean {
   const ahead = clearAhead(track, edge, offset, length);
   const behind = clearBehind(track, edge, offset, length);
-  if (ahead + behind < length) return { kind: "short", clearLdu: ahead + behind };
+  out[FIT_CLEAR] = ahead + behind;
+  if (ahead + behind < length) return false;
   const lead = Math.min(Math.max(length / 2, length - behind), ahead);
-  const head = new Float64Array(HEAD_FLOATS);
-  advanceAlong(track, edge, offset, lead, head);
-  const headEdge = head[0] ?? 0;
-  const at = head[1] ?? 0;
-  const headLength = track.edgeLength[headEdge] ?? 0;
-  for (const candidate of [Math.floor(at), Math.ceil(at)]) {
-    if (candidate > headLength) continue;
-    if (path.stand(headEdge, candidate, length)) {
-      return { kind: "fits", edge: headEdge, offsetLdu: candidate };
-    }
-  }
-  return { kind: "short", clearLdu: ahead + behind };
+  advanceAlong(track, edge, offset, lead, out);
+  const headEdge = out[FIT_EDGE] ?? 0;
+  const at = out[FIT_OFFSET] ?? 0;
+  return (
+    standsAt(track, path, headEdge, Math.floor(at), length, out) ||
+    standsAt(track, path, headEdge, Math.ceil(at), length, out)
+  );
 }
 
-interface Span {
-  readonly route: number;
-  readonly from: number;
-  readonly to: number;
+export function fitEdge(out: Float64Array): number {
+  return out[FIT_EDGE] ?? 0;
 }
 
-function spansOf(path: TrainPath, length: number): Span[] {
-  const spans: Span[] = [];
-  path.span(length, (route, from, to) => spans.push({ route, from, to }));
-  return spans;
+export function fitOffset(out: Float64Array): number {
+  return out[FIT_OFFSET] ?? 0;
+}
+
+export function fitClear(out: Float64Array): number {
+  return out[FIT_CLEAR] ?? 0;
 }
 
 export function trainsOverlap(
@@ -51,12 +61,15 @@ export function trainsOverlap(
   bLength: number,
   routePlacement: Int32Array,
 ): boolean {
-  const theirs = spansOf(b, bLength);
-  for (const mine of spansOf(a, aLength)) {
-    for (const other of theirs) {
-      if (mine.route === other.route) {
-        if (mine.from < other.to && other.from < mine.to) return true;
-      } else if (routePlacement[mine.route] === routePlacement[other.route]) {
+  const mine = a.measure(aLength);
+  const theirs = b.measure(bLength);
+  for (let i = 0; i < mine; i++) {
+    const route = a.spanRoute(i);
+    for (let j = 0; j < theirs; j++) {
+      const other = b.spanRoute(j);
+      if (route === other) {
+        if (a.spanFrom(i) < b.spanTo(j) && b.spanFrom(j) < a.spanTo(i)) return true;
+      } else if (routePlacement[route] === routePlacement[other]) {
         return true;
       }
     }
@@ -70,6 +83,7 @@ export function placementsUnder(
   routePlacement: Int32Array,
 ): ReadonlySet<number> {
   const placements = new Set<number>();
-  path.span(length, (route) => placements.add(routePlacement[route] ?? -1));
+  const spans = path.measure(length);
+  for (let i = 0; i < spans; i++) placements.add(routePlacement[path.spanRoute(i)] ?? -1);
   return placements;
 }

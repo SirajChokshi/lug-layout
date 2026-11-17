@@ -140,7 +140,7 @@ interface RunTrain {
 interface RunTrack extends TrackPlanLayout {
   readonly name: string;
   readonly trains: ReadonlyArray<RunTrain>;
-  readonly shared: boolean;
+  readonly source: "plan" | "world";
 }
 
 function railTopY(
@@ -180,7 +180,7 @@ export class RunScene implements IRunScene {
         ...buildTrackPlan(request.plan, catalog),
         name: request.plan,
         trains: request.trains.map((train) => ({ ...train, consist: request.consist })),
-        shared: true,
+        source: "plan",
       };
     }
     const stored = await this.worlds.read(request.world);
@@ -209,7 +209,7 @@ export class RunScene implements IRunScene {
     if (trains.length === 0) {
       throw new Error(`world "${manifest.name}" has no rolling stock on its track to run`);
     }
-    return { ...track, name: manifest.name, trains, shared: false };
+    return { ...track, name: manifest.name, trains, source: "world" };
   }
 
   configure(request: RunRequest): void {
@@ -261,11 +261,13 @@ export class RunScene implements IRunScene {
           entry.model,
           entry.reversed,
           railPart,
-          this.runningGear.effectiveVehicles(entry.model),
+          run.source === "plan"
+            ? this.runningGear.effectiveVehicles(entry.model)
+            : loaded.model.vehicles,
         ).map((vehicle) => ({ vehicle, loaded }));
       }),
     );
-    const consist = run.shared ? (consists[0] ?? []) : consists.flat();
+    const consist = run.source === "plan" ? (consists[0] ?? []) : consists.flat();
     this.consist = consist.map(({ vehicle }) => vehicle);
     const rigidChunks = consists.flat().map(({ vehicle, loaded }) => {
       const chunk = (rigid: RigidBodyInstances | null): ChunkInstances | null =>

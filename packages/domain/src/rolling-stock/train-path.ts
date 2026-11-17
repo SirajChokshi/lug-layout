@@ -58,41 +58,7 @@ export function advanceAlong(
   return reached;
 }
 
-function projectOnSegment(track: SimTrack, segment: number, x: number, z: number): number {
-  const sx = track.segmentX[segment] ?? 0;
-  const sz = track.segmentZ[segment] ?? 0;
-  const heading = track.segmentHeading[segment] ?? 0;
-  const k = track.segmentCurvature[segment] ?? 0;
-  const length = track.segmentLength[segment] ?? 0;
-  if (k === 0) {
-    const s = (x - sx) * Math.cos(heading) + (z - sz) * Math.sin(heading);
-    return Math.min(Math.max(s, 0), length);
-  }
-  const cx = sx - Math.sin(heading) / k;
-  const cz = sz + Math.cos(heading) / k;
-  const sign = Math.sign(k);
-  const turned = Math.atan2(sign * (x - cx), -sign * (z - cz));
-  let swept = sign * (turned - heading);
-  swept -= FULL_TURN * Math.floor((swept + HALF_TURN) / FULL_TURN);
-  return Math.min(Math.max(swept / Math.abs(k), 0), length);
-}
-
-function closerAlong(
-  track: SimTrack,
-  edge: number,
-  along: number,
-  x: number,
-  z: number,
-  scratch: Float64Array,
-  out: Float64Array,
-): void {
-  trackPoint(track, edge, along, scratch, 0);
-  const distance = Math.hypot((scratch[0] ?? 0) - x, (scratch[1] ?? 0) - z);
-  if (distance >= (out[POINT_DISTANCE] ?? Number.POSITIVE_INFINITY)) return;
-  out[POINT_EDGE] = edge;
-  out[POINT_OFFSET] = along;
-  out[POINT_DISTANCE] = distance;
-}
+const SEGMENT_CANDIDATES = 3;
 
 export function nearestTrackPoint(
   track: SimTrack,
@@ -102,29 +68,77 @@ export function nearestTrackPoint(
   scratch: Float64Array,
   out: Float64Array,
 ): boolean {
-  out[POINT_EDGE] = NO_STEP;
-  out[POINT_DISTANCE] = Number.POSITIVE_INFINITY;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestEdge = NO_STEP;
+  let bestAlong = 0;
   for (let edge = 0; edge < track.edgeCount; edge += 2) {
     const first = track.segmentStart[edge] ?? 0;
     const last = track.segmentStart[edge + 1] ?? first;
     let before = 0;
     for (let segment = first; segment < last; segment++) {
+      const sx = track.segmentX[segment] ?? 0;
+      const sz = track.segmentZ[segment] ?? 0;
+      const heading = track.segmentHeading[segment] ?? 0;
+      const k = track.segmentCurvature[segment] ?? 0;
       const length = track.segmentLength[segment] ?? 0;
-      closerAlong(track, edge, before + projectOnSegment(track, segment, x, z), x, z, scratch, out);
-      closerAlong(track, edge, before, x, z, scratch, out);
-      closerAlong(track, edge, before + length, x, z, scratch, out);
+      const cos = Math.cos(heading);
+      const sin = Math.sin(heading);
+      let projected: number;
+      if (k === 0) {
+        projected = (x - sx) * cos + (z - sz) * sin;
+      } else {
+        const sign = Math.sign(k);
+        const turned = Math.atan2(sign * (x - sx + sin / k), -sign * (z - sz - cos / k));
+        let swept = sign * (turned - heading);
+        swept -= FULL_TURN * Math.floor((swept + HALF_TURN) / FULL_TURN);
+        projected = swept / Math.abs(k);
+      }
+      projected = Math.min(Math.max(projected, 0), length);
+      for (let c = 0; c < SEGMENT_CANDIDATES; c++) {
+        const along = c === 0 ? projected : c === 1 ? 0 : length;
+        let px: number;
+        let pz: number;
+        if (k === 0) {
+          px = sx + along * cos;
+          pz = sz + along * sin;
+        } else {
+          const turned = heading + k * along;
+          px = sx + (Math.sin(turned) - sin) / k;
+          pz = sz - (Math.cos(turned) - cos) / k;
+        }
+        const dx = px - x;
+        const dz = pz - z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestEdge = edge;
+          bestAlong = before + along;
+        }
+      }
       before += length;
     }
   }
-  return (out[POINT_DISTANCE] ?? Number.POSITIVE_INFINITY) <= radius;
+  scratch[0] = bestDistance;
+  out[POINT_EDGE] = bestEdge;
+  out[POINT_OFFSET] = bestAlong;
+  out[POINT_DISTANCE] = bestDistance;
+  return bestDistance <= radius;
 }
 
 export class TrainPath implements PathSampler {
   private edges = new Int32Array(INITIAL_PATH_EDGES);
+  private spanRoutes = new Int32Array(INITIAL_PATH_EDGES);
+  private spanFroms = new Float64Array(INITIAL_PATH_EDGES);
+  private spanTos = new Float64Array(INITIAL_PATH_EDGES);
   private count = 0;
+  private spans = 0;
   private head = 0;
 
-  constructor(readonly track: SimTrack) {}
+  readonly track: SimTrack;
+
+  constructor(track: SimTrack) {
+    this.track = track;
+  }
 
   get edgeCount(): number {
     return this.count;
@@ -187,9 +201,10 @@ export class TrainPath implements PathSampler {
     return NO_STEP;
   }
 
-  span(length: number, visit: (route: number, from: number, to: number) => void): void {
+  measure(length: number): number {
     const track = this.track;
     let remaining = length;
+    this.spans = 0;
     for (let k = 0; k < this.count && remaining > 0; k++) {
       const edge = this.edges[k] ?? 0;
       const edgeLength = track.edgeLength[edge] ?? 0;
@@ -197,17 +212,42 @@ export class TrainPath implements PathSampler {
       const bottom = Math.max(top - remaining, 0);
       remaining -= top - bottom;
       if (top <= bottom) continue;
-      const route = edge >> 1;
-      if ((edge & 1) === 0) visit(route, bottom, top);
-      else visit(route, edgeLength - top, edgeLength - bottom);
+      const forward = (edge & 1) === 0;
+      this.spanRoutes[this.spans] = edge >> 1;
+      this.spanFroms[this.spans] = forward ? bottom : edgeLength - top;
+      this.spanTos[this.spans] = forward ? top : edgeLength - bottom;
+      this.spans++;
     }
+    return this.spans;
+  }
+
+  spanRoute(index: number): number {
+    return this.spanRoutes[index] ?? NO_STEP;
+  }
+
+  spanFrom(index: number): number {
+    return this.spanFroms[index] ?? 0;
+  }
+
+  spanTo(index: number): number {
+    return this.spanTos[index] ?? 0;
   }
 
   private push(edge: number): void {
     if (this.count === this.edges.length) {
-      const grown = new Int32Array(this.edges.length * 2);
+      const capacity = this.edges.length * 2;
+      const grown = new Int32Array(capacity);
       grown.set(this.edges);
       this.edges = grown;
+      const routes = new Int32Array(capacity);
+      routes.set(this.spanRoutes);
+      this.spanRoutes = routes;
+      const froms = new Float64Array(capacity);
+      froms.set(this.spanFroms);
+      this.spanFroms = froms;
+      const tos = new Float64Array(capacity);
+      tos.set(this.spanTos);
+      this.spanTos = tos;
     }
     this.edges[this.count++] = edge;
   }

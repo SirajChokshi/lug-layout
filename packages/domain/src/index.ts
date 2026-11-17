@@ -265,8 +265,11 @@ export {
   TrainPath,
 } from "./rolling-stock/train-path.ts";
 export {
+  fitClear,
+  fitEdge,
+  fitOffset,
   fitTrain,
   placementsUnder,
+  TRAIN_FIT_FLOATS,
   trainsOverlap,
-  type TrainFit,
 } from "./rolling-stock/train-fit.ts";

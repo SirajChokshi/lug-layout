@@ -380,10 +380,9 @@ export class RunningGearPoser {
     for (let i = 0; i < NEWTON_ITERATIONS; i++) {
       path.pointBehind(middleBehind - half, s, P_LEAD);
       path.pointBehind(middleBehind + half, s, P_TRAIL);
-      const chord = Math.hypot(
-        (s[P_TRAIL] ?? 0) - (s[P_LEAD] ?? 0),
-        (s[P_TRAIL + 1] ?? 0) - (s[P_LEAD + 1] ?? 0),
-      );
+      const dx = (s[P_TRAIL] ?? 0) - (s[P_LEAD] ?? 0);
+      const dz = (s[P_TRAIL + 1] ?? 0) - (s[P_LEAD + 1] ?? 0);
+      const chord = Math.sqrt(dx * dx + dz * dz);
       const error = spacing - chord;
       if (Math.abs(error) < NEWTON_TOLERANCE_LDU) break;
       const along = 2 * half;

@@ -7,6 +7,7 @@ import {
   type ModelSection,
   type ModelVehicle,
   type PartRole,
+  type PartShape,
   type TrackEnd,
   type Vec3,
 } from "@brr/schema/bundle";
@@ -131,6 +132,7 @@ export interface ModelBundle {
   readonly bundle: PartBundle;
   readonly entry: BundleModelEntry;
   readonly model: PartModel;
+  readonly shapes: ReadonlyArray<PartShape>;
   readonly farMesh: ModelFarMesh | undefined;
 }
 

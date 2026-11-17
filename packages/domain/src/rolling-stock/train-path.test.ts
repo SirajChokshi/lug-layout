@@ -7,7 +7,15 @@ import {
   type SimRoute,
   type SimTrack,
 } from "../track-path/sim-track.ts";
-import { fitTrain, placementsUnder, trainsOverlap } from "./train-fit.ts";
+import {
+  fitClear,
+  fitEdge,
+  fitOffset,
+  fitTrain,
+  placementsUnder,
+  TRAIN_FIT_FLOATS,
+  trainsOverlap,
+} from "./train-fit.ts";
 import {
   clearAhead,
   clearBehind,
@@ -108,32 +116,32 @@ describe("fitTrain", () => {
     const track = straightThenCurve();
     const total = STRAIGHT_LDU + ARC_LDU;
     const path = new TrainPath(track);
+    const fit = new Float64Array(TRAIN_FIT_FLOATS);
     for (const length of [100, 300.5, 470]) {
       for (const cursor of [0, 50, 200, 319]) {
-        const fit = fitTrain(track, path, 0, cursor, length);
-        if (fit.kind !== "fits") throw new Error(`${length} LDU did not fit at ${cursor}`);
-        expect(Number.isInteger(fit.offsetLdu)).toBe(true);
-        expect(path.stand(fit.edge, fit.offsetLdu, length)).toBe(true);
-        const ahead = clearAhead(track, fit.edge, fit.offsetLdu, total);
-        const behind = clearBehind(track, fit.edge, fit.offsetLdu, total);
+        if (!fitTrain(track, path, 0, cursor, length, fit)) {
+          throw new Error(`${length} LDU did not fit at ${cursor}`);
+        }
+        expect(Number.isInteger(fitOffset(fit))).toBe(true);
+        expect(path.stand(fitEdge(fit), fitOffset(fit), length)).toBe(true);
+        const ahead = clearAhead(track, fitEdge(fit), fitOffset(fit), total);
+        const behind = clearBehind(track, fitEdge(fit), fitOffset(fit), total);
         expect(behind).toBeGreaterThanOrEqual(length);
         expect(ahead + behind).toBeCloseTo(total, 9);
       }
     }
-    expect(fitTrain(track, path, 0, 100, total + 1)).toEqual({
-      kind: "short",
-      clearLdu: expect.closeTo(total, 9),
-    });
+    expect(fitTrain(track, path, 0, 100, total + 1, fit)).toBe(false);
+    expect(fitClear(fit)).toBeCloseTo(total, 9);
   });
 
   it("never stands a consist across a facing switch, where the path behind would need a choice", () => {
     const track = lineIntoSwitch();
     const path = new TrainPath(track);
+    const fit = new Float64Array(TRAIN_FIT_FLOATS);
     expect(clearAhead(track, 0, 100, 10_000)).toBe(STRAIGHT_LDU - 100);
-    const onThrough = fitTrain(track, path, 2, 10, 500);
-    expect(onThrough.kind).toBe("fits");
-    const facing = fitTrain(track, path, 1, 10, 500);
-    expect(facing).toEqual({ kind: "short", clearLdu: STRAIGHT_LDU });
+    expect(fitTrain(track, path, 2, 10, 500, fit)).toBe(true);
+    expect(fitTrain(track, path, 1, 10, 500, fit)).toBe(false);
+    expect(fitClear(fit)).toBe(STRAIGHT_LDU);
   });
 });
 

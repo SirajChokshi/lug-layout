@@ -1,4 +1,4 @@
-import type { BundleColor, BundleLod, NotDrawnSection } from "@brr/schema/bundle";
+import type { BundleColor, BundleLod, NotDrawnSection, PartShape } from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
@@ -6,6 +6,7 @@ import {
   type PartAsset,
   type PartBundle,
   type PartMesh,
+  type PartModel,
   type FilterablePart,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
@@ -96,11 +97,9 @@ import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
-import { CREDITS, RUNNING_GEAR, TRADEMARK_DISCLAIMER } from "../tokens.ts";
-import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
-import { instanceBoxes } from "../running-gear/instance-boxes.ts";
-import { railTopLdu } from "../scene/part-footprint.ts";
+import { CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
 import {
+  INSTANCE_BOUNDS_FLOATS,
   ROLLING_STOCK_PREFIX,
   RollingStock,
   rollingStockModel,
@@ -799,6 +798,17 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
   };
 }
 
+function recordInstanceBounds(model: PartModel, shapes: ReadonlyArray<PartShape>): Float64Array {
+  const bounds = new Float64Array(model.instanceCount * INSTANCE_BOUNDS_FLOATS);
+  for (let i = 0; i < model.instanceCount; i++) {
+    const shape = shapes[model.partIndex[i] ?? 0];
+    if (!shape) throw new Error(`model instance ${i} names a part without a shape in its record`);
+    bounds.set(shape.bounds.min, i * INSTANCE_BOUNDS_FLOATS);
+    bounds.set(shape.bounds.max, i * INSTANCE_BOUNDS_FLOATS + 3);
+  }
+  return bounds;
+}
+
 function setLabel(entry: {
   readonly name: string;
   readonly set: { readonly name: string; readonly year: number } | null;
@@ -968,7 +978,6 @@ export class Editor implements IEditor {
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
     @inject(CREDITS) private readonly credits: ICredits,
     @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
-    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -1098,22 +1107,16 @@ export class Editor implements IEditor {
     colors: ColorTable,
     loaded: ReadonlyArray<ModelBundle>,
   ): Promise<RollingStock> {
-    await this.runningGear.setModels(
-      loaded.map(({ entry, model, bundle: own }) => ({
-        name: entry.name,
-        sha256: entry.sha256,
-        vehicles: model.vehicles,
-        instanceBoxes: instanceBoxes(model, own),
-      })),
-    );
     const rail = bundle.trackCatalog.pieces.find(
       (piece) =>
         piece.system === TRACK_SYSTEM && piece.kind === "straight" && piece.status === "certified",
     );
-    const railAsset = rail ? palette.parts[palette.indexOf(rail.part)] : undefined;
-    if (!rail || !railAsset)
-      throw new Error(`the bundle has no certified ${TRACK_SYSTEM} straight`);
-    const models = loaded.map(({ entry, model, bundle: own }) =>
+    const { trackShapes } = await this.loader.loadManifest(EDITOR_LOD);
+    const railShape = trackShapes.find((shape) => shape.piece === rail?.id);
+    if (!rail || !railShape) {
+      throw new Error(`the bundle has no certified ${TRACK_SYSTEM} straight with a track shape`);
+    }
+    const models = loaded.map(({ entry, model, bundle: own, shapes }) =>
       rollingStockModel(
         {
           id: `omr:${entry.name}`,
@@ -1121,7 +1124,8 @@ export class Editor implements IEditor {
           label: setLabel(entry),
           credit: { name: entry.name, source: entry.source, sections: model.sections },
           model: palette.remap(model, own.parts),
-          vehicles: this.runningGear.effectiveVehicles(entry.name),
+          vehicles: model.vehicles,
+          instanceBounds: recordInstanceBounds(model, shapes),
         },
         rail.part,
         palette.parts,
@@ -1130,7 +1134,7 @@ export class Editor implements IEditor {
     );
     return new RollingStock(
       models,
-      railTopLdu(railAsset, LAID_TRACK_PLATES),
+      LAID_TRACK_PLATES * PLATE_LDU + railShape.maxY - railShape.minY,
       palette.parts,
       colors,
       {

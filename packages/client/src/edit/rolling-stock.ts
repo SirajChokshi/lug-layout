@@ -10,7 +10,11 @@ import {
   runningGearSpanProblem,
   simTrackFromGraph,
   clearBehind,
+  fitClear,
+  fitEdge,
+  fitOffset,
   fitTrain,
+  TRAIN_FIT_FLOATS,
   trainsOverlap,
   TRACK_POINT_FLOATS,
   TrackGraph,
@@ -40,6 +44,7 @@ export interface RollingStockSource {
   readonly credit: ModelCredit;
   readonly model: PartModel;
   readonly vehicles: ReadonlyArray<PartVehicle>;
+  readonly instanceBounds: Float64Array;
 }
 
 export interface TrainCar {
@@ -128,6 +133,7 @@ interface StockVehicle {
 interface RollingStockModel {
   readonly source: string;
   readonly item: RollingStockItem;
+  readonly lengthLdu: number;
   readonly forward: ReadonlyArray<StockVehicle>;
   readonly reversed: ReadonlyArray<StockVehicle>;
 }
@@ -153,7 +159,9 @@ const POSE_BODY_YAW = 2;
 const POSE_FRONT = 3;
 const POSE_REAR = 6;
 
-function bodyBox(rigid: RigidBodyInstances, model: PartModel, parts: ReadonlyArray<PartAsset>) {
+export const INSTANCE_BOUNDS_FLOATS = 6;
+
+function bodyBox(rigid: RigidBodyInstances, instanceBounds: Float64Array): Float64Array {
   const box = Float64Array.of(
     Number.POSITIVE_INFINITY,
     Number.POSITIVE_INFINITY,
@@ -163,8 +171,7 @@ function bodyBox(rigid: RigidBodyInstances, model: PartModel, parts: ReadonlyArr
     Number.NEGATIVE_INFINITY,
   );
   for (let k = 0; k < rigid.instances.length; k++) {
-    const part = parts[model.partIndex[rigid.instances[k] ?? 0] ?? 0];
-    if (!part) continue;
+    const at = (rigid.instances[k] ?? 0) * INSTANCE_BOUNDS_FLOATS;
     const m = rigid.matrices;
     const o = k * INSTANCE_MATRIX_FLOATS;
     for (let axis = 0; axis < 3; axis++) {
@@ -172,8 +179,10 @@ function bodyBox(rigid: RigidBodyInstances, model: PartModel, parts: ReadonlyArr
       let hi = lo;
       for (let j = 0; j < 3; j++) {
         const c = m[o + axis * 4 + j] ?? 0;
-        lo += Math.min(c * (part.boundsMin[j] ?? 0), c * (part.boundsMax[j] ?? 0));
-        hi += Math.max(c * (part.boundsMin[j] ?? 0), c * (part.boundsMax[j] ?? 0));
+        const min = instanceBounds[at + j] ?? 0;
+        const max = instanceBounds[at + 3 + j] ?? 0;
+        lo += Math.min(c * min, c * max);
+        hi += Math.max(c * min, c * max);
       }
       box[axis] = Math.min(box[axis] ?? 0, lo);
       box[axis + 3] = Math.max(box[axis + 3] ?? 0, hi);
@@ -223,7 +232,7 @@ function stockVehicles(
           body: rigidChunk(vehicle.body, source.model, parts, colors),
           front: chunk(vehicle.frontBogie),
           rear: chunk(vehicle.rearBogie),
-          box: bodyBox(vehicle.body, source.model, parts),
+          box: bodyBox(vehicle.body, source.instanceBounds),
         },
       };
     },
@@ -256,9 +265,21 @@ export function rollingStockModel(
     const widthLdu = Math.max(
       ...forward.map((v) => (v.chunks.box[5] ?? 0) - (v.chunks.box[2] ?? 0)),
     );
-    return { source: source.id, item: item(null, lengthLdu, widthLdu), forward, reversed };
+    return {
+      source: source.id,
+      item: item(null, lengthLdu, widthLdu),
+      lengthLdu,
+      forward,
+      reversed,
+    };
   } catch (error) {
-    return { source: source.id, item: item(errorText(error), 0, 0), forward: [], reversed: [] };
+    return {
+      source: source.id,
+      item: item(errorText(error), 0, 0),
+      lengthLdu: 0,
+      forward: [],
+      reversed: [],
+    };
   }
 }
 
@@ -401,8 +422,14 @@ function writePosed(
 export class RollingStock {
   private readonly models = new Map<string, RollingStockModel>();
   private rails: Rails | null = null;
-  private path: TrainPath | null = null;
+  private fitPath: TrainPath | null = null;
+  private aimPath: TrainPath | null = null;
+  private checkPath: TrainPath | null = null;
+  private otherPath: TrainPath | null = null;
+  private drawPath: TrainPath | null = null;
+  private readonly fit = new Float64Array(TRAIN_FIT_FLOATS);
   private readonly placed = new Map<number, PlacedTrain>();
+  private placedList: ReadonlyArray<PlacedTrain> = [];
   private readonly drawn = new Map<number, DrawnTrain>();
   private readonly poser = new RunningGearPoser();
   private readonly scratch = new Float64Array(2);
@@ -442,14 +469,20 @@ export class RollingStock {
   }
 
   setTrack(layout: TrackLayout, pieces: ReadonlyArray<TrackPiece>): void {
-    this.rails = new Rails(layout, pieces);
-    this.path = new TrainPath(this.rails.track);
-    for (const train of this.placed.values()) this.redraw(train);
+    const rails = new Rails(layout, pieces);
+    this.rails = rails;
+    this.fitPath = new TrainPath(rails.track);
+    this.aimPath = new TrainPath(rails.track);
+    this.checkPath = new TrainPath(rails.track);
+    this.otherPath = new TrainPath(rails.track);
+    this.drawPath = new TrainPath(rails.track);
+    for (const train of this.placedList) this.redraw(train);
   }
 
   clear(): void {
     for (const id of this.placed.keys()) this.undraw(id);
     this.placed.clear();
+    this.placedList = [];
     this.nextTrain = 1;
   }
 
@@ -467,25 +500,45 @@ export class RollingStock {
     return cars.map((car) => this.models.get(car.model)?.item.label ?? car.model).join(" + ");
   }
 
+  private trainLength(cars: ReadonlyArray<TrainCar>): number {
+    let length = 0;
+    for (let c = 0; c < cars.length; c++) {
+      const car = cars[c];
+      const model = car ? this.models.get(car.model) : undefined;
+      if (!car || !model || model.item.problem !== null) return Number.NaN;
+      const vehicles = car.reversed ? model.reversed : model.forward;
+      for (let v = 0; v < vehicles.length; v++) length += vehicles[v]?.vehicle.spec.lengthLdu ?? 0;
+    }
+    return length;
+  }
+
+  private standBehind(plan: TrainPlan, path: TrainPath): number | Refusal {
+    const length = this.trainLength(plan.cars);
+    if (Number.isNaN(length)) {
+      return { rule: "rolling-stock", message: `${this.label(plan.cars)} is not in the catalog.` };
+    }
+    const edge = this.rails?.edgeOf(plan.anchor) ?? null;
+    if (edge === null) {
+      return {
+        rule: "rolling-stock",
+        message: `${this.label(plan.cars)} stands on a track piece that is no longer laid.`,
+      };
+    }
+    if (!path.stand(edge, plan.anchor.offsetLdu, length)) {
+      return {
+        rule: "rolling-stock",
+        message: `${this.label(plan.cars)} doesn't fit on the track behind its head: it needs ${studs(length)} of track in one line, without an open end or a switch to choose at.`,
+      };
+    }
+    return length;
+  }
+
   private stand(plan: TrainPlan, path: TrainPath): Posed | Refusal {
-    const rails = this.rails;
-    const vehicles = this.vehiclesOf(plan.cars);
+    const lengthLdu = this.standBehind(plan, path);
+    if (typeof lengthLdu !== "number") return lengthLdu;
+    const vehicles = this.vehiclesOf(plan.cars) ?? [];
     const label = this.label(plan.cars);
-    if (!vehicles) return { rule: "rolling-stock", message: `${label} is not in the catalog.` };
-    const edge = rails?.edgeOf(plan.anchor) ?? null;
-    if (!rails || edge === null) {
-      return {
-        rule: "rolling-stock",
-        message: `${label} stands on a track piece that is no longer laid.`,
-      };
-    }
-    const lengthLdu = vehicles.reduce((sum, v) => sum + v.vehicle.spec.lengthLdu, 0);
-    if (!path.stand(edge, plan.anchor.offsetLdu, lengthLdu)) {
-      return {
-        rule: "rolling-stock",
-        message: `${label} doesn't fit on the track behind its head: it needs ${studs(lengthLdu)} of track in one line, without an open end or a switch to choose at.`,
-      };
-    }
+    const edge = this.rails?.edgeOf(plan.anchor) ?? 0;
     const count = vehicles.length;
     const geometry = new Float64Array(count * GEOMETRY_FIELDS);
     const geometryAt = new Int32Array(count);
@@ -500,17 +553,18 @@ export class RollingStock {
     return { vehicles, lengthLdu, edge, poses };
   }
 
-  private clashes(plan: Posed, path: TrainPath, ignore: number | null): PlacedTrain | null {
+  private clashes(length: number, path: TrainPath, ignore: number | null): PlacedTrain | null {
     const rails = this.rails;
-    if (!rails) return null;
-    const other = new TrainPath(rails.track);
-    for (const train of this.placed.values()) {
-      if (train.id === ignore) continue;
+    const other = this.otherPath;
+    if (!rails || !other) return null;
+    for (let t = 0; t < this.placedList.length; t++) {
+      const train = this.placedList[t];
+      if (!train || train.id === ignore) continue;
       const drawn = this.drawn.get(train.id);
       const edge = rails.edgeOf(train.anchor);
       if (!drawn || edge === null) continue;
       if (!other.stand(edge, train.anchor.offsetLdu, drawn.posed.lengthLdu)) continue;
-      if (trainsOverlap(path, plan.lengthLdu, other, drawn.posed.lengthLdu, rails.routePlacement)) {
+      if (trainsOverlap(path, length, other, drawn.posed.lengthLdu, rails.routePlacement)) {
         return train;
       }
     }
@@ -518,12 +572,11 @@ export class RollingStock {
   }
 
   check(plan: TrainPlan, ignore: number | null): Refusal | null {
-    const rails = this.rails;
-    if (!rails) return offTrack(this.label(plan.cars));
-    const path = new TrainPath(rails.track);
-    const posed = this.stand(plan, path);
-    if (!("poses" in posed)) return posed;
-    const clash = this.clashes(posed, path, ignore);
+    const path = this.checkPath;
+    if (!path) return offTrack(this.label(plan.cars));
+    const length = this.standBehind(plan, path);
+    if (typeof length !== "number") return length;
+    const clash = this.clashes(length, path, ignore);
     return clash ? clashRefusal(this.label(plan.cars), this.label(clash.cars)) : null;
   }
 
@@ -539,7 +592,7 @@ export class RollingStock {
   } {
     const model = this.models.get(modelId);
     const rails = this.rails;
-    const path = this.path;
+    const path = this.fitPath;
     const label = model?.item.label ?? modelId;
     const offTrackView = (refusal: Refusal): TrainGhostView => ({
       item: `${ROLLING_STOCK_PREFIX}${modelId}`,
@@ -582,15 +635,15 @@ export class RollingStock {
       const edge = route * 2 + (facingBackward ? 1 : 0);
       const length = rails.track.edgeLength[edge] ?? 0;
       const offset = facingBackward ? length - along : along;
-      const fit = fitTrain(rails.track, path, edge, offset, model.item.lengthStuds * STUD_LDU);
-      if (fit.kind === "short") {
+      const fit = this.fit;
+      if (!fitTrain(rails.track, path, edge, offset, model.lengthLdu, fit)) {
         const refusal: Refusal = {
           rule: "rolling-stock",
-          message: `${label} needs ${studs(model.item.lengthStuds * STUD_LDU)} of track in one line, without an open end or a switch to choose at; the track here gives ${studs(fit.clearLdu)}.`,
+          message: `${label} needs ${studs(model.lengthLdu)} of track in one line, without an open end or a switch to choose at; the track here gives ${studs(fitClear(fit))}.`,
         };
         return { view: { ...offTrackView(refusal), state: "on-track" }, plan: null, edit: null };
       }
-      plan = { anchor: rails.anchorOf(fit.edge, fit.offsetLdu), cars: [car] };
+      plan = { anchor: rails.anchorOf(fitEdge(fit), fitOffset(fit)), cars: [car] };
       edit = { id: this.nextTrain, before: null, after: plan };
     }
     const refusal = this.check(plan, coupling?.train.id ?? null);
@@ -618,11 +671,13 @@ export class RollingStock {
     facingBackward: boolean,
   ): { readonly train: PlacedTrain; readonly reversed: boolean } | null {
     const rails = this.rails;
-    if (!rails) return null;
-    const path = new TrainPath(rails.track);
-    const carLength = model.item.lengthStuds * STUD_LDU;
-    for (const train of this.placed.values()) {
-      const drawn = this.drawn.get(train.id);
+    const path = this.aimPath;
+    if (!rails || !path) return null;
+    const carLength = model.lengthLdu;
+    for (let t = 0; t < this.placedList.length; t++) {
+      const train = this.placedList[t];
+      const drawn = train ? this.drawn.get(train.id) : undefined;
+      if (!train) continue;
       const edge = rails.edgeOf(train.anchor);
       if (!drawn || edge === null) continue;
       const reach = drawn.posed.lengthLdu + carLength + ROLLING_STOCK_PICK_LDU;
@@ -643,9 +698,8 @@ export class RollingStock {
     plan: TrainPlan,
     fromCar: number,
   ): { chunk: ChunkInstances; x: number; z: number } | null {
-    const rails = this.rails;
-    if (!rails) return null;
-    const path = new TrainPath(rails.track);
+    const path = this.drawPath;
+    if (!path) return null;
     const posed = this.stand(plan, path);
     if (!("poses" in posed)) return null;
     let first = 0;
@@ -738,6 +792,7 @@ export class RollingStock {
       this.placed.set(edit.id, train);
       this.redraw(train);
     }
+    this.placedList = [...this.placed.values()];
     this.nextTrain = Math.max(this.nextTrain, edit.id + 1);
   }
 
@@ -760,9 +815,8 @@ export class RollingStock {
 
   private redraw(train: PlacedTrain): void {
     this.undraw(train.id);
-    const rails = this.rails;
-    if (!rails) return;
-    const path = new TrainPath(rails.track);
+    const path = this.drawPath;
+    if (!path) return;
     const posed = this.stand(train, path);
     if (!("poses" in posed)) return;
     const ids: number[] = [];
@@ -829,10 +883,10 @@ export class RollingStock {
 
   trainsOn(placement: number): ReadonlyArray<string> {
     const rails = this.rails;
-    if (!rails) return [];
-    const path = new TrainPath(rails.track);
+    const path = this.otherPath;
+    if (!rails || !path) return [];
     const labels: string[] = [];
-    for (const train of this.placed.values()) {
+    for (const train of this.placedList) {
       const drawn = this.drawn.get(train.id);
       const edge = rails.edgeOf(train.anchor);
       if (!drawn || edge === null) continue;
