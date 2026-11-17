@@ -35,7 +35,36 @@ function surfaceFromMap(
       road[row * columns + column] = r;
     }
   }
-  return { minX: (-columns * STUD) / 2, minZ: (-rows * STUD) / 2, columns, rows, top, stud, road };
+  return {
+    minX: (-columns * STUD) / 2,
+    minZ: (-rows * STUD) / 2,
+    columns,
+    rows,
+    top,
+    stud,
+    road,
+    roadOnly: false,
+  };
+}
+
+function setBuiltOn(base: RoadSurface, wallTopLdu: number): RoadSurface {
+  const offRoad = (i: number) => base.road[i] !== 1;
+  return {
+    ...base,
+    top: base.top.map((top, i) => (offRoad(i) ? wallTopLdu : top)),
+    stud: base.stud.map((stud, i) => (offRoad(i) ? NO_STUD : stud)),
+    roadOnly: true,
+  };
+}
+
+function roadCellsUnder(base: RoadSurface, columns: number, rows: number): number {
+  let count = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      count += base.road[row * base.columns + column] ?? 0;
+    }
+  }
+  return count;
 }
 
 function recessedPlate(part: string): RoadSurface {
@@ -110,6 +139,50 @@ describe("road joins (layout rule 7)", () => {
       joinedCells: 16,
       mismatchedCells: 0,
       overlappingCells: 0,
+    });
+  });
+
+  describe("a set that carries road", () => {
+    const sixStud = roadBaseplate("44336");
+    const station = setBuiltOn(sixStud, 6 * 24);
+    const strict = { ...station, roadOnly: false };
+    const edgeRoadCells = roadCellsUnder(sixStud, sixStud.columns, 1);
+
+    it("joins its road to a road baseplate's road exactly, and its buildings beside the road never count against the join", () => {
+      const report = new RoadNetwork([at(0, station, 0, 0), at(1, sixStud, 0, -640)]).report();
+      const fit = new RoadNetwork([at(0, station, 0, 0)]).fit(at(1, sixStud, 0, -640));
+      expect(report.joinedCells).toBe(edgeRoadCells);
+      expect(report.mismatchedCells).toBe(0);
+      expect(fit).toEqual({ joinedCells: edgeRoadCells, mismatchedCells: 0, overlappingCells: 0 });
+    });
+
+    it("would mismatch on every building cell of the edge if the set had to match its whole surface", () => {
+      const report = new RoadNetwork([at(0, strict, 0, 0), at(1, sixStud, 0, -640)]).report();
+      const fit = new RoadNetwork([at(0, strict, 0, 0)]).fit(at(1, sixStud, 0, -640));
+      expect(report.mismatchedCells).toBe(sixStud.columns - edgeRoadCells);
+      expect(fit.mismatchedCells).toBe(sixStud.columns - edgeRoadCells);
+    });
+
+    it("still refuses its road against the grass of a road baseplate turned across it", () => {
+      const fit = new RoadNetwork([at(0, station, 0, 0)]).fit(at(1, sixStud, 0, -640, 1));
+      expect(fit.mismatchedCells).toBeGreaterThan(0);
+    });
+
+    it("counts a road piece over its road as overlap, and over its buildings not at all", () => {
+      const narrow = recessedPlate("71772");
+      const corner = at(
+        1,
+        narrow,
+        -320 + (narrow.columns * STUD) / 2,
+        -320 + (narrow.rows * STUD) / 2,
+      );
+      const overRoad = roadCellsUnder(sixStud, narrow.columns, narrow.rows);
+      expect(overRoad).toBeGreaterThan(0);
+      expect(overRoad).toBeLessThan(narrow.columns * narrow.rows);
+      expect(new RoadNetwork([at(0, station, 0, 0)]).fit(corner).overlappingCells).toBe(overRoad);
+      expect(new RoadNetwork([at(0, strict, 0, 0)]).fit(corner).overlappingCells).toBe(
+        narrow.columns * narrow.rows,
+      );
     });
   });
 });

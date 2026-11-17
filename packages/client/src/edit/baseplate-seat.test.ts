@@ -43,6 +43,9 @@ const SWEEP_STEP_LDU = 40;
 const OFF_LATTICE = [7, 3] as const;
 const PLATE_SPACING_LDU = 4000;
 const RUN_MODULES = 3;
+const ROAD_IN_SET = "ldraw:44336p01";
+const SWEEP_AROUND_SET_LDU = 1280;
+const ROAD_SWEEP_STEP_LDU = 160;
 const MILS_MODULE_LDU = CHUNK_LDU;
 const JITTER_LDU = 0.5;
 
@@ -418,4 +421,40 @@ it("lets every standalone baseplate take a flush 3811 on each side, where it is 
       placed: sides.length,
     });
   });
+}, 300_000);
+
+it("joins the road inside a set to a road baseplate laid against it, edge to edge and exactly", async () => {
+  const editor = await startEditor(new TopDownBackend());
+  editor.chooseItem(`omr:${SET_ON_BASEPLATES}`);
+  clickAt(editor, 0, 0);
+  const alone = editor.snapshot().roads;
+  expect(alone.placements).toBe(1);
+  expect(alone.openCells).toBeGreaterThan(0);
+
+  chooseGroup(editor, ROAD_IN_SET);
+  let snapped: readonly [number, number] | null = null;
+  for (let rot = 0; rot < 4 && !snapped; rot++) {
+    while (editor.snapshot().ghostRot !== rot) editor.rotate(0);
+    for (
+      let x = -SWEEP_AROUND_SET_LDU;
+      x <= SWEEP_AROUND_SET_LDU && !snapped;
+      x += ROAD_SWEEP_STEP_LDU
+    ) {
+      for (
+        let z = -SWEEP_AROUND_SET_LDU;
+        z <= SWEEP_AROUND_SET_LDU && !snapped;
+        z += ROAD_SWEEP_STEP_LDU
+      ) {
+        editor.pointerMove(x / NDC_TO_LDU, z / NDC_TO_LDU);
+        if (editor.snapshot().snap?.state === "snapped") snapped = [x, z];
+      }
+    }
+  }
+  if (!snapped) throw new Error(`no position near ${SET_ON_BASEPLATES} joins its road`);
+  clickAt(editor, snapped[0], snapped[1]);
+  expect(editor.snapshot().lastRefusal).toBeNull();
+  const joined = editor.snapshot().roads;
+  expect(joined.placements).toBe(2);
+  expect(joined.joinedCells).toBeGreaterThan(0);
+  expect(joined.mismatchedCells).toBe(0);
 }, 300_000);
