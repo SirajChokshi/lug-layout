@@ -2464,7 +2464,6 @@
         "root": "rebrickable_db/data"
       },
       "files": {
-        "elements.csv.gz": "e20caa5497ee8ccab7eabcf287186eed0665061f628b7cde6add4bc591bfe4d7",
         "parts.csv.gz": "b544375151f86b7b5bd8e9cebbe352b3bc6be80b9826e206246b83f8174b1039"
       }
     },

@@ -146,19 +146,10 @@ export async function readCrosswalkInputs(
   const parts = await readGzipCsv(
     sourceFile(lock, catalogRoot, "rebrickable-dump", "parts.csv.gz"),
   );
-  const elements = await readGzipCsv(
-    sourceFile(lock, catalogRoot, "rebrickable-dump", "elements.csv.gz"),
-  );
-  const elementCounts = new Map<string, number>();
-  for (const element of elements) {
-    const part = element["part_num"] ?? "";
-    elementCounts.set(part, (elementCounts.get(part) ?? 0) + 1);
-  }
   return {
     apiParts,
     apiColors,
     rebrickableParts: new Set(parts.map((part) => part["part_num"] ?? "")),
-    elementCounts,
     ldrawParts: await ldrawPartFacts(
       sourceFile(lock, catalogRoot, LDRAW_ARCHIVE_SOURCE, archiveFile),
       pin,
