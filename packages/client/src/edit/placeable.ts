@@ -58,6 +58,7 @@ export interface Placeable {
   readonly road: RoadSurface | null;
   readonly module: ModuleSurface | null;
   readonly tongueBoxes: Float32Array | null;
+  readonly slabDepthLdu: number;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -338,6 +339,10 @@ function shifted(matrices: Float32Array, count: number, shift: Vec3): Float32Arr
   return out;
 }
 
+function depthBelowRest(box: LocalBox): number {
+  return Math.max(0, -box.min[1]);
+}
+
 function shiftedBox(min: Vec3, max: Vec3, shift: Vec3): LocalBox {
   return {
     min: [min[0] + shift[0], min[1] + shift[1], min[2] + shift[2]],
@@ -446,6 +451,7 @@ export function modelPlaceable(
     road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
     module,
     tongueBoxes: module ? trackTongueBoxes(local, partBoxes, parts, module) : null,
+    slabDepthLdu: isModule ? depthBelowRest(box) : 0,
   };
 }
 
@@ -496,5 +502,6 @@ export function partPlaceable(
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
     module: null,
     tongueBoxes: null,
+    slabDepthLdu: depthBelowRest(box),
   };
 }

@@ -50,6 +50,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
+import { toolHints } from "../commands/tool-hints.ts";
 import { EDITOR } from "../tokens.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 
@@ -989,3 +990,153 @@ it("offers none of the editing commands on a selection in a world another tab ho
   expect(readOnly.readOnly).toBe(true);
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
 }, 120_000);
+
+const SET = `omr:${PLACEABLE_SET}`;
+const PLAIN_MODULE = "generated:mils-plain";
+const OVERLAP = "would overlap";
+
+function posesOf(editor: IEditor) {
+  const { refs, placements } = editor.dump();
+  return placements.refId
+    .map((ref, i) => `${refs[ref]} ${placements.x[i]},${placements.z[i]} y${placements.yPlates[i]}`)
+    .toSorted();
+}
+
+const OVERLAP_REFUSED = {
+  outcome: {
+    placements: 1,
+    refusedClicks: 1,
+    reason: expect.stringContaining(`${OVERLAP} 3811 Baseplate 32 x 32`),
+  },
+  ghostRefusal: expect.stringContaining(OVERLAP),
+};
+const PLACED_BESIDE = {
+  outcome: { placements: 2, refusedClicks: 0, reason: null },
+  ghostRefusal: null,
+};
+
+it.each([
+  {
+    name: "a second 3811 five studs over the first",
+    held: BASEPLATE,
+    at: [100, 0],
+    expected: OVERLAP_REFUSED,
+  },
+  {
+    name: "a road plate across a 3811",
+    held: "ldraw:44336p04@72",
+    at: [320, 0],
+    expected: OVERLAP_REFUSED,
+  },
+  {
+    name: "a MILS module over a 3811",
+    held: PLAIN_MODULE,
+    at: [320, 320],
+    expected: OVERLAP_REFUSED,
+  },
+  { name: "a 3811 flush beside the first", held: BASEPLATE, at: [640, 0], expected: PLACED_BESIDE },
+  { name: "a set on the 3811", held: SET, at: [0, 0], expected: PLACED_BESIDE },
+] as const)(
+  "with a 3811 placed, $name is refused only where two baseplates would share space",
+  async ({ held, at, expected }) => {
+    const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const place = placer(editor, backend);
+    place(BASEPLATE, 0, 0);
+    editor.chooseItem(held);
+    backend.aim(at[0], at[1]);
+    editor.pointerMove(0, 0);
+    const ghostRefusal = editor.snapshot().hover?.refusal ?? null;
+    const outcome = place(held, at[0], at[1]);
+
+    expect({ outcome, ghostRefusal }).toEqual(expected);
+  },
+  120_000,
+);
+
+it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  const narrow = "ldraw:3857@2";
+  const item = editor.snapshot().catalog.find((entry) => entry.id === narrow);
+  if (!item) throw new Error(`${narrow} is not in the catalog`);
+  editor.chooseItem(narrow);
+  if (item.studsWide > item.studsDeep) editor.rotate(0);
+  const halfWidth = (Math.min(item.studsWide, item.studsDeep) * 20) / 2;
+  place(BASEPLATE, 0, 0);
+  const flush = place(narrow, 320 + halfWidth, 0);
+  expect(selectAt(editor, backend, 320 + halfWidth, 0)?.item).toBe(narrow);
+  const before = posesOf(editor);
+  editor.rotate(0);
+
+  expect({ flush, poses: posesOf(editor), reason: editor.snapshot().lastRefusal?.reason }).toEqual({
+    flush: { placements: 2, refusedClicks: 0, reason: null },
+    poses: before,
+    reason: expect.stringContaining(OVERLAP),
+  });
+}, 120_000);
+
+it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
+  const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  const place = placer(editor, backend);
+  place(PLAIN_MODULE, 320, 320);
+  place(SET, 320, 320);
+  const raised = posesOf(editor);
+  expect(selectAt(editor, backend, 20, 20)?.item).toBe(PLAIN_MODULE);
+  editor.deleteSelection(0);
+  const refused = {
+    poses: posesOf(editor),
+    refusal: editor.snapshot().selectionRefusal,
+    tone: toolHints(editor.snapshot()).tone,
+  };
+  expect(selectAt(editor, backend, 320, 320)?.item).toBe(SET);
+  editor.deleteSelection(0);
+  expect(selectAt(editor, backend, 20, 20)?.item).toBe(PLAIN_MODULE);
+  editor.deleteSelection(0);
+
+  expect(raised.some((pose) => pose.startsWith(SET) && !pose.endsWith(" y0"))).toBe(true);
+  expect({ refused, left: editor.snapshot().placements }).toEqual({
+    refused: {
+      poses: raised,
+      refusal: expect.stringContaining(`${PLACEABLE_SET} Level Crossing (2010) rests on it`),
+      tone: "warn",
+    },
+    left: 0,
+  });
+}, 120_000);
+
+it.each([
+  {
+    name: "a set straddling two MILS modules loses one of them",
+    lay: [
+      [PLAIN_MODULE, 320, 320],
+      [PLAIN_MODULE, 960, 320],
+      [SET, 640, 320],
+    ],
+    remove: [20, 20],
+  },
+  {
+    name: "a 3811 under a set at the ground plane is deleted",
+    lay: [
+      [BASEPLATE, 0, 0],
+      [SET, 0, 0],
+    ],
+    remove: [300, 300],
+  },
+] as const)(
+  "deletes the support when $name, since the set keeps its resting height",
+  async ({ lay, remove }) => {
+    const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const place = placer(editor, backend);
+    for (const [item, x, z] of lay) place(item, x, z);
+    const setPose = () => posesOf(editor).find((pose) => pose.startsWith(SET));
+    const before = setPose();
+    selectAt(editor, backend, remove[0], remove[1]);
+    editor.deleteSelection(0);
+
+    expect({ placements: editor.snapshot().placements, set: setPose() }).toEqual({
+      placements: lay.length - 1,
+      set: before,
+    });
+  },
+  120_000,
+);

@@ -2136,6 +2136,10 @@ export class Editor implements IEditor {
         return `${placeable.label}: its ${EDGE_KIND_NAMES[clash.kind]} edge on the ${clash.side} side would face the ${EDGE_KIND_NAMES[clash.facing]} edge of ${neighbour}. A rail edge only joins another rail edge, where the track ends mate.`;
       }
     }
+    const overlap = this.placed.slabClash(placeable, x, z, rot, yPlates, ignore);
+    if (overlap) {
+      return `${placeable.label} would overlap ${overlap.placeable.label} at the same height. Two baseplates can't share the same space.`;
+    }
     this.refusalPlacement = own;
     const clash = this.placed.tongueClash(placeable, x, z, rot, yPlates, ignore, this.matesRefusal);
     this.refusalPlacement = null;
@@ -2568,6 +2572,16 @@ export class Editor implements IEditor {
   deleteSelection(eventTimeMs: number): void {
     const model = this.selected;
     if (!model || this.readOnly) return;
+    const rider = this.placed.strandedRider(model);
+    if (rider) {
+      const label = model.placeable.label;
+      const riding = rider.placeable.label;
+      const reason = `${label}: ${riding} rests on it, so deleting it would leave ${riding} floating. Delete ${riding} first.`;
+      const { x, z, rot } = model.handle;
+      this.refuse(model.placeable.id, x, z, rot, reason);
+      this.update({ selectionRefusal: `Can't delete. ${reason}` });
+      return;
+    }
     this.show(this.history.remove(model.placement), eventTimeMs);
     this.select(null);
   }
