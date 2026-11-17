@@ -1,4 +1,4 @@
-import type { BundleLod, ModelSection, PartBundle, PartFilter } from "@brr/catalog";
+import type { BundleColor, BundleLod, ModelSection, PartBundle, PartFilter } from "@brr/catalog";
 import {
   COLOR_CHANNELS,
   type ChunkInstances,
@@ -6,6 +6,8 @@ import {
   type LdrawColor,
   type PartPalette,
 } from "@brr/render";
+
+const LDCONFIG_MAX_ALPHA = 255;
 
 export const PALETTE_PARTS: PartFilter = (part) => part.role !== "model";
 
@@ -83,7 +85,7 @@ export class ColorTable {
     const lookup = ldrawColors(this.bundle);
     const srgb = new Uint8Array(this.codes.length * COLOR_CHANNELS);
     this.codes.forEach((code, i) => {
-      const value = lookup.get(code)?.srgb ?? 0;
+      const value = colorOf(lookup, code).srgb;
       srgb[i * COLOR_CHANNELS] = (value >> 16) & 0xff;
       srgb[i * COLOR_CHANNELS + 1] = (value >> 8) & 0xff;
       srgb[i * COLOR_CHANNELS + 2] = value & 0xff;
@@ -93,15 +95,28 @@ export class ColorTable {
 
   toAlpha(): Uint8Array {
     const lookup = ldrawColors(this.bundle);
-    return Uint8Array.from(this.codes, (code) => lookup.get(code)?.alpha ?? 0);
+    return Uint8Array.from(this.codes, (code) => colorOf(lookup, code).alpha);
   }
+}
+
+function colorOf(lookup: ReadonlyMap<number, LdrawColor>, code: number): LdrawColor {
+  const color = lookup.get(code);
+  if (color === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
+  return color;
+}
+
+function alphaOf(color: BundleColor): number {
+  if (!Number.isInteger(color.alpha) || color.alpha < 0 || color.alpha > LDCONFIG_MAX_ALPHA) {
+    throw new Error(`LDConfig colour ${color.code} has no ALPHA in the bundle manifest`);
+  }
+  return color.alpha;
 }
 
 export function ldrawColors(bundle: PartBundle): ReadonlyMap<number, LdrawColor> {
   return new Map(
     bundle.colors.map((c) => [
       c.code,
-      { srgb: Number.parseInt(c.rgb.slice(1), 16), alpha: c.alpha },
+      { srgb: Number.parseInt(c.rgb.slice(1), 16), alpha: alphaOf(c) },
     ]),
   );
 }

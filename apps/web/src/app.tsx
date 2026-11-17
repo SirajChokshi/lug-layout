@@ -153,7 +153,7 @@ function renderOriginText(report: ViewerReport): string {
 
 function lookText(look: LookSettings): string {
   const enabled = LOOK_FEATURES.filter((feature) => look[feature]);
-  return enabled.length > 0 ? enabled.join(", ") : "none (M0 look)";
+  return enabled.length > 0 ? enabled.join(", ") : "none (M0 lighting and material)";
 }
 
 function percent(fraction: number): string {

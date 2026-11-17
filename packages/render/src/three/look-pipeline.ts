@@ -248,8 +248,4 @@ export class LookPipeline {
     this.sunView.value.copy(this.sunWorld).transformDirection(camera.matrixWorldInverse);
     this.pipeline.render();
   }
-
-  dispose(): void {
-    this.pipeline.dispose();
-  }
 }
