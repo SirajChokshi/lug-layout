@@ -8,6 +8,7 @@ import type {
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const LISTED_GAPS = 8;
+const LISTED_CROSSING_CONFLICTS = 8;
 
 const studs = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 
@@ -69,6 +70,12 @@ function heldRows(held: TrackPieceView): ReadonlyArray<readonly [string, string]
   return rows;
 }
 
+function crossingText(track: TrackView): string {
+  const crossings = track.crossings;
+  if (!crossings || crossings.crossings === 0) return "none";
+  return `${integer.format(crossings.crossings)} (${integer.format(crossings.ramps)} × ${crossings.part} ramps on the road)`;
+}
+
 function switchText(track: TrackView): string {
   const branching = track.switches.filter((s) => s.lever === "branching").length;
   return `${integer.format(track.switches.length)} (${integer.format(branching)} set to branch)`;
@@ -93,6 +100,8 @@ function commitText(track: TrackView): string {
       return "refused: no exact join exists";
     case "refused-limit":
       return "refused: search hit its time limit";
+    case "refused-road":
+      return `refused: ${track.refusal ?? "the track would cross a road without a level crossing"}`;
     case "switch-straight":
       return "switch thrown to the straight route";
     case "switch-branching":
@@ -120,6 +129,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
     ["Coincident ends not joined", integer.format(track.coincidentEndIssues)],
     ["Near-miss gaps", integer.format(track.gaps.length)],
     ["Switches", switchText(track)],
+    ["Level crossings", crossingText(track)],
     ["Last release", commitText(track)],
   ];
   if (track.held) rows.push(...heldRows(track.held));
@@ -144,6 +154,9 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-held={track.held?.item ?? ""}
       data-snapped={track.held?.snapped ? "1" : ""}
       data-held-misses={track.held?.misses ?? 0}
+      data-crossings={track.crossings?.crossings ?? 0}
+      data-crossing-ramps={track.crossings?.ramps ?? 0}
+      data-crossing-conflicts={track.crossings?.conflicts.length ?? 0}
     >
       <h2>Track</h2>
       {snapshot.mode === "track" && !track.held && (
@@ -161,6 +174,15 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
           </div>
         ))}
       </dl>
+      {(track.crossings?.conflicts.length ?? 0) > 0 && (
+        <ul className="track-gaps" aria-label="Track over road without a level crossing">
+          {track.crossings?.conflicts.slice(0, LISTED_CROSSING_CONFLICTS).map((conflict) => (
+            <li key={`${conflict.track},${conflict.road},${conflict.reason}`} className="mismatch">
+              Track piece #{conflict.track + 1} over a road plate: {conflict.text}.
+            </li>
+          ))}
+        </ul>
+      )}
       {track.gaps.length > 0 && (
         <ul className="track-gaps" aria-label="Near-miss gaps">
           {track.gaps.slice(0, LISTED_GAPS).map((gap) => (

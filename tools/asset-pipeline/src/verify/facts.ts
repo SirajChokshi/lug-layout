@@ -9,6 +9,7 @@ import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
 import { milsEdgeRules, milsModules } from "../mils/mils-modules.ts";
+import { buildLevelCrossing, LEVEL_CROSSING_FILE } from "../crossing/level-crossing.ts";
 import { roadBaseplateScene, switchParallelScene } from "./scenes.ts";
 import { ovalPassingSidingScene, r40CircleScene, trackLoopReport } from "./track-loops.ts";
 
@@ -125,6 +126,19 @@ export function trackCatalogReports(
       fileName: `scenes/${layout.name}.ldr`,
       render: () => scene.ldraw,
     })),
+  ];
+}
+
+export function levelCrossingReports(
+  library: LdrawLibrary,
+  models: ReadonlyMap<string, string>,
+  palette: Palette,
+): ReadonlyArray<FactReport> {
+  return [
+    {
+      fileName: LEVEL_CROSSING_FILE,
+      render: () => asJson(buildLevelCrossing(library, models, palette)),
+    },
   ];
 }
 

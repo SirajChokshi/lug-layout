@@ -36,7 +36,8 @@
         "!$TURBO_ROOT$/packages/math/src/**/*.test.ts",
         "$TURBO_ROOT$/packages/catalog/src/glb.ts",
         "$TURBO_ROOT$/packages/catalog/src/part-bundle.ts",
-        "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts"
+        "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts",
+        "$TURBO_ROOT$/docs/verified-facts/level-crossing.json"
       ],
       "outputs": ["dist/**"],
       "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]

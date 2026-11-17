@@ -57,6 +57,15 @@ export interface TrackCounts {
   readonly openEnds: number;
   readonly joins: number;
   readonly lastCommit: string;
+  readonly crossings: number;
+  readonly crossingConflicts: number;
+}
+
+export interface CrossingRamp {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly rot: number;
 }
 
 export interface CatalogEntry {
@@ -78,6 +87,7 @@ interface EditState {
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
+    readonly crossingRamps: ReadonlyArray<CrossingRamp>;
   };
 }
 
@@ -326,6 +336,8 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+      crossings: Number(await read("crossings")),
+      crossingConflicts: Number(await read("crossing-conflicts")),
     };
   }
 
@@ -352,6 +364,12 @@ export class EditorPage {
 
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {
     return (await this.editState()).world.trackEnds;
+  }
+
+  async crossingRamps(): Promise<ReadonlyArray<CrossingRamp>> {
+    return [...(await this.editState()).world.crossingRamps].toSorted(
+      (a, b) => a.z - b.z || a.x - b.x,
+    );
   }
 
   private async planState(): Promise<PlanState> {

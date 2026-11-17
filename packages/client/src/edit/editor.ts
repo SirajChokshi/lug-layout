@@ -29,11 +29,13 @@ import {
   railEdgesMate,
   worldPlacements,
   type AppliedEdit,
+  type CrossingPlan,
   type EditKind,
   type GridPlacement,
   type HistoryStep,
   type ModuleEdgeKind,
   type ModuleSide,
+  type PlacementPose,
   type PlacementTarget,
   type PlacementContents,
   type RoadEdgeSegment,
@@ -108,6 +110,12 @@ import {
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { thumbnailUrls } from "../catalog/thumbnail-urls.ts";
+import {
+  LevelCrossingParts,
+  type CrossingRampDump,
+  type CrossingView,
+  type TrackCrossingInput,
+} from "./level-crossings.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
@@ -351,6 +359,7 @@ export type TrackCommitResult =
   | "joined"
   | "refused-impossible"
   | "refused-limit"
+  | "refused-road"
   | "switch-straight"
   | "switch-branching";
 
@@ -376,6 +385,8 @@ export interface TrackView {
   readonly held: TrackPieceView | null;
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
+  readonly refusal: string | null;
+  readonly crossings: CrossingView | null;
   readonly solve: TrackSolveStats | null;
 }
 
@@ -473,6 +484,7 @@ export interface EditorDump {
   readonly placements: PlacementDump;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
+  readonly crossingRamps: ReadonlyArray<CrossingRampDump>;
   readonly studs: StudTotals;
 }
 
@@ -663,6 +675,22 @@ interface FrameTimes {
 
 function quantileOfSorted(sorted: Float64Array, fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)] ?? Number.NaN;
+}
+
+interface RoadCrossingRefusal {
+  readonly pose: PlacementPose;
+  readonly reason: string;
+}
+
+interface CrossingCheck {
+  readonly placeable: Placeable;
+  readonly x: number;
+  readonly z: number;
+  readonly rot: number;
+  readonly yPlates: number;
+  readonly ignore: PlacedModel | null;
+  readonly epoch: number;
+  readonly refusal: string | null;
 }
 
 interface OpenWorld {
@@ -887,6 +915,12 @@ export class Editor implements IEditor {
   private roadPreviewMarkers: ReadonlyArray<EdgeMarker> = [];
   private play: Omit<PlaySetup, "track"> | null = null;
   private lastTrackCommit: TrackCommitResult | null = null;
+  private trackRefusal: string | null = null;
+  private crossingParts: LevelCrossingParts | null = null;
+  private crossingPlan: CrossingPlan = { crossings: [], conflicts: [] };
+  private crossingChunks: ReadonlySet<number> = new Set();
+  private crossingEpoch = 0;
+  private lastCrossingCheck: CrossingCheck | null = null;
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
   private pending: PendingAction | null = null;
@@ -983,6 +1017,7 @@ export class Editor implements IEditor {
       this.plans.setTableTopY(this.baseplateBottomY());
       this.newTrack = () => new TrackDrawing(index, palette.parts, colors);
       this.track = this.newTrack();
+      this.crossingParts = new LevelCrossingParts(index.levelCrossing, palette.parts, colors);
       this.bomTables = { palette, colors, ldrawColors: index.colors.map((color) => color.code) };
       this.roadDrawing = new RoadDrawing(this.loadedPlaceables(), (family, placeable) =>
         family === "mils"
@@ -1449,6 +1484,13 @@ export class Editor implements IEditor {
     });
   }
 
+  private crossingBomLine(): ReadonlyArray<TrackBomLine> {
+    const parts = this.crossingParts;
+    const ramps = this.crossingPlan.crossings.reduce((sum, c) => sum + c.slopes.length, 0);
+    if (!parts || ramps === 0) return [];
+    return [{ piece: parts.part.id.replace("ldraw:", ""), title: parts.part.title, count: ramps }];
+  }
+
   private bomLines(track: TrackDrawing): ReadonlyArray<TrackBomLine> {
     const lines = new Map<string, TrackBomLine>();
     for (const kit of track.pieceParts()) {
@@ -1457,9 +1499,12 @@ export class Editor implements IEditor {
       const line = lines.get(element);
       lines.set(element, { piece: element, title, count: (line?.count ?? 0) + count });
     }
-    return [...lines.values()].filter(
-      (line) => line.count > 0 || track.kitParts().some((k) => k.piece.part === line.piece),
-    );
+    return [
+      ...[...lines.values()].filter(
+        (line) => line.count > 0 || track.kitParts().some((k) => k.piece.part === line.piece),
+      ),
+      ...this.crossingBomLine(),
+    ];
   }
 
   private heldView(track: TrackDrawing): TrackPieceView | null {
@@ -1498,6 +1543,8 @@ export class Editor implements IEditor {
       held: this.heldView(track),
       drag: track.dragView(),
       lastCommit: this.lastTrackCommit,
+      refusal: this.trackRefusal,
+      crossings: this.crossingParts ? this.crossingParts.view(this.crossingPlan) : null,
       solve:
         samples.length === 0
           ? null
@@ -1579,6 +1626,31 @@ export class Editor implements IEditor {
     const stroke = roads.end(...this.roadNeighbours());
     this.clearRoadPreview();
     if (!stroke) return;
+    const replaced = new Set(stroke.requests.flatMap((request) => request.placement ?? []));
+    const crossing = this.roadCrossingRefusal(
+      (model) => !replaced.has(model.placement),
+      stroke.requests.flatMap((request) => request.to ?? []),
+    );
+    if (crossing) {
+      const refused = {
+        ...stroke.view,
+        issues: [
+          {
+            x: crossing.pose.x,
+            z: crossing.pose.z,
+            problem: "crosses-track" as const,
+            shape: null,
+            blocker: crossing.reason,
+          },
+        ],
+      };
+      this.update({
+        roadStroke: refused,
+        lastRoadStroke: { result: "refused", stroke: refused },
+        refusedClicks: this.state.refusedClicks + 1,
+      });
+      return;
+    }
     if (stroke.requests.length === 0) {
       this.update({
         roadStroke: stroke.view,
@@ -1630,6 +1702,15 @@ export class Editor implements IEditor {
     const hit = this.groundHit(ndcX, ndcY);
     if (hit) track.moveDrag(this.hitX, this.hitZ);
     const stayed = (track.dragView()?.pieces ?? 0) === 0;
+    const proposal = track.dragCrossingInput();
+    const crossingRefusal = proposal ? this.trackCrossingRefusal(proposal) : null;
+    if (crossingRefusal !== null) {
+      track.cancelDrag();
+      this.backend.setGhost(null);
+      this.showTrackEnds(null);
+      this.refuseTrack(crossingRefusal);
+      return;
+    }
     const commit = track.endDrag();
     if (hit && stayed && this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)) {
       this.backend.setGhost(null);
@@ -1666,6 +1747,7 @@ export class Editor implements IEditor {
     }
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    if (commit.refusal || commit.laid > 0) this.trackRefusal = null;
     this.update({ track: this.trackView() });
   }
 
@@ -1675,6 +1757,27 @@ export class Editor implements IEditor {
       const placeable = this.placeables[this.slots.findIndex((slot) => slot.id === piece.item)];
       if (placeable) this.requestMeshes(placeable, "high");
     }
+  }
+
+  private trackCrossingRefusal(proposal: TrackCrossingInput): string | null {
+    const parts = this.crossingParts;
+    const track = this.track;
+    if (!parts || !track) return null;
+    const laid = track.pieceCount;
+    const plan = parts.plan(this.roadPlacements(), proposal);
+    const conflict = plan.conflicts.find((entry) => entry.track >= laid);
+    if (!conflict) return null;
+    const road = this.roadModels[conflict.road]?.placeable.label ?? "a road plate";
+    return `track across ${road}: ${parts.view({ crossings: [], conflicts: [conflict] }).conflicts[0]?.text ?? conflict.reason}`;
+  }
+
+  private refuseTrack(reason: string): void {
+    this.lastTrackCommit = "refused-road";
+    this.trackRefusal = reason;
+    this.update({
+      refusedClicks: this.state.refusedClicks + 1,
+      track: this.trackView(),
+    });
   }
 
   private enterRoadMode(id: string): void {
@@ -1847,6 +1950,13 @@ export class Editor implements IEditor {
     const held = this.held;
     const snap = held?.snap;
     if (!track || !held || !snap) return;
+    const refusal = this.trackCrossingRefusal(
+      track.pieceCrossingInput(held.catalogIndex, snap.placement),
+    );
+    if (refusal !== null) {
+      this.refuseTrack(refusal);
+      return;
+    }
     const commit = track.placePiece(held.catalogIndex, snap.placement);
     const report = this.rebuildTrackChunks(track, commit.chunks);
     this.pending = {
@@ -1863,6 +1973,7 @@ export class Editor implements IEditor {
     this.syncPlan();
     this.trackEdited();
     this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    this.trackRefusal = null;
     this.held = { ...held, snap: null };
     this.showTrackEnds(null);
     this.showHeldPiece();
@@ -2168,7 +2279,7 @@ export class Editor implements IEditor {
     this.refusalPlacement = own;
     const clash = this.placed.tongueClash(placeable, x, z, rot, yPlates, ignore, this.matesRefusal);
     this.refusalPlacement = null;
-    if (!clash) return null;
+    if (!clash) return this.placedRoadCrossingRefusal(placeable, x, z, rot, yPlates, ignore);
     const other = clash.other.placeable.label;
     return clash.ownTongue
       ? `${placeable.label}: its track end would run into ${other}. Only a rail module whose rail edge faces it can take the track end.`
@@ -2319,6 +2430,7 @@ export class Editor implements IEditor {
         topLdu: segment.topLdu,
       });
     }
+    this.refreshCrossings();
     this.update({
       roads: {
         checkMs,
@@ -2684,8 +2796,111 @@ export class Editor implements IEditor {
   }
 
   private trackEdited(): void {
+    this.refreshCrossings();
     this.dirty.touchTrack(this.trackRecords());
     this.scheduleSave();
+  }
+
+  private refreshCrossings(): void {
+    const parts = this.crossingParts;
+    const track = this.track;
+    if (!parts) return;
+    this.crossingPlan = track
+      ? parts.plan(this.roadPlacements(), track.laidCrossingInput())
+      : { crossings: [], conflicts: [] };
+    const chunks = parts.chunks(this.crossingPlan);
+    for (const key of this.crossingChunks) {
+      if (!chunks.has(key)) this.backend.deleteChunk(key);
+    }
+    for (const [key, chunk] of chunks) this.backend.setChunk(key, chunk);
+    this.crossingChunks = new Set(chunks.keys());
+    this.crossingEpoch++;
+    this.update({ track: this.trackView() });
+  }
+
+  private placedRoadCrossingRefusal(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+    ignore: PlacedModel | null,
+  ): string | null {
+    if (!placeable.road) return null;
+    const last = this.lastCrossingCheck;
+    if (
+      last?.placeable === placeable &&
+      last.x === x &&
+      last.z === z &&
+      last.rot === rot &&
+      last.yPlates === yPlates &&
+      last.ignore === ignore &&
+      last.epoch === this.crossingEpoch
+    ) {
+      return last.refusal;
+    }
+    const pose = {
+      refId: this.placeables.indexOf(placeable),
+      colorId: placeable.worldColor,
+      x,
+      z,
+      yPlates,
+      rot,
+    };
+    const refusal = this.roadCrossingRefusal((model) => model !== ignore, [pose])?.reason ?? null;
+    this.lastCrossingCheck = {
+      placeable,
+      x,
+      z,
+      rot,
+      yPlates,
+      ignore,
+      epoch: this.crossingEpoch,
+      refusal,
+    };
+    return refusal;
+  }
+
+  private roadCrossingRefusal(
+    keep: (model: PlacedModel) => boolean,
+    added: ReadonlyArray<PlacementPose>,
+  ): RoadCrossingRefusal | null {
+    const parts = this.crossingParts;
+    const track = this.track;
+    if (!parts || !track || track.pieceCount === 0) return null;
+    const kept = this.roadModels.filter(keep);
+    const proposed: RoadPlacement[] = kept.flatMap((model, id) => {
+      const surface = model.placeable.road;
+      if (!surface) return [];
+      const { x, z, yPlates, rot } = model.handle;
+      return [{ id, x, z, yLdu: yPlates * PLATE_LDU, rot, surface }];
+    });
+    const fresh: Array<{ readonly placeable: Placeable; readonly pose: PlacementPose }> = [];
+    for (const pose of added) {
+      const placeable = this.placeables[pose.refId];
+      const surface = placeable?.road;
+      if (!placeable || !surface) continue;
+      proposed.push({
+        id: kept.length + fresh.length,
+        x: pose.x,
+        z: pose.z,
+        yLdu: pose.yPlates * PLATE_LDU,
+        rot: pose.rot,
+        surface,
+      });
+      fresh.push({ placeable, pose });
+    }
+    if (fresh.length === 0) return null;
+    const plan = parts.plan(proposed, track.laidCrossingInput());
+    const conflict = plan.conflicts.find((entry) => entry.road >= kept.length);
+    if (!conflict) return null;
+    const entry = fresh[conflict.road - kept.length];
+    if (!entry) return null;
+    const text = parts.view({ crossings: [], conflicts: [conflict] }).conflicts[0]?.text;
+    return {
+      pose: entry.pose,
+      reason: `${entry.placeable.label} crosses laid track: ${text ?? conflict.reason}`,
+    };
   }
 
   private scheduleSave(): void {
@@ -3169,6 +3384,7 @@ export class Editor implements IEditor {
         rot: model.handle.rot,
       })),
       roads: this.roadReport,
+      crossingRamps: this.crossingParts?.ramps(this.crossingPlan) ?? [],
       studs: this.placed.studTotals(),
     };
   }

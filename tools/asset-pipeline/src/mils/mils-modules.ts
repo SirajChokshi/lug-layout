@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import {
   MilsProfile,
   TrackCatalog,
+  type LevelCrossingRecipe,
   type MilsEdgeFeatureRule,
   type MilsEdgeRules,
   type MilsBuildFeature,
@@ -14,6 +15,7 @@ import {
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { attachPose16, composePose16, pose16, pose16Equals, zeta16, type Pose16 } from "@brr/math";
+import { loadLevelCrossing } from "../crossing/level-crossing.ts";
 import type { Affine } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { ldrawPlacement } from "../track/catalog-scenes.ts";
@@ -52,10 +54,18 @@ export function loadTrackCatalog(): TrackCatalog {
   );
 }
 
-export function milsParts(profile: MilsProfile): ReadonlyArray<string> {
+function ldrawPartName(id: string): string {
+  return id.replace(/^ldraw:/u, "");
+}
+
+export function milsParts(
+  profile: MilsProfile,
+  crossing: LevelCrossingRecipe,
+): ReadonlyArray<string> {
   const { parts, rail } = profile.build;
   return [
     ...new Set([
+      ldrawPartName(crossing.part),
       parts.baseplate,
       parts.corner,
       parts.edgeJoin,
@@ -184,6 +194,13 @@ class ModuleBuilder {
       transform: [a, b, c, d, e, f, g, h, i, targetX - rotatedCentreX, y, targetZ - rotatedCentreZ],
     });
     return footprint;
+  }
+
+  placeCrossingPart(part: string, color: number, transform: Affine): void {
+    if (!this.isProduced(part, color)) {
+      throw new Error(`${part} in colour ${color} has no Rebrickable element in the profile`);
+    }
+    this.placements.push({ part, color, transform });
   }
 
   placeTrack(part: string, color: number, onLattice: Affine, restOn: number): void {
@@ -320,7 +337,57 @@ function centrelineDistance(edges: ReadonlyArray<MilsModuleEdge>, studs: number)
   return (p: Point) => Math.min(...ends.map((end) => distanceToSegment(p, centre, end)));
 }
 
-function columnsFor(profile: MilsProfile, template: MilsTemplate): ReadonlyArray<Column> {
+interface PlanRect {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+}
+
+function crossingRects(crossing: LevelCrossingRecipe): ReadonlyArray<PlanRect> {
+  const slopes = crossing.slopes.map(({ footprint }) => ({
+    minX: footprint.minX,
+    maxX: footprint.maxX,
+    minZ: -footprint.maxZ,
+    maxZ: -footprint.minZ,
+  }));
+  const deck = {
+    minX: Math.min(...slopes.map((rect) => rect.minX)),
+    maxX: Math.max(...slopes.map((rect) => rect.maxX)),
+    minZ: -crossing.trackHalfWidthLdu,
+    maxZ: crossing.trackHalfWidthLdu,
+  };
+  return [...slopes, deck];
+}
+
+function straightAlong(edges: ReadonlyArray<MilsModuleEdge>, axis: string): boolean {
+  return edges.length === 2 && edges.every((edge) => edgeAxis(edge) === axis);
+}
+
+function crossesRail(template: MilsTemplate): boolean {
+  const railEdges = template.railEdges ?? [];
+  if (railEdges.length === 0) return false;
+  if (
+    template.feature !== "road" ||
+    !straightAlong(template.edges, "Z") ||
+    !straightAlong(railEdges, "X")
+  ) {
+    throw new Error(
+      `${template.name}: a level crossing needs a straight road on minZ and maxZ over a rail on minX and maxX`,
+    );
+  }
+  return true;
+}
+
+function inCrossing(rects: ReadonlyArray<PlanRect>, x: number, z: number): boolean {
+  return rects.some((rect) => x > rect.minX && x < rect.maxX && z > rect.minZ && z < rect.maxZ);
+}
+
+function columnsFor(
+  profile: MilsProfile,
+  template: MilsTemplate,
+  crossing: LevelCrossingRecipe,
+): ReadonlyArray<Column> {
   const studs = profile.spec.moduleStuds.value;
   const land: Column = {
     topPlates: profile.spec.surfacePlates.value,
@@ -335,9 +402,17 @@ function columnsFor(profile: MilsProfile, template: MilsTemplate): ReadonlyArray
   const build = profile.build.features[feature];
   const halfWidth = build.widthStuds / 2;
   const distance = centrelineDistance(template.edges, studs);
+  const deck = crossesRail(template) ? crossingRects(crossing) : [];
+  const half = (studs * LDU_PER_STUD) / 2;
   const columns: Column[] = [];
   for (let row = 0; row < studs; row++) {
     for (let column = 0; column < studs; column++) {
+      const centreX = -half + (column + 0.5) * LDU_PER_STUD;
+      const centreZ = -half + (row + 0.5) * LDU_PER_STUD;
+      if (inCrossing(deck, centreX, centreZ)) {
+        columns.push(land);
+        continue;
+      }
       const offset = distance({ x: column + 0.5, z: row + 0.5 });
       columns.push(featureColumn(build, land, offset - halfWidth));
     }
@@ -607,8 +682,11 @@ function expectedEdge(
   const land: StudRule = { minPlates: surface, maxPlates: surface, colors: null, what: "land" };
   const rules: StudRule[] = Array.from({ length: studs }, () => land);
   const { feature } = template;
-  if (feature === null || !template.edges.includes(edge)) return rules;
-  if (feature === "rail") {
+  const isRailEdge =
+    (feature === "rail" && template.edges.includes(edge)) ||
+    (template.railEdges ?? []).includes(edge);
+  if (feature === null || !(template.edges.includes(edge) || isRailEdge)) return rules;
+  if (isRailEdge) {
     const width = wholeStuds(rail.depthLdu, `${rail.part} width across the track`);
     const { from, to } = centredBand(studs, width, "the rail");
     const plates = surface + rail.thicknessLdu / LDU_PER_PLATE;
@@ -648,6 +726,7 @@ function expectedEdge(
     }
     return rules;
   }
+  if (feature === "rail") return rules;
   const level = spec.features[feature];
   const { from, to } = centredBand(studs, level.widthStuds.value, `the ${feature}`);
   return setBand(
@@ -741,6 +820,7 @@ function buildModule(
   measured: ReadonlyMap<string, BaseplateMeasurement>,
   profile: MilsProfile,
   catalog: TrackCatalog,
+  crossing: LevelCrossingRecipe,
   template: MilsTemplate,
 ): ReadonlyArray<Placement> {
   const studs = profile.spec.moduleStuds.value;
@@ -764,7 +844,7 @@ function buildModule(
     false,
     -baseplateThickness,
   );
-  const columns = columnsFor(profile, template);
+  const columns = columnsFor(profile, template, crossing);
   const { solid, hollow } = substructureCells(builder, profile, columns);
   const topLevel = Math.max(...columns.map((column) => column.topPlates));
   for (let level = 1; level <= topLevel; level++) {
@@ -776,8 +856,27 @@ function buildModule(
       if (level === surface) supportCovers(builder, profile, packed, solid, hollow);
     }
   }
-  if (template.feature === "rail") placeRail(builder, profile, catalog, surface * LDU_PER_PLATE);
+  const restOn = surface * LDU_PER_PLATE;
+  if (template.feature === "rail" || crossesRail(template)) {
+    placeRail(builder, profile, catalog, restOn);
+  }
+  if (crossesRail(template)) placeCrossing(builder, profile, crossing, restOn);
   return builder.placements;
+}
+
+function placeCrossing(
+  builder: ModuleBuilder,
+  profile: MilsProfile,
+  crossing: LevelCrossingRecipe,
+  restOn: number,
+): void {
+  const part = ldrawPartName(crossing.part);
+  const color = profile.build.crossingLdrawColor;
+  for (const { rot, offset } of crossing.slopes) {
+    const [a, b, c, d, e, f, g, h, i] = QUARTER_TURNS[rot];
+    const [x, y, z] = offset;
+    builder.placeCrossingPart(part, color, [a, b, -c, d, e, f, -g, h, i, x, -restOn - y, -z]);
+  }
 }
 
 function placeRail(
@@ -836,14 +935,15 @@ export function buildMilsModules(
   library: LdrawLibrary,
   profile: MilsProfile,
   catalog: TrackCatalog,
+  crossing: LevelCrossingRecipe,
 ): ReadonlyArray<MilsModule> {
   const measured = new Map(
-    milsParts(profile).map((part) => [part, measureBaseplate(library, part)]),
+    milsParts(profile, crossing).map((part) => [part, measureBaseplate(library, part)]),
   );
   const rail = measureBaseplate(library, profile.build.rail.part);
   const studs = profile.spec.moduleStuds.value;
   return profile.templates.map((template) => {
-    const placements = buildModule(measured, profile, catalog, template);
+    const placements = buildModule(measured, profile, catalog, crossing, template);
     const tops = measureTops(measured, placements, studs);
     requireSpecEdges(profile, template, tops, rail);
     return {
@@ -855,7 +955,7 @@ export function buildMilsModules(
 }
 
 export function milsModules(library: LdrawLibrary): ReadonlyArray<MilsModule> {
-  return buildMilsModules(library, loadMilsProfile(), loadTrackCatalog());
+  return buildMilsModules(library, loadMilsProfile(), loadTrackCatalog(), loadLevelCrossing());
 }
 
 function levelFeatureRule(

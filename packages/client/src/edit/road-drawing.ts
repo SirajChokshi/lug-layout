@@ -27,7 +27,12 @@ import {
 import type { Placeable } from "./placeable.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
 
-export type RoadTileProblem = "no-piece" | "other-family" | "mismatch" | "overlap";
+export type RoadTileProblem =
+  | "no-piece"
+  | "other-family"
+  | "mismatch"
+  | "overlap"
+  | "crosses-track";
 
 export interface RoadKitView {
   readonly id: string;

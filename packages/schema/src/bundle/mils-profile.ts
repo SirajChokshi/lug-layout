@@ -95,6 +95,7 @@ export const MilsBuild = v.strictObject({
     river: MilsBuildRiver,
   }),
   rail: v.strictObject({ part: v.string(), ldrawColor: Count }),
+  crossingLdrawColor: Count,
 });
 export type MilsBuild = v.InferOutput<typeof MilsBuild>;
 
@@ -103,6 +104,7 @@ export const MilsTemplate = v.strictObject({
   title: v.pipe(v.string(), v.minLength(1)),
   feature: v.nullable(MilsFeature),
   edges: v.array(MilsModuleEdge),
+  railEdges: v.optional(v.array(MilsModuleEdge)),
 });
 export type MilsTemplate = v.InferOutput<typeof MilsTemplate>;
 

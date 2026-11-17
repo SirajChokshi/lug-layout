@@ -188,7 +188,8 @@
     "rail": {
       "part": "74746",
       "ldrawColor": 72
-    }
+    },
+    "crossingLdrawColor": 72
   },
   "elementSource": "Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16); keys are part@colour with LDraw colour codes, which equal the Rebrickable colour ids for every colour used here (docs/verified-facts.md, Catalog data)",
   "elements": {
@@ -301,6 +302,7 @@
     "3958@19": ["4125217"],
     "3958@2": ["4112519", "4140525", "4226356", "4626001", "6097194"],
     "3958@70": ["4217848"],
+    "4515@72": ["4211027", "4654618", "6597674"],
     "6111@71": ["4211521"],
     "6112@71": ["4211522"],
     "63864@72": ["4568734"],
@@ -388,6 +390,13 @@
       "title": "Rail Module Straight (project rule, not MILS)",
       "feature": "rail",
       "edges": ["minX", "maxX"]
+    },
+    {
+      "name": "mils-level-crossing",
+      "title": "MILS Level Crossing: Paved Road over Rail (rail is a project rule, not MILS)",
+      "feature": "road",
+      "edges": ["minZ", "maxZ"],
+      "railEdges": ["minX", "maxX"]
     }
   ]
 }

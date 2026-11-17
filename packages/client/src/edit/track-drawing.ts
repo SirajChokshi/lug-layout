@@ -14,15 +14,18 @@ import {
   NO_END,
   TrackGraph,
   TrackLayout,
+  type CrossingTrackPiece,
   type DrawingKit,
   type EndGap,
   type TrackEnd,
+  type TrackLine,
   type TrackMove,
   type TrackPieceDef,
   type TrackPieceSpec,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
+  PLATE_LDU,
   STUD_LDU,
   ZETA16_ORDER,
   chunkKey,
@@ -37,11 +40,13 @@ import {
   zeta16,
   zeta16ToStuds,
   type Pose16,
+  type Zeta16,
 } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
+import { planTrianglesMeetRect, type TrackCrossingInput } from "./level-crossings.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
@@ -52,6 +57,7 @@ const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
 const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
+const LATTICE_COEFFICIENTS = new Set([0, 4]);
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -165,6 +171,10 @@ interface Placed {
   readonly placement: Pose16;
 }
 
+interface CrossingCandidate extends Placed {
+  readonly yPlates: number;
+}
+
 function normalizeConnector(connector: number, count: number): number {
   return ((connector % count) + count) % count;
 }
@@ -259,6 +269,45 @@ function partBox(placed: Placed): WorldBox {
     maxY: placed.part.yLdu + maxY,
     maxZ: z + (boxes[o + 3] ?? 0),
   };
+}
+
+function onStudLattice(position: Zeta16): boolean {
+  return position.every((coefficient, k) => LATTICE_COEFFICIENTS.has(k) || coefficient === 0n);
+}
+
+function latticeLine(placed: Placed): TrackLine | null {
+  if (placed.part.piece.kind !== "straight") return null;
+  const ends = placed.part.def.connectors.map((c) => composePose16(placed.placement, c).position);
+  const [a, b] = ends;
+  if (ends.length !== 2 || !a || !b || !onStudLattice(a) || !onStudLattice(b)) return null;
+  const ax = Number(a[0]) * STUD_LDU;
+  const az = Number(a[4]) * STUD_LDU;
+  const bx = Number(b[0]) * STUD_LDU;
+  const bz = Number(b[4]) * STUD_LDU;
+  if (az === bz) return { axis: "x", across: az, from: Math.min(ax, bx), to: Math.max(ax, bx) };
+  if (ax === bx) return { axis: "z", across: ax, from: Math.min(az, bz), to: Math.max(az, bz) };
+  return null;
+}
+
+function planTriangles(placed: Placed, part: PartAsset): Float64Array {
+  const { x, z, c, s } = partTransform(placed.placement, placed.part.piece.partFrame);
+  const positions = part.mesh.positions;
+  let count = 0;
+  for (const group of part.mesh.groups) count += Math.floor(group.indices.length / 3);
+  const out = new Float64Array(count * PLAN_TRIANGLE_FLOATS);
+  let o = 0;
+  for (const group of part.mesh.groups) {
+    for (let t = 0; t + 2 < group.indices.length; t += 3) {
+      for (let v = 0; v < 3; v++) {
+        const index = (group.indices[t + v] ?? 0) * 3;
+        const px = positions[index] ?? 0;
+        const pz = positions[index + 2] ?? 0;
+        out[o++] = x + c * px - s * pz;
+        out[o++] = z + s * px + c * pz;
+      }
+    }
+  }
+  return out;
 }
 
 export function trackChunkKey(chunkX: number, chunkZ: number): number {
@@ -767,6 +816,65 @@ export class TrackDrawing {
     }
     this.ends = ends.map((end) => end.pose);
     this.gapList = endGaps(ends);
+  }
+
+  private laidCandidates(): CrossingCandidate[] {
+    const laid: CrossingCandidate[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      laid.push({ ...this.placedAt(p), yPlates: this.layout.yPlates(p) });
+    }
+    return laid;
+  }
+
+  private crossingInput(candidates: ReadonlyArray<CrossingCandidate>): TrackCrossingInput {
+    const triangles = new Map<number, Float64Array>();
+    const pieces: CrossingTrackPiece[] = candidates.map((candidate, index) => ({
+      index,
+      bedLdu: candidate.yPlates * PLATE_LDU,
+      straight: candidate.part.piece.kind === "straight",
+      line: latticeLine(candidate),
+      box: partBox(candidate),
+    }));
+    return {
+      pieces,
+      meets: (index, rect) => {
+        const candidate = candidates[index];
+        const part = candidate ? this.parts[candidate.part.partIndex] : undefined;
+        if (!candidate || !part) throw new RangeError(`no track piece ${index} to test`);
+        let planned = triangles.get(index);
+        if (!planned) {
+          planned = planTriangles(candidate, part);
+          triangles.set(index, planned);
+        }
+        return planTrianglesMeetRect(planned, rect.minX, rect.maxX, rect.minZ, rect.maxZ);
+      },
+    };
+  }
+
+  laidCrossingInput(): TrackCrossingInput {
+    return this.crossingInput(this.laidCandidates());
+  }
+
+  dragCrossingInput(): TrackCrossingInput | null {
+    const drag = this.drag;
+    if (!drag?.start || drag.moves.length === 0) return null;
+    if (drag.closure === "impossible" || drag.closure === "limit") return null;
+    const { placed } = layMoves(drag.start, drag.moves);
+    const proposed = placed.flatMap((piece, i) => {
+      const move = drag.moves[i];
+      return move
+        ? [{ part: this.kitPart(move), placement: piece.placement, yPlates: GROUND_PLATES }]
+        : [];
+    });
+    return this.crossingInput([...this.laidCandidates(), ...proposed]);
+  }
+
+  pieceCrossingInput(catalogIndex: number, placement: Pose16): TrackCrossingInput {
+    const part = this.pieceByIndex(catalogIndex);
+    return this.crossingInput([
+      ...this.laidCandidates(),
+      { part, placement, yPlates: GROUND_PLATES },
+    ]);
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {

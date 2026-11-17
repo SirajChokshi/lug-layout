@@ -31,6 +31,18 @@ export {
   type RoadTile,
   type RoadTileRefusal,
 } from "./road-tiles.ts";
+export {
+  planLevelCrossings,
+  type CrossingConflict,
+  type CrossingConflictReport,
+  type CrossingPlan,
+  type CrossingTrackPiece,
+  type LevelCrossing,
+  type PlacedCrossingSlope,
+  type TrackAxis,
+  type TrackLine,
+  type TrackMeetsRect,
+} from "./level-crossings.ts";
 export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
   classifyModuleEdge,

@@ -309,6 +309,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
       trackShapes: manifest.trackShapes,
+      levelCrossing: manifest.levelCrossing,
       milsEdgeRules: manifest.milsEdgeRules,
     };
   }
@@ -362,6 +363,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
       trackShapes: manifest.trackShapes,
+      levelCrossing: manifest.levelCrossing,
       milsEdgeRules: manifest.milsEdgeRules,
     };
   }

@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import levelCrossing from "../../../docs/verified-facts/level-crossing.json" with { type: "json" };
 import { MANIFEST_FILE, publishBundle } from "./publish.ts";
 import { encodePng } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
@@ -58,6 +59,7 @@ function compiledManifest() {
     catalogParts: [],
     trackCatalog: { n: 16, pieces: [] },
     trackShapes: [],
+    levelCrossing,
     milsEdgeRules: {
       source: "test",
       moduleStuds: 32,

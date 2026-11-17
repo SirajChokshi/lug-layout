@@ -40,6 +40,8 @@ function issueText(issue: RoadTileIssue): string {
       return `${where}: its edges wouldn't line up with ${issue.blocker ?? "the road"} beside it`;
     case "overlap":
       return `${where}: overlaps ${issue.blocker ?? "another plate"}`;
+    case "crosses-track":
+      return `${where}: ${issue.blocker ?? "crosses laid track without a level crossing"}`;
     default: {
       const unhandled: never = issue.problem;
       throw new Error(`unhandled road problem ${String(unhandled)}`);

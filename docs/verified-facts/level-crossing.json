@@ -1,0 +1,128 @@
+{
+  "source": "tools/asset-pipeline cli.ts facts (src/crossing/level-crossing.ts): the 4515 placements of the recipe model's crossing section, read relative to its first 74746 and identified as quarter turns with whole-LDU offsets within 0.0005 LDU; the other sources are cross-checks",
+  "frame": "bundle frame, +Y up and z = -z_LDraw; origin on the track centreline at the crossing centre, at the track's underside (the bed); +x along the track; rot is a quarter turn in the editor's Rot90 sense (x' = cos x + sin z, z' = -sin x + cos z)",
+  "part": "ldraw:4515",
+  "title": "Slope Brick 10 6 x 8",
+  "trackSystem": "lego-9v",
+  "trackPart": "ldraw:74746",
+  "trackHalfWidthLdu": 80,
+  "railTopAboveBedLdu": 24,
+  "slopeRiseLdu": 24,
+  "lowLipLdu": 5,
+  "slopes": [
+    {
+      "rot": 0,
+      "offset": [
+        -80,
+        24,
+        140
+      ],
+      "footprint": {
+        "minX": -160,
+        "maxX": 0,
+        "minZ": 80,
+        "maxZ": 200
+      },
+      "highEdgeAcrossLdu": 80
+    },
+    {
+      "rot": 0,
+      "offset": [
+        80,
+        24,
+        140
+      ],
+      "footprint": {
+        "minX": 0,
+        "maxX": 160,
+        "minZ": 80,
+        "maxZ": 200
+      },
+      "highEdgeAcrossLdu": 80
+    },
+    {
+      "rot": 2,
+      "offset": [
+        80,
+        24,
+        -140
+      ],
+      "footprint": {
+        "minX": 0,
+        "maxX": 160,
+        "minZ": -200,
+        "maxZ": -80
+      },
+      "highEdgeAcrossLdu": -80
+    },
+    {
+      "rot": 2,
+      "offset": [
+        -80,
+        24,
+        -140
+      ],
+      "footprint": {
+        "minX": -160,
+        "maxX": 0,
+        "minZ": -200,
+        "maxZ": -80
+      },
+      "highEdgeAcrossLdu": -80
+    }
+  ],
+  "evidence": [
+    {
+      "model": "10128-1",
+      "sha256": "7928f4e259455ec49cc02c62acb1653f7a002824c789f099845936d0a2e8a0b9",
+      "section": "10128 - level crossing.ldr",
+      "trackPart": "ldraw:74746",
+      "trackSystem": "lego-9v",
+      "use": "recipe",
+      "trackPieces": 3,
+      "slopes": 4,
+      "centreAlongTrackLdu": 480,
+      "alongOffsetsLdu": [
+        -80,
+        80,
+        80,
+        -80
+      ],
+      "acrossOffsetsLdu": [
+        140,
+        140,
+        -140,
+        -140
+      ],
+      "highEdgeAcrossLdu": 80,
+      "trackHalfWidthLdu": 80,
+      "railTopAboveBedLdu": 24
+    },
+    {
+      "model": "7936-1",
+      "sha256": "f26bc3b65089335753e0b0d5d77c1b048dd7f2475cafd177a4c44ff440a4fd10",
+      "section": "7936 - crossing.ldr",
+      "trackPart": "ldraw:53401",
+      "trackSystem": "lego-plastic",
+      "use": "cross-check",
+      "trackPieces": 3,
+      "slopes": 4,
+      "centreAlongTrackLdu": 0,
+      "alongOffsetsLdu": [
+        -80,
+        80,
+        -80,
+        80
+      ],
+      "acrossOffsetsLdu": [
+        120,
+        120,
+        -120,
+        -120
+      ],
+      "highEdgeAcrossLdu": 60,
+      "trackHalfWidthLdu": 80,
+      "railTopAboveBedLdu": 24
+    }
+  ]
+}

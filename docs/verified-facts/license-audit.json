@@ -12,20 +12,20 @@
     "root": ""
   },
   "bundleClosure": {
-    "files": 1968,
+    "files": 1971,
     "licenses": {
       "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 135,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 1833
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 1836
     },
     "withoutLicense": [],
     "nonCaLicense": [],
     "unofficial": []
   },
   "auditClosure": {
-    "files": 478,
+    "files": 483,
     "licenses": {
       "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 3,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 475
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 480
     },
     "withoutLicense": [],
     "nonCaLicense": [],
@@ -46,7 +46,7 @@
   "ldcadShadow": {
     "licenseFileFirstLine": "Attribution-ShareAlike 4.0 International",
     "patchFileLicenses": {
-      "CC BY-SA 4.0, see LICENSE.md": 73
+      "CC BY-SA 4.0, see LICENSE.md": 74
     }
   },
   "parts": [
@@ -1228,6 +1228,29 @@
         ],
         "trainTrackSnapLines": 0,
         "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "4515",
+      "group": "level-crossing",
+      "status": "officialCA",
+      "header": {
+        "title": "Slope Brick 10 6 x 8",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 21,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/4515s01.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
       }
     },
     {

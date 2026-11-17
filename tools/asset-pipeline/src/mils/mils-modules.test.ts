@@ -6,6 +6,7 @@ import { decode } from "@brr/schema/decode";
 import { describe, expect, it } from "vitest";
 import { LdrawLibrary } from "../ldraw/library.ts";
 import { findTrackEnds, LDU_PER_STUD, loadTrackEndMarkers } from "../track/track-ends.ts";
+import { loadLevelCrossing } from "../crossing/level-crossing.ts";
 import { buildMilsModules, loadMilsProfile, loadTrackCatalog } from "./mils-modules.ts";
 
 const library = new LdrawLibrary([
@@ -13,6 +14,7 @@ const library = new LdrawLibrary([
 ]);
 const catalog = loadTrackCatalog();
 const profile = loadMilsProfile();
+const crossing = loadLevelCrossing();
 const EDGES: ReadonlyArray<MilsModuleEdge> = ["minX", "maxX", "minZ", "maxZ"];
 
 const LAND = "32@4:2";
@@ -42,7 +44,9 @@ function exactStuds(ldu: number, what: string): number {
 
 function chainedRailEnds(modules: number): ReadonlyArray<Pose16> {
   const rail = profile.templates.find((template) => template.feature === "rail");
-  const built = buildMilsModules(library, profile, catalog).find((m) => m.name === rail?.name);
+  const built = buildMilsModules(library, profile, catalog, crossing).find(
+    (m) => m.name === rail?.name,
+  );
   if (!built) throw new Error("the profile has no rail module");
   const part = profile.build.rail.part;
   const ends = findTrackEnds(library, part, loadTrackEndMarkers());
@@ -83,16 +87,18 @@ function withoutElement(key: string): MilsProfile {
 
 describe("MILS module templates", () => {
   it("measure, from the placed parts, MILS edges on every side of every template", () => {
-    const modules = buildMilsModules(library, profile, catalog);
+    const modules = buildMilsModules(library, profile, catalog, crossing);
     expect(modules.map((module) => module.name)).toEqual(profile.templates.map((t) => t.name));
     for (const template of profile.templates) {
       const module = modules.find((entry) => entry.name === template.name);
       const expected = Object.fromEntries(
         EDGES.map((edge) => [
           edge,
-          template.feature !== null && template.edges.includes(edge)
-            ? FEATURE_EDGES[template.feature]
-            : LAND,
+          template.railEdges?.includes(edge)
+            ? FEATURE_EDGES["rail"]
+            : template.feature !== null && template.edges.includes(edge)
+              ? FEATURE_EDGES[template.feature]
+              : LAND,
         ]),
       );
       expect({ name: template.name, edges: module?.edges }).toEqual({
@@ -124,7 +130,7 @@ describe("MILS module templates", () => {
       /mils-road-straight: edge minX stud 8 measures 4 plates in colour 2, but the spec needs road/u,
     ],
   ])("refuses a profile with %s", (_case, edit, message) => {
-    expect(() => buildMilsModules(library, corrupted(edit), catalog)).toThrow(message);
+    expect(() => buildMilsModules(library, corrupted(edit), catalog, crossing)).toThrow(message);
   });
 
   it.each([2, 3])(
@@ -145,10 +151,10 @@ describe("MILS module templates", () => {
   );
 
   it("packs around a plate never produced in a colour, and refuses to place a part that was not", () => {
-    const plain = buildMilsModules(library, withoutElement("91405@2"), catalog)[0];
+    const plain = buildMilsModules(library, withoutElement("91405@2"), catalog, crossing)[0];
     expect(plain?.ldraw).toContain("92438.dat");
     expect(plain?.ldraw).not.toMatch(/^1 2 .* 91405\.dat$/mu);
-    expect(() => buildMilsModules(library, withoutElement("3811@2"), catalog)).toThrow(
+    expect(() => buildMilsModules(library, withoutElement("3811@2"), catalog, crossing)).toThrow(
       "3811 in colour 2 has no Rebrickable element in the profile",
     );
   });

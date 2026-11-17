@@ -79,6 +79,11 @@ export type {
 } from "./edit/editor.ts";
 export type { RoadShape } from "@brr/domain";
 export type {
+  CrossingConflictView,
+  CrossingRampDump,
+  CrossingView,
+} from "./edit/level-crossings.ts";
+export type {
   RoadKitView,
   RoadStrandedTile,
   RoadStrokeView,

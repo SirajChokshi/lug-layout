@@ -138,6 +138,7 @@ export type PartBundle = Pick<
   | "models"
   | "trackCatalog"
   | "trackShapes"
+  | "levelCrossing"
   | "milsEdgeRules"
 > & {
   readonly parts: ReadonlyArray<PartAsset>;

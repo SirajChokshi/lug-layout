@@ -32,7 +32,16 @@ export type Vec3 = v.InferOutput<typeof Vec3>;
 
 const Bounds = v.object({ min: Vec3, max: Vec3 });
 
-export const PartRole = v.picklist(["ground", "road", "track", "wall", "roof", "detail", "model"]);
+export const PartRole = v.picklist([
+  "ground",
+  "road",
+  "track",
+  "crossing",
+  "wall",
+  "roof",
+  "detail",
+  "model",
+]);
 export type PartRole = v.InferOutput<typeof PartRole>;
 
 export const DisplayColor = v.object({ ldraw: Integer, source: v.string() });
@@ -128,6 +137,57 @@ export const TrackCatalog = v.object({
   pieces: v.array(TrackPiece),
 });
 export type TrackCatalog = v.InferOutput<typeof TrackCatalog>;
+
+const QuarterTurn = v.picklist([0, 1, 2, 3]);
+const IntegerTriple = v.tuple([Integer, Integer, Integer]);
+
+export const CrossingRect = v.pipe(
+  v.strictObject({ minX: Integer, maxX: Integer, minZ: Integer, maxZ: Integer }),
+  v.check((rect) => rect.minX < rect.maxX && rect.minZ < rect.maxZ, "a rectangle must have area"),
+);
+export type CrossingRect = v.InferOutput<typeof CrossingRect>;
+
+export const LevelCrossingSlope = v.strictObject({
+  rot: QuarterTurn,
+  offset: IntegerTriple,
+  footprint: CrossingRect,
+  highEdgeAcrossLdu: Integer,
+});
+export type LevelCrossingSlope = v.InferOutput<typeof LevelCrossingSlope>;
+
+export const LevelCrossingEvidence = v.strictObject({
+  model: v.string(),
+  sha256: Sha256Hex,
+  section: v.string(),
+  trackPart: v.string(),
+  trackSystem: TrackSystem,
+  use: v.picklist(["recipe", "cross-check"]),
+  trackPieces: Count,
+  slopes: Count,
+  centreAlongTrackLdu: Integer,
+  alongOffsetsLdu: v.array(Integer),
+  acrossOffsetsLdu: v.array(Integer),
+  highEdgeAcrossLdu: Integer,
+  trackHalfWidthLdu: Integer,
+  railTopAboveBedLdu: Integer,
+});
+export type LevelCrossingEvidence = v.InferOutput<typeof LevelCrossingEvidence>;
+
+export const LevelCrossingRecipe = v.strictObject({
+  source: v.string(),
+  frame: v.string(),
+  part: v.string(),
+  title: v.string(),
+  trackSystem: TrackSystem,
+  trackPart: v.string(),
+  trackHalfWidthLdu: Count,
+  railTopAboveBedLdu: Count,
+  slopeRiseLdu: Count,
+  lowLipLdu: Count,
+  slopes: v.pipe(v.array(LevelCrossingSlope), v.minLength(1)),
+  evidence: v.pipe(v.array(LevelCrossingEvidence), v.minLength(1)),
+});
+export type LevelCrossingRecipe = v.InferOutput<typeof LevelCrossingRecipe>;
 
 export const BundleSource = v.object({
   kind: v.literal("github-mirror"),
@@ -447,6 +507,7 @@ export const BundleIndex = v.object({
   }),
   trackCatalog: TrackCatalog,
   trackShapes: v.array(TrackShape),
+  levelCrossing: LevelCrossingRecipe,
   milsEdgeRules: MilsEdgeRules,
   compiler: v.nullable(BundleCompiler),
   crosswalk: FileRef,

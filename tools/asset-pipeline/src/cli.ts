@@ -2,6 +2,7 @@ import {
   BundleIndex,
   BundleLod,
   BundleManifest,
+  LevelCrossingRecipe,
   MilsEdgeRules,
   TrackCatalog,
   type CatalogSourceUse,
@@ -62,8 +63,10 @@ import {
   uploadPartBundle,
   waitUntilServed,
 } from "./remote-bundle.ts";
+import { LEVEL_CROSSING_FILE, readCrossingModels } from "./crossing/level-crossing.ts";
 import {
   geometryReports,
+  levelCrossingReports,
   licenseAuditReport,
   readSources,
   trackCatalogReports,
@@ -229,6 +232,7 @@ async function factsCommand(check: boolean): Promise<void> {
     }),
     ...geometryReports(lock.source, auditLibrary, shadowLibrary, palette.studPrimitives),
     ...trackCatalogReports(auditLibrary, palette),
+    ...levelCrossingReports(auditLibrary, readCrossingModels(omrRoot, palette), palette),
   ];
   if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
@@ -331,9 +335,17 @@ async function addVerifiedFacts(directory: string): Promise<void> {
     decode(MilsEdgeRules, JSON.parse(await readFile(rulesPath, "utf8"))),
     rulesPath,
   );
+  const crossingPath = join(verifiedFactsRoot, LEVEL_CROSSING_FILE);
+  const levelCrossing = decodedOrThrow(
+    decode(LevelCrossingRecipe, JSON.parse(await readFile(crossingPath, "utf8"))),
+    crossingPath,
+  );
+  if (!bundled.has(levelCrossing.part)) {
+    throw new Error(`level crossing part ${levelCrossing.part} is missing from the bundle`);
+  }
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, milsEdgeRules }, null, 2)}\n`,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, levelCrossing, milsEdgeRules }, null, 2)}\n`,
   );
 }
 
