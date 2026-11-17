@@ -32,7 +32,10 @@ jobs:
         id: served
         env:
           PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
-        run: node tools/asset-pipeline/src/cli.ts served
+        run: |
+          : "${PART_BUNDLE_BASE_URL:=$(node -p "require('./infra/cloudflare/part-bundles.json').public_base_url")}"
+          export PART_BUNDLE_BASE_URL
+          node tools/asset-pipeline/src/cli.ts served
 
   publish:
     name: Publish part bundle
