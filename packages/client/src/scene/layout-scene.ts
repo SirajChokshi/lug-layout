@@ -29,7 +29,7 @@ import { inject, injectable } from "inversify";
 import { MergedParts } from "../edit/merged-parts.ts";
 import { PlacedChunks } from "../edit/placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "../edit/placeable.ts";
-import { TrackDrawing } from "../edit/track-drawing.ts";
+import { TrackDrawing, type TrackSupportProbe } from "../edit/track-drawing.ts";
 import { layoutClash } from "./layout-clashes.ts";
 import type { CityCamera } from "./city-scene.ts";
 import {
@@ -70,6 +70,7 @@ interface DisplayRow {
   readonly zStuds: number;
 }
 
+const BENCH_TABLE: TrackSupportProbe = (cells) => ({ kind: "on-baseplate", cells: cells.count });
 const MODULE_NAME = "mils-plain";
 const BASEPLATE_ID = "ldraw:3811";
 const BASEPLATE_COLOR_NAME = "Green";
@@ -259,7 +260,7 @@ export class LayoutScene implements ILayoutScene {
     const farModels: PartMesh[] = [];
     const placeables = await this.loadPlaceables(lod, palette, farPalette, farModels, colors);
     const baseplate = this.baseplate(bundle, palette, colors);
-    const track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+    const track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors, BENCH_TABLE);
     this.capture.setPalette({
       detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
       far: { parts: farPalette.parts, studPrimitives: farBundle.studPrimitives },
@@ -317,6 +318,7 @@ export class LayoutScene implements ILayoutScene {
       color.name,
       palette.parts,
       colors,
+      part.boundsMin[1],
     );
   }
 

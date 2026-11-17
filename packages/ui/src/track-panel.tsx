@@ -80,6 +80,12 @@ function dragRows(drag: TrackDragView): ReadonlyArray<readonly [string, string]>
     ["Ghost run", `${drag.pieces} pieces (${drag.straights} straight, ${drag.curves} curve)`],
     ["Join", closureText(drag)],
     ["Solve", `${drag.solveMs.toFixed(2)} ms`],
+    [
+      "Baseplate under the run",
+      drag.offBaseplate
+        ? `piece ${drag.offBaseplate.piece + 1} of ${drag.offBaseplate.pieces} has ${drag.offBaseplate.missing.count} cells off the baseplates (red); release lays nothing`
+        : "every piece sits on a baseplate",
+    ],
   ];
 }
 
@@ -97,6 +103,8 @@ function commitText(track: TrackView): string {
       return "switch thrown to the straight route";
     case "switch-branching":
       return "switch thrown to the branching route";
+    case "refused-off-baseplate":
+      return "refused: part of the run has no baseplate under it";
     case null:
       return "none yet";
     default: {
@@ -144,6 +152,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-held={track.held?.item ?? ""}
       data-snapped={track.held?.snapped ? "1" : ""}
       data-held-misses={track.held?.misses ?? 0}
+      data-off-baseplate={track.drag?.offBaseplate?.missing.count ?? ""}
     >
       <h2>Track</h2>
       {snapshot.mode === "track" && !track.held && (
