@@ -14,6 +14,7 @@ import {
   type PlanOverlay,
   type RebaseEvent,
   type SceneBackendConfig,
+  type TrackEndMarker,
   type WorldBox,
 } from "@brr/render";
 import { inject, injectable } from "inversify";
@@ -119,6 +120,9 @@ class ChunkCapture implements ISceneBackend {
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
     this.inner.setMarkers(markers);
   }
+  setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
+    this.inner.setTrackEnds(markers);
+  }
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.inner.setPlanOverlays(overlays);
   }
@@ -134,8 +138,16 @@ class ChunkCapture implements ISceneBackend {
   setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void {
     this.inner.setVehiclePose(vehicle, x, y, z, yaw);
   }
-  setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void {
-    this.inner.setView(eyeX, eyeY, eyeZ, atX, atY, atZ);
+  setView(
+    eyeX: number,
+    eyeY: number,
+    eyeZ: number,
+    atX: number,
+    atY: number,
+    atZ: number,
+    orthoHalfHeightLdu?: number,
+  ): void {
+    this.inner.setView(eyeX, eyeY, eyeZ, atX, atY, atZ, orthoHalfHeightLdu);
   }
   resize(width: number, height: number): void {
     this.inner.resize(width, height);
