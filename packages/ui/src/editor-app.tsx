@@ -17,6 +17,7 @@ import {
 } from "./editor-panels.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
 import { TrackPanel } from "./track-panel.tsx";
@@ -100,6 +101,8 @@ export function EditorApp({
       data-road-joined={snapshot.roads.joinedCells}
       data-road-open={snapshot.roads.openCells}
       data-road-mismatch={snapshot.roads.mismatchedCells}
+      data-road-pieces={snapshot.roads.placements}
+      data-mode={snapshot.mode}
     >
       <EditorCanvas editor={editor} camera={camera} options={options} />
       <ToolHud snapshot={snapshot} />
@@ -110,6 +113,7 @@ export function EditorApp({
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
+        <RoadDrawPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />
       </div>

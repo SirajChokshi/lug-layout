@@ -5,6 +5,7 @@ import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 export type EditorActionId =
   | "select-tool"
   | "draw-track"
+  | "draw-road"
   | "rotate"
   | "delete"
   | "duplicate"
@@ -64,6 +65,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "t" }],
     keywords: "rail train lay 9v",
+  },
+  {
+    id: "draw-road",
+    title: "Draw road",
+    group: "Tools",
+    keys: [{ key: "g" }],
+    keywords: "street lay plates mils",
   },
   {
     id: "rotate",
@@ -257,6 +265,7 @@ export function isShellCommand(id: CommandId): id is ShellCommandId {
 export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean {
   if (id === "select-tool") return snapshot.mode === "select";
   if (id === "draw-track") return snapshot.mode === "track";
+  if (id === "draw-road") return snapshot.mode === "road";
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
   return false;
@@ -267,7 +276,7 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
   if (snapshot.status !== "ready") return false;
   switch (id) {
     case "rotate":
-      return snapshot.mode === "place" || snapshot.selection !== null;
+      return snapshot.mode === "place" || snapshot.mode === "road" || snapshot.selection !== null;
     case "delete":
     case "duplicate":
     case "focus":
@@ -280,6 +289,8 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
       return snapshot.hover !== null;
     case "draw-track":
       return snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
+    case "draw-road":
+      return snapshot.roadKit !== null;
     case "select-tool":
     case "fit-all":
     case "toggle-plan-view":
@@ -324,6 +335,11 @@ export function runEditorAction(
     case "draw-track":
       editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
       return;
+    case "draw-road": {
+      const snapshot = editor.snapshot();
+      editor.chooseItem(snapshot.mode === "road" ? null : snapshot.roadKit);
+      return;
+    }
     case "rotate":
       editor.rotate(eventTimeMs);
       return;

@@ -5,6 +5,7 @@ import {
   type EditorSnapshot,
   type IEditor,
 } from "@brr/client";
+import { RoadKitList } from "./road-draw-panel.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -247,7 +248,9 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
       )}
       {shown(modules) && <MilsSection groups={modules} editor={editor} snapshot={snapshot} />}
       {shown(roads) && (
-        <SwatchSection id="road" title="Road" groups={roads} editor={editor} snapshot={snapshot} />
+        <SwatchSection id="road" title="Road" groups={roads} editor={editor} snapshot={snapshot}>
+          <RoadKitList editor={editor} snapshot={snapshot} kits={snapshot.roadKits} />
+        </SwatchSection>
       )}
       {shown(models) && (
         <Section id="sets" title="Sets" count={`${models.length} sets`}>

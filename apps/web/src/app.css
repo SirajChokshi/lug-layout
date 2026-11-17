@@ -870,3 +870,68 @@ footer a {
 .import-panel pre {
   display: none;
 }
+
+.road-kits {
+  margin: 0 0 8px;
+}
+
+.road-kit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.road-kit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  text-align: left;
+  border: 1px solid #c3ccd6;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.road-kit[aria-pressed="true"] {
+  border-color: #1f6feb;
+  background: #eef4ff;
+}
+
+.road-kit-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.road-kit-meta {
+  font-size: 11px;
+  color: #556;
+}
+
+.road-kit-shapes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.road-shape {
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.road-shape.has {
+  background: #dff3e4;
+  color: #1a5d2b;
+}
+
+.road-shape.missing {
+  background: #f1f1f1;
+  color: #8a8f96;
+  text-decoration: line-through;
+}

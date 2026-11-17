@@ -86,6 +86,18 @@ function view(snapshot: EditorSnapshot): ToolHintView {
         hints: [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")],
       };
     }
+    case "road":
+      return {
+        tone: "place",
+        title: "Drawing road",
+        detail: snapshot.roadKits.find((kit) => kit.id === snapshot.roadKit)?.label ?? null,
+        hints: [
+          gesture("Drag", "lay road"),
+          key("rotate", "turn a lone tile"),
+          key("undo", "undo"),
+          key("draw-road", "done"),
+        ],
+      };
     case "select": {
       const { selection } = snapshot;
       if (selection) {

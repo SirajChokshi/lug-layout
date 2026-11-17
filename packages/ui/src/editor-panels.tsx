@@ -23,7 +23,11 @@ function degrees(rot: number): string {
 
 function itemLabel(snapshot: EditorSnapshot, id: string | null): string {
   if (id === null) return "none";
-  return snapshot.catalog.find((item) => item.id === id)?.label ?? id;
+  return (
+    snapshot.catalog.find((item) => item.id === id)?.label ??
+    snapshot.roadKits.find((kit) => kit.id === id)?.label ??
+    id
+  );
 }
 
 interface PanelProps {
@@ -119,7 +123,8 @@ export function PlacementToolbar({
   snapshot,
   onShellCommand,
 }: PanelProps & { readonly onShellCommand: (id: ShellCommandId) => void }) {
-  const canRotate = snapshot.mode === "place" || snapshot.selection !== null;
+  const canRotate =
+    snapshot.mode === "place" || snapshot.mode === "road" || snapshot.selection !== null;
   const { history } = snapshot;
   return (
     <div className="toolbar" role="toolbar" aria-label="Placement tools">
@@ -137,6 +142,15 @@ export function PlacementToolbar({
         onClick={() => editor.chooseItem(snapshot.mode === "track" ? null : TRACK_ITEM_ID)}
       >
         Draw track ({shortcutText("draw-track")})
+      </button>
+      <button
+        type="button"
+        data-action="draw-road-tool"
+        aria-pressed={snapshot.mode === "road"}
+        disabled={snapshot.roadKit === null}
+        onClick={() => editor.chooseItem(snapshot.mode === "road" ? null : snapshot.roadKit)}
+      >
+        Draw road ({shortcutText("draw-road")})
       </button>
       <button
         type="button"

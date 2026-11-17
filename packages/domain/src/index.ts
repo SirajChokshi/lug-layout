@@ -10,6 +10,26 @@ export {
   type RoadSide,
   type RoadSurface,
 } from "./road-joins.ts";
+export {
+  ARM_BITS,
+  armToward,
+  extendRoadPath,
+  planRoadTiles,
+  roadKits,
+  roadPieceChoices,
+  roadShape,
+  rotateArms,
+  type ExistingRoadTile,
+  type PlannedRoadTile,
+  type RoadEdgeRun,
+  type RoadKit,
+  type RoadKitCandidate,
+  type RoadKitPiece,
+  type RoadPieceChoice,
+  type RoadShape,
+  type RoadTile,
+  type RoadTileRefusal,
+} from "./road-tiles.ts";
 export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
   EditHistory,
