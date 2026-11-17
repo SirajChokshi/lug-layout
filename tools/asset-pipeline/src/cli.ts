@@ -1,4 +1,10 @@
-import { BundleLod, BundleManifest, TrackCatalog, type Palette } from "@brr/schema/bundle";
+import {
+  BundleLod,
+  BundleManifest,
+  MilsEdgeRules,
+  TrackCatalog,
+  type Palette,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -40,6 +46,7 @@ import {
 import {
   geometryReports,
   licenseAuditReport,
+  MILS_EDGE_RULES_FILE,
   readSources,
   TRACK_CATALOG_FILE,
   trackCatalogReports,
@@ -259,7 +266,7 @@ async function fileSha256(path: string): Promise<string> {
     .digest("hex");
 }
 
-async function addTrackCatalog(directory: string): Promise<void> {
+async function addVerifiedFacts(directory: string): Promise<void> {
   const manifestPath = join(directory, MANIFEST_FILE);
   const manifest: Record<string, unknown> = JSON.parse(await readFile(manifestPath, "utf8"));
   const catalogPath = join(verifiedFactsRoot, TRACK_CATALOG_FILE);
@@ -276,9 +283,14 @@ async function addTrackCatalog(directory: string): Promise<void> {
     throw new Error(`track catalog pieces missing from the bundle: ${missing}`);
   }
   const bundledCatalog = { n: catalog["n"], pieces: catalog["pieces"] };
+  const rulesPath = join(verifiedFactsRoot, MILS_EDGE_RULES_FILE);
+  const milsEdgeRules = decodedOrThrow(
+    decode(MilsEdgeRules, JSON.parse(await readFile(rulesPath, "utf8"))),
+    rulesPath,
+  );
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog }, null, 2)}\n`,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, milsEdgeRules }, null, 2)}\n`,
   );
 }
 
@@ -334,7 +346,7 @@ async function bundleCommand(): Promise<void> {
       "--cover-cache",
       coverCache,
     ]);
-    await addTrackCatalog(out);
+    await addVerifiedFacts(out);
     const { bundleVersion, files } = await publishBundle(out, inputs);
     process.stdout.write(
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,

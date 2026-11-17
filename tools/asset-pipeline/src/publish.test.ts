@@ -56,6 +56,13 @@ function compiledManifest() {
     modified: "modified from LDraw",
     disclaimer: "not affiliated",
     trackCatalog: { n: 16, pieces: [] },
+    milsEdgeRules: {
+      source: "test",
+      moduleStuds: 32,
+      surfacePlates: 4,
+      surfaceTolerancePlates: 1,
+      features: [],
+    },
     compiler: null,
   };
 }
