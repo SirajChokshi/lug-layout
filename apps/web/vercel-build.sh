@@ -12,7 +12,7 @@ if [ -n "$VITE_LDRAW_LIBRARY_BASE_URL" ]; then
 else
   unset VITE_LDRAW_LIBRARY_BASE_URL
 fi
-: "${PART_BUNDLE_WAIT_MINUTES:=42}"
+: "${PART_BUNDLE_WAIT_MINUTES:=0}"
 export PART_BUNDLE_WAIT_MINUTES
 
 if [ "${VERCEL_ENV:-production}" != production ]; then
