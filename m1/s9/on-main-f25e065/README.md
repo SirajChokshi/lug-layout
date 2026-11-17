@@ -17,3 +17,7 @@ The full checks pass (36 tasks). The production build was served by `vite previe
 | Track (`track.log`) | Reload differs in 0 pixels. Exports are byte-identical, with sha256 `fbb83c9d…83fa`, the same as before the rebase. After a wipe and import: 0 pixels differ and the re-export is identical. |
 | Two sets (`sets/recheck.log`, headed) | Reload differs in 0 pixels; export → import → export is byte-identical (`c9f7c5c6…42a7`). |
 | UI (`ui/`) | Retry and refusal, two tabs (0 of 129 palette buttons enabled in the read-only tab), no storage, Import confirmation, long names and delete all behave as before. |
+
+## Rebased on main f982e6d (#95), head eedad7e
+
+The one conflict, `editor-app.tsx`, was resolved by keeping #95's `useRecentItems` and `onShellCommand` toolbar and adding `WorldMenu`. The full checks pass (36 tasks). `rebased-f982e6d/` holds the reruns. Track: reload and wipe-then-import both differ in 0 pixels, and the export is byte-identical (`fbb83c9d…`). The UI checks behave as before.
