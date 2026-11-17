@@ -102,6 +102,7 @@ function playEdit(sounds: PlacementSounds, sample: LatencySample): void {
       sounds.clack();
       return;
     case "remove":
+    case "erase":
       sounds.pop();
       return;
     case "rotate":

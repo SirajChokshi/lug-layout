@@ -1413,7 +1413,8 @@ export class Editor implements IEditor {
       });
       return;
     }
-    this.show(this.history.commit("road", stroke.requests), eventTimeMs);
+    const kind = stroke.view.erasing ? "erase" : "road";
+    this.show(this.history.commit(kind, stroke.requests), eventTimeMs);
     this.update({ roadStroke: null, lastRoadStroke: { result: "laid", stroke: stroke.view } });
   }
 

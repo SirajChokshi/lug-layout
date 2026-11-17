@@ -393,7 +393,7 @@ describe("draw road", () => {
     },
   );
 
-  it("erases a branch in one stroke under an Erasing HUD, turning the T it leaves back into a straight, and one undo restores both", () => {
+  it("erases a branch in one stroke under an Erasing HUD, turning the T it leaves back into a straight, and undoing the one erase edit restores both", () => {
     editor.chooseItem(kitId(editor, completeKits[0][1]));
     drag(editor, [
       [0, 0],
@@ -418,6 +418,7 @@ describe("draw road", () => {
     expect(itemAt(2, 0)).toBe("ldraw:44336p04@72");
     expect(itemAt(2, 1)).toBeUndefined();
     expect(editor.snapshot().roads.mismatchedCells).toBe(0);
+    expect(editor.snapshot().history.undo).toBe("erase");
     editor.undo(0);
     expect(editor.snapshot().placements).toBe(7);
     expect(itemAt(2, 0)).toBe("ldraw:44341p02@72");
