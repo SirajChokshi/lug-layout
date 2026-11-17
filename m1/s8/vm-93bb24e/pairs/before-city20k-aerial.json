@@ -1,0 +1,118 @@
+{
+ "url": "http://localhost:4173/?scene=city&parts=20000&camera=aerial&api=webgl2&measure=1&warmup=2&frames=8",
+ "error": "",
+ "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n1fd935a2278f8b65\nParts\n20,090\nModules\n25\nStud instances (drawn of total)\n34,145 of 120,037\nScene triangles\n5,493,920\nLoad\n114 ms\nGPU buffers allocated so far, JS heap\nvertex+index 4.3 MiB, other 0.1 MiB, JS heap 28.0 MiB\nRender origin (chunks), rebases\n(4, 0); 1 rebases, last at frame 0\nChunk tiers near/mid/far (median)\n4 / 21 / 0\nDraw calls (median)\n196\nDrawn triangles (median)\n1,698,973\nScene coverage (sampled frames)\n72%, 67%, 71%, 71%, 75%, 76%, 71%, 72%, 67%\nMedian frame (GPU-synced)\n1127.9 ms\np95 frame\n1357.6 ms\nMedian CPU submit\n3.3 ms\nMeasured frames\n8",
+ "logs": [],
+ "result": {
+  "params": {
+   "mode": "city",
+   "showEditState": false,
+   "api": "webgl2",
+   "lod": "standard",
+   "model": null,
+   "city": true,
+   "parts": 20000,
+   "seed": 1,
+   "camera": "aerial",
+   "originChunkX": 0,
+   "originChunkZ": 0,
+   "dumpWorld": false,
+   "measure": true,
+   "warmupFrames": 2,
+   "measuredFrames": 8,
+   "maxMeasureMs": 120000
+  },
+  "backend": {
+   "requestedApi": "webgl2",
+   "backgroundSrgb": 14280434,
+   "activeApi": "webgl2",
+   "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+  },
+  "drawingBuffer": {
+   "width": 1920,
+   "height": 1081,
+   "devicePixelRatio": 1.0000000577419996
+  },
+  "summary": {
+   "bundleVersion": "1fd935a2278f8b65",
+   "parts": 20090,
+   "modules": 25,
+   "studInstances": 120037,
+   "visibleStudInstances": 34145,
+   "bodyTriangles": 3854960,
+   "studTriangles": 1638960,
+   "creditedFiles": 1723,
+   "creditedLicenses": [
+    "Licensed under CC BY 4.0 : see CAreadme.txt",
+    "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+   ],
+   "model": null
+  },
+  "memory": {
+   "vertexIndexBytes": 4470340,
+   "otherBytes": 59760,
+   "jsHeapBytes": 29313806
+  },
+  "loadMs": 113.80000000074506,
+  "timings": {
+   "frames": 8,
+   "medianFrameMs": 1127.9000000003725,
+   "p95FrameMs": 1357.5999999996275,
+   "meanFrameMs": 1134.2375000000466,
+   "medianCpuSubmitMs": 3.300000000745058,
+   "fpsFromMedian": 0.8866034222889172,
+   "medianDrawCalls": 196,
+   "medianDrawnTriangles": 1698973,
+   "medianChunkTiers": {
+    "near": 4,
+    "mid": 21,
+    "far": 0
+   },
+   "sceneCoverage": [
+    0.7239583333333334,
+    0.671875,
+    0.7144097222222222,
+    0.7087673611111112,
+    0.7478298611111112,
+    0.76171875,
+    0.7065972222222222,
+    0.7200520833333334,
+    0.6675347222222222
+   ],
+   "firstMeasuredFrame": 2,
+   "frameMs": [
+    1357.5999999996275,
+    1072.800000000745,
+    1183.0999999996275,
+    1130.5999999996275,
+    914.5,
+    1127.9000000003725,
+    1184.9000000003725,
+    1102.5
+   ],
+   "cpuSubmitMs": [
+    3.599999999627471,
+    4,
+    4.099999999627471,
+    3.300000000745058,
+    2,
+    4.900000000372529,
+    2.599999999627471,
+    1.800000000745058
+   ]
+  },
+  "drawCalls": 196,
+  "drawnTriangles": 1698973,
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "worldPlacements": null,
+  "rebases": [
+   {
+    "frame": 0,
+    "chunkX": 4,
+    "chunkZ": 0,
+    "chunks": 25,
+    "ms": 0.40000000037252903
+   }
+  ]
+ }
+}

@@ -1,0 +1,25 @@
+branch-webgpu-look-none_pace_tight: median 13.800000190734863 p95 20.5 cpu 3.200000047683716 draws 1557 | load { 8.36 8.75 8.32 }
+branch-webgpu-look-none: median 19.40000009536743 p95 20.5 cpu 3.299999952316284 draws 1557 | load { 8.97 8.87 8.36 }
+branch-webgpu-look-plastic_pace_tight: median 15.399999856948853 p95 22 cpu 3.4000000953674316 draws 1557 | load { 8.97 8.87 8.37 }
+branch-webgpu-look-plastic: median 14.900000095367432 p95 22.90000009536743 cpu 3.799999952316284 draws 1557 | load { 8.42 8.75 8.33 }
+branch-webgpu-look-plastic_gtao: median 22.799999952316284 p95 24.799999952316284 cpu 4.200000047683716 draws 1559 | load { 8.06 8.68 8.30 }
+branch-webgpu-look-plastic_outlines: median 15.400000095367432 p95 22.09999990463257 cpu 3.700000047683716 draws 1558 | load { 7.82 8.61 8.28 }
+branch-webgpu-look-plastic_bevel: median 15 p95 22.700000047683716 cpu 3.700000047683716 draws 1558 | load { 7.35 8.50 8.25 }
+branch-webgpu-look-plastic_outlines_bevel: median 14.700000047683716 p95 23.09999990463257 cpu 3.700000047683716 draws 1558 | load { 7.00 8.41 8.22 }
+branch-webgpu-look-plastic_shadows: median 22.5 p95 31.09999990463257 cpu 5.5 draws 1939 | load { 6.60 8.31 8.18 }
+branch-webgpu-look-plastic_oit: median 17.5 p95 22.700000047683716 cpu 4.799999952316284 draws 1558 | load { 6.39 8.23 8.15 }
+branch-webgpu-look-all: median 23.200000047683716 p95 30.799999952316284 cpu 5.599999904632568 draws 1941 | load { 6.04 8.13 8.12 }
+main-webgpu-noparams: median 15.400000095367432 p95 21.199999809265137 cpu 3.3000001907348633 draws 1557 | load { 5.65 7.98 8.06 }
+branch-webgl2-look-none_pace_tight: median 12.600000143051147 p95 17.799999952316284 cpu 3 draws 1557 | load { 5.65 7.98 8.06 }
+branch-webgl2-look-none: median 14.899999856948853 p95 19.299999952316284 cpu 3.3999998569488525 draws 1557 | load { 5.51 7.91 8.04 }
+branch-webgl2-look-plastic_pace_tight: median 13.800000190734863 p95 16.700000047683716 cpu 3.3999998569488525 draws 1557 | load { 5.63 7.90 8.03 }
+branch-webgl2-look-plastic: median 15.200000047683716 p95 18.59999990463257 cpu 3.5 draws 1557 | load { 5.63 7.90 8.03 }
+branch-webgl2-look-plastic_gtao: median 15.299999952316284 p95 20.600000143051147 cpu 3.700000047683716 draws 1559 | load { 5.26 7.78 7.99 }
+branch-webgl2-look-plastic_outlines: median 16.700000047683716 p95 26.600000143051147 cpu 4 draws 1558 | load { 5.00 7.68 7.96 }
+branch-webgl2-look-plastic_bevel: median 15.400000095367432 p95 21.399999856948853 cpu 3.9000000953674316 draws 1558 | load { 4.84 7.61 7.93 }
+branch-webgl2-look-plastic_outlines_bevel: median 15.299999952316284 p95 20.90000009536743 cpu 3.799999952316284 draws 1558 | load { 4.84 7.61 7.93 }
+branch-webgl2-look-plastic_shadows: median 18.09999990463257 p95 23.799999952316284 cpu 4.6000001430511475 draws 1939 | load { 4.85 7.56 7.91 }
+branch-webgl2-look-plastic_oit: median 15.100000143051147 p95 20.300000190734863 cpu 4.200000047683716 draws 1558 | load { 5.02 7.55 7.90 }
+branch-webgl2-look-all: median 17.699999809265137 p95 24.200000047683716 cpu 5.400000095367432 draws 1941 | load { 4.78 7.46 7.87 }
+main-webgl2-noparams: median 13.400000095367432 p95 15.600000143051147 cpu 3.4000000953674316 draws 1557 | load { 4.56 7.37 7.83 }
+EXIT=0

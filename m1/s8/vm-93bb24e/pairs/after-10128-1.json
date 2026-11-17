@@ -1,0 +1,204 @@
+{
+ "url": "http://localhost:4174/?model=10128-1&api=webgl2&measure=1&warmup=2&frames=8",
+ "error": "",
+ "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLook\nplastic, outlines, bevel\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n1fd935a2278f8b65\nParts\n336\nModules\n1\nStud instances (drawn of total)\n2,137 of 2,137\nScene triangles\n322,238\nLoad\n683 ms\nGPU buffers allocated so far, JS heap\nvertex+index 3.2 MiB, other 0.0 MiB, JS heap 25.7 MiB\nRender origin (chunks), rebases\n(3, 0); 1 rebases, last at frame 0\nChunk tiers near/mid/far (median)\n1 / 0 / 0\nDraw calls (median)\n129\nDrawn triangles (median)\n322,240\nScene coverage (sampled frames)\n11%, 12%, 12%, 13%, 14%, 12%, 12%, 12%, 10%\nMedian frame (GPU-synced)\n279.9 ms\np95 frame\n320.1 ms\nMedian CPU submit\n1.6 ms\nMeasured frames\n8",
+ "logs": [],
+ "result": {
+  "params": {
+   "mode": "model",
+   "showEditState": false,
+   "api": "webgl2",
+   "lod": "standard",
+   "model": "10128-1",
+   "city": false,
+   "parts": 20000,
+   "seed": 1,
+   "camera": "aerial",
+   "modelView": "orbit",
+   "originChunkX": 0,
+   "originChunkZ": 0,
+   "dumpWorld": false,
+   "measure": true,
+   "warmupFrames": 2,
+   "measuredFrames": 8,
+   "maxMeasureMs": 120000,
+   "look": {
+    "plastic": true,
+    "gtao": false,
+    "outlines": true,
+    "bevel": true,
+    "shadows": false,
+    "oit": false
+   },
+   "pace": "frame"
+  },
+  "backend": {
+   "requestedApi": "webgl2",
+   "backgroundSrgb": 14280434,
+   "activeApi": "webgl2",
+   "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+   "look": {
+    "plastic": true,
+    "gtao": false,
+    "outlines": true,
+    "bevel": true,
+    "shadows": false,
+    "oit": false
+   }
+  },
+  "drawingBuffer": {
+   "width": 1920,
+   "height": 1081,
+   "devicePixelRatio": 1.0000000577419996
+  },
+  "summary": {
+   "bundleVersion": "1fd935a2278f8b65",
+   "parts": 336,
+   "modules": 1,
+   "studInstances": 2137,
+   "visibleStudInstances": 2137,
+   "bodyTriangles": 215822,
+   "studTriangles": 106416,
+   "creditedFiles": 1723,
+   "creditedLicenses": [
+    "Licensed under CC BY 4.0 : see CAreadme.txt",
+    "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+   ],
+   "model": {
+    "name": "10128-1",
+    "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10128-1.mpd",
+    "sections": [
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - main.ldr",
+      "title": "main"
+     },
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - level crossing.ldr",
+      "title": "level crossing"
+     },
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - level crossing - barrier.ldr",
+      "title": "level crossing - barrier"
+     },
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - car.ldr",
+      "title": "car"
+     },
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - car - subpart 1.ldr",
+      "title": "car - subpart 1"
+     },
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - car - subpart 2.ldr",
+      "title": "car - subpart 2"
+     },
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - car - subpart 2a.ldr",
+      "title": "car - subpart 2a"
+     },
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - minifig 1.ldr",
+      "title": "minifig 1"
+     },
+     {
+      "author": "Robert Paciorek [bercik]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "10128 - minifig 2.ldr",
+      "title": "minifig 2"
+     }
+    ]
+   }
+  },
+  "memory": {
+   "vertexIndexBytes": 3334024,
+   "otherBytes": 39152,
+   "jsHeapBytes": 26974718
+  },
+  "loadMs": 683.4000000003725,
+  "timings": {
+   "frames": 8,
+   "medianFrameMs": 279.90000000037253,
+   "p95FrameMs": 320.1000000014901,
+   "meanFrameMs": 280.26250000018626,
+   "medianCpuSubmitMs": 1.599999999627471,
+   "fpsFromMedian": 3.5727045373300075,
+   "medianDrawCalls": 129,
+   "medianDrawnTriangles": 322240,
+   "medianChunkTiers": {
+    "near": 1,
+    "mid": 0,
+    "far": 0
+   },
+   "sceneCoverage": [
+    0.10807291666666667,
+    0.1154513888888889,
+    0.12152777777777778,
+    0.1306423611111111,
+    0.1449652777777778,
+    0.12369791666666667,
+    0.12109375,
+    0.11588541666666667,
+    0.1032986111111111
+   ],
+   "firstMeasuredFrame": 2,
+   "frameMs": [
+    258.7999999988824,
+    265.30000000074506,
+    254.5,
+    296.59999999962747,
+    285.1000000014901,
+    320.1000000014901,
+    281.7999999988824,
+    279.90000000037253
+   ],
+   "cpuSubmitMs": [
+    2.900000000372529,
+    2.600000001490116,
+    2.800000000745058,
+    1.800000000745058,
+    1.5,
+    1.5,
+    1.599999999627471,
+    1.599999999627471
+   ]
+  },
+  "drawCalls": 129,
+  "drawnTriangles": 322240,
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "worldPlacements": null,
+  "rebases": [
+   {
+    "frame": 0,
+    "chunkX": 3,
+    "chunkZ": 0,
+    "chunks": 1,
+    "ms": 0.19999999925494194
+   }
+  ]
+ }
+}

@@ -1,0 +1,1883 @@
+[
+ {
+  "color": 0,
+  "name": "Black",
+  "ldconfig": "#1B2A34",
+  "samples": [
+   {
+    "model": "10185-1",
+    "instance": 2288,
+    "part": "ldraw:2431",
+    "px": 804,
+    "py": 610,
+    "viewAngleDeg": 6.6,
+    "rgb": [
+     42,
+     53,
+     60
+    ],
+    "deltaE2000": 4.08
+   },
+   {
+    "model": "10185-1",
+    "instance": 2314,
+    "part": "ldraw:3020",
+    "px": 873,
+    "py": 343,
+    "viewAngleDeg": 8.3,
+    "rgb": [
+     42,
+     53,
+     60
+    ],
+    "deltaE2000": 4.08
+   },
+   {
+    "model": "10185-1",
+    "instance": 2314,
+    "part": "ldraw:3020",
+    "px": 873,
+    "py": 363,
+    "viewAngleDeg": 7.6,
+    "rgb": [
+     42,
+     53,
+     60
+    ],
+    "deltaE2000": 4.08
+   },
+   {
+    "model": "10185-1",
+    "instance": 2314,
+    "part": "ldraw:3020",
+    "px": 873,
+    "py": 383,
+    "viewAngleDeg": 6.9,
+    "rgb": [
+     42,
+     53,
+     60
+    ],
+    "deltaE2000": 4.08
+   }
+  ],
+  "medianRgb": [
+   42,
+   53,
+   60
+  ],
+  "medianDeltaE2000": 4.08,
+  "minDeltaE2000": 4.08,
+  "maxDeltaE2000": 4.08
+ },
+ {
+  "color": 14,
+  "name": "Yellow",
+  "ldconfig": "#FAC80A",
+  "samples": [
+   {
+    "model": "10264-1",
+    "instance": 2,
+    "part": "ldraw:3070b",
+    "px": 1045,
+    "py": 375,
+    "viewAngleDeg": 7.1,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "10264-1",
+    "instance": 25,
+    "part": "ldraw:63864",
+    "px": 1034,
+    "py": 479,
+    "viewAngleDeg": 3.7,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "2150-1",
+    "instance": 20,
+    "part": "ldraw:3068b",
+    "px": 883,
+    "py": 576,
+    "viewAngleDeg": 3.3,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4554-1",
+    "instance": 337,
+    "part": "ldraw:3069b",
+    "px": 1077,
+    "py": 491,
+    "viewAngleDeg": 4.9,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4554-1",
+    "instance": 338,
+    "part": "ldraw:3069b",
+    "px": 843,
+    "py": 491,
+    "viewAngleDeg": 4.9,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4554-1",
+    "instance": 439,
+    "part": "ldraw:3069b",
+    "px": 960,
+    "py": 485,
+    "viewAngleDeg": 2.1,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 166,
+    "part": "ldraw:3034",
+    "px": 1026,
+    "py": 886,
+    "viewAngleDeg": 13.4,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 166,
+    "part": "ldraw:3034",
+    "px": 1010,
+    "py": 886,
+    "viewAngleDeg": 13.3,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 166,
+    "part": "ldraw:3034",
+    "px": 994,
+    "py": 886,
+    "viewAngleDeg": 13.2,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 166,
+    "part": "ldraw:3034",
+    "px": 977,
+    "py": 886,
+    "viewAngleDeg": 13.2,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 166,
+    "part": "ldraw:3034",
+    "px": 961,
+    "py": 886,
+    "viewAngleDeg": 13.1,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 166,
+    "part": "ldraw:3034",
+    "px": 945,
+    "py": 886,
+    "viewAngleDeg": 13.1,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 166,
+    "part": "ldraw:3034",
+    "px": 929,
+    "py": 886,
+    "viewAngleDeg": 13.2,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 1042,
+    "py": 204,
+    "viewAngleDeg": 13.1,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 1026,
+    "py": 204,
+    "viewAngleDeg": 13,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 1010,
+    "py": 204,
+    "viewAngleDeg": 12.9,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 994,
+    "py": 204,
+    "viewAngleDeg": 12.8,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 977,
+    "py": 204,
+    "viewAngleDeg": 12.8,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 961,
+    "py": 204,
+    "viewAngleDeg": 12.8,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 945,
+    "py": 204,
+    "viewAngleDeg": 12.8,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 929,
+    "py": 204,
+    "viewAngleDeg": 12.8,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   },
+   {
+    "model": "4555-1",
+    "instance": 168,
+    "part": "ldraw:3832",
+    "px": 912,
+    "py": 204,
+    "viewAngleDeg": 12.9,
+    "rgb": [
+     245,
+     197,
+     34
+    ],
+    "deltaE2000": 1.33
+   }
+  ],
+  "medianRgb": [
+   245,
+   197,
+   34
+  ],
+  "medianDeltaE2000": 1.33,
+  "minDeltaE2000": 1.33,
+  "maxDeltaE2000": 1.33
+ },
+ {
+  "color": 15,
+  "name": "White",
+  "ldconfig": "#F4F4F4",
+  "samples": [
+   {
+    "model": "10218-1",
+    "instance": 785,
+    "part": "ldraw:3070b",
+    "px": 766,
+    "py": 692,
+    "viewAngleDeg": 9.4,
+    "rgb": [
+     239,
+     240,
+     240
+    ],
+    "deltaE2000": 1.01
+   },
+   {
+    "model": "10218-1",
+    "instance": 786,
+    "part": "ldraw:3070b",
+    "px": 766,
+    "py": 555,
+    "viewAngleDeg": 7.5,
+    "rgb": [
+     239,
+     240,
+     240
+    ],
+    "deltaE2000": 1.01
+   },
+   {
+    "model": "4555-1",
+    "instance": 272,
+    "part": "ldraw:3069b",
+    "px": 788,
+    "py": 292,
+    "viewAngleDeg": 11.5,
+    "rgb": [
+     239,
+     240,
+     240
+    ],
+    "deltaE2000": 1.01
+   },
+   {
+    "model": "4555-1",
+    "instance": 273,
+    "part": "ldraw:3069b",
+    "px": 696,
+    "py": 292,
+    "viewAngleDeg": 13.7,
+    "rgb": [
+     239,
+     240,
+     240
+    ],
+    "deltaE2000": 1.01
+   }
+  ],
+  "medianRgb": [
+   239,
+   240,
+   240
+  ],
+  "medianDeltaE2000": 1.01,
+  "minDeltaE2000": 1.01,
+  "maxDeltaE2000": 1.01
+ },
+ {
+  "color": 71,
+  "name": "Light_Bluish_Grey",
+  "ldconfig": "#969696",
+  "samples": [
+   {
+    "model": "10264-1",
+    "instance": 8,
+    "part": "ldraw:3068b",
+    "px": 1028,
+    "py": 392,
+    "viewAngleDeg": 6.3,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 9,
+    "part": "ldraw:3068b",
+    "px": 1028,
+    "py": 415,
+    "viewAngleDeg": 5.5,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 10,
+    "part": "ldraw:3068b",
+    "px": 1028,
+    "py": 439,
+    "viewAngleDeg": 4.7,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 11,
+    "part": "ldraw:3068b",
+    "px": 1028,
+    "py": 462,
+    "viewAngleDeg": 4,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 33,
+    "part": "ldraw:3068b",
+    "px": 1028,
+    "py": 520,
+    "viewAngleDeg": 2.7,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 40,
+    "part": "ldraw:3068b",
+    "px": 1005,
+    "py": 520,
+    "viewAngleDeg": 1.9,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 43,
+    "part": "ldraw:3068b",
+    "px": 981,
+    "py": 520,
+    "viewAngleDeg": 1.1,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 102,
+    "part": "ldraw:3068b",
+    "px": 842,
+    "py": 705,
+    "viewAngleDeg": 7.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 131,
+    "part": "ldraw:3068b",
+    "px": 819,
+    "py": 705,
+    "viewAngleDeg": 8.3,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 138,
+    "part": "ldraw:3068b",
+    "px": 796,
+    "py": 705,
+    "viewAngleDeg": 8.9,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 139,
+    "part": "ldraw:3068b",
+    "px": 796,
+    "py": 682,
+    "viewAngleDeg": 8.3,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 140,
+    "part": "ldraw:3068b",
+    "px": 796,
+    "py": 659,
+    "viewAngleDeg": 7.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 2353,
+    "part": "ldraw:3069b",
+    "px": 918,
+    "py": 449,
+    "viewAngleDeg": 3.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 2354,
+    "part": "ldraw:3069b",
+    "px": 918,
+    "py": 323,
+    "viewAngleDeg": 8.5,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 1,
+    "part": "ldraw:3070b",
+    "px": 1045,
+    "py": 363,
+    "viewAngleDeg": 7.5,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 26,
+    "part": "ldraw:3070b",
+    "px": 1045,
+    "py": 491,
+    "viewAngleDeg": 3.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 56,
+    "part": "ldraw:3070b",
+    "px": 1045,
+    "py": 722,
+    "viewAngleDeg": 7.7,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 58,
+    "part": "ldraw:3070b",
+    "px": 941,
+    "py": 722,
+    "viewAngleDeg": 7,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 205,
+    "part": "ldraw:3070b",
+    "px": 683,
+    "py": 467,
+    "viewAngleDeg": 10.9,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 2215,
+    "part": "ldraw:63864",
+    "px": 589,
+    "py": 646,
+    "viewAngleDeg": 14.6,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 2216,
+    "part": "ldraw:63864",
+    "px": 589,
+    "py": 489,
+    "viewAngleDeg": 14.2,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 2217,
+    "part": "ldraw:63864",
+    "px": 604,
+    "py": 458,
+    "viewAngleDeg": 13.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 94,
+    "part": "ldraw:6636",
+    "px": 889,
+    "py": 722,
+    "viewAngleDeg": 7.5,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10264-1",
+    "instance": 95,
+    "part": "ldraw:6636",
+    "px": 819,
+    "py": 722,
+    "viewAngleDeg": 8.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10185-1",
+    "instance": 2158,
+    "part": "ldraw:3069b",
+    "px": 876,
+    "py": 845,
+    "viewAngleDeg": 12,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10185-1",
+    "instance": 2283,
+    "part": "ldraw:3069b",
+    "px": 874,
+    "py": 495,
+    "viewAngleDeg": 3.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10185-1",
+    "instance": 2286,
+    "part": "ldraw:3069b",
+    "px": 874,
+    "py": 235,
+    "viewAngleDeg": 12.1,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10185-1",
+    "instance": 3,
+    "part": "ldraw:3070b",
+    "px": 1133,
+    "py": 340,
+    "viewAngleDeg": 10.1,
+    "rgb": [
+     130,
+     130,
+     130
+    ],
+    "deltaE2000": 6.96
+   },
+   {
+    "model": "10185-1",
+    "instance": 327,
+    "part": "ldraw:3070b",
+    "px": 1068,
+    "py": 642,
+    "viewAngleDeg": 5.7,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10185-1",
+    "instance": 328,
+    "part": "ldraw:3070b",
+    "px": 1068,
+    "py": 709,
+    "viewAngleDeg": 7.7,
+    "rgb": [
+     96,
+     56,
+     33
+    ],
+    "deltaE2000": 37.16
+   },
+   {
+    "model": "10185-1",
+    "instance": 5,
+    "part": "ldraw:6636",
+    "px": 1133,
+    "py": 465,
+    "viewAngleDeg": 7.2,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10185-1",
+    "instance": 326,
+    "part": "ldraw:6636",
+    "px": 1081,
+    "py": 676,
+    "viewAngleDeg": 7,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10190-1",
+    "instance": 1340,
+    "part": "ldraw:3069b",
+    "px": 1243,
+    "py": 607,
+    "viewAngleDeg": 11.1,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10190-1",
+    "instance": 1341,
+    "part": "ldraw:3069b",
+    "px": 1211,
+    "py": 609,
+    "viewAngleDeg": 10,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10190-1",
+    "instance": 1342,
+    "part": "ldraw:3069b",
+    "px": 1160,
+    "py": 612,
+    "viewAngleDeg": 8.1,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10190-1",
+    "instance": 1343,
+    "part": "ldraw:3069b",
+    "px": 1071,
+    "py": 611,
+    "viewAngleDeg": 5.1,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10190-1",
+    "instance": 1344,
+    "part": "ldraw:3069b",
+    "px": 1005,
+    "py": 608,
+    "viewAngleDeg": 3.1,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10190-1",
+    "instance": 3,
+    "part": "ldraw:2431",
+    "px": 847,
+    "py": 696,
+    "viewAngleDeg": 7.4,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10190-1",
+    "instance": 1,
+    "part": "ldraw:6636",
+    "px": 778,
+    "py": 696,
+    "viewAngleDeg": 9.2,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10190-1",
+    "instance": 2,
+    "part": "ldraw:6636",
+    "px": 915,
+    "py": 696,
+    "viewAngleDeg": 6.2,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 1921,
+    "part": "ldraw:3069b",
+    "px": 1076,
+    "py": 277,
+    "viewAngleDeg": 11,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 1922,
+    "part": "ldraw:3069b",
+    "px": 1076,
+    "py": 380,
+    "viewAngleDeg": 7.6,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 1923,
+    "part": "ldraw:3069b",
+    "px": 1076,
+    "py": 483,
+    "viewAngleDeg": 5,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 1,
+    "part": "ldraw:2431",
+    "px": 1154,
+    "py": 662,
+    "viewAngleDeg": 8.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 2,
+    "part": "ldraw:6636",
+    "px": 1154,
+    "py": 736,
+    "viewAngleDeg": 10.5,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 964,
+    "part": "ldraw:6636",
+    "px": 1154,
+    "py": 351,
+    "viewAngleDeg": 10.3,
+    "rgb": [
+     223,
+     223,
+     224
+    ],
+    "deltaE2000": 19.46
+   },
+   {
+    "model": "10218-1",
+    "instance": 943,
+    "part": "ldraw:3034",
+    "px": 801,
+    "py": 803,
+    "viewAngleDeg": 11.7,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 943,
+    "part": "ldraw:3034",
+    "px": 823,
+    "py": 803,
+    "viewAngleDeg": 11.3,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 943,
+    "part": "ldraw:3034",
+    "px": 844,
+    "py": 803,
+    "viewAngleDeg": 11,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 943,
+    "part": "ldraw:3034",
+    "px": 866,
+    "py": 803,
+    "viewAngleDeg": 10.7,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 943,
+    "part": "ldraw:3034",
+    "px": 887,
+    "py": 803,
+    "viewAngleDeg": 10.4,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 943,
+    "part": "ldraw:3034",
+    "px": 909,
+    "py": 803,
+    "viewAngleDeg": 10.2,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   },
+   {
+    "model": "10218-1",
+    "instance": 943,
+    "part": "ldraw:3034",
+    "px": 930,
+    "py": 803,
+    "viewAngleDeg": 10.1,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 0.67
+   }
+  ],
+  "medianRgb": [
+   149,
+   149,
+   150
+  ],
+  "medianDeltaE2000": 0.67,
+  "minDeltaE2000": 0.67,
+  "maxDeltaE2000": 37.16
+ },
+ {
+  "color": 72,
+  "name": "Dark_Bluish_Grey",
+  "ldconfig": "#646464",
+  "samples": [
+   {
+    "model": "10264-1",
+    "instance": 5,
+    "part": "ldraw:3069b",
+    "px": 993,
+    "py": 363,
+    "viewAngleDeg": 6.9,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10264-1",
+    "instance": 28,
+    "part": "ldraw:3069b",
+    "px": 1016,
+    "py": 491,
+    "viewAngleDeg": 2.9,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10264-1",
+    "instance": 29,
+    "part": "ldraw:3069b",
+    "px": 993,
+    "py": 491,
+    "viewAngleDeg": 2.3,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10264-1",
+    "instance": 166,
+    "part": "ldraw:3069b",
+    "px": 738,
+    "py": 711,
+    "viewAngleDeg": 10.7,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10264-1",
+    "instance": 4,
+    "part": "ldraw:3070b",
+    "px": 1010,
+    "py": 363,
+    "viewAngleDeg": 7.1,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10264-1",
+    "instance": 27,
+    "part": "ldraw:3070b",
+    "px": 1034,
+    "py": 491,
+    "viewAngleDeg": 3.4,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10185-1",
+    "instance": 10,
+    "part": "ldraw:3069b",
+    "px": 1080,
+    "py": 740,
+    "viewAngleDeg": 8.9,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10185-1",
+    "instance": 12,
+    "part": "ldraw:3069b",
+    "px": 1120,
+    "py": 688,
+    "viewAngleDeg": 8.3,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10185-1",
+    "instance": 15,
+    "part": "ldraw:3069b",
+    "px": 1120,
+    "py": 399,
+    "viewAngleDeg": 8.2,
+    "rgb": [
+     136,
+     136,
+     136
+    ],
+    "deltaE2000": 14.32
+   },
+   {
+    "model": "10185-1",
+    "instance": 16,
+    "part": "ldraw:3069b",
+    "px": 1094,
+    "py": 346,
+    "viewAngleDeg": 9,
+    "rgb": [
+     73,
+     73,
+     73
+    ],
+    "deltaE2000": 9.54
+   },
+   {
+    "model": "10185-1",
+    "instance": 20,
+    "part": "ldraw:3069b",
+    "px": 1120,
+    "py": 425,
+    "viewAngleDeg": 7.6,
+    "rgb": [
+     138,
+     138,
+     138
+    ],
+    "deltaE2000": 15.1
+   },
+   {
+    "model": "10185-1",
+    "instance": 21,
+    "part": "ldraw:3069b",
+    "px": 1120,
+    "py": 478,
+    "viewAngleDeg": 6.6,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10185-1",
+    "instance": 22,
+    "part": "ldraw:3069b",
+    "px": 1120,
+    "py": 504,
+    "viewAngleDeg": 6.3,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10185-1",
+    "instance": 26,
+    "part": "ldraw:3069b",
+    "px": 1107,
+    "py": 688,
+    "viewAngleDeg": 8,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10185-1",
+    "instance": 27,
+    "part": "ldraw:3069b",
+    "px": 1107,
+    "py": 661,
+    "viewAngleDeg": 7.3,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10185-1",
+    "instance": 30,
+    "part": "ldraw:3070b",
+    "px": 1120,
+    "py": 366,
+    "viewAngleDeg": 9,
+    "rgb": [
+     136,
+     136,
+     136
+    ],
+    "deltaE2000": 14.32
+   },
+   {
+    "model": "10190-1",
+    "instance": 11,
+    "part": "ldraw:3068b",
+    "px": 888,
+    "py": 675,
+    "viewAngleDeg": 5.9,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10190-1",
+    "instance": 12,
+    "part": "ldraw:3068b",
+    "px": 888,
+    "py": 648,
+    "viewAngleDeg": 5,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10190-1",
+    "instance": 15,
+    "part": "ldraw:3068b",
+    "px": 860,
+    "py": 675,
+    "viewAngleDeg": 6.5,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10190-1",
+    "instance": 16,
+    "part": "ldraw:3068b",
+    "px": 860,
+    "py": 648,
+    "viewAngleDeg": 5.7,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10190-1",
+    "instance": 23,
+    "part": "ldraw:3068b",
+    "px": 915,
+    "py": 675,
+    "viewAngleDeg": 5.5,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10190-1",
+    "instance": 326,
+    "part": "ldraw:3069b",
+    "px": 1135,
+    "py": 682,
+    "viewAngleDeg": 8.7,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10190-1",
+    "instance": 26,
+    "part": "ldraw:3070b",
+    "px": 799,
+    "py": 682,
+    "viewAngleDeg": 8.3,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10218-1",
+    "instance": 15,
+    "part": "ldraw:3068b",
+    "px": 1117,
+    "py": 588,
+    "viewAngleDeg": 6.3,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 16,
+    "part": "ldraw:3068b",
+    "px": 1117,
+    "py": 618,
+    "viewAngleDeg": 6.7,
+    "rgb": [
+     98,
+     91,
+     74
+    ],
+    "deltaE2000": 9.26
+   },
+   {
+    "model": "10218-1",
+    "instance": 17,
+    "part": "ldraw:3068b",
+    "px": 1117,
+    "py": 647,
+    "viewAngleDeg": 7.3,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 18,
+    "part": "ldraw:3068b",
+    "px": 1117,
+    "py": 706,
+    "viewAngleDeg": 8.8,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 19,
+    "part": "ldraw:3068b",
+    "px": 1117,
+    "py": 736,
+    "viewAngleDeg": 9.6,
+    "rgb": [
+     101,
+     101,
+     100
+    ],
+    "deltaE2000": 0.72
+   },
+   {
+    "model": "10218-1",
+    "instance": 965,
+    "part": "ldraw:3068b",
+    "px": 1087,
+    "py": 322,
+    "viewAngleDeg": 9.7,
+    "rgb": [
+     74,
+     74,
+     74
+    ],
+    "deltaE2000": 9.21
+   },
+   {
+    "model": "10218-1",
+    "instance": 966,
+    "part": "ldraw:3068b",
+    "px": 1117,
+    "py": 322,
+    "viewAngleDeg": 10.3,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10218-1",
+    "instance": 969,
+    "part": "ldraw:3068b",
+    "px": 1117,
+    "py": 351,
+    "viewAngleDeg": 9.4,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10218-1",
+    "instance": 971,
+    "part": "ldraw:3068b",
+    "px": 1087,
+    "py": 381,
+    "viewAngleDeg": 7.8,
+    "rgb": [
+     149,
+     149,
+     150
+    ],
+    "deltaE2000": 19.12
+   },
+   {
+    "model": "10218-1",
+    "instance": 5,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 588,
+    "viewAngleDeg": 7.1,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 6,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 618,
+    "viewAngleDeg": 7.5,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 7,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 647,
+    "viewAngleDeg": 8,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 8,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 706,
+    "viewAngleDeg": 9.4,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 9,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 736,
+    "viewAngleDeg": 10.1,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 10,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 765,
+    "viewAngleDeg": 11,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 11,
+    "part": "ldraw:3069b",
+    "px": 1124,
+    "py": 765,
+    "viewAngleDeg": 10.6,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 967,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 322,
+    "viewAngleDeg": 10.8,
+    "rgb": [
+     102,
+     102,
+     102
+    ],
+    "deltaE2000": 0.75
+   },
+   {
+    "model": "10218-1",
+    "instance": 970,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 351,
+    "viewAngleDeg": 9.9,
+    "rgb": [
+     105,
+     105,
+     106
+    ],
+    "deltaE2000": 2.01
+   },
+   {
+    "model": "10218-1",
+    "instance": 972,
+    "part": "ldraw:3069b",
+    "px": 1109,
+    "py": 381,
+    "viewAngleDeg": 8.4,
+    "rgb": [
+     125,
+     125,
+     126
+    ],
+    "deltaE2000": 9.89
+   },
+   {
+    "model": "10218-1",
+    "instance": 974,
+    "part": "ldraw:3069b",
+    "px": 1139,
+    "py": 411,
+    "viewAngleDeg": 8.5,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 2008,
+    "part": "ldraw:3069b",
+    "px": 973,
+    "py": 512,
+    "viewAngleDeg": 1.2,
+    "rgb": [
+     102,
+     102,
+     103
+    ],
+    "deltaE2000": 1
+   },
+   {
+    "model": "10218-1",
+    "instance": 21,
+    "part": "ldraw:3070b",
+    "px": 1109,
+    "py": 669,
+    "viewAngleDeg": 7.6,
+    "rgb": [
+     97,
+     63,
+     42
+    ],
+    "deltaE2000": 19.39
+   },
+   {
+    "model": "10218-1",
+    "instance": 22,
+    "part": "ldraw:3070b",
+    "px": 1109,
+    "py": 773,
+    "viewAngleDeg": 10.6,
+    "rgb": [
+     201,
+     201,
+     201
+    ],
+    "deltaE2000": 33.17
+   }
+  ],
+  "medianRgb": [
+   102,
+   102,
+   103
+  ],
+  "medianDeltaE2000": 1,
+  "minDeltaE2000": 0.72,
+  "maxDeltaE2000": 33.17
+ }
+]

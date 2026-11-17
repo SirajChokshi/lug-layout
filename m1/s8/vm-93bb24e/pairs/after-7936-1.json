@@ -1,0 +1,176 @@
+{
+ "url": "http://localhost:4174/?model=7936-1&api=webgl2&measure=1&warmup=2&frames=8",
+ "error": "",
+ "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLook\nplastic, outlines, bevel\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n1fd935a2278f8b65\nParts\n147\nModules\n1\nStud instances (drawn of total)\n622 of 622\nScene triangles\n140,603\nLoad\n677 ms\nGPU buffers allocated so far, JS heap\nvertex+index 1.9 MiB, other 0.0 MiB, JS heap 22.5 MiB\nRender origin (chunks), rebases\n(1, 0); 1 rebases, last at frame 0\nChunk tiers near/mid/far (median)\n1 / 0 / 0\nDraw calls (median)\n75\nDrawn triangles (median)\n140,605\nScene coverage (sampled frames)\n14%, 14%, 13%, 13%, 15%, 15%, 15%, 14%, 14%\nMedian frame (GPU-synced)\n235.4 ms\np95 frame\n281.2 ms\nMedian CPU submit\n1.4 ms\nMeasured frames\n8",
+ "logs": [],
+ "result": {
+  "params": {
+   "mode": "model",
+   "showEditState": false,
+   "api": "webgl2",
+   "lod": "standard",
+   "model": "7936-1",
+   "city": false,
+   "parts": 20000,
+   "seed": 1,
+   "camera": "aerial",
+   "modelView": "orbit",
+   "originChunkX": 0,
+   "originChunkZ": 0,
+   "dumpWorld": false,
+   "measure": true,
+   "warmupFrames": 2,
+   "measuredFrames": 8,
+   "maxMeasureMs": 120000,
+   "look": {
+    "plastic": true,
+    "gtao": false,
+    "outlines": true,
+    "bevel": true,
+    "shadows": false,
+    "oit": false
+   },
+   "pace": "frame"
+  },
+  "backend": {
+   "requestedApi": "webgl2",
+   "backgroundSrgb": 14280434,
+   "activeApi": "webgl2",
+   "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+   "look": {
+    "plastic": true,
+    "gtao": false,
+    "outlines": true,
+    "bevel": true,
+    "shadows": false,
+    "oit": false
+   }
+  },
+  "drawingBuffer": {
+   "width": 1920,
+   "height": 1081,
+   "devicePixelRatio": 1.0000000577419996
+  },
+  "summary": {
+   "bundleVersion": "1fd935a2278f8b65",
+   "parts": 147,
+   "modules": 1,
+   "studInstances": 622,
+   "visibleStudInstances": 622,
+   "bodyTriangles": 108923,
+   "studTriangles": 31680,
+   "creditedFiles": 1723,
+   "creditedLicenses": [
+    "Licensed under CC BY 4.0 : see CAreadme.txt",
+    "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+   ],
+   "model": {
+    "name": "7936-1",
+    "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/7936-1.mpd",
+    "sections": [
+     {
+      "author": "Marc Giraudet [Mad_Marc]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "7936 - Main.ldr",
+      "title": "Main"
+     },
+     {
+      "author": "Marc Giraudet [Mad_Marc]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "7936 - Crossing.ldr",
+      "title": "Crossing"
+     },
+     {
+      "author": "Marc Giraudet [Mad_Marc]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "7936 - Crane.ldr",
+      "title": "Crane"
+     },
+     {
+      "author": "Marc Giraudet [Mad_Marc]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "7936 - Track.ldr",
+      "title": "Track"
+     },
+     {
+      "author": "Marc Giraudet [Mad_Marc]",
+      "ldrawOrg": "Model",
+      "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+      "name": "7936 - Worker.ldr",
+      "title": "Worker"
+     }
+    ]
+   }
+  },
+  "memory": {
+   "vertexIndexBytes": 2018632,
+   "otherBytes": 22736,
+   "jsHeapBytes": 23609468
+  },
+  "loadMs": 676.5999999996275,
+  "timings": {
+   "frames": 8,
+   "medianFrameMs": 235.39999999850988,
+   "p95FrameMs": 281.2000000011176,
+   "meanFrameMs": 245.80000000004657,
+   "medianCpuSubmitMs": 1.400000000372529,
+   "fpsFromMedian": 4.248088360264784,
+   "medianDrawCalls": 75,
+   "medianDrawnTriangles": 140605,
+   "medianChunkTiers": {
+    "near": 1,
+    "mid": 0,
+    "far": 0
+   },
+   "sceneCoverage": [
+    0.1384548611111111,
+    0.13541666666666666,
+    0.13151041666666666,
+    0.13020833333333334,
+    0.14713541666666666,
+    0.1540798611111111,
+    0.1488715277777778,
+    0.1427951388888889,
+    0.1427951388888889
+   ],
+   "firstMeasuredFrame": 2,
+   "frameMs": [
+    235.39999999850988,
+    227.5,
+    222.09999999962747,
+    267.5,
+    240.09999999962747,
+    281.2000000011176,
+    258.40000000037253,
+    234.2000000011176
+   ],
+   "cpuSubmitMs": [
+    1.799999998882413,
+    1.400000000372529,
+    1.5,
+    1.400000000372529,
+    1.800000000745058,
+    1.900000000372529,
+    1.300000000745058,
+    1.200000001117587
+   ]
+  },
+  "drawCalls": 75,
+  "drawnTriangles": 140605,
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "worldPlacements": null,
+  "rebases": [
+   {
+    "frame": 0,
+    "chunkX": 1,
+    "chunkZ": 0,
+    "chunks": 1,
+    "ms": 0.09999999962747097
+   }
+  ]
+ }
+}

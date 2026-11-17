@@ -1,0 +1,7 @@
+Mon Nov 16 13:38:47 PST 2026
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=22610019)	100%; charged; 0:00 remaining present: true
+powermode 2
+{ 5.14 9.22 9.01 }
+26.6.2
+Google Chrome 157.0.8103.52 

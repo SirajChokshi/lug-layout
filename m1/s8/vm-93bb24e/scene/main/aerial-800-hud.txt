@@ -1,0 +1,25 @@
+Brick Railroad
+API
+webgl2
+Adapter
+Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)
+Load
+835 ms
+Mode
+select
+Ghost rotation
+0°
+Cursor on lattice (LDU)
+-23460, 4160
+Placements
+20
+Last placement latency
+4093.7 ms (place 10133-1, 0°)
+Rebuilt for it
+2 chunks, 420 parts, 2,420 studs
+Frame rate (rAF)
+0.5 fps
+Draw calls
+2,809
+Drawn triangles
+6,303,296

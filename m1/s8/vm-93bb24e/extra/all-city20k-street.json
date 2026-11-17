@@ -1,0 +1,136 @@
+{
+ "url": "http://localhost:4174/?scene=city&parts=20000&camera=street&api=webgl2&measure=1&warmup=2&frames=8&look=all",
+ "error": "",
+ "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLook\nplastic, gtao, outlines, bevel, shadows, oit\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n1fd935a2278f8b65\nParts\n20,090\nModules\n25\nStud instances (drawn of total)\n34,145 of 120,037\nScene triangles\n5,493,920\nLoad\n627 ms\nGPU buffers allocated so far, JS heap\nvertex+index 3.7 MiB, other 0.1 MiB, JS heap 20.4 MiB\nRender origin (chunks), rebases\n(-2, -2); 1 rebases, last at frame 0\nChunk tiers near/mid/far (median)\n22 / 2 / 0\nDraw calls (median)\n110\nDrawn triangles (median)\n2,250,083\nScene coverage (sampled frames)\n65%, 65%, 64%, 65%, 64%, 63%, 62%, 59%, 56%\nMedian frame (GPU-synced)\n2082.4 ms\np95 frame\n2744.2 ms\nMedian CPU submit\n2.3 ms\nMeasured frames\n8",
+ "logs": [],
+ "result": {
+  "params": {
+   "mode": "city",
+   "showEditState": false,
+   "api": "webgl2",
+   "lod": "standard",
+   "model": null,
+   "city": true,
+   "parts": 20000,
+   "seed": 1,
+   "camera": "street",
+   "modelView": "orbit",
+   "originChunkX": 0,
+   "originChunkZ": 0,
+   "dumpWorld": false,
+   "measure": true,
+   "warmupFrames": 2,
+   "measuredFrames": 8,
+   "maxMeasureMs": 120000,
+   "look": {
+    "plastic": true,
+    "gtao": true,
+    "outlines": true,
+    "bevel": true,
+    "shadows": true,
+    "oit": true
+   },
+   "pace": "frame"
+  },
+  "backend": {
+   "requestedApi": "webgl2",
+   "backgroundSrgb": 14280434,
+   "activeApi": "webgl2",
+   "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+   "look": {
+    "plastic": true,
+    "gtao": true,
+    "outlines": true,
+    "bevel": true,
+    "shadows": true,
+    "oit": true
+   }
+  },
+  "drawingBuffer": {
+   "width": 1920,
+   "height": 1081,
+   "devicePixelRatio": 1.0000000577419996
+  },
+  "summary": {
+   "bundleVersion": "1fd935a2278f8b65",
+   "parts": 20090,
+   "modules": 25,
+   "studInstances": 120037,
+   "visibleStudInstances": 34145,
+   "bodyTriangles": 3854960,
+   "studTriangles": 1638960,
+   "creditedFiles": 1723,
+   "creditedLicenses": [
+    "Licensed under CC BY 4.0 : see CAreadme.txt",
+    "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt"
+   ],
+   "model": null
+  },
+  "memory": {
+   "vertexIndexBytes": 3891068,
+   "otherBytes": 54480,
+   "jsHeapBytes": 21381457
+  },
+  "loadMs": 626.5999999996275,
+  "timings": {
+   "frames": 8,
+   "medianFrameMs": 2082.4000000003725,
+   "p95FrameMs": 2744.2000000011176,
+   "meanFrameMs": 2112.2125000001397,
+   "medianCpuSubmitMs": 2.300000000745058,
+   "fpsFromMedian": 0.4802151363810128,
+   "medianDrawCalls": 110,
+   "medianDrawnTriangles": 2250083,
+   "medianChunkTiers": {
+    "near": 22,
+    "mid": 2,
+    "far": 0
+   },
+   "sceneCoverage": [
+    0.6506076388888888,
+    0.6493055555555556,
+    0.6449652777777778,
+    0.6458333333333334,
+    0.640625,
+    0.6293402777777778,
+    0.6180555555555556,
+    0.5941840277777778,
+    0.5611979166666666
+   ],
+   "firstMeasuredFrame": 2,
+   "frameMs": [
+    2744.2000000011176,
+    2682.9000000003725,
+    2630.0999999996275,
+    2332.5999999996275,
+    2082.4000000003725,
+    1755.9000000003725,
+    1498.9000000003725,
+    1170.699999999255
+   ],
+   "cpuSubmitMs": [
+    3.700000001117587,
+    3.599999999627471,
+    2.800000000745058,
+    2.5,
+    2.200000001117587,
+    2.300000000745058,
+    2.299999998882413,
+    2.099999999627471
+   ]
+  },
+  "drawCalls": 110,
+  "drawnTriangles": 2250083,
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "worldPlacements": null,
+  "rebases": [
+   {
+    "frame": 0,
+    "chunkX": -2,
+    "chunkZ": -2,
+    "chunks": 25,
+    "ms": 0.19999999925494194
+   }
+  ]
+ }
+}

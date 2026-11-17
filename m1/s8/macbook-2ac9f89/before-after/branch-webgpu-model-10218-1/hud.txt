@@ -1,0 +1,41 @@
+Brick Railroad
+API
+webgpu
+Adapter
+apple / metal-3
+Look
+plastic, gtao, outlines, bevel, shadows, oit
+Drawing buffer
+3600×2086 px (devicePixelRatio 2)
+Bundle
+aa83d3a97cb22130
+Parts
+2,042
+Modules
+1
+Stud instances (drawn of total)
+7,040 of 7,040
+Scene triangles
+936,912
+Load
+120 ms
+GPU buffers allocated so far, JS heap
+vertex+index 5.7 MiB, other 0.1 MiB, JS heap 21.5 MiB
+Render origin (chunks), rebases
+(2, -1); 1 rebases, last at frame 0
+Chunk tiers near/mid/far (median)
+1 / 0 / 0
+Draw calls (median)
+645
+Drawn triangles (median)
+2,077,930
+Scene coverage (sampled frames)
+25%, 25%, 21%, 24%, 28%, 28%, 25%, 19%, 24%
+Median frame (GPU-synced)
+5.5 ms
+p95 frame
+8.2 ms
+Median CPU submit
+2.9 ms
+Measured frames
+8
