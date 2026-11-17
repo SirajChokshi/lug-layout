@@ -803,6 +803,17 @@ footer a {
   border-top: 1px solid rgb(0 0 0 / 0.12);
 }
 
+.side-panel > .catalog {
+  min-height: 160px;
+}
+
+.side-panel > .bom {
+  min-height: 0;
+  margin-top: 0;
+  border-top: 0;
+  overflow-y: auto;
+}
+
 .bom h2 {
   margin: 0 0 6px;
   font-size: 14px;
