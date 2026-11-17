@@ -488,42 +488,93 @@ describe("draw road", () => {
   });
 });
 
-it("refuses an erase across plates where only the last carries track, marking that plate's tile", async () => {
-  const editor = await startEditor();
-  const kit = kitId(
+const ERASE_RUN: ReadonlyArray<readonly [number, number]> = [
+  [0, 0],
+  [1, 0],
+  [2, 0],
+];
+
+function sixStudKit(editor: IEditor): string {
+  return kitId(
     editor,
     (label, edge) => label.startsWith("Dark Bluish Grey") && edge === "6 + 20 road + 6",
   );
-  const run: ReadonlyArray<readonly [number, number]> = [
-    [0, 0],
-    [1, 0],
-    [2, 0],
-  ];
-  editor.chooseItem(kit);
-  drag(editor, run);
-  const z = centre(0) / WORLD_PER_NDC;
-  const fromX = (2 * TILE + 20) / WORLD_PER_NDC;
-  const toX = (2 * TILE + 340) / WORLD_PER_NDC;
-  editor.chooseItem(TRACK_ITEM_ID);
-  editor.pointerMove(fromX, z);
-  editor.dragStart(fromX, z);
-  editor.dragMove(toX, z);
-  editor.dragEnd(toX, z, 0);
-  expect(editor.snapshot().track).toMatchObject({ pieces: 1, lastCommit: "laid" });
+}
 
+const ONE_STRAIGHT_LDU = 320;
+
+function layTrackAlongRow(editor: IEditor, fromLdu: number): void {
+  const toLdu = fromLdu + ONE_STRAIGHT_LDU;
+  const z = centre(0) / WORLD_PER_NDC;
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.pointerMove(fromLdu / WORLD_PER_NDC, z);
+  editor.dragStart(fromLdu / WORLD_PER_NDC, z);
+  editor.dragMove(toLdu / WORLD_PER_NDC, z);
+  editor.dragEnd(toLdu / WORLD_PER_NDC, z, 0);
+  expect(editor.snapshot().track).toMatchObject({ pieces: 1, lastCommit: "laid" });
+}
+
+function eraseRun(editor: IEditor, kit: string): void {
   editor.chooseItem(kit);
   editor.setRoadErase(true);
-  drag(editor, run);
+  drag(editor, ERASE_RUN);
+}
+
+function carriesTrackAt(tile: number) {
+  return expect.objectContaining({
+    x: centre(tile),
+    z: centre(0),
+    problem: "rules",
+    refusal: expect.stringContaining("carries track"),
+  });
+}
+
+it.each([
+  ["only the last plate carries the track", 2 * TILE + 20, [2]],
+  ["the track straddles the last two plates", 2 * TILE - 140, [1, 2]],
+] as const)(
+  "refuses an erase across three plates where %s, marking the tile of every plate that carries it",
+  async (_, fromLdu, carriers) => {
+    const editor = await startEditor();
+    const kit = sixStudKit(editor);
+    editor.chooseItem(kit);
+    drag(editor, ERASE_RUN);
+    layTrackAlongRow(editor, fromLdu);
+
+    eraseRun(editor, kit);
+    expect(placedItems(editor)).toHaveLength(3);
+    expect(editor.snapshot().lastRoadStroke).toMatchObject({ result: "refused" });
+    expect(editor.snapshot().lastRoadStroke?.stroke.issues).toEqual(
+      carriers.map((tile) => carriesTrackAt(tile)),
+    );
+  },
+  120_000,
+);
+
+it("checks an erase against the track as it is now: hovered before track is laid, refused once a plate carries it, allowed again once it's removed", async () => {
+  const editor = await startEditor();
+  const kit = sixStudKit(editor);
+  editor.chooseItem(kit);
+  drag(editor, ERASE_RUN);
+  editor.setRoadErase(true);
+  for (const tile of ERASE_RUN) editor.pointerMove(...ndc(tile));
+  const pieceFromLdu = 2 * TILE + 20;
+  layTrackAlongRow(editor, pieceFromLdu);
+
+  eraseRun(editor, kit);
   expect(placedItems(editor)).toHaveLength(3);
-  expect(editor.snapshot().lastRoadStroke).toMatchObject({ result: "refused" });
-  expect(editor.snapshot().lastRoadStroke?.stroke.issues).toEqual([
-    expect.objectContaining({
-      x: centre(2),
-      z: centre(0),
-      problem: "rules",
-      refusal: expect.stringContaining("carries track"),
-    }),
-  ]);
+  expect(editor.snapshot().lastRoadStroke?.stroke.issues).toEqual([carriesTrackAt(2)]);
+
+  editor.chooseItem(TRACK_ITEM_ID);
+  const onPiece = (pieceFromLdu + ONE_STRAIGHT_LDU / 2) / WORLD_PER_NDC;
+  editor.dragStart(onPiece, centre(0) / WORLD_PER_NDC);
+  editor.dragEnd(onPiece, centre(0) / WORLD_PER_NDC, 0);
+  editor.deleteSelection(0);
+  expect(editor.snapshot().track?.pieces).toBe(0);
+
+  eraseRun(editor, kit);
+  expect(editor.snapshot().lastRoadStroke?.result).toBe("laid");
+  expect(placedItems(editor)).toHaveLength(0);
 }, 120_000);
 
 function refusedByRules(blocker: string) {
