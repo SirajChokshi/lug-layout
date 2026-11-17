@@ -366,6 +366,28 @@ class PlacedEntry implements PlacedModel {
     return cellIndex(this.placeable.cells, this.pose, worldCellX, worldCellZ);
   }
 
+  private columnTopPlates(worldCellX: number, worldCellZ: number): number | null {
+    const cell = this.cellAt(worldCellX, worldCellZ);
+    if (cell < 0) return null;
+    const top = this.placeable.cells.columnTop[cell] ?? EMPTY_COLUMN;
+    return top === EMPTY_COLUMN ? null : this.handle.yPlates + top;
+  }
+
+  restsOn(base: PlacedEntry): boolean {
+    const { cells } = this.placeable;
+    for (let j = 0; j < cells.depth; j++) {
+      for (let i = 0; i < cells.width; i++) {
+        const cell = j * cells.width + i;
+        if ((cells.columnTop[cell] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
+        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
+        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
+        const bottom = this.handle.yPlates + (cells.columnBottom[cell] ?? 0);
+        if (base.columnTopPlates(wx, wz) === bottom) return true;
+      }
+    }
+    return false;
+  }
+
   footprintKind(worldCellX: number, worldCellZ: number, baseLdu: number): number {
     if (baseLdu !== this.yLdu) return FOOTPRINT_NONE;
     const cell = this.cellAt(worldCellX, worldCellZ);
@@ -699,6 +721,17 @@ export class PlacedChunks {
     const yPlates = restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
     if (ignored) this.restamp(ignored.columnKeys, null);
     return yPlates;
+  }
+
+  riderOn(model: PlacedModel): PlacedModel | null {
+    const base = this.entries.find((entry) => entry === model);
+    if (!base) return null;
+    for (const key of base.columnKeys) {
+      for (const entry of this.byColumnChunk.get(key) ?? []) {
+        if (entry !== base && entry.restsOn(base)) return entry;
+      }
+    }
+    return null;
   }
 
   tongueClash(

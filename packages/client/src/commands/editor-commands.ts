@@ -8,6 +8,7 @@ export type EditorActionId =
   | "draw-track"
   | "draw-road"
   | "rotate"
+  | "rotate-back"
   | "flip-switch"
   | "next-connector"
   | "delete"
@@ -94,6 +95,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "r" }],
     keywords: "turn spin quarter 90 22.5",
+  },
+  {
+    id: "rotate-back",
+    title: "Rotate the other way",
+    group: "Edit",
+    keys: [{ key: "r", shift: true }],
+    keywords: "turn spin quarter 90 22.5 back reverse counter anticlockwise",
   },
   {
     id: "flip-switch",
@@ -394,6 +402,7 @@ export function commandEnabled(
   if (play?.status === "running" && !runsDuringPlay(id)) return false;
   switch (id) {
     case "rotate":
+    case "rotate-back":
       return (
         !snapshot.readOnly &&
         (snapshot.mode === "place" ||
@@ -450,7 +459,9 @@ function placeMoreLikeSelection(editor: IEditor, eventTimeMs: number): void {
   if (!selection) return;
   editor.chooseItem(selection.item);
   const turns = (selection.rot - editor.snapshot().ghostRot + QUARTER_TURNS) % QUARTER_TURNS;
-  for (let turn = 0; turn < turns; turn++) editor.rotate(eventTimeMs);
+  const direction = turns > QUARTER_TURNS / 2 ? -1 : 1;
+  const presses = direction === 1 ? turns : QUARTER_TURNS - turns;
+  for (let press = 0; press < presses; press++) editor.rotate(eventTimeMs, direction);
 }
 
 export function runEditorAction(
@@ -472,7 +483,10 @@ export function runEditorAction(
       return;
     }
     case "rotate":
-      editor.rotate(eventTimeMs);
+      editor.rotate(eventTimeMs, 1);
+      return;
+    case "rotate-back":
+      editor.rotate(eventTimeMs, -1);
       return;
     case "flip-switch":
       editor.mirrorPiece();
