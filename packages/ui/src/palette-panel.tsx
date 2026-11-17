@@ -17,8 +17,6 @@ import {
   TRACK_ITEM_ID,
   TRACK_PIECE_PREFIX,
   colorDisplayName,
-  commonestColor,
-  displayItem,
   itemInColor,
   type CatalogItemView,
   type EditorSnapshot,
@@ -93,28 +91,53 @@ const ThumbnailsContext = createContext<IPaletteThumbnails | null>(null);
 
 const NO_THUMBNAILS: ReadonlyMap<string, string> = new Map();
 
+const THUMBNAIL_LOOKAHEAD = "200px";
+
+function useScrolledIntoView(node: HTMLElement | null): boolean {
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    if (seen || !node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        setSeen(true);
+        observer.disconnect();
+      },
+      { rootMargin: THUMBNAIL_LOOKAHEAD },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [seen, node]);
+  return seen;
+}
+
 function Thumbnail({ item }: { readonly item: CatalogItemView | undefined }) {
   const thumbnails = useContext(ThumbnailsContext);
+  const [node, setNode] = useState<HTMLElement | null>(null);
+  const seen = useScrolledIntoView(node);
   const urls = useSyncExternalStore(
     (listener) => thumbnails?.subscribe(listener) ?? (() => {}),
     () => thumbnails?.snapshot() ?? NO_THUMBNAILS,
   );
   const id = item?.kind === "track" ? undefined : item?.id;
   useEffect(() => {
-    if (id !== undefined) thumbnails?.request(id);
-  }, [thumbnails, id]);
+    if (seen && id !== undefined) thumbnails?.request(id);
+  }, [thumbnails, id, seen]);
   const url = id === undefined ? undefined : urls.get(id);
   return url ? (
-    <img className="palette-thumb" src={url} alt="" data-thumb={id} />
+    <img ref={setNode} className="palette-thumb" src={url} alt="" data-thumb={id} />
   ) : (
-    <span className="palette-thumb palette-thumb-empty" aria-hidden="true" />
+    <span ref={setNode} className="palette-thumb palette-thumb-empty" aria-hidden="true" />
   );
 }
 
 interface Paint {
   readonly current: number | null;
   readonly choose: (code: number | null) => void;
-  readonly fallback?: number | null;
+  readonly resolve: (
+    items: ReadonlyArray<CatalogItemView>,
+    current: number | null,
+  ) => CatalogItemView | undefined;
 }
 
 function Section({
@@ -196,13 +219,11 @@ function SwatchRow({
   readonly paint: Paint;
 }) {
   const painted =
-    paint.current === null
-      ? displayItem(entry, paint.fallback ?? null)
-      : itemInColor(entry, paint.current);
+    paint.current === null ? paint.resolve(entry.items, null) : itemInColor(entry, paint.current);
   const unavailable = paint.current !== null && painted === undefined;
   return (
     <li className="palette-row" data-group={entry.key} data-unavailable={unavailable}>
-      <Thumbnail item={painted ?? displayItem(entry, paint.fallback ?? null)} />
+      <Thumbnail item={painted ?? paint.resolve(entry.items, null)} />
       <div className="palette-row-head">
         <button
           type="button"
@@ -390,8 +411,7 @@ function PaintedSection({
 }) {
   const noun = category === "road" ? "road plates" : "baseplates";
   const offered = choices.some((choice) => choice.color.code === paint.current);
-  const fallback = commonestColor(choices);
-  const sectionPaint = offered ? { ...paint, fallback } : { ...paint, current: null, fallback };
+  const sectionPaint = offered ? paint : { ...paint, current: null };
   const current = sectionPaint.current;
   const made = current === null ? entries : entries.filter((entry) => itemInColor(entry, current));
   const unmade = current === null ? [] : entries.filter((entry) => !itemInColor(entry, current));
@@ -480,17 +500,6 @@ function CategorySection({
   }
 }
 
-function paintedItem(
-  items: ReadonlyArray<CatalogItemView>,
-  current: number | null,
-): CatalogItemView | undefined {
-  return (
-    items.find((item) => item.color !== null && item.color.code === current) ??
-    items.find((item) => item.displayColor) ??
-    items[0]
-  );
-}
-
 function hitItemsText(hit: PaletteHit): string {
   const colored = hit.items.filter((item) => item.color !== null);
   if (colored.length === 0) return hit.items[0] ? itemMeta(hit.items[0]) : "";
@@ -518,7 +527,7 @@ function ResultRow({
     if (highlighted) rowRef.current?.scrollIntoView({ block: "nearest" });
   }, [highlighted]);
   const { entry } = hit;
-  const first = paintedItem(hit.items, paint.current);
+  const first = paint.resolve(hit.items, paint.current);
   const colored = first?.color !== null && first !== undefined;
   return (
     <li
@@ -645,7 +654,6 @@ export const PalettePanel = memo(function PalettePanel({
   const [tab, setTab] = useState<Tab>("all");
   const [highlight, setHighlight] = useState(0);
   const [color, setColor] = useState<number | null>(null);
-  const paint: Paint = { current: color, choose: setColor };
   const remembered = usePaletteMemory(memory);
   const favorites = useMemo<Favorites>(
     () => ({
@@ -663,6 +671,11 @@ export const PalettePanel = memo(function PalettePanel({
       ]),
     [catalog, trackKey],
   );
+  const paint: Paint = {
+    current: color,
+    choose: setColor,
+    resolve: (items, current) => index.defaultItem(items, current),
+  };
   const searching = query.trim() !== "";
   const listing = searching || tab === "favorites";
   const hits = useMemo(() => {
@@ -696,7 +709,7 @@ export const PalettePanel = memo(function PalettePanel({
         setHighlight(Math.max(shownHighlight - 1, 0));
         break;
       case "Enter": {
-        const item = paintedItem(hits[shownHighlight]?.items ?? [], color);
+        const item = paint.resolve(hits[shownHighlight]?.items ?? [], color);
         if (!item) return;
         pick(item);
         event.currentTarget.blur();
