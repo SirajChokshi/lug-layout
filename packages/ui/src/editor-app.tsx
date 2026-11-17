@@ -9,6 +9,7 @@ import {
   RoadJoins,
 } from "./editor-panels.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { TrackPanel } from "./track-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 
 interface EditorAppProps {
@@ -69,6 +70,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} />
         <CatalogList editor={editor} snapshot={snapshot} />
+        <TrackPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />
       </div>
