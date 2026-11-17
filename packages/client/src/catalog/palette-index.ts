@@ -1,4 +1,4 @@
-import type { CatalogItemView } from "../edit/editor.ts";
+import type { CatalogColorView, CatalogItemView } from "../edit/editor.ts";
 
 export type PaletteCategory = "track" | "baseplates" | "road" | "mils" | "sets";
 export type PaletteFilter = PaletteCategory | "all";
@@ -81,6 +81,71 @@ export const CATEGORY_LABEL: Readonly<Record<PaletteCategory, string>> = {
 
 export function colorDisplayName(name: string): string {
   return name.replaceAll("_", " ");
+}
+
+export interface PaletteColorChoice {
+  readonly color: CatalogColorView;
+  readonly parts: number;
+}
+
+const HEX_RGB = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/iu;
+const GREY_SATURATION = 0.12;
+const DEGREES = 360;
+const HEXTET = 255;
+
+interface Hsl {
+  readonly hue: number;
+  readonly saturation: number;
+  readonly lightness: number;
+}
+
+function hslOf(rgb: string): Hsl {
+  const match = HEX_RGB.exec(rgb);
+  if (!match) return { hue: 0, saturation: 0, lightness: 0 };
+  const channel = (group: number): number => parseInt(match[group] ?? "0", 16) / HEXTET;
+  const red = channel(1);
+  const green = channel(2);
+  const blue = channel(3);
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const lightness = (max + min) / 2;
+  const chroma = max - min;
+  if (chroma === 0) return { hue: 0, saturation: 0, lightness };
+  const saturation = chroma / (1 - Math.abs(2 * lightness - 1));
+  let sector: number;
+  if (max === red) sector = ((green - blue) / chroma + 6) % 6;
+  else if (max === green) sector = (blue - red) / chroma + 2;
+  else sector = (red - green) / chroma + 4;
+  return { hue: (sector * DEGREES) / 6, saturation, lightness };
+}
+
+function colorOrder(a: CatalogColorView, b: CatalogColorView): number {
+  const ha = hslOf(a.rgb);
+  const hb = hslOf(b.rgb);
+  const greyA = ha.saturation < GREY_SATURATION;
+  const greyB = hb.saturation < GREY_SATURATION;
+  if (greyA !== greyB) return greyA ? 1 : -1;
+  if (greyA) return hb.lightness - ha.lightness || a.code - b.code;
+  return ha.hue - hb.hue || hb.lightness - ha.lightness || a.code - b.code;
+}
+
+export function colorChoices(
+  entries: ReadonlyArray<PaletteEntry>,
+): ReadonlyArray<PaletteColorChoice> {
+  const choices = new Map<number, { color: CatalogColorView; parts: number }>();
+  for (const entry of entries) {
+    for (const item of entry.items) {
+      if (!item.color) continue;
+      const choice = choices.get(item.color.code);
+      if (choice) choice.parts++;
+      else choices.set(item.color.code, { color: item.color, parts: 1 });
+    }
+  }
+  return [...choices.values()].toSorted((a, b) => colorOrder(a.color, b.color));
+}
+
+export function itemInColor(entry: PaletteEntry, code: number): CatalogItemView | undefined {
+  return entry.items.find((item) => item.color?.code === code);
 }
 
 function normalized(text: string): string {
