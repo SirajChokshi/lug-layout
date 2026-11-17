@@ -1,5 +1,6 @@
 import type { EditorOptions, IEditor, IPlanService, ShellCommandId } from "@brr/client";
 import { useCallback, useState } from "react";
+import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CreditsFooter,
@@ -14,6 +15,7 @@ import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { TrackPanel } from "./track-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
+import { useRecentItems } from "./use-recent-items.ts";
 
 interface EditorAppProps {
   readonly editor: IEditor;
@@ -53,6 +55,7 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
 
 export function EditorApp({ editor, plans, options, disclaimer, showState }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
+  const recent = useRecentItems(snapshot.activeItem);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const toggleOverlay = useCallback(
@@ -82,11 +85,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       <EditorHud snapshot={snapshot} />
       <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">
-        <PlacementToolbar
-          editor={editor}
-          snapshot={snapshot}
-          onShowShortcuts={() => toggleOverlay("show-shortcuts")}
-        />
+        <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
@@ -96,6 +95,15 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       {showState && <PlanState plans={plans} />}
       <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
+      {overlay === "open-palette" && (
+        <CommandPalette
+          editor={editor}
+          snapshot={snapshot}
+          recent={recent}
+          onClose={closeOverlay}
+          onShellCommand={toggleOverlay}
+        />
+      )}
     </div>
   );
 }
