@@ -1,13 +1,22 @@
 import { expect, test } from "@playwright/test";
 import { EditorPage, STUD, TRACK_ITEM, nearestLattice } from "./editor-page.ts";
 
+const BASEPLATE = "ldraw:3811@2";
 const HEADINGS = 16;
 const EAST = 0;
 const WEST = HEADINGS / 2;
 
-test("a straight run closed into an oval joins every end exactly", async ({ page }) => {
+test("a straight run on baseplates closed into an oval joins every end exactly", async ({
+  page,
+}) => {
   const editor = await EditorPage.open(page);
-  await editor.zoom(700);
+  await editor.zoom(1400);
+  const { wide } = await editor.itemStuds(BASEPLATE);
+  const side = wide * STUD;
+  const columns = [-2.5, -1.5, -0.5, 0.5, 1.5].map((k) => k * side);
+  const rows = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map((k) => k * side);
+  for (const x of columns) for (const z of rows) await editor.placeAt(BASEPLATE, { x, z });
+  expect(await editor.poses()).toHaveLength(columns.length * rows.length);
   await editor.choose(TRACK_ITEM);
 
   const start = { x: -400, z: 0 };

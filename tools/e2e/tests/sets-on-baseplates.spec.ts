@@ -13,7 +13,7 @@ function boxOf(footprints: ReadonlyArray<PlanFootprint>, ref: string): Box {
   return footprint.box;
 }
 
-test("sets seat one baseplate apart on the stud lattice and a caboose sits on the baseplate", async ({
+test("sets seat one baseplate apart on the stud lattice, and a caboose without anti-studs is refused on the baseplate", async ({
   page,
 }) => {
   const editor = await EditorPage.open(page);
@@ -24,17 +24,19 @@ test("sets seat one baseplate apart on the stud lattice and a caboose sits on th
   await editor.placeAt(BASEPLATE, { x: 0, z: 0 });
   await editor.placeAt(GROCER, { x: side, z: 0 });
   await editor.placeAt(FIRE_BRIGADE, { x: -side, z: 0 });
-  await editor.placeAt(CABOOSE, { x: 0, z: 0 });
+  const seated = [
+    { item: FIRE_BRIGADE, x: -side, z: 0, yPlates: 0, rot: 0 },
+    { item: BASEPLATE, x: 0, z: 0, yPlates: 0, rot: 0 },
+    { item: GROCER, x: side, z: 0, yPlates: 0, rot: 0 },
+  ].toSorted(byPosition);
+  expect(await editor.poses()).toEqual(seated);
 
-  const poses = await editor.poses();
-  expect(poses).toEqual(
-    [
-      { item: FIRE_BRIGADE, x: -side, z: 0, yPlates: 0, rot: 0 },
-      { item: BASEPLATE, x: 0, z: 0, yPlates: 0, rot: 0 },
-      { item: CABOOSE, x: 0, z: 0, yPlates: 0, rot: 0 },
-      { item: GROCER, x: side, z: 0, yPlates: 0, rot: 0 },
-    ].toSorted(byPosition),
-  );
+  await editor.placeAt(CABOOSE, { x: 0, z: 0 });
+  expect(await editor.poses(), "the refused caboose changes nothing").toEqual(seated);
+  expect(await editor.lastRefusal()).toEqual({
+    rule: "support",
+    message: expect.stringContaining("10014-1 has no anti-studs and no flat base to rest on"),
+  });
 
   const footprints = await editor.footprints();
   const baseplate = boxOf(footprints, BASEPLATE);
@@ -47,17 +49,7 @@ test("sets seat one baseplate apart on the stud lattice and a caboose sits on th
     "10190-1's baseplate sits flush west of it, with its one-stud overhang over the 3811",
   ).toBe(baseplate.minX + FIRE_BRIGADE_OVERHANG_STUDS * STUD);
 
-  const tableTop = await editor.tableTopY();
-  expect(baseplate.minY, "the baseplate lies on the table").toBe(tableTop);
-  const caboose = boxOf(footprints, CABOOSE);
-  expect(caboose.minY, "the caboose sits on the baseplate's top face").toBe(baseplate.maxY);
-  expect(caboose.minY - tableTop, "raised off the table by the baseplate").toBe(
-    baseplate.maxY - baseplate.minY,
-  );
-  expect(caboose.minX).toBeGreaterThanOrEqual(baseplate.minX);
-  expect(caboose.maxX).toBeLessThanOrEqual(baseplate.maxX);
-  expect(caboose.minZ).toBeGreaterThanOrEqual(baseplate.minZ);
-  expect(caboose.maxZ).toBeLessThanOrEqual(baseplate.maxZ);
+  expect(baseplate.minY, "the baseplate lies on the table").toBe(await editor.tableTopY());
 
   await page.screenshot({ path: test.info().outputPath("sets-on-baseplates.png") });
 });
