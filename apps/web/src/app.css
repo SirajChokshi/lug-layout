@@ -1402,3 +1402,15 @@ footer a {
   color: #8a8f96;
   text-decoration: line-through;
 }
+.palette [draggable="true"] {
+  cursor: grab;
+}
+
+.palette [draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.palette-how {
+  margin: 0 0 6px;
+  font-size: 11px;
+}
