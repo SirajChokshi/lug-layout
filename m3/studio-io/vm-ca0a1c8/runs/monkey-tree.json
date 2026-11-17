@@ -1,0 +1,396 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\ne7f95dbb6832c648\nParts\n35\nModules\n2\nStud instances (drawn of total)\n139 of 139\nScene triangles\n17,990\nLoad\n41 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.3 MiB, other 0.0 MiB, JS heap 48.7 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n24\nDrawn triangles\n17,991\nScene coverage\n10%\nFrame rate (rAF)\n6.0 fps\nParts list\nWorld\nRegion (LDU, placement origins)\nBuild parts list",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 240,
+        "z": 0,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "monkey-tree.io!modelv2.ldr",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "monkey-tree",
+            "title": "Untitled Model"
+          }
+        ],
+        "instanceCount": 35,
+        "drawnInstanceCount": 35,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3036.dat",
+            "official": "3036.dat",
+            "instances": 1,
+            "partId": "ldraw:3036"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "official": "3003.dat",
+            "instances": 14,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3700.dat",
+            "official": "3700.dat",
+            "instances": 2,
+            "partId": "ldraw:3700"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3708.dat",
+            "official": "3708.dat",
+            "instances": 1,
+            "partId": "ldraw:3708",
+            "file": "parts/3708.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3708.dat",
+              "title": "Technic Axle 12"
+            },
+            "sourceFiles": 4
+          },
+          {
+            "kind": "bundle",
+            "reference": "92947.dat",
+            "official": "92947.dat",
+            "instances": 1,
+            "partId": "ldraw:92947"
+          },
+          {
+            "kind": "compiled",
+            "reference": "78666.dat",
+            "official": "78666.dat",
+            "instances": 2,
+            "partId": "ldraw:78666",
+            "file": "parts/78666.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2025-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "78666.dat",
+              "title": "Arch 1 x 2 x 1 Inverted"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "6182.dat",
+            "official": "6182.dat",
+            "instances": 1,
+            "partId": "ldraw:6182",
+            "file": "parts/6182.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2010-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6182.dat",
+              "title": "Arch 1 x 4 x 2"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "compiled",
+            "reference": "3660b.dat",
+            "official": "3660b.dat",
+            "instances": 1,
+            "partId": "ldraw:3660b",
+            "file": "parts/3660b.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2026-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3660b.dat",
+              "title": "Slope Brick 45 2 x 2 Inverted with Flat Bottom Pin with Inner Stopper Ring"
+            },
+            "sourceFiles": 23
+          },
+          {
+            "kind": "bundle",
+            "reference": "3794b.dat",
+            "official": "3794b.dat",
+            "instances": 1,
+            "partId": "ldraw:3794b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "official": "3001.dat",
+            "instances": 1,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "compiled",
+            "reference": "7674.dat",
+            "official": "7674.dat",
+            "instances": 1,
+            "partId": "ldraw:7674",
+            "file": "parts/7674.dat",
+            "header": {
+              "author": "Rene Rechthaler [Blechtaler]",
+              "ldrawOrg": "Part UPDATE 2026-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "7674.dat",
+              "title": "Bracket 1 x 2 - 2 x 2 Centered"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "compiled",
+            "reference": "98138p07.dat",
+            "official": "98138p07.dat",
+            "instances": 2,
+            "partId": "ldraw:98138p07",
+            "file": "parts/98138p07.dat",
+            "header": {
+              "author": "Nils Schmidt [BlackBrick89]",
+              "ldrawOrg": "Part UPDATE 2022-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "98138p07.dat",
+              "title": "Tile 1 x 1 Round with Eye Pattern"
+            },
+            "sourceFiles": 18
+          },
+          {
+            "kind": "bundle",
+            "reference": "3245b.dat",
+            "official": "3245b.dat",
+            "instances": 2,
+            "partId": "ldraw:3245b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "32013.dat",
+            "official": "32013.dat",
+            "instances": 2,
+            "partId": "ldraw:32013",
+            "file": "parts/32013.dat",
+            "header": {
+              "author": "Lutz Uhlmann [El-Lutzo]",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "32013.dat",
+              "title": "Technic Angle Connector #1"
+            },
+            "sourceFiles": 26
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "official": "3004.dat",
+            "instances": 2,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "compiled",
+            "reference": "7134.dat",
+            "official": "7134.dat",
+            "instances": 1,
+            "partId": "ldraw:7134",
+            "file": "parts/7134.dat",
+            "header": {
+              "author": "Rene Rechthaler [Blechtaler]",
+              "ldrawOrg": "Part UPDATE 2025-07",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "7134.dat",
+              "title": "Brick 1 x 2 with Curved Top without Stud Holders"
+            },
+            "sourceFiles": 8
+          }
+        ],
+        "inlineParts": [],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 23,
+        "fetched": {
+          "requests": 161,
+          "found": 89,
+          "notFound": 72,
+          "bytes": 108544
+        },
+        "timings": {
+          "bakeMs": 1.800000000745058,
+          "resolveMs": 851,
+          "totalMs": 852.8000000007451
+        },
+        "studio": {
+          "file": "monkey-tree.io",
+          "entry": "modelv2.ldr",
+          "studioVersion": "2.26.7_1",
+          "convertedLines": 35,
+          "unconvertedLines": [],
+          "parts": [
+            {
+              "studio": "3001.dat",
+              "bricklinkId": "3001",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3003.dat",
+              "bricklinkId": "3003",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 14,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3004.dat",
+              "bricklinkId": "3004",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3036.dat",
+              "bricklinkId": "3036",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "32013.dat",
+              "bricklinkId": "32013",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3245b.dat",
+              "bricklinkId": "3245b",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3660b.dat",
+              "bricklinkId": "3660b",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3700.dat",
+              "bricklinkId": "3700",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3708.dat",
+              "bricklinkId": "3708",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3794b.dat",
+              "bricklinkId": "3794b",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6182.dat",
+              "bricklinkId": "6182",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "7134.dat",
+              "bricklinkId": "7134",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "78666.dat",
+              "bricklinkId": "78666",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "92947.dat",
+              "bricklinkId": "92947",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "98138p07.dat",
+              "bricklinkId": "98138p07",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "bl_7674.dat",
+              "bricklinkId": "7674",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "bricklinkCrosswalk",
+                "ldraw": "7674"
+              }
+            }
+          ],
+          "unknownColors": []
+        },
+        "importMs": 1742.0999999977648,
+        "sceneMs": 286.1000000014901
+      }
+    ]
+  }
+}
