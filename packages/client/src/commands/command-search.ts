@@ -1,3 +1,4 @@
+import type { PaletteIndex } from "../catalog/palette-index.ts";
 import type { CatalogItemView } from "../edit/editor.ts";
 import { COMMANDS, type CommandId, type CommandSpec } from "./editor-commands.ts";
 
@@ -17,24 +18,17 @@ export type PaletteResult = CommandResult | ItemResult;
 
 export interface PaletteSources {
   readonly catalog: ReadonlyArray<CatalogItemView>;
+  readonly index: PaletteIndex;
   readonly recent: ReadonlyArray<string>;
   readonly enabled: (id: CommandId) => boolean;
 }
 
-const KIND_WORDS: Readonly<Record<CatalogItemView["kind"], string>> = {
-  baseplate: "baseplate plate ground",
-  "road-plate": "road plate street",
-  "mils-module": "mils module",
-  model: "set model",
-  track: "track rail train",
-};
-
-const TITLE_START_SCORE = 6;
-const TITLE_WORD_SCORE = 4;
-const WORD_SCORE = 3;
-const INSIDE_SCORE = 1;
-const RECENT_BONUS = 2;
-const DISABLED_PENALTY = 3;
+const TITLE_START_SCORE = 100;
+const TITLE_WORD_SCORE = 90;
+const WORD_SCORE = 80;
+const INSIDE_SCORE = 50;
+const RECENT_BONUS = 20;
+const DISABLED_PENALTY = 30;
 const RESULT_LIMIT = 60;
 const DIMENSION = /(\d)\s*[x×]\s*(\d)/gu;
 const ALPHANUMERIC = /[\p{L}\p{N}]/u;
@@ -74,16 +68,6 @@ function matchScore(words: ReadonlyArray<string>, title: string, extra: string):
   return total;
 }
 
-function itemExtra(item: CatalogItemView): string {
-  return [
-    item.color?.name ?? "",
-    item.groupLabel,
-    KIND_WORDS[item.kind],
-    `${item.studsWide}x${item.studsDeep}`,
-    item.id,
-  ].join(" ");
-}
-
 function commandExtra(spec: CommandSpec): string {
   return `${spec.group} ${spec.keywords ?? ""}`;
 }
@@ -91,11 +75,26 @@ function commandExtra(spec: CommandSpec): string {
 interface Scored {
   readonly result: PaletteResult;
   readonly score: number;
-  readonly title: string;
+  readonly order: number;
+}
+
+function titleLength(scored: Scored): number {
+  return scored.result.kind === "command"
+    ? scored.result.spec.title.length
+    : Number.MAX_SAFE_INTEGER;
 }
 
 function byScore(a: Scored, b: Scored): number {
-  return b.score - a.score || a.title.length - b.title.length || a.title.localeCompare(b.title);
+  return b.score - a.score || titleLength(a) - titleLength(b) || a.order - b.order;
+}
+
+function itemsInHitOrder(
+  index: PaletteIndex,
+  items: ReadonlyArray<CatalogItemView>,
+  narrowed: boolean,
+): ReadonlyArray<CatalogItemView> {
+  const preferred = narrowed ? items[0] : index.defaultItem(items, null);
+  return preferred ? [preferred, ...items.filter((item) => item !== preferred)] : items;
 }
 
 function browse(sources: PaletteSources): ReadonlyArray<PaletteResult> {
@@ -131,18 +130,19 @@ export function searchPalette(
     scored.push({
       result: { kind: "command", spec, enabled },
       score: enabled ? score : score - DISABLED_PENALTY,
-      title: spec.title,
+      order: scored.length,
     });
   }
-  for (const item of sources.catalog) {
-    const score = matchScore(words, item.label, itemExtra(item));
-    if (score === 0) continue;
-    const recent = sources.recent.includes(item.id);
-    scored.push({
-      result: { kind: "item", item, recent },
-      score: recent ? score + RECENT_BONUS : score,
-      title: item.label,
-    });
+  for (const hit of sources.index.search(query, "all")) {
+    const narrowed = hit.items.length < hit.entry.items.length;
+    for (const item of itemsInHitOrder(sources.index, hit.items, narrowed)) {
+      const recent = sources.recent.includes(item.id);
+      scored.push({
+        result: { kind: "item", item, recent },
+        score: recent ? hit.score + RECENT_BONUS : hit.score,
+        order: scored.length,
+      });
+    }
   }
   return scored
     .toSorted(byScore)

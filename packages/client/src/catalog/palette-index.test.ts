@@ -79,6 +79,21 @@ const catalog: ReadonlyArray<CatalogItemView> = [
   },
 ];
 
+const milsTrack: CatalogItemView = {
+  id: "generated:mils-track-straight",
+  label: "MILS Earth Track Straight",
+  group: "generated:mils-track-straight",
+  groupLabel: "MILS Earth Track Straight",
+  color: null,
+  kind: "mils-module",
+  parts: 30,
+  studsWide: 32,
+  studsDeep: 32,
+  aliases: [],
+  elements: [],
+  displayColor: false,
+};
+
 const index = new PaletteIndex(catalog, [
   { entryKey: "track:lego-9v", terms: ["2865", "Train Track 9V Straight", "2867"] },
 ]);
@@ -181,4 +196,12 @@ it("defaults a part to the current colour, else its display colour, else its sec
   expect(pick("ldraw:3867", TAN.code)).toBe("ldraw:3867@2");
   const [searched] = index.search("4186", "all");
   expect(searched && index.defaultItem(searched.items, null)?.id).toBe("ldraw:4186@2");
+});
+
+it("ranks a part named by the word above parts that only mention it", () => {
+  const withModule = new PaletteIndex([milsTrack, ...catalog]);
+  expect(withModule.search("track", "all").map((hit) => hit.entry.key)).toEqual([
+    "track:lego-9v",
+    "generated:mils-track-straight",
+  ]);
 });
