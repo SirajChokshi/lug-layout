@@ -2,6 +2,7 @@ import {
   attachPose16,
   composePose16,
   pose16,
+  pose16Equals,
   zeta16,
   ZETA16_COEFFICIENT_COUNT,
   type Pose16,
@@ -107,6 +108,25 @@ export class TrackLayout {
     if (!local) throw new RangeError(`track piece ${piece} has no connector ${connector}`);
     const placement = attachPose16(local, this.connectorPose(target.placement, target.connector));
     return this.place(piece, placement, this.endYPlates(target.placement, target.connector));
+  }
+
+  replace(placement: number, piece: number): void {
+    this.checkPlacement(placement);
+    const from = this.pieces[this.piece(placement)];
+    const to = this.pieces[piece];
+    if (!from || !to || !Number.isInteger(piece)) {
+      throw new RangeError(`track piece ${piece} is not in the layout's piece table`);
+    }
+    const sameEnds =
+      from.connectors.length === to.connectors.length &&
+      from.connectors.every((end, index) => {
+        const other = to.connectors[index];
+        return other !== undefined && pose16Equals(end, other);
+      });
+    if (!sameEnds) {
+      throw new RangeError(`track piece ${piece} does not have placement ${placement}'s ends`);
+    }
+    this.pieceOf[placement] = piece;
   }
 
   piece(placement: number): number {

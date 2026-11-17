@@ -1,5 +1,5 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
-import { lduFromMm, STUD_LDU } from "@brr/math";
+import { lduFromMm, pose16, STUD_LDU, zeta16 } from "@brr/math";
 import {
   INSTANCE_MATRIX_FLOATS,
   SCENE_BACKEND,
@@ -217,4 +217,63 @@ it("marks a drag target as joining only when the closure solver finds an exact j
   const exact = aim([48, 0], [160, 0]);
   expect(exact.closure).toBe("exact");
   expect(exact.target).toEqual({ end: expect.any(Number), joins: true });
+});
+
+function latticePose(x: number, z: number) {
+  return pose16(zeta16([BigInt(x), 0n, 0n, 0n, BigInt(z), 0n, 0n, 0n]), 0);
+}
+
+it("lays a passing siding from the real 9V switches that closes exactly and keeps every join when thrown", async () => {
+  const bundle = await container
+    .get(PART_BUNDLE_LOADER)
+    .load("standard", (part) => part.role === "track");
+  const siding = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle));
+  const index = (id: string): number => {
+    const part = siding.pieceParts().find((p) => p.piece.id === id);
+    if (!part) throw new Error(`${id} is not placeable`);
+    return part.catalogIndex;
+  };
+  const right = index("ldraw:75541-f1");
+  const left = siding.pieceSet.mirrored(right);
+  const curve = index("ldraw:74747");
+  if (left === null) throw new Error("the right switch has no mirror");
+  const snapAt = (piece: number, connector: number, end: { xLdu: number; zLdu: number }) => {
+    const snap = siding.snapPiece(piece, connector, end.xLdu, end.zLdu, latticePose(0, 0));
+    expect(snap.end).not.toBeNull();
+    siding.placePiece(piece, snap.placement);
+  };
+  const openEndNear = (xStuds: number, zStuds: number) => {
+    const end = siding
+      .openEnds()
+      .find((e) => Math.hypot(e.xLdu / STUD_LDU - xStuds, e.zLdu / STUD_LDU - zStuds) < 1);
+    if (!end) throw new Error(`no open end near ${xStuds}, ${zStuds} studs`);
+    return end;
+  };
+
+  siding.placePiece(right, latticePose(0, 0));
+  snapAt(curve, 1, openEndNear(32.69, 12.96));
+  const draw = (from: readonly [number, number], to: readonly [number, number]) => {
+    siding.beginDrag(
+      from[0] * STUD_LDU,
+      from[1] * STUD_LDU,
+      from[0] * STUD_LDU,
+      from[1] * STUD_LDU,
+    );
+    siding.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
+    return siding.endDrag();
+  };
+  draw([32, 0], [80, 0]);
+  snapAt(left, 1, openEndNear(80, 0));
+  snapAt(curve, 0, openEndNear(79.31, 12.96));
+  expect(draw([48, 16], [64, 16]).joined).toBe(true);
+
+  expect(siding.pieceCount).toBe(8);
+  expect(siding.joinedPairs()).toBe(8);
+  expect(siding.openEnds()).toHaveLength(2);
+  expect(siding.gaps()).toHaveLength(0);
+
+  for (const lever of siding.switchLevers()) siding.throwSwitch(lever.placement);
+  expect(siding.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
+  expect(siding.joinedPairs()).toBe(8);
+  expect(siding.openEnds()).toHaveLength(2);
 });

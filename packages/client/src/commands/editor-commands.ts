@@ -6,6 +6,8 @@ export type EditorActionId =
   | "select-tool"
   | "draw-track"
   | "rotate"
+  | "flip-switch"
+  | "next-connector"
   | "delete"
   | "duplicate"
   | "undo"
@@ -71,6 +73,20 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "r" }],
     keywords: "turn spin quarter",
+  },
+  {
+    id: "flip-switch",
+    title: "Swap the held switch between left and right",
+    group: "Edit",
+    keys: [{ key: "x" }],
+    keywords: "mirror flip turnout points hand",
+  },
+  {
+    id: "next-connector",
+    title: "Attach the held track piece by its next end",
+    group: "Edit",
+    keys: [{ key: "q" }],
+    keywords: "cycle swing connector reverse curve",
   },
   {
     id: "delete",
@@ -267,7 +283,13 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
   if (snapshot.status !== "ready") return false;
   switch (id) {
     case "rotate":
-      return snapshot.mode === "place" || snapshot.selection !== null;
+      return (
+        snapshot.mode === "place" || snapshot.selection !== null || snapshot.track?.held != null
+      );
+    case "flip-switch":
+      return snapshot.track?.held?.mirror != null;
+    case "next-connector":
+      return snapshot.track?.held != null;
     case "delete":
     case "duplicate":
     case "focus":
@@ -326,6 +348,12 @@ export function runEditorAction(
       return;
     case "rotate":
       editor.rotate(eventTimeMs);
+      return;
+    case "flip-switch":
+      editor.mirrorPiece();
+      return;
+    case "next-connector":
+      editor.cycleConnector();
       return;
     case "delete":
       editor.deleteSelection(eventTimeMs);
