@@ -15,7 +15,7 @@ import { mainThreadModules } from "../client.module.ts";
 import { LAYOUT_SCENE } from "../tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
-const LAYOUT_SIDE_LDU = 4 * CHUNK_LDU;
+const TILE_SIDE_LDU = 4 * CHUNK_LDU;
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -61,23 +61,29 @@ class RecordingBackend implements ISceneBackend {
   }
 }
 
-it("builds the 4×4 bench layout from the pinned bundle with every part inside its four modules", async () => {
-  const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
-  const backend = new RecordingBackend();
-  container.rebind(SCENE_BACKEND).toConstantValue(backend);
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+it.each([1, 2])(
+  "builds %i×%i tiles of the 4×4 bench layout with every part inside them",
+  async (tiles) => {
+    const container = new Container();
+    container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+    const backend = new RecordingBackend();
+    container.rebind(SCENE_BACKEND).toConstantValue(backend);
+    container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+    const scene = container.get(LAYOUT_SCENE);
+    scene.configure({ camera: "aerial", tiles });
 
-  const summary = await container.get(LAYOUT_SCENE).load("standard");
+    const summary = await scene.load("standard");
+    const side = tiles * TILE_SIDE_LDU;
 
-  expect(summary.modules).toBe(backend.chunks.size);
-  let outside = 0;
-  for (const chunk of backend.chunks.values()) {
-    for (let i = 0; i < chunk.count; i++) {
-      const x = chunk.originX + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0);
-      const z = chunk.originZ + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0);
-      if (x < 0 || z < 0 || x > LAYOUT_SIDE_LDU || z > LAYOUT_SIDE_LDU) outside++;
+    expect(summary.modules).toBe(backend.chunks.size);
+    let outside = 0;
+    for (const chunk of backend.chunks.values()) {
+      for (let i = 0; i < chunk.count; i++) {
+        const x = chunk.originX + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0);
+        const z = chunk.originZ + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0);
+        if (x < 0 || z < 0 || x > side || z > side) outside++;
+      }
     }
-  }
-  expect(outside).toBe(0);
-});
+    expect(outside).toBe(0);
+  },
+);

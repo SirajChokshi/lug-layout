@@ -33,6 +33,7 @@ import {
 
 export interface LayoutRequest {
   readonly camera: CityCamera;
+  readonly tiles: number;
 }
 
 export interface ILayoutScene extends IViewerScene {
@@ -44,6 +45,13 @@ interface LayoutModel {
   readonly column: number;
   readonly row: number;
   readonly rot: number;
+}
+
+interface LayoutTile {
+  readonly history: EditHistory;
+  readonly placed: PlacedChunks;
+  readonly x: number;
+  readonly z: number;
 }
 
 interface DisplayRow {
@@ -170,7 +178,7 @@ function snapToStud(ldu: number): number {
 
 @injectable()
 export class LayoutScene implements ILayoutScene {
-  private request: LayoutRequest = { camera: "aerial" };
+  private request: LayoutRequest = { camera: "aerial", tiles: 1 };
   private extent = 0;
   private readonly capture: ChunkCapture;
 
@@ -200,8 +208,22 @@ export class LayoutScene implements ILayoutScene {
       colorsSrgb: colors.toSrgb(),
       ldrawColorsSrgb: ldrawColorsSrgb(bundle),
     });
-    this.placeModels(placeables, baseplate);
-    this.layTrack(track);
+    this.extent = lengthAlongX(placeableNamed(placeables, MODULE_NAME)) * MODULES_PER_SIDE;
+    const world = new World();
+    const history = new EditHistory(world);
+    const placed = new PlacedChunks(this.capture);
+    const touched = new Set<number>();
+    for (let tileZ = 0; tileZ < this.request.tiles; tileZ++) {
+      for (let tileX = 0; tileX < this.request.tiles; tileX++) {
+        const tile = { history, placed, x: tileX * this.extent, z: tileZ * this.extent };
+        this.placeModels(placeables, baseplate, tile);
+        this.layTrack(track, tile, touched);
+      }
+    }
+    for (const key of touched) {
+      const chunk = track.chunkInstances(key);
+      if (chunk) this.capture.setChunk(key, chunk);
+    }
     const chunks: KeyedChunk[] = [];
     for (const [key, instances] of this.capture.chunks) chunks.push({ key, instances });
     return summarizeChunks(
@@ -262,11 +284,13 @@ export class LayoutScene implements ILayoutScene {
     return placeables;
   }
 
-  private placeModels(placeables: ReadonlyMap<string, Placeable>, baseplate: Placeable): void {
+  private placeModels(
+    placeables: ReadonlyMap<string, Placeable>,
+    baseplate: Placeable,
+    tile: LayoutTile,
+  ): void {
     const refs = [...placeables.values(), baseplate];
-    const world = new World();
-    const history = new EditHistory(world);
-    const placed = new PlacedChunks(this.capture);
+    const { history, placed } = tile;
     const refOf = (refId: number): Placeable => {
       const placeable = refs[refId];
       if (!placeable) throw new Error(`layout ref ${refId} is out of range`);
@@ -276,8 +300,8 @@ export class LayoutScene implements ILayoutScene {
       const edit = history.place({
         refId: refs.indexOf(placeable),
         colorId: placeable.worldColor,
-        x,
-        z,
+        x: tile.x + x,
+        z: tile.z + z,
         yPlates,
         rot,
       });
@@ -286,7 +310,6 @@ export class LayoutScene implements ILayoutScene {
     const module = placeableNamed(placeables, MODULE_NAME);
     const moduleLdu = lengthAlongX(module);
     const surfacePlates = Math.round(module.box.max[1] / PLATE_LDU);
-    this.extent = moduleLdu * MODULES_PER_SIDE;
     for (let row = 0; row < MODULES_PER_SIDE; row++) {
       for (let column = 0; column < MODULES_PER_SIDE; column++) {
         const inner =
@@ -320,35 +343,31 @@ export class LayoutScene implements ILayoutScene {
     }
   }
 
-  private layTrack(track: TrackDrawing): void {
-    const touched = new Set<number>();
+  private layTrack(track: TrackDrawing, tile: LayoutTile, touched: Set<number>): void {
     for (let i = 0; i < TRACK_CORNERS_STUDS.length; i++) {
       const from = TRACK_CORNERS_STUDS[i];
       const to = TRACK_CORNERS_STUDS[(i + 1) % TRACK_CORNERS_STUDS.length];
       if (!from || !to) continue;
-      const [fx, fz] = from;
-      const [tx, tz] = to;
-      track.beginDrag(fx * STUD_LDU, fz * STUD_LDU, fx * STUD_LDU, fz * STUD_LDU);
-      track.moveDrag(tx * STUD_LDU, tz * STUD_LDU);
+      const fx = tile.x + from[0] * STUD_LDU;
+      const fz = tile.z + from[1] * STUD_LDU;
+      track.beginDrag(fx, fz, fx, fz);
+      track.moveDrag(tile.x + to[0] * STUD_LDU, tile.z + to[1] * STUD_LDU);
       for (const key of track.endDrag().chunks) touched.add(key);
     }
     if (track.openEnds().length > 0) {
       throw new Error(`the layout's track loop has ${track.openEnds().length} open ends`);
     }
-    for (const key of touched) {
-      const chunk = track.chunkInstances(key);
-      if (chunk) this.capture.setChunk(key, chunk);
-    }
   }
 
   setCamera(t: number): void {
-    const centre = this.extent / 2;
+    const side = this.extent * this.request.tiles;
+    const centre = side / 2;
     const angle = t * 2 * Math.PI;
     if (this.request.camera === "aerial") {
-      const radius = this.extent * AERIAL_RADIUS_FACTOR;
+      const radius = side * AERIAL_RADIUS_FACTOR;
       this.backend.setView(
         centre + radius * Math.cos(angle),
-        this.extent * AERIAL_HEIGHT_FACTOR,
+        side * AERIAL_HEIGHT_FACTOR,
         centre + radius * Math.sin(angle),
         centre,
         0,

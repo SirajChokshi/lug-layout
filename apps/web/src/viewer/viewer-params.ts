@@ -38,6 +38,7 @@ export interface ViewerParams {
   readonly autopilotSeed: number | null;
   readonly city: boolean;
   readonly parts: number;
+  readonly tiles: number;
   readonly seed: number;
   readonly camera: CityCamera;
   readonly modelView: ModelView;
@@ -236,6 +237,7 @@ export function readViewerParams(search: string): ViewerParams {
     autopilotSeed: autopilotSeed(params.get("autopilot")),
     city: params.get("scene") === "city",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
+    tiles: Math.floor(positiveNumber(params.get("tiles"), 1)),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",
     modelView: modelView(params),
