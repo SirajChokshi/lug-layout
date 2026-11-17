@@ -12,9 +12,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  status:
+    name: Check the public bundle
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      served: ${{ steps.served.outputs.served }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
+      - name: Look for this input key's manifests at the public URL
+        id: served
+        env:
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/cli.ts served
+
   publish:
     name: Publish part bundle
-    if: github.ref == 'refs/heads/main'
+    needs: status
+    if: needs.status.outputs.served != 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:

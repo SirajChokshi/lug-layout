@@ -105,8 +105,22 @@ export interface PublishWait {
 }
 
 async function isServed(url: string): Promise<boolean> {
-  const response = await fetch(url, { method: "HEAD" });
-  return response.ok;
+  try {
+    return (await fetch(url, { method: "HEAD" })).ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function unservedManifests(
+  baseUrl: string,
+  lods: ReadonlyArray<string>,
+  manifestFile: string,
+): Promise<string[]> {
+  const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const urls = lods.map((lod) => new URL(`${lod}/${manifestFile}`, base).href);
+  const served = await Promise.all(urls.map(isServed));
+  return urls.filter((_, index) => !served[index]);
 }
 
 export async function waitUntilServed(
@@ -115,12 +129,9 @@ export async function waitUntilServed(
   manifestFile: string,
   wait: PublishWait,
 ): Promise<void> {
-  const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const urls = lods.map((lod) => new URL(`${lod}/${manifestFile}`, base).href);
   const deadline = Date.now() + wait.timeoutMs;
   for (;;) {
-    const served = await Promise.all(urls.map(isServed));
-    const missing = urls.filter((_, index) => !served[index]);
+    const missing = await unservedManifests(baseUrl, lods, manifestFile);
     if (missing.length === 0) return;
     if (Date.now() >= deadline) {
       throw new Error(`part bundle manifests are not served: ${missing.join(", ")}`);

@@ -13,15 +13,19 @@ Every object is stored with `Cache-Control: public, max-age=31536000, immutable`
 
 ## CI
 
-`.github/workflows/part-bundle.yml` runs on every push to `main`, in the `production` environment that #62's catalog deploy also uses:
-1. Checks the bucket for the three manifests of the commit's input key, and stops if they're all there. That covers every commit that doesn't touch the bundle inputs.
+`.github/workflows/part-bundle.yml` runs two jobs on every push to `main`.
+
+**`status`** has no environment and no secrets. It HEADs the three manifests for the commit's input key at the repository variable `PART_BUNDLE_BASE_URL`. If all three are served, the workflow ends there. That covers every commit that doesn't touch the bundle inputs, and nobody is asked to approve anything. If the variable is unset, a manifest is missing, or the URL can't be reached, it falls through to `publish`.
+
+**`publish`** runs in the `production` environment that #62's catalog deploy also uses, so it waits for the owner's approval:
+1. Checks the bucket itself for the three manifests, over R2's S3 API, and stops if they're all there.
 2. Otherwise, restores the pinned LDraw inputs and builds the bundle, including the compiler.
 3. Uploads the objects the bucket doesn't have yet.
 4. Uploads the manifests last, so a manifest never names a missing object.
 
-The job uses #62's single Cloudflare account token. R2's S3 API takes the token's id as the access key and the SHA-256 hex digest of the token value as the secret, and the CLI derives both from `CLOUDFLARE_API_TOKEN_ID` and `CLOUDFLARE_API_TOKEN`. `CLOUDFLARE_ACCOUNT_ID`, the token and its id are passed only to the check step and the upload step. Installs, the Rust toolchain, `cargo` build scripts and the LDraw restore never see them. Without the token, the check step warns and nothing is published. It never reads `infra/cloudflare/part-bundles.json` in that case. The bucket name is that file's `production.bucket_name`.
+`publish` uses #62's single Cloudflare account token. R2's S3 API takes the token's id as the access key and the SHA-256 hex digest of the token value as the secret, and the CLI derives both from `CLOUDFLARE_API_TOKEN_ID` and `CLOUDFLARE_API_TOKEN`. `CLOUDFLARE_ACCOUNT_ID`, the token and its id are passed only to the check step and the upload step. Installs, the Rust toolchain, `cargo` build scripts and the LDraw restore never see them. Without the token, the check step warns and nothing is published. It never reads `infra/cloudflare/part-bundles.json` in that case. The bucket name is that file's `bucket_name`.
 
-`production` has the owner as its required reviewer, so every push to `main` waits for approval before this job runs. For a merge that doesn't change bundle inputs, the manifests are already published, and Vercel doesn't wait for the job. For a merge that does, Production deploys only after the job is approved and has built and uploaded the bundle, about 6 minutes. If that takes longer than `PART_BUNDLE_WAIT_MINUTES`, the Vercel build fails and the previous deployment keeps serving. Approve the job, then redeploy in Vercel.
+**Approval is requested only when the bundle is missing**, which is after a merge that changes bundle inputs, or always while `PART_BUNDLE_BASE_URL` is unset. Production then deploys only after the job is approved and has built and uploaded the bundle, about 6 minutes. If that takes longer than `PART_BUNDLE_WAIT_MINUTES`, the Vercel build fails and the previous deployment keeps serving. Approve the job, then redeploy in Vercel.
 
 ## Vercel
 
@@ -35,14 +39,15 @@ The job uses #62's single Cloudflare account token. R2's S3 API takes the token'
 ## Setup
 
 1. Apply `infra/cloudflare`. It creates the bucket, public on its r2.dev domain.
-2. Add nothing new. The job uses `production`'s `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_API_TOKEN_ID`, set up for #62 (*Credentials* in the infra README). The token's Workers R2 Storage permission covers the bucket.
-3. In the Vercel project, set `VITE_BUNDLE_BASE_URL` for Production to the Terraform output `part_bundle_base_urls.production`, and check that Root Directory is `apps/web`.
-4. To move to a custom domain later, follow the three steps in the infra README. r2.dev stays on until no deployment loads from it.
+2. No new secrets. `publish` uses `production`'s `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_API_TOKEN_ID`, set up for #62 (*Credentials* in the infra README). The token's Workers R2 Storage permission covers the bucket.
+3. In the Vercel project, set `VITE_BUNDLE_BASE_URL` for Production to the Terraform output `part_bundle_base_url`, and check that Root Directory is `apps/web`.
+4. Under *Settings → Secrets and variables → Actions → Variables*, set the repository variable `PART_BUNDLE_BASE_URL` to the same `part_bundle_base_url` value. It isn't secret. Without it, every push to `main` asks for approval.
+5. To move to a custom domain later, follow the three steps in the infra README, and update `PART_BUNDLE_BASE_URL` together with Vercel's `VITE_BUNDLE_BASE_URL`. r2.dev stays on until no deployment loads from it.
 
 ## Local development
 
 Nothing changes locally. `pnpm --filter @brr/asset-pipeline build` writes `tools/asset-pipeline/dist/bundle`, and `vite` serves it at `/bundle/`. To use the published bundle instead:
 
 ```sh
-VITE_BUNDLE_BASE_URL=<part_bundle_base_urls.production> VITE_BUNDLE_MANIFEST_FILE=$(node tools/asset-pipeline/src/cli.ts manifest-file) pnpm --filter @brr/web dev
+VITE_BUNDLE_BASE_URL=<part_bundle_base_url> VITE_BUNDLE_MANIFEST_FILE=$(node tools/asset-pipeline/src/cli.ts manifest-file) pnpm --filter @brr/web dev
 ```

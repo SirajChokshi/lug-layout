@@ -31,7 +31,12 @@ import {
 import { readPalette } from "./palette.ts";
 import { MANIFEST_FILE, publishBundle } from "./publish.ts";
 import { R2ObjectStore, sha256Hex } from "./r2.ts";
-import { isPartBundlePublished, uploadPartBundle, waitUntilServed } from "./remote-bundle.ts";
+import {
+  isPartBundlePublished,
+  unservedManifests,
+  uploadPartBundle,
+  waitUntilServed,
+} from "./remote-bundle.ts";
 import {
   geometryReports,
   licenseAuditReport,
@@ -344,18 +349,14 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-const PART_BUNDLE_TARGET = "production";
-
 async function partBundleBucket(): Promise<string> {
   const store = await readFile(partBundleStorePath, "utf8").catch(() => {
     throw new Error(
       `${partBundleStorePath} is missing: apply the infra/cloudflare Terraform that creates the bucket first`,
     );
   });
-  const targets = JSON.parse(store) as Readonly<Record<string, { readonly bucket_name: string }>>;
-  const bucket = targets[PART_BUNDLE_TARGET]?.bucket_name;
-  if (bucket === undefined)
-    throw new Error(`${partBundleStorePath} has no ${PART_BUNDLE_TARGET} bucket`);
+  const { bucket_name: bucket } = JSON.parse(store) as { readonly bucket_name?: string };
+  if (bucket === undefined) throw new Error(`${partBundleStorePath} has no bucket_name`);
   return bucket;
 }
 
@@ -363,13 +364,15 @@ async function partBundleStore(): Promise<R2ObjectStore | undefined> {
   const tokenId = process.env["CLOUDFLARE_API_TOKEN_ID"];
   const token = process.env["CLOUDFLARE_API_TOKEN"];
   if (!tokenId || !token) return undefined;
+  const secretAccessKey = sha256Hex(token);
+  if (process.env["GITHUB_ACTIONS"]) process.stdout.write(`::add-mask::${secretAccessKey}\n`);
   const endpoint =
     process.env["PART_BUNDLE_R2_ENDPOINT"] ||
     `https://${requiredEnv("CLOUDFLARE_ACCOUNT_ID")}.r2.cloudflarestorage.com`;
   return new R2ObjectStore({
     endpoint,
     bucket: await partBundleBucket(),
-    credentials: { accessKeyId: tokenId, secretAccessKey: sha256Hex(token) },
+    credentials: { accessKeyId: tokenId, secretAccessKey },
   });
 }
 
@@ -410,6 +413,25 @@ async function uploadCommand(): Promise<void> {
     manifestFile,
   );
   process.stdout.write(`${manifestFile}: ${uploaded} uploaded, ${present} already present\n`);
+}
+
+async function servedCommand(): Promise<void> {
+  const manifestFile = currentManifestFile();
+  const baseUrl = process.env["PART_BUNDLE_BASE_URL"];
+  if (!baseUrl) {
+    process.stdout.write(
+      "PART_BUNDLE_BASE_URL is not set; the publish job checks the bucket itself\n",
+    );
+    await writeStepOutput("served", "false");
+    return;
+  }
+  const missing = await unservedManifests(baseUrl, BundleLod.options, manifestFile);
+  process.stdout.write(
+    missing.length === 0
+      ? `${manifestFile}: served from ${baseUrl}\n`
+      : `${manifestFile}: not served: ${missing.join(", ")}\n`,
+  );
+  await writeStepOutput("served", String(missing.length === 0));
 }
 
 async function awaitServedCommand(): Promise<void> {
@@ -462,12 +484,15 @@ switch (command) {
   case "upload":
     await uploadCommand();
     break;
+  case "served":
+    await servedCommand();
+    break;
   case "await-served":
     await awaitServedCommand();
     break;
   default:
     process.stderr.write(
-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|published|upload|await-served\n",
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served\n",
     );
     process.exitCode = 2;
 }
