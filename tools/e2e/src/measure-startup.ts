@@ -13,6 +13,7 @@ const NSS_NICKNAME = "brr-measure-startup";
 const VIEWPORT = { width: 1600, height: 900 } as const;
 const READY_TIMEOUT_MS = 900_000;
 const SETTLED = ["ready", "error"];
+const SETTLE_POLL_MS = 100;
 const MS_PER_S = 1000;
 const BITS_PER_BYTE = 8;
 const IMMUTABLE = "public, max-age=31536000, immutable";
@@ -56,6 +57,8 @@ interface RunResult {
   readonly cache: "cold" | "warm";
   readonly status: string;
   readonly readyMs: number;
+  readonly settledMs: number;
+  readonly beforeReady: RequestTally;
   readonly bundle: RequestTally;
   readonly app: RequestTally;
   readonly byKind: Readonly<Record<string, RequestTally>>;
@@ -73,6 +76,7 @@ const { values } = parseArgs({
     out: { type: "string" },
     chrome: { type: "string" },
     serve: { type: "boolean", default: false },
+    "settle-ms": { type: "string", default: "3000" },
   },
 });
 
@@ -235,6 +239,8 @@ async function throttle(cdp: CDPSession, profile: NetworkProfile | null): Promis
   });
 }
 
+const settleMs = Number(values["settle-ms"]);
+
 async function run(
   context: BrowserContext,
   appUrl: string,
@@ -250,7 +256,19 @@ async function run(
   const bundle = emptyTally();
   const app = emptyTally();
   const byKind: Record<string, RequestTally> = {};
-  cdp.on("Network.requestWillBeSent", (event) => urls.set(event.requestId, event.request.url));
+  let inFlight = 0;
+  let lastBundleAt = 0;
+  const started = performance.now();
+  const finish = (requestId: string): void => {
+    if (!urls.get(requestId)?.startsWith(bundleOrigin)) return;
+    inFlight -= 1;
+    lastBundleAt = performance.now() - started;
+  };
+  cdp.on("Network.requestWillBeSent", (event) => {
+    urls.set(event.requestId, event.request.url);
+    if (event.request.url.startsWith(bundleOrigin)) inFlight += 1;
+  });
+  cdp.on("Network.loadingFailed", (event) => finish(event.requestId));
   const cached = new Set<string>();
   cdp.on("Network.requestServedFromCache", (event) => cached.add(event.requestId));
   cdp.on("Network.responseReceived", (event) => {
@@ -267,6 +285,7 @@ async function run(
     }
   });
   cdp.on("Network.loadingFinished", (event) => {
+    finish(event.requestId);
     const url = urls.get(event.requestId);
     if (url === undefined) return;
     const tally = url.startsWith(bundleOrigin) ? bundle : app;
@@ -292,8 +311,28 @@ async function run(
     { timeout: READY_TIMEOUT_MS, polling: 50 },
   );
   const { status, at } = (await handle.jsonValue()) ?? { status: "unknown", at: 0 };
+  const beforeReady = { ...bundle };
+  let quietSince = performance.now();
+  while (performance.now() - quietSince < settleMs) {
+    await new Promise((done) => setTimeout(done, SETTLE_POLL_MS));
+    if (inFlight > 0) quietSince = performance.now();
+  }
   await page.close();
-  return { profile: profileName, cache, status, readyMs: Math.round(at), bundle, app, byKind };
+  return {
+    profile: profileName,
+    cache,
+    status,
+    readyMs: Math.round(at),
+    settledMs: Math.round(Math.max(lastBundleAt, at)),
+    beforeReady,
+    bundle,
+    app,
+    byKind,
+  };
+}
+
+function seconds(ms: number): string {
+  return (ms / MS_PER_S).toFixed(1);
 }
 
 function megabytes(bytes: number): string {
@@ -303,11 +342,11 @@ function megabytes(bytes: number): string {
 function report(results: ReadonlyArray<RunResult>): string {
   const rows = results.map(
     (r) =>
-      `| ${r.profile} | ${r.cache} | ${r.status} | ${(r.readyMs / MS_PER_S).toFixed(1)} | ${r.bundle.requests} | ${r.bundle.fromCache} | ${megabytes(r.bundle.encodedBytes)} | ${megabytes(r.bundle.decodedBytes)} | ${r.app.requests} | ${megabytes(r.app.encodedBytes)} |`,
+      `| ${r.profile} | ${r.cache} | ${r.status} | ${seconds(r.readyMs)} | ${r.beforeReady.requests} | ${megabytes(r.beforeReady.encodedBytes)} | ${seconds(r.settledMs)} | ${r.bundle.requests} | ${r.bundle.fromCache} | ${megabytes(r.bundle.encodedBytes)} | ${megabytes(r.bundle.decodedBytes)} | ${r.app.requests} | ${megabytes(r.app.encodedBytes)} |`,
   );
   return [
-    "| network | cache | status | ready (s) | bundle requests | from cache | bundle MB transferred | bundle MB decoded | app requests | app MB transferred |",
-    "|---|---|---|---|---|---|---|---|---|---|",
+    "| network | cache | status | ready (s) | bundle requests before ready | bundle MB before ready | bundle settled (s) | bundle requests | from cache | bundle MB transferred | bundle MB decoded | app requests | app MB transferred |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows,
   ].join("\n");
 }
