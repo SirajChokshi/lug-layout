@@ -79,16 +79,89 @@ footer {
   font-size: 11px;
 }
 
+.editor {
+  --panel-edge: 12px;
+  --panel-gap: 8px;
+  --left-column: 404px;
+  --side-column: 360px;
+  --footer-clearance: 84px;
+  --view-bar-height: 38px;
+  --hud-chip-height: 42px;
+  --column-top: var(--panel-edge);
+  --column-height: calc(100vh - var(--column-top) - var(--footer-clearance) - var(--panel-gap));
+  --centre-left: calc(var(--panel-edge) + var(--left-column) + var(--panel-gap));
+  --centre-right: calc(var(--panel-edge) + var(--side-column) + var(--panel-gap));
+}
+
+.editor[data-layout="compact"] {
+  --column-top: calc(var(--panel-edge) + var(--view-bar-height) + var(--panel-gap));
+}
+
 .editor-hud {
-  max-width: 420px;
+  top: var(--column-top);
+  left: var(--panel-edge);
+  box-sizing: border-box;
+  width: var(--left-column);
+  max-width: none;
+  max-height: calc(var(--column-height) / 2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.editor-hud:not([open]) {
+  width: auto;
+  height: var(--hud-chip-height);
+  overflow: hidden;
+}
+
+.editor-hud > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 22px;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.editor-hud > summary::-webkit-details-marker {
+  display: none;
+}
+
+.editor-hud > summary::before {
+  content: "▸";
+  color: #1f6feb;
+  transition: transform 120ms ease-out;
+}
+
+.editor-hud[open] > summary {
+  margin-bottom: 6px;
+}
+
+.editor-hud[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.editor-hud > summary h1 {
+  margin: 0;
+}
+
+.hud-glance {
+  padding: 0 8px;
+  border-radius: 10px;
+  background: #eef2f6;
+  color: #445;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .side-panel {
   position: fixed;
-  top: 12px;
-  right: 12px;
-  bottom: 84px;
-  width: 360px;
+  top: var(--panel-edge);
+  right: var(--panel-edge);
+  bottom: var(--footer-clearance);
+  width: var(--side-column);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -427,17 +500,23 @@ footer {
 
 .plan-panel {
   position: fixed;
-  left: 12px;
-  bottom: 84px;
-  width: 380px;
-  max-height: 50vh;
+  left: var(--panel-edge);
+  bottom: var(--footer-clearance);
+  box-sizing: border-box;
+  width: var(--left-column);
+  max-height: calc(var(--column-height) / 2);
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px 12px;
   border-radius: 8px;
   background: rgb(255 255 255 / 0.94);
   color: #1b2a34;
   box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
   font-size: 12px;
+}
+
+.editor:has(.editor-hud:not([open])) .plan-panel {
+  max-height: calc(var(--column-height) - var(--hud-chip-height));
 }
 
 .plan-panel h2 {
@@ -575,19 +654,31 @@ footer {
 
 .view-controls {
   position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: var(--panel-edge);
+  left: var(--centre-left);
+  right: var(--centre-right);
+  box-sizing: border-box;
+  width: fit-content;
+  height: var(--view-bar-height);
+  margin-inline: auto;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 6px;
+  padding: 0 6px;
   border-radius: 10px;
   background: rgb(255 255 255 / 0.92);
   color: #1b2a34;
   box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.editor[data-layout="compact"] .view-controls {
+  left: var(--panel-edge);
+  right: auto;
+  width: var(--left-column);
+  margin-inline: 0;
+  justify-content: space-between;
 }
 
 .view-controls button,
@@ -599,6 +690,11 @@ footer {
   background: #f6f8fa;
   color: inherit;
   cursor: pointer;
+  transition: transform 80ms ease-out;
+}
+
+.view-controls button:not(:disabled):hover {
+  transform: translateY(-1px);
 }
 
 .view-controls button:disabled {

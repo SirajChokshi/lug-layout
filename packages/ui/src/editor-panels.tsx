@@ -13,6 +13,7 @@ import {
 import { shortcutText } from "./keys.tsx";
 import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
 import { useState, type FormEvent } from "react";
+import { isCompactLayout } from "./use-compact-layout.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
@@ -399,7 +400,12 @@ function rebuildText(sample: LatencySample | null): string {
 }
 
 export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
+  const [open, setOpen] = useState(() => !isCompactLayout());
   const { backend, stats } = snapshot;
+  const glance = [
+    ...(stats ? [`${stats.fps.toFixed(0)} fps`] : []),
+    `${integer.format(snapshot.placements)} placed`,
+  ].join(" · ");
   const rows: Array<readonly [string, string]> = [];
   if (backend) {
     rows.push(
@@ -481,8 +487,15 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     ]);
   }
   return (
-    <aside className="hud editor-hud">
-      <h1>Brick Railroad</h1>
+    <details
+      className="hud editor-hud"
+      open={open || snapshot.error !== null}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary title={open ? "Fold the stats away" : "Show the editor's stats"}>
+        <h1>Brick Railroad</h1>
+        <span className="hud-glance">{glance}</span>
+      </summary>
       {snapshot.status === "loading" && <p>Loading the bundle and the 10 sets…</p>}
       {snapshot.error !== null && <p className="error">{snapshot.error}</p>}
       <dl>
@@ -493,7 +506,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
           </div>
         ))}
       </dl>
-    </aside>
+    </details>
   );
 }
 

@@ -244,22 +244,25 @@ kbd {
 .tool-hud {
   --tone: #5b6b7a;
   position: fixed;
-  bottom: 88px;
-  left: 50%;
+  bottom: var(--footer-clearance);
+  left: var(--centre-left);
+  right: var(--centre-right);
   z-index: 5;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  max-width: min(600px, calc(100vw - 880px));
-  min-width: 300px;
+  width: fit-content;
+  max-width: 600px;
+  margin-inline: auto;
   padding: 7px 14px;
   border-left: 4px solid var(--tone);
   border-radius: 10px;
   background: rgb(255 255 255 / 0.94);
   color: #1b2a34;
   box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
-  transform: translateX(-50%);
+  text-align: center;
   pointer-events: none;
 }
 
