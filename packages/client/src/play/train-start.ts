@@ -1,4 +1,4 @@
-import type { TrackPiece } from "@brr/catalog";
+import type { TrackPiece } from "@brr/schema/bundle";
 import { NO_EDGE, NO_SWITCH, type TrackGraph, type TrackLayout } from "@brr/domain";
 
 export interface TrainStart {

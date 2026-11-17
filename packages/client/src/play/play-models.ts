@@ -1,4 +1,5 @@
-import type { BundleModelEntry, PartAsset, PartBundle, PartModel } from "@brr/catalog";
+import type { PartAsset, PartBundle, PartModel } from "@brr/catalog";
+import type { BundleModelEntry } from "@brr/schema/bundle";
 import type { MergedParts } from "../edit/merged-parts.ts";
 import type { PlayTrack } from "../edit/track-drawing.ts";
 import { instanceBoxes } from "../running-gear/instance-boxes.ts";
