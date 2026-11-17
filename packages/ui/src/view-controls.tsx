@@ -12,9 +12,10 @@ export function useCameraSnapshot(camera: IEditorCamera): CameraSnapshot {
 interface ViewControlsProps {
   readonly camera: IEditorCamera;
   readonly snapshot: EditorSnapshot;
+  readonly compact: boolean;
 }
 
-export function ViewControls({ camera, snapshot }: ViewControlsProps) {
+export function ViewControls({ camera, snapshot, compact }: ViewControlsProps) {
   const view = useCameraSnapshot(camera);
   const selection = snapshot.selection;
   const plan = view.mode === "plan";
@@ -37,7 +38,7 @@ export function ViewControls({ camera, snapshot }: ViewControlsProps) {
           title={`Top-down 2D plan, true to scale (${shortcutText("toggle-plan-view")} toggles)`}
           onClick={() => camera.setMode("plan")}
         >
-          2D plan
+          {compact ? "2D" : "2D plan"}
         </button>
       </div>
       <button
@@ -79,15 +80,15 @@ export function ViewControls({ camera, snapshot }: ViewControlsProps) {
       </div>
       <label
         className="view-scroll"
-        title="What two-finger scroll or the mouse wheel does. Pinch and Ctrl+wheel always zoom."
+        title="What two-finger scroll or the mouse wheel does: zooms suits a mouse, pans suits a trackpad. Pinch and Ctrl+wheel always zoom."
       >
         Scroll
         <select
           value={view.scroll}
           onChange={(event) => camera.setScroll(event.target.value === "pan" ? "pan" : "zoom")}
         >
-          <option value="zoom">zooms (mouse)</option>
-          <option value="pan">pans (trackpad)</option>
+          <option value="zoom">{compact ? "zooms" : "zooms (mouse)"}</option>
+          <option value="pan">{compact ? "pans" : "pans (trackpad)"}</option>
         </select>
       </label>
     </div>

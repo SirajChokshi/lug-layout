@@ -44,6 +44,7 @@ docs/                   architecture.md, verified-facts.md
 - `pnpm format` / `pnpm format:check` run oxfmt (there's no ESLint or Prettier)
 - `pnpm typecheck`, `pnpm test`, `pnpm build` run through Turborepo (add `--filter=@brr/<pkg>...` to scope)
 - `pnpm check` runs everything CI runs
+- `pnpm e2e` builds `apps/web` and runs the Playwright layout scenarios in `tools/e2e/tests` against `vite preview`, in installed Google Chrome on WebGL2 (SwiftShader without a GPU; set `CHROME` to use another binary). They drive the editor only through the UI: cursor positions come from the HUD's lattice readout, and poses are read from `?state=1`. CI and `pnpm check` run them
 - `pnpm --filter @brr/web dev`
 - `pnpm lint:rust` (no comments in `crates/`) and `pnpm check:rust` (fmt, clippy `-D warnings`, `cargo test`)
 - `pnpm --filter @brr/asset-pipeline fetch-ldraw` re-pins LDraw inputs (network; plain `fetch` would run pnpm's built-in). `restore-ldraw` downloads exactly the pinned files into the git-ignored `.cache/` (network once, then a no-op), `verify-ldraw` checks them offline, and `build` restores, verifies and compiles the bundle that `apps/web` serves at `/bundle/` in local dev. Deployed apps load it from R2 instead: CI uploads it when its inputs change, and the Vercel build ships no bundle (`docs/part-bundle.md`). LDraw `.dat` files and generated GLBs are never committed. `pnpm check` restores them first; the Rust integration test reads `.cache/ldraw`, so run `restore-ldraw` before a bare `cargo test`
@@ -61,6 +62,7 @@ Before you finish: `pnpm check` is green.
 - Rust: stable toolchain pinned in `rust-toolchain.toml`, `clippy -D warnings`, no comments (`pnpm lint:rust`), and `brick-compile` stays free of I/O so it builds for WASM.
 - Units: integer LDU (1 LDU = 0.4 mm; stud = 20, plate = 8, brick = 24). Layout heights are in plates above the top face of the baseplate. LDraw −Y-up data converts to y-up exactly once, at the compile and import boundary.
 - Facts listed in §11 as unverified must not be hard-coded from memory. Verify them with `.cursor/skills/verify-ldraw-facts` and record them in `docs/verified-facts.md`.
+- Editor overlays are fixed children of `.editor`, positioned from the layout tokens on `.editor` in `apps/web/src/app.css`; below 1340 px the editor switches to its compact layout (`use-compact-layout.ts`). `tools/e2e/tests/overlay-layout.spec.ts` fails if two overlays overlap, one leaves the screen or spills out of its box, or one catches another's clicks, at 1024×768, 1280×800 and 1440×900 in every mode.
 
 ## Skills
 - `.cursor/skills/add-package`: new `@brr/*` package in the right layer

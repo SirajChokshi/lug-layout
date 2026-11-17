@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "e2e": "playwright test",
     "import-models": "node src/import-models.ts",
     "export-parts-lists": "node src/export-parts-lists.ts",
     "typecheck": "tsc -p tsconfig.json",
@@ -13,6 +14,7 @@
   },
   "devDependencies": {
     "@brr/config": "workspace:*",
+    "@playwright/test": "1.58.2",
     "@types/node": "22.20.5",
     "playwright-core": "1.58.2",
     "typescript": "7.0.2"
