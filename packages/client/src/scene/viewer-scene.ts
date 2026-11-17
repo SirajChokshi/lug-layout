@@ -14,7 +14,7 @@ import {
   type PartPalette,
 } from "@brr/render";
 
-const CATALOG_ROLES: ReadonlySet<string> = new Set(["ground", "road"]);
+const CATALOG_ROLES: ReadonlySet<string> = new Set(["ground", "road", "brick"]);
 
 const hasSceneColor: PartFilter = (part) =>
   !CATALOG_ROLES.has(part.role) || part.displayColor !== undefined;

@@ -32,7 +32,16 @@ export type Vec3 = v.InferOutput<typeof Vec3>;
 
 const Bounds = v.object({ min: Vec3, max: Vec3 });
 
-export const PartRole = v.picklist(["ground", "road", "track", "wall", "roof", "detail", "model"]);
+export const PartRole = v.picklist([
+  "ground",
+  "road",
+  "track",
+  "wall",
+  "roof",
+  "detail",
+  "brick",
+  "model",
+]);
 export type PartRole = v.InferOutput<typeof PartRole>;
 
 export const DisplayColor = v.object({ ldraw: Integer, source: v.string() });
@@ -203,6 +212,12 @@ export const ModelFileCells = v.pipe(
 );
 export type ModelFileCells = v.InferOutput<typeof ModelFileCells>;
 
+export const PartSeat = v.object({
+  phase: v.tuple([StudPhase, StudPhase]),
+  cells: ModelFileCells,
+});
+export type PartSeat = v.InferOutput<typeof PartSeat>;
+
 export const ModelFileCover = v.pipe(
   v.object({
     studs: Count,
@@ -299,6 +314,7 @@ export const ManifestPart = v.object({
   trackEnds: v.optional(v.array(TrackEnd)),
   baseplate: v.boolean(),
   aliasOf: v.nullable(v.string()),
+  seat: v.optional(v.nullable(PartSeat)),
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 
