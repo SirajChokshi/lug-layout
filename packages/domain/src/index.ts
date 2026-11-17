@@ -127,7 +127,6 @@ export {
 } from "./track/closure.ts";
 export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";
 export {
-  NO_STUD_TOP,
   SupportGrid,
   firstLayerSupport,
   isSupported,
@@ -139,7 +138,9 @@ export {
   type UpperSupport,
 } from "./support.ts";
 export {
+  HALF_PLANE_FLOATS,
   PLAN_TRIANGLE_FLOATS,
-  REPRESENTATION_EPSILON_LDU,
+  placedPlanCells,
   planTriangleCells,
+  type PlaneTransform,
 } from "./cell-raster.ts";

@@ -284,6 +284,7 @@ export const ManifestPart = v.object({
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
+  baseplate: v.boolean(),
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 

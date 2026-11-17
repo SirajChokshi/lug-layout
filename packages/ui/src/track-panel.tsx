@@ -93,6 +93,12 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
     ["Coincident ends not joined", integer.format(track.coincidentEndIssues)],
     ["Near-miss gaps", integer.format(track.gaps.length)],
     ["Last release", commitText(track)],
+    [
+      "Selected piece",
+      track.selected
+        ? `${track.selected.pieceId} #${track.selected.piece + 1}; Delete removes it`
+        : "none; click a laid piece to select it",
+    ],
   ];
   if (track.drag) rows.push(...dragRows(track.drag));
   if (track.solve) {
@@ -118,7 +124,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
         <p className="toolbar-hint">
           Drag from an open end (or from empty ground) to lay track. Release over another open end
           to join it exactly. Amber arrows mark open ends; red arrows mark two ends that nearly meet
-          but don't join.
+          but don't join. Click a laid piece and press Delete to remove it.
         </p>
       )}
       <dl>

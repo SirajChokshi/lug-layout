@@ -41,6 +41,7 @@ export interface PartAsset {
   readonly boundsMax: Vec3;
   readonly producedColor: number | undefined;
   readonly producedColors: ReadonlyArray<number>;
+  readonly baseplate: boolean;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
   readonly mesh: PartMesh;
   readonly studPrimitiveIndex: Uint8Array;

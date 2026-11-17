@@ -1,5 +1,6 @@
 import {
   TRACK_ITEM_ID,
+  commandEnabled,
   type EditorCredits,
   type EditorSnapshot,
   type IEditor,
@@ -241,7 +242,7 @@ export function PlacementToolbar({
       </button>
       <button
         type="button"
-        disabled={snapshot.selection === null}
+        disabled={!commandEnabled("delete", snapshot)}
         onClick={(event) => editor.deleteSelection(event.timeStamp)}
       >
         Delete ({shortcutText("delete")})
