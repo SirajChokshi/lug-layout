@@ -1,0 +1,10 @@
+far GLBs: binary chunk, buffer views, accessors, meshes and voxel extras identical: 27 | differ: [] | farMesh null: 4
+every far GLB has extras.ldraw with the manifest authors and licenses, a voxelization note, and sources that all carry a license
+10264-1 extras keys ['arrays', 'ldraw', 'model', 'unit', 'upAxis', 'voxels'] | ldraw keys ['authors', 'file', 'licenses', 'name', 'note', 'sections', 'source', 'sources'] | sources 895
+GLB note: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up; model far meshes voxelize the standard-detail body triangles (studs excluded) of every drawn part onto 20 x 8 x 20 LDU cells on the model's stud lattice, colour each cell by its largest clipped area, and greedy-mesh the exposed cell faces into one primitive per colour
+far credits before 1891 after 1960 added 69 removed 0
+added examples ['p/1-4chrd.dat', 'p/1-4con0.dat', 'p/1-4cyli.dat', 'p/1-4cylo.dat', 'p/1-4cyls.dat', 'p/1-4cyls2.dat', 'p/1-4disc.dat', 'p/1-4edge.dat']
+files cited by far GLB sources but missing from far credits: 0
+modified: Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up, 8-segment p/8 primitives used where LDraw provides them, triangles hidden from above removed; model far meshes voxelize the standard-detail body triangles (studs excluded) of every drawn part onto 20 x 8 x 20 LDU cells on the model's stud lattice, colour each cell by its largest clipped area, and greedy-mesh the exposed cell faces into one primitive per colour
+standard compiler brick-compile.1a0d0c0e64c75912.wasm
+low compiler brick-compile.1a0d0c0e64c75912.wasm
