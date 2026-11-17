@@ -343,6 +343,9 @@ fn run(args: &Args) -> Result<(), String> {
         if !entry["displayColor"].is_null() {
             summary["displayColor"] = entry["displayColor"].clone();
         }
+        if !entry["producedColors"].is_null() {
+            summary["producedColors"] = entry["producedColors"].clone();
+        }
         part_index.insert(reference, parts.len());
         parts.push(summary);
         shapes.push(shape);

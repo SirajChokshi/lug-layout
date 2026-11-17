@@ -1,10 +1,10 @@
-import type {
-  CatalogItemView,
-  EditorCredits,
-  EditorSnapshot,
-  IEditor,
-  LatencySample,
-  RoadIssueView,
+import {
+  TRACK_ITEM_ID,
+  type EditorCredits,
+  type EditorSnapshot,
+  type IEditor,
+  type LatencySample,
+  type RoadIssueView,
 } from "@brr/client";
 import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
 
@@ -29,86 +29,6 @@ interface PanelProps {
   readonly snapshot: EditorSnapshot;
 }
 
-function CatalogEntry({
-  item,
-  active,
-  onChoose,
-}: {
-  readonly item: CatalogItemView;
-  readonly active: boolean;
-  readonly onChoose: (id: string) => void;
-}) {
-  return (
-    <li>
-      <button
-        type="button"
-        className={active ? "catalog-item active" : "catalog-item"}
-        data-item={item.id}
-        aria-pressed={active}
-        onClick={() => onChoose(item.id)}
-      >
-        <span className="catalog-name">{item.label}</span>
-        <span className="catalog-meta">
-          {integer.format(item.parts)} {item.parts === 1 ? "part" : "parts"} · {item.studsWide}×
-          {item.studsDeep} studs
-        </span>
-      </button>
-    </li>
-  );
-}
-
-const CATALOG_GROUPS: Readonly<Record<CatalogItemView["kind"], string>> = {
-  baseplate: "Baseplate",
-  "road-plate": "Road plates",
-  "road-module": "MILS road modules",
-  track: "Track",
-  model: "Sets",
-};
-
-export function CatalogList({ editor, snapshot }: PanelProps) {
-  return (
-    <nav className="catalog" aria-label="Catalog">
-      <h2>Catalog</h2>
-      {Object.entries(CATALOG_GROUPS).map(([kind, heading]) => {
-        const items = snapshot.catalog.filter((item) => item.kind === kind);
-        if (items.length === 0) return null;
-        return (
-          <section key={kind} className="catalog-group">
-            <h3>{heading}</h3>
-            <ul>
-              {items.map((item) => (
-                <CatalogEntry
-                  key={item.id}
-                  item={item}
-                  active={snapshot.activeItem === item.id}
-                  onChoose={(id) => editor.chooseItem(id)}
-                />
-              ))}
-            </ul>
-          </section>
-        );
-      })}
-      {snapshot.catalogSkipped.length > 0 && (
-        <p className="catalog-skipped" data-catalog-skipped={skippedNames(snapshot)}>
-          Not placeable: {skippedText(snapshot)}
-        </p>
-      )}
-    </nav>
-  );
-}
-
-function skippedNames(snapshot: EditorSnapshot): string {
-  return snapshot.catalogSkipped.map((model) => model.name).join(",");
-}
-
-function skippedText(snapshot: EditorSnapshot): string {
-  const byReason = new Map<string, string[]>();
-  for (const model of snapshot.catalogSkipped) {
-    byReason.set(model.reason, [...(byReason.get(model.reason) ?? []), model.name]);
-  }
-  return [...byReason].map(([reason, names]) => `${names.join(", ")} (${reason})`).join("; ");
-}
-
 function issueText(issue: RoadIssueView): string {
   const axis = issue.side === "minX" || issue.side === "maxX" ? "x" : "z";
   const along = axis === "x" ? "z" : "x";
@@ -118,8 +38,13 @@ function issueText(issue: RoadIssueView): string {
 export function RoadJoins({ editor, snapshot }: PanelProps) {
   const { roads } = snapshot;
   return (
-    <section className="road-joins" aria-label="Road joins">
-      <h2>Road joins</h2>
+    <details className="road-joins" aria-label="Road joins">
+      <summary>
+        <h2>Road joins</h2>
+        <span className="road-joins-summary">
+          {roads.joinedCells} joined · {roads.openCells} open · {roads.mismatchedCells} mismatched
+        </span>
+      </summary>
       <label className="road-joins-toggle">
         <input
           type="checkbox"
@@ -183,7 +108,7 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
           ))}
         </ul>
       )}
-    </section>
+    </details>
   );
 }
 
@@ -198,6 +123,14 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
         onClick={() => editor.chooseItem(null)}
       >
         Select (Esc)
+      </button>
+      <button
+        type="button"
+        data-action="draw-track"
+        aria-pressed={snapshot.mode === "track"}
+        onClick={() => editor.chooseItem(snapshot.mode === "track" ? null : TRACK_ITEM_ID)}
+      >
+        Draw track (T)
       </button>
       <button
         type="button"
@@ -245,46 +178,43 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
 
 export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const { selection } = snapshot;
+  if (!selection) return null;
   return (
     <section className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
-      {selection ? (
-        <dl>
-          <div>
-            <dt>Model</dt>
-            <dd>{itemLabel(snapshot, selection.item)}</dd>
-          </div>
-          <div>
-            <dt>x, z (LDU)</dt>
-            <dd>
-              {selection.x}, {selection.z}
-            </dd>
-          </div>
-          <div>
-            <dt>Height (plates)</dt>
-            <dd>{selection.yPlates}</dd>
-          </div>
-          <div>
-            <dt>Rotation</dt>
-            <dd>{degrees(selection.rot)}</dd>
-          </div>
-          <div>
-            <dt>Footprint x, z (LDU)</dt>
-            <dd>
-              {ldu(selection.box.minX)}…{ldu(selection.box.maxX)}, {ldu(selection.box.minZ)}…
-              {ldu(selection.box.maxZ)}
-            </dd>
-          </div>
-          <div>
-            <dt>Chunk key, slot</dt>
-            <dd>
-              {selection.chunkKey}, {selection.slot}
-            </dd>
-          </div>
-        </dl>
-      ) : (
-        <p>Nothing selected. Click a placed model.</p>
-      )}
+      <dl>
+        <div>
+          <dt>Model</dt>
+          <dd>{itemLabel(snapshot, selection.item)}</dd>
+        </div>
+        <div>
+          <dt>x, z (LDU)</dt>
+          <dd>
+            {selection.x}, {selection.z}
+          </dd>
+        </div>
+        <div>
+          <dt>Height (plates)</dt>
+          <dd>{selection.yPlates}</dd>
+        </div>
+        <div>
+          <dt>Rotation</dt>
+          <dd>{degrees(selection.rot)}</dd>
+        </div>
+        <div>
+          <dt>Footprint x, z (LDU)</dt>
+          <dd>
+            {ldu(selection.box.minX)}…{ldu(selection.box.maxX)}, {ldu(selection.box.minZ)}…
+            {ldu(selection.box.maxZ)}
+          </dd>
+        </div>
+        <div>
+          <dt>Chunk key, slot</dt>
+          <dd>
+            {selection.chunkKey}, {selection.slot}
+          </dd>
+        </div>
+      </dl>
     </section>
   );
 }

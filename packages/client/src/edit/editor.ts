@@ -1,5 +1,6 @@
 import {
   PART_BUNDLE_LOADER,
+  type BundleColor,
   type BundleLod,
   type IPartBundleLoader,
   type PartAsset,
@@ -50,9 +51,23 @@ export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
 export type EditorMode = "place" | "select" | "track";
 
+export interface CatalogColorView {
+  readonly code: number;
+  readonly name: string;
+  readonly rgb: string;
+}
+
+export interface CatalogPartView {
+  readonly id: string;
+  readonly title: string;
+}
+
 export interface CatalogItemView {
   readonly id: string;
   readonly label: string;
+  readonly group: string;
+  readonly groupLabel: string;
+  readonly color: CatalogColorView | null;
   readonly kind: Placeable["kind"] | "track";
   readonly parts: number;
   readonly studsWide: number;
@@ -185,6 +200,7 @@ export interface EditorSnapshot {
   readonly backend: BackendInfo | null;
   readonly catalog: ReadonlyArray<CatalogItemView>;
   readonly catalogSkipped: ReadonlyArray<SkippedCatalogModel>;
+  readonly trackNotDrawable: ReadonlyArray<CatalogPartView>;
   readonly mode: EditorMode;
   readonly activeItem: string | null;
   readonly ghostRot: number;
@@ -261,14 +277,12 @@ export interface IEditor {
 }
 
 const EDITOR_LOD: BundleLod = "standard";
-const BASEPLATE_ID = "ldraw:3811";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
 const END_MARKER_HALF_LDU = 30;
 const END_MARKER_HEIGHT_LDU = 40;
 const P95 = 0.95;
-const BASEPLATE_COLOR_NAME = "Green";
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
 const MARKER_WIDTH_LDU = 6;
@@ -354,6 +368,42 @@ function snapToLattice(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU + 0;
 }
 
+function footprintArea(part: PartAsset): number {
+  return (part.boundsMax[0] - part.boundsMin[0]) * (part.boundsMax[2] - part.boundsMin[2]);
+}
+
+function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor {
+  const color = colors.find((c) => c.code === code);
+  if (!color) throw new Error(`LDConfig has no colour ${code}`);
+  return color;
+}
+
+function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): CatalogItemView {
+  const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
+  return {
+    id: placeable.id,
+    label: placeable.label,
+    group: placeable.group,
+    groupLabel: placeable.groupLabel,
+    color: colored ? colorOf(colors, placeable.worldColor) : null,
+    kind: placeable.kind,
+    parts: placeable.parts.count,
+    studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
+    studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+  };
+}
+
+function undrawableTrack(
+  bundleParts: ReadonlyArray<PartAsset>,
+  track: TrackDrawing,
+  parts: ReadonlyArray<PartAsset>,
+): ReadonlyArray<CatalogPartView> {
+  const drawable = new Set(track.kitParts().map((kit) => parts[kit.partIndex]?.id));
+  return bundleParts
+    .filter((part) => part.role === "track" && !drawable.has(part.id))
+    .map((part) => ({ id: part.id.replace("ldraw:", ""), title: part.title }));
+}
+
 @injectable()
 export class Editor implements IEditor {
   private readonly listeners = new Set<() => void>();
@@ -364,6 +414,7 @@ export class Editor implements IEditor {
     backend: null,
     catalog: [],
     catalogSkipped: [],
+    trackNotDrawable: [],
     mode: "select",
     activeItem: null,
     ghostRot: 0,
@@ -452,7 +503,7 @@ export class Editor implements IEditor {
       });
       const bundle = await this.loader.load(
         EDITOR_LOD,
-        (part) => part.id === BASEPLATE_ID || part.role === "road" || part.role === "track",
+        (part) => part.role === "ground" || part.role === "road" || part.role === "track",
       );
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
@@ -470,17 +521,11 @@ export class Editor implements IEditor {
         loadMs: performance.now() - started,
         backend,
         catalog: [
-          ...this.placeables.map((placeable) => ({
-            id: placeable.id,
-            label: placeable.label,
-            kind: placeable.kind,
-            parts: placeable.parts.count,
-            studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
-            studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
-          })),
+          ...this.placeables.map((placeable) => catalogItem(placeable, bundle.colors)),
           this.trackItem(this.track, palette.parts),
         ],
         catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
+        trackNotDrawable: undrawableTrack(bundle.parts, this.track, palette.parts),
         track: this.trackView(),
         credits: {
           partFiles: bundle.credits.length,
@@ -501,8 +546,8 @@ export class Editor implements IEditor {
   }
 
   private baseplateBottomY(): number {
-    const baseplate = this.placeables.find((p) => p.id === BASEPLATE_ID);
-    if (!baseplate) throw new Error(`the bundle has no ${BASEPLATE_ID} baseplate`);
+    const baseplate = this.placeables.find((p) => p.kind === "baseplate");
+    if (!baseplate) throw new Error("the bundle has no baseplate");
     return baseplate.box.min[1];
   }
 
@@ -523,34 +568,32 @@ export class Editor implements IEditor {
     palette: MergedParts,
     colors: ColorTable,
   ): Promise<LoadedCatalog> {
-    const baseplateIndex = palette.indexOf(BASEPLATE_ID);
-    const baseplate = palette.parts[baseplateIndex];
-    if (!baseplate) throw new Error(`the bundle has no ${BASEPLATE_ID} baseplate`);
-    const baseplateColor = bundle.colors.find((c) => c.name === BASEPLATE_COLOR_NAME);
-    if (!baseplateColor) throw new Error(`LDConfig colour ${BASEPLATE_COLOR_NAME} is missing`);
+    const groundParts = bundle.parts
+      .filter((part) => part.role === "ground")
+      .toSorted((a, b) => footprintArea(b) - footprintArea(a));
     const roadParts = bundle.parts.filter((part) => part.role === "road");
     const placeableModels = [
-      ...bundle.models.filter((entry) => entry.role === "road-module"),
+      ...bundle.models.filter((entry) => entry.role === "mils-module"),
       ...bundle.models.filter((entry) => entry.origin === "omr"),
     ];
     const loaded = await Promise.all(
       placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
-    const placeables: Placeable[] = [
-      partPlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
-      ...roadParts.map((part) => {
-        if (part.producedColor === undefined) {
-          throw new Error(`${part.id} has no produced colour in the bundle`);
-        }
-        return partPlaceable(
+    const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
+      if (part.producedColors.length === 0) {
+        throw new Error(`${part.id} has no produced colour in the bundle`);
+      }
+      return part.producedColors.map((code) =>
+        partPlaceable(
           part,
           palette.indexOf(part.id),
-          part.producedColor,
+          code,
+          colorOf(bundle.colors, code).name,
           palette.parts,
           colors,
-        );
-      }),
-    ];
+        ),
+      );
+    });
     const skipped: SkippedModel[] = [];
     for (const { bundle: modelBundle, entry, model } of loaded) {
       const credit = { name: entry.name, source: entry.source, sections: model.sections };
@@ -561,7 +604,7 @@ export class Editor implements IEditor {
       placeables.push(
         modelPlaceable(
           entry.name,
-          entry.role === "road-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
+          entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
           entry.role,
           palette.remap(model, modelBundle.parts),
           credit,
@@ -649,6 +692,9 @@ export class Editor implements IEditor {
     return {
       id: TRACK_ITEM_ID,
       label: TRACK_ITEM_LABEL,
+      group: TRACK_ITEM_ID,
+      groupLabel: TRACK_ITEM_LABEL,
+      color: null,
       kind: "track",
       parts: track.kitParts().length,
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,

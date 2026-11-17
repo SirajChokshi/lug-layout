@@ -103,7 +103,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("starts with a stud-less set in the bundle, leaving it out of the catalog and reporting it as skipped", async () => {
+async function startEditor() {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
@@ -121,6 +121,11 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   } as unknown as HTMLCanvasElement;
 
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1 });
+  return { editor, manifest: await realLoader.loadManifest("standard") };
+}
+
+it("starts with a stud-less set in the bundle, leaving it out of the catalog and reporting it as skipped", async () => {
+  const { editor } = await startEditor();
 
   const snapshot = editor.snapshot();
   expect(snapshot.error).toBeNull();
@@ -132,4 +137,21 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
     { name: STUDLESS_SET, reason: "no stud lattice from the bake" },
   ]);
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
+}, 120_000);
+
+it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
+  const { editor, manifest } = await startEditor();
+
+  const { catalog } = editor.snapshot();
+  const catalogParts = manifest.parts.filter((p) => p.role === "ground" || p.role === "road");
+  expect(catalogParts.length).toBeGreaterThan(0);
+  const offered = catalogParts.map((part) => [
+    part.id,
+    catalog.filter((item) => item.group === part.id).map((item) => item.color?.code),
+  ]);
+  const produced = catalogParts.map((part) => [
+    part.id,
+    part.producedColors?.colors.map((color) => color.ldraw),
+  ]);
+  expect(offered).toEqual(produced);
 }, 120_000);

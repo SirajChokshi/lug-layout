@@ -21,12 +21,14 @@ type PartRole =
   | "edgeJoin"
   | "seamSupport"
   | "cover"
+  | "terrainCover"
   | "road"
   | "roadArm"
   | "crosswalkArm"
   | "walkwayCourse"
   | "walkwayTile";
 type ArmRole = "roadArm" | "crosswalkArm";
+type ModuleKind = "plain" | "road";
 
 interface CitedValue {
   readonly value: number;
@@ -42,6 +44,7 @@ interface ProfilePart {
 interface ModuleSpec {
   readonly name: string;
   readonly title: string;
+  readonly kind: ModuleKind;
   readonly arms: Partial<Record<ModuleEdge, ArmRole>>;
 }
 
@@ -182,7 +185,25 @@ function requireHeight(actual: number, cited: CitedValue, what: string): void {
   }
 }
 
-function substructure(builder: ModuleBuilder, studs: number, courseTop: number): void {
+function coverRole(kind: ModuleKind): PartRole {
+  switch (kind) {
+    case "plain":
+      return "terrainCover";
+    case "road":
+      return "cover";
+    default: {
+      const unhandled: never = kind;
+      throw new Error(`unhandled module kind ${String(unhandled)}`);
+    }
+  }
+}
+
+function substructure(
+  builder: ModuleBuilder,
+  studs: number,
+  courseTop: number,
+  cover: PartRole,
+): void {
   const corner = builder.footprint("corner", false);
   const join = builder.footprint("edgeJoin", false);
   const farCorner = studs - corner.columns;
@@ -215,10 +236,10 @@ function substructure(builder: ModuleBuilder, studs: number, courseTop: number):
     builder.place("seamSupport", along, seam - support.rows / 2, false, 0);
     builder.place("seamSupport", seam - support.rows / 2, along, true, 0);
   }
-  const cover = builder.footprint("cover", false);
-  for (let row = 0; row < studs; row += cover.rows) {
-    for (let column = 0; column < studs; column += cover.columns) {
-      builder.place("cover", column, row, false, courseTop);
+  const coverFootprint = builder.footprint(cover, false);
+  for (let row = 0; row < studs; row += coverFootprint.rows) {
+    for (let column = 0; column < studs; column += coverFootprint.columns) {
+      builder.place(cover, column, row, false, courseTop);
     }
   }
 }
@@ -295,7 +316,7 @@ function toLdraw(spec: ModuleSpec, placements: ReadonlyArray<Placement>): string
   return [
     `0 ${spec.title}`,
     `0 Name: ${spec.name}.ldr`,
-    `0 Author: ${AUTHOR}, MILS road module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents`,
+    `0 Author: ${AUTHOR}, MILS ${spec.kind} module from tools/asset-pipeline/src/road/mils-road-profile.json and measured part extents`,
     ...lines,
     "",
   ].join("\n");
@@ -322,9 +343,13 @@ export function milsRoadModules(library: LdrawLibrary): ReadonlyArray<MilsRoadMo
     }
     builder.place("baseplate", 0, 0, false, -builder.thickness("baseplate"));
     const courseTop = sameThickness(builder, ["corner", "edgeJoin", "seamSupport"]);
-    substructure(builder, studs, courseTop);
-    const surface = courseTop + builder.thickness("cover");
+    const cover = coverRole(spec.kind);
+    substructure(builder, studs, courseTop, cover);
+    const surface = courseTop + builder.thickness(cover);
     requireHeight(surface, profile.surfacePlates, "the substructure top");
+    if (spec.kind === "plain") {
+      return { name: spec.name, ldraw: toLdraw(spec, builder.placements) };
+    }
     requireHeight(surface + builder.thickness("road"), profile.streetPlates, "the street surface");
     requireHeight(
       surface + builder.thickness("walkwayCourse") + builder.thickness("walkwayTile"),

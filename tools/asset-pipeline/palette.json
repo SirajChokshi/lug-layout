@@ -11,7 +11,355 @@
   "parts": [
     {
       "id": "3811",
-      "role": "ground"
+      "role": "ground",
+      "displayColor": {
+        "ldraw": 2,
+        "source": "3811 elements 381128, 4219692 in Green; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "3811",
+        "colors": [
+          {
+            "ldraw": 1,
+            "elements": ["381123", "4219691"]
+          },
+          {
+            "ldraw": 2,
+            "elements": ["381128", "4219692"]
+          },
+          {
+            "ldraw": 4,
+            "elements": ["6025341"]
+          },
+          {
+            "ldraw": 7,
+            "elements": ["4155361", "4221067"]
+          },
+          {
+            "ldraw": 10,
+            "elements": ["6097276"]
+          },
+          {
+            "ldraw": 15,
+            "elements": ["381101", "4209334", "4244677", "6295194"]
+          },
+          {
+            "ldraw": 19,
+            "elements": ["4106730", "4218688", "4219688", "4558611"]
+          },
+          {
+            "ldraw": 26,
+            "elements": ["4242522"]
+          },
+          {
+            "ldraw": 70,
+            "elements": ["6093974"]
+          },
+          {
+            "ldraw": 71,
+            "elements": ["6061048"]
+          },
+          {
+            "ldraw": 72,
+            "elements": ["4560729", "6139364"]
+          },
+          {
+            "ldraw": 272,
+            "elements": ["6411443"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3857",
+      "role": "ground",
+      "producedColors": {
+        "rebrickable": "3857",
+        "colors": [
+          {
+            "ldraw": 0,
+            "elements": ["274826"]
+          },
+          {
+            "ldraw": 1,
+            "elements": ["274823", "4226002"]
+          },
+          {
+            "ldraw": 2,
+            "elements": ["274828", "4219615"]
+          },
+          {
+            "ldraw": 6,
+            "elements": ["4121920"]
+          },
+          {
+            "ldraw": 7,
+            "elements": ["274802", "4219612"]
+          },
+          {
+            "ldraw": 8,
+            "elements": ["4195646", "4219645"]
+          },
+          {
+            "ldraw": 10,
+            "elements": ["4111841", "4173066", "4219648"]
+          },
+          {
+            "ldraw": 15,
+            "elements": ["4186599", "4219635", "4295314", "6030593"]
+          },
+          {
+            "ldraw": 17,
+            "elements": ["274806"]
+          },
+          {
+            "ldraw": 19,
+            "elements": ["4106321", "4161028", "4253734", "4254866", "4295401"]
+          },
+          {
+            "ldraw": 71,
+            "elements": ["4278194"]
+          },
+          {
+            "ldraw": 72,
+            "elements": ["4269651"]
+          },
+          {
+            "ldraw": 212,
+            "elements": ["4520893"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3867",
+      "role": "ground",
+      "producedColors": {
+        "rebrickable": "3867",
+        "colors": [
+          {
+            "ldraw": 1,
+            "elements": ["4585049"]
+          },
+          {
+            "ldraw": 2,
+            "elements": ["4217115", "609828"]
+          },
+          {
+            "ldraw": 6,
+            "elements": ["4121926"]
+          },
+          {
+            "ldraw": 7,
+            "elements": ["4206787", "4217335"]
+          },
+          {
+            "ldraw": 10,
+            "elements": ["4114221", "4217334"]
+          },
+          {
+            "ldraw": 14,
+            "elements": ["4107642"]
+          },
+          {
+            "ldraw": 15,
+            "elements": ["4118930", "4217333"]
+          },
+          {
+            "ldraw": 19,
+            "elements": ["4106818"]
+          },
+          {
+            "ldraw": 25,
+            "elements": ["4585500"]
+          },
+          {
+            "ldraw": 47,
+            "elements": ["4497482"]
+          },
+          {
+            "ldraw": 71,
+            "elements": ["4251286"]
+          },
+          {
+            "ldraw": 72,
+            "elements": ["4248205", "4261365", "6004921"]
+          },
+          {
+            "ldraw": 74,
+            "elements": ["609829"]
+          },
+          {
+            "ldraw": 212,
+            "elements": ["4520892"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "4186",
+      "role": "ground",
+      "producedColors": {
+        "rebrickable": "4186",
+        "colors": [
+          {
+            "ldraw": 1,
+            "elements": ["4116855", "418623", "4228058", "6030733"]
+          },
+          {
+            "ldraw": 2,
+            "elements": ["4116857", "418628", "4543945"]
+          },
+          {
+            "ldraw": 4,
+            "elements": ["4228057", "6035578"]
+          },
+          {
+            "ldraw": 7,
+            "elements": ["418602"]
+          },
+          {
+            "ldraw": 10,
+            "elements": ["4116642", "6491335"]
+          },
+          {
+            "ldraw": 14,
+            "elements": ["4228059", "6035593"]
+          },
+          {
+            "ldraw": 15,
+            "elements": ["4176640", "6030674"]
+          },
+          {
+            "ldraw": 18,
+            "elements": ["4174283"]
+          },
+          {
+            "ldraw": 19,
+            "elements": ["4116641"]
+          },
+          {
+            "ldraw": 47,
+            "elements": ["4278575", "4597490"]
+          },
+          {
+            "ldraw": 71,
+            "elements": ["4219806", "4278193"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3334",
+      "role": "ground",
+      "producedColors": {
+        "rebrickable": "3334",
+        "colors": [
+          {
+            "ldraw": 1,
+            "elements": ["333423"]
+          },
+          {
+            "ldraw": 2,
+            "elements": ["4113262"]
+          },
+          {
+            "ldraw": 10,
+            "elements": ["4111989"]
+          },
+          {
+            "ldraw": 17,
+            "elements": ["333406"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3497",
+      "role": "ground",
+      "producedColors": {
+        "rebrickable": "3497",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["349728"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "3865",
+      "role": "ground",
+      "producedColors": {
+        "rebrickable": "3865",
+        "colors": [
+          {
+            "ldraw": 1,
+            "elements": ["4106348"]
+          },
+          {
+            "ldraw": 2,
+            "elements": ["386528", "4179342", "4179599", "4219812"]
+          },
+          {
+            "ldraw": 7,
+            "elements": ["386502", "4142722", "4179353", "4179592", "4219739"]
+          },
+          {
+            "ldraw": 8,
+            "elements": ["4177897", "4219822"]
+          },
+          {
+            "ldraw": 10,
+            "elements": ["4114545", "4179347", "4179598", "4219811", "4288282"]
+          },
+          {
+            "ldraw": 15,
+            "elements": ["4184634", "4187361", "4219734"]
+          },
+          {
+            "ldraw": 17,
+            "elements": ["386506"]
+          },
+          {
+            "ldraw": 18,
+            "elements": ["4173515", "4179352", "4179593", "4219808"]
+          },
+          {
+            "ldraw": 19,
+            "elements": ["4106815", "4198151", "4219736", "4504900"]
+          },
+          {
+            "ldraw": 72,
+            "elements": ["4226978"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "4187",
+      "role": "ground",
+      "producedColors": {
+        "rebrickable": "4187",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["624228"]
+          },
+          {
+            "ldraw": 7,
+            "elements": ["4142857", "4219436"]
+          },
+          {
+            "ldraw": 15,
+            "elements": ["4203886", "4219437"]
+          },
+          {
+            "ldraw": 19,
+            "elements": ["4107095"]
+          }
+        ]
+      }
     },
     {
       "id": "44336p04",
@@ -19,6 +367,15 @@
       "displayColor": {
         "ldraw": 72,
         "source": "44336pr0004 element 4277471 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "44336pr0004",
+        "colors": [
+          {
+            "ldraw": 72,
+            "elements": ["4277471"]
+          }
+        ]
       }
     },
     {
@@ -27,6 +384,15 @@
       "displayColor": {
         "ldraw": 2,
         "source": "44336pr0001 elements 4179968, 4219946 in Green; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "44336pr0001",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4179968", "4219946"]
+          }
+        ]
       }
     },
     {
@@ -35,6 +401,15 @@
       "displayColor": {
         "ldraw": 72,
         "source": "44341pr0002 element 4277472 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "44341pr0002",
+        "colors": [
+          {
+            "ldraw": 72,
+            "elements": ["4277472"]
+          }
+        ]
       }
     },
     {
@@ -43,6 +418,15 @@
       "displayColor": {
         "ldraw": 72,
         "source": "44342pr0002 element 4277476 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "44342pr0002",
+        "colors": [
+          {
+            "ldraw": 72,
+            "elements": ["4277476"]
+          }
+        ]
       }
     },
     {
@@ -51,6 +435,15 @@
       "displayColor": {
         "ldraw": 72,
         "source": "44343pr0003 element 4277477 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "44343pr0003",
+        "colors": [
+          {
+            "ldraw": 72,
+            "elements": ["4277477"]
+          }
+        ]
       }
     },
     {
@@ -59,6 +452,15 @@
       "displayColor": {
         "ldraw": 72,
         "source": "30225 element 4507668 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "30225",
+        "colors": [
+          {
+            "ldraw": 72,
+            "elements": ["4507668"]
+          }
+        ]
       }
     },
     {
@@ -67,6 +469,19 @@
       "displayColor": {
         "ldraw": 72,
         "source": "69958 element 6325635 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "69958",
+        "colors": [
+          {
+            "ldraw": 72,
+            "elements": ["6325635"]
+          },
+          {
+            "ldraw": 272,
+            "elements": ["6504268"]
+          }
+        ]
       }
     },
     {
@@ -75,6 +490,31 @@
       "displayColor": {
         "ldraw": 72,
         "source": "71772 element 6325431 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "71772",
+        "colors": [
+          {
+            "ldraw": 25,
+            "elements": ["6398707"]
+          },
+          {
+            "ldraw": 27,
+            "elements": ["6398706"]
+          },
+          {
+            "ldraw": 28,
+            "elements": ["6346348"]
+          },
+          {
+            "ldraw": 72,
+            "elements": ["6325431"]
+          },
+          {
+            "ldraw": 321,
+            "elements": ["6346349"]
+          }
+        ]
       }
     },
     {
@@ -83,6 +523,309 @@
       "displayColor": {
         "ldraw": 72,
         "source": "71772pr0001 element 6328358 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      },
+      "producedColors": {
+        "rebrickable": "71772pr0001",
+        "colors": [
+          {
+            "ldraw": 72,
+            "elements": ["6328358"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2358p02",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "2358pr0002",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["81733"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "80547",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "2358pr0001",
+        "colors": [
+          {
+            "ldraw": 7,
+            "elements": ["80547"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2359p02",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "2359pr0002",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4160982", "82018"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "2359p03",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "2359pr0003",
+        "colors": [
+          {
+            "ldraw": 19,
+            "elements": ["4107712", "4161083"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "309p03",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "309pr0003",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4161156"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "425p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "425pr0001",
+        "colors": [
+          {
+            "ldraw": 7,
+            "elements": ["81043"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "4478p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "4478pr0001",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["81022"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "44336p02",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "44336pr0002",
+        "colors": [
+          {
+            "ldraw": 72,
+            "elements": ["4224562"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "44336p03",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "44336pr0003",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4264194"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "44341p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "44341pr0001",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4179970", "4219961"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "44342p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "44342pr0001",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4179971", "4219988"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "44343p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "44343pr0001",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4179972", "4219996"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "44343p02",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "44343pr0002",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4264193"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "51595",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "51595",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4114142", "4190625"]
+          },
+          {
+            "ldraw": 72,
+            "elements": ["4247669", "4260321"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "51595p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "51595pr0003",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4116754", "4190948"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "51595p02",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "51595pr0004",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4112083"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "51595p03",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "51595pr0002",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4114266"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "608p02",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "608pr0002",
+        "colors": [
+          {
+            "ldraw": 0,
+            "elements": ["81607"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "6099p02",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "6099pr0002",
+        "colors": [
+          {
+            "ldraw": 0,
+            "elements": ["81536"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "611p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "611pr0001",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4109603"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "612p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "612pr0001",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4109600"]
+          },
+          {
+            "ldraw": 7,
+            "elements": ["4220028"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "613p01",
+      "role": "road",
+      "producedColors": {
+        "rebrickable": "613pr0001",
+        "colors": [
+          {
+            "ldraw": 2,
+            "elements": ["4109601"]
+          }
+        ]
       }
     },
     {
@@ -462,9 +1205,18 @@
       "retrieved": "2026-11-16"
     },
     {
+      "name": "mils-plain",
+      "origin": "generated",
+      "role": "mils-module",
+      "file": "../../docs/verified-facts/scenes/mils-plain.ldr",
+      "sha256": "121f425c88b9a4d50352342e7ce42ddef1f9decd67218d9d9711e498b3fffeed",
+      "source": "generated by tools/asset-pipeline `cli.ts facts`: MILS plain module (the S5 minimal substructure with a 4-plate surface, MILS rows of docs/verified-facts.md) laid out from tools/asset-pipeline/src/road/mils-road-profile.json with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)",
+      "retrieved": "2026-11-17"
+    },
+    {
       "name": "mils-road-straight",
       "origin": "generated",
-      "role": "road-module",
+      "role": "mils-module",
       "file": "../../docs/verified-facts/scenes/mils-road-straight.ldr",
       "sha256": "ee32b1f2be185bbeddf28322bc696d864f757ac9ea36a0a10a96e5b4521caac8",
       "source": "generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)",
@@ -473,7 +1225,7 @@
     {
       "name": "mils-road-crosswalk",
       "origin": "generated",
-      "role": "road-module",
+      "role": "mils-module",
       "file": "../../docs/verified-facts/scenes/mils-road-crosswalk.ldr",
       "sha256": "fb676344e2c25fadc0663762983f2cc61e173b3c828d720a4d7501988727fbd6",
       "source": "generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)",
@@ -482,7 +1234,7 @@
     {
       "name": "mils-road-curve",
       "origin": "generated",
-      "role": "road-module",
+      "role": "mils-module",
       "file": "../../docs/verified-facts/scenes/mils-road-curve.ldr",
       "sha256": "6d46613e9844777b49219eae4610290cc17ebf41c02cf57dcb91dc71f7ffcb77",
       "source": "generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)",
@@ -491,7 +1243,7 @@
     {
       "name": "mils-road-t-junction",
       "origin": "generated",
-      "role": "road-module",
+      "role": "mils-module",
       "file": "../../docs/verified-facts/scenes/mils-road-t-junction.ldr",
       "sha256": "51aadac708715690dbc85cd94a263b4ae3b1202c6a8493f34429348a13a20736",
       "source": "generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)",
@@ -500,7 +1252,7 @@
     {
       "name": "mils-road-crossroads",
       "origin": "generated",
-      "role": "road-module",
+      "role": "mils-module",
       "file": "../../docs/verified-facts/scenes/mils-road-crossroads.ldr",
       "sha256": "b78d37cc2147d8dafaae35217cae8ad1e448a7aca2fdfa0665af8cfe61d567bd",
       "source": "generated by tools/asset-pipeline `cli.ts facts`: MILS road module laid out from tools/asset-pipeline/src/road/mils-road-profile.json (MILS and MultiRoad rows of docs/verified-facts.md) with part extents measured at the pin; part colours are the Rebrickable elements listed in that profile, from the Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)",
@@ -598,5 +1350,6 @@
     "repo": "RolandMelkert/LDCadShadowLibrary",
     "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
     "root": ""
-  }
+  },
+  "producedColorSource": "Rebrickable database export (elements.csv.gz sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, colors.csv.gz sha256 3eb7dbb76409f8234d321cfc767ffa31fd54f1b01c6ad4f199e5baf4bdf66095), docs/verified-facts.md S13; a colour counts only when its Rebrickable id and name equal an LDConfig code and name"
 }

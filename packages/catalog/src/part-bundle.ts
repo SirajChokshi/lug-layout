@@ -41,6 +41,7 @@ export interface PartAsset {
   readonly boundsMin: Vec3Tuple;
   readonly boundsMax: Vec3Tuple;
   readonly producedColor: number | undefined;
+  readonly producedColors: ReadonlyArray<number>;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
   readonly mesh: PartMesh;
   readonly studPrimitiveIndex: Uint8Array;
@@ -73,7 +74,7 @@ export interface ModelSection {
 }
 
 export type ModelOrigin = "omr" | "generated";
-export type ModelRole = "road-module";
+export type ModelRole = "mils-module";
 
 export interface ModelSet {
   readonly name: string;
@@ -131,6 +132,7 @@ export interface PartBundle {
 export interface PartSummary {
   readonly id: string;
   readonly role: PartRole;
+  readonly displayColor?: { readonly ldraw: number };
 }
 
 export type PartFilter = (part: PartSummary) => boolean;

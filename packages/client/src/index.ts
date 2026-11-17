@@ -34,7 +34,9 @@ export {
   type SetCredit,
 } from "./credits/credits-view.ts";
 export type {
+  CatalogColorView,
   CatalogItemView,
+  CatalogPartView,
   EditAction,
   EditorCredits,
   EditorDump,

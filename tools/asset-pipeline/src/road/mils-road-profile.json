@@ -28,6 +28,7 @@
     "edgeJoin": { "part": "3701", "ldrawColor": 71, "element": "4211441" },
     "seamSupport": { "part": "3001", "ldrawColor": 71, "element": "4211385" },
     "cover": { "part": "91405", "ldrawColor": 71, "element": "4620130" },
+    "terrainCover": { "part": "91405", "ldrawColor": 2, "element": "4593364" },
     "road": { "part": "69958", "ldrawColor": 72, "element": "6325635" },
     "roadArm": { "part": "71772", "ldrawColor": 72, "element": "6325431" },
     "crosswalkArm": { "part": "71772p01", "ldrawColor": 72, "element": "6328358" },
@@ -36,28 +37,39 @@
   },
   "modules": [
     {
+      "name": "mils-plain",
+      "title": "MILS Plain Module",
+      "kind": "plain",
+      "arms": {}
+    },
+    {
       "name": "mils-road-straight",
       "title": "MILS Road Straight",
+      "kind": "road",
       "arms": { "minX": "roadArm", "maxX": "roadArm" }
     },
     {
       "name": "mils-road-crosswalk",
       "title": "MILS Road Crosswalk",
+      "kind": "road",
       "arms": { "minX": "crosswalkArm", "maxX": "roadArm" }
     },
     {
       "name": "mils-road-curve",
       "title": "MILS Road Curve",
+      "kind": "road",
       "arms": { "minX": "roadArm", "maxZ": "roadArm" }
     },
     {
       "name": "mils-road-t-junction",
       "title": "MILS Road T-Junction",
+      "kind": "road",
       "arms": { "minX": "roadArm", "maxX": "roadArm", "maxZ": "roadArm" }
     },
     {
       "name": "mils-road-crossroads",
       "title": "MILS Road Crossroads",
+      "kind": "road",
       "arms": { "minX": "roadArm", "maxX": "roadArm", "minZ": "roadArm", "maxZ": "roadArm" }
     }
   ]
