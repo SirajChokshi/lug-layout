@@ -80,9 +80,10 @@ function Section({
 }
 
 function swatchTitle(item: CatalogItemView): string {
-  return item.color
-    ? `${colorDisplayName(item.color.name)} (LDraw ${item.color.code})`
-    : item.label;
+  if (!item.color) return item.label;
+  const name = `${colorDisplayName(item.color.name)} (LDraw ${item.color.code})`;
+  if (item.elements.length === 0) return name;
+  return `${name}, LEGO element ${item.elements.join(" or ")}`;
 }
 
 function Swatches({
@@ -464,6 +465,11 @@ function ResultRow({
         </span>
         <span className="palette-result-meta">
           <span className="palette-tag">{CATEGORY_LABEL[entry.category]}</span>
+          {first?.aliases.map((alias) => (
+            <span key={alias} className="palette-alias" title="Rebrickable part number">
+              {alias}
+            </span>
+          ))}
           {entry.size !== "" && entry.category !== "track" && <span>{entry.size}</span>}
           <span>{hitItemsText(hit)}</span>
         </span>

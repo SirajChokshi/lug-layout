@@ -221,9 +221,12 @@ function typoLimit(token: string): number {
   return token.length >= ONE_TYPO_FROM ? 1 : 0;
 }
 
+const HAS_DIGIT = /\d/u;
+
 function wordScore(token: string, word: string, exact: number): number {
   if (word === token) return exact;
   if (word.startsWith(token)) return PREFIX;
+  if (HAS_DIGIT.test(token)) return 0;
   if (token.length >= MIN_SUBSTRING && word.includes(token)) return SUBSTRING;
   if (token.length >= MIN_SUBSEQUENCE && isSubsequence(token, word)) return SUBSEQUENCE;
   const limit = typoLimit(token);
@@ -344,12 +347,13 @@ export class PaletteIndex {
         order,
         numbers: [
           ...(entry.partNumber === null ? [] : [normalized(entry.partNumber)]),
+          ...(first?.aliases ?? []).map(normalized),
           ...words.filter((word) => /^\d/u.test(word) && !isLatticeSize(word)),
         ],
         words,
         phrases,
         colorWords: entry.items.map((item) =>
-          item.color ? withSpellings(wordsOf(item.color.name)) : [],
+          item.color ? [...withSpellings(wordsOf(item.color.name)), ...item.elements] : [],
         ),
       };
     });
