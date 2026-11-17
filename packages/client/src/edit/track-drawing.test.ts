@@ -6,6 +6,8 @@ import {
 } from "@brr/catalog";
 import { SupportGrid, trackSupport, type BaseCells, type TrackSupport } from "@brr/domain";
 import { lduFromMm, STUD_LDU } from "@brr/math";
+import { latticePose16, type ModelTrack } from "./model-track.ts";
+import { modelPlaceable } from "./placeable.ts";
 import {
   INSTANCE_MATRIX_FLOATS,
   SCENE_BACKEND,
@@ -260,5 +262,75 @@ describe("track on baseplates: only the span between a piece's own connectors ne
     const toSeam = drawingOn(both);
     expect(lay(toSeam, [0, 8], [16, 8])).toMatchObject({ laid: 1, refusal: null });
     expect(toSeam.unsupportedPieces(westOnly)).toHaveLength(0);
+  });
+});
+
+async function heldTrack(name: string): Promise<ModelTrack | null> {
+  const loader = container.get(PART_BUNDLE_LOADER);
+  const [{ bundle, entry, model }, plates] = await Promise.all([
+    loader.loadModel("standard", name),
+    loader.load("standard", (part) => part.id === "ldraw:3811"),
+  ]);
+  const baseplate = plates.parts[0];
+  if (!baseplate) throw new Error("the bundle has no baseplate");
+  return modelPlaceable(
+    name,
+    name,
+    entry.role,
+    model,
+    { name, source: entry.source, sections: model.sections },
+    bundle.parts,
+    new ColorTable(bundle),
+    baseplate.boundsMin[1],
+    trackBundle.trackCatalog,
+  ).track;
+}
+
+async function summary(name: string) {
+  const track = await heldTrack(name);
+  return {
+    pieces: track?.pieces.map((piece) => `${piece.pieceId}@${piece.plates}`),
+    open: track?.openEnds.length,
+    uncertified: track?.uncertified,
+  };
+}
+
+describe("track held by models", () => {
+  it("turns every catalog track part in a model into exact track at the model's height, following LDraw redirects", async () => {
+    expect(await summary("7936-1")).toEqual({
+      pieces: Array.from({ length: 4 }, () => "ldraw:53401@0"),
+      open: 4,
+      uncertified: [],
+    });
+    expect((await summary("10128-1")).pieces).toEqual(
+      Array.from({ length: 3 }, () => "ldraw:74746@0"),
+    );
+    expect((await summary("4555-1")).pieces).toEqual(
+      Array.from({ length: 2 }, () => "ldraw:74746@0"),
+    );
+  });
+
+  it("checks a run joined to a model's track end against the baseplates exactly as it checks laid track", () => {
+    const plate = baseplates([-16, -16]);
+    const straight = trackBundle.trackCatalog.pieces.findIndex(
+      (piece) => piece.id === "ldraw:74746",
+    );
+    const heldAt = (xStuds: number) => [
+      {
+        owner: 1,
+        label: "a model",
+        catalogIndex: straight,
+        placement: latticePose16(xStuds * STUD_LDU, 0, 0),
+        plates: 0,
+      },
+    ];
+    const flush = drawingOn(plate);
+    flush.syncHeld(heldAt(16));
+    expect(lay(flush, [16, 0], [0, 0])).toMatchObject({ laid: 1, refusal: null });
+    expect(flush.joinedPairs()).toBe(1);
+    expect(flush.unsupportedPieces(probeOn(plate))).toHaveLength(0);
+    const short = drawingOn(plate);
+    short.syncHeld(heldAt(24));
+    expect(lay(short, [24, 0], [8, 0])).toMatchObject({ laid: 0, refusal: "off-baseplate" });
   });
 });
