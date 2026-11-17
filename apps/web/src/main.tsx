@@ -75,7 +75,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
     }
     case "layout": {
       const layout = container.get(LAYOUT_SCENE);
-      layout.configure({ camera: viewer.camera });
+      layout.configure({ camera: viewer.camera, tiles: viewer.tiles });
       return { scene: layout, placements: null, run: null };
     }
     case "model": {
