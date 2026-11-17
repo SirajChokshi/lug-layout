@@ -108,6 +108,7 @@ describe("road joins (layout rule 7)", () => {
     expect(network.fit(at(2, plate, 0, 160)).overlappingCells).toBeGreaterThan(0);
     expect(new RoadNetwork([at(0, plate, 0, 0)]).fit(at(1, plate, 0, 320))).toEqual({
       joinedCells: 16,
+      joinedRoadCells: 16,
       mismatchedCells: 0,
       overlappingCells: 0,
     });
