@@ -1,4 +1,5 @@
 import { CAMERA_FOV_DEGREES, type ISceneBackend, type WorldBox } from "@brr/render";
+import type { SavedViewV1 } from "@brr/schema/world";
 
 export type ViewMode = "orbit" | "plan";
 
@@ -196,6 +197,26 @@ export class ViewCamera {
     this.pose.targetY = anchorY + (this.pose.targetY - anchorY) * scale;
     this.pose.targetZ = anchorZ + (this.pose.targetZ - anchorZ) * scale;
     return after !== before;
+  }
+
+  savedView(): SavedViewV1 {
+    const { targetX, targetY, targetZ, distance, yaw, pitch } = this.pose;
+    return { targetX, targetY, targetZ, distance, yaw, pitch };
+  }
+
+  restore(view: SavedViewV1 | null): void {
+    this.tweening = false;
+    this.tweenStartMs = Number.NaN;
+    this.glideLog = 0;
+    this.mode = "orbit";
+    this.orthographic = false;
+    const from = view ?? new Pose();
+    this.pose.targetX = from.targetX;
+    this.pose.targetY = from.targetY;
+    this.pose.targetZ = from.targetZ;
+    this.pose.distance = from.distance;
+    this.pose.yaw = from.yaw;
+    this.pose.pitch = from.pitch;
   }
 
   jumpTo(x: number, z: number): void {

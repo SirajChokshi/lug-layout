@@ -26,6 +26,7 @@ import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
 import { useRecentItems } from "./use-recent-items.ts";
 import { ViewControls } from "./view-controls.tsx";
+import { WorldMenu } from "./world-menu.tsx";
 
 interface EditorAppProps {
   readonly editor: IEditor;
@@ -109,6 +110,8 @@ export function EditorApp({
           ? `${snapshot.moduleFit.column},${snapshot.moduleFit.row},${snapshot.moduleFit.rot},${snapshot.moduleFit.joined},${snapshot.moduleFit.mismatched}`
           : ""
       }
+      data-world={snapshot.world?.id ?? ""}
+      data-save={snapshot.world?.save ?? ""}
     >
       <EditorCanvas editor={editor} camera={camera} options={options} />
       <ToolHud snapshot={snapshot} />
@@ -116,6 +119,7 @@ export function EditorApp({
       <ViewControls camera={camera} snapshot={snapshot} />
       <PlanPanel camera={camera} plans={plans} />
       <div className="side-panel">
+        <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />

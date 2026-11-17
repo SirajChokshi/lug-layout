@@ -1,5 +1,7 @@
 import type { PartAsset } from "@brr/catalog";
 import type { TrackCatalog, TrackPartFrame, TrackPiece } from "@brr/schema/bundle";
+import type { Decoded, Issue } from "@brr/schema/decode";
+import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
 import {
   drawingKit,
   endGaps,
@@ -599,6 +601,59 @@ export class TrackDrawing {
       });
     }
     return footprints;
+  }
+
+  records(): TrackRecordV1[] {
+    const records: TrackRecordV1[] = [];
+    for (let index = 0; index < this.layout.count; index++) {
+      const placed = this.placedAt(index);
+      records.push({
+        index,
+        ref: placed.part.piece.id,
+        heading: placed.placement.heading,
+        position: encodeTrackPosition(placed.placement.position),
+        yPlates: this.layout.yPlates(index),
+      });
+    }
+    return records;
+  }
+
+  restore(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<number>> {
+    const issues: Issue[] = [];
+    if (this.layout.count > 0) {
+      issues.push({ path: "track", message: "can only be restored into an empty drawing" });
+    }
+    records.forEach((record, position) => {
+      if (record.index !== position) {
+        issues.push({ path: `track ${record.index}`, message: `is out of order at ${position}` });
+      }
+      if (!this.byDef.has(record.ref)) {
+        issues.push({
+          path: `track ${record.index}`,
+          message: `"${record.ref}" isn't a drawable piece`,
+        });
+      }
+    });
+    if (issues.length > 0) return { ok: false, issues };
+    const touched = new Set<number>();
+    for (const record of records) {
+      const part = this.byDef.get(record.ref);
+      if (!part) continue;
+      const placement = pose16(decodeTrackPosition(record.position), record.heading);
+      const index = this.layout.place(part.catalogIndex, placement, record.yPlates);
+      const centre = partCentre({ part, placement });
+      const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
+      const members = this.chunkMembers.get(key) ?? [];
+      members.push(index);
+      this.chunkMembers.set(key, members);
+      touched.add(key);
+    }
+    this.recomputeEnds();
+    return { ok: true, value: [...touched] };
+  }
+
+  chunkKeys(): ReadonlyArray<number> {
+    return [...this.chunkMembers.keys()];
   }
 
   chunkInstances(key: number): ChunkInstances | null {

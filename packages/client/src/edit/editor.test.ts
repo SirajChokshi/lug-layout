@@ -20,9 +20,26 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
-import { afterEach, expect, it, vi } from "vitest";
+import type { Decoded } from "@brr/schema/decode";
+import {
+  shardEntry,
+  shardName,
+  worldManifest,
+  type WorldArchive,
+  type WorldHeader,
+  type WorldIndexEntry,
+  type WorldShardV1,
+} from "@brr/schema/world";
+import {
+  WORLD_REPOSITORY,
+  type IWorldRepository,
+  type StoredWorld,
+  type WorldChange,
+} from "@brr/storage";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR } from "../tokens.ts";
+import type { IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -36,6 +53,7 @@ const NO_LOOK: LookSettings = {
   shadows: false,
   oit: false,
 };
+const BASEPLATE = "ldraw:3811@2";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -131,7 +149,7 @@ async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDL
   const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
@@ -229,3 +247,156 @@ it("undoes, redoes, rotates and deletes placed MILS modules, keeping the module 
   editor.deleteSelection(0);
   expect(counts()).toEqual({ placements: 1, joined: 0, open: 4, error: null });
 }, 120_000);
+
+interface MemoryWorld {
+  header: WorldHeader;
+  readonly shards: Map<string, WorldShardV1>;
+}
+
+class FlakyRepository implements IWorldRepository {
+  failSaves = false;
+  private readonly worlds = new Map<string, MemoryWorld>();
+  private nextId = 1;
+
+  storedPlacements(): number {
+    let count = 0;
+    for (const world of this.worlds.values()) {
+      for (const shard of world.shards.values()) count += shard.placements.length;
+    }
+    return count;
+  }
+
+  private entry(id: string, world: MemoryWorld): WorldIndexEntry {
+    const manifest = worldManifest(world.header, [...world.shards.values()].map(shardEntry));
+    return {
+      id,
+      name: world.header.name,
+      placements: manifest.placements,
+      track: manifest.track,
+      shards: manifest.shards.length,
+      savedAt: 0,
+    };
+  }
+
+  seed(header: WorldHeader): WorldIndexEntry {
+    const id = `world-${this.nextId++}`;
+    const world = { header, shards: new Map<string, WorldShardV1>() };
+    this.worlds.set(id, world);
+    return this.entry(id, world);
+  }
+
+  async list(): Promise<ReadonlyArray<WorldIndexEntry>> {
+    return [...this.worlds].map(([id, world]) => this.entry(id, world));
+  }
+
+  async create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
+    const id = `world-${this.nextId++}`;
+    this.worlds.set(id, { header, shards: new Map() });
+    return this.save(id, { header, put: shards, drop: [] });
+  }
+
+  async read(id: string): Promise<Decoded<StoredWorld>> {
+    const world = this.worlds.get(id);
+    if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
+    const shards = [...world.shards.values()];
+    return {
+      ok: true,
+      value: { id, manifest: worldManifest(world.header, shards.map(shardEntry)), shards },
+    };
+  }
+
+  async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
+    if (this.failSaves) throw new Error("QuotaExceededError");
+    const world = this.worlds.get(id) ?? { header: change.header, shards: new Map() };
+    world.header = change.header;
+    for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
+    for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
+    this.worlds.set(id, world);
+    return this.entry(id, world);
+  }
+
+  async remove(id: string): Promise<void> {
+    this.worlds.delete(id);
+  }
+
+  async shardFiles(): Promise<never[]> {
+    return [];
+  }
+
+  packArchive(): Uint8Array {
+    return new Uint8Array();
+  }
+
+  async readArchive(): Promise<Decoded<WorldArchive>> {
+    return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
+  }
+}
+
+async function editorWithFailingSaves() {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  const repository = new FlakyRepository();
+  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK });
+  expect(editor.snapshot().status).toBe("ready");
+
+  editor.chooseItem(BASEPLATE);
+  editor.click(0, 0, 0);
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
+  repository.failSaves = true;
+  backend.aim(640, 0);
+  editor.click(0, 0, 0);
+  await vi.waitFor(() => expect(editor.snapshot().world?.save).toBe("failed"));
+  return { editor, repository };
+}
+
+describe("unsaved edits after a failed save", () => {
+  it.each([
+    ["New", (editor: IEditor) => editor.newWorld("Other")],
+    ["Import", (editor: IEditor) => editor.importWorld(new Uint8Array())],
+  ])("refuses %s and keeps the world and its edits", async (_action, act) => {
+    const { editor } = await editorWithFailingSaves();
+
+    expect(await act(editor)).toBe(false);
+
+    const snapshot = editor.snapshot();
+    expect(snapshot.world?.name).toBe("World 1");
+    expect(snapshot.placements).toBe(2);
+    expect(snapshot.unsavedEdits).toBe(true);
+    expect(snapshot.fileError).toContain("has unsaved edits (saving failed: QuotaExceededError)");
+  });
+
+  it("refuses Open of another world, then saves everything on Retry and lets the switch through", async () => {
+    const { editor, repository } = await editorWithFailingSaves();
+    const other = repository.seed({
+      name: "Other",
+      bundleVersion: "test",
+      view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0, pitch: 0.75 },
+      disclaimer: "disclaimer",
+    });
+
+    expect(await editor.openWorld(other.id)).toBe(false);
+    expect(editor.snapshot().world?.name).toBe("World 1");
+
+    repository.failSaves = false;
+    await editor.retrySave();
+    expect(repository.storedPlacements()).toBe(2);
+    expect(editor.snapshot().unsavedEdits).toBe(false);
+    expect(editor.snapshot().world?.save).toBe("saved");
+
+    expect(await editor.openWorld(other.id)).toBe(true);
+    expect(editor.snapshot().world?.name).toBe("Other");
+  });
+});

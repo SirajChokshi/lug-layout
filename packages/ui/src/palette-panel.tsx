@@ -70,6 +70,7 @@ function Swatches({
           aria-label={item.label}
           title={swatchTitle(item)}
           style={{ background: item.color?.rgb ?? "transparent" }}
+          disabled={snapshot.readOnly}
           onClick={() => editor.chooseItem(item.id)}
         />
       ))}
@@ -110,6 +111,7 @@ function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: 
         className="catalog-item"
         data-item={item.id}
         aria-pressed={snapshot.activeItem === item.id}
+        disabled={snapshot.readOnly}
         onClick={() => editor.chooseItem(item.id)}
       >
         <span className="catalog-name">{item.label}</span>
@@ -135,7 +137,7 @@ function TrackSection({ editor, snapshot }: PaletteProps) {
         className="palette-primary"
         data-item={TRACK_ITEM_ID}
         aria-pressed={drawing}
-        disabled={!available}
+        disabled={!available || snapshot.readOnly}
         onClick={() => editor.chooseItem(drawing ? null : TRACK_ITEM_ID)}
       >
         {drawing ? "Drawing track: press Esc or T to stop" : "Draw track (T)"}

@@ -98,7 +98,7 @@ function drag(from: readonly [number, number], to: readonly [number, number]): v
 }
 
 beforeAll(async () => {
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   container.rebind(SCENE_BACKEND).toConstantValue(new PlanOnlyBackend());
   const bundle = await container

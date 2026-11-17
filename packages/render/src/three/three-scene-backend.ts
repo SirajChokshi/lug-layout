@@ -60,6 +60,9 @@ import { OPAQUE_ALPHA, PlasticMaterials } from "./plastic-materials.ts";
 import { skyEnvironment } from "./sky-environment.ts";
 
 const MATRIX4_FLOATS = 16;
+const REBASE_DISTANCE_CHUNKS = 8;
+const SETTLED_EYE_MS = 250;
+const REBASE_LOG_LIMIT = 256;
 const CAMERA_NEAR_LDU = 20;
 const CAMERA_FAR_LDU = 400_000;
 const SKY_COLOR = 0xd9e6f2;
@@ -88,7 +91,6 @@ const TIER_NEAR = 0;
 const TIER_MID = 1;
 const TIER_FAR = 2;
 const TIER_UNSET = 255;
-const REBASE_DISTANCE_CHUNKS = 8;
 const GHOST_OPACITY = 0.55;
 const SELECTION_COLOR = 0xff8c00;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
@@ -427,6 +429,8 @@ export class ThreeSceneBackend implements ISceneBackend {
   private sceneMaxZ = Number.NEGATIVE_INFINITY;
   private frame = 0;
   private readonly rebases: RebaseEvent[] = [];
+  private rebaseCount = 0;
+  private eyeMovedAt = 0;
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
   private failure: string | undefined;
@@ -1243,10 +1247,13 @@ export class ThreeSceneBackend implements ISceneBackend {
     atZ: number,
     orthoHalfHeightLdu?: number,
   ): void {
+    if (eyeX !== this.eyeX || eyeY !== this.eyeY || eyeZ !== this.eyeZ) {
+      this.eyeMovedAt = performance.now();
+    }
     this.eyeX = eyeX;
     this.eyeY = eyeY;
     this.eyeZ = eyeZ;
-    this.rebaseIfFar();
+    this.followEye();
     this.camera = orthoHalfHeightLdu === undefined ? this.perspective : this.orthographic;
     if (orthoHalfHeightLdu !== undefined && orthoHalfHeightLdu !== this.orthoHalfHeight) {
       this.orthoHalfHeight = orthoHalfHeightLdu;
@@ -1298,15 +1305,17 @@ export class ThreeSceneBackend implements ISceneBackend {
     camera.updateProjectionMatrix();
   }
 
-  private rebaseIfFar(): void {
+  private followEye(): void {
     const chunkX = chunkOf(this.eyeX);
     const chunkZ = chunkOf(this.eyeZ);
     const originChunkX = this.renderOriginX / CHUNK_LDU;
     const originChunkZ = this.renderOriginZ / CHUNK_LDU;
-    const nearOrigin =
-      Math.abs(chunkX - originChunkX) <= REBASE_DISTANCE_CHUNKS &&
-      Math.abs(chunkZ - originChunkZ) <= REBASE_DISTANCE_CHUNKS;
-    if (this.rebases.length > 0 && nearOrigin) return;
+    const atEye = chunkX === originChunkX && chunkZ === originChunkZ;
+    const far =
+      Math.abs(chunkX - originChunkX) > REBASE_DISTANCE_CHUNKS ||
+      Math.abs(chunkZ - originChunkZ) > REBASE_DISTANCE_CHUNKS;
+    const settled = performance.now() - this.eyeMovedAt >= SETTLED_EYE_MS;
+    if (this.rebaseCount > 0 && !far && (atEye || !settled)) return;
     const started = performance.now();
     this.renderOriginX = chunkX * CHUNK_LDU;
     this.renderOriginZ = chunkZ * CHUNK_LDU;
@@ -1343,6 +1352,8 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.positionTrackEnds();
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
+    if (this.rebases.length === REBASE_LOG_LIMIT) this.rebases.shift();
+    this.rebaseCount++;
     this.rebases.push({
       frame: this.frame,
       chunkX,
@@ -1424,7 +1435,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     out.triangles = renderer.info.render.triangles;
     out.renderOriginChunkX = this.renderOriginX / CHUNK_LDU;
     out.renderOriginChunkZ = this.renderOriginZ / CHUNK_LDU;
-    out.rebaseCount = this.rebases.length;
+    out.rebaseCount = this.rebaseCount;
     this.frame++;
   }
 

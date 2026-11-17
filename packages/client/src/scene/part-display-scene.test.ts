@@ -60,7 +60,7 @@ class RecordingBackend implements ISceneBackend {
 
 it("shows every palette part on the integer lattice when resolved through the real modules", async () => {
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   const backend = new RecordingBackend();
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());

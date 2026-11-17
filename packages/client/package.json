@@ -18,6 +18,7 @@
     "@brr/rpc": "workspace:*",
     "@brr/schema": "workspace:*",
     "@brr/sim": "workspace:*",
+    "@brr/storage": "workspace:*",
     "inversify": "8.3.0"
   },
   "devDependencies": {

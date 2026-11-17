@@ -44,7 +44,7 @@ let trackParts: ReadonlyArray<PartAsset>;
 
 beforeAll(async () => {
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
