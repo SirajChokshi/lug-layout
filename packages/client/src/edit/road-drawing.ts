@@ -1,6 +1,7 @@
 import {
   RoadNetwork,
   extendRoadPath,
+  planRoadErase,
   planRoadTiles,
   roadKits,
   roadShape,
@@ -46,10 +47,12 @@ export interface RoadTileIssue {
 
 export interface RoadStrokeView {
   readonly kit: string;
+  readonly erasing: boolean;
   readonly tiles: number;
   readonly laid: number;
   readonly replaced: number;
   readonly overGround: number;
+  readonly removed: number;
   readonly kept: number;
   readonly issues: ReadonlyArray<RoadTileIssue>;
 }
@@ -69,6 +72,7 @@ interface TilePlacement {
 
 interface Evaluated {
   readonly placements: ReadonlyArray<TilePlacement>;
+  readonly removals: ReadonlyArray<PlacedModel>;
   readonly issues: ReadonlyArray<RoadTileIssue>;
   readonly view: RoadStrokeView;
 }
@@ -144,6 +148,7 @@ export class RoadDrawing {
   private dragging = false;
   private evaluated: Evaluated | null = null;
   preferredRot = 0;
+  erasing = false;
 
   constructor(
     private readonly placeables: ReadonlyArray<Placeable>,
@@ -284,10 +289,13 @@ export class RoadDrawing {
     this.cancel();
     if (!evaluated) return null;
     if (evaluated.issues.length > 0) return { requests: [], view: evaluated.view };
-    const requests = evaluated.placements.map(({ pose, replaces }) => ({
-      placement: replaces?.placement ?? null,
-      to: pose,
-    }));
+    const requests: PlacementRequest[] = [
+      ...evaluated.removals.map((model) => ({ placement: model.placement, to: null })),
+      ...evaluated.placements.map(({ pose, replaces }) => ({
+        placement: replaces?.placement ?? null,
+        to: pose,
+      })),
+    ];
     return { requests, view: evaluated.view };
   }
 
@@ -402,19 +410,21 @@ export class RoadDrawing {
     const { kit, view } = this.entry();
     const existing = this.existingTiles(roads);
     const ground = this.groundTiles([...roads, ...others]);
-    const planned = planRoadTiles(
-      kit,
-      this.path,
-      (ix, iz) => existing.get(`${ix},${iz}`)?.tile ?? null,
-      this.preferredRot,
-    );
+    const existingAt = (ix: number, iz: number) => existing.get(`${ix},${iz}`)?.tile ?? null;
+    const planned = this.erasing
+      ? planRoadErase(kit, this.path, existingAt)
+      : planRoadTiles(kit, this.path, existingAt, this.preferredRot);
+    const removals = planned.flatMap((tile) => {
+      const model = tile.kind === "remove" ? existing.get(`${tile.ix},${tile.iz}`)?.model : null;
+      return model ? [model] : [];
+    });
     const choiceOf = new Map<PlannedRoadTile, number>();
     for (const tile of planned) if (tile.kind === "lay") choiceOf.set(tile, 0);
     let issues: RoadTileIssue[] = [];
     let placements: TilePlacement[] = [];
     for (let round = 0; round < MAX_CHOICE_ROUNDS; round++) {
       placements = this.placementsFor(planned, choiceOf, existing, ground);
-      issues = this.check(planned, placements, roads, others);
+      issues = this.check(planned, placements, removals, roads, others);
       const retry = placements.filter(
         (p) =>
           issues.some((issue) => this.sameTile(issue, p.tile) && issue.problem === "mismatch") &&
@@ -428,17 +438,19 @@ export class RoadDrawing {
     const overGround = placements.filter((p) => p.replaces !== null).length - replaced;
     const stroke: RoadStrokeView = {
       kit: view.id,
+      erasing: this.erasing,
       tiles: planned.length,
       laid: placements.length - replaced - overGround,
       replaced,
       overGround,
+      removed: removals.length,
       kept: planned.filter((tile) => tile.kind === "keep").length,
       issues,
     };
-    this.evaluated = { placements, issues, view: stroke };
+    this.evaluated = { placements, removals, issues, view: stroke };
     return {
       ghost: this.ghost(placements),
-      markers: this.markers(planned, placements, issues),
+      markers: this.markers(planned, placements, removals, issues),
       view: stroke,
     };
   }
@@ -483,6 +495,7 @@ export class RoadDrawing {
   private check(
     planned: ReadonlyArray<PlannedRoadTile>,
     placements: ReadonlyArray<TilePlacement>,
+    removals: ReadonlyArray<PlacedModel>,
     roads: ReadonlyArray<PlacedModel>,
     others: ReadonlyArray<PlacedModel>,
   ): RoadTileIssue[] {
@@ -505,7 +518,10 @@ export class RoadDrawing {
           box.maxZ > a.minZ - reach,
       );
     };
-    const replaced = new Set(placements.flatMap((p) => (p.replaces ? [p.replaces] : [])));
+    const replaced = new Set([
+      ...removals,
+      ...placements.flatMap((p) => (p.replaces ? [p.replaces] : [])),
+    ]);
     const kept = roads.filter((model) => !replaced.has(model) && near(model.box));
     const network: RoadPlacement[] = kept.flatMap((model, id) =>
       model.placeable.road
@@ -647,13 +663,18 @@ export class RoadDrawing {
   private markers(
     planned: ReadonlyArray<PlannedRoadTile>,
     placements: ReadonlyArray<TilePlacement>,
+    removals: ReadonlyArray<PlacedModel>,
     issues: ReadonlyArray<RoadTileIssue>,
   ): ReadonlyArray<EdgeMarker> {
-    const top = Math.max(0, ...placements.map((p) => this.placeable(p.pose.refId).box.max[1]));
+    const top = Math.max(
+      0,
+      ...placements.map((p) => this.placeable(p.pose.refId).box.max[1]),
+      ...removals.map((model) => model.box.maxY),
+    );
     const markers: EdgeMarker[] = [];
     for (const tile of planned) {
       const box = this.tileBox(tile, top);
-      if (issues.some((issue) => this.sameTile(issue, tile))) {
+      if (tile.kind === "remove" || issues.some((issue) => this.sameTile(issue, tile))) {
         markers.push(...outline(box, "mismatch"));
       } else if (placements.some((p) => p.tile === tile && p.replaces !== null)) {
         markers.push(...outline(box, "open"));

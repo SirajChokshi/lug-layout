@@ -426,6 +426,7 @@ export interface EditorSnapshot {
   readonly roadKit: string | null;
   readonly roadStroke: RoadStrokeView | null;
   readonly lastRoadStroke: RoadStrokeResult | null;
+  readonly roadErase: boolean;
 }
 
 export interface EditorCredits {
@@ -493,6 +494,7 @@ export interface IEditor extends IBomSource {
   measureFrames(): void;
   cycleTier(): void;
   trackRoutes(): ReadonlyArray<TrackRouteView>;
+  setRoadErase(erase: boolean): void;
   dump(): EditorDump;
 }
 
@@ -744,6 +746,7 @@ export class Editor implements IEditor {
     roadKit: null,
     roadStroke: null,
     lastRoadStroke: null,
+    roadErase: false,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -2060,6 +2063,14 @@ export class Editor implements IEditor {
 
   setSnapModules(snap: boolean): void {
     this.update({ snapModules: snap });
+  }
+
+  setRoadErase(erase: boolean): void {
+    const roads = this.roadDrawing;
+    if (!roads) return;
+    roads.erasing = erase;
+    this.update({ roadErase: erase, lastRoadStroke: null });
+    this.showRoadPreview(roads.rerun(...this.roadNeighbours()));
   }
 
   setSnapRoads(snap: boolean): void {
