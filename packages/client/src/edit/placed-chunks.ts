@@ -393,6 +393,14 @@ class PlacedEntry implements PlacedModel, VoxelPlacement {
     return this.yLdu + bottom * PLATE_LDU <= ldu && ldu <= this.yLdu + top * PLATE_LDU;
   }
 
+  studsDrawnIn(key: number): number {
+    let drawn = 0;
+    for (let i = 0; i < this.studKeys.length; i++) {
+      if (this.studKeys[i] === key && this.studCulled[i] === 0) drawn++;
+    }
+    return drawn;
+  }
+
   markCulled(
     key: number,
     covers: ReadonlyArray<PlacedEntry>,
@@ -949,10 +957,6 @@ export class PlacedChunks implements ChunkResidency {
   }
 
   private rebuildChunk(key: number): ChunkCounts {
-    const origin = this.chunkOrigins.get(key);
-    if (!origin) throw new Error(`chunk ${key} has no recorded origin`);
-    const originX = origin[0] * CHUNK_LDU;
-    const originZ = origin[1] * CHUNK_LDU;
     const placed = inWorldOrder(this.byChunk.get(key) ?? EMPTY_ENTRIES);
     const covers = [...(this.byFootprintChunk.get(key) ?? EMPTY_ENTRIES)];
     const closers = covers.length > 0 ? this.columnsAround(key) : [];
@@ -981,6 +985,37 @@ export class PlacedChunks implements ChunkResidency {
       this.forgetIfEmpty(key);
       return counts;
     }
+    this.backend.setChunk(key, this.writeChunk(key, entries, partCount, studCount));
+    this.liveChunks.add(key);
+    return counts;
+  }
+
+  placedInstances(): ChunkInstances[] {
+    const chunks: ChunkInstances[] = [];
+    for (const [key, set] of this.byChunk) {
+      const entries = inWorldOrder(set);
+      let partCount = 0;
+      let studCount = 0;
+      for (const entry of entries) {
+        partCount += entry.contributions.get(key)?.parts ?? 0;
+        studCount += entry.studsDrawnIn(key);
+      }
+      if (partCount === 0 && studCount === 0) continue;
+      chunks.push(this.writeChunk(key, entries, partCount, studCount));
+    }
+    return chunks;
+  }
+
+  private writeChunk(
+    key: number,
+    entries: ReadonlyArray<PlacedEntry>,
+    partCount: number,
+    studCount: number,
+  ): ChunkInstances {
+    const origin = this.chunkOrigins.get(key);
+    if (!origin) throw new Error(`chunk ${key} has no recorded origin`);
+    const originX = origin[0] * CHUNK_LDU;
+    const originZ = origin[1] * CHUNK_LDU;
     const voxelizedFlags = new Uint8Array(partCount);
     const chunk: ChunkInstances = {
       originX,
@@ -1040,8 +1075,6 @@ export class PlacedChunks implements ChunkResidency {
         chunk.studs.colorIndex[slot] = studs.colorIndex[i] ?? 0;
       }
     }
-    this.backend.setChunk(key, chunk);
-    this.liveChunks.add(key);
-    return counts;
+    return chunk;
   }
 }
