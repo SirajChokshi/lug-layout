@@ -16,6 +16,8 @@ export type {
   RebaseEvent,
   SceneBackendConfig,
   StudInstances,
+  TrackEndKind,
+  TrackEndMarker,
   WorldBox,
 } from "./scene-backend.ts";
 export {

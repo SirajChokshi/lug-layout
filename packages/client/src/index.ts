@@ -176,5 +176,10 @@ export type {
   ViewMode,
   WheelInput,
 } from "./camera/editor-camera.ts";
-export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
+export type {
+  ClosureState,
+  TrackDragView,
+  TrackEndView,
+  TrackGapView,
+} from "./edit/track-drawing.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
