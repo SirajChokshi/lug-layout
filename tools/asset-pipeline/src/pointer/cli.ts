@@ -47,7 +47,13 @@ async function writeStepOutput(name: string, value: string): Promise<void> {
 async function servedPointer(baseUrl: string): Promise<string | undefined> {
   const response = await fetch(new URL(BUNDLE_POINTER_FILE, baseUrl));
   if (!response.ok) return undefined;
-  const pointer = decode(BundlePointer, await response.json(), BUNDLE_POINTER_FILE);
+  let json: unknown;
+  try {
+    json = JSON.parse(await response.text());
+  } catch {
+    return undefined;
+  }
+  const pointer = decode(BundlePointer, json, BUNDLE_POINTER_FILE);
   return pointer.ok ? pointer.value.manifestFile : undefined;
 }
 
