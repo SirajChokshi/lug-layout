@@ -18,8 +18,10 @@ import {
   type RigidBodyInstances,
 } from "../sim/consist.ts";
 import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
+import { instanceBoxes } from "../running-gear/instance-boxes.ts";
+import type { IRunningGear, RunningGearSource } from "../running-gear/running-gear-editor.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
-import { SIM_CLIENT } from "../tokens.ts";
+import { RUNNING_GEAR, SIM_CLIENT } from "../tokens.ts";
 import { plateDepthBelowOrigin } from "./part-footprint.ts";
 import { withStuds } from "./stud-stream.ts";
 import { buildTrackPlan } from "./track-plan.ts";
@@ -80,6 +82,7 @@ export interface RunVehicleStatus {
   readonly spec: VehicleSpec;
   readonly wheelsets: number;
   readonly bogieBodies: number;
+  readonly gear: RunningGearSource;
 }
 
 export interface IRunScene extends IViewerScene {
@@ -151,6 +154,7 @@ export class RunScene implements IRunScene {
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) readonly backend: ISceneBackend,
     @inject(SIM_CLIENT) readonly sim: ISimClient,
+    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
   ) {}
 
   configure(request: RunRequest): void {
@@ -178,12 +182,28 @@ export class RunScene implements IRunScene {
     const railPart = railPartFor(layout, catalogPieces);
     this.railY = railTopY(layout, catalogPieces, bundle);
     const first = modelBundles[0];
+    await this.runningGear.setModels(
+      models.map((name, i) => {
+        const loaded = modelBundles[i];
+        if (!loaded) throw new Error(`model ${name} did not load`);
+        return {
+          name,
+          sha256: loaded.entry.sha256,
+          vehicles: loaded.model.vehicles,
+          instanceBoxes: instanceBoxes(loaded.model, loaded.bundle),
+        };
+      }),
+    );
     const consist = request.consist.flatMap((entry) => {
       const loaded = modelByName.get(entry.model);
       if (!loaded) throw new Error(`model ${entry.model} did not load`);
-      return consistVehicles(loaded.model, entry.model, entry.reversed, railPart).map(
-        (vehicle) => ({ vehicle, loaded }),
-      );
+      return consistVehicles(
+        loaded.model,
+        entry.model,
+        entry.reversed,
+        railPart,
+        this.runningGear.effectiveVehicles(entry.model),
+      ).map((vehicle) => ({ vehicle, loaded }));
     });
     this.consist = consist.map(({ vehicle }) => vehicle);
     const rigidChunks = consist.map(({ vehicle, loaded }) => {
@@ -354,6 +374,7 @@ export class RunScene implements IRunScene {
         spec: vehicle.spec,
         wheelsets: vehicle.wheelsets,
         bogieBodies: (vehicle.frontBogie ? 1 : 0) + (vehicle.rearBogie ? 1 : 0),
+        gear: this.runningGear.gearSource(vehicle.model, vehicle.vehicle),
       })),
       maxEndResidualLdu: loaded.maxEndResidualLdu,
       maxEndHeadingResidualRadians: loaded.maxEndHeadingResidualRadians,

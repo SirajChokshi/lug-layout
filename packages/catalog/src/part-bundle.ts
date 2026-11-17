@@ -93,6 +93,7 @@ export interface BundleModelEntry {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly inlinePartsResolvedToOfficial: ReadonlyArray<InlinePartResolution>;
   readonly instances: number;
+  readonly sha256: string;
 }
 
 export interface InlinePartResolution {
