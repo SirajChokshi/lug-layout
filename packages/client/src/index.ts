@@ -67,6 +67,7 @@ export type {
   SkippedCatalogModel,
   TrackBomLine,
   TrackCommitResult,
+  TrackPieceView,
   TrackSolveStats,
   TrackView,
   WorldFileView,
@@ -136,7 +137,7 @@ export {
   TRACK_SCENE,
   PLAN_SERVICE,
 } from "./tokens.ts";
-export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./edit/editor.ts";
 export {
   COMMAND_GROUPS,
   COMMANDS,
@@ -185,6 +186,7 @@ export type {
 export type {
   ClosureState,
   TrackDragView,
+  SwitchLeverView,
   TrackEndView,
   TrackGapView,
 } from "./edit/track-drawing.ts";
@@ -202,3 +204,4 @@ export type {
   PaletteHit,
   PaletteTerms,
 } from "./catalog/palette-index.ts";
+export type { Lever } from "./edit/track-pieces.ts";

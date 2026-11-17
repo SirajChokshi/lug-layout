@@ -4,6 +4,7 @@ import {
   PALETTE_CATEGORIES,
   PaletteIndex,
   TRACK_ITEM_ID,
+  TRACK_PIECE_PREFIX,
   colorDisplayName,
   type CatalogItemView,
   type EditorSnapshot,
@@ -127,11 +128,12 @@ function colorCount(entries: ReadonlyArray<PaletteEntry>): string {
 }
 
 function TrackSection({ editor, snapshot }: PaletteProps) {
-  const drawing = snapshot.mode === "track";
-  const kit = snapshot.track?.bom ?? [];
+  const drawing = snapshot.mode === "track" && snapshot.activeItem === TRACK_ITEM_ID;
+  const pieces = snapshot.catalog.filter((item) => item.id.startsWith(TRACK_PIECE_PREFIX));
   const available = snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
+  const held = snapshot.track?.held ?? null;
   return (
-    <Section id="track" title="Track" count={`${kit.length} drawable pieces`}>
+    <Section id="track" title="Track" count={`${pieces.length} real pieces`}>
       <button
         type="button"
         className="palette-primary"
@@ -146,16 +148,32 @@ function TrackSection({ editor, snapshot }: PaletteProps) {
         Drag on the ground to lay a run of real pieces. Start on an open end to continue a line, and
         release on another open end to join it exactly.
       </p>
-      {kit.length > 0 && (
-        <ul className="palette-parts">
-          {kit.map((line) => (
-            <li key={line.piece}>
-              <span className="palette-size">{line.piece.replace(/^[a-z]+:/u, "")}</span>
-              {line.title}
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="palette-pieces" aria-label="Single track pieces">
+        {pieces.map((item) => (
+          <li key={item.id}>
+            <button
+              type="button"
+              className="catalog-item"
+              data-item={item.id}
+              aria-pressed={
+                snapshot.activeItem === item.id ||
+                (held !== null && item.id === `${TRACK_PIECE_PREFIX}${held.item}`)
+              }
+              onClick={() => editor.chooseItem(snapshot.activeItem === item.id ? null : item.id)}
+            >
+              <span className="catalog-name">{item.label}</span>
+              <span className="catalog-meta">
+                {item.studsWide}×{item.studsDeep} studs
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="palette-hint">
+        Pick a piece, then click to lay it. Near an open end it attaches exactly. Q swings it onto
+        its next end, R turns it 22.5° on open ground, X swaps a switch between left and right.
+        Click a laid switch to throw it.
+      </p>
       {snapshot.trackNotDrawable.length > 0 && (
         <p className="palette-note" data-not-drawable={snapshot.trackNotDrawable.length}>
           In the bundle but not drawable yet:{" "}
