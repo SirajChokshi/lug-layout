@@ -7,6 +7,7 @@ import {
   type ModelSection,
   type ModelVehicle,
   type PartRole,
+  type ProducedColors,
   type TrackEnd,
   type Vec3,
 } from "@brr/schema/bundle";
@@ -40,7 +41,7 @@ export interface PartAsset {
   readonly boundsMin: Vec3;
   readonly boundsMax: Vec3;
   readonly producedColor: number | undefined;
-  readonly producedColors: ReadonlyArray<number>;
+  readonly producedColors: ProducedColors | undefined;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
   readonly mesh: PartMesh;
   readonly studPrimitiveIndex: Uint8Array;
