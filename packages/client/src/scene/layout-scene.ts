@@ -104,8 +104,6 @@ const EDITOR_PARTS: PartFilter = (part) =>
   part.role === "ground" || part.role === "road" || part.role === "track";
 
 class ChunkCapture implements ISceneBackend {
-  readonly chunks = new Map<number, ChunkInstances>();
-
   constructor(private readonly inner: ISceneBackend) {}
 
   init(config: SceneBackendConfig): Promise<BackendInfo> {
@@ -115,11 +113,9 @@ class ChunkCapture implements ISceneBackend {
     this.inner.setPalette(palette);
   }
   setChunk(key: number, chunk: ChunkInstances): void {
-    this.chunks.set(key, chunk);
     this.inner.setChunk(key, chunk);
   }
   deleteChunk(key: number): void {
-    this.chunks.delete(key);
     this.inner.deleteChunk(key);
   }
   setSuperChunk(key: number, mesh: SuperChunkMesh): void {
@@ -302,8 +298,10 @@ export class LayoutScene implements ILayoutScene {
     const clash = layoutClash(placed.models(), [...trackChunks.values()], palette.parts);
     if (clash) throw new Error(`the bench layout is not buildable: ${clash}`);
     for (const [key, chunk] of trackChunks) this.capture.setChunk(key, chunk);
-    const chunks: KeyedChunk[] = [];
-    for (const [key, instances] of this.capture.chunks) chunks.push({ key, instances });
+    const chunks: KeyedChunk[] = placed
+      .placedInstances()
+      .map((instances, index) => ({ key: index, instances }));
+    for (const [key, instances] of trackChunks) chunks.push({ key, instances });
     return summarizeChunks(
       {
         bundleVersion: bundle.bundleVersion,
