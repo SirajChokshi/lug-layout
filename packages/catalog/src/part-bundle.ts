@@ -44,6 +44,7 @@ export interface PartAsset {
   readonly baseplate: boolean;
   readonly aliasOf: string | null;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
+  readonly seat: PartSeat | null;
   readonly mesh: PartMesh;
   readonly studPrimitiveIndex: Uint8Array;
   readonly studColors: Uint16Array;
@@ -87,6 +88,12 @@ export interface ModelCells {
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+}
+
+export interface PartSeat {
+  readonly phaseX: number;
+  readonly phaseZ: number;
+  readonly cells: ModelCells;
 }
 
 export interface ModelStudCover {

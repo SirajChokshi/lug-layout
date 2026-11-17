@@ -50,6 +50,17 @@ fn integer_phase(value: f64) -> Option<u32> {
     (phase.fract() == 0.0).then_some(phase as u32 % STUD_LDU as u32)
 }
 
+pub fn seat_phase(bounds_min: Vec3, bounds_max: Vec3) -> Option<[u32; 2]> {
+    let axis_phase = |axis: usize| {
+        let span = (bounds_max[axis] - bounds_min[axis]) / STUD_LDU;
+        if span.fract() != 0.0 || span < 1.0 {
+            return None;
+        }
+        integer_phase(bounds_min[axis] + STUD_LDU / 2.0)
+    };
+    Some([axis_phase(0)?, axis_phase(2)?])
+}
+
 fn corners(min: Vec3, max: Vec3) -> [Vec3; 8] {
     let mut out = [[0.0; 3]; 8];
     for (i, corner) in out.iter_mut().enumerate() {
@@ -149,6 +160,19 @@ mod tests {
         assert_eq!(lattice.phase_layer_y, 24.0);
         assert_eq!(lattice.aabb_min, [-20.0, 0.0, -10.0]);
         assert_eq!(lattice.aabb_max, [105.0, 52.0, 10.0]);
+    }
+
+    #[test]
+    fn a_part_seats_on_its_body_bounds_and_only_on_whole_studs() {
+        assert_eq!(
+            seat_phase([-20.0, -8.0, -10.0], [20.0, 0.0, 10.0]),
+            Some([10, 0])
+        );
+        assert_eq!(
+            seat_phase([-10.0, -8.0, -10.0], [10.0, 0.0, 10.0]),
+            Some([0, 0])
+        );
+        assert_eq!(seat_phase([-9.5, -24.0, -10.0], [9.5, 0.0, 10.0]), None);
     }
 
     #[test]

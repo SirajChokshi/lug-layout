@@ -190,7 +190,14 @@ async function factsCommand(check: boolean): Promise<void> {
   if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
 
-const CATALOG_ROLES: ReadonlySet<string> = new Set(["ground", "road"]);
+const CATALOG_ROLES: ReadonlySet<string> = new Set([
+  "ground",
+  "road",
+  "wall",
+  "roof",
+  "detail",
+  "brick",
+]);
 
 function producedColorSource(): string {
   const files = Object.values(REBRICKABLE_EXPORT)

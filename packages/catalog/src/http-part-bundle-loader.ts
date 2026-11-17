@@ -27,6 +27,7 @@ import type {
   PartAsset,
   PartBundle,
   PartFilter,
+  PartSeat,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
@@ -39,6 +40,13 @@ function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   if (lattice === null) return null;
   const [phaseX, phaseZ] = lattice.phase;
   return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
+}
+
+function partSeat(seat: ManifestPart["seat"]): PartSeat | null {
+  if (!seat) return null;
+  const [phaseX, phaseZ] = seat.phase;
+  const cells = modelCells(seat.cells);
+  return cells && { phaseX, phaseZ, cells };
 }
 
 function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
@@ -247,7 +255,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
           covered: cover.coveredStuds,
           visibleBits: Uint32Array.from(cover.visibleBits),
         },
-        cells: modelCells(cover.cells),
+        cells: cover.cells === null ? null : modelCells(cover.cells),
         instanceCount: count,
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),
@@ -323,6 +331,7 @@ function toPartAsset(
     | "trackEnds"
     | "baseplate"
     | "aliasOf"
+    | "seat"
   >,
   bytes: ArrayBuffer,
   studPrimitiveNames: ReadonlyArray<string>,
@@ -352,6 +361,7 @@ function toPartAsset(
     baseplate: part.baseplate,
     aliasOf: part.aliasOf,
     trackEnds: part.trackEnds,
+    seat: partSeat(part.seat),
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
     studPrimitiveIndex,

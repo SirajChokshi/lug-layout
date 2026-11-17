@@ -9,9 +9,10 @@ use brick_compile::compile::{modified_note, MODIFIED_NOTE};
 use brick_compile::cover::{
     model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape, PLATE_LDU,
 };
+use brick_compile::flatten::INHERIT_COLOR;
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
-use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
+use brick_compile::lattice::{model_lattice, seat_phase, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{identity_redirect, normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, ModelInstance};
 use brick_compile::vehicle::{
@@ -27,6 +28,7 @@ const DISCLAIMER: &str =
     "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.";
 const LDCONFIG: &str = "ldconfig.ldr";
 const COMPILER_FILE: &str = "brick-compile.wasm";
+const SEATED_ROLES: [&str; 4] = ["wall", "roof", "detail", "brick"];
 
 struct FsLibrary {
     files: HashMap<String, String>,
@@ -184,6 +186,41 @@ fn cover_json(cover: &ModelCover) -> Value {
         "visibleBits": cover.visible_bits(),
         "cells": cells,
     })
+}
+
+fn part_seat(
+    cover_parts: &mut CoverParts,
+    reference: &str,
+    shape: &PartShape,
+    opacity: &Opacity,
+    stud_shape: StudShape,
+) -> Result<Value, String> {
+    let Some(phase) = seat_phase(shape.bounds[0], shape.bounds[1]) else {
+        return Ok(Value::Null);
+    };
+    let slot = cover_parts.slot(reference)?;
+    let instance = CoverInstance {
+        matrix: &Affine::IDENTITY,
+        color: INHERIT_COLOR,
+        part: slot,
+        studs: &cover_parts.studs[slot],
+        baseplate: false,
+    };
+    let cover = model_cover(
+        &[instance],
+        &cover_parts.solids,
+        opacity,
+        Some(phase),
+        stud_shape,
+    );
+    if cover
+        .cells
+        .as_ref()
+        .is_none_or(|cells| cells.footprint.is_empty())
+    {
+        return Ok(Value::Null);
+    }
+    Ok(json!({ "phase": phase, "cells": cover_json(&cover)["cells"] }))
 }
 
 fn cover_summary(cover: &ModelCover) -> Value {
@@ -575,6 +612,13 @@ fn run(args: &Args) -> Result<(), String> {
         }
         if !entry["producedColors"].is_null() {
             summary["producedColors"] = entry["producedColors"].clone();
+        }
+        if entry["role"]
+            .as_str()
+            .is_some_and(|role| SEATED_ROLES.contains(&role))
+        {
+            summary["seat"] =
+                part_seat(&mut cover_parts, &reference, &shape, &opacity, stud_shape)?;
         }
         part_index.insert(reference, parts.len());
         parts.push(summary);
