@@ -25,3 +25,7 @@ These were recorded by the MacBook worker, and its README is copied as-is. They 
 - **`equivalence/`:** five views re-shot at `a25c0f4` (branch) and `ecd8f23` (main): 10185-1, 10264-1 and city 20k aerial for the branch, 10185-1 and city 20k aerial for main. Compared with `scripts/diff.mjs` against the `vm-93bb24e/pairs` shots, each has 0 differing pixels (max channel delta 0), so the `vm-93bb24e` evidence holds at this head.
 - **`run-scene/`:** main's own run scene (#38 merged), `?api=webgl2&run=1&trains=60@100&track=<dogbone>`, live after 20 s at 960×600. Shown for main, the branch at its default look, and the branch at `look=all`. Median track brightness (rows 0–160 against 320–480): main 130 / 202, default 114 / 119, `look=all` 116 / 135.
 - **`pnpm-check.log`:** `pnpm check` at `a25c0f4`, exit 0.
+
+## `vm-ebf2b15/` (after rebasing onto main `f1026d3`, #44 merged)
+- **`equivalence/`:** the same five views re-shot at `ebf2b15` (branch) and `f1026d3` (main). Each has 0 differing pixels against `vm-93bb24e/pairs`.
+- **`pnpm-check.log`:** `pnpm check` at `ebf2b15`, exit 0.
