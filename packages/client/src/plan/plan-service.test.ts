@@ -20,6 +20,7 @@ class IssueBoxBackend implements ISceneBackend {
   setPartMeshes(): void {}
   setFarStuds(): void {}
   setFarModelMesh(): void {}
+  setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
   setGhost(): void {}

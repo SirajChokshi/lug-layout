@@ -1,4 +1,4 @@
-import type { PartAsset, PartBundle, PartModel } from "@brr/catalog";
+import type { PartAsset, PartModel } from "@brr/catalog";
 import type { BundleModelEntry } from "@brr/schema/bundle";
 import type { MergedParts } from "../edit/merged-parts.ts";
 import type { PlayTrack } from "../edit/track-drawing.ts";
@@ -17,7 +17,7 @@ export interface PlayModel {
 export function playModel(
   entry: BundleModelEntry,
   model: PartModel,
-  modelBundle: PartBundle,
+  modelBundle: { readonly parts: ReadonlyArray<PartAsset> },
   palette: MergedParts,
   colors: ColorTable,
 ): PlayModel {
