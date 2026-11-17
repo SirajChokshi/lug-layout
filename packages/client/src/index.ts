@@ -195,6 +195,16 @@ export type {
   TrackEndView,
   TrackGapView,
 } from "./edit/track-drawing.ts";
+export {
+  GRID_STEPS_STUDS,
+  areaText,
+  cmOf,
+  lengthText,
+  studsOf,
+  type LabelKind,
+  type LabelView,
+} from "./edit/layout-guides.ts";
+export { SCREEN_POINT_FLOATS } from "@brr/render";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export {
   CATEGORY_LABEL,

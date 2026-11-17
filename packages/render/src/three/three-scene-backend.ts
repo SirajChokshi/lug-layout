@@ -38,6 +38,9 @@ import {
   type FarModelPlacement,
   type GeometrySet,
   type FrameStats,
+  type GroundGrid,
+  type GuideKind,
+  type GuideSegment,
   type ISceneBackend,
   type LookSettings,
   type PartPalette,
@@ -60,6 +63,7 @@ import {
 } from "./part-geometry.ts";
 import { OPAQUE_ALPHA, PlasticMaterials } from "./plastic-materials.ts";
 import { skyEnvironment } from "./sky-environment.ts";
+import { GroundGridLayer } from "./ground-grid.ts";
 
 const MATRIX4_FLOATS = 16;
 const REBASE_DISTANCE_CHUNKS = 8;
@@ -129,6 +133,12 @@ const TABLE_GRID_COLOR = 0x6b4f2e;
 const OBSTACLE_COLOR = 0xc0392b;
 const OBSTACLE_OPACITY = 0.45;
 const ISSUE_COLOR = 0xe0115f;
+const GUIDE_COLORS: Readonly<Record<GuideKind, number>> = {
+  ruler: 0x0b5fff,
+  dimension: 0x1b2a34,
+  draft: 0xff8c00,
+};
+const GUIDE_RENDER_ORDER = 3;
 const FLOOR_THICKNESS_LDU = 10;
 const GRID_LIFT_LDU = 0.5;
 
@@ -458,6 +468,12 @@ export class ThreeSceneBackend implements ISceneBackend {
     depthTest: false,
   });
   private readonly rayPoint = new Vector3();
+  private readonly projected = new Vector3();
+  private readonly groundGrid = new GroundGridLayer();
+  private guideObjects: Anchored[] = [];
+  private targetX = 0;
+  private targetY = 0;
+  private targetZ = 0;
   private detailedLevel: LevelGeometries = EMPTY_LEVEL;
   private farLevel: LevelGeometries = EMPTY_LEVEL;
   private farModelGeometries: ReadonlyArray<ReadonlyArray<FixedColorGeometry>> = [];
@@ -529,6 +545,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
     this.scene.add(this.trackEndGroup);
+    this.scene.add(this.groundGrid.group);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -1349,6 +1366,10 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.aim(this.perspective, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.aim(this.orthographic, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.fitShadowRange();
+    this.targetX = atX;
+    this.targetY = atY;
+    this.targetZ = atZ;
+    this.followGrid();
   }
 
   private aim(
@@ -1390,6 +1411,60 @@ export class ThreeSceneBackend implements ISceneBackend {
     camera.right = this.orthoHalfHeight * this.aspect;
     camera.left = -camera.right;
     camera.updateProjectionMatrix();
+  }
+
+  private followGrid(): void {
+    this.groundGrid.follow(
+      this.targetX,
+      this.targetZ,
+      this.renderOriginX,
+      this.renderOriginZ,
+      this.focalLengthPx,
+      this.camera === this.orthographic
+        ? this.orthoHalfHeight / Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360)
+        : Math.hypot(this.eyeX - this.targetX, this.eyeY - this.targetY, this.eyeZ - this.targetZ),
+    );
+  }
+
+  setGroundGrid(grid: GroundGrid | null): void {
+    this.groundGrid.set(grid);
+    this.followGrid();
+  }
+
+  setGuides(segments: ReadonlyArray<GuideSegment>): void {
+    for (const anchored of this.guideObjects) {
+      this.scene.remove(anchored.object);
+      disposeTree(anchored.object);
+    }
+    const byKind = new Map<GuideKind, GuideSegment[]>();
+    for (const segment of segments) {
+      byKind.set(segment.kind, [...(byKind.get(segment.kind) ?? []), segment]);
+    }
+    this.guideObjects = [...byKind].map(([kind, list]) => {
+      const x = list[0]?.ax ?? 0;
+      const z = list[0]?.az ?? 0;
+      const positions = list.flatMap((s) => [s.ax - x, s.ay, s.az - z, s.bx - x, s.by, s.bz - z]);
+      const lines = new LineSegments(
+        new LineGeometry().setAttribute("position", new Float32BufferAttribute(positions, 3)),
+        new LineBasicNodeMaterial({ color: GUIDE_COLORS[kind], depthTest: false }),
+      );
+      lines.matrixAutoUpdate = false;
+      lines.renderOrder = GUIDE_RENDER_ORDER;
+      return { object: lines, x, z };
+    });
+    for (const anchored of this.guideObjects) {
+      this.positionAnchored(anchored);
+      this.scene.add(anchored.object);
+    }
+  }
+
+  projectToScreen(x: number, y: number, z: number, out: Float64Array, offset: number): void {
+    const point = this.projected
+      .set(x - this.renderOriginX, y, z - this.renderOriginZ)
+      .project(this.camera);
+    out[offset] = point.x;
+    out[offset + 1] = point.y;
+    out[offset + 2] = point.z > -1 && point.z < 1 ? 1 : 0;
   }
 
   private followEye(): void {
@@ -1452,6 +1527,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
     if (this.rebases.length === REBASE_LOG_LIMIT) this.rebases.shift();
     this.rebaseCount++;
+    for (const anchored of this.guideObjects) this.positionAnchored(anchored);
     this.rebases.push({
       frame: this.frame,
       chunkX,
@@ -1476,6 +1552,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.focalLengthPx = bufferHeight / (2 * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360));
     this.pipeline?.resize(bufferWidth, bufferHeight, this.focalLengthPx);
     if (this.shadowNode?.camera) this.shadowNode.updateFrustums();
+    this.followGrid();
   }
 
   setFarModel(id: number, placement: FarModelPlacement | null): void {

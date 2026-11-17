@@ -17,6 +17,7 @@ import {
   PlacementRules,
   RoadJoins,
 } from "./editor-panels.tsx";
+import { LayoutBar, MeasureLabels } from "./layout-overlay.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
@@ -122,6 +123,8 @@ export function EditorApp({
     >
       <EditorCanvas editor={editor} camera={camera} options={options} />
       <ToolHud snapshot={snapshot} />
+      <MeasureLabels editor={editor} snapshot={snapshot} />
+      <LayoutBar editor={editor} snapshot={snapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} />
       <PlanPanel camera={camera} plans={plans} />

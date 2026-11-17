@@ -1134,3 +1134,82 @@ footer a {
   cursor: default;
   opacity: 0.4;
 }
+
+.measure-labels {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.measure-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgb(27 42 52 / 0.86);
+  color: #fff;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.measure-label-ruler {
+  background: rgb(11 95 255 / 0.9);
+}
+
+.measure-label-draft {
+  background: rgb(255 140 0 / 0.95);
+}
+
+.measure-label-selection {
+  background: rgb(204 112 0 / 0.92);
+}
+
+.layout-bar {
+  position: fixed;
+  left: 472px;
+  top: 12px;
+  max-width: calc(100vw - 472px - 336px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.94);
+  color: #1b2a34;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
+}
+
+.layout-cursor {
+  min-width: 260px;
+  font-variant-numeric: tabular-nums;
+}
+
+.layout-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.layout-bar button {
+  font: inherit;
+  padding: 4px 8px;
+  border: 1px solid #c3ccd6;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: inherit;
+  cursor: pointer;
+}
+
+.layout-bar button[aria-pressed="true"] {
+  border-color: #1f6feb;
+  background: #dbe9ff;
+}
+
+.layout-hint {
+  color: #556;
+}

@@ -9,6 +9,10 @@ export type {
   FrameStats,
   GeometrySet,
   GraphicsApi,
+  GridLevel,
+  GroundGrid,
+  GuideKind,
+  GuideSegment,
   ISceneBackend,
   LdrawColor,
   LookFeature,
@@ -29,6 +33,7 @@ export {
   INSTANCE_MATRIX_FLOATS,
   LOOK_FEATURES,
   RAY_FLOATS,
+  SCREEN_POINT_FLOATS,
 } from "./scene-backend.ts";
 export { SCENE_BACKEND } from "./tokens.ts";
 export { renderModule } from "./render.module.ts";

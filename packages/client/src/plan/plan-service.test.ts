@@ -22,6 +22,9 @@ class IssueBoxBackend implements ISceneBackend {
   placeGhost(): void {}
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
+  setGroundGrid(): void {}
+  setGuides(): void {}
+  projectToScreen(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
   setVehicle(): void {}

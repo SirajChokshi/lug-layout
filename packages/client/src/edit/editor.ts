@@ -32,11 +32,13 @@ import { BRICK_LDU, CHUNK_LDU, PLATE_LDU, STUD_LDU, ZETA16_ORDER, pose16, zeta16
 import {
   RAY_FLOATS,
   SCENE_BACKEND,
+  SCREEN_POINT_FLOATS,
   type BackendInfo,
   type EdgeMarker,
   type ChunkTier,
   type FrameStats,
   type GraphicsApi,
+  type GuideSegment,
   type LookSettings,
   type ISceneBackend,
   type WorldBox,
@@ -96,6 +98,15 @@ import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
 import { creditsForWorld, exportFileName } from "./world-credits.ts";
 import {
+  boxLabel,
+  groundGrid,
+  placedBox,
+  rulerGuides,
+  rulerLabel,
+  type LabelView,
+  type Ruler,
+} from "./layout-guides.ts";
+import {
   carriesRefusal,
   supportRefusal,
   trackCarriedRefusal,
@@ -106,7 +117,7 @@ import {
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
-export type EditorMode = "place" | "select" | "track";
+export type EditorMode = "place" | "select" | "track" | "measure";
 
 export interface CatalogColorView {
   readonly code: number;
@@ -401,6 +412,9 @@ export interface EditorSnapshot {
   readonly readOnly: boolean;
   readonly unsavedEdits: boolean;
   readonly coldStartMs: number | null;
+  readonly showGrid: boolean;
+  readonly rulers: number;
+  readonly labels: ReadonlyArray<LabelView>;
 }
 
 export interface EditorCredits {
@@ -467,6 +481,10 @@ export interface IEditor {
   importWorld(bytes: Uint8Array): Promise<boolean>;
   measureFrames(): void;
   cycleTier(): void;
+  setShowGrid(show: boolean): void;
+  setMeasuring(on: boolean): void;
+  clearRulers(): void;
+  projectLabels(out: Float64Array): void;
   dump(): EditorDump;
 }
 
@@ -586,6 +604,7 @@ interface HeldPiece {
   readonly heading: number;
   readonly snap: PieceSnap | null;
 }
+const RULER_Y_LDU = 0;
 
 interface PendingAction {
   readonly step: HistoryStep;
@@ -717,6 +736,9 @@ export class Editor implements IEditor {
     readOnly: false,
     unsavedEdits: false,
     coldStartMs: null,
+    showGrid: true,
+    rulers: 0,
+    labels: [],
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -767,6 +789,8 @@ export class Editor implements IEditor {
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
   private selectedTrack: number | null = null;
+  private rulers: Ruler[] = [];
+  private draftRuler: Ruler | null = null;
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -804,7 +828,8 @@ export class Editor implements IEditor {
   }
 
   private update(patch: Partial<EditorSnapshot>): void {
-    this.state = { ...this.state, ...patch };
+    const next = { ...this.state, ...patch };
+    this.state = { ...next, labels: this.labelsOf(next) };
     for (const listener of this.listeners) listener();
   }
 
@@ -853,6 +878,7 @@ export class Editor implements IEditor {
         colorsAlpha: colors.toAlpha(),
         ldrawColors: ldrawColors(bundle),
       });
+      this.backend.setGroundGrid(groundGrid(this.tableY));
       const loadMs = performance.now() - started;
       await this.openFirstWorld();
       this.firstWorldFrame = true;
@@ -1239,6 +1265,12 @@ export class Editor implements IEditor {
   }
 
   dragStart(ndcX: number, ndcY: number): boolean {
+    if (this.state.mode === "measure") {
+      if (!this.groundHit(ndcX, ndcY)) return false;
+      this.draftRuler = { ax: this.hoverX, az: this.hoverZ, bx: this.hoverX, bz: this.hoverZ };
+      this.showRulers();
+      return true;
+    }
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
@@ -1249,6 +1281,14 @@ export class Editor implements IEditor {
   }
 
   dragMove(ndcX: number, ndcY: number): void {
+    const draft = this.draftRuler;
+    if (draft) {
+      if (this.groundHit(ndcX, ndcY)) {
+        this.draftRuler = { ...draft, bx: this.hoverX, bz: this.hoverZ };
+        this.showRulers();
+      }
+      return;
+    }
     const track = this.track;
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
@@ -1263,6 +1303,14 @@ export class Editor implements IEditor {
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.draftRuler) {
+      this.dragMove(ndcX, ndcY);
+      const ruler = this.draftRuler;
+      this.draftRuler = null;
+      if (ruler.ax !== ruler.bx || ruler.az !== ruler.bz) this.rulers = [...this.rulers, ruler];
+      this.showRulers();
+      return;
+    }
     const track = this.track;
     if (!track) return;
     const hit = this.groundHit(ndcX, ndcY);
@@ -1314,6 +1362,7 @@ export class Editor implements IEditor {
   }
 
   chooseItem(id: string | null): void {
+    if (this.state.mode === "measure") this.setMeasuring(false);
     if (id !== null && this.readOnly) return;
     this.showRefusalCells(null);
     const track = this.track;
@@ -1586,6 +1635,7 @@ export class Editor implements IEditor {
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.state.mode === "measure") return;
     if (this.state.mode === "track") {
       if (!this.held || this.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -1855,6 +1905,67 @@ export class Editor implements IEditor {
     this.update({ snapRoads: snap, snap: null });
   }
 
+  setShowGrid(show: boolean): void {
+    this.backend.setGroundGrid(show ? groundGrid(this.tableY) : null);
+    this.update({ showGrid: show });
+  }
+
+  setMeasuring(on: boolean): void {
+    if (on === (this.state.mode === "measure")) return;
+    if (on) {
+      this.chooseItem(null);
+      this.select(null);
+      this.update({ mode: "measure", activeItem: null });
+      return;
+    }
+    this.draftRuler = null;
+    this.showRulers();
+    this.update({ mode: "select" });
+  }
+
+  clearRulers(): void {
+    this.rulers = [];
+    this.draftRuler = null;
+    this.showRulers();
+  }
+
+  private showRulers(): void {
+    const guides: GuideSegment[] = [];
+    for (const ruler of this.rulers) guides.push(...rulerGuides(ruler, RULER_Y_LDU, "ruler"));
+    if (this.draftRuler) guides.push(...rulerGuides(this.draftRuler, RULER_Y_LDU, "draft"));
+    this.backend.setGuides(guides);
+    this.update({ rulers: this.rulers.length });
+  }
+
+  private labelsOf(state: EditorSnapshot): ReadonlyArray<LabelView> {
+    const labels = this.rulers.map((ruler, i) =>
+      rulerLabel(`ruler-${i}`, "ruler", ruler, RULER_Y_LDU),
+    );
+    if (this.draftRuler) labels.push(rulerLabel("draft", "draft", this.draftRuler, RULER_Y_LDU));
+    const active = this.active;
+    if (state.mode === "place" && active && state.hover) {
+      const box = placedBox(
+        active.box,
+        state.hover.x,
+        state.hover.z,
+        state.hover.yPlates * PLATE_LDU,
+        state.ghostRot,
+      );
+      labels.push(boxLabel("ghost", "ghost", box));
+    }
+    if (state.selection) labels.push(boxLabel("selection", "selection", state.selection.box));
+    return labels;
+  }
+
+  projectLabels(out: Float64Array): void {
+    const { labels } = this.state;
+    for (let i = 0; i < labels.length; i++) {
+      const label = labels[i];
+      if (!label) continue;
+      this.backend.projectToScreen(label.x, label.y, label.z, out, i * SCREEN_POINT_FLOATS);
+    }
+  }
+
   private select(model: PlacedModel | null): void {
     this.selected = model;
     this.backend.setSelectionBox(model ? model.box : null);
@@ -1944,6 +2055,11 @@ export class Editor implements IEditor {
   }
 
   deleteSelection(eventTimeMs: number): void {
+    if (this.state.mode === "measure") {
+      this.rulers = this.rulers.slice(0, -1);
+      this.showRulers();
+      return;
+    }
     if (this.state.mode === "track") {
       this.removeSelectedTrack();
       return;

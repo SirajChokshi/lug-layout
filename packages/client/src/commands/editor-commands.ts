@@ -29,7 +29,9 @@ export type EditorActionId =
   | "toggle-joins"
   | "toggle-road-snap"
   | "cycle-tier"
-  | "measure-frames";
+  | "measure-frames"
+  | "measure"
+  | "toggle-grid";
 
 export type ShellCommandId = "show-shortcuts" | "open-palette";
 
@@ -68,6 +70,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "t" }],
     keywords: "rail train lay 9v",
+  },
+  {
+    id: "measure",
+    title: "Measure: drag a ruler in studs and cm",
+    group: "Tools",
+    keys: [{ key: "u" }],
+    keywords: "ruler distance length dimension tape",
   },
   {
     id: "rotate",
@@ -232,6 +241,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "frame time performance benchmark gpu",
   },
   {
+    id: "toggle-grid",
+    title: "Show the stud grid (1, 8 and 32 studs)",
+    group: "View",
+    keys: [{ key: "g" }],
+    keywords: "grid lattice studs lines guides",
+  },
+  {
     id: "open-palette",
     title: "Find a part or command",
     group: "Help",
@@ -291,6 +307,8 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "draw-track") return snapshot.mode === "track";
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
+  if (id === "measure") return snapshot.mode === "measure";
+  if (id === "toggle-grid") return snapshot.showGrid;
   return false;
 }
 
@@ -336,6 +354,8 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
     case "toggle-road-snap":
     case "cycle-tier":
     case "measure-frames":
+    case "measure":
+    case "toggle-grid":
       return true;
     default: {
       const unhandled: never = id;
@@ -443,6 +463,12 @@ export function runEditorAction(
       return;
     case "measure-frames":
       editor.measureFrames();
+      return;
+    case "measure":
+      editor.setMeasuring(editor.snapshot().mode !== "measure");
+      return;
+    case "toggle-grid":
+      editor.setShowGrid(!editor.snapshot().showGrid);
       return;
     default: {
       const unhandled: never = id;

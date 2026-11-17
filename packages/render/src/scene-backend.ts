@@ -135,8 +135,38 @@ export interface PlanOverlay {
   readonly active: boolean;
 }
 
+export interface GridLevel {
+  readonly stepLdu: number;
+  readonly halfSteps: number;
+  readonly color: number;
+  readonly opacity: number;
+  readonly minPitchPx: number;
+}
+
+export interface GroundGrid {
+  readonly y: number;
+  readonly levels: ReadonlyArray<GridLevel>;
+}
+
+export type GuideKind = "ruler" | "dimension" | "draft";
+
+export interface GuideSegment {
+  readonly kind: GuideKind;
+  readonly ax: number;
+  readonly ay: number;
+  readonly az: number;
+  readonly bx: number;
+  readonly by: number;
+  readonly bz: number;
+}
+
+export const SCREEN_POINT_FLOATS = 3;
+
 export interface ISceneBackend {
   init(config: SceneBackendConfig): Promise<BackendInfo>;
+  setGroundGrid(grid: GroundGrid | null): void;
+  setGuides(segments: ReadonlyArray<GuideSegment>): void;
+  projectToScreen(x: number, y: number, z: number, out: Float64Array, offset: number): void;
   setPalette(palette: PartPalette): void;
   setChunk(key: number, chunk: ChunkInstances): void;
   deleteChunk(key: number): void;

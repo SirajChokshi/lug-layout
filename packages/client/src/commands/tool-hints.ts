@@ -114,6 +114,17 @@ function view(snapshot: EditorSnapshot): ToolHintView {
         ],
       };
     }
+    case "measure":
+      return {
+        tone: "select",
+        title: "Measuring",
+        detail: snapshot.rulers === 0 ? "in studs and cm" : `${snapshot.rulers} on the layout`,
+        hints: [
+          gesture("Drag", "lay a ruler"),
+          gesture("Del", "remove the last"),
+          key("measure", "done"),
+        ],
+      };
     default: {
       const unhandled: never = snapshot.mode;
       throw new Error(`unhandled mode ${String(unhandled)}`);
