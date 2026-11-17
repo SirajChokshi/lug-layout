@@ -1,8 +1,9 @@
 import type { EditorSnapshot } from "../edit/editor.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
+import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
 
-export type ToolTone = "idle" | "select" | "place" | "erase" | "track" | "warn";
+export type ToolTone = "idle" | "select" | "place" | "erase" | "track" | "play" | "warn";
 
 export type ToolHint =
   | { readonly kind: "key"; readonly command: CommandId; readonly text: string }
@@ -150,12 +151,30 @@ function view(snapshot: EditorSnapshot): ToolHintView {
   }
 }
 
-export function toolHints(snapshot: EditorSnapshot): ToolHintView {
-  const hinted = view(snapshot);
+function playView(play: PlaySnapshot): ToolHintView {
+  const derailed = play.derailSpeedLduPerS > 0;
+  return {
+    tone: derailed ? "warn" : "play",
+    title: derailed ? "Derailed" : "Playing",
+    detail: derailed ? "the train ran off an open end" : null,
+    hints: [
+      key("throttle-up", "faster"),
+      key("throttle-down", "slower, then back"),
+      key("stop-train", "stop"),
+      key("rerail", "rerail"),
+      gesture("Click a switch", "throw it"),
+      key("play", "leave play"),
+    ],
+  };
+}
+
+export function toolHints(snapshot: EditorSnapshot, play?: PlaySnapshot): ToolHintView {
+  const hinted =
+    play?.status === "running" && snapshot.status === "ready" ? playView(play) : view(snapshot);
   return {
     ...hinted,
     hints: hinted.hints.filter(
-      (hint) => hint.kind === "gesture" || commandEnabled(hint.command, snapshot),
+      (hint) => hint.kind === "gesture" || commandEnabled(hint.command, snapshot, play),
     ),
   };
 }

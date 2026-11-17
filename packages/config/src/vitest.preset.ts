@@ -7,3 +7,11 @@ export const nodePreset = defineConfig({
     restoreMocks: true,
   },
 });
+
+export const domPreset = defineConfig({
+  test: {
+    environment: "happy-dom",
+    include: ["src/**/*.test.ts"],
+    restoreMocks: true,
+  },
+});

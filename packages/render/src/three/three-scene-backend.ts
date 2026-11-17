@@ -368,11 +368,15 @@ class ChunkRecord {
   }
 }
 
+const VEHICLE_EULER_ORDER = "YZX";
+
 class VehicleRecord {
   x = 0;
   y = 0;
   z = 0;
   yaw = 0;
+  pitch = 0;
+  roll = 0;
 
   constructor(
     readonly group: Group,
@@ -716,13 +720,23 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.placeVehicle(record);
   }
 
-  setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void {
+  setVehiclePose(
+    vehicle: number,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    pitch = 0,
+    roll = 0,
+  ): void {
     const record = this.vehicles.get(vehicle);
     if (!record) throw new Error(`vehicle ${vehicle} has no model`);
     record.x = x;
     record.y = y;
     record.z = z;
     record.yaw = yaw;
+    record.pitch = pitch;
+    record.roll = roll;
     this.placeVehicle(record);
   }
 
@@ -732,7 +746,11 @@ export class ThreeSceneBackend implements ISceneBackend {
       record.y,
       record.z - this.renderOriginZ,
     );
-    record.group.rotation.y = -record.yaw;
+    record.group.rotation.set(record.roll, -record.yaw, record.pitch, VEHICLE_EULER_ORDER);
+  }
+
+  deleteVehicle(vehicle: number): void {
+    this.removeVehicle(vehicle);
   }
 
   private removeVehicle(vehicle: number): void {

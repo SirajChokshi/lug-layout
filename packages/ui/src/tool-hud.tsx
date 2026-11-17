@@ -1,4 +1,10 @@
-import { commandSpec, toolHints, type EditorSnapshot, type ToolHint } from "@brr/client";
+import {
+  commandSpec,
+  toolHints,
+  type EditorSnapshot,
+  type PlaySnapshot,
+  type ToolHint,
+} from "@brr/client";
 import { Chord } from "./keys.tsx";
 
 function hintKey(hint: ToolHint): string {
@@ -11,8 +17,13 @@ function HintInput({ hint }: { readonly hint: ToolHint }) {
   return chord ? <Chord chord={chord} /> : null;
 }
 
-export function ToolHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
-  const view = toolHints(snapshot);
+interface ToolHudProps {
+  readonly snapshot: EditorSnapshot;
+  readonly play: PlaySnapshot;
+}
+
+export function ToolHud({ snapshot, play }: ToolHudProps) {
+  const view = toolHints(snapshot, play);
   return (
     <div className="tool-hud" data-tone={view.tone} role="status" aria-live="polite">
       <span className="tool-title">

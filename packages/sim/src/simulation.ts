@@ -269,8 +269,9 @@ export class Simulation {
     this.applyThrottle(train, speedLduPerS);
   }
 
-  drive(train: number, signedSpeedLduPerS: number): void {
+  drive(train: number, signedSpeedLduPerS: number): boolean {
     this.assertTrain(train);
+    if (this.derailed(train)) return false;
     this.blocks?.drive(train);
     const wanted = signedSpeedLduPerS < 0 ? DIRECTION_BACKWARD : DIRECTION_FORWARD;
     const facing = this.trainReversed[train] === 1 ? DIRECTION_BACKWARD : DIRECTION_FORWARD;
@@ -278,11 +279,16 @@ export class Simulation {
     if (wanted === facing || speed === 0) {
       this.trainTurnPending[train] = 0;
       this.applyThrottle(train, speed);
-      return;
+      return true;
     }
     this.trainTurnPending[train] = 1;
     this.trainTurnSpeed[train] = speed;
     this.trainThrottle[train] = 0;
+    return true;
+  }
+
+  facing(train: number): number {
+    return this.trainReversed[train] === 1 ? DIRECTION_BACKWARD : DIRECTION_FORWARD;
   }
 
   direction(train: number): number {

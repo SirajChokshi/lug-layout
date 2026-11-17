@@ -112,6 +112,7 @@ import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
 import { creditsForWorld, exportFileName } from "./world-credits.ts";
+import { playModel, type PlayModel, type PlaySetup } from "../play/play-models.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
@@ -304,11 +305,19 @@ interface SkippedModel extends SkippedCatalogModel {
 interface LoadedCatalog {
   readonly placeables: ReadonlyArray<Placeable>;
   readonly skipped: ReadonlyArray<SkippedModel>;
+  readonly trains: ReadonlyArray<PlayModel>;
 }
 
 interface NearModels {
   readonly kept: ReadonlyArray<ModelBundle>;
   readonly skipped: ReadonlyArray<SkippedModel>;
+  readonly trains: ReadonlyArray<ModelBundle>;
+}
+
+function farTierModelNames(near: NearModels): ReadonlyArray<string> {
+  const kept = near.kept.map(({ entry }) => entry.name);
+  const trains = near.trains.map(({ entry }) => entry.name).filter((name) => !kept.includes(name));
+  return [...kept, ...trains];
 }
 
 interface FarTier {
@@ -496,6 +505,7 @@ export interface IEditor extends IBomSource {
   cycleTier(): void;
   trackRoutes(): ReadonlyArray<TrackRouteView>;
   setRoadErase(erase: boolean): void;
+  playSetup(): PlaySetup | null;
   dump(): EditorDump;
 }
 
@@ -795,6 +805,7 @@ export class Editor implements IEditor {
   private newTrack: (() => TrackDrawing) | null = null;
   private roadDrawing: RoadDrawing | null = null;
   private roadPreviewMarkers: ReadonlyArray<EdgeMarker> = [];
+  private play: Omit<PlaySetup, "track"> | null = null;
   private lastTrackCommit: TrackCommitResult | null = null;
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
@@ -860,10 +871,17 @@ export class Editor implements IEditor {
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       const near = await this.loadNearModels(bundle);
-      const far = await this.loadFarTier(near.kept.map(({ entry }) => entry.name));
-      const { placeables, skipped } = this.buildPlaceables(bundle, palette, colors, near, far);
+      const far = await this.loadFarTier(farTierModelNames(near));
+      const { placeables, skipped, trains } = this.buildPlaceables(
+        bundle,
+        palette,
+        colors,
+        near,
+        far,
+      );
       this.placeables = placeables;
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
+      this.play = { models: trains, parts: palette.parts, colors };
       this.plans.setTableTopY(this.baseplateBottomY());
       this.newTrack = () => new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
       this.track = this.newTrack();
@@ -954,7 +972,11 @@ export class Editor implements IEditor {
         reason: NO_LATTICE_REASON,
         credit: { name: entry.name, source: entry.source, sections: model.sections },
       }));
-    return { kept: loaded.filter((near) => near.model.lattice !== null), skipped };
+    return {
+      kept: loaded.filter((near) => near.model.lattice !== null),
+      skipped,
+      trains: loaded.filter((near) => near.model.vehicles.length > 0),
+    };
   }
 
   private async loadFarTier(modelNames: ReadonlyArray<string>): Promise<FarTier | null> {
@@ -1021,7 +1043,10 @@ export class Editor implements IEditor {
       this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
       placeables.push(placeable);
     }
-    return { placeables, skipped: near.skipped };
+    const trains = near.trains.map(({ bundle: modelBundle, entry, model }) =>
+      playModel(entry, model, modelBundle, palette, colors),
+    );
+    return { placeables, skipped: near.skipped, trains };
   }
 
   private readonly step = (): void => {
@@ -2722,6 +2747,13 @@ export class Editor implements IEditor {
 
   trackRoutes(): ReadonlyArray<TrackRouteView> {
     return this.track?.routes() ?? [];
+  }
+
+  playSetup(): PlaySetup | null {
+    const track = this.track;
+    const play = this.play;
+    if (!track || !play) return null;
+    return { ...play, track: track.playTrack() };
   }
 
   dump(): EditorDump {

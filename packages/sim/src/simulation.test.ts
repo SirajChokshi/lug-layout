@@ -607,9 +607,12 @@ describe("Open ends under the derail rule", () => {
     run(sim, 5);
     const resting = sim.trainOffset[0] ?? 0;
     expect(session.apply({ kind: "reverse", train: 0 })).toBe(false);
-    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -500 });
+    expect(session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -500 })).toBe(false);
     run(sim, 2);
     expect(sim.trainOffset[0]).toBe(resting);
+    const derailedFrame = frameOf(session);
+    expect(derailedFrame[session.layout.trainDirectionStart]).toBe(1);
+    expect(derailedFrame[session.layout.trainFacingStart]).toBe(1);
     expect(session.apply({ kind: "rerail", train: 0 })).toBe(true);
     expect(sim.derailed(0)).toBe(false);
     expect(sim.trainOffset[0]).toBe(sim.track.edgeLength[LAST_EDGE]);
@@ -647,6 +650,9 @@ describe("Driving with a signed speed", () => {
     const forwardSense = Math.sign(angularStep(sim));
     session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -300 });
     expect(sim.direction(0)).toBe(-1);
+    const turning = frameOf(session);
+    expect(turning[session.layout.trainDirectionStart]).toBe(-1);
+    expect(turning[session.layout.trainFacingStart]).toBe(1);
     let previousSpeed = sim.trainSpeed[0] ?? 0;
     while ((sim.trainSpeed[0] ?? 0) > 0) {
       sim.step();
@@ -661,7 +667,9 @@ describe("Driving with a signed speed", () => {
     run(sim, 4);
     expect(sim.trainSpeed[0]).toBe(300);
     expect(Math.sign(angularStep(sim))).toBe(-forwardSense);
-    expect(frameOf(session)[session.layout.trainDirectionStart]).toBe(-1);
+    const turned = frameOf(session);
+    expect(turned[session.layout.trainDirectionStart]).toBe(-1);
+    expect(turned[session.layout.trainFacingStart]).toBe(-1);
     const replayed = replay(circle(), session.log, sim.tick);
     expect(replayed.stateHash()).toBe(sim.stateHash());
   });

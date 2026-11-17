@@ -26,6 +26,7 @@ class IssueBoxBackend implements ISceneBackend {
   setTrackEnds(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
+  deleteVehicle(): void {}
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.issueBoxes = boxes;
   }
