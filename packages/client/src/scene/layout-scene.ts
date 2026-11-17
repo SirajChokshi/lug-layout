@@ -259,7 +259,7 @@ export class LayoutScene implements ILayoutScene {
     const farModels: PartMesh[] = [];
     const placeables = await this.loadPlaceables(lod, palette, farPalette, farModels, colors);
     const baseplate = this.baseplate(bundle, palette, colors);
-    const track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+    const track = new TrackDrawing(bundle, palette.parts, colors);
     this.capture.setPalette({
       detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
       far: { parts: farPalette.parts, studPrimitives: farBundle.studPrimitives },

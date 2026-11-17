@@ -3,7 +3,7 @@ import {
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
   type ModelBundle,
-  type PartAsset,
+  type PartShapeAsset,
   type PartBundle,
   type PartMesh,
   type FilterablePart,
@@ -664,7 +664,7 @@ function snapToLattice(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU + 0;
 }
 
-function footprintArea(part: PartAsset): number {
+function footprintArea(part: PartShapeAsset): number {
   return (part.boundsMax[0] - part.boundsMin[0]) * (part.boundsMax[2] - part.boundsMin[2]);
 }
 
@@ -698,9 +698,9 @@ function setLabel(entry: {
 }
 
 function undrawableTrack(
-  bundleParts: ReadonlyArray<PartAsset>,
+  bundleParts: ReadonlyArray<PartShapeAsset>,
   track: TrackDrawing,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
 ): ReadonlyArray<CatalogPartView> {
   const drawable = new Set(track.pieceParts().map((kit) => parts[kit.partIndex]?.id));
   return bundleParts
@@ -883,7 +883,7 @@ export class Editor implements IEditor {
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.play = { models: trains, parts: palette.parts, colors };
       this.plans.setTableTopY(this.baseplateBottomY());
-      this.newTrack = () => new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+      this.newTrack = () => new TrackDrawing(bundle, palette.parts, colors);
       this.track = this.newTrack();
       this.bomTables = { palette, colors, ldrawColors: bundle.colors.map((color) => color.code) };
       this.roadDrawing = new RoadDrawing(this.placeables, (family, placeable) =>
@@ -1177,7 +1177,7 @@ export class Editor implements IEditor {
     this.update({ lastLatency: sample, latencies: [...this.state.latencies, sample] });
   }
 
-  private trackItem(track: TrackDrawing, parts: ReadonlyArray<PartAsset>): CatalogItemView {
+  private trackItem(track: TrackDrawing, parts: ReadonlyArray<PartShapeAsset>): CatalogItemView {
     const straight = track.kitParts().find((k) => k.piece.kind === "straight");
     const part = straight ? parts[straight.partIndex] : undefined;
     return {
@@ -1195,7 +1195,7 @@ export class Editor implements IEditor {
 
   private trackPieceItems(
     track: TrackDrawing,
-    parts: ReadonlyArray<PartAsset>,
+    parts: ReadonlyArray<PartShapeAsset>,
   ): ReadonlyArray<CatalogItemView> {
     return track.pieceSet.palette().map((catalogIndex) => {
       const kit = track.pieceByIndex(catalogIndex);
