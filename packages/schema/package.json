@@ -6,6 +6,7 @@
     "./bundle": "./src/bundle/index.ts",
     "./catalog-api": "./src/catalog-api/index.ts",
     "./decode": "./src/decode/index.ts",
+    "./palette": "./src/palette/index.ts",
     "./world": "./src/world/index.ts"
   },
   "scripts": {

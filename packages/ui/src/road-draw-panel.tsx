@@ -62,7 +62,7 @@ function itemShortName(item: string): string {
 
 interface KitsProps {
   readonly editor: IEditor;
-  readonly snapshot: EditorSnapshot;
+  readonly snapshot: Pick<EditorSnapshot, "mode" | "roadKit" | "readOnly">;
   readonly kits: ReadonlyArray<RoadKitView>;
 }
 

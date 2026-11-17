@@ -1,4 +1,4 @@
-import type { CatalogItemView } from "../edit/editor.ts";
+import type { CatalogColorView, CatalogItemView } from "../edit/editor.ts";
 
 export type PaletteCategory = "track" | "baseplates" | "road" | "mils" | "sets";
 export type PaletteFilter = PaletteCategory | "all";
@@ -38,6 +38,8 @@ interface IndexedEntry {
   readonly words: ReadonlyArray<string>;
   readonly phrases: ReadonlyArray<ReadonlyArray<string>>;
   readonly colorWords: ReadonlyArray<ReadonlyArray<string>>;
+  readonly kindWords: ReadonlyArray<string>;
+  readonly leadWord: string | undefined;
 }
 
 interface TokenMatch {
@@ -47,6 +49,7 @@ interface TokenMatch {
 
 const EXACT_NUMBER = 120;
 const EXACT_WORD = 100;
+const LEAD_WORD_BONUS = 10;
 const PREFIX = 80;
 const SUBSTRING = 50;
 const SUBSEQUENCE = 30;
@@ -79,8 +82,88 @@ export const CATEGORY_LABEL: Readonly<Record<PaletteCategory, string>> = {
   sets: "Sets",
 };
 
+const KIND_WORDS: Readonly<Record<PaletteCategory, string>> = {
+  track: "track rail train",
+  baseplates: "baseplate plate ground",
+  road: "road plate street",
+  mils: "mils module",
+  sets: "set model",
+};
+
 export function colorDisplayName(name: string): string {
   return name.replaceAll("_", " ");
+}
+
+export interface PaletteColorChoice {
+  readonly color: CatalogColorView;
+  readonly parts: number;
+}
+
+const HEX_RGB = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/iu;
+const GREY_SATURATION = 0.12;
+const NEAR_BLACK = 0.18;
+const NEAR_WHITE = 0.95;
+const DEGREES = 360;
+const HEXTET = 255;
+
+interface Hsl {
+  readonly hue: number;
+  readonly saturation: number;
+  readonly lightness: number;
+}
+
+function hslOf(rgb: string): Hsl {
+  const match = HEX_RGB.exec(rgb);
+  if (!match) return { hue: 0, saturation: 0, lightness: 0 };
+  const channel = (group: number): number => parseInt(match[group] ?? "0", 16) / HEXTET;
+  const red = channel(1);
+  const green = channel(2);
+  const blue = channel(3);
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const lightness = (max + min) / 2;
+  const chroma = max - min;
+  if (chroma === 0) return { hue: 0, saturation: 0, lightness };
+  const saturation = chroma / (1 - Math.abs(2 * lightness - 1));
+  let sector: number;
+  if (max === red) sector = ((green - blue) / chroma + 6) % 6;
+  else if (max === green) sector = (blue - red) / chroma + 2;
+  else sector = (red - green) / chroma + 4;
+  return { hue: (sector * DEGREES) / 6, saturation, lightness };
+}
+
+function isNeutral({ saturation, lightness }: Hsl): boolean {
+  return saturation < GREY_SATURATION || lightness < NEAR_BLACK || lightness > NEAR_WHITE;
+}
+
+interface ColorKey {
+  readonly code: number;
+  readonly neutral: boolean;
+  readonly hue: number;
+  readonly lightness: number;
+}
+
+function colorKey(color: CatalogColorView): ColorKey {
+  const hsl = hslOf(color.rgb);
+  return { code: color.code, neutral: isNeutral(hsl), hue: hsl.hue, lightness: hsl.lightness };
+}
+
+function byColorKey(a: ColorKey, b: ColorKey): number {
+  if (a.neutral !== b.neutral) return a.neutral ? 1 : -1;
+  if (a.neutral) return b.lightness - a.lightness || a.code - b.code;
+  return a.hue - b.hue || b.lightness - a.lightness || a.code - b.code;
+}
+
+function colorRanks(items: ReadonlyArray<CatalogItemView>): ReadonlyMap<number, number> {
+  const keys = new Map<number, ColorKey>();
+  for (const { color } of items) {
+    if (color && !keys.has(color.code)) keys.set(color.code, colorKey(color));
+  }
+  return new Map([...keys.values()].toSorted(byColorKey).map((key, rank) => [key.code, rank]));
+}
+
+export function itemInColor(entry: PaletteEntry, code: number): CatalogItemView | undefined {
+  return entry.items.find((item) => item.color?.code === code);
 }
 
 function normalized(text: string): string {
@@ -149,9 +232,12 @@ function typoLimit(token: string): number {
   return token.length >= ONE_TYPO_FROM ? 1 : 0;
 }
 
+const HAS_DIGIT = /\d/u;
+
 function wordScore(token: string, word: string, exact: number): number {
   if (word === token) return exact;
   if (word.startsWith(token)) return PREFIX;
+  if (HAS_DIGIT.test(token)) return 0;
   if (token.length >= MIN_SUBSTRING && word.includes(token)) return SUBSTRING;
   if (token.length >= MIN_SUBSEQUENCE && isSubsequence(token, word)) return SUBSEQUENCE;
   const limit = typoLimit(token);
@@ -162,6 +248,20 @@ function wordScore(token: string, word: string, exact: number): number {
     }
   }
   return 0;
+}
+
+function exactOrPrefixScore(token: string, words: ReadonlyArray<string>): number {
+  let best = 0;
+  for (const word of words) {
+    if (word === token) return EXACT_WORD;
+    if (word.startsWith(token)) best = PREFIX;
+  }
+  return best;
+}
+
+function kindWordScore(token: string, words: ReadonlyArray<string>): number {
+  if (words.includes(token)) return PREFIX;
+  return words.some((word) => word.startsWith(token)) ? SUBSTRING : 0;
 }
 
 function bestScore(token: string, words: ReadonlyArray<string>, exact: number): number {
@@ -183,16 +283,17 @@ function sizeWords(item: CatalogItemView): ReadonlyArray<string> {
 function groupEntries(items: ReadonlyArray<CatalogItemView>): ReadonlyArray<PaletteEntry> {
   const entries = new Map<string, PaletteEntry>();
   for (const item of items) {
-    const existing = entries.get(item.group);
+    const key = item.color ? item.group : item.id;
+    const existing = entries.get(key);
     if (existing) {
-      entries.set(item.group, { ...existing, items: [...existing.items, item] });
+      entries.set(key, { ...existing, items: [...existing.items, item] });
       continue;
     }
-    entries.set(item.group, {
-      key: item.group,
+    entries.set(key, {
+      key,
       category: CATEGORY_OF[item.kind],
-      title: item.groupLabel,
-      partNumber: partNumberOf(item.group),
+      title: item.color ? item.groupLabel : item.label,
+      partNumber: partNumberOf(key),
       size: item.studsWide > 0 ? `${item.studsWide}×${item.studsDeep}` : "",
       items: [item],
     });
@@ -223,6 +324,21 @@ function parseQuery(query: string): ReadonlyArray<QueryTerm> {
   return terms;
 }
 
+function termWords(term: QueryTerm): ReadonlyArray<string> {
+  switch (term.kind) {
+    case "word":
+      return [term.word];
+    case "phrase":
+      return term.words;
+    case "number":
+      return [term.number];
+    default: {
+      const unhandled: never = term;
+      throw new Error(`unhandled query term ${String(unhandled)}`);
+    }
+  }
+}
+
 function phraseScore(phrase: ReadonlyArray<string>, words: ReadonlyArray<string>): number {
   const last = phrase.length - 1;
   for (let start = 0; start + phrase.length <= words.length; start++) {
@@ -245,13 +361,25 @@ function isLatticeSize(word: string): boolean {
 
 export class PaletteIndex {
   private readonly indexed: ReadonlyArray<IndexedEntry>;
+  private readonly ranks: ReadonlyMap<number, number>;
+  private readonly colorVocabulary: ReadonlyArray<string>;
+  private readonly colorTokenCache = new Map<string, boolean>();
+  private readonly entryCache = new Map<PaletteFilter, ReadonlyArray<PaletteEntry>>();
+  private readonly choiceCache = new Map<PaletteFilter, ReadonlyArray<PaletteColorChoice>>();
 
   constructor(items: ReadonlyArray<CatalogItemView>, extraTerms: ReadonlyArray<PaletteTerms> = []) {
     const extra = new Map<string, string[]>();
     for (const { entryKey, terms } of extraTerms) {
       extra.set(entryKey, [...(extra.get(entryKey) ?? []), ...terms]);
     }
-    this.indexed = groupEntries(items).map((entry, order) => {
+    this.ranks = colorRanks(items);
+    const rankOf = (item: CatalogItemView): number =>
+      item.color ? (this.ranks.get(item.color.code) ?? 0) : 0;
+    const sorted = groupEntries(items).map((entry) => ({
+      ...entry,
+      items: entry.items.toSorted((a, b) => rankOf(a) - rankOf(b)),
+    }));
+    this.indexed = sorted.map((entry, order) => {
       const phrases = [entry.title, CATEGORY_LABEL[entry.category], ...(extra.get(entry.key) ?? [])]
         .map(wordsOf)
         .map(withSpellings);
@@ -262,21 +390,90 @@ export class PaletteIndex {
         order,
         numbers: [
           ...(entry.partNumber === null ? [] : [normalized(entry.partNumber)]),
+          ...(first?.aliases ?? []).map(normalized),
           ...words.filter((word) => /^\d/u.test(word) && !isLatticeSize(word)),
         ],
         words,
         phrases,
-        colorWords: entry.items.map((item) =>
-          item.color ? withSpellings(wordsOf(item.color.name)) : [],
+        leadWord: wordsOf(entry.title).find(
+          (word) => entry.partNumber === null || word !== normalized(entry.partNumber),
         ),
+        colorWords: entry.items.map((item) =>
+          item.color ? [...withSpellings(wordsOf(item.color.name)), ...item.elements] : [],
+        ),
+        kindWords: wordsOf(KIND_WORDS[entry.category]),
       };
     });
+    this.colorVocabulary = [
+      ...new Set(this.indexed.flatMap((indexed) => indexed.colorWords.flat())),
+    ].filter((word) => !HAS_DIGIT.test(word));
+  }
+
+  private isColorWordOrPrefix(token: string): boolean {
+    const known = this.colorTokenCache.get(token);
+    if (known !== undefined) return known;
+    const found = this.colorVocabulary.some((word) => word.startsWith(token));
+    this.colorTokenCache.set(token, found);
+    return found;
+  }
+
+  private colorScore(token: string, words: ReadonlyArray<string>): number {
+    return this.isColorWordOrPrefix(token)
+      ? exactOrPrefixScore(token, words)
+      : bestScore(token, words, EXACT_WORD);
   }
 
   entries(filter: PaletteFilter): ReadonlyArray<PaletteEntry> {
-    return this.indexed
+    const cached = this.entryCache.get(filter);
+    if (cached) return cached;
+    const entries = this.indexed
       .map(({ entry }) => entry)
       .filter((entry) => filter === "all" || entry.category === filter);
+    this.entryCache.set(filter, entries);
+    return entries;
+  }
+
+  defaultItem(
+    items: ReadonlyArray<CatalogItemView>,
+    current: number | null,
+  ): CatalogItemView | undefined {
+    const first = items[0];
+    if (!first) return undefined;
+    const common = this.commonestColor(CATEGORY_OF[first.kind]);
+    return (
+      items.find((item) => item.color !== null && item.color.code === current) ??
+      items.find((item) => item.displayColor) ??
+      items.find((item) => item.color !== null && item.color.code === common) ??
+      first
+    );
+  }
+
+  private commonestColor(category: PaletteCategory): number | null {
+    let best: PaletteColorChoice | null = null;
+    for (const choice of this.colorChoices(category)) {
+      if (!best || choice.parts > best.parts) best = choice;
+    }
+    return best ? best.color.code : null;
+  }
+
+  colorChoices(filter: PaletteFilter): ReadonlyArray<PaletteColorChoice> {
+    const cached = this.choiceCache.get(filter);
+    if (cached) return cached;
+    const counts = new Map<number, { color: CatalogColorView; parts: number }>();
+    for (const entry of this.entries(filter)) {
+      for (const { color } of entry.items) {
+        if (!color) continue;
+        const choice = counts.get(color.code);
+        if (choice) choice.parts++;
+        else counts.set(color.code, { color, parts: 1 });
+      }
+    }
+    const rank = (code: number): number => this.ranks.get(code) ?? 0;
+    const choices = [...counts.values()].toSorted(
+      (a, b) => rank(a.color.code) - rank(b.color.code),
+    );
+    this.choiceCache.set(filter, choices);
+    return choices;
   }
 
   search(query: string, filter: PaletteFilter): ReadonlyArray<PaletteHit> {
@@ -299,6 +496,7 @@ export class PaletteIndex {
     const { entry } = indexed;
     let score = 0;
     let kept = entry.items.map((_, i) => i);
+    const colorTokens: string[] = [];
     for (const term of terms) {
       const matched = this.matchTerm(indexed, term);
       if (term.negated) {
@@ -309,9 +507,19 @@ export class PaletteIndex {
         if (!matched) return null;
         score += matched.score;
         const colors = matched.colors;
-        if (colors) kept = kept.filter((i) => colors.has(i));
+        if (colors) {
+          kept = kept.filter((i) => colors.has(i));
+          colorTokens.push(...termWords(term));
+        }
       }
       if (kept.length === 0) return null;
+    }
+    if (colorTokens.length > 0) {
+      const unnamed = (i: number): number =>
+        (indexed.colorWords[i] ?? []).filter(
+          (word) => !HAS_DIGIT.test(word) && !colorTokens.some((token) => word.startsWith(token)),
+        ).length;
+      kept = kept.toSorted((a, b) => unnamed(a) - unnamed(b));
     }
     return { entry, items: kept.flatMap((i) => entry.items[i] ?? []), score };
   }
@@ -336,6 +544,7 @@ export class PaletteIndex {
               indexed,
               Math.max(
                 strictScore(term.word, indexed.words),
+                strictScore(term.word, indexed.kindWords),
                 strictScore(term.word, indexed.numbers),
               ),
               (words) => strictScore(term.word, words),
@@ -344,9 +553,11 @@ export class PaletteIndex {
               indexed,
               Math.max(
                 bestScore(term.word, indexed.numbers, EXACT_NUMBER),
-                bestScore(term.word, indexed.words, EXACT_WORD),
+                bestScore(term.word, indexed.words, EXACT_WORD) +
+                  (indexed.leadWord === term.word ? LEAD_WORD_BONUS : 0),
+                kindWordScore(term.word, indexed.kindWords),
               ),
-              (words) => bestScore(term.word, words, EXACT_WORD),
+              (words) => this.colorScore(term.word, words),
             );
       default: {
         const unhandled: never = term;

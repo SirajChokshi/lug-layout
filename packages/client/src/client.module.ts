@@ -9,6 +9,8 @@ import type { RpcPort } from "@brr/rpc";
 import { storageModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
+import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
+import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
@@ -35,6 +37,9 @@ import {
   LAYOUT_SCENE,
   MODEL_IMPORTER,
   MODEL_SCENE,
+  PALETTE_MEMORY,
+  PALETTE_MEMORY_STORE,
+  PALETTE_THUMBNAILS,
   PART_DISPLAY_SCENE,
   RUN_SCENE,
   RUNNING_GEAR,
@@ -63,6 +68,9 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
+  bind(PALETTE_MEMORY_STORE).to(LocalStoragePaletteMemoryStore).inSingletonScope();
+  bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
+  bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
 });
 
 export interface MainThreadConfig {

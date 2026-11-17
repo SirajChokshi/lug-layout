@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PaletteIndex } from "../catalog/palette-index.ts";
 import type { CatalogItemView } from "../edit/editor.ts";
 import { searchPalette, type PaletteResult } from "./command-search.ts";
 import type { CommandId } from "./editor-commands.ts";
@@ -9,6 +10,7 @@ function baseplate(
   code: number,
   colorName: string,
   rgb: string,
+  elements: ReadonlyArray<string> = [],
 ): CatalogItemView {
   const title = `Baseplate ${studs} x ${studs}`;
   return {
@@ -21,12 +23,32 @@ function baseplate(
     parts: 1,
     studsWide: studs,
     studsDeep: studs,
+    aliases: [],
+    elements,
+    displayColor: false,
+  };
+}
+
+function roadPlate(part: string, title: string, studs: number, alias: string): CatalogItemView {
+  return {
+    id: `ldraw:${part}@72`,
+    label: `${part} ${title}, Dark_Bluish_Grey`,
+    group: `ldraw:${part}`,
+    groupLabel: `${part} ${title}`,
+    color: { code: 72, name: "Dark_Bluish_Grey", rgb: "#6C6E68" },
+    kind: "road-plate",
+    parts: 1,
+    studsWide: studs,
+    studsDeep: studs,
+    aliases: [alias],
+    elements: [],
+    displayColor: false,
   };
 }
 
 const catalog: ReadonlyArray<CatalogItemView> = [
   baseplate("3811", 32, 10, "Bright_Green", "#58AB41"),
-  baseplate("3811", 32, 2, "Green", "#00852B"),
+  baseplate("3811", 32, 2, "Green", "#00852B", ["381128", "4219692"]),
   baseplate("3811", 32, 1, "Blue", "#1E5AA8"),
   baseplate("3867", 16, 2, "Green", "#00852B"),
   {
@@ -39,12 +61,26 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     parts: 1,
     studsWide: 32,
     studsDeep: 32,
+    aliases: ["44336pr0001"],
+    elements: [],
+    displayColor: false,
   },
+  roadPlate(
+    "44336p03",
+    "Baseplate 32 x 32 Road 6-Stud Straight with Runway Pattern",
+    32,
+    "44336pr0003",
+  ),
+  roadPlate("2358p02", "Baseplate 48 x 48 Road 7-Stud Crossroads", 48, "2358pr0002"),
+  baseplate("4186", 48, 2, "Green", "#00852B"),
 ];
+
+const index = new PaletteIndex(catalog);
 
 function search(query: string, recent: ReadonlyArray<string> = []) {
   return searchPalette(query, {
     catalog,
+    index,
     recent,
     enabled: (id: CommandId) => id !== "delete",
   });
@@ -67,6 +103,10 @@ describe("palette search", () => {
     ["remove", "delete"],
     ["track", "draw-track"],
     ["help", "show-shortcuts"],
+    ["44336pr0003", "ldraw:44336p03@72"],
+    ["4219692", "ldraw:3811@2"],
+    ["crosroads", "ldraw:2358p02@72"],
+    ["-road baseplate 48", "ldraw:4186@2"],
   ])("puts the best match for %s first", (query, expected) => {
     expect(name(search(query)[0])).toBe(expected);
   });
@@ -97,5 +137,23 @@ describe("palette search", () => {
 
   it("lifts a recent part above an equal match", () => {
     expect(name(search("baseplate 32", ["ldraw:3811@1"])[0])).toBe("ldraw:3811@1");
+  });
+
+  it("ranks a command whose title has the word with the parts named by it, not below them", () => {
+    const kinds = search("road").map((result) => result.kind);
+    expect(kinds.lastIndexOf("command")).toBeLessThan(kinds.indexOf("item"));
+    expect(
+      search("road")
+        .filter((result) => result.kind === "command")
+        .map(name),
+    ).toEqual(expect.arrayContaining(["toggle-joins", "toggle-road-snap"]));
+  });
+
+  it("lists every matching part once before any part's other colours", () => {
+    const groups = search("baseplate").flatMap((result) =>
+      result.kind === "item" ? [result.item.group] : [],
+    );
+    const firstRepeat = groups.findIndex((group, at) => groups.indexOf(group) < at);
+    expect(new Set(groups.slice(0, firstRepeat)).size).toBe(new Set(groups).size);
   });
 });

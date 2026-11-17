@@ -3,6 +3,8 @@ import type {
   IBomService,
   IEditor,
   IEditorCamera,
+  IPaletteMemory,
+  IPaletteThumbnails,
   IPlanService,
   ShellCommandId,
 } from "@brr/client";
@@ -29,7 +31,7 @@ import { useSafeArea } from "./safe-area.ts";
 import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
-import { useRecentItems } from "./use-recent-items.ts";
+import { usePaletteMemory } from "./use-palette-memory.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WorldMenu } from "./world-menu.tsx";
 
@@ -38,6 +40,8 @@ interface EditorAppProps {
   readonly camera: IEditorCamera;
   readonly plans: IPlanService;
   readonly bomService: IBomService;
+  readonly palette: IPaletteMemory;
+  readonly thumbnails: IPaletteThumbnails;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -82,12 +86,14 @@ export function EditorApp({
   camera,
   plans,
   bomService,
+  palette,
+  thumbnails,
   options,
   disclaimer,
   showState,
 }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
-  const recent = useRecentItems(snapshot.activeItem);
+  const { recents: recent } = usePaletteMemory(palette);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const toggleOverlay = useCallback(
@@ -139,7 +145,12 @@ export function EditorApp({
         <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
-        <PalettePanel editor={editor} snapshot={snapshot} />
+        <PalettePanel
+          editor={editor}
+          snapshot={snapshot}
+          memory={palette}
+          thumbnails={thumbnails}
+        />
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
