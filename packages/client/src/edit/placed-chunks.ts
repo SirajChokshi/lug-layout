@@ -66,10 +66,12 @@ export interface LostSupport {
   readonly support: UpperSupport;
 }
 
-export function placementSupported(verdict: PlacementSupport): boolean {
-  return verdict.layer === "first"
-    ? verdict.support.kind === "on-table"
-    : isSupported(verdict.support);
+export interface PendingPose {
+  readonly placeable: Placeable;
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly rot: number;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -447,7 +449,8 @@ class PlacedEntry implements PlacedModel {
         const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
         if (onlyChunk !== null && cellChunkKey(wx, wz) !== onlyChunk) continue;
         occupancy.raise(wx, wz, yPlates + top);
-        if (cells.baseplate[cell] === 1 && yPlates === 0) support.markBaseplate(wx, wz);
+        if (cells.offLatticeTop) support.markOffLatticeTop(wx, wz);
+        else if (cells.baseplate[cell] === 1 && yPlates === 0) support.markBaseplate(wx, wz);
         else support.cover(wx, wz);
       }
     }
@@ -770,16 +773,6 @@ export class PlacedChunks {
     return { added, report: this.rebuild(touched) };
   }
 
-  restingHeight(
-    placeable: Placeable,
-    x: number,
-    z: number,
-    rot: number,
-    ignore: PlacedModel | null,
-  ): number {
-    return this.check(placeable, x, z, rot, ignore ? [ignore] : []).yPlates;
-  }
-
   check(
     placeable: Placeable,
     x: number,
@@ -804,46 +797,55 @@ export class PlacedChunks {
     });
   }
 
-  supportAt(
-    model: PlacedModel,
-    yPlates: number,
-    ignore: ReadonlyArray<PlacedModel>,
-  ): PlacementSupport {
-    const entry = this.entryOf(model);
-    return this.withExcluded(this.entriesOf([...ignore, model]), () => {
-      if (entry.placeable.layer === "first") {
-        const support = firstLayerSupport(entry.candidate.raised, this.occupancy);
-        const blocker =
-          support.kind === "blocked"
-            ? this.topmostAt(support.cellX, support.cellZ, support.topPlates)
-            : null;
-        return { layer: "first", support, blocker };
-      }
-      return {
-        layer: "upper",
-        support: upperSupport(entry.candidate.base, yPlates, this.occupancy, this.support),
-      };
-    });
-  }
-
-  lostSupport(removed: ReadonlyArray<PlacedModel>): ReadonlyArray<LostSupport> {
+  lostSupport(
+    removed: ReadonlyArray<PlacedModel>,
+    moved: ReadonlyArray<PendingPose> = [],
+  ): ReadonlyArray<LostSupport> {
     const gone = this.entriesOf(removed);
+    const arriving = moved.map((pose) => this.pendingEntry(pose));
     const keys = new Set<number>();
-    for (const entry of gone) for (const key of entry.columnKeys) keys.add(key);
+    for (const entry of [...gone, ...arriving]) for (const key of entry.columnKeys) keys.add(key);
     const lost: LostSupport[] = [];
     for (const entry of this.entries) {
       if (gone.has(entry) || entry.placeable.layer === "first") continue;
       if (![...entry.columnKeys].some((key) => keys.has(key))) continue;
-      const support = this.withExcluded(new Set([...gone, entry]), () =>
-        upperSupport(entry.candidate.base, entry.handle.yPlates, this.occupancy, this.support),
+      const support = this.withExcluded(
+        new Set([...gone, entry]),
+        () =>
+          upperSupport(entry.candidate.base, entry.handle.yPlates, this.occupancy, this.support),
+        arriving,
       );
       if (!isSupported(support)) lost.push({ model: entry, support });
     }
     return lost;
   }
 
-  trackSupport(cells: BaseCells, ignore: ReadonlyArray<PlacedModel>): TrackSupport {
-    return this.withExcluded(this.entriesOf(ignore), () => trackSupport(cells, this.support));
+  trackSupport(
+    cells: BaseCells,
+    ignore: ReadonlyArray<PlacedModel>,
+    moved: ReadonlyArray<PendingPose> = [],
+  ): TrackSupport {
+    return this.withExcluded(
+      this.entriesOf(ignore),
+      () => trackSupport(cells, this.support),
+      moved.map((pose) => this.pendingEntry(pose)),
+    );
+  }
+
+  private pendingEntry(pose: PendingPose): PlacedEntry {
+    const handle: PlacementHandle = {
+      chunkKey: -1,
+      slot: -1,
+      generation: -1,
+      live: false,
+      refId: -1,
+      colorId: 0,
+      x: pose.x,
+      z: pose.z,
+      yPlates: pose.yPlates,
+      rot: pose.rot,
+    };
+    return new PlacedEntry(-1, { handle: null }, handle, pose.placeable, new Map());
   }
 
   private topmostAt(cellX: number, cellZ: number, topPlates: number): PlacedModel | null {
@@ -863,15 +865,21 @@ export class PlacedChunks {
     return new Set(models.map((model) => this.entryOf(model)));
   }
 
-  private withExcluded<T>(excluded: ReadonlySet<PlacedEntry>, read: () => T): T {
-    if (excluded.size === 0) return read();
+  private withExcluded<T>(
+    excluded: ReadonlySet<PlacedEntry>,
+    read: () => T,
+    arriving: ReadonlyArray<PlacedEntry> = [],
+  ): T {
+    if (excluded.size === 0 && arriving.length === 0) return read();
     const keys = new Set<number>();
-    for (const entry of excluded) for (const key of entry.columnKeys) keys.add(key);
-    this.restamp(keys, excluded);
+    for (const entry of [...excluded, ...arriving]) {
+      for (const key of entry.columnKeys) keys.add(key);
+    }
+    this.restamp(keys, excluded, arriving);
     try {
       return read();
     } finally {
-      this.restamp(keys, new Set());
+      this.restamp(keys, new Set(), []);
     }
   }
 
@@ -933,13 +941,18 @@ export class PlacedChunks {
     return [...found];
   }
 
-  private restamp(keys: ReadonlySet<number>, except: ReadonlySet<PlacedEntry>): void {
+  private restamp(
+    keys: ReadonlySet<number>,
+    except: ReadonlySet<PlacedEntry>,
+    arriving: ReadonlyArray<PlacedEntry> = [],
+  ): void {
     for (const key of keys) {
       this.occupancy.clearChunk(key);
       this.support.clearChunk(key);
       for (const entry of this.byColumnChunk.get(key) ?? []) {
         if (!except.has(entry)) entry.stampColumns(this.occupancy, this.support, key);
       }
+      for (const entry of arriving) entry.stampColumns(this.occupancy, this.support, key);
     }
   }
 

@@ -29,7 +29,7 @@ export function supportRefusal(label: string, verdict: PlacementSupport): Refusa
       case "blocked":
         return {
           rule: "first-layer",
-          message: `${label} is first layer and rests on the table, but it would rise into cell (${support.cellX}, ${support.cellZ}), where ${verdict.blocker?.placeable.label ?? "a placement"} already stands ${plates(support.topPlates)} high.`,
+          message: `${label} is first layer and rests on the table, but it would rise into cell (${support.cellX}, ${support.cellZ}), where ${verdict.blocker?.placeable.label ?? "a placement"} already stands.`,
         };
       default: {
         const unhandled: never = support;
@@ -57,6 +57,11 @@ export function supportRefusal(label: string, verdict: PlacementSupport): Refusa
         rule: "support",
         message: `${label} has a solid bottom at cell (${support.cellX}, ${support.cellZ}), which would sit on studs ${plates(support.yPlates)} up.`,
       };
+    case "off-lattice-top":
+      return {
+        rule: "support",
+        message: `${label} would rest on ${support.cells} cells whose top isn't a whole number of plates above the baseplates (a road plate on the table tops out 1.5 plates up), so nothing can rest there yet.`,
+      };
     case "no-studs-engaged":
       return {
         rule: "support",
@@ -82,13 +87,13 @@ export function carriesRefusal(label: string, lost: ReadonlyArray<LostSupport>):
 export function trackRunRefusal(off: OffBaseplate): Refusal {
   return {
     rule: "track-support",
-    message: `Track run refused: piece ${off.piece + 1} of ${off.pieces} (${off.pieceId}) has ${off.missing.count} of its ${off.cells} stud cells with no baseplate under them. Track sits on a baseplate.`,
+    message: `Track run refused: piece ${off.piece + 1} of ${off.pieces} (${off.pieceId}) has ${off.missing.count} of the ${off.cells} stud cells between its ends with no baseplate under them. Track sits on a baseplate.`,
   };
 }
 
 export function trackCarriedRefusal(label: string, off: OffBaseplate): Refusal {
   return {
     rule: "carries",
-    message: `${label} carries track: without it, laid piece ${off.piece + 1} (${off.pieceId}) would have ${off.missing.count} of its ${off.cells} stud cells with no baseplate under them. Track sits on a baseplate.`,
+    message: `${label} carries track: without it, laid piece ${off.piece + 1} (${off.pieceId}) would have ${off.missing.count} of the ${off.cells} stud cells between its ends with no baseplate under them. Remove that piece first: in the track tool, click it and press Delete.`,
   };
 }

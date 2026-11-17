@@ -50,6 +50,7 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
     role: part.role,
     file: part.file,
     bounds: glb.document.extras.bounds,
+    baseplate: part.baseplate,
     studs: glb.document.extras.studs,
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),

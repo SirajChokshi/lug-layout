@@ -406,6 +406,10 @@ export function commandEnabled(
     case "next-connector":
       return snapshot.track?.held != null;
     case "delete":
+      return (
+        !snapshot.readOnly &&
+        (snapshot.selection !== null || (snapshot.track?.selected ?? null) !== null)
+      );
     case "duplicate":
       return snapshot.selection !== null && !snapshot.readOnly;
     case "focus":

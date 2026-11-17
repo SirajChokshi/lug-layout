@@ -47,6 +47,7 @@ function partShape(part: ManifestPart, studs: PartShape["studs"]): PartShape {
     role: part.role,
     file: part.file,
     bounds: part.bounds,
+    baseplate: part.baseplate,
     studs,
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),
