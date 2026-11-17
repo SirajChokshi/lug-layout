@@ -7,6 +7,7 @@ import {
   TRACK_PIECE_PREFIX,
   colorChoices,
   colorDisplayName,
+  inColorOrder,
   itemInColor,
   type CatalogItemView,
   type EditorSnapshot,
@@ -73,7 +74,7 @@ function Swatches({
 }) {
   return (
     <div className="palette-swatches" role="group" aria-label={entry.title}>
-      {items.map((item) => (
+      {inColorOrder(items).map((item) => (
         <button
           key={item.id}
           type="button"
@@ -107,12 +108,10 @@ function SwatchRow({
   editor,
   snapshot,
   paint,
-  choices,
 }: PaletteProps & {
   readonly entry: PaletteEntry;
   readonly items: ReadonlyArray<CatalogItemView>;
   readonly paint: Paint;
-  readonly choices: ReadonlyArray<PaletteColorChoice>;
 }) {
   const painted = paint.current === null ? entry.items[0] : itemInColor(entry, paint.current);
   const unavailable = paint.current !== null && painted === undefined;
@@ -129,11 +128,6 @@ function SwatchRow({
       >
         <span className="palette-size">{entry.size}</span>
         <span className="palette-title">{entry.title}</span>
-        {unavailable && paint.current !== null && (
-          <span className="palette-unavailable">
-            not made in {colorName(choices, paint.current)}
-          </span>
-        )}
       </button>
       <Swatches entry={entry} items={items} editor={editor} snapshot={snapshot} paint={paint} />
     </li>
@@ -305,6 +299,19 @@ function PaintedSection({
   const noun = category === "road" ? "road plates" : "baseplates";
   const offered = choices.some((choice) => choice.color.code === paint.current);
   const sectionPaint = offered ? paint : { ...paint, current: null };
+  const current = sectionPaint.current;
+  const made = current === null ? entries : entries.filter((entry) => itemInColor(entry, current));
+  const unmade = current === null ? [] : entries.filter((entry) => !itemInColor(entry, current));
+  const row = (entry: PaletteEntry) => (
+    <SwatchRow
+      key={entry.key}
+      entry={entry}
+      items={entry.items}
+      editor={editor}
+      snapshot={snapshot}
+      paint={sectionPaint}
+    />
+  );
   return (
     <Section id={category} title={CATEGORY_LABEL[category]} count={colorCount(entries)}>
       {category === "road" && (
@@ -316,19 +323,16 @@ function PaintedSection({
           No {noun.replace(/s$/u, "")} is made in the current colour, so these show every colour.
         </p>
       )}
-      <ul className="palette-rows">
-        {entries.map((entry) => (
-          <SwatchRow
-            key={entry.key}
-            entry={entry}
-            items={entry.items}
-            editor={editor}
-            snapshot={snapshot}
-            paint={sectionPaint}
-            choices={choices}
-          />
-        ))}
-      </ul>
+      <ul className="palette-rows">{made.map((entry) => row(entry))}</ul>
+      {current !== null && unmade.length > 0 && (
+        <details className="palette-unmade" data-unmade={unmade.length}>
+          <summary>
+            {unmade.length} more {unmade.length === 1 ? noun.replace(/s$/u, "") : noun} not made in{" "}
+            {colorName(choices, current)}
+          </summary>
+          <ul className="palette-rows">{unmade.map((entry) => row(entry))}</ul>
+        </details>
+      )}
     </Section>
   );
 }
