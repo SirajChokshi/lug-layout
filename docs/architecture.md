@@ -27,7 +27,7 @@ An **offline data pipeline** (Rust plus scripts, run in CI) compiles the LDraw C
 - a **sim worker** that runs trains on a derived track graph at a fixed timestep;
 - a **renderer**: three.js `WebGPURenderer` with automatic WebGL2 fallback, drawing instanced and merged *models* with LODs, culled studs, SSAO and outlines.
 
-A world is a manifest plus one JSON shard of placements per super-chunk, stored in IndexedDB and exported as a file. Plan regions export separately, together with their BOMs and printable plans. The MVP has no backend. Accounts, cloud saves and sharing come in P1.
+A world is a manifest plus one JSON shard of placements and laid track per super-chunk, stored in IndexedDB and exported as a file. Plan regions export separately, together with their BOMs and printable plans. The MVP has no backend. Accounts, cloud saves and sharing come in P1.
 
 ## 2. How the reports' conflicts are resolved
 
@@ -337,7 +337,7 @@ Extra plan rules:
 | Data | Format | Location |
 |---|---|---|
 | Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and OPFS |
-| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists, vehicle sidecars) plus one shard per super-chunk (placements, switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
+| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists, vehicle sidecars) plus one shard per super-chunk (placements as catalog ref plus LDraw colour code, so a palette id like `ldraw:3811@2` saves as ref `ldraw:3811` and colour 2; laid track as exact ℤ[ζ₁₆] poses with their global order, filed by the exact floor of their stud position; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
 | Plan export | `*.brrplan.zip`: the region's placements, its footprint and the models it references, so it reopens on its own | File |
 | Collection | An imported Rebrickable collection or CSV of what the user owns | IndexedDB |
 | Printable plan | SVG in the MVP, PDF in P1 | Download |
