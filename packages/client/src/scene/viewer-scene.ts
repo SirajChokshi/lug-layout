@@ -90,7 +90,7 @@ export class ColorTable {
     const lookup = ldrawColors(this.bundle);
     const srgb = new Uint8Array(this.codes.length * COLOR_CHANNELS);
     this.codes.forEach((code, i) => {
-      const value = isDirectColor(code) ? directColorSrgb(code) : (lookup.get(code)?.srgb ?? 0);
+      const value = colorOf(lookup, code).srgb;
       srgb[i * COLOR_CHANNELS] = (value >> 16) & 0xff;
       srgb[i * COLOR_CHANNELS + 1] = (value >> 8) & 0xff;
       srgb[i * COLOR_CHANNELS + 2] = value & 0xff;
@@ -100,10 +100,15 @@ export class ColorTable {
 
   toAlpha(): Uint8Array {
     const lookup = ldrawColors(this.bundle);
-    return Uint8Array.from(this.codes, (code) =>
-      isDirectColor(code) ? DIRECT_COLOR_ALPHA : (lookup.get(code)?.alpha ?? 0),
-    );
+    return Uint8Array.from(this.codes, (code) => colorOf(lookup, code).alpha);
   }
+}
+
+function colorOf(lookup: ReadonlyMap<number, LdrawColor>, code: number): LdrawColor {
+  if (isDirectColor(code)) return { srgb: directColorSrgb(code), alpha: DIRECT_COLOR_ALPHA };
+  const color = lookup.get(code);
+  if (color === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
+  return color;
 }
 
 export function ldrawColors(bundle: PartBundle): ReadonlyMap<number, LdrawColor> {
