@@ -24,6 +24,9 @@ function baseplate(color: CatalogItemView["color"] & object): CatalogItemView {
     parts: 1,
     studsWide: 32,
     studsDeep: 32,
+    aliases: [],
+    elements: [],
+    displayColor: false,
   };
 }
 
@@ -37,6 +40,9 @@ const crossroads: CatalogItemView = {
   parts: 1,
   studsWide: 48,
   studsDeep: 48,
+  aliases: [],
+  elements: [],
+  displayColor: false,
 };
 
 const index = new PaletteIndex([baseplate(TAN), baseplate(GREEN), crossroads]);
