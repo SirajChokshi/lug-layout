@@ -93,8 +93,18 @@ export interface TrackEndView {
 export interface TrackGapView {
   readonly a: TrackEndView;
   readonly b: TrackEndView;
+  readonly xStuds: number;
+  readonly zStuds: number;
   readonly gapStuds: number;
+  readonly aheadStuds: number;
+  readonly asideStuds: number;
+  readonly headingErrorSteps: number;
   readonly headingErrorDegrees: number;
+}
+
+export interface DragTargetView {
+  readonly end: number;
+  readonly joins: boolean;
 }
 
 interface Drag {
@@ -324,12 +334,26 @@ export class TrackDrawing {
   }
 
   gaps(): ReadonlyArray<TrackGapView> {
-    return this.gapList.map((gap) => ({
-      a: endView(this.ends[gap.a] ?? POSE16_IDENTITY),
-      b: endView(this.ends[gap.b] ?? POSE16_IDENTITY),
-      gapStuds: gap.gapLdu / STUD_LDU,
-      headingErrorDegrees: (gap.headingErrorSteps * 360) / ZETA16_ORDER,
-    }));
+    return this.gapList.map((gap) => {
+      const a = this.ends[gap.a] ?? POSE16_IDENTITY;
+      const b = this.ends[gap.b] ?? POSE16_IDENTITY;
+      const from = zeta16ToStuds(a.position);
+      const to = zeta16ToStuds(b.position);
+      const theta = a.heading * HEADING_RADIANS;
+      const dx = to.x - from.x;
+      const dz = to.z - from.z;
+      return {
+        a: endView(a),
+        b: endView(b),
+        xStuds: from.x,
+        zStuds: from.z,
+        gapStuds: gap.gapLdu / STUD_LDU,
+        aheadStuds: dx * Math.cos(theta) + dz * Math.sin(theta),
+        asideStuds: dz * Math.cos(theta) - dx * Math.sin(theta),
+        headingErrorSteps: gap.headingErrorSteps,
+        headingErrorDegrees: (gap.headingErrorSteps * 360) / ZETA16_ORDER,
+      };
+    });
   }
 
   gappedEnds(): ReadonlySet<number> {
@@ -456,8 +480,10 @@ export class TrackDrawing {
     };
   }
 
-  dragTargetEnd(): number | null {
-    return this.drag?.target ?? null;
+  dragTarget(): DragTargetView | null {
+    const drag = this.drag;
+    if (!drag || drag.target === null) return null;
+    return { end: drag.target, joins: drag.closure === "exact" };
   }
 
   ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {

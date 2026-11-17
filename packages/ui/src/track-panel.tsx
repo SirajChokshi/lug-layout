@@ -3,15 +3,25 @@ import type { EditorSnapshot, TrackDragView, TrackGapView, TrackView } from "@br
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const LISTED_GAPS = 8;
 
+const studs = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+
+function offsetText(gap: TrackGapView): string {
+  if (gap.gapStuds === 0) return "on the same spot";
+  const ahead = `${studs.format(Math.abs(gap.aheadStuds))} ${gap.aheadStuds >= 0 ? "ahead" : "behind"}`;
+  return `${studs.format(gap.gapStuds)} studs apart (${ahead}, ${studs.format(Math.abs(gap.asideStuds))} aside)`;
+}
+
+function angleText(gap: TrackGapView): string {
+  if (gap.headingErrorSteps === 0) {
+    return gap.aheadStuds > 0 ? "facing each other" : "in line but overlapping";
+  }
+  const steps = Math.abs(gap.headingErrorSteps);
+  return `${Math.abs(gap.headingErrorDegrees)}° out of line (${steps} curve ${steps === 1 ? "step" : "steps"})`;
+}
+
 function gapText(gap: TrackGapView): string {
-  const where = `at ${integer.format(gap.a.xLdu)}, ${integer.format(gap.a.zLdu)} LDU`;
-  const distance =
-    gap.gapStuds === 0 ? "on the same spot" : `${gap.gapStuds.toFixed(2)} studs apart`;
-  const angle =
-    gap.headingErrorDegrees === 0
-      ? "facing each other"
-      : `${Math.abs(gap.headingErrorDegrees)}° out of line`;
-  return `Two open ends ${distance}, ${angle}, ${where}. They don't join exactly.`;
+  const where = `at stud ${studs.format(gap.xStuds)}, ${studs.format(gap.zStuds)}`;
+  return `Two open ends ${offsetText(gap)}, ${angleText(gap)}, ${where}. They don't join exactly.`;
 }
 
 function closureText(drag: TrackDragView): string {
