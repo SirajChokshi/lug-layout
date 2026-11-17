@@ -62,6 +62,7 @@ struct Args {
     out: PathBuf,
     lod: Lod,
     compiler: Option<PathBuf>,
+    cover_cache: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -85,6 +86,7 @@ fn parse_args() -> Result<Args, String> {
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
+        cover_cache: values.get("--cover-cache").map(PathBuf::from),
         lod,
         compiler: values.get("--compiler").map(PathBuf::from),
     })
@@ -624,13 +626,51 @@ fn run(args: &Args) -> Result<(), String> {
                 studs: &cover_parts.studs[slot],
             })
             .collect();
-        let cover = model_cover(
-            &cover_instances,
-            &cover_parts.solids,
-            &opacity,
-            lattice.as_ref().map(|lattice| lattice.phase),
-            stud_shape,
-        );
+        let cached = args
+            .cover_cache
+            .as_ref()
+            .map(|dir| dir.join(format!("{}.json", stem(name))));
+        let reuse = match (&cached, args.lod) {
+            (Some(path), Lod::Low | Lod::Far) if path.exists() => Some(
+                serde_json::from_slice::<Value>(&fs::read(path).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?,
+            ),
+            _ => None,
+        };
+        let (cover_file, cover_manifest) = match reuse {
+            Some(cached) => (cached["file"].clone(), cached["summary"].clone()),
+            None => {
+                let cover = model_cover(
+                    &cover_instances,
+                    &cover_parts.solids,
+                    &opacity,
+                    lattice.as_ref().map(|lattice| lattice.phase),
+                    stud_shape,
+                );
+                let pair = (cover_json(&cover), cover_summary(&cover));
+                if let (Some(path), Lod::Standard) = (&cached, args.lod) {
+                    fs::create_dir_all(path.parent().unwrap_or(&args.out))
+                        .map_err(|e| e.to_string())?;
+                    fs::write(
+                        path,
+                        serde_json::to_vec(&json!({ "file": pair.0, "summary": pair.1 }))
+                            .map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+                pair
+            }
+        };
+        let total_studs: usize = cover_slots
+            .iter()
+            .map(|&slot| cover_parts.studs[slot].len())
+            .sum();
+        if cover_file["studs"].as_u64() != Some(total_studs as u64) {
+            return Err(format!(
+                "{file}: the stud cover lists {} studs but the model has {total_studs}",
+                cover_file["studs"]
+            ));
+        }
         let lattice_json = match &lattice {
             Some(lattice) => json!({
                 "phase": lattice.phase,
@@ -657,7 +697,7 @@ fn run(args: &Args) -> Result<(), String> {
             "inlinePartsResolvedToOfficial": inline_parts,
             "parts": model_parts,
             "lattice": lattice_json,
-            "cover": cover_json(&cover),
+            "cover": cover_file,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
             "vehicles": vehicles,
         });
@@ -685,7 +725,7 @@ fn run(args: &Args) -> Result<(), String> {
             "lattice": lattice_json,
             "vehicles": vehicles.len(),
             "sha256": entry["sha256"],
-            "cover": cover_summary(&cover),
+            "cover": cover_manifest,
         });
         if !not_drawn.is_empty() {
             manifest_entry["notDrawn"] = json!(not_drawn);
