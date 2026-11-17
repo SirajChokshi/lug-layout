@@ -31,6 +31,7 @@ const PALETTE_FIELDS = [
   "mode",
   "track",
   "trackNotDrawable",
+  "readOnly",
 ] as const satisfies ReadonlyArray<keyof EditorSnapshot>;
 
 type PaletteSnapshot = Pick<EditorSnapshot, (typeof PALETTE_FIELDS)[number]>;
