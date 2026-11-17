@@ -41,6 +41,15 @@ jq -r '
 ' "$plan_json" >"$destroyed_list"
 mapfile -t destroyed_data <"$destroyed_list"
 
+digest="$(
+  jq -cS '
+    [.resource_changes[]?
+      | select(.change.actions != ["no-op"] and .change.actions != ["read"])
+      | {address, actions: .change.actions, before: .change.before, after: .change.after, after_unknown: .change.after_unknown}]
+  ' "$plan_json" | sha256sum | cut -d " " -f 1
+)"
+echo "digest=$digest" >>"$output"
+
 if ((${#destroyed_data[@]} > 0)); then
   addresses="$(printf "\`%s\`, " "${destroyed_data[@]}")"
   {

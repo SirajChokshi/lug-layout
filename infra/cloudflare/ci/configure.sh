@@ -1,50 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mode="${1:-}"
-if [[ "$mode" != "plan" && "$mode" != "apply" ]]; then
-  echo "usage: configure.sh plan|apply" >&2
-  exit 2
-fi
-
 module_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out_dir="${RUNNER_TEMP:?RUNNER_TEMP must be set}"
 output="${GITHUB_OUTPUT:-/dev/stdout}"
-report="$out_dir/catalog-plan.md"
-
-required_env_and_secret=(
-  "CLOUDFLARE_ACCOUNT_ID=CLOUDFLARE_ACCOUNT_ID"
-  "CLOUDFLARE_API_TOKEN=TERRAFORM_CLOUDFLARE_API_TOKEN"
-  "AWS_ACCESS_KEY_ID=TERRAFORM_STATE_R2_ACCESS_KEY_ID"
-  "AWS_SECRET_ACCESS_KEY=TERRAFORM_STATE_R2_SECRET_ACCESS_KEY"
-)
 
 missing=()
-for pair in "${required_env_and_secret[@]}"; do
-  env_name="${pair%%=*}"
-  if [[ -z "${!env_name:-}" ]]; then
-    missing+=("${pair#*=}")
+for name in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN CLOUDFLARE_API_TOKEN_ID; do
+  if [[ -z "${!name:-}" ]]; then
+    missing+=("$name")
   fi
 done
-
 if ((${#missing[@]} > 0)); then
   list="${missing[*]}"
-  if [[ "$mode" == "apply" ]]; then
-    echo "::error::Environment secrets missing: ${list// /, }. See infra/cloudflare/README.md."
-    exit 1
-  fi
-  echo "::warning::Plan skipped. Environment secrets missing: ${list// /, }."
-  {
-    echo "Plan skipped: the environment is missing these secrets: \`${list// /\`, \`}\`."
-    echo
-    echo "Setup: \`infra/cloudflare/README.md\`, section *Deploy from GitHub Actions*."
-  } >"$report"
-  echo "configured=false" >>"$output"
-  exit 0
+  echo "::error::Environment secrets missing: ${list// /, }. See infra/cloudflare/README.md."
+  exit 1
 fi
 
 if [[ ! "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]; then
   echo "::error::CLOUDFLARE_ACCOUNT_ID is not a 32-character hex account id."
+  exit 1
+fi
+if [[ ! "$CLOUDFLARE_API_TOKEN_ID" =~ ^[0-9a-f]{32}$ ]]; then
+  echo "::error::CLOUDFLARE_API_TOKEN_ID is not a 32-character hex token id. It is the token's id, not its value."
   exit 1
 fi
 
@@ -71,7 +49,6 @@ jq --arg account_id "$CLOUDFLARE_ACCOUNT_ID" '. + {account_id: $account_id}' \
   <<<"$tfvars_json" >"$var_file"
 
 {
-  echo "configured=true"
   echo "backend_config=$backend_config"
   echo "var_file=$var_file"
 } >>"$output"

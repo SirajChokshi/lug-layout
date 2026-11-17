@@ -79,13 +79,11 @@ jobs:
       - name: Load release (--remote)
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CATALOG_LOADER_D1_API_TOKEN }}
-          CLOUDFLARE_R2_API_TOKEN: ${{ secrets.CATALOG_LOADER_R2_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           missing=()
           [[ -n "$CLOUDFLARE_ACCOUNT_ID" ]] || missing+=(CLOUDFLARE_ACCOUNT_ID)
-          [[ -n "$CLOUDFLARE_API_TOKEN" ]] || missing+=(CATALOG_LOADER_D1_API_TOKEN)
-          [[ -n "$CLOUDFLARE_R2_API_TOKEN" ]] || missing+=(CATALOG_LOADER_R2_API_TOKEN)
+          [[ -n "$CLOUDFLARE_API_TOKEN" ]] || missing+=(CLOUDFLARE_API_TOKEN)
           if ((${#missing[@]} > 0)); then
             echo "::error::Environment secrets missing: ${missing[*]}. See infra/cloudflare/README.md."
             exit 1
