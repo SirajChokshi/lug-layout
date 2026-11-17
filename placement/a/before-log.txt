@@ -1,0 +1,59 @@
+01-station-on-bare-table: omr:2150-1 at (16, 64) studs: placements 0 -> 1
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+screenshot 01-station-on-bare-table.png
+02-locomotive-on-bare-table: omr:10133-1 at (16, 64) studs: placements 1 -> 2
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+screenshot 02-locomotive-on-bare-table.png
+03-baseplate-a: ldraw:3811 at (0, 0) studs: placements 0 -> 1
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+04-baseplate-b: ldraw:3811 at (32, 0) studs: placements 1 -> 2
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+05-station-on-baseplates: omr:2150-1 at (16, 0) studs: placements 2 -> 3
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+06-modular-on-table: omr:10185-1 at (-40, 0) studs: placements 3 -> 4
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+07-modular-over-station: omr:10264-1 at (16, 0) studs: placements 4 -> 5
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+screenshot 07-modular-over-station.png
+08-road-plate-on-table: ldraw:69958 at (0, 48) studs: placements 5 -> 6
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+09-baseplate-c: ldraw:3811 at (80, 0) studs: placements 6 -> 7
+  rules panel on hover: (no rules panel)
+  rules panel after click: (no rules panel)
+screenshot 09-layout.png
+10-track-on-baseplate: drag (66,-8) -> (82,-8) studs
+  track panel while dragging: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 0 | ldraw:74746 Train Track 9V Straight | × 0 | ldraw:74747 Train Track 9V Curved | × 0 | Exact joins | 0 | Open ends | 0 | Coincident ends not joined | 0 | Last release | none yet | Drawing from | a new start on the stud grid | Ghost run | 1 pieces (1 straight, 0 curve) | Join | ends 0.4 studs from the cursor | Solve | 0.50 ms | Solver per pointer move | median 0.60 ms, p95 1.70 ms, max 1.70 ms (12 moves)
+screenshot 10-track-on-baseplate-ghost.png
+  track panel after release: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 1 | ldraw:74746 Train Track 9V Straight | × 1 | ldraw:74747 Train Track 9V Curved | × 0 | Exact joins | 0 | Open ends | 2 | Coincident ends not joined | 0 | Last release | laid with an open end | Solver per pointer move | median 0.50 ms, p95 1.70 ms, max 1.70 ms (13 moves)
+  rules panel after release: (no rules panel)
+11-track-past-baseplate-edge: drag (88,8) -> (88,-26) studs
+  track panel while dragging: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 1 | ldraw:74746 Train Track 9V Straight | × 1 | ldraw:74747 Train Track 9V Curved | × 0 | Exact joins | 0 | Open ends | 2 | Coincident ends not joined | 0 | Last release | laid with an open end | Drawing from | a new start on the stud grid | Ghost run | 2 pieces (2 straight, 0 curve) | Join | ends 1.8 studs from the cursor | Solve | 0.50 ms | Solver per pointer move | median 0.50 ms, p95 0.70 ms, max 1.70 ms (25 moves)
+screenshot 11-track-past-baseplate-edge-ghost.png
+  track panel after release: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 3 | ldraw:74746 Train Track 9V Straight | × 3 | ldraw:74747 Train Track 9V Curved | × 0 | Exact joins | 1 | Open ends | 4 | Coincident ends not joined | 0 | Last release | laid with an open end | Solver per pointer move | median 0.50 ms, p95 0.70 ms, max 1.70 ms (26 moves)
+  rules panel after release: (no rules panel)
+12-track-on-bare-table: drag (40,-40) -> (64,-40) studs
+  track panel while dragging: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 3 | ldraw:74746 Train Track 9V Straight | × 3 | ldraw:74747 Train Track 9V Curved | × 0 | Exact joins | 1 | Open ends | 4 | Coincident ends not joined | 0 | Last release | laid with an open end | Drawing from | a new start on the stud grid | Ghost run | 2 pieces (2 straight, 0 curve) | Join | ends 7.8 studs from the cursor | Solve | 0.50 ms | Solver per pointer move | median 0.50 ms, p95 0.70 ms, max 1.70 ms (38 moves)
+screenshot 12-track-on-bare-table-ghost.png
+  track panel after release: TRACK |  | Drag from an open end (or from empty ground) to lay track. Release over another open end to join it exactly. |  | Pieces laid | 5 | ldraw:74746 Train Track 9V Straight | × 5 | ldraw:74747 Train Track 9V Curved | × 0 | Exact joins | 2 | Open ends | 6 | Coincident ends not joined | 0 | Last release | laid with an open end | Solver per pointer move | median 0.50 ms, p95 0.70 ms, max 1.70 ms (39 moves)
+  rules panel after release: (no rules panel)
+screenshot 12-after-refused-runs.png
+13-select-baseplate-c: selected ldraw:3811
+  delete: placements 6, rules: (no rules panel)
+screenshot 13-delete-baseplate-under-track.png
+14-select-baseplate-a: selected ldraw:3811
+  delete a (the station still engages b): placements 5, rules: (no rules panel)
+15-select-baseplate-b: selected ldraw:3811
+  delete b: placements 4, rules: (no rules panel)
+screenshot 15-delete-last-baseplate-under-station.png
+16-undo-delete-a: placements 5, rules: (no rules panel)
+17-undo-place-baseplate-c: placements 6, rules: (no rules panel)
+screenshot 17-undo-refused.png
+final hud: Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 662 ms | Mode | select | Ghost rotation | 0° | Road-edge snap | none | Cursor on lattice (LDU) | 920, 300 | Lands at (plates) | – | Placements | 6 | History (undo, redo) | 8, 2 | Last edit latency | 1577.6 ms (undo remove 3811 Baseplate 32 x 32, 0°) | Rebuilt for it | 4 chunks, 3,551 parts, 4,214 studs | Studs drawn | 6,488 | Studs culled inside models | 12,897 | Studs culled under footprints | 272 | Frame rate (rAF) | 1.3 fps | Draw calls | 1,056 | Drawn triangles | 2,156,748

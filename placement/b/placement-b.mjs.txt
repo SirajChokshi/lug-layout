@@ -1,0 +1,172 @@
+import { chromium } from "playwright-core";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+
+const [out, base, mode] = process.argv.slice(2);
+const before = mode === "before";
+mkdirSync(out, { recursive: true });
+const STUD = 20;
+const log = (line) => {
+  console.log(line);
+  appendFileSync(`${out}/log.txt`, `${line}\n`);
+};
+writeFileSync(`${out}/log.txt`, "");
+
+const browser = await chromium.launch({
+  executablePath: "/usr/local/bin/google-chrome",
+  headless: false,
+  args: [
+    "--ignore-gpu-blocklist",
+    "--window-size=1920,1200",
+    "--window-position=0,0",
+    "--hide-crash-restore-bubble",
+    "--no-first-run",
+  ],
+});
+const page = await browser.newPage({ viewport: null });
+page.on("console", (m) => {
+  if (m.type() === "error") log(`console: ${m.text()}`);
+});
+page.on("pageerror", (e) => log(`pageerror: ${e.message}`));
+await page.goto(base, { waitUntil: "domcontentloaded" });
+await page.waitForSelector('.editor[data-status="ready"]', { state: "attached", timeout: 300_000 });
+const canvas = await page.locator("canvas.scene").boundingBox();
+const cx = canvas.x + canvas.width / 2;
+const cy = canvas.y + canvas.height / 2;
+
+async function hoverAt(sx, sy) {
+  await page.mouse.move(sx, sy);
+  let previous = null;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    await page.waitForTimeout(50);
+    const value = await page.getAttribute(".editor", "data-hover");
+    if (value && value === previous) {
+      const [x, z] = value.split(",").map(Number);
+      return { x, z };
+    }
+    previous = value;
+  }
+  throw new Error(`no ground hover at ${sx}, ${sy}`);
+}
+
+async function screenOf(xStuds, zStuds) {
+  const xLdu = xStuds * STUD;
+  const zLdu = zStuds * STUD;
+  let sx = cx;
+  let sy = cy;
+  const d = 30;
+  for (let iteration = 0; iteration < 14; iteration++) {
+    const h0 = await hoverAt(sx, sy);
+    if (h0.x === xLdu && h0.z === zLdu) return { sx, sy };
+    const h1 = await hoverAt(sx + d, sy);
+    const h2 = await hoverAt(sx, sy + d);
+    const a = (h1.x - h0.x) / d;
+    const b = (h2.x - h0.x) / d;
+    const c = (h1.z - h0.z) / d;
+    const e = (h2.z - h0.z) / d;
+    const det = a * e - b * c;
+    sx += (e * (xLdu - h0.x) - b * (zLdu - h0.z)) / det;
+    sy += (-c * (xLdu - h0.x) + a * (zLdu - h0.z)) / det;
+  }
+  const h = await hoverAt(sx, sy);
+  if (h.x !== xLdu || h.z !== zLdu) throw new Error(`could not reach (${xStuds}, ${zStuds})`);
+  return { sx, sy };
+}
+
+async function choose(id) {
+  await page.click(`button.catalog-item[data-item="${id}"]`);
+  await page.waitForTimeout(300);
+}
+
+async function escape() {
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+}
+
+async function rulesText() {
+  const panel = page.locator("section.placement-rules");
+  return (await panel.count()) ? (await panel.innerText()).replaceAll("\n", " | ") : "(no rules panel)";
+}
+
+async function placementsCount() {
+  const hud = await page.locator(".editor-hud").innerText();
+  const match = /Placements\s+(\d+)/u.exec(hud);
+  return match ? Number(match[1]) : -1;
+}
+
+async function placeAt(label, id, xStuds, zStuds) {
+  await choose(id);
+  const { sx, sy } = await screenOf(xStuds, zStuds);
+  await page.mouse.move(sx, sy);
+  await page.waitForTimeout(400);
+  const ghost = await rulesText();
+  const beforeCount = await placementsCount();
+  await page.mouse.click(sx, sy);
+  await page.waitForTimeout(700);
+  const afterCount = await placementsCount();
+  log(`${label}: ${id} at (${xStuds}, ${zStuds}) studs: placements ${beforeCount} -> ${afterCount}`);
+  log(`  rules panel on hover: ${ghost}`);
+  log(`  rules panel after click: ${await rulesText()}`);
+  return { sx, sy };
+}
+
+async function shot(name) {
+  await page.screenshot({ path: `${out}/${name}.png` });
+  log(`screenshot ${name}.png`);
+}
+
+async function drag(label, from, to) {
+  await choose("track:lego-9v");
+  const a = await screenOf(from[0], from[1]);
+  const b = await screenOf(to[0], to[1]);
+  await page.mouse.move(a.sx, a.sy);
+  await page.mouse.down();
+  const steps = 12;
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(a.sx + ((b.sx - a.sx) * i) / steps, a.sy + ((b.sy - a.sy) * i) / steps);
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(400);
+  const track = page.locator("section.track-panel");
+  log(`${label}: drag (${from}) -> (${to}) studs`);
+  log(`  track panel while dragging: ${(await track.innerText()).replaceAll("\n", " | ")}`);
+  await shot(`${label}-ghost`);
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+  log(`  track panel after release: ${(await track.innerText()).replaceAll("\n", " | ")}`);
+  log(`  rules panel after release: ${await rulesText()}`);
+}
+
+async function selectAt(label, xStuds, zStuds) {
+  await escape();
+  const { sx, sy } = await screenOf(xStuds, zStuds);
+  await page.mouse.click(sx, sy);
+  await page.waitForTimeout(400);
+  log(`${label}: selected ${await page.getAttribute(".editor", "data-selection")}`);
+}
+
+await page.mouse.move(cx, cy);
+await page.mouse.wheel(0, Number(process.env.ZOOM ?? 500));
+await page.waitForTimeout(600);
+
+await placeAt("01-baseplate-a", "ldraw:3811", 0, 0);
+await placeAt("02-baseplate-b", "ldraw:3811", 32, 0);
+await placeAt("03-station", "omr:2150-1", 16, 0);
+await placeAt("04-modular", "omr:10185-1", -48, 0);
+await placeAt("05-baseplate-c", "ldraw:3811", 64, 0);
+await placeAt("06-baseplate-d", "ldraw:3811", 64, 32);
+await placeAt("07-baseplate-over-baseplates", "ldraw:3811", 8, 0);
+await shot("07-baseplate-over-baseplates");
+await placeAt("08-baseplate-into-modular", "ldraw:3811", -40, 0);
+await shot("08-baseplate-into-modular");
+await placeAt("09-modular-over-station", "omr:10264-1", 16, 0);
+await escape();
+await drag("10-track-through-station", [24, 6], [40, 6]);
+await drag("11-joined-run-across-two-baseplates", [64, -12], [64, 20]);
+await drag("12-run-crossing-track", [50, 0], [66, 0]);
+await escape();
+await shot("12-after-runs");
+await placeAt("13-level-crossing-onto-track", "omr:7936-1", 64, 16);
+await shot("13-level-crossing-onto-track");
+await escape();
+log(`final hud: ${(await page.locator(".editor-hud").innerText()).replaceAll("\n", " | ")}`);
+await browser.close();
