@@ -5,7 +5,6 @@ import {
   studsOf,
   type EditorSnapshot,
   type IEditor,
-  type LabelView,
 } from "@brr/client";
 import { useEffect, useRef } from "react";
 
@@ -17,14 +16,14 @@ interface OverlayProps {
 function placeLabels(
   editor: IEditor,
   overlay: HTMLDivElement,
-  labels: ReadonlyArray<LabelView>,
+  count: number,
   points: Float64Array,
 ): void {
   editor.projectLabels(points);
   const width = overlay.clientWidth;
   const height = overlay.clientHeight;
   const nodes = overlay.children;
-  for (let i = 0; i < labels.length; i++) {
+  for (let i = 0; i < count; i++) {
     const node = nodes[i];
     if (!(node instanceof HTMLElement)) continue;
     const o = i * SCREEN_POINT_FLOATS;
@@ -40,18 +39,19 @@ function placeLabels(
 export function MeasureLabels({ editor, snapshot }: OverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const { labels } = snapshot;
+  const count = labels.length;
   useEffect(() => {
     const overlay = overlayRef.current;
-    if (!overlay) return;
-    const points = new Float64Array(labels.length * SCREEN_POINT_FLOATS);
+    if (!overlay || count === 0) return;
+    const points = new Float64Array(count * SCREEN_POINT_FLOATS);
     let frame = 0;
     const tick = (): void => {
-      placeLabels(editor, overlay, labels, points);
+      placeLabels(editor, overlay, count, points);
       frame = requestAnimationFrame(tick);
     };
     tick();
     return () => cancelAnimationFrame(frame);
-  }, [editor, labels]);
+  }, [editor, count]);
   return (
     <div className="measure-labels" ref={overlayRef} aria-hidden="true">
       {labels.map((label) => (
