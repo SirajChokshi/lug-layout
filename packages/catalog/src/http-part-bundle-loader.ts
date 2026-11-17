@@ -9,6 +9,7 @@ import {
   type BundleManifest,
   type ManifestPart,
 } from "@brr/schema/bundle";
+import { BUNDLE_POINTER_FILE, BundlePointer } from "@brr/schema/bundle-pointer";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
 import type * as v from "valibot";
@@ -36,6 +37,7 @@ import type {
   PartFilter,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
+import { DEFAULT_BUNDLE_MANIFEST_FILE } from "./part-bundle.ts";
 import { FetchPool } from "./fetch-pool.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
 
@@ -96,11 +98,38 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     Promise<ReadonlyArray<StudPrimitiveAsset>>
   >();
   private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
+  private pointedManifestFile: string | undefined;
 
   constructor(
     @inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher,
-    @inject(BUNDLE_MANIFEST_FILE) private readonly manifestFile: string,
+    @inject(BUNDLE_MANIFEST_FILE) private readonly configuredManifestFile: string | null,
   ) {}
+
+  private async manifestFile(): Promise<string> {
+    if (this.configuredManifestFile !== null) return this.configuredManifestFile;
+    if (this.pointedManifestFile !== undefined) return this.pointedManifestFile;
+    const pointed = await this.pointer();
+    if (pointed === undefined) return DEFAULT_BUNDLE_MANIFEST_FILE;
+    this.pointedManifestFile = pointed;
+    return pointed;
+  }
+
+  private async pointer(): Promise<string | undefined> {
+    let text: string;
+    try {
+      text = await this.text(BUNDLE_POINTER_FILE);
+    } catch {
+      return undefined;
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return undefined;
+    }
+    const pointer = decode(BundlePointer, json, BUNDLE_POINTER_FILE);
+    return pointer.ok ? pointer.value.manifestFile : undefined;
+  }
 
   private bytes(path: string): Promise<ArrayBuffer> {
     return this.pool.run(() => this.fetcher.bytes(path));
@@ -118,7 +147,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   private async manifest(lod: BundleLod): Promise<BundleManifest> {
-    const index = await this.json(BundleIndex, `${lod}/${this.manifestFile}`);
+    const index = await this.json(BundleIndex, `${lod}/${await this.manifestFile()}`);
     const [{ parts }, { credits }] = await Promise.all([
       this.json(PartTableFile, `${lod}/${index.partTable.file}`),
       this.json(CreditTableFile, `${lod}/${index.creditTable.file}`),

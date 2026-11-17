@@ -38,11 +38,6 @@ function servesRemoteBundle(env: Record<string, string>): boolean {
   if (process.env["VERCEL"] && !remote) {
     throw new Error("Vercel builds load the part bundle from R2: set VITE_BUNDLE_BASE_URL");
   }
-  if (remote && !env["VITE_BUNDLE_MANIFEST_FILE"]) {
-    throw new Error(
-      "VITE_BUNDLE_MANIFEST_FILE must name the published manifest: node tools/asset-pipeline/src/cli.ts await-served",
-    );
-  }
   return remote;
 }
 

@@ -17,6 +17,7 @@
         "src/**",
         "!src/**/*.test.ts",
         "!src/library/**",
+        "!src/pointer/**",
         "palette.json",
         "ldraw.lock.json",
         "$TURBO_ROOT$/crates/**",
