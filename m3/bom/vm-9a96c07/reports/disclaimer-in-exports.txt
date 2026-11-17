@@ -12,4 +12,4 @@ $ head -2 exports/model/10218-1.rebrickable.csv
 Part,Color,Quantity
 10201,0,1
 
-All 23 BrickLink XML files pass xmllint --noout and carry the comment; all 28 plain CSVs end with the disclaimer row. With the comment line and the last row removed, every XML and plain CSV is byte-identical to the 162b05d run, and every Rebrickable CSV is byte-identical as is.
+All 23 BrickLink XML files in exports/ pass xmllint --noout and carry the comment. All 28 plain CSVs (23 in exports/, 5 in demo/) end with the disclaimer row. With the comment line or the last row removed, each of the 23 XML and 23 plain CSV files in exports/ is byte-identical to the 162b05d run, and every Rebrickable CSV is byte-identical as it is.
