@@ -1,10 +1,26 @@
-import { isLatticePose, isRot90 } from "@brr/math";
+import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 import type { PlacementHandle, World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
+const INT16_MIN = -(2 ** 15);
+const INT16_MAX = 2 ** 15 - 1;
 
-export type EditKind = "place" | "rotate" | "remove";
+export type EditKind = "place" | "rotate" | "remove" | "move" | "draw-track";
 export type HistoryStep = "do" | "undo" | "redo";
+
+export interface TrackPieceAt {
+  readonly index: number;
+  readonly piece: number;
+  readonly pose: Pose16;
+  readonly yPlates: number;
+}
+
+export interface TrackRequest {
+  readonly lift: ReadonlyArray<TrackPieceAt>;
+  readonly lay: ReadonlyArray<TrackPieceAt>;
+}
+
+export const NO_TRACK_CHANGE: TrackRequest = { lift: [], lay: [] };
 
 export interface PlacementPose {
   readonly refId: number;
@@ -24,12 +40,6 @@ export interface PlacementRequest {
   readonly to: PlacementPose | null;
 }
 
-export interface PendingChange {
-  readonly placement: PlacementRef;
-  readonly from: PlacementPose | null;
-  readonly to: PlacementPose | null;
-}
-
 export interface AppliedChange {
   readonly placement: PlacementRef;
   readonly from: PlacementPose | null;
@@ -42,6 +52,7 @@ export interface AppliedEdit {
   readonly kind: EditKind;
   readonly step: HistoryStep;
   readonly changes: ReadonlyArray<AppliedChange>;
+  readonly track: TrackRequest;
 }
 
 class Ref implements PlacementRef {
@@ -59,6 +70,7 @@ interface Change {
 interface Edit {
   readonly kind: EditKind;
   readonly changes: ReadonlyArray<Change>;
+  readonly track: TrackRequest;
 }
 
 function poseOf(handle: PlacementHandle): PlacementPose {
@@ -79,6 +91,26 @@ function checkPose(pose: PlacementPose): void {
     );
   }
   if (!isRot90(pose.rot)) throw new Error(`rotation ${pose.rot} is not a quarter turn 0-3`);
+}
+
+function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: "lift" | "lay"): void {
+  let previous = -1;
+  for (const { index, piece, yPlates } of pieces) {
+    if (!Number.isInteger(index) || index <= previous) {
+      throw new RangeError(`track ${role} indices must be ascending non-negative integers`);
+    }
+    if (!Number.isInteger(piece) || piece < 0) {
+      throw new RangeError(`track piece ${piece} is not a catalog index`);
+    }
+    if (!Number.isInteger(yPlates) || yPlates < INT16_MIN || yPlates > INT16_MAX) {
+      throw new RangeError(`track height ${yPlates} plates is not an int16`);
+    }
+    previous = index;
+  }
+}
+
+function reversed(track: TrackRequest): TrackRequest {
+  return { lift: track.lay, lay: track.lift };
 }
 
 export class EditHistory {
@@ -103,20 +135,6 @@ export class EditHistory {
     return this.undone.at(-1)?.kind ?? null;
   }
 
-  peekUndo(): ReadonlyArray<PendingChange> | null {
-    const edit = this.done.at(-1);
-    return edit
-      ? edit.changes.map((c) => ({ placement: c.ref, from: c.after, to: c.before }))
-      : null;
-  }
-
-  peekRedo(): ReadonlyArray<PendingChange> | null {
-    const edit = this.undone.at(-1);
-    return edit
-      ? edit.changes.map((c) => ({ placement: c.ref, from: c.before, to: c.after }))
-      : null;
-  }
-
   place(pose: PlacementPose): AppliedEdit {
     return this.commit("place", [{ placement: null, to: pose }]);
   }
@@ -132,7 +150,13 @@ export class EditHistory {
     return this.commit("remove", [{ placement, to: null }]);
   }
 
-  commit(kind: EditKind, requests: ReadonlyArray<PlacementRequest>): AppliedEdit {
+  commit(
+    kind: EditKind,
+    requests: ReadonlyArray<PlacementRequest>,
+    track: TrackRequest = NO_TRACK_CHANGE,
+  ): AppliedEdit {
+    checkTrackPieces(track.lift, "lift");
+    checkTrackPieces(track.lay, "lay");
     const seen = new Set<Ref>();
     const changes: Change[] = [];
     for (const request of requests) {
@@ -147,8 +171,9 @@ export class EditHistory {
       seen.add(ref);
       changes.push({ ref, before: poseOf(this.liveHandle(ref)), after: request.to });
     }
-    const edit: Edit = { kind, changes };
+    const edit: Edit = { kind, changes, track };
     const applied = this.apply(edit, "do");
+    if (changes.length === 0 && track.lift.length === 0 && track.lay.length === 0) return applied;
     this.done.push(edit);
     this.undone.length = 0;
     return applied;
@@ -206,6 +231,6 @@ export class EditHistory {
       if (added) change.ref.handle = added;
       changes.push({ placement: change.ref, from, to, removed: removed[index] ?? null, added });
     }
-    return { kind: edit.kind, step, changes };
+    return { kind: edit.kind, step, changes, track: backwards ? reversed(edit.track) : edit.track };
   }
 }

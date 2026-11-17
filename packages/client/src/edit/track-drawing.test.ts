@@ -116,7 +116,7 @@ function drag(from: readonly [number, number], to: readonly [number, number]): v
   const [tx, tz] = to;
   drawing.beginDrag(fx * STUD_LDU, fz * STUD_LDU, fx * STUD_LDU, fz * STUD_LDU);
   drawing.moveDrag(tx * STUD_LDU, tz * STUD_LDU);
-  drawing.endDrag();
+  drawing.applyTrack(drawing.endDrag().run);
 }
 
 beforeAll(async () => {
@@ -230,10 +230,12 @@ function lay(
   target: TrackDrawing,
   from: readonly [number, number],
   to: readonly [number, number],
-): TrackCommit {
+): { readonly laid: number; readonly refusal: TrackCommit["refusal"] } {
   target.beginDrag(from[0] * STUD_LDU, from[1] * STUD_LDU, from[0] * STUD_LDU, from[1] * STUD_LDU);
   target.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
-  return target.endDrag();
+  const commit = target.endDrag();
+  target.applyTrack(commit.run);
+  return { laid: commit.run.lay.length, refusal: commit.refusal };
 }
 
 describe("track on baseplates: only the span between a piece's own connectors needs one (P6)", () => {

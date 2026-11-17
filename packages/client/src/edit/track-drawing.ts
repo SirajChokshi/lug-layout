@@ -6,6 +6,7 @@ import {
   solveClosure,
   solveDrag,
   NO_END,
+  NO_TRACK_CHANGE,
   TrackGraph,
   TrackLayout,
   type DrawingKit,
@@ -16,11 +17,14 @@ import {
   type OwnerFilter,
   type TrackMove,
   type TrackPieceDef,
+  type TrackPieceAt,
   type TrackPieceSpec,
+  type TrackRequest,
   type TrackSupport,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
+  PLATE_LDU,
   STUD_LDU,
   ZETA16_ORDER,
   chunkKey,
@@ -163,11 +167,17 @@ export interface TrackDragView {
 }
 
 export interface TrackCommit {
-  readonly laid: number;
-  readonly joined: boolean;
+  readonly run: TrackRequest;
+  readonly goal: Pose16 | null;
   readonly refusal: TrackRefusal | null;
   readonly blocked: RunBlock | null;
-  readonly chunks: ReadonlyArray<number>;
+}
+
+export interface TrackPieceDump {
+  readonly piece: string;
+  readonly heading: number;
+  readonly position: ReadonlyArray<string>;
+  readonly yPlates: number;
 }
 
 export interface TrackFootprint {
@@ -300,6 +310,10 @@ function cellKeys(cells: BaseCells): ReadonlySet<number> {
   for (let c = 0; c < cells.count; c++)
     keys.add(packedCellKey(cells.cellX[c] ?? 0, cells.cellZ[c] ?? 0));
   return keys;
+}
+
+function refused(refusal: TrackRefusal, blocked: RunBlock | null): TrackCommit {
+  return { run: NO_TRACK_CHANGE, goal: null, refusal, blocked };
 }
 
 export function trackChunkKey(chunkX: number, chunkZ: number): number {
@@ -780,43 +794,131 @@ export class TrackDrawing {
     const drag = this.drag;
     this.drag = null;
     if (!drag?.start || drag.moves.length === 0) {
-      return { laid: 0, joined: false, refusal: null, blocked: null, chunks: [] };
+      return { run: NO_TRACK_CHANGE, goal: null, refusal: null, blocked: null };
     }
     if (drag.closure === "impossible" || drag.closure === "limit") {
-      return { laid: 0, joined: false, refusal: drag.closure, blocked: null, chunks: [] };
+      return refused(drag.closure, null);
     }
     const blocked = this.runBlock(drag.start, drag.moves);
-    if (blocked) {
-      return { laid: 0, joined: false, refusal: blocked.kind, blocked, chunks: [] };
-    }
+    if (blocked) return refused(blocked.kind, blocked);
     const { placed } = layMoves(drag.start, drag.moves);
-    const touched = new Set<number>();
+    const lay: TrackPieceAt[] = [];
     placed.forEach((piece, i) => {
       const move = drag.moves[i];
       if (!move) return;
-      const entry: Placed = { part: this.kitPart(move), placement: piece.placement };
-      const index = this.layout.place(entry.part.catalogIndex, piece.placement, LAID_TRACK_PLATES);
-      const plan = this.planOf(entry.part, piece.placement);
-      this.piecePlans[index] = plan;
-      this.host.laid(index, entry.part.piece.id, plan.cells, 0, entry.part.heightLdu);
-      const centre = partCentre(entry);
-      const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
-      const members = this.chunkMembers.get(key) ?? [];
-      members.push(index);
-      this.chunkMembers.set(key, members);
-      touched.add(key);
+      lay.push({
+        index: this.layout.count + lay.length,
+        piece: this.kitPart(move).catalogIndex,
+        pose: piece.placement,
+        yPlates: LAID_TRACK_PLATES,
+      });
     });
-    this.recomputeEnds();
+    return { run: { lift: [], lay }, goal: drag.goal, refusal: null, blocked: null };
+  }
+
+  laidPiece(index: number): TrackPieceAt {
     return {
-      laid: placed.length,
-      joined: drag.goal !== null && this.graphJoins(drag.goal),
-      refusal: null,
-      blocked: null,
-      chunks: [...touched],
+      index,
+      piece: this.layout.piece(index),
+      pose: this.layout.pose(index),
+      yPlates: this.layout.yPlates(index),
     };
   }
 
-  private graphJoins(end: Pose16): boolean {
+  dump(): ReadonlyArray<TrackPieceDump> {
+    const pieces: TrackPieceDump[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      const { pose, yPlates } = this.laidPiece(p);
+      pieces.push({
+        piece: this.pieceId(p),
+        heading: pose.heading,
+        position: pose.position.map(String),
+        yPlates,
+      });
+    }
+    return pieces;
+  }
+
+  applyTrack(change: TrackRequest): ReadonlyArray<number> {
+    const appends =
+      change.lift.length === 0 && change.lay.every((at, i) => at.index === this.layout.count + i);
+    const touched = appends ? this.appendPieces(change.lay) : this.relayPieces(change);
+    this.recomputeEnds();
+    return touched;
+  }
+
+  private partOf(at: TrackPieceAt): KitPart {
+    const part = this.byCatalogIndex.get(at.piece);
+    if (!part) throw new Error(`track catalog piece ${at.piece} is not drawable here`);
+    return part;
+  }
+
+  private laidAt(at: TrackPieceAt): LaidTrackPiece & { readonly key: number } {
+    const part = this.partOf(at);
+    const index = this.layout.place(at.piece, at.pose, at.yPlates);
+    const plan = this.planOf(part, at.pose);
+    this.piecePlans[index] = plan;
+    const centre = partCentre({ part, placement: at.pose });
+    const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
+    const members = this.chunkMembers.get(key) ?? [];
+    members.push(index);
+    this.chunkMembers.set(key, members);
+    const bottomLdu = at.yPlates * PLATE_LDU;
+    return {
+      piece: index,
+      pieceId: part.piece.id,
+      cells: plan.cells,
+      bottomLdu,
+      topLdu: bottomLdu + part.heightLdu,
+      key,
+    };
+  }
+
+  private appendPieces(pieces: ReadonlyArray<TrackPieceAt>): ReadonlyArray<number> {
+    const touched = new Set<number>();
+    for (const at of pieces) {
+      const laid = this.laidAt(at);
+      this.host.laid(laid.piece, laid.pieceId, laid.cells, laid.bottomLdu, laid.topLdu);
+      touched.add(laid.key);
+    }
+    return [...touched];
+  }
+
+  private relayPieces(change: TrackRequest): ReadonlyArray<number> {
+    const pieces: TrackPieceAt[] = [];
+    for (let p = 0; p < this.layout.count; p++) pieces.push(this.laidPiece(p));
+    for (let i = change.lift.length - 1; i >= 0; i--) {
+      const at = change.lift[i];
+      const laid = at ? pieces[at.index] : undefined;
+      const same =
+        at !== undefined &&
+        laid !== undefined &&
+        laid.piece === at.piece &&
+        laid.yPlates === at.yPlates &&
+        pose16Equals(laid.pose, at.pose);
+      if (!at || !same) throw new Error("the edit history is out of step with the laid track");
+      pieces.splice(at.index, 1);
+    }
+    for (const at of change.lay) {
+      if (at.index > pieces.length)
+        throw new Error(`track index ${at.index} is past the laid track`);
+      pieces.splice(at.index, 0, at);
+    }
+    const touched = new Set(this.chunkMembers.keys());
+    this.layout = new TrackLayout(this.layout.pieces);
+    this.chunkMembers.clear();
+    this.piecePlans = [];
+    const relaid: LaidTrackPiece[] = [];
+    for (const at of pieces) {
+      const { key, ...laid } = this.laidAt(at);
+      relaid.push(laid);
+      touched.add(key);
+    }
+    this.host.relaid(relaid);
+    return [...touched];
+  }
+
+  joinsAt(end: Pose16): boolean {
     const graph = this.graph;
     for (let e = 0; e < graph.endCount; e++) {
       if ((graph.endPartner[e] ?? NO_END) === NO_END) continue;
@@ -866,43 +968,6 @@ export class TrackDrawing {
 
   pieceId(piece: number): string {
     return this.placedAt(piece).part.piece.id;
-  }
-
-  removePiece(piece: number): ReadonlyArray<number> {
-    const kept: Placed[] = [];
-    for (let p = 0; p < this.layout.count; p++) {
-      if (p !== piece) kept.push(this.placedAt(p));
-    }
-    const touched = new Set(this.chunkMembers.keys());
-    this.layout = new TrackLayout(this.layout.pieces);
-    this.chunkMembers.clear();
-    this.piecePlans = [];
-    const relaid: LaidTrackPiece[] = [];
-    for (const placed of kept) {
-      const index = this.layout.place(
-        placed.part.catalogIndex,
-        placed.placement,
-        LAID_TRACK_PLATES,
-      );
-      const plan = this.planOf(placed.part, placed.placement);
-      this.piecePlans[index] = plan;
-      relaid.push({
-        piece: index,
-        pieceId: placed.part.piece.id,
-        cells: plan.cells,
-        bottomLdu: 0,
-        topLdu: placed.part.heightLdu,
-      });
-      const centre = partCentre(placed);
-      const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
-      const members = this.chunkMembers.get(key) ?? [];
-      members.push(index);
-      this.chunkMembers.set(key, members);
-      touched.add(key);
-    }
-    this.host.relaid(relaid);
-    this.recomputeEnds();
-    return [...touched];
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {

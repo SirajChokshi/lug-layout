@@ -18,7 +18,7 @@ import {
   type BaseCells,
   type HistoryStep,
   type OwnerFilter,
-  type PendingChange,
+  type TrackRequest,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
@@ -54,6 +54,7 @@ import {
   TrackDrawing,
   type HeldTrackRequest,
   type TrackDragView,
+  type TrackPieceDump,
 } from "./track-drawing.ts";
 import {
   PlacedChunks,
@@ -86,7 +87,7 @@ import {
 } from "./placement-messages.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
-export type EditAction = EditKind | "track";
+export type EditAction = EditKind;
 export type EditorMode = "place" | "select" | "track";
 
 export interface CatalogColorView {
@@ -184,7 +185,7 @@ export interface RoadSnapView {
   readonly overlappingCells: number;
 }
 
-export type RefusedAction = "place" | "rotate" | "remove" | "undo" | "redo" | "track";
+export type RefusedAction = "place" | "rotate" | "remove" | "track";
 
 export interface RefusedEdit {
   readonly action: RefusedAction;
@@ -323,6 +324,7 @@ export interface EditorDump {
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
   readonly studs: StudTotals;
+  readonly track: ReadonlyArray<TrackPieceDump>;
 }
 
 export interface EditorOptions {
@@ -367,6 +369,7 @@ const END_MARKER_HEIGHT_LDU = 40;
 const P95 = 0.95;
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
+const NO_REBUILD: RebuildReport = { chunks: 0, instances: 0, studs: 0 };
 const MARKER_WIDTH_LDU = 6;
 const MARKER_LIFT_LDU = 1;
 const MARKER_HEIGHT_LDU = 2;
@@ -929,33 +932,12 @@ export class Editor implements IEditor {
     const commit = track.endDrag();
     this.backend.setGhost(null);
     this.showEndMarker(null);
-    let instances = 0;
-    let studs = 0;
-    for (const key of commit.chunks) {
-      const chunk = track.chunkInstances(key);
-      if (!chunk) continue;
-      this.backend.setChunk(key, chunk);
-      instances += chunk.count;
-      studs += chunk.studs.count;
-    }
-    if (commit.laid > 0) {
-      this.pending = {
-        step: "do",
-        action: "track",
-        item: TRACK_ITEM_ID,
-        rot: 0,
-        x: this.hoverX,
-        z: this.hoverZ,
-        startMs: eventTimeMs,
-        rebuiltMs: performance.now(),
-        report: { chunks: commit.chunks.length, instances, studs },
-      };
-    }
-    if (commit.laid > 0) this.syncPlan();
-    if (commit.laid === 0 && commit.refusal === null)
-      this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
+    const laid = commit.run.lay.length > 0;
+    if (laid) this.show(this.history.commit("draw-track", [], commit.run), eventTimeMs);
+    if (!laid && commit.refusal === null) this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
-    else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    else if (laid)
+      this.lastTrackCommit = commit.goal && track.joinsAt(commit.goal) ? "joined" : "laid";
     this.showRefusalCells(commit.blocked?.missing ?? null);
     if (commit.blocked) this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
     this.update({ track: this.trackView() });
@@ -1302,23 +1284,47 @@ export class Editor implements IEditor {
     return placeable;
   }
 
+  private applyTrack(change: TrackRequest): RebuildReport {
+    const track = this.track;
+    if (!track || (change.lift.length === 0 && change.lay.length === 0)) return NO_REBUILD;
+    const keys = track.applyTrack(change);
+    let instances = 0;
+    let studs = 0;
+    for (const key of keys) {
+      const chunk = track.chunkInstances(key);
+      if (!chunk) {
+        this.backend.deleteChunk(key);
+        continue;
+      }
+      this.backend.setChunk(key, chunk);
+      instances += chunk.count;
+      studs += chunk.studs.count;
+    }
+    if (this.selectedTrack !== null) this.selectTrack(null);
+    return { chunks: keys.length, instances, studs };
+  }
+
   private show(edit: AppliedEdit, eventTimeMs: number): ViewUpdate {
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
+    const trackReport = this.applyTrack(edit.track);
     const primary = edit.changes[0];
     const pose = primary?.to ?? primary?.from ?? null;
-    if (pose) {
-      this.pending = {
-        step: edit.step,
-        action: edit.kind,
-        item: this.placeableAt(pose.refId).id,
-        rot: pose.rot,
-        x: pose.x,
-        z: pose.z,
-        startMs: eventTimeMs,
-        rebuiltMs: performance.now(),
-        report: view.report,
-      };
-    }
+    const report = {
+      chunks: view.report.chunks + trackReport.chunks,
+      instances: view.report.instances + trackReport.instances,
+      studs: view.report.studs + trackReport.studs,
+    };
+    this.pending = {
+      step: edit.step,
+      action: edit.kind,
+      item: pose ? this.placeableAt(pose.refId).id : TRACK_ITEM_ID,
+      rot: pose?.rot ?? 0,
+      x: pose?.x ?? this.hoverX,
+      z: pose?.z ?? this.hoverZ,
+      startMs: eventTimeMs,
+      rebuiltMs: performance.now(),
+      report,
+    };
     this.refreshRoads();
     this.syncHeldTrack();
     this.placeGhost();
@@ -1480,22 +1486,19 @@ export class Editor implements IEditor {
     this.update({ track: this.trackView() });
   }
 
-  private removeSelectedTrack(): void {
+  private removeSelectedTrack(eventTimeMs: number): void {
     const track = this.track;
     const piece = this.selectedTrack;
     if (!track || piece === null) return;
-    for (const key of track.removePiece(piece)) {
-      const chunk = track.chunkInstances(key);
-      if (chunk) this.backend.setChunk(key, chunk);
-      else this.backend.deleteChunk(key);
-    }
-    this.syncPlan();
-    this.selectTrack(null);
+    this.show(
+      this.history.commit("remove", [], { lift: [track.laidPiece(piece)], lay: [] }),
+      eventTimeMs,
+    );
   }
 
   deleteSelection(eventTimeMs: number): void {
     if (this.state.mode === "track") {
-      this.removeSelectedTrack();
+      this.removeSelectedTrack(eventTimeMs);
       return;
     }
     const model = this.selected;
@@ -1510,26 +1513,20 @@ export class Editor implements IEditor {
   }
 
   undo(eventTimeMs: number): void {
-    const refusal = this.replayRefusal(this.history.peekUndo());
-    if (refusal) {
-      this.refuse("undo", refusal.item, refusal);
-      return;
-    }
+    this.abandonTrackDrag();
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
-    const refusal = this.replayRefusal(this.history.peekRedo());
-    if (refusal) {
-      this.refuse("redo", refusal.item, refusal);
-      return;
-    }
+    this.abandonTrackDrag();
     this.replay(this.history.redo(), eventTimeMs);
   }
 
-  private modelOf(change: PendingChange): PlacedModel | null {
-    const handle = change.placement.handle;
-    return this.placed.models().find((model) => model.handle === handle) ?? null;
+  private abandonTrackDrag(): void {
+    if (!this.track?.dragView()) return;
+    this.track.cancelDrag();
+    this.backend.setGhost(null);
+    this.showEndMarker(null);
   }
 
   private removalRefusal(
@@ -1544,39 +1541,6 @@ export class Editor implements IEditor {
     );
     const first = off?.[0];
     return first ? trackCarriedRefusal(label, first) : null;
-  }
-
-  private replayRefusal(
-    changes: ReadonlyArray<PendingChange> | null,
-  ): (Refusal & { readonly item: string }) | null {
-    if (!changes) return null;
-    const removed: PlacedModel[] = [];
-    for (const change of changes) {
-      const model = change.from ? this.modelOf(change) : null;
-      if (model) removed.push(model);
-    }
-    const moved: PendingPose[] = [];
-    for (const change of changes) {
-      const to = change.to;
-      if (to) moved.push({ placeable: this.placeableAt(to.refId), ...to });
-    }
-    const first = removed[0];
-    if (first) {
-      const refusal = this.removalRefusal(removed, first.placeable.label, moved);
-      if (refusal) return { ...refusal, item: first.placeable.id };
-    }
-    for (const change of changes) {
-      const to = change.to;
-      if (!to) continue;
-      const placeable = this.placeableAt(to.refId);
-      const check = this.checkAt(placeable, to.x, to.z, to.rot, removed, {
-        kind: "height",
-        yPlates: to.yPlates,
-      });
-      const refusal = checkRefusal(placeable.label, check);
-      if (refusal) return { ...refusal, item: placeable.id };
-    }
-    return null;
   }
 
   private refuse(action: RefusedAction, item: string, refusal: Refusal): void {
@@ -1669,6 +1633,7 @@ export class Editor implements IEditor {
       })),
       roads: this.roadReport,
       studs: this.placed.studTotals(),
+      track: this.track?.dump() ?? [],
     };
   }
 }
