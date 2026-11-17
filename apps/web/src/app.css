@@ -181,6 +181,12 @@ footer {
   color: #556;
 }
 
+.catalog-skipped {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #8a5a00;
+}
+
 .plan-panel {
   position: fixed;
   left: 12px;
