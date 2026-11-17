@@ -22,6 +22,7 @@ export type {
   ModelLattice,
   ModelOrigin,
   ModelSection,
+  NotDrawnSection,
   ModelSet,
   PartAsset,
   PartBundle,

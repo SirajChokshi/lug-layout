@@ -10,6 +10,7 @@ export interface PartComponent {
 export interface PartCrosswalkEntry {
   readonly rebrickable: string | null;
   readonly bricklink: string | null;
+  readonly bricklinkFromKeywordOnly?: boolean;
   readonly components?: ReadonlyArray<PartComponent>;
 }
 
@@ -30,6 +31,7 @@ export interface CatalogLine {
   readonly part: string;
   readonly color: number;
   readonly quantity: number;
+  readonly fromKeywordOnly: boolean;
 }
 
 export type MissingMapping = "part" | "color" | "part-and-color";
@@ -93,7 +95,8 @@ export function toCatalog(
   const merged = new Map<string, CatalogLine>();
   const unmapped: UnmappedLine[] = [];
   for (const line of resolveLines(lines, crosswalk)) {
-    const part = crosswalk.parts.get(line.part)?.[system] ?? null;
+    const entry = crosswalk.parts.get(line.part);
+    const part = entry?.[system] ?? null;
     const color = crosswalk.colors.get(line.ldrawColor)?.[system] ?? null;
     if (color === null) {
       unmapped.push({ ...line, missing: missingMapping(part) });
@@ -105,7 +108,13 @@ export function toCatalog(
     }
     const key = `${part}\u0000${color}`;
     const existing = merged.get(key);
-    merged.set(key, { part, color, quantity: (existing?.quantity ?? 0) + line.quantity });
+    const fromKeywordOnly = system === "bricklink" && entry?.bricklinkFromKeywordOnly === true;
+    merged.set(key, {
+      part,
+      color,
+      quantity: (existing?.quantity ?? 0) + line.quantity,
+      fromKeywordOnly: (existing?.fromKeywordOnly ?? false) || fromKeywordOnly,
+    });
   }
   const sorted = [...merged.values()].toSorted((a, b) =>
     a.part === b.part ? a.color - b.color : a.part < b.part ? -1 : 1,

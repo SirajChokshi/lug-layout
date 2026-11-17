@@ -2,6 +2,7 @@ import {
   PART_BUNDLE_LOADER,
   type BundleLod,
   type IPartBundleLoader,
+  type NotDrawnSection,
   type PartBundle,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
@@ -26,7 +27,12 @@ import {
   type WorldBox,
 } from "@brr/render";
 import { inject, injectable } from "inversify";
-import type { BomInput, BomScope, IBomSource } from "../bom/bom-service.ts";
+import {
+  notDrawnItems,
+  type BomInput,
+  type BomScope,
+  type IBomSource,
+} from "../bom/bom-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
@@ -232,6 +238,7 @@ export class Editor implements IEditor {
   private framesSinceStats = 0;
   private statsSince = 0;
   private bomTables: EditorBomTables | null = null;
+  private placeableNotDrawn: ReadonlyArray<ReadonlyArray<NotDrawnSection>> = [];
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -315,6 +322,7 @@ export class Editor implements IEditor {
     const loaded = await Promise.all(
       sets.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
+    this.placeableNotDrawn = [[], ...loaded.map(({ entry }) => entry.notDrawn ?? [])];
     return [
       baseplatePlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
       ...loaded.map(({ bundle: modelBundle, entry, model }) =>
@@ -521,16 +529,26 @@ export class Editor implements IEditor {
       tables.palette.parts.map((part) => part.id),
       tables.ldrawColors,
     );
+    const placedCounts = new Map<number, number>();
     const contents: PlacementContents = {
       addTo: (target, refId) => {
         const placeable = this.placeables[refId];
         if (!placeable) throw new Error(`world holds unknown placeable ${refId}`);
+        placedCounts.set(refId, (placedCounts.get(refId) ?? 0) + 1);
         const { parts } = placeable;
         for (let i = 0; i < parts.count; i++) {
           target.add(parts.partIndex[i] ?? 0, tables.colors.codeAt(parts.colorIndex[i] ?? 0), 1);
         }
       },
     };
+    const uncounted = (): BomInput["uncounted"] =>
+      [...placedCounts].flatMap(([refId, count]) =>
+        notDrawnItems(
+          this.placeables[refId]?.id ?? String(refId),
+          this.placeableNotDrawn[refId] ?? [],
+          count,
+        ),
+      );
     if (scope.kind !== "selection") {
       const placements = countPlacements(
         this.world,
@@ -538,7 +556,13 @@ export class Editor implements IEditor {
         counter,
         scope.kind === "region" ? scope.region : null,
       );
-      return { name: EDITOR_WORLD_NAME, lod: "standard", placements, counter };
+      return {
+        name: EDITOR_WORLD_NAME,
+        lod: "standard",
+        placements,
+        counter,
+        uncounted: uncounted(),
+      };
     }
     const selected = this.selected;
     if (!selected?.handle.live) throw new Error("nothing is selected");
@@ -548,6 +572,7 @@ export class Editor implements IEditor {
       lod: "standard",
       placements: 1,
       counter,
+      uncounted: uncounted(),
     };
   }
 

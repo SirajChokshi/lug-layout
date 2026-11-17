@@ -98,7 +98,12 @@ function save(bom: BillOfMaterials, download: Download): void {
 function catalogText(catalog: CatalogBom): string {
   const parts = catalog.lines.reduce((sum, line) => sum + line.quantity, 0);
   const unmapped = catalog.unmapped.reduce((sum, line) => sum + line.quantity, 0);
-  return `${integer.format(parts)} parts in ${integer.format(catalog.lines.length)} lots, ${integer.format(unmapped)} unmapped`;
+  const keywordOnly = catalog.lines
+    .filter((line) => line.fromKeywordOnly)
+    .reduce((sum, line) => sum + line.quantity, 0);
+  const keywordText =
+    keywordOnly > 0 ? `, ${integer.format(keywordOnly)} with an id from an LDraw keyword only` : "";
+  return `${integer.format(parts)} parts in ${integer.format(catalog.lines.length)} lots, ${integer.format(unmapped)} unmapped${keywordText}`;
 }
 
 export function BomPanel({ service, source, region, selectionLabel }: BomPanelProps) {
@@ -218,6 +223,21 @@ export function BomPanel({ service, source, region, selectionLabel }: BomPanelPr
                 {bom.rebrickable.unmapped.map((line) => (
                   <li key={`${line.part}-${line.ldrawColor}`}>
                     {line.quantity}× {line.part} colour {line.ldrawColor} (no {line.missing} id)
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {bom.uncounted.length > 0 && (
+            <details>
+              <summary>Not counted ({integer.format(bom.uncounted.length)} items)</summary>
+              <ul>
+                {bom.uncounted.map((item) => (
+                  <li key={`${item.source}-${item.item}-${item.ldrawColor ?? ""}`}>
+                    {item.quantity === null ? "" : `${item.quantity}× `}
+                    {item.item}
+                    {item.ldrawColor === null ? "" : ` colour ${item.ldrawColor}`} ({item.source}:{" "}
+                    {item.reason})
                   </li>
                 ))}
               </ul>

@@ -44,7 +44,6 @@ export type RebrickableVia =
   | "rebrickable-api"
   | "ldraw-keyword"
   | "bricklink-keyword"
-  | "same-id"
   | `moved:${string}`;
 export type BrickLinkVia = "rebrickable-api" | "ldraw-keyword";
 
@@ -85,6 +84,12 @@ export interface CrosswalkFile {
   readonly bricklinkColors: Readonly<Record<string, ReadonlyArray<number>>>;
 }
 
+const REBRICKABLE_UNKNOWN_COLOR = -1;
+const REBRICKABLE_ANY_COLOR = 9999;
+const REBRICKABLE_PLACEHOLDER_COLORS: ReadonlySet<number> = new Set([
+  REBRICKABLE_UNKNOWN_COLOR,
+  REBRICKABLE_ANY_COLOR,
+]);
 const EXPANDED_ORG_KINDS: ReadonlySet<string> = new Set(["Shortcut", "Alias"]);
 
 function keywordIds(facts: LdrawPartFacts | undefined, system: string): string[] {
@@ -155,10 +160,14 @@ class PartResolver {
       const moved = this.candidates(target, new Set([...seen, target]));
       if (moved) return { ids: moved.ids, via: `moved:${target}` };
     }
-    return this.inputs.rebrickableParts.has(id) ? { ids: [id], via: "same-id" } : null;
+    return null;
   }
 
   private choose(id: string, ids: ReadonlyArray<string>): string | null {
+    const named = keywordIds(this.inputs.ldrawParts.get(id), REBRICKABLE_KEYWORD).filter((rb) =>
+      ids.includes(rb),
+    );
+    if (named.length === 1) return named[0] ?? null;
     if (ids.includes(id)) return id;
     const ranked = ids.toSorted(
       (a, b) =>
@@ -224,6 +233,7 @@ function colorIds(color: ApiColor, system: string): number[] {
 function deriveColors(inputs: CrosswalkInputs): Record<string, CrosswalkColor> {
   const byLdraw = new Map<number, ApiColor[]>();
   for (const color of inputs.apiColors) {
+    if (REBRICKABLE_PLACEHOLDER_COLORS.has(color.id)) continue;
     for (const code of colorIds(color, "LDraw")) pushTo(byLdraw, code, color);
   }
   const colors: Record<string, CrosswalkColor> = {};

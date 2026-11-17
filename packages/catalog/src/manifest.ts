@@ -62,8 +62,12 @@ export interface BundleManifest {
   readonly crosswalk: { readonly file: string };
 }
 
+export interface CrosswalkFilePart extends CatalogPartIds {
+  readonly via?: { readonly bricklink?: string | null };
+}
+
 export interface CrosswalkFile {
-  readonly parts: Readonly<Record<string, CatalogPartIds>>;
+  readonly parts: Readonly<Record<string, CrosswalkFilePart>>;
   readonly colors: Readonly<Record<string, CatalogColorIds>>;
   readonly bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly bricklinkColors: Readonly<Record<string, ReadonlyArray<number>>>;
@@ -259,6 +263,8 @@ export function parseCrosswalkFile(value: unknown, label: string): CrosswalkFile
   return value as unknown as CrosswalkFile;
 }
 
+const BRICKLINK_FROM_KEYWORD = "ldraw-keyword";
+
 export function crosswalkMaps(file: CrosswalkFile): CatalogCrosswalk {
   return {
     parts: new Map(
@@ -267,6 +273,9 @@ export function crosswalkMaps(file: CrosswalkFile): CatalogCrosswalk {
         {
           rebrickable: ids.rebrickable,
           bricklink: ids.bricklink,
+          ...(ids.via?.bricklink === BRICKLINK_FROM_KEYWORD
+            ? { bricklinkFromKeywordOnly: true }
+            : {}),
           ...(ids.components ? { components: ids.components } : {}),
         },
       ]),

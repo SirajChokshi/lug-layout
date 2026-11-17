@@ -1,9 +1,20 @@
-import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr/catalog";
+import {
+  PART_BUNDLE_LOADER,
+  type BundleLod,
+  type IPartBundleLoader,
+  type NotDrawnSection,
+} from "@brr/catalog";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { BomCounter } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import { chunkKey } from "@brr/math";
-import { sceneRegion, type BomInput, type BomScope, type IBomSource } from "../bom/bom-service.ts";
+import {
+  notDrawnItems,
+  sceneRegion,
+  type BomInput,
+  type BomScope,
+  type IBomSource,
+} from "../bom/bom-service.ts";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 import { withStuds } from "./stud-stream.ts";
 
@@ -23,6 +34,7 @@ interface LoadedModel {
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint16Array;
+  readonly notDrawn: ReadonlyArray<NotDrawnSection>;
 }
 
 @injectable()
@@ -53,6 +65,7 @@ export class ModelScene implements IModelScene {
       instanceCount: model.instanceCount,
       partIndex: model.partIndex,
       ldrawColor: model.ldrawColor,
+      notDrawn: entry.notDrawn ?? [],
     };
     const colorIndex = new Uint16Array(model.instanceCount);
     for (let i = 0; i < model.instanceCount; i++) {
@@ -100,7 +113,14 @@ export class ModelScene implements IModelScene {
     if (included) {
       counter.addInstances(loaded.partIndex, loaded.ldrawColor, loaded.instanceCount, 1);
     }
-    return { name: this.modelName, lod: loaded.lod, placements: included ? 1 : 0, counter };
+    const placements = included ? 1 : 0;
+    return {
+      name: this.modelName,
+      lod: loaded.lod,
+      placements,
+      counter,
+      uncounted: notDrawnItems(this.modelName, loaded.notDrawn, placements),
+    };
   }
 
   private frame(matrices: Float32Array, count: number): void {

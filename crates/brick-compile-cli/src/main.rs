@@ -323,9 +323,18 @@ fn run(args: &Args) -> Result<(), String> {
         for part in &baked.inline_parts {
             if let Some(reason) = acknowledged.get(&part.inline) {
                 used.insert(part.inline.clone());
-                not_drawn.push(
-                    json!({ "section": part.inline, "kind": "customPart", "reason": reason }),
-                );
+                let mut colors: BTreeMap<u32, usize> = BTreeMap::new();
+                for instance in &baked.instances {
+                    if instance.inline.as_deref() == Some(part.inline.as_str()) {
+                        *colors.entry(instance.color).or_default() += 1;
+                    }
+                }
+                let instances: usize = colors.values().sum();
+                let colors: Vec<Value> = colors
+                    .into_iter()
+                    .map(|(color, count)| json!({ "color": color, "instances": count }))
+                    .collect();
+                not_drawn.push(json!({ "section": part.inline, "kind": "customPart", "instances": instances, "colors": colors, "reason": reason }));
                 continue;
             }
             let comparison = compare_inline_part(&library, &text, &part.inline, &part.official)
