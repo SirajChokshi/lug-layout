@@ -1,6 +1,7 @@
 import type { EditorOptions, IEditor, IEditorCamera } from "@brr/client";
 import { useEffect, useRef } from "react";
 import { isTyping } from "./use-editor-keys.ts";
+import { PALETTE_ITEM_MIME, carriesPaletteItem } from "./palette-drag.ts";
 
 const CLICK_SLOP_PX = 4;
 const LEFT_BUTTON = 0;
@@ -163,6 +164,24 @@ export function EditorCanvas({ editor, camera, options }: EditorCanvasProps) {
     };
     const onContextMenu = (event: Event): void => event.preventDefault();
     const onLeave = (): void => editor.pointerLeave();
+    const onDragOver = (event: DragEvent): void => {
+      if (!carriesPaletteItem(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      const [x, y] = ndc(canvas, event);
+      pointer.current.ndcX = x;
+      pointer.current.ndcY = y;
+      editor.pointerMove(x, y);
+    };
+    const onDrop = (event: DragEvent): void => {
+      if (!carriesPaletteItem(event)) return;
+      event.preventDefault();
+      const item = event.dataTransfer?.getData(PALETTE_ITEM_MIME) ?? "";
+      if (item !== "" && editor.snapshot().activeItem !== item) editor.chooseItem(item);
+      const [x, y] = ndc(canvas, event);
+      editor.pointerMove(x, y);
+      editor.click(x, y, event.timeStamp);
+    };
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", onPointerUp);
@@ -173,6 +192,9 @@ export function EditorCanvas({ editor, camera, options }: EditorCanvasProps) {
     canvas.addEventListener("gesturechange", onGestureChange);
     canvas.addEventListener("contextmenu", onContextMenu);
     canvas.addEventListener("dblclick", onDoubleClick);
+    canvas.addEventListener("dragover", onDragOver);
+    canvas.addEventListener("dragleave", onLeave);
+    canvas.addEventListener("drop", onDrop);
     return () => {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
@@ -184,6 +206,9 @@ export function EditorCanvas({ editor, camera, options }: EditorCanvasProps) {
       canvas.removeEventListener("gesturechange", onGestureChange);
       canvas.removeEventListener("contextmenu", onContextMenu);
       canvas.removeEventListener("dblclick", onDoubleClick);
+      canvas.removeEventListener("dragover", onDragOver);
+      canvas.removeEventListener("dragleave", onLeave);
+      canvas.removeEventListener("drop", onDrop);
     };
   }, [editor, camera]);
 

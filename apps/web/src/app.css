@@ -1337,3 +1337,16 @@ footer a {
   box-sizing: border-box;
   font-variant-numeric: tabular-nums;
 }
+
+.palette [draggable="true"] {
+  cursor: grab;
+}
+
+.palette [draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.palette-how {
+  margin: 0 0 6px;
+  font-size: 11px;
+}
