@@ -16,6 +16,7 @@ import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { EdgeMarker, WorldBox } from "@brr/render";
 import type { ModuleSurface } from "./module-surface.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
+import { quarterTurned, type TurnDirection } from "./turn.ts";
 
 const QUARTER_TURNS = 4;
 const SIDE_BAR_WIDTH_LDU = 6;
@@ -177,11 +178,12 @@ export class ModuleLayout {
   bestCandidate(
     surface: ModuleSurface,
     preferred: number,
+    direction: TurnDirection,
     hitX: number,
     hitZ: number,
   ): ModuleCandidate {
     const options = Array.from({ length: QUARTER_TURNS }, (_, k) =>
-      this.candidate(surface, (preferred + k) % QUARTER_TURNS, hitX, hitZ),
+      this.candidate(surface, quarterTurned(preferred, direction * k), hitX, hitZ),
     );
     return options.reduce((best, option) => (better(option.fit, best.fit) < 0 ? option : best));
   }
