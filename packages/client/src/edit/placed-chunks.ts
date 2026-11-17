@@ -52,6 +52,17 @@ import {
   FOOTPRINT_NONE,
   type Placeable,
 } from "./placeable.ts";
+import {
+  EDGE_HOLE_FIELDS,
+  HOLE_X,
+  HOLE_Y,
+  HOLE_Z,
+  HolePose,
+  bothPinned,
+  facesOpposite,
+  holesMeet,
+  onePinned,
+} from "./modular-pins.ts";
 import type { LaidTrackPiece } from "./track-drawing.ts";
 
 export interface PlacedModel {
@@ -76,6 +87,17 @@ export interface PlacementCheck {
   readonly support: UpperSupport | null;
   readonly restsOn: VolumeOwner | null;
   readonly overlap: PlacedOverlap | null;
+}
+
+export interface PinHoles {
+  readonly aligned: number;
+  readonly pinned: number;
+}
+
+export interface PinSnap {
+  readonly x: number;
+  readonly z: number;
+  readonly aligned: number;
 }
 
 export interface LostSupport {
@@ -414,6 +436,7 @@ class PlacedEntry implements PlacedModel {
   readonly footprintKeys = new Set<number>();
   readonly columnKeys = new Set<number>();
   readonly tongueBoxes: Float64Array;
+  readonly worldHoles: Int32Array;
   readonly technic: TechnicSet;
   readonly box: WorldBox;
   readonly pose: LatticePose;
@@ -469,6 +492,9 @@ class PlacedEntry implements PlacedModel {
     for (let b = 0; b < tongues.length; b += BOX_FLOATS) {
       this.pose.worldBox(tongues, b, this.yLdu, this.tongueBoxes, b);
     }
+    this.worldHoles = new HolePose()
+      .set(this.x, this.yLdu, this.z, this.cos, this.sin)
+      .worldHoles(placeable.pins);
     this.box = this.worldBox();
   }
 
@@ -818,6 +844,9 @@ export class PlacedChunks {
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private readonly volumes = new VolumeIndex();
   private readonly tongued: PlacedEntry[] = [];
+  private readonly holed: PlacedEntry[] = [];
+  private readonly holePose = new HolePose();
+  private heldHoles = new Int32Array(0);
   private readonly probe = new LatticePose(0, 0, 0);
   private readonly support = new SupportGrid();
   private readonly owners = new Map<number, VolumeOwner>();
@@ -1116,6 +1145,93 @@ export class PlacedChunks {
     return null;
   }
 
+  private heldHolesAt(
+    placeable: Placeable,
+    x: number,
+    yLdu: number,
+    z: number,
+    rot: number,
+  ): Int32Array {
+    const pins = placeable.pins;
+    if (this.heldHoles.length < pins.count * EDGE_HOLE_FIELDS) {
+      this.heldHoles = new Int32Array(pins.count * EDGE_HOLE_FIELDS);
+    }
+    const pose = this.probe.at(x, z, rot);
+    this.holePose.set(x, yLdu, z, pose.cos, pose.sin);
+    for (let h = 0; h < pins.count; h++) {
+      this.holePose.holeInto(pins, h, this.heldHoles, h * EDGE_HOLE_FIELDS);
+    }
+    return this.heldHoles;
+  }
+
+  pinHoles(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+    ignore: ReadonlyArray<PlacedModel>,
+  ): PinHoles {
+    const count = placeable.pins.count;
+    if (count === 0 || this.holed.length === 0) return { aligned: 0, pinned: 0 };
+    const held = this.heldHolesAt(placeable, x, yPlates * PLATE_LDU, z, rot);
+    const skipped = this.entriesOf(ignore);
+    let aligned = 0;
+    let pinned = 0;
+    for (const entry of this.holed) {
+      if (skipped.has(entry)) continue;
+      const theirs = entry.worldHoles;
+      for (let h = 0; h < count; h++) {
+        const o = h * EDGE_HOLE_FIELDS;
+        for (let g = 0; g < theirs.length; g += EDGE_HOLE_FIELDS) {
+          if (!holesMeet(held, o, theirs, g)) continue;
+          aligned++;
+          if (onePinned(held, o, theirs, g)) pinned++;
+        }
+      }
+    }
+    return { aligned, pinned };
+  }
+
+  pinSnap(
+    placeable: Placeable,
+    rot: number,
+    cursorX: number,
+    cursorZ: number,
+    radius: number,
+  ): PinSnap | null {
+    const count = placeable.pins.count;
+    if (count === 0 || placeable.layer !== "first") return null;
+    let best: PinSnap | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    const turned = Int32Array.from(this.heldHolesAt(placeable, 0, 0, 0, rot));
+    for (const entry of this.holed) {
+      const theirs = entry.worldHoles;
+      for (let g = 0; g < theirs.length; g += EDGE_HOLE_FIELDS) {
+        for (let h = 0; h < count; h++) {
+          const o = h * EDGE_HOLE_FIELDS;
+          if (turned[o + HOLE_Y] !== theirs[g + HOLE_Y]) continue;
+          if (!facesOpposite(turned, o, theirs, g) || bothPinned(turned, o, theirs, g)) continue;
+          const x = (theirs[g + HOLE_X] ?? 0) - (turned[o + HOLE_X] ?? 0);
+          const z = (theirs[g + HOLE_Z] ?? 0) - (turned[o + HOLE_Z] ?? 0);
+          if (x % STUD_LDU !== 0 || z % STUD_LDU !== 0) continue;
+          if (Math.abs(x - cursorX) > radius || Math.abs(z - cursorZ) > radius) continue;
+          const aligned = this.pinHoles(placeable, x, z, rot, 0, []).aligned;
+          const distance = Math.hypot(x - cursorX, z - cursorZ);
+          if (
+            best === null ||
+            aligned > best.aligned ||
+            (aligned === best.aligned && distance < bestDistance)
+          ) {
+            best = { x: x + 0, z: z + 0, aligned };
+            bestDistance = distance;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
   studTotals(): StudTotals {
     let drawn = 0;
     let culledUnderFootprints = 0;
@@ -1192,6 +1308,7 @@ export class PlacedChunks {
     this.byFootprintChunk.clear();
     this.byColumnChunk.clear();
     this.tongued.length = 0;
+    this.holed.length = 0;
     this.chunkStuds.clear();
     this.entries.length = 0;
   }
@@ -1218,6 +1335,7 @@ export class PlacedChunks {
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
     if (entry.tongueBoxes.length > 0) this.tongued.push(entry);
+    if (entry.worldHoles.length > 0) this.holed.push(entry);
     entry.stampColumns(this.volumes, this.support, null);
     return entry;
   }
@@ -1235,6 +1353,8 @@ export class PlacedChunks {
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
     const tongued = this.tongued.indexOf(entry);
     if (tongued >= 0) this.tongued.splice(tongued, 1);
+    const holed = this.holed.indexOf(entry);
+    if (holed >= 0) this.holed.splice(holed, 1);
     this.restamp(entry.columnKeys, new Set());
     return entry;
   }

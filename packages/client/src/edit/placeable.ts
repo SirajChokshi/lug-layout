@@ -17,6 +17,7 @@ import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
 import { modelTrack, type ModelTrack } from "./model-track.ts";
 import { roadSurface } from "./road-surface.ts";
+import { edgeHoles, type EdgeHoles } from "./modular-pins.ts";
 import { technicVolumes, type PlaceableVolumes } from "./technic-volumes.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
@@ -70,6 +71,7 @@ export interface Placeable {
   readonly tongueBoxes: Float32Array | null;
   readonly track: ModelTrack | null;
   readonly ground: SeatedGround | null;
+  readonly pins: EdgeHoles;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -505,6 +507,8 @@ export function modelPlaceable(
   const restPlates = ((cells.groundY ?? cells.restY) - restingOn) / PLATE_LDU;
   const placedCells = modelCells(cells, shift, name, restPlates, !isModule, tableY);
   const finalCells = module ? moduleCells(placedCells, module, name) : placedCells;
+  const volumes = technicVolumes(local, parts, partBoxes, finalCells);
+  const seated = seatedGround(ground, shift, name);
   return {
     id,
     label,
@@ -518,7 +522,7 @@ export function modelPlaceable(
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
     cells: finalCells,
-    volumes: technicVolumes(local, parts, partBoxes, finalCells),
+    volumes,
     box,
     partBoxes,
     frameShift: shift,
@@ -528,7 +532,8 @@ export function modelPlaceable(
     module,
     tongueBoxes: module ? trackTongueBoxes(local, partBoxes, parts, module) : null,
     track: modelTrack(local, parts, trackCatalog),
-    ground: seatedGround(ground, shift, name),
+    ground: seated,
+    pins: edgeHoles(volumes.technic, seated),
   };
 }
 
@@ -575,6 +580,8 @@ export function partPlaceable(
   const isRoad = part.role === "road";
   const studs = withStuds(local, parts, colors, undefined).studs;
   const cells = partCells(part, shift, tableY);
+  const volumes = technicVolumes(local, parts, partBoxes, cells);
+  const seated = seatedGround(ground, shift, part.id);
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
@@ -588,7 +595,7 @@ export function partPlaceable(
     studLattice: studLattice(studs),
     bakedCoveredStuds: 0,
     cells,
-    volumes: technicVolumes(local, parts, partBoxes, cells),
+    volumes,
     box,
     partBoxes,
     frameShift: shift,
@@ -598,6 +605,7 @@ export function partPlaceable(
     module: null,
     tongueBoxes: null,
     track: null,
-    ground: seatedGround(ground, shift, part.id),
+    ground: seated,
+    pins: edgeHoles(volumes.technic, seated),
   };
 }
