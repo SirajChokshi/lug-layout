@@ -44,6 +44,7 @@ import {
 } from "./catalog/produced-colors.ts";
 import { readPalette } from "./palette.ts";
 import { attachCrosswalk, MANIFEST_FILE, publishBundle } from "./publish.ts";
+import { attachRecords } from "./records.ts";
 import { R2ObjectStore, sha256Hex } from "./r2.ts";
 import {
   isPartBundlePublished,
@@ -388,6 +389,7 @@ async function bundleCommand(): Promise<void> {
     ]);
     await addVerifiedFacts(out);
     await attachCrosswalk(out, crosswalk);
+    await attachRecords(out);
     const { bundleVersion, files } = await publishBundle(out, inputs);
     process.stdout.write(
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,

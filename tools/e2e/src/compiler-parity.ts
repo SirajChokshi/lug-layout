@@ -11,7 +11,7 @@ interface ManifestFile {
 interface Manifest {
   readonly bundleVersion: string;
   readonly models: ReadonlyArray<ManifestFile & { readonly name: string }>;
-  readonly parts: ReadonlyArray<ManifestFile & { readonly id: string }>;
+  readonly partTable: ManifestFile;
   readonly studPrimitives: ReadonlyArray<ManifestFile & { readonly name: string }>;
   readonly compiler: ManifestFile & { readonly unofficialAllowlist: ReadonlyArray<string> };
 }
@@ -75,7 +75,10 @@ for (const lod of lods) {
     new WebAssembly.Module(await readFile(join(directory, manifest.compiler.file))),
   );
   const bundled = new Map<string, Uint8Array>();
-  for (const part of manifest.parts) {
+  const { parts } = JSON.parse(
+    await readFile(join(directory, manifest.partTable.file), "utf8"),
+  ) as { readonly parts: ReadonlyArray<ManifestFile & { readonly id: string }> };
+  for (const part of parts) {
     bundled.set(part.id, new Uint8Array(await readFile(join(directory, part.file))));
   }
   const references = new Map<string, string>();

@@ -148,6 +148,12 @@ export {
   type ClosureResult,
   type SearchBudget,
 } from "./track/closure.ts";
+export {
+  FOOTPRINT_FLOATS,
+  HEADING_FOOTPRINT_FLOATS,
+  headingFootprints,
+  verticalRange,
+} from "./track/heading-footprints.ts";
 export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";
 export {
   DirtyShards,

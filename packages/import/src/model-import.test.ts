@@ -16,7 +16,7 @@ const YELLOW = 14;
 
 interface Manifest {
   readonly source: { readonly repo: string; readonly commit: string; readonly root: string };
-  readonly parts: ReadonlyArray<{ readonly id: string }>;
+  readonly partTable: { readonly file: string };
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
   readonly colors: ReadonlyArray<{ readonly code: number }>;
   readonly compiler: { readonly file: string };
@@ -30,6 +30,9 @@ async function importWith(
   const manifest = JSON.parse(
     await readFile(new URL("manifest.json", bundleRoot), "utf8"),
   ) as Manifest;
+  const partTable = JSON.parse(
+    await readFile(new URL(manifest.partTable.file, bundleRoot), "utf8"),
+  ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
   const compiler = new BrickCompiler(
     new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot))),
   );
@@ -45,7 +48,7 @@ async function importWith(
     source: manifest.source,
     studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: [],
-    bundlePartIds: manifest.parts.map((part) => part.id),
+    bundlePartIds: partTable.parts.map((part) => part.id),
     ldconfigCodes: manifest.colors.map((color) => color.code),
   });
 }
