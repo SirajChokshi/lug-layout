@@ -295,20 +295,25 @@ export type LandingAt =
   | { readonly kind: "height"; readonly yPlates: number };
 
 interface Landing {
-  readonly yPlates: number;
-  readonly owner: number | null;
+  yPlates: number;
+  owner: number | null;
 }
+
+const landingHit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
 
 function landing(
   volumes: VolumeIndex,
   base: BaseCells,
   at: LandingAt,
   ignore: OwnerFilter,
+  out: Landing,
 ): Landing {
-  const hit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
+  const hit = landingHit;
   if (at.kind === "cursor") {
-    if (!volumes.topOwnerAt(at.cellX, at.cellZ, ignore, hit)) return { yPlates: 0, owner: null };
-    return { yPlates: Math.max(0, Math.ceil(hit.topLdu / PLATE_LDU)), owner: hit.owner };
+    const found = volumes.topOwnerAt(at.cellX, at.cellZ, ignore, hit);
+    out.yPlates = found ? Math.max(0, Math.ceil(hit.topLdu / PLATE_LDU)) : 0;
+    out.owner = found ? hit.owner : null;
+    return out;
   }
   const limit = at.yPlates * PLATE_LDU;
   let owner: number | null = null;
@@ -319,7 +324,9 @@ function landing(
     highest = hit.topLdu;
     owner = hit.owner;
   }
-  return { yPlates: at.yPlates, owner };
+  out.yPlates = at.yPlates;
+  out.owner = owner;
+  return out;
 }
 
 interface CandidateCells {
@@ -327,27 +334,47 @@ interface CandidateCells {
   readonly volumes: CellVolumes;
 }
 
-function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells {
+interface CellBuffers {
+  count: number;
+  cellX: Int32Array;
+  cellZ: Int32Array;
+}
+
+interface BaseBuffers extends CellBuffers {
+  flat: Uint8Array;
+}
+
+interface VolumeBuffers extends CellBuffers {
+  bottomLdu: Int32Array;
+  topLdu: Int32Array;
+}
+
+function baseBuffers(capacity: number): BaseBuffers {
+  return {
+    count: 0,
+    cellX: new Int32Array(capacity),
+    cellZ: new Int32Array(capacity),
+    flat: new Uint8Array(capacity),
+  };
+}
+
+function volumeBuffers(capacity: number): VolumeBuffers {
+  return {
+    count: 0,
+    cellX: new Int32Array(capacity),
+    cellZ: new Int32Array(capacity),
+    bottomLdu: new Int32Array(capacity),
+    topLdu: new Int32Array(capacity),
+  };
+}
+
+function writeCandidateCells(
+  placeable: Placeable,
+  pose: LatticePose,
+  base: BaseBuffers,
+  volumes: VolumeBuffers,
+): void {
   const { cells } = placeable;
-  let volumeCount = 0;
-  let baseCount = 0;
-  for (let cell = 0; cell < cells.width * cells.depth; cell++) {
-    if ((cells.topLdu[cell] ?? 0) > (cells.bottomLdu[cell] ?? 0)) volumeCount++;
-    if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) baseCount++;
-  }
-  const volumes = {
-    count: volumeCount,
-    cellX: new Int32Array(volumeCount),
-    cellZ: new Int32Array(volumeCount),
-    bottomLdu: new Int32Array(volumeCount),
-    topLdu: new Int32Array(volumeCount),
-  };
-  const base = {
-    count: baseCount,
-    cellX: new Int32Array(baseCount),
-    cellZ: new Int32Array(baseCount),
-    flat: new Uint8Array(baseCount),
-  };
   let v = 0;
   let b = 0;
   for (let j = 0; j < cells.depth; j++) {
@@ -372,17 +399,65 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
       }
     }
   }
+  base.count = b;
+  volumes.count = v;
+}
+
+function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells {
+  const { cells } = placeable;
+  let volumeCount = 0;
+  let baseCount = 0;
+  for (let cell = 0; cell < cells.width * cells.depth; cell++) {
+    if ((cells.topLdu[cell] ?? 0) > (cells.bottomLdu[cell] ?? 0)) volumeCount++;
+    if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) baseCount++;
+  }
+  const base = baseBuffers(baseCount);
+  const volumes = volumeBuffers(volumeCount);
+  writeCandidateCells(placeable, pose, base, volumes);
   return { base, volumes };
 }
 
-function raised(volumes: CellVolumes, byLdu: number): CellVolumes {
-  const bottomLdu = new Int32Array(volumes.count);
-  const topLdu = new Int32Array(volumes.count);
-  for (let c = 0; c < volumes.count; c++) {
-    bottomLdu[c] = (volumes.bottomLdu[c] ?? 0) + byLdu;
-    topLdu[c] = (volumes.topLdu[c] ?? 0) + byLdu;
+class CandidateScratch implements CandidateCells {
+  private placeable: Placeable | null = null;
+  private x = 0;
+  private z = 0;
+  private rot = 0;
+  private readonly pose = new LatticePose(0, 0, 0);
+  base = baseBuffers(0);
+  volumes = volumeBuffers(0);
+  private raisedVolumes = volumeBuffers(0);
+
+  at(placeable: Placeable, x: number, z: number, rot: number): this {
+    if (this.placeable === placeable && this.x === x && this.z === z && this.rot === rot) {
+      return this;
+    }
+    const capacity = placeable.cells.width * placeable.cells.depth;
+    if (this.base.cellX.length < capacity) {
+      this.base = baseBuffers(capacity);
+      this.volumes = volumeBuffers(capacity);
+      this.raisedVolumes = volumeBuffers(capacity);
+    }
+    writeCandidateCells(placeable, this.pose.at(x, z, rot), this.base, this.volumes);
+    this.placeable = placeable;
+    this.x = x;
+    this.z = z;
+    this.rot = rot;
+    return this;
   }
-  return { count: volumes.count, cellX: volumes.cellX, cellZ: volumes.cellZ, bottomLdu, topLdu };
+
+  raised(byLdu: number): CellVolumes {
+    if (byLdu === 0) return this.volumes;
+    const from = this.volumes;
+    const to = this.raisedVolumes;
+    for (let c = 0; c < from.count; c++) {
+      to.cellX[c] = from.cellX[c] ?? 0;
+      to.cellZ[c] = from.cellZ[c] ?? 0;
+      to.bottomLdu[c] = (from.bottomLdu[c] ?? 0) + byLdu;
+      to.topLdu[c] = (from.topLdu[c] ?? 0) + byLdu;
+    }
+    to.count = from.count;
+    return to;
+  }
 }
 
 class PlacedEntry implements PlacedModel {
@@ -789,6 +864,8 @@ export class PlacedChunks {
   private readonly volumes = new VolumeIndex();
   private readonly tongued: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
+  private readonly candidate = new CandidateScratch();
+  private readonly lands: Landing = { yPlates: 0, owner: null };
   private readonly support = new SupportGrid();
   private readonly owners = new Map<number, VolumeOwner>();
   private readonly trackStamps = new Map<number, TrackStamp>();
@@ -826,28 +903,27 @@ export class PlacedChunks {
     ignore: ReadonlyArray<PlacedModel>,
     at: LandingAt,
   ): PlacementCheck {
-    const cells = candidateCells(placeable, new LatticePose(x, z, rot));
-    return this.withExcluded(this.entriesOf(ignore), () => {
-      const first = placeable.layer === "first";
-      const lands = first
-        ? { yPlates: 0, owner: null }
-        : landing(this.volumes, cells.base, at, this.isTrack);
-      const { yPlates } = lands;
-      const support = first
-        ? null
-        : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
-      const hit = firstOverlap(
-        raised(cells.volumes, yPlates * PLATE_LDU),
-        this.volumes,
-        keepEveryOwner,
-      );
-      return {
-        yPlates,
-        support,
-        restsOn: lands.owner === null ? null : (this.owners.get(lands.owner) ?? null),
-        overlap: hit ? this.placedOverlap(hit) : null,
-      };
-    });
+    const cells = this.candidate.at(placeable, x, z, rot);
+    if (ignore.length === 0) return this.checkCells(placeable, cells, at);
+    return this.withExcluded(this.entriesOf(ignore), () => this.checkCells(placeable, cells, at));
+  }
+
+  private checkCells(placeable: Placeable, cells: CandidateScratch, at: LandingAt): PlacementCheck {
+    const first = placeable.layer === "first";
+    const lands = this.lands;
+    if (first) {
+      lands.yPlates = 0;
+      lands.owner = null;
+    } else {
+      landing(this.volumes, cells.base, at, this.isTrack, lands);
+    }
+    const { yPlates } = lands;
+    const restsOn = lands.owner === null ? null : (this.owners.get(lands.owner) ?? null);
+    const support = first
+      ? null
+      : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
+    const hit = firstOverlap(cells.raised(yPlates * PLATE_LDU), this.volumes, keepEveryOwner);
+    return { yPlates, support, restsOn, overlap: hit ? this.placedOverlap(hit) : null };
   }
 
   trackOverlap(cells: BaseCells, bottomLdu: number, topLdu: number): PlacedOverlap | null {
