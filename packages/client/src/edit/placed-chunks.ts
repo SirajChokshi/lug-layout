@@ -829,7 +829,10 @@ export class PlacedChunks {
     for (const key of new Set([...this.byChunk.keys(), ...this.chunkStuds.keys()])) {
       this.backend.deleteChunk(key);
     }
-    for (const key of this.byColumnChunk.keys()) this.occupancy.clearChunk(key);
+    for (const key of this.byColumnChunk.keys()) {
+      this.occupancy.clearChunk(key);
+      this.support.clearChunk(key);
+    }
     this.byChunk.clear();
     this.byFootprintChunk.clear();
     this.byColumnChunk.clear();
