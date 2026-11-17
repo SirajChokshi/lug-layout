@@ -49,6 +49,7 @@ export type {
   HoverView,
   IEditor,
   LatencySample,
+  MoveView,
   RoadIssueView,
   RoadJoinView,
   RoadPlacementDump,

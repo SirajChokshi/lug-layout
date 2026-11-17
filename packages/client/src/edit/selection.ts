@@ -128,3 +128,23 @@ export function quarterTurnAbout<T extends QuarterTurnPose>(pose: T, pivot: Latt
     rot,
   };
 }
+
+export function turnedBox(box: WorldBox, pivot: LatticePoint, turns: number): WorldBox {
+  let corners = [
+    { x: box.minX, z: box.minZ, rot: 0 },
+    { x: box.maxX, z: box.maxZ, rot: 0 },
+  ];
+  for (let turn = 0; turn < turns; turn++) {
+    corners = corners.map((corner) => quarterTurnAbout(corner, pivot));
+  }
+  const xs = corners.map((corner) => corner.x);
+  const zs = corners.map((corner) => corner.z);
+  return {
+    minX: Math.min(...xs),
+    minY: box.minY,
+    minZ: Math.min(...zs),
+    maxX: Math.max(...xs),
+    maxY: box.maxY,
+    maxZ: Math.max(...zs),
+  };
+}

@@ -84,6 +84,7 @@ import {
   quarterTurnAbout,
   rectMode,
   rotationPivot,
+  turnedBox,
   unionBox,
   type LatticePoint,
 } from "./selection.ts";
@@ -327,7 +328,9 @@ export interface EditorSnapshot {
 export interface MoveView {
   readonly dx: number;
   readonly dz: number;
+  readonly turns: number;
   readonly models: number;
+  readonly checking: boolean;
   readonly refusal: string | null;
 }
 
@@ -402,6 +405,8 @@ const TRACK_SNAP_RADIUS_LDU = 3 * STUD_LDU;
 const END_MARKER_HEIGHT_LDU = 40;
 const P95 = 0.95;
 const QUARTER_TURNS = 4;
+const SLOW_MOVE_CHECK_MS = 30;
+const MOVE_REST_MS = 150;
 const SELECT_IT_TOO = "Select it too, or remove it first.";
 const STATS_INTERVAL_MS = 500;
 const NO_REBUILD: RebuildReport = { chunks: 0, instances: 0, studs: 0 };
@@ -512,9 +517,13 @@ interface MoveDrag {
   readonly grid: number;
   dx: number;
   dz: number;
+  turns: number;
   ghostShown: boolean;
   changes: ReadonlyArray<ModelChange>;
   refusal: ItemRefusal | null;
+  checked: boolean;
+  changedAtMs: number;
+  lastCheckMs: number;
 }
 
 interface ModelChange {
@@ -842,6 +851,7 @@ export class Editor implements IEditor {
     try {
       this.resizeToCanvas();
       const startMs = performance.now();
+      if (this.moving) this.checkMove(this.moving, startMs);
       this.camera.apply(this.backend);
       this.backend.renderFrame(this.frameStats);
       const pending = this.pending;
@@ -993,7 +1003,7 @@ export class Editor implements IEditor {
       return;
     }
     const track = this.track;
-    if (!track || !this.groundHit(ndcX, ndcY)) return;
+    if (this.state.mode !== "track" || !track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
     this.showTrackGhost(track);
     this.showEndMarker(track.dragTarget());
@@ -1007,7 +1017,7 @@ export class Editor implements IEditor {
       return;
     }
     const track = this.track;
-    if (!track) return;
+    if (this.state.mode !== "track" || !track) return;
     if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
     const commit = track.endDrag();
     this.backend.setGhost(null);
@@ -1024,6 +1034,10 @@ export class Editor implements IEditor {
   }
 
   chooseItem(id: string | null): void {
+    if (id === null && this.moving) {
+      this.cancelMove();
+      return;
+    }
     this.cancelMove();
     this.showRefusalCells(null);
     if (id === TRACK_ITEM_ID && this.track) {
@@ -1582,6 +1596,10 @@ export class Editor implements IEditor {
   }
 
   rotate(eventTimeMs: number): void {
+    if (this.moving) {
+      this.turnMove(this.moving);
+      return;
+    }
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
       this.placeGhost();
@@ -1658,59 +1676,118 @@ export class Editor implements IEditor {
       grid,
       dx: 0,
       dz: 0,
+      turns: 0,
       ghostShown: false,
       changes: [],
       refusal: null,
+      checked: true,
+      changedAtMs: 0,
+      lastCheckMs: 0,
     };
     return true;
   }
 
+  private dragHeld(drag: MoveDrag): boolean {
+    if (drag.models.every((model) => model.handle.live)) return true;
+    this.cancelMove();
+    return false;
+  }
+
+  private draggedChanges(drag: MoveDrag): ReadonlyArray<ModelChange> {
+    const landsAlone = drag.models.length === 1;
+    return drag.models.map((model) => {
+      let pose = poseOf(model.handle);
+      for (let turn = 0; turn < drag.turns; turn++) pose = quarterTurnAbout(pose, drag.origin);
+      const x = pose.x + drag.dx;
+      const z = pose.z + drag.dz;
+      const yPlates = landsAlone
+        ? this.checkAt(model.placeable, x, z, pose.rot, [model], this.cursorLanding()).yPlates
+        : pose.yPlates;
+      return { model, to: { ...pose, x, z, yPlates } };
+    });
+  }
+
+  private dragChanged(drag: MoveDrag): void {
+    if (!drag.ghostShown) {
+      this.backend.setGhost(groupGhost(drag.models, drag.origin.x, drag.origin.z));
+      drag.ghostShown = true;
+    }
+    drag.changes = this.draggedChanges(drag);
+    drag.checked = false;
+    drag.refusal = null;
+    drag.changedAtMs = performance.now();
+    const lead = drag.changes[0];
+    const dyLdu = lead?.to ? (lead.to.yPlates - lead.model.handle.yPlates) * PLATE_LDU : 0;
+    this.backend.placeGhost(drag.origin.x + drag.dx, dyLdu, drag.origin.z + drag.dz, drag.turns);
+    this.backend.setSelectionBoxes(
+      drag.models.map(({ box }) => {
+        const turned = turnedBox(box, drag.origin, drag.turns);
+        return {
+          minX: turned.minX + drag.dx,
+          minY: turned.minY + dyLdu,
+          minZ: turned.minZ + drag.dz,
+          maxX: turned.maxX + drag.dx,
+          maxY: turned.maxY + dyLdu,
+          maxZ: turned.maxZ + drag.dz,
+        };
+      }),
+    );
+    this.showMove(drag);
+  }
+
+  private showMove(drag: MoveDrag): void {
+    this.update({
+      move: {
+        dx: drag.dx,
+        dz: drag.dz,
+        turns: drag.turns,
+        models: drag.models.length,
+        checking: !drag.checked,
+        refusal: drag.refusal?.message ?? null,
+      },
+    });
+  }
+
+  private checkMove(drag: MoveDrag, nowMs: number): void {
+    if (drag.checked || !this.dragHeld(drag)) return;
+    const slow = drag.lastCheckMs > SLOW_MOVE_CHECK_MS;
+    if (slow && nowMs - drag.changedAtMs < MOVE_REST_MS) return;
+    const started = performance.now();
+    const still = drag.dx === 0 && drag.dz === 0 && drag.turns === 0;
+    drag.refusal = still ? null : this.groupRefusal(drag.changes);
+    drag.lastCheckMs = performance.now() - started;
+    drag.checked = true;
+    this.showMove(drag);
+  }
+
   private updateMove(drag: MoveDrag, ndcX: number, ndcY: number): void {
-    if (!this.groundHit(ndcX, ndcY)) return;
+    if (!this.dragHeld(drag) || !this.groundHit(ndcX, ndcY)) return;
     const dx = snapToGrid(this.hitX - drag.anchorX, drag.grid);
     const dz = snapToGrid(this.hitZ - drag.anchorZ, drag.grid);
     if (dx === drag.dx && dz === drag.dz) return;
     drag.dx = dx;
     drag.dz = dz;
-    if (!drag.ghostShown) {
-      this.backend.setGhost(groupGhost(drag.models, drag.origin.x, drag.origin.z));
-      drag.ghostShown = true;
-    }
-    drag.changes = this.translated(drag.models, dx, dz, true);
-    drag.refusal = dx === 0 && dz === 0 ? null : this.groupRefusal(drag.changes);
-    const lead = drag.changes[0];
-    const dyLdu = lead?.to ? (lead.to.yPlates - lead.model.handle.yPlates) * PLATE_LDU : 0;
-    this.backend.placeGhost(drag.origin.x + dx, dyLdu, drag.origin.z + dz, 0);
-    this.backend.setSelectionBoxes(
-      drag.models.map(({ box }) => ({
-        minX: box.minX + dx,
-        minY: box.minY + dyLdu,
-        minZ: box.minZ + dz,
-        maxX: box.maxX + dx,
-        maxY: box.maxY + dyLdu,
-        maxZ: box.maxZ + dz,
-      })),
-    );
-    this.update({
-      move: { dx, dz, models: drag.models.length, refusal: drag.refusal?.message ?? null },
-    });
+    this.dragChanged(drag);
+  }
+
+  private turnMove(drag: MoveDrag): void {
+    if (!this.dragHeld(drag)) return;
+    drag.turns = (drag.turns + 1) % QUARTER_TURNS;
+    this.dragChanged(drag);
   }
 
   private endMove(drag: MoveDrag, ndcX: number, ndcY: number, eventTimeMs: number): void {
     this.updateMove(drag, ndcX, ndcY);
+    if (this.moving !== drag) return;
     this.moving = null;
     this.backend.setGhost(null);
     this.update({ move: null });
-    if (drag.dx === 0 && drag.dz === 0) {
+    if (drag.dx === 0 && drag.dz === 0 && drag.turns === 0) {
       this.select([drag.picked], drag.picked);
       return;
     }
-    if (drag.refusal) {
-      this.refuse("move", drag.refusal.item, drag.refusal);
-      this.select(drag.models);
-      return;
-    }
-    this.commitModels("move", drag.changes, eventTimeMs);
+    const kind = drag.dx === 0 && drag.dz === 0 ? "rotate" : "move";
+    if (!this.commitModels(kind, drag.changes, eventTimeMs)) this.select(drag.models);
   }
 
   private cancelMove(): void {
@@ -1719,7 +1796,7 @@ export class Editor implements IEditor {
     this.moving = null;
     this.backend.setGhost(null);
     this.update({ move: null });
-    this.select(drag.models);
+    this.select(drag.models.filter((model) => model.handle.live));
   }
 
   nudge(right: number, up: number, eventTimeMs: number): void {
@@ -1750,6 +1827,7 @@ export class Editor implements IEditor {
   }
 
   deleteSelection(eventTimeMs: number): void {
+    this.cancelMove();
     if (this.state.mode === "track") {
       this.removeSelectedTrack(eventTimeMs);
       return;
@@ -1764,11 +1842,13 @@ export class Editor implements IEditor {
   }
 
   undo(eventTimeMs: number): void {
+    this.cancelMove();
     this.abandonTrackDrag();
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
+    this.cancelMove();
     this.abandonTrackDrag();
     this.replay(this.history.redo(), eventTimeMs);
   }

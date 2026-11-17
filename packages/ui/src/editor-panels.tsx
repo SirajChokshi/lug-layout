@@ -4,6 +4,7 @@ import {
   type EditorSnapshot,
   type IEditor,
   type LatencySample,
+  type MoveView,
   type RoadIssueView,
 } from "@brr/client";
 import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
@@ -163,10 +164,11 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
       </button>
       <p className="toolbar-hint">
         Click picks a model; Shift-, Ctrl- or Cmd-click adds or removes one; Ctrl+A picks all. Drag
-        a model to move the selection on the grid; the arrow keys nudge it one step. Drag on empty
-        ground to box-select: left to right takes models wholly inside, right to left takes anything
-        the box touches, Shift adds. Right-drag orbits, middle-drag or Shift+right-drag pans, the
-        wheel zooms, C centres on the cursor.
+        a model without modifiers to move the selection on the grid; R turns it while you hold it,
+        Esc puts it back. The arrow keys nudge the selection one step. Drag on empty ground, or with
+        a modifier held, to box-select: left to right takes models wholly inside, right to left
+        takes anything the box touches, Shift adds. Right-drag orbits, middle-drag or
+        Shift+right-drag pans, the wheel zooms, C centres on the cursor.
       </p>
     </div>
   );
@@ -244,6 +246,11 @@ function seatText(snapshot: EditorSnapshot): string {
   return `${plates} baseplate${plates === 1 ? "" : "s"}, ${studsWide}×${studsDeep} studs, top at y = 0${gridText}`;
 }
 
+function moveVerdict(move: MoveView): string {
+  if (move.refusal !== null) return `: refused, ${move.refusal}`;
+  return move.checking ? ", checking" : "";
+}
+
 function snapText(snapshot: EditorSnapshot): string {
   const { snap } = snapshot;
   if (!snap) return "none";
@@ -300,7 +307,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     [
       "Moving",
       snapshot.move
-        ? `${snapshot.move.models} by ${snapshot.move.dx}, ${snapshot.move.dz} LDU${snapshot.move.refusal ? `: refused, ${snapshot.move.refusal}` : ""}`
+        ? `${snapshot.move.models} by ${snapshot.move.dx}, ${snapshot.move.dz} LDU${snapshot.move.turns > 0 ? `, turned ${degrees(snapshot.move.turns)}` : ""}${moveVerdict(snapshot.move)}`
         : "no",
     ],
     ["Baseplate seat", seatText(snapshot)],

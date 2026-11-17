@@ -15,8 +15,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startEditor(): Promise<IEditor> {
-  return (await startRig([UPPER_SET], new StraightDownBackend(NDC_TO_LDU, RAY_START_Y))).editor;
+async function startEditor(
+  backend = new StraightDownBackend(NDC_TO_LDU, RAY_START_Y),
+): Promise<IEditor> {
+  return (await startRig([UPPER_SET], backend)).editor;
 }
 
 function itemOf(editor: IEditor, group: string): string {
@@ -188,4 +190,60 @@ it("drags a model as one move command: refused off the studs, landed exactly on 
   editor.undo(0);
   editor.undo(0);
   expect(poses(editor)).toEqual(home);
+}, 120_000);
+
+async function heldPlate(backend: StraightDownBackend): Promise<{
+  readonly editor: IEditor;
+  readonly plate: Pose;
+  readonly target: readonly [number, number];
+}> {
+  const editor = await startEditor(backend);
+  const plateItem = itemOf(editor, BASEPLATE);
+  editor.chooseItem(plateItem);
+  clickAt(editor, 0, 0);
+  clickAt(editor, FAR_LDU / 2, 0);
+  editor.chooseItem(null);
+  const plate = poses(editor)
+    .filter((pose) => pose.item === plateItem)
+    .at(-1);
+  if (!plate) throw new Error("the baseplates were not placed");
+  const target = [plate.x, plate.z + FAR_LDU] as const;
+  expect(editor.dragStart(plate.x / NDC_TO_LDU, plate.z / NDC_TO_LDU)).toBe(true);
+  editor.dragMove(target[0] / NDC_TO_LDU, target[1] / NDC_TO_LDU);
+  expect(editor.snapshot().move?.dz).toBe(FAR_LDU);
+  return { editor, plate, target };
+}
+
+it("turns a held drag with R, and drops it turned where it was dragged, as one move", async () => {
+  const { editor, plate, target } = await heldPlate(
+    new StraightDownBackend(NDC_TO_LDU, RAY_START_Y),
+  );
+  const depth = editor.snapshot().history.undoDepth;
+  editor.rotate(0);
+  expect(editor.snapshot().move?.turns).toBe(1);
+  expect(editor.snapshot().history.undoDepth).toBe(depth);
+  editor.dragEnd(target[0] / NDC_TO_LDU, target[1] / NDC_TO_LDU, 0);
+  expect(editor.snapshot().lastRefusal).toBeNull();
+  expect(editor.snapshot().history.undoDepth).toBe(depth + 1);
+  expect(editor.snapshot().history.undo).toBe("move");
+  const dropped = poses(editor).find((pose) => pose.z > plate.z + FAR_LDU / 2);
+  expect(dropped?.rot).toBe((plate.rot + 1) % 4);
+}, 120_000);
+
+it("lets go of a held drag cleanly when Delete or Ctrl+Z is pressed mid-drag", async () => {
+  for (const command of ["delete", "undo"] as const) {
+    const backend = new StraightDownBackend(NDC_TO_LDU, RAY_START_Y);
+    const { editor, target } = await heldPlate(backend);
+    const before = editor.snapshot();
+    if (command === "delete") editor.deleteSelection(0);
+    else editor.undo(0);
+    expect(editor.snapshot().move).toBeNull();
+    editor.dragMove(target[0] / NDC_TO_LDU + 0.01, target[1] / NDC_TO_LDU);
+    editor.dragEnd(target[0] / NDC_TO_LDU, target[1] / NDC_TO_LDU, 0);
+    expect(editor.snapshot().refusals).toBe(before.refusals);
+    expect(editor.snapshot().placements).toBe(before.placements - 1);
+    expect(editor.snapshot().history.undo).toBe(command === "delete" ? "remove" : "place");
+    expect(backend.selectionBoxes).toHaveLength(editor.snapshot().selection?.count ?? 0);
+    expect(poses(editor).every((pose) => pose.z < FAR_LDU / 2)).toBe(true);
+  }
 }, 120_000);
