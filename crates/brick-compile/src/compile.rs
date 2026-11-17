@@ -1,11 +1,14 @@
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
-use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference};
+use crate::flatten::{
+    FlattenError, Flattened, Flattener, Library, Lod, SpanRecording, StudReference,
+};
 use crate::glb;
 use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
+use crate::technic::{self, TechnicPart, TechnicPrimitives};
 use crate::voxel::VOXEL_NOTE;
 
 pub const MODIFIED_NOTE: &str =
@@ -40,6 +43,7 @@ pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
     pub unofficial_allowlist: Vec<String>,
+    pub technic: TechnicPrimitives,
 }
 
 const UNOFFICIAL_PREFIX: &str = "Unofficial_";
@@ -72,6 +76,7 @@ pub struct CompiledPart {
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
+    pub technic: Option<TechnicPart>,
 }
 
 fn to_y_up(p: Vec3) -> Vec3 {
@@ -105,7 +110,12 @@ pub fn compile_part<L: Library>(
     reference: &str,
     options: &CompileOptions,
 ) -> Result<CompiledPart, CompileError> {
-    let mut flattener = Flattener::new(library, options.lod, &options.stud_primitives);
+    let technic_names = options.technic.names();
+    let mut flattener =
+        Flattener::new(library, options.lod, &options.stud_primitives).recording(SpanRecording {
+            named: &technic_names,
+            circular: false,
+        });
     let path =
         flattener
             .resolve(reference)
@@ -125,6 +135,11 @@ pub fn compile_part<L: Library>(
         *edge = edge.map(to_y_up);
     }
     let mesh = mesh::build(&flattened.triangles, &flattened.hard_edges);
+    let technic = if flattened.spans.is_empty() {
+        None
+    } else {
+        technic_features(library, &path, &options.technic, &technic_names, &mesh)?
+    };
     let studs = flattened
         .studs
         .iter()
@@ -141,7 +156,40 @@ pub fn compile_part<L: Library>(
         mesh,
         studs,
         flattened_files: flattened.files,
+        technic,
     })
+}
+
+fn technic_features<L: Library>(
+    library: &L,
+    path: &str,
+    primitives: &TechnicPrimitives,
+    names: &[String],
+    mesh: &Mesh,
+) -> Result<Option<TechnicPart>, CompileError> {
+    let Some([min, max]) = mesh.bounds() else {
+        return Ok(None);
+    };
+    let mut flattened = Flattener::new(library, Lod::Standard, &[])
+        .recording(SpanRecording {
+            named: names,
+            circular: true,
+        })
+        .flatten(path)
+        .map_err(CompileError::Flatten)?;
+    for triangle in &mut flattened.triangles {
+        triangle.points = triangle.points.map(to_y_up);
+    }
+    for span in &mut flattened.spans {
+        span.matrix = span.matrix.ldraw_to_y_up();
+    }
+    let part = technic::analyze(
+        &flattened.triangles,
+        &flattened.spans,
+        primitives,
+        [min.map(f64::from), max.map(f64::from)],
+    );
+    Ok((!part.is_empty()).then_some(part))
 }
 
 impl CompiledPart {
@@ -164,7 +212,7 @@ impl CompiledPart {
             .map(|s| json!({ "primitive": s.primitive, "color": s.color, "matrix": s.matrix.m }))
             .collect();
         let [min, max] = self.mesh.bounds().unwrap_or([[0.0; 3]; 2]);
-        json!({
+        let mut extras = json!({
             "unit": "LDU",
             "upAxis": "+Y",
             "ldraw": {
@@ -179,7 +227,11 @@ impl CompiledPart {
             "sources": sources,
             "studs": studs,
             "bounds": { "min": min, "max": max },
-        })
+        });
+        if let Some(technic) = &self.technic {
+            extras["technic"] = technic.to_json();
+        }
+        extras
     }
 
     pub fn to_glb(&self) -> Vec<u8> {

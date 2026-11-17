@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  NO_ITEM,
   NO_VOLUME_TOP,
   VolumeIndex,
   cellChunkKey,
@@ -8,6 +9,18 @@ import {
 } from "./volume-index.ts";
 
 const keepAll = (): boolean => false;
+const technicItemsClear = (): boolean => false;
+
+function pinSpan(item: number): CellVolumes {
+  return {
+    count: 1,
+    cellX: Int32Array.of(0),
+    cellZ: Int32Array.of(0),
+    bottomLdu: Int32Array.of(6),
+    topLdu: Int32Array.of(22),
+    item: Int32Array.of(item),
+  };
+}
 const ignoreBaseplate = (owner: number): boolean => owner === 1;
 
 function volumes(list: ReadonlyArray<readonly [number, number, number, number]>): CellVolumes {
@@ -59,5 +72,16 @@ describe("VolumeIndex", () => {
   it("refuses an empty or fractional span", () => {
     expect(() => index.add(4, 0, 0, 8, 8)).toThrow(RangeError);
     expect(() => index.add(4, 0, 0, 0, 1.5)).toThrow(RangeError);
+  });
+});
+
+describe("VolumeIndex with Technic items", () => {
+  it("lets the Technic test clear two Technic items only, and keeps plain space against Technic space overlapping", () => {
+    const index = new VolumeIndex();
+    index.add(7, 0, 0, 0, 24, 0);
+    expect({
+      technicAgainstTechnic: firstOverlap(pinSpan(3), index, keepAll, technicItemsClear),
+      plainAgainstTechnic: firstOverlap(pinSpan(NO_ITEM), index, keepAll, technicItemsClear)?.owner,
+    }).toEqual({ technicAgainstTechnic: null, plainAgainstTechnic: 7 });
   });
 });

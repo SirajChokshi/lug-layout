@@ -710,7 +710,32 @@ it("measures a set's volume from where its parts start, so 10190-1's hanging pin
   expect(place("generated:mils-plain", 960, 320)).toEqual({
     placements: 1,
     refusals: 1,
-    reason: expect.stringContaining("and 10190-1 Market Street (2007) fills 6 to 24 LDU."),
+    reason: expect.stringContaining("and 10190-1 Market Street (2007) fills 6 to 22 LDU."),
+  });
+}, 120_000);
+
+it("takes 10190-1 flush against 10218-1 where the Pet Shop's Technic pins enter Market Street's Technic-brick holes, and refuses a pin that meets the baseplate", async () => {
+  const { editor, backend } = await startEditor(["10218-1", "10190-1"]);
+  const place = placer(editor, backend);
+  const market = "omr:10190-1";
+  expect(await editor.prefetch("omr:10218-1")).toBe(true);
+  expect(await editor.prefetch(market)).toBe(true);
+  place("omr:10218-1", 320, 320);
+
+  editor.chooseItem(market);
+  const pinIntoBaseplate = place(market, 320, -320);
+  editor.rotate(0);
+  const pinsIntoHoles = place(market, 320, -320);
+  const { placements } = editor.dump();
+
+  expect({ pinIntoBaseplate, pinsIntoHoles, rot: placements.rot.toSorted() }).toEqual({
+    pinIntoBaseplate: {
+      placements: 1,
+      refusals: 1,
+      reason: expect.stringContaining("and 10218-1 Pet Shop (2011) fills 6 to 22 LDU."),
+    },
+    pinsIntoHoles: { placements: 2, refusals: 1, reason: expect.any(String) },
+    rot: [0, 1],
   });
 }, 120_000);
 

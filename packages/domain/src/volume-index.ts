@@ -1,12 +1,14 @@
 import { CHUNK_STUDS, chunkKey } from "@brr/math";
 
 const CELLS_PER_CHUNK = CHUNK_STUDS * CHUNK_STUDS;
-const RECORD_FIELDS = 4;
+const RECORD_FIELDS = 5;
 const OWNER = 0;
 const BOTTOM = 1;
 const TOP = 2;
 const NEXT = 3;
+const ITEM = 4;
 const NO_RECORD = -1;
+export const NO_ITEM = -1;
 const INITIAL_RECORDS = 256;
 export const NO_VOLUME_TOP = -0x8000_0000;
 
@@ -34,7 +36,7 @@ class VolumeChunk {
   records = new Int32Array(INITIAL_RECORDS * RECORD_FIELDS);
   count = 0;
 
-  push(cell: number, owner: number, bottom: number, top: number): void {
+  push(cell: number, owner: number, bottom: number, top: number, item: number): void {
     if ((this.count + 1) * RECORD_FIELDS > this.records.length) {
       const grown = new Int32Array(this.records.length * 2);
       grown.set(this.records);
@@ -45,6 +47,7 @@ class VolumeChunk {
     this.records[r + BOTTOM] = bottom;
     this.records[r + TOP] = top;
     this.records[r + NEXT] = this.heads[cell] ?? NO_RECORD;
+    this.records[r + ITEM] = item;
     this.heads[cell] = r;
   }
 }
@@ -57,6 +60,8 @@ export interface VolumeHit {
 
 export type OwnerFilter = (owner: number, cellX: number, cellZ: number) => boolean;
 
+export type ItemOverlap = (owner: number, placedItem: number, candidateItem: number) => boolean;
+
 export class VolumeIndex {
   private readonly byKey = new Map<number, VolumeChunk>();
   private readonly byChunkX = new Map<number, Map<number, VolumeChunk>>();
@@ -65,7 +70,14 @@ export class VolumeIndex {
     return this.byChunkX.get(chunkOfCell(cellX))?.get(chunkOfCell(cellZ));
   }
 
-  add(owner: number, cellX: number, cellZ: number, bottomLdu: number, topLdu: number): void {
+  add(
+    owner: number,
+    cellX: number,
+    cellZ: number,
+    bottomLdu: number,
+    topLdu: number,
+    item: number = NO_ITEM,
+  ): void {
     if (!Number.isInteger(bottomLdu) || !Number.isInteger(topLdu) || topLdu <= bottomLdu) {
       throw new RangeError(`volume [${bottomLdu}, ${topLdu}) LDU is not a non-empty integer span`);
     }
@@ -82,7 +94,7 @@ export class VolumeIndex {
       rows.set(chunkZ, chunk);
       this.byKey.set(chunkKey(chunkX, chunkZ), chunk);
     }
-    chunk.push(cellIndex(cellX, cellZ), owner, bottomLdu, topLdu);
+    chunk.push(cellIndex(cellX, cellZ), owner, bottomLdu, topLdu, item);
   }
 
   topAt(cellX: number, cellZ: number): number {
@@ -125,6 +137,8 @@ export class VolumeIndex {
     topLdu: number,
     ignore: OwnerFilter,
     out: VolumeHit,
+    item: number = NO_ITEM,
+    itemOverlap: ItemOverlap | null = null,
   ): boolean {
     const chunk = this.chunkAt(cellX, cellZ);
     if (!chunk) return false;
@@ -132,7 +146,15 @@ export class VolumeIndex {
       const owner = chunk.records[r + OWNER] ?? 0;
       const b = chunk.records[r + BOTTOM] ?? 0;
       const t = chunk.records[r + TOP] ?? 0;
-      if (!ignore(owner, cellX, cellZ) && Math.max(b, bottomLdu) < Math.min(t, topLdu)) {
+      const placedItem = chunk.records[r + ITEM] ?? NO_ITEM;
+      if (
+        Math.max(b, bottomLdu) < Math.min(t, topLdu) &&
+        !ignore(owner, cellX, cellZ) &&
+        (item === NO_ITEM ||
+          placedItem === NO_ITEM ||
+          itemOverlap === null ||
+          itemOverlap(owner, placedItem, item))
+      ) {
         out.owner = owner;
         out.bottomLdu = b;
         out.topLdu = t;
@@ -166,6 +188,7 @@ export interface CellVolumes {
   readonly cellZ: Int32Array;
   readonly bottomLdu: Int32Array;
   readonly topLdu: Int32Array;
+  readonly item?: Int32Array;
 }
 
 export interface Overlap {
@@ -184,6 +207,7 @@ export function firstOverlap(
   volumes: CellVolumes,
   index: VolumeIndex,
   ignore: OwnerFilter,
+  itemOverlap: ItemOverlap | null = null,
 ): Overlap | null {
   const hit = overlapHit;
   for (let c = 0; c < volumes.count; c++) {
@@ -192,7 +216,8 @@ export function firstOverlap(
     const bottom = volumes.bottomLdu[c] ?? 0;
     const top = volumes.topLdu[c] ?? 0;
     if (top <= bottom) continue;
-    if (index.firstOverlap(x, z, bottom, top, ignore, hit)) {
+    const item = volumes.item?.[c] ?? NO_ITEM;
+    if (index.firstOverlap(x, z, bottom, top, ignore, hit, item, itemOverlap)) {
       return {
         cellX: x,
         cellZ: z,

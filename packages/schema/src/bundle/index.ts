@@ -849,6 +849,11 @@ export const Palette = v.strictObject({
   source: BundleSource,
   config: v.array(v.string()),
   studPrimitives: v.array(v.string()),
+  technicPrimitives: v.strictObject({
+    holes: v.array(v.string()),
+    pins: v.array(v.string()),
+    axleEnds: v.array(v.string()),
+  }),
   unofficialAllowlist: v.array(v.string()),
   parts: v.array(
     v.strictObject({
