@@ -1532,3 +1532,16 @@ footer a {
   gap: 6px;
   color: #556;
 }
+
+.palette [draggable="true"] {
+  cursor: grab;
+}
+
+.palette [draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.palette-how {
+  margin: 0 0 6px;
+  font-size: 11px;
+}
