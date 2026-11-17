@@ -1040,6 +1040,7 @@ it.each([
   "with a 3811 placed, $name is refused only where two baseplates would share space",
   async ({ held, at, expected }) => {
     const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    expect(await editor.prefetch(SET)).toBe(true);
     const place = placer(editor, backend);
     place(BASEPLATE, 0, 0);
     editor.chooseItem(held);
@@ -1077,6 +1078,7 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
 
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
   const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  expect(await editor.prefetch(SET)).toBe(true);
   const place = placer(editor, backend);
   place(PLAIN_MODULE, 320, 320);
   place(SET, 320, 320);
@@ -1126,6 +1128,7 @@ it.each([
   "deletes the support when $name, since the set keeps its resting height",
   async ({ lay, remove }) => {
     const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    expect(await editor.prefetch(SET)).toBe(true);
     const place = placer(editor, backend);
     for (const [item, x, z] of lay) place(item, x, z);
     const setPose = () => posesOf(editor).find((pose) => pose.startsWith(SET));
