@@ -138,4 +138,22 @@ describe("palette search", () => {
   it("lifts a recent part above an equal match", () => {
     expect(name(search("baseplate 32", ["ldraw:3811@1"])[0])).toBe("ldraw:3811@1");
   });
+
+  it("ranks a command whose title has the word with the parts named by it, not below them", () => {
+    const kinds = search("road").map((result) => result.kind);
+    expect(kinds.lastIndexOf("command")).toBeLessThan(kinds.indexOf("item"));
+    expect(
+      search("road")
+        .filter((result) => result.kind === "command")
+        .map(name),
+    ).toEqual(expect.arrayContaining(["toggle-joins", "toggle-road-snap"]));
+  });
+
+  it("lists every matching part once before any part's other colours", () => {
+    const groups = search("baseplate").flatMap((result) =>
+      result.kind === "item" ? [result.item.group] : [],
+    );
+    const firstRepeat = groups.findIndex((group, at) => groups.indexOf(group) < at);
+    expect(new Set(groups.slice(0, firstRepeat)).size).toBe(new Set(groups).size);
+  });
 });

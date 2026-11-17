@@ -153,6 +153,20 @@ it("forgives typos and abbreviations but ranks exact words first", () => {
   expect(keys("passenger")[0]).toBe("omr:7938-1");
 });
 
+it("forgives a misspelt colour, but never reads one real colour word as another", () => {
+  expect(colorsOf("gren 3811", "ldraw:3811")?.[0]).toBe("Green");
+  for (const key of ["ldraw:4186", "ldraw:3811", "ldraw:3867"]) {
+    expect(colorsOf("baseplate gren", key)?.[0]).toBe("Green");
+  }
+  expect(colorsOf("green", "ldraw:3867")).toEqual(["Green"]);
+});
+
+it("matches the words for a kind of part as typed or abbreviated, never as a typo", () => {
+  expect(keys("ground")).toEqual(["ldraw:4186", "ldraw:3811", "ldraw:3867"]);
+  expect(keys("grou")).toEqual(["ldraw:4186", "ldraw:3811", "ldraw:3867"]);
+  expect(keys("plan")).toEqual([]);
+});
+
 it("reads quoted phrases, minus to exclude, and # for numbers only", () => {
   expect(keys('"road crossroads"')).toEqual(["ldraw:2358p02"]);
   expect(keys('"crossroads road"')).toEqual([]);
