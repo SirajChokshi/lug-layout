@@ -720,6 +720,7 @@ export class PlacedChunks {
     rot: number,
     ignore: ReadonlyArray<PlacedModel>,
     at: LandingAt,
+    exempt: OwnerFilter = keepEveryOwner,
   ): PlacementCheck {
     const cells = candidateCells(placeable, new LatticePose(x, z, rot));
     return this.withExcluded(this.entriesOf(ignore), () => {
@@ -731,11 +732,7 @@ export class PlacedChunks {
       const support = first
         ? null
         : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
-      const hit = firstOverlap(
-        raised(cells.volumes, yPlates * PLATE_LDU),
-        this.volumes,
-        keepEveryOwner,
-      );
+      const hit = firstOverlap(raised(cells.volumes, yPlates * PLATE_LDU), this.volumes, exempt);
       return {
         yPlates,
         support,
@@ -768,6 +765,15 @@ export class PlacedChunks {
       if (known?.kind === "track") pieces.add(known.piece);
     }
     return pieces;
+  }
+
+  trackOwnerOf(piece: number): number | null {
+    for (const stamp of this.trackStamps.values()) if (stamp.piece === piece) return stamp.owner;
+    return null;
+  }
+
+  ownerOf(model: PlacedModel): number {
+    return this.entryOf(model).owner;
   }
 
   addTrackPiece(

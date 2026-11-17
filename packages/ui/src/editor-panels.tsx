@@ -513,12 +513,13 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       ? "no item in hand"
       : ghost.refusal
         ? `refused: ${ghost.refusal.message}`
-        : `lands at ${ghost.yPlates} plates, supported`;
+        : `lands at ${ghost.yPlates} plates, supported${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}`;
   return (
     <section
       className="inspector placement-rules"
       aria-label="Placement rules"
       data-ghost-refused={ghost?.refusal ? ghost.refusal.rule : ""}
+      data-ghost-track-joins={ghost?.trackJoins ?? 0}
       data-refusals={snapshot.refusals}
       data-last-refusal-rule={lastRefusal?.rule ?? ""}
     >
