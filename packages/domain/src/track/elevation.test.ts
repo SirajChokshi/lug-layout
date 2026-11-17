@@ -3,7 +3,7 @@ import { conjugateZeta16, pose16, POSE16_IDENTITY, zeta16 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { crossing, PLATES_PER_BRICK, rampRises, riserCourses } from "./elevation.ts";
 import { NO_END, TrackGraph } from "./track-graph.ts";
-import { TrackLayout, type TrackPieceSpec } from "./track-layout.ts";
+import { INT8_MAX, TrackLayout, type TrackPieceSpec } from "./track-layout.ts";
 
 interface GeometryEnd {
   readonly fieldCertified: boolean;
@@ -105,6 +105,16 @@ describe("rampRises", () => {
       expect(rises.reduce((sum, rise) => sum + rise, 0)).toBe(to - from);
       expect(violations).toEqual([]);
     }
+  });
+});
+
+describe("rampRises rate bound", () => {
+  it("refuses a per-piece rise that a piece's int8 rise can't hold, instead of wrapping", () => {
+    expect(() => rampRises(0, 200, [true], 200)).toThrow(RangeError);
+    expect(() => rampRises(0, 130, [true, false], 130)).toThrow(RangeError);
+    expect(() => rampRises(0, 128, [true], INT8_MAX + 1)).toThrow(RangeError);
+    expect(rampRises(0, INT8_MAX, [true], INT8_MAX)).toEqual(Int8Array.of(INT8_MAX));
+    expect(rampRises(0, -INT8_MAX, [true], INT8_MAX)).toEqual(Int8Array.of(-INT8_MAX));
   });
 });
 
