@@ -25,6 +25,7 @@ function plate(
     parts: 1,
     studsWide: studs,
     studsDeep: studs,
+    thumbnail: null,
   }));
 }
 
@@ -44,6 +45,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     parts: 663,
     studsWide: 8,
     studsDeep: 90,
+    thumbnail: null,
   },
   {
     id: "track:lego-9v",
@@ -55,6 +57,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     parts: 2,
     studsWide: 16,
     studsDeep: 8,
+    thumbnail: null,
   },
 ];
 

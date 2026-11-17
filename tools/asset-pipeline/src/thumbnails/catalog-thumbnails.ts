@@ -107,11 +107,10 @@ class CompiledBundle {
   private readonly partsById: ReadonlyMap<string, ManifestPart>;
   private readonly studFiles: ReadonlyMap<string, string>;
   private readonly composed = new Float32Array(MATRIX_FLOATS);
+  private readonly directory: string;
 
-  constructor(
-    private readonly directory: string,
-    readonly manifest: ThumbnailInputs,
-  ) {
+  constructor(directory: string, manifest: ThumbnailInputs) {
+    this.directory = directory;
     this.partsById = new Map(manifest.parts.map((part) => [part.id, part]));
     this.studFiles = new Map(manifest.studPrimitives.map((stud) => [stud.name, stud.file]));
   }
