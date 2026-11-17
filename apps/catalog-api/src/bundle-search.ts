@@ -112,8 +112,8 @@ function modelItem(model: BundleModelEntry): IndexedItem {
       kind: isModule ? "mils-module" : "model",
       file: model.file,
     },
-    [model.name],
-    [model.set?.name ?? ""],
+    isModule ? [] : [model.name],
+    isModule ? [model.name] : [model.set?.name ?? ""],
   );
 }
 
