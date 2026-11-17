@@ -12,15 +12,22 @@ Terraform for the server-side catalog search (`apps/catalog-api`):
 
 Names, the compatibility date, the rate limits and observability come from `apps/catalog-api/wrangler.json`, so `wrangler dev`, the loader and Terraform can't drift apart. Terraform uploads the Worker bundle; nothing here runs `wrangler deploy`. `pnpm check:infra` (run by CI and `pnpm check`) checks formatting and validates the configuration with the pinned provider.
 
+Why wrangler is used only for `dev` and the loader:
+- **The code upload stays in Terraform.** `wrangler deploy` uploads the script together with its bindings and settings. If it ran next to Terraform, the two would overwrite each other's view of the same `cloudflare_workers_script`, and every plan would show drift. With one owner, a plan shows exactly what an apply changes, including a new bundle (`content_sha256`).
+- **There are no D1 migrations.** The schema belongs to each release, not to the database. Every load creates `catalog_releases` and `catalog_current` if they don't exist, and drops and recreates its own `r<release>_*` tables (`apps/catalog-api/src/release-schema.ts`). A new database therefore needs no step between `apply` and the first load, and `wrangler d1 migrations` has nothing to apply.
+- **No database id is pasted anywhere.** Terraform binds the Worker to `cloudflare_d1_database.catalog.id`. `wrangler.json` carries only `database_name`; with no `database_id`, wrangler 4.163 looks the database up by name (`GET /accounts/<account>/d1/database/brr-catalog`) for `--remote` commands. The id is still printed as the `d1_database_id` output.
+
 ## Credentials
 
-Nothing secret is committed. `*.tfvars`, `backend.hcl`, `.terraform/` and state files are git-ignored. Use three separate credentials so the everyday loader can't touch infrastructure or state:
+Nothing secret is committed. `*.tfvars`, `backend.hcl`, `.terraform/` and state files are git-ignored. Use three separate credentials so the everyday loader can't touch infrastructure or state.
+
+The dashboard's **Edit** is the API's **Write**: Account · D1 · Edit is the permission group `D1 Write`. The groups below are the ones Cloudflare's OpenAPI schema (`x-api-token-group`, [`cloudflare/api-schemas`](https://github.com/cloudflare/api-schemas) at `023a080`) lists for every endpoint the provider calls: D1 database create, read, update and delete; R2 bucket create, update and delete; Worker script upload, settings and subdomain; zone Workers routes. The schema names no group for the D1 import API, which `wrangler d1 execute --file --remote` uses, or for R2 single-object `PUT`. Those two are unverified until the first remote load.
 
 1. **Terraform token**, for `plan` and `apply` only. A custom API token (*My Profile → API Tokens*) limited to this account, in `CLOUDFLARE_API_TOKEN` or `cloudflare_api_token` in `terraform.tfvars`:
-   - Account · **Workers Scripts · Edit** (script, bindings, workers.dev toggle, rate limiters)
-   - Account · **D1 · Edit** (the database)
-   - Account · **Workers R2 Storage · Edit** (the release bucket)
-   - Zone · **Workers Routes · Edit**, scoped to the zone, only if you set `route_pattern`
+   - Account · **Workers Scripts · Edit** (`Workers Scripts Write`: script, bindings, workers.dev toggle, rate limiters)
+   - Account · **D1 · Edit** (`D1 Write`: the database)
+   - Account · **Workers R2 Storage · Edit** (`Workers R2 Storage Write`: the release bucket)
+   - Zone · **Workers Routes · Edit** (`Workers Routes Write`), scoped to the zone, only if you set `route_pattern`
 
    *Workers R2 Storage · Edit* is account-wide, so this token can also reach the state bucket. Keep it out of the loader. In GitHub Actions only the apply job sees it, through the protected `production` environment; the `check` job and PR plans never do.
 2. **Loader credentials**, for `load-release --remote`:
@@ -111,7 +118,7 @@ The non-secret Terraform variables (`d1_primary_location_hint`, `r2_location`, `
 
 ### One-time setup
 
-1. Create the state bucket: `pnpm --filter @brr/catalog-api exec wrangler r2 bucket create brr-terraform-state`. CI and local runs share `cloudflare/catalog.tfstate` in it, so state from an earlier local apply carries over.
+1. Create the state bucket: `pnpm --filter @brr/catalog-api exec wrangler r2 bucket create brr-terraform-state` after `wrangler login`, or *R2 → Create bucket* in the dashboard. CI and local runs share `cloudflare/catalog.tfstate` in it, so state from an earlier local apply carries over. Don't create `brr-catalog` or `brr-catalog-releases` by hand: the first apply creates them, and Terraform never adopts a resource that isn't in its state.
 2. Register the account's workers.dev subdomain in *Workers & Pages → Overview*. Without it, `workers_dev_enabled` has no effect.
 3. Create the tokens in the table above.
 4. Create both environments under *Settings → Environments* before adding secrets, and before merging any change that triggers the workflow, because the merge push runs apply:
