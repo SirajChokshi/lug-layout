@@ -1,4 +1,5 @@
 import {
+  BundleIndex,
   BundleLod,
   BundleManifest,
   MilsEdgeRules,
@@ -14,6 +15,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as v from "valibot";
 import { bundleInputKey, remoteManifestFile } from "./bundle-key.ts";
+import {
+  bundleBuildKey,
+  forgetBundleBuild,
+  isBundleBuiltFrom,
+  recordBundleBuild,
+  type BundleBuildKey,
+} from "./built-bundle.ts";
 import { deriveCrosswalk } from "./catalog/crosswalk.ts";
 import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
 import { bomCheck } from "./catalog/bom-check.ts";
@@ -351,10 +359,32 @@ function reportThumbnails(
   );
 }
 
+async function reportReusedBundle(buildKey: BundleBuildKey): Promise<void> {
+  for (const lod of BundleLod.options) {
+    const manifestPath = join(bundleRoot, lod, MANIFEST_FILE);
+    const { bundleVersion } = decodedOrThrow(
+      decode(
+        v.pick(BundleIndex, ["bundleVersion"]),
+        JSON.parse(await readFile(manifestPath, "utf8")),
+      ),
+      manifestPath,
+    );
+    process.stdout.write(
+      `bundle ${lod} ${bundleVersion}: already built from input key ${buildKey.inputKey} in ${join(bundleRoot, lod)}\n`,
+    );
+  }
+}
+
 async function bundleCommand(): Promise<void> {
   await restoreCommand();
   await verifyCommand();
   if (process.exitCode) return;
+  const buildKey = await bundleBuildKey(repoRoot);
+  if (await isBundleBuiltFrom(repoRoot, bundleRoot, BundleLod.options, buildKey)) {
+    await reportReusedBundle(buildKey);
+    return;
+  }
+  await forgetBundleBuild(bundleRoot);
   const palette = await readPalette(palettePath);
   const inputs = {
     ldraw: palette.source,
@@ -419,6 +449,7 @@ async function bundleCommand(): Promise<void> {
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
     );
   }
+  await recordBundleBuild(bundleRoot, buildKey);
 }
 
 const partBundleStorePath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");

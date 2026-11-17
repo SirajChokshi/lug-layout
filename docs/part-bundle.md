@@ -4,6 +4,8 @@ The compiled part bundle lives only in the `brr-part-bundles` R2 bucket: GLBs, m
 
 Only `main` publishes. Pull requests never write or read R2. Their `check` job builds the bundle locally, and every test that loads parts reads `tools/asset-pipeline/dist/bundle` from disk.
 
+`bundle` records what it built from in `dist/bundle/build-key.json`: the input key (*Keys* below) and the SHA-256 of `pnpm-lock.yaml`. When that file matches the checkout, every LOD has its manifest and no untracked file matches the bundle inputs, `bundle` keeps the existing output instead of compiling it again. The `check` job restores `dist/bundle` from the GitHub Actions cache under `part-bundle-<input key>-<lockfile hash>` and saves it there after a fresh build, so runs that don't change the bundle inputs skip the compile. Pushes to `main` fill the cache that pull requests read. Delete `build-key.json` to force a rebuild.
+
 ## Keys
 
 - `<lod>/<file>.<sha256 prefix>.glb|json|wasm`: content-addressed objects. Identical bytes get the same key, so a new bundle uploads only what changed. The uploader refuses any file whose name doesn't match its own SHA-256.
