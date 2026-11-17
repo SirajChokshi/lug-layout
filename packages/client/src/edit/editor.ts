@@ -1517,10 +1517,12 @@ export class Editor implements IEditor {
     this.refreshModules();
     this.refreshRoads();
     this.syncHeldTrack();
-    this.placeGhost();
+    const { snap, moduleFit } = this.aimGhost();
     this.update({
       placements: this.world.size,
       hover: this.hoverView(),
+      snap,
+      moduleFit,
       studs: this.placed.studTotals(),
       history: {
         undo: this.history.nextUndo(),

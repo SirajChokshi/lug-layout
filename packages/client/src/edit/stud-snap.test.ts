@@ -221,3 +221,27 @@ it("snaps a held model to the nearest pose within reach whose anti-studs meet st
     firstSnap.hover?.z,
   ]);
 }, 120_000);
+
+it("re-aims the ghost after an undo, as if the cursor had just moved there", async () => {
+  const editor = await startEditor(new TopDownBackend());
+  const baseplate = editor.snapshot().catalog.find((entry) => entry.group === BASEPLATE);
+  if (!baseplate) throw new Error(`the catalog offers no ${BASEPLATE}`);
+  editor.chooseItem(baseplate.id);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem(`omr:${STATION}`);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  expect(editor.snapshot().placements).toBe(2);
+
+  const blocked = Array.from({ length: SWEEP_STUDS }, (_, k) => k * STUD_LDU).find(
+    (z) => hoverAt(editor, 0, z).snappedStuds !== null,
+  );
+  if (blocked === undefined) throw new Error("no cursor next to the station snaps");
+  editor.undo(0);
+  expect(editor.snapshot().placements).toBe(1);
+  const afterUndo = editor.snapshot();
+  editor.pointerMove(0, blocked / NDC_TO_LDU);
+  const freshAim = editor.snapshot();
+  expect([afterUndo.hover, afterUndo.ghost]).toEqual([freshAim.hover, freshAim.ghost]);
+}, 120_000);
