@@ -26,12 +26,13 @@ import {
   type EdgeMarker,
   type FrameStats,
   type GraphicsApi,
+  type LookSettings,
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
 import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
-import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
+import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
 import {
   PlacedChunks,
@@ -202,6 +203,7 @@ export interface EditorDump {
 export interface EditorOptions {
   readonly api: GraphicsApi;
   readonly pixelRatio: number;
+  readonly look: LookSettings;
 }
 
 export interface IEditor {
@@ -407,6 +409,7 @@ export class Editor implements IEditor {
         api: options.api,
         pixelRatio: options.pixelRatio,
         antialias: true,
+        look: options.look,
       });
       const bundle = await this.loader.load(
         EDITOR_LOD,
@@ -420,7 +423,8 @@ export class Editor implements IEditor {
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
-        ldrawColorsSrgb: ldrawColorsSrgb(bundle),
+        colorsAlpha: colors.toAlpha(),
+        ldrawColors: ldrawColors(bundle),
       });
       this.update({
         status: "ready",

@@ -2,11 +2,20 @@ import type { PartAsset, StudPrimitiveAsset } from "@brr/catalog";
 
 export type GraphicsApi = "webgpu" | "webgl2";
 
+export const LOOK_FEATURES = ["plastic", "gtao", "outlines", "bevel", "shadows", "oit"] as const;
+
+export type LookFeature = (typeof LOOK_FEATURES)[number];
+
+export const DEFAULT_LOOK_FEATURES: ReadonlyArray<LookFeature> = ["plastic", "outlines", "bevel"];
+
+export type LookSettings = Readonly<Record<LookFeature, boolean>>;
+
 export interface SceneBackendConfig {
   readonly canvas: HTMLCanvasElement;
   readonly api: GraphicsApi;
   readonly pixelRatio: number;
   readonly antialias: boolean;
+  readonly look: LookSettings;
 }
 
 export interface BackendInfo {
@@ -14,6 +23,7 @@ export interface BackendInfo {
   readonly activeApi: GraphicsApi;
   readonly adapter: string;
   readonly backgroundSrgb: number;
+  readonly look: LookSettings;
 }
 
 export interface GeometrySet {
@@ -25,7 +35,13 @@ export interface PartPalette {
   readonly detailed: GeometrySet;
   readonly far?: GeometrySet;
   readonly colorsSrgb: Uint8Array;
-  readonly ldrawColorsSrgb: ReadonlyMap<number, number>;
+  readonly colorsAlpha: Uint8Array;
+  readonly ldrawColors: ReadonlyMap<number, LdrawColor>;
+}
+
+export interface LdrawColor {
+  readonly srgb: number;
+  readonly alpha: number;
 }
 
 export interface StudInstances {

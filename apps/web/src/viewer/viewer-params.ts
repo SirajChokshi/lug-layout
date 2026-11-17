@@ -1,6 +1,19 @@
-import type { BundleLod, CityCamera, ConsistEntry, GraphicsApi, TrainRequest } from "@brr/client";
+import {
+  DEFAULT_LOOK_FEATURES,
+  LOOK_FEATURES,
+  type BundleLod,
+  type CityCamera,
+  type ConsistEntry,
+  type GraphicsApi,
+  type LookFeature,
+  type LookSettings,
+  type ModelView,
+  type TrainRequest,
+} from "@brr/client";
 
 export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run";
+
+export type MeasurePace = "frame" | "tight";
 
 export interface ViewerParams {
   readonly mode: AppMode;
@@ -25,6 +38,7 @@ export interface ViewerParams {
   readonly parts: number;
   readonly seed: number;
   readonly camera: CityCamera;
+  readonly modelView: ModelView;
   readonly originChunkX: number;
   readonly originChunkZ: number;
   readonly dumpWorld: boolean;
@@ -32,6 +46,8 @@ export interface ViewerParams {
   readonly warmupFrames: number;
   readonly measuredFrames: number;
   readonly maxMeasureMs: number;
+  readonly look: LookSettings;
+  readonly pace: MeasurePace;
 }
 
 const DEFAULT_CITY_PARTS = 20_000;
@@ -110,8 +126,58 @@ function appMode(params: URLSearchParams): AppMode {
   return "edit";
 }
 
+function isLookFeature(name: string): name is LookFeature {
+  return LOOK_FEATURES.some((feature) => feature === name);
+}
+
+function lookSettings(value: string | null): LookSettings {
+  if (value === null) return lookFrom(new Set(DEFAULT_LOOK_FEATURES));
+  const enabled = new Set<LookFeature>(LOOK_FEATURES);
+  if (value === "all") return lookFrom(enabled);
+  if (value === "none") return lookFrom(new Set());
+  const entries = value.split(",").filter((entry) => entry !== "");
+  const onlyRemovals = entries.every((entry) => entry.startsWith("-"));
+  if (!onlyRemovals) enabled.clear();
+  for (const entry of entries) {
+    const name = entry.startsWith("-") ? entry.slice(1) : entry;
+    if (!isLookFeature(name)) {
+      throw new Error(`look=${value}: "${name}" is not one of ${LOOK_FEATURES.join(", ")}`);
+    }
+    if (entry.startsWith("-")) enabled.delete(name);
+    else enabled.add(name);
+  }
+  return lookFrom(enabled);
+}
+
+function lookFrom(enabled: ReadonlySet<LookFeature>): LookSettings {
+  return {
+    plastic: enabled.has("plastic"),
+    gtao: enabled.has("gtao"),
+    outlines: enabled.has("outlines"),
+    bevel: enabled.has("bevel"),
+    shadows: enabled.has("shadows"),
+    oit: enabled.has("oit"),
+  };
+}
+
+function hasPerFramePasses(look: LookSettings): boolean {
+  return look.gtao || look.outlines || look.bevel || look.shadows || look.oit;
+}
+
+function measurePace(value: string | null, look: LookSettings): MeasurePace {
+  if (value === null || value === "frame") return "frame";
+  if (value !== "tight") throw new Error(`pace=${value} is not "frame" or "tight"`);
+  if (hasPerFramePasses(look)) {
+    throw new Error(
+      "pace=tight renders frames back to back inside one animation frame, so three.js would not refresh this look's passes and shadow maps; use it only with look=none or look=plastic",
+    );
+  }
+  return "tight";
+}
+
 export function readViewerParams(search: string): ViewerParams {
   const params = new URLSearchParams(search);
+  const look = lookSettings(params.get("look"));
   const [originChunkX, originChunkZ] = originChunks(params.get("origin"));
   return {
     mode: appMode(params),
@@ -136,6 +202,7 @@ export function readViewerParams(search: string): ViewerParams {
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",
+    modelView: params.get("camera") === "top" ? "top" : "orbit",
     originChunkX,
     originChunkZ,
     dumpWorld: params.get("dumpWorld") === "1",
@@ -143,5 +210,7 @@ export function readViewerParams(search: string): ViewerParams {
     warmupFrames: positiveNumber(params.get("warmup"), DEFAULT_WARMUP_FRAMES),
     measuredFrames: positiveNumber(params.get("frames"), DEFAULT_MEASURED_FRAMES),
     maxMeasureMs: positiveNumber(params.get("maxMs"), DEFAULT_MAX_MEASURE_MS),
+    look,
+    pace: measurePace(params.get("pace"), look),
   };
 }
