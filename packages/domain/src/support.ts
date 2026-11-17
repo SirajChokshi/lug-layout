@@ -6,6 +6,7 @@ export const NO_STUD_TOP = -0x8000;
 const MAX_STUD_PLATES = 0x7fff;
 const COVERED = 1;
 const BASEPLATE = 2;
+const OFF_LATTICE_TOP = 4;
 
 function cellIndex(cellX: number, cellZ: number): number {
   const x = cellX - Math.floor(cellX / CHUNK_STUDS) * CHUNK_STUDS;
@@ -28,6 +29,16 @@ export class SupportGrid {
 
   coveredAt(cellX: number, cellZ: number): boolean {
     return (this.flagsAt(cellX, cellZ) & COVERED) !== 0;
+  }
+
+  offLatticeTopAt(cellX: number, cellZ: number): boolean {
+    return (this.flagsAt(cellX, cellZ) & OFF_LATTICE_TOP) !== 0;
+  }
+
+  markOffLatticeTop(cellX: number, cellZ: number): void {
+    const chunk = this.chunkFor(cellX, cellZ);
+    const i = cellIndex(cellX, cellZ);
+    chunk.flags[i] = (chunk.flags[i] ?? 0) | COVERED | OFF_LATTICE_TOP;
   }
 
   baseplateAt(cellX: number, cellZ: number): boolean {
@@ -100,6 +111,7 @@ export type UpperSupport =
       readonly cellZ: number;
       readonly yPlates: number;
     }
+  | { readonly kind: "off-lattice-top"; readonly yPlates: number; readonly cells: number }
   | {
       readonly kind: "no-studs-engaged";
       readonly yPlates: number;
@@ -117,6 +129,7 @@ export function upperSupport(
   let engaged = 0;
   let touching = 0;
   let overTable = 0;
+  let offLattice = 0;
   for (let c = 0; c < base.count; c++) {
     const x = base.cellX[c] ?? 0;
     const z = base.cellZ[c] ?? 0;
@@ -129,11 +142,13 @@ export function upperSupport(
     if (studHere && base.flat[c] === 1)
       return { kind: "flat-on-studs", cellX: x, cellZ: z, yPlates };
     if (studHere) engaged++;
+    else if (support.offLatticeTopAt(x, z)) offLattice++;
     else if (occupancy.topAt(x, z) === yPlates) touching++;
   }
   if (engaged > 0) return { kind: "studs", engaged };
   if (touching === base.count) return { kind: "flat", cells: touching };
   if (overTable === base.count) return { kind: "on-table", cells: overTable };
+  if (offLattice > 0) return { kind: "off-lattice-top", yPlates, cells: offLattice };
   return { kind: "no-studs-engaged", yPlates, cells: base.count, touching };
 }
 
