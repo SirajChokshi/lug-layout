@@ -285,7 +285,8 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
 **How strictly rules apply depends on the mode (D4).**
 - In the **sandbox** (outside plan regions), rules 1, 2, the rest of rule 5, and rules 6 to 9 show as warnings. Building never stops for them.
 - Inside a **plan region**, the same rules are errors, and a region can only reach "Buildable as planned" (§7.3) with zero errors.
-- **Rules 3, 4 and rule 5's "track sits on a baseplate" apply everywhere** and are hard: the editor refuses a placement, rotation, removal, undo, redo or track run that would break them, and says why (P4).
+- **Rules 3, 4 and rule 5's "track sits on a baseplate" apply everywhere** and are hard: the editor refuses a placement, rotation, removal or track run that would break them, and says why (P4).
+- **Undo and redo are never refused.** Every edit is one command in a single history: model placements, rotations and removals, track runs and track removals, and multi-placement gestures alike (`EditHistory.commit`, with laid track as index-addressed `lift`/`lay` records). Stepping through that history only returns to layouts the editor has already accepted, so it can't break a rule.
 
 **Placement decisions (owner, 2026-11-16).** These settle rules 3 to 5. They replace the §12 item 14 default for those rules.
 
@@ -304,7 +305,7 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
 - **Upper models** land on the highest column under them (#53). They're supported when at least one anti-stud footprint cell meets a whole-plate stud at exactly that height, or when every footprint cell touches a stud-free top at that height. A solid-bottom cell over studs is refused.
 - **First-layer items** go at yPlates 0. One is refused where it would rise into a cell that already holds something above the datum. Baseplate-on-baseplate overlap is rule 4's job.
 - **Track** needs a baseplate under every stud cell its plan silhouette covers between its own connector planes (P6). The silhouette is the piece's own mesh, projected at the exact solver pose and clipped to those planes. A cell counts when a face overlaps its interior by more than the 1e-6 LDU representation ε of §5.3; touching an edge doesn't count. So an open end may be flush with a baseplate edge, two straights fill a 3811, and a piece that ends at a seam needs only its own baseplate.
-- **Removing, rotating or undoing** is refused if it would leave a placed model with no support or a laid track piece off the baseplates. A rotation is checked as a move to its new pose. A laid track piece can be removed in the track tool (click it, then Delete), so a baseplate under track is never locked for good.
+- **Removing or rotating** is refused if it would leave a placed model with no support or a laid track piece off the baseplates. A rotation is checked as a move to its new pose. A laid track piece can be removed in the track tool (click it, then Delete), so a baseplate under track is never locked for good.
 
 *Rule 4 status (PR B, on PR A):*
 - **One volume index holds every placement** (`@brr/domain` `VolumeIndex`). It keeps per-chunk typed arrays of integer-LDU spans per stud cell, each tagged with its owner.
@@ -314,7 +315,7 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
   - a model fills its baked columns (part AABBs, whole plates), and a first-layer model's baseplate cells reach down to the table;
   - a laid track piece fills [0, its part height) on the cells its mesh silhouette covers.
 - **Overlap is strict:** spans that only touch don't overlap, so a model resting on studs and a baseplate under a model's overhang are both fine.
-- **An upper model lands on the stack under the cursor** (the highest non-track span in the cursor's cell, rounded up to a whole plate) and is never lifted to clear anything else. Anything else in its volume refuses the placement, and the refusal names the placement it would hit, the cell and both spans in LDU. Track is never support: its tops count neither for landing nor as a flat top. Rotations, undo and redo are checked at their recorded height.
+- **An upper model lands on the stack under the cursor** (the highest non-track span in the cursor's cell, rounded up to a whole plate) and is never lifted to clear anything else. Anything else in its volume refuses the placement, and the refusal names the placement it would hit, the cell and both spans in LDU. Track is never support: its tops count neither for landing nor as a flat top. Rotations are checked at their recorded height.
 - **Track against track** is tested on the pieces' plan silhouettes, only where two pieces share a stud cell. Joined pieces are exempt: their connector tabs interlock. Any other positive-area overlap beyond the 1e-6 LDU representation ε is refused until a real crossing part is used.
 
 *Track held by models (PR C, on PR B):*
