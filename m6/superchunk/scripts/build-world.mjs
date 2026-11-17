@@ -271,6 +271,10 @@ async function zoomTo(distance) {
   }
 }
 
+const catalogItems = await page.$$eval("[data-item]", (els) => els.map((el) => el.getAttribute("data-item")));
+const BASEPLATE_ITEM =
+  catalogItems.find((id) => id === "ldraw:3811@2") ?? catalogItems.find((id) => id === "ldraw:3811");
+if (!BASEPLATE_ITEM) throw new Error(`no green 3811 baseplate in the catalog: ${catalogItems.join(", ")}`);
 let ghostRot = 0;
 async function choose(item) {
   const button = page.locator(`[data-item="${item}"]`);
@@ -430,7 +434,7 @@ const bounds = [0, ...CHECKPOINTS.filter((c) => c < all.length), all.length];
 let placed = 0;
 for (let b = 1; b < bounds.length; b++) {
   const batch = all.slice(bounds[b - 1], bounds[b]);
-  await choose("ldraw:3811");
+  await choose(BASEPLATE_ITEM);
   await setRotation(0);
   for (const m of batch) {
     await placeAt(m.x, m.z);
