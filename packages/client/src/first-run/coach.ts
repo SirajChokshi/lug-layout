@@ -207,9 +207,9 @@ export class Coach implements ICoach {
   }
 
   private observe(now: EditorSnapshot): void {
+    if (this.loadingStarter) return;
     const before = this.previous;
     this.previous = now;
-    if (this.loadingStarter) return;
     this.noticeTrack(before, now);
     this.noticeRefusal(before, now);
     this.advanceTour(now);

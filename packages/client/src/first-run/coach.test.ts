@@ -11,7 +11,8 @@ import { readFile } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { TRACK_ITEM_ID } from "../edit/editor.ts";
-import { COACH, EDITOR, TOUR_MEMORY } from "../tokens.ts";
+import { SHIPPED_STARTER_LAYOUTS, type StarterLayout } from "../starters/starter-layouts.ts";
+import { COACH, EDITOR, STARTER_LAYOUTS, TOUR_MEMORY } from "../tokens.ts";
 import type { ITourMemory } from "./tour-memory.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -84,13 +85,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startCoach(memory: ITourMemory = new MemoryTourMemory()) {
+async function startCoach(
+  memory: ITourMemory = new MemoryTourMemory(),
+  starters: ReadonlyArray<StarterLayout> = SHIPPED_STARTER_LAYOUTS,
+) {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   container.rebind(SCENE_BACKEND).toConstantValue(new TopDownBackend());
   container.rebind(TOUR_MEMORY).toConstantValue(memory);
+  container.rebind(STARTER_LAYOUTS).toConstantValue(starters);
   const editor = container.get(EDITOR);
   const coach = container.get(COACH);
   const canvas = {
@@ -146,4 +151,31 @@ it("offers the tour on a first visit only, and remembers a finished or skipped t
   second.coach.startTour();
   second.coach.endTour();
   expect(memory.tourDone()).toBe(true);
+}, 120_000);
+
+it("toasts why a starter was refused, and what is on the table when one loads", async () => {
+  const crossroads = SHIPPED_STARTER_LAYOUTS.find((layout) => layout.id === "crossroads-square");
+  if (!crossroads) throw new Error("no crossroads starter");
+  const refused: StarterLayout = {
+    ...crossroads,
+    id: "set-on-the-crossroads",
+    pieces: [
+      ...crossroads.pieces,
+      ...crossroads.pieces
+        .filter((piece) => piece.item === "omr:10185-1")
+        .map((piece) => ({ ...piece, col: 1, row: 1 })),
+    ],
+  };
+  const { editor, coach } = await startCoach(new MemoryTourMemory(), [crossroads, refused]);
+
+  coach.loadStarter(refused.id, 0);
+
+  expect(editor.snapshot().placements).toBe(0);
+  expect(coach.snapshot().toasts.map(({ kind, detail }) => ({ kind, detail }))).toEqual([
+    { kind: "warn", detail: editor.snapshot().lastRefusal?.message },
+  ]);
+
+  coach.loadStarter(crossroads.id, 1);
+
+  expect(coach.snapshot().toasts.at(-1)?.title).toBe(`${crossroads.title} is ready`);
 }, 120_000);
