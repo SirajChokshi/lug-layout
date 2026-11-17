@@ -49,6 +49,7 @@ export interface RoadStrokeView {
   readonly tiles: number;
   readonly laid: number;
   readonly replaced: number;
+  readonly overGround: number;
   readonly kept: number;
   readonly issues: ReadonlyArray<RoadTileIssue>;
 }
@@ -213,7 +214,7 @@ export class RoadDrawing {
     if (this.dragging) return null;
     const { phaseX, phaseZ } = this;
     const previous = this.path[0];
-    this.choosePhase(x, z, roads);
+    this.choosePhase(x, z, [...roads, ...others]);
     const tile = this.tileAt(x, z);
     const unchanged =
       this.evaluated !== null &&
@@ -237,7 +238,7 @@ export class RoadDrawing {
     roads: ReadonlyArray<PlacedModel>,
     others: ReadonlyArray<PlacedModel>,
   ): RoadPreview | null {
-    this.choosePhase(x, z, roads);
+    this.choosePhase(x, z, [...roads, ...others]);
     this.dragging = true;
     this.path = [this.tileAt(x, z)];
     return this.evaluate(roads, others);
@@ -309,19 +310,42 @@ export class RoadDrawing {
     return entry.kit.tileLdu === kit.tileLdu && entry.kit.profile === kit.profile ? entry : null;
   }
 
-  private choosePhase(x: number, z: number, roads: ReadonlyArray<PlacedModel>): void {
+  private isGround(model: PlacedModel): boolean {
+    const { kit } = this.entry();
+    const { box, placeable, handle } = model;
+    const fitsTile = box.maxX - box.minX === kit.tileLdu && box.maxZ - box.minZ === kit.tileLdu;
+    const centredOnLattice =
+      ((box.minX + box.maxX) / 2) % STUD_LDU === 0 && ((box.minZ + box.maxZ) / 2) % STUD_LDU === 0;
+    if (!fitsTile || !centredOnLattice || handle.yPlates !== 0) return false;
+    return placeable.kind === "baseplate";
+  }
+
+  private choosePhase(x: number, z: number, models: ReadonlyArray<PlacedModel>): void {
     const tileLdu = this.entry().kit.tileLdu;
-    const under = roads.find(
+    const under = models.find(
       (model) =>
-        this.compatible(model) &&
+        (this.compatible(model) || this.isGround(model)) &&
         x >= model.box.minX &&
         x < model.box.maxX &&
         z >= model.box.minZ &&
         z < model.box.maxZ,
     );
     const latticeCentre = Math.round(tileLdu / 2 / STUD_LDU) * STUD_LDU;
-    this.phaseX = under ? under.handle.x : latticeCentre;
-    this.phaseZ = under ? under.handle.z : latticeCentre;
+    this.phaseX = under ? (under.box.minX + under.box.maxX) / 2 : latticeCentre;
+    this.phaseZ = under ? (under.box.minZ + under.box.maxZ) / 2 : latticeCentre;
+  }
+
+  private groundTiles(models: ReadonlyArray<PlacedModel>): Map<string, PlacedModel> {
+    const tileLdu = this.entry().kit.tileLdu;
+    const tiles = new Map<string, PlacedModel>();
+    for (const model of models) {
+      if (!this.isGround(model)) continue;
+      const dx = (model.box.minX + model.box.maxX) / 2 - this.phaseX;
+      const dz = (model.box.minZ + model.box.maxZ) / 2 - this.phaseZ;
+      if (dx % tileLdu !== 0 || dz % tileLdu !== 0) continue;
+      tiles.set(`${dx / tileLdu},${dz / tileLdu}`, model);
+    }
+    return tiles;
   }
 
   private tileAt(x: number, z: number): RoadTile {
@@ -377,6 +401,7 @@ export class RoadDrawing {
   ): RoadPreview {
     const { kit, view } = this.entry();
     const existing = this.existingTiles(roads);
+    const ground = this.groundTiles([...roads, ...others]);
     const planned = planRoadTiles(
       kit,
       this.path,
@@ -388,7 +413,7 @@ export class RoadDrawing {
     let issues: RoadTileIssue[] = [];
     let placements: TilePlacement[] = [];
     for (let round = 0; round < MAX_CHOICE_ROUNDS; round++) {
-      placements = this.placementsFor(planned, choiceOf, existing);
+      placements = this.placementsFor(planned, choiceOf, existing, ground);
       issues = this.check(planned, placements, roads, others);
       const retry = placements.filter(
         (p) =>
@@ -399,12 +424,14 @@ export class RoadDrawing {
       if (retry.length === 0) break;
       for (const p of retry) choiceOf.set(p.tile, p.choice + 1);
     }
-    const replaced = placements.filter((p) => p.replaces !== null).length;
+    const replaced = placements.filter((p) => p.tile.kind === "lay" && p.tile.replaces).length;
+    const overGround = placements.filter((p) => p.replaces !== null).length - replaced;
     const stroke: RoadStrokeView = {
       kit: view.id,
       tiles: planned.length,
-      laid: placements.length - replaced,
+      laid: placements.length - replaced - overGround,
       replaced,
+      overGround,
       kept: planned.filter((tile) => tile.kind === "keep").length,
       issues,
     };
@@ -425,6 +452,7 @@ export class RoadDrawing {
     planned: ReadonlyArray<PlannedRoadTile>,
     choiceOf: ReadonlyMap<PlannedRoadTile, number>,
     existing: ReadonlyMap<string, { readonly model: PlacedModel }>,
+    ground: ReadonlyMap<string, PlacedModel>,
   ): TilePlacement[] {
     const placements: TilePlacement[] = [];
     for (const tile of planned) {
@@ -444,7 +472,9 @@ export class RoadDrawing {
           yPlates: 0,
           rot: picked.rot,
         },
-        replaces: tile.replaces ? (existing.get(`${tile.ix},${tile.iz}`)?.model ?? null) : null,
+        replaces: tile.replaces
+          ? (existing.get(`${tile.ix},${tile.iz}`)?.model ?? null)
+          : (ground.get(`${tile.ix},${tile.iz}`) ?? null),
       });
     }
     return placements;
@@ -523,7 +553,7 @@ export class RoadDrawing {
         return;
       }
       const box = this.tileBox(p.tile, top);
-      const model = others.find((other) => boxesMeet(other.box, box));
+      const model = others.find((other) => !replaced.has(other) && boxesMeet(other.box, box));
       if (model) {
         issues.push({
           x,
@@ -622,10 +652,12 @@ export class RoadDrawing {
     const top = Math.max(0, ...placements.map((p) => this.placeable(p.pose.refId).box.max[1]));
     const markers: EdgeMarker[] = [];
     for (const tile of planned) {
-      const refused = issues.some((issue) => this.sameTile(issue, tile));
-      if (refused) markers.push(...outline(this.tileBox(tile, top), "mismatch"));
-      else if (tile.kind === "lay" && tile.replaces)
-        markers.push(...outline(this.tileBox(tile, top), "open"));
+      const box = this.tileBox(tile, top);
+      if (issues.some((issue) => this.sameTile(issue, tile))) {
+        markers.push(...outline(box, "mismatch"));
+      } else if (placements.some((p) => p.tile === tile && p.replaces !== null)) {
+        markers.push(...outline(box, "open"));
+      }
     }
     return markers;
   }

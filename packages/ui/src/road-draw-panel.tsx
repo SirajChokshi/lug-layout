@@ -47,10 +47,13 @@ function issueText(issue: RoadTileIssue): string {
 }
 
 function strokeText(stroke: RoadStrokeView): string {
-  const parts = [`${stroke.laid} new`];
+  const parts: string[] = [];
+  if (stroke.laid > 0) parts.push(`${stroke.laid} new`);
   if (stroke.replaced > 0) parts.push(`${stroke.replaced} upgraded`);
+  if (stroke.overGround > 0) parts.push(`${stroke.overGround} swapped for ground under them`);
   if (stroke.kept > 0) parts.push(`${stroke.kept} already right`);
-  return `${stroke.tiles} ${stroke.tiles === 1 ? "tile" : "tiles"}: ${parts.join(", ")}`;
+  const changes = parts.length > 0 ? parts.join(", ") : "nothing to change";
+  return `${stroke.tiles} ${stroke.tiles === 1 ? "tile" : "tiles"}: ${changes}`;
 }
 
 function itemShortName(item: string): string {
@@ -78,9 +81,9 @@ export function RoadKitList({ editor, snapshot, kits }: KitsProps) {
         {drawing ? "Drawing road: press Esc or G to stop" : "Draw road (G)"}
       </button>
       <p className="palette-hint">
-        Drag across the ground. Each 32-stud tile gets the real straight, curve, T-junction or
-        crossroads its neighbours need, and branching off a road upgrades the plate there. R turns a
-        lone tile.
+        Drag across the ground. Each tile gets the real straight, curve, T-junction or crossroads
+        its neighbours need, and branching off a road upgrades the plate there. A plain baseplate
+        exactly under a tile is swapped for the road piece. R turns a lone tile.
       </p>
       <ul className="road-kit-list">
         {kits.map((kit) => (
