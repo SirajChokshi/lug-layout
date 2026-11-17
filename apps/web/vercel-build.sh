@@ -7,7 +7,11 @@ pipeline_cli="$pipeline_dir/src/cli.ts"
 : "${VITE_BUNDLE_BASE_URL:=$(node -p "require('../../infra/cloudflare/part-bundles.json').public_base_url")}"
 export VITE_BUNDLE_BASE_URL
 : "${VITE_LDRAW_LIBRARY_BASE_URL:=$(node -p "require('../../infra/cloudflare/ldraw-library.json').public_base_url ?? ''")}"
-export VITE_LDRAW_LIBRARY_BASE_URL
+if [ -n "$VITE_LDRAW_LIBRARY_BASE_URL" ]; then
+  export VITE_LDRAW_LIBRARY_BASE_URL
+else
+  unset VITE_LDRAW_LIBRARY_BASE_URL
+fi
 : "${PART_BUNDLE_WAIT_MINUTES:=42}"
 export PART_BUNDLE_WAIT_MINUTES
 
@@ -55,26 +59,30 @@ fi
 
 VITE_BUNDLE_MANIFEST_FILE="$(node "$pipeline_cli" await-served)"
 export VITE_BUNDLE_MANIFEST_FILE
-library_output="$(mktemp)"
-LDRAW_LIBRARY_BASE_URL="$VITE_LDRAW_LIBRARY_BASE_URL" GITHUB_OUTPUT="$library_output" node "$pipeline_dir/src/library/cli.ts" served
-library_state="$(sed -n 's/^state=//p' "$library_output")"
-rm -f "$library_output"
-case "$library_state" in
-  served) ;;
-  absent)
-    if [ "${VERCEL_ENV:-production}" = production ]; then
-      echo "The pinned LDraw library is not published at '$VITE_LDRAW_LIBRARY_BASE_URL'. Deployed apps never read it from GitHub: publish it and commit public_base_url (docs/ldraw-library.md)." >&2
+if [ -z "${VITE_LDRAW_LIBRARY_BASE_URL:-}" ]; then
+  echo "LDraw library: infra/cloudflare/ldraw-library.json has no public_base_url yet, so this build reads library files from GitHub raw. Committing the URL switches deployed builds to R2 (docs/ldraw-library.md)."
+else
+  library_output="$(mktemp)"
+  LDRAW_LIBRARY_BASE_URL="$VITE_LDRAW_LIBRARY_BASE_URL" GITHUB_OUTPUT="$library_output" node "$pipeline_dir/src/library/cli.ts" served
+  library_state="$(sed -n 's/^state=//p' "$library_output")"
+  rm -f "$library_output"
+  case "$library_state" in
+    served) ;;
+    absent)
+      if [ "${VERCEL_ENV:-production}" = production ]; then
+        echo "The pinned LDraw library is not published at '$VITE_LDRAW_LIBRARY_BASE_URL'. public_base_url is committed, so deployed apps no longer read it from GitHub: approve the LDraw library workflow's publish job, then redeploy (docs/ldraw-library.md)." >&2
+        exit 1
+      fi
+      echo "Preview skipped: the pinned LDraw library is not published at '$VITE_LDRAW_LIBRARY_BASE_URL', and with public_base_url committed deployed apps no longer read it from GitHub (docs/ldraw-library.md)."
+      rm -rf dist
+      mkdir dist
+      cp preview-skipped.html dist/index.html
+      exit 0
+      ;;
+    *)
+      echo "Can't tell whether the LDraw library is published: library/cli.ts served reported '$library_state', expected served or absent." >&2
       exit 1
-    fi
-    echo "Preview skipped: the pinned LDraw library is not published at '$VITE_LDRAW_LIBRARY_BASE_URL', and deployed apps never read it from GitHub (docs/ldraw-library.md)."
-    rm -rf dist
-    mkdir dist
-    cp preview-skipped.html dist/index.html
-    exit 0
-    ;;
-  *)
-    echo "Can't tell whether the LDraw library is published: library/cli.ts served reported '$library_state', expected served or absent." >&2
-    exit 1
-    ;;
-esac
+      ;;
+  esac
+fi
 exec pnpm run build

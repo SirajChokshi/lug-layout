@@ -1,4 +1,5 @@
 import react from "@vitejs/plugin-react";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv, type Connect, type Plugin } from "vite";
 
@@ -7,6 +8,7 @@ const assetBundleRoot = fileURLToPath(new URL("../../tools/asset-pipeline/dist",
 const BUNDLE_PATH = /^\/bundle\/[^/]+\/(?<file>[^/]+)$/u;
 const CONTENT_ADDRESSED_FILE = /\.[0-9a-f]{16}\.(?:glb|json|wasm)$/u;
 const ABSOLUTE_HTTP_URL = /^https?:\/\//u;
+const ldrawLibraryConfig = new URL("../../infra/cloudflare/ldraw-library.json", import.meta.url);
 const MANIFEST_FILE = "manifest.json";
 const IMMUTABLE = "public, max-age=31536000, immutable";
 const REVALIDATE = "no-cache";
@@ -44,10 +46,18 @@ function servesRemoteBundle(env: Record<string, string>): boolean {
   return remote;
 }
 
+function ldrawLibraryPublished(): boolean {
+  const config = JSON.parse(readFileSync(ldrawLibraryConfig, "utf8")) as {
+    readonly public_base_url?: string | null;
+  };
+  return typeof config.public_base_url === "string" && config.public_base_url !== "";
+}
+
 function requireRemoteLdrawLibrary(env: Record<string, string>): void {
-  if (process.env["VERCEL"] && !ABSOLUTE_HTTP_URL.test(env["VITE_LDRAW_LIBRARY_BASE_URL"] ?? "")) {
+  if (!process.env["VERCEL"] || !ldrawLibraryPublished()) return;
+  if (!ABSOLUTE_HTTP_URL.test(env["VITE_LDRAW_LIBRARY_BASE_URL"] ?? "")) {
     throw new Error(
-      "Vercel builds read LDraw library files from R2: set VITE_LDRAW_LIBRARY_BASE_URL (docs/ldraw-library.md)",
+      "ldraw-library.json has a public_base_url, so Vercel builds read LDraw library files from R2: set VITE_LDRAW_LIBRARY_BASE_URL (docs/ldraw-library.md)",
     );
   }
 }

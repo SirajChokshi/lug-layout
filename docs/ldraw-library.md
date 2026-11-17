@@ -1,6 +1,6 @@
 # LDraw library delivery
 
-The import worker compiles parts that the part bundle doesn't ship. It fetches their `.dat` files, and every subfile they reference, through `LdrawMirror` (`packages/import/src/ldraw-mirror.ts`). Deployed apps read these files from the `brr-ldraw-library` R2 bucket. GitHub's raw mirror is only the fallback for local development.
+The import worker compiles parts that the part bundle doesn't ship. It fetches their `.dat` files, and every subfile they reference, through `LdrawMirror` (`packages/import/src/ldraw-mirror.ts`). Deployed apps read these files from the `brr-ldraw-library` R2 bucket once its public URL is committed. Until then they keep reading GitHub's raw mirror, as they did before the bucket existed. After that, GitHub is only the fallback for local development.
 
 ## What is published
 
@@ -22,11 +22,27 @@ Every object is stored with `Cache-Control: public, max-age=31536000, immutable`
 
 ## How the app finds it
 
-`VITE_LDRAW_LIBRARY_BASE_URL` reaches the client as `ldrawLibraryBaseUrl` (`LDRAW_LIBRARY_BASE_URL` token). The import request passes it to the worker as `ldrawLibraryUrl`, and the worker passes it to `LdrawMirror`. Without it, the mirror reads `https://raw.githubusercontent.com`. Deployed apps never do that. `vite.config.ts` refuses a Vercel build without the URL. `vercel-build.sh` takes the URL from `public_base_url` in `infra/cloudflare/ldraw-library.json`. Once the part bundle is served, it runs `library/cli.ts served`, which HEADs the pinned library's index:
+`VITE_LDRAW_LIBRARY_BASE_URL` reaches the client as `ldrawLibraryBaseUrl` (`LDRAW_LIBRARY_BASE_URL` token). The import request passes it to the worker as `ldrawLibraryUrl`, and the worker passes it to `LdrawMirror`. Without it, the mirror reads `https://raw.githubusercontent.com`.
 
-- **Served:** the build proceeds.
-- **Absent** (no public URL, or the index answers 404): Production fails, and the previous deployment keeps serving. A preview deploys only `preview-skipped.html` and logs `Preview skipped: the pinned LDraw library is not published …`, the same way a preview whose part bundle isn't published is skipped.
-- **Any other answer, or an unreachable bucket:** the build fails.
+## Switching deployed builds from GitHub to R2
+
+`public_base_url` in `infra/cloudflare/ldraw-library.json` is the switch. Merging changes to the bucket, the publisher or the workflow never breaks Vercel Production or previews, whether or not the owner has applied, published or approved anything yet.
+
+**While `public_base_url` is `null`:** deployed builds read the library from GitHub raw, exactly as before this bucket existed.
+- `vercel-build.sh` leaves `VITE_LDRAW_LIBRARY_BASE_URL` unset and logs `LDraw library: … has no public_base_url yet, so this build reads library files from GitHub raw`.
+- It skips the library check.
+- `vite.config.ts` accepts the build.
+- This holds for Production and for previews alike.
+
+**Once `public_base_url` is committed:** deployed builds read only R2, and GitHub is the local-dev fallback from then on.
+- `vercel-build.sh` exports the URL, unless Vercel sets `VITE_LDRAW_LIBRARY_BASE_URL` itself, in which case that value wins.
+- `vite.config.ts` refuses a Vercel build without an absolute `VITE_LDRAW_LIBRARY_BASE_URL`, so a deployment can't fall back to GitHub by accident.
+- Once the part bundle is served, `vercel-build.sh` runs `library/cli.ts served`, which HEADs the pinned library's index:
+  - **Served:** the build proceeds.
+  - **Absent** (the index answers 404, for example after a merge that re-pins the library and before its publish is approved): Production fails, and the previous deployment keeps serving. A preview deploys only `preview-skipped.html` and logs `Preview skipped: the pinned LDraw library is not published …`, the same way a preview whose part bundle isn't published is skipped.
+  - **Any other answer, or an unreachable bucket:** the build fails.
+
+Commit the URL only after the library is published and `verify-served` passes against it (*Setup*). Going back to GitHub means setting `public_base_url` to `null` again.
 
 ## CI
 
@@ -60,9 +76,10 @@ LDRAW_LIBRARY_BASE_URL=<url> pnpm --filter @brr/asset-pipeline ldraw-library ver
 
 1. Apply `infra/cloudflare`, which creates `brr-ldraw-library`, its CORS and its r2.dev domain (*LDraw library bucket* in its README). After a merge, the catalog deploy workflow plans and applies it.
 2. Run the LDraw library workflow (*Actions → LDraw library → Run workflow*) and approve `publish`.
-3. Commit the Terraform output `ldraw_library_base_url` as `public_base_url` in `infra/cloudflare/ldraw-library.json`. `ignoreCommand` skips commits that touch only `infra/`, so redeploy Vercel Production by hand after that commit.
+3. Check the bucket: `LDRAW_LIBRARY_BASE_URL=<ldraw_library_base_url> pnpm --filter @brr/asset-pipeline ldraw-library verify-served`. The publish job already ran this if the URL was known to it.
+4. Commit the Terraform output `ldraw_library_base_url` as `public_base_url` in `infra/cloudflare/ldraw-library.json`. That commit is the switch to R2. `ignoreCommand` skips commits that touch only `infra/`, so redeploy Vercel Production by hand after it.
 
-Until step 3, Production builds fail, the previous deployment keeps serving, and previews are skipped. To move to a custom domain later, follow the part bundle's three steps with `ldraw_library_domain` and `ldraw_library_r2_dev`.
+Until step 4, deployed builds keep reading GitHub raw, and nothing in steps 1 to 3 affects them. To move to a custom domain later, follow the part bundle's three steps with `ldraw_library_domain` and `ldraw_library_r2_dev`.
 
 ## Local development
 
