@@ -735,6 +735,10 @@ export class ThreeSceneBackend implements ISceneBackend {
     record.group.rotation.y = -record.yaw;
   }
 
+  deleteVehicle(vehicle: number): void {
+    this.removeVehicle(vehicle);
+  }
+
   private removeVehicle(vehicle: number): void {
     const existing = this.vehicles.get(vehicle);
     if (!existing) return;

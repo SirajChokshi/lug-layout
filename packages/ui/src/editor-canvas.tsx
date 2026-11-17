@@ -1,4 +1,4 @@
-import type { EditorOptions, IEditor, IEditorCamera } from "@brr/client";
+import type { EditorOptions, IEditor, IEditorCamera, ITrainPlay } from "@brr/client";
 import { useEffect, useRef } from "react";
 import { isTyping } from "./use-editor-keys.ts";
 
@@ -49,10 +49,11 @@ function gestureScale(event: Event): number | null {
 interface EditorCanvasProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
+  readonly play: ITrainPlay;
   readonly options: EditorOptions;
 }
 
-export function EditorCanvas({ editor, camera, options }: EditorCanvasProps) {
+export function EditorCanvas({ editor, camera, play, options }: EditorCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const pointer = useRef<Pointer>({ ndcX: 0, ndcY: 0, spaceHeld: false });
@@ -79,8 +80,9 @@ export function EditorCanvas({ editor, camera, options }: EditorCanvasProps) {
       canvas.setPointerCapture(event.pointerId);
       const kind = dragKind(event, camera, pointer.current.spaceHeld);
       const [x, y] = ndc(canvas, event);
+      const playing = play.snapshot().status === "running";
       drag = {
-        kind: kind === "click" && editor.dragStart(x, y) ? "tool" : kind,
+        kind: kind === "click" && !playing && editor.dragStart(x, y) ? "tool" : kind,
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
@@ -127,6 +129,7 @@ export function EditorCanvas({ editor, camera, options }: EditorCanvasProps) {
       }
       if (finished.kind === "click" && !finished.moved) {
         const [x, y] = ndc(canvas, event);
+        if (play.click(x, y)) return;
         editor.click(x, y, event.timeStamp);
       }
     };
@@ -185,7 +188,7 @@ export function EditorCanvas({ editor, camera, options }: EditorCanvasProps) {
       canvas.removeEventListener("contextmenu", onContextMenu);
       canvas.removeEventListener("dblclick", onDoubleClick);
     };
-  }, [editor, camera]);
+  }, [editor, camera, play]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

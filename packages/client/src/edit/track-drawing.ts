@@ -91,6 +91,13 @@ export interface TrackFootprint {
   readonly box: WorldBox;
 }
 
+export interface PlayTrack {
+  readonly layout: TrackLayout;
+  readonly pieces: ReadonlyArray<TrackPiece>;
+  readonly railPart: string;
+  readonly railTopY: number;
+}
+
 export interface TrackEndView {
   readonly xLdu: number;
   readonly zLdu: number;
@@ -297,6 +304,7 @@ export class TrackDrawing {
   private readonly byPieceId = new Map<string, KitPart>();
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
+  private readonly pieces: ReadonlyArray<TrackPiece>;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
@@ -313,6 +321,7 @@ export class TrackDrawing {
     private readonly parts: ReadonlyArray<PartAsset>,
     private readonly colors: ColorTable,
   ) {
+    this.pieces = catalog.pieces;
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
@@ -349,6 +358,18 @@ export class TrackDrawing {
 
   kitParts(): ReadonlyArray<KitPart> {
     return [...this.byDef.values()];
+  }
+
+  playTrack(): PlayTrack {
+    const straight = this.kitParts().find((k) => k.piece.kind === "straight");
+    const part = straight ? this.parts[straight.partIndex] : undefined;
+    if (!straight || !part) throw new Error(`the ${TRACK_SYSTEM} kit has no straight to run on`);
+    return {
+      layout: this.layout,
+      pieces: this.pieces,
+      railPart: straight.piece.part,
+      railTopY: straight.yLdu + part.boundsMax[1],
+    };
   }
 
   get pieceCount(): number {

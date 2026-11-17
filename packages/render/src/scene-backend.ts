@@ -150,6 +150,7 @@ export interface ISceneBackend {
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
   setVehicle(vehicle: number, model: ChunkInstances): void;
   setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void;
+  deleteVehicle(vehicle: number): void;
   setView(
     eyeX: number,
     eyeY: number,

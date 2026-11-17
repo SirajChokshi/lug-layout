@@ -12,6 +12,7 @@ import {
   RUN_SCENE,
   RUNNING_GEAR,
   TRACK_SCENE,
+  TRAIN_PLAY,
   type IBomSource,
   type IImportScene,
   type IRunScene,
@@ -151,6 +152,7 @@ function root(): ReactNode {
         camera={container.get(EDITOR_CAMERA)}
         plans={container.get(PLAN_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
+        play={container.get(TRAIN_PLAY)}
         options={{
           api: params.api,
           pixelRatio: window.devicePixelRatio,

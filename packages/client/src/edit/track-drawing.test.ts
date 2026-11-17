@@ -47,6 +47,7 @@ class PlanOnlyBackend implements ISceneBackend {
   setTrackEnds(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
+  deleteVehicle(): void {}
   setIssueBoxes(): void {}
   rayThrough(): void {}
   setView(): void {}

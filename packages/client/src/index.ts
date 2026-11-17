@@ -109,7 +109,7 @@ export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient, SimTickCost } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export type { SimBenchResult } from "@brr/sim";
-export { MM_PER_STUD } from "@brr/math";
+export { MM_PER_STUD, STUD_LDU } from "@brr/math";
 export {
   DEFAULT_MAX_OVERHANG_MM,
   PLAN_GRID_MM,
@@ -150,8 +150,17 @@ export {
   RUN_SCENE,
   SIM_CLIENT,
   TRACK_SCENE,
+  TRAIN_PLAY,
   PLAN_SERVICE,
 } from "./tokens.ts";
+export type {
+  ITrainPlay,
+  PlaySnapshot,
+  PlayStatus,
+  PlaySwitchView,
+  TrainSetView,
+} from "./play/train-play.ts";
+export type { PlaySetup } from "./play/play-models.ts";
 export { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./edit/editor.ts";
 export {
   COMMAND_GROUPS,

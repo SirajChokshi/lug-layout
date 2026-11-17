@@ -156,6 +156,9 @@ class ChunkCapture implements ISceneBackend {
   setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void {
     this.inner.setVehiclePose(vehicle, x, y, z, yaw);
   }
+  deleteVehicle(vehicle: number): void {
+    this.inner.deleteVehicle(vehicle);
+  }
   setView(
     eyeX: number,
     eyeY: number,
