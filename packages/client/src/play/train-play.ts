@@ -82,6 +82,7 @@ const STATUS_INTERVAL_MS = 100;
 const DIVERGING = 1;
 const STRAIGHT = 0;
 const OFF_TRACK_YAW_RADIANS = 0.12;
+const OFF_TRACK_ROLL_RADIANS = 0.22;
 const NO_BODY = -1;
 const DIVERGING_PIECE = /-f2$/u;
 
@@ -432,23 +433,51 @@ export class TrainPlay implements ITrainPlay {
       const off = data[layout.bogiesOffTrackStart + v] ?? 0;
       const onRails = this.railTopY - placed.vehicle.railTopY;
       const onGround = -placed.vehicle.railTopY;
-      const bodyY = onRails + ((onGround - onRails) * off) / 2;
-      const kink = off === 0 ? 0 : OFF_TRACK_YAW_RADIANS * (v % 2 === 0 ? 1 : -1);
+      const leadingY = off >= 1 ? onGround : onRails;
+      const trailingY = off >= 2 ? onGround : onRails;
+      const side = v % 2 === 0 ? 1 : -1;
+      const kink = off === 0 ? 0 : OFF_TRACK_YAW_RADIANS * side;
+      const roll = off === 0 ? 0 : OFF_TRACK_ROLL_RADIANS * side;
+      const forward = layout.trainDirectionStart;
+      const leadingIsFront = (data[forward] ?? 1) > 0;
+      const frontY = leadingIsFront ? leadingY : trailingY;
+      const rearY = leadingIsFront ? trailingY : leadingY;
+      const spacing = Math.hypot(
+        (data[o + 3] ?? 0) - (data[o + 6] ?? 0),
+        (data[o + 4] ?? 0) - (data[o + 7] ?? 0),
+      );
       this.backend.setVehiclePose(
         placed.body,
         data[o] ?? 0,
-        bodyY,
+        (frontY + rearY) / 2,
         data[o + 1] ?? 0,
         (data[o + 2] ?? 0) + kink,
+        spacing === 0 ? 0 : Math.atan2(frontY - rearY, spacing),
+        roll,
       );
-      this.poseBogie(placed.frontBogie, data, o + 3, off >= 1 ? onGround : onRails, kink);
-      this.poseBogie(placed.rearBogie, data, o + 6, off >= 2 ? onGround : onRails, kink);
+      this.poseBogie(placed.frontBogie, data, o + 3, frontY, kink, roll);
+      this.poseBogie(placed.rearBogie, data, o + 6, rearY, kink, roll);
     }
   }
 
-  private poseBogie(body: number, data: Float64Array, o: number, y: number, kink: number): void {
+  private poseBogie(
+    body: number,
+    data: Float64Array,
+    o: number,
+    y: number,
+    kink: number,
+    roll: number,
+  ): void {
     if (body === NO_BODY) return;
-    this.backend.setVehiclePose(body, data[o] ?? 0, y, data[o + 1] ?? 0, (data[o + 2] ?? 0) + kink);
+    this.backend.setVehiclePose(
+      body,
+      data[o] ?? 0,
+      y,
+      data[o + 1] ?? 0,
+      (data[o + 2] ?? 0) + kink,
+      0,
+      roll,
+    );
   }
 }
 
