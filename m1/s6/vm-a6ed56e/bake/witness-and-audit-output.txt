@@ -1,0 +1,30 @@
+AUDITSAMPLE sampled=15 open=0
+AUDIT 7936-1 culled=156 open_under_dense_test=0 secs=0.2
+WITNESS 7936-1 culled=156 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=10 footprint_unchanged=true
+AUDITSAMPLE sampled=440 open=1
+AUDIT 10264-1 culled=4404 open_under_dense_test=1 secs=5.3
+WITNESS 10264-1 culled=4404 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=93 footprint_unchanged=true
+AUDITSAMPLE sampled=472 open=1
+AUDIT 10185-1 culled=4726 open_under_dense_test=1 secs=4.8
+WITNESS 10185-1 culled=4726 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=26 footprint_unchanged=true
+AUDITSAMPLE sampled=252 open=1
+AUDIT 10190-1 culled=2527 open_under_dense_test=1 secs=2.4
+WITNESS 10190-1 culled=2527 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=4 footprint_unchanged=true
+AUDITSAMPLE sampled=431 open=1
+AUDIT 10218-1 culled=4311 open_under_dense_test=1 secs=4.2
+WITNESS 10218-1 culled=4311 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=101 footprint_unchanged=true
+AUDITSAMPLE sampled=92 open=4
+AUDIT 2150-1 culled=927 open_under_dense_test=4 secs=1.0
+WITNESS 2150-1 culled=927 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=4 footprint_unchanged=true
+AUDITSAMPLE sampled=91 open=1
+AUDIT 4554-1 culled=913 open_under_dense_test=1 secs=1.0
+WITNESS 4554-1 culled=913 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=4 footprint_unchanged=true
+AUDITSAMPLE sampled=71 open=0
+AUDIT 4555-1 culled=713 open_under_dense_test=0 secs=1.1
+WITNESS 4555-1 culled=713 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=5 footprint_unchanged=true
+AUDITSAMPLE sampled=45 open=0
+AUDIT 10128-1 culled=451 open_under_dense_test=0 secs=1.2
+WITNESS 10128-1 culled=451 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=24 footprint_unchanged=true
+AUDITSAMPLE sampled=73 open=0
+AUDIT 10133-1 culled=737 open_under_dense_test=0 secs=1.3
+WITNESS 10133-1 culled=737 witnessed_visible_from_below=0 extra_culled_if_translucent_covered=2 footprint_unchanged=true

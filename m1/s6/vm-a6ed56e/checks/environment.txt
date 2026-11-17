@@ -1,0 +1,4 @@
+Google Chrome 157.0.8103.50 
+Linux 6.12.113+
+8
+model name	: Intel(R) Xeon(R) Processor
