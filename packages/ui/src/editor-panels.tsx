@@ -464,6 +464,9 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
         `(${stats.renderOriginChunkX}, ${stats.renderOriginChunkZ}); ${stats.rebases}`,
       ],
       ["Tier (L)", snapshot.tier ?? "auto"],
+      ...(snapshot.farTierError === null
+        ? []
+        : [["Far tier", `unavailable: ${snapshot.farTierError}`] as const]),
       ["Chunk tiers near/mid/far", `${stats.nearChunks} / ${stats.midChunks} / ${stats.farChunks}`],
       ["Projected stud pitch, nearest chunk", `${stats.nearestStudPitchPx.toFixed(1)} px`],
     );
