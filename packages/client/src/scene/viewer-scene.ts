@@ -13,7 +13,12 @@ import {
   type PartPalette,
 } from "@brr/render";
 
-export const PALETTE_PARTS: PartFilter = (part) => part.role !== "model";
+const CATALOG_ROLES: ReadonlySet<string> = new Set(["ground", "road"]);
+
+const hasSceneColor: PartFilter = (part) =>
+  !CATALOG_ROLES.has(part.role) || part.displayColor !== undefined;
+
+export const PALETTE_PARTS: PartFilter = (part) => part.role !== "model" && hasSceneColor(part);
 
 export interface SceneSummary {
   readonly bundleVersion: string;

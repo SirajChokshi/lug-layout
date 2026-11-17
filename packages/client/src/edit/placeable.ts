@@ -8,11 +8,13 @@ import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { roadSurface } from "./road-surface.ts";
 
-export type PlaceableKind = "baseplate" | "road-plate" | "road-module" | "model";
+export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
 
 export interface Placeable {
   readonly id: string;
   readonly label: string;
+  readonly group: string;
+  readonly groupLabel: string;
   readonly kind: PlaceableKind;
   readonly worldColor: number;
   readonly parts: ChunkPartInstances;
@@ -115,9 +117,9 @@ function restingY(
   parts: ReadonlyArray<PartAsset>,
   role: ModelRole | undefined,
 ): number {
-  if (role !== "road-module") return lattice.aabbMin[1];
+  if (role !== "mils-module") return lattice.aabbMin[1];
   const top = groundTop(model, parts);
-  if (top === null) throw new Error("a road module needs its own baseplate to stand on");
+  if (top === null) throw new Error("a MILS module needs its own baseplate to stand on");
   return top;
 }
 
@@ -149,19 +151,22 @@ export function modelPlaceable(
   };
   const box = shiftedBox(lattice.aabbMin, lattice.aabbMax, shift);
   const partBoxes = instanceBoxes(local, parts);
-  const isRoad = role === "road-module";
+  const isModule = role === "mils-module";
+  const id = isModule ? `generated:${name}` : `omr:${name}`;
   return {
-    id: isRoad ? `generated:${name}` : `omr:${name}`,
+    id,
     label,
-    kind: isRoad ? "road-module" : "model",
+    group: id,
+    groupLabel: label,
+    kind: isModule ? "mils-module" : "model",
     worldColor: 0,
     parts: local,
     studs: withStuds(local, parts, colors, undefined).studs,
     box,
     partBoxes,
     frameShift: shift,
-    credit: isRoad ? null : credit,
-    road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
+    credit: isModule ? null : credit,
+    road: isModule ? roadSurface(local, partBoxes, box, parts) : null,
   };
 }
 
@@ -175,6 +180,7 @@ export function partPlaceable(
   part: PartAsset,
   partIndex: number,
   ldrawColor: number,
+  colorName: string,
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
 ): Placeable {
@@ -191,8 +197,10 @@ export function partPlaceable(
   const partBoxes = instanceBoxes(local, parts);
   const isRoad = part.role === "road";
   return {
-    id: part.id,
-    label: `${part.id.replace("ldraw:", "")} ${part.title}`,
+    id: `${part.id}@${ldrawColor}`,
+    label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
+    group: part.id,
+    groupLabel: `${part.id.replace("ldraw:", "")} ${part.title}`,
     kind: isRoad ? "road-plate" : "baseplate",
     worldColor: ldrawColor,
     parts: local,

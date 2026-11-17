@@ -47,6 +47,7 @@ docs/                   architecture.md, verified-facts.md
 - `pnpm --filter @brr/web dev`
 - `pnpm lint:rust` (no comments in `crates/`) and `pnpm check:rust` (fmt, clippy `-D warnings`, `cargo test`)
 - `pnpm --filter @brr/asset-pipeline fetch-ldraw` re-pins LDraw inputs (network; plain `fetch` would run pnpm's built-in). `restore-ldraw` downloads exactly the pinned files into the git-ignored `.cache/` (network once, then a no-op), `verify-ldraw` checks them offline, and `build` restores, verifies and compiles the bundle that `apps/web` serves at `/bundle/`. LDraw `.dat` files are never committed. `pnpm check` restores them first; the Rust integration test reads `.cache/ldraw`, so run `restore-ldraw` before a bare `cargo test`
+- `pnpm --filter @brr/asset-pipeline colors <dir>` re-derives the palette's `producedColors` (every colour a baseplate or road plate is offered in) from the S13 Rebrickable export in `<dir>` (hash-checked; the Project store keeps a copy under `internal/sources/rebrickable`). `--check` reports drift
 - The app's viewer takes `?api=webgpu|webgl2&lod=standard|low`, and `&measure=1` for GPU-synced frame timing
 - `pnpm lint:boundaries` runs dependency-cruiser (`.dependency-cruiser.json`) against the §14.2 layer table; CI and `pnpm check` run it
 - `pnpm check:infra` runs `terraform fmt -check`, `init -backend=false` and `validate` on `infra/cloudflare` (needs Terraform ≥ 1.10); CI and `pnpm check` run it

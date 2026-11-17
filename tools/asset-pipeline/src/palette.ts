@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import type { PartProducedColors } from "./catalog/produced-colors.ts";
 
 export type PartRole = "ground" | "road" | "track" | "wall" | "roof" | "detail";
 
@@ -7,7 +8,7 @@ export type ModelOrigin = "omr" | "generated";
 export interface PaletteModel {
   readonly name: string;
   readonly origin: ModelOrigin;
-  readonly role?: "road-module";
+  readonly role?: "mils-module";
   readonly file: string;
   readonly sha256: string;
   readonly source: string;
@@ -30,7 +31,9 @@ export interface Palette {
     readonly id: string;
     readonly role: PartRole;
     readonly displayColor?: { readonly ldraw: number; readonly source: string };
+    readonly producedColors?: PartProducedColors;
   }>;
+  readonly producedColorSource?: string;
   readonly omrSource: Palette["source"];
   readonly models: ReadonlyArray<PaletteModel>;
   readonly audit: ReadonlyArray<AuditGroup>;

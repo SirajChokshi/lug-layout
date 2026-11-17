@@ -10,6 +10,7 @@
     "build": "node src/cli.ts bundle",
     "typecheck": "tsc -p tsconfig.json",
     "facts": "node src/cli.ts facts",
+    "colors": "node src/cli.ts colors",
     "test": "vitest run"
   },
   "dependencies": {

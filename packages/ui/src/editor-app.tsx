@@ -1,13 +1,13 @@
 import type { EditorOptions, IEditor, IPlanService } from "@brr/client";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
-  CatalogList,
   CreditsFooter,
   EditorHud,
   Inspector,
   PlacementToolbar,
   RoadJoins,
 } from "./editor-panels.tsx";
+import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { TrackPanel } from "./track-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
@@ -69,7 +69,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} />
-        <CatalogList editor={editor} snapshot={snapshot} />
+        <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />

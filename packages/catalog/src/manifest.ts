@@ -18,7 +18,16 @@ export interface ManifestPart {
   readonly bounds: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
   readonly title?: string;
   readonly displayColor?: { readonly ldraw: number; readonly source: string };
+  readonly producedColors?: ManifestProducedColors;
   readonly trackEnds?: ReadonlyArray<TrackEnd>;
+}
+
+export interface ManifestProducedColors {
+  readonly rebrickable: string;
+  readonly colors: ReadonlyArray<{
+    readonly ldraw: number;
+    readonly elements: ReadonlyArray<string>;
+  }>;
 }
 
 export interface ManifestStudPrimitive {
@@ -155,7 +164,7 @@ function isBundleModelEntry(value: unknown): value is BundleModelEntry {
     isStringArray(value["authors"]) &&
     isStringArray(value["licenses"]) &&
     Array.isArray(value["sections"]) &&
-    (value["role"] === undefined || value["role"] === "road-module")
+    (value["role"] === undefined || value["role"] === "mils-module")
   );
 }
 

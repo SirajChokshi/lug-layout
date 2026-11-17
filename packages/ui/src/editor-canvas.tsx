@@ -1,4 +1,4 @@
-import type { EditorOptions, IEditor } from "@brr/client";
+import { TRACK_ITEM_ID, type EditorOptions, type IEditor } from "@brr/client";
 import { useEffect, useRef } from "react";
 
 const CLICK_SLOP_PX = 4;
@@ -159,6 +159,10 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
         case "c":
         case "C":
           editor.centreOnCursor();
+          break;
+        case "t":
+        case "T":
+          editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
           break;
         default:
           return;

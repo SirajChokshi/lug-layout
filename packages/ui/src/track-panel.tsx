@@ -51,7 +51,7 @@ function commitText(track: TrackView): string {
 
 export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const { track } = snapshot;
-  if (!track) return null;
+  if (!track || (snapshot.mode !== "track" && track.pieces === 0)) return null;
   const rows: Array<readonly [string, string]> = [
     ["Pieces laid", integer.format(track.pieces)],
     ...track.bom.map((line): readonly [string, string] => [

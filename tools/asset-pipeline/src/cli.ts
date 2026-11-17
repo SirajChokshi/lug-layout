@@ -19,6 +19,11 @@ import {
   type ModelRoots,
 } from "./fetch-ldraw.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
+import {
+  producedColors,
+  readProducedColorInputs,
+  REBRICKABLE_EXPORT,
+} from "./catalog/produced-colors.ts";
 import { readPalette, type Palette } from "./palette.ts";
 import { MANIFEST_FILE, publishBundle, type BundleInputs } from "./publish.ts";
 import {
@@ -166,6 +171,62 @@ async function factsCommand(check: boolean): Promise<void> {
   if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
 
+const CATALOG_ROLES: ReadonlySet<string> = new Set(["ground", "road"]);
+
+function producedColorSource(): string {
+  const files = Object.values(REBRICKABLE_EXPORT)
+    .map(({ file, sha256 }) => `${file} sha256 ${sha256}`)
+    .join(", ");
+  return `Rebrickable database export (${files}), docs/verified-facts.md S13; a colour counts only when its Rebrickable id and name equal an LDConfig code and name`;
+}
+
+async function colorsCommand(
+  rebrickableDirectory: string | undefined,
+  check: boolean,
+): Promise<void> {
+  if (rebrickableDirectory === undefined) {
+    throw new Error("usage: cli.ts colors <directory with the S13 Rebrickable export> [--check]");
+  }
+  const palette = await readPalette(palettePath);
+  const catalogParts = palette.parts.filter((part) => CATALOG_ROLES.has(part.role));
+  const report = producedColors(
+    await readProducedColorInputs(
+      rebrickableDirectory,
+      ldrawRoot,
+      catalogParts.map((part) => part.id),
+    ),
+  );
+  for (const excluded of report.excluded) {
+    process.stdout.write(
+      `excluded ${excluded.part} colour ${excluded.rebrickableColor}: ${excluded.reason}\n`,
+    );
+  }
+  const unproduced = [...report.parts].filter(([, entry]) => entry.colors.length === 0);
+  if (unproduced.length > 0) {
+    throw new Error(
+      `no produced colour for ${unproduced.map(([id, entry]) => `${id} (${entry.rebrickable})`).join(", ")}`,
+    );
+  }
+  const updated: Palette = {
+    ...palette,
+    producedColorSource: producedColorSource(),
+    parts: palette.parts.map((part) => {
+      const entry = report.parts.get(part.id);
+      return entry ? { ...part, producedColors: entry } : part;
+    }),
+  };
+  const text = `${JSON.stringify(updated, null, 2)}\n`;
+  if (check) {
+    if (JSON.stringify(updated) !== JSON.stringify(palette)) {
+      process.stderr.write("palette.json producedColors differ from the Rebrickable export\n");
+      process.exitCode = 1;
+    }
+    return;
+  }
+  await writeFile(palettePath, text);
+  process.stdout.write(`produced colours for ${report.parts.size} catalog parts\n`);
+}
+
 const BUNDLE_LODS = ["standard", "low", "far"] as const;
 const COMPILER_TARGET = "wasm32-wasip1";
 const compilerWasm = join(
@@ -280,7 +341,15 @@ switch (command) {
   case "facts":
     await factsCommand(process.argv.includes("--check"));
     break;
+  case "colors":
+    await colorsCommand(
+      process.argv.slice(3).find((arg) => !arg.startsWith("--")),
+      process.argv.includes("--check"),
+    );
+    break;
   default:
-    process.stderr.write("usage: cli.ts fetch|restore|attribution|verify|bundle|facts [--check]\n");
+    process.stderr.write(
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]\n",
+    );
     process.exitCode = 2;
 }
