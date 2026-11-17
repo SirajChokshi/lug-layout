@@ -24,6 +24,7 @@ import {
   Vector3,
   WebGPURenderer,
   MeshStandardNodeMaterial,
+  type Object3DEventMap,
 } from "three/webgpu";
 import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
@@ -386,9 +387,20 @@ class VehicleRecord {
   ) {}
 }
 
+interface DisposableMeshEvents extends Object3DEventMap {
+  dispose: object;
+}
+
+type DisposableMesh = Mesh<BufferGeometry, MeshStandardNodeMaterial, DisposableMeshEvents>;
+
+function releaseRenderObjects(mesh: DisposableMesh): void {
+  mesh.dispatchEvent({ type: "dispose" });
+}
+
 class FarModelNode {
   constructor(
     readonly group: Group,
+    readonly meshes: ReadonlyArray<DisposableMesh>,
     readonly originX: number,
     readonly originZ: number,
     readonly chunkKeys: ReadonlyArray<number>,
@@ -397,7 +409,7 @@ class FarModelNode {
 
 class SuperChunkRecord {
   constructor(
-    readonly mesh: Mesh,
+    readonly mesh: DisposableMesh,
     readonly originX: number,
     readonly originZ: number,
   ) {}
@@ -652,7 +664,10 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   setPalette(palette: PartPalette): void {
     this.clearChunks();
-    for (const node of this.farModelList) this.scene.remove(node.group);
+    for (const node of this.farModelList) {
+      this.scene.remove(node.group);
+      for (const mesh of node.meshes) releaseRenderObjects(mesh);
+    }
     this.farModelNodes.clear();
     this.farModelList = [];
     for (const key of this.superChunks.keys()) this.deleteSuperChunk(key);
@@ -791,7 +806,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     geometry.setAttribute("color", new BufferAttribute(colors, RGBA_CHANNELS, true));
     geometry.setIndex(new BufferAttribute(mesh.indices, 1));
     geometry.computeBoundingSphere();
-    const object = new Mesh(geometry, this.voxelMaterial);
+    const object: DisposableMesh = new Mesh(geometry, this.voxelMaterial);
     object.matrixAutoUpdate = false;
     object.visible = visible;
     const record = new SuperChunkRecord(object, mesh.originX, mesh.originZ);
@@ -810,6 +825,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     const record = this.superChunks.get(key);
     if (!record) return;
     this.superLayer.remove(record.mesh);
+    releaseRenderObjects(record.mesh);
     record.mesh.geometry.dispose();
     this.superChunks.delete(key);
     this.superList = this.superList.filter((existing) => existing !== record);
@@ -1574,6 +1590,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     const existing = this.farModelNodes.get(id);
     if (existing) {
       this.scene.remove(existing.group);
+      for (const mesh of existing.meshes) releaseRenderObjects(mesh);
       this.farModelNodes.delete(id);
       this.farModelList = this.farModelList.filter((node) => node !== existing);
     }
@@ -1588,18 +1605,20 @@ export class ThreeSceneBackend implements ISceneBackend {
       placement.originZ - this.renderOriginZ,
     );
     group.updateMatrix();
+    const meshes: DisposableMesh[] = [];
     writeMatrix4(placement.matrix, 0, this.farModelMatrix, 0);
     for (const fixed of geometries) {
       const material = this.materials.vertexColored(fixed.alpha);
-      const mesh = new Mesh(fixed.geometry, material);
+      const mesh: DisposableMesh = new Mesh(fixed.geometry, material);
       mesh.matrixAutoUpdate = false;
       mesh.matrix.fromArray(this.farModelMatrix);
       mesh.receiveShadow = this.look.shadows && !material.transparent;
       group.add(mesh);
+      meshes.push(mesh);
     }
     group.updateMatrixWorld(true);
     group.visible = false;
-    const node = new FarModelNode(group, placement.originX, placement.originZ, [
+    const node = new FarModelNode(group, meshes, placement.originX, placement.originZ, [
       ...placement.chunkKeys,
     ]);
     this.farModelNodes.set(id, node);
