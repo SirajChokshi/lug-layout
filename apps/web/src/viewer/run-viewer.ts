@@ -63,6 +63,7 @@ export async function runViewer(
     api: params.api,
     pixelRatio: devicePixelRatio,
     antialias: true,
+    look: params.look,
   });
   const drawingBuffer = (): DrawingBuffer => ({
     width: canvas.width,
