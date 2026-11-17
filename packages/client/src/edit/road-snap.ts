@@ -32,6 +32,21 @@ export function cellExtent(placement: RoadPlacement): CellExtent {
   return { minX, maxX, minZ, maxZ };
 }
 
+export function touchingRoads(
+  placed: ReadonlyArray<CellExtent>,
+  ghost: CellExtent,
+): ReadonlyArray<number> {
+  const near: number[] = [];
+  for (let i = 0; i < placed.length; i++) {
+    const extent = placed[i];
+    if (!extent) continue;
+    const touchesX = extent.minX <= ghost.maxX && extent.maxX >= ghost.minX;
+    const touchesZ = extent.minZ <= ghost.maxZ && extent.maxZ >= ghost.minZ;
+    if (touchesX && touchesZ) near.push(i);
+  }
+  return near;
+}
+
 function* alongSide(placed: CellExtent, ghost: CellExtent): Generator<readonly [number, number]> {
   for (let z = placed.minZ - ghost.maxZ + STUD_LDU; z < placed.maxZ - ghost.minZ; z += STUD_LDU) {
     yield [placed.maxX - ghost.minX, z];

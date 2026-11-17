@@ -13,8 +13,11 @@ import {
 } from "@brr/catalog";
 import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
 import {
+  CAMERA_FOV_DEGREES,
   SCENE_BACKEND,
   type BackendInfo,
+  type GhostTone,
+  type SnapTarget,
   type BufferMemory,
   type ISceneBackend,
   type LookSettings,
@@ -44,7 +47,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
-import { EDITOR } from "../tokens.ts";
+import { EDITOR, EDITOR_CAMERA } from "../tokens.ts";
 import type { IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -60,6 +63,27 @@ const NO_LOOK: LookSettings = {
   oit: false,
 };
 const BASEPLATE = "ldraw:3811@2";
+const HALF_FOV_TAN = Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360);
+
+type Vec3 = readonly [number, number, number];
+type Ndc = readonly [number, number];
+
+function sub(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
+function unit(a: Vec3): Vec3 {
+  const length = Math.hypot(a[0], a[1], a[2]);
+  return [a[0] / length, a[1] / length, a[2] / length];
+}
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -144,7 +168,12 @@ class ModelSubsetLoader implements IPartBundleLoader {
   }
 }
 
-class HeadlessBackend implements ISceneBackend {
+class PerspectiveBackend implements ISceneBackend {
+  tone: GhostTone = "neutral";
+  private eye: Vec3 = [0, 1, 0];
+  private at: Vec3 = [0, 0, 0];
+  private aspect = 1;
+
   async init(): Promise<BackendInfo> {
     return {
       requestedApi: "webgl2",
@@ -159,6 +188,14 @@ class HeadlessBackend implements ISceneBackend {
   deleteChunk(): void {}
   setGhost(): void {}
   placeGhost(): void {}
+  setGhostTone(tone: GhostTone): void {
+    this.tone = tone;
+  }
+  cueGhost(): void {}
+  targets: ReadonlyArray<SnapTarget> = [];
+  setSnapTargets(targets: ReadonlyArray<SnapTarget>): void {
+    this.targets = targets;
+  }
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
@@ -167,17 +204,50 @@ class HeadlessBackend implements ISceneBackend {
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
-  private aimX = 0;
-  private aimZ = 0;
+  private aimed: readonly [number, number] | null = null;
   aim(x: number, z: number): void {
-    this.aimX = x;
-    this.aimZ = z;
+    this.aimed = [x, z];
   }
-  rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
-    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ, 0, -1, 0]);
+  setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void {
+    this.eye = [eyeX, eyeY, eyeZ];
+    this.at = [atX, atY, atZ];
   }
-  setView(): void {}
-  resize(): void {}
+  resize(width: number, height: number): void {
+    this.aspect = width / Math.max(height, 1);
+  }
+
+  private basis(): readonly [Vec3, Vec3, Vec3] {
+    const forward = unit(sub(this.at, this.eye));
+    const right = unit(cross(forward, [0, 1, 0]));
+    return [forward, right, cross(right, forward)];
+  }
+
+  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
+    if (this.aimed) {
+      out.set([this.aimed[0], RAY_HEIGHT_LDU, this.aimed[1], 0, -1, 0]);
+      return;
+    }
+    const [forward, right, up] = this.basis();
+    const sx = ndcX * HALF_FOV_TAN * this.aspect;
+    const sy = ndcY * HALF_FOV_TAN;
+    const direction = unit([
+      forward[0] + right[0] * sx + up[0] * sy,
+      forward[1] + right[1] * sx + up[1] * sy,
+      forward[2] + right[2] * sx + up[2] * sy,
+    ]);
+    out.set([...this.eye, ...direction]);
+  }
+
+  project(x: number, z: number): Ndc {
+    const [forward, right, up] = this.basis();
+    const offset = sub([x, 0, z], this.eye);
+    const depth = dot(offset, forward);
+    return [
+      dot(offset, right) / (depth * HALF_FOV_TAN * this.aspect),
+      dot(offset, up) / (depth * HALF_FOV_TAN),
+    ];
+  }
+
   renderFrame(): void {}
   async waitForGpu(): Promise<void> {}
   rebaseLog(): ReadonlyArray<RebaseEvent> {
@@ -198,8 +268,13 @@ async function startEditor(
   models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
 ) {
-  const backend = new HeadlessBackend();
-  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const backend = new PerspectiveBackend();
+  let step: FrameRequestCallback | null = null;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    step = callback;
+    return 0;
+  });
+  const nextFrame = (): void => step?.(performance.now());
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
@@ -216,7 +291,14 @@ async function startEditor(
   } as unknown as HTMLCanvasElement;
 
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return { editor, backend, manifest: await realLoader.loadManifest("standard") };
+  const camera = container.get(EDITOR_CAMERA);
+  return {
+    editor,
+    backend,
+    camera,
+    nextFrame,
+    manifest: await realLoader.loadManifest("standard"),
+  };
 }
 
 it("starts with every model in the bundle while keeping at most 16 bundle fetches in flight", async () => {
@@ -418,7 +500,8 @@ async function editorWithFailingSaves() {
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  const backend = new HeadlessBackend();
+  const backend = new PerspectiveBackend();
+  backend.aim(0, 0);
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const repository = new FlakyRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
@@ -516,7 +599,7 @@ it.each([2, 3])(
 const RAIL_MODULE = "generated:mils-rail-straight";
 const RAIL_LABEL = "Rail Module Straight (project rule, not MILS)";
 
-function placer(editor: IEditor, backend: HeadlessBackend) {
+function placer(editor: IEditor, backend: PerspectiveBackend) {
   return (item: string, x: number, z: number) => {
     editor.chooseItem(item);
     backend.aim(x, z);
@@ -586,6 +669,136 @@ it("refuses a rail edge against a plain or road module in either order, and join
       ),
     },
   });
+});
+
+type Verdict = (at: Ndc) => void;
+
+async function editorWithRoad() {
+  const { editor, backend, camera, nextFrame } = await startEditor();
+  const road = editor.snapshot().catalog.find((item) => item.kind === "road-plate");
+  if (!road) throw new Error("the bundle has no road plate");
+  editor.chooseItem(road.id);
+  editor.pointerMove(...backend.project(0, 0));
+  editor.click(...backend.project(0, 0), 0);
+  expect(editor.snapshot().placements).toBe(1);
+  const seen = new Set<string>();
+  return {
+    editor,
+    backend,
+    camera,
+    nextFrame,
+    seen,
+    clickMatchesGhost: verdict(editor, backend, seen),
+  };
+}
+
+function verdict(editor: IEditor, backend: PerspectiveBackend, seen: Set<string>): Verdict {
+  return (at) => {
+    const feedback = editor.snapshot().ghostFeedback;
+    expect(backend.tone).toBe(feedback?.tone ?? "neutral");
+    const refusedBefore = editor.snapshot().refusedClicks;
+    editor.click(...at, 0);
+    const refused = editor.snapshot().refusedClicks > refusedBefore;
+    seen.add(feedback?.tone ?? "none");
+    expect(feedback?.tone === "blocked").toBe(refused);
+    expect(feedback?.message !== null).toBe(feedback?.tone !== "valid");
+    if (refused) return;
+    expect(editor.snapshot().ghostFeedback).toBeNull();
+    expect(backend.tone).toBe("neutral");
+    editor.undo(0);
+  };
+}
+
+it("shows the ghost as blocked, with a reason, exactly where a click would be refused", async () => {
+  const { editor, backend, seen, clickMatchesGhost } = await editorWithRoad();
+  for (let x = -1_000; x <= 1_000; x += 140) {
+    for (let z = -1_000; z <= 1_000; z += 140) {
+      const at = backend.project(x, z);
+      editor.pointerMove(...at);
+      clickMatchesGhost(at);
+    }
+  }
+  expect([...seen].toSorted()).toEqual(["blocked", "snapped", "valid"]);
+  expect(editor.snapshot().placements).toBe(1);
+}, 120_000);
+
+it("keeps the ghost's verdict true when the camera moves under a still pointer", async () => {
+  const { editor, backend, camera, nextFrame, seen, clickMatchesGhost } = await editorWithRoad();
+  const pinchAtCentre = (deltaY: number): void =>
+    camera.wheel({
+      deltaX: 0,
+      deltaY,
+      deltaMode: 0,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: false,
+      ndcX: 0,
+      ndcY: 0,
+    });
+  const moves: ReadonlyArray<readonly [() => void, () => void]> = [
+    [() => pinchAtCentre(-120), () => pinchAtCentre(120)],
+    [() => pinchAtCentre(80), () => pinchAtCentre(-80)],
+    [() => camera.panBy(80, 30), () => camera.panBy(-80, -30)],
+    [() => camera.orbit(60, 20), () => camera.orbit(-60, -20)],
+  ];
+  for (const [move, undoMove] of moves) {
+    for (let x = -700; x <= 700; x += 175) {
+      for (let z = -700; z <= 700; z += 175) {
+        const at = backend.project(x, z);
+        editor.pointerMove(...at);
+        move();
+        nextFrame();
+        clickMatchesGhost(at);
+        undoMove();
+        nextFrame();
+      }
+    }
+  }
+  expect(seen.has("blocked")).toBe(true);
+  expect(seen.has("snapped")).toBe(true);
+  expect(editor.snapshot().placements).toBe(1);
+}, 120_000);
+
+it("shows a MILS module's ghost as blocked exactly where its module square is taken", async () => {
+  const { editor, backend } = await startEditor(["mils-road-straight"]);
+  const moduleLdu = 640;
+  editor.chooseItem("generated:mils-road-straight");
+  editor.pointerMove(...backend.project(moduleLdu / 2, moduleLdu / 2));
+  editor.click(...backend.project(moduleLdu / 2, moduleLdu / 2), 0);
+  expect(editor.snapshot().placements).toBe(1);
+  const seen = new Set<string>();
+  const clickMatchesGhost = verdict(editor, backend, seen);
+  for (let x = -moduleLdu; x <= 2 * moduleLdu; x += moduleLdu / 2) {
+    for (let z = -moduleLdu; z <= 2 * moduleLdu; z += moduleLdu / 2) {
+      const at = backend.project(x + moduleLdu / 4, z + moduleLdu / 4);
+      editor.pointerMove(...at);
+      clickMatchesGhost(at);
+    }
+  }
+  expect(seen.has("blocked")).toBe(true);
+  expect(editor.snapshot().placements).toBe(1);
+}, 120_000);
+
+it("shows the ghost as blocked exactly where a module would face a rail edge", async () => {
+  const { editor, backend } = await startEditor(["mils-rail-straight", "mils-plain"]);
+  const moduleLdu = 640;
+  editor.setSnapModules(false);
+  editor.chooseItem(RAIL_MODULE);
+  editor.pointerMove(...backend.project(moduleLdu / 2, moduleLdu / 2));
+  editor.click(...backend.project(moduleLdu / 2, moduleLdu / 2), 0);
+  expect(editor.snapshot().placements).toBe(1);
+  editor.chooseItem("generated:mils-plain");
+  const seen = new Set<string>();
+  const clickMatchesGhost = verdict(editor, backend, seen);
+  for (let x = -moduleLdu; x <= 2 * moduleLdu; x += moduleLdu / 2) {
+    for (let z = -moduleLdu; z <= 2 * moduleLdu; z += moduleLdu / 2) {
+      const at = backend.project(x + moduleLdu / 4, z + moduleLdu / 4);
+      editor.pointerMove(...at);
+      clickMatchesGhost(at);
+    }
+  }
+  expect(editor.snapshot().lastRefusal?.reason).toContain("would face the rail edge");
+  expect(editor.snapshot().placements).toBe(1);
 }, 120_000);
 
 it.each([
@@ -670,7 +883,7 @@ it("leaves road mode when the world turns read-only, and refuses road draw and e
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  const backend = new HeadlessBackend();
+  const backend = new PerspectiveBackend();
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const repository = new FlakyRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
@@ -754,7 +967,7 @@ it("offers none of the editing commands on a selection in a world another tab ho
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  container.rebind(SCENE_BACKEND).toConstantValue(new PerspectiveBackend());
   const repository = new FlakyRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   const locks = new HeldElsewhereLocks();
@@ -785,4 +998,30 @@ it("offers none of the editing commands on a selection in a world another tab ho
   const readOnly = selectBaseplate();
   expect(readOnly.readOnly).toBe(true);
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
+}, 120_000);
+
+function lockedSeamStuds(targets: ReadonlyArray<SnapTarget>): number {
+  return targets
+    .filter((target) => target.kind === "locked")
+    .reduce((sum, { box }) => sum + Math.max(box.maxX - box.minX, box.maxZ - box.minZ) / 20, 0);
+}
+
+it("glows exactly the seam a road snap joins, at whatever turn the snap chose", async () => {
+  const { editor, backend } = await startEditor();
+  const straight = "ldraw:44336p04@72";
+  const curve = "ldraw:44342p02@72";
+  editor.chooseItem(straight);
+  editor.pointerMove(...backend.project(320, 320));
+  editor.click(...backend.project(320, 320), 0);
+  expect(editor.snapshot().placements).toBe(1);
+  editor.chooseItem(curve);
+  const turns: Array<readonly [number, number]> = [];
+  for (let turn = 0; turn < 4; turn++) {
+    editor.pointerMove(...backend.project(320, 960));
+    const { snap } = editor.snapshot();
+    if (snap?.state === "snapped") turns.push([lockedSeamStuds(backend.targets), snap.joinedCells]);
+    editor.rotate(0);
+  }
+  expect(turns.length).toBeGreaterThan(0);
+  for (const [glowing, joined] of turns) expect(glowing).toBe(joined);
 }, 120_000);

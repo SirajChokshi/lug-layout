@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
-import { NO_STUD, RoadNetwork, type RoadPlacement, type RoadSurface } from "./road-joins.ts";
+import {
+  NO_STUD,
+  RoadNetwork,
+  type RoadEdgeSegment,
+  type RoadPlacement,
+  type RoadSurface,
+} from "./road-joins.ts";
 
 interface MeasuredGeometry {
   readonly roadStudZones: ReadonlyArray<{
@@ -66,6 +72,12 @@ function at(
   return { id, x, z, yLdu, rot, surface };
 }
 
+function studsOf(segments: ReadonlyArray<RoadEdgeSegment>, status: string): number {
+  return segments
+    .filter((segment) => segment.status === status)
+    .reduce((sum, segment) => sum + (segment.to - segment.from) / STUD, 0);
+}
+
 describe("road joins (layout rule 7)", () => {
   const plate = recessedPlate("69958");
 
@@ -100,6 +112,34 @@ describe("road joins (layout rule 7)", () => {
     expect(same.joinedCells).toBe(32);
     expect(same.mismatchedCells).toBe(0);
     expect(mixed.mismatchedCells).toBeGreaterThan(0);
+  });
+
+  it("gives a candidate's seams on its own edge, covering exactly the cells its fit counts", () => {
+    const placed = new RoadNetwork([at(0, plate, 0, 0)]);
+    for (const candidate of [
+      at(1, plate, 320, 0),
+      at(1, plate, 320, 20),
+      at(1, plate, 320, 0, 0, 8),
+      at(1, plate, 0, -320, 1),
+    ]) {
+      const seams = placed.seams(candidate);
+      const fit = placed.fit(candidate);
+      expect(seams.every((segment) => segment.placement === 1)).toBe(true);
+      expect(studsOf(seams, "joined")).toBe(fit.joinedCells);
+      expect(studsOf(seams, "mismatch")).toBe(fit.mismatchedCells);
+    }
+    expect(placed.seams(at(1, plate, 320, 0))).toEqual([
+      {
+        placement: 1,
+        side: "minX",
+        line: 160,
+        from: -160,
+        to: 160,
+        topLdu: plate.top[0],
+        status: "joined",
+      },
+    ]);
+    expect(placed.seams(at(1, plate, 960, 0))).toEqual([]);
   });
 
   it("reports overlapping pieces and refuses them as a fit", () => {

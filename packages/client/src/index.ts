@@ -229,6 +229,7 @@ export type {
   ViewMode,
   WheelInput,
 } from "./camera/editor-camera.ts";
+export { trackRefusalMessage, type GhostFeedbackView } from "./edit/ghost-feedback.ts";
 export type {
   ClosureState,
   TrackDragView,

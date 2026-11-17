@@ -12,7 +12,7 @@ import {
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { isCompactLayout } from "./use-compact-layout.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -228,9 +228,11 @@ export function PlacementToolbar({
   snapshot,
   play,
   onShellCommand,
+  children,
 }: PanelProps & {
   readonly play: PlaySnapshot;
   readonly onShellCommand: (id: ShellCommandId) => void;
+  readonly children?: ReactNode;
 }) {
   const { history } = snapshot;
   return (
@@ -304,6 +306,7 @@ export function PlacementToolbar({
       >
         Shortcuts ({shortcutText("show-shortcuts")})
       </button>
+      {children}
       <GoTo editor={editor} />
       <p className="toolbar-hint">
         Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the
