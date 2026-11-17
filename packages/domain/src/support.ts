@@ -1,5 +1,11 @@
 import { CHUNK_STUDS, PLATE_LDU } from "@brr/math";
-import { NO_VOLUME_TOP, cellChunkKey, type VolumeIndex } from "./volume-index.ts";
+import {
+  NO_VOLUME_TOP,
+  cellChunkKey,
+  type OwnerFilter,
+  type VolumeHit,
+  type VolumeIndex,
+} from "./volume-index.ts";
 
 const CELLS_PER_CHUNK = CHUNK_STUDS * CHUNK_STUDS;
 export const NO_STUD_TOP = -0x8000;
@@ -108,11 +114,14 @@ export type UpperSupport =
       readonly touching: number;
     };
 
+const topHit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
+
 export function upperSupport(
   base: BaseCells,
   yPlates: number,
   volumes: VolumeIndex,
   support: SupportGrid,
+  ignore: OwnerFilter,
 ): UpperSupport {
   if (base.count === 0) return { kind: "no-base" };
   let engaged = 0;
@@ -122,7 +131,7 @@ export function upperSupport(
   for (let c = 0; c < base.count; c++) {
     const x = base.cellX[c] ?? 0;
     const z = base.cellZ[c] ?? 0;
-    const top = volumes.topAt(x, z);
+    const top = volumes.topOwnerAt(x, z, ignore, topHit) ? topHit.topLdu : NO_VOLUME_TOP;
     if (top === NO_VOLUME_TOP) {
       if (yPlates === 0) overTable++;
       continue;
