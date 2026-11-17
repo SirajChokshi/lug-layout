@@ -263,7 +263,8 @@ export function PlacementToolbar({
       <button
         type="button"
         disabled={!commandEnabled("rotate", snapshot, play)}
-        onClick={(event) => editor.rotate(event.timeStamp)}
+        title={`Shift-click or ${shortcutText("rotate-back")} turns the other way`}
+        onClick={(event) => editor.rotate(event.timeStamp, event.shiftKey ? -1 : 1)}
       >
         Rotate ({shortcutText("rotate")})
       </button>

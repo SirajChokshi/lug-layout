@@ -1,5 +1,6 @@
 import { placedCells, type RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
+import { quarterTurned, type TurnDirection } from "./turn.ts";
 
 export interface CellExtent {
   readonly minX: number;
@@ -78,13 +79,14 @@ export function snapToRoadEdge(
   placed: ReadonlyArray<CellExtent>,
   surface: RoadSurface,
   preferredRot: number,
+  direction: TurnDirection,
   yLdu: number,
   cursorX: number,
   cursorZ: number,
 ): RoadSnap | null {
   let best: Ranked | null = null;
   for (let turn = 0; turn < QUARTER_TURNS; turn++) {
-    const rot = (preferredRot + turn) % QUARTER_TURNS;
+    const rot = quarterTurned(preferredRot, direction * turn);
     const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu, rot, surface });
     for (const extent of placed) {
       if (!within(extent, ghost, cursorX, cursorZ)) continue;

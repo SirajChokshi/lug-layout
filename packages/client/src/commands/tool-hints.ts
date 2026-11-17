@@ -119,9 +119,9 @@ function view(snapshot: EditorSnapshot): ToolHintView {
       const { selection } = snapshot;
       if (selection) {
         return {
-          tone: "select",
+          tone: snapshot.selectionRefusal === null ? "select" : "warn",
           title: itemName(snapshot, selection.item),
-          detail: `${selection.rot * DEGREES_PER_QUARTER_TURN}°`,
+          detail: snapshot.selectionRefusal ?? `${selection.rot * DEGREES_PER_QUARTER_TURN}°`,
           hints: [
             key("rotate", "rotate"),
             key("delete", "delete"),

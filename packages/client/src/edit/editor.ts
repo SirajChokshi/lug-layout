@@ -103,6 +103,7 @@ import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { thumbnailUrls } from "../catalog/thumbnail-urls.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
+import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
   ROAD_KIT_PREFIX,
   RoadDrawing,
@@ -117,6 +118,7 @@ import { ViewCamera } from "../camera/view-camera.ts";
 import { creditsForWorld, exportFileName } from "./world-credits.ts";
 import { playModel, type PlayModel, type PlaySetup } from "../play/play-models.ts";
 
+export type { TurnDirection } from "./turn.ts";
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
 export type EditorMode = "place" | "select" | "track" | "road";
@@ -408,6 +410,7 @@ export interface EditorSnapshot {
   readonly ghostRot: number;
   readonly hover: HoverView | null;
   readonly selection: SelectionView | null;
+  readonly selectionRefusal: string | null;
   readonly placements: number;
   readonly history: HistoryView;
   readonly lastLatency: LatencySample | null;
@@ -490,7 +493,7 @@ export interface IEditor extends IBomSource {
   dragStart(ndcX: number, ndcY: number): boolean;
   dragMove(ndcX: number, ndcY: number): void;
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
-  rotate(eventTimeMs: number): void;
+  rotate(eventTimeMs: number, direction?: TurnDirection): void;
   mirrorPiece(): void;
   cycleConnector(): void;
   deleteSelection(eventTimeMs: number): void;
@@ -525,7 +528,7 @@ const TRACK_PIECE_GROUP_LABEL = "Track pieces";
 const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
 const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const P95 = 0.95;
-const QUARTER_TURNS = 4;
+const DEGREES_PER_QUARTER_TURN = 90;
 const ROAD_REFUSAL = "its road edges would mismatch or overlap placed road pieces";
 const EDGE_KIND_NAMES: Readonly<Record<ModuleEdgeKind, string>> = {
   terrain: "terrain",
@@ -536,6 +539,11 @@ const EDGE_KIND_NAMES: Readonly<Record<ModuleEdgeKind, string>> = {
   rail: "rail",
   other: "non-MILS",
 };
+interface RoadCellCounts {
+  readonly mismatchedCells: number;
+  readonly overlappingCells: number;
+}
+const NO_ROAD_CELLS: RoadCellCounts = { mismatchedCells: 0, overlappingCells: 0 };
 const STATS_INTERVAL_MS = 500;
 const MEASURE_WARMUP_FRAMES = 5;
 const MEASURED_FRAMES = 60;
@@ -736,6 +744,7 @@ export class Editor implements IEditor {
     ghostRot: 0,
     hover: null,
     selection: null,
+    selectionRefusal: null,
     placements: 0,
     history: { undo: null, redo: null, undoDepth: 0, redoDepth: 0 },
     lastLatency: null,
@@ -807,6 +816,7 @@ export class Editor implements IEditor {
   private selected: PlacedModel | null = null;
   private ghostRot = 0;
   private placeRot = 0;
+  private turnDirection: TurnDirection = 1;
   private hoverX = 0;
   private hoverZ = 0;
   private hoverYPlates = 0;
@@ -1747,6 +1757,7 @@ export class Editor implements IEditor {
       this.roadExtents,
       surface,
       this.ghostRot,
+      this.turnDirection,
       0,
       this.hoverX,
       this.hoverZ,
@@ -1864,10 +1875,25 @@ export class Editor implements IEditor {
     this.select(best);
   }
 
-  private refuse(item: string, x: number, z: number, rot: number, reason: string): void {
+  private refuse(
+    item: string,
+    x: number,
+    z: number,
+    rot: number,
+    reason: string,
+    fit: RoadCellCounts = NO_ROAD_CELLS,
+  ): void {
     this.update({
       refusedClicks: this.state.refusedClicks + 1,
-      lastRefusal: { item, x, z, rot, mismatchedCells: 0, overlappingCells: 0, reason },
+      lastRefusal: {
+        item,
+        x,
+        z,
+        rot,
+        mismatchedCells: fit.mismatchedCells,
+        overlappingCells: fit.overlappingCells,
+        reason,
+      },
     });
   }
 
@@ -1982,6 +2008,7 @@ export class Editor implements IEditor {
     this.refreshRoads();
     this.placeGhost();
     this.update({
+      selectionRefusal: null,
       placements: this.world.size,
       hover: this.hoverView(),
       studs: this.placed.studTotals(),
@@ -2105,7 +2132,7 @@ export class Editor implements IEditor {
       return null;
     }
     const candidate = this.state.snapModules
-      ? layout.bestCandidate(surface, this.ghostRot, this.hitX, this.hitZ)
+      ? layout.bestCandidate(surface, this.ghostRot, this.turnDirection, this.hitX, this.hitZ)
       : layout.candidate(surface, this.ghostRot, this.hitX, this.hitZ);
     this.moduleGhost = candidate;
     this.placeRot = candidate.rot;
@@ -2204,6 +2231,7 @@ export class Editor implements IEditor {
     this.selected = model;
     this.backend.setSelectionBox(model ? model.box : null);
     this.update({
+      selectionRefusal: null,
       selection: model
         ? {
             item: model.placeable.id,
@@ -2219,10 +2247,10 @@ export class Editor implements IEditor {
     });
   }
 
-  rotate(eventTimeMs: number): void {
+  rotate(eventTimeMs: number, direction: TurnDirection = 1): void {
     const roads = this.roadDrawing;
     if (this.state.mode === "road" && roads) {
-      this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
+      this.ghostRot = quarterTurned(this.ghostRot, direction);
       this.placeRot = this.ghostRot;
       roads.preferredRot = this.ghostRot;
       this.showRoadPreview(roads.rerun(...this.roadNeighbours()));
@@ -2233,13 +2261,14 @@ export class Editor implements IEditor {
     if (held) {
       this.held =
         held.snap?.end === null || !held.snap
-          ? { ...held, heading: (held.heading + 1) % ZETA16_ORDER }
-          : { ...held, connector: held.connector + 1 };
+          ? { ...held, heading: (held.heading + direction + ZETA16_ORDER) % ZETA16_ORDER }
+          : { ...held, connector: held.connector + direction };
       this.showHeldPiece();
       return;
     }
     if (this.active) {
-      this.ghostRot = (this.placeRot + 1) % QUARTER_TURNS;
+      this.turnDirection = direction;
+      this.ghostRot = quarterTurned(this.placeRot, direction);
       if (this.hovering) {
         this.hoverX = snapToLattice(this.hitX);
         this.hoverZ = snapToLattice(this.hitZ);
@@ -2256,12 +2285,35 @@ export class Editor implements IEditor {
     }
     const model = this.selected;
     if (!model || this.readOnly) return;
+    this.turnSelection(model, quarterTurned(model.handle.rot, direction), eventTimeMs);
+  }
+
+  private turnSelection(model: PlacedModel, rot: number, eventTimeMs: number): void {
     const pose = model.handle;
-    const rot = (pose.rot + 1) % QUARTER_TURNS;
+    const label = model.placeable.label;
+    const refuseTurn = (reason: string, fit: RoadCellCounts = NO_ROAD_CELLS): void => {
+      this.refuse(model.placeable.id, pose.x, pose.z, rot, reason, fit);
+      this.update({
+        selectionRefusal: `Can't turn to ${rot * DEGREES_PER_QUARTER_TURN}°. ${reason}`,
+      });
+    };
+    const rider = this.placed.riderOn(model);
+    if (rider) {
+      const riding = rider.placeable.label;
+      refuseTurn(
+        `${label}: ${riding} rests on it, so turning it would leave ${riding} floating or cut into it.`,
+      );
+      return;
+    }
     const yPlates = this.placed.restingHeight(model.placeable, pose.x, pose.z, rot, model);
     const refusal = this.placementRefusal(model.placeable, pose.x, pose.z, rot, yPlates, model);
     if (refusal !== null) {
-      this.refuse(model.placeable.id, pose.x, pose.z, rot, refusal);
+      refuseTurn(refusal);
+      return;
+    }
+    const road = this.turnedRoadFit(model, rot, yPlates);
+    if (road && (road.mismatchedCells > 0 || road.overlappingCells > 0)) {
+      refuseTurn(`${label}: ${ROAD_REFUSAL}.`, road);
       return;
     }
     const edit = this.history.commit("rotate", [
@@ -2271,6 +2323,20 @@ export class Editor implements IEditor {
       },
     ]);
     this.select(this.show(edit, eventTimeMs).added[0] ?? null);
+  }
+
+  private turnedRoadFit(model: PlacedModel, rot: number, yPlates: number): RoadCellCounts | null {
+    const surface = model.placeable.road;
+    if (!surface || !this.state.snapRoads) return null;
+    const others = this.roadPlacements().filter(({ id }) => this.roadModels[id] !== model);
+    return new RoadNetwork(others).fit({
+      id: -1,
+      x: model.handle.x,
+      z: model.handle.z,
+      yLdu: yPlates * PLATE_LDU,
+      rot,
+      surface,
+    });
   }
 
   deleteSelection(eventTimeMs: number): void {

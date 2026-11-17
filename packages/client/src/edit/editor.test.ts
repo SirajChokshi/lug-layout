@@ -639,21 +639,105 @@ it.each([
       const { ghostRot, moduleFit, snap } = editor.snapshot();
       return { ghostRot, fit: moduleFit?.rot ?? (snap?.state === "snapped" ? ghostRot : null) };
     };
-    const turns = [shown()];
-    for (let press = 0; press < 4; press++) {
-      editor.rotate(0);
-      turns.push(shown());
+    for (const direction of [1, -1] as const) {
+      const turns = [shown()];
+      for (let press = 0; press < 4; press++) {
+        editor.rotate(0, direction);
+        const turned = shown();
+        editor.pointerMove(0, 0);
+        expect(shown()).toEqual(turned);
+        turns.push(turned);
+      }
+      for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
+      const rots = turns.map((turn) => turn.ghostRot);
+      expect(new Set(rots).size).toBe(2);
+      expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
     }
-    for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
-    const rots = turns.map((turn) => turn.ghostRot);
-    expect(new Set(rots).size).toBe(2);
-    expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
+    const shownRot = shown().ghostRot;
     editor.click(0, 0, 0);
     const { placements } = editor.dump();
-    expect(placements.rot.at(-1)).toBe(rots.at(-1));
+    expect(placements.rot.at(-1)).toBe(shownRot);
   },
   120_000,
 );
+
+function selectAt(editor: IEditor, backend: HeadlessBackend, x: number, z: number) {
+  editor.chooseItem(null);
+  backend.aim(x, z);
+  editor.click(0, 0, 0);
+  return editor.snapshot().selection;
+}
+
+function turnOutcome(editor: IEditor, direction: 1 | -1) {
+  editor.rotate(0, direction);
+  const { selection, selectionRefusal, lastRefusal } = editor.snapshot();
+  return {
+    rot: selection?.rot ?? null,
+    yPlates: selection?.yPlates ?? null,
+    refusal: selectionRefusal,
+    roadCells: lastRefusal ? lastRefusal.mismatchedCells + lastRefusal.overlappingCells : null,
+  };
+}
+
+it("refuses to turn a baseplate while a set rests on it, turns the set itself, and turns the baseplate once the set is gone", async () => {
+  const { editor, backend } = await startEditor([PLACEABLE_SET]);
+  const place = placer(editor, backend);
+  const set = `omr:${PLACEABLE_SET}`;
+  place(BASEPLATE, 0, 0);
+  place(set, 0, 0);
+  const corner = 300;
+
+  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
+  const baseplateUnderSet = turnOutcome(editor, 1);
+  const baseplateUnderSetBack = turnOutcome(editor, -1);
+  expect(selectAt(editor, backend, 0, 0)?.item).toBe(set);
+  const setOnBaseplate = turnOutcome(editor, -1);
+  editor.deleteSelection(0);
+  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
+  const bareBaseplate = turnOutcome(editor, -1);
+
+  const refused = {
+    rot: 0,
+    yPlates: 0,
+    refusal: expect.stringContaining(`rests on it`),
+    roadCells: 0,
+  };
+  expect({ baseplateUnderSet, baseplateUnderSetBack, setOnBaseplate, bareBaseplate }).toEqual({
+    baseplateUnderSet: refused,
+    baseplateUnderSetBack: refused,
+    setOnBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
+    bareBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
+  });
+}, 120_000);
+
+it("refuses to turn a placed road plate into a mismatch with its neighbour, the same as placing it there, unless road snap is off", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  const straight = "ldraw:44336p04@72";
+  place(straight, 320, 320);
+  place(straight, 320, 960);
+  expect(editor.snapshot().roads.mismatchedCells).toBe(0);
+
+  expect(selectAt(editor, backend, 320, 960)?.item).toBe(straight);
+  const turned = turnOutcome(editor, 1);
+  const turnedBack = turnOutcome(editor, -1);
+  const mismatchedWhileRefused = editor.snapshot().roads.mismatchedCells;
+  editor.setSnapRoads(false);
+  const unsnapped = turnOutcome(editor, 1);
+
+  expect({ turned, turnedBack, mismatchedWhileRefused, unsnapped }).toEqual({
+    turned: {
+      rot: 0,
+      yPlates: 0,
+      refusal: expect.stringContaining("road edges would mismatch"),
+      roadCells: expect.any(Number),
+    },
+    turnedBack: expect.objectContaining({ rot: 0 }),
+    mismatchedWhileRefused: 0,
+    unsnapped: expect.objectContaining({ rot: 1, refusal: null }),
+  });
+  expect(turned.roadCells).toBeGreaterThan(0);
+}, 120_000);
 
 it("takes a 10185-1 Green Grocer flush against a rail edge when none of its parts reach the track end", async () => {
   const { editor, backend } = await startEditor(["mils-rail-straight", "10185-1"]);
