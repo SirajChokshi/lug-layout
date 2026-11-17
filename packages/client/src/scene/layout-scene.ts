@@ -192,12 +192,22 @@ function snapToStud(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU;
 }
 
+function sharedDirectory(sources: ReadonlyArray<string>): string | null {
+  const first = sources[0];
+  if (first === undefined) return null;
+  const directory = first.slice(0, first.lastIndexOf("/") + 1);
+  if (directory === "") return null;
+  return sources.every((source) => source.startsWith(directory)) ? directory : null;
+}
+
 function mergedCredit(placeables: Iterable<Placeable>): ModelCredit {
   const credits: ModelCredit[] = [];
   for (const placeable of placeables) if (placeable.credit) credits.push(placeable.credit);
+  const sources = [...new Set(credits.map((credit) => credit.source))];
   return {
     name: credits.map((credit) => credit.name).join(" + "),
-    source: [...new Set(credits.map((credit) => credit.source))].join(" "),
+    source:
+      sources.length === 1 ? (sources[0] ?? "") : (sharedDirectory(sources) ?? sources.join(" ")),
     sections: credits.flatMap((credit) => credit.sections),
   };
 }
