@@ -24,6 +24,7 @@ import {
   TrackDrawing,
   type TrackCommit,
   type TrackFootprint,
+  type TrackHost,
   type TrackSupportProbe,
 } from "./track-drawing.ts";
 
@@ -98,10 +99,13 @@ function grow(extent: Extent, x: number, z: number): void {
   extent.maxZ = Math.max(extent.maxZ, z);
 }
 
-const onBaseplates = (cells: BaseCells): TrackSupport => ({
-  kind: "on-baseplate",
-  cells: cells.count,
-});
+const openTable: TrackHost = {
+  support: (cells: BaseCells): TrackSupport => ({ kind: "on-baseplate", cells: cells.count }),
+  overlap: () => null,
+  neighbours: () => new Set(),
+  laid: () => undefined,
+  relaid: () => undefined,
+};
 
 const container = new Container();
 let drawing: TrackDrawing;
@@ -125,12 +129,7 @@ beforeAll(async () => {
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
   trackBundle = bundle;
-  drawing = new TrackDrawing(
-    bundle.trackCatalog,
-    bundle.parts,
-    new ColorTable(bundle),
-    onBaseplates,
-  );
+  drawing = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle), openTable);
   drag([180, 190], [260, 190]);
   drag([260, 190], [260, 270]);
   drag([260, 270], [180, 270]);
@@ -212,7 +211,7 @@ it("marks a drag target as joining only when the closure solver finds an exact j
     bundle.trackCatalog,
     bundle.parts,
     new ColorTable(bundle),
-    onBaseplates,
+    openTable,
   );
   const aim = (from: readonly [number, number], to: readonly [number, number]) => {
     layout.beginDrag(
@@ -252,7 +251,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
     bundle.trackCatalog,
     bundle.parts,
     new ColorTable(bundle),
-    onBaseplates,
+    openTable,
   );
   const index = (id: string): number => {
     const part = siding.pieceParts().find((p) => p.piece.id === id);
@@ -307,7 +306,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
     bundle.trackCatalog,
     bundle.parts,
     new ColorTable(bundle),
-    onBaseplates,
+    openTable,
   );
   expect(reopened.restore(siding.records()).ok).toBe(true);
   expect(reopened.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
@@ -336,7 +335,7 @@ function drawingOn(grid: SupportGrid): TrackDrawing {
     trackBundle.trackCatalog,
     trackBundle.parts,
     new ColorTable(trackBundle),
-    probeOn(grid),
+    { ...openTable, support: probeOn(grid) },
   );
 }
 

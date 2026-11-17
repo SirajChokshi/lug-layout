@@ -149,7 +149,16 @@ export {
   type ClosureResult,
   type SearchBudget,
 } from "./track/closure.ts";
-export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";
+export {
+  NO_VOLUME_TOP,
+  VolumeIndex,
+  cellChunkKey,
+  firstOverlap,
+  type CellVolumes,
+  type Overlap,
+  type OwnerFilter,
+  type VolumeHit,
+} from "./volume-index.ts";
 export {
   DirtyShards,
   addShards,
@@ -187,12 +196,10 @@ export {
 } from "./bom/export-formats.ts";
 export {
   SupportGrid,
-  firstLayerSupport,
   isSupported,
   trackSupport,
   upperSupport,
   type BaseCells,
-  type FirstLayerSupport,
   type TrackSupport,
   type UpperSupport,
 } from "./support.ts";
@@ -203,3 +210,4 @@ export {
   planTriangleCells,
   type PlaneTransform,
 } from "./cell-raster.ts";
+export { planTrianglesOverlap, type PlanBox } from "./plan-overlap.ts";

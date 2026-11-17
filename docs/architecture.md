@@ -325,6 +325,17 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
 - **Track** needs a baseplate under every stud cell its plan silhouette covers between its own connector planes (P6). The silhouette is the piece's own mesh, projected at the exact solver pose and clipped to those planes. A cell counts when a face overlaps its interior by more than the 1e-6 LDU representation ε of §5.3; touching an edge doesn't count. So an open end may be flush with a baseplate edge, two straights fill a 3811, and a piece that ends at a seam needs only its own baseplate.
 - **Removing, rotating or undoing** is refused if it would leave a placed model with no support or a laid track piece off the baseplates. A rotation is checked as a move to its new pose. A laid track piece can be removed in the track tool (click it, then Delete), so a baseplate under track is never locked for good.
 
+*Rule 4 status (PR B, on PR A):*
+- **One volume index holds every placement** (`@brr/domain` `VolumeIndex`). It keeps per-chunk typed arrays of integer-LDU spans per stud cell, each tagged with its owner.
+- **What each placement fills:**
+  - a baseplate fills the table slab [−4, 0);
+  - a road plate fills [−4, 12);
+  - a model fills its baked columns (part AABBs, whole plates), and a first-layer model's baseplate cells reach down to the table;
+  - a laid track piece fills [0, its part height) on the cells its mesh silhouette covers.
+- **Overlap is strict:** spans that only touch don't overlap, so a model resting on studs and a baseplate under a model's overhang are both fine.
+- **An upper model lands on whatever its footprint rests on** (the highest span under its base cells) and is never lifted to clear anything else. Anything else in its volume refuses the placement, and the refusal names the placement it would hit, the cell and both spans.
+- **Track against track** is tested on the pieces' plan silhouettes, only where two pieces share a stud cell. Joined pieces are exempt: their connector tabs interlock. Any other positive-area overlap beyond the 1e-6 LDU representation ε is refused until a real crossing part is used.
+
 ### 7.3 Plan regions and "Buildable as planned"
 A plan region is a polygon in the world, aligned to the 32-stud grid, linked to a **physical footprint**:
 - the room outline, doors and obstacles;

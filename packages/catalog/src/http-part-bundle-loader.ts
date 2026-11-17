@@ -60,6 +60,7 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
     footprint: Uint32Array.from(cells.footprint),
     flat: Uint32Array.from(cells.flat),
     columnBottom: Int16Array.from(cells.columnBottom),
+    columnBottomLdu: Int32Array.from(cells.columnBottomLdu),
     columnTop: Int16Array.from(cells.columnTop),
   };
 }

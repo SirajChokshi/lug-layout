@@ -52,8 +52,11 @@ class BundleDirectoryFetcher implements IAssetFetcher {
   }
 }
 
-class MilsModulesOnly implements IPartBundleLoader {
-  constructor(private readonly loader: IPartBundleLoader) {}
+class MilsModulesAnd implements IPartBundleLoader {
+  constructor(
+    private readonly loader: IPartBundleLoader,
+    private readonly sets: ReadonlyArray<string>,
+  ) {}
 
   loadManifest(lod: BundleLod): Promise<BundleManifest> {
     return this.loader.loadManifest(lod);
@@ -61,7 +64,10 @@ class MilsModulesOnly implements IPartBundleLoader {
 
   async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
     const bundle = await this.loader.load(lod, include);
-    return { ...bundle, models: bundle.models.filter((m) => m.role === "mils-module") };
+    return {
+      ...bundle,
+      models: bundle.models.filter((m) => m.role === "mils-module" || this.sets.includes(m.name)),
+    };
   }
 
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
@@ -129,13 +135,13 @@ class TopDownBackend implements ISceneBackend {
   }
 }
 
-async function startEditor(): Promise<IEditor> {
+async function startEditor(sets: ReadonlyArray<string> = []): Promise<IEditor> {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new MilsModulesOnly(realLoader));
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new MilsModulesAnd(realLoader, sets));
   container.rebind(SCENE_BACKEND).toConstantValue(new TopDownBackend());
   const editor = container.get(EDITOR);
   const canvas = {
@@ -518,4 +524,47 @@ it("refuses an erase across plates where only the last carries track, marking th
       refusal: expect.stringContaining("carries track"),
     }),
   ]);
+}, 120_000);
+
+function refusedByRules(blocker: string) {
+  return expect.arrayContaining([
+    expect.objectContaining({ problem: "rules", refusal: expect.stringContaining(blocker) }),
+  ]);
+}
+
+it("checks every laid tile against the placement rules: a 16×16 tile over a 3811 carrying track, or a stroke across a set's own baseplate, lays nothing", async () => {
+  const editor = await startEditor(["10185-1"]);
+  const z = centre(0) / WORLD_PER_NDC;
+  editor.chooseItem("ldraw:3811@2");
+  editor.click(...ndc([0, 0]), 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.pointerMove(20 / WORLD_PER_NDC, z);
+  editor.dragStart(20 / WORLD_PER_NDC, z);
+  editor.dragMove(340 / WORLD_PER_NDC, z);
+  editor.dragEnd(340 / WORLD_PER_NDC, z, 0);
+  editor.chooseItem("omr:10185-1");
+  editor.click(...ndc([3, 0]), 0);
+  expect([editor.snapshot().placements, editor.snapshot().track?.pieces]).toEqual([2, 1]);
+
+  editor.chooseItem(
+    kitId(editor, (label) => label.startsWith("Dark Bluish Grey road plates, 16×16")),
+  );
+  drag(editor, [[0, 0]]);
+  expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
+  expect(editor.snapshot().lastRoadStroke?.stroke.issues).toEqual(refusedByRules("3811"));
+
+  editor.chooseItem(
+    kitId(
+      editor,
+      (label, edge) => label.startsWith("Dark Bluish Grey") && edge === "6 + 20 road + 6",
+    ),
+  );
+  drag(editor, [
+    [2, 0],
+    [3, 0],
+    [4, 0],
+  ]);
+  expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
+  expect(editor.snapshot().lastRoadStroke?.stroke.issues).toEqual(refusedByRules("10185-1"));
+  expect([editor.snapshot().placements, editor.snapshot().track?.pieces]).toEqual([2, 1]);
 }, 120_000);
