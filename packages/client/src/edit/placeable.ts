@@ -1,7 +1,7 @@
 import {
   EMPTY_COLUMN,
   type ModelCells,
-  type PartAsset,
+  type PartShapeAsset,
   type PartModel,
   type PartModelLattice,
 } from "@brr/catalog";
@@ -67,7 +67,7 @@ export const FOOTPRINT_FLAT = 2;
 
 function instanceBoxes(
   instances: ChunkPartInstances,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
 ): Float32Array {
   const boxes = new Float32Array(instances.count * BOX_FLOATS);
   for (let i = 0; i < instances.count; i++) {
@@ -170,7 +170,7 @@ function modelCells(
 function requireOnlyTrackPastModuleEdges(
   instances: ChunkPartInstances,
   partBoxes: Float32Array,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   surface: ModuleSurface,
   label: string,
 ): void {
@@ -230,7 +230,7 @@ function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: strin
 function trackTongueBoxes(
   instances: ChunkPartInstances,
   partBoxes: Float32Array,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   surface: ModuleSurface,
 ): Float32Array {
   const minX = surface.minX;
@@ -252,7 +252,7 @@ function trackTongueBoxes(
   return Float32Array.from(tongues);
 }
 
-function partCells(part: PartAsset, shift: Vec3): PlaceableCells {
+function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
   const cellX0 = wholeCells(part.boundsMin[0], `${part.id} min x`);
   const cellZ0 = wholeCells(part.boundsMin[2], `${part.id} min z`);
   const width = wholeCells(part.boundsMax[0], `${part.id} max x`) - cellX0;
@@ -345,7 +345,7 @@ function shiftedBox(min: Vec3, max: Vec3, shift: Vec3): LocalBox {
   };
 }
 
-function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | null {
+function groundTop(model: PartModel, parts: ReadonlyArray<PartShapeAsset>): number | null {
   const boxes = instanceBoxes(
     {
       originX: 0,
@@ -366,7 +366,7 @@ function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | 
   return top;
 }
 
-function hasRoadPart(instances: ChunkPartInstances, parts: ReadonlyArray<PartAsset>): boolean {
+function hasRoadPart(instances: ChunkPartInstances, parts: ReadonlyArray<PartShapeAsset>): boolean {
   for (let i = 0; i < instances.count; i++) {
     const index = instances.partIndex[i];
     const part = index === undefined ? undefined : parts[index];
@@ -380,7 +380,7 @@ function hasRoadPart(instances: ChunkPartInstances, parts: ReadonlyArray<PartAss
 function restingY(
   model: PartModel,
   cells: ModelCells,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   role: ModelRole | undefined,
 ): number {
   if (role !== "mils-module") return cells.restY;
@@ -395,7 +395,7 @@ export function modelPlaceable(
   role: ModelRole | undefined,
   model: PartModel,
   credit: ModelCredit,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   colors: ColorTable,
   farModel: number | null,
 ): Placeable {
@@ -451,16 +451,16 @@ export function modelPlaceable(
 
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 
-function isBaseplate(part: PartAsset): boolean {
+function isBaseplate(part: PartShapeAsset): boolean {
   return part.boundsMax[1] - part.boundsMin[1] < PLATE_LDU;
 }
 
 export function partPlaceable(
-  part: PartAsset,
+  part: PartShapeAsset,
   partIndex: number,
   ldrawColor: number,
   colorName: string,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   colors: ColorTable,
 ): Placeable {
   const shift: Vec3 = [0, isBaseplate(part) ? 0 : -part.boundsMin[1], 0];

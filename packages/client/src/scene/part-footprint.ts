@@ -1,4 +1,4 @@
-import type { PartAsset } from "@brr/catalog";
+import type { PartShapeAsset } from "@brr/catalog";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 
 export interface PartFootprint {
@@ -15,11 +15,11 @@ function wholeMultiple(value: number, unit: number, what: string, id: string): n
   return value / unit;
 }
 
-export function plateDepthBelowOrigin(part: PartAsset): number {
+export function plateDepthBelowOrigin(part: PartShapeAsset): number {
   return wholeMultiple(-part.boundsMin[1], PLATE_LDU, "depth below origin", part.id);
 }
 
-export function footprintOf(part: PartAsset, index: number): PartFootprint {
+export function footprintOf(part: PartShapeAsset, index: number): PartFootprint {
   const [minX, , minZ] = part.boundsMin;
   const [maxX, , maxZ] = part.boundsMax;
   if (minX + maxX !== 0 || minZ + maxZ !== 0) {
