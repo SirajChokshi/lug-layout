@@ -144,7 +144,12 @@ export function EditorApp({
       <PlanPanel camera={camera} plans={plans} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />
-        <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
+        <PlacementToolbar
+          editor={editor}
+          snapshot={snapshot}
+          play={playSnapshot}
+          onShellCommand={toggleOverlay}
+        />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}

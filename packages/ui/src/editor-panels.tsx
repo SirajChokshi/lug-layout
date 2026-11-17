@@ -7,6 +7,7 @@ import {
   type LatencySample,
   type ModuleFitView,
   type ModuleIssueView,
+  type PlaySnapshot,
   type RoadIssueView,
   type ShellCommandId,
 } from "@brr/client";
@@ -226,8 +227,12 @@ export function ModuleJoins({ editor, snapshot }: PanelProps) {
 export function PlacementToolbar({
   editor,
   snapshot,
+  play,
   onShellCommand,
-}: PanelProps & { readonly onShellCommand: (id: ShellCommandId) => void }) {
+}: PanelProps & {
+  readonly play: PlaySnapshot;
+  readonly onShellCommand: (id: ShellCommandId) => void;
+}) {
   const { history } = snapshot;
   return (
     <div className="toolbar" role="toolbar" aria-label="Placement tools">
@@ -242,7 +247,7 @@ export function PlacementToolbar({
         type="button"
         data-action="draw-track"
         aria-pressed={snapshot.mode === "track"}
-        disabled={!commandEnabled("draw-track", snapshot)}
+        disabled={!commandEnabled("draw-track", snapshot, play)}
         onClick={() => editor.chooseItem(snapshot.mode === "track" ? null : TRACK_ITEM_ID)}
       >
         Draw track ({shortcutText("draw-track")})
@@ -251,21 +256,21 @@ export function PlacementToolbar({
         type="button"
         data-action="draw-road-tool"
         aria-pressed={snapshot.mode === "road"}
-        disabled={!commandEnabled("draw-road", snapshot)}
+        disabled={!commandEnabled("draw-road", snapshot, play)}
         onClick={() => editor.chooseItem(snapshot.mode === "road" ? null : snapshot.roadKit)}
       >
         Draw road ({shortcutText("draw-road")})
       </button>
       <button
         type="button"
-        disabled={!commandEnabled("rotate", snapshot)}
+        disabled={!commandEnabled("rotate", snapshot, play)}
         onClick={(event) => editor.rotate(event.timeStamp)}
       >
         Rotate ({shortcutText("rotate")})
       </button>
       <button
         type="button"
-        disabled={!commandEnabled("delete", snapshot)}
+        disabled={!commandEnabled("delete", snapshot, play)}
         onClick={(event) => editor.deleteSelection(event.timeStamp)}
       >
         Delete ({shortcutText("delete")})
@@ -273,7 +278,7 @@ export function PlacementToolbar({
       <button
         type="button"
         data-action="undo"
-        disabled={!commandEnabled("undo", snapshot)}
+        disabled={!commandEnabled("undo", snapshot, play)}
         onClick={(event) => editor.undo(event.timeStamp)}
       >
         Undo{history.undo === null ? "" : ` ${history.undo}`} ({shortcutText("undo")})
@@ -281,7 +286,7 @@ export function PlacementToolbar({
       <button
         type="button"
         data-action="redo"
-        disabled={!commandEnabled("redo", snapshot)}
+        disabled={!commandEnabled("redo", snapshot, play)}
         onClick={(event) => editor.redo(event.timeStamp)}
       >
         Redo{history.redo === null ? "" : ` ${history.redo}`} ({shortcutText("redo")})
