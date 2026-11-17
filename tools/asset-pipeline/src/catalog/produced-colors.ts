@@ -1,3 +1,4 @@
+import type { ProducedColors } from "@brr/schema/bundle";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -19,16 +20,6 @@ export const REBRICKABLE_EXPORT = {
   },
 } as const satisfies Record<string, RebrickableExportFile>;
 
-export interface ProducedColor {
-  readonly ldraw: number;
-  readonly elements: ReadonlyArray<string>;
-}
-
-export interface PartProducedColors {
-  readonly rebrickable: string;
-  readonly colors: ReadonlyArray<ProducedColor>;
-}
-
 export interface ExcludedColor {
   readonly part: string;
   readonly rebrickableColor: number;
@@ -36,7 +27,7 @@ export interface ExcludedColor {
 }
 
 export interface ProducedColorReport {
-  readonly parts: ReadonlyMap<string, PartProducedColors>;
+  readonly parts: ReadonlyMap<string, ProducedColors>;
   readonly excluded: ReadonlyArray<ExcludedColor>;
 }
 
@@ -108,11 +99,11 @@ export function producedColors(inputs: ProducedColorInputs): ProducedColorReport
     byColor.set(code, [...(byColor.get(code) ?? []), element]);
     elementsByPart.set(part, byColor);
   }
-  const parts = new Map<string, PartProducedColors>();
+  const parts = new Map<string, ProducedColors>();
   const excluded: ExcludedColor[] = [];
   for (const { id, datText } of inputs.parts) {
     const rebrickable = rebrickablePartNumber(id, datText);
-    const colors: ProducedColor[] = [];
+    const colors: ProducedColors["colors"] = [];
     const byColor = elementsByPart.get(rebrickable) ?? new Map<number, string[]>();
     for (const [code, elements] of [...byColor].toSorted(([a], [b]) => a - b)) {
       const rebrickableName = rebrickableNames.get(code) ?? "";

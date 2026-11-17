@@ -1,9 +1,5 @@
-import {
-  BUNDLE_BASE_URL,
-  PART_BUNDLE_LOADER,
-  type BundleLod,
-  type IPartBundleLoader,
-} from "@brr/catalog";
+import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
+import type { BundleLod } from "@brr/schema/bundle";
 import type { ImportResult, ImportWorkerRequest, ImportWorkerResponse } from "@brr/import";
 import { inject, injectable } from "inversify";
 import { IMPORT_WORKER_FACTORY } from "../tokens.ts";

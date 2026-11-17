@@ -1,12 +1,11 @@
 import {
   PART_BUNDLE_LOADER,
-  type BundleCredit,
-  type BundleLod,
   type IPartBundleLoader,
   type PartAsset,
   type PartBundle,
 } from "@brr/catalog";
 import { World } from "@brr/domain";
+import type { BundleCredit, BundleLod } from "@brr/schema/bundle";
 import type { ImportResult } from "@brr/import";
 import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";

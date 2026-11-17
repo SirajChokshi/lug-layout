@@ -8,7 +8,7 @@ import {
   parseLdraw,
   type LdrawFile,
 } from "../ldraw/parse.ts";
-import type { AuditGroup } from "../palette.ts";
+import type { AuditGroup } from "@brr/schema/bundle";
 
 export const CA_LICENSE_LINES: ReadonlyArray<string> = [
   "Licensed under CC BY 4.0 : see CAreadme.txt",

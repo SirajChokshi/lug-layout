@@ -10,6 +10,10 @@
     "load-release": "node scripts/load-release.ts",
     "measure": "node scripts/measure.ts"
   },
+  "dependencies": {
+    "@brr/schema": "workspace:*",
+    "valibot": "1.5.0"
+  },
   "devDependencies": {
     "@brr/config": "workspace:*",
     "@cloudflare/workers-types": "5.20261116.1",

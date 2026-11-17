@@ -1,8 +1,8 @@
-import type { Vec3Tuple } from "@brr/catalog";
+import type { Vec3 } from "@brr/schema/bundle";
 
 export interface LocalBox {
-  readonly min: Vec3Tuple;
-  readonly max: Vec3Tuple;
+  readonly min: Vec3;
+  readonly max: Vec3;
 }
 
 export const BOX_FLOATS = 6;

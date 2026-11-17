@@ -1,4 +1,4 @@
-import type { TrackCatalog, TrackPiece } from "@brr/catalog";
+import type { TrackCatalog, TrackPiece } from "@brr/schema/bundle";
 import { TrackLayout, type TrackEndRef, type TrackPieceSpec } from "@brr/domain";
 import { HALF_TURN_16, pose16, POSE16_IDENTITY, type Pose16 } from "@brr/math";
 

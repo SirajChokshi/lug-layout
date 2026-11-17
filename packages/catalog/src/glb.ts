@@ -1,3 +1,5 @@
+import { GltfDocument, type GltfAccessor, type GltfBufferView } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { INHERIT_COLOR, type ColorGroup, type MeshArrays, type PartMesh } from "./part-bundle.ts";
 
 const GLB_MAGIC = 0x46546c67;
@@ -8,36 +10,12 @@ const CHUNK_HEADER_BYTES = 8;
 const COMPONENT_FLOAT = 5126;
 const COMPONENT_UNSIGNED_INT = 5125;
 
-interface GltfAccessor {
-  readonly bufferView: number;
-  readonly componentType: number;
-  readonly count: number;
-  readonly type: "SCALAR" | "VEC3";
-}
-
-interface GltfBufferView {
-  readonly byteOffset: number;
-}
-
-interface GltfPrimitive {
-  readonly attributes: { readonly POSITION: number; readonly NORMAL: number };
-  readonly indices: number;
-  readonly extras: { readonly ldrawColor: number };
-}
-
-export interface GltfDocument {
-  readonly accessors: ReadonlyArray<GltfAccessor>;
-  readonly bufferViews: ReadonlyArray<GltfBufferView>;
-  readonly meshes: ReadonlyArray<{ readonly primitives: ReadonlyArray<GltfPrimitive> }>;
-  readonly extras: unknown;
-}
-
 export interface ParsedGlb {
   readonly document: GltfDocument;
   readonly binary: ArrayBuffer;
 }
 
-export function parseGlb(bytes: ArrayBuffer): ParsedGlb {
+export function parseGlb(bytes: ArrayBuffer, label: string): ParsedGlb {
   const view = new DataView(bytes);
   if (view.getUint32(0, true) !== GLB_MAGIC) throw new Error("not a GLB file");
   const jsonLength = view.getUint32(HEADER_BYTES, true);
@@ -49,7 +27,7 @@ export function parseGlb(bytes: ArrayBuffer): ParsedGlb {
   if (view.getUint32(binHeader + 4, true) !== CHUNK_BIN) throw new Error("GLB missing BIN");
   const binStart = binHeader + CHUNK_HEADER_BYTES;
   return {
-    document: JSON.parse(jsonText) as GltfDocument,
+    document: decodedOrThrow(decode(GltfDocument, JSON.parse(jsonText)), label),
     binary: bytes.slice(binStart, binStart + binLength),
   };
 }

@@ -1,6 +1,7 @@
-import type { ModelLattice, ModelRole, PartAsset, PartModel, Vec3Tuple } from "@brr/catalog";
+import type { PartModelLattice, PartAsset, PartModel } from "@brr/catalog";
 import type { RoadSurface } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
+import type { ModelRole, Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
@@ -21,7 +22,7 @@ export interface Placeable {
   readonly studs: StudInstances;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
-  readonly frameShift: Vec3Tuple;
+  readonly frameShift: Vec3;
   readonly credit: ModelCredit | null;
   readonly road: RoadSurface | null;
 }
@@ -64,7 +65,7 @@ export function pivotOnStudCorner(centre: number): number {
   return Math.round(centre / STUD_LDU) * STUD_LDU;
 }
 
-export function modelFrameShift(lattice: ModelLattice, restingOn: number): Vec3Tuple {
+export function modelFrameShift(lattice: PartModelLattice, restingOn: number): Vec3 {
   const shiftX = phaseShift(lattice.phaseX);
   const shiftZ = phaseShift(lattice.phaseZ);
   const centreX = (lattice.aabbMin[0] + lattice.aabbMax[0]) / 2 + shiftX;
@@ -72,7 +73,7 @@ export function modelFrameShift(lattice: ModelLattice, restingOn: number): Vec3T
   return [shiftX - pivotOnStudCorner(centreX), -restingOn, shiftZ - pivotOnStudCorner(centreZ)];
 }
 
-function shifted(matrices: Float32Array, count: number, shift: Vec3Tuple): Float32Array {
+function shifted(matrices: Float32Array, count: number, shift: Vec3): Float32Array {
   const out = Float32Array.from(matrices);
   for (let i = 0; i < count; i++) {
     const o = i * INSTANCE_MATRIX_FLOATS;
@@ -83,7 +84,7 @@ function shifted(matrices: Float32Array, count: number, shift: Vec3Tuple): Float
   return out;
 }
 
-function shiftedBox(min: Vec3Tuple, max: Vec3Tuple, shift: Vec3Tuple): LocalBox {
+function shiftedBox(min: Vec3, max: Vec3, shift: Vec3): LocalBox {
   return {
     min: [min[0] + shift[0], min[1] + shift[1], min[2] + shift[2]],
     max: [max[0] + shift[0], max[1] + shift[1], max[2] + shift[2]],
@@ -113,7 +114,7 @@ function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | 
 
 function restingY(
   model: PartModel,
-  lattice: ModelLattice,
+  lattice: PartModelLattice,
   parts: ReadonlyArray<PartAsset>,
   role: ModelRole | undefined,
 ): number {
@@ -184,7 +185,7 @@ export function partPlaceable(
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
 ): Placeable {
-  const shift: Vec3Tuple = [0, isBaseplate(part) ? 0 : -part.boundsMin[1], 0];
+  const shift: Vec3 = [0, isBaseplate(part) ? 0 : -part.boundsMin[1], 0];
   const local: ChunkPartInstances = {
     originX: 0,
     originZ: 0,

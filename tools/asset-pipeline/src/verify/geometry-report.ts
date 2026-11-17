@@ -1,6 +1,7 @@
+import type { TrackEnd } from "@brr/schema/bundle";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { ZETA16_ORDER } from "@brr/math";
-import { loadTrackEndMarkers, type RelativeTrackEnd } from "../track/track-ends.ts";
+import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import {
   composeDivergingWithCurve,
   crossCheckLdcadTrackSnaps,
@@ -41,7 +42,7 @@ function composeSwitchWithCurve(
   ]);
 }
 
-function turningEnd(report: TrackEndReport | undefined): RelativeTrackEnd {
+function turningEnd(report: TrackEndReport | undefined): TrackEnd {
   const end = report?.relative.find(
     (candidate) =>
       candidate.headingSteps !== ENTRY_HEADING_STEPS &&

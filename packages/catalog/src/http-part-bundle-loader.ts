@@ -1,22 +1,20 @@
+import {
+  BundleManifest,
+  ModelFile,
+  type BundleCredit,
+  type BundleLod,
+  type ManifestPart,
+} from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
 import { parseGlb, readInheritColorMesh, readPartMesh } from "./glb.ts";
-import {
-  parseManifest,
-  parseModelFile,
-  parsePartExtras,
-  type BundleManifest,
-  type ManifestPart,
-  type ModelFileLattice,
-} from "./manifest.ts";
 import type {
-  BundleCredit,
-  BundleLod,
   CompiledPartGlb,
   IAssetFetcher,
   ImportContext,
   IPartBundleLoader,
   ModelBundle,
-  ModelLattice,
+  PartModelLattice,
   PartAsset,
   PartBundle,
   PartFilter,
@@ -28,7 +26,7 @@ const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
 const MAX_CONCURRENT_FETCHES = 32;
 
-function modelLattice(lattice: ModelFileLattice | null): ModelLattice | null {
+function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   if (lattice === null) return null;
   const [phaseX, phaseZ] = lattice.phase;
   return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
@@ -82,7 +80,9 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     if (cached) return cached;
     const loading = this.fetcher
       .text(`${lod}/manifest.json`)
-      .then((text) => parseManifest(JSON.parse(text)));
+      .then((text) =>
+        decodedOrThrow(decode(BundleManifest, JSON.parse(text)), `${lod}/manifest.json`),
+      );
     this.manifests.set(lod, loading);
     return loading;
   }
@@ -93,7 +93,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   ): Promise<ReadonlyArray<StudPrimitiveAsset>> {
     return Promise.all(
       manifest.studPrimitives.map(async (primitive): Promise<StudPrimitiveAsset> => {
-        const glb = parseGlb(await this.fetcher.bytes(`${lod}/${primitive.file}`));
+        const glb = parseGlb(await this.fetcher.bytes(`${lod}/${primitive.file}`), primitive.file);
         return { mesh: readInheritColorMesh(glb, primitive.name) };
       }),
     );
@@ -187,8 +187,8 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       const available = manifest.models.map((model) => model.name).join(", ");
       throw new Error(`model "${name}" is not in the bundle (available: ${available})`);
     }
-    const file = parseModelFile(
-      JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`)),
+    const file = decodedOrThrow(
+      decode(ModelFile, JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`))),
       entry.file,
     );
     const manifestParts = new Map(manifest.parts.map((part) => [part.id, part]));
@@ -208,7 +208,14 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),
         matrices: Float32Array.from(file.instances.matrix),
-        vehicles: file.vehicles,
+        vehicles: file.vehicles.map((vehicle) => ({
+          ...vehicle,
+          body: Uint32Array.from(vehicle.body),
+          bogies: vehicle.bogies.map((bogie) => ({
+            ...bogie,
+            instances: Uint32Array.from(bogie.instances),
+          })),
+        })),
       },
     };
   }
@@ -220,19 +227,11 @@ function compiledPartAsset(
   studPrimitiveNames: ReadonlyArray<string>,
 ): { part: PartAsset; credits: ReadonlyArray<BundleCredit> } {
   const bytes = glb.slice().buffer;
-  const extras = parsePartExtras(parseGlb(bytes).document.extras, id);
-  if (!extras.bounds) throw new Error(`${id}: compiled GLB carries no bounds`);
-  const sources = extras.sources ?? [];
-  const part: ManifestPart = {
-    id,
-    path: sources[0]?.path ?? id,
-    role: COMPILED_PART_ROLE,
-    file: "",
-    bounds: extras.bounds,
-  };
+  const { extras } = parseGlb(bytes, id).document;
+  const part = { id, title: id, role: COMPILED_PART_ROLE, bounds: extras.bounds } as const;
   return {
     part: toPartAsset(part, bytes, studPrimitiveNames),
-    credits: sources.map((source) => ({
+    credits: extras.sources.map((source) => ({
       path: source.path,
       title: "",
       author: source.author,
@@ -242,12 +241,15 @@ function compiledPartAsset(
 }
 
 function toPartAsset(
-  part: ManifestPart,
+  part: Pick<
+    ManifestPart,
+    "id" | "title" | "role" | "bounds" | "displayColor" | "producedColors" | "trackEnds"
+  >,
   bytes: ArrayBuffer,
   studPrimitiveNames: ReadonlyArray<string>,
 ): PartAsset {
-  const glb = parseGlb(bytes);
-  const extras = parsePartExtras(glb.document.extras, part.id);
+  const glb = parseGlb(bytes, part.id);
+  const { extras } = glb.document;
   const studCount = extras.studs.length;
   const studPrimitiveIndex = new Uint8Array(studCount);
   const studColors = new Uint16Array(studCount);
@@ -263,7 +265,7 @@ function toPartAsset(
   }
   return {
     id: part.id,
-    title: part.title ?? part.id,
+    title: part.title,
     role: part.role,
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,

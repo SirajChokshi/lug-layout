@@ -1,4 +1,4 @@
-import type { BundleLod, BundleManifest, BundleModelEntry, BundleSource } from "@brr/catalog";
+import type { BundleLod, BundleManifest, BundleModelEntry, BundleSource } from "@brr/schema/bundle";
 
 export interface CreditedFile {
   readonly path: string;

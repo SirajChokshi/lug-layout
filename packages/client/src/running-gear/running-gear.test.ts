@@ -3,9 +3,8 @@ import {
   catalogModule,
   PART_BUNDLE_LOADER,
   BUNDLE_BASE_URL,
-  type BakedVehicle,
+  type PartVehicle,
   type IAssetFetcher,
-  type Vec3Tuple,
 } from "@brr/catalog";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -15,10 +14,13 @@ import {
   detectedBogies,
   effectiveVehicle,
   parseRunningGearOverride,
-  RUNNING_GEAR_OVERRIDE_VERSION,
   toModelFrame,
-  type RunningGearOverride,
 } from "./override.ts";
+import {
+  RUNNING_GEAR_OVERRIDE_VERSION,
+  type RunningGearOverride,
+  type Vec3,
+} from "@brr/schema/bundle";
 import {
   IndexedDbRunningGearOverrideStore,
   type IRunningGearOverrideStore,
@@ -56,7 +58,7 @@ async function gearSource(name: string): Promise<GearModelSource> {
   };
 }
 
-async function gp38(): Promise<{ vehicle: BakedVehicle; sha256: string; boxes: Float64Array }> {
+async function gp38(): Promise<{ vehicle: PartVehicle; sha256: string; boxes: Float64Array }> {
   const source = await gearSource("10133-1");
   const vehicle = source.vehicles[0];
   if (!vehicle) throw new Error("10133-1 has no vehicle");
@@ -80,7 +82,7 @@ class MemoryOverrideStore implements IRunningGearOverrideStore {
   }
 }
 
-function frontFace(vehicle: BakedVehicle): { instance: number; x: number; z: number } {
+function frontFace(vehicle: PartVehicle): { instance: number; x: number; z: number } {
   const coupler = vehicle.frontCoupler;
   if (!coupler) throw new Error("the vehicle has a front coupler");
   return { instance: coupler.instance, x: coupler.face[0], z: coupler.face[2] };
@@ -107,7 +109,7 @@ describe("Running gear overrides on 10133-1", () => {
         ? { ...bogie, instances: bogie.instances.filter((i) => i !== front.instance) }
         : bogie,
     );
-    const movedFace: Vec3Tuple = [front.face[0] - 0.75, front.face[1], front.face[2]];
+    const movedFace: Vec3 = [front.face[0] - 0.75, front.face[1], front.face[2]];
     const override: RunningGearOverride = {
       version: RUNNING_GEAR_OVERRIDE_VERSION,
       modelSha256: sha256,
@@ -136,10 +138,10 @@ describe("Running gear overrides on 10133-1", () => {
     const front = frontFace(vehicle);
     const rear = vehicle.rearCoupler;
     if (!rear) throw new Error("10133-1 has a rear coupler");
-    const pivotAt = (x: number): Vec3Tuple => [x, first.pivot[1], 0];
+    const pivotAt = (x: number): Vec3 => [x, first.pivot[1], 0];
     const faceAt = (instance: number, x: number) => ({
       instance,
-      face: [x, 0, front.z] satisfies Vec3Tuple,
+      face: [x, 0, front.z] satisfies Vec3,
     });
     const refusals: ReadonlyArray<
       readonly [string, Parameters<typeof effectiveVehicle>[1], ReadonlyArray<RegExp>]
@@ -227,7 +229,7 @@ describe("Running gear editor", () => {
     expect(store.records.size).toBe(0);
     expect(editor.snapshot().error).toMatch(/^not saved, this running gear cannot run: /);
 
-    const inboard: Vec3Tuple = [10, 0, front.z];
+    const inboard: Vec3 = [10, 0, front.z];
     await store.save({
       version: RUNNING_GEAR_OVERRIDE_VERSION,
       modelSha256: source.sha256,
@@ -279,7 +281,7 @@ describe("Running gear editor", () => {
     const vehicle = source.vehicles[0];
     if (!vehicle) throw new Error("10133-1 has no vehicle");
     const front = frontFace(vehicle);
-    const moved: Vec3Tuple = [front.x - 0.5, vehicle.frontCoupler?.face[1] ?? 0, front.z];
+    const moved: Vec3 = [front.x - 0.5, vehicle.frontCoupler?.face[1] ?? 0, front.z];
     const store = new MemoryOverrideStore();
     await store.save({
       version: 1,

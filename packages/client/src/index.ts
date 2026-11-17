@@ -1,4 +1,3 @@
-export type { BundleLod, ModelSection } from "@brr/catalog";
 export type {
   BackendInfo,
   BufferMemory,
@@ -82,12 +81,6 @@ export type {
   RunningGearSource,
 } from "./running-gear/running-gear-editor.ts";
 export { exactLduText } from "./running-gear/running-gear-editor.ts";
-export type {
-  BogieOverride,
-  CouplerOverride,
-  RunningGearOverride,
-  VehicleOverride,
-} from "./running-gear/override.ts";
 export type { ISimClient, SimTickCost } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export type { SimBenchResult } from "@brr/sim";
