@@ -20,7 +20,7 @@ import {
   Vector3,
   WebGPURenderer,
   type BufferGeometry,
-  type MeshStandardNodeMaterial,
+  MeshStandardNodeMaterial,
 } from "three/webgpu";
 import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
