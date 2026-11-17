@@ -9,9 +9,6 @@ if [[ -z "${CLOUDFLARE_API_TOKEN:-}" || -z "${CLOUDFLARE_API_TOKEN_ID:-}" ]]; th
 fi
 
 secret_access_key="$(printf '%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d " " -f 1)"
-if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-  echo "::add-mask::${secret_access_key}"
-fi
 
 export AWS_ACCESS_KEY_ID="$CLOUDFLARE_API_TOKEN_ID"
 export AWS_SECRET_ACCESS_KEY="$secret_access_key"
