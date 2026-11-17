@@ -18,6 +18,11 @@ import { isCompactLayout } from "./use-compact-layout.ts";
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
 
+function meshesText(meshes: EditorSnapshot["meshes"]): string {
+  const failed = meshes.failed > 0 ? `, ${integer.format(meshes.failed)} failed` : "";
+  return `${integer.format(meshes.loaded)} of ${integer.format(meshes.wanted)} loaded${failed}`;
+}
+
 function ldu(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
@@ -469,6 +474,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       "History (undo, redo)",
       `${integer.format(snapshot.history.undoDepth)}, ${integer.format(snapshot.history.redoDepth)}`,
     ],
+    ["Part meshes", meshesText(snapshot.meshes)],
     ["Last edit latency", latencyText(snapshot.lastLatency, snapshot)],
     ["Rebuilt for it", rebuildText(snapshot.lastLatency)],
   );
