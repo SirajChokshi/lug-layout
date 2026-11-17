@@ -79,6 +79,7 @@ function straightLine(): SimLoad {
       },
     ],
     autopilotSeed: null,
+    openEnds: "brake",
   };
 }
 

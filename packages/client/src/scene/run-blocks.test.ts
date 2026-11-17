@@ -1,7 +1,14 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import type { TrackCatalog } from "@brr/schema/bundle";
 import { TrackGraph } from "@brr/domain";
-import { SIM_TICK_HZ, SimSession, simTrackFromGraph, type VehicleSpec } from "@brr/sim";
+import {
+  SIM_TICK_HZ,
+  POSE_FLOATS_PER_VEHICLE,
+  SimSession,
+  simTrackFromGraph,
+  type OpenEndRule,
+  type VehicleSpec,
+} from "@brr/sim";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, it } from "vitest";
@@ -42,6 +49,8 @@ const TWO_SIDINGS = [
   SIDING,
 ].join(", ");
 const SWITCHLESS_OVAL = "ldraw:74746*4, ldraw:74747*8, ldraw:74746*4, ldraw:74747*8";
+const OPEN_LINE = "ldraw:74746*6, ldraw:74747*4";
+const OPEN_LINE_SPEED_LDU_PER_S = 400;
 const LOCOMOTIVE_MODEL = "10133-1";
 const AUTOPILOT_MINUTES = 20;
 const MIN_ARRIVALS_PER_TRAIN = 20;
@@ -67,6 +76,7 @@ function session(
   plan: string,
   fronts: ReadonlyArray<readonly [number, number]>,
   autopilotSeed: number | null,
+  openEnds: OpenEndRule = "brake",
 ): SimSession {
   const { layout, catalogPieces } = buildTrackPlan(plan, catalog);
   const graph = new TrackGraph(layout);
@@ -83,6 +93,7 @@ function session(
     capacity: { trains: fronts.length, vehicles: fronts.length },
     trains: fronts.map(([edge, offsetLdu]) => ({ spec, placement: { edge, offsetLdu } })),
     railway: { topology, autopilotSeed },
+    openEnds,
   });
 }
 
@@ -133,4 +144,70 @@ it("runs two manual trains on a switchless oval and stops the follower behind a 
   const couplersTouchingBogieDistance =
     locomotive.frontBogieLdu + locomotive.lengthLdu - locomotive.rearBogieLdu;
   expect(sim.separationCounters[1]).toBeGreaterThan(couplersTouchingBogieDistance);
+});
+
+function leadBogieXZ(target: SimSession): readonly [number, number] {
+  const poses = new Float64Array(target.simulation.vehicles * POSE_FLOATS_PER_VEHICLE);
+  target.simulation.writeVehiclePoses(poses);
+  return [poses[0] ?? 0, poses[1] ?? 0];
+}
+
+it("stops a reserved train short of an open end under the brake rule and runs it off under the derail rule once its leading axle leaves the rail", () => {
+  const stopped = session(OPEN_LINE, [[4, 100]], null, "brake");
+  stopped.apply({ kind: "drive", train: 0, signedSpeedLduPerS: OPEN_LINE_SPEED_LDU_PER_S });
+  run(stopped, 1);
+  const stoppedSim = stopped.simulation;
+  const stoppedEdge = stoppedSim.trainEdge[0] ?? 0;
+  expect(stoppedSim.derailed(0)).toBe(false);
+  expect(stoppedSim.trainSpeed[0]).toBe(0);
+  expect(stoppedSim.successor(stoppedEdge)).toBe(-1);
+  expect(stoppedSim.trainOffset[0] ?? 0).toBeLessThan(
+    stoppedSim.track.edgeLength[stoppedEdge] ?? 0,
+  );
+
+  const derailing = session(OPEN_LINE, [[4, 100]], null, "derail");
+  const sim = derailing.simulation;
+  derailing.apply({ kind: "drive", train: 0, signedSpeedLduPerS: OPEN_LINE_SPEED_LDU_PER_S });
+  for (let tick = 0; tick < 60 * SIM_TICK_HZ && !sim.derailed(0); tick++) sim.step();
+  expect(sim.derailed(0)).toBe(true);
+  expect(sim.trainDerailSpeed[0]).toBe(OPEN_LINE_SPEED_LDU_PER_S);
+  expect(sim.trainEdge[0]).toBe(stoppedEdge);
+  const geometry = locomotive.geometry;
+  if (!geometry) throw new Error(`${LOCOMOTIVE_MODEL} has no imported running gear geometry`);
+  const leadAxle = geometry.frontCoupler.xLdu - geometry.front.leadAxleXLdu;
+  expect(leadAxle).toBeLessThan(locomotive.frontBogieLdu);
+  expect(sim.overrunLdu(0)).toBeGreaterThanOrEqual(leadAxle);
+  expect(sim.overrunLdu(0)).toBeLessThan(leadAxle + OPEN_LINE_SPEED_LDU_PER_S / SIM_TICK_HZ);
+  run(derailing, 1);
+  expect(sim.trainSpeed[0]).toBe(0);
+  expect(derailing.apply({ kind: "rerail", train: 0 })).toBe(true);
+  const [restX, restZ] = leadBogieXZ(derailing);
+  derailing.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -OPEN_LINE_SPEED_LDU_PER_S });
+  run(derailing, 0.1);
+  expect(sim.derailed(0)).toBe(false);
+  expect(sim.trainSpeed[0]).toBeGreaterThan(0);
+  const [x, z] = leadBogieXZ(derailing);
+  expect(Math.hypot(x - restX, z - restZ)).toBeGreaterThan(OPEN_LINE_SPEED_LDU_PER_S);
+});
+
+it("keeps routed trains to their stops under the derail rule: one arrives at a stub end, one parked near it reverses to a stop behind", () => {
+  const lastPlacement = buildTrackPlan(OPEN_LINE, catalog).layout.count - 1;
+  for (const openEnds of ["brake", "derail"] as const) {
+    const toStub = session(OPEN_LINE, [[4, 100]], null, openEnds);
+    expect(toStub.apply({ kind: "goTo", train: 0, placement: lastPlacement })).toBe(true);
+    run(toStub, 1);
+    const ahead = toStub.simulation;
+    expect(ahead.derailed(0)).toBe(false);
+    expect(ahead.blocks?.routeState(0)).toBe("arrived");
+    expect(ahead.blocks?.arrivals[0]).toBe(1);
+    expect(ahead.overrunLdu(0)).toBe(0);
+
+    const behind = session(OPEN_LINE, [[2 * lastPlacement, 300]], null, openEnds);
+    expect(behind.apply({ kind: "goTo", train: 0, placement: 0 })).toBe(true);
+    run(behind, 1);
+    const reversed = behind.simulation;
+    expect(reversed.derailed(0)).toBe(false);
+    expect(reversed.blocks?.routeState(0)).toBe("arrived");
+    expect(reversed.blocks?.arrivals[0]).toBe(1);
+  }
 });
