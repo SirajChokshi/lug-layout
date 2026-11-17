@@ -145,6 +145,15 @@ export function trackPoint(
   const z = track.segmentZ[i] ?? 0;
   const h = track.segmentHeading[i] ?? 0;
   const k = track.segmentCurvature[i] ?? 0;
+  const length = track.segmentLength[i] ?? 0;
+  if (s > length && k !== 0) {
+    const endHeading = h + k * length;
+    const beyond = s - length;
+    out[outIndex] = x + (Math.sin(endHeading) - Math.sin(h)) / k + beyond * Math.cos(endHeading);
+    out[outIndex + 1] =
+      z - (Math.cos(endHeading) - Math.cos(h)) / k + beyond * Math.sin(endHeading);
+    return;
+  }
   if (k === 0) {
     out[outIndex] = x + s * Math.cos(h);
     out[outIndex + 1] = z + s * Math.sin(h);

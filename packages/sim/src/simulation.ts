@@ -18,6 +18,11 @@ export const NO_EDGE = -1;
 export const POSE_FLOATS_PER_VEHICLE = 4;
 const PATH_CAPACITY = 64;
 const PATH_MARGIN_EDGES = 2;
+const AXLES_PER_VEHICLE = 4;
+const FRONT_LEAD_AXLE = 0;
+const FRONT_TRAIL_AXLE = 1;
+const REAR_LEAD_AXLE = 2;
+const REAR_TRAIL_AXLE = 3;
 
 export interface VehicleSpec {
   readonly lengthLdu: number;
@@ -48,6 +53,11 @@ export interface SimRailway {
   readonly autopilotSeed: number | null;
 }
 
+export type OpenEndRule = "brake" | "derail";
+
+export const DIRECTION_FORWARD = 1;
+export const DIRECTION_BACKWARD = -1;
+
 const AUTOPILOT_DWELL_SECONDS = 3;
 const AUTOPILOT_RETRY_SECONDS = 2;
 const NOBODY = -1;
@@ -68,10 +78,13 @@ export class Simulation {
   private readonly trainAcceleration: Float64Array;
   private readonly trainBraking: Float64Array;
   private readonly trainReversed: Uint8Array;
+  private readonly trainTurnPending: Uint8Array;
+  private readonly trainTurnSpeed: Float64Array;
+  readonly trainDerailSpeed: Float64Array;
+  private readonly trainCoupledLength: Float64Array;
   private readonly trainVehicleStart: Int32Array;
   private readonly trainVehicleCount: Int32Array;
-  private readonly vehicleFrontBogie: Float64Array;
-  private readonly vehicleRearBogie: Float64Array;
+  private readonly vehicleAxles: Float64Array;
   private readonly vehicleGeometry: Float64Array;
   private readonly vehicleGeometryAt: Int32Array;
   private readonly poser = new RunningGearPoser();
@@ -96,11 +109,21 @@ export class Simulation {
   private readonly placementTrain: Int32Array;
   private readonly placementTick: Int32Array;
   private readonly poseScratch: Float64Array;
+  private readonly reverseScratch = new Int32Array(PATH_CAPACITY);
   readonly separationCounters = Float64Array.of(0, Number.POSITIVE_INFINITY, 0);
+  readonly openEnds: OpenEndRule;
+  private readonly openEndsDerail: boolean;
 
-  constructor(track: SimTrack, capacity: SimCapacity, railway: SimRailway | null = null) {
+  constructor(
+    track: SimTrack,
+    capacity: SimCapacity,
+    railway: SimRailway | null = null,
+    openEnds: OpenEndRule = "brake",
+  ) {
     this.track = track;
     this.capacity = capacity;
+    this.openEnds = openEnds;
+    this.openEndsDerail = openEnds === "derail";
     if (railway) {
       const map = new BlockMap(railway.topology, track.edgeLength);
       const keeper = new BlockKeeper(map, capacity.trains);
@@ -139,10 +162,13 @@ export class Simulation {
     this.trainAcceleration = new Float64Array(capacity.trains);
     this.trainBraking = new Float64Array(capacity.trains);
     this.trainReversed = new Uint8Array(capacity.trains);
+    this.trainTurnPending = new Uint8Array(capacity.trains);
+    this.trainTurnSpeed = new Float64Array(capacity.trains);
+    this.trainDerailSpeed = new Float64Array(capacity.trains);
+    this.trainCoupledLength = new Float64Array(capacity.trains);
     this.trainVehicleStart = new Int32Array(capacity.trains);
     this.trainVehicleCount = new Int32Array(capacity.trains);
-    this.vehicleFrontBogie = new Float64Array(capacity.vehicles);
-    this.vehicleRearBogie = new Float64Array(capacity.vehicles);
+    this.vehicleAxles = new Float64Array(capacity.vehicles * AXLES_PER_VEHICLE);
     this.vehicleGeometry = new Float64Array(capacity.vehicles * GEOMETRY_FIELDS);
     this.vehicleGeometryAt = new Int32Array(capacity.vehicles);
     this.pathEdges = new Int32Array(capacity.trains * PATH_CAPACITY);
@@ -191,8 +217,7 @@ export class Simulation {
     for (const vehicle of spec.vehicles) {
       const problem = runningGearSpanProblem(vehicle);
       if (problem) throw new Error(`a vehicle's running gear cannot run: ${problem}`);
-      this.vehicleFrontBogie[this.vehicleCount] = length + vehicle.frontBogieLdu;
-      this.vehicleRearBogie[this.vehicleCount] = length + vehicle.rearBogieLdu;
+      writeAxles(vehicle, length, this.vehicleAxles, this.vehicleCount * AXLES_PER_VEHICLE);
       const at = this.vehicleCount * GEOMETRY_FIELDS;
       this.vehicleGeometryAt[this.vehicleCount] = at;
       if (vehicle.geometry) {
@@ -222,6 +247,10 @@ export class Simulation {
     this.trainAcceleration[train] = spec.accelerationLduPerS2;
     this.trainBraking[train] = spec.brakingLduPerS2;
     this.trainReversed[train] = 0;
+    this.trainTurnPending[train] = 0;
+    this.trainTurnSpeed[train] = 0;
+    this.trainDerailSpeed[train] = 0;
+    this.trainCoupledLength[train] = length;
     this.trainVehicleStart[train] = firstVehicle;
     this.trainVehicleCount[train] = spec.vehicles.length;
     if (!this.fillPathBehind(train, edge, offsetLdu, length)) {
@@ -236,7 +265,88 @@ export class Simulation {
   setThrottle(train: number, speedLduPerS: number): void {
     this.assertTrain(train);
     this.blocks?.drive(train);
+    this.trainTurnPending[train] = 0;
     this.applyThrottle(train, speedLduPerS);
+  }
+
+  drive(train: number, signedSpeedLduPerS: number): void {
+    this.assertTrain(train);
+    this.blocks?.drive(train);
+    const wanted = signedSpeedLduPerS < 0 ? DIRECTION_BACKWARD : DIRECTION_FORWARD;
+    const facing = this.trainReversed[train] === 1 ? DIRECTION_BACKWARD : DIRECTION_FORWARD;
+    const speed = Math.abs(signedSpeedLduPerS);
+    if (wanted === facing || speed === 0) {
+      this.trainTurnPending[train] = 0;
+      this.applyThrottle(train, speed);
+      return;
+    }
+    this.trainTurnPending[train] = 1;
+    this.trainTurnSpeed[train] = speed;
+    this.trainThrottle[train] = 0;
+  }
+
+  direction(train: number): number {
+    const facingBackward = this.trainReversed[train] === 1;
+    const turning = this.trainTurnPending[train] === 1;
+    return facingBackward !== turning ? DIRECTION_BACKWARD : DIRECTION_FORWARD;
+  }
+
+  derailed(train: number): boolean {
+    return (this.trainDerailSpeed[train] ?? 0) > 0;
+  }
+
+  overrunLdu(train: number): number {
+    const edge = this.trainEdge[train] ?? 0;
+    return Math.max((this.trainOffset[train] ?? 0) - (this.track.edgeLength[edge] ?? 0), 0);
+  }
+
+  private axleBehindHead(train: number, vehicle: number, axle: number): number {
+    const at = this.vehicleAxles[vehicle * AXLES_PER_VEHICLE + axle] ?? 0;
+    return this.trainReversed[train] === 1 ? (this.trainCoupledLength[train] ?? 0) - at : at;
+  }
+
+  private leadingAxleLdu(train: number): number {
+    const first = this.trainVehicleStart[train] ?? 0;
+    if (this.trainReversed[train] !== 1) return this.axleBehindHead(train, first, FRONT_LEAD_AXLE);
+    const last = first + (this.trainVehicleCount[train] ?? 1) - 1;
+    return this.axleBehindHead(train, last, REAR_TRAIL_AXLE);
+  }
+
+  private bogiesOffTrack(vehicle: number, train: number): number {
+    const overrun = this.overrunLdu(train);
+    if (overrun === 0) return 0;
+    const reversed = this.trainReversed[train] === 1;
+    const front = this.axleBehindHead(
+      train,
+      vehicle,
+      reversed ? FRONT_TRAIL_AXLE : FRONT_LEAD_AXLE,
+    );
+    const rear = this.axleBehindHead(train, vehicle, reversed ? REAR_TRAIL_AXLE : REAR_LEAD_AXLE);
+    return (front <= overrun ? 1 : 0) + (rear <= overrun ? 1 : 0);
+  }
+
+  writeBogiesOffTrack(out: Float64Array, start: number): void {
+    for (let t = 0; t < this.trainCount; t++) {
+      const first = this.trainVehicleStart[t] ?? 0;
+      const end = first + (this.trainVehicleCount[t] ?? 0);
+      for (let v = first; v < end; v++) out[start + v] = this.bogiesOffTrack(v, t);
+    }
+  }
+
+  rerail(train: number): boolean {
+    this.assertTrain(train);
+    if (!this.derailed(train)) return false;
+    const edge = this.trainEdge[train] ?? 0;
+    this.trainOffset[train] = Math.min(
+      this.trainOffset[train] ?? 0,
+      this.track.edgeLength[edge] ?? 0,
+    );
+    this.trainSpeed[train] = 0;
+    this.trainThrottle[train] = 0;
+    this.trainTurnPending[train] = 0;
+    this.trainDerailSpeed[train] = 0;
+    this.trainSolvedTick[train] = NOT_SOLVED;
+    return true;
   }
 
   goTo(train: number, placement: number): boolean {
@@ -247,6 +357,7 @@ export class Simulation {
     const block = map.placementBlock[placement] ?? NO_BLOCK;
     if (block === NO_BLOCK || map.blockIsJunction[block] === 1) return false;
     keeper.goTo(train, block);
+    this.trainTurnPending[train] = 0;
     this.driveAtTopSpeed(train);
     return true;
   }
@@ -276,7 +387,7 @@ export class Simulation {
 
   reverse(train: number): boolean {
     this.assertTrain(train);
-    if ((this.trainSpeed[train] ?? 0) !== 0) return false;
+    if ((this.trainSpeed[train] ?? 0) !== 0 || this.derailed(train)) return false;
     const length = this.poseTrain(train, null, 0, null, 0);
     const base = train * PATH_CAPACITY;
     const count = this.pathCount[train] ?? 0;
@@ -291,13 +402,13 @@ export class Simulation {
     if (remaining > 0) throw new Error(`train ${train} path buffer does not cover its length`);
     const tailEdge = this.pathEdges[base + slot] ?? 0;
     const tailOffset = -remaining;
-    const reversedPath = new Int32Array(used);
+    const reversedPath = this.reverseScratch;
     let read = this.pathTop[train] ?? 0;
     for (let i = 0; i < used; i++) {
       reversedPath[i] = this.track.reverseEdge[this.pathEdges[base + read] ?? 0] ?? 0;
       read = (read + PATH_CAPACITY - 1) % PATH_CAPACITY;
     }
-    this.pathEdges.set(reversedPath, base);
+    for (let i = 0; i < used; i++) this.pathEdges[base + i] = reversedPath[i] ?? 0;
     this.pathTop[train] = used - 1;
     this.pathCount[train] = used;
     this.trainEdge[train] = this.track.reverseEdge[tailEdge] ?? 0;
@@ -322,7 +433,10 @@ export class Simulation {
         if (blocks.routeState(t) === "reversing" && this.trainSpeed[t] === 0) this.reverse(t);
       }
     }
-    for (let t = 0; t < this.trainCount; t++) this.advanceTrain(t);
+    for (let t = 0; t < this.trainCount; t++) {
+      if (this.trainTurnPending[t] === 1) this.completeTurn(t);
+      this.advanceTrain(t);
+    }
     this.tickCount++;
     if (this.edgePlacement) this.measureSeparation(this.edgePlacement);
   }
@@ -390,6 +504,9 @@ export class Simulation {
       hash = this.mixFloat(hash, this.trainSpeed[t] ?? 0);
       hash = this.mixFloat(hash, this.trainThrottle[t] ?? 0);
       hash = this.mixWord(hash, this.trainReversed[t] ?? 0);
+      hash = this.mixWord(hash, this.trainTurnPending[t] ?? 0);
+      hash = this.mixFloat(hash, this.trainTurnSpeed[t] ?? 0);
+      hash = this.mixFloat(hash, this.trainDerailSpeed[t] ?? 0);
       const count = this.pathCount[t] ?? 0;
       let slot = this.pathTop[t] ?? 0;
       hash = this.mixWord(hash, count);
@@ -460,22 +577,60 @@ export class Simulation {
     return clear;
   }
 
+  private completeTurn(train: number): void {
+    if ((this.trainSpeed[train] ?? 0) !== 0) return;
+    if (!this.reverse(train)) return;
+    this.trainTurnPending[train] = 0;
+    this.applyThrottle(train, this.trainTurnSpeed[train] ?? 0);
+  }
+
+  private skid(train: number): void {
+    const speed = Math.max(
+      (this.trainSpeed[train] ?? 0) - (this.trainBraking[train] ?? 0) * SIM_TICK_SECONDS,
+      0,
+    );
+    this.trainSpeed[train] = speed;
+    this.trainOffset[train] = (this.trainOffset[train] ?? 0) + speed * SIM_TICK_SECONDS;
+  }
+
+  private clearAhead(train: number, speed: number, braking: number): number {
+    const derails = this.openEndsDerail;
+    const blocks = this.blocks;
+    if (!blocks) {
+      if (derails) return Number.POSITIVE_INFINITY;
+      return this.clearDistanceAhead(
+        train,
+        (speed * speed) / (2 * braking) + speed * SIM_TICK_SECONDS,
+      );
+    }
+    const held = blocks.clearDistanceAhead(
+      train,
+      this.trainEdge[train] ?? 0,
+      this.trainOffset[train] ?? 0,
+      speed,
+      braking,
+      this.bodyLengthLdu(train),
+      this.switchStates,
+    );
+    if (
+      derails &&
+      blocks.routeState(train) === "manual" &&
+      blocks.heldEndIsOpen(train, this.switchStates)
+    ) {
+      return Number.POSITIVE_INFINITY;
+    }
+    return held;
+  }
+
   private advanceTrain(train: number): void {
+    if ((this.trainDerailSpeed[train] ?? 0) > 0) {
+      this.skid(train);
+      return;
+    }
     const braking = this.trainBraking[train] ?? 0;
     const acceleration = this.trainAcceleration[train] ?? 0;
     let speed = this.trainSpeed[train] ?? 0;
-    const stoppingDistance = (speed * speed) / (2 * braking) + speed * SIM_TICK_SECONDS;
-    const clear = this.blocks
-      ? this.blocks.clearDistanceAhead(
-          train,
-          this.trainEdge[train] ?? 0,
-          this.trainOffset[train] ?? 0,
-          speed,
-          braking,
-          this.bodyLengthLdu(train),
-          this.switchStates,
-        )
-      : this.clearDistanceAhead(train, stoppingDistance);
+    const clear = this.clearAhead(train, speed, braking);
     const stopCap = Math.sqrt(2 * braking * clear);
     const target = Math.min(this.trainThrottle[train] ?? 0, stopCap);
     if (speed < target) speed = Math.min(target, speed + acceleration * SIM_TICK_SECONDS);
@@ -489,6 +644,14 @@ export class Simulation {
         ? this.blocks.heldSuccessor(train, edge, this.switchStates)
         : this.successor(edge);
       if (next === NO_EDGE) {
+        if (this.openEndsDerail && this.successor(edge) === NO_EDGE) {
+          if (offset - length >= this.leadingAxleLdu(train)) {
+            this.trainDerailSpeed[train] = speed;
+            this.trainThrottle[train] = 0;
+            this.trainTurnPending[train] = 0;
+          }
+          break;
+        }
         offset = length;
         speed = 0;
         break;
@@ -591,4 +754,20 @@ function assertGeometryMatchesSpec(vehicle: VehicleSpec): void {
   ) {
     throw new Error("a vehicle's geometry disagrees with its length and bogie distances");
   }
+}
+
+function writeAxles(vehicle: VehicleSpec, ahead: number, out: Float64Array, at: number): void {
+  const geometry = vehicle.geometry;
+  if (!geometry) {
+    out[at + FRONT_LEAD_AXLE] = ahead + vehicle.frontBogieLdu;
+    out[at + FRONT_TRAIL_AXLE] = ahead + vehicle.frontBogieLdu;
+    out[at + REAR_LEAD_AXLE] = ahead + vehicle.rearBogieLdu;
+    out[at + REAR_TRAIL_AXLE] = ahead + vehicle.rearBogieLdu;
+    return;
+  }
+  const front = ahead + geometry.frontCoupler.xLdu;
+  out[at + FRONT_LEAD_AXLE] = front - geometry.front.leadAxleXLdu;
+  out[at + FRONT_TRAIL_AXLE] = front - geometry.front.trailAxleXLdu;
+  out[at + REAR_LEAD_AXLE] = front - geometry.rear.leadAxleXLdu;
+  out[at + REAR_TRAIL_AXLE] = front - geometry.rear.trailAxleXLdu;
 }
