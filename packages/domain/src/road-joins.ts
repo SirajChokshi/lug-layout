@@ -45,6 +45,7 @@ export interface RoadJoinReport {
 
 export interface RoadFit {
   readonly joinedCells: number;
+  readonly joinedRoadCells: number;
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
 }
@@ -204,13 +205,83 @@ function mergeSegments(cells: ReadonlyArray<EdgeCell>): ReadonlyArray<RoadEdgeSe
   return segments;
 }
 
+const STAMP_CELL_INTS = 5;
+const STAMP_EDGE_INTS = 3;
+
+interface CellRect {
+  readonly minX: number;
+  readonly minZ: number;
+  readonly maxX: number;
+  readonly maxZ: number;
+}
+
+interface RoadStamp extends CellRect {
+  readonly cells: Int32Array;
+  readonly edges: Int32Array;
+}
+
+const stamps = new WeakMap<RoadSurface, Array<RoadStamp | undefined>>();
+
+function rectOf(cells: ReadonlyArray<PlacedCell>): CellRect {
+  let minX = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+  for (const cell of cells) {
+    minX = Math.min(minX, cell.cellX);
+    minZ = Math.min(minZ, cell.cellZ);
+    maxX = Math.max(maxX, cell.cellX);
+    maxZ = Math.max(maxZ, cell.cellZ);
+  }
+  return { minX, minZ, maxX, maxZ };
+}
+
+function buildStamp(surface: RoadSurface, rot: number): RoadStamp {
+  const local = placedCells({ id: -1, x: 0, z: 0, yLdu: 0, rot, surface });
+  const own = new CellMap<boolean>();
+  for (const cell of local) own.set(cell.cellX, cell.cellZ, true);
+  const cells = new Int32Array(local.length * STAMP_CELL_INTS);
+  const edges: number[] = [];
+  local.forEach((cell, index) => {
+    cells.set([cell.cellX, cell.cellZ, cell.top, cell.stud, cell.road], index * STAMP_CELL_INTS);
+    for (const [, dx, dz] of SIDES) {
+      if (!own.has(cell.cellX + dx, cell.cellZ + dz)) edges.push(index, dx, dz);
+    }
+  });
+  return { ...rectOf(local), cells, edges: Int32Array.from(edges) };
+}
+
+function stampOf(surface: RoadSurface, rot: number): RoadStamp {
+  let byRot = stamps.get(surface);
+  if (!byRot) {
+    byRot = [];
+    stamps.set(surface, byRot);
+  }
+  const cached = byRot[rot];
+  if (cached) return cached;
+  const stamp = buildStamp(surface, rot);
+  byRot[rot] = stamp;
+  return stamp;
+}
+
+function rectsMeet(a: CellRect, b: CellRect, offsetX: number, offsetZ: number): boolean {
+  return (
+    a.minX + offsetX <= b.maxX &&
+    a.maxX + offsetX >= b.minX &&
+    a.minZ + offsetZ <= b.maxZ &&
+    a.maxZ + offsetZ >= b.minZ
+  );
+}
+
 export class RoadNetwork {
   private readonly cells = new CellMap<Cell>();
   private readonly placed: ReadonlyArray<ReadonlyArray<PlacedCell>>;
+  private readonly rects: ReadonlyArray<CellRect>;
   private readonly overlapPairs = new Set<string>();
 
   constructor(placements: ReadonlyArray<RoadPlacement>) {
     this.placed = placements.map(placedCells);
+    this.rects = this.placed.map(rectOf);
     for (const cells of this.placed) {
       for (const cell of cells) {
         const existing = this.cells.get(cell.cellX, cell.cellZ);
@@ -272,10 +343,53 @@ export class RoadNetwork {
   }
 
   fit(candidate: RoadPlacement): RoadFit {
+    const onLattice = candidate.x % STUD_LDU === 0 && candidate.z % STUD_LDU === 0;
+    if (!onLattice || !isRot90(candidate.rot)) return this.fitCells(candidate);
+    const stamp = stampOf(candidate.surface, candidate.rot);
+    const offsetX = candidate.x / STUD_LDU;
+    const offsetZ = candidate.z / STUD_LDU;
+    const y = candidate.yLdu;
+    const { cells, edges } = stamp;
+    let overlappingCells = 0;
+    if (this.rects.some((rect) => rectsMeet(stamp, rect, offsetX, offsetZ))) {
+      for (let c = 0; c < cells.length; c += STAMP_CELL_INTS) {
+        if (this.cells.has((cells[c] ?? 0) + offsetX, (cells[c + 1] ?? 0) + offsetZ)) {
+          overlappingCells++;
+        }
+      }
+    }
+    let joinedCells = 0;
+    let joinedRoadCells = 0;
+    let mismatchedCells = 0;
+    for (let e = 0; e < edges.length; e += STAMP_EDGE_INTS) {
+      const c = (edges[e] ?? 0) * STAMP_CELL_INTS;
+      const neighbour = this.cells.get(
+        (cells[c] ?? 0) + offsetX + (edges[e + 1] ?? 0),
+        (cells[c + 1] ?? 0) + offsetZ + (edges[e + 2] ?? 0),
+      );
+      if (!neighbour) continue;
+      const stud = cells[c + 3] ?? NO_STUD;
+      const road = cells[c + 4] ?? 0;
+      const same =
+        neighbour.top === (cells[c + 2] ?? 0) + y &&
+        neighbour.stud === (stud === NO_STUD ? NO_STUD : stud + y) &&
+        neighbour.road === road;
+      if (!same) {
+        mismatchedCells++;
+        continue;
+      }
+      joinedCells++;
+      if (road !== 0) joinedRoadCells++;
+    }
+    return { joinedCells, joinedRoadCells, mismatchedCells, overlappingCells };
+  }
+
+  private fitCells(candidate: RoadPlacement): RoadFit {
     const cells = placedCells(candidate);
     const own = new CellMap<boolean>();
     for (const cell of cells) own.set(cell.cellX, cell.cellZ, true);
     let joinedCells = 0;
+    let joinedRoadCells = 0;
     let mismatchedCells = 0;
     let overlappingCells = 0;
     for (const cell of cells) {
@@ -284,10 +398,14 @@ export class RoadNetwork {
         if (own.has(cell.cellX + dx, cell.cellZ + dz)) continue;
         const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
         if (!neighbour) continue;
-        if (sameSurface(cell, neighbour)) joinedCells++;
-        else mismatchedCells++;
+        if (!sameSurface(cell, neighbour)) {
+          mismatchedCells++;
+          continue;
+        }
+        joinedCells++;
+        if (cell.road !== 0) joinedRoadCells++;
       }
     }
-    return { joinedCells, mismatchedCells, overlappingCells };
+    return { joinedCells, joinedRoadCells, mismatchedCells, overlappingCells };
   }
 }

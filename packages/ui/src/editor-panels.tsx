@@ -371,7 +371,9 @@ function snapText(snapshot: EditorSnapshot): string {
   if (!snap) return "none";
   switch (snap.state) {
     case "snapped":
-      return `snapped, ${snap.joinedCells} edge cells join`;
+      return snap.joinedRoadCells > 0
+        ? `snapped, lanes join on ${snap.joinedRoadCells} of ${snap.joinedCells} edge cells`
+        : `snapped beside a sidewalk, ${snap.joinedCells} edge cells join`;
     case "free":
       return snap.joinedCells > 0
         ? `exact here, ${snap.joinedCells} edge cells join`
