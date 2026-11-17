@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import {
   CATEGORY_LABEL,
   PALETTE_CATEGORIES,
@@ -17,9 +25,28 @@ import {
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
+const PALETTE_FIELDS = [
+  "catalog",
+  "catalogSkipped",
+  "activeItem",
+  "mode",
+  "track",
+  "trackNotDrawable",
+  "readOnly",
+] as const satisfies ReadonlyArray<keyof EditorSnapshot>;
+
+type PaletteSnapshot = Pick<EditorSnapshot, (typeof PALETTE_FIELDS)[number]>;
+
 interface PaletteProps {
   readonly editor: IEditor;
-  readonly snapshot: EditorSnapshot;
+  readonly snapshot: PaletteSnapshot;
+}
+
+function samePaletteInputs(before: PaletteProps, after: PaletteProps): boolean {
+  return (
+    before.editor === after.editor &&
+    PALETTE_FIELDS.every((field) => before.snapshot[field] === after.snapshot[field])
+  );
 }
 
 function Section({
@@ -324,7 +351,7 @@ function filterLabel(filter: PaletteFilter): string {
   return filter === "all" ? "All" : CATEGORY_LABEL[filter].replace(" modules", "");
 }
 
-export function PalettePanel({ editor, snapshot }: PaletteProps) {
+export const PalettePanel = memo(function PalettePanel({ editor, snapshot }: PaletteProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PaletteFilter>("all");
   const [highlight, setHighlight] = useState(0);
@@ -469,9 +496,9 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
       )}
     </nav>
   );
-}
+}, samePaletteInputs);
 
-function skippedText(snapshot: EditorSnapshot): string {
+function skippedText(snapshot: PaletteSnapshot): string {
   const byReason = new Map<string, string[]>();
   for (const model of snapshot.catalogSkipped) {
     byReason.set(model.reason, [...(byReason.get(model.reason) ?? []), model.name]);
