@@ -2,12 +2,14 @@ import {
   CITY_SCENE,
   CREDITS,
   EDITOR,
+  IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
   RUN_SCENE,
   RUNNING_GEAR,
   TRACK_SCENE,
+  type IImportScene,
   type IRunScene,
   PLAN_SERVICE,
   type IViewerScene,
@@ -30,13 +32,16 @@ const bundleBaseUrl = new URL(import.meta.env.VITE_BUNDLE_BASE_URL ?? "bundle/",
   .href;
 const startSimWorker = (): Worker =>
   new Worker(new URL("@brr/sim-worker/entry", import.meta.url), { type: "module" });
-container.load(...mainThreadModules({ bundleBaseUrl, startSimWorker }));
+const createImportWorker = (): Worker =>
+  new Worker(new URL("@brr/import-worker/entry", import.meta.url), { type: "module" });
+container.load(...mainThreadModules({ bundleBaseUrl, startSimWorker, createImportWorker }));
 const params = readViewerParams(location.search);
 
 interface ViewerChoice {
   readonly scene: IViewerScene;
   readonly placements: (() => PlacementDump) | null;
   readonly run: IRunScene | null;
+  readonly importScene?: IImportScene;
 }
 
 function viewerScene(viewer: ViewerParams): ViewerChoice {
@@ -84,6 +89,10 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
     }
     case "parts":
       return { scene: container.get(PART_DISPLAY_SCENE), placements: null, run: null };
+    case "import": {
+      const importScene = container.get(IMPORT_SCENE);
+      return { scene: importScene, placements: null, run: null, importScene };
+    }
     case "edit":
       throw new Error("the editor is not a viewer scene");
     default: {
@@ -118,7 +127,7 @@ function root(): ReactNode {
       />
     );
   }
-  const { scene, placements, run } = viewerScene(params);
+  const { scene, placements, run, importScene } = viewerScene(params);
   return (
     <App
       scene={scene}
@@ -126,6 +135,7 @@ function root(): ReactNode {
       placements={placements}
       run={run}
       runningGear={run ? container.get(RUNNING_GEAR) : null}
+      importScene={importScene ?? null}
     />
   );
 }

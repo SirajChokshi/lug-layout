@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
-use crate::affine::Vec3;
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod};
+use crate::mesh::WELD_EPSILON_LDU;
 use crate::model::mpd_sections;
+use crate::surface::{surface_match, Face, SurfaceMatch};
 
 const LIBRARY_DIRECTORIES: [&str; 2] = ["parts/", "p/"];
-const VERTEX_GRID_LDU: f64 = 1e-6;
 
 struct SectionsFirst<'a, L: Library> {
     sections: HashMap<String, String>,
@@ -25,46 +25,73 @@ impl<L: Library> Library for SectionsFirst<'_, L> {
     }
 }
 
-fn vertices(flattened: &Flattened) -> Vec<Vec3> {
-    let mut seen = HashSet::new();
-    flattened
-        .triangles
-        .iter()
-        .flat_map(|triangle| triangle.points)
-        .filter(|p| seen.insert(p.map(|v| (v / VERTEX_GRID_LDU).round() as i64)))
-        .collect()
+#[derive(Clone, Debug, PartialEq)]
+pub struct InlineComparison {
+    pub surface_within_weld: bool,
+    pub max_measured_distance: f64,
+    pub inline_colors: Vec<u32>,
+    pub official_colors: Vec<u32>,
 }
 
-fn directed_distance(from: &[Vec3], to: &[Vec3]) -> f64 {
-    from.iter()
-        .map(|p| {
-            to.iter()
-                .map(|q| (p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2))
-                .fold(f64::INFINITY, f64::min)
-        })
-        .fold(0.0, f64::max)
-        .sqrt()
+impl InlineComparison {
+    pub fn colors_match(&self) -> bool {
+        self.inline_colors == self.official_colors
+    }
+
+    pub fn equivalent(&self) -> bool {
+        self.colors_match() && self.surface_within_weld
+    }
 }
 
-pub fn max_vertex_distance(a: &[Vec3], b: &[Vec3]) -> f64 {
-    directed_distance(a, b).max(directed_distance(b, a))
+fn faces_by_color(flattened: &Flattened) -> BTreeMap<u32, Vec<Face>> {
+    let mut faces: BTreeMap<u32, Vec<Face>> = BTreeMap::new();
+    for triangle in &flattened.triangles {
+        faces
+            .entry(triangle.color)
+            .or_default()
+            .push(triangle.points);
+    }
+    faces
 }
 
-pub fn inline_part_distance<L: Library>(
+pub fn compare_inline_part<L: Library>(
     library: &L,
     model_source: &str,
     inline: &str,
     official: &str,
-) -> Result<f64, FlattenError> {
+) -> Result<InlineComparison, FlattenError> {
     let sections_first = SectionsFirst {
         sections: mpd_sections(model_source),
         library,
     };
-    let inline_geometry = Flattener::new(&sections_first, Lod::Standard, &[]).flatten(inline)?;
-    let official_geometry =
-        Flattener::new(library, Lod::Standard, &[]).flatten(&format!("parts/{official}"))?;
-    Ok(max_vertex_distance(
-        &vertices(&inline_geometry),
-        &vertices(&official_geometry),
-    ))
+    let inline_faces =
+        faces_by_color(&Flattener::new(&sections_first, Lod::Standard, &[]).flatten(inline)?);
+    let official_faces = faces_by_color(
+        &Flattener::new(library, Lod::Standard, &[]).flatten(&format!("parts/{official}"))?,
+    );
+    let surface = inline_faces
+        .iter()
+        .filter_map(|(color, faces)| {
+            Some(surface_match(
+                faces,
+                official_faces.get(color)?,
+                WELD_EPSILON_LDU,
+            ))
+        })
+        .fold(
+            SurfaceMatch {
+                within: true,
+                max_measured: 0.0,
+            },
+            |all, one| SurfaceMatch {
+                within: all.within && one.within,
+                max_measured: all.max_measured.max(one.max_measured),
+            },
+        );
+    Ok(InlineComparison {
+        surface_within_weld: surface.within,
+        max_measured_distance: surface.max_measured,
+        inline_colors: inline_faces.keys().copied().collect(),
+        official_colors: official_faces.keys().copied().collect(),
+    })
 }

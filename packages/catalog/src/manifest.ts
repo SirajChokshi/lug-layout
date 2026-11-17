@@ -27,6 +27,11 @@ export interface ManifestStudPrimitive {
   readonly file: string;
 }
 
+export interface BundleCompiler {
+  readonly file: string;
+  readonly unofficialAllowlist: ReadonlyArray<string>;
+}
+
 export interface BundleSource {
   readonly repo: string;
   readonly commit: string;
@@ -40,6 +45,8 @@ export interface BundleInputs {
 
 export interface BundleManifest {
   readonly bundleVersion: string;
+  readonly source: BundleSource;
+  readonly compiler: BundleCompiler | null;
   readonly unit: "LDU";
   readonly upAxis: "+Y";
   readonly parts: ReadonlyArray<ManifestPart>;
@@ -76,8 +83,16 @@ export interface StudExtra {
   readonly matrix: ReadonlyArray<number>;
 }
 
+export interface SourceExtra {
+  readonly path: string;
+  readonly author: string;
+  readonly license: string | null;
+}
+
 export interface PartExtras {
   readonly studs: ReadonlyArray<StudExtra>;
+  readonly sources?: ReadonlyArray<SourceExtra>;
+  readonly bounds?: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -97,6 +112,24 @@ function isManifestPart(value: unknown): value is ManifestPart {
     typeof value["role"] === "string" &&
     isVec3(value["bounds"]["min"]) &&
     isVec3(value["bounds"]["max"])
+  );
+}
+
+function isBundleSource(value: unknown): value is BundleSource {
+  return (
+    isRecord(value) &&
+    typeof value["repo"] === "string" &&
+    typeof value["commit"] === "string" &&
+    typeof value["root"] === "string"
+  );
+}
+
+function isCompiler(value: unknown): value is BundleCompiler {
+  return (
+    isRecord(value) &&
+    typeof value["file"] === "string" &&
+    Array.isArray(value["unofficialAllowlist"]) &&
+    value["unofficialAllowlist"].every((entry) => typeof entry === "string")
   );
 }
 
@@ -145,6 +178,12 @@ export function parseManifest(value: unknown): BundleManifest {
     !Array.isArray(value["credits"]) ||
     !value["credits"].every(isCredit) ||
     !Array.isArray(value["models"]) ||
+    !isBundleSource(value["source"]) ||
+    !(
+      value["compiler"] === null ||
+      value["compiler"] === undefined ||
+      isCompiler(value["compiler"])
+    ) ||
     !value["models"].every(isBundleModelEntry) ||
     typeof value["modified"] !== "string" ||
     typeof value["disclaimer"] !== "string" ||
@@ -155,7 +194,8 @@ export function parseManifest(value: unknown): BundleManifest {
     throw new Error("bundle manifest does not match the M1 bundle format");
   }
   return {
-    ...(value as unknown as Omit<BundleManifest, "trackCatalog">),
+    ...(value as unknown as Omit<BundleManifest, "trackCatalog" | "compiler">),
+    compiler: isCompiler(value["compiler"]) ? value["compiler"] : null,
     trackCatalog: parseTrackCatalog(value["trackCatalog"]),
   };
 }

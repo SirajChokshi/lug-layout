@@ -1,0 +1,23 @@
+0 FILE critic-gap-3.ldr
+0 Critic gap probe 3
+0 Name: critic-gap-3.ldr
+0 Author: critic
+0 !LDRAW_ORG Model
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+1 4 0 0 0 1 0 0 0 1 0 0 0 1 9996-1 - 3001.dat
+1 4 100 0 0 1 0 0 0 1 0 0 0 1 3001.dat
+0 NOFILE
+0 FILE 9996-1 - 3001.dat
+0 Brick  2 x  4 with an 8 x 5 LDU hole in the front face
+0 Name: 9996-1 - 3001.dat
+0 Author: James Jessiman
+0 !LDRAW_ORG Unofficial_Part
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+0 !HISTORY 2026-11-17 [critic] Modified from LDraw parts/3001.dat: an 8 x 5 LDU hole cut in the front face, which is retessellated as four quads around it
+1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\3001s01.dat
+4 16 -40 0 -20 -40 24 -20 16 24 -20 16 0 -20
+4 16 24 0 -20 24 24 -20 40 24 -20 40 0 -20
+4 16 16 0 -20 16 10 -20 24 10 -20 24 0 -20
+4 16 16 15 -20 16 24 -20 24 24 -20 24 15 -20
+4 16 40 0 20 40 24 20 -40 24 20 -40 0 20
+0 NOFILE

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -6,11 +6,10 @@ use std::process::ExitCode;
 use brick_compile::affine::Vec3;
 use brick_compile::colors::parse_ldconfig;
 use brick_compile::compile::modified_note;
-use brick_compile::inline::inline_part_distance;
+use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
-use brick_compile::ldraw::{parse as parse_ldraw, Header};
-use brick_compile::mesh::WELD_EPSILON_LDU;
-use brick_compile::model::bake_model;
+use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
+use brick_compile::model::{bake_model, ModelInstance};
 use brick_compile::vehicle::{
     detect_vehicles, GuideKind, RailHeadBand, Vehicle, VehicleSignatures,
 };
@@ -20,6 +19,7 @@ use serde_json::{json, Value};
 const DISCLAIMER: &str =
     "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.";
 const LDCONFIG: &str = "ldconfig.ldr";
+const COMPILER_FILE: &str = "brick-compile.wasm";
 
 struct FsLibrary {
     files: HashMap<String, String>,
@@ -60,6 +60,7 @@ struct Args {
     palette: PathBuf,
     out: PathBuf,
     lod: Lod,
+    compiler: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -84,6 +85,7 @@ fn parse_args() -> Result<Args, String> {
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
         lod,
+        compiler: values.get("--compiler").map(PathBuf::from),
     })
 }
 
@@ -172,6 +174,20 @@ fn compile_entry(
     summary["author"] = json!(header.author);
     summary["license"] = json!(header.license);
     Ok((summary, part_shape(&compiled)))
+}
+
+fn acknowledged_not_drawn(entry: &Value, file: &str) -> Result<BTreeMap<String, String>, String> {
+    let mut acknowledged = BTreeMap::new();
+    for item in entry["notDrawn"].as_array().cloned().unwrap_or_default() {
+        let (Some(section), Some(reason)) = (item["section"].as_str(), item["reason"].as_str())
+        else {
+            return Err(format!(
+                "{file}: notDrawn entries need a section and a reason"
+            ));
+        };
+        acknowledged.insert(normalize_reference(section), reason.to_string());
+    }
+    Ok(acknowledged)
 }
 
 fn string_list(value: &Value, label: &str) -> Result<Vec<String>, String> {
@@ -275,6 +291,15 @@ fn run(args: &Args) -> Result<(), String> {
         stud_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
     };
+    let compiler = match &args.compiler {
+        Some(path) => {
+            fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
+            fs::copy(path, args.out.join(COMPILER_FILE))
+                .map_err(|e| format!("{}: {e}", path.display()))?;
+            json!({ "file": COMPILER_FILE, "unofficialAllowlist": unofficial_allowlist })
+        }
+        None => Value::Null,
+    };
     let part_options = CompileOptions {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
@@ -359,18 +384,71 @@ fn run(args: &Args) -> Result<(), String> {
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let text = String::from_utf8_lossy(&source);
         let baked = bake_model(&text).map_err(|e| format!("{file}: {e}"))?;
-        let vehicles: Vec<Value> = detect_vehicles(&library, &baked.instances, &signatures, &rails)
+        let acknowledged = acknowledged_not_drawn(&entry, file)?;
+        let mut not_drawn: Vec<Value> = Vec::new();
+        let mut used: HashSet<String> = HashSet::new();
+        for loose in &baked.loose_geometry {
+            let Some(reason) = acknowledged.get(&loose.section) else {
+                return Err(format!(
+                    "{file}: model section {} has {} triangles and {} quads outside any part",
+                    loose.section, loose.triangles, loose.quads
+                ));
+            };
+            used.insert(loose.section.clone());
+            not_drawn.push(json!({ "section": loose.section, "kind": "looseGeometry", "triangles": loose.triangles, "quads": loose.quads, "reason": reason }));
+        }
+        let mut inline_parts: Vec<Value> = Vec::new();
+        for part in &baked.inline_parts {
+            if let Some(reason) = acknowledged.get(&part.inline) {
+                used.insert(part.inline.clone());
+                not_drawn.push(
+                    json!({ "section": part.inline, "kind": "customPart", "reason": reason }),
+                );
+                continue;
+            }
+            let comparison = compare_inline_part(&library, &text, &part.inline, &part.official)
+                .map_err(|e| format!("{file}: {}: {e:?}", part.inline))?;
+            if !comparison.equivalent() {
+                return Err(format!(
+                    "{file}: inline part {} differs from official {} (colours {:?} against {:?}, surface within weld {}, farthest measured point {:.4} LDU)",
+                    part.inline,
+                    part.official,
+                    comparison.inline_colors,
+                    comparison.official_colors,
+                    comparison.surface_within_weld,
+                    comparison.max_measured_distance
+                ));
+            }
+            inline_parts.push(json!({ "inline": part.inline, "official": part.official, "maxMeasuredDistanceLdu": comparison.max_measured_distance }));
+        }
+        if let Some(stale) = acknowledged.keys().find(|section| !used.contains(*section)) {
+            return Err(format!(
+                "{file}: palette notDrawn lists {stale}, which the model does not drop"
+            ));
+        }
+        let drawn: Vec<ModelInstance> = baked
+            .instances
+            .iter()
+            .filter(|instance| {
+                instance
+                    .inline
+                    .as_ref()
+                    .is_none_or(|inline| !acknowledged.contains_key(inline))
+            })
+            .cloned()
+            .collect();
+        let vehicles: Vec<Value> = detect_vehicles(&library, &drawn, &signatures, &rails)
             .map_err(|e| format!("{file}: {e}"))?
             .iter()
             .map(vehicle_json)
             .collect();
         let mut model_parts: Vec<Value> = Vec::new();
         let mut model_part_index: HashMap<usize, usize> = HashMap::new();
-        let mut instance_parts = Vec::with_capacity(baked.instances.len());
-        let mut instance_global_parts = Vec::with_capacity(baked.instances.len());
-        let mut instance_colors = Vec::with_capacity(baked.instances.len());
-        let mut instance_matrices = Vec::with_capacity(baked.instances.len() * 12);
-        for instance in &baked.instances {
+        let mut instance_parts = Vec::with_capacity(drawn.len());
+        let mut instance_global_parts = Vec::with_capacity(drawn.len());
+        let mut instance_colors = Vec::with_capacity(drawn.len());
+        let mut instance_matrices = Vec::with_capacity(drawn.len() * 12);
+        for instance in &drawn {
             let index = match part_index.get(&instance.part) {
                 Some(&index) => index,
                 None => {
@@ -398,8 +476,7 @@ fn run(args: &Args) -> Result<(), String> {
             instance_colors.push(instance.color);
             instance_matrices.extend(instance.matrix.m.map(|v| v as f32));
         }
-        let lattice_instances: Vec<LatticeInstance> = baked
-            .instances
+        let lattice_instances: Vec<LatticeInstance> = drawn
             .iter()
             .zip(&instance_global_parts)
             .map(|(instance, &index)| LatticeInstance {
@@ -426,19 +503,7 @@ fn run(args: &Args) -> Result<(), String> {
             .iter()
             .map(|h| json!({ "name": h.name, "title": h.title, "author": h.author, "license": h.license, "ldrawOrg": h.ldraw_org }))
             .collect();
-        let mut inline_parts: Vec<Value> = Vec::new();
-        for part in &baked.inline_parts {
-            let distance = inline_part_distance(&library, &text, &part.inline, &part.official)
-                .map_err(|e| format!("{file}: {}: {e:?}", part.inline))?;
-            if distance > WELD_EPSILON_LDU {
-                return Err(format!(
-                    "{file}: inline part {} draws different geometry from official {} (max vertex distance {distance:.4} LDU)",
-                    part.inline, part.official
-                ));
-            }
-            inline_parts.push(json!({ "inline": part.inline, "official": part.official, "maxVertexDistanceLdu": distance }));
-        }
-        let model = json!({
+        let mut model = json!({
             "name": name,
             "file": file,
             "source": entry["source"],
@@ -451,6 +516,9 @@ fn run(args: &Args) -> Result<(), String> {
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
             "vehicles": vehicles,
         });
+        if !not_drawn.is_empty() {
+            model["notDrawn"] = json!(not_drawn);
+        }
         fs::write(
             args.out.join(&model_file),
             serde_json::to_string(&model).map_err(|e| e.to_string())?,
@@ -468,11 +536,14 @@ fn run(args: &Args) -> Result<(), String> {
             "licenses": licenses,
             "sections": sections,
             "inlinePartsResolvedToOfficial": inline_parts,
-            "instances": baked.instances.len(),
+            "instances": drawn.len(),
             "lattice": lattice_json,
             "vehicles": vehicles.len(),
             "sha256": entry["sha256"],
         });
+        if !not_drawn.is_empty() {
+            manifest_entry["notDrawn"] = json!(not_drawn);
+        }
         if !entry["role"].is_null() {
             manifest_entry["role"] = entry["role"].clone();
         }
@@ -514,6 +585,7 @@ fn run(args: &Args) -> Result<(), String> {
         "credits": credits.into_values().collect::<Vec<_>>(),
         "modified": modified_note(args.lod),
         "disclaimer": DISCLAIMER,
+        "compiler": compiler,
     });
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(args.out.join("manifest.json"), text + "\n").map_err(|e| e.to_string())?;

@@ -21,6 +21,7 @@ interface CompiledManifest {
   parts: FileReference[];
   studPrimitives: FileReference[];
   models: FileReference[];
+  compiler: FileReference | null;
   [key: string]: unknown;
 }
 
@@ -51,7 +52,8 @@ function isCompiledManifest(value: unknown): value is CompiledManifest {
   return (
     isFileReferenceList(candidate["parts"]) &&
     isFileReferenceList(candidate["studPrimitives"]) &&
-    isFileReferenceList(candidate["models"])
+    isFileReferenceList(candidate["models"]) &&
+    (candidate["compiler"] === null || isFileReferenceList([candidate["compiler"]]))
   );
 }
 
@@ -67,7 +69,12 @@ export async function publishBundle(
   const manifestPath = join(directory, MANIFEST_FILE);
   const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
   if (!isCompiledManifest(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
-  const references = [...compiled.studPrimitives, ...compiled.parts, ...compiled.models];
+  const references = [
+    ...compiled.studPrimitives,
+    ...compiled.parts,
+    ...compiled.models,
+    ...(compiled.compiler ? [compiled.compiler] : []),
+  ];
   const published = new Set<string>();
   for (const reference of references) {
     const digest = sha256(await readFile(join(directory, reference.file)));
