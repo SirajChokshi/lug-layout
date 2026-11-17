@@ -186,6 +186,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function exactShapesLoaded(editor: IEditor): Promise<void> {
+  const loaded = (): boolean => {
+    const { loaded: done, total } = editor.snapshot().solids;
+    return total > 0 && done === total;
+  };
+  return new Promise((resolve) => {
+    if (loaded()) {
+      resolve();
+      return;
+    }
+    const stop = editor.subscribe(() => {
+      if (!loaded()) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
 async function startEditor(backend: ISceneBackend): Promise<IEditor> {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
@@ -203,6 +221,7 @@ async function startEditor(backend: ISceneBackend): Promise<IEditor> {
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK });
+  await exactShapesLoaded(editor);
   return editor;
 }
 

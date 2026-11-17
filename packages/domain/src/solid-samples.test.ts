@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   PlanShell,
   solidMeetsShellInCell,
-  solidPatternSpans,
   solidsMeetInCell,
   type Contact,
   type PlacedSolid,
@@ -35,7 +34,19 @@ function blockOfFourCells(solidSample: (a: number, b: number) => boolean): Solid
 function placed(samples: SolidSamples, rot: number, ySteps = 0): PlacedSolid {
   const cos = [1, 0, -1, 0][rot] ?? 1;
   const sin = [0, 1, 0, -1][rot] ?? 0;
-  return { samples, cellX0: -1, cellZ0: -1, width: 2, depth: 2, x: 0, z: 0, cos, sin, ySteps };
+  return {
+    samples,
+    cellX0: -1,
+    cellZ0: -1,
+    width: 2,
+    depth: 2,
+    x: 0,
+    z: 0,
+    cos,
+    sin,
+    ySteps,
+    studLayerLdu: null,
+  };
 }
 
 function meetsAnywhere(a: PlacedSolid, b: PlacedSolid): boolean {
@@ -71,24 +82,13 @@ describe("solid samples on a lattice pose", () => {
       candidateTopLdu: 24,
     });
   });
-
-  it("unions each pattern's sample spans into whole-LDU cell spans, rounded outward", () => {
-    const samples: SolidSamples = {
-      samplesPerStud: 1,
-      stepsPerLdu: STEPS,
-      lists: Int32Array.of(0, 2, 1, 40, 200, 300),
-      patterns: Int32Array.of(1),
-      cells: Int32Array.of(0),
-    };
-    expect(Array.from(solidPatternSpans(samples).spans)).toEqual([0, 3, 12, 19]);
-  });
 });
 
 function quad(x0: number, x1: number, y: number): number[] {
   return [x0, y, 0, x1, y, 0, x1, y, STUD_LDU, x0, y, 0, x1, y, STUD_LDU, x0, y, STUD_LDU];
 }
 
-function studsUnder(xFrom: number): PlacedSolid {
+function studsUnder(xFrom: number, studLayerLdu: number | null = null): PlacedSolid {
   const pattern: number[] = [];
   for (let b = 0; b < PER_STUD; b++) {
     for (let a = 0; a < PER_STUD; a++) pattern.push(a * 2 + 1 > xFrom ? 4 : 1);
@@ -110,8 +110,11 @@ function studsUnder(xFrom: number): PlacedSolid {
     cos: 1,
     sin: 0,
     ySteps: 0,
+    studLayerLdu,
   };
 }
+
+const AS_LAID = { cos: 1, sin: 0, x: 0, z: 0 };
 
 describe("solid against a track piece's shell", () => {
   const tieWithAntiStud = new PlanShell(
@@ -127,10 +130,65 @@ describe("solid against a track piece's shell", () => {
     expect(tieWithAntiStud.spanAt(25, 5, span)).toBe(false);
   });
 
+  it("reads lines that run along a shared triangle edge", () => {
+    const span = new Float64Array(2);
+    expect(tieWithAntiStud.spanAt(5, 5, span)).toBe(true);
+    expect(Array.from(span)).toEqual([0, 8]);
+  });
+
   it("lets studs stand in the cavity and refuses studs under the solid part", () => {
     const out = contact();
-    expect(solidMeetsShellInCell(studsUnder(10), tieWithAntiStud, false, 0, 0, out)).toBe(false);
-    expect(solidMeetsShellInCell(studsUnder(4), tieWithAntiStud, false, 0, 0, out)).toBe(true);
+    expect(
+      solidMeetsShellInCell(
+        studsUnder(10),
+        { shell: tieWithAntiStud, pose: AS_LAID },
+        false,
+        0,
+        0,
+        out,
+      ),
+    ).toBe(false);
+    expect(
+      solidMeetsShellInCell(
+        studsUnder(4),
+        { shell: tieWithAntiStud, pose: AS_LAID },
+        false,
+        0,
+        0,
+        out,
+      ),
+    ).toBe(true);
     expect(out).toMatchObject({ xLdu: 5, bottomLdu: -4, topLdu: 4, candidateBottomLdu: 0 });
+  });
+
+  it("finds a laid piece's shell through its pose", () => {
+    const quarterTurn = { cos: 0, sin: 1, x: STUD_LDU, z: 0 };
+    const out = contact();
+    expect(
+      solidMeetsShellInCell(
+        studsUnder(10),
+        { shell: tieWithAntiStud, pose: quarterTurn },
+        false,
+        0,
+        0,
+        out,
+      ),
+    ).toBe(true);
+    expect(out).toMatchObject({ xLdu: 11, zLdu: 1 });
+  });
+
+  it("lets track rest on a baseplate's stud layer, but not reach below it", () => {
+    const out = contact();
+    const studs = studsUnder(4, 0);
+    expect(
+      solidMeetsShellInCell(studs, { shell: tieWithAntiStud, pose: AS_LAID }, false, 0, 0, out),
+    ).toBe(false);
+    const sunk = new PlanShell(
+      Float64Array.from([...quad(0, STUD_LDU, 8), ...quad(0, STUD_LDU, -1)]),
+    );
+    expect(solidMeetsShellInCell(studs, { shell: sunk, pose: AS_LAID }, false, 0, 0, out)).toBe(
+      true,
+    );
+    expect(out.candidateBottomLdu).toBe(-1);
   });
 });

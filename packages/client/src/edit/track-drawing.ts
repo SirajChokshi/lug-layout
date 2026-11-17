@@ -15,6 +15,7 @@ import {
   planTrianglesOverlap,
   type BaseCells,
   type OwnerFilter,
+  type PlacedShell,
   type PlanShell,
   type TrackMove,
   type TrackPieceDef,
@@ -44,7 +45,7 @@ import type { PlacedOverlap } from "./placed-chunks.ts";
 import {
   localBoundsTriangles,
   localPlanTriangles,
-  localShellTriangles,
+  localShell,
   placedPlan,
   trackPlanTransform,
   type PlacedPlan,
@@ -73,7 +74,7 @@ export interface KitPart {
   readonly yLdu: number;
   readonly heightLdu: number;
   readonly plan: Float64Array;
-  readonly shell: Float64Array;
+  readonly shell: PlanShell;
   readonly bounds: Float64Array;
 }
 
@@ -85,7 +86,7 @@ export interface LaidTrackPiece {
   readonly cells: BaseCells;
   readonly bottomLdu: number;
   readonly topLdu: number;
-  readonly shell: PlanShell;
+  readonly shell: PlacedShell;
 }
 
 export interface HeldTrackRequest {
@@ -113,7 +114,7 @@ export interface TrackHost {
     cells: BaseCells,
     bottomLdu: number,
     topLdu: number,
-    shell: PlanShell,
+    shell: PlacedShell,
     exempt: OwnerFilter,
   ): PlacedOverlap | null;
   neighbours(cells: BaseCells): ReadonlySet<number>;
@@ -123,7 +124,7 @@ export interface TrackHost {
     cells: BaseCells,
     bottomLdu: number,
     topLdu: number,
-    shell: PlanShell,
+    shell: PlacedShell,
   ): void;
   relaid(pieces: ReadonlyArray<LaidTrackPiece>): void;
 }
@@ -372,7 +373,7 @@ export class TrackDrawing {
         yLdu: -part.boundsMin[1],
         heightLdu: Math.ceil(part.boundsMax[1] - part.boundsMin[1]),
         plan: localPlanTriangles(part),
-        shell: localShellTriangles(part, -part.boundsMin[1]),
+        shell: localShell(part, -part.boundsMin[1]),
         bounds: localBoundsTriangles(part),
       };
       if (inKit) this.byDef.set(piece.id, kitPart);

@@ -18,7 +18,7 @@ import {
   type OwnerFilter,
   type PlacedSolid,
   type PlacementHandle,
-  type PlanShell,
+  type PlacedShell,
   type VolumeHit,
   type PlacementRef,
   type TrackSupport,
@@ -71,6 +71,7 @@ export interface PlacementCheck {
   readonly support: UpperSupport | null;
   readonly restsOn: VolumeOwner | null;
   readonly overlap: PlacedOverlap | null;
+  readonly checking: boolean;
 }
 
 export interface LostSupport {
@@ -93,7 +94,7 @@ interface TrackStamp {
   readonly cells: BaseCells;
   readonly bottomLdu: number;
   readonly topLdu: number;
-  readonly shell: PlanShell;
+  readonly shell: PlacedShell;
 }
 
 const keepEveryOwner: OwnerFilter = () => false;
@@ -242,11 +243,11 @@ interface CandidateCells {
 
 function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells {
   const { cells, solid } = placeable;
-  const { start, spans } = solid.spans;
+  const { coarseStart: start, coarseSpans: spans, cells: patternOf } = solid.coarse;
   let volumeCount = 0;
   let baseCount = 0;
   for (let cell = 0; cell < cells.width * cells.depth; cell++) {
-    const pattern = solid.samples.cells[cell] ?? -1;
+    const pattern = patternOf[cell] ?? -1;
     if (pattern >= 0) volumeCount += ((start[pattern + 1] ?? 0) - (start[pattern] ?? 0)) / 2;
     if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) baseCount++;
   }
@@ -270,7 +271,7 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
       const cell = j * cells.width + i;
       const wx = pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
       const wz = pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
-      const pattern = solid.samples.cells[cell] ?? -1;
+      const pattern = patternOf[cell] ?? -1;
       if (pattern >= 0) {
         for (let k = start[pattern] ?? 0; k < (start[pattern + 1] ?? 0); k += 2) {
           volumes.cellX[v] = wx;
@@ -291,10 +292,12 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
   return { base, volumes };
 }
 
-function placedSolid(placeable: Placeable, pose: LatticePose, yPlates: number): PlacedSolid {
+function placedSolid(placeable: Placeable, pose: LatticePose, yPlates: number): PlacedSolid | null {
   const { cells, solid } = placeable;
+  const { samples } = solid;
+  if (!samples) return null;
   return {
-    samples: solid.samples,
+    samples,
     cellX0: cells.cellX0,
     cellZ0: cells.cellZ0,
     width: cells.width,
@@ -303,7 +306,8 @@ function placedSolid(placeable: Placeable, pose: LatticePose, yPlates: number): 
     z: pose.z,
     cos: pose.cos,
     sin: pose.sin,
-    ySteps: (yPlates * PLATE_LDU + solid.yLdu) * solid.samples.stepsPerLdu,
+    ySteps: (yPlates * PLATE_LDU + solid.yLdu) * samples.stepsPerLdu,
+    studLayerLdu: solid.studLayerLdu === null ? null : yPlates * PLATE_LDU + solid.studLayerLdu,
   };
 }
 
@@ -376,7 +380,9 @@ class PlacedEntry implements PlacedModel {
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
     }
     this.candidate = candidateCells(placeable, this.pose);
-    this.solid = placedSolid(placeable, this.pose, handle.yPlates);
+    const solid = placedSolid(placeable, this.pose, handle.yPlates);
+    if (!solid) throw new Error(`${placeable.label} is placed before its solid samples loaded`);
+    this.solid = solid;
     this.registerCells(chunkOrigins);
     this.box = this.worldBox();
   }
@@ -734,17 +740,20 @@ export class PlacedChunks {
         ? null
         : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
       const solid = placedSolid(placeable, pose, yPlates);
-      const hit = firstContact(
-        raised(cells.volumes, yPlates * PLATE_LDU),
-        this.solids,
-        exempt,
-        (owner, cellX, cellZ, out) => this.solidMeets(solid, owner, cellX, cellZ, out),
-      );
+      const hit =
+        solid &&
+        firstContact(
+          raised(cells.volumes, yPlates * PLATE_LDU),
+          this.solids,
+          exempt,
+          (owner, cellX, cellZ, out) => this.solidMeets(solid, owner, cellX, cellZ, out),
+        );
       return {
         yPlates,
         support,
         restsOn: lands.owner === null ? null : (this.owners.get(lands.owner) ?? null),
         overlap: hit ? this.placedOverlap(hit) : null,
+        checking: solid === null,
       };
     });
   }
@@ -767,7 +776,7 @@ export class PlacedChunks {
     cells: BaseCells,
     bottomLdu: number,
     topLdu: number,
-    shell: PlanShell,
+    shell: PlacedShell,
     exempt: OwnerFilter,
   ): PlacedOverlap | null {
     const volumes: CellVolumes = {
@@ -817,7 +826,7 @@ export class PlacedChunks {
     cells: BaseCells,
     bottomLdu: number,
     topLdu: number,
-    shell: PlanShell,
+    shell: PlacedShell,
   ): void {
     const owner = this.nextOwner++;
     const stamp: TrackStamp = { owner, piece, pieceId, cells, bottomLdu, topLdu, shell };

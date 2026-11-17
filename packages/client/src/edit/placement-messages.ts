@@ -8,7 +8,8 @@ export type RefusalRule =
   | "support"
   | "overlap"
   | "carries"
-  | "track-support";
+  | "track-support"
+  | "checking";
 
 export interface Refusal {
   readonly rule: RefusalRule;
@@ -91,6 +92,12 @@ export function supportRefusal(
 
 export function checkRefusal(label: string, check: PlacementCheck): Refusal | null {
   if (check.overlap) return overlapRefusal(label, check.overlap);
+  if (check.checking) {
+    return {
+      rule: "checking",
+      message: `${label}: loading its exact shape to check it against what's placed. Try again in a moment.`,
+    };
+  }
   return check.support ? supportRefusal(label, check.support, check.restsOn) : null;
 }
 

@@ -1,4 +1,4 @@
-import { BundleManifest, GltfDocument, ModelFile } from "@brr/schema/bundle";
+import { BundleManifest, GltfDocument, ModelFile, decodeSolidSidecar } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
@@ -79,8 +79,22 @@ export async function publishBundle(
   for (const { file } of [...manifest.studPrimitives, ...manifest.parts]) {
     decodeDeclared(GltfDocument, glbJson(await publish(file), file), file);
   }
-  for (const { file } of manifest.models) {
-    decodeDeclared(ModelFile, JSON.parse((await publish(file)).toString("utf8")), file);
+  for (const { file, solidSamples } of manifest.models) {
+    const model = decodeDeclared(
+      ModelFile,
+      JSON.parse((await publish(file)).toString("utf8")),
+      file,
+    );
+    const solid = model.cover.cells?.solid;
+    if (!solid !== !solidSamples) {
+      throw new Error(`${file}: the solid sidecar and the model's coarse solid must come together`);
+    }
+    if (solid && solidSamples) {
+      const bytes = await publish(solidSamples.file);
+      const exact = new Uint8Array(bytes).buffer;
+      const perCell = solid.samplesPerStud * solid.samplesPerStud;
+      decodeSolidSidecar(exact, solidSamples, solid.coarseStart.length - 1, perCell);
+    }
   }
   if (manifest.compiler !== null) await publish(manifest.compiler.file);
   const published = new Set(renamed.values());

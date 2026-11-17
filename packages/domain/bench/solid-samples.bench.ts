@@ -33,6 +33,7 @@ function interleavedFloors(): PlacedSolid {
     cos: 1,
     sin: 0,
     ySteps: 0,
+    studLayerLdu: null,
   };
 }
 

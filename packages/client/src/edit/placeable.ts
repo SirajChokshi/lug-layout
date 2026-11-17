@@ -1,18 +1,14 @@
 import {
   EMPTY_COLUMN,
+  type CoarseSolidCells,
   type ModelCells,
   type PartAsset,
   type PartModel,
   type PartModelLattice,
 } from "@brr/catalog";
-import {
-  solidPatternSpans,
-  type PatternSpans,
-  type RoadSurface,
-  type SolidSamples,
-} from "@brr/domain";
+import type { RoadSurface, SolidSamples } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import type { ModelRole, TrackCatalog, Vec3 } from "@brr/schema/bundle";
+import type { ModelRole, SolidSampleArrays, TrackCatalog, Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
@@ -42,10 +38,34 @@ export interface PlaceableCells {
   readonly offLatticeTop: boolean;
 }
 
-export interface PlaceableSolid {
-  readonly samples: SolidSamples;
-  readonly yLdu: number;
-  readonly spans: PatternSpans;
+export class PlaceableSolid {
+  private loaded: SolidSamples | null = null;
+  private loading: Promise<void> | null = null;
+
+  constructor(
+    readonly coarse: CoarseSolidCells,
+    readonly yLdu: number,
+    readonly studLayerLdu: number | null,
+    private readonly source: SolidSampleArrays | (() => Promise<SolidSampleArrays>),
+  ) {
+    if (typeof source !== "function") this.adopt(source);
+  }
+
+  get samples(): SolidSamples | null {
+    return this.loaded;
+  }
+
+  load(): Promise<void> {
+    const { source } = this;
+    if (typeof source !== "function") return Promise.resolve();
+    this.loading ??= source().then((arrays) => this.adopt(arrays));
+    return this.loading;
+  }
+
+  private adopt({ lists, patterns }: SolidSampleArrays): void {
+    const { samplesPerStud, stepsPerLdu, cells } = this.coarse;
+    this.loaded = { samplesPerStud, stepsPerLdu, cells, lists, patterns };
+  }
 }
 
 export interface StudLattice {
@@ -201,11 +221,11 @@ function modelCells(
   };
 }
 
-function placeableSolid(samples: SolidSamples, yLdu: number, label: string): PlaceableSolid {
+function wholeLdu(yLdu: number, label: string): number {
   if (!Number.isInteger(yLdu)) {
     throw new Error(`${label} solid sits ${yLdu} LDU above its frame, not a whole LDU`);
   }
-  return { samples, yLdu, spans: solidPatternSpans(samples) };
+  return yLdu;
 }
 
 function partSolid(part: PartAsset, cells: PlaceableCells, shift: Vec3): PlaceableSolid {
@@ -219,7 +239,8 @@ function partSolid(part: PartAsset, cells: PlaceableCells, shift: Vec3): Placeab
   ) {
     throw new Error(`${part.id} solid samples do not cover its stud cells`);
   }
-  return placeableSolid(solid, shift[1], part.id);
+  const studLayer = isBaseplatePart(part) ? part.boundsMax[1] + shift[1] : null;
+  return new PlaceableSolid(solid, wholeLdu(shift[1], part.id), studLayer, solid);
 }
 
 function partCells(part: PartAsset, shift: Vec3, tableY: number): PlaceableCells {
@@ -442,7 +463,12 @@ export function modelPlaceable(
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
     cells: modelCells(cells, shift, name, restPlatesInFrame, !isModule, tableY),
-    solid: placeableSolid(cells.solid, restPlatesInFrame * PLATE_LDU, name),
+    solid: new PlaceableSolid(
+      cells.solid,
+      wholeLdu(restPlatesInFrame * PLATE_LDU, name),
+      null,
+      () => cells.solid.loadSamples(),
+    ),
     box,
     partBoxes,
     frameShift: shift,

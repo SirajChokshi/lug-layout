@@ -7,6 +7,7 @@ import {
   type ModelSection,
   type ModelVehicle,
   type PartRole,
+  type SolidSampleArrays,
   type TrackEnd,
   type Vec3,
 } from "@brr/schema/bundle";
@@ -64,15 +65,19 @@ export interface PartModelLattice {
 
 export { EMPTY_COLUMN } from "@brr/schema/bundle";
 
-export interface SolidCells {
+export interface CoarseSolidCells {
   readonly samplesPerStud: number;
   readonly stepsPerLdu: number;
-  readonly lists: Int32Array;
-  readonly patterns: Int32Array;
   readonly cells: Int32Array;
+  readonly coarseStart: Int32Array;
+  readonly coarseSpans: Int32Array;
 }
 
-export interface PartSolidCells extends SolidCells {
+export interface ModelSolidCells extends CoarseSolidCells {
+  loadSamples(): Promise<SolidSampleArrays>;
+}
+
+export interface PartSolidCells extends CoarseSolidCells, SolidSampleArrays {
   readonly originX: number;
   readonly originZ: number;
   readonly width: number;
@@ -90,7 +95,7 @@ export interface ModelCells {
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
-  readonly solid: SolidCells;
+  readonly solid: ModelSolidCells;
 }
 
 export interface ModelStudCover {

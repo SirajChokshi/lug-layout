@@ -1,6 +1,8 @@
 import { pose16, ZETA16_COEFFICIENT_COUNT, ZETA16_ORDER, zeta16, type Zeta16 } from "@brr/math";
 import * as v from "valibot";
 
+export { decodeSolidSidecar, type SolidSampleArrays } from "./solid-sidecar.ts";
+
 const MATRIX_FLOATS = 12;
 const STUD_PHASES = 20;
 const BITS_PER_WORD = 32;
@@ -184,49 +186,63 @@ function listsCovered(lists: ReadonlyArray<number>): (offset: number) => boolean
     offset >= 0 && offset < lists.length && offset + 1 + 2 * (lists[offset] ?? 0) <= lists.length;
 }
 
-const SolidSampleArrays = v.object({
-  samplesPerStud: v.pipe(Integer, v.minValue(1)),
-  stepsPerLdu: v.pipe(Integer, v.minValue(1)),
-  lists: v.array(Integer),
-  patterns: v.array(Count),
-  cells: v.array(v.pipe(Integer, v.minValue(-1))),
-});
-
 function samplesPerCell(samplesPerStud: number): number {
   return samplesPerStud * samplesPerStud;
 }
 
-type SolidSampleArrays = v.InferOutput<typeof SolidSampleArrays>;
+const CoarseSolidFields = v.object({
+  samplesPerStud: v.pipe(Integer, v.minValue(1)),
+  stepsPerLdu: v.pipe(Integer, v.minValue(1)),
+  cells: v.array(v.pipe(Integer, v.minValue(-1))),
+  coarseStart: v.array(Count),
+  coarseSpans: v.array(Integer),
+});
+type CoarseSolidFields = v.InferOutput<typeof CoarseSolidFields>;
 
-function wholeCellPatterns({ samplesPerStud, patterns }: SolidSampleArrays): boolean {
-  return patterns.length % samplesPerCell(samplesPerStud) === 0;
+function coarseStartsSpans({ coarseStart, coarseSpans }: CoarseSolidFields): boolean {
+  return (
+    coarseStart[0] === 0 &&
+    coarseStart.at(-1) === coarseSpans.length &&
+    coarseStart.every((at, i) => i === 0 || (at >= (coarseStart[i - 1] ?? 0) && at % 2 === 0))
+  );
 }
 
-function patternsInLists({ lists, patterns }: SolidSampleArrays): boolean {
-  return patterns.every(listsCovered(lists));
+function cellsNamePatterns({ coarseStart, cells }: CoarseSolidFields): boolean {
+  return cells.every((pattern) => pattern < coarseStart.length - 1);
 }
 
-function cellsNamePatterns({ samplesPerStud, patterns, cells }: SolidSampleArrays): boolean {
-  return cells.every((pattern) => pattern < patterns.length / samplesPerCell(samplesPerStud));
-}
-
-const WHOLE_CELL_PATTERNS = "the sample patterns are not whole stud cells";
-const PATTERNS_IN_LISTS = "a sample pattern points outside the span lists";
+const COARSE_STARTS_SPANS = "the coarse span starts do not index the coarse spans";
 const CELLS_NAME_PATTERNS = "a cell names a sample pattern that does not exist";
 
-export const SolidSamples = v.pipe(
-  SolidSampleArrays,
-  v.check((solid) => wholeCellPatterns(solid), WHOLE_CELL_PATTERNS),
-  v.check((solid) => patternsInLists(solid), PATTERNS_IN_LISTS),
+export const CoarseSolid = v.pipe(
+  CoarseSolidFields,
+  v.check((solid) => coarseStartsSpans(solid), COARSE_STARTS_SPANS),
   v.check((solid) => cellsNamePatterns(solid), CELLS_NAME_PATTERNS),
 );
-export type SolidSamples = v.InferOutput<typeof SolidSamples>;
+export type CoarseSolid = v.InferOutput<typeof CoarseSolid>;
+
+export const SolidSidecar = v.object({ file: v.string(), lists: Count, patterns: Count });
+export type SolidSidecar = v.InferOutput<typeof SolidSidecar>;
 
 export const PartSolid = v.pipe(
-  v.object({ ...SolidSampleArrays.entries, origin: v.tuple([Finite, Finite]), size: CellGridSize }),
-  v.check((solid) => wholeCellPatterns(solid), WHOLE_CELL_PATTERNS),
-  v.check((solid) => patternsInLists(solid), PATTERNS_IN_LISTS),
+  v.object({
+    ...CoarseSolidFields.entries,
+    lists: v.array(Integer),
+    patterns: v.array(Count),
+    origin: v.tuple([Finite, Finite]),
+    size: CellGridSize,
+  }),
+  v.check((solid) => coarseStartsSpans(solid), COARSE_STARTS_SPANS),
   v.check((solid) => cellsNamePatterns(solid), CELLS_NAME_PATTERNS),
+  v.check(
+    ({ samplesPerStud, patterns, coarseStart }) =>
+      patterns.length === (coarseStart.length - 1) * samplesPerCell(samplesPerStud),
+    "the sample patterns do not match the coarse patterns",
+  ),
+  v.check(
+    ({ lists, patterns }) => patterns.every(listsCovered(lists)),
+    "a sample pattern points outside the span lists",
+  ),
   v.check(
     ({ size, cells }) => cells.length === cellCount(size),
     "the solid's cells do not cover its grid",
@@ -244,7 +260,7 @@ export const ModelFileCells = v.pipe(
     flat: v.array(Count),
     columnBottom: v.array(ColumnPlates),
     columnTop: v.array(ColumnPlates),
-    solid: SolidSamples,
+    solid: CoarseSolid,
   }),
   v.check(
     ({ size, footprint, flat }) => [...footprint, ...flat].every((cell) => cell < cellCount(size)),
@@ -322,6 +338,7 @@ export const BundleModelEntry = v.object({
   sha256: Sha256Hex,
   cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
+  solidSamples: v.optional(SolidSidecar),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
 

@@ -191,7 +191,7 @@ fn cover_json(cover: &ModelCover) -> Value {
             "flat": cells.flat,
             "columnBottom": cells.column_bottom,
             "columnTop": cells.column_top,
-            "solid": solid_json(&cells.solid),
+            "solid": coarse_json(&cells.solid),
         })
     });
     json!({
@@ -203,14 +203,19 @@ fn cover_json(cover: &ModelCover) -> Value {
     })
 }
 
-fn solid_json(solid: &SolidSamples) -> Value {
+fn coarse_json(solid: &SolidSamples) -> Value {
+    let coarse = solid.coarse_spans();
     json!({
         "samplesPerStud": SAMPLES_PER_STUD,
         "stepsPerLdu": STEPS_PER_LDU,
-        "lists": solid.lists,
-        "patterns": solid.patterns,
         "cells": solid.cells,
+        "coarseStart": coarse.start,
+        "coarseSpans": coarse.spans,
     })
+}
+
+fn sidecar_json(file: &str, solid: &SolidSamples) -> Value {
+    json!({ "file": file, "lists": solid.lists.len(), "patterns": solid.patterns.len() })
 }
 
 fn whole_cells(ldu: f64) -> Result<f64, String> {
@@ -239,7 +244,9 @@ fn part_solid_json(solid: &PartSolid, [min, max]: [Vec3; 2]) -> Result<Value, St
             datum_y: 0.0,
         },
     );
-    let mut out = solid_json(&samples);
+    let mut out = coarse_json(&samples);
+    out["lists"] = json!(samples.lists);
+    out["patterns"] = json!(samples.patterns);
     out["origin"] = json!(origin.map(|cells| cells * STUD_LDU));
     out["size"] = json!([width, depth]);
     Ok(out)
@@ -733,8 +740,22 @@ fn run(args: &Args) -> Result<(), String> {
                 baseplate: shapes[index].is_baseplate(),
             })
             .collect();
-        let (cover_file, cover_manifest) = match reuse {
-            Some(cached) => (cached["file"].clone(), cached["summary"].clone()),
+        let model_file = format!("model-{}.json", stem(name));
+        let sidecar_file = format!("model-{}.solid.bin", stem(name));
+        let cached_sidecar = cached.as_ref().map(|path| path.with_extension("solid.bin"));
+        let (cover_file, cover_manifest, sidecar) = match reuse {
+            Some(cached) => {
+                let sidecar = match (&cached["sidecar"], &cached_sidecar) {
+                    (Value::Null, _) => None,
+                    (header, Some(path)) => {
+                        let bytes =
+                            fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+                        Some((header.clone(), bytes))
+                    }
+                    (_, None) => return Err(format!("{file}: cached cover has no sidecar path")),
+                };
+                (cached["file"].clone(), cached["summary"].clone(), sidecar)
+            }
             None => {
                 let cover = model_cover(
                     &cover_instances,
@@ -744,18 +765,32 @@ fn run(args: &Args) -> Result<(), String> {
                     lattice.as_ref().map(|lattice| lattice.phase),
                     stud_shape,
                 );
+                let sidecar = cover.cells.as_ref().map(|cells| {
+                    (
+                        sidecar_json(&sidecar_file, &cells.solid),
+                        cells.solid.sample_bytes(),
+                    )
+                });
                 let pair = (cover_json(&cover), cover_summary(&cover));
                 if let (Some(path), Lod::Standard) = (&cached, args.lod) {
                     fs::create_dir_all(path.parent().unwrap_or(&args.out))
                         .map_err(|e| e.to_string())?;
+                    let header = sidecar
+                        .as_ref()
+                        .map_or(Value::Null, |(header, _)| header.clone());
                     fs::write(
                         path,
-                        serde_json::to_vec(&json!({ "file": pair.0, "summary": pair.1 }))
-                            .map_err(|e| e.to_string())?,
+                        serde_json::to_vec(
+                            &json!({ "file": pair.0, "summary": pair.1, "sidecar": header }),
+                        )
+                        .map_err(|e| e.to_string())?,
                     )
                     .map_err(|e| e.to_string())?;
+                    if let (Some((_, bytes)), Some(sidecar_path)) = (&sidecar, &cached_sidecar) {
+                        fs::write(sidecar_path, bytes).map_err(|e| e.to_string())?;
+                    }
                 }
-                pair
+                (pair.0, pair.1, sidecar)
             }
         };
         let total_studs: usize = cover_slots
@@ -778,7 +813,6 @@ fn run(args: &Args) -> Result<(), String> {
             }),
             None => Value::Null,
         };
-        let model_file = format!("model-{}.json", stem(name));
         let sections: Vec<Value> = baked
             .sections
             .iter()
@@ -824,6 +858,10 @@ fn run(args: &Args) -> Result<(), String> {
             "sha256": entry["sha256"],
             "cover": cover_manifest,
         });
+        if let Some((header, bytes)) = &sidecar {
+            fs::write(args.out.join(&sidecar_file), bytes).map_err(|e| e.to_string())?;
+            manifest_entry["solidSamples"] = header.clone();
+        }
         if !not_drawn.is_empty() {
             manifest_entry["notDrawn"] = json!(not_drawn);
         }

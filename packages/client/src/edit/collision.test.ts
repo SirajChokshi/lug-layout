@@ -32,6 +32,10 @@ const BASEPLATE = "ldraw:3811";
 const MODULE_LDU = 640;
 const TRACK_HALF_WIDTH_LDU = 80;
 const RUN_LDU = 240;
+const CURVED_RUN = [
+  [-860, -440],
+  [720, -120],
+] as const;
 const NDC_TO_LDU = 10_000;
 const RAY_START_Y = 1000;
 
@@ -112,6 +116,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function exactShapesLoaded(editor: IEditor): Promise<void> {
+  const loaded = (): boolean => {
+    const { loaded: done, total } = editor.snapshot().solids;
+    return total > 0 && done === total;
+  };
+  return new Promise((resolve) => {
+    if (loaded()) {
+      resolve();
+      return;
+    }
+    const stop = editor.subscribe(() => {
+      if (!loaded()) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
 async function startEditor(models: ReadonlyArray<string>): Promise<IEditor> {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
@@ -127,6 +149,7 @@ async function startEditor(models: ReadonlyArray<string>): Promise<IEditor> {
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1 });
+  await exactShapesLoaded(editor);
   return editor;
 }
 
@@ -217,4 +240,24 @@ it("lays track on baseplate studs flush against a real building, and refuses a r
   );
   expect(flush.track?.lastCommit).toBe("laid");
   expect(flush.track?.pieces).toBeGreaterThan(0);
+}, 120_000);
+
+it("lays four 9V straights and a curve straight onto the studs of a 3 × 2 field of baseplates", async () => {
+  const editor = await startEditor([]);
+  expect(editor.snapshot().error).toBeNull();
+  chooseGroup(editor, BASEPLATE);
+  for (const x of [-MODULE_LDU, 0, MODULE_LDU]) {
+    for (const z of [-MODULE_LDU / 2, MODULE_LDU / 2]) {
+      editor.click(x / NDC_TO_LDU, z / NDC_TO_LDU, 0);
+    }
+  }
+  expect(editor.snapshot().placements).toBe(6);
+  editor.chooseItem(TRACK_ITEM_ID);
+  const [from, to] = CURVED_RUN;
+  editor.pointerMove(from[0] / NDC_TO_LDU, from[1] / NDC_TO_LDU);
+  editor.dragStart(from[0] / NDC_TO_LDU, from[1] / NDC_TO_LDU);
+  editor.dragMove(to[0] / NDC_TO_LDU, to[1] / NDC_TO_LDU);
+  expect(editor.snapshot().track?.drag).toMatchObject({ straights: 4, curves: 1, blocked: null });
+  editor.dragEnd(to[0] / NDC_TO_LDU, to[1] / NDC_TO_LDU, 0);
+  expect(editor.snapshot().track).toMatchObject({ lastCommit: "laid", pieces: 5 });
 }, 120_000);

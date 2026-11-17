@@ -1,5 +1,5 @@
 import { STUD_LDU } from "@brr/math";
-import { REPRESENTATION_EPSILON_LDU, packedCellKey } from "./cell-raster.ts";
+import { REPRESENTATION_EPSILON_LDU, packedCellKey, type PlaneTransform } from "./cell-raster.ts";
 
 export interface SolidSamples {
   readonly samplesPerStud: number;
@@ -20,6 +20,7 @@ export interface PlacedSolid {
   readonly cos: number;
   readonly sin: number;
   readonly ySteps: number;
+  readonly studLayerLdu: number | null;
 }
 
 export interface Contact {
@@ -31,49 +32,12 @@ export interface Contact {
   candidateTopLdu: number;
 }
 
-export interface PatternSpans {
-  readonly start: Int32Array;
-  readonly spans: Int32Array;
-}
-
 const NO_LIST = -1;
 const TRIANGLE_FLOATS = 9;
+const COVERAGE_TOLERANCE = 1e-9;
 
 function samplesPerCell(samples: SolidSamples): number {
   return samples.samplesPerStud * samples.samplesPerStud;
-}
-
-export function solidPatternSpans(samples: SolidSamples): PatternSpans {
-  const perCell = samplesPerCell(samples);
-  const patternCount = samples.patterns.length / perCell;
-  const start = new Int32Array(patternCount + 1);
-  const spans: number[] = [];
-  const merged: number[] = [];
-  for (let p = 0; p < patternCount; p++) {
-    const ends: Array<readonly [number, number]> = [];
-    for (let s = 0; s < perCell; s++) {
-      const offset = samples.patterns[p * perCell + s] ?? 0;
-      const count = samples.lists[offset] ?? 0;
-      for (let k = 0; k < count; k++) {
-        const bottom = Math.floor((samples.lists[offset + 1 + 2 * k] ?? 0) / samples.stepsPerLdu);
-        const top = Math.ceil((samples.lists[offset + 2 + 2 * k] ?? 0) / samples.stepsPerLdu);
-        ends.push([bottom, top]);
-      }
-    }
-    ends.sort((a, b) => a[0] - b[0]);
-    merged.length = 0;
-    for (const [bottom, top] of ends) {
-      const last = merged.length - 1;
-      if (last > 0 && bottom <= (merged[last] ?? 0)) {
-        merged[last] = Math.max(merged[last] ?? 0, top);
-      } else {
-        merged.push(bottom, top);
-      }
-    }
-    spans.push(...merged);
-    start[p + 1] = spans.length;
-  }
-  return { start, spans: Int32Array.from(spans) };
 }
 
 function cellPattern(solid: PlacedSolid, cellX: number, cellZ: number): number {
@@ -195,7 +159,8 @@ export class PlanShell {
       const wa = ((bx - x) * (cz - z) - (bz - z) * (cx - x)) / area;
       const wb = ((cx - x) * (az - z) - (cz - z) * (ax - x)) / area;
       const wc = 1 - wa - wb;
-      if (wa <= 0 || wb <= 0 || wc <= 0) continue;
+      if (wa < -COVERAGE_TOLERANCE || wb < -COVERAGE_TOLERANCE || wc < -COVERAGE_TOLERANCE)
+        continue;
       const ya = t[o + 1] ?? 0;
       const yb = t[o + 4] ?? 0;
       const yc = t[o + 7] ?? 0;
@@ -210,11 +175,16 @@ export class PlanShell {
   }
 }
 
+export interface PlacedShell {
+  readonly shell: PlanShell;
+  readonly pose: PlaneTransform;
+}
+
 const shellSpan = new Float64Array(2);
 
 export function solidMeetsShellInCell(
   solid: PlacedSolid,
-  shell: PlanShell,
+  { shell, pose }: PlacedShell,
   solidIsCandidate: boolean,
   cellX: number,
   cellZ: number,
@@ -231,9 +201,19 @@ export function solidMeetsShellInCell(
     for (let i = 0; i < perStud; i++) {
       const x = cellX * STUD_LDU + (i + 0.5) * pitch;
       const list = listOf(solid, pattern, i, j);
-      if (!shell.spanAt(x, z, shellSpan)) continue;
+      const dx = x - pose.x;
+      const dz = z - pose.z;
+      if (!shell.spanAt(pose.cos * dx + pose.sin * dz, pose.cos * dz - pose.sin * dx, shellSpan)) {
+        continue;
+      }
       const shellBottom = shellSpan[0] ?? 0;
       const shellTop = shellSpan[1] ?? 0;
+      if (
+        solid.studLayerLdu !== null &&
+        shellBottom >= solid.studLayerLdu - REPRESENTATION_EPSILON_LDU
+      ) {
+        continue;
+      }
       const count = lists[list] ?? 0;
       for (let k = 0; k < count; k++) {
         const bottomLdu = ((lists[list + 1 + 2 * k] ?? 0) + solid.ySteps) / steps;

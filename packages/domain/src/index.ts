@@ -131,10 +131,9 @@ export { planTrianglesOverlap, type PlanBox } from "./plan-overlap.ts";
 export {
   PlanShell,
   solidMeetsShellInCell,
-  solidPatternSpans,
   solidsMeetInCell,
   type Contact,
-  type PatternSpans,
+  type PlacedShell,
   type PlacedSolid,
   type SolidSamples,
 } from "./solid-samples.ts";

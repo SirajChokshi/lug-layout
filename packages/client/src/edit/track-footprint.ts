@@ -2,11 +2,12 @@ import type { PartAsset } from "@brr/catalog";
 import type { TrackPartFrame } from "@brr/schema/bundle";
 import {
   HALF_PLANE_FLOATS,
-  PLAN_TRIANGLE_FLOATS,
   PlanShell,
+  PLAN_TRIANGLE_FLOATS,
   placedPlanCells,
   planTriangleCells,
   type BaseCells,
+  type PlacedShell,
   type PlaneTransform,
 } from "@brr/domain";
 import { STUD_LDU, ZETA16_ORDER, composePose16, zeta16ToStuds, type Pose16 } from "@brr/math";
@@ -51,7 +52,7 @@ export function localPlanTriangles(part: PartAsset): Float64Array {
   return out;
 }
 
-export function localShellTriangles(part: PartAsset, yLdu: number): Float64Array {
+export function localShell(part: PartAsset, yLdu: number): PlanShell {
   const { positions, groups } = part.mesh;
   const kept: number[] = [];
   for (const group of groups) {
@@ -64,7 +65,7 @@ export function localShellTriangles(part: PartAsset, yLdu: number): Float64Array
       }
     }
   }
-  return Float64Array.from(kept);
+  return new PlanShell(Float64Array.from(kept));
 }
 
 export function localBoundsTriangles(part: PartAsset): Float64Array {
@@ -106,25 +107,12 @@ export interface PlacedPlan {
   readonly triangles: Float64Array;
   readonly cells: BaseCells;
   readonly support: BaseCells;
-  readonly shell: PlanShell;
-}
-
-function worldShell(local: Float64Array, transform: PlaneTransform): PlanShell {
-  const { cos, sin, x, z } = transform;
-  const world = new Float64Array(local.length);
-  for (let i = 0; i + POSITION_FLOATS <= local.length; i += POSITION_FLOATS) {
-    const lx = local[i] ?? 0;
-    const lz = local[i + 2] ?? 0;
-    world[i] = cos * lx - sin * lz + x;
-    world[i + 1] = local[i + 1] ?? 0;
-    world[i + 2] = sin * lx + cos * lz + z;
-  }
-  return new PlanShell(world);
+  readonly shell: PlacedShell;
 }
 
 export function placedPlan(
   local: Float64Array,
-  shell: Float64Array,
+  shell: PlanShell,
   placement: Pose16,
   frame: TrackPartFrame,
   connectors: ReadonlyArray<Pose16>,
@@ -142,6 +130,6 @@ export function placedPlan(
     triangles: world,
     cells: planTriangleCells(world),
     support: placedPlanCells(local, transform, connectorSpan(placement, connectors)),
-    shell: worldShell(shell, transform),
+    shell: { shell, pose: transform },
   };
 }

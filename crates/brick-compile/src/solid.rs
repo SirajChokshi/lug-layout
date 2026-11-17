@@ -46,14 +46,48 @@ pub struct SolidSamples {
     pub overlaps: Vec<[usize; 2]>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoarseSpans {
+    pub start: Vec<u32>,
+    pub spans: Vec<i32>,
+}
+
 impl SolidSamples {
-    pub fn spans_at(&self, cell: usize, sample: usize) -> &[i32] {
-        let Some(pattern) = usize::try_from(self.cells[cell]).ok() else {
-            return &[];
-        };
-        let start = self.patterns[pattern * SAMPLES_PER_CELL + sample] as usize;
-        let count = self.lists[start] as usize;
-        &self.lists[start + 1..start + 1 + 2 * count]
+    pub fn coarse_spans(&self) -> CoarseSpans {
+        let steps = STEPS_PER_LDU as i32;
+        let mut start = vec![0];
+        let mut spans: Vec<i32> = Vec::new();
+        for pattern in self.patterns.chunks(SAMPLES_PER_CELL) {
+            let mut ends: Vec<(i32, i32)> = Vec::new();
+            for &offset in pattern {
+                let offset = offset as usize;
+                let count = self.lists[offset] as usize;
+                for pair in self.lists[offset + 1..offset + 1 + 2 * count].chunks(2) {
+                    ends.push((pair[0].div_euclid(steps), -(-pair[1]).div_euclid(steps)));
+                }
+            }
+            ends.sort_unstable();
+            let first = spans.len();
+            for (bottom, top) in ends {
+                match spans[first..].last_mut() {
+                    Some(last) if bottom <= *last => *last = (*last).max(top),
+                    _ => spans.extend([bottom, top]),
+                }
+            }
+            start.push(spans.len() as u32);
+        }
+        CoarseSpans { start, spans }
+    }
+
+    pub fn sample_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(4 * (self.lists.len() + self.patterns.len()));
+        for value in &self.lists {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for &value in &self.patterns {
+            bytes.extend_from_slice(&(value as i32).to_le_bytes());
+        }
+        bytes
     }
 }
 
@@ -342,5 +376,30 @@ pub fn solid_samples(
         patterns,
         cells,
         overlaps,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn coarse_spans_union_every_sample_of_a_pattern_rounded_out_to_whole_ldu() {
+        let mut patterns = vec![1; SAMPLES_PER_CELL];
+        patterns[7] = 4;
+        let samples = SolidSamples {
+            lists: vec![0, 1, -64, 0, 2, 1, 40, 200, 300],
+            patterns,
+            cells: vec![0],
+            overlaps: Vec::new(),
+        };
+        assert_eq!(
+            samples.coarse_spans(),
+            CoarseSpans {
+                start: vec![0, 4],
+                spans: vec![-4, 3, 12, 19],
+            }
+        );
+        assert_eq!(samples.sample_bytes()[..8], [0, 0, 0, 0, 1, 0, 0, 0]);
     }
 }

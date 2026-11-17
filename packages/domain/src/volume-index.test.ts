@@ -9,6 +9,12 @@ import {
 } from "./volume-index.ts";
 
 const keepAll = (): boolean => false;
+const meetsAll = (): boolean => true;
+
+function meetsOnlyTheOverhang(owner: number, _x: number, _z: number, out: Contact): boolean {
+  out.xLdu = -9;
+  return owner === 3;
+}
 const ignoreBaseplate = (owner: number): boolean => owner === 1;
 
 function volumes(list: ReadonlyArray<readonly [number, number, number, number]>): CellVolumes {
@@ -50,24 +56,19 @@ describe("VolumeIndex", () => {
     expect(out).toEqual(owners);
   });
 
-  it("reports only coarse hits whose exact shapes meet, testing each owner once per cell", () => {
-    const tested: number[] = [];
-    const meetsOnlyTheOverhang = (owner: number, _x: number, _z: number, out: Contact): boolean => {
-      tested.push(owner);
-      out.xLdu = -9;
-      out.zLdu = -9;
-      return owner === 3;
-    };
+  it("reports only coarse hits whose exact shapes meet, never an ignored owner", () => {
     const twoSpans = volumes([
       [-1, -1, -8, 10],
       [-1, -1, 20, 90],
     ]);
-    expect(firstContact(twoSpans, index, ignoreBaseplate, meetsOnlyTheOverhang)).toMatchObject({
+    expect(firstContact(twoSpans, index, keepAll, meetsOnlyTheOverhang)).toMatchObject({
       owner: 3,
       cellX: -1,
       xLdu: -9,
     });
-    expect(tested).toEqual([2, 3]);
+    const lowOnly = volumes([[-1, -1, -8, -2]]);
+    expect(firstContact(lowOnly, index, keepAll, meetsAll)?.owner).toBe(1);
+    expect(firstContact(lowOnly, index, ignoreBaseplate, meetsAll)).toBeNull();
     expect(firstContact(twoSpans, index, keepAll, () => false)).toBeNull();
   });
 

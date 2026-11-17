@@ -155,6 +155,17 @@ export interface Overlap {
   readonly candidateTopLdu: number;
 }
 
+const contactOwners: number[] = [];
+const contactTested: number[] = [];
+const contactScratch: Contact = {
+  xLdu: 0,
+  zLdu: 0,
+  bottomLdu: 0,
+  topLdu: 0,
+  candidateBottomLdu: 0,
+  candidateTopLdu: 0,
+};
+
 export type MeetsIn = (owner: number, cellX: number, cellZ: number, out: Contact) => boolean;
 
 export function firstContact(
@@ -163,16 +174,10 @@ export function firstContact(
   ignore: OwnerFilter,
   meets: MeetsIn,
 ): Overlap | null {
-  const owners: number[] = [];
-  const tested: number[] = [];
-  const contact: Contact = {
-    xLdu: 0,
-    zLdu: 0,
-    bottomLdu: 0,
-    topLdu: 0,
-    candidateBottomLdu: 0,
-    candidateTopLdu: 0,
-  };
+  const owners = contactOwners;
+  const tested = contactTested;
+  const contact = contactScratch;
+  tested.length = 0;
   let lastX = Number.NaN;
   let lastZ = Number.NaN;
   for (let c = 0; c < volumes.count; c++) {
