@@ -1,0 +1,66 @@
+const list = await (await fetch(`http://127.0.0.1:9401/json/list`)).json();
+const ws = new WebSocket(list.find((t) => t.type === "page").webSocketDebuggerUrl);
+await new Promise((r) => ws.addEventListener("open", r));
+let id = 1; const pend = new Map();
+ws.addEventListener("message", (e) => { const m = JSON.parse(e.data); if (m.id && pend.has(m.id)) { pend.get(m.id)(m.result); pend.delete(m.id); } });
+const send = (method, params = {}) => new Promise((res) => { const i = id++; pend.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const ev = async (js) => (await send("Runtime.evaluate", { expression: js, returnByValue: true, awaitPromise: true })).result;
+const rate = Number(process.argv[3] ?? "1");
+await send("Emulation.setDeviceMetricsOverride", { width: 1800, height: 1000, deviceScaleFactor: 1, mobile: false });
+await send("Page.navigate", { url: process.argv[2] });
+for (let i = 0; i < 100; i++) { await sleep(300); if ((await ev("globalThis.__editor?.snapshot().status === 'ready'")).value) break; }
+for (let i = 0; i < 200; i++) { await sleep(300); if ((await ev("(() => { const s = globalThis.__editor.snapshot().solids; return !s || s.loaded === s.total; })()")).value) break; }
+const setup = await ev(`(() => {
+  const ed = globalThis.__editor;
+  const hover = () => ed.snapshot().hover;
+  const ndcFor = (x, z) => {
+    let nx = 0, ny = 0;
+    for (let i = 0; i < 40; i++) {
+      ed.pointerMove(nx, ny); const h = hover(); if (!h) { nx *= 0.5; ny *= 0.5; continue; }
+      if (h.x === x && h.z === z) return [nx, ny];
+      let a = 0, b = 0, c = 0, e = 0, det = 0;
+      for (let d = 0.02; d < 0.5 && !det; d *= 2) {
+        ed.pointerMove(nx + d, ny); const hx = hover(); ed.pointerMove(nx, ny + d); const hy = hover();
+        if (!hx || !hy) break;
+        a = (hx.x - h.x) / d; b = (hy.x - h.x) / d; c = (hx.z - h.z) / d; e = (hy.z - h.z) / d; det = a * e - b * c;
+      }
+      if (!det) return null;
+      const ex = x - h.x, ez = z - h.z; nx += (e * ex - b * ez) / det; ny += (-c * ex + a * ez) / det;
+    }
+    return [nx, ny];
+  };
+  const snap = (v) => Math.round(v / 20) * 20;
+  const path = [];
+  for (let i = 0; i <= 40; i++) path.push([-860 + 20 * i, -440]);
+  for (let i = 1; i <= 40; i++) { const t = (Math.PI / 2) * i / 40; path.push([snap(-60 + 400 * Math.sin(t)), snap(-40 - 400 * Math.cos(t))]); }
+  ed.chooseItem(null);
+  const plates = [];
+  for (const x of [-640, 0, 640]) for (const z of [-320, 320]) plates.push(ndcFor(x, z));
+  const ndc = path.map(([x, z]) => ndcFor(x, z));
+  if (plates.some((p) => !p) || ndc.some((p) => !p)) return { failed: true };
+  const base = ed.snapshot().catalog.find((c) => c.group === 'ldraw:3811');
+  ed.chooseItem(base.id);
+  for (const p of plates) ed.click(p[0], p[1], 0);
+  ed.chooseItem('track:lego-9v');
+  globalThis.__dragNdc = ndc;
+  return { placements: ed.snapshot().placements, points: ndc.length };
+})()`);
+await send("Emulation.setCPUThrottlingRate", { rate });
+const r = await ev(`(() => {
+  const ed = globalThis.__editor; const ndc = globalThis.__dragNdc;
+  ed.pointerMove(ndc[0][0], ndc[0][1]); ed.dragStart(ndc[0][0], ndc[0][1]);
+  const times = [];
+  for (let i = 1; i < ndc.length; i++) { const t0 = performance.now(); ed.dragMove(ndc[i][0], ndc[i][1]); times.push(performance.now() - t0); }
+  const last = ndc[ndc.length - 1];
+  const drag = ed.snapshot().track.drag;
+  const e0 = performance.now(); ed.dragEnd(last[0], last[1], 0); const endMs = performance.now() - e0;
+  const sorted = [...times].sort((a, b) => a - b);
+  const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+  const s = ed.snapshot();
+  return { moves: times.length, median: q(0.5), p95: q(0.95), max: sorted[sorted.length - 1], endMs, straights: drag && drag.straights, curves: drag && drag.curves, laid: s.track.pieces, commit: s.track.lastCommit };
+})()`);
+await send("Emulation.setCPUThrottlingRate", { rate: 1 });
+const v = r.value; const f = (n) => n.toFixed(1);
+console.log(JSON.stringify({ rate, setup: setup.value, ...v, median: f(v.median), p95: f(v.p95), max: f(v.max), endMs: f(v.endMs) }));
+process.exit(0);
