@@ -1,7 +1,12 @@
 # M1 S7 evidence: per-model voxel far LODs
 
 Code: branch `siraj/m1-model-lods-134d`, PR #52.
-- `vm-07720a9/`: the PR head, rebased onto `main` at `cd2b742`. This is the current evidence.
+- `vm-9742bc6/`: the PR head after rebasing onto `main` at `e3c57ab`, which only resolves merge conflicts.
+  - `voxcheck.json`: 21 models.
+  - `viewer-vs-main/`: city, track and run viewers.
+  - `editor-near-vs-main/`
+  - `smoke-*.png`: far-tier smoke screenshots.
+- `vm-07720a9/`: the full scene capture at `07720a9`, the same S7 code on `main` at `cd2b742`.
   - `voxcheck.json`
   - `models/`
   - `city-vs-main/`

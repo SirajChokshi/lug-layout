@@ -1,0 +1,137 @@
+{
+  "url": "http://localhost:4174/?track=ldraw:53400*16&api=webgl2&measure=1&warmup=2&frames=3",
+  "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Drawing buffer | 1280×801 px (devicePixelRatio 1) | Bundle | 4ff1c2d8b37d8d78 | Parts | 16 | Modules | 8 | Stud instances (drawn of total) | 768 of 768 | Scene triangles | 98,144 | Load | 109 ms | GPU buffers allocated so far, JS heap | vertex+index 0.2 MiB, other 0.0 MiB, JS heap 25.9 MiB | Render origin (chunks), rebases | (0, 1); 1 rebases, last at frame 0 | Track placements | 16 | Exact joins | 16 of 32 ends paired | Open ends | 0 | Coincident ends not joined | 0 | Switches | 0 | Directed edges (reachable from edge 0) | 32 (16) | Unverified track poses | 16 placements | Chunk tiers near/mid/far (median) | 8 / 0 / 0 | Draw calls (median) | 17 | Drawn triangles (median) | 98,145 | Scene coverage (sampled frames) | 8%, 8%, 8%, 8%, 8%, 8%, 8%, 8%, 8% | Median frame (GPU-synced) | 130.5 ms | p95 frame | 139.3 ms | Median CPU submit | 1.4 ms | Measured frames | 3",
+  "result": {
+    "params": {
+      "mode": "track",
+      "showEditState": false,
+      "api": "webgl2",
+      "lod": "standard",
+      "model": null,
+      "track": "ldraw:53400*16",
+      "run": false,
+      "trainModel": "10133-1",
+      "trains": [
+        {
+          "edge": 0,
+          "offsetLdu": 0
+        }
+      ],
+      "speedLduPerS": 400,
+      "accelerationLduPerS2": 150,
+      "brakingLduPerS2": 300,
+      "follow": false,
+      "simBenchTicks": 0,
+      "hud": true,
+      "start": true,
+      "autopilotSeed": null,
+      "city": false,
+      "parts": 20000,
+      "seed": 1,
+      "camera": "aerial",
+      "originChunkX": 0,
+      "originChunkZ": 0,
+      "dumpWorld": false,
+      "measure": true,
+      "warmupFrames": 2,
+      "measuredFrames": 3,
+      "maxMeasureMs": 120000
+    },
+    "backend": {
+      "requestedApi": "webgl2",
+      "backgroundSrgb": 14280434,
+      "activeApi": "webgl2",
+      "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+    },
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "summary": {
+      "bundleVersion": "4ff1c2d8b37d8d78",
+      "parts": 16,
+      "modules": 8,
+      "studInstances": 768,
+      "visibleStudInstances": 768,
+      "bodyTriangles": 61280,
+      "studTriangles": 36864,
+      "creditedFiles": 1764,
+      "model": null,
+      "track": {
+        "plan": "ldraw:53400*16",
+        "placements": 16,
+        "ends": 32,
+        "joins": 16,
+        "openEnds": 0,
+        "coincidentNotJoined": 0,
+        "switches": 0,
+        "directedEdges": 32,
+        "reachableFromFirstEdge": 16,
+        "unverifiedPlacements": 16
+      }
+    },
+    "memory": {
+      "vertexIndexBytes": 218644,
+      "otherBytes": 3264,
+      "jsHeapBytes": 27209035
+    },
+    "loadMs": 109.10000000149012,
+    "timings": {
+      "frames": 3,
+      "medianFrameMs": 130.5,
+      "p95FrameMs": 139.29999999701977,
+      "meanFrameMs": 132.96666666616997,
+      "medianCpuSubmitMs": 1.3999999985098839,
+      "fpsFromMedian": 7.662835249042145,
+      "medianDrawCalls": 17,
+      "medianDrawnTriangles": 98145,
+      "medianChunkTiers": {
+        "near": 8,
+        "mid": 0,
+        "far": 0
+      },
+      "sceneCoverage": [
+        0.07682291666666667,
+        0.078125,
+        0.07769097222222222,
+        0.07682291666666667,
+        0.078125,
+        0.07769097222222222,
+        0.07682291666666667,
+        0.078125,
+        0.07725694444444445
+      ],
+      "firstMeasuredFrame": 2,
+      "frameMs": [
+        129.10000000149012,
+        130.5,
+        139.29999999701977
+      ],
+      "cpuSubmitMs": [
+        1.3999999985098839,
+        1.199999999254942,
+        1.5
+      ]
+    },
+    "drawCalls": 17,
+    "drawnTriangles": 98145,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+    "worldPlacements": null,
+    "rebases": [
+      {
+        "frame": 0,
+        "chunkX": 0,
+        "chunkZ": 1,
+        "chunks": 8,
+        "ms": 0.10000000149011612
+      }
+    ]
+  },
+  "logs": [
+    "warning: [.WebGL-0x12cc001d2a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "warning: [.WebGL-0x12cc001d2a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "warning: [.WebGL-0x12cc001d2a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "warning: [.WebGL-0x12cc001d2a00]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+  ]
+}
