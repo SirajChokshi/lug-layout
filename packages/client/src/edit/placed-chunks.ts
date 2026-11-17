@@ -794,6 +794,7 @@ export class PlacedChunks {
   private readonly trackStamps = new Map<number, TrackStamp>();
   private readonly byTrackChunk = new Map<number, Set<TrackStamp>>();
   private nextOwner = 1;
+  private readonly trackOwnerByPiece = new Map<number, number>();
   private readonly isTrack: OwnerFilter = (owner) => this.owners.get(owner)?.kind === "track";
 
   constructor(private readonly backend: ISceneBackend) {}
@@ -847,7 +848,12 @@ export class PlacedChunks {
     });
   }
 
-  trackOverlap(cells: BaseCells, bottomLdu: number, topLdu: number): PlacedOverlap | null {
+  trackOverlap(
+    cells: BaseCells,
+    bottomLdu: number,
+    topLdu: number,
+    exempt: OwnerFilter,
+  ): PlacedOverlap | null {
     const volumes: CellVolumes = {
       count: cells.count,
       cellX: cells.cellX,
@@ -855,7 +861,11 @@ export class PlacedChunks {
       bottomLdu: new Int32Array(cells.count).fill(bottomLdu),
       topLdu: new Int32Array(cells.count).fill(topLdu),
     };
-    const hit = firstOverlap(volumes, this.volumes, this.isTrack);
+    const hit = firstOverlap(
+      volumes,
+      this.volumes,
+      (owner, cellX, cellZ) => this.isTrack(owner, cellX, cellZ) || exempt(owner, cellX, cellZ),
+    );
     return hit ? this.placedOverlap(hit) : null;
   }
 
@@ -873,8 +883,7 @@ export class PlacedChunks {
   }
 
   trackOwnerOf(piece: number): number | null {
-    for (const stamp of this.trackStamps.values()) if (stamp.piece === piece) return stamp.owner;
-    return null;
+    return this.trackOwnerByPiece.get(piece) ?? null;
   }
 
   ownerOf(model: PlacedModel): number {
@@ -892,6 +901,7 @@ export class PlacedChunks {
     const stamp: TrackStamp = { owner, piece, pieceId, cells, bottomLdu, topLdu };
     this.owners.set(owner, { kind: "track", piece, pieceId });
     this.trackStamps.set(owner, stamp);
+    this.trackOwnerByPiece.set(piece, owner);
     for (let c = 0; c < cells.count; c++) {
       const x = cells.cellX[c] ?? 0;
       const z = cells.cellZ[c] ?? 0;
@@ -909,6 +919,7 @@ export class PlacedChunks {
     const keys = new Set(this.byTrackChunk.keys());
     for (const owner of this.trackStamps.keys()) this.owners.delete(owner);
     this.trackStamps.clear();
+    this.trackOwnerByPiece.clear();
     this.byTrackChunk.clear();
     for (const piece of pieces) {
       this.addTrackPiece(piece.piece, piece.pieceId, piece.cells, piece.bottomLdu, piece.topLdu);

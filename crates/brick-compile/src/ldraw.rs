@@ -45,6 +45,38 @@ pub struct LdrawFile {
     pub lines: Vec<Line>,
 }
 
+const MOVED_PREFIX: &str = "~Moved to ";
+const MAIN_COLOR: u32 = 16;
+const DAT_SUFFIX: &str = ".dat";
+
+pub fn identity_redirect(file: &LdrawFile) -> Option<String> {
+    let target = file.header.title.strip_prefix(MOVED_PREFIX)?.trim();
+    let mut geometry = file.lines.iter().filter(|line| {
+        matches!(
+            line,
+            Line::Subfile { .. } | Line::Edge { .. } | Line::Triangle { .. } | Line::Quad { .. }
+        )
+    });
+    let only = geometry.next()?;
+    if geometry.next().is_some() {
+        return None;
+    }
+    match only {
+        Line::Subfile {
+            color,
+            matrix,
+            reference,
+        } if *color == MAIN_COLOR
+            && *matrix == Affine::IDENTITY
+            && normalize_reference(reference)
+                == format!("{}{DAT_SUFFIX}", target.to_lowercase()) =>
+        {
+            Some(target.to_string())
+        }
+        _ => None,
+    }
+}
+
 pub fn normalize_reference(reference: &str) -> String {
     reference.trim().replace('\\', "/").to_lowercase()
 }
@@ -185,4 +217,25 @@ fn parse_subfile(rest: &[&str]) -> Option<Line> {
         matrix: Affine::from_ldraw([numbers[0], numbers[1], numbers[2]], rotation),
         reference: normalize_reference(&reference),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identity_redirect_names_the_target_only_for_a_bare_identity_reference() {
+        let moved = "0 ~Moved to 74746\n0 Name: 2865.dat\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 74746.dat\n";
+        assert_eq!(identity_redirect(&parse(moved)), Some("74746".to_string()));
+        let shifted = moved.replace("1 16 0 0 0", "1 16 0 8 0");
+        assert_eq!(identity_redirect(&parse(&shifted)), None);
+        let recoloured = moved.replace("1 16 0 0 0", "1 4 0 0 0");
+        assert_eq!(identity_redirect(&parse(&recoloured)), None);
+        let extra = format!("{moved}3 16 0 0 0 1 0 0 0 0 1\n");
+        assert_eq!(identity_redirect(&parse(&extra)), None);
+        let elsewhere = moved.replace("74746.dat", "3001.dat");
+        assert_eq!(identity_redirect(&parse(&elsewhere)), None);
+        let plain = "0 Brick 2 x 4\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001s01.dat\n";
+        assert_eq!(identity_redirect(&parse(plain)), None);
+    }
 }

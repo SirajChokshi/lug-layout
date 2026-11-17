@@ -42,6 +42,7 @@ export interface PartAsset {
   readonly producedColor: number | undefined;
   readonly producedColors: ReadonlyArray<number>;
   readonly baseplate: boolean;
+  readonly aliasOf: string | null;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
   readonly mesh: PartMesh;
   readonly studPrimitiveIndex: Uint8Array;
