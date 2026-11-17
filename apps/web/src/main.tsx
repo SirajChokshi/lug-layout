@@ -47,6 +47,9 @@ container.load(
     ...(import.meta.env.VITE_BUNDLE_MANIFEST_FILE === undefined
       ? {}
       : { bundleManifestFile: import.meta.env.VITE_BUNDLE_MANIFEST_FILE }),
+    ...(import.meta.env.VITE_LDRAW_LIBRARY_BASE_URL
+      ? { ldrawLibraryBaseUrl: import.meta.env.VITE_LDRAW_LIBRARY_BASE_URL }
+      : {}),
     disclaimer: TRADEMARK_DISCLAIMER,
   }),
 );

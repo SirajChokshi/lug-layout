@@ -22,6 +22,16 @@ output "part_bundle_base_url" {
   value       = var.part_bundle_domain == null ? "https://${cloudflare_r2_managed_domain.part_bundles.domain}/" : "https://${var.part_bundle_domain}/"
 }
 
+output "ldraw_library_bucket_name" {
+  description = "Bucket holding the pinned LDraw library files the import worker reads, written only from main."
+  value       = cloudflare_r2_bucket.ldraw_library.name
+}
+
+output "ldraw_library_base_url" {
+  description = "public_base_url for ldraw-library.json: the custom domain when one is set, otherwise r2.dev."
+  value       = var.ldraw_library_domain == null ? "https://${cloudflare_r2_managed_domain.ldraw_library.domain}/" : "https://${var.ldraw_library_domain}/"
+}
+
 output "worker_name" {
   value = cloudflare_workers_script.catalog_api.script_name
 }

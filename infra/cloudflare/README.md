@@ -13,8 +13,12 @@ Terraform for the server-side catalog search (`apps/catalog-api`) and for the bu
 | `cloudflare_r2_bucket_cors.part_bundles` | | `GET` and `HEAD` from any origin, so apps on Vercel can read the bucket. |
 | `cloudflare_r2_custom_domain.part_bundles` | `part_bundle_domain` | Public custom domain in `zone_id`, when `part_bundle_domain` is set. |
 | `cloudflare_r2_managed_domain.part_bundles` | `pub-….r2.dev` | The bucket's r2.dev domain, on while `part_bundle_r2_dev` is true (the default). Cloudflare rate-limits r2.dev, so set `part_bundle_domain` for production. |
+| `cloudflare_r2_bucket.ldraw_library` | `brr-ldraw-library` | The pinned LDraw library files the import worker reads, unmodified, at the same paths as on GitHub's raw mirror, plus one index per pinned commit. Written only by CI on `main` (`docs/ldraw-library.md`). Never pruned. |
+| `cloudflare_r2_bucket_cors.ldraw_library` | | `GET` and `HEAD` from any origin, for the import worker. |
+| `cloudflare_r2_custom_domain.ldraw_library` | `ldraw_library_domain` | Optional public custom domain in `zone_id`. |
+| `cloudflare_r2_managed_domain.ldraw_library` | `pub-….r2.dev` | The library bucket's r2.dev domain, on while `ldraw_library_r2_dev` is true (the default). |
 
-Names, the compatibility date, the rate limits and observability come from `apps/catalog-api/wrangler.json`, so `wrangler dev`, the loader and Terraform can't drift apart. The part bundle bucket's name comes from `part-bundles.json`, which the asset pipeline's uploader reads too. Terraform uploads the Worker bundle; nothing here runs `wrangler deploy`. `pnpm check:infra` (run by CI and `pnpm check`) checks formatting and validates the configuration with the pinned provider.
+Names, the compatibility date, the rate limits and observability come from `apps/catalog-api/wrangler.json`, so `wrangler dev`, the loader and Terraform can't drift apart. The part bundle bucket's name comes from `part-bundles.json`, which the asset pipeline's uploader reads too, and the LDraw library bucket's name comes from `ldraw-library.json` in the same way. Terraform uploads the Worker bundle; nothing here runs `wrangler deploy`. `pnpm check:infra` (run by CI and `pnpm check`) checks formatting and validates the configuration with the pinned provider.
 
 Why wrangler is used only for `dev` and the loader:
 - **The code upload stays in Terraform.** `wrangler deploy` uploads the script together with its bindings and settings. If it ran next to Terraform, the two would overwrite each other's view of the same `cloudflare_workers_script`, and every plan would show drift. With one owner, a plan shows exactly what an apply changes, including a new bundle (`content_sha256`).
@@ -29,7 +33,7 @@ One account API token does everything: Terraform's Cloudflare API calls, Terrafo
 
 - Account · **Workers Scripts · Edit** (`Workers Scripts Write`: script, bindings, workers.dev toggle, rate limiters)
 - Account · **D1 · Edit** (`D1 Write`: the database and the loader's imports)
-- Account · **Workers R2 Storage · Edit** (`Workers R2 Storage Write`: the buckets and their objects, which covers `brr-catalog-releases`, `brr-part-bundles` and the state bucket `brr-terraform-state`)
+- Account · **Workers R2 Storage · Edit** (`Workers R2 Storage Write`: the buckets and their objects, which covers `brr-catalog-releases`, `brr-part-bundles`, `brr-ldraw-library` and the state bucket `brr-terraform-state`)
 - Zone · **Workers Routes · Edit** (`Workers Routes Write`), scoped to the zone, only if you set `route_pattern`
 
 The dashboard's **Edit** is the API's **Write**: Account · D1 · Edit is the permission group `D1 Write`. The groups above are the ones Cloudflare's OpenAPI schema (`x-api-token-group`, [`cloudflare/api-schemas`](https://github.com/cloudflare/api-schemas) at `023a080`) lists for every endpoint the provider calls: D1 database create, read, update and delete; R2 bucket create, update and delete; Worker script upload, settings and subdomain; zone Workers routes. The schema names no group for the D1 import API, which `wrangler d1 execute --file --remote` uses, for R2 single-object `PUT`, for the R2 bucket CORS endpoints, for the r2.dev managed-domain endpoints, or for custom-domain create and update; a custom domain also adds a DNS record to the zone. Those are unverified until the first remote load or the first apply that creates them. If one fails with an authorization error, report the endpoint rather than widening the token blindly.
@@ -117,11 +121,11 @@ Three environment secrets in `production`, and nothing in repository secrets:
 | `CLOUDFLARE_API_TOKEN` | The account API token's value (see *Credentials*). |
 | `CLOUDFLARE_API_TOKEN_ID` | That token's id, 32 hex characters. Not secret on its own, but it's half of the R2 key pair. |
 
-The non-secret Terraform variables (`d1_primary_location_hint`, `r2_location`, `workers_dev_enabled`, `zone_id`, `route_pattern`, `part_bundle_domain`, `part_bundle_r2_dev`) come from the repository variable `CATALOG_TFVARS_JSON`, a JSON object like `{"d1_primary_location_hint":"wnam","r2_location":"wnam"}`. It may not contain `account_id` or `cloudflare_api_token`. Leave it unset for the defaults in `variables.tf`. It must match what earlier applies used: a different `d1_primary_location_hint` can plan a new database, which the workflow refuses.
+The non-secret Terraform variables (`d1_primary_location_hint`, `r2_location`, `workers_dev_enabled`, `zone_id`, `route_pattern`, `part_bundle_domain`, `part_bundle_r2_dev`, `ldraw_library_domain`, `ldraw_library_r2_dev`) come from the repository variable `CATALOG_TFVARS_JSON`, a JSON object like `{"d1_primary_location_hint":"wnam","r2_location":"wnam"}`. It may not contain `account_id` or `cloudflare_api_token`. Leave it unset for the defaults in `variables.tf`. It must match what earlier applies used: a different `d1_primary_location_hint` can plan a new database, which the workflow refuses.
 
 ### One-time setup
 
-1. Create the state bucket: `pnpm --filter @brr/catalog-api exec wrangler r2 bucket create brr-terraform-state` after `wrangler login`, or *R2 → Create bucket* in the dashboard. CI and local runs share `cloudflare/catalog.tfstate` in it, so state from an earlier local apply carries over. Don't create `brr-catalog`, `brr-catalog-releases` or `brr-part-bundles` by hand: the first apply creates them, and Terraform never adopts a resource that isn't in its state.
+1. Create the state bucket: `pnpm --filter @brr/catalog-api exec wrangler r2 bucket create brr-terraform-state` after `wrangler login`, or *R2 → Create bucket* in the dashboard. CI and local runs share `cloudflare/catalog.tfstate` in it, so state from an earlier local apply carries over. Don't create `brr-catalog`, `brr-catalog-releases`, `brr-part-bundles` or `brr-ldraw-library` by hand: the first apply creates them, and Terraform never adopts a resource that isn't in its state.
 2. Register the account's workers.dev subdomain in *Workers & Pages → Overview*. Without it, `workers_dev_enabled` has no effect.
 3. Create the account API token (see *Credentials*). Copy its value and its id.
 4. Create the `production` environment under *Settings → Environments*, before adding secrets and before merging any change that triggers the deploy workflow, because the merge push starts a deploy. Add yourself as a required reviewer, and under *Deployment branches and tags* allow `main` only.
@@ -162,3 +166,11 @@ Older releases stay in D1 until their tables are dropped by hand; their SQLite f
 - **CORS.** `GET` and `HEAD` from any origin. The objects are public and immutable.
 - **Caching.** The uploader stores every object with `Cache-Control: public, max-age=31536000, immutable`. Manifests can be immutable too, because their name changes whenever their inputs do.
 - **The app's URL.** `public_base_url` in `part-bundles.json` is a committed copy of the `part_bundle_base_url` output. Terraform doesn't read it. The Vercel build and the part bundle workflow do, so neither needs a variable set.
+
+## LDraw library bucket
+
+`brr-ldraw-library` holds the unmodified LDraw library files that the import worker fetches for parts the bundle doesn't ship. `docs/ldraw-library.md` covers what is published, the key layout and the workflow. Terraform owns the bucket and how it's reached, the same way as the part bundle bucket:
+
+- **Public access.** The import worker fetches the files directly, so the bucket is public on its r2.dev domain while `ldraw_library_r2_dev` is true (the default). Set `ldraw_library_domain` (with `zone_id`) for a custom domain that goes through Cloudflare's cache. Terraform refuses a plan that would leave the bucket with no public domain.
+- **The app's URL.** `public_base_url` in `ldraw-library.json` is a committed copy of the `ldraw_library_base_url` output. It's `null` until the first apply. While it's `null`, deployed builds keep reading the library from GitHub raw; committing it switches them to this bucket, and from then on GitHub is dev-only (`docs/ldraw-library.md`). Switch domains in the same three steps as the part bundle, using `ldraw_library_domain`, `ldraw_library_r2_dev` and `ldraw-library.json`.
+- **CORS and caching.** `GET` and `HEAD` from any origin. Every object is immutable: its key contains the pinned commit.
