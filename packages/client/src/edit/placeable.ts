@@ -39,10 +39,7 @@ export interface PlaceableCells {
 }
 
 export interface StudLattice {
-  readonly onLattice: Uint8Array;
   readonly upright: Uint8Array;
-  readonly cellX: Int32Array;
-  readonly cellZ: Int32Array;
   readonly centreX: Float64Array;
   readonly centreZ: Float64Array;
   readonly baseLdu: Float64Array;
@@ -105,11 +102,6 @@ function instanceBoxes(
   return boxes;
 }
 
-function latticeCell(centre: number): number | null {
-  const cell = (centre - HALF_STUD_LDU) / STUD_LDU;
-  return Number.isInteger(cell) ? cell : null;
-}
-
 const STUD_DRIFT_LDU = 0.5;
 
 function nearestLatticePoint(ldu: number): number {
@@ -127,10 +119,7 @@ function seatedStudCentre(x: number, z: number, out: Float64Array): void {
 const seatedCentre = new Float64Array(2);
 
 function studLattice(studs: StudInstances): StudLattice {
-  const onLattice = new Uint8Array(studs.count);
   const upright = new Uint8Array(studs.count);
-  const cellX = new Int32Array(studs.count);
-  const cellZ = new Int32Array(studs.count);
   const centreX = new Float64Array(studs.count);
   const centreZ = new Float64Array(studs.count);
   const baseLdu = new Float64Array(studs.count);
@@ -144,18 +133,10 @@ function studLattice(studs: StudInstances): StudLattice {
     upright[i] = 1;
     baseLdu[i] = base;
     seatedStudCentre(sx, sz, seatedCentre);
-    const cx = seatedCentre[0] ?? sx;
-    const cz = seatedCentre[1] ?? sz;
-    centreX[i] = cx;
-    centreZ[i] = cz;
-    const x = latticeCell(cx);
-    const z = latticeCell(cz);
-    if (x === null || z === null || !Number.isInteger(base)) continue;
-    onLattice[i] = 1;
-    cellX[i] = x;
-    cellZ[i] = z;
+    centreX[i] = seatedCentre[0] ?? sx;
+    centreZ[i] = seatedCentre[1] ?? sz;
   }
-  return { onLattice, upright, cellX, cellZ, centreX, centreZ, baseLdu };
+  return { upright, centreX, centreZ, baseLdu };
 }
 
 function wholeCells(ldu: number, what: string): number {

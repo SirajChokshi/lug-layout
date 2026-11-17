@@ -4,9 +4,13 @@ import {
   type ReceptacleIndex,
   firstCellTouched,
   lastCellTouched,
+  quadBit,
+  quadCell,
+  studQuads,
   type StudIndex,
 } from "./stud-index.ts";
 import {
+  FULL_CELL,
   NO_VOLUME_TOP,
   cellChunkKey,
   type CellVolumes,
@@ -155,7 +159,9 @@ export function upperSupport(
       return { kind: "flat-on-studs", cellX: x, cellZ: z, yPlates };
     if (studHere) engaged++;
     else if (support.offLatticeTopAt(x, z)) offLattice++;
-    else if (top === restLdu) touching++;
+    else if (top === restLdu && volumes.quadsWithTop(x, z, restLdu, ignore) === FULL_CELL) {
+      touching++;
+    }
   }
   if (offsetStuds > 0) return { kind: "offset-stud", yPlates, cells: offsetStuds };
   if (engaged > 0) return { kind: "studs", engaged };
@@ -185,6 +191,48 @@ function hasReceptacle(receptacles: Receptacles, x: number, z: number, bottomLdu
   return false;
 }
 
+const AROUND_X = Int8Array.of(-1, 0, -1, 0);
+const AROUND_Z = Int8Array.of(-1, -1, 0, 0);
+const MAX_COVERING_OWNERS = 16;
+const covering = new Int32Array(MAX_COVERING_OWNERS);
+
+function restsInsideOne(
+  volumes: VolumeIndex,
+  x: number,
+  z: number,
+  topLdu: number,
+  ignore: OwnerFilter,
+): boolean {
+  const quarter = STUD_LDU / 2;
+  const firstX = x + (AROUND_X[0] ?? 0) * quarter;
+  const firstZ = z + (AROUND_Z[0] ?? 0) * quarter;
+  const owners = volumes.ownersCovering(
+    quadCell(firstX),
+    quadCell(firstZ),
+    quadBit(firstX, firstZ),
+    topLdu,
+    ignore,
+    covering,
+  );
+  for (let o = 0; o < owners; o++) {
+    const owner = covering[o] ?? 0;
+    let all = true;
+    for (let q = 1; q < AROUND_X.length && all; q++) {
+      const cornerX = x + (AROUND_X[q] ?? 0) * quarter;
+      const cornerZ = z + (AROUND_Z[q] ?? 0) * quarter;
+      all = volumes.ownerCovers(
+        owner,
+        quadCell(cornerX),
+        quadCell(cornerZ),
+        quadBit(cornerX, cornerZ),
+        topLdu,
+      );
+    }
+    if (all) return true;
+  }
+  return false;
+}
+
 export function brickSupport(
   receptacles: Receptacles,
   body: CellVolumes,
@@ -200,8 +248,10 @@ export function brickSupport(
     const z = body.cellZ[c] ?? 0;
     const bottom = body.bottomLdu[c] ?? 0;
     const top = body.topLdu[c] ?? 0;
+    const quads = body.quads?.[c] ?? FULL_CELL;
     for (studIndex.cursor(x, z, studs); studs.valid; studs.advance()) {
       if (studs.topLdu <= bottom || studs.baseLdu >= top) continue;
+      if ((studQuads(x, z, studs.x, studs.z, studs.radius) & quads) === 0) continue;
       if (studs.baseLdu === bottom && hasReceptacle(receptacles, studs.x, studs.z, bottom)) {
         engaged++;
         continue;
@@ -219,11 +269,16 @@ export function brickSupport(
   let flat = 0;
   let overTable = 0;
   for (let p = 0; p < receptacles.count; p++) {
-    const cellX = Math.floor((receptacles.x[p] ?? 0) / STUD_LDU);
-    const cellZ = Math.floor((receptacles.z[p] ?? 0) / STUD_LDU);
+    const x = receptacles.x[p] ?? 0;
+    const z = receptacles.z[p] ?? 0;
     const bottom = receptacles.bottomLdu[p] ?? 0;
-    if (volumes.hasTopAt(cellX, cellZ, bottom, ignore)) flat++;
-    else if (bottom === 0 && !volumes.topOwnerAt(cellX, cellZ, ignore, topHit)) overTable++;
+    if (restsInsideOne(volumes, x, z, bottom, ignore)) flat++;
+    else if (
+      bottom === 0 &&
+      !volumes.topOwnerAt(Math.floor(x / STUD_LDU), Math.floor(z / STUD_LDU), ignore, topHit)
+    ) {
+      overTable++;
+    }
   }
   if (flat === receptacles.count) return { kind: "flat", cells: flat };
   if (overTable === receptacles.count) return { kind: "on-table", cells: overTable };
@@ -275,7 +330,8 @@ export function studClash(
     clashStudBase = base;
     for (let cz = firstCellTouched(z, radius); cz <= lastCellTouched(z, radius); cz++) {
       for (let cx = firstCellTouched(x, radius); cx <= lastCellTouched(x, radius); cx++) {
-        if (volumes.firstOverlapWhere(cx, cz, base, top, clashes, clashHit)) {
+        const quads = studQuads(cx, cz, x, z, radius);
+        if (volumes.firstOverlapWhere(cx, cz, base, top, clashes, clashHit, quads)) {
           return { owner: clashHit.owner, x, z, baseLdu: base };
         }
       }

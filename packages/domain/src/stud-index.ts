@@ -205,3 +205,46 @@ export class ReceptacleIndex {
     this.byKey.delete(key);
   }
 }
+
+const QUAD_LOW_X = 0b0101;
+const QUAD_HIGH_X = 0b1010;
+const QUAD_LOW_Z = 0b0011;
+const QUAD_HIGH_Z = 0b1100;
+const HALF_CELL = STUD_LDU / 2;
+
+function axisQuads(
+  cell: number,
+  centre: number,
+  radius: number,
+  low: number,
+  high: number,
+): number {
+  const edge = cell * STUD_LDU;
+  let quads = 0;
+  if (edge < centre + radius && edge + HALF_CELL > centre - radius) quads |= low;
+  if (edge + HALF_CELL < centre + radius && edge + STUD_LDU > centre - radius) quads |= high;
+  return quads;
+}
+
+export function studQuads(
+  cellX: number,
+  cellZ: number,
+  x: number,
+  z: number,
+  radius: number,
+): number {
+  return (
+    axisQuads(cellX, x, radius, QUAD_LOW_X, QUAD_HIGH_X) &
+    axisQuads(cellZ, z, radius, QUAD_LOW_Z, QUAD_HIGH_Z)
+  );
+}
+
+export function quadCell(corner: number): number {
+  return Math.floor(corner / STUD_LDU);
+}
+
+export function quadBit(cornerX: number, cornerZ: number): number {
+  const highX = cornerX - quadCell(cornerX) * STUD_LDU >= HALF_CELL;
+  const highZ = cornerZ - quadCell(cornerZ) * STUD_LDU >= HALF_CELL;
+  return (highX ? QUAD_HIGH_X : QUAD_LOW_X) & (highZ ? QUAD_HIGH_Z : QUAD_LOW_Z);
+}

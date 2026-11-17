@@ -569,7 +569,9 @@ it("seats a brick on a model stud that drifted less than half an LDU off its lat
   expect(bench.editor.snapshot().hover).toEqual({ x: -120, z: 40, yPlates: 62 });
   expect(bench.editor.snapshot().ghost?.refusal).toBeNull();
 
-  expect(ghostAtPivot(bench, "ldraw:3005", [180, 240], 0, 74)).toBe("support");
+  pointAt(bench, 170.5, 240.5);
+  expect(bench.editor.snapshot().hover).toEqual({ x: 180, z: 250, yPlates: 74 });
+  expect(bench.editor.snapshot().ghost?.refusal).toBeNull();
 }, 120_000);
 
 it("refuses a brick over a model stud more than half an LDU off any lattice point", async () => {
@@ -577,5 +579,31 @@ it("refuses a brick over a model stud more than half an LDU off any lattice poin
   hold(bench, "ldraw:3005", 0);
   pointAt(bench, -59.5, 40.5);
   expect(bench.editor.snapshot().hover).toEqual({ x: -40, z: 60, yPlates: 88 });
+  expect(bench.editor.snapshot().ghost?.refusal?.rule).toBe("support");
+}, 120_000);
+
+it("refuses a grid brick resting half on a half-stud tile and half over air", async () => {
+  const bench = await benchOnBaseplate();
+  expect(placeAtCursor(bench, "ldraw:3794b", 50, 50)).toBe(true);
+  hold(bench, "ldraw:3070b", 0);
+  pointAt(bench, 40.5, 50.5);
+  expect(bench.editor.snapshot().hover).toEqual({ x: 70, z: 60, yPlates: 1 });
+  bench.editor.click(0, 0, 0);
+  expect(bench.editor.snapshot().placements).toBe(3);
+
+  hold(bench, "ldraw:3005", 0);
+  pointAt(bench, 40.5, 40.5);
+  expect(bench.editor.snapshot().hover).toEqual({ x: 60, z: 60, yPlates: 2 });
+  expect(bench.editor.snapshot().ghost?.refusal?.rule).toBe("support");
+}, 120_000);
+
+it("refuses a half-stud plate that would cover another jumper's centre stud off its anti-studs", async () => {
+  const bench = await benchOnBaseplate();
+  expect(placeAtCursor(bench, "ldraw:3794b", 50, 50)).toBe(true);
+  expect(placeAtCursor(bench, "ldraw:3794b", 50, 70, 1)).toBe(true);
+
+  hold(bench, "ldraw:3022", 0);
+  pointAt(bench, 40.5, 40.5);
+  expect(bench.editor.snapshot().hover).toEqual({ x: 70, z: 60, yPlates: 1 });
   expect(bench.editor.snapshot().ghost?.refusal?.rule).toBe("support");
 }, 120_000);

@@ -114,6 +114,7 @@ import { groundGrid, snapToGrid, worldGround, type WorldGround } from "./ground.
 import { BrickCatalog, isBrickPart, type BrickPart, type BrickShape } from "./brick-catalog.ts";
 import {
   modelGround,
+  FOOTPRINT_NONE,
   footprintCentre,
   modelPlaceable,
   partGround,
@@ -861,6 +862,7 @@ export class Editor implements IEditor {
   private bricks: BrickCatalog | null = null;
   private brickColor: number | null = null;
   private readonly surface: SurfaceHit = { cellX: 0, cellZ: 0, x: 0, z: 0 };
+  private readonly jumperStud: SurfaceHit = { cellX: 0, cellZ: 0, x: 0, z: 0 };
   private cursorCellX = 0;
   private cursorCellZ = 0;
   private placed: PlacedChunks;
@@ -1708,6 +1710,38 @@ export class Editor implements IEditor {
     const cellCentreZ = (this.cursorCellZ + 0.5) * STUD_LDU;
     this.hoverX = snapToGrid(cellCentreX - centreX, STUD_LDU);
     this.hoverZ = snapToGrid(cellCentreZ - centreZ, STUD_LDU);
+    this.seatOnJumperStud(active, cos, sin);
+  }
+
+  private seatOnJumperStud(active: Placeable, cos: number, sin: number): void {
+    const stud = this.jumperStud;
+    if (
+      active.kind !== "brick" ||
+      !this.placed.offsetStudNear(this.cursorCellX, this.cursorCellZ, this.hitX, this.hitZ, stud)
+    ) {
+      return;
+    }
+    const { cells } = active;
+    let bestDx = 0;
+    let bestDz = 0;
+    let best = Number.POSITIVE_INFINITY;
+    for (let j = 0; j < cells.depth; j++) {
+      for (let i = 0; i < cells.width; i++) {
+        if ((cells.footprint[j * cells.width + i] ?? FOOTPRINT_NONE) === FOOTPRINT_NONE) continue;
+        const lx = (cells.cellX0 + i) * STUD_LDU + STUD_LDU / 2;
+        const lz = (cells.cellZ0 + j) * STUD_LDU + STUD_LDU / 2;
+        const dx = stud.x - (this.hoverX + cos * lx + sin * lz);
+        const dz = stud.z - (this.hoverZ - sin * lx + cos * lz);
+        const distance = Math.hypot(dx, dz);
+        if (distance >= best) continue;
+        best = distance;
+        bestDx = dx;
+        bestDz = dz;
+      }
+    }
+    if (Math.abs(bestDx) > STUD_LDU / 2 || Math.abs(bestDz) > STUD_LDU / 2) return;
+    this.hoverX += bestDx;
+    this.hoverZ += bestDz;
   }
 
   private cursorLanding(): LandingAt {

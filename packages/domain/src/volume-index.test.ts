@@ -56,6 +56,20 @@ describe("VolumeIndex", () => {
     expect(other.topAt(32, 0)).toBe(8);
   });
 
+  it("lets half-stud spans share a cell only when their quarters don't meet", () => {
+    const half = new VolumeIndex();
+    const xHigh = 0b1010;
+    const xLow = 0b0101;
+    half.add(5, 4, 0, 8, 16, xHigh);
+    const span = (quads: number): CellVolumes => ({
+      ...volumes([[4, 0, 8, 16]]),
+      quads: Uint8Array.of(quads),
+    });
+    expect(firstOverlap(span(xLow), half, keepAll)).toBeNull();
+    expect(firstOverlap(span(0b0010), half, keepAll)?.owner).toBe(5);
+    expect(firstOverlap(volumes([[4, 0, 8, 16]]), half, keepAll)?.owner).toBe(5);
+  });
+
   it("refuses an empty or fractional span", () => {
     expect(() => index.add(4, 0, 0, 8, 8)).toThrow(RangeError);
     expect(() => index.add(4, 0, 0, 0, 1.5)).toThrow(RangeError);

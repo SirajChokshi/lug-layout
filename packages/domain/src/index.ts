@@ -126,6 +126,7 @@ export {
   type SearchBudget,
 } from "./track/closure.ts";
 export {
+  FULL_CELL,
   NO_VOLUME_TOP,
   VolumeIndex,
   cellChunkKey,

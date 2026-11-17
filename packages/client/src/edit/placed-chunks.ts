@@ -1,7 +1,9 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
+  FULL_CELL,
   NO_VOLUME_TOP,
   ReceptacleIndex,
+  StudCursor,
   StudIndex,
   SupportGrid,
   VolumeIndex,
@@ -117,6 +119,7 @@ interface TrackStamp {
 
 const keepEveryOwner: OwnerFilter = () => false;
 const surfaceTop: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
+const nearStud = new StudCursor();
 const PENDING_OWNER = 0;
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -224,9 +227,45 @@ interface Contribution {
   studs: number;
 }
 
+const STUD_ON_GRID = 1;
+const X_LOW = 0b0101;
+const X_HIGH = 0b1010;
+const Z_LOW = 0b0011;
+const Z_HIGH = 0b1100;
+const MAX_COVERED = 4;
+const coverX = new Int32Array(MAX_COVERED);
+const coverZ = new Int32Array(MAX_COVERED);
+const coverQuads = new Uint8Array(MAX_COVERED);
+const axisCells = new Int32Array(2);
+const axisMasks = new Uint8Array(2);
+const xCells = new Int32Array(2);
+const xMasks = new Uint8Array(2);
+
+function onCellEdge(ldu: number): boolean {
+  return ldu % STUD_LDU === 0;
+}
+
+function onCellCentre(ldu: number): boolean {
+  return ((ldu % STUD_LDU) + STUD_LDU) % STUD_LDU === HALF_STUD_LDU;
+}
+
+function axisCover(centre: number, low: number, high: number): number {
+  if (!onCellEdge(centre)) {
+    axisCells[0] = Math.floor(centre / STUD_LDU);
+    axisMasks[0] = low | high;
+    return 1;
+  }
+  axisCells[0] = centre / STUD_LDU - 1;
+  axisMasks[0] = high;
+  axisCells[1] = centre / STUD_LDU;
+  axisMasks[1] = low;
+  return 2;
+}
+
 class LatticePose {
   readonly cos: number;
   readonly sin: number;
+  readonly halfStud: boolean;
 
   constructor(
     readonly x: number,
@@ -234,20 +273,43 @@ class LatticePose {
     rot: number,
   ) {
     if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+    if (x % HALF_STUD_LDU !== 0 || z % HALF_STUD_LDU !== 0) {
+      throw new Error(`pose ${x}, ${z} is not on the stud or half-stud lattice`);
+    }
     this.cos = rot90Cos(rot);
     this.sin = rot90Sin(rot);
+    this.halfStud = x % STUD_LDU !== 0 || z % STUD_LDU !== 0;
   }
 
-  worldCellX(localCellX: number, localCellZ: number): number {
+  centreX(localCellX: number, localCellZ: number): number {
     const lx = localCellX * STUD_LDU + HALF_STUD_LDU;
     const lz = localCellZ * STUD_LDU + HALF_STUD_LDU;
-    return Math.floor((this.x + this.cos * lx + this.sin * lz) / STUD_LDU);
+    return this.x + this.cos * lx + this.sin * lz;
   }
 
-  worldCellZ(localCellX: number, localCellZ: number): number {
+  centreZ(localCellX: number, localCellZ: number): number {
     const lx = localCellX * STUD_LDU + HALF_STUD_LDU;
     const lz = localCellZ * STUD_LDU + HALF_STUD_LDU;
-    return Math.floor((this.z - this.sin * lx + this.cos * lz) / STUD_LDU);
+    return this.z - this.sin * lx + this.cos * lz;
+  }
+
+  covered(localCellX: number, localCellZ: number): number {
+    const xs = axisCover(this.centreX(localCellX, localCellZ), X_LOW, X_HIGH);
+    for (let i = 0; i < xs; i++) {
+      xCells[i] = axisCells[i] ?? 0;
+      xMasks[i] = axisMasks[i] ?? 0;
+    }
+    const zs = axisCover(this.centreZ(localCellX, localCellZ), Z_LOW, Z_HIGH);
+    let n = 0;
+    for (let j = 0; j < zs; j++) {
+      for (let i = 0; i < xs; i++) {
+        coverX[n] = xCells[i] ?? 0;
+        coverZ[n] = axisCells[j] ?? 0;
+        coverQuads[n] = (xMasks[i] ?? 0) & (axisMasks[j] ?? 0);
+        n++;
+      }
+    }
+    return n;
   }
 
   localCellX(worldCellX: number, worldCellZ: number): number {
@@ -334,10 +396,18 @@ interface CandidateCells {
 function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells {
   const { cells } = placeable;
   let volumeCount = 0;
-  let baseCount = 0;
-  for (let cell = 0; cell < cells.width * cells.depth; cell++) {
-    if ((cells.topLdu[cell] ?? 0) > (cells.bottomLdu[cell] ?? 0)) volumeCount++;
-    if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) baseCount++;
+  let coveredCount = 0;
+  let footprintCount = 0;
+  for (let j = 0; j < cells.depth; j++) {
+    for (let i = 0; i < cells.width; i++) {
+      const cell = j * cells.width + i;
+      const n = pose.covered(cells.cellX0 + i, cells.cellZ0 + j);
+      if ((cells.topLdu[cell] ?? 0) > (cells.bottomLdu[cell] ?? 0)) volumeCount += n;
+      if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) {
+        coveredCount += n;
+        footprintCount++;
+      }
+    }
   }
   const volumes = {
     count: volumeCount,
@@ -345,43 +415,54 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
     cellZ: new Int32Array(volumeCount),
     bottomLdu: new Int32Array(volumeCount),
     topLdu: new Int32Array(volumeCount),
+    quads: new Uint8Array(volumeCount),
   };
   const base = {
-    count: baseCount,
-    cellX: new Int32Array(baseCount),
-    cellZ: new Int32Array(baseCount),
-    flat: new Uint8Array(baseCount),
+    count: coveredCount,
+    cellX: new Int32Array(coveredCount),
+    cellZ: new Int32Array(coveredCount),
+    flat: new Uint8Array(coveredCount),
   };
   const points = {
-    count: baseCount,
-    x: new Int32Array(baseCount),
-    z: new Int32Array(baseCount),
-    bottomLdu: new Int32Array(baseCount),
+    count: footprintCount,
+    x: new Int32Array(footprintCount),
+    z: new Int32Array(footprintCount),
+    bottomLdu: new Int32Array(footprintCount),
   };
   let v = 0;
   let b = 0;
+  let p = 0;
   for (let j = 0; j < cells.depth; j++) {
     for (let i = 0; i < cells.width; i++) {
       const cell = j * cells.width + i;
-      const wx = pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
-      const wz = pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
+      const localX = cells.cellX0 + i;
+      const localZ = cells.cellZ0 + j;
+      const n = pose.covered(localX, localZ);
       const bottom = cells.bottomLdu[cell] ?? 0;
       const top = cells.topLdu[cell] ?? 0;
-      if (top > bottom) {
-        volumes.cellX[v] = wx;
-        volumes.cellZ[v] = wz;
-        volumes.bottomLdu[v] = bottom;
-        volumes.topLdu[v] = top;
-        v++;
+      const footprint = (cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE;
+      const flat = cells.footprint[cell] === FOOTPRINT_FLAT ? 1 : 0;
+      for (let k = 0; k < n; k++) {
+        if (top > bottom) {
+          volumes.cellX[v] = coverX[k] ?? 0;
+          volumes.cellZ[v] = coverZ[k] ?? 0;
+          volumes.bottomLdu[v] = bottom;
+          volumes.topLdu[v] = top;
+          volumes.quads[v] = coverQuads[k] ?? FULL_CELL;
+          v++;
+        }
+        if (footprint) {
+          base.cellX[b] = coverX[k] ?? 0;
+          base.cellZ[b] = coverZ[k] ?? 0;
+          base.flat[b] = flat;
+          b++;
+        }
       }
-      if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) {
-        base.cellX[b] = wx;
-        base.cellZ[b] = wz;
-        base.flat[b] = cells.footprint[cell] === FOOTPRINT_FLAT ? 1 : 0;
-        points.x[b] = wx * STUD_LDU + HALF_STUD_LDU;
-        points.z[b] = wz * STUD_LDU + HALF_STUD_LDU;
-        points.bottomLdu[b] = bottom;
-        b++;
+      if (footprint) {
+        points.x[p] = pose.centreX(localX, localZ);
+        points.z[p] = pose.centreZ(localX, localZ);
+        points.bottomLdu[p] = bottom;
+        p++;
       }
     }
   }
@@ -395,7 +476,14 @@ function raised(volumes: CellVolumes, byLdu: number): CellVolumes {
     bottomLdu[c] = (volumes.bottomLdu[c] ?? 0) + byLdu;
     topLdu[c] = (volumes.topLdu[c] ?? 0) + byLdu;
   }
-  return { count: volumes.count, cellX: volumes.cellX, cellZ: volumes.cellZ, bottomLdu, topLdu };
+  const lifted = {
+    count: volumes.count,
+    cellX: volumes.cellX,
+    cellZ: volumes.cellZ,
+    bottomLdu,
+    topLdu,
+  };
+  return volumes.quads ? { ...lifted, quads: volumes.quads } : lifted;
 }
 
 class PlacedEntry implements PlacedModel {
@@ -404,6 +492,7 @@ class PlacedEntry implements PlacedModel {
   readonly studCellX: Int32Array;
   readonly studCellZ: Int32Array;
   readonly studBaseLdu: Int32Array;
+  readonly studOnGrid: Uint8Array;
   readonly studCulled: Uint8Array;
   readonly worldStuds: StudSet;
   readonly receptacles: Receptacles | null;
@@ -450,13 +539,19 @@ class PlacedEntry implements PlacedModel {
     this.studCellX = new Int32Array(count);
     this.studCellZ = new Int32Array(count);
     this.studBaseLdu = new Int32Array(count);
+    this.studOnGrid = new Uint8Array(count);
     this.studCulled = new Uint8Array(count);
     for (let i = 0; i < count; i++) {
-      const lx = studs.cellX[i] ?? 0;
-      const lz = studs.cellZ[i] ?? 0;
-      this.studCellX[i] = this.pose.worldCellX(lx, lz);
-      this.studCellZ[i] = this.pose.worldCellZ(lx, lz);
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
+      if (studs.upright[i] !== 1) continue;
+      const cx = studs.centreX[i] ?? 0;
+      const cz = studs.centreZ[i] ?? 0;
+      const wx = this.x + this.cos * cx + this.sin * cz;
+      const wz = this.z - this.sin * cx + this.cos * cz;
+      if (!onCellCentre(wx) || !onCellCentre(wz)) continue;
+      this.studOnGrid[i] = STUD_ON_GRID;
+      this.studCellX[i] = Math.floor(wx / STUD_LDU);
+      this.studCellZ[i] = Math.floor(wz / STUD_LDU);
     }
     this.worldStuds = worldStuds(placeable, this.pose, this.yLdu, shapes);
     this.candidate = candidateCells(placeable, this.pose);
@@ -473,11 +568,13 @@ class PlacedEntry implements PlacedModel {
         const occupied = (cells.topLdu[cell] ?? 0) > (cells.bottomLdu[cell] ?? 0);
         const footprint = (cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE;
         if (!occupied && !footprint) continue;
-        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
-        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
-        const key = cellChunkKey(wx, wz);
-        if (occupied) this.columnKeys.add(key);
-        if (footprint) {
+        const n = this.pose.covered(cells.cellX0 + i, cells.cellZ0 + j);
+        for (let k = 0; k < n; k++) {
+          const wx = coverX[k] ?? 0;
+          const wz = coverZ[k] ?? 0;
+          const key = cellChunkKey(wx, wz);
+          if (occupied) this.columnKeys.add(key);
+          if (!footprint) continue;
           this.footprintKeys.add(key);
           if (!chunkOrigins.has(key)) {
             chunkOrigins.set(key, [
@@ -511,12 +608,24 @@ class PlacedEntry implements PlacedModel {
         const bottom = cells.bottomLdu[cell] ?? 0;
         const top = cells.topLdu[cell] ?? 0;
         if (top <= bottom) continue;
-        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
-        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
-        if (onlyChunk !== null && cellChunkKey(wx, wz) !== onlyChunk) continue;
-        volumes.add(this.owner, wx, wz, this.yLdu + bottom, this.yLdu + top);
-        if (cells.offLatticeTop) support.markOffLatticeTop(wx, wz);
-        else if (cells.baseplate[cell] === 1 && yPlates === 0) support.markBaseplate(wx, wz);
+        const n = this.pose.covered(cells.cellX0 + i, cells.cellZ0 + j);
+        for (let k = 0; k < n; k++) {
+          const wx = coverX[k] ?? 0;
+          const wz = coverZ[k] ?? 0;
+          if (onlyChunk !== null && cellChunkKey(wx, wz) !== onlyChunk) continue;
+          volumes.add(
+            this.owner,
+            wx,
+            wz,
+            this.yLdu + bottom,
+            this.yLdu + top,
+            coverQuads[k] ?? FULL_CELL,
+          );
+          if (cells.offLatticeTop) support.markOffLatticeTop(wx, wz);
+          else if (cells.baseplate[cell] === 1 && yPlates === 0 && !this.pose.halfStud) {
+            support.markBaseplate(wx, wz);
+          }
+        }
       }
     }
     const studs = this.worldStuds;
@@ -552,7 +661,7 @@ class PlacedEntry implements PlacedModel {
   }
 
   footprintKind(worldCellX: number, worldCellZ: number, baseLdu: number): number {
-    if (baseLdu !== this.yLdu) return FOOTPRINT_NONE;
+    if (baseLdu !== this.yLdu || this.pose.halfStud) return FOOTPRINT_NONE;
     const cell = this.cellAt(worldCellX, worldCellZ);
     return cell < 0 ? FOOTPRINT_NONE : (this.placeable.cells.footprint[cell] ?? FOOTPRINT_NONE);
   }
@@ -572,12 +681,11 @@ class PlacedEntry implements PlacedModel {
     covers: ReadonlyArray<PlacedEntry>,
     closers: ReadonlyArray<PlacedEntry>,
   ): number {
-    const onLattice = this.placeable.studLattice.onLattice;
     let visible = 0;
     for (let i = 0; i < this.studKeys.length; i++) {
       if (this.studKeys[i] !== key) continue;
       let culled = 0;
-      if (onLattice[i] === 1) {
+      if (this.studOnGrid[i] === STUD_ON_GRID) {
         const cx = this.studCellX[i] ?? 0;
         const cz = this.studCellZ[i] ?? 0;
         const base = this.studBaseLdu[i] ?? 0;
@@ -918,6 +1026,35 @@ export class PlacedChunks {
     const owner = this.owners.get(clash.owner);
     if (!owner) throw new Error(`volume owner ${clash.owner} is not registered`);
     return { clash, owner };
+  }
+
+  offsetStudNear(
+    cellX: number,
+    cellZ: number,
+    hitX: number,
+    hitZ: number,
+    out: SurfaceHit,
+  ): boolean {
+    if (!this.volumes.topOwnerAt(cellX, cellZ, this.isTrack, surfaceTop)) return false;
+    const landingLdu = Math.max(0, Math.ceil(surfaceTop.topLdu / PLATE_LDU)) * PLATE_LDU;
+    const minX = cellX * STUD_LDU;
+    const minZ = cellZ * STUD_LDU;
+    let best = Number.POSITIVE_INFINITY;
+    for (this.studs.cursor(cellX, cellZ, nearStud); nearStud.valid; nearStud.advance()) {
+      const { x, z } = nearStud;
+      if (nearStud.baseLdu !== landingLdu) continue;
+      if (x % HALF_STUD_LDU !== 0 || z % HALF_STUD_LDU !== 0) continue;
+      if (onCellCentre(x) && onCellCentre(z)) continue;
+      if (x < minX || x > minX + STUD_LDU || z < minZ || z > minZ + STUD_LDU) continue;
+      const distance = Math.hypot(x - hitX, z - hitZ);
+      if (distance >= best) continue;
+      best = distance;
+      out.x = x;
+      out.z = z;
+      out.cellX = cellX;
+      out.cellZ = cellZ;
+    }
+    return best < Number.POSITIVE_INFINITY;
   }
 
   setStudShapes(shapes: StudShapes): void {
