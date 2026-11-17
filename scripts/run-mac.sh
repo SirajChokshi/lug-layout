@@ -21,5 +21,9 @@ for i in $(seq 1 60); do curl -sf http://127.0.0.1:4173/ >/dev/null && break; sl
 mkdir -p "$EVIDENCE/results/$LABEL"
 { echo "ref=$REF sha=$SHA"; sw_vers; sysctl -n machdep.cpu.brand_string; pmset -g batt | head -2; uptime; "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version; } > "$EVIDENCE/results/$LABEL/machine.txt" 2>&1 || true
 ln -sfn "$ROOT/tools/e2e/node_modules" "$EVIDENCE/node_modules"
-node "$EVIDENCE/scripts/measure.mjs" --label="$LABEL" --out="$EVIDENCE/results/$LABEL" --extra="$EXTRA" --throttle="$THROTTLE" --repeats="$REPEATS"
+if [ "${MODE:-layout}" = "pointer" ]; then
+  node "$EVIDENCE/scripts/pointer-move.mjs" --out="$EVIDENCE/results/$LABEL" --throttle="$THROTTLE"
+else
+  node "$EVIDENCE/scripts/measure.mjs" --label="$LABEL" --out="$EVIDENCE/results/$LABEL" --extra="$EXTRA" --throttle="$THROTTLE" --repeats="$REPEATS"
+fi
 lsof -ti tcp:4173 -sTCP:LISTEN | xargs kill 2>/dev/null || true
