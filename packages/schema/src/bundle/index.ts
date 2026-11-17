@@ -392,6 +392,9 @@ export const BundleCredit = v.object({
 });
 export type BundleCredit = v.InferOutput<typeof BundleCredit>;
 
+export const BundleThumbnail = v.object({ item: v.string(), file: v.string() });
+export type BundleThumbnail = v.InferOutput<typeof BundleThumbnail>;
+
 export const BundleLod = v.picklist(["standard", "low", "far"]);
 export type BundleLod = v.InferOutput<typeof BundleLod>;
 
@@ -420,6 +423,7 @@ export const BundleIndex = v.object({
   crosswalk: FileRef,
   partTable: FileRef,
   creditTable: FileRef,
+  thumbnails: v.array(BundleThumbnail),
 });
 export type BundleIndex = v.InferOutput<typeof BundleIndex>;
 
