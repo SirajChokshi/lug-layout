@@ -210,10 +210,13 @@ export {
   CATEGORY_LABEL,
   PALETTE_CATEGORIES,
   PaletteIndex,
+  colorChoices,
   colorDisplayName,
+  itemInColor,
 } from "./catalog/palette-index.ts";
 export type {
   PaletteCategory,
+  PaletteColorChoice,
   PaletteEntry,
   PaletteFilter,
   PaletteHit,

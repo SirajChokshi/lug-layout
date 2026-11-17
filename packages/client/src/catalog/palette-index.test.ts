@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { CatalogItemView } from "../edit/editor.ts";
-import { PaletteIndex } from "./palette-index.ts";
+import { PaletteIndex, colorChoices, itemInColor } from "./palette-index.ts";
 
 const GREEN = { code: 2, name: "Green", rgb: "#237841" };
 const DARK_GREEN = { code: 288, name: "Dark_Green", rgb: "#184632" };
@@ -123,4 +123,18 @@ it("searches only the chosen category", () => {
   expect(keys("32", "road")).toEqual(["ldraw:44336p03"]);
   expect(keys("straight", "baseplates")).toEqual([]);
   expect(keys("", "sets")).toEqual(["omr:7938-1"]);
+});
+
+it("offers each colour the parts come in once, with how many parts, colours before greys", () => {
+  const choices = colorChoices(index.entries("baseplates"));
+  expect(choices.map(({ color, parts }) => [color.name, parts])).toEqual([
+    ["Tan", 2],
+    ["Green", 3],
+    ["Dark_Green", 1],
+    ["Very_Light_Bluish_Grey", 1],
+    ["Dark_Bluish_Grey", 2],
+  ]);
+  const [sixteen] = index.entries("baseplates").filter((entry) => entry.key === "ldraw:3867");
+  expect(sixteen && itemInColor(sixteen, TAN.code)).toBeUndefined();
+  expect(sixteen && itemInColor(sixteen, GREEN.code)?.id).toBe("ldraw:3867@2");
 });
