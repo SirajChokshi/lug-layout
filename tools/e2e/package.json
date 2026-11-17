@@ -6,6 +6,7 @@
     "e2e": "playwright test",
     "import-models": "node src/import-models.ts",
     "export-parts-lists": "node src/export-parts-lists.ts",
+    "measure-startup": "node src/measure-startup.ts",
     "typecheck": "tsc -p tsconfig.json",
     "compiler-parity": "node --experimental-transform-types --no-warnings src/compiler-parity.ts"
   },
