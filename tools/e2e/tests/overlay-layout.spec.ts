@@ -68,6 +68,7 @@ async function enterMode(page: Page, mode: Mode): Promise<void> {
       return;
     }
     case "plan":
+      await page.locator(".plan-panel > summary").click();
       await page.locator('[data-action="new-plan"]').click();
       await expect(page.locator(".plan-panel")).toHaveAttribute("data-active-plan", /.+/u);
       await expect(page.locator(".view-controls")).toHaveAttribute("data-view", "plan");
