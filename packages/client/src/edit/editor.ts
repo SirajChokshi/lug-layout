@@ -350,6 +350,11 @@ export interface SkippedCatalogModel {
   readonly reason: string;
 }
 
+interface ModuleCell {
+  readonly column: number;
+  readonly row: number;
+}
+
 interface SkippedModel extends SkippedCatalogModel {
   readonly credit: ModelCredit;
 }
@@ -904,6 +909,7 @@ export class Editor implements IEditor {
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private modules: ModuleLayout | null = null;
   private moduleGhost: ModuleCandidate | null = null;
+  private turnedModuleCell: ModuleCell | null = null;
   private refusalMates: ReadonlyArray<string> = NO_END_KEYS;
   private lastMates: {
     readonly placeable: Placeable;
@@ -1649,6 +1655,7 @@ export class Editor implements IEditor {
     }
     const placeable = id === null ? null : (this.placeables.find((p) => p.id === id) ?? null);
     this.active = placeable;
+    this.turnedModuleCell = null;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
     const { moduleFit, snap } = this.snapGhost();
@@ -2415,9 +2422,14 @@ export class Editor implements IEditor {
       this.moduleGhost = null;
       return null;
     }
-    const candidate = this.state.snapModules
-      ? layout.bestCandidate(surface, this.ghostRot, this.hitX, this.hitZ)
-      : layout.candidate(surface, this.ghostRot, this.hitX, this.hitZ);
+    const turned = layout.candidate(surface, this.ghostRot, this.hitX, this.hitZ);
+    const pinned = this.turnedModuleCell;
+    const keepTurn = pinned?.column === turned.column && pinned.row === turned.row;
+    if (!keepTurn) this.turnedModuleCell = null;
+    const candidate =
+      this.state.snapModules && !keepTurn
+        ? layout.bestCandidate(surface, this.ghostRot, this.hitX, this.hitZ)
+        : turned;
     this.moduleGhost = candidate;
     this.placeRot = candidate.rot;
     this.hoverX = candidate.x;
@@ -2560,6 +2572,10 @@ export class Editor implements IEditor {
     }
     if (this.active) {
       this.ghostRot = (this.placeRot + 1) % QUARTER_TURNS;
+      this.turnedModuleCell = this.moduleGhost && {
+        column: this.moduleGhost.column,
+        row: this.moduleGhost.row,
+      };
       if (this.hovering) {
         this.hoverX = snapToGrid(this.hitX, STUD_LDU);
         this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);

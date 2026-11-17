@@ -612,51 +612,70 @@ it("refuses a rail edge against a plain or road module in either order, and join
   });
 }, 120_000);
 
-it.each([
-  {
-    name: "a MILS curve beside a MILS straight",
-    models: ["mils-road-straight", "mils-road-curve"],
-    placed: "generated:mils-road-straight",
-    held: "generated:mils-road-curve",
-    heldAt: [960, 320],
-  },
-  {
-    name: "a road curve at a road straight's open end",
-    models: [],
-    placed: "ldraw:44336p04@72",
-    held: "ldraw:44342p02@72",
-    heldAt: [320, 960],
-  },
-] as const)(
-  "R cycles the fitting turns of $name, and the click lays the turn the ghost shows",
-  async ({ models, placed, held, heldAt }) => {
-    const { editor, backend } = await startEditor(models);
-    editor.chooseItem(placed);
-    backend.aim(320, 320);
-    editor.pointerMove(0, 0);
-    editor.click(0, 0, 0);
-    editor.chooseItem(held);
-    backend.aim(heldAt[0], heldAt[1]);
-    editor.pointerMove(0, 0);
-    const shown = () => {
-      const { ghostRot, moduleFit, snap } = editor.snapshot();
-      return { ghostRot, fit: moduleFit?.rot ?? (snap?.state === "snapped" ? ghostRot : null) };
-    };
-    const turns = [shown()];
-    for (let press = 0; press < 4; press++) {
-      editor.rotate(0);
-      turns.push(shown());
-    }
-    for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
-    const rots = turns.map((turn) => turn.ghostRot);
-    expect(new Set(rots).size).toBe(2);
-    expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
-    editor.click(0, 0, 0);
-    const { placements } = editor.dump();
-    expect(placements.rot.at(-1)).toBe(rots.at(-1));
-  },
-  120_000,
-);
+it("R cycles the fitting turns of a road curve at a road straight's open end, and the click lays the turn the ghost shows", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem("ldraw:44336p04@72");
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem("ldraw:44342p02@72");
+  backend.aim(320, 960);
+  editor.pointerMove(0, 0);
+  const shown = () => {
+    const { ghostRot, snap } = editor.snapshot();
+    return { ghostRot, fit: snap?.state === "snapped" ? ghostRot : null };
+  };
+  const turns = [shown()];
+  for (let press = 0; press < 4; press++) {
+    editor.rotate(0);
+    turns.push(shown());
+  }
+  for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
+  const rots = turns.map((turn) => turn.ghostRot);
+  expect(new Set(rots).size).toBe(2);
+  expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
+  editor.click(0, 0, 0);
+  const { placements } = editor.dump();
+  expect(placements.rot.at(-1)).toBe(rots.at(-1));
+}, 120_000);
+
+it("R steps a MILS curve beside a MILS straight through all four turns from the fitted one, lays the turn the ghost shows, and fits again in the next cell", async () => {
+  const { editor, backend } = await startEditor(["mils-road-straight", "mils-road-curve"]);
+  editor.chooseItem("generated:mils-road-straight");
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem("generated:mils-road-curve");
+  backend.aim(960, 320);
+  editor.pointerMove(0, 0);
+  const shown = () => {
+    const { ghostRot, moduleFit } = editor.snapshot();
+    return { ghostRot, fit: moduleFit?.rot ?? null, mismatched: moduleFit?.mismatched ?? null };
+  };
+  const fitted = shown();
+  expect(fitted.mismatched).toBe(0);
+  const turns = [fitted];
+  for (let press = 0; press < 4; press++) {
+    editor.rotate(0);
+    turns.push(shown());
+  }
+  for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
+  expect(turns.map((turn) => turn.ghostRot)).toEqual(
+    [0, 1, 2, 3, 0].map((step) => (fitted.ghostRot + step) % 4),
+  );
+  const mismatching = turns.findIndex((turn) => (turn.mismatched ?? 0) > 0);
+  expect(mismatching).toBeGreaterThan(0);
+  for (let press = 0; press < mismatching; press++) editor.rotate(0);
+  editor.click(0, 0, 0);
+  expect({
+    rot: editor.dump().placements.rot.at(-1),
+    mismatched: editor.snapshot().modules.mismatched,
+  }).toEqual({ rot: turns[mismatching]?.ghostRot, mismatched: 2 });
+  editor.undo(0);
+  backend.aim(320, 960);
+  editor.pointerMove(0, 0);
+  expect(editor.snapshot().moduleFit).toMatchObject({ column: 0, row: 1, mismatched: 0 });
+}, 120_000);
 
 it("takes a 10185-1 Green Grocer flush against a rail edge when none of its parts reach the track end", async () => {
   const { editor, backend } = await startEditor(["mils-rail-straight", "10185-1"]);
@@ -810,50 +829,65 @@ it("offers none of the editing commands on a selection in a world another tab ho
   expect(readOnly.readOnly).toBe(true);
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
 }, 120_000);
-it.each([
-  {
-    name: "a road curve snapped to a road straight's open end",
-    models: [],
-    placed: "ldraw:44336p04@72",
-    held: "ldraw:44342p02@72",
-    heldAt: [320, 960],
-  },
-  {
-    name: "a rail module turned to face a rail module's rail edge",
-    models: ["mils-rail-straight"],
-    placed: RAIL_MODULE,
-    held: RAIL_MODULE,
-    heldAt: [960, 320],
-  },
-] as const)(
-  "checks and places $name at the snapped turn, not the turn R chose",
-  async ({ models, placed, held, heldAt }) => {
-    const { editor, backend } = await startEditor(models);
-    editor.chooseItem(placed);
-    backend.aim(320, 320);
-    editor.pointerMove(0, 0);
-    editor.click(0, 0, 0);
-    editor.chooseItem(held);
-    backend.aim(heldAt[0], heldAt[1]);
-    editor.pointerMove(0, 0);
-    let chosen = editor.snapshot().ghostRot;
-    for (let press = 0; press < 4 && editor.snapshot().ghostRot === chosen; press++) {
-      chosen = (editor.snapshot().ghostRot + 1) % 4;
-      editor.rotate(0);
-    }
-    const { ghostRot: snapped, ghost } = editor.snapshot();
-    expect(snapped).not.toBe(chosen);
-    expect(ghost?.refusal ?? null).toBeNull();
-    editor.click(0, 0, 0);
-    const { placements, refusals } = editor.snapshot();
-    expect({ placements, refusals, rot: editor.dump().placements.rot.at(-1) }).toEqual({
-      placements: 2,
-      refusals: 0,
-      rot: snapped,
-    });
-  },
-  120_000,
-);
+it("checks and places a road curve snapped to a road straight's open end at the snapped turn, not the turn R chose", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem("ldraw:44336p04@72");
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem("ldraw:44342p02@72");
+  backend.aim(320, 960);
+  editor.pointerMove(0, 0);
+  let chosen = editor.snapshot().ghostRot;
+  for (let press = 0; press < 4 && editor.snapshot().ghostRot === chosen; press++) {
+    chosen = (editor.snapshot().ghostRot + 1) % 4;
+    editor.rotate(0);
+  }
+  const { ghostRot: snapped, ghost } = editor.snapshot();
+  expect(snapped).not.toBe(chosen);
+  expect(ghost?.refusal ?? null).toBeNull();
+  editor.click(0, 0, 0);
+  const { placements, refusals } = editor.snapshot();
+  expect({ placements, refusals, rot: editor.dump().placements.rot.at(-1) }).toEqual({
+    placements: 2,
+    refusals: 0,
+    rot: snapped,
+  });
+}, 120_000);
+
+it("checks and refuses a rail module at the turn R chose beside a rail module, then places it at the fitted turn", async () => {
+  const { editor, backend } = await startEditor(["mils-rail-straight"]);
+  editor.chooseItem(RAIL_MODULE);
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem(RAIL_MODULE);
+  backend.aim(960, 320);
+  editor.pointerMove(0, 0);
+  const fitted = editor.snapshot();
+  expect(fitted.ghost?.refusal ?? null).toBeNull();
+  editor.rotate(0);
+  const turned = editor.snapshot();
+  expect({ rot: turned.ghostRot, rule: turned.ghost?.refusal?.rule }).toEqual({
+    rot: (fitted.ghostRot + 1) % 4,
+    rule: "rail-edge",
+  });
+  editor.click(0, 0, 0);
+  const refused = editor.snapshot();
+  expect({
+    placements: refused.placements,
+    refusals: refused.refusals,
+    rule: refused.lastRefusal?.rule,
+  }).toEqual({ placements: 1, refusals: 1, rule: "rail-edge" });
+  for (let press = 0; press < 3; press++) editor.rotate(0);
+  expect(editor.snapshot().ghostRot).toBe(fitted.ghostRot);
+  editor.click(0, 0, 0);
+  expect({
+    placements: editor.snapshot().placements,
+    rot: editor.dump().placements.rot.at(-1),
+  }).toEqual({ placements: 2, rot: fitted.ghostRot });
+}, 120_000);
+
 const SET_WITH_TRACK = "10128-1";
 
 function drawTrack(

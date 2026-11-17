@@ -565,6 +565,11 @@ it(
           );
           editor.undo(0);
         }
+        note(problems, shown.size === QUARTER_TURNS, {
+          anchor: anchor.id,
+          neighbour: neighbour.id,
+          turnsShownByR: [...shown],
+        });
       }
       editor.undo(0);
       expect(editor.snapshot().placements).toBe(0);
