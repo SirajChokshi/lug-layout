@@ -1,3 +1,4 @@
+import { PLATE_LDU } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { parseGlb, readInheritColorMesh, readPartMesh } from "./glb.ts";
 import {
@@ -256,6 +257,7 @@ function compiledPartAsset(
     role: COMPILED_PART_ROLE,
     file: "",
     bounds: extras.bounds,
+    baseplate: extras.bounds.max[1] - extras.bounds.min[1] < PLATE_LDU && extras.studs.length > 0,
   };
   return {
     part: toPartAsset(part, bytes, studPrimitiveNames),
@@ -295,6 +297,7 @@ function toPartAsset(
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,
     producedColors: part.producedColors?.colors.map((color) => color.ldraw) ?? [],
+    baseplate: part.baseplate,
     trackEnds: part.trackEnds,
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),

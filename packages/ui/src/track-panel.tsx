@@ -70,6 +70,12 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
     ["Open ends", integer.format(track.openEnds)],
     ["Coincident ends not joined", integer.format(track.coincidentEndIssues)],
     ["Last release", commitText(track)],
+    [
+      "Selected piece",
+      track.selected
+        ? `${track.selected.pieceId} #${track.selected.piece + 1}; Delete removes it`
+        : "none; click a laid piece to select it",
+    ],
   ];
   if (track.drag) rows.push(...dragRows(track.drag));
   if (track.solve) {
@@ -93,7 +99,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       {snapshot.mode === "track" && (
         <p className="toolbar-hint">
           Drag from an open end (or from empty ground) to lay track. Release over another open end
-          to join it exactly.
+          to join it exactly. Click a laid piece and press Delete to remove it.
         </p>
       )}
       <dl>

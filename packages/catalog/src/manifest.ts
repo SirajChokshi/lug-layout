@@ -16,6 +16,7 @@ export interface ManifestPart {
   readonly role: PartRole;
   readonly file: string;
   readonly bounds: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
+  readonly baseplate: boolean;
   readonly title?: string;
   readonly displayColor?: { readonly ldraw: number; readonly source: string };
   readonly producedColors?: ManifestProducedColors;
@@ -138,6 +139,7 @@ function isManifestPart(value: unknown): value is ManifestPart {
     typeof value["path"] === "string" &&
     typeof value["file"] === "string" &&
     typeof value["role"] === "string" &&
+    typeof value["baseplate"] === "boolean" &&
     isVec3(value["bounds"]["min"]) &&
     isVec3(value["bounds"]["max"])
   );
