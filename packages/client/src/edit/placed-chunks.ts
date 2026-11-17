@@ -197,24 +197,36 @@ function closedAround(
   return true;
 }
 
+export type LandingAt =
+  | { readonly kind: "cursor"; readonly cellX: number; readonly cellZ: number }
+  | { readonly kind: "height"; readonly yPlates: number };
+
 interface Landing {
   readonly yPlates: number;
   readonly owner: number | null;
 }
 
-function landing(volumes: VolumeIndex, base: BaseCells): Landing {
+function landing(
+  volumes: VolumeIndex,
+  base: BaseCells,
+  at: LandingAt,
+  ignore: OwnerFilter,
+): Landing {
   const hit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
-  let yPlates = 0;
+  if (at.kind === "cursor") {
+    if (!volumes.topOwnerAt(at.cellX, at.cellZ, ignore, hit)) return { yPlates: 0, owner: null };
+    return { yPlates: Math.max(0, Math.ceil(hit.topLdu / PLATE_LDU)), owner: hit.owner };
+  }
+  const limit = at.yPlates * PLATE_LDU;
   let owner: number | null = null;
   let highest = NO_TOP;
   for (let c = 0; c < base.count; c++) {
-    if (!volumes.topOwnerAt(base.cellX[c] ?? 0, base.cellZ[c] ?? 0, hit)) continue;
-    if (hit.topLdu <= highest) continue;
+    if (!volumes.topOwnerAt(base.cellX[c] ?? 0, base.cellZ[c] ?? 0, ignore, hit)) continue;
+    if (hit.topLdu > limit || hit.topLdu <= highest) continue;
     highest = hit.topLdu;
     owner = hit.owner;
-    yPlates = Math.max(0, Math.ceil(hit.topLdu / PLATE_LDU));
   }
-  return { yPlates, owner };
+  return { yPlates: at.yPlates, owner };
 }
 
 interface CandidateCells {
@@ -627,6 +639,7 @@ export class PlacedChunks {
   private readonly trackStamps = new Map<number, TrackStamp>();
   private readonly byTrackChunk = new Map<number, Set<TrackStamp>>();
   private nextOwner = 1;
+  private readonly isTrack: OwnerFilter = (owner) => this.owners.get(owner)?.kind === "track";
 
   constructor(private readonly backend: ISceneBackend) {}
 
@@ -656,13 +669,18 @@ export class PlacedChunks {
     z: number,
     rot: number,
     ignore: ReadonlyArray<PlacedModel>,
+    at: LandingAt,
   ): PlacementCheck {
     const cells = candidateCells(placeable, new LatticePose(x, z, rot));
     return this.withExcluded(this.entriesOf(ignore), () => {
       const first = placeable.layer === "first";
-      const lands = first ? { yPlates: 0, owner: null } : landing(this.volumes, cells.base);
+      const lands = first
+        ? { yPlates: 0, owner: null }
+        : landing(this.volumes, cells.base, at, this.isTrack);
       const { yPlates } = lands;
-      const support = first ? null : upperSupport(cells.base, yPlates, this.volumes, this.support);
+      const support = first
+        ? null
+        : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
       const hit = firstOverlap(
         raised(cells.volumes, yPlates * PLATE_LDU),
         this.volumes,
@@ -685,11 +703,7 @@ export class PlacedChunks {
       bottomLdu: new Int32Array(cells.count).fill(bottomLdu),
       topLdu: new Int32Array(cells.count).fill(topLdu),
     };
-    const hit = firstOverlap(
-      volumes,
-      this.volumes,
-      (owner) => this.owners.get(owner)?.kind === "track",
-    );
+    const hit = firstOverlap(volumes, this.volumes, this.isTrack);
     return hit ? this.placedOverlap(hit) : null;
   }
 
@@ -762,7 +776,14 @@ export class PlacedChunks {
       if (![...entry.columnKeys].some((key) => keys.has(key))) continue;
       const support = this.withExcluded(
         new Set([...gone, entry]),
-        () => upperSupport(entry.candidate.base, entry.handle.yPlates, this.volumes, this.support),
+        () =>
+          upperSupport(
+            entry.candidate.base,
+            entry.handle.yPlates,
+            this.volumes,
+            this.support,
+            this.isTrack,
+          ),
         arriving,
       );
       if (!isSupported(support)) lost.push({ model: entry, support });
