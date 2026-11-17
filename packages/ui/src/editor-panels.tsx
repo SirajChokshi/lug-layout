@@ -176,7 +176,8 @@ export function ModuleJoins({ editor, snapshot }: PanelProps) {
         path, earth track, paved road, river or rail centred on the side, or plain terrain. Sides
         join when they are the same kind. The markers are green where sides join, amber where a side
         is open and red where it meets a different kind; the tall block marks where the feature
-        crosses the side.
+        crosses the side. Every count is of module sides, so two modules that meet add two joined or
+        two mismatched sides.
       </p>
       <dl>
         <div>

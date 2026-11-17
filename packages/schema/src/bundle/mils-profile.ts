@@ -42,6 +42,7 @@ export const MilsSpecRiver = v.strictObject({
   ldrawColors: CitedColors,
   bankStartPlates: CitedCount,
   bankRisePlatesPerStud: CitedPositive,
+  bankVariationPlates: CitedCount,
 });
 export type MilsSpecRiver = v.InferOutput<typeof MilsSpecRiver>;
 
@@ -127,6 +128,9 @@ export const MilsEdgeFeatureRule = v.strictObject({
   belowPlates: Count,
   abovePlates: Count,
   bankStuds: Count,
+  bankStartPlates: Count,
+  bankRisePlatesPerStud: Count,
+  bankVariationPlates: Count,
   ldrawColors: ColorList,
 });
 export type MilsEdgeFeatureRule = v.InferOutput<typeof MilsEdgeFeatureRule>;

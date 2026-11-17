@@ -23,7 +23,13 @@ function groundFootprint(
   let maxX = Number.NEGATIVE_INFINITY;
   let maxZ = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < instances.count; i++) {
-    if (parts[instances.partIndex[i] ?? 0]?.role !== "ground") continue;
+    const index = instances.partIndex[i];
+    const part = index === undefined ? undefined : parts[index];
+    if (!part)
+      throw new Error(
+        `${label}: instance ${i} names part ${String(index)}, which the palette lacks`,
+      );
+    if (part.role !== "ground") continue;
     const b = i * BOX_FLOATS;
     minX = Math.min(minX, partBoxes[b] ?? 0);
     minZ = Math.min(minZ, partBoxes[b + 2] ?? 0);

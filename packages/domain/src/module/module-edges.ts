@@ -81,9 +81,10 @@ function matchesFeature(
       continue;
     }
     const distance = stud < from ? from - stud : stud - to + 1;
+    const bank = feature.bankStartPlates + (distance - 1) * feature.bankRisePlatesPerStud;
     const fits =
       distance <= feature.bankStuds
-        ? within(height, feature.plates, surfaceHigh)
+        ? within(height, bank - feature.bankVariationPlates, bank + feature.bankVariationPlates)
         : within(height, surfaceLow, surfaceHigh);
     if (!fits) return false;
   }
@@ -194,10 +195,8 @@ export class ModuleGrid {
         const { status, facing: facingKind } = this.check(module.column, module.row, side, edge);
         edges.push({ module: module.id, side, kind: edge.kind, status, facing: facingKind });
         if (status === "open") open++;
-        else if (side === "maxX" || side === "maxZ") {
-          if (status === "joined") joined++;
-          else mismatched++;
-        }
+        else if (status === "joined") joined++;
+        else mismatched++;
       });
     }
     return { modules: this.cells.size, joined, mismatched, open, edges };

@@ -840,6 +840,9 @@ function levelFeatureRule(
       level.aboveSurfacePlates.min +
       level.sideVariationPlates.abovePlates,
     bankStuds: 0,
+    bankStartPlates: 0,
+    bankRisePlatesPerStud: 0,
+    bankVariationPlates: 0,
     ldrawColors: level.ldrawColors.values,
   };
 }
@@ -857,6 +860,9 @@ function riverRule(profile: MilsProfile): MilsEdgeFeatureRule {
       (profile.spec.surfacePlates.value - river.bankStartPlates.value) /
         river.bankRisePlatesPerStud.value,
     ),
+    bankStartPlates: river.bankStartPlates.value,
+    bankRisePlatesPerStud: river.bankRisePlatesPerStud.value,
+    bankVariationPlates: river.bankVariationPlates.value,
     ldrawColors: river.ldrawColors.values,
   };
 }
@@ -870,6 +876,9 @@ function railRule(profile: MilsProfile, rail: BaseplateMeasurement): MilsEdgeFea
     belowPlates: 0,
     abovePlates: 0,
     bankStuds: 0,
+    bankStartPlates: 0,
+    bankRisePlatesPerStud: 0,
+    bankVariationPlates: 0,
     ldrawColors: [profile.build.rail.ldrawColor],
   };
 }

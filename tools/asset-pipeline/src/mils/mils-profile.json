@@ -95,6 +95,10 @@
         "bankRisePlatesPerStud": {
           "value": 1,
           "source": "same row: banks rise 1 plate per stud to the module surface (S2)"
+        },
+        "bankVariationPlates": {
+          "value": 1,
+          "source": "docs/verified-facts.md, \"MILS rivers\": the banks rise 1 plate per stud from the stud adjacent to the river at 2 plates, and \"there may be variations of 1 plate in this height\" (S2)"
         }
       }
     },

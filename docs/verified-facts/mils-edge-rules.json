@@ -12,6 +12,9 @@
       "belowPlates": 0,
       "abovePlates": 1,
       "bankStuds": 0,
+      "bankStartPlates": 0,
+      "bankRisePlatesPerStud": 0,
+      "bankVariationPlates": 0,
       "ldrawColors": [
         72
       ]
@@ -24,6 +27,9 @@
       "belowPlates": 1,
       "abovePlates": 1,
       "bankStuds": 0,
+      "bankStartPlates": 0,
+      "bankRisePlatesPerStud": 0,
+      "bankVariationPlates": 0,
       "ldrawColors": [
         6,
         70,
@@ -38,6 +44,9 @@
       "belowPlates": 0,
       "abovePlates": 0,
       "bankStuds": 2,
+      "bankStartPlates": 2,
+      "bankRisePlatesPerStud": 1,
+      "bankVariationPlates": 1,
       "ldrawColors": [
         33
       ]
@@ -50,6 +59,9 @@
       "belowPlates": 0,
       "abovePlates": 0,
       "bankStuds": 0,
+      "bankStartPlates": 0,
+      "bankRisePlatesPerStud": 0,
+      "bankVariationPlates": 0,
       "ldrawColors": [
         72
       ]
@@ -62,6 +74,9 @@
       "belowPlates": 1,
       "abovePlates": 1,
       "bankStuds": 0,
+      "bankStartPlates": 0,
+      "bankRisePlatesPerStud": 0,
+      "bankVariationPlates": 0,
       "ldrawColors": [
         6,
         70,

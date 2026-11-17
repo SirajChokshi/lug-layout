@@ -48,8 +48,9 @@ function featureSamples(rule: MilsEdgeFeatureRule, shift = 0, width = rule.width
     samples.colors[stud] = rule.ldrawColors[0] ?? 0;
   }
   for (let bank = 0; bank < rule.bankStuds; bank++) {
-    samples.plates[from - 1 - bank] = rule.plates + bank;
-    samples.plates[from + width + bank] = rule.plates + bank;
+    const plates = rule.bankStartPlates + bank * rule.bankRisePlatesPerStud;
+    samples.plates[from - 1 - bank] = plates;
+    samples.plates[from + width + bank] = plates;
   }
   return samples;
 }
@@ -96,11 +97,18 @@ describe("classifyModuleEdge", () => {
     expect(classifyModuleEdge(rules, desert.plates, desert.colors)).toBe("terrain");
   });
 
-  it("refuses a river without its banks stepping up from the water", () => {
-    const river = featureSamples(feature("river"));
-    const from = (studs - feature("river").widthStuds) / 2;
-    river.plates[from - 1] = surface + rules.surfaceTolerancePlates + 1;
-    expect(classifyModuleEdge(rules, river.plates, river.colors)).toBe("other");
+  it("refuses a river whose banks don't step up from the water, such as a cliff at the surface", () => {
+    const river = feature("river");
+    const from = (studs - river.widthStuds) / 2;
+    const cliff = featureSamples(river);
+    for (let bank = 0; bank < river.bankStuds; bank++) {
+      cliff.plates[from - 1 - bank] = surface;
+      cliff.plates[from + river.widthStuds + bank] = surface;
+    }
+    expect(classifyModuleEdge(rules, cliff.plates, cliff.colors)).toBe("other");
+    const varied = featureSamples(river);
+    varied.plates[from - 1] = river.bankStartPlates + river.bankVariationPlates;
+    expect(classifyModuleEdge(rules, varied.plates, varied.colors)).toBe("river");
   });
 });
 
@@ -118,7 +126,7 @@ describe("ModuleGrid", () => {
       { id: 3, column: 1, row: 1, edges: [terrain, terrain, terrain, terrain] },
     ]);
     const report = grid.report();
-    expect(report).toMatchObject({ modules: 4, joined: 3, mismatched: 1, open: 8 });
+    expect(report).toMatchObject({ modules: 4, joined: 6, mismatched: 2, open: 8 });
     const between = report.edges.filter((e) => e.module === 2 && e.side === "maxX");
     expect(between).toEqual([
       { module: 2, side: "maxX", kind: "river", status: "mismatch", facing: "terrain" },

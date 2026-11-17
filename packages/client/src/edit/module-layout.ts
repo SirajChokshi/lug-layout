@@ -30,6 +30,15 @@ export interface ModulePose {
   readonly rot: number;
 }
 
+export interface GridModuleSnapshot {
+  readonly item: string;
+  readonly x: number;
+  readonly z: number;
+  readonly originX: number;
+  readonly originZ: number;
+  readonly edges: ReadonlyArray<ModuleEdge>;
+}
+
 export interface ModuleCandidate extends ModulePose {
   readonly edges: ReadonlyArray<ModuleEdge>;
   readonly fit: ModuleFit;
@@ -85,8 +94,8 @@ function better(a: ModuleFit, b: ModuleFit): number {
 
 export class ModuleLayout {
   private grid = new ModuleGrid([]);
-  private gridModels: ReadonlyArray<PlacedModel> = [];
-  private gridEdges: ReadonlyArray<ReadonlyArray<ModuleEdge>> = [];
+  private gridModules: ReadonlyArray<GridModuleSnapshot> = [];
+  private placedMarkers: ReadonlyArray<EdgeMarker> = [];
   private latest: ModuleJoinReport;
   private offGridCount = 0;
 
@@ -157,8 +166,7 @@ export class ModuleLayout {
   }
 
   refresh(models: ReadonlyArray<PlacedModel>): ModuleJoinReport {
-    const gridModels: PlacedModel[] = [];
-    const gridEdges: Array<ReadonlyArray<ModuleEdge>> = [];
+    const gridModules: GridModuleSnapshot[] = [];
     const cells: Array<{
       id: number;
       column: number;
@@ -178,15 +186,26 @@ export class ModuleLayout {
         continue;
       }
       const edges = this.edges(surface, x, z, rot);
-      cells.push({ id: gridModels.length, column, row, edges });
-      gridModels.push(model);
-      gridEdges.push(edges);
+      cells.push({ id: gridModules.length, column, row, edges });
+      gridModules.push({
+        item: model.placeable.id,
+        x,
+        z,
+        originX: column * this.sizeLdu,
+        originZ: row * this.sizeLdu,
+        edges,
+      });
     }
     this.grid = new ModuleGrid(cells);
-    this.gridModels = gridModels;
-    this.gridEdges = gridEdges;
+    this.gridModules = gridModules;
     this.offGridCount = offGrid;
     this.latest = this.grid.report();
+    this.placedMarkers = this.latest.edges.flatMap((edge) => {
+      const module = gridModules[edge.module];
+      const sample = module?.edges[MODULE_SIDES.indexOf(edge.side)];
+      if (!module || !sample) return [];
+      return this.sideMarkers(module.originX, module.originZ, edge.side, sample, edge.status);
+    });
     return this.latest;
   }
 
@@ -202,27 +221,12 @@ export class ModuleLayout {
     return this.grid.occupant(column, row) !== null;
   }
 
-  modelOf(id: number): PlacedModel | null {
-    return this.gridModels[id] ?? null;
+  module(id: number): GridModuleSnapshot | null {
+    return this.gridModules[id] ?? null;
   }
 
   markers(): ReadonlyArray<EdgeMarker> {
-    return this.latest.edges.flatMap((edge) => {
-      const model = this.gridModels[edge.module];
-      const edges = this.gridEdges[edge.module];
-      const sample = edges?.[MODULE_SIDES.indexOf(edge.side)];
-      if (!model || !sample) return [];
-      const surface = model.placeable.module;
-      if (!surface) return [];
-      const min = footprintMin(surface, model.handle.rot);
-      return this.sideMarkers(
-        model.handle.x + min.x,
-        model.handle.z + min.z,
-        edge.side,
-        sample,
-        edge.status,
-      );
-    });
+    return this.placedMarkers;
   }
 
   ghostMarkers(candidate: ModuleCandidate, surface: ModuleSurface): ReadonlyArray<EdgeMarker> {

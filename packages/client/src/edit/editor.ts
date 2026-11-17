@@ -1093,9 +1093,9 @@ export class Editor implements IEditor {
         report: view.report,
       };
     }
+    this.refreshModules();
     this.refreshRoads();
     this.placeGhost();
-    this.refreshModules();
     this.update({
       placements: this.world.size,
       hover: this.hoverView(),
@@ -1189,12 +1189,12 @@ export class Editor implements IEditor {
     const issues: ModuleIssueView[] = [];
     for (const edge of report.edges) {
       if (edge.status !== "mismatch" || issues.length >= LISTED_MODULE_ISSUES) continue;
-      const model = layout.modelOf(edge.module);
-      if (!model) continue;
+      const module = layout.module(edge.module);
+      if (!module) continue;
       issues.push({
-        item: model.placeable.id,
-        x: model.handle.x,
-        z: model.handle.z,
+        item: module.item,
+        x: module.x,
+        z: module.z,
         side: edge.side,
         kind: edge.kind,
         facing: edge.facing,
