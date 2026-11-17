@@ -27,7 +27,7 @@ const INT64_BITS = 64;
 const INT16_MIN = -(2 ** 15);
 const INT16_MAX = 2 ** 15 - 1;
 const INT8_MIN = -(2 ** 7);
-const INT8_MAX = 2 ** 7 - 1;
+export const INT8_MAX = 2 ** 7 - 1;
 const RAMP_CONNECTORS = 2;
 const RAMP_HIGH_END = 1;
 

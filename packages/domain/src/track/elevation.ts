@@ -1,4 +1,5 @@
 import { BRICK_LDU, PLATE_LDU } from "@brr/math";
+import { INT8_MAX } from "./track-layout.ts";
 
 export const PLATES_PER_BRICK = BRICK_LDU / PLATE_LDU;
 
@@ -26,8 +27,10 @@ export function rampRises(
   if (!Number.isInteger(fromPlates) || !Number.isInteger(toPlates)) {
     throw new RangeError(`ramp heights ${fromPlates} → ${toPlates} must be whole plates`);
   }
-  if (!Number.isInteger(maxRisePlates) || maxRisePlates < 0) {
-    throw new RangeError(`a ramp can't rise ${maxRisePlates} plates per piece`);
+  if (!Number.isInteger(maxRisePlates) || maxRisePlates < 0 || maxRisePlates > INT8_MAX) {
+    throw new RangeError(
+      `a ramp can't rise ${maxRisePlates} plates per piece: a piece's rise is 0 to ${INT8_MAX} plates`,
+    );
   }
   const rises = new Int8Array(preferred.length);
   const direction = Math.sign(toPlates - fromPlates);
