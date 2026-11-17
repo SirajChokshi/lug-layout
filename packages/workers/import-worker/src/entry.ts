@@ -15,6 +15,14 @@ self.addEventListener("message", (event: MessageEvent<ImportWorkerRequest>) => {
   const request = event.data;
   service.run(request).then(
     (model) => reply({ id: request.id, kind: "imported", model }, transferablesOf(model)),
-    (error: unknown) => reply({ id: request.id, kind: "failed", message: String(error) }, []),
+    (error: unknown) =>
+      reply(
+        {
+          id: request.id,
+          kind: "failed",
+          message: error instanceof Error ? error.message : String(error),
+        },
+        [],
+      ),
   );
 });

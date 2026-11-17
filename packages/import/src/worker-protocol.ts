@@ -1,3 +1,4 @@
+import type { BricklinkPartCandidates } from "@brr/catalog";
 import type { ImportResult, ImportJob } from "./model-import.ts";
 
 export interface LdrawTextInput {
@@ -5,7 +6,14 @@ export interface LdrawTextInput {
   readonly job: ImportJob;
 }
 
-export type ImportInput = LdrawTextInput;
+export interface StudioFileInput {
+  readonly kind: "studio";
+  readonly job: Omit<ImportJob, "text">;
+  readonly bytes: Uint8Array;
+  readonly bricklinkParts: BricklinkPartCandidates;
+}
+
+export type ImportInput = LdrawTextInput | StudioFileInput;
 
 export interface ImportWorkerRequest {
   readonly id: number;
