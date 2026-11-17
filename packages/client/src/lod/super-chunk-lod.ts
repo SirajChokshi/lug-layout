@@ -36,6 +36,8 @@ export interface SuperChunkLodStats {
 
 const DETAIL_ENTER_STUD_PX = 3;
 const DETAIL_LEAVE_STUD_PX = 2.25;
+const MESH_PREFETCH_STUD_PX = 4.5;
+const MESH_RELEASE_STUD_PX = 6;
 const IDLE_SLICE_MS = 4;
 const MAX_CELL_PX = 3;
 const LEVEL_HYSTERESIS = 1.25;
@@ -79,6 +81,10 @@ class SuperChunkState {
 
   get meshBuilt(): boolean {
     return this.meshVersion >= 0;
+  }
+
+  get needsMesh(): boolean {
+    return !this.wantsChunks || !this.chunksLoaded || this.studPitchPx < MESH_PREFETCH_STUD_PX;
   }
 
   touch(nowMs: number): void {
@@ -154,7 +160,7 @@ export class SuperChunkLod implements IdleWork {
       const state = this.stateList[i];
       if (!state) continue;
       if (state.wantsChunks && !state.chunksLoaded) return false;
-      if (this.enabled && !state.meshCurrent) return false;
+      if (this.enabled && state.needsMesh && !state.meshCurrent) return false;
     }
     return true;
   }
@@ -259,6 +265,8 @@ export class SuperChunkLod implements IdleWork {
     state.studPitchPx = pitch;
     this.releveled(state, pitch);
     const wants = this.wantsDetail(state, pitch);
+    this.releaseHiddenMesh(state);
+    if (this.enabled && state.needsMesh && !state.meshCurrent) this.idle.wake();
     if (wants === state.wantsChunks) return;
     if (wants) {
       state.wantsChunks = true;
@@ -292,7 +300,7 @@ export class SuperChunkLod implements IdleWork {
     let bestScore = Number.NEGATIVE_INFINITY;
     for (let i = 0; i < this.stateList.length; i++) {
       const state = this.stateList[i];
-      if (!state || state.meshCurrent) continue;
+      if (!state || state.meshCurrent || !state.needsMesh) continue;
       const urgent =
         !state.wantsChunks || !state.chunksLoaded || state.studPitchPx < DETAIL_LEAVE_STUD_PX
           ? 1
@@ -304,6 +312,17 @@ export class SuperChunkLod implements IdleWork {
       }
     }
     return best;
+  }
+
+  private releaseHiddenMesh(state: SuperChunkState): void {
+    if (!state.meshBuilt || !state.wantsChunks || !state.chunksLoaded) return;
+    if (state.studPitchPx < MESH_RELEASE_STUD_PX) return;
+    if (this.job?.state === state) this.job = null;
+    this.backend.deleteSuperChunk(state.key);
+    state.meshVersion = -1;
+    state.meshLevel = -1;
+    state.meshVisible = false;
+    state.meshTriangles = 0;
   }
 
   private buildMeshes(deadlineMs: number): void {
