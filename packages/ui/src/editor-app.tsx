@@ -1,4 +1,5 @@
-import type { EditorOptions, IEditor, IPlanService } from "@brr/client";
+import type { EditorOptions, IEditor, IPlanService, ShellCommandId } from "@brr/client";
+import { useCallback, useState } from "react";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CreditsFooter,
@@ -9,8 +10,10 @@ import {
 } from "./editor-panels.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { TrackPanel } from "./track-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
+import { useEditorKeys } from "./use-editor-keys.ts";
 
 interface EditorAppProps {
   readonly editor: IEditor;
@@ -50,6 +53,17 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
 
 export function EditorApp({ editor, plans, options, disclaimer, showState }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
+  const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
+  const closeOverlay = useCallback(() => setOverlay(null), []);
+  const toggleOverlay = useCallback(
+    (id: ShellCommandId) => setOverlay((open) => (open === id ? null : id)),
+    [],
+  );
+  useEditorKeys(editor, {
+    onShellCommand: toggleOverlay,
+    overlayOpen: overlay !== null,
+    closeOverlay,
+  });
   return (
     <div
       className="editor"
@@ -68,7 +82,11 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       <EditorHud snapshot={snapshot} />
       <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">
-        <PlacementToolbar editor={editor} snapshot={snapshot} />
+        <PlacementToolbar
+          editor={editor}
+          snapshot={snapshot}
+          onShowShortcuts={() => toggleOverlay("show-shortcuts")}
+        />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
@@ -77,6 +95,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
       <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />
+      {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
     </div>
   );
 }
