@@ -1356,7 +1356,7 @@ footer a {
 }
 
 .side-panel > .catalog {
-  min-height: 160px;
+  min-height: min(440px, 55vh);
 }
 
 .side-panel > .bom {
