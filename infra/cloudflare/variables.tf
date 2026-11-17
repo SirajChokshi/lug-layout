@@ -73,6 +73,23 @@ variable "part_bundle_r2_dev" {
   default     = true
 }
 
+variable "ldraw_library_domain" {
+  description = "Custom domain serving the LDraw library bucket in zone_id, for example ldraw.example.org."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.ldraw_library_domain == null || var.zone_id != null
+    error_message = "ldraw_library_domain needs zone_id."
+  }
+}
+
+variable "ldraw_library_r2_dev" {
+  description = "Keep the LDraw library bucket public on its r2.dev domain. Leave it on while any deployment, including a rollback target, still reads the library from the r2.dev URL; setting ldraw_library_domain doesn't turn it off."
+  type        = bool
+  default     = true
+}
+
 variable "worker_bundle" {
   description = "Worker module built by `pnpm --filter @brr/catalog-api build`."
   type        = string

@@ -8,7 +8,7 @@ import type {
   ImportWorkerResponse,
 } from "@brr/import";
 import { inject, injectable } from "inversify";
-import { IMPORT_WORKER_FACTORY } from "../tokens.ts";
+import { IMPORT_WORKER_FACTORY, LDRAW_LIBRARY_BASE_URL } from "../tokens.ts";
 
 export interface IModelImporter {
   importText(fileName: string, text: string, lod?: BundleLod): Promise<ImportResult>;
@@ -32,6 +32,7 @@ export class WorkerModelImporter implements IModelImporter {
     @inject(IMPORT_WORKER_FACTORY) private readonly createWorker: ImportWorkerFactory,
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
+    @inject(LDRAW_LIBRARY_BASE_URL) private readonly ldrawLibraryBaseUrl: string | null,
   ) {}
 
   private connection(): Worker {
@@ -109,6 +110,7 @@ export class WorkerModelImporter implements IModelImporter {
       id: this.nextId++,
       compilerUrl: new URL(context.compilerPath, new URL(this.bundleBaseUrl.replace(/\/?$/u, "/")))
         .href,
+      ...(this.ldrawLibraryBaseUrl === null ? {} : { ldrawLibraryUrl: this.ldrawLibraryBaseUrl }),
       input,
     };
     return new Promise((resolve, reject) => {

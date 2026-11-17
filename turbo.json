@@ -16,6 +16,7 @@
       "inputs": [
         "src/**",
         "!src/**/*.test.ts",
+        "!src/library/**",
         "palette.json",
         "ldraw.lock.json",
         "$TURBO_ROOT$/crates/**",
