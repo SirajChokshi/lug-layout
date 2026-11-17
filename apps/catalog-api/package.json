@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
     "test": "vitest run",
     "load-release": "node scripts/load-release.ts",
-    "measure": "node scripts/measure.ts"
+    "measure": "node scripts/measure.ts",
+    "measure-bundle-search": "node scripts/measure-bundle-search.ts"
   },
   "dependencies": {
     "@brr/schema": "workspace:*",

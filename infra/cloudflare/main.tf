@@ -127,6 +127,11 @@ resource "cloudflare_workers_script" "catalog_api" {
         name        = local.r2.binding
         bucket_name = cloudflare_r2_bucket.catalog_releases.name
       },
+      {
+        type = "plain_text"
+        name = "PART_BUNDLE_BASE_URL"
+        text = local.part_bundle.public_base_url
+      },
     ],
     [
       for limiter in local.wrangler.ratelimits : {
@@ -143,6 +148,13 @@ resource "cloudflare_workers_script" "catalog_api" {
 
   observability = {
     enabled = local.wrangler.observability.enabled
+  }
+
+  lifecycle {
+    precondition {
+      condition     = local.wrangler.vars.PART_BUNDLE_BASE_URL == local.part_bundle.public_base_url
+      error_message = "PART_BUNDLE_BASE_URL in apps/catalog-api/wrangler.json differs from public_base_url in part-bundles.json."
+    }
   }
 }
 

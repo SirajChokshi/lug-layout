@@ -50,6 +50,9 @@ container.load(
     ...(import.meta.env.VITE_LDRAW_LIBRARY_BASE_URL
       ? { ldrawLibraryBaseUrl: import.meta.env.VITE_LDRAW_LIBRARY_BASE_URL }
       : {}),
+    ...(import.meta.env.VITE_CATALOG_API_BASE_URL
+      ? { catalogApiBaseUrl: import.meta.env.VITE_CATALOG_API_BASE_URL }
+      : {}),
     disclaimer: TRADEMARK_DISCLAIMER,
   }),
 );

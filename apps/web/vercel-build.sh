@@ -11,4 +11,6 @@ if [ -n "$VITE_LDRAW_LIBRARY_BASE_URL" ]; then
 else
   unset VITE_LDRAW_LIBRARY_BASE_URL
 fi
+: "${VITE_CATALOG_API_BASE_URL:=$(node -p "require('../../infra/cloudflare/catalog-api.json').base_url ?? ''")}"
+export VITE_CATALOG_API_BASE_URL
 exec pnpm run build

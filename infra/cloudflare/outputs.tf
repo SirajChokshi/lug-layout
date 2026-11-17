@@ -39,3 +39,8 @@ output "worker_name" {
 output "route_pattern" {
   value = var.route_pattern
 }
+
+output "catalog_api_base_url" {
+  description = "base_url for catalog-api.json: the Worker's zone route. Null without route_pattern, since workers.dev has no edge cache."
+  value       = var.route_pattern == null ? null : "https://${trimsuffix(var.route_pattern, "/*")}/"
+}

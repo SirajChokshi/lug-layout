@@ -6,7 +6,7 @@ Terraform for the server-side catalog search (`apps/catalog-api`) and for the bu
 |---|---|---|
 | `cloudflare_r2_bucket.catalog_releases` | `brr-catalog-releases` | Every catalog release SQLite file at `catalog/<release>/catalog.sqlite`. The source of truth and the offline fallback. Never pruned. |
 | `cloudflare_d1_database.catalog` | `brr-catalog` | Query copy of loaded releases, one table set per release (`r<release>_*`), with read replication on. |
-| `cloudflare_workers_script.catalog_api` | `brr-catalog-api` | The Worker, bound to D1 (`CATALOG_DB`), R2 (`CATALOG_RELEASES`) and two rate limiters (`QUERY_RATE_LIMIT` for D1 queries, `FILE_RATE_LIMIT` for release-file reads from R2). |
+| `cloudflare_workers_script.catalog_api` | `brr-catalog-api` | The Worker, bound to D1 (`CATALOG_DB`), R2 (`CATALOG_RELEASES`), the part bundle's public URL (`PART_BUNDLE_BASE_URL`, from `part-bundles.json`; part search fetches manifests from it, so the Worker holds no write access to `brr-part-bundles`), and two rate limiters (`QUERY_RATE_LIMIT` for D1 queries and part searches, `FILE_RATE_LIMIT` for release-file reads from R2). |
 | `cloudflare_workers_script_subdomain.catalog_api` | | `brr-catalog-api.<account>.workers.dev` on or off. |
 | `cloudflare_workers_route.catalog_api` | | Optional zone route. Needed for the edge cache: the Cache API does nothing on workers.dev, so there every uncached request reaches D1 or R2. |
 | `cloudflare_r2_bucket.part_bundles` | `brr-part-bundles` | The compiled part bundle (GLBs, model JSON, one manifest per LOD) under content-addressed keys. Written only by CI on `main`; deployed apps read it. Never pruned, so every deployment keeps its parts. |
@@ -17,6 +17,8 @@ Terraform for the server-side catalog search (`apps/catalog-api`) and for the bu
 | `cloudflare_r2_bucket_cors.ldraw_library` | | `GET` and `HEAD` from any origin, for the import worker. |
 | `cloudflare_r2_custom_domain.ldraw_library` | `ldraw_library_domain` | Optional public custom domain in `zone_id`. |
 | `cloudflare_r2_managed_domain.ldraw_library` | `pub-….r2.dev` | The library bucket's r2.dev domain, on while `ldraw_library_r2_dev` is true (the default). |
+
+The web app finds the Worker through `base_url` in `catalog-api.json`, which `apps/web/vercel-build.sh` exports as `VITE_CATALOG_API_BASE_URL` unless Vercel sets it. While it is `null`, deployed apps search only locally. Copy the output `catalog_api_base_url` into it once `route_pattern` is set (workers.dev has no edge cache), commit it, and redeploy Production by hand, because `ignoreCommand` skips commits that touch only `infra/`.
 
 Names, the compatibility date, the rate limits and observability come from `apps/catalog-api/wrangler.json`, so `wrangler dev`, the loader and Terraform can't drift apart. The part bundle bucket's name comes from `part-bundles.json`, which the asset pipeline's uploader reads too, and the LDraw library bucket's name comes from `ldraw-library.json` in the same way. Terraform uploads the Worker bundle; nothing here runs `wrangler deploy`. `pnpm check:infra` (run by CI and `pnpm check`) checks formatting and validates the configuration with the pinned provider.
 

@@ -121,6 +121,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     @inject(BUNDLE_MANIFEST_FILE) private readonly fallbackManifestFile: string,
   ) {}
 
+  async loadManifestFile(): Promise<string> {
+    return (await this.manifestFile()).file;
+  }
+
   private manifestFile(): Promise<ResolvedManifest> {
     this.resolvedManifest ??= this.resolveManifestFile();
     return this.resolvedManifest;
