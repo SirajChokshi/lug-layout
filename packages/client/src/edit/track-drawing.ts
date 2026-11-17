@@ -44,7 +44,7 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
-import { localPlanTriangles, supportCells } from "./track-footprint.ts";
+import { localPlanTriangles, supportCells, trackPlanTransform } from "./track-footprint.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -189,27 +189,6 @@ function partForPiece(piece: TrackPiece, parts: ReadonlyArray<PartAsset>): numbe
   return index;
 }
 
-interface PartTransform {
-  readonly x: number;
-  readonly z: number;
-  readonly c: number;
-  readonly s: number;
-}
-
-function partTransform(placement: Pose16, frame: TrackPartFrame): PartTransform {
-  const studs = zeta16ToStuds(placement.position);
-  const theta = placement.heading * HEADING_RADIANS;
-  const cosTheta = Math.cos(theta);
-  const sinTheta = Math.sin(theta);
-  const phi = theta + frame.headingHalfSteps * HALF_STEP_RADIANS;
-  return {
-    x: studs.x * STUD_LDU + cosTheta * frame.xLdu - sinTheta * frame.zLdu,
-    z: studs.z * STUD_LDU + sinTheta * frame.xLdu + cosTheta * frame.zLdu,
-    c: Math.cos(phi),
-    s: Math.sin(phi),
-  };
-}
-
 function writeMatrix(
   out: Float32Array,
   slot: number,
@@ -219,7 +198,7 @@ function writeMatrix(
   originX: number,
   originZ: number,
 ): void {
-  const { x, z, c, s } = partTransform(placement, frame);
+  const { x, z, cos: c, sin: s } = trackPlanTransform(placement, frame);
   const o = slot * INSTANCE_MATRIX_FLOATS;
   out[o] = c;
   out[o + 1] = 0;
@@ -236,7 +215,7 @@ function writeMatrix(
 }
 
 function partCentre(placed: Placed): { readonly x: number; readonly z: number } {
-  const { x, z } = partTransform(placed.placement, placed.part.piece.partFrame);
+  const { x, z } = trackPlanTransform(placed.placement, placed.part.piece.partFrame);
   return { x, z };
 }
 
@@ -279,7 +258,7 @@ function meshYRange(part: PartAsset): readonly [number, number] {
 }
 
 function partBox(placed: Placed): WorldBox {
-  const { x, z } = partTransform(placed.placement, placed.part.piece.partFrame);
+  const { x, z } = trackPlanTransform(placed.placement, placed.part.piece.partFrame);
   const o = normalizeHeading16(placed.placement.heading) * FOOTPRINT_FLOATS;
   const boxes = placed.part.footprints;
   const [minY, maxY] = placed.part.meshY;
