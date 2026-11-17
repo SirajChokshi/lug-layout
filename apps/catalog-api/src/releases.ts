@@ -1,29 +1,20 @@
 import type { CatalogReader } from "./catalog-queries.ts";
-import { CURRENT_RELEASE_TABLE, RELEASES_TABLE } from "./release-schema.ts";
+import { ReleaseCounts } from "@brr/schema/catalog-api";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
+import * as v from "valibot";
+import { CURRENT_RELEASE_TABLE, RELEASES_TABLE, ReleaseRow } from "./release-schema.ts";
 
-export interface CatalogRelease {
-  readonly id: string;
-  readonly sha256: string;
-  readonly bytes: number;
-  readonly objectKey: string;
-  readonly source: string;
-  readonly loadedAt: string;
-  readonly counts: Readonly<Record<string, number>>;
-}
-
-interface ReleaseRow {
-  readonly id: string;
-  readonly sha256: string;
-  readonly bytes: number;
-  readonly object_key: string;
-  readonly source: string;
-  readonly loaded_at: string;
-  readonly counts: string;
-}
+export const CatalogRelease = v.object({
+  ...ReleaseRow.entries,
+  counts: v.pipe(v.string(), v.parseJson(), ReleaseCounts),
+});
+export type CatalogRelease = v.InferOutput<typeof CatalogRelease>;
 
 const RELEASE_MEMO_MS = 300_000;
 const CURRENT_MEMO_MS = 30_000;
-const releaseColumns = "r.id, r.sha256, r.bytes, r.object_key, r.source, r.loaded_at, r.counts";
+const releaseColumns = Object.keys(ReleaseRow.entries)
+  .map((column) => `r.${column}`)
+  .join(", ");
 
 interface Memo<T> {
   readonly value: T;
@@ -40,7 +31,7 @@ export class ReleaseDirectory {
     const row = await db
       .prepare(`SELECT ${releaseColumns} FROM ${RELEASES_TABLE} r WHERE r.id = ?1`)
       .bind(id)
-      .first<ReleaseRow>();
+      .first();
     const release = row === null ? undefined : toRelease(row);
     const ttl = release === undefined ? CURRENT_MEMO_MS : RELEASE_MEMO_MS;
     this.known.set(id, { value: release, expires: now + ttl });
@@ -53,21 +44,13 @@ export class ReleaseDirectory {
       .prepare(
         `SELECT ${releaseColumns} FROM ${CURRENT_RELEASE_TABLE} c JOIN ${RELEASES_TABLE} r ON r.id = c.release_id WHERE c.slot = 'current'`,
       )
-      .first<ReleaseRow>();
+      .first();
     const release = row === null ? undefined : toRelease(row);
     this.current = { value: release, expires: now + CURRENT_MEMO_MS };
     return release;
   }
 }
 
-function toRelease(row: ReleaseRow): CatalogRelease {
-  return {
-    id: row.id,
-    sha256: row.sha256,
-    bytes: row.bytes,
-    objectKey: row.object_key,
-    source: row.source,
-    loadedAt: row.loaded_at,
-    counts: JSON.parse(row.counts) as Record<string, number>,
-  };
+function toRelease(row: unknown): CatalogRelease {
+  return decodedOrThrow(decode(CatalogRelease, row), RELEASES_TABLE);
 }

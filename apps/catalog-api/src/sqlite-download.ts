@@ -45,7 +45,7 @@ export async function sqliteFromStorage(
   request: Request,
   range: Exclude<ByteRange, { kind: "unsatisfiable" }>,
 ): Promise<Response> {
-  const object = await bucket.get(release.objectKey, {
+  const object = await bucket.get(release.object_key, {
     onlyIf: request.headers,
     ...(range.kind === "slice" ? { range: { offset: range.offset, length: range.length } } : {}),
   });

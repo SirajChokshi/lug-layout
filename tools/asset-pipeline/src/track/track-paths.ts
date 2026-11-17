@@ -1,3 +1,4 @@
+import type { TrackPathSegment } from "@brr/schema/bundle";
 import { onRailHead, type PlanPoint, type RailHeads } from "./rail-heads.ts";
 
 const SAMPLE_STEP_LDU = 2;
@@ -5,10 +6,6 @@ const ENDPOINT_TOLERANCE_LDU = 1e-6;
 const DEGENERATE_SEGMENT_LDU = 1e-6;
 const ANGLE_EPSILON = 1e-9;
 const MINIMUM_RAIL_COVERAGE = 0.8;
-
-export type PathSegment =
-  | { readonly kind: "straight"; readonly lengthLdu: number }
-  | { readonly kind: "arc"; readonly radiusLdu: number; readonly sweepRadians: number };
 
 export type PathFamily =
   | "straight"
@@ -25,12 +22,12 @@ export interface RoutePose {
 
 interface Candidate {
   readonly family: PathFamily;
-  readonly segments: ReadonlyArray<PathSegment>;
+  readonly segments: ReadonlyArray<TrackPathSegment>;
 }
 
 export interface FittedPath {
   readonly family: PathFamily;
-  readonly segments: ReadonlyArray<PathSegment>;
+  readonly segments: ReadonlyArray<TrackPathSegment>;
   readonly lengthLdu: number;
   readonly railCoverage: readonly [number, number];
   readonly rejected: ReadonlyArray<{ readonly family: PathFamily; readonly railCoverage: number }>;
@@ -40,13 +37,13 @@ function wrapAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
-function segmentLength(segment: PathSegment): number {
+function segmentLength(segment: TrackPathSegment): number {
   return segment.kind === "straight"
     ? segment.lengthLdu
     : segment.radiusLdu * Math.abs(segment.sweepRadians);
 }
 
-function advance(pose: RoutePose, segment: PathSegment, distance: number): RoutePose {
+function advance(pose: RoutePose, segment: TrackPathSegment, distance: number): RoutePose {
   if (segment.kind === "straight") {
     return {
       x: pose.x + Math.cos(pose.heading) * distance,
@@ -63,13 +60,13 @@ function advance(pose: RoutePose, segment: PathSegment, distance: number): Route
   };
 }
 
-export function walkPath(start: RoutePose, segments: ReadonlyArray<PathSegment>): RoutePose {
+export function walkPath(start: RoutePose, segments: ReadonlyArray<TrackPathSegment>): RoutePose {
   return segments.reduce((pose, segment) => advance(pose, segment, segmentLength(segment)), start);
 }
 
 export function samplePath(
   start: RoutePose,
-  segments: ReadonlyArray<PathSegment>,
+  segments: ReadonlyArray<TrackPathSegment>,
   step: number,
 ): ReadonlyArray<RoutePose> {
   const samples: RoutePose[] = [];
@@ -86,7 +83,7 @@ export function samplePath(
   return samples;
 }
 
-function arc(radius: number, sweep: number): PathSegment {
+function arc(radius: number, sweep: number): TrackPathSegment {
   return { kind: "arc", radiusLdu: Math.abs(radius), sweepRadians: sweep };
 }
 
@@ -150,7 +147,7 @@ function railCoverage(
   heads: RailHeads,
   toPart: (point: PlanPoint) => PlanPoint,
   start: RoutePose,
-  segments: ReadonlyArray<PathSegment>,
+  segments: ReadonlyArray<TrackPathSegment>,
   halfSpacing: number,
 ): readonly [number, number] {
   const samples = samplePath(start, segments, SAMPLE_STEP_LDU);

@@ -1,10 +1,5 @@
-import {
-  PART_BUNDLE_LOADER,
-  type BundleLod,
-  type IPartBundleLoader,
-  type PartBundle,
-  type PartRole,
-} from "@brr/catalog";
+import { PART_BUNDLE_LOADER, type IPartBundleLoader, type PartBundle } from "@brr/catalog";
+import type { BundleLod, PartRole } from "@brr/schema/bundle";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { World } from "@brr/domain";
 import { inject, injectable } from "inversify";

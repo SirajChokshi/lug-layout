@@ -1,11 +1,11 @@
+import type { ReleaseResponse, SearchResponse } from "@brr/schema/catalog-api";
+import type * as v from "valibot";
 import {
   searchCatalog,
   setInventory,
   themePage,
   themeRoots,
   type CatalogReader,
-  type SetSummary,
-  type ThemeNode,
 } from "./catalog-queries.ts";
 import {
   CLIENT_ERROR_CACHE,
@@ -23,15 +23,7 @@ import {
   withoutBody,
 } from "./http.ts";
 import { ReleaseDirectory, type CatalogRelease } from "./releases.ts";
-import {
-  canonicalUrl,
-  inventoryHref,
-  parseRoute,
-  releaseHref,
-  sqliteHref,
-  themeHref,
-  type Route,
-} from "./routes.ts";
+import { canonicalUrl, parseRoute, releaseHref, sqliteHref, type Route } from "./routes.ts";
 import {
   parseRange,
   rangeNotSatisfiable,
@@ -144,7 +136,7 @@ async function respondCurrent(
   const current = await releases.findCurrent(db, Date.now());
   if (current === undefined) return problem(503, "no catalog release is loaded", NO_STORE);
   if (route.kind === "current") {
-    return json({ release: releaseBody(url.origin, current) }, 200, POINTER_CACHE, {
+    return json(releaseBody(url.origin, current), 200, POINTER_CACHE, {
       "x-catalog-release": current.id,
     });
   }
@@ -166,94 +158,34 @@ async function respondVersioned(
 ): Promise<Response> {
   switch (route.kind) {
     case "release":
-      return immutableJson({ release: releaseBody(origin, release) }, release.id, {
+      return immutableJson(releaseBody(origin, release), release.id, {
         durationMs: 0,
         rowsRead: 0,
       });
     case "search": {
-      const { value, cost } = await searchCatalog(
-        db,
-        release.id,
-        route.tokens,
-        route.kinds,
-        route.limit,
-      );
-      const results = Object.fromEntries(
-        Object.entries(value).map(([kind, hits]) => [
-          kind,
-          kind === "part"
-            ? hits
-            : (hits as ReadonlyArray<SetSummary>).map((hit) => setBody(origin, release.id, hit)),
-        ]),
-      );
-      return immutableJson(
-        { release: release.id, query: route.tokens.join(" "), results },
-        release.id,
-        cost,
-      );
+      const { q, kind, limit } = route.params;
+      const { value, cost } = await searchCatalog(db, origin, release.id, q, kind, limit);
+      const body: v.InferInput<typeof SearchResponse> = {
+        release: release.id,
+        query: q.join(" "),
+        results: value,
+      };
+      return immutableJson(body, release.id, cost);
     }
     case "inventory": {
-      const { value, cost } = await setInventory(db, release.id, route.setNum);
+      const { value, cost } = await setInventory(db, origin, release.id, route.setNum);
       if (value === undefined) return problem(404, `no set ${route.setNum}`, CLIENT_ERROR_CACHE);
-      const regular = value.lots.filter((lot) => !lot.isSpare);
-      return immutableJson(
-        {
-          release: release.id,
-          set: { ...setBody(origin, release.id, value.set), description: value.set.description },
-          totals: {
-            lots: regular.length,
-            parts: regular.reduce((sum, lot) => sum + lot.quantity, 0),
-            spareLots: value.lots.length - regular.length,
-            minifigs: value.minifigs.reduce((sum, fig) => sum + fig.quantity, 0),
-          },
-          lots: value.lots,
-          minifigs: value.minifigs,
-        },
-        release.id,
-        cost,
-      );
+      return immutableJson(value, release.id, cost);
     }
     case "theme-roots": {
-      const { value, cost } = await themeRoots(db, release.id);
-      return immutableJson(
-        {
-          release: release.id,
-          themes: value.map((theme) => themeBody(origin, release.id, theme)),
-        },
-        release.id,
-        cost,
-      );
+      const { value, cost } = await themeRoots(db, origin, release.id);
+      return immutableJson(value, release.id, cost);
     }
     case "theme": {
-      const { value, cost } = await themePage(
-        db,
-        release.id,
-        route.themeId,
-        route.limit,
-        route.offset,
-      );
+      const { limit, offset } = route.params;
+      const { value, cost } = await themePage(db, origin, release.id, route.themeId, limit, offset);
       if (value === undefined) return problem(404, `no theme ${route.themeId}`, CLIENT_ERROR_CACHE);
-      const total = value.theme.setCount + value.theme.moduleCount;
-      const nextOffset = route.offset + route.limit;
-      return immutableJson(
-        {
-          release: release.id,
-          theme: themeBody(origin, release.id, value.theme),
-          children: value.children.map((child) => themeBody(origin, release.id, child)),
-          sets: value.sets.map((set) => setBody(origin, release.id, set)),
-          page: {
-            limit: route.limit,
-            offset: route.offset,
-            total,
-            next:
-              nextOffset < total
-                ? `${themeHref(origin, release.id, route.themeId)}?limit=${route.limit}&offset=${nextOffset}`
-                : null,
-          },
-        },
-        release.id,
-        cost,
-      );
+      return immutableJson(value, release.id, cost);
     }
     default: {
       const exhaustive: never = route;
@@ -282,34 +214,26 @@ function tagged(response: Response, cache: "HIT" | "MISS"): Response {
   return copy;
 }
 
-function releaseBody(origin: string, release: CatalogRelease) {
+function releaseBody(
+  origin: string,
+  release: CatalogRelease,
+): v.InferInput<typeof ReleaseResponse> {
   const self = releaseHref(origin, release.id);
   return {
-    id: release.id,
-    sha256: release.sha256,
-    bytes: release.bytes,
-    source: release.source,
-    loadedAt: release.loadedAt,
-    counts: release.counts,
-    attribution: DATA_ATTRIBUTION,
-    links: {
-      self,
-      search: `${self}/search`,
-      themes: `${self}/themes`,
-      sqlite: sqliteHref(origin, release.id),
+    release: {
+      id: release.id,
+      sha256: release.sha256,
+      bytes: release.bytes,
+      source: release.source,
+      loadedAt: release.loaded_at,
+      counts: release.counts,
+      attribution: DATA_ATTRIBUTION,
+      links: {
+        self,
+        search: `${self}/search`,
+        themes: `${self}/themes`,
+        sqlite: sqliteHref(origin, release.id),
+      },
     },
   };
-}
-
-function setBody(origin: string, release: string, set: SetSummary) {
-  return {
-    ...set,
-    href: inventoryHref(origin, release, set.id),
-    theme:
-      set.theme === null ? null : { ...set.theme, href: themeHref(origin, release, set.theme.id) },
-  };
-}
-
-function themeBody(origin: string, release: string, theme: ThemeNode) {
-  return { ...theme, href: themeHref(origin, release, theme.id) };
 }

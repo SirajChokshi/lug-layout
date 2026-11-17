@@ -1,63 +1,40 @@
+import { BundleSource, DisplayColor, ModelOrigin, ModelRole, PartRole } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile } from "node:fs/promises";
+import * as v from "valibot";
 
-export type PartRole = "ground" | "road" | "track" | "wall" | "roof" | "detail";
+export const PaletteModel = v.strictObject({
+  name: v.string(),
+  origin: ModelOrigin,
+  role: v.optional(ModelRole),
+  file: v.string(),
+  sha256: v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/u)),
+  source: v.string(),
+  retrieved: v.string(),
+  set: v.optional(
+    v.strictObject({ name: v.string(), year: v.pipe(v.number(), v.integer()), source: v.string() }),
+  ),
+});
+export type PaletteModel = v.InferOutput<typeof PaletteModel>;
 
-export type ModelOrigin = "omr" | "generated";
+export const AuditGroup = v.strictObject({ group: v.string(), parts: v.array(v.string()) });
+export type AuditGroup = v.InferOutput<typeof AuditGroup>;
 
-export interface PaletteModel {
-  readonly name: string;
-  readonly origin: ModelOrigin;
-  readonly role?: "road-module";
-  readonly file: string;
-  readonly sha256: string;
-  readonly source: string;
-  readonly retrieved: string;
-  readonly set?: { readonly name: string; readonly year: number; readonly source: string };
-}
-
-export interface Palette {
-  readonly source: {
-    readonly kind: "github-mirror";
-    readonly repo: string;
-    readonly commit: string;
-    readonly root: string;
-  };
-  readonly config: ReadonlyArray<string>;
-  readonly studPrimitives: ReadonlyArray<string>;
-  readonly unofficialAllowlist: ReadonlyArray<string>;
-  readonly parts: ReadonlyArray<{
-    readonly id: string;
-    readonly role: PartRole;
-    readonly displayColor?: { readonly ldraw: number; readonly source: string };
-  }>;
-  readonly omrSource: Palette["source"];
-  readonly models: ReadonlyArray<PaletteModel>;
-  readonly audit: ReadonlyArray<AuditGroup>;
-  readonly connectivitySource: Palette["source"];
-}
-
-export interface AuditGroup {
-  readonly group: string;
-  readonly parts: ReadonlyArray<string>;
-}
+export const Palette = v.strictObject({
+  source: BundleSource,
+  config: v.array(v.string()),
+  studPrimitives: v.array(v.string()),
+  unofficialAllowlist: v.array(v.string()),
+  parts: v.array(
+    v.strictObject({ id: v.string(), role: PartRole, displayColor: v.optional(DisplayColor) }),
+  ),
+  omrSource: BundleSource,
+  models: v.array(PaletteModel),
+  audit: v.array(AuditGroup),
+  connectivitySource: BundleSource,
+});
+export type Palette = v.InferOutput<typeof Palette>;
 
 export async function readPalette(path: string): Promise<Palette> {
-  const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
-  if (!isPalette(parsed)) throw new Error(`${path} is not a valid palette`);
-  return parsed;
-}
-
-function isPalette(value: unknown): value is Palette {
-  if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate["source"] === "object" &&
-    Array.isArray(candidate["config"]) &&
-    Array.isArray(candidate["studPrimitives"]) &&
-    Array.isArray(candidate["parts"]) &&
-    typeof candidate["omrSource"] === "object" &&
-    Array.isArray(candidate["models"]) &&
-    Array.isArray(candidate["audit"]) &&
-    typeof candidate["connectivitySource"] === "object"
-  );
+  return decodedOrThrow(decode(Palette, JSON.parse(await readFile(path, "utf8"))), path);
 }

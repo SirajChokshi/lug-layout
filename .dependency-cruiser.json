@@ -55,7 +55,7 @@
         "path": "^packages/schema/"
       },
       "to": {
-        "pathNot": "^packages/(math|schema)/"
+        "pathNot": ["^packages/(math|schema)/", "(^|/)node_modules/valibot/"]
       }
     },
     {
@@ -79,13 +79,13 @@
       }
     },
     {
-      "name": "catalog-depends-on-math-schema-inversify",
+      "name": "catalog-depends-on-math-schema-valibot-inversify",
       "severity": "error",
       "from": {
         "path": "^packages/catalog/"
       },
       "to": {
-        "pathNot": ["^packages/(math|schema|catalog)/", "(^|/)node_modules/inversify/"]
+        "pathNot": ["^packages/(math|schema|catalog)/", "(^|/)node_modules/(inversify|valibot)/"]
       }
     },
     {
@@ -122,26 +122,26 @@
       }
     },
     {
-      "name": "client-depends-on-math-l2-and-sim-import-types",
+      "name": "client-depends-on-math-l2-and-sim-import-schema-types",
       "severity": "error",
       "from": {
         "path": "^packages/client/"
       },
       "to": {
         "pathNot": [
-          "^packages/(math|domain|catalog|render|storage|rpc|sim|import|client)/",
+          "^packages/(math|domain|catalog|render|storage|rpc|sim|import|schema|client)/",
           "(^|/)node_modules/inversify/"
         ]
       }
     },
     {
-      "name": "client-takes-only-types-from-sim-and-import",
+      "name": "client-takes-only-types-from-sim-import-and-schema",
       "severity": "error",
       "from": {
         "path": "^packages/client/"
       },
       "to": {
-        "path": "^packages/(sim|import)/",
+        "path": "^packages/(sim|import|schema)/",
         "dependencyTypesNot": ["type-only"]
       }
     },
@@ -205,23 +205,25 @@
       }
     },
     {
-      "name": "asset-pipeline-imports-no-npm-modules",
+      "name": "asset-pipeline-imports-only-valibot-from-npm",
       "severity": "error",
       "from": {
         "path": "^tools/asset-pipeline/"
       },
       "to": {
-        "path": "(^|/)node_modules/"
+        "path": "(^|/)node_modules/",
+        "pathNot": "(^|/)node_modules/valibot/"
       }
     },
     {
-      "name": "catalog-api-imports-no-workspace-package",
+      "name": "catalog-api-imports-only-schema",
       "severity": "error",
       "from": {
         "path": "^apps/catalog-api/"
       },
       "to": {
-        "path": "^(packages|tools|apps/web)/"
+        "path": "^(packages|tools|apps/web)/",
+        "pathNot": "^packages/schema/"
       }
     },
     {

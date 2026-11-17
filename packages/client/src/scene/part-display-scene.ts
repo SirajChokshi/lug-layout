@@ -1,4 +1,5 @@
-import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr/catalog";
+import type { BundleLod } from "@brr/schema/bundle";
+import { PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import { buildPartDisplay } from "./part-display.ts";

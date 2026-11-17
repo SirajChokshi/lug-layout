@@ -1,84 +1,32 @@
+import type { ReleaseCounts } from "@brr/schema/catalog-api";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
   CURRENT_RELEASE_TABLE,
   MODULE_KIND,
   RELEASES_TABLE,
   SET_KIND,
+  THEME_COUNT_COLUMNS,
   dropRelease,
   metadataSchema,
   releaseIndexes,
   releaseSchema,
   releaseSearchIndex,
+  releaseTableEntries,
+  releaseTableSpecs,
   releaseTables,
-  type ReleaseTables,
+  ReleaseRow,
+  type ReleaseTable,
 } from "../src/release-schema.ts";
 
 export const MAX_STATEMENT_BYTES = 90_000;
 
-export interface ReleaseFile {
-  readonly id: string;
-  readonly sha256: string;
-  readonly bytes: number;
-  readonly objectKey: string;
-  readonly source: string;
-  readonly loadedAt: string;
+function sourceColumns(table: ReleaseTable): ReadonlyArray<string> {
+  const columns = Object.keys(releaseTableSpecs[table].columns);
+  return table === "themes"
+    ? columns.filter((column) => !THEME_COUNT_COLUMNS.includes(column))
+    : columns;
 }
-
-interface CopiedTable {
-  readonly source: string;
-  readonly target: keyof ReleaseTables;
-  readonly columns: ReadonlyArray<string>;
-  readonly order: string;
-}
-
-const copiedTables: ReadonlyArray<CopiedTable> = [
-  {
-    source: "sets",
-    target: "sets",
-    columns: [
-      "id",
-      "set_num",
-      "name",
-      "year",
-      "theme_id",
-      "num_parts",
-      "kind",
-      "author",
-      "description",
-      "tags",
-      "footprint",
-    ],
-    order: "id",
-  },
-  { source: "colors", target: "colors", columns: ["id", "name", "rgb", "is_trans"], order: "id" },
-  { source: "part_categories", target: "partCategories", columns: ["id", "name"], order: "id" },
-  {
-    source: "parts",
-    target: "parts",
-    columns: ["id", "part_num", "name", "cat_id", "material"],
-    order: "id",
-  },
-  {
-    source: "minifigs",
-    target: "minifigs",
-    columns: ["id", "fig_num", "name", "num_parts"],
-    order: "id",
-  },
-  {
-    source: "inventory_parts",
-    target: "inventoryParts",
-    columns: ["inventory_id", "part_id", "color_id", "is_spare", "quantity"],
-    order: "inventory_id, part_id, color_id, is_spare",
-  },
-  {
-    source: "inventory_minifigs",
-    target: "inventoryMinifigs",
-    columns: ["inventory_id", "minifig_id", "quantity"],
-    order: "inventory_id, minifig_id",
-  },
-];
-
-const themeColumns = ["id", "name", "parent_id", "path"] as const;
 
 export function releaseProblems(db: DatabaseSync): ReadonlyArray<string> {
   const schema = sourceSchemaProblems(db);
@@ -102,11 +50,8 @@ export function releaseProblems(db: DatabaseSync): ReadonlyArray<string> {
 }
 
 function sourceSchemaProblems(db: DatabaseSync): ReadonlyArray<string> {
-  const expected = [
-    { source: "themes", columns: [...themeColumns] },
-    ...copiedTables.map(({ source, columns }) => ({ source, columns: [...columns] })),
-  ];
-  return expected.flatMap(({ source, columns }) => {
+  return releaseTableEntries().flatMap(([source]) => {
+    const columns = sourceColumns(source);
     const present = new Set(
       db
         .prepare(`SELECT name FROM pragma_table_info(?)`)
@@ -120,7 +65,7 @@ function sourceSchemaProblems(db: DatabaseSync): ReadonlyArray<string> {
   });
 }
 
-export function releaseCounts(db: DatabaseSync): Readonly<Record<string, number>> {
+export function releaseCounts(db: DatabaseSync): ReleaseCounts {
   const count = (sql: string): number => Number(db.prepare(sql).get()?.["n"] ?? 0);
   return {
     sets: count(`SELECT count(*) AS n FROM sets WHERE kind = ${SET_KIND}`),
@@ -136,44 +81,38 @@ export function releaseCounts(db: DatabaseSync): Readonly<Record<string, number>
 
 export function* releaseStatements(
   db: DatabaseSync,
-  release: ReleaseFile,
+  release: ReleaseRow,
   promote: boolean,
 ): Generator<string> {
   const tables = releaseTables(release.id);
   yield* metadataSchema();
   yield* dropRelease(release.id);
   yield* releaseSchema(release.id);
-  yield* batchedInserts(
-    tables.themes,
-    [...themeColumns, "set_count", "module_count"],
-    themesWithCounts(db),
-  );
-  for (const table of copiedTables) {
+  for (const [table, spec] of releaseTableEntries()) {
+    if (table === "themes") {
+      yield* batchedInserts(tables.themes, Object.keys(spec.columns), themesWithCounts(db));
+      continue;
+    }
+    const columns = sourceColumns(table);
     const rows = db
-      .prepare(`SELECT ${table.columns.join(", ")} FROM ${table.source} ORDER BY ${table.order}`)
+      .prepare(`SELECT ${columns.join(", ")} FROM ${table} ORDER BY ${spec.order}`)
       .iterate();
     yield* batchedInserts(
-      tables[table.target],
-      table.columns,
-      mapRows(rows, (row) => table.columns.map((column) => row[column] ?? null)),
+      tables[table],
+      columns,
+      mapRows(rows, (row) => columns.map((column) => row[column] ?? null)),
     );
   }
   yield* releaseIndexes(release.id);
   yield* releaseSearchIndex(release.id);
-  const counts = JSON.stringify(releaseCounts(db));
-  yield `INSERT INTO ${RELEASES_TABLE}(id, sha256, bytes, object_key, source, loaded_at, counts) VALUES (${[
-    release.id,
-    release.sha256,
-    release.bytes,
-    release.objectKey,
-    release.source,
-    release.loadedAt,
-    counts,
-  ]
+  const row = decodedOrThrow(decode(ReleaseRow, release), RELEASES_TABLE);
+  const columns = Object.keys(row);
+  const updates = columns
+    .filter((column) => column !== "id")
+    .map((column) => `${column} = excluded.${column}`);
+  yield `INSERT INTO ${RELEASES_TABLE}(${columns.join(", ")}) VALUES (${Object.values(row)
     .map(sqlLiteral)
-    .join(
-      ", ",
-    )}) ON CONFLICT(id) DO UPDATE SET sha256 = excluded.sha256, bytes = excluded.bytes, object_key = excluded.object_key, source = excluded.source, loaded_at = excluded.loaded_at, counts = excluded.counts`;
+    .join(", ")}) ON CONFLICT(id) DO UPDATE SET ${updates.join(", ")}`;
   if (promote) {
     yield `INSERT INTO ${CURRENT_RELEASE_TABLE}(slot, release_id) VALUES ('current', ${sqlLiteral(release.id)}) ON CONFLICT(slot) DO UPDATE SET release_id = excluded.release_id`;
   }
@@ -188,7 +127,7 @@ export function sqlLiteral(value: SQLInputValue): string {
 
 function* themesWithCounts(db: DatabaseSync): Generator<ReadonlyArray<SQLInputValue>> {
   const themes = db
-    .prepare(`SELECT ${themeColumns.join(", ")} FROM themes ORDER BY id`)
+    .prepare(`SELECT ${sourceColumns("themes").join(", ")} FROM themes ORDER BY id`)
     .all()
     .map((row) => ({
       id: Number(row["id"]),

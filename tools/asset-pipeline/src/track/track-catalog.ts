@@ -1,4 +1,15 @@
 import {
+  decodeZeta16,
+  encodeZeta16,
+  type PieceKind,
+  type PoseStatus,
+  type TrackEnd,
+  type TrackPathSegment,
+  type TrackPiece,
+  type TrackSystem,
+} from "@brr/schema/bundle";
+import type * as v from "valibot";
+import {
   conjugateZeta16,
   HALF_TURN_16,
   normalizeHeading16,
@@ -26,15 +37,10 @@ import {
   LDU_PER_STUD,
   PART_FRAME_HEADING_GRID,
   relativeToEntry,
-  type RelativeTrackEnd,
-  type TrackEnd,
+  type MarkerEnd,
   type TrackEndMarker,
 } from "./track-ends.ts";
-import { fitRoutePath, type FittedPath, type PathSegment, type RoutePose } from "./track-paths.ts";
-
-export type PieceKind = "straight" | "curve" | "switch" | "crossing";
-export type TrackSystem = "lego-9v" | "lego-plastic";
-export type PoseStatus = "certified" | "unverified";
+import { fitRoutePath, type FittedPath, type RoutePose } from "./track-paths.ts";
 
 const STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEPS_PER_TURN = 2 * ZETA16_ORDER;
@@ -55,37 +61,6 @@ interface ExactEnd {
   readonly status: PoseStatus;
   readonly derivation: string;
   readonly residualLdu: number;
-}
-
-export interface CatalogConnector {
-  readonly coefficients: Zeta16;
-  readonly heading: number;
-  readonly status: PoseStatus;
-  readonly residualLdu: number;
-}
-
-export interface CatalogRoute {
-  readonly from: number;
-  readonly to: number;
-  readonly lengthLdu: number;
-  readonly segments: ReadonlyArray<PathSegment>;
-}
-
-export interface CatalogPiece {
-  readonly id: string;
-  readonly part: string;
-  readonly title: string;
-  readonly kind: PieceKind;
-  readonly system: TrackSystem;
-  readonly joinClass: "lego-train";
-  readonly status: PoseStatus;
-  readonly connectors: ReadonlyArray<CatalogConnector>;
-  readonly routes: ReadonlyArray<CatalogRoute>;
-  readonly partFrame: {
-    readonly xLdu: number;
-    readonly zLdu: number;
-    readonly headingHalfSteps: number;
-  };
 }
 
 export interface ConnectorCheck {
@@ -115,7 +90,7 @@ export interface PieceChecks {
 export interface TrackCatalogReport {
   readonly frame: string;
   readonly n: typeof ZETA16_ORDER;
-  readonly pieces: ReadonlyArray<CatalogPiece>;
+  readonly pieces: ReadonlyArray<v.InferInput<typeof TrackPiece>>;
   readonly checks: ReadonlyArray<PieceChecks>;
 }
 
@@ -139,7 +114,7 @@ function scale(value: Zeta16, factor: bigint): Zeta16 {
   return zeta16(value.map((coefficient) => coefficient * factor));
 }
 
-function residualLdu(position: Zeta16, end: RelativeTrackEnd): number {
+function residualLdu(position: Zeta16, end: TrackEnd): number {
   const exact = zeta16ToStuds(position);
   return Math.hypot(exact.x - end.xStuds, exact.z - end.zStuds) * LDU_PER_STUD;
 }
@@ -160,8 +135,8 @@ function helpRotationPoint(library: LdrawLibrary, part: string): PlanPoint | nul
 function arcFromHelp(
   library: LdrawLibrary,
   part: string,
-  ends: ReadonlyArray<TrackEnd>,
-  exit: RelativeTrackEnd,
+  ends: ReadonlyArray<MarkerEnd>,
+  exit: TrackEnd,
 ): ExactEnd | null {
   const pivot = helpRotationPoint(library, part);
   const turn = signedTurn(exit.headingSteps);
@@ -188,12 +163,12 @@ function arcFromHelp(
 function exactEnd(
   library: LdrawLibrary,
   part: string,
-  ends: ReadonlyArray<TrackEnd>,
-  end: RelativeTrackEnd,
+  ends: ReadonlyArray<MarkerEnd>,
+  end: TrackEnd,
   index: number,
 ): ExactEnd {
   if (end.fieldCertified && end.coefficients !== null) {
-    const position = zeta16(end.coefficients);
+    const position = decodeZeta16(end.coefficients);
     return {
       position,
       heading: end.headingSteps,
@@ -273,7 +248,7 @@ interface EntryFrame {
   readonly inward: number;
 }
 
-function entryFrame(entry: TrackEnd): EntryFrame {
+function entryFrame(entry: MarkerEnd): EntryFrame {
   const inward =
     Math.round((entry.outward + Math.PI) / PART_FRAME_HEADING_GRID) * PART_FRAME_HEADING_GRID;
   return { origin: { x: entry.x, z: entry.z }, inward };
@@ -297,13 +272,13 @@ function poseInEntryFrame(end: ExactEnd): RoutePose {
   };
 }
 
-function mirrorSegment(segment: PathSegment): PathSegment {
+function mirrorSegment(segment: TrackPathSegment): TrackPathSegment {
   return segment.kind === "straight"
     ? segment
     : { ...segment, sweepRadians: -segment.sweepRadians };
 }
 
-function partFrameInBundle(frame: EntryFrame): CatalogPiece["partFrame"] {
+function partFrameInBundle(frame: EntryFrame): v.InferInput<typeof TrackPiece>["partFrame"] {
   const cos = Math.cos(-frame.inward);
   const sin = Math.sin(-frame.inward);
   const x = -frame.origin.x * cos + frame.origin.z * sin;
@@ -334,7 +309,7 @@ export function buildTrackPiece(
   library: LdrawLibrary,
   part: string,
   markers: ReadonlyArray<TrackEndMarker>,
-): { readonly piece: CatalogPiece; readonly checks: PieceChecks } {
+): { readonly piece: v.InferInput<typeof TrackPiece>; readonly checks: PieceChecks } {
   const ends = findTrackEnds(library, part, markers);
   const relative = relativeToEntry(ends);
   const measured = relative.map((end, index) => exactEnd(library, part, ends, end, index));
@@ -385,7 +360,7 @@ export function buildTrackPiece(
   )
     ? "certified"
     : "unverified";
-  const piece: CatalogPiece = {
+  const piece: v.InferInput<typeof TrackPiece> = {
     id: bundlePartId(part),
     part: bundlePartId(part),
     title,
@@ -394,7 +369,7 @@ export function buildTrackPiece(
     joinClass: "lego-train",
     status,
     connectors: ordered.map((end, index) => ({
-      coefficients: conjugateZeta16(end.position),
+      coefficients: encodeZeta16(conjugateZeta16(end.position)),
       heading: normalizeHeading16(-end.heading),
       status: index === 0 ? status : end.status,
       residualLdu: end.residualLdu,

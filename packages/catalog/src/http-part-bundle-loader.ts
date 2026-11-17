@@ -1,15 +1,8 @@
+import { BundleManifest, ModelFile, type BundleLod, type ManifestPart } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
 import { parseGlb, readInheritColorMesh, readPartMesh } from "./glb.ts";
-import {
-  parseManifest,
-  parseModelFile,
-  parsePartExtras,
-  type BundleManifest,
-  type ManifestPart,
-  type ModelFileLattice,
-} from "./manifest.ts";
 import type {
-  BundleLod,
   IAssetFetcher,
   IPartBundleLoader,
   ModelBundle,
@@ -24,7 +17,7 @@ import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
 const MATRIX_FLOATS = 12;
 const MAX_CONCURRENT_FETCHES = 32;
 
-function modelLattice(lattice: ModelFileLattice | null): ModelLattice | null {
+function modelLattice(lattice: ModelFile["lattice"]): ModelLattice | null {
   if (lattice === null) return null;
   const [phaseX, phaseZ] = lattice.phase;
   return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
@@ -78,7 +71,9 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     if (cached) return cached;
     const loading = this.fetcher
       .text(`${lod}/manifest.json`)
-      .then((text) => parseManifest(JSON.parse(text)));
+      .then((text) =>
+        decodedOrThrow(decode(BundleManifest, JSON.parse(text)), `${lod}/manifest.json`),
+      );
     this.manifests.set(lod, loading);
     return loading;
   }
@@ -91,7 +86,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     const studPrimitiveNames = manifest.studPrimitives.map((primitive) => primitive.name);
     const studPrimitives = await Promise.all(
       manifest.studPrimitives.map(async (primitive): Promise<StudPrimitiveAsset> => {
-        const glb = parseGlb(await this.fetcher.bytes(`${lod}/${primitive.file}`));
+        const glb = parseGlb(await this.fetcher.bytes(`${lod}/${primitive.file}`), primitive.file);
         return { mesh: readInheritColorMesh(glb, primitive.name) };
       }),
     );
@@ -121,8 +116,8 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       const available = manifest.models.map((model) => model.name).join(", ");
       throw new Error(`model "${name}" is not in the bundle (available: ${available})`);
     }
-    const file = parseModelFile(
-      JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`)),
+    const file = decodedOrThrow(
+      decode(ModelFile, JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`))),
       entry.file,
     );
     const manifestParts = new Map(manifest.parts.map((part) => [part.id, part]));
@@ -142,7 +137,14 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),
         matrices: Float32Array.from(file.instances.matrix),
-        vehicles: file.vehicles,
+        vehicles: file.vehicles.map((vehicle) => ({
+          ...vehicle,
+          body: Uint32Array.from(vehicle.body),
+          bogies: vehicle.bogies.map((bogie) => ({
+            ...bogie,
+            instances: Uint32Array.from(bogie.instances),
+          })),
+        })),
       },
     };
   }
@@ -153,8 +155,8 @@ function toPartAsset(
   bytes: ArrayBuffer,
   studPrimitiveNames: ReadonlyArray<string>,
 ): PartAsset {
-  const glb = parseGlb(bytes);
-  const extras = parsePartExtras(glb.document.extras, part.id);
+  const glb = parseGlb(bytes, part.file);
+  const { extras } = glb.document;
   const studCount = extras.studs.length;
   const studPrimitiveIndex = new Uint8Array(studCount);
   const studColors = new Uint16Array(studCount);

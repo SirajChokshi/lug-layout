@@ -1,8 +1,11 @@
+import { BundleLod, BundleManifest, TrackCatalog } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import * as v from "valibot";
 import {
   fetchAuditInputs,
   fetchClosure,
@@ -19,7 +22,7 @@ import {
 } from "./fetch-ldraw.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
 import { readPalette, type Palette } from "./palette.ts";
-import { MANIFEST_FILE, publishBundle, type BundleInputs } from "./publish.ts";
+import { MANIFEST_FILE, publishBundle } from "./publish.ts";
 import {
   geometryReports,
   licenseAuditReport,
@@ -155,8 +158,6 @@ async function factsCommand(check: boolean): Promise<void> {
   if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
 
-const BUNDLE_LODS = ["standard", "low", "far"] as const;
-
 function runCargo(args: ReadonlyArray<string>): void {
   const result = spawnSync("cargo", args, { cwd: repoRoot, stdio: "inherit" });
   if (result.status !== 0) throw new Error(`cargo ${args.join(" ")} exited with ${result.status}`);
@@ -170,19 +171,25 @@ async function fileSha256(path: string): Promise<string> {
 
 async function addTrackCatalog(directory: string): Promise<void> {
   const manifestPath = join(directory, MANIFEST_FILE);
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-    parts: ReadonlyArray<{ id: string }>;
-  };
-  const catalog = JSON.parse(
-    await readFile(join(verifiedFactsRoot, TRACK_CATALOG_FILE), "utf8"),
-  ) as { n: number; pieces: ReadonlyArray<{ id: string }> };
-  const bundled = new Set(manifest.parts.map((part) => part.id));
-  const missing = catalog.pieces.filter((piece) => !bundled.has(piece.id));
+  const manifest: Record<string, unknown> = JSON.parse(await readFile(manifestPath, "utf8"));
+  const catalogPath = join(verifiedFactsRoot, TRACK_CATALOG_FILE);
+  const catalog: Record<string, unknown> = JSON.parse(await readFile(catalogPath, "utf8"));
+  const bundled = new Set(
+    decodedOrThrow(decode(v.pick(BundleManifest, ["parts"]), manifest), manifestPath).parts.map(
+      (part) => part.id,
+    ),
+  );
+  const missing = decodedOrThrow(decode(TrackCatalog, catalog), catalogPath)
+    .pieces.filter((piece) => !bundled.has(piece.id))
+    .map((piece) => piece.id);
   if (missing.length > 0) {
-    throw new Error(`track catalog pieces missing from the bundle: ${missing.map((p) => p.id)}`);
+    throw new Error(`track catalog pieces missing from the bundle: ${missing}`);
   }
-  const trackCatalog = { n: catalog.n, pieces: catalog.pieces };
-  await writeFile(manifestPath, `${JSON.stringify({ ...manifest, trackCatalog }, null, 2)}\n`);
+  const bundledCatalog = { n: catalog["n"], pieces: catalog["pieces"] };
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog }, null, 2)}\n`,
+  );
 }
 
 async function bundleCommand(): Promise<void> {
@@ -190,14 +197,14 @@ async function bundleCommand(): Promise<void> {
   await verifyCommand();
   if (process.exitCode) return;
   const palette = await readPalette(palettePath);
-  const inputs: BundleInputs = {
+  const inputs = {
     ldraw: palette.source,
     omr: palette.omrSource,
     lockSha256: await fileSha256(lockPath),
     paletteSha256: await fileSha256(palettePath),
   };
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
-  for (const lod of BUNDLE_LODS) {
+  for (const lod of BundleLod.options) {
     const out = join(toolRoot, "dist", "bundle", lod);
     await rm(out, { recursive: true, force: true });
     runCargo([

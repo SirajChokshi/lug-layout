@@ -6,13 +6,20 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createTestHarness, type TestHarness } from "wrangler";
-import { releaseProblems, releaseStatements } from "../scripts/release-sql.ts";
 import {
-  CURRENT_RELEASE_TABLE,
-  RELEASE_ID_HEX_LENGTH,
-  releaseObjectKey,
-} from "./release-schema.ts";
+  RELEASE_ID_HEX_DIGITS,
+  ErrorResponse,
+  InventoryResponse,
+  ReleaseResponse,
+  SearchResponse,
+  ThemePageResponse,
+  ThemeRootsResponse,
+} from "@brr/schema/catalog-api";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
+import type * as v from "valibot";
+import { createTestHarness, type TestHarness } from "wrangler";
+import { releaseCounts, releaseProblems, releaseStatements } from "../scripts/release-sql.ts";
+import { CURRENT_RELEASE_TABLE, releaseObjectKey } from "./release-schema.ts";
 
 interface PreparedStatement {
   first<T>(): Promise<T | null>;
@@ -68,6 +75,8 @@ let staged: LoadedRelease;
 let currentPath: string;
 let bindings: TestEnv;
 
+const QUERIES_PER_MINUTE = 100;
+
 async function buildRelease(name: string, extra: ReadonlyArray<string>): Promise<string> {
   const path = join(scratch, name);
   const db = new DatabaseSync(path);
@@ -79,7 +88,7 @@ async function buildRelease(name: string, extra: ReadonlyArray<string>): Promise
 async function loadRelease(env: TestEnv, path: string, promote: boolean): Promise<LoadedRelease> {
   const bytes = await readFile(path);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const id = sha256.slice(0, RELEASE_ID_HEX_LENGTH);
+  const id = sha256.slice(0, RELEASE_ID_HEX_DIGITS);
   const source = new DatabaseSync(path, { readOnly: true });
   const statements = [
     ...releaseStatements(
@@ -88,9 +97,10 @@ async function loadRelease(env: TestEnv, path: string, promote: boolean): Promis
         id,
         sha256,
         bytes: bytes.byteLength,
-        objectKey: releaseObjectKey(id),
+        object_key: releaseObjectKey(id),
         source: "rebrickable-db@ad9943cc slice",
-        loadedAt: "2026-11-16T00:00:00.000Z",
+        loaded_at: "2026-11-16T00:00:00.000Z",
+        counts: JSON.stringify(releaseCounts(source)),
       },
       promote,
     ),
@@ -122,10 +132,13 @@ function wrangler(args: ReadonlyArray<string>): string {
   return result.stdout;
 }
 
-async function getJson<T>(path: string): Promise<T> {
+async function getJson<Schema extends v.GenericSchema>(
+  schema: Schema,
+  path: string,
+): Promise<v.InferOutput<Schema>> {
   const response = await get(path);
   expect(response.status).toBe(200);
-  return (await response.json()) as T;
+  return decodedOrThrow(decode(schema, await response.json()), path);
 }
 
 beforeAll(async () => {
@@ -148,9 +161,7 @@ afterAll(async () => {
 
 describe("catalog API over a loaded release", () => {
   it("points current at the promoted release and redirects unversioned paths to it", async () => {
-    const body = await getJson<{ release: { id: string; sha256: string; counts: unknown } }>(
-      "/v1/catalogs/current",
-    );
+    const body = await getJson(ReleaseResponse, "/v1/catalogs/current");
     expect(body.release.id).toBe(current.id);
     expect(body.release.sha256).toBe(current.sha256);
     expect(body.release.counts).toMatchObject({ sets: 3, themes: 4, inventoryLots: 6 });
@@ -162,34 +173,38 @@ describe("catalog API over a loaded release", () => {
   });
 
   it("matches whole words and a last word of 3 or more letters as a prefix", async () => {
-    const typed = await getJson<{ results: { set: Array<{ id: string }>; part: unknown[] } }>(
-      `/v1/catalogs/${current.id}/search?q=fire%20sta`,
-    );
-    expect(typed.results.set.map((set) => set.id).toSorted()).toEqual(["60004-1", "60215-1"]);
+    const typed = await getJson(SearchResponse, `/v1/catalogs/${current.id}/search?q=fire%20sta`);
+    expect(typed.results.set?.map((set) => set.id).toSorted()).toEqual(["60004-1", "60215-1"]);
     expect(typed.results.part).toEqual([]);
-    const shortLast = await getJson<{ results: { set: unknown[] } }>(
+    const shortLast = await getJson(
+      SearchResponse,
       `/v1/catalogs/${current.id}/search?q=fire%20st&kind=set`,
     );
     expect(shortLast.results.set).toEqual([]);
-    const threeLetters = await getJson<{ results: { set: Array<{ id: string }> } }>(
+    const threeLetters = await getJson(
+      SearchResponse,
       `/v1/catalogs/${current.id}/search?q=fir&kind=set`,
     );
     expect(threeLetters.results.set).toHaveLength(2);
-    const train = await getJson<{
-      results: { set: Array<{ id: string; theme: { path: string } }> };
-    }>(`/v1/catalogs/${current.id}/search?q=9v%20metro&kind=set`);
-    expect(train.results.set.map((set) => [set.id, set.theme.path])).toEqual([
+    const train = await getJson(
+      SearchResponse,
+      `/v1/catalogs/${current.id}/search?q=9v%20metro&kind=set`,
+    );
+    expect(train.results.set?.map((set) => [set.id, set.theme?.path])).toEqual([
       ["4558-1", "Train > 9V"],
     ]);
-    const parts = await getJson<{ results: { part: Array<{ id: string; category: string }> } }>(
+    const parts = await getJson(
+      SearchResponse,
       `/v1/catalogs/${current.id}/search?q=PLATE%201&kind=part`,
     );
     expect(parts.results.part).toEqual([{ id: "3024", name: "Plate 1 x 1", category: "Plates" }]);
-    const byNumber = await getJson<{ results: { part: Array<{ id: string }> } }>(
+    const byNumber = await getJson(
+      SearchResponse,
       `/v1/catalogs/${current.id}/search?q=3010&kind=part`,
     );
-    expect(byNumber.results.part.map((part) => part.id)).toEqual(["3010"]);
-    const modules = await getJson<{ results: { module: unknown[] } }>(
+    expect(byNumber.results.part?.map((part) => part.id)).toEqual(["3010"]);
+    const modules = await getJson(
+      SearchResponse,
       `/v1/catalogs/${current.id}/search?q=fire&kind=module`,
     );
     expect(modules.results.module).toEqual([]);
@@ -199,26 +214,20 @@ describe("catalog API over a loaded release", () => {
     for (const q of ["a", "ab", "%20%20ab%20", "%20%20%20%20", "x%20", ""]) {
       const response = await get(`/v1/catalogs/${current.id}/search?q=${q}`);
       expect({ q, status: response.status }).toEqual({ q, status: 400 });
-      expect(await response.json()).toEqual({
-        error: "q must be at least 3 characters after trimming spaces",
+      expect(decode(ErrorResponse, await response.json())).toEqual({
+        ok: true,
+        value: { error: "query.q: must be at least 3 characters after trimming spaces" },
       });
     }
     expect((await get(`/v1/catalogs/${current.id}/search?q=%20a%20b%20`)).status).toBe(200);
   });
 
   it("returns a set inventory with colors, spares and minifigs", async () => {
-    const body = await getJson<{
-      set: { id: string; theme: { path: string } };
-      totals: unknown;
-      lots: Array<{
-        part: { id: string };
-        color: { name: string };
-        quantity: number;
-        isSpare: boolean;
-      }>;
-      minifigs: Array<{ id: string; quantity: number }>;
-    }>(`/v1/catalogs/${current.id}/sets/60215-1/inventory`);
-    expect(body.set.theme.path).toBe("City > Fire");
+    const body = await getJson(
+      InventoryResponse,
+      `/v1/catalogs/${current.id}/sets/60215-1/inventory`,
+    );
+    expect(body.set.theme?.path).toBe("City > Fire");
     expect(body.totals).toEqual({ lots: 4, parts: 6, spareLots: 2, minifigs: 1 });
     expect(body.lots[0]).toMatchObject({
       part: { id: "3010" },
@@ -238,18 +247,12 @@ describe("catalog API over a loaded release", () => {
   });
 
   it("browses a theme subtree newest first with child counts", async () => {
-    const roots = await getJson<{ themes: Array<{ name: string; setCount: number }> }>(
-      `/v1/catalogs/${current.id}/themes`,
-    );
+    const roots = await getJson(ThemeRootsResponse, `/v1/catalogs/${current.id}/themes`);
     expect(roots.themes.map((theme) => [theme.name, theme.setCount])).toEqual([
       ["City", 2],
       ["Train", 1],
     ]);
-    const city = await getJson<{
-      children: Array<{ id: number; setCount: number }>;
-      sets: Array<{ id: string }>;
-      page: { total: number; next: string | null };
-    }>(`/v1/catalogs/${current.id}/themes/52?limit=1`);
+    const city = await getJson(ThemePageResponse, `/v1/catalogs/${current.id}/themes/52?limit=1`);
     expect(city.children.map((child) => [child.id, child.setCount])).toEqual([[58, 2]]);
     expect(city.sets.map((set) => set.id)).toEqual(["60215-1"]);
     expect(city.page.total).toBe(2);
@@ -259,13 +262,11 @@ describe("catalog API over a loaded release", () => {
   });
 
   it("serves a staged release at its own id without moving current", async () => {
-    const before = await getJson<{ results: { set: unknown[] } }>(fireSetSearch(current.id));
-    const after = await getJson<{ results: { set: Array<{ id: string }> } }>(
-      fireSetSearch(staged.id),
-    );
+    const before = await getJson(SearchResponse, fireSetSearch(current.id));
+    const after = await getJson(SearchResponse, fireSetSearch(staged.id));
     expect(before.results.set).toHaveLength(2);
-    expect(after.results.set.map((set) => set.id)).toContain("60110-1");
-    const pointer = await getJson<{ release: { id: string } }>("/v1/catalogs/current");
+    expect(after.results.set?.map((set) => set.id)).toContain("60110-1");
+    const pointer = await getJson(ReleaseResponse, "/v1/catalogs/current");
     expect(pointer.release.id).toBe(current.id);
     expect((await get("/v1/catalogs/0000000000000000/themes")).status).toBe(404);
   });
@@ -373,15 +374,28 @@ describe("catalog API over a loaded release", () => {
   it("rejects malformed queries and rate-limits a client's uncached queries", async () => {
     expect((await get(`/v1/catalogs/${current.id}/search?q=fire&limit=500`)).status).toBe(400);
     expect((await get(`/v1/catalogs/${current.id}/search?q=fire&kind=train`)).status).toBe(400);
-    const statuses: number[] = [];
-    for (let index = 0; index < 101; index += 1) {
-      const response = await get(`/v1/catalogs/${current.id}/search?q=limit${index}`, {
-        "cf-connecting-ip": "192.0.2.99",
-      });
-      await response.arrayBuffer();
-      statuses.push(response.status);
-    }
-    expect(statuses.filter((status) => status === 200)).toHaveLength(100);
-    expect(statuses.at(-1)).toBe(429);
+    const burst = async (client: string) => {
+      const statuses: number[] = [];
+      let retryAfter: string | null = null;
+      for (let index = 0; index <= 2 * QUERIES_PER_MINUTE && retryAfter === null; index += 1) {
+        const response = await get(`/v1/catalogs/${current.id}/search?q=${client}x${index}`, {
+          "cf-connecting-ip": client,
+        });
+        await response.arrayBuffer();
+        statuses.push(response.status);
+        retryAfter = response.headers.get("retry-after");
+      }
+      return { allowed: statuses.indexOf(429), statuses: new Set(statuses), retryAfter };
+    };
+    const bursts = [await burst("192.0.2.98"), await burst("192.0.2.99")];
+    expect(bursts.map(({ statuses }) => statuses)).toEqual([
+      new Set([200, 429]),
+      new Set([200, 429]),
+    ]);
+    expect(bursts.map(({ retryAfter }) => retryAfter)).toEqual(["60", "60"]);
+    expect(Math.min(...bursts.map(({ allowed }) => allowed))).toBeGreaterThanOrEqual(
+      QUERIES_PER_MINUTE,
+    );
+    expect(bursts.map(({ allowed }) => allowed)).toContain(QUERIES_PER_MINUTE);
   });
 });

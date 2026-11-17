@@ -1,4 +1,4 @@
-export type { BundleLod, ModelSection } from "@brr/catalog";
+export type { BundleLod } from "@brr/schema/bundle";
 export type {
   BackendInfo,
   BufferMemory,

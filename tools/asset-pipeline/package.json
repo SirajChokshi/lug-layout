@@ -12,7 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brr/math": "workspace:*"
+    "@brr/math": "workspace:*",
+    "@brr/schema": "workspace:*",
+    "valibot": "1.5.0"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",

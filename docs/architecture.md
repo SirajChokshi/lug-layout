@@ -476,7 +476,7 @@ apps/
   catalog-api/            Cloudflare Worker: catalog search, set inventory and theme browse over D1; release files from R2 (D5)
 packages/
   math/                   exact ℤ[ζ_N] arithmetic, lattice poses, Rot90, SoA vector helpers
-  schema/                 file-format types, runtime validators, versioned migrations (world, plan, part record, profile, bundle manifest)
+  schema/                 valibot schemas for every wire and file format, one subpath each (bundle, catalog-api, world, decode); types are inferred from them
   domain/                 world/chunk store, placements, joins, track and road graph derivation, layout and plan rules, BOM engine, profiles
   sim/                    fixed-timestep simulation core (consists, routing, occupancy, later IDM-lite)
   catalog/                asset-bundle client: manifest, part records, connector tables, element-existence table, GLB loading
@@ -519,22 +519,23 @@ L0  math
 | Package | May depend on |
 |---|---|
 | `math` | nothing |
-| `schema` | math |
+| `schema` | math, valibot |
 | `domain` | math, schema |
-| `catalog` | math, schema, inversify |
+| `catalog` | math, schema, valibot, inversify |
 | `render` | math, schema, catalog (asset formats), inversify — **not** domain; client adapts domain data into render buffers |
 | `storage` | schema, inversify |
 | `rpc` | schema, inversify |
 | `sim` | math, schema, domain (graph types) |
 | `import` | math, schema, domain, catalog, compile-wasm |
-| `client` | math, domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) |
+| `client` | math, domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) and from schema (bundle wire types) |
 | `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify |
 | `ui` | client (service interfaces, tokens, view models), schema types |
 | `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries) |
-| `tools/asset-pipeline` | math, schema, domain, catalog, the brick-compile CLI; never imported by apps |
-| `apps/catalog-api` | no `@brr/*` package at runtime or in tests; only `@brr/config` presets as dev tooling. Nothing imports it. |
+| `tools/asset-pipeline` | math, schema, domain, catalog, valibot, the brick-compile CLI; never imported by apps |
+| `apps/catalog-api` | schema and valibot only; `@brr/config` presets as dev tooling. Nothing imports it. |
 
 **Enforced rules:**
+- Every wire and file format (CDN bundle, catalog API, saved worlds) is one valibot schema in `schema`, with its type inferred from it (owner decision, 2026-11-16). Packages that run schemas depend on `valibot`; packages that only name the types use `import type` from `schema`.
 - `math`, `schema`, `domain` and `sim` are **pure**: no DOM, no three.js, no IndexedDB, no workers and no Inversify. They run unchanged in Node tests, in workers and in the pipeline.
 - Only `client`, `workers/*`, `apps/web` and the L2 adapter packages `storage`, `render`, `catalog` and `rpc` import `inversify` (owner decision, 2026-11-16). Only `apps/web` and each worker entry **create containers**; they are the composition roots.
 - `ui` never imports `domain`, `render` or `storage` directly. It goes through `client`.

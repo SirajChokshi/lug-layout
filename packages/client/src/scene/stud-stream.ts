@@ -1,4 +1,5 @@
-import { INHERIT_COLOR, type PartAsset, type PartRole } from "@brr/catalog";
+import { INHERIT_COLOR, type PartAsset } from "@brr/catalog";
+import type { PartRole } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type StudInstances } from "@brr/render";
 import { STUD_LDU } from "@brr/math";
 import type { ChunkPartInstances } from "./placements.ts";
