@@ -38,6 +38,11 @@
     },
     "@brr/import#test": {
       "dependsOn": ["^build", "@brr/asset-pipeline#build"]
+    },
+    "@brr/e2e#e2e": {
+      "dependsOn": ["@brr/web#build"],
+      "cache": false,
+      "passThroughEnv": ["CI", "CHROME"]
     }
   }
 }
