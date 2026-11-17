@@ -42,13 +42,19 @@ function CommitInput({
 }) {
   const [draft, setDraft] = useState(value);
   const [shown, setShown] = useState(value);
+  const [typing, setTyping] = useState(false);
   if (shown !== value) {
     setShown(value);
-    setDraft(value);
+    if (!typing) setDraft(value);
   }
-  const commit = (): void => {
-    const parsed = draft.trim() === "" ? null : parse(draft);
+  const revert = (): void => {
+    setTyping(false);
     setDraft(value);
+  };
+  const commit = (): void => {
+    if (!typing) return;
+    const parsed = draft.trim() === "" ? null : parse(draft);
+    revert();
     if (parsed !== null && draft !== value) onCommit(parsed);
   };
   return (
@@ -58,11 +64,14 @@ function CommitInput({
       name={name}
       aria-label={ariaLabel}
       value={draft}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => {
+        setTyping(true);
+        setDraft(event.target.value);
+      }}
       onBlur={commit}
       onKeyDown={(event) => {
         if (event.key === "Enter") commit();
-        if (event.key === "Escape") setDraft(value);
+        if (event.key === "Escape") revert();
       }}
     />
   );
