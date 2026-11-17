@@ -5,6 +5,7 @@ const BASEPLATE = "ldraw:3811@2";
 const GROCER = "omr:10185-1";
 const FIRE_BRIGADE = "omr:10190-1";
 const CABOOSE = "omr:10014-1";
+const FIRE_BRIGADE_OVERHANG_STUDS = 1;
 
 function boxOf(footprints: ReadonlyArray<PlanFootprint>, ref: string): Box {
   const footprint = footprints.find((f) => f.ref === ref);
@@ -38,12 +39,13 @@ test("sets seat one baseplate apart on the stud lattice and a caboose sits on th
   const footprints = await editor.footprints();
   const baseplate = boxOf(footprints, BASEPLATE);
   expect(baseplate).toMatchObject({ minX: -side / 2, maxX: side / 2, maxY: 0 });
-  expect(boxOf(footprints, GROCER).minX, "no gap east of the baseplate").toBeLessThanOrEqual(
+  expect(boxOf(footprints, GROCER).minX, "10185-1 sits flush east of the baseplate").toBe(
     baseplate.maxX,
   );
-  expect(boxOf(footprints, FIRE_BRIGADE).maxX, "no gap west of it").toBeGreaterThanOrEqual(
-    baseplate.minX,
-  );
+  expect(
+    boxOf(footprints, FIRE_BRIGADE).maxX,
+    "10190-1's baseplate sits flush west of it, with its one-stud overhang over the 3811",
+  ).toBe(baseplate.minX + FIRE_BRIGADE_OVERHANG_STUDS * STUD);
 
   const tableTop = await editor.tableTopY();
   expect(baseplate.minY, "the baseplate lies on the table").toBe(tableTop);
