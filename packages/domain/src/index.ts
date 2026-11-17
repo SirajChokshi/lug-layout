@@ -52,6 +52,7 @@ export {
   type CoincidentEndsIssue,
   type TrackGraphIssue,
 } from "./track/track-graph.ts";
+export { NEAR_MISS_RADIUS_LDU, endGaps, type EndGap, type TrackEnd } from "./track/end-gaps.ts";
 export {
   mmRectInWorld,
   rectContains,
