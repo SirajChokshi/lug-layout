@@ -203,6 +203,8 @@ The MVP ships four module profiles: `free`, `lego-modular`, `mils` and `club-roa
 
 **Erasing roads.** In Erase, a drag lifts the active kit's plates under the stroke (never another family's). A junction left beside them becomes the smallest kit piece that covers its remaining arms and has fewer arms than before, exact matches first; if the kit has no such piece, or no arm is left, the junction stays and is reported. A plate laid over ground gives back exactly the ground piece that stroke swapped out (part, colour, pose), remembered per placement through later upgrades, undo and redo; a plate laid on an empty table is just lifted, so erasing never adds or recolours a part. The stroke is one undoable edit, and downgrades pass the same join check as drawing.
 
+**Strokes and the placement rules.** Drawing and erasing go through the same placement rules as a click, undo or redo (§7.2). Every piece a stroke lays or gives back is checked at its pose with the plates and ground the stroke lifts taken out: first layer on the table, support, and (with the volume index) no overlap. The plates the stroke lifts must not carry anything, models or laid track, that the new pieces don't carry in turn. A refusal is a tile issue with the rule's reason, so the whole stroke lays nothing. The road tool turns with the snapped turn (`placeRot`), which R advances.
+
 Third-party track arrives later as an extra `TrackProfile` plus a `PartSource` (§3.5).
 
 ## 6. Renderer
