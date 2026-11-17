@@ -1,9 +1,17 @@
-import type { IImportScene, ImportedModule, ImportReport, PartResolution } from "@brr/client";
+import type {
+  IImportScene,
+  ImportedModule,
+  ImportReport,
+  PartResolution,
+  StudioPart,
+  StudioReport,
+} from "@brr/client";
 import { useState, type ChangeEvent } from "react";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const SHORT_COMMIT = 7;
 const KIBIBYTE = 1024;
+const STUDIO_EXTENSION = /\.io$/iu;
 
 interface ImportPanelProps {
   readonly scene: IImportScene;
@@ -42,6 +50,74 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
   }
 }
 
+function studioReason(part: StudioPart): string {
+  const id =
+    part.bricklinkIdSource === "studioMetadata"
+      ? `Studio's BrickLink id ${part.bricklinkId}`
+      : `BrickLink id ${part.bricklinkId}, read from Studio's file name`;
+  switch (part.outcome.kind) {
+    case "kept":
+      return `${id} has no LDraw part in the crosswalk.`;
+    case "bricklinkCrosswalk":
+      return `${id} maps to ldraw:${part.outcome.ldraw}.`;
+    case "crosswalkTargetMissing":
+      return `${id} maps only to ldraw:${part.outcome.ldraw}, which is not in the pinned library.`;
+    case "ambiguous":
+      return `${id} has ${part.outcome.candidates.length} LDraw candidates (${part.outcome.candidates.join(", ")}), so nothing is substituted.`;
+    case "custom":
+      return "A Studio CustomParts file: custom geometry stays in the user's file and is never drawn.";
+    default: {
+      const unhandled: never = part.outcome;
+      throw new Error(`unhandled Studio outcome ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+function studioPartFor(official: string, studio: StudioReport): StudioPart | undefined {
+  return studio.parts.find((part) =>
+    part.outcome.kind === "bricklinkCrosswalk"
+      ? `${part.outcome.ldraw}.dat` === official
+      : part.studio === official,
+  );
+}
+
+function StudioSummary({ studio }: { readonly studio: StudioReport }) {
+  const sum = (kind: StudioPart["outcome"]["kind"]): number =>
+    studio.parts
+      .filter((part) => part.outcome.kind === kind)
+      .reduce((total, part) => total + part.instances, 0);
+  const rewritten = studio.parts.flatMap((part) =>
+    part.outcome.kind === "bricklinkCrosswalk"
+      ? [{ studio: part.studio, ldraw: part.outcome.ldraw, instances: part.instances }]
+      : [],
+  );
+  return (
+    <>
+      <div>
+        <dt>Studio file</dt>
+        <dd>
+          {studio.entry}
+          {studio.studioVersion ? ` from Studio ${studio.studioVersion}` : ""},{" "}
+          {integer.format(studio.convertedLines)} Studio part lines read as LDraw
+        </dd>
+      </div>
+      <div>
+        <dt>Mapped to LDraw</dt>
+        <dd className="studio-mapping">
+          {integer.format(sum("kept"))} instances kept under Studio&apos;s name,{" "}
+          {integer.format(sum("bricklinkCrosswalk"))} renamed through the BrickLink crosswalk
+          {rewritten.map((part) => (
+            <span key={part.studio} className="studio-rewrite">
+              {" "}
+              <code>{part.studio}</code> → <code>ldraw:{part.ldraw}</code> ×{part.instances}
+            </span>
+          ))}
+        </dd>
+      </div>
+    </>
+  );
+}
+
 function uniqueText(values: ReadonlyArray<string | null>): string {
   return [...new Set(values.filter((v): v is string => v !== null && v !== ""))].join("; ");
 }
@@ -50,9 +126,12 @@ function ModuleReport({ module }: { readonly module: ImportedModule }) {
   const { report } = module.result;
   const bundled = report.parts.filter((p) => p.kind === "bundle");
   const compiled = report.parts.filter((p) => p.kind === "compiled");
+  const { studio } = module.result;
   const notDrawn = report.parts.flatMap((part) => {
     const reason = notDrawnReason(part, report);
-    return reason === null ? [] : [{ part, reason }];
+    if (reason === null) return [];
+    const studioPart = studio && studioPartFor(part.official, studio);
+    return [{ part, reason: studioPart ? `${reason} ${studioReason(studioPart)}` : reason }];
   });
   const notDrawnInstances = notDrawn.reduce((sum, { part }) => sum + part.instances, 0);
   const hasLooseGeometry = report.looseGeometry.length > 0;
@@ -77,6 +156,7 @@ function ModuleReport({ module }: { readonly module: ImportedModule }) {
             rot {module.placement.rot}
           </dd>
         </div>
+        {studio && <StudioSummary studio={studio} />}
         <div>
           <dt>Instances drawn</dt>
           <dd>
@@ -122,6 +202,7 @@ function ModuleReport({ module }: { readonly module: ImportedModule }) {
               <li key={`color-${color.code}`} data-kind="unknownColor">
                 Colour <code>{color.code}</code> ×{color.instances}: not in LDConfig, so these
                 instances are not drawn.
+                {studio ? " It is a Studio colour code and the file carries no RGB for it." : ""}
               </li>
             ))}
           </ul>
@@ -143,11 +224,13 @@ export function ImportPanel({ scene, onImported }: ImportPanelProps) {
     for (const file of files) {
       setBusy(`Importing ${file.name}…`);
       try {
-        const module = await scene.importText(file.name, await file.text());
+        const module = STUDIO_EXTENSION.test(file.name)
+          ? await scene.importStudio(file.name, new Uint8Array(await file.arrayBuffer()))
+          : await scene.importText(file.name, await file.text());
         setModules((previous) => [...previous, module]);
         onImported(module);
       } catch (e) {
-        setError(`${file.name}: ${String(e)}`);
+        setError(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
     setBusy(null);
@@ -156,10 +239,10 @@ export function ImportPanel({ scene, onImported }: ImportPanelProps) {
   return (
     <aside className="import-panel">
       <label className="import-button">
-        Import .ldr / .mpd
+        Import .ldr / .mpd / .io
         <input
           type="file"
-          accept=".ldr,.mpd"
+          accept=".ldr,.mpd,.io"
           multiple
           disabled={busy !== null}
           onChange={(event) => void importFiles(event)}
@@ -183,6 +266,7 @@ export function ImportPanel({ scene, onImported }: ImportPanelProps) {
             placements: scene.placements(),
             reports: modules.map((m) => ({
               ...m.result.report,
+              studio: m.result.studio ?? null,
               importMs: m.importMs,
               sceneMs: m.sceneMs,
             })),

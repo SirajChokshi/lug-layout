@@ -6,6 +6,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 const VIEWPORT = { width: 1920, height: 1080 } as const;
 const IMPORT_TIMEOUT_MS = 600_000;
 const SETTLE_MS = 1_500;
+const ERROR_READ_TIMEOUT_MS = 10_000;
 const DEFAULT_CHROME = "/usr/local/bin/google-chrome";
 
 const { values, positionals } = parseArgs({
@@ -37,7 +38,11 @@ async function openImporter(browser: Browser, name: string): Promise<Page> {
   return page;
 }
 
-async function importFile(page: Page, file: string, expectedModules: number): Promise<void> {
+async function importFile(
+  page: Page,
+  file: string,
+  expectedModules: number,
+): Promise<string | null> {
   await page.setInputFiles(".import-panel input[type=file]", file);
   await page.waitForFunction(
     (count) =>
@@ -46,11 +51,16 @@ async function importFile(page: Page, file: string, expectedModules: number): Pr
     expectedModules,
     { timeout: IMPORT_TIMEOUT_MS, polling: 250 },
   );
-  const error = await page
-    .locator(".import-panel .error")
-    .textContent({ timeout: 100 })
-    .catch(() => null);
-  if (error) throw new Error(error);
+  const error = page.locator(".import-panel .error");
+  if ((await error.count()) === 0) return null;
+  return error.textContent({ timeout: ERROR_READ_TIMEOUT_MS });
+}
+
+async function captureRejection(page: Page, name: string, error: string): Promise<void> {
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: join(out, `${name}.png`) });
+  writeFileSync(join(out, `${name}.json`), JSON.stringify({ error }, null, 2));
+  process.stdout.write(`${name}: rejected\n`);
 }
 
 async function capture(page: Page, name: string): Promise<void> {
@@ -80,7 +90,8 @@ try {
   if (values.mode === "world") {
     const page = await openImporter(browser, "world");
     for (const [index, file] of positionals.entries()) {
-      await importFile(page, file, index + 1);
+      const error = await importFile(page, file, index + 1);
+      if (error) throw new Error(error);
       process.stdout.write(`imported ${basename(file)}\n`);
     }
     await capture(page, "world");
@@ -89,8 +100,9 @@ try {
     for (const file of positionals) {
       const name = basename(file).replace(/\.[^.]+$/u, "");
       const page = await openImporter(browser, name);
-      await importFile(page, file, 1);
-      await capture(page, name);
+      const error = await importFile(page, file, 1);
+      if (error) await captureRejection(page, name, error);
+      else await capture(page, name);
       await page.context().close();
     }
   }

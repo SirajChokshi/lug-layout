@@ -86,7 +86,14 @@ export type {
 } from "./edit/road-drawing.ts";
 export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
-export type { ImportReport, ImportResult, PartResolution, PartResolutionKind } from "@brr/import";
+export type {
+  ImportReport,
+  ImportResult,
+  PartResolution,
+  PartResolutionKind,
+  StudioPart,
+  StudioReport,
+} from "@brr/import";
 export type {
   IRunScene,
   RunRequest,

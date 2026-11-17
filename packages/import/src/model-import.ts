@@ -11,6 +11,7 @@ import type {
 } from "./brick-compiler.ts";
 import { isDirectColor } from "@brr/catalog/colors";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
+import type { StudioReport } from "./studio-import.ts";
 
 export interface ImportJob {
   readonly fileName: string;
@@ -100,6 +101,7 @@ export interface ImportResult {
   readonly ldrawColor: Uint32Array;
   readonly matrices: Float32Array;
   readonly compiled: ReadonlyArray<CompiledGlb>;
+  readonly studio?: StudioReport;
 }
 
 const MAX_COMPILE_ROUNDS = 64;

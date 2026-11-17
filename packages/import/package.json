@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brr/catalog": "workspace:*"
+    "@brr/catalog": "workspace:*",
+    "@brr/schema": "workspace:*"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",
