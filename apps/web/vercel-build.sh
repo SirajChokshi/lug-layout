@@ -55,5 +55,26 @@ fi
 
 VITE_BUNDLE_MANIFEST_FILE="$(node "$pipeline_cli" await-served)"
 export VITE_BUNDLE_MANIFEST_FILE
-LDRAW_LIBRARY_BASE_URL="$VITE_LDRAW_LIBRARY_BASE_URL" node "$pipeline_dir/src/library/cli.ts" served --require
+library_output="$(mktemp)"
+LDRAW_LIBRARY_BASE_URL="$VITE_LDRAW_LIBRARY_BASE_URL" GITHUB_OUTPUT="$library_output" node "$pipeline_dir/src/library/cli.ts" served
+library_state="$(sed -n 's/^state=//p' "$library_output")"
+rm -f "$library_output"
+case "$library_state" in
+  served) ;;
+  absent)
+    if [ "${VERCEL_ENV:-production}" = production ]; then
+      echo "The pinned LDraw library is not published at '$VITE_LDRAW_LIBRARY_BASE_URL'. Deployed apps never read it from GitHub: publish it and commit public_base_url (docs/ldraw-library.md)." >&2
+      exit 1
+    fi
+    echo "Preview skipped: the pinned LDraw library is not published at '$VITE_LDRAW_LIBRARY_BASE_URL', and deployed apps never read it from GitHub (docs/ldraw-library.md)."
+    rm -rf dist
+    mkdir dist
+    cp preview-skipped.html dist/index.html
+    exit 0
+    ;;
+  *)
+    echo "Can't tell whether the LDraw library is published: library/cli.ts served reported '$library_state', expected served or absent." >&2
+    exit 1
+    ;;
+esac
 exec pnpm run build

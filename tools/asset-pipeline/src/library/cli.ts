@@ -20,6 +20,7 @@ const lockPath = join(toolRoot, "ldraw.lock.json");
 const catalogRoot = join(repoRoot, ".cache", "catalog");
 const extractRoot = join(repoRoot, ".cache", "ldraw-library");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "ldraw-library.json");
+const HTTP_NOT_FOUND = 404;
 
 interface StoreConfig {
   readonly bucket_name?: string;
@@ -117,29 +118,34 @@ async function checkCommand(): Promise<void> {
   );
 }
 
-async function servedCommand(required: boolean): Promise<void> {
+type ServedState = "served" | "absent" | "unknown";
+
+async function indexState(url: string): Promise<ServedState> {
+  try {
+    const response = await fetch(url, { method: "HEAD" });
+    if (response.ok) return "served";
+    return response.status === HTTP_NOT_FOUND ? "absent" : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+async function servedCommand(): Promise<void> {
   const baseUrl = await publicBaseUrl();
   const { mirror } = pinnedArchive(await readLock());
-  const key = libraryIndexKey(mirror);
   if (baseUrl === undefined) {
-    const message = `the LDraw library has no public URL: set LDRAW_LIBRARY_BASE_URL or public_base_url in ${storeConfigPath}`;
-    if (required) throw new Error(message);
-    process.stdout.write(`${message}\n`);
+    process.stdout.write(
+      `the LDraw library has no public URL: set LDRAW_LIBRARY_BASE_URL or public_base_url in ${storeConfigPath}\n`,
+    );
     await writeStepOutput("served", "false");
+    await writeStepOutput("state", "absent");
     return;
   }
-  const url = publicObjectUrl(baseUrl, key);
-  const served = await fetch(url, { method: "HEAD" }).then(
-    (response) => response.ok,
-    () => false,
-  );
-  process.stdout.write(`${url}: ${served ? "served" : "not served"}\n`);
-  await writeStepOutput("served", String(served));
-  if (required && !served) {
-    throw new Error(
-      `the LDraw library ${mirror.repo}@${mirror.commit} is not published at ${baseUrl}; approve the LDraw library workflow's publish job on main, then redeploy (docs/ldraw-library.md)`,
-    );
-  }
+  const url = publicObjectUrl(baseUrl, libraryIndexKey(mirror));
+  const state = await indexState(url);
+  process.stdout.write(`${url}: ${state}\n`);
+  await writeStepOutput("served", String(state === "served"));
+  await writeStepOutput("state", state);
 }
 
 async function verifyServedCommand(scope: "pinned" | "all"): Promise<void> {
@@ -168,14 +174,14 @@ switch (command) {
     await uploadCommand();
     break;
   case "served":
-    await servedCommand(process.argv.includes("--require"));
+    await servedCommand();
     break;
   case "verify-served":
     await verifyServedCommand(process.argv.includes("--all") ? "all" : "pinned");
     break;
   default:
     process.stderr.write(
-      "usage: library/cli.ts check|published|upload|served [--require]|verify-served [--all]\n",
+      "usage: library/cli.ts check|published|upload|served|verify-served [--all]\n",
     );
     process.exitCode = 2;
 }

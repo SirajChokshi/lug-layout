@@ -22,7 +22,11 @@ Every object is stored with `Cache-Control: public, max-age=31536000, immutable`
 
 ## How the app finds it
 
-`VITE_LDRAW_LIBRARY_BASE_URL` reaches the client as `ldrawLibraryBaseUrl` (`LDRAW_LIBRARY_BASE_URL` token). The import request passes it to the worker as `ldrawLibraryUrl`, and the worker passes it to `LdrawMirror`. Without it, the mirror reads `https://raw.githubusercontent.com`. Vercel builds refuse to run without it, in `vite.config.ts` and in `vercel-build.sh`. `vercel-build.sh` takes it from `public_base_url` in `infra/cloudflare/ldraw-library.json`. Once the part bundle is served, it HEADs the pinned library's index and fails if the index isn't there.
+`VITE_LDRAW_LIBRARY_BASE_URL` reaches the client as `ldrawLibraryBaseUrl` (`LDRAW_LIBRARY_BASE_URL` token). The import request passes it to the worker as `ldrawLibraryUrl`, and the worker passes it to `LdrawMirror`. Without it, the mirror reads `https://raw.githubusercontent.com`. Deployed apps never do that. `vite.config.ts` refuses a Vercel build without the URL. `vercel-build.sh` takes the URL from `public_base_url` in `infra/cloudflare/ldraw-library.json`. Once the part bundle is served, it runs `library/cli.ts served`, which HEADs the pinned library's index:
+
+- **Served:** the build proceeds.
+- **Absent** (no public URL, or the index answers 404): Production fails, and the previous deployment keeps serving. A preview deploys only `preview-skipped.html` and logs `Preview skipped: the pinned LDraw library is not published …`, the same way a preview whose part bundle isn't published is skipped.
+- **Any other answer, or an unreachable bucket:** the build fails.
 
 ## CI
 
@@ -46,7 +50,7 @@ LDRAW_LIBRARY_BASE_URL=<url> pnpm --filter @brr/asset-pipeline ldraw-library ver
 ```
 
 - `check`: runs every publish check locally, with no credentials needed.
-- `served`: reports whether the index is served.
+- `served`: reports whether the index is `served`, `absent` or `unknown`.
 - `verify-served`: checks every lock-pinned file the URL serves against `ldraw.lock.json`.
 - `verify-served --all`: checks all 37,155 published files against the index.
 
@@ -58,7 +62,7 @@ LDRAW_LIBRARY_BASE_URL=<url> pnpm --filter @brr/asset-pipeline ldraw-library ver
 2. Run the LDraw library workflow (*Actions → LDraw library → Run workflow*) and approve `publish`.
 3. Commit the Terraform output `ldraw_library_base_url` as `public_base_url` in `infra/cloudflare/ldraw-library.json`. `ignoreCommand` skips commits that touch only `infra/`, so redeploy Vercel Production by hand after that commit.
 
-Until step 3, Vercel builds fail with "the LDraw library has no public URL", and the previous deployment keeps serving. To move to a custom domain later, follow the part bundle's three steps with `ldraw_library_domain` and `ldraw_library_r2_dev`.
+Until step 3, Production builds fail, the previous deployment keeps serving, and previews are skipped. To move to a custom domain later, follow the part bundle's three steps with `ldraw_library_domain` and `ldraw_library_r2_dev`.
 
 ## Local development
 
