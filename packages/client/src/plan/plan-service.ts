@@ -74,7 +74,13 @@ export interface IPlanService {
   removeObstacle(planId: string, obstacleId: string): void;
   setPlacements(placements: ReadonlyArray<PlacedForPlan>): void;
   setTableTopY(y: number): void;
+  onEdit(listener: () => void): () => void;
+  undo(): boolean;
+  redo(): boolean;
+  discardRedo(): void;
 }
+
+type PlanState = Pick<PlanSnapshot, "plans" | "activePlanId">;
 
 type Evaluation = Pick<PlanSnapshot, "checks" | "sandboxPlacements">;
 
@@ -115,6 +121,10 @@ function toDomain(placement: PlacedForPlan): PlanPlacement {
 @injectable()
 export class PlanService implements IPlanService {
   private readonly listeners = new Set<() => void>();
+  private readonly editListeners = new Set<() => void>();
+  private readonly undone: PlanState[] = [];
+  private readonly done: PlanState[] = [];
+  private grouped = 0;
   private nextId = 1;
   private state: PlanSnapshot = {
     plans: [],
@@ -147,7 +157,7 @@ export class PlanService implements IPlanService {
   }
 
   private replacePlan(planId: string, next: (plan: PlanRegion) => PlanRegion): void {
-    this.commit({
+    this.commitEdit({
       plans: this.state.plans.map((plan) => (plan.id === planId ? next(plan) : plan)),
     });
   }
@@ -167,7 +177,7 @@ export class PlanService implements IPlanService {
       },
       maxOverhangMm: DEFAULT_MAX_OVERHANG_MM,
     };
-    this.commit({ plans: [...this.state.plans, region], activePlanId: id });
+    this.commitEdit({ plans: [...this.state.plans, region], activePlanId: id });
     return id;
   }
 
@@ -189,7 +199,7 @@ export class PlanService implements IPlanService {
   removePlan(planId: string): void {
     this.plan(planId);
     const plans = this.state.plans.filter((p) => p.id !== planId);
-    this.commit({
+    this.commitEdit({
       plans,
       activePlanId:
         this.state.activePlanId === planId ? (plans[0]?.id ?? null) : this.state.activePlanId,
@@ -224,6 +234,17 @@ export class PlanService implements IPlanService {
   }
 
   drawTable(rect: LduRect): DrawnTable {
+    const before = this.planState();
+    this.grouped++;
+    try {
+      return this.addDrawnTable(rect);
+    } finally {
+      this.grouped--;
+      this.recordEdit(before);
+    }
+  }
+
+  private addDrawnTable(rect: LduRect): DrawnTable {
     const planId = this.state.activePlanId ?? this.createPlanAround(rect);
     const tableId = this.newId("table");
     this.replacePlan(planId, (plan) => {
@@ -318,6 +339,50 @@ export class PlanService implements IPlanService {
 
   setTableTopY(y: number): void {
     this.commit({ tableTopY: y });
+  }
+
+  onEdit(listener: () => void): () => void {
+    this.editListeners.add(listener);
+    return () => this.editListeners.delete(listener);
+  }
+
+  undo(): boolean {
+    return this.restore(this.done, this.undone);
+  }
+
+  redo(): boolean {
+    return this.restore(this.undone, this.done);
+  }
+
+  discardRedo(): void {
+    this.undone.length = 0;
+  }
+
+  private restore(from: PlanState[], to: PlanState[]): boolean {
+    const state = from.pop();
+    if (!state) return false;
+    to.push(this.planState());
+    this.commit(state);
+    return true;
+  }
+
+  private planState(): PlanState {
+    return { plans: this.state.plans, activePlanId: this.state.activePlanId };
+  }
+
+  private commitEdit(patch: Partial<PlanSnapshot>): void {
+    const before = this.planState();
+    this.commit(patch);
+    if (this.grouped === 0) this.recordEdit(before);
+  }
+
+  private recordEdit(before: PlanState): void {
+    if (before.plans === this.state.plans && before.activePlanId === this.state.activePlanId) {
+      return;
+    }
+    this.done.push(before);
+    this.undone.length = 0;
+    for (const listener of this.editListeners) listener();
   }
 
   private commit(patch: Partial<PlanSnapshot>): void {

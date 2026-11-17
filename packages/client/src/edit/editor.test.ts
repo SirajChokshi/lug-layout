@@ -38,7 +38,7 @@ import {
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { EDITOR } from "../tokens.ts";
+import { EDITOR, PLAN_SERVICE } from "../tokens.ts";
 import type { IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -167,7 +167,12 @@ async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDL
   } as unknown as HTMLCanvasElement;
 
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return { editor, backend, manifest: await realLoader.loadManifest("standard") };
+  return {
+    editor,
+    backend,
+    plans: container.get(PLAN_SERVICE),
+    manifest: await realLoader.loadManifest("standard"),
+  };
 }
 
 it("starts with a stud-less set in the bundle, leaving it out of the catalog and reporting it as skipped", async () => {
@@ -405,3 +410,41 @@ describe("unsaved edits after a failed save", () => {
     expect(editor.snapshot().world?.name).toBe("Other");
   });
 });
+
+it("undoes and redoes table edits in one timeline with placements", async () => {
+  const { editor, backend, plans } = await startEditor();
+  const baseplate = editor.snapshot().catalog.find((item) => item.id.startsWith("ldraw:3811@"));
+  if (!baseplate) throw new Error("the bundle has no 3811");
+  const placeAt = (x: number, z: number): void => {
+    backend.aim(x, z);
+    editor.chooseItem(baseplate.id);
+    editor.click(0, 0, 0);
+    editor.chooseItem(null);
+  };
+  const state = () => [
+    editor.snapshot().placements,
+    plans.snapshot().plans.map((plan) => plan.footprint.tables.map((t) => t.rect.width)),
+  ];
+
+  placeAt(320, 320);
+  const { planId, tableId } = plans.drawTable({ minX: 0, minZ: 0, maxX: 1280, maxZ: 640 });
+  plans.updateTable(planId, tableId, { rect: { x: 0, z: 0, width: 640, depth: 256 } });
+  placeAt(960, 320);
+  expect(state()).toEqual([2, [[640]]]);
+
+  const undone = [];
+  for (let i = 0; i < 4; i++) {
+    undone.push([editor.snapshot().history.undo, ...state()]);
+    editor.undo(0);
+  }
+  expect(undone).toEqual([
+    ["place", 2, [[640]]],
+    ["plan", 1, [[640]]],
+    ["plan", 1, [[512]]],
+    ["place", 1, []],
+  ]);
+  expect(state()).toEqual([0, []]);
+  for (let i = 0; i < 4; i++) editor.redo(0);
+  expect(state()).toEqual([2, [[640]]]);
+  expect(editor.snapshot().history.redo).toBeNull();
+}, 120_000);

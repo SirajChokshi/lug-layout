@@ -118,7 +118,8 @@ import {
 } from "./placement-messages.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
-export type EditAction = EditKind | "track";
+export type EditAction = EditKind | "track" | "plan";
+type TimelineEntry = "world" | "plan";
 export type EditorMode = "place" | "select" | "track" | "measure" | "table";
 
 export interface CatalogColorView {
@@ -797,6 +798,8 @@ export class Editor implements IEditor {
   private draftRuler: Ruler | null = null;
   private readonly tableTool: TableTool;
   private gridAreasKey = "null";
+  private readonly timeline: TimelineEntry[] = [];
+  private readonly untimeline: TimelineEntry[] = [];
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -887,6 +890,7 @@ export class Editor implements IEditor {
       });
       this.backend.setGroundGrid(groundGrid(this.tableY, this.gridAreas()));
       this.plans.subscribe(() => this.plansChanged());
+      this.plans.onEdit(() => this.recordEdit("plan"));
       const loadMs = performance.now() - started;
       await this.openFirstWorld();
       this.firstWorldFrame = true;
@@ -1745,15 +1749,6 @@ export class Editor implements IEditor {
     );
   }
 
-  private historyView(): HistoryView {
-    return {
-      undo: this.history.nextUndo(),
-      redo: this.history.nextRedo(),
-      undoDepth: this.history.undoDepth,
-      redoDepth: this.history.redoDepth,
-    };
-  }
-
   private placeableAt(refId: number): Placeable {
     const placeable = this.placeables[refId];
     if (!placeable) throw new Error(`no catalog item has ref id ${refId}`);
@@ -1785,10 +1780,36 @@ export class Editor implements IEditor {
       placements: this.world.size,
       hover: this.hoverView(),
       studs: this.placed.studTotals(),
-      history: this.historyView(),
     });
+    if (edit.step === "do") this.recordEdit("world");
+    else this.update({ history: this.historyView() });
     this.syncPlan();
     return view;
+  }
+
+  private recordEdit(entry: TimelineEntry): void {
+    this.timeline.push(entry);
+    this.untimeline.length = 0;
+    if (entry === "world") this.plans.discardRedo();
+    this.update({ history: this.historyView() });
+  }
+
+  private historyView(): HistoryView {
+    const undo = this.timeline.at(-1);
+    const redo = this.untimeline.at(-1);
+    return {
+      undo: undo === "plan" ? "plan" : undo === "world" ? this.history.nextUndo() : null,
+      redo: redo === "plan" ? "plan" : redo === "world" ? this.history.nextRedo() : null,
+      undoDepth: this.timeline.length,
+      redoDepth: this.untimeline.length,
+    };
+  }
+
+  private stepPlan(from: TimelineEntry[], to: TimelineEntry[], step: () => boolean): void {
+    from.pop();
+    to.push("plan");
+    step();
+    this.update({ history: this.historyView() });
   }
 
   private roadPlacements(): ReadonlyArray<RoadPlacement> {
@@ -2154,21 +2175,37 @@ export class Editor implements IEditor {
 
   undo(eventTimeMs: number): void {
     if (this.readOnly) return;
+    const entry = this.timeline.at(-1);
+    if (entry === undefined) return;
+    if (entry === "plan") {
+      this.stepPlan(this.timeline, this.untimeline, () => this.plans.undo());
+      return;
+    }
     const refusal = this.replayRefusal(this.history.peekUndo());
     if (refusal) {
       this.refuse("undo", refusal.item, refusal);
       return;
     }
+    this.timeline.pop();
+    this.untimeline.push("world");
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
     if (this.readOnly) return;
+    const entry = this.untimeline.at(-1);
+    if (entry === undefined) return;
+    if (entry === "plan") {
+      this.stepPlan(this.untimeline, this.timeline, () => this.plans.redo());
+      return;
+    }
     const refusal = this.replayRefusal(this.history.peekRedo());
     if (refusal) {
       this.refuse("redo", refusal.item, refusal);
       return;
     }
+    this.untimeline.pop();
+    this.timeline.push("world");
     this.replay(this.history.redo(), eventTimeMs);
   }
 
@@ -2524,6 +2561,9 @@ export class Editor implements IEditor {
     this.showTrackEnds(null);
     this.world = world;
     this.history = new EditHistory(world);
+    this.timeline.length = 0;
+    this.untimeline.length = 0;
+    this.plans.discardRedo();
     this.camera.restoreView(view);
     this.lastView = this.camera.savedView();
     this.current = current;
