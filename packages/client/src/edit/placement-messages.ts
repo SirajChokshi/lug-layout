@@ -1,4 +1,5 @@
-import type { UpperSupport } from "@brr/domain";
+import type { StrongerShift, UpperSupport } from "@brr/domain";
+import { STUD_LDU } from "@brr/math";
 import type { LostSupport, PlacedOverlap, PlacementCheck, VolumeOwner } from "./placed-chunks.ts";
 import type { OffBaseplate, RunBlock } from "./track-drawing.ts";
 
@@ -9,7 +10,8 @@ export type RefusalRule =
   | "support"
   | "overlap"
   | "carries"
-  | "track-support";
+  | "track-support"
+  | "technic-alignment";
 
 export interface Refusal {
   readonly rule: RefusalRule;
@@ -133,5 +135,22 @@ export function trackCarriedRefusal(label: string, off: OffBaseplate): Refusal {
   return {
     rule: "carries",
     message: `${label} carries track: without it, laid piece ${off.piece + 1} (${off.pieceId}) would have ${off.missing.count} of the ${off.cells} stud cells between its ends with no baseplate under them. Remove that piece first: in the track tool, click it and press Delete.`,
+  };
+}
+
+export interface PartialAlignment {
+  readonly joins: number;
+  readonly stronger: StrongerShift;
+}
+
+function holes(count: number): string {
+  return count === 1 ? "1 Technic hole" : `${count} Technic holes`;
+}
+
+export function partialAlignmentRefusal(label: string, partial: PartialAlignment): Refusal {
+  const { dx, dz, joins } = partial.stronger;
+  return {
+    rule: "technic-alignment",
+    message: `${label} would line up only ${holes(partial.joins)} with its neighbour; moved (${dx / STUD_LDU}, ${dz / STUD_LDU}) studs, ${joins} line up and the edges align.`,
   };
 }

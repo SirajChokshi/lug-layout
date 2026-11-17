@@ -7,6 +7,7 @@ import {
   AXIS_POS_X,
   AXIS_POS_Y,
   AXIS_POS_Z,
+  alignmentSpan,
   type HoleEnds,
 } from "@brr/domain";
 import { INSTANCE_MATRIX_FLOATS, type EdgeMarker } from "@brr/render";
@@ -14,6 +15,7 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 
 export interface ModelHoleEnds extends HoleEnds {
   readonly uncertified: number;
+  readonly alignSpanLdu: number;
 }
 
 const NO_AXIS = -1;
@@ -88,14 +90,14 @@ export function modelHoleEnds(
       count++;
     }
   }
-  return {
+  const ends = {
     count,
     x: x.slice(0, count),
     y: y.slice(0, count),
     z: z.slice(0, count),
     axis: axis.slice(0, count),
-    uncertified,
   };
+  return { ...ends, uncertified, alignSpanLdu: alignmentSpan(ends) };
 }
 
 const PIN_POST_HALF_LDU = 4;

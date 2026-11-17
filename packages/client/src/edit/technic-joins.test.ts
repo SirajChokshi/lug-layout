@@ -268,3 +268,38 @@ it("refuses a modular where a Technic pin would go into a wall with no free hole
   editor.click((depth * STUD_LDU) / NDC_TO_LDU, 0, 0);
   expect(editor.snapshot().placements).toBe(1);
 }, 120_000);
+
+it("never settles a modular on a partial edge alignment: it pins every hole the seam offers, or none", async () => {
+  const editor = await startEditor(new TopDownBackend(), ["10185-1", "10190-1"]);
+  const gridStuds = editor.snapshot().baseplateGridStuds ?? 0;
+  editor.chooseItem(GROCER);
+  aimAt(editor, 0, 0);
+  editor.click(0, 0, 0);
+  const depth = editor.snapshot().catalog.find((item) => item.id === GROCER)?.baseplate?.studsDeep;
+  if (depth === undefined) throw new Error(`${GROCER} has no baseplate`);
+
+  editor.chooseItem(MARKET);
+  const reach = 2 * gridStuds + gridStuds / 2;
+  const sweep = [0, 1, 2, 3].flatMap((turns) => {
+    while (editor.snapshot().ghostRot !== turns) editor.rotate(0);
+    return [-depth, depth].flatMap((z) =>
+      Array.from({ length: 2 * reach + 1 }, (_, i) => {
+        const k = i - reach;
+        aimAt(editor, k, z);
+        const ghost = editor.snapshot().ghost;
+        return { k, pins: ghost?.technicJoins ?? 0, rule: ghost?.refusal?.rule ?? null };
+      }),
+    );
+  });
+  const full = Math.max(...sweep.map(({ pins }) => pins));
+  expect(full).toBeGreaterThan(1);
+  const partialAccepted = sweep.filter(
+    ({ pins, rule }) => rule === null && pins > 0 && pins < full,
+  );
+  expect(partialAccepted).toEqual([]);
+  const partialShown = sweep.filter(({ pins }) => pins > 0 && pins < full);
+  expect(partialShown.map(({ rule }) => rule)).toEqual(partialShown.map(() => "technic-alignment"));
+  expect(
+    sweep.filter(({ k, pins }) => Math.abs(k) > gridStuds && pins === full).length,
+  ).toBeGreaterThan(0);
+}, 120_000);

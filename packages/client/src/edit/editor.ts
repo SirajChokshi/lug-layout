@@ -26,6 +26,8 @@ import {
   type SurfaceHit,
   TechnicJoins,
   placedHoleEnds,
+  seamLock,
+  strongerShift,
   type HoleEnds,
 } from "@brr/domain";
 import {
@@ -92,6 +94,8 @@ import type { IEditorCamera } from "../camera/editor-camera.ts";
 import {
   carriesRefusal,
   checkRefusal,
+  partialAlignmentRefusal,
+  type PartialAlignment,
   trackCarriedRefusal,
   trackRunRefusal,
   type Refusal,
@@ -644,6 +648,7 @@ export class Editor implements IEditor {
   private snappedStuds: readonly [number, number] | null = null;
   private snappedToTechnic = false;
   private technicTurn: TechnicTurnView | null = null;
+  private technicPartial: PartialAlignment | null = null;
   private technicJoins = new TechnicJoins();
   private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
   private connectionMarkers: ReadonlyArray<EdgeMarker> = [];
@@ -1200,19 +1205,47 @@ export class Editor implements IEditor {
       yLdu: yPlates * PLATE_LDU,
       rot,
     });
-    const shifts = this.technicJoins.shiftsWithin(ends, radius);
+    const span = placeable.technic.alignSpanLdu;
+    const scored = this.technicJoins.shiftsWithin(ends, radius + span);
+    const { shifts } = scored;
     const at: LandingAt = { kind: "height", yPlates };
     for (let s = 0; s < shifts.length; s += 2) {
-      const dx = shifts[s] ?? 0;
-      const dz = shifts[s + 1] ?? 0;
+      const reachedX = shifts[s] ?? 0;
+      const reachedZ = shifts[s + 1] ?? 0;
+      if (reachedX * reachedX + reachedZ * reachedZ > radius * radius) continue;
+      const joined = new Uint8Array(ends.count);
+      const reachedJoins = this.technicJoins.joinsAt(ends, reachedX, reachedZ, joined);
+      const lock = seamLock(ends, joined);
+      const full = strongerShift(scored, reachedX, reachedZ, reachedJoins, span, lock);
+      const dx = reachedX + (full?.dx ?? 0);
+      const dz = reachedZ + (full?.dz ?? 0);
       if (dx % STUD_LDU !== 0 || dz % STUD_LDU !== 0) continue;
       const x = hoverX + dx;
       const z = hoverZ + dz;
       if (this.roadRefusedAt(placeable, x, z, rot)) continue;
       if (!acceptable(this.checkAt(placeable, x, z, rot, [], at))) continue;
-      return { x, z, at, joins: this.technicJoins.joinsAt(ends, dx, dz, null) };
+      return { x, z, at, joins: full?.joins ?? reachedJoins };
     }
     return null;
+  }
+
+  private partialAlignment(
+    placeable: Placeable,
+    holes: HoleEnds,
+    joined: Uint8Array,
+    joins: number,
+  ): PartialAlignment | null {
+    if (joins === 0) return null;
+    const span = placeable.technic.alignSpanLdu;
+    const scored = this.technicJoins.shiftsWithin(holes, span);
+    const stronger = strongerShift(scored, 0, 0, joins, span, seamLock(holes, joined));
+    return stronger ? { joins, stronger } : null;
+  }
+
+  private ghostRefusal(placeable: Placeable, check: PlacementCheck): Refusal | null {
+    const refusal = checkRefusal(placeable.label, check);
+    if (refusal || !this.technicPartial) return refusal;
+    return partialAlignmentRefusal(placeable.label, this.technicPartial);
   }
 
   private snapGhostToTechnic(): boolean {
@@ -1393,11 +1426,12 @@ export class Editor implements IEditor {
     const holes = this.ghostHoleEnds(this.active, check.yPlates);
     const joinedHoles = new Uint8Array(holes.count);
     const technicJoins = this.technicJoins.joinsAt(holes, 0, 0, joinedHoles);
+    this.technicPartial = this.partialAlignment(this.active, holes, joinedHoles, technicJoins);
     const studsEngaged = this.showConnections(this.active, check, holes, joinedHoles);
     this.update({
       ghost: {
         yPlates: check.yPlates,
-        refusal: checkRefusal(this.active.label, check),
+        refusal: this.ghostRefusal(this.active, check),
         studsEngaged,
         snappedStuds: this.snappedStuds,
         technicJoins,
@@ -1648,7 +1682,7 @@ export class Editor implements IEditor {
         return;
       }
       const check = this.ghostCheck;
-      const refusal = check ? checkRefusal(this.active.label, check) : null;
+      const refusal = check ? this.ghostRefusal(this.active, check) : null;
       if (refusal) {
         this.refuse("place", this.active.id, refusal);
         return;

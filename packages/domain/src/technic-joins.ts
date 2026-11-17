@@ -148,7 +148,7 @@ export class TechnicJoins {
     return joins;
   }
 
-  shiftsWithin(ends: HoleEnds, radiusLdu: number): Int32Array {
+  shiftsWithin(ends: HoleEnds, radiusLdu: number): ScoredShifts {
     const reach = Math.ceil(radiusLdu);
     const span = 2 * reach + 1;
     const keys = new Set<number>();
@@ -175,11 +175,79 @@ export class TechnicJoins {
     }
     scored.sort();
     const shifts = new Int32Array(scored.length * 2);
+    const joins = new Int32Array(scored.length);
     for (let i = 0; i < scored.length; i++) {
-      const key = (scored[i] ?? 0) % span ** 4;
+      const value = scored[i] ?? 0;
+      const key = value % span ** 4;
       shifts[2 * i] = (key % span) - reach;
       shifts[2 * i + 1] = (Math.floor(key / span) % span) - reach;
+      joins[i] = most - Math.floor(value / span ** 4);
     }
-    return shifts;
+    return { shifts, joins };
   }
+}
+
+export interface ScoredShifts {
+  readonly shifts: Int32Array;
+  readonly joins: Int32Array;
+}
+
+export const SEAM_HOLDS_X = 1;
+export const SEAM_HOLDS_Z = 2;
+
+export function seamLock(ends: HoleEnds, joined: Uint8Array): number {
+  let lock = 0;
+  for (let i = 0; i < ends.count; i++) {
+    if (joined[i] !== 1) continue;
+    const axis = ends.axis[i] ?? 0;
+    if (axis === AXIS_POS_X || axis === AXIS_NEG_X) lock |= SEAM_HOLDS_X;
+    if (axis === AXIS_POS_Z || axis === AXIS_NEG_Z) lock |= SEAM_HOLDS_Z;
+  }
+  return lock;
+}
+
+export function strongerShift(
+  scored: ScoredShifts,
+  dx: number,
+  dz: number,
+  joins: number,
+  windowLdu: number,
+  lock: number,
+): StrongerShift | null {
+  let stronger: StrongerShift | null = null;
+  let strongerDistance = 0;
+  for (let s = 0; s < scored.joins.length; s++) {
+    const more = scored.joins[s] ?? 0;
+    if (more <= joins) break;
+    const sx = (scored.shifts[2 * s] ?? 0) - dx;
+    const sz = (scored.shifts[2 * s + 1] ?? 0) - dz;
+    const distance = sx * sx + sz * sz;
+    if (distance > windowLdu * windowLdu) continue;
+    if ((lock & SEAM_HOLDS_X) !== 0 && sx !== 0) continue;
+    if ((lock & SEAM_HOLDS_Z) !== 0 && sz !== 0) continue;
+    if (stronger === null || (more === stronger.joins && distance < strongerDistance)) {
+      stronger = { dx: sx, dz: sz, joins: more };
+      strongerDistance = distance;
+    }
+  }
+  return stronger;
+}
+
+export interface StrongerShift {
+  readonly dx: number;
+  readonly dz: number;
+  readonly joins: number;
+}
+
+export function alignmentSpan(ends: HoleEnds): number {
+  let span = 0;
+  for (let i = 0; i < ends.count; i++) {
+    for (let j = i + 1; j < ends.count; j++) {
+      if (ends.axis[i] !== ends.axis[j] || ends.y[i] !== ends.y[j]) continue;
+      const dx = (ends.x[i] ?? 0) - (ends.x[j] ?? 0);
+      const dz = (ends.z[i] ?? 0) - (ends.z[j] ?? 0);
+      span = Math.max(span, Math.sqrt(dx * dx + dz * dz));
+    }
+  }
+  return span;
 }

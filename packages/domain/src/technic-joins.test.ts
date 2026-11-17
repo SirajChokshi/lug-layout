@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  alignmentSpan,
+  seamLock,
+  strongerShift,
   AXIS_NEG_X,
   AXIS_NEG_Z,
   AXIS_POS_X,
@@ -76,7 +79,7 @@ describe("TechnicJoins", () => {
 
   it("offers the shifts that make ends meet, most pins first, then nearest", () => {
     const held = placedHoleEnds(edgeBrick, { x: 30, z: 37, yLdu: 0, rot: 0 });
-    const shifts = joins.shiftsWithin(held, 60);
+    const { shifts, joins: scored } = joins.shiftsWithin(held, 60);
     expect(shifts.length).toBeGreaterThan(0);
     let previous = { pins: Number.POSITIVE_INFINITY, distance: 0 };
     for (let s = 0; s < shifts.length; s += 2) {
@@ -84,6 +87,7 @@ describe("TechnicJoins", () => {
       const dz = shifts[s + 1] ?? 0;
       const distance = dx * dx + dz * dz;
       const pins = joins.joinsAt(held, dx, dz, null);
+      expect(scored[s / 2]).toBe(pins);
       expect(pins).toBeGreaterThan(0);
       expect(distance).toBeLessThanOrEqual(60 * 60);
       expect(pins < previous.pins || distance >= previous.distance).toBe(true);
@@ -111,5 +115,47 @@ describe("TechnicJoins pins", () => {
     expect(index.pinAt(0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_NEG_Z)).toBeNull();
     expect(index.holeOwnerAt(0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_NEG_Z)).toBe(4);
     expect(index.holeOwnerAt(0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_POS_Z)).toBe(-1);
+  });
+});
+
+describe("strongerShift", () => {
+  const joins = new TechnicJoins();
+  joins.add(1, placedHoleEnds(edgeBrick, { x: 0, z: 0, yLdu: 0, rot: 0 }));
+  const span = alignmentSpan(edgeBrick);
+
+  it("measures the alignment span as the widest run of same-facing ends", () => {
+    expect(span).toBe(40);
+  });
+
+  it.each([
+    ["fully aligned", 0, null],
+    ["one stud along the face", 20, { dx: -20, dz: 0, joins: 3 }],
+    ["two studs along the face", 40, { dx: -40, dz: 0, joins: 3 }],
+  ])("names the nearest pose within the span that pins more: %s", (_, x, expected) => {
+    const held = placedHoleEnds(edgeBrick, { x, z: 2 * BRICK_FACE_LDU, yLdu: 0, rot: 0 });
+    const scored = joins.shiftsWithin(held, span);
+    const joined = new Uint8Array(held.count);
+    const pins = joins.joinsAt(held, 0, 0, joined);
+    expect(strongerShift(scored, 0, 0, pins, span, seamLock(held, joined))).toEqual(expected);
+  });
+
+  it("looks no further than the window", () => {
+    const held = placedHoleEnds(edgeBrick, { x: 40, z: 2 * BRICK_FACE_LDU, yLdu: 0, rot: 0 });
+    const scored = joins.shiftsWithin(held, span);
+    expect(strongerShift(scored, 0, 0, joins.joinsAt(held, 0, 0, null), 20, 0)).toEqual({
+      dx: -20,
+      dz: 0,
+      joins: 2,
+    });
+    expect(strongerShift(scored, 0, 0, joins.joinsAt(held, 0, 0, null), 10, 0)).toBeNull();
+  });
+
+  it("keeps to the seam: a pose that pins more only by sliding off the contact face doesn't count", () => {
+    const held = placedHoleEnds(edgeBrick, { x: 20, z: 2 * BRICK_FACE_LDU, yLdu: 0, rot: 0 });
+    const scored = { shifts: Int32Array.of(-20, -20), joins: Int32Array.of(3) };
+    const joined = new Uint8Array(held.count);
+    const pins = joins.joinsAt(held, 0, 0, joined);
+    expect(strongerShift(scored, 0, 0, pins, span, seamLock(held, joined))).toBeNull();
+    expect(strongerShift(scored, 0, 0, pins, span, 0)).toEqual({ dx: -20, dz: -20, joins: 3 });
   });
 });
