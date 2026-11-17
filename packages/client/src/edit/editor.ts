@@ -480,17 +480,19 @@ export class Editor implements IEditor {
           colors,
         );
       }),
-      ...loaded.map(({ bundle: modelBundle, entry, model }) =>
-        modelPlaceable(
-          entry.name,
-          entry.role === "road-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
-          entry.role,
-          palette.remap(model, modelBundle.parts),
-          { name: entry.name, source: entry.source, sections: model.sections },
-          palette.parts,
-          colors,
+      ...loaded
+        .filter(({ model }) => model.lattice !== null)
+        .map(({ bundle: modelBundle, entry, model }) =>
+          modelPlaceable(
+            entry.name,
+            entry.role === "road-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
+            entry.role,
+            palette.remap(model, modelBundle.parts),
+            { name: entry.name, source: entry.source, sections: model.sections },
+            palette.parts,
+            colors,
+          ),
         ),
-      ),
     ];
   }
 
