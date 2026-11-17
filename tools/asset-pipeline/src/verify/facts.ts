@@ -8,7 +8,7 @@ import { buildTrackCatalog } from "../track/track-catalog.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
-import { milsRoadModules } from "../road/mils-road-modules.ts";
+import { milsModules } from "../mils/mils-modules.ts";
 import { roadBaseplateScene, switchParallelScene } from "./scenes.ts";
 import { ovalPassingSidingScene, r40CircleScene, trackLoopReport } from "./track-loops.ts";
 
@@ -94,7 +94,7 @@ export function geometryReports(
       fileName: "scenes/oval-passing-siding-9v.ldr",
       render: () => ovalPassingSidingScene(library, loadTrackEndMarkers()),
     },
-    ...milsRoadModules(library).map((module) => ({
+    ...milsModules(library).map((module) => ({
       fileName: `scenes/${module.name}.ldr`,
       render: () => module.ldraw,
     })),

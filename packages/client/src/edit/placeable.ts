@@ -112,6 +112,17 @@ function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | 
   return top;
 }
 
+function hasRoadPart(instances: ChunkPartInstances, parts: ReadonlyArray<PartAsset>): boolean {
+  for (let i = 0; i < instances.count; i++) {
+    const index = instances.partIndex[i];
+    const part = index === undefined ? undefined : parts[index];
+    if (!part)
+      throw new Error(`instance ${i} names part ${String(index)}, which the palette lacks`);
+    if (part.role === "road") return true;
+  }
+  return false;
+}
+
 function restingY(
   model: PartModel,
   lattice: PartModelLattice,
@@ -167,7 +178,7 @@ export function modelPlaceable(
     partBoxes,
     frameShift: shift,
     credit: isModule ? null : credit,
-    road: isModule ? roadSurface(local, partBoxes, box, parts) : null,
+    road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
   };
 }
 
