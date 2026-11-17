@@ -2,17 +2,18 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { walkPart } from "../ldraw/walk.ts";
-import { ZETA16_ORDER, type Zeta16 } from "@brr/math";
 import {
+  CERTIFIED_RESIDUAL_LIMIT_LDU,
   findZeta16Representation,
+  UNROUNDED_TOLERANCE_LDU,
+  ZETA16_ORDER,
   ZETA16_STEP_RADIANS,
   type FieldRepresentation,
-} from "./cyclotomic.ts";
+  type Zeta16,
+} from "@brr/math";
 
 export const LDU_PER_STUD = 20;
-const UNROUNDED_TOLERANCE_LDU = 1e-6;
 export const PART_FRAME_HEADING_GRID = ZETA16_STEP_RADIANS / 2;
-const CERTIFIED_RESIDUAL_LIMIT_LDU = 0.0005;
 const MARKERS_PATH = fileURLToPath(new URL("./track-end-markers.json", import.meta.url));
 
 export interface TrackEndMarker {
