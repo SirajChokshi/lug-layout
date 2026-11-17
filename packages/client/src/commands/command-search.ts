@@ -27,6 +27,7 @@ const KIND_WORDS: Readonly<Record<CatalogItemView["kind"], string>> = {
   "mils-module": "mils module",
   model: "set model",
   track: "track rail train",
+  "rolling-stock": "train locomotive car wagon rolling stock",
 };
 
 const TITLE_START_SCORE = 6;

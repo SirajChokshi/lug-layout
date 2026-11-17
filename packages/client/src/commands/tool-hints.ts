@@ -115,8 +115,37 @@ function view(snapshot: EditorSnapshot): ToolHintView {
         ],
       };
     }
+    case "train": {
+      const ghost = snapshot.trains.ghost;
+      return {
+        tone: ghost?.refusal ? "warn" : "place",
+        title: `Placing ${itemName(snapshot, snapshot.activeItem)} on track`,
+        detail: ghost?.refusal
+          ? ghost.state === "off-track"
+            ? "rolling stock rests only on track"
+            : ghost.refusal.message
+          : ghost?.couplesTo != null
+            ? "couples behind the train"
+            : `facing ${snapshot.trains.facingBackward ? "back" : "forward"} along the track`,
+        hints: [
+          gesture("Click", "place on the track"),
+          key("rotate", "face the other way"),
+          key("undo", "undo"),
+          key("select-tool", "done"),
+        ],
+      };
+    }
     case "select": {
       const { selection } = snapshot;
+      const train = snapshot.trains.placed.find((t) => t.id === snapshot.trains.selected);
+      if (train) {
+        return {
+          tone: "select",
+          title: train.label,
+          detail: `${Number(train.lengthStuds.toFixed(1))} studs on track`,
+          hints: [key("delete", "delete"), key("select-tool", "deselect")],
+        };
+      }
       if (selection) {
         return {
           tone: "select",

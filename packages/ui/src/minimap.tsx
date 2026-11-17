@@ -52,6 +52,7 @@ function itemKind(item: CatalogItemView | undefined): ItemKind {
       return "road";
     case "model":
     case "mils-module":
+    case "rolling-stock":
       return "model";
     case "track":
       return "track";

@@ -353,6 +353,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       bundle,
       farMesh,
       entry,
+      shapes: file.shapes,
       model: {
         sections: file.sections,
         lattice: modelLattice(file.lattice),

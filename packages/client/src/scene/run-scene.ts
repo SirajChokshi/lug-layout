@@ -4,11 +4,13 @@ import {
   type PartBundle,
   type PartModel,
 } from "@brr/catalog";
-import type { BundleLod, TrackPiece } from "@brr/schema/bundle";
-import { TrackGraph, type TrackLayout } from "@brr/domain";
-import { PLATE_LDU } from "@brr/math";
+import type { BundleLod, TrackCatalog, TrackPiece } from "@brr/schema/bundle";
+import { NO_EDGE, TrackGraph, type TrackLayout } from "@brr/domain";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";
 import type { SimFrameLayout, SimLoad, SimLoaded, TrainSpec, VehicleSpec } from "@brr/sim";
+import { worldTrack, worldTrains } from "@brr/schema/world";
+import { issueText } from "@brr/schema/decode";
+import { WORLD_REPOSITORY, type IWorldRepository } from "@brr/storage";
 import { inject, injectable } from "inversify";
 import {
   consistVehicles,
@@ -21,9 +23,10 @@ import { instanceBoxes } from "../running-gear/instance-boxes.ts";
 import type { IRunningGear, RunningGearSource } from "../running-gear/running-gear-editor.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { RUNNING_GEAR, SIM_CLIENT } from "../tokens.ts";
-import { plateDepthBelowOrigin } from "./part-footprint.ts";
+import { railTopLdu } from "./part-footprint.ts";
 import { withStuds } from "./stud-stream.ts";
-import { buildTrackPlan } from "./track-plan.ts";
+import { buildTrackPlan, type TrackPlanLayout } from "./track-plan.ts";
+import { buildWorldTrack, routeEdge } from "./world-track.ts";
 import { summarizeTrack, TRACK_PARTS, trackChunks } from "./track-scene.ts";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 
@@ -33,6 +36,7 @@ export interface TrainRequest {
 }
 
 export interface RunRequest {
+  readonly world: string | null;
   readonly plan: string;
   readonly consist: ReadonlyArray<ConsistEntry>;
   readonly trains: ReadonlyArray<TrainRequest>;
@@ -125,6 +129,19 @@ interface PlacedVehicle {
 }
 
 const NO_BODY = -1;
+const OMR_PREFIX = /^omr:/u;
+
+interface RunTrain {
+  readonly edge: number;
+  readonly offsetLdu: number;
+  readonly consist: ReadonlyArray<ConsistEntry>;
+}
+
+interface RunTrack extends TrackPlanLayout {
+  readonly name: string;
+  readonly trains: ReadonlyArray<RunTrain>;
+  readonly source: "plan" | "world";
+}
 
 function railTopY(
   layout: TrackLayout,
@@ -134,7 +151,7 @@ function railTopY(
   const piece = pieces[layout.piece(0)];
   const asset = bundle.parts.find((part) => part.id === piece?.part);
   if (!asset) throw new Error("the first track placement has no part in the bundle");
-  return (layout.yPlates(0) + plateDepthBelowOrigin(asset)) * PLATE_LDU + asset.boundsMax[1];
+  return railTopLdu(asset, layout.yPlates(0));
 }
 
 @injectable()
@@ -154,7 +171,46 @@ export class RunScene implements IRunScene {
     @inject(SCENE_BACKEND) readonly backend: ISceneBackend,
     @inject(SIM_CLIENT) readonly sim: ISimClient,
     @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
+    @inject(WORLD_REPOSITORY) private readonly worlds: IWorldRepository,
   ) {}
+
+  private async runTrack(request: RunRequest, catalog: TrackCatalog): Promise<RunTrack> {
+    if (request.world === null) {
+      return {
+        ...buildTrackPlan(request.plan, catalog),
+        name: request.plan,
+        trains: request.trains.map((train) => ({ ...train, consist: request.consist })),
+        source: "plan",
+      };
+    }
+    const stored = await this.worlds.read(request.world);
+    if (!stored.ok) {
+      throw new Error(`world ${request.world} can't be read: ${issueText(stored.issues)}`);
+    }
+    const { shards, manifest } = stored.value;
+    const track = buildWorldTrack(worldTrack(shards), catalog);
+    const graph = new TrackGraph(track.layout);
+    const trains = worldTrains(shards).map((record, index) => {
+      const edge = routeEdge(graph, record.track, record.route, record.forward);
+      if (edge === NO_EDGE) {
+        throw new Error(
+          `train ${index + 1} stands on route ${record.route} of track piece ${record.track}, which isn't laid`,
+        );
+      }
+      return {
+        edge,
+        offsetLdu: record.offsetLdu,
+        consist: record.cars.map((car) => ({
+          model: car.ref.replace(OMR_PREFIX, ""),
+          reversed: car.reversed,
+        })),
+      };
+    });
+    if (trains.length === 0) {
+      throw new Error(`world "${manifest.name}" has no rolling stock on its track to run`);
+    }
+    return { ...track, name: manifest.name, trains, source: "world" };
+  }
 
   configure(request: RunRequest): void {
     this.request = request;
@@ -163,17 +219,20 @@ export class RunScene implements IRunScene {
   async load(lod: BundleLod): Promise<SceneSummary> {
     const request = this.request;
     if (!request) throw new Error("RunScene.load called before configure");
-    const models = [...new Set(request.consist.map((entry) => entry.model))];
-    const [trackBundle, ...modelBundles] = await Promise.all([
-      this.loader.load(lod, TRACK_PARTS),
-      ...models.map((model) => this.loader.loadModel(lod, model)),
-    ]);
+    const trackBundle = await this.loader.load(lod, TRACK_PARTS);
+    const run = await this.runTrack(request, trackBundle.trackCatalog);
+    const models = [
+      ...new Set(run.trains.flatMap((train) => train.consist.map((entry) => entry.model))),
+    ];
+    const modelBundles = await Promise.all(
+      models.map((model) => this.loader.loadModel(lod, model)),
+    );
     const modelByName = new Map(models.map((name, i) => [name, modelBundles[i]]));
     const bundle = mergedBundle(
       trackBundle,
       modelBundles.map((model) => model.bundle),
     );
-    const { layout, catalogPieces } = buildTrackPlan(request.plan, trackBundle.trackCatalog);
+    const { layout, catalogPieces } = run;
     const graph = new TrackGraph(layout);
     this.frame(graph);
     const colors = new ColorTable(bundle);
@@ -193,19 +252,24 @@ export class RunScene implements IRunScene {
         };
       }),
     );
-    const consist = request.consist.flatMap((entry) => {
-      const loaded = modelByName.get(entry.model);
-      if (!loaded) throw new Error(`model ${entry.model} did not load`);
-      return consistVehicles(
-        loaded.model,
-        entry.model,
-        entry.reversed,
-        railPart,
-        this.runningGear.effectiveVehicles(entry.model),
-      ).map((vehicle) => ({ vehicle, loaded }));
-    });
+    const consists = run.trains.map((train) =>
+      train.consist.flatMap((entry) => {
+        const loaded = modelByName.get(entry.model);
+        if (!loaded) throw new Error(`model ${entry.model} did not load`);
+        return consistVehicles(
+          loaded.model,
+          entry.model,
+          entry.reversed,
+          railPart,
+          run.source === "plan"
+            ? this.runningGear.effectiveVehicles(entry.model)
+            : loaded.model.vehicles,
+        ).map((vehicle) => ({ vehicle, loaded }));
+      }),
+    );
+    const consist = run.source === "plan" ? (consists[0] ?? []) : consists.flat();
     this.consist = consist.map(({ vehicle }) => vehicle);
-    const rigidChunks = consist.map(({ vehicle, loaded }) => {
+    const rigidChunks = consists.flat().map(({ vehicle, loaded }) => {
       const chunk = (rigid: RigidBodyInstances | null): ChunkInstances | null =>
         rigid ? this.rigidChunk(rigid, loaded.model, loaded.bundle, bundle, colors) : null;
       return {
@@ -219,16 +283,17 @@ export class RunScene implements IRunScene {
       };
     });
     const summary = showChunks(this.backend, bundle, undefined, colors, chunks, {
-      name: request.consist.map((entry) => entry.model).join(" + "),
+      name: models.join(" + "),
       source: first?.entry.source ?? "",
       sections: modelBundles.flatMap((model) => model.model.sections),
     });
     let nextBody = 0;
     let drawnParts = 0;
     this.placed = [];
-    for (let t = 0; t < request.trains.length; t++) {
-      consist.forEach(({ vehicle }, v) => {
-        const prepared = rigidChunks[v];
+    let firstOfTrain = 0;
+    for (const trainVehicles of consists) {
+      trainVehicles.forEach(({ vehicle }, v) => {
+        const prepared = rigidChunks[firstOfTrain + v];
         if (!prepared) return;
         const show = (chunk: ChunkInstances | null): number => {
           if (!chunk) return NO_BODY;
@@ -244,31 +309,33 @@ export class RunScene implements IRunScene {
           rearBogie: show(prepared.rearBogie),
         });
       });
+      firstOfTrain += trainVehicles.length;
     }
-    const spec: TrainSpec = {
-      vehicles: consist.map(({ vehicle }) => vehicle.spec),
+    const specs: TrainSpec[] = consists.map((trainVehicles) => ({
+      vehicles: trainVehicles.map(({ vehicle }) => vehicle.spec),
       maxSpeedLduPerS: request.speedLduPerS,
       accelerationLduPerS2: request.accelerationLduPerS2,
       brakingLduPerS2: request.brakingLduPerS2,
-    };
+    }));
     const load: SimLoad = {
       graph: simTopology(graph),
       routeSegments: routeSegments(graph, layout, catalogPieces),
       capacity: {
-        trains: request.trains.length,
-        vehicles: request.trains.length * consist.length,
+        trains: run.trains.length,
+        vehicles: specs.reduce((sum, spec) => sum + spec.vehicles.length, 0),
       },
-      trains: request.trains.map((train) => ({
-        spec,
-        placement: { edge: train.edge, offsetLdu: train.offsetLdu },
-      })),
+      trains: run.trains.map((train, t) => {
+        const spec = specs[t];
+        if (!spec) throw new Error(`train ${t + 1} has no consist`);
+        return { spec, placement: { edge: train.edge, offsetLdu: train.offsetLdu } };
+      }),
       autopilotSeed: request.autopilotSeed,
       openEnds: "brake",
     };
     this.loaded = await this.sim.load(load);
     this.frameLayout = this.loaded.layout;
     if (request.autopilotSeed === null) {
-      for (let t = 0; t < request.trains.length; t++) {
+      for (let t = 0; t < run.trains.length; t++) {
         await this.sim.command({ kind: "throttle", train: t, speedLduPerS: request.speedLduPerS });
       }
     }
@@ -280,7 +347,7 @@ export class RunScene implements IRunScene {
     return {
       ...summary,
       parts: summary.parts + drawnParts,
-      track: summarizeTrack(request.plan, graph, layout, catalogPieces),
+      track: summarizeTrack(run.name, graph, layout, catalogPieces),
     };
   }
 

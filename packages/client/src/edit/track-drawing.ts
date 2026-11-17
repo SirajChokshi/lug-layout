@@ -405,7 +405,7 @@ export class TrackDrawing {
   readonly solveSamplesMs: number[] = [];
 
   constructor(
-    catalog: TrackCatalog,
+    private readonly catalog: TrackCatalog,
     private readonly parts: ReadonlyArray<PartAsset>,
     private readonly colors: ColorTable,
     private readonly host: TrackHost,
@@ -452,6 +452,10 @@ export class TrackDrawing {
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
     if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
     this.kit = result.kit;
+  }
+
+  laid(): { readonly layout: TrackLayout; readonly pieces: ReadonlyArray<TrackPiece> } {
+    return { layout: this.layout, pieces: this.catalog.pieces };
   }
 
   kitParts(): ReadonlyArray<KitPart> {

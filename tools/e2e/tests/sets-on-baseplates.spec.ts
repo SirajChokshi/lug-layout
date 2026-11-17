@@ -4,7 +4,7 @@ import { EditorPage, STUD, byPosition, type Box, type PlanFootprint } from "./ed
 const BASEPLATE = "ldraw:3811@2";
 const GROCER = "omr:10185-1";
 const FIRE_BRIGADE = "omr:10190-1";
-const CABOOSE = "omr:10014-1";
+const CABOOSE = "rolling-stock:omr:10014-1";
 const FIRE_BRIGADE_OVERHANG_STUDS = 1;
 
 function boxOf(footprints: ReadonlyArray<PlanFootprint>, ref: string): Box {
@@ -13,7 +13,7 @@ function boxOf(footprints: ReadonlyArray<PlanFootprint>, ref: string): Box {
   return footprint.box;
 }
 
-test("sets seat one baseplate apart on the stud lattice, and a caboose without anti-studs is refused on the baseplate", async ({
+test("sets seat one baseplate apart on the stud lattice, and a caboose is refused on the baseplate because rolling stock stands only on track", async ({
   page,
 }) => {
   const editor = await EditorPage.open(page);
@@ -34,8 +34,8 @@ test("sets seat one baseplate apart on the stud lattice, and a caboose without a
   await editor.placeAt(CABOOSE, { x: 0, z: 0 });
   expect(await editor.poses(), "the refused caboose changes nothing").toEqual(seated);
   expect(await editor.lastRefusal()).toEqual({
-    rule: "support",
-    message: expect.stringContaining("10014-1 has no anti-studs and no flat base to rest on"),
+    rule: "rolling-stock",
+    message: expect.stringContaining("10014-1 rests only on track"),
   });
 
   const footprints = await editor.footprints();

@@ -24,6 +24,7 @@ export interface ViewerParams {
   readonly lod: BundleLod;
   readonly model: string | null;
   readonly track: string | null;
+  readonly world: string | null;
   readonly run: boolean;
   readonly consist: ReadonlyArray<ConsistEntry>;
   readonly trains: ReadonlyArray<TrainRequest>;
@@ -148,6 +149,7 @@ function appMode(params: URLSearchParams): AppMode {
   const scene = params.get("scene");
   if (scene === "city") return "city";
   if (scene === "layout") return "layout";
+  if (params.get("world") !== null && params.get("run") === "1") return "run";
   if (params.get("track") !== null) return params.get("run") === "1" ? "run" : "track";
   if (params.get("model") !== null) return "model";
   if (scene === "parts") return "parts";
@@ -243,6 +245,7 @@ export function readViewerParams(search: string): ViewerParams {
     lod: params.get("lod") === "low" ? "low" : "standard",
     model: params.get("model"),
     track: params.get("track"),
+    world: params.get("world"),
     run: params.get("run") === "1",
     consist: consistEntries(params.get("train") ?? DEFAULT_CONSIST),
     trains: trainRequests(params.get("trains") ?? DEFAULT_TRAINS),

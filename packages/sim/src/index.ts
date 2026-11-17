@@ -1,11 +1,23 @@
 export {
+  backwardEdge,
+  buildSimTrack,
+  forwardEdge,
+  NO_SWITCH,
+  simTrackFromGraph,
+  trackPoint,
   VEHICLE_POSE_FLOATS,
+  type BuiltSimTrack,
   type CouplerGeometry,
   type CouplerMount,
   type GuideGeometry,
+  type PlanPose,
+  type SimPathSegment,
+  type SimRoute,
+  type SimTrack,
+  type SimTrackInput,
+  type TrackGraphTopology,
   type VehicleGeometry,
-} from "./running-gear.ts";
-export { simTrackFromGraph, type TrackGraphTopology } from "./graph-track.ts";
+} from "@brr/domain";
 export { loadSession, type LoadedSession } from "./load.ts";
 export type {
   SimBenchResult,
@@ -15,7 +27,6 @@ export type {
   SimReply,
   SimRequest,
 } from "./protocol.ts";
-export type { PlanPose, SimPathSegment } from "./route-geometry.ts";
 export {
   replay,
   SimSession,
@@ -26,17 +37,6 @@ export {
   type SimScenario,
   type SimTrainLoad,
 } from "./sim-session.ts";
-export {
-  backwardEdge,
-  buildSimTrack,
-  forwardEdge,
-  NO_SWITCH,
-  trackPoint,
-  type BuiltSimTrack,
-  type SimRoute,
-  type SimTrack,
-  type SimTrackInput,
-} from "./sim-track.ts";
 export {
   DIRECTION_BACKWARD,
   DIRECTION_FORWARD,

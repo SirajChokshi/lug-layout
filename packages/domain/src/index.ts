@@ -217,3 +217,59 @@ export {
   type PlaneTransform,
 } from "./cell-raster.ts";
 export { planTrianglesOverlap, type PlanBox } from "./plan-overlap.ts";
+export {
+  pointOnSegment,
+  placeSegments,
+  reversedSegments,
+  segmentsEnd,
+  wrapAngle,
+  type PlacedSegment,
+  type PlanPose,
+  type SimPathSegment,
+} from "./track-path/route-geometry.ts";
+export {
+  backwardEdge,
+  buildSimTrack,
+  forwardEdge,
+  trackPoint,
+  type BuiltSimTrack,
+  type SimRoute,
+  type SimTrack,
+  type SimTrackInput,
+} from "./track-path/sim-track.ts";
+export { simTrackFromGraph, type TrackGraphTopology } from "./track-path/graph-track.ts";
+export {
+  GEOMETRY_FIELDS,
+  packGeometry,
+  packSpecOnlyGeometry,
+  PIVOT_POINT_FLOATS,
+  RunningGearPoser,
+  VEHICLE_POSE_FLOATS,
+  type CouplerGeometry,
+  type CouplerMount,
+  type GuideGeometry,
+  type PathSampler,
+  type VehicleGeometry,
+} from "./track-path/running-gear.ts";
+export {
+  advanceAlong,
+  clearAhead,
+  clearBehind,
+  nearestTrackPoint,
+  NO_STEP,
+  onlySuccessor,
+  pointDistance,
+  pointEdge,
+  pointOffset,
+  TRACK_POINT_FLOATS,
+  TrainPath,
+} from "./rolling-stock/train-path.ts";
+export {
+  fitClear,
+  fitEdge,
+  fitOffset,
+  fitTrain,
+  placementsUnder,
+  TRAIN_FIT_FLOATS,
+  trainsOverlap,
+} from "./rolling-stock/train-fit.ts";

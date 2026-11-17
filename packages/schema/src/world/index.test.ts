@@ -14,8 +14,10 @@ import {
   worldManifest,
   worldShards,
   worldTrack,
+  worldTrains,
   type PlacementRecordV1,
   type TrackRecordV1,
+  type TrainRecordV1,
   type WorldHeader,
 } from "./index.ts";
 
@@ -215,8 +217,9 @@ describe("world schema v1", () => {
   function archiveFiles(
     placed: ReadonlyArray<PlacementRecordV1>,
     laid: ReadonlyArray<TrackRecordV1>,
+    trains: ReadonlyArray<TrainRecordV1> = [],
   ): Map<string, string> {
-    const shards = worldShards(placed, laid);
+    const shards = worldShards(placed, laid, trains);
     const files = worldArchiveFiles({
       manifest: worldManifest(
         header,
@@ -242,6 +245,57 @@ describe("world schema v1", () => {
     );
     expect(resaved).toEqual(saved);
     expect(worldTrack(loaded.shards)).toEqual(track);
+  });
+
+  it("files each train with the track piece its head stands on, and rereads it byte-identical", () => {
+    const trains: TrainRecordV1[] = [
+      {
+        track: 5,
+        route: 0,
+        forward: true,
+        offsetLdu: 120,
+        cars: [
+          { ref: "omr:10133-1", reversed: false },
+          { ref: "omr:10013-1", reversed: true },
+        ],
+      },
+      {
+        track: 1,
+        route: 0,
+        forward: false,
+        offsetLdu: 0,
+        cars: [{ ref: "omr:10014-1", reversed: false }],
+      },
+    ];
+    const saved = archiveFiles(placements, track, trains);
+    const loaded = reread(saved);
+    for (const loadedShard of loaded.shards) {
+      for (const train of loadedShard.trains ?? []) {
+        expect(loadedShard.track.map((piece) => piece.index)).toContain(train.track);
+      }
+    }
+    const [onFive, onOne] = trains;
+    expect(worldTrains(loaded.shards)).toEqual([onOne, onFive]);
+    const resaved = archiveFiles(
+      loaded.shards.flatMap((s) => s.placements),
+      worldTrack(loaded.shards),
+      worldTrains(loaded.shards),
+    );
+    expect(resaved).toEqual(saved);
+  });
+
+  it("refuses a train whose head stands on a piece filed in another shard, or that has no car", () => {
+    const car = { ref: "omr:10133-1", reversed: false };
+    const away = { track: 9, route: 0, forward: true, offsetLdu: 0, cars: [car] };
+    expect(decode(WorldShardV1, { ...shard, trains: [away] })).toEqual({
+      ok: false,
+      issues: [
+        { path: "$.trains", message: "must each stand on a track piece filed in the same shard" },
+      ],
+    });
+    const empty = { track: 0, route: 0, forward: true, offsetLdu: 0, cars: [] };
+    expect(decode(WorldShardV1, { ...shard, trains: [empty] }).ok).toBe(false);
+    expect(decode(WorldShardV1, { ...shard, trains: [{ ...away, track: 0 }] }).ok).toBe(true);
   });
 
   it("writes the same bytes whatever order the placements arrive in", () => {

@@ -1,4 +1,4 @@
-import type { BundleColor, BundleLod, NotDrawnSection } from "@brr/schema/bundle";
+import type { BundleColor, BundleLod, NotDrawnSection, PartShape } from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
@@ -6,6 +6,7 @@ import {
   type PartAsset,
   type PartBundle,
   type PartMesh,
+  type PartModel,
   type FilterablePart,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
@@ -70,6 +71,7 @@ import {
   worldManifest,
   worldShards,
   worldTrack,
+  worldTrains,
   type SavedViewV1,
   type TrackRecordV1,
   type WorldHeader,
@@ -96,6 +98,16 @@ import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene
 import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
 import { CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import {
+  INSTANCE_BOUNDS_FLOATS,
+  ROLLING_STOCK_PREFIX,
+  RollingStock,
+  rollingStockModel,
+  type TrainEdit,
+  type TrainGhostView,
+  type TrainPlan,
+  type TrainView,
+} from "./rolling-stock.ts";
 import { heldPlacements, latticePose16, latticeSnap, trackEndKeys } from "./model-track.ts";
 import {
   LAID_TRACK_PLATES,
@@ -152,8 +164,8 @@ import {
 } from "./placement-messages.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
-export type EditAction = EditKind | "track";
-export type EditorMode = "place" | "select" | "track" | "road";
+export type EditAction = EditKind | "track" | "train";
+export type EditorMode = "place" | "select" | "track" | "road" | "train";
 export interface RoadStrokeResult {
   readonly result: "laid" | "refused";
   readonly stroke: RoadStrokeView;
@@ -182,7 +194,7 @@ export interface CatalogItemView {
   readonly group: string;
   readonly groupLabel: string;
   readonly color: CatalogColorView | null;
-  readonly kind: Placeable["kind"] | "track";
+  readonly kind: Placeable["kind"] | "track" | "rolling-stock";
   readonly parts: number;
   readonly studsWide: number;
   readonly studsDeep: number;
@@ -371,6 +383,13 @@ function farTierModelNames(near: NearModels): ReadonlyArray<string> {
   return [...kept, ...trains];
 }
 
+type TimelineStep =
+  | { readonly kind: "world" }
+  | { readonly kind: "train"; readonly edit: TrainEdit };
+
+const WORLD_STEP: TimelineStep = { kind: "world" };
+const NO_TRAINS: TrainsView = { placed: [], ghost: null, selected: null, facingBackward: false };
+
 interface FarTier {
   readonly bundle: PartBundle;
   readonly palette: MergedParts;
@@ -426,6 +445,13 @@ export interface TrackView {
   readonly lastCommit: TrackCommitResult | null;
   readonly solve: TrackSolveStats | null;
   readonly selected: { readonly piece: number; readonly pieceId: string } | null;
+}
+
+export interface TrainsView {
+  readonly placed: ReadonlyArray<TrainView>;
+  readonly ghost: TrainGhostView | null;
+  readonly selected: number | null;
+  readonly facingBackward: boolean;
 }
 
 export interface HoverView {
@@ -492,6 +518,7 @@ export interface EditorSnapshot {
   readonly roadStroke: RoadStrokeView | null;
   readonly lastRoadStroke: RoadStrokeResult | null;
   readonly roadErase: boolean;
+  readonly trains: TrainsView;
 }
 
 export interface EditorCredits {
@@ -519,6 +546,7 @@ export interface EditorDump {
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
   readonly studs: StudTotals;
+  readonly trains: ReadonlyArray<TrainView>;
 }
 
 export interface EditorOptions {
@@ -770,6 +798,17 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
   };
 }
 
+function recordInstanceBounds(model: PartModel, shapes: ReadonlyArray<PartShape>): Float64Array {
+  const bounds = new Float64Array(model.instanceCount * INSTANCE_BOUNDS_FLOATS);
+  for (let i = 0; i < model.instanceCount; i++) {
+    const shape = shapes[model.partIndex[i] ?? 0];
+    if (!shape) throw new Error(`model instance ${i} names a part without a shape in its record`);
+    bounds.set(shape.bounds.min, i * INSTANCE_BOUNDS_FLOATS);
+    bounds.set(shape.bounds.max, i * INSTANCE_BOUNDS_FLOATS + 3);
+  }
+  return bounds;
+}
+
 function setLabel(entry: {
   readonly name: string;
   readonly set: { readonly name: string; readonly year: number } | null;
@@ -840,6 +879,7 @@ export class Editor implements IEditor {
     roadStroke: null,
     lastRoadStroke: null,
     roadErase: false,
+    trains: NO_TRAINS,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -921,6 +961,13 @@ export class Editor implements IEditor {
   private statsSince = 0;
   private bomTables: EditorBomTables | null = null;
   private readonly notDrawnByPlaceable = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
+  private rollingStock: RollingStock | null = null;
+  private trainItem: string | null = null;
+  private trainFacingBackward = false;
+  private trainGhostKey = "";
+  private selectedTrain: number | null = null;
+  private done: TimelineStep[] = [];
+  private undone: TimelineStep[] = [];
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -976,6 +1023,7 @@ export class Editor implements IEditor {
         far,
       );
       this.placeables = placeables;
+      this.rollingStock = await this.loadRollingStock(bundle, palette, colors, near.trains);
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.play = { models: trains, parts: palette.parts, colors };
       this.plans.setTableTopY(this.baseplateBottomY());
@@ -1023,6 +1071,7 @@ export class Editor implements IEditor {
           ...this.placeables.map((placeable) => catalogItem(placeable, bundle.colors)),
           this.trackItem(this.track, palette.parts),
           ...this.trackPieceItems(this.track, palette.parts),
+          ...this.rollingStockItems(),
         ],
         catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
         trackNotDrawable: undrawableTrack(bundle.parts, this.track, palette.parts),
@@ -1034,6 +1083,11 @@ export class Editor implements IEditor {
           partFilesLod: EDITOR_LOD,
           models: [
             ...this.placeables.flatMap((p) => (p.credit ? [p.credit] : [])),
+            ...near.trains.map(({ entry, model }) => ({
+              name: entry.name,
+              source: entry.source,
+              sections: model.sections,
+            })),
             ...skipped.map(({ credit }) => credit),
           ],
         },
@@ -1045,6 +1099,65 @@ export class Editor implements IEditor {
     } catch (error) {
       this.update({ status: "error", error: String(error) });
     }
+  }
+
+  private async loadRollingStock(
+    bundle: PartBundle,
+    palette: MergedParts,
+    colors: ColorTable,
+    loaded: ReadonlyArray<ModelBundle>,
+  ): Promise<RollingStock> {
+    const rail = bundle.trackCatalog.pieces.find(
+      (piece) =>
+        piece.system === TRACK_SYSTEM && piece.kind === "straight" && piece.status === "certified",
+    );
+    const { trackShapes } = await this.loader.loadManifest(EDITOR_LOD);
+    const railShape = trackShapes.find((shape) => shape.piece === rail?.id);
+    if (!rail || !railShape) {
+      throw new Error(`the bundle has no certified ${TRACK_SYSTEM} straight with a track shape`);
+    }
+    const models = loaded.map(({ entry, model, bundle: own, shapes }) =>
+      rollingStockModel(
+        {
+          id: `omr:${entry.name}`,
+          name: entry.name,
+          label: setLabel(entry),
+          credit: { name: entry.name, source: entry.source, sections: model.sections },
+          model: palette.remap(model, own.parts),
+          vehicles: model.vehicles,
+          instanceBounds: recordInstanceBounds(model, shapes),
+        },
+        rail.part,
+        palette.parts,
+        colors,
+      ),
+    );
+    return new RollingStock(
+      models,
+      LAID_TRACK_PLATES * PLATE_LDU + railShape.maxY - railShape.minY,
+      palette.parts,
+      colors,
+      {
+        setVehicle: (id, chunk) => this.backend.setVehicle(id, chunk),
+        setVehiclePose: (id, x, y, z, yaw) => this.backend.setVehiclePose(id, x, y, z, yaw),
+        deleteVehicle: (id) => this.backend.deleteVehicle(id),
+      },
+    );
+  }
+
+  private rollingStockItems(): ReadonlyArray<CatalogItemView> {
+    return (this.rollingStock?.items() ?? []).map((item) => ({
+      id: item.id,
+      label: item.label,
+      group: item.id,
+      groupLabel: item.label,
+      color: null,
+      kind: "rolling-stock",
+      parts: item.parts,
+      studsWide: Math.round(item.lengthStuds),
+      studsDeep: item.widthStuds,
+      baseplate: null,
+    }));
   }
 
   private baseplateBottomY(): number {
@@ -1073,7 +1186,9 @@ export class Editor implements IEditor {
     const loaded = await Promise.all(
       placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
-    const skipped = loaded
+    const rollingStock = loaded.filter((near) => near.model.vehicles.length > 0);
+    const stationary = loaded.filter((near) => near.model.vehicles.length === 0);
+    const skipped = stationary
       .filter((near) => near.model.lattice === null)
       .map(({ entry, model }) => ({
         name: entry.name,
@@ -1081,9 +1196,9 @@ export class Editor implements IEditor {
         credit: { name: entry.name, source: entry.source, sections: model.sections },
       }));
     return {
-      kept: loaded.filter((near) => near.model.lattice !== null),
+      kept: stationary.filter((near) => near.model.lattice !== null),
       skipped,
-      trains: loaded.filter((near) => near.model.vehicles.length > 0),
+      trains: rollingStock,
     };
   }
 
@@ -1616,6 +1731,11 @@ export class Editor implements IEditor {
       this.enterRoadMode(id);
       return;
     }
+    if (id?.startsWith(ROLLING_STOCK_PREFIX) && this.rollingStock?.item(id)) {
+      this.enterTrainMode(id);
+      return;
+    }
+    if (this.state.mode === "train") this.leaveTrainMode();
     const track = this.track;
     const pieceIndex = id === null || !track ? null : this.trackPieceIndex(track, id);
     if ((id === TRACK_ITEM_ID || pieceIndex !== null) && track) {
@@ -1660,6 +1780,125 @@ export class Editor implements IEditor {
       snap,
       ghostRot: this.placeRot,
     });
+  }
+
+  private enterTrainMode(id: string): void {
+    this.held = null;
+    this.track?.cancelDrag();
+    this.selectedTrack = null;
+    this.targetTrackEnd(null);
+    this.active = null;
+    this.moduleGhost = null;
+    this.showMarkers();
+    this.select(null);
+    this.selectTrain(null);
+    this.trainItem = id.slice(ROLLING_STOCK_PREFIX.length);
+    this.trainGhostKey = "";
+    this.backend.setGhost(null);
+    this.update({ mode: "train", activeItem: id, track: this.trackView() });
+    this.showTrainGhost();
+  }
+
+  private leaveTrainMode(): void {
+    this.trainItem = null;
+    this.trainGhostKey = "";
+    this.backend.setGhost(null);
+    this.update({ mode: "select", activeItem: null });
+    this.updateTrains({ ghost: null });
+  }
+
+  private updateTrains(patch: Partial<TrainsView>): void {
+    this.update({ trains: { ...this.state.trains, ...patch } });
+  }
+
+  private showTrainGhost(): void {
+    const stock = this.rollingStock;
+    const item = this.trainItem;
+    if (!stock || item === null) return;
+    if (!this.hovering) {
+      this.backend.setGhost(null);
+      this.trainGhostKey = "";
+      this.updateTrains({ ghost: null });
+      return;
+    }
+    const facing = this.trainFacingBackward;
+    const { view, plan } = stock.ghost(item, facing, this.hitX, this.hitZ);
+    if (plan) {
+      const { anchor } = plan;
+      const key = `${String(view.couplesTo)}:${anchor.piece}:${anchor.route}:${String(anchor.forward)}:${anchor.offsetLdu}:${plan.cars.length}:${String(facing)}`;
+      if (key !== this.trainGhostKey) {
+        this.trainGhostKey = key;
+        const baked = stock.ghostChunk(plan, view.couplesTo === null ? 0 : plan.cars.length - 1);
+        this.backend.setGhost(baked?.chunk ?? null);
+        if (baked) this.backend.placeGhost(baked.x, 0, baked.z, 0);
+      }
+    } else {
+      const key = `free:${item}:${String(facing)}`;
+      if (key !== this.trainGhostKey) {
+        this.trainGhostKey = key;
+        this.backend.setGhost(stock.freeChunk(item, facing, 0, 0)?.chunk ?? null);
+      }
+      this.backend.placeGhost(this.hitX, 0, this.hitZ, 0);
+    }
+    this.updateTrains({ ghost: view });
+  }
+
+  private placeTrain(): void {
+    const stock = this.rollingStock;
+    const item = this.trainItem;
+    if (!stock || item === null) return;
+    const { view, edit } = stock.ghost(item, this.trainFacingBackward, this.hitX, this.hitZ);
+    if (!edit) {
+      if (view.refusal) this.refuse("place", view.item, view.refusal);
+      this.showTrainGhost();
+      return;
+    }
+    this.commitTrain(edit);
+    this.trainGhostKey = "";
+    this.showTrainGhost();
+  }
+
+  private commitTrain(edit: TrainEdit): void {
+    this.applyTrain(edit, false);
+    this.done.push({ kind: "train", edit });
+    this.undone.length = 0;
+    this.update({ history: this.historyView() });
+  }
+
+  private applyTrain(edit: TrainEdit, backwards: boolean): void {
+    const stock = this.rollingStock;
+    if (!stock) return;
+    const anchors = [edit.before, edit.after].flatMap((plan: TrainPlan | null) => {
+      const piece = plan ? stock.anchorPiece(plan) : null;
+      return piece === null ? [] : [piece];
+    });
+    stock.apply(edit, backwards);
+    const records = this.trackRecords();
+    this.dirty.touchTrack(anchors.flatMap((piece) => records[piece] ?? []));
+    this.scheduleSave();
+    if (this.selectedTrain === edit.id && !(backwards ? edit.before : edit.after)) {
+      this.selectTrain(null);
+    }
+    this.updateTrains({ placed: stock.views() });
+  }
+
+  private trainEditItem(edit: TrainEdit): string {
+    const car = (edit.after ?? edit.before)?.cars.at(-1);
+    return car ? `${ROLLING_STOCK_PREFIX}${car.model}` : "";
+  }
+
+  private selectTrain(id: number | null): void {
+    this.selectedTrain = id;
+    if (id !== null) this.backend.setSelectionBox(this.rollingStock?.box(id) ?? null);
+    this.updateTrains({ selected: id });
+  }
+
+  private syncRails(): void {
+    const stock = this.rollingStock;
+    const laid = this.track?.laid();
+    if (!stock || !laid) return;
+    stock.setTrack(laid.layout, laid.pieces);
+    this.updateTrains({ placed: stock.views() });
   }
 
   private trackPieceIndex(track: TrackDrawing, id: string): number | null {
@@ -1751,6 +1990,14 @@ export class Editor implements IEditor {
     if (!track || this.readOnly) return false;
     const placement = track.switchAt(xLdu, zLdu);
     if (placement === null) return false;
+    const carried = this.rollingStock?.trainsOn(placement) ?? [];
+    if (carried.length > 0) {
+      this.refuse("track", `switch #${placement + 1}`, {
+        rule: "rolling-stock",
+        message: `switch #${placement + 1} carries ${carried.join(", ")}, so it can't be thrown under it. Move or remove the rolling stock first.`,
+      });
+      return true;
+    }
     const thrown = track.throwSwitch(placement);
     if (!thrown) return false;
     const report = this.rebuildTrackChunks(track, [thrown.chunk]);
@@ -2057,6 +2304,7 @@ export class Editor implements IEditor {
     ) {
       this.targetTrackEnd(this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null);
     }
+    if (this.state.mode === "train") this.showTrainGhost();
     this.placeGhost();
     this.update({
       hover: this.hoverView(),
@@ -2069,12 +2317,19 @@ export class Editor implements IEditor {
   pointerLeave(): void {
     this.hovering = false;
     this.moduleGhost = null;
+    if (this.state.mode === "train") this.showTrainGhost();
     this.showMarkers();
     this.update({ hover: null, moduleFit: null });
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
     if (this.state.mode === "road") return;
+    if (this.state.mode === "train") {
+      if (this.readOnly || !this.groundHit(ndcX, ndcY)) return;
+      this.hovering = true;
+      this.placeTrain();
+      return;
+    }
     if (this.state.mode === "track") {
       if (!this.held || this.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -2127,6 +2382,13 @@ export class Editor implements IEditor {
         best = model;
       }
     }
+    const train = this.rollingStock?.trainAt(this.ray) ?? null;
+    if (train && train.t < bestT) {
+      this.select(null);
+      this.selectTrain(train.id);
+      return;
+    }
+    if (this.selectedTrain !== null) this.selectTrain(null);
     if (
       !best &&
       this.groundHit(ndcX, ndcY) &&
@@ -2255,11 +2517,13 @@ export class Editor implements IEditor {
   }
 
   private historyView(): HistoryView {
+    const undo = this.done.at(-1);
+    const redo = this.undone.at(-1);
     return {
-      undo: this.history.nextUndo(),
-      redo: this.history.nextRedo(),
-      undoDepth: this.history.undoDepth,
-      redoDepth: this.history.redoDepth,
+      undo: undo === undefined ? null : undo.kind === "train" ? "train" : this.history.nextUndo(),
+      redo: redo === undefined ? null : redo.kind === "train" ? "train" : this.history.nextRedo(),
+      undoDepth: this.done.length,
+      redoDepth: this.undone.length,
     };
   }
 
@@ -2270,6 +2534,10 @@ export class Editor implements IEditor {
   }
 
   private show(edit: AppliedEdit, eventTimeMs: number): ViewUpdate {
+    if (edit.step === "do") {
+      this.done.push(WORLD_STEP);
+      this.undone.length = 0;
+    }
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     this.edited(edit);
     const primary = edit.changes[0];
@@ -2548,6 +2816,13 @@ export class Editor implements IEditor {
       this.update({ ghostRot: this.placeRot });
       return;
     }
+    if (this.state.mode === "train") {
+      this.trainFacingBackward = !this.trainFacingBackward;
+      this.trainGhostKey = "";
+      this.updateTrains({ facingBackward: this.trainFacingBackward });
+      this.showTrainGhost();
+      return;
+    }
     const held = this.held;
     if (held) {
       this.held =
@@ -2614,6 +2889,14 @@ export class Editor implements IEditor {
     const track = this.track;
     const piece = this.selectedTrack;
     if (!track || piece === null || this.readOnly) return;
+    const carried = this.rollingStock?.trainsOn(piece) ?? [];
+    if (carried.length > 0) {
+      this.refuse("remove", track.pieceId(piece), {
+        rule: "rolling-stock",
+        message: `track piece ${piece + 1} (${track.pieceId(piece)}) carries ${carried.join(", ")}. Remove the rolling stock first: click it and press Delete.`,
+      });
+      return;
+    }
     const before = this.trackRecords();
     for (const key of track.removePiece(piece)) {
       const chunk = track.chunkInstances(key);
@@ -2631,6 +2914,11 @@ export class Editor implements IEditor {
       this.removeSelectedTrack();
       return;
     }
+    if (this.selectedTrain !== null) {
+      const edit = this.readOnly ? null : (this.rollingStock?.removal(this.selectedTrain) ?? null);
+      if (edit) this.commitTrain(edit);
+      return;
+    }
     const model = this.selected;
     if (!model || this.readOnly) return;
     const refusal = this.removalRefusal([model], model.placeable.label);
@@ -2644,21 +2932,53 @@ export class Editor implements IEditor {
 
   undo(eventTimeMs: number): void {
     if (this.readOnly) return;
+    const step = this.done.at(-1);
+    if (!step) return;
+    if (step.kind === "train") {
+      const refusal = this.rollingStock?.replayRefusal(step.edit, true) ?? null;
+      if (refusal) {
+        this.refuse("undo", this.trainEditItem(step.edit), refusal);
+        return;
+      }
+      this.done.pop();
+      this.undone.push(step);
+      this.applyTrain(step.edit, true);
+      this.update({ history: this.historyView() });
+      return;
+    }
     const refusal = this.replayRefusal(this.history.peekUndo());
     if (refusal) {
       this.refuse("undo", refusal.item, refusal);
       return;
     }
+    this.done.pop();
+    this.undone.push(step);
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
     if (this.readOnly) return;
+    const step = this.undone.at(-1);
+    if (!step) return;
+    if (step.kind === "train") {
+      const refusal = this.rollingStock?.replayRefusal(step.edit, false) ?? null;
+      if (refusal) {
+        this.refuse("redo", this.trainEditItem(step.edit), refusal);
+        return;
+      }
+      this.undone.pop();
+      this.done.push(step);
+      this.applyTrain(step.edit, false);
+      this.update({ history: this.historyView() });
+      return;
+    }
     const refusal = this.replayRefusal(this.history.peekRedo());
     if (refusal) {
       this.refuse("redo", refusal.item, refusal);
       return;
     }
+    this.undone.pop();
+    this.done.push(step);
     this.replay(this.history.redo(), eventTimeMs);
   }
 
@@ -2798,8 +3118,16 @@ export class Editor implements IEditor {
     return this.track?.records() ?? [];
   }
 
+  private trainRecords(): ReturnType<RollingStock["records"]> {
+    return this.rollingStock?.records(this.trackRecords()) ?? [];
+  }
+
   private worldShardsNow(): WorldShardV1[] {
-    return worldShards(worldPlacements(this.world, this.refs()), this.trackRecords());
+    return worldShards(
+      worldPlacements(this.world, this.refs()),
+      this.trackRecords(),
+      this.trainRecords(),
+    );
   }
 
   private header(current: OpenWorld): WorldHeader {
@@ -2829,6 +3157,7 @@ export class Editor implements IEditor {
   }
 
   private trackEdited(): void {
+    this.syncRails();
     this.roadDrawing?.worldChanged();
     this.dirty.touchTrack(this.trackRecords());
     this.scheduleSave();
@@ -2882,7 +3211,12 @@ export class Editor implements IEditor {
     const current = this.current;
     if (!current || current.id === null || !this.canSave()) return;
     if (this.dirty.size === 0 && !this.viewDirty) return;
-    const change = this.dirty.take(this.world, this.refs(), this.trackRecords());
+    const change = this.dirty.take(
+      this.world,
+      this.refs(),
+      this.trackRecords(),
+      this.trainRecords(),
+    );
     const viewWasDirty = this.viewDirty;
     this.viewDirty = false;
     this.setWorldView(current, { save: "saving" });
@@ -2992,7 +3326,10 @@ export class Editor implements IEditor {
 
   private setReadOnly(readOnly: boolean): void {
     this.readOnly = readOnly;
-    if (readOnly && (this.active || this.held || this.state.mode === "road")) {
+    if (
+      readOnly &&
+      (this.active || this.held || this.state.mode === "road" || this.state.mode === "train")
+    ) {
       this.chooseItem(null);
     }
     this.update({ readOnly });
@@ -3054,8 +3391,13 @@ export class Editor implements IEditor {
       if (chunk) this.backend.setChunk(key, chunk);
     }
     this.showTrackEnds(null);
+    this.selectTrain(null);
+    this.rollingStock?.clear();
+    this.syncRails();
     this.world = world;
     this.history = new EditHistory(world);
+    this.done = [];
+    this.undone = [];
     this.camera.restoreView(view);
     this.lastView = this.camera.savedView();
     this.current = current;
@@ -3121,6 +3463,11 @@ export class Editor implements IEditor {
       openMs: 0,
     };
     this.install(world, manifest.view, current, track);
+    const trains = this.rollingStock?.restore(worldTrains(shards));
+    if (trains && !trains.ok) {
+      throw new Error(`world "${manifest.name}" can't be opened: ${issueText(trains.issues)}`);
+    }
+    this.updateTrains({ placed: this.rollingStock?.views() ?? [] });
     this.placed.addAll(
       handles.value.flatMap((handle) => {
         const placeable = this.placeables[handle.refId];
@@ -3241,6 +3588,9 @@ export class Editor implements IEditor {
         creditsForWorld(
           await this.creditsView,
           this.placed.models().map((model) => model.placeable),
+          (this.rollingStock?.trains() ?? []).flatMap((train) =>
+            train.cars.map((car) => car.model.replace(/^omr:/u, "")),
+          ),
         ),
       );
       const shards = this.worldShardsNow();
@@ -3315,6 +3665,7 @@ export class Editor implements IEditor {
       })),
       roads: this.roadReport,
       studs: this.placed.studTotals(),
+      trains: this.rollingStock?.views() ?? [],
     };
   }
 }

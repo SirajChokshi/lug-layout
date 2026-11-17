@@ -73,11 +73,23 @@ interface PlacementColumns {
   readonly rot: ReadonlyArray<number>;
 }
 
+export interface PlacedTrain {
+  readonly id: number;
+  readonly cars: ReadonlyArray<{ readonly model: string; readonly reversed: boolean }>;
+  readonly track: number;
+  readonly route: number;
+  readonly forward: boolean;
+  readonly offsetLdu: number;
+  readonly lengthStuds: number;
+  readonly axleOffCentreLdu: number;
+}
+
 interface EditState {
   readonly world: {
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
+    readonly trains: ReadonlyArray<PlacedTrain>;
   };
 }
 
@@ -356,6 +368,16 @@ export class EditorPage {
       rule: (await panel.getAttribute("data-last-refusal-rule")) ?? "",
       message: (await panel.locator('[data-rule="last-refusal"]').textContent()) ?? "",
     };
+  }
+
+  async trains(): Promise<ReadonlyArray<PlacedTrain>> {
+    return (await this.editState()).world.trains;
+  }
+
+  async trainGhost(): Promise<string> {
+    return (
+      (await this.page.locator("section.placement-rules").getAttribute("data-train-ghost")) ?? ""
+    );
   }
 
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {

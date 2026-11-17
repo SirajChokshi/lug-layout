@@ -7,8 +7,7 @@ import {
   type PlanPose,
   type SimPathSegment,
 } from "./route-geometry.ts";
-
-export const NO_SWITCH = -1;
+import { NO_SWITCH } from "../track/track-graph.ts";
 
 export interface SimTrack {
   readonly edgeCount: number;
