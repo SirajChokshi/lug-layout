@@ -6,6 +6,7 @@ import { RUNNING_GEAR_OVERRIDES } from "../tokens.ts";
 import {
   detectedBogies,
   effectiveVehicle,
+  inVehicleFrame,
   RUNNING_GEAR_OVERRIDE_VERSION,
   toModelFrame,
   type BogieOverride,
@@ -106,9 +107,13 @@ const EMPTY: GearSnapshot = {
 
 function detectedFace(vehicle: BakedVehicle, instance: number): Vec3Tuple | null {
   for (const coupler of [vehicle.frontCoupler, vehicle.rearCoupler]) {
-    if (coupler?.instance === instance) return toModelFrame(vehicle, coupler.face);
+    if (coupler?.instance === instance) return coupler.face;
   }
   return null;
+}
+
+export function exactLduText(value: number): string {
+  return String(value);
 }
 
 function toDetected(vehicle: BakedVehicle, model: Vec3Tuple): Vec3Tuple {
@@ -150,7 +155,7 @@ export class RunningGearEditor implements IRunningGear {
     for (const model of models) {
       try {
         const override = await this.store.load(model.sha256);
-        if (override) this.stored.set(model.sha256, override);
+        if (override) this.stored.set(model.sha256, inVehicleFrame(override, model.vehicles));
       } catch (e) {
         this.storeProblem = `saved running gear could not be read, so every vehicle runs its detected gear: ${String(e)}`;
       }
@@ -199,13 +204,11 @@ export class RunningGearEditor implements IRunningGear {
   }
 
   setPivot(bogie: number, xLdu: number, zLdu: number): void {
-    this.edit((draft, vehicle) => ({
+    this.edit((draft) => ({
       ...draft,
-      bogies: (draft.bogies ?? []).map((b, i) => {
-        if (i !== bogie) return b;
-        const y = toDetected(vehicle, b.pivot)[1];
-        return { ...b, pivot: toModelFrame(vehicle, [xLdu, y, zLdu]) };
-      }),
+      bogies: (draft.bogies ?? []).map((b, i) =>
+        i === bogie ? { ...b, pivot: [xLdu, b.pivot[1], zLdu] } : b,
+      ),
     }));
   }
 
@@ -214,16 +217,15 @@ export class RunningGearEditor implements IRunningGear {
       const existing = draft.couplers?.find((c) => c.instance === instance)?.face;
       const base = existing ?? detectedFace(vehicle, instance);
       if (!base) return draft;
-      const y = toDetected(vehicle, base)[1];
       const others = (draft.couplers ?? []).filter((c) => c.instance !== instance);
-      const moved: CouplerOverride = { instance, face: toModelFrame(vehicle, [xLdu, y, zLdu]) };
+      const moved: CouplerOverride = { instance, face: [xLdu, base[1], zLdu] };
       return { ...draft, couplers: [...others, moved] };
     });
   }
 
   addBogie(): void {
-    this.edit((draft, vehicle) => {
-      const bogie: BogieOverride = { instances: [], pivot: toModelFrame(vehicle, [0, 0, 0]) };
+    this.edit((draft) => {
+      const bogie: BogieOverride = { instances: [], pivot: [0, 0, 0] };
       return { ...draft, bogies: [...(draft.bogies ?? []), bogie] };
     });
   }
@@ -386,11 +388,10 @@ export class RunningGearEditor implements IRunningGear {
     const draftFaces = new Map((this.draft?.couplers ?? []).map((c) => [c.instance, c.face]));
     const couplers: GearCoupler[] = [detected.frontCoupler, detected.rearCoupler].flatMap((c) => {
       if (!c) return [];
-      const face = draftFaces.get(c.instance) ?? toModelFrame(detected, c.face);
       return [
         {
           instance: c.instance,
-          face: toDetected(detected, face),
+          face: draftFaces.get(c.instance) ?? c.face,
           bogie: owner.get(c.instance) ?? null,
           obsoleteSources: c.obsoleteSources,
         },
@@ -415,7 +416,7 @@ export class RunningGearEditor implements IRunningGear {
       source: this.draft ? "override" : "detected",
       savedOverrideRefused: saved && !saved.vehicle ? saved.issues : null,
       boxes,
-      pivots: draftBogies.map((bogie) => toDetected(detected, bogie.pivot)),
+      pivots: draftBogies.map((bogie) => bogie.pivot),
       axles,
       couplers,
       spec,

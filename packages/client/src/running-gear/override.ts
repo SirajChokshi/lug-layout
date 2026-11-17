@@ -3,7 +3,8 @@ import { runningGearSpanProblem } from "@brr/domain";
 import { vehicleSpec } from "../sim/consist.ts";
 import { distanceOutside, planBox, unionBox, type PlanBox } from "./instance-boxes.ts";
 
-export const RUNNING_GEAR_OVERRIDE_VERSION = 1;
+export const RUNNING_GEAR_OVERRIDE_VERSION = 2;
+const MODEL_FRAME_OVERRIDE_VERSION = 1;
 
 export interface BogieOverride {
   readonly instances: ReadonlyArray<number>;
@@ -22,7 +23,7 @@ export interface VehicleOverride {
 }
 
 export interface RunningGearOverride {
-  readonly version: typeof RUNNING_GEAR_OVERRIDE_VERSION;
+  readonly version: typeof RUNNING_GEAR_OVERRIDE_VERSION | typeof MODEL_FRAME_OVERRIDE_VERSION;
   readonly modelSha256: string;
   readonly model: string;
   readonly vehicles: ReadonlyArray<VehicleOverride>;
@@ -73,8 +74,33 @@ export function vehicleInstances(vehicle: BakedVehicle): ReadonlyArray<number> {
 export function detectedBogies(vehicle: BakedVehicle): ReadonlyArray<BogieOverride> {
   return vehicle.bogies.map((bogie) => ({
     instances: [...bogie.instances],
-    pivot: toModelFrame(vehicle, bogie.pivot),
+    pivot: [...bogie.pivot],
   }));
+}
+
+export function inVehicleFrame(
+  override: RunningGearOverride,
+  vehicles: ReadonlyArray<BakedVehicle>,
+): RunningGearOverride {
+  if (override.version === RUNNING_GEAR_OVERRIDE_VERSION) return override;
+  return {
+    ...override,
+    version: RUNNING_GEAR_OVERRIDE_VERSION,
+    vehicles: override.vehicles.map((entry) => {
+      const vehicle = vehicles[entry.vehicle];
+      if (!vehicle) return entry;
+      const local = (model: Vec3Tuple): Vec3Tuple => toFrame(frameOf(vehicle), model);
+      return {
+        vehicle: entry.vehicle,
+        ...(entry.bogies
+          ? { bogies: entry.bogies.map((b) => ({ ...b, pivot: local(b.pivot) })) }
+          : {}),
+        ...(entry.couplers
+          ? { couplers: entry.couplers.map((c) => ({ ...c, face: local(c.face) })) }
+          : {}),
+      };
+    }),
+  };
 }
 
 function along(f: PlanFrame, p: Vec3Tuple): number {
@@ -134,11 +160,8 @@ export function effectiveVehicle(
   });
   const fixed = wheelsets.filter((w) => !owner.has(w.instance)).map((w) => w.centre);
   const detected = frameOf(baked);
-  const guides = chooseGuides(
-    detected,
-    bogies.map((bogie) => bogie.pivot),
-    fixed,
-  );
+  const modelPivots = bogies.map((bogie) => toModelFrame(baked, bogie.pivot));
+  const guides = chooseGuides(detected, modelPivots, fixed);
   if (typeof guides === "string") issues.push(guides);
   const faces = new Map((override.couplers ?? []).map((c) => [c.instance, c.face]));
   issues.push(...partBoundsIssues(baked, bogies, faces, boxes));
@@ -154,7 +177,7 @@ export function effectiveVehicle(
   const placed = (coupler: VehicleCoupler | null): VehicleCoupler | null =>
     coupler && {
       instance: coupler.instance,
-      face: toFrame(frame, faces.get(coupler.instance) ?? toModelFrame(baked, coupler.face)),
+      face: toFrame(frame, toModelFrame(baked, faces.get(coupler.instance) ?? coupler.face)),
       bogie: owner.get(coupler.instance) ?? null,
       obsoleteSources: coupler.obsoleteSources,
     };
@@ -162,7 +185,7 @@ export function effectiveVehicle(
   const rearCoupler = placed(baked.rearCoupler);
   const effectiveBogies: VehicleBogie[] = bogies.map((bogie, b) => ({
     instances: Uint32Array.from(bogie.instances.toSorted((x, y) => x - y)),
-    pivot: toFrame(frame, bogie.pivot),
+    pivot: toFrame(frame, modelPivots[b] ?? bogie.pivot),
     axles: (bogieAxles[b] ?? []).map((axle) => toFrame(frame, axle)),
   }));
   const vehicle: BakedVehicle = {
@@ -218,8 +241,7 @@ function partBoundsIssues(
   for (const coupler of [baked.frontCoupler, baked.rearCoupler]) {
     if (!coupler) continue;
     const box = localBox(coupler.instance);
-    const moved = faces.get(coupler.instance);
-    const face = moved ? toFrame(detected, moved) : coupler.face;
+    const face = faces.get(coupler.instance) ?? coupler.face;
     if (!box) issues.push(`part ${coupler.instance} has no box to bound its coupling face`);
     else {
       const outside = distanceOutside(box, face[0], face[2]);
@@ -238,8 +260,7 @@ function partBoundsIssues(
       issues.push(`bogie ${b + 1} has a part with no box to bound its pivot`);
       return;
     }
-    const pivot = toFrame(detected, bogie.pivot);
-    const outside = distanceOutside(footprint, pivot[0], pivot[2]);
+    const outside = distanceOutside(footprint, bogie.pivot[0], bogie.pivot[2]);
     if (outside > 0) {
       issues.push(`bogie ${b + 1}'s pivot lies ${ldu(outside)} outside the footprint of its parts`);
     }
@@ -321,7 +342,8 @@ export function parseRunningGearOverride(value: unknown): RunningGearOverride | 
   const raw = record(value);
   if (
     !raw ||
-    raw["version"] !== RUNNING_GEAR_OVERRIDE_VERSION ||
+    (raw["version"] !== RUNNING_GEAR_OVERRIDE_VERSION &&
+      raw["version"] !== MODEL_FRAME_OVERRIDE_VERSION) ||
     typeof raw["modelSha256"] !== "string" ||
     typeof raw["model"] !== "string" ||
     !Array.isArray(raw["vehicles"])
@@ -335,7 +357,7 @@ export function parseRunningGearOverride(value: unknown): RunningGearOverride | 
     vehicles.push(vehicle);
   }
   return {
-    version: RUNNING_GEAR_OVERRIDE_VERSION,
+    version: raw["version"],
     modelSha256: raw["modelSha256"],
     model: raw["model"],
     vehicles,
