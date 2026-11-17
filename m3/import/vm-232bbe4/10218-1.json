@@ -1,0 +1,1616 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\na1194996a2d6ff6e\nParts\n2,042\nModules\n2\nStud instances (drawn of total)\n7,040 of 7,040\nScene triangles\n936,912\nLoad\n39 ms\nGPU buffers allocated so far, JS heap\nvertex+index 5.7 MiB, other 0.1 MiB, JS heap 50.9 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n303\nDrawn triangles\n936,913\nScene coverage\n27%\nFrame rate (rAF)\n1.6 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 220,
+        "z": 0,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "10218-1.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 1 Basement.ldr",
+            "title": "Brown House 1 Basement"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 2 Downstairs.ldr",
+            "title": "Brown House 2 Downstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 3 Upstairs.ldr",
+            "title": "Brown House 3 Upstairs"
+          },
+          {
+            "author": "Stefan Frenz",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House 4 Roof.ldr",
+            "title": "Brown House 4 Roof"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Corkskrew Stair.ldr",
+            "title": "Corkskrew Stair"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 1 Basement.ldr",
+            "title": "Blue House 1 Basement"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 2 Downstairs.ldr",
+            "title": "Blue House 2 Downstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 3 Upstairs.ldr",
+            "title": "Blue House 3 Upstairs"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House 4 Roof.ldr",
+            "title": "Blue House 4 Roof"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig1.ldr",
+            "title": "MiniFig1"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig2.ldr",
+            "title": "MiniFig2"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig3.ldr",
+            "title": "MiniFig3"
+          },
+          {
+            "author": "Stefan Frenz (smf)",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - MiniFig4.ldr",
+            "title": "MiniFig4"
+          },
+          {
+            "author": "Stefan Frenz [smf]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Brown House.ldr",
+            "title": "Brown House"
+          },
+          {
+            "author": "Stefan Frenz [smf]",
+            "ldrawOrg": null,
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10218 - Blue House.ldr",
+            "title": "Blue House"
+          }
+        ],
+        "instanceCount": 2044,
+        "drawnInstanceCount": 2042,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3857.dat",
+            "official": "3857.dat",
+            "instances": 2,
+            "partId": "ldraw:3857"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431.dat",
+            "official": "2431.dat",
+            "instances": 17,
+            "partId": "ldraw:2431"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6636.dat",
+            "official": "6636.dat",
+            "instances": 37,
+            "partId": "ldraw:6636"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "official": "3069b.dat",
+            "instances": 84,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068b.dat",
+            "official": "3068b.dat",
+            "instances": 46,
+            "partId": "ldraw:3068b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070b.dat",
+            "official": "3070b.dat",
+            "instances": 54,
+            "partId": "ldraw:3070b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "official": "3623.dat",
+            "instances": 11,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2412b.dat",
+            "official": "2412b.dat",
+            "instances": 5,
+            "partId": "ldraw:2412b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3023.dat",
+            "official": "3023.dat",
+            "instances": 80,
+            "partId": "ldraw:3023"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3666.dat",
+            "official": "3666.dat",
+            "instances": 48,
+            "partId": "ldraw:3666"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3460.dat",
+            "official": "3460.dat",
+            "instances": 22,
+            "partId": "ldraw:3460"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "official": "3024.dat",
+            "instances": 69,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "official": "3001.dat",
+            "instances": 11,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30136.dat",
+            "official": "30136.dat",
+            "instances": 29,
+            "partId": "ldraw:30136"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3795.dat",
+            "official": "3795.dat",
+            "instances": 9,
+            "partId": "ldraw:3795"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "official": "3710.dat",
+            "instances": 44,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6141.dat",
+            "official": "6141.dat",
+            "instances": 110,
+            "partId": "ldraw:6141"
+          },
+          {
+            "kind": "bundle",
+            "reference": "33291.dat",
+            "official": "33291.dat",
+            "instances": 36,
+            "partId": "ldraw:33291"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3040b.dat",
+            "official": "3040b.dat",
+            "instances": 16,
+            "partId": "ldraw:3040b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3062b.dat",
+            "official": "3062b.dat",
+            "instances": 10,
+            "partId": "ldraw:3062b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3622.dat",
+            "official": "3622.dat",
+            "instances": 20,
+            "partId": "ldraw:3622"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6111.dat",
+            "official": "6111.dat",
+            "instances": 3,
+            "partId": "ldraw:6111"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3700.dat",
+            "official": "3700.dat",
+            "instances": 9,
+            "partId": "ldraw:3700"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2780.dat",
+            "official": "2780.dat",
+            "instances": 6,
+            "partId": "ldraw:2780"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92926.dat",
+            "official": "92926.dat",
+            "instances": 1,
+            "partId": "ldraw:92926"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54200.dat",
+            "official": "54200.dat",
+            "instances": 13,
+            "partId": "ldraw:54200"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4740.dat",
+            "official": "4740.dat",
+            "instances": 3,
+            "partId": "ldraw:4740"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3660.dat",
+            "official": "3660.dat",
+            "instances": 2,
+            "partId": "ldraw:3660"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92946.dat",
+            "official": "92946.dat",
+            "instances": 6,
+            "partId": "ldraw:92946"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6541.dat",
+            "official": "6541.dat",
+            "instances": 6,
+            "partId": "ldraw:6541"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32002.dat",
+            "official": "32002.dat",
+            "instances": 2,
+            "partId": "ldraw:32002"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2357.dat",
+            "official": "2357.dat",
+            "instances": 10,
+            "partId": "ldraw:2357"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3009.dat",
+            "official": "3009.dat",
+            "instances": 113,
+            "partId": "ldraw:3009"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2921.dat",
+            "official": "2921.dat",
+            "instances": 6,
+            "partId": "ldraw:2921"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6231.dat",
+            "official": "6231.dat",
+            "instances": 11,
+            "partId": "ldraw:6231"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4070.dat",
+            "official": "4070.dat",
+            "instances": 26,
+            "partId": "ldraw:4070"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4175.dat",
+            "official": "4175.dat",
+            "instances": 3,
+            "partId": "ldraw:4175"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60806.dat",
+            "official": "60806.dat",
+            "instances": 1,
+            "partId": "ldraw:60806"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60614.dat",
+            "official": "60614.dat",
+            "instances": 2,
+            "partId": "ldraw:60614"
+          },
+          {
+            "kind": "bundle",
+            "reference": "41539.dat",
+            "official": "41539.dat",
+            "instances": 3,
+            "partId": "ldraw:41539"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92107.dat",
+            "official": "92107.dat",
+            "instances": 1,
+            "partId": "ldraw:92107"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60897.dat",
+            "official": "60897.dat",
+            "instances": 9,
+            "partId": "ldraw:60897"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88293.dat",
+            "official": "88293.dat",
+            "instances": 2,
+            "partId": "ldraw:88293"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4529.dat",
+            "official": "4529.dat",
+            "instances": 1,
+            "partId": "ldraw:4529"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3176.dat",
+            "official": "3176.dat",
+            "instances": 2,
+            "partId": "ldraw:3176"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48729b.dat",
+            "official": "48729b.dat",
+            "instances": 4,
+            "partId": "ldraw:48729b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30340.dat",
+            "official": "30340.dat",
+            "instances": 1,
+            "partId": "ldraw:30340"
+          },
+          {
+            "kind": "bundle",
+            "reference": "15207.dat",
+            "official": "15207.dat",
+            "instances": 1,
+            "partId": "ldraw:15207"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30055.dat",
+            "official": "30055.dat",
+            "instances": 5,
+            "partId": "ldraw:30055"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60581.dat",
+            "official": "60581.dat",
+            "instances": 1,
+            "partId": "ldraw:60581"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3008.dat",
+            "official": "3008.dat",
+            "instances": 49,
+            "partId": "ldraw:3008"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "official": "3005.dat",
+            "instances": 113,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3002.dat",
+            "official": "3002.dat",
+            "instances": 3,
+            "partId": "ldraw:3002"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2430.dat",
+            "official": "2430.dat",
+            "instances": 18,
+            "partId": "ldraw:2430"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2429.dat",
+            "official": "2429.dat",
+            "instances": 18,
+            "partId": "ldraw:2429"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87580.dat",
+            "official": "87580.dat",
+            "instances": 5,
+            "partId": "ldraw:87580"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6266.dat",
+            "official": "6266.dat",
+            "instances": 7,
+            "partId": "ldraw:6266"
+          },
+          {
+            "kind": "bundle",
+            "reference": "577b.dat",
+            "official": "577b.dat",
+            "instances": 5,
+            "partId": "ldraw:577b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3010.dat",
+            "official": "3010.dat",
+            "instances": 86,
+            "partId": "ldraw:3010"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63864.dat",
+            "official": "63864.dat",
+            "instances": 30,
+            "partId": "ldraw:63864"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "official": "3004.dat",
+            "instances": 67,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87087.dat",
+            "official": "87087.dat",
+            "instances": 15,
+            "partId": "ldraw:87087"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92099.dat",
+            "official": "92099.dat",
+            "instances": 1,
+            "partId": "ldraw:92099"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3899.dat",
+            "official": "3899.dat",
+            "instances": 3,
+            "partId": "ldraw:3899"
+          },
+          {
+            "kind": "bundle",
+            "reference": "12825.dat",
+            "official": "12825.dat",
+            "instances": 6,
+            "partId": "ldraw:12825"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4032a.dat",
+            "official": "4032a.dat",
+            "instances": 5,
+            "partId": "ldraw:4032a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3021.dat",
+            "official": "3021.dat",
+            "instances": 7,
+            "partId": "ldraw:3021"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6091.dat",
+            "official": "6091.dat",
+            "instances": 27,
+            "partId": "ldraw:6091"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6191.dat",
+            "official": "6191.dat",
+            "instances": 2,
+            "partId": "ldraw:6191"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63965.dat",
+            "official": "63965.dat",
+            "instances": 1,
+            "partId": "ldraw:63965"
+          },
+          {
+            "kind": "bundle",
+            "reference": "59900.dat",
+            "official": "59900.dat",
+            "instances": 11,
+            "partId": "ldraw:59900"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32124.dat",
+            "official": "32124.dat",
+            "instances": 3,
+            "partId": "ldraw:32124"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4345b.dat",
+            "official": "4345b.dat",
+            "instances": 3,
+            "partId": "ldraw:4345b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4346.dat",
+            "official": "4346.dat",
+            "instances": 3,
+            "partId": "ldraw:4346"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069bp01.dat",
+            "official": "3069bp01.dat",
+            "instances": 2,
+            "partId": "ldraw:3069bp01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626b.dat",
+            "official": "3626b.dat",
+            "instances": 2,
+            "partId": "ldraw:3626b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3741ac01.dat",
+            "official": "3741ac01.dat",
+            "instances": 1,
+            "partId": "ldraw:3741ac01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92690.dat",
+            "official": "92690.dat",
+            "instances": 1,
+            "partId": "ldraw:92690"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4485.dat",
+            "official": "4485.dat",
+            "instances": 1,
+            "partId": "ldraw:4485"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60593c01.dat",
+            "official": "60593c01.dat",
+            "instances": 19,
+            "partId": "ldraw:60593c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88292.dat",
+            "official": "88292.dat",
+            "instances": 4,
+            "partId": "ldraw:88292"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60596.dat",
+            "official": "60596.dat",
+            "instances": 8,
+            "partId": "ldraw:60596"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60623.dat",
+            "official": "60623.dat",
+            "instances": 6,
+            "partId": "ldraw:60623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "official": "3020.dat",
+            "instances": 17,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3675.dat",
+            "official": "3675.dat",
+            "instances": 2,
+            "partId": "ldraw:3675"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3794a.dat",
+            "official": "3794a.dat",
+            "instances": 53,
+            "partId": "ldraw:3794a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3065.dat",
+            "official": "3065.dat",
+            "instances": 1,
+            "partId": "ldraw:3065"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92593.dat",
+            "official": "92593.dat",
+            "instances": 11,
+            "partId": "ldraw:92593"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87079.dat",
+            "official": "87079.dat",
+            "instances": 7,
+            "partId": "ldraw:87079"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99774.dat",
+            "official": "99774.dat",
+            "instances": 2,
+            "partId": "ldraw:99774"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60478.dat",
+            "official": "60478.dat",
+            "instances": 4,
+            "partId": "ldraw:60478"
+          },
+          {
+            "kind": "notInLibrary",
+            "reference": "10218 - rigidhosed9.ldr",
+            "official": "rigidhosed9.ldr",
+            "instances": 2,
+            "definedInline": true
+          },
+          {
+            "kind": "bundle",
+            "reference": "2445.dat",
+            "official": "2445.dat",
+            "instances": 1,
+            "partId": "ldraw:2445"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63325.dat",
+            "official": "63325.dat",
+            "instances": 13,
+            "partId": "ldraw:63325"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60479.dat",
+            "official": "60479.dat",
+            "instances": 3,
+            "partId": "ldraw:60479"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3034.dat",
+            "official": "3034.dat",
+            "instances": 4,
+            "partId": "ldraw:3034"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3028.dat",
+            "official": "3028.dat",
+            "instances": 2,
+            "partId": "ldraw:3028"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92438.dat",
+            "official": "92438.dat",
+            "instances": 3,
+            "partId": "ldraw:92438"
+          },
+          {
+            "kind": "bundle",
+            "reference": "51739.dat",
+            "official": "51739.dat",
+            "instances": 1,
+            "partId": "ldraw:51739"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6143.dat",
+            "official": "6143.dat",
+            "instances": 1,
+            "partId": "ldraw:6143"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4150.dat",
+            "official": "4150.dat",
+            "instances": 1,
+            "partId": "ldraw:4150"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87552.dat",
+            "official": "87552.dat",
+            "instances": 7,
+            "partId": "ldraw:87552"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60594.dat",
+            "official": "60594.dat",
+            "instances": 3,
+            "partId": "ldraw:60594"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60603.dat",
+            "official": "60603.dat",
+            "instances": 3,
+            "partId": "ldraw:60603"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815c01.dat",
+            "official": "3815c01.dat",
+            "instances": 3,
+            "partId": "ldraw:3815c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3820.dat",
+            "official": "3820.dat",
+            "instances": 8,
+            "partId": "ldraw:3820"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3819.dat",
+            "official": "3819.dat",
+            "instances": 4,
+            "partId": "ldraw:3819"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p1b.dat",
+            "official": "973p1b.dat",
+            "instances": 1,
+            "partId": "ldraw:973p1b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3818.dat",
+            "official": "3818.dat",
+            "instances": 4,
+            "partId": "ldraw:3818"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626bp01.dat",
+            "official": "3626bp01.dat",
+            "instances": 4,
+            "partId": "ldraw:3626bp01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "86035.dat",
+            "official": "86035.dat",
+            "instances": 1,
+            "partId": "ldraw:86035"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3957a.dat",
+            "official": "3957a.dat",
+            "instances": 3,
+            "partId": "ldraw:3957a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "42446.dat",
+            "official": "42446.dat",
+            "instances": 1,
+            "partId": "ldraw:42446"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4274.dat",
+            "official": "4274.dat",
+            "instances": 1,
+            "partId": "ldraw:4274"
+          },
+          {
+            "kind": "bundle",
+            "reference": "62462.dat",
+            "official": "62462.dat",
+            "instances": 1,
+            "partId": "ldraw:62462"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87544.dat",
+            "official": "87544.dat",
+            "instances": 2,
+            "partId": "ldraw:87544"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30044.dat",
+            "official": "30044.dat",
+            "instances": 4,
+            "partId": "ldraw:30044"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3659.dat",
+            "official": "3659.dat",
+            "instances": 5,
+            "partId": "ldraw:3659"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3027.dat",
+            "official": "3027.dat",
+            "instances": 4,
+            "partId": "ldraw:3027"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4599b.dat",
+            "official": "4599b.dat",
+            "instances": 3,
+            "partId": "ldraw:4599b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30414.dat",
+            "official": "30414.dat",
+            "instances": 4,
+            "partId": "ldraw:30414"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "official": "3003.dat",
+            "instances": 4,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2432.dat",
+            "official": "2432.dat",
+            "instances": 6,
+            "partId": "ldraw:2432"
+          },
+          {
+            "kind": "bundle",
+            "reference": "33183.dat",
+            "official": "33183.dat",
+            "instances": 2,
+            "partId": "ldraw:33183"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3831.dat",
+            "official": "3831.dat",
+            "instances": 2,
+            "partId": "ldraw:3831"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3830.dat",
+            "official": "3830.dat",
+            "instances": 2,
+            "partId": "ldraw:3830"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60592.dat",
+            "official": "60592.dat",
+            "instances": 16,
+            "partId": "ldraw:60592"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60601.dat",
+            "official": "60601.dat",
+            "instances": 16,
+            "partId": "ldraw:60601"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3684c.dat",
+            "official": "3684c.dat",
+            "instances": 7,
+            "partId": "ldraw:3684c"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4460b.dat",
+            "official": "4460b.dat",
+            "instances": 2,
+            "partId": "ldraw:4460b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4445.dat",
+            "official": "4445.dat",
+            "instances": 5,
+            "partId": "ldraw:4445"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3039.dat",
+            "official": "3039.dat",
+            "instances": 1,
+            "partId": "ldraw:3039"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4286.dat",
+            "official": "4286.dat",
+            "instances": 10,
+            "partId": "ldraw:4286"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3036.dat",
+            "official": "3036.dat",
+            "instances": 2,
+            "partId": "ldraw:3036"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4162.dat",
+            "official": "4162.dat",
+            "instances": 13,
+            "partId": "ldraw:4162"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3633.dat",
+            "official": "3633.dat",
+            "instances": 3,
+            "partId": "ldraw:3633"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87620.dat",
+            "official": "87620.dat",
+            "instances": 4,
+            "partId": "ldraw:87620"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4490.dat",
+            "official": "4490.dat",
+            "instances": 2,
+            "partId": "ldraw:4490"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92586.dat",
+            "official": "92586.dat",
+            "instances": 1,
+            "partId": "ldraw:92586"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6251.dat",
+            "official": "6251.dat",
+            "instances": 1,
+            "partId": "ldraw:6251"
+          },
+          {
+            "kind": "bundle",
+            "reference": "93160.dat",
+            "official": "93160.dat",
+            "instances": 3,
+            "partId": "ldraw:93160"
+          },
+          {
+            "kind": "bundle",
+            "reference": "40234.dat",
+            "official": "40234.dat",
+            "instances": 1,
+            "partId": "ldraw:40234"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48245.dat",
+            "official": "48245.dat",
+            "instances": 1,
+            "partId": "ldraw:48245"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3852a.dat",
+            "official": "3852a.dat",
+            "instances": 1,
+            "partId": "ldraw:3852a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30150.dat",
+            "official": "30150.dat",
+            "instances": 1,
+            "partId": "ldraw:30150"
+          },
+          {
+            "kind": "bundle",
+            "reference": "92410.dat",
+            "official": "92410.dat",
+            "instances": 1,
+            "partId": "ldraw:92410"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4536.dat",
+            "official": "4536.dat",
+            "instances": 1,
+            "partId": "ldraw:4536"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069bpw2.dat",
+            "official": "3069bpw2.dat",
+            "instances": 1,
+            "partId": "ldraw:3069bpw2"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4081b.dat",
+            "official": "4081b.dat",
+            "instances": 1,
+            "partId": "ldraw:4081b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4592c01.dat",
+            "official": "4592c01.dat",
+            "instances": 1,
+            "partId": "ldraw:4592c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64644.dat",
+            "official": "64644.dat",
+            "instances": 2,
+            "partId": "ldraw:64644"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2546p02.dat",
+            "official": "2546p02.dat",
+            "instances": 2,
+            "partId": "ldraw:2546p02"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6019.dat",
+            "official": "6019.dat",
+            "instances": 5,
+            "partId": "ldraw:6019"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64648.dat",
+            "official": "64648.dat",
+            "instances": 1,
+            "partId": "ldraw:64648"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4594.dat",
+            "official": "4594.dat",
+            "instances": 1,
+            "partId": "ldraw:4594"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88930.dat",
+            "official": "88930.dat",
+            "instances": 1,
+            "partId": "ldraw:88930"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4216.dat",
+            "official": "4216.dat",
+            "instances": 48,
+            "partId": "ldraw:4216"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32028.dat",
+            "official": "32028.dat",
+            "instances": 20,
+            "partId": "ldraw:32028"
+          },
+          {
+            "kind": "bundle",
+            "reference": "33320.dat",
+            "official": "33320.dat",
+            "instances": 2,
+            "partId": "ldraw:33320"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30134.dat",
+            "official": "30134.dat",
+            "instances": 2,
+            "partId": "ldraw:30134"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60616a.dat",
+            "official": "60616a.dat",
+            "instances": 1,
+            "partId": "ldraw:60616a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "57895.dat",
+            "official": "57895.dat",
+            "instances": 1,
+            "partId": "ldraw:57895"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3037.dat",
+            "official": "3037.dat",
+            "instances": 2,
+            "partId": "ldraw:3037"
+          },
+          {
+            "kind": "bundle",
+            "reference": "43888.dat",
+            "official": "43888.dat",
+            "instances": 2,
+            "partId": "ldraw:43888"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2436b.dat",
+            "official": "2436b.dat",
+            "instances": 1,
+            "partId": "ldraw:2436b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "43093.dat",
+            "official": "43093.dat",
+            "instances": 1,
+            "partId": "ldraw:43093"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32054.dat",
+            "official": "32054.dat",
+            "instances": 1,
+            "partId": "ldraw:32054"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2817.dat",
+            "official": "2817.dat",
+            "instances": 1,
+            "partId": "ldraw:2817"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30106.dat",
+            "official": "30106.dat",
+            "instances": 1,
+            "partId": "ldraw:30106"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3832.dat",
+            "official": "3832.dat",
+            "instances": 5,
+            "partId": "ldraw:3832"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4510.dat",
+            "official": "4510.dat",
+            "instances": 1,
+            "partId": "ldraw:4510"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3307.dat",
+            "official": "3307.dat",
+            "instances": 1,
+            "partId": "ldraw:3307"
+          },
+          {
+            "kind": "bundle",
+            "reference": "47905.dat",
+            "official": "47905.dat",
+            "instances": 1,
+            "partId": "ldraw:47905"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30586.dat",
+            "official": "30586.dat",
+            "instances": 4,
+            "partId": "ldraw:30586"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3937.dat",
+            "official": "3937.dat",
+            "instances": 1,
+            "partId": "ldraw:3937"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6134.dat",
+            "official": "6134.dat",
+            "instances": 1,
+            "partId": "ldraw:6134"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2039.dat",
+            "official": "2039.dat",
+            "instances": 1,
+            "partId": "ldraw:2039"
+          },
+          {
+            "kind": "bundle",
+            "reference": "91501.dat",
+            "official": "91501.dat",
+            "instances": 1,
+            "partId": "ldraw:91501"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32474.dat",
+            "official": "32474.dat",
+            "instances": 1,
+            "partId": "ldraw:32474"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4282.dat",
+            "official": "4282.dat",
+            "instances": 1,
+            "partId": "ldraw:4282"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3035.dat",
+            "official": "3035.dat",
+            "instances": 3,
+            "partId": "ldraw:3035"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4865b.dat",
+            "official": "4865b.dat",
+            "instances": 2,
+            "partId": "ldraw:4865b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64647.dat",
+            "official": "64647.dat",
+            "instances": 1,
+            "partId": "ldraw:64647"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "official": "3022.dat",
+            "instances": 10,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4528.dat",
+            "official": "4528.dat",
+            "instances": 1,
+            "partId": "ldraw:4528"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3747b.dat",
+            "official": "3747b.dat",
+            "instances": 1,
+            "partId": "ldraw:3747b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44728.dat",
+            "official": "44728.dat",
+            "instances": 1,
+            "partId": "ldraw:44728"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4150p03.dat",
+            "official": "4150p03.dat",
+            "instances": 1,
+            "partId": "ldraw:4150p03"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2456.dat",
+            "official": "2456.dat",
+            "instances": 1,
+            "partId": "ldraw:2456"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6081.dat",
+            "official": "6081.dat",
+            "instances": 2,
+            "partId": "ldraw:6081"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2343.dat",
+            "official": "2343.dat",
+            "instances": 1,
+            "partId": "ldraw:2343"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60481.dat",
+            "official": "60481.dat",
+            "instances": 28,
+            "partId": "ldraw:60481"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3665a.dat",
+            "official": "3665a.dat",
+            "instances": 4,
+            "partId": "ldraw:3665a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "18759.dat",
+            "official": "18759.dat",
+            "instances": 2,
+            "partId": "ldraw:18759"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4477.dat",
+            "official": "4477.dat",
+            "instances": 2,
+            "partId": "ldraw:4477"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2540.dat",
+            "official": "2540.dat",
+            "instances": 3,
+            "partId": "ldraw:2540"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3678a.dat",
+            "official": "3678a.dat",
+            "instances": 6,
+            "partId": "ldraw:3678a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3958.dat",
+            "official": "3958.dat",
+            "instances": 2,
+            "partId": "ldraw:3958"
+          },
+          {
+            "kind": "bundle",
+            "reference": "58181.dat",
+            "official": "58181.dat",
+            "instances": 2,
+            "partId": "ldraw:58181"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973pbj.dat",
+            "official": "973pbj.dat",
+            "instances": 1,
+            "partId": "ldraw:973pbj"
+          },
+          {
+            "kind": "bundle",
+            "reference": "85974.dat",
+            "official": "85974.dat",
+            "instances": 1,
+            "partId": "ldraw:85974"
+          },
+          {
+            "kind": "bundle",
+            "reference": "62810.dat",
+            "official": "62810.dat",
+            "instances": 1,
+            "partId": "ldraw:62810"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p94.dat",
+            "official": "973p94.dat",
+            "instances": 1,
+            "partId": "ldraw:973p94"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4719c01.dat",
+            "official": "4719c01.dat",
+            "instances": 1,
+            "partId": "ldraw:4719c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "41879a.dat",
+            "official": "41879a.dat",
+            "instances": 1,
+            "partId": "ldraw:41879a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p7j.dat",
+            "official": "973p7j.dat",
+            "instances": 1,
+            "partId": "ldraw:973p7j"
+          },
+          {
+            "kind": "bundle",
+            "reference": "88286.dat",
+            "official": "88286.dat",
+            "instances": 1,
+            "partId": "ldraw:88286"
+          }
+        ],
+        "inlineParts": [
+          {
+            "inline": "10218 - rigidhosed9.ldr",
+            "official": "rigidhosed9.ldr"
+          }
+        ],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 2,
+        "fetched": {
+          "requests": 3,
+          "found": 0,
+          "notFound": 3,
+          "bytes": 0
+        },
+        "timings": {
+          "bakeMs": 14,
+          "resolveMs": 99.40000000037253,
+          "totalMs": 113.40000000037253
+        },
+        "importMs": 500.90000000037253,
+        "sceneMs": 2222.199999999255
+      }
+    ]
+  }
+}

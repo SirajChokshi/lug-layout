@@ -1,0 +1,133 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\na1194996a2d6ff6e\nParts\n4\nModules\n2\nStud instances (drawn of total)\n24 of 24\nScene triangles\n2,430\nLoad\n44 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.0 MiB, other 0.0 MiB, JS heap 40.7 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n7\nDrawn triangles\n2,431\nScene coverage\n3% (essentially empty frame)\nFrame rate (rAF)\n4.9 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 0,
+        "z": 60,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "critic-gap-2.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "critic",
+            "ldrawOrg": "Model",
+            "license": null,
+            "name": "critic-gap-2.ldr",
+            "title": "Critic gap probe 2"
+          },
+          {
+            "author": "",
+            "ldrawOrg": "Unofficial_Model",
+            "license": null,
+            "name": "unofficial-model.ldr",
+            "title": "Submodel declared Unofficial_Model"
+          }
+        ],
+        "instanceCount": 6,
+        "drawnInstanceCount": 4,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "9998-1 - 3001.dat",
+            "official": "3001.dat",
+            "instances": 1,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "official": "3001.dat",
+            "instances": 2,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "inlineDiffers",
+            "reference": "9997-1 - 3068bp0c.dat",
+            "official": "3068bp0c.dat",
+            "instances": 1,
+            "colorsMatch": true,
+            "inlineColors": [
+              16,
+              82,
+              320
+            ],
+            "officialColors": [
+              16,
+              82,
+              320
+            ],
+            "maxSurfaceDistanceLdu": 2.723119718264329,
+            "weldEpsilonLdu": 0.05
+          },
+          {
+            "kind": "compiled",
+            "reference": "3068bp0c.dat",
+            "official": "3068bp0c.dat",
+            "instances": 1,
+            "partId": "ldraw:3068bp0c",
+            "file": "parts/3068bp0c.dat",
+            "header": {
+              "author": "J.C. Tchang [tchang]",
+              "ldrawOrg": "Part UPDATE 2013-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3068bp0c.dat",
+              "title": "Tile 2 x 2 with Gold Star with Brick in Center Pattern"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "notInLibrary",
+            "reference": "mixed.ldr",
+            "official": "mixed.ldr",
+            "instances": 1,
+            "definedInline": true
+          }
+        ],
+        "inlineParts": [
+          {
+            "inline": "9997-1 - 3068bp0c.dat",
+            "official": "3068bp0c.dat"
+          },
+          {
+            "inline": "9998-1 - 3001.dat",
+            "official": "3001.dat"
+          },
+          {
+            "inline": "mixed.ldr",
+            "official": "mixed.ldr"
+          }
+        ],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 9,
+        "fetched": {
+          "requests": 27,
+          "found": 14,
+          "notFound": 13,
+          "bytes": 20787
+        },
+        "timings": {
+          "bakeMs": 4.199999999254942,
+          "resolveMs": 317.90000000037253,
+          "totalMs": 322.09999999962747
+        },
+        "importMs": 655,
+        "sceneMs": 327.1000000014901
+      }
+    ]
+  }
+}

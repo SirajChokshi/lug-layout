@@ -1,0 +1,1582 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\na1194996a2d6ff6e\nParts\n1,073\nModules\n6\nStud instances (drawn of total)\n2,809 of 2,809\nScene triangles\n575,418\nLoad\n43 ms\nGPU buffers allocated so far, JS heap\nvertex+index 4.5 MiB, other 0.1 MiB, JS heap 53.0 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n6 / 0 / 0\nDraw calls\n387\nDrawn triangles\n575,419\nScene coverage\n5% (essentially empty frame)\nFrame rate (rAF)\n2.7 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 1300,
+        "z": -20,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "10194-1.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - main.ldr",
+            "title": "main"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - locomotive.ldr",
+            "title": "locomotive"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - tender.ldr",
+            "title": "tender"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - tender - wheels.ldr",
+            "title": "tender - wheels"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - train car.ldr",
+            "title": "train car"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - train car - wheels.ldr",
+            "title": "train car - wheels"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - minifig 1.ldr",
+            "title": "minifig 1"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - minifig 2.ldr",
+            "title": "minifig 2"
+          },
+          {
+            "author": "TotalyWicked [TotalyWicked]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10194 - minifig 3.ldr",
+            "title": "minifig 3"
+          }
+        ],
+        "instanceCount": 1073,
+        "drawnInstanceCount": 1073,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3901.dat",
+            "official": "3901.dat",
+            "instances": 1,
+            "partId": "ldraw:3901"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p83.dat",
+            "official": "973p83.dat",
+            "instances": 1,
+            "partId": "ldraw:973p83"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3816.dat",
+            "official": "3816.dat",
+            "instances": 3,
+            "partId": "ldraw:3816"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3817.dat",
+            "official": "3817.dat",
+            "instances": 3,
+            "partId": "ldraw:3817"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3820.dat",
+            "official": "3820.dat",
+            "instances": 6,
+            "partId": "ldraw:3820"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3818.dat",
+            "official": "3818.dat",
+            "instances": 3,
+            "partId": "ldraw:3818"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3819.dat",
+            "official": "3819.dat",
+            "instances": 3,
+            "partId": "ldraw:3819"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815.dat",
+            "official": "3815.dat",
+            "instances": 3,
+            "partId": "ldraw:3815"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626bp01.dat",
+            "official": "3626bp01.dat",
+            "instances": 2,
+            "partId": "ldraw:3626bp01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973.dat",
+            "official": "973.dat",
+            "instances": 2,
+            "partId": "ldraw:973"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30133.dat",
+            "official": "30133.dat",
+            "instances": 1,
+            "partId": "ldraw:30133"
+          },
+          {
+            "kind": "compiled",
+            "reference": "30135.dat",
+            "official": "30135.dat",
+            "instances": 1,
+            "partId": "ldraw:30135",
+            "file": "parts/30135.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2012-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "30135.dat",
+              "title": "Minifig Hat Kepi"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "6093a.dat",
+            "official": "6093a.dat",
+            "instances": 1,
+            "partId": "ldraw:6093a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626bp02.dat",
+            "official": "3626bp02.dat",
+            "instances": 1,
+            "partId": "ldraw:3626bp02"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4092a.dat",
+            "official": "4092a.dat",
+            "instances": 4,
+            "partId": "ldraw:4092a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "64422.dat",
+            "official": "64422.dat",
+            "instances": 4,
+            "partId": "ldraw:64422",
+            "file": "parts/64422.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Shortcut UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "64422.dat",
+              "title": "Train Buffer Beam with Sealed Magnet (Complete)"
+            },
+            "sourceFiles": 50
+          },
+          {
+            "kind": "bundle",
+            "reference": "2878c01.dat",
+            "official": "2878c01.dat",
+            "instances": 8,
+            "partId": "ldraw:2878c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "official": "3022.dat",
+            "instances": 11,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "compiled",
+            "reference": "32001.dat",
+            "official": "32001.dat",
+            "instances": 4,
+            "partId": "ldraw:32001",
+            "file": "parts/32001.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2004-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "32001.dat",
+              "title": "Technic Plate 2 x 6 with Holes"
+            },
+            "sourceFiles": 7
+          },
+          {
+            "kind": "bundle",
+            "reference": "2445.dat",
+            "official": "2445.dat",
+            "instances": 2,
+            "partId": "ldraw:2445"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3958.dat",
+            "official": "3958.dat",
+            "instances": 1,
+            "partId": "ldraw:3958"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3023.dat",
+            "official": "3023.dat",
+            "instances": 57,
+            "partId": "ldraw:3023"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3795.dat",
+            "official": "3795.dat",
+            "instances": 11,
+            "partId": "ldraw:3795"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32028.dat",
+            "official": "32028.dat",
+            "instances": 18,
+            "partId": "ldraw:32028"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3666.dat",
+            "official": "3666.dat",
+            "instances": 29,
+            "partId": "ldraw:3666"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "official": "3004.dat",
+            "instances": 22,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3010.dat",
+            "official": "3010.dat",
+            "instances": 26,
+            "partId": "ldraw:3010"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "official": "3005.dat",
+            "instances": 27,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3660.dat",
+            "official": "3660.dat",
+            "instances": 3,
+            "partId": "ldraw:3660"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "official": "3069b.dat",
+            "instances": 34,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431.dat",
+            "official": "2431.dat",
+            "instances": 23,
+            "partId": "ldraw:2431"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3040b.dat",
+            "official": "3040b.dat",
+            "instances": 2,
+            "partId": "ldraw:3040b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4175.dat",
+            "official": "4175.dat",
+            "instances": 1,
+            "partId": "ldraw:4175"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3031.dat",
+            "official": "3031.dat",
+            "instances": 1,
+            "partId": "ldraw:3031"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2412b.dat",
+            "official": "2412b.dat",
+            "instances": 1,
+            "partId": "ldraw:2412b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54200.dat",
+            "official": "54200.dat",
+            "instances": 110,
+            "partId": "ldraw:54200"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4070.dat",
+            "official": "4070.dat",
+            "instances": 7,
+            "partId": "ldraw:4070"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6141.dat",
+            "official": "6141.dat",
+            "instances": 33,
+            "partId": "ldraw:6141"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4085c.dat",
+            "official": "4085c.dat",
+            "instances": 5,
+            "partId": "ldraw:4085c"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "official": "3024.dat",
+            "instances": 19,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "compiled",
+            "reference": "60475a.dat",
+            "official": "60475a.dat",
+            "instances": 10,
+            "partId": "ldraw:60475a",
+            "file": "parts/60475a.dat",
+            "header": {
+              "author": "J.C. Tchang [tchang]",
+              "ldrawOrg": "Part UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "60475a.dat",
+              "title": "Brick 1 x 1 with Clip Vertical (Thick U-Clip) and Solid Stud"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "compiled",
+            "reference": "61068.dat",
+            "official": "61068.dat",
+            "instances": 18,
+            "partId": "ldraw:61068",
+            "file": "parts/61068.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2022-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "61068.dat",
+              "title": "Slope Brick Curved 2 x 4 without Underside Studs"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "3460.dat",
+            "official": "3460.dat",
+            "instances": 8,
+            "partId": "ldraw:3460"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "official": "3710.dat",
+            "instances": 10,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3957a.dat",
+            "official": "3957a.dat",
+            "instances": 2,
+            "partId": "ldraw:3957a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60470a.dat",
+            "official": "60470a.dat",
+            "instances": 4,
+            "partId": "ldraw:60470a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3941.dat",
+            "official": "3941.dat",
+            "instances": 4,
+            "partId": "ldraw:3941"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32124.dat",
+            "official": "32124.dat",
+            "instances": 2,
+            "partId": "ldraw:32124"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626b.dat",
+            "official": "3626b.dat",
+            "instances": 2,
+            "partId": "ldraw:3626b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4519.dat",
+            "official": "4519.dat",
+            "instances": 3,
+            "partId": "ldraw:4519"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32002.dat",
+            "official": "32002.dat",
+            "instances": 4,
+            "partId": "ldraw:32002"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3706.dat",
+            "official": "3706.dat",
+            "instances": 4,
+            "partId": "ldraw:3706"
+          },
+          {
+            "kind": "compiled",
+            "reference": "32013.dat",
+            "official": "32013.dat",
+            "instances": 3,
+            "partId": "ldraw:32013",
+            "file": "parts/32013.dat",
+            "header": {
+              "author": "Lutz Uhlmann [El-Lutzo]",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "32013.dat",
+              "title": "Technic Angle Connector #1"
+            },
+            "sourceFiles": 26
+          },
+          {
+            "kind": "compiled",
+            "reference": "32017.dat",
+            "official": "32017.dat",
+            "instances": 2,
+            "partId": "ldraw:32017",
+            "file": "parts/32017.dat",
+            "header": {
+              "author": "Lutz Uhlmann [El-Lutzo]",
+              "ldrawOrg": "Part UPDATE 2009-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "32017.dat",
+              "title": "Technic Beam 5 x 0.5"
+            },
+            "sourceFiles": 22
+          },
+          {
+            "kind": "compiled",
+            "reference": "40490.dat",
+            "official": "40490.dat",
+            "instances": 2,
+            "partId": "ldraw:40490",
+            "file": "parts/40490.dat",
+            "header": {
+              "author": "Ross Crawford [rosco]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "40490.dat",
+              "title": "Technic Beam 9"
+            },
+            "sourceFiles": 22
+          },
+          {
+            "kind": "compiled",
+            "reference": "3673.dat",
+            "official": "3673.dat",
+            "instances": 6,
+            "partId": "ldraw:3673",
+            "file": "parts/3673.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2012-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3673.dat",
+              "title": "Technic Pin"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "compiled",
+            "reference": "85489b.dat",
+            "official": "85489b.dat",
+            "instances": 2,
+            "partId": "ldraw:85489b",
+            "file": "parts/85489b.dat",
+            "header": {
+              "author": "Donald Sutter [technog]",
+              "ldrawOrg": "Part UPDATE 2024-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "85489b.dat",
+              "title": "Train Wheel Large with Axlehole and Pinhole without Flange"
+            },
+            "sourceFiles": 42
+          },
+          {
+            "kind": "compiled",
+            "reference": "3749.dat",
+            "official": "3749.dat",
+            "instances": 8,
+            "partId": "ldraw:3749",
+            "file": "parts/3749.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-10",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3749.dat",
+              "title": "Technic Axle Pin"
+            },
+            "sourceFiles": 20
+          },
+          {
+            "kind": "compiled",
+            "reference": "85544.dat",
+            "official": "85544.dat",
+            "instances": 4,
+            "partId": "ldraw:85544",
+            "file": "parts/85544.dat",
+            "header": {
+              "author": "Donald Sutter [technog]",
+              "ldrawOrg": "Part UPDATE 2011-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "85544.dat",
+              "title": "Train Wheel Large Traction Band"
+            },
+            "sourceFiles": 4
+          },
+          {
+            "kind": "compiled",
+            "reference": "85489a.dat",
+            "official": "85489a.dat",
+            "instances": 4,
+            "partId": "ldraw:85489a",
+            "file": "parts/85489a.dat",
+            "header": {
+              "author": "Donald Sutter [technog]",
+              "ldrawOrg": "Part UPDATE 2024-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "85489a.dat",
+              "title": "Train Wheel Large with Axlehole and Pinhole"
+            },
+            "sourceFiles": 48
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "official": "3001.dat",
+            "instances": 2,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30165.dat",
+            "official": "30165.dat",
+            "instances": 1,
+            "partId": "ldraw:30165"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6541.dat",
+            "official": "6541.dat",
+            "instances": 7,
+            "partId": "ldraw:6541"
+          },
+          {
+            "kind": "compiled",
+            "reference": "6558.dat",
+            "official": "6558.dat",
+            "instances": 6,
+            "partId": "ldraw:6558",
+            "file": "parts/6558.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2009-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6558.dat",
+              "title": "Technic Pin Long with Friction and Slot"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "compiled",
+            "reference": "3709b.dat",
+            "official": "3709b.dat",
+            "instances": 12,
+            "partId": "ldraw:3709b",
+            "file": "parts/3709b.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2005-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3709b.dat",
+              "title": "Technic Plate 2 x 4 with Holes"
+            },
+            "sourceFiles": 7
+          },
+          {
+            "kind": "compiled",
+            "reference": "76277.dat",
+            "official": "76277.dat",
+            "instances": 2,
+            "partId": "ldraw:76277",
+            "file": "parts/76277.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "76277.dat",
+              "title": "Technic Flex-System Hose 24L (480LDU)"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "compiled",
+            "reference": "71192.dat",
+            "official": "71192.dat",
+            "instances": 2,
+            "partId": "ldraw:71192",
+            "file": "parts/71192.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "71192.dat",
+              "title": "Technic Flex-System Hose 16L (320LDU)"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "compiled",
+            "reference": "61068p01.dat",
+            "official": "61068p01.dat",
+            "instances": 18,
+            "partId": "ldraw:61068p01",
+            "file": "parts/61068p01.dat",
+            "header": {
+              "author": "J.C. Tchang [tchang]",
+              "ldrawOrg": "Part UPDATE 2022-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "61068p01.dat",
+              "title": "Slope Brick Curved 2 x 4 with 2 Gold Stripes Pattern"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "3701.dat",
+            "official": "3701.dat",
+            "instances": 6,
+            "partId": "ldraw:3701"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3035.dat",
+            "official": "3035.dat",
+            "instances": 4,
+            "partId": "ldraw:3035"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2420.dat",
+            "official": "2420.dat",
+            "instances": 24,
+            "partId": "ldraw:2420"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2540.dat",
+            "official": "2540.dat",
+            "instances": 15,
+            "partId": "ldraw:2540"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070a.dat",
+            "official": "3070a.dat",
+            "instances": 9,
+            "partId": "ldraw:3070a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3021.dat",
+            "official": "3021.dat",
+            "instances": 11,
+            "partId": "ldraw:3021"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "official": "3020.dat",
+            "instances": 25,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6019.dat",
+            "official": "6019.dat",
+            "instances": 7,
+            "partId": "ldraw:6019"
+          },
+          {
+            "kind": "compiled",
+            "reference": "45729.dat",
+            "official": "45729.dat",
+            "instances": 1,
+            "partId": "ldraw:45729",
+            "file": "parts/45729.dat",
+            "header": {
+              "author": "[PTadmin]",
+              "ldrawOrg": "Part Alias UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "45729.dat",
+              "title": "=Dish 6 x 6 Inverted With Hollow Studs"
+            },
+            "sourceFiles": 27
+          },
+          {
+            "kind": "bundle",
+            "reference": "2377.dat",
+            "official": "2377.dat",
+            "instances": 8,
+            "partId": "ldraw:2377"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2555.dat",
+            "official": "2555.dat",
+            "instances": 7,
+            "partId": "ldraw:2555"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60479.dat",
+            "official": "60479.dat",
+            "instances": 8,
+            "partId": "ldraw:60479"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "official": "3623.dat",
+            "instances": 25,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "compiled",
+            "reference": "61678.dat",
+            "official": "61678.dat",
+            "instances": 4,
+            "partId": "ldraw:61678",
+            "file": "parts/61678.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2014-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "61678.dat",
+              "title": "Slope Brick Curved 4 x 1"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "bundle",
+            "reference": "4510.dat",
+            "official": "4510.dat",
+            "instances": 2,
+            "partId": "ldraw:4510"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3794b.dat",
+            "official": "3794b.dat",
+            "instances": 19,
+            "partId": "ldraw:3794b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068b.dat",
+            "official": "3068b.dat",
+            "instances": 10,
+            "partId": "ldraw:3068b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "2444.dat",
+            "official": "2444.dat",
+            "instances": 3,
+            "partId": "ldraw:2444",
+            "file": "parts/2444.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2016-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2444.dat",
+              "title": "Plate 2 x 2 with Hole and Split Underside Ribs"
+            },
+            "sourceFiles": 21
+          },
+          {
+            "kind": "bundle",
+            "reference": "3659.dat",
+            "official": "3659.dat",
+            "instances": 3,
+            "partId": "ldraw:3659"
+          },
+          {
+            "kind": "bundle",
+            "reference": "64647.dat",
+            "official": "64647.dat",
+            "instances": 1,
+            "partId": "ldraw:64647"
+          },
+          {
+            "kind": "bundle",
+            "reference": "47905.dat",
+            "official": "47905.dat",
+            "instances": 2,
+            "partId": "ldraw:47905"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30414.dat",
+            "official": "30414.dat",
+            "instances": 15,
+            "partId": "ldraw:30414"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44728.dat",
+            "official": "44728.dat",
+            "instances": 3,
+            "partId": "ldraw:44728"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60478.dat",
+            "official": "60478.dat",
+            "instances": 4,
+            "partId": "ldraw:60478"
+          },
+          {
+            "kind": "compiled",
+            "reference": "48183.dat",
+            "official": "48183.dat",
+            "instances": 2,
+            "partId": "ldraw:48183",
+            "file": "parts/48183.dat",
+            "header": {
+              "author": "Andy Westrate [westrate]",
+              "ldrawOrg": "Part UPDATE 2009-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "48183.dat",
+              "title": "Wing 3 x 4 with 1 x 2 Cutout with Stud Notches"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "compiled",
+            "reference": "55013.dat",
+            "official": "55013.dat",
+            "instances": 2,
+            "partId": "ldraw:55013",
+            "file": "parts/55013.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "55013.dat",
+              "title": "Technic Axle 8 with Stop"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "compiled",
+            "reference": "4019.dat",
+            "official": "4019.dat",
+            "instances": 2,
+            "partId": "ldraw:4019",
+            "file": "parts/4019.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4019.dat",
+              "title": "Technic Gear 16 Tooth"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "bundle",
+            "reference": "3794a.dat",
+            "official": "3794a.dat",
+            "instances": 8,
+            "partId": "ldraw:3794a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "32209.dat",
+            "official": "32209.dat",
+            "instances": 1,
+            "partId": "ldraw:32209",
+            "file": "parts/32209.dat",
+            "header": {
+              "author": "Steve Bliss [sbliss]",
+              "ldrawOrg": "Part UPDATE 2025-12",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "32209.dat",
+              "title": "Technic Axle 5.5 with Stop Type 1"
+            },
+            "sourceFiles": 17
+          },
+          {
+            "kind": "bundle",
+            "reference": "3700.dat",
+            "official": "3700.dat",
+            "instances": 8,
+            "partId": "ldraw:3700"
+          },
+          {
+            "kind": "compiled",
+            "reference": "32523.dat",
+            "official": "32523.dat",
+            "instances": 2,
+            "partId": "ldraw:32523",
+            "file": "parts/32523.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2022-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "32523.dat",
+              "title": "Technic Beam 3"
+            },
+            "sourceFiles": 24
+          },
+          {
+            "kind": "bundle",
+            "reference": "32270.dat",
+            "official": "32270.dat",
+            "instances": 1,
+            "partId": "ldraw:32270"
+          },
+          {
+            "kind": "compiled",
+            "reference": "32324.dat",
+            "official": "32324.dat",
+            "instances": 1,
+            "partId": "ldraw:32324",
+            "file": "parts/32324.dat",
+            "header": {
+              "author": "Marc Klein [marckl]",
+              "ldrawOrg": "Part UPDATE 2023-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "32324.dat",
+              "title": "Technic Brick 4 x 4 with Open Centre 2 x 2"
+            },
+            "sourceFiles": 36
+          },
+          {
+            "kind": "bundle",
+            "reference": "43093.dat",
+            "official": "43093.dat",
+            "instances": 2,
+            "partId": "ldraw:43093"
+          },
+          {
+            "kind": "compiled",
+            "reference": "32184.dat",
+            "official": "32184.dat",
+            "instances": 1,
+            "partId": "ldraw:32184",
+            "file": "parts/32184.dat",
+            "header": {
+              "author": "Jeff Boen [onyx]",
+              "ldrawOrg": "Part UPDATE 2009-03",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "32184.dat",
+              "title": "Technic Cross Block 1 x 3 (Axle/Pin/Axle)"
+            },
+            "sourceFiles": 27
+          },
+          {
+            "kind": "bundle",
+            "reference": "3702.dat",
+            "official": "3702.dat",
+            "instances": 2,
+            "partId": "ldraw:3702"
+          },
+          {
+            "kind": "compiled",
+            "reference": "6589.dat",
+            "official": "6589.dat",
+            "instances": 2,
+            "partId": "ldraw:6589",
+            "file": "parts/6589.dat",
+            "header": {
+              "author": "Jeroen Ottens [JeroenOttens]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6589.dat",
+              "title": "Technic Gear 12 Tooth Bevel"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "bundle",
+            "reference": "3176.dat",
+            "official": "3176.dat",
+            "instances": 4,
+            "partId": "ldraw:3176"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30363.dat",
+            "official": "30363.dat",
+            "instances": 1,
+            "partId": "ldraw:30363"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4865b.dat",
+            "official": "4865b.dat",
+            "instances": 2,
+            "partId": "ldraw:4865b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2780.dat",
+            "official": "2780.dat",
+            "instances": 8,
+            "partId": "ldraw:2780"
+          },
+          {
+            "kind": "compiled",
+            "reference": "60484.dat",
+            "official": "60484.dat",
+            "instances": 2,
+            "partId": "ldraw:60484",
+            "file": "parts/60484.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2009-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "60484.dat",
+              "title": "Technic Beam 3 x 3 T-shaped"
+            },
+            "sourceFiles": 25
+          },
+          {
+            "kind": "compiled",
+            "reference": "32269.dat",
+            "official": "32269.dat",
+            "instances": 1,
+            "partId": "ldraw:32269",
+            "file": "parts/32269.dat",
+            "header": {
+              "author": "Marc Klein [marckl]",
+              "ldrawOrg": "Part UPDATE 2024-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "32269.dat",
+              "title": "Technic Gear 20 Tooth Double Bevel"
+            },
+            "sourceFiles": 24
+          },
+          {
+            "kind": "bundle",
+            "reference": "32064a.dat",
+            "official": "32064a.dat",
+            "instances": 4,
+            "partId": "ldraw:32064a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6536.dat",
+            "official": "6536.dat",
+            "instances": 2,
+            "partId": "ldraw:6536"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3036.dat",
+            "official": "3036.dat",
+            "instances": 1,
+            "partId": "ldraw:3036"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070b.dat",
+            "official": "3070b.dat",
+            "instances": 2,
+            "partId": "ldraw:3070b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48336.dat",
+            "official": "48336.dat",
+            "instances": 2,
+            "partId": "ldraw:48336"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3956.dat",
+            "official": "3956.dat",
+            "instances": 1,
+            "partId": "ldraw:3956",
+            "file": "parts/3956.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3956.dat",
+              "title": "Bracket 2 x 2 - 2 x 2 Up"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "3832.dat",
+            "official": "3832.dat",
+            "instances": 4,
+            "partId": "ldraw:3832"
+          },
+          {
+            "kind": "bundle",
+            "reference": "50950.dat",
+            "official": "50950.dat",
+            "instances": 12,
+            "partId": "ldraw:50950"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3894.dat",
+            "official": "3894.dat",
+            "instances": 2,
+            "partId": "ldraw:3894",
+            "file": "parts/3894.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2010-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3894.dat",
+              "title": "Technic Brick 1 x 6 with Holes"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "compiled",
+            "reference": "55423.dat",
+            "official": "55423.dat",
+            "instances": 6,
+            "partId": "ldraw:55423",
+            "file": "parts/55423.dat",
+            "header": {
+              "author": "Matthew J. Chiles [mchiles]",
+              "ldrawOrg": "Shortcut UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "55423.dat",
+              "title": "Train Wheel for RC Train w Technic Axle Hole and Rubber Ring"
+            },
+            "sourceFiles": 30
+          },
+          {
+            "kind": "compiled",
+            "reference": "64415.dat",
+            "official": "64415.dat",
+            "instances": 1,
+            "partId": "ldraw:64415",
+            "file": "parts/64415.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "64415.dat",
+              "title": "~Train Buffer Beam with Plow"
+            },
+            "sourceFiles": 28
+          },
+          {
+            "kind": "compiled",
+            "reference": "64417.dat",
+            "official": "64417.dat",
+            "instances": 4,
+            "partId": "ldraw:64417",
+            "file": "parts/64417.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "64417.dat",
+              "title": "~Train Buffer Sealed Magnet Casing"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "compiled",
+            "reference": "64420.dat",
+            "official": "64420.dat",
+            "instances": 2,
+            "partId": "ldraw:64420",
+            "file": "parts/64420.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "64420.dat",
+              "title": "~Screw 42 x 5 Flat Tamper-Proof Slot"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "30526.dat",
+            "official": "30526.dat",
+            "instances": 1,
+            "partId": "ldraw:30526",
+            "file": "parts/30526.dat",
+            "header": {
+              "author": "Joseph H. Cardana",
+              "ldrawOrg": "Part UPDATE 2010-02",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "30526.dat",
+              "title": "Brick 1 x 2 with 2 Pins"
+            },
+            "sourceFiles": 18
+          },
+          {
+            "kind": "compiled",
+            "reference": "41678.dat",
+            "official": "41678.dat",
+            "instances": 1,
+            "partId": "ldraw:41678",
+            "file": "parts/41678.dat",
+            "header": {
+              "author": "Orion Pobursky [OrionP]",
+              "ldrawOrg": "Part UPDATE 2010-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "41678.dat",
+              "title": "Technic Cross Block 2 x 2 Split (Axle/Twin Pin)"
+            },
+            "sourceFiles": 25
+          },
+          {
+            "kind": "bundle",
+            "reference": "32062.dat",
+            "official": "32062.dat",
+            "instances": 2,
+            "partId": "ldraw:32062"
+          },
+          {
+            "kind": "compiled",
+            "reference": "42003.dat",
+            "official": "42003.dat",
+            "instances": 1,
+            "partId": "ldraw:42003",
+            "file": "parts/42003.dat",
+            "header": {
+              "author": "Donald Sutter [technog]",
+              "ldrawOrg": "Part UPDATE 2024-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "42003.dat",
+              "title": "Technic Cross Block 1 x 3 (Axle/Pin/Pin)"
+            },
+            "sourceFiles": 39
+          },
+          {
+            "kind": "compiled",
+            "reference": "64424.dat",
+            "official": "64424.dat",
+            "instances": 1,
+            "partId": "ldraw:64424",
+            "file": "parts/64424.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2022-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "64424.dat",
+              "title": "~Train Buffer Beam with Open Buffer Bottom and Long Cylinder for Sealed Magnet (Type 1)"
+            },
+            "sourceFiles": 36
+          },
+          {
+            "kind": "compiled",
+            "reference": "55982.dat",
+            "official": "55982.dat",
+            "instances": 1,
+            "partId": "ldraw:55982",
+            "file": "parts/55982.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "55982.dat",
+              "title": "Wheel Rim 14 x 18 with Axlehole"
+            },
+            "sourceFiles": 25
+          },
+          {
+            "kind": "bundle",
+            "reference": "4862.dat",
+            "official": "4862.dat",
+            "instances": 4,
+            "partId": "ldraw:4862"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4150.dat",
+            "official": "4150.dat",
+            "instances": 5,
+            "partId": "ldraw:4150"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4032a.dat",
+            "official": "4032a.dat",
+            "instances": 8,
+            "partId": "ldraw:4032a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "6192.dat",
+            "official": "6192.dat",
+            "instances": 2,
+            "partId": "ldraw:6192",
+            "file": "parts/6192.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2026-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6192.dat",
+              "title": "~Moved to 6192a"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "bundle",
+            "reference": "4081b.dat",
+            "official": "4081b.dat",
+            "instances": 4,
+            "partId": "ldraw:4081b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2921.dat",
+            "official": "2921.dat",
+            "instances": 8,
+            "partId": "ldraw:2921"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3032.dat",
+            "official": "3032.dat",
+            "instances": 2,
+            "partId": "ldraw:3032"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6636.dat",
+            "official": "6636.dat",
+            "instances": 10,
+            "partId": "ldraw:6636"
+          },
+          {
+            "kind": "compiled",
+            "reference": "4034.dat",
+            "official": "4034.dat",
+            "instances": 10,
+            "partId": "ldraw:4034",
+            "file": "parts/4034.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4034.dat",
+              "title": "Glass for Train Window 1 x 4 x 3"
+            },
+            "sourceFiles": 15
+          },
+          {
+            "kind": "bundle",
+            "reference": "6556.dat",
+            "official": "6556.dat",
+            "instances": 10,
+            "partId": "ldraw:6556"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3665a.dat",
+            "official": "3665a.dat",
+            "instances": 4,
+            "partId": "ldraw:3665a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "42446.dat",
+            "official": "42446.dat",
+            "instances": 4,
+            "partId": "ldraw:42446"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2877.dat",
+            "official": "2877.dat",
+            "instances": 18,
+            "partId": "ldraw:2877"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4093c.dat",
+            "official": "4093c.dat",
+            "instances": 1,
+            "partId": "ldraw:4093c"
+          },
+          {
+            "kind": "compiled",
+            "reference": "30039.dat",
+            "official": "30039.dat",
+            "instances": 4,
+            "partId": "ldraw:30039",
+            "file": "parts/30039.dat",
+            "header": {
+              "author": "Chris Dee [cwdee]",
+              "ldrawOrg": "Part Alias UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "30039.dat",
+              "title": "=Tile 1 x 1 with Groove"
+            },
+            "sourceFiles": 5
+          },
+          {
+            "kind": "bundle",
+            "reference": "4079.dat",
+            "official": "4079.dat",
+            "instances": 4,
+            "partId": "ldraw:4079"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4532.dat",
+            "official": "4532.dat",
+            "instances": 1,
+            "partId": "ldraw:4532"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4536.dat",
+            "official": "4536.dat",
+            "instances": 2,
+            "partId": "ldraw:4536"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3899.dat",
+            "official": "3899.dat",
+            "instances": 2,
+            "partId": "ldraw:3899"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3034.dat",
+            "official": "3034.dat",
+            "instances": 2,
+            "partId": "ldraw:3034"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3033.dat",
+            "official": "3033.dat",
+            "instances": 2,
+            "partId": "ldraw:3033"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4449-f1.dat",
+            "official": "4449-f1.dat",
+            "instances": 2,
+            "partId": "ldraw:4449-f1"
+          }
+        ],
+        "inlineParts": [],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 24,
+        "fetched": {
+          "requests": 534,
+          "found": 299,
+          "notFound": 235,
+          "bytes": 859022
+        },
+        "timings": {
+          "bakeMs": 9.300000000745058,
+          "resolveMs": 3195.5,
+          "totalMs": 3204.800000000745
+        },
+        "importMs": 3609.5999999996275,
+        "sceneMs": 1323
+      }
+    ]
+  }
+}
