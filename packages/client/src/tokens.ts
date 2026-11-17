@@ -1,6 +1,7 @@
 import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
+import type { ICatalogSearch } from "./catalog/catalog-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
@@ -29,6 +30,9 @@ export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor"
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
+export const CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
+  "brr.client.CatalogSearch",
+);
 export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Symbol.for(
   "brr.client.ImportWorkerFactory",
 );

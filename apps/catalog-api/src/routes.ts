@@ -1,4 +1,6 @@
 import {
+  BUNDLE_MANIFEST_KEY_PATTERN,
+  BundleSearchParams,
   MAX_THEME_ID_DIGITS,
   RELEASE_ID_PATTERN,
   SearchParams,
@@ -24,7 +26,12 @@ export type Route =
       readonly themeId: number;
       readonly params: ThemePageParams;
     }
-  | { readonly kind: "sqlite"; readonly release: string };
+  | { readonly kind: "sqlite"; readonly release: string }
+  | {
+      readonly kind: "bundle-search";
+      readonly manifest: string;
+      readonly params: BundleSearchParams;
+    };
 
 export type RouteResult =
   | { readonly kind: "route"; readonly route: Route }
@@ -42,6 +49,7 @@ const themePath = new RegExp(
   `^/v1/catalogs/${releaseSegment}/themes/([0-9]{1,${MAX_THEME_ID_DIGITS}})$`,
 );
 const sqlitePath = new RegExp(`^/v1/catalogs/${releaseSegment}/catalog\\.sqlite$`);
+const bundleSearchPath = new RegExp(`^/v1/bundles/(${BUNDLE_MANIFEST_KEY_PATTERN})/search$`);
 
 const found = (route: Route): RouteResult => ({ kind: "route", route });
 const invalid = (message: string): RouteResult => ({ kind: "invalid", message });
@@ -67,6 +75,10 @@ export function parseRoute(url: URL): RouteResult {
   }
   const sqlite = sqlitePath.exec(path);
   if (sqlite?.[1] !== undefined) return found({ kind: "sqlite", release: sqlite[1] });
+  const bundleSearch = bundleSearchPath.exec(path);
+  if (bundleSearch?.[1] !== undefined) {
+    return parseBundleSearch(bundleSearch[1], url.searchParams);
+  }
   return { kind: "not-found" };
 }
 
@@ -99,6 +111,13 @@ export function canonicalUrl(origin: string, route: Route): string {
     }
     case "sqlite":
       return sqliteHref(origin, route.release);
+    case "bundle-search": {
+      const params = new URLSearchParams({
+        q: route.params.q.join(" "),
+        limit: String(route.params.limit),
+      });
+      return `${origin}/v1/bundles/${route.manifest}/search?${params.toString()}`;
+    }
     default: {
       const exhaustive: never = route;
       throw new Error(`unhandled route ${String(exhaustive)}`);
@@ -126,6 +145,12 @@ function parseSearch(release: string, params: URLSearchParams): RouteResult {
   const parsed = decode(SearchParams, Object.fromEntries(params), "query");
   if (!parsed.ok) return invalid(issueText(parsed.issues));
   return found({ kind: "search", release, params: parsed.value });
+}
+
+function parseBundleSearch(manifest: string, params: URLSearchParams): RouteResult {
+  const parsed = decode(BundleSearchParams, Object.fromEntries(params), "query");
+  if (!parsed.ok) return invalid(issueText(parsed.issues));
+  return found({ kind: "bundle-search", manifest, params: parsed.value });
 }
 
 function parseInventory(release: string, encodedSetNum: string): RouteResult {

@@ -1,7 +1,9 @@
 locals {
   wrangler    = jsondecode(file("${path.module}/../../apps/catalog-api/wrangler.json"))
   d1          = one(local.wrangler.d1_databases)
-  r2          = one(local.wrangler.r2_buckets)
+  r2_buckets  = { for bucket in local.wrangler.r2_buckets : bucket.binding => bucket }
+  r2          = local.r2_buckets["CATALOG_RELEASES"]
+  bundle_r2   = local.r2_buckets["PART_BUNDLES"]
   bundle_path = abspath("${path.module}/${var.worker_bundle}")
   part_bundle = jsondecode(file("${path.module}/part-bundles.json"))
   ldraw       = jsondecode(file("${path.module}/ldraw-library.json"))
@@ -127,6 +129,11 @@ resource "cloudflare_workers_script" "catalog_api" {
         name        = local.r2.binding
         bucket_name = cloudflare_r2_bucket.catalog_releases.name
       },
+      {
+        type        = "r2_bucket"
+        name        = local.bundle_r2.binding
+        bucket_name = cloudflare_r2_bucket.part_bundles.name
+      },
     ],
     [
       for limiter in local.wrangler.ratelimits : {
@@ -143,6 +150,13 @@ resource "cloudflare_workers_script" "catalog_api" {
 
   observability = {
     enabled = local.wrangler.observability.enabled
+  }
+
+  lifecycle {
+    precondition {
+      condition     = local.bundle_r2.bucket_name == local.part_bundle.bucket_name
+      error_message = "apps/catalog-api/wrangler.json binds PART_BUNDLES to a bucket other than bucket_name in part-bundles.json."
+    }
   }
 }
 

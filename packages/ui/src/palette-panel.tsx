@@ -6,6 +6,7 @@ import {
   TRACK_ITEM_ID,
   TRACK_PIECE_PREFIX,
   colorDisplayName,
+  paletteResults,
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
@@ -348,20 +349,13 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
     [catalog, trackKey],
   );
   const searching = query.trim() !== "";
-  const hits = useMemo(
-    () => (searching ? index.search(query, filter) : []),
-    [index, query, filter, searching],
+  useEffect(() => editor.searchCatalog(query), [editor, query]);
+  const results = useMemo(
+    () => paletteResults(index, query, filter, snapshot.catalogSearch),
+    [index, query, filter, snapshot.catalogSearch],
   );
-  const counts = useMemo(() => {
-    const all = index.search(query, "all");
-    return new Map<PaletteFilter, number>([
-      ["all", all.length],
-      ...PALETTE_CATEGORIES.map(
-        (category) =>
-          [category, all.filter((hit) => hit.entry.category === category).length] as const,
-      ),
-    ]);
-  }, [index, query]);
+  const hits = searching ? results.hits : [];
+  const { counts } = results;
   const shownHighlight = Math.min(highlight, Math.max(hits.length - 1, 0));
 
   const pick = (item: CatalogItemView): void => {
@@ -462,6 +456,11 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
             snapshot={snapshot}
           />
         ))
+      )}
+      {searching && results.status === "offline" && (
+        <p className="palette-hint" data-search-offline>
+          Search offline: showing palette matches only.
+        </p>
       )}
       {searching && hits.length === 0 && (
         <p className="palette-hint" data-no-results>

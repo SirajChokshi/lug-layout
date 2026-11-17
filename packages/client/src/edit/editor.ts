@@ -87,7 +87,8 @@ import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
-import { CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import { CATALOG_SEARCH, CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import type { CatalogSearchView, ICatalogSearch } from "../catalog/catalog-search.ts";
 import {
   TRACK_SYSTEM,
   TrackDrawing,
@@ -439,6 +440,7 @@ export interface EditorSnapshot {
   readonly roadStroke: RoadStrokeView | null;
   readonly lastRoadStroke: RoadStrokeResult | null;
   readonly roadErase: boolean;
+  readonly catalogSearch: CatalogSearchView;
 }
 
 export interface EditorCredits {
@@ -511,6 +513,7 @@ export interface IEditor extends IBomSource {
   setRoadErase(erase: boolean): void;
   playSetup(): PlaySetup | null;
   loadPlayMeshes(): void;
+  searchCatalog(query: string): void;
   dump(): EditorDump;
 }
 
@@ -806,6 +809,7 @@ export class Editor implements IEditor {
     roadStroke: null,
     lastRoadStroke: null,
     roadErase: false,
+    catalogSearch: { query: "", status: "off", hits: [] },
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -894,8 +898,11 @@ export class Editor implements IEditor {
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
     @inject(CREDITS) private readonly credits: ICredits,
     @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
+    @inject(CATALOG_SEARCH) private readonly catalogSearch: ICatalogSearch,
   ) {
     this.placed = new PlacedChunks(backend);
+    this.state = { ...this.state, catalogSearch: catalogSearch.view() };
+    catalogSearch.subscribe(() => this.update({ catalogSearch: catalogSearch.view() }));
   }
 
   subscribe(listener: () => void): () => void {
@@ -2360,6 +2367,10 @@ export class Editor implements IEditor {
 
   setSnapModules(snap: boolean): void {
     this.update({ snapModules: snap });
+  }
+
+  searchCatalog(query: string): void {
+    this.catalogSearch.search(query);
   }
 
   setRoadErase(erase: boolean): void {

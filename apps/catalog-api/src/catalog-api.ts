@@ -1,5 +1,11 @@
-import type { CatalogRelease, ReleaseResponse, SearchResponse } from "@brr/schema/catalog-api";
+import type {
+  BundleSearchResponse,
+  CatalogRelease,
+  ReleaseResponse,
+  SearchResponse,
+} from "@brr/schema/catalog-api";
 import type * as v from "valibot";
+import { BundleSearchDirectory, type BundleReader } from "./bundle-search.ts";
 import {
   searchCatalog,
   setInventory,
@@ -11,13 +17,14 @@ import {
   CLIENT_ERROR_CACHE,
   NO_STORE,
   POINTER_CACHE,
+  immutableBundleJson,
   immutableJson,
   json,
   matchesEtag,
   notModified,
   preflight,
   problem,
-  releaseEtag,
+  versionEtag,
   tooManyRequests,
   withCors,
   withoutBody,
@@ -36,6 +43,7 @@ export interface CatalogEnv {
   readonly CATALOG_RELEASES: R2Bucket;
   readonly QUERY_RATE_LIMIT: RateLimit;
   readonly FILE_RATE_LIMIT: RateLimit;
+  readonly PART_BUNDLES: BundleReader;
 }
 
 export const DATA_ATTRIBUTION = "Catalog data from Rebrickable (https://rebrickable.com)";
@@ -44,9 +52,13 @@ export interface EdgeContext {
   waitUntil(promise: Promise<unknown>): void;
 }
 
-type VersionedRoute = Exclude<Route, { kind: "current" } | { kind: "current-redirect" }>;
+type VersionedRoute = Exclude<
+  Route,
+  { kind: "current" } | { kind: "current-redirect" } | { kind: "bundle-search" }
+>;
 
 const releases = new ReleaseDirectory();
+const bundleIndexes = new BundleSearchDirectory();
 
 export async function handleRequest(
   request: Request,
@@ -85,6 +97,9 @@ async function respond(
     }
   }
   const route = parsed.route;
+  if (route.kind === "bundle-search") {
+    return respondBundleSearch(route, request, url, env, context, edgeCache);
+  }
   const db = env.CATALOG_DB.withSession("first-unconstrained");
   if (route.kind === "current" || route.kind === "current-redirect") {
     return respondCurrent(route, url, db);
@@ -92,7 +107,7 @@ async function respond(
   if (route.kind === "sqlite") {
     return respondSqlite(route.release, request, url, env, context, edgeCache, db);
   }
-  if (matchesEtag(request, releaseEtag(route.release))) return notModified(route.release);
+  if (matchesEtag(request, versionEtag(route.release))) return notModified(route.release);
   const cacheKey = new Request(canonicalUrl(url.origin, route), { method: "GET" });
   const cached = await edgeCache.match(cacheKey);
   if (cached !== undefined) return tagged(cached, "HIT");
@@ -100,6 +115,47 @@ async function respond(
   const release = await releases.find(db, route.release, Date.now());
   if (release === undefined) return unknownRelease(route.release);
   const fresh = await respondVersioned(route, release, url.origin, db);
+  context.waitUntil(edgeCache.put(cacheKey, fresh.clone()));
+  return tagged(fresh, "MISS");
+}
+
+async function respondBundleSearch(
+  route: Extract<Route, { kind: "bundle-search" }>,
+  request: Request,
+  url: URL,
+  env: CatalogEnv,
+  context: EdgeContext,
+  edgeCache: Cache,
+): Promise<Response> {
+  if (matchesEtag(request, versionEtag(route.manifest))) return notModified(route.manifest);
+  const cacheKey = new Request(canonicalUrl(url.origin, route), { method: "GET" });
+  const cached = await edgeCache.match(cacheKey);
+  if (cached !== undefined) return tagged(cached, "HIT");
+  if (!(await allowed(env.QUERY_RATE_LIMIT, request))) return tooManyRequests();
+  const loaded = await bundleIndexes.find(env.PART_BUNDLES, route.manifest);
+  switch (loaded.kind) {
+    case "missing":
+      return problem(404, `part bundle manifest ${route.manifest} is not published`, NO_STORE);
+    case "unreadable":
+      return problem(
+        502,
+        `part bundle manifest ${route.manifest} does not decode: ${loaded.message}`,
+        NO_STORE,
+      );
+    case "found":
+      break;
+    default: {
+      const exhaustive: never = loaded;
+      throw new Error(`unhandled bundle index ${String(exhaustive)}`);
+    }
+  }
+  const { q, limit } = route.params;
+  const body: v.InferInput<typeof BundleSearchResponse> = {
+    manifest: route.manifest,
+    query: q.join(" "),
+    results: [...loaded.index.search(q, limit)],
+  };
+  const fresh = immutableBundleJson(body, route.manifest);
   context.waitUntil(edgeCache.put(cacheKey, fresh.clone()));
   return tagged(fresh, "MISS");
 }
