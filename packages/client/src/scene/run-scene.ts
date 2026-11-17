@@ -8,12 +8,7 @@ import {
 } from "@brr/catalog";
 import { TrackGraph, type TrackLayout } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
-import {
-  INSTANCE_MATRIX_FLOATS,
-  SCENE_BACKEND,
-  type ChunkInstances,
-  type ISceneBackend,
-} from "@brr/render";
+import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";
 import type { SimFrameLayout, SimLoad, SimLoaded, TrainSpec, VehicleSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import {
@@ -23,11 +18,8 @@ import {
   type RigidBodyInstances,
 } from "../sim/consist.ts";
 import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
-import {
-  BOX_FLOATS,
-  type IRunningGear,
-  type RunningGearSource,
-} from "../running-gear/running-gear-editor.ts";
+import { instanceBoxes } from "../running-gear/instance-boxes.ts";
+import type { IRunningGear, RunningGearSource } from "../running-gear/running-gear-editor.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { RUNNING_GEAR, SIM_CLIENT } from "../tokens.ts";
 import { plateDepthBelowOrigin } from "./part-footprint.ts";
@@ -134,33 +126,6 @@ interface PlacedVehicle {
 }
 
 const NO_BODY = -1;
-
-function instanceBoxes(model: PartModel, bundle: PartBundle): Float32Array {
-  const out = new Float32Array(model.instanceCount * BOX_FLOATS);
-  const m = model.matrices;
-  for (let i = 0; i < model.instanceCount; i++) {
-    const part = bundle.parts[model.partIndex[i] ?? 0];
-    const o = i * INSTANCE_MATRIX_FLOATS;
-    const b = i * BOX_FLOATS;
-    for (let axis = 0; axis < 3; axis++) {
-      out[b + axis] = Number.POSITIVE_INFINITY;
-      out[b + 3 + axis] = Number.NEGATIVE_INFINITY;
-    }
-    if (!part) continue;
-    for (let corner = 0; corner < 8; corner++) {
-      const x = corner & 1 ? part.boundsMax[0] : part.boundsMin[0];
-      const y = corner & 2 ? part.boundsMax[1] : part.boundsMin[1];
-      const z = corner & 4 ? part.boundsMax[2] : part.boundsMin[2];
-      for (let axis = 0; axis < 3; axis++) {
-        const r = o + axis * 4;
-        const value = (m[r] ?? 0) * x + (m[r + 1] ?? 0) * y + (m[r + 2] ?? 0) * z + (m[r + 3] ?? 0);
-        out[b + axis] = Math.min(out[b + axis] ?? 0, value);
-        out[b + 3 + axis] = Math.max(out[b + 3 + axis] ?? 0, value);
-      }
-    }
-  }
-  return out;
-}
 
 function railTopY(
   layout: TrackLayout,

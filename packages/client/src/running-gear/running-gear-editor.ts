@@ -15,14 +15,13 @@ import {
   type VehicleOverride,
 } from "./override.ts";
 import type { IRunningGearOverrideStore } from "./override-store.ts";
-
-export const BOX_FLOATS = 6;
+import { BOX_FLOATS } from "../edit/local-box.ts";
 
 export interface GearModelSource {
   readonly name: string;
   readonly sha256: string;
   readonly vehicles: ReadonlyArray<BakedVehicle>;
-  readonly instanceBoxes: Float32Array;
+  readonly instanceBoxes: Float64Array;
 }
 
 export interface GearBox {
@@ -242,7 +241,7 @@ export class RunningGearEditor implements IRunningGear {
     const baked = selected ? source?.vehicles[selected.vehicle] : undefined;
     const draft = this.draft;
     if (!source || !selected || !baked || !draft) return;
-    const { issues } = effectiveVehicle(baked, draft);
+    const { issues } = effectiveVehicle(baked, draft, source.instanceBoxes);
     if (issues.length > 0) {
       this.error = `not saved, this running gear cannot run: ${issues.join("; ")}`;
       this.publish();
@@ -293,7 +292,7 @@ export class RunningGearEditor implements IRunningGear {
     vehicle: number,
   ): EffectiveVehicle | null {
     const saved = this.storedVehicle(sha256, vehicle);
-    return saved ? effectiveVehicle(baked, saved) : null;
+    return saved ? effectiveVehicle(baked, saved, this.boxesFor(sha256)) : null;
   }
 
   private async persist(work: () => Promise<void>): Promise<void> {
@@ -308,6 +307,12 @@ export class RunningGearEditor implements IRunningGear {
       this.busy = false;
       this.publish();
     }
+  }
+
+  private boxesFor(sha256: string): Float64Array {
+    const source = this.models.find((m) => m.sha256 === sha256);
+    if (!source) throw new Error(`no model with sha256 ${sha256} is loaded`);
+    return source.instanceBoxes;
   }
 
   private source(model: string): GearModelSource | undefined {
@@ -360,7 +365,7 @@ export class RunningGearEditor implements IRunningGear {
     const selected = this.selected;
     const detected = selected ? source?.vehicles[selected.vehicle] : undefined;
     if (!source || !selected || !detected) return null;
-    const result = effectiveVehicle(detected, this.draft ?? undefined);
+    const result = effectiveVehicle(detected, this.draft ?? undefined, source.instanceBoxes);
     const saved = this.savedResult(source.sha256, detected, selected.vehicle);
     const shown = result.vehicle;
     const local = (p: Vec3Tuple): Vec3Tuple =>

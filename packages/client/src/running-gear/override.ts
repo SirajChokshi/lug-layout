@@ -1,6 +1,7 @@
 import type { BakedVehicle, Vec3Tuple, VehicleBogie, VehicleCoupler } from "@brr/catalog";
 import { runningGearSpanProblem } from "@brr/domain";
 import { vehicleSpec } from "../sim/consist.ts";
+import { distanceOutside, planBox, unionBox, type PlanBox } from "./instance-boxes.ts";
 
 export const RUNNING_GEAR_OVERRIDE_VERSION = 1;
 
@@ -106,6 +107,7 @@ function chooseGuides(
 export function effectiveVehicle(
   baked: BakedVehicle,
   override: VehicleOverride | undefined,
+  boxes: Float64Array,
 ): EffectiveVehicle {
   if (!override) return { vehicle: baked, issues: [] };
   const issues: string[] = [];
@@ -138,6 +140,8 @@ export function effectiveVehicle(
     fixed,
   );
   if (typeof guides === "string") issues.push(guides);
+  const faces = new Map((override.couplers ?? []).map((c) => [c.instance, c.face]));
+  issues.push(...partBoundsIssues(baked, bogies, faces, boxes));
   if (issues.length > 0 || typeof guides === "string") return { vehicle: null, issues };
   const yaw = Math.atan2(guides.front[2] - guides.rear[2], guides.front[0] - guides.rear[0]);
   const frame: PlanFrame = {
@@ -147,7 +151,6 @@ export function effectiveVehicle(
     sin: Math.sin(yaw),
   };
   const half = Math.hypot(guides.front[0] - guides.rear[0], guides.front[2] - guides.rear[2]) / 2;
-  const faces = new Map((override.couplers ?? []).map((c) => [c.instance, c.face]));
   const placed = (coupler: VehicleCoupler | null): VehicleCoupler | null =>
     coupler && {
       instance: coupler.instance,
@@ -179,6 +182,69 @@ export function effectiveVehicle(
   };
   const problem = runningGearProblem(vehicle);
   return problem ? { vehicle: null, issues: [problem] } : { vehicle, issues: [] };
+}
+
+function ldu(value: number): string {
+  return `${Number(value.toPrecision(3))} LDU`;
+}
+
+function boxInFrame(f: PlanFrame, box: PlanBox): PlanBox {
+  const corners = [
+    toFrame(f, [box.minX, 0, box.minZ]),
+    toFrame(f, [box.minX, 0, box.maxZ]),
+    toFrame(f, [box.maxX, 0, box.minZ]),
+    toFrame(f, [box.maxX, 0, box.maxZ]),
+  ];
+  return {
+    minX: Math.min(...corners.map((c) => c[0])),
+    maxX: Math.max(...corners.map((c) => c[0])),
+    minZ: Math.min(...corners.map((c) => c[2])),
+    maxZ: Math.max(...corners.map((c) => c[2])),
+  };
+}
+
+function partBoundsIssues(
+  baked: BakedVehicle,
+  bogies: ReadonlyArray<BogieOverride>,
+  faces: ReadonlyMap<number, Vec3Tuple>,
+  boxes: Float64Array,
+): string[] {
+  const detected = frameOf(baked);
+  const issues: string[] = [];
+  const localBox = (instance: number): PlanBox | null => {
+    const box = planBox(boxes, instance);
+    return box && boxInFrame(detected, box);
+  };
+  for (const coupler of [baked.frontCoupler, baked.rearCoupler]) {
+    if (!coupler) continue;
+    const box = localBox(coupler.instance);
+    const moved = faces.get(coupler.instance);
+    const face = moved ? toFrame(detected, moved) : coupler.face;
+    if (!box) issues.push(`part ${coupler.instance} has no box to bound its coupling face`);
+    else {
+      const outside = distanceOutside(box, face[0], face[2]);
+      if (outside > 0) {
+        issues.push(
+          `the coupling face of part ${coupler.instance} lies ${ldu(outside)} outside that part's box`,
+        );
+      }
+    }
+  }
+  bogies.forEach((bogie, b) => {
+    const parts = bogie.instances.map(localBox);
+    if (parts.length === 0) return;
+    const footprint = parts.every((box) => box !== null) ? unionBox(parts) : null;
+    if (!footprint) {
+      issues.push(`bogie ${b + 1} has a part with no box to bound its pivot`);
+      return;
+    }
+    const pivot = toFrame(detected, bogie.pivot);
+    const outside = distanceOutside(footprint, pivot[0], pivot[2]);
+    if (outside > 0) {
+      issues.push(`bogie ${b + 1}'s pivot lies ${ldu(outside)} outside the footprint of its parts`);
+    }
+  });
+  return issues;
 }
 
 function runningGearProblem(vehicle: BakedVehicle): string | null {
