@@ -10,6 +10,7 @@ const MODES = ["select", "place", "track", "road", "plan"] as const;
 type Mode = (typeof MODES)[number];
 
 const READY_TIMEOUT_MS = 150_000;
+const ACTION_TIMEOUT_MS = 30_000;
 const CLICK_SAMPLE_STEP_PX = 8;
 
 interface Viewport {
@@ -92,13 +93,16 @@ function measureOverlays(stepPx: number): OverlayBox[] {
         if (owner !== undefined && owner.element !== element) caught.add(owner.name);
       }
     }
+    const style = getComputedStyle(element);
+    const spillX = style.overflowX === "visible" ? element.scrollWidth - element.clientWidth : 0;
+    const spillY = style.overflowY === "visible" ? element.scrollHeight - element.clientHeight : 0;
     return {
       name,
       left: rect.left,
       top: rect.top,
       right: rect.right,
       bottom: rect.bottom,
-      spillPx: element.scrollWidth - element.clientWidth,
+      spillPx: Math.max(spillX, spillY),
       clicksCaughtBy: [...caught],
     };
   });
@@ -136,7 +140,7 @@ async function expectOverlaysApart(page: Page, viewport: Viewport): Promise<void
   expect(intersections(boxes)).toEqual([]);
   expect(offScreen(boxes, viewport)).toEqual([]);
   expect(
-    boxes.filter((box) => box.spillPx > 0).map((box) => `${box.name} spills sideways`),
+    boxes.filter((box) => box.spillPx > 0).map((box) => `${box.name} spills out of its box`),
   ).toEqual([]);
   expect(
     boxes.flatMap((box) =>
@@ -147,7 +151,7 @@ async function expectOverlaysApart(page: Page, viewport: Viewport): Promise<void
 
 for (const viewport of VIEWPORTS) {
   test.describe(`${viewport.width}×${viewport.height}`, () => {
-    test.use({ viewport });
+    test.use({ viewport, actionTimeout: ACTION_TIMEOUT_MS });
     for (const mode of MODES) {
       test(`overlays never overlap or catch each other's clicks in ${mode} mode, stats folded or open`, async ({
         page,
