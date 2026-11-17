@@ -1,7 +1,9 @@
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
-use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference};
+use crate::flatten::{
+    ConnectorReference, FlattenError, Flattened, Flattener, Library, Lod, StudReference,
+};
 use crate::glb;
 use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
@@ -38,6 +40,7 @@ pub enum CompileError {
 pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
+    pub technic_hole_primitives: Vec<String>,
     pub unofficial_allowlist: Vec<String>,
 }
 
@@ -70,6 +73,7 @@ pub struct CompiledPart {
     pub path: String,
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
+    pub technic_holes: Vec<ConnectorReference>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
 }
 
@@ -104,7 +108,8 @@ pub fn compile_part<L: Library>(
     reference: &str,
     options: &CompileOptions,
 ) -> Result<CompiledPart, CompileError> {
-    let mut flattener = Flattener::new(library, options.lod, &options.stud_primitives);
+    let mut flattener = Flattener::new(library, options.lod, &options.stud_primitives)
+        .with_technic_holes(&options.technic_hole_primitives);
     let path =
         flattener
             .resolve(reference)
@@ -135,10 +140,21 @@ pub fn compile_part<L: Library>(
             },
         })
         .collect();
+    let technic_holes = flattened
+        .technic_holes
+        .iter()
+        .map(|hole| ConnectorReference {
+            primitive: hole.primitive.clone(),
+            matrix: Affine {
+                m: hole.matrix.ldraw_to_y_up().m.map(|v| v + 0.0),
+            },
+        })
+        .collect();
     Ok(CompiledPart {
         path,
         mesh,
         studs,
+        technic_holes,
         flattened_files: flattened.files,
     })
 }
@@ -162,6 +178,11 @@ impl CompiledPart {
             .iter()
             .map(|s| json!({ "primitive": s.primitive, "color": s.color, "matrix": s.matrix.m }))
             .collect();
+        let technic_holes: Vec<Value> = self
+            .technic_holes
+            .iter()
+            .map(|h| json!({ "primitive": h.primitive, "matrix": h.matrix.m }))
+            .collect();
         let [min, max] = self.mesh.bounds().unwrap_or([[0.0; 3]; 2]);
         json!({
             "unit": "LDU",
@@ -177,6 +198,7 @@ impl CompiledPart {
             },
             "sources": sources,
             "studs": studs,
+            "technicHoles": technic_holes,
             "bounds": { "min": min, "max": max },
         })
     }

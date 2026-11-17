@@ -463,6 +463,7 @@ export const PartExtras = v.object({
     v.object({ path: v.string(), author: v.string(), license: v.nullable(v.string()) }),
   ),
   studs: v.array(v.object({ primitive: v.string(), color: Integer, matrix: Matrix })),
+  technicHoles: v.array(v.object({ primitive: v.string(), matrix: Matrix })),
   bounds: Bounds,
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;
@@ -552,6 +553,7 @@ export const Palette = v.strictObject({
   source: BundleSource,
   config: v.array(v.string()),
   studPrimitives: v.array(v.string()),
+  technicHolePrimitives: v.array(v.string()),
   unofficialAllowlist: v.array(v.string()),
   parts: v.array(
     v.strictObject({

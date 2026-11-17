@@ -7,6 +7,7 @@
   },
   "config": ["LDConfig.ldr"],
   "studPrimitives": ["stud.dat", "stud2.dat"],
+  "technicHolePrimitives": ["peghole.dat"],
   "unofficialAllowlist": [],
   "parts": [
     {

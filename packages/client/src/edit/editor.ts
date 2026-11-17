@@ -24,6 +24,9 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
   type SurfaceHit,
+  TechnicJoins,
+  placedHoleEnds,
+  type HoleEnds,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -77,7 +80,8 @@ import {
 } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
-import { connectionMarkers, snapToStuds } from "./stud-snap.ts";
+import { STUD_SNAP_RADIUS_STUDS, acceptable, connectionMarkers, snapToStuds } from "./stud-snap.ts";
+import { holeMarkers } from "./technic-holes.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
@@ -227,11 +231,19 @@ export interface RefusedEdit {
   readonly message: string;
 }
 
+interface TechnicSnap {
+  readonly x: number;
+  readonly z: number;
+  readonly at: LandingAt;
+}
+
 export interface GhostCheckView {
   readonly yPlates: number;
   readonly refusal: Refusal | null;
   readonly studsEngaged: number;
   readonly snappedStuds: readonly [number, number] | null;
+  readonly technicJoins: number;
+  readonly snappedToTechnic: boolean;
   readonly trackJoins: number;
   readonly uncertifiedTrack: number;
 }
@@ -619,6 +631,8 @@ export class Editor implements IEditor {
   private ghostCheck: PlacementCheck | null = null;
   private ghostLanding: LandingAt = { kind: "height", yPlates: 0 };
   private snappedStuds: readonly [number, number] | null = null;
+  private snappedToTechnic = false;
+  private technicJoins = new TechnicJoins();
   private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
   private connectionMarkers: ReadonlyArray<EdgeMarker> = [];
   private readonly surface: SurfaceHit = { cellX: 0, cellZ: 0, topLdu: 0, x: 0, z: 0 };
@@ -1147,6 +1161,78 @@ export class Editor implements IEditor {
     this.snappedStuds = snap.offsetStuds;
   }
 
+  private ghostHoleEnds(placeable: Placeable, yPlates: number): HoleEnds {
+    return placedHoleEnds(placeable.technic, {
+      x: this.hoverX,
+      z: this.hoverZ,
+      yLdu: yPlates * PLATE_LDU,
+      rot: this.ghostRot,
+    });
+  }
+
+  private roadRefusedAt(placeable: Placeable, x: number, z: number, rot: number): boolean {
+    const surface = placeable.road;
+    if (!surface || !this.state.snapRoads) return false;
+    const fit = this.roadNetwork.fit({ id: -1, x, z, yLdu: 0, rot, surface });
+    return fit.mismatchedCells > 0 || fit.overlappingCells > 0;
+  }
+
+  private technicSnap(placeable: Placeable, rot: number): TechnicSnap | null {
+    const { hoverX, hoverZ } = this;
+    const yPlates = this.checkAt(placeable, hoverX, hoverZ, rot, [], this.ghostLanding).yPlates;
+    const radius =
+      placeable.layer === "first" ? this.baseplateGrid : STUD_SNAP_RADIUS_STUDS * STUD_LDU;
+    const ends = placedHoleEnds(placeable.technic, {
+      x: hoverX,
+      z: hoverZ,
+      yLdu: yPlates * PLATE_LDU,
+      rot,
+    });
+    const shifts = this.technicJoins.shiftsWithin(ends, radius);
+    const at: LandingAt = { kind: "height", yPlates };
+    for (let s = 0; s < shifts.length; s += 2) {
+      const dx = shifts[s] ?? 0;
+      const dz = shifts[s + 1] ?? 0;
+      if (dx % STUD_LDU !== 0 || dz % STUD_LDU !== 0) continue;
+      const x = hoverX + dx;
+      const z = hoverZ + dz;
+      if (this.roadRefusedAt(placeable, x, z, rot)) continue;
+      if (!acceptable(this.checkAt(placeable, x, z, rot, [], at))) continue;
+      return { x, z, at };
+    }
+    return null;
+  }
+
+  private snapGhostToTechnic(): boolean {
+    const placeable = this.active;
+    if (!placeable || !this.hovering || placeable.technic.count === 0) return false;
+    const snap = this.technicSnap(placeable, this.ghostRot);
+    if (!snap) return false;
+    this.hoverX = snap.x;
+    this.hoverZ = snap.z;
+    this.ghostLanding = snap.at;
+    this.snappedToTechnic = true;
+    return true;
+  }
+
+  private refreshTechnic(): void {
+    const joins = new TechnicJoins();
+    for (const model of this.placed.models()) {
+      const { handle, placeable } = model;
+      if (placeable.technic.count === 0) continue;
+      joins.add(
+        this.placed.ownerOf(model),
+        placedHoleEnds(placeable.technic, {
+          x: handle.x,
+          z: handle.z,
+          yLdu: handle.yPlates * PLATE_LDU,
+          rot: handle.rot,
+        }),
+      );
+    }
+    this.technicJoins = joins;
+  }
+
   private aimGhost(): GhostAim {
     this.hoverX = this.cursorX;
     this.hoverZ = this.cursorZ;
@@ -1157,7 +1243,12 @@ export class Editor implements IEditor {
     return { snap, moduleFit };
   }
 
-  private showConnections(placeable: Placeable, check: PlacementCheck): number {
+  private showConnections(
+    placeable: Placeable,
+    check: PlacementCheck,
+    holes: HoleEnds,
+    joinedHoles: Uint8Array,
+  ): number {
     const engaged =
       placeable.layer === "upper"
         ? this.placed.engagedStuds(
@@ -1177,7 +1268,7 @@ export class Editor implements IEditor {
       },
       check.yPlates,
       check.overlap,
-    );
+    ).concat(holeMarkers(holes, joinedHoles));
     this.showMarkers();
     return engaged?.count ?? 0;
   }
@@ -1201,13 +1292,18 @@ export class Editor implements IEditor {
     this.ghostCheck = check;
     this.hoverYPlates = check.yPlates;
     const track = this.active.track;
-    const studsEngaged = this.showConnections(this.active, check);
+    const holes = this.ghostHoleEnds(this.active, check.yPlates);
+    const joinedHoles = new Uint8Array(holes.count);
+    const technicJoins = this.technicJoins.joinsAt(holes, 0, 0, joinedHoles);
+    const studsEngaged = this.showConnections(this.active, check, holes, joinedHoles);
     this.update({
       ghost: {
         yPlates: check.yPlates,
         refusal: checkRefusal(this.active.label, check),
         studsEngaged,
         snappedStuds: this.snappedStuds,
+        technicJoins,
+        snappedToTechnic: this.snappedToTechnic,
         trackJoins: this.trackJoinsAt(this.active, check.yPlates),
         uncertifiedTrack: track?.uncertified.length ?? 0,
       },
@@ -1394,6 +1490,8 @@ export class Editor implements IEditor {
   private snapGhost(moduleFit: ModuleFitView | null): RoadSnapView | null {
     this.ghostLanding = this.cursorLanding();
     this.snappedStuds = null;
+    this.snappedToTechnic = false;
+    if (!moduleFit && this.snapGhostToTechnic()) return this.roadFit();
     const joined = this.snapGhostToRoad();
     const onTrack = this.snapGhostToTrack();
     if (joined || onTrack) return joined ?? this.roadFit();
@@ -1516,6 +1614,7 @@ export class Editor implements IEditor {
     }
     this.refreshModules();
     this.refreshRoads();
+    this.refreshTechnic();
     this.syncHeldTrack();
     const { snap, moduleFit } = this.aimGhost();
     this.update({

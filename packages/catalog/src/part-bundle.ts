@@ -48,6 +48,7 @@ export interface PartAsset {
   readonly studPrimitiveIndex: Uint8Array;
   readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
+  readonly holeMatrices: Float32Array;
 }
 
 export interface StudPrimitiveAsset {

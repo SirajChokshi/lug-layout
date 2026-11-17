@@ -154,3 +154,16 @@ export {
 } from "./cell-raster.ts";
 export { planTrianglesOverlap, type PlanBox } from "./plan-overlap.ts";
 export { engagedStuds, pickSurface, type SurfaceHit } from "./stud-connection.ts";
+export {
+  AXIS_NEG_X,
+  AXIS_NEG_Y,
+  AXIS_NEG_Z,
+  AXIS_POS_X,
+  AXIS_POS_Y,
+  AXIS_POS_Z,
+  TechnicJoins,
+  oppositeAxis,
+  placedHoleEnds,
+  type HoleEnds,
+  type LatticePlacement,
+} from "./technic-joins.ts";

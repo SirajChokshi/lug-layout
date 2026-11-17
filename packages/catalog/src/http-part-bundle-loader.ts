@@ -310,6 +310,11 @@ function toPartAsset(
     studColors[i] = stud.color;
     studMatrices.set(stud.matrix, i * MATRIX_FLOATS);
   }
+  const holeMatrices = new Float32Array(extras.technicHoles.length * MATRIX_FLOATS);
+  for (let i = 0; i < extras.technicHoles.length; i++) {
+    const hole = extras.technicHoles[i];
+    if (hole) holeMatrices.set(hole.matrix, i * MATRIX_FLOATS);
+  }
   return {
     id: part.id,
     title: part.title,
@@ -325,5 +330,6 @@ function toPartAsset(
     studPrimitiveIndex,
     studColors,
     studMatrices,
+    holeMatrices,
   };
 }

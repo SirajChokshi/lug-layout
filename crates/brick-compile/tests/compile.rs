@@ -151,3 +151,39 @@ fn brick_2x4_studs_are_split_out_onto_the_stud_lattice_above_the_body() {
     assert_eq!(positions, expected);
     assert!(brick.studs.iter().all(|s| s.primitive == "stud.dat"));
 }
+
+#[test]
+fn technic_brick_hole_ends_are_recorded_facing_into_the_part_and_still_meshed() {
+    let library = fixture_library();
+    let with_holes = CompileOptions {
+        technic_hole_primitives: vec!["peghole.dat".to_string()],
+        ..CompileOptions::default()
+    };
+    let brick = compile_part(&library, "3701.dat", &with_holes).expect("3701 compiles");
+    let plain = compile_part(&library, "3701.dat", &CompileOptions::default()).expect("3701");
+    assert_eq!(brick.mesh, plain.mesh);
+    assert!(plain.technic_holes.is_empty());
+
+    let mut mouths: Vec<(i64, i64, i64)> = Vec::new();
+    for hole in &brick.technic_holes {
+        let m = hole.matrix.m;
+        let position = [m[3], m[7], m[11]];
+        let inward = [-m[1], -m[5], -m[9]];
+        let length = inward.iter().map(|v| v * v).sum::<f64>().sqrt();
+        assert!((length - 1.0).abs() < 1e-9);
+        assert!(inward[2] * -position[2] > 0.0);
+        assert_eq!((inward[0], inward[1]), (0.0, 0.0));
+        mouths.push((
+            position[0].round() as i64,
+            position[1].round() as i64,
+            position[2].round() as i64,
+        ));
+    }
+    mouths.sort_unstable();
+    let mut expected: Vec<(i64, i64, i64)> = [-20, 0, 20]
+        .iter()
+        .flat_map(|&x| [(x, -10, -10), (x, -10, 10)])
+        .collect();
+    expected.sort_unstable();
+    assert_eq!(mouths, expected);
+}

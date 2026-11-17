@@ -481,11 +481,27 @@ export function CreditsFooter({
 }
 
 function connectionText(ghost: GhostCheckView): string {
-  const studs = ghost.studsEngaged === 1 ? "1 stud" : `${ghost.studsEngaged} studs`;
-  const engaged = ghost.studsEngaged > 0 ? `${studs} engaged` : "no stud engaged";
+  const phrases: string[] = [];
+  if (ghost.studsEngaged > 0) {
+    phrases.push(
+      ghost.studsEngaged === 1 ? "1 stud engaged" : `${ghost.studsEngaged} studs engaged`,
+    );
+  }
   const snapped = ghost.snappedStuds;
-  if (snapped === null) return engaged;
-  return `${engaged}; moved (${snapped[0]}, ${snapped[1]}) studs from the cursor to the nearest pose that connects`;
+  if (snapped !== null) {
+    phrases.push(
+      `moved (${snapped[0]}, ${snapped[1]}) studs from the cursor to the nearest pose that connects`,
+    );
+  }
+  if (ghost.technicJoins > 0) {
+    const holes =
+      ghost.technicJoins === 1
+        ? "1 Technic hole lines up"
+        : `${ghost.technicJoins} Technic holes line up`;
+    phrases.push(`${holes} with a neighbour's for a pin`);
+  }
+  if (ghost.snappedToTechnic) phrases.push("snapped to line them up");
+  return phrases.map((phrase) => `; ${phrase}`).join("");
 }
 
 export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot }) {
@@ -495,7 +511,7 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       ? "no item in hand"
       : ghost.refusal
         ? `refused: ${ghost.refusal.message}`
-        : `lands at ${ghost.yPlates} plates, supported; ${connectionText(ghost)}${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}`;
+        : `lands at ${ghost.yPlates} plates, supported${connectionText(ghost)}${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}`;
   return (
     <section
       className="inspector placement-rules"
@@ -505,6 +521,8 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       data-ghost-uncertified-track={ghost?.uncertifiedTrack ?? 0}
       data-ghost-studs={ghost?.studsEngaged ?? 0}
       data-ghost-snapped={ghost?.snappedStuds ? ghost.snappedStuds.join(",") : ""}
+      data-ghost-technic-joins={ghost?.technicJoins ?? 0}
+      data-ghost-technic-snap={ghost?.snappedToTechnic ? "1" : ""}
       data-refusals={snapshot.refusals}
       data-last-refusal-rule={lastRefusal?.rule ?? ""}
     >

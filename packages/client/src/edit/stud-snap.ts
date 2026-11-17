@@ -34,7 +34,7 @@ export interface StudSnap {
   readonly offsetStuds: readonly [number, number] | null;
 }
 
-function placeable(check: PlacementCheck): boolean {
+export function acceptable(check: PlacementCheck): boolean {
   return check.overlap === null && (check.support === null || isSupported(check.support));
 }
 
@@ -47,7 +47,7 @@ export function snapToStuds(
 ): StudSnap {
   const first = checkAt(x, z, cursor);
   const unchanged: StudSnap = { x, z, at: cursor, offsetStuds: null };
-  if (placeable(first) || first.support === null || first.support.kind === "no-base") {
+  if (acceptable(first) || first.support === null || first.support.kind === "no-base") {
     return unchanged;
   }
   const shift = firstShift(first.yPlates, OFFSETS);

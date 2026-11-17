@@ -35,6 +35,12 @@ pub struct StudReference {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ConnectorReference {
+    pub primitive: String,
+    pub matrix: Affine,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct VisitedFile {
     pub path: String,
     pub header: ldraw::Header,
@@ -46,6 +52,7 @@ pub struct Flattened {
     pub triangles: Vec<Triangle>,
     pub hard_edges: Vec<[Vec3; 2]>,
     pub studs: Vec<StudReference>,
+    pub technic_holes: Vec<ConnectorReference>,
     pub files: Vec<VisitedFile>,
 }
 
@@ -59,6 +66,7 @@ pub struct Flattener<'a, L: Library> {
     library: &'a L,
     lod: Lod,
     stud_primitives: &'a [String],
+    technic_hole_primitives: &'a [String],
     parsed: HashMap<String, Rc<LdrawFile>>,
 }
 
@@ -76,8 +84,14 @@ impl<'a, L: Library> Flattener<'a, L> {
             library,
             lod,
             stud_primitives,
+            technic_hole_primitives: &[],
             parsed: HashMap::new(),
         }
+    }
+
+    pub fn with_technic_holes(mut self, technic_hole_primitives: &'a [String]) -> Self {
+        self.technic_hole_primitives = technic_hole_primitives;
+        self
     }
 
     pub fn resolve(&self, reference: &str) -> Option<String> {
@@ -172,6 +186,16 @@ impl<'a, L: Library> Flattener<'a, L> {
                             matrix: child_matrix,
                         });
                         continue;
+                    }
+                    if self
+                        .technic_hole_primitives
+                        .iter()
+                        .any(|hole| hole == reference)
+                    {
+                        out.technic_holes.push(ConnectorReference {
+                            primitive: reference.clone(),
+                            matrix: child_matrix,
+                        });
                     }
                     let child_path =
                         self.resolve(reference)

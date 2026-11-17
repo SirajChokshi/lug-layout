@@ -362,6 +362,12 @@ fn run(args: &Args) -> Result<(), String> {
         .iter()
         .filter_map(|v| v.as_str().map(str::to_string))
         .collect();
+    let technic_hole_primitives: Vec<String> = palette["technicHolePrimitives"]
+        .as_array()
+        .ok_or("palette.technicHolePrimitives must be an array")?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
     let unofficial_allowlist: Vec<String> = palette["unofficialAllowlist"]
         .as_array()
         .map(|list| {
@@ -373,6 +379,7 @@ fn run(args: &Args) -> Result<(), String> {
     let primitive_options = CompileOptions {
         lod: args.lod,
         stud_primitives: Vec::new(),
+        technic_hole_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
     };
     let compiler = match &args.compiler {
@@ -387,11 +394,13 @@ fn run(args: &Args) -> Result<(), String> {
     let cover_options = CompileOptions {
         lod: Lod::Standard,
         stud_primitives: stud_primitives.clone(),
+        technic_hole_primitives: technic_hole_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
     };
     let part_options = CompileOptions {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
+        technic_hole_primitives,
         unofficial_allowlist,
     };
     let mut stud_shape = StudShape {

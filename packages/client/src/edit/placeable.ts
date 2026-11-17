@@ -17,6 +17,7 @@ import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
 import { modelTrack, type ModelTrack } from "./model-track.ts";
 import { roadSurface } from "./road-surface.ts";
+import { modelHoleEnds, type ModelHoleEnds } from "./technic-holes.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
 export type PlaceableLayer = "first" | "upper";
@@ -66,6 +67,7 @@ export interface Placeable {
   readonly module: ModuleSurface | null;
   readonly track: ModelTrack | null;
   readonly ground: SeatedGround | null;
+  readonly technic: ModelHoleEnds;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -425,6 +427,7 @@ export function modelPlaceable(
     module: isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null,
     track: modelTrack(local, parts, trackCatalog),
     ground: seatedGround(ground, shift, name),
+    technic: modelHoleEnds(local, parts),
   };
 }
 
@@ -491,5 +494,6 @@ export function partPlaceable(
     module: null,
     track: null,
     ground: seatedGround(ground, shift, part.id),
+    technic: modelHoleEnds(local, parts),
   };
 }
