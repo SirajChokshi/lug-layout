@@ -22,6 +22,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.event_name == 'push' && 'catalog-deploy-main' || format('catalog-deploy-pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   TERRAFORM_VERSION: 1.17.2
   WORKER_BUNDLE_ARTIFACT: catalog-worker-bundle
@@ -32,9 +36,6 @@ jobs:
   build:
     name: Build Worker
     runs-on: ubuntu-latest
-    concurrency:
-      group: catalog-build-${{ github.event.pull_request.number || github.sha }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -66,15 +67,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    concurrency:
-      group: catalog-plan-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
-      CATALOG_TFVARS_JSON: ${{ vars.CATALOG_TFVARS_JSON }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -89,15 +81,26 @@ jobs:
           terraform_wrapper: false
       - name: Configure backend and variables
         id: configure
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          CATALOG_TFVARS_JSON: ${{ vars.CATALOG_TFVARS_JSON }}
         run: infra/cloudflare/ci/configure.sh plan
       - name: Terraform init
         if: steps.configure.outputs.configured == 'true'
         env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
           BACKEND_CONFIG: ${{ steps.configure.outputs.backend_config }}
         run: terraform -chdir=infra/cloudflare init -lockfile=readonly -backend-config="$BACKEND_CONFIG"
       - name: Terraform plan
         if: steps.configure.outputs.configured == 'true'
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
           VAR_FILE: ${{ steps.configure.outputs.var_file }}
         run: |
           terraform -chdir=infra/cloudflare plan -lock=false -var-file="$VAR_FILE" -out="$RUNNER_TEMP/catalog.tfplan"
@@ -128,42 +131,63 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
-    concurrency:
-      group: catalog-production
-      cancel-in-progress: false
-    env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
-      CATALOG_TFVARS_JSON: ${{ vars.CATALOG_TFVARS_JSON }}
     steps:
+      - name: Skip unless this commit is main's tip
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          if [[ "$tip" == "$GITHUB_SHA" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Apply skipped: ${GITHUB_SHA} is no longer main's tip (${tip}). The run for the newer commit applies it."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: steps.tip.outputs.current == 'true'
         with:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.tip.outputs.current == 'true'
         with:
           name: ${{ env.WORKER_BUNDLE_ARTIFACT }}
           path: apps/catalog-api/dist
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        if: steps.tip.outputs.current == 'true'
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
       - name: Configure backend and variables
         id: configure
+        if: steps.tip.outputs.current == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
+          CATALOG_TFVARS_JSON: ${{ vars.CATALOG_TFVARS_JSON }}
         run: infra/cloudflare/ci/configure.sh apply
       - name: Terraform init
+        if: steps.tip.outputs.current == 'true'
         env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
           BACKEND_CONFIG: ${{ steps.configure.outputs.backend_config }}
         run: terraform -chdir=infra/cloudflare init -lockfile=readonly -backend-config="$BACKEND_CONFIG"
       - name: Terraform plan
+        if: steps.tip.outputs.current == 'true'
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
           VAR_FILE: ${{ steps.configure.outputs.var_file }}
         run: |
           terraform -chdir=infra/cloudflare plan -lock-timeout=10m -var-file="$VAR_FILE" -out="$RUNNER_TEMP/catalog.tfplan"
           terraform -chdir=infra/cloudflare show -json "$RUNNER_TEMP/catalog.tfplan" > "$RUNNER_TEMP/catalog.tfplan.json"
       - name: Summarize plan
         id: report
+        if: steps.tip.outputs.current == 'true'
         run: |
           infra/cloudflare/ci/plan-report.sh "$RUNNER_TEMP/catalog.tfplan.json" "$RUNNER_TEMP/catalog-plan.md"
           cat "$RUNNER_TEMP/catalog-plan.md" >> "$GITHUB_STEP_SUMMARY"
@@ -173,4 +197,9 @@ jobs:
           echo "::error::The plan destroys the D1 database or the R2 release bucket."
           exit 1
       - name: Terraform apply
+        if: steps.tip.outputs.current == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
         run: terraform -chdir=infra/cloudflare apply -lock-timeout=10m "$RUNNER_TEMP/catalog.tfplan"

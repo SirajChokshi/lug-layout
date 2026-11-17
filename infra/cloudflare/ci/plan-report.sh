@@ -32,12 +32,14 @@ jq -r '
     end
 ' "$plan_json" >"$report"
 
-mapfile -t destroyed_data < <(jq -r '
+destroyed_list="$(mktemp)"
+jq -r '
   .resource_changes[]?
   | select(.type == "cloudflare_d1_database" or .type == "cloudflare_r2_bucket")
   | select(.change.actions | index("delete") != null)
   | .address
-' "$plan_json")
+' "$plan_json" >"$destroyed_list"
+mapfile -t destroyed_data <"$destroyed_list"
 
 if ((${#destroyed_data[@]} > 0)); then
   addresses="$(printf "\`%s\`, " "${destroyed_data[@]}")"

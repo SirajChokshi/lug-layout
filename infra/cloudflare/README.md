@@ -66,11 +66,15 @@ Two workflows replace the manual steps above. Neither commits or prints a secret
 |---|---|---|---|
 | Build Worker | every run | none, no secrets | Installs only `@brr/catalog-api`, typechecks, tests and builds it, and uploads `dist/index.js` as an artifact. |
 | Terraform plan | pull requests from this repository | `production-plan` | Downloads the bundle, `init` against the R2 backend, `plan -lock=false`, then posts a summary (resource addresses and actions only, never attribute values) as one PR comment that later runs update. |
-| Terraform apply | push to `main` | `production` | Downloads the bundle, `init`, `plan`, then `apply` of exactly that plan. |
+| Terraform apply | push to `main` | `production` | Skips unless the commit is still main's tip. Otherwise downloads the bundle, `init`, `plan`, then `apply` of exactly that plan. |
 
 Pull requests from forks build but never plan, so they never get a secret. The workflow uses `pull_request`, never `pull_request_target`. Plan and apply both refuse a plan that destroys or replaces the D1 database or the release bucket. Do that locally, on purpose. If `production-plan` lacks a secret, the PR plan is skipped with a warning and a comment naming the secret. If `production` lacks one, apply fails.
 
-Applies and remote release loads share the concurrency group `catalog-production` with `cancel-in-progress: false`, so they never overlap. GitHub keeps one run in the group and one waiting; a newer waiting run replaces the older waiting one, which shows as cancelled (re-run it if it was a release load). That serializes CI only: a local `apply` can still collide with CI unless the R2 lock check in *Remote state on R2* passes. Apply waits up to 10 minutes for the lock.
+Push runs share one run-level concurrency group, `catalog-deploy-main`, with `cancel-in-progress: false`. A run joins the group when it is created, so builds and applies run one whole run at a time, in push order, and never overlap. GitHub keeps one run in the group and one waiting. A newer push replaces the waiting run, which shows as cancelled; nothing is lost, because the newer commit contains it. Apply also skips with a notice unless the run's commit is still main's tip, so re-running an old run can't roll production back. Each pull request has its own group, and a new push to it cancels the stale run.
+
+Remote release loads have their own group, `catalog-release-load`, so loads never overlap each other. A newer waiting load replaces an older waiting one; dispatch the cancelled one again if it still matters. A load may run during an apply. That's safe because they touch different things: the load writes D1 rows and R2 objects, while apply changes the Worker and resource settings, and the destroy guard refuses any plan that would remove the database or the bucket.
+
+All of this serializes CI only. A local `apply` can still collide with CI unless the lock check in *Remote state on R2* passes. Apply waits up to 10 minutes for the lock.
 
 **`.github/workflows/catalog-load-release.yml`** is started by hand (*Actions → Catalog load release → Run workflow*):
 
