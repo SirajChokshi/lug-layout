@@ -8,7 +8,7 @@ import {
   type Pose16,
 } from "@brr/math";
 import { describe, expect, it } from "vitest";
-import { latticePose16, latticeSnap } from "./model-track.ts";
+import { latticePose16, latticeSnap, trackEndKeys, type ModelTrack } from "./model-track.ts";
 
 const QUARTER_TURNS = 4;
 const HEADINGS = 16;
@@ -61,5 +61,27 @@ describe("latticeSnap", () => {
         expect(latticeSnap(locals[0] ?? at([], 0), target, rot)).toBeNull();
       }
     }
+  });
+});
+
+function oneEnd(local: Pose16): ModelTrack {
+  return { pieces: [], openEnds: [{ local, plates: 4 }], uncertified: [] };
+}
+
+describe("trackEndKeys", () => {
+  const own = oneEnd(at([16, 0, 0, 0, 0], 0));
+  const theirs = oneEnd(at([0, 0, 0, 0, 0], 8));
+  const atSeam = { x: 16 * STUD_LDU, z: 0, rot: 0 };
+
+  it("matches two open ends exactly where they join, at the same height only", () => {
+    const facing = trackEndKeys(own, { x: 0, z: 0, yPlates: 0, rot: 0 }, true);
+    const level = new Set(trackEndKeys(theirs, { ...atSeam, yPlates: 0 }, false));
+    const raised = new Set(trackEndKeys(theirs, { ...atSeam, yPlates: 1 }, false));
+    const offset = new Set(
+      trackEndKeys(theirs, { ...atSeam, x: 17 * STUD_LDU, yPlates: 0 }, false),
+    );
+    expect(facing.filter((key) => level.has(key))).toHaveLength(1);
+    expect(facing.filter((key) => raised.has(key))).toHaveLength(0);
+    expect(facing.filter((key) => offset.has(key))).toHaveLength(0);
   });
 });
