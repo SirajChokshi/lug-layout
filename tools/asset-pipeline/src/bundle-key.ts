@@ -43,7 +43,7 @@ function listBundleInputs(repoRoot: string, options: ReadonlyArray<string>): Rea
     .toSorted();
 }
 
-function bundleInputFiles(repoRoot: string): ReadonlyArray<string> {
+export function bundleInputFiles(repoRoot: string): ReadonlyArray<string> {
   return listBundleInputs(repoRoot, []);
 }
 
