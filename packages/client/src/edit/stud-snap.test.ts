@@ -170,7 +170,9 @@ it("snaps a held model to the nearest pose within reach whose anti-studs meet st
   const backend = new TopDownBackend();
   const editor = await startEditor(backend);
   expect(editor.snapshot().error).toBeNull();
-  editor.chooseItem(BASEPLATE);
+  const baseplate = editor.snapshot().catalog.find((entry) => entry.group === BASEPLATE);
+  if (!baseplate) throw new Error(`the catalog offers no ${BASEPLATE}`);
+  editor.chooseItem(baseplate.id);
   editor.pointerMove(0, 0);
   editor.click(0, 0, 0);
   expect(editor.snapshot().placements).toBe(1);
