@@ -1,5 +1,6 @@
 import {
   directColorSrgb,
+  DIRECT_COLOR_ALPHA,
   isDirectColor,
   type ModelFarMesh,
   type PartAsset,
@@ -22,7 +23,6 @@ const hasSceneColor: PartFilter = (part) =>
   !CATALOG_ROLES.has(part.role) || part.displayColor !== undefined;
 
 export const PALETTE_PARTS: PartFilter = (part) => part.role !== "model" && hasSceneColor(part);
-const DIRECT_COLOR_ALPHA = 255;
 
 export interface SceneSummary {
   readonly bundleVersion: string;
@@ -79,10 +79,16 @@ export interface IViewerScene {
   onFrame?(): void;
 }
 
+export type ColorSource = Pick<PartBundle, "colors" | "parts">;
+
 export class ColorTable {
   private readonly codes: number[] = [];
 
-  constructor(private readonly bundle: PartBundle) {}
+  constructor(private readonly bundle: ColorSource) {}
+
+  get size(): number {
+    return this.codes.length;
+  }
 
   indexOfCode(code: number): number {
     const existing = this.codes.indexOf(code);
@@ -131,7 +137,7 @@ function colorOf(lookup: ReadonlyMap<number, LdrawColor>, code: number): LdrawCo
   return color;
 }
 
-export function ldrawColors(bundle: PartBundle): ReadonlyMap<number, LdrawColor> {
+export function ldrawColors(bundle: ColorSource): ReadonlyMap<number, LdrawColor> {
   const colors = new Map<number, LdrawColor>(
     bundle.colors.map((c) => [
       c.code,

@@ -1,4 +1,4 @@
-import { INHERIT_COLOR, type ModelStudCover, type PartAsset } from "@brr/catalog";
+import { INHERIT_COLOR, type ModelStudCover, type PartShapeAsset } from "@brr/catalog";
 import type { PartRole } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type StudInstances } from "@brr/render";
 import { STUD_LDU } from "@brr/math";
@@ -40,7 +40,7 @@ class CoveredStuds {
   private readonly bottoms = new Set<number>();
 
   constructor(
-    parts: ReadonlyArray<PartAsset>,
+    parts: ReadonlyArray<PartShapeAsset>,
     instances: PartInstances,
     coveringRoles: ReadonlySet<PartRole>,
   ) {
@@ -104,7 +104,7 @@ function composeInto(
 
 export function withStuds(
   base: ChunkPartInstances,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   colors: ColorTable,
   coveringRoles: ReadonlySet<PartRole> | undefined,
   bakedCover?: ModelStudCover,
@@ -121,7 +121,7 @@ function bakedVisible(cover: ModelStudCover | undefined, stud: number): boolean 
 }
 
 function studStream(
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   colors: ColorTable,
   instances: PartInstances,
   covered: CoveredStuds | undefined,
