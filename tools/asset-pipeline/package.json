@@ -19,10 +19,13 @@
     "@brr/domain": "workspace:*",
     "@brr/math": "workspace:*",
     "@brr/schema": "workspace:*",
+    "clipper-lib": "6.4.2",
+    "earcut": "3.2.4",
     "valibot": "1.5.0"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",
+    "@types/clipper-lib": "6.4.0",
     "@types/node": "22.20.5",
     "typescript": "7.0.2",
     "vitest": "5.1.0"

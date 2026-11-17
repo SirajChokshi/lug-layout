@@ -216,14 +216,14 @@
       }
     },
     {
-      "name": "asset-pipeline-imports-only-valibot-from-npm",
+      "name": "asset-pipeline-imports-only-valibot-clipper-lib-and-earcut-from-npm",
       "severity": "error",
       "from": {
         "path": "^tools/asset-pipeline/"
       },
       "to": {
         "path": "(^|/)node_modules/",
-        "pathNot": "(^|/)node_modules/valibot/"
+        "pathNot": "(^|/)node_modules/(valibot|clipper-lib|earcut)/"
       }
     },
     {

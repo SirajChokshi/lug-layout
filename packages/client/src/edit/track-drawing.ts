@@ -1,5 +1,5 @@
 import type { PartBundle, PartShapeAsset } from "@brr/catalog";
-import type { TrackPartFrame, TrackPiece, TrackShape } from "@brr/schema/bundle";
+import type { TrackPartFrame, TrackPiece, TrackShape, TrackSilhouette } from "@brr/schema/bundle";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
 import {
@@ -17,9 +17,11 @@ import {
   type DrawingKit,
   type EndGap,
   type TrackEnd,
+  type BaseCells,
   type TrackMove,
   type TrackPieceDef,
   type TrackPieceSpec,
+  type TrackSupport,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -43,6 +45,7 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
+import { placedPlanCells, planTriangles, trackPlanTransform } from "./track-footprint.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -52,6 +55,7 @@ const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
 const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
+const CELL_CACHE_LIMIT = 4096;
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -62,10 +66,21 @@ export interface KitPart {
   readonly partIndex: number;
   readonly color: number;
   readonly yLdu: number;
+  readonly plan: Float64Array;
+}
+
+export type TrackSupportProbe = (cells: BaseCells) => TrackSupport;
+
+export interface OffBaseplate {
+  readonly piece: number;
+  readonly pieceId: string;
+  readonly pieces: number;
+  readonly cells: number;
+  readonly missing: BaseCells;
 }
 
 export type ClosureState = "exact" | "impossible" | "limit" | null;
-export type TrackRefusal = "impossible" | "limit";
+export type TrackRefusal = "impossible" | "limit" | "off-baseplate";
 
 export interface TrackDragView {
   readonly pieces: number;
@@ -75,12 +90,14 @@ export interface TrackDragView {
   readonly closure: ClosureState;
   readonly fromOpenEnd: boolean;
   readonly solveMs: number;
+  readonly offBaseplate: OffBaseplate | null;
 }
 
 export interface TrackCommit {
   readonly laid: number;
   readonly joined: boolean;
   readonly refusal: TrackRefusal | null;
+  readonly offBaseplate: OffBaseplate | null;
   readonly chunks: ReadonlyArray<number>;
 }
 
@@ -158,6 +175,7 @@ interface Drag {
   goal: Pose16 | null;
   missStuds: number;
   target: number | null;
+  offBaseplate: OffBaseplate | null;
 }
 
 interface Placed {
@@ -240,6 +258,17 @@ function partCentre(placed: Placed): { readonly x: number; readonly z: number } 
   return { x, z };
 }
 
+export type TrackData = Pick<PartBundle, "trackCatalog" | "trackShapes" | "trackSilhouettes">;
+
+function silhouetteOf(
+  piece: TrackPiece,
+  silhouettes: ReadonlyMap<string, TrackSilhouette>,
+): TrackSilhouette {
+  const silhouette = silhouettes.get(piece.id);
+  if (!silhouette) throw new Error(`${piece.id}: the bundle has no track silhouette for it`);
+  return silhouette;
+}
+
 function kitFootprints(piece: TrackPiece, shapes: ReadonlyMap<string, TrackShape>): TrackShape {
   const shape = shapes.get(piece.id);
   if (!shape) throw new Error(`${piece.id}: the bundle has no track shape for it`);
@@ -277,6 +306,8 @@ export class TrackDrawing {
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
   private gapList: ReadonlyArray<EndGap> = [];
+  private readonly pieceCells: BaseCells[] = [];
+  private readonly cellCache = new Map<string, BaseCells>();
   private drag: Drag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -285,12 +316,16 @@ export class TrackDrawing {
   readonly solveSamplesMs: number[] = [];
 
   constructor(
-    { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
+    { trackCatalog: catalog, trackShapes, trackSilhouettes }: TrackData,
     private readonly parts: ReadonlyArray<PartShapeAsset>,
     private readonly colors: ColorTable,
+    private readonly probe: TrackSupportProbe,
   ) {
     this.pieces = catalog.pieces;
     const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));
+    const silhouettes = new Map(
+      trackSilhouettes.map((silhouette) => [silhouette.piece, silhouette]),
+    );
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
@@ -314,6 +349,7 @@ export class TrackDrawing {
         partIndex,
         color: colors.indexOfCode(part.producedColor),
         yLdu: -part.boundsMin[1],
+        plan: planTriangles(silhouetteOf(piece, silhouettes).plan),
       };
       if (inKit) this.byDef.set(piece.id, kitPart);
       this.byCatalogIndex.set(catalogIndex, kitPart);
@@ -457,7 +493,58 @@ export class TrackDrawing {
       goal: null,
       missStuds: 0,
       target: null,
+      offBaseplate: null,
     };
+  }
+
+  cellsOf(part: KitPart, placement: Pose16): BaseCells {
+    const key = `${part.piece.id}|${placement.heading}|${placement.position.join(",")}`;
+    const cached = this.cellCache.get(key);
+    if (cached) return cached;
+    const cells = placedPlanCells(part.plan, trackPlanTransform(placement, part.piece.partFrame));
+    if (this.cellCache.size >= CELL_CACHE_LIMIT) this.cellCache.clear();
+    this.cellCache.set(key, cells);
+    return cells;
+  }
+
+  private offBaseplate(start: Pose16, moves: ReadonlyArray<TrackMove>): OffBaseplate | null {
+    if (moves.length === 0) return null;
+    const { placed } = layMoves(start, moves);
+    for (let i = 0; i < placed.length; i++) {
+      const move = moves[i];
+      const piece = placed[i];
+      if (!move || !piece) continue;
+      const part = this.kitPart(move);
+      const support = this.probe(this.cellsOf(part, piece.placement));
+      if (support.kind === "off-baseplate") {
+        return {
+          piece: i,
+          pieceId: part.piece.id,
+          pieces: placed.length,
+          cells: support.cells,
+          missing: support.missing,
+        };
+      }
+    }
+    return null;
+  }
+
+  unsupportedPieces(probe: TrackSupportProbe): ReadonlyArray<OffBaseplate> {
+    const off: OffBaseplate[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      const cells = this.pieceCells[p];
+      if (!cells) continue;
+      const support = probe(cells);
+      if (support.kind === "on-baseplate") continue;
+      off.push({
+        piece: p,
+        pieceId: this.placedAt(p).part.piece.id,
+        pieces: this.layout.count,
+        cells: support.cells,
+        missing: support.missing,
+      });
+    }
+    return off;
   }
 
   private newRunStart(drag: Drag, hitX: number, hitZ: number): Pose16 | null {
@@ -500,6 +587,7 @@ export class TrackDrawing {
       if (result.kind === "exact") {
         drag.moves = runMoves(this.kit, result.run);
         drag.missStuds = 0;
+        drag.offBaseplate = this.offBaseplate(start, drag.moves);
         this.recordSolve(began);
         return;
       }
@@ -515,6 +603,7 @@ export class TrackDrawing {
     drag.previousKey = plan.key;
     drag.moves = runMoves(this.kit, plan);
     drag.missStuds = plan.missStuds;
+    drag.offBaseplate = this.offBaseplate(start, drag.moves);
     this.recordSolve(began);
   }
 
@@ -535,6 +624,7 @@ export class TrackDrawing {
       closure: drag.closure,
       fromOpenEnd: drag.fromEnd !== null,
       solveMs: this.lastSolveMs,
+      offBaseplate: drag.offBaseplate,
     };
   }
 
@@ -588,10 +678,14 @@ export class TrackDrawing {
     const drag = this.drag;
     this.drag = null;
     if (!drag?.start || drag.moves.length === 0) {
-      return { laid: 0, joined: false, refusal: null, chunks: [] };
+      return { laid: 0, joined: false, refusal: null, offBaseplate: null, chunks: [] };
     }
     if (drag.closure === "impossible" || drag.closure === "limit") {
-      return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
+      return { laid: 0, joined: false, refusal: drag.closure, offBaseplate: null, chunks: [] };
+    }
+    const offBaseplate = this.offBaseplate(drag.start, drag.moves);
+    if (offBaseplate) {
+      return { laid: 0, joined: false, refusal: "off-baseplate", offBaseplate, chunks: [] };
     }
     const { placed } = layMoves(drag.start, drag.moves);
     const entries: Placed[] = [];
@@ -604,6 +698,7 @@ export class TrackDrawing {
       laid: entries.length,
       joined: drag.goal !== null && this.graphJoins(drag.goal),
       refusal: null,
+      offBaseplate: null,
       chunks,
     };
   }
@@ -612,6 +707,7 @@ export class TrackDrawing {
     const touched = new Set<number>();
     for (const entry of entries) {
       const index = this.layout.place(entry.part.catalogIndex, entry.placement, GROUND_PLATES);
+      this.pieceCells[index] = this.cellsOf(entry.part, entry.placement);
       const key = this.chunkOfPlaced(entry);
       const members = this.chunkMembers.get(key) ?? [];
       members.push(index);
@@ -690,9 +786,26 @@ export class TrackDrawing {
 
   placePiece(catalogIndex: number, placement: Pose16): TrackCommit {
     const part = this.pieceByIndex(catalogIndex);
+    const support = this.probe(this.cellsOf(part, placement));
+    if (support.kind === "off-baseplate") {
+      const offBaseplate: OffBaseplate = {
+        piece: 0,
+        pieceId: part.piece.id,
+        pieces: 1,
+        cells: support.cells,
+        missing: support.missing,
+      };
+      return { laid: 0, joined: false, refusal: "off-baseplate", offBaseplate, chunks: [] };
+    }
     const before = this.graph.joinCount;
     const chunks = this.commitPlaced([{ part, placement }]);
-    return { laid: 1, joined: this.graph.joinCount > before, refusal: null, chunks };
+    return {
+      laid: 1,
+      joined: this.graph.joinCount > before,
+      refusal: null,
+      offBaseplate: null,
+      chunks,
+    };
   }
 
   switchAt(xLdu: number, zLdu: number): number | null {
@@ -718,6 +831,7 @@ export class TrackDrawing {
     const thrown = this.pieceSet.thrown(placed.part.catalogIndex);
     if (thrown === null) return null;
     this.layout.replace(placement, thrown);
+    this.pieceCells[placement] = this.cellsOf(this.pieceByIndex(thrown), placed.placement);
     const lever = this.pieceSet.lever(thrown);
     if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
     return { chunk: this.chunkOfPlaced(placed), lever };

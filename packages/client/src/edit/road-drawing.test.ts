@@ -16,7 +16,13 @@ import {
   type PartShapeRecord,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
+import type {
+  BundleIndex,
+  BundleLod,
+  BundleManifest,
+  CatalogPart,
+  TrackSilhouette,
+} from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -75,6 +81,10 @@ class MilsModulesOnly implements IPartBundleLoader {
 
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord> {
     return this.loader.loadPartShape(lod, part);
+  }
+
+  loadTrackSilhouettes(lod: BundleLod): Promise<ReadonlyArray<TrackSilhouette>> {
+    return this.loader.loadTrackSilhouettes(lod);
   }
 
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {

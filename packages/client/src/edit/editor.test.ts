@@ -17,7 +17,13 @@ import {
   type PartShapeRecord,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
+import type {
+  BundleIndex,
+  BundleLod,
+  BundleManifest,
+  CatalogPart,
+  TrackSilhouette,
+} from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -56,6 +62,8 @@ import type { EditorSnapshot, IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
+const FIRST_LAYER_SET = "10185-1";
+const STUD_BASED_SET = "2150-1";
 const RAY_HEIGHT_LDU = 10_000;
 const STUDLESS_SET = "10016-1";
 const NO_LOOK: LookSettings = {
@@ -134,6 +142,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord> {
     return this.loader.loadPartShape(lod, part);
+  }
+
+  loadTrackSilhouettes(lod: BundleLod): Promise<ReadonlyArray<TrackSilhouette>> {
+    return this.loader.loadTrackSilhouettes(lod);
   }
 
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
@@ -327,22 +339,22 @@ it("starts from the index, part shapes and the MILS module and train records, fe
 
 it("loads a set's record only once it is picked, refuses clicks until then, and fetches its meshes once placed", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
-  const { editor, backend, manifest } = await startEditor([PLACEABLE_SET], fetcher);
-  const set = `omr:${PLACEABLE_SET}`;
-  const record = `standard/${manifest.models.find((model) => model.name === PLACEABLE_SET)?.file}`;
+  const { editor, backend, manifest } = await startEditor([FIRST_LAYER_SET], fetcher);
+  const set = `omr:${FIRST_LAYER_SET}`;
+  const record = `standard/${manifest.models.find((model) => model.name === FIRST_LAYER_SET)?.file}`;
   const place = placer(editor, backend);
 
   expect(fetcher.paths).not.toContain(record);
   const whileLoading = place(set, 640, 640);
   expect(whileLoading).toEqual({
     placements: 0,
-    refusedClicks: 1,
+    refusals: 1,
     reason: expect.stringContaining("is still loading"),
   });
   expect(await editor.prefetch(set)).toBe(true);
   expect(fetcher.paths).toContain(record);
 
-  expect(place(set, 640, 640)).toMatchObject({ placements: 1, refusedClicks: 1 });
+  expect(place(set, 640, 640)).toMatchObject({ placements: 1, refusals: 1 });
   await vi.waitFor(() => {
     const { meshes } = editor.snapshot();
     expect(meshes.wanted).toBeGreaterThan(0);
@@ -643,8 +655,8 @@ function placer(editor: IEditor, backend: HeadlessBackend) {
     backend.aim(x, z);
     editor.pointerMove(0, 0);
     editor.click(0, 0, 0);
-    const { placements, refusedClicks, lastRefusal } = editor.snapshot();
-    return { placements, refusedClicks, reason: lastRefusal?.reason ?? null };
+    const { placements, refusals, lastRefusal } = editor.snapshot();
+    return { placements, refusals, reason: lastRefusal?.message ?? null };
   };
 }
 
@@ -656,22 +668,26 @@ it("refuses a 10264-1 Corner Garage in a rail module's track end in either order
 
   place(RAIL_MODULE, 320, 320);
   const intoTrackEnd = place(garage, 960, 320);
+  editor.rotate(0);
+  editor.rotate(0);
   const besideTerrain = place(garage, 320, 960);
   editor.undo(0);
   editor.undo(0);
+  editor.rotate(0);
+  editor.rotate(0);
   place(garage, 960, 320);
   const trackEndIntoGarage = place(RAIL_MODULE, 320, 320);
 
   expect({ intoTrackEnd, besideTerrain, trackEndIntoGarage }).toEqual({
     intoTrackEnd: {
       placements: 1,
-      refusedClicks: 1,
+      refusals: 1,
       reason: expect.stringContaining(`the track end of ${RAIL_LABEL}`),
     },
-    besideTerrain: { placements: 2, refusedClicks: 1, reason: expect.any(String) },
+    besideTerrain: { placements: 2, refusals: 1, reason: expect.any(String) },
     trackEndIntoGarage: {
       placements: 1,
-      refusedClicks: 2,
+      refusals: 2,
       reason: expect.stringContaining(`${RAIL_LABEL}: its track end would run into 10264-1`),
     },
   });
@@ -697,12 +713,12 @@ it("refuses a rail edge against a plain or road module in either order, and join
   const railOnPlain = place(RAIL_MODULE, 320, 320);
 
   expect({ plainOnRail, roadOnRail, plainOnTerrain, railOnPlain }).toEqual({
-    plainOnRail: { placements: 1, refusedClicks: 1, reason: facingRail },
-    roadOnRail: { placements: 1, refusedClicks: 2, reason: facingRail },
-    plainOnTerrain: { placements: 2, refusedClicks: 2, reason: facingRail },
+    plainOnRail: { placements: 1, refusals: 1, reason: facingRail },
+    roadOnRail: { placements: 1, refusals: 2, reason: facingRail },
+    plainOnTerrain: { placements: 2, refusals: 2, reason: facingRail },
     railOnPlain: {
       placements: 1,
-      refusedClicks: 3,
+      refusals: 3,
       reason: expect.stringContaining(
         `${RAIL_LABEL}: its rail edge on the maxX side would face the terrain edge of MILS Basic Terrain Module`,
       ),
@@ -770,20 +786,21 @@ function selectAt(editor: IEditor, backend: HeadlessBackend, x: number, z: numbe
 }
 
 function turnOutcome(editor: IEditor, direction: 1 | -1) {
+  const before = editor.snapshot().refusals;
   editor.rotate(0, direction);
-  const { selection, selectionRefusal, lastRefusal } = editor.snapshot();
+  const { selection, selectionRefusal, refusals, lastRefusal } = editor.snapshot();
   return {
     rot: selection?.rot ?? null,
     yPlates: selection?.yPlates ?? null,
     refusal: selectionRefusal,
-    roadCells: lastRefusal ? lastRefusal.mismatchedCells + lastRefusal.overlappingCells : null,
+    rule: refusals > before ? (lastRefusal?.rule ?? null) : null,
   };
 }
 
 it("refuses to turn a baseplate while a set rests on it, turns the set itself, and turns the baseplate once the set is gone", async () => {
-  const { editor, backend } = await startEditor([PLACEABLE_SET]);
+  const { editor, backend } = await startEditor([STUD_BASED_SET]);
   const place = placer(editor, backend);
-  const set = `omr:${PLACEABLE_SET}`;
+  const set = `omr:${STUD_BASED_SET}`;
   expect(await editor.prefetch(set)).toBe(true);
   place(BASEPLATE, 0, 0);
   place(set, 0, 0);
@@ -802,13 +819,13 @@ it("refuses to turn a baseplate while a set rests on it, turns the set itself, a
     rot: 0,
     yPlates: 0,
     refusal: expect.stringContaining(`rests on it`),
-    roadCells: 0,
+    rule: "carries",
   };
   expect({ baseplateUnderSet, baseplateUnderSetBack, setOnBaseplate, bareBaseplate }).toEqual({
     baseplateUnderSet: refused,
     baseplateUnderSetBack: refused,
-    setOnBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
-    bareBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
+    setOnBaseplate: { rot: 3, yPlates: 0, refusal: null, rule: null },
+    bareBaseplate: { rot: 3, yPlates: 0, refusal: null, rule: null },
   });
 }, 120_000);
 
@@ -831,14 +848,15 @@ it("refuses to turn a placed road plate into a mismatch with its neighbour, the 
     turned: {
       rot: 0,
       yPlates: 0,
-      refusal: expect.stringContaining("road edges would mismatch"),
-      roadCells: expect.any(Number),
+      refusal: expect.stringMatching(
+        /would leave (?:[1-9]\d* road edge cells mismatched and overlap \d+|\d+ road edge cells mismatched and overlap [1-9]\d*) road cells/u,
+      ),
+      rule: "road",
     },
     turnedBack: expect.objectContaining({ rot: 0 }),
     mismatchedWhileRefused: 0,
     unsnapped: expect.objectContaining({ rot: 1, refusal: null }),
   });
-  expect(turned.roadCells).toBeGreaterThan(0);
 }, 120_000);
 
 it("takes a 10185-1 Green Grocer flush against a rail edge when none of its parts reach the track end", async () => {
@@ -853,7 +871,7 @@ it("takes a 10185-1 Green Grocer flush against a rail edge when none of its part
   const { placements } = editor.dump();
 
   expect({ flush, yPlates: placements.yPlates, rot: placements.rot.toSorted() }).toEqual({
-    flush: { placements: 2, refusedClicks: 0, reason: null },
+    flush: { placements: 2, refusals: 0, reason: null },
     yPlates: [0, 0],
     rot: [0, 2],
   });
@@ -995,7 +1013,7 @@ it("offers none of the editing commands on a selection in a world another tab ho
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
 }, 120_000);
 
-const SET = `omr:${PLACEABLE_SET}`;
+const SET = `omr:${STUD_BASED_SET}`;
 const PLAIN_MODULE = "generated:mils-plain";
 const OVERLAP = "would overlap";
 
@@ -1009,13 +1027,13 @@ function posesOf(editor: IEditor) {
 const OVERLAP_REFUSED = {
   outcome: {
     placements: 1,
-    refusedClicks: 1,
+    refusals: 1,
     reason: expect.stringContaining(`${OVERLAP} 3811 Baseplate 32 x 32`),
   },
   ghostRefusal: expect.stringContaining(OVERLAP),
 };
 const PLACED_BESIDE = {
-  outcome: { placements: 2, refusedClicks: 0, reason: null },
+  outcome: { placements: 2, refusals: 0, reason: null },
   ghostRefusal: null,
 };
 
@@ -1043,14 +1061,14 @@ it.each([
 ] as const)(
   "with a 3811 placed, $name is refused only where two baseplates would share space",
   async ({ held, at, expected }) => {
-    const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const { editor, backend } = await startEditor(["mils-plain", STUD_BASED_SET]);
     expect(await editor.prefetch(SET)).toBe(true);
     const place = placer(editor, backend);
     place(BASEPLATE, 0, 0);
     editor.chooseItem(held);
     backend.aim(at[0], at[1]);
     editor.pointerMove(0, 0);
-    const ghostRefusal = editor.snapshot().hover?.refusal ?? null;
+    const ghostRefusal = editor.snapshot().ghost?.refusal?.message ?? null;
     const outcome = place(held, at[0], at[1]);
 
     expect({ outcome, ghostRefusal }).toEqual(expected);
@@ -1073,15 +1091,17 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
   const before = posesOf(editor);
   editor.rotate(0);
 
-  expect({ flush, poses: posesOf(editor), reason: editor.snapshot().lastRefusal?.reason }).toEqual({
-    flush: { placements: 2, refusedClicks: 0, reason: null },
-    poses: before,
-    reason: expect.stringContaining(OVERLAP),
-  });
+  expect({ flush, poses: posesOf(editor), reason: editor.snapshot().lastRefusal?.message }).toEqual(
+    {
+      flush: { placements: 2, refusals: 0, reason: null },
+      poses: before,
+      reason: expect.stringContaining(OVERLAP),
+    },
+  );
 }, 120_000);
 
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
-  const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  const { editor, backend } = await startEditor(["mils-plain", STUD_BASED_SET]);
   expect(await editor.prefetch(SET)).toBe(true);
   const place = placer(editor, backend);
   place(PLAIN_MODULE, 320, 320);
@@ -1103,7 +1123,7 @@ it("refuses to delete a MILS module while a set rests on it, names the set, and 
   expect({ refused, left: editor.snapshot().placements }).toEqual({
     refused: {
       poses: raised,
-      refusal: expect.stringContaining(`${PLACEABLE_SET} Level Crossing (2010) rests on it`),
+      refusal: expect.stringContaining(`carries ${STUD_BASED_SET} Train Station (1996)`),
       tone: "warn",
     },
     left: 0,
@@ -1120,18 +1140,10 @@ it.each([
     ],
     remove: [20, 20],
   },
-  {
-    name: "a 3811 under a set at the ground plane is deleted",
-    lay: [
-      [BASEPLATE, 0, 0],
-      [SET, 0, 0],
-    ],
-    remove: [300, 300],
-  },
 ] as const)(
   "deletes the support when $name, since the set keeps its resting height",
   async ({ lay, remove }) => {
-    const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const { editor, backend } = await startEditor(["mils-plain", STUD_BASED_SET]);
     expect(await editor.prefetch(SET)).toBe(true);
     const place = placer(editor, backend);
     for (const [item, x, z] of lay) place(item, x, z);
@@ -1147,3 +1159,24 @@ it.each([
   },
   120_000,
 );
+
+it("refuses to delete a 3811 a set stands on at the ground plane, since the set can't stand on the bare table", async () => {
+  const { editor, backend } = await startEditor([STUD_BASED_SET]);
+  expect(await editor.prefetch(SET)).toBe(true);
+  const place = placer(editor, backend);
+  place(BASEPLATE, 0, 0);
+  place(SET, 0, 0);
+  const before = posesOf(editor);
+  expect(selectAt(editor, backend, 300, 300)?.item).toBe(BASEPLATE);
+  editor.deleteSelection(0);
+
+  expect({
+    poses: posesOf(editor),
+    rule: editor.snapshot().lastRefusal?.rule,
+    refusal: editor.snapshot().selectionRefusal,
+  }).toEqual({
+    poses: before,
+    rule: "carries",
+    refusal: expect.stringContaining(`carries ${STUD_BASED_SET} Train Station (1996)`),
+  });
+}, 120_000);

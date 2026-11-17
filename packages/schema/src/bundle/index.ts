@@ -191,6 +191,7 @@ export const ModelFileCells = v.pipe(
     origin: v.tuple([Finite, Finite]),
     size: CellGridSize,
     bottomY: Finite,
+    groundY: v.nullable(Finite),
     footprint: v.array(Count),
     flat: v.array(Count),
     columnBottom: v.array(ColumnPlates),
@@ -232,6 +233,7 @@ export const BundleModelCover = v.object({
       footprintCells: Count,
       flatCells: Count,
       restY: Finite,
+      groundY: v.nullable(Finite),
       size: CellGridSize,
       heightPlates: ColumnPlates,
     }),
@@ -361,8 +363,33 @@ export const TrackShape = v.object({
   footprints: v.pipe(v.array(Finite), v.length(ZETA16_ORDER * PART_FOOTPRINT_FLOATS)),
   minY: Finite,
   maxY: Finite,
+  silhouette: FileRef,
 });
 export type TrackShape = v.InferOutput<typeof TrackShape>;
+
+export const PLAN_VERTEX_FLOATS = 2;
+export const PLAN_TRIANGLE_VERTICES = 3;
+
+export const TrackPlan = v.pipe(
+  v.object({ vertices: v.array(Finite), triangles: v.array(Count) }),
+  v.check(
+    ({ vertices }) => vertices.length % PLAN_VERTEX_FLOATS === 0,
+    "plan vertices are not (x, z) pairs",
+  ),
+  v.check(
+    ({ triangles }) => triangles.length % PLAN_TRIANGLE_VERTICES === 0,
+    "plan triangles are not index triples",
+  ),
+  v.check(
+    ({ vertices, triangles }) =>
+      triangles.every((index) => index < vertices.length / PLAN_VERTEX_FLOATS),
+    "a plan triangle names a vertex that isn't there",
+  ),
+);
+export type TrackPlan = v.InferOutput<typeof TrackPlan>;
+
+export const TrackSilhouette = v.object({ piece: v.string(), plan: TrackPlan });
+export type TrackSilhouette = v.InferOutput<typeof TrackSilhouette>;
 
 export const StudPrimitive = v.object({
   ...CompiledMesh.entries,

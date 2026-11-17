@@ -461,6 +461,12 @@ importers:
       '@brr/schema':
         specifier: workspace:*
         version: link:../../packages/schema
+      clipper-lib:
+        specifier: 6.4.2
+        version: 6.4.2
+      earcut:
+        specifier: 3.2.4
+        version: 3.2.4
       valibot:
         specifier: 1.5.0
         version: 1.5.0(typescript@7.0.2)
@@ -468,6 +474,9 @@ importers:
       '@brr/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@types/clipper-lib':
+        specifier: 6.4.0
+        version: 6.4.0
       '@types/node':
         specifier: 22.20.5
         version: 22.20.5
@@ -1512,6 +1521,9 @@ packages:
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
+  '@types/clipper-lib@6.4.0':
+    resolution: {integrity: sha512-y8WVQWLCIJobtcxk8SJj1f7OGVbQEL7RmfGtrWDkAKFxq2U6F0/7/hLYvDWlUnBayvnRYkq+QVZaUzm13mu+Ng==}
+
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
@@ -1752,6 +1764,9 @@ packages:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
     engines: {node: '>=10'}
 
+  clipper-lib@6.4.2:
+    resolution: {integrity: sha512-knglhjQX5ihNj/XCIs6zCHrTemdvHY3LPZP9XB2nq2/3igyYMFueFXtfp84baJvEE+f8pO1ZS4UVeEgmLnAprQ==}
+
   color-convert@2.0.1:
     resolution: {integrity: sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==}
     engines: {node: '>=7.0.0'}
@@ -1785,6 +1800,9 @@ packages:
 
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
+
+  earcut@3.2.4:
+    resolution: {integrity: sha512-FHc6yNpnTORB0tM5kmZ03iD2mDuNakDE2lvf4Hw1XkfxtEHIGVi01B/GqUSwx+NcC1WGjidAfpTXzeALtPtfpg==}
 
   enhanced-resolve@5.26.0:
     resolution: {integrity: sha512-9vhedylFonb2YGogzUKX6+Ja72gOJbN1QHAqdrvqLwhdl/QWbKopzoUC9EbQNVsAns/bx/4uyqalrQAoy1IByw==}
@@ -2952,6 +2970,8 @@ snapshots:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
 
+  '@types/clipper-lib@6.4.0': {}
+
   '@types/deep-eql@4.0.2': {}
 
   '@types/estree@1.0.10': {}
@@ -3108,6 +3128,8 @@ snapshots:
       ansi-styles: 4.3.0
       supports-color: 7.2.0
 
+  clipper-lib@6.4.2: {}
+
   color-convert@2.0.1:
     dependencies:
       color-name: 1.1.4
@@ -3146,6 +3168,8 @@ snapshots:
   detect-libc@2.1.2: {}
 
   dom-accessibility-api@0.5.16: {}
+
+  earcut@3.2.4: {}
 
   enhanced-resolve@5.26.0:
     dependencies:

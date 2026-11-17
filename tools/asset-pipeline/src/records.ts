@@ -10,12 +10,14 @@ import {
   type PartRole,
   type PartShape,
   type TrackShape,
+  type TrackSilhouette,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as v from "valibot";
 import { MANIFEST_FILE } from "./publish.ts";
+import { planSilhouette, type PlanMesh } from "./track-silhouette.ts";
 
 export const PART_TABLE_FILE = "parts.json";
 export const CREDIT_TABLE_FILE = "credits.json";
@@ -59,7 +61,15 @@ function partShape(
   };
 }
 
-function trackShape(piece: string, positions: Float32Array, headingHalfSteps: number): TrackShape {
+export function silhouetteFileName(pieceId: string): string {
+  return `silhouette-${pieceId.replace(UNSAFE_FILE_CHARACTERS, "_")}.json`;
+}
+
+function trackShape(
+  piece: string,
+  positions: Float32Array,
+  headingHalfSteps: number,
+): Omit<TrackShape, "silhouette"> {
   const [minY, maxY] = verticalRange(positions);
   return {
     piece,
@@ -81,11 +91,11 @@ export async function attachRecords(directory: string): Promise<void> {
     manifestPath,
   );
   const shapes = new Map<string, PartShape>();
-  const positions = new Map<string, Float32Array>();
+  const trackMeshes = new Map<string, PlanMesh>();
   for (const part of parts) {
     const glb = parseGlb(arrayBuffer(await readFile(join(directory, part.file))), part.file);
     shapes.set(part.id, partShape(part, glb.document.extras));
-    if (part.role === "track") positions.set(part.id, readPartMesh(glb, part.file).positions);
+    if (part.role === "track") trackMeshes.set(part.id, readPartMesh(glb, part.file));
   }
   const shapeOf = (id: string, where: string): PartShape => {
     const shape = shapes.get(id);
@@ -108,12 +118,26 @@ export async function attachRecords(directory: string): Promise<void> {
     await writeJson(join(directory, file), shapeOf(part.id, file));
     catalogParts.push({ ...part, shape: { file } });
   }
-  const trackShapes = trackCatalog.pieces.map((piece) => {
-    const mesh = positions.get(piece.part);
+  const trackShapes: TrackShape[] = [];
+  const silhouetteFiles = new Set<string>();
+  for (const piece of trackCatalog.pieces) {
+    const mesh = trackMeshes.get(piece.part);
     if (!mesh)
       throw new Error(`track piece ${piece.id} names ${piece.part}, not a bundled track part`);
-    return trackShape(piece.id, mesh, piece.partFrame.headingHalfSteps);
-  });
+    const { headingHalfSteps } = piece.partFrame;
+    const file = silhouetteFileName(piece.id);
+    if (silhouetteFiles.has(file)) throw new Error(`two track pieces share the file ${file}`);
+    silhouetteFiles.add(file);
+    const silhouette: TrackSilhouette = {
+      piece: piece.id,
+      plan: planSilhouette(mesh, headingHalfSteps),
+    };
+    await writeJson(join(directory, file), silhouette);
+    trackShapes.push({
+      ...trackShape(piece.id, mesh.positions, headingHalfSteps),
+      silhouette: { file },
+    });
+  }
   await writeJson(join(directory, PART_TABLE_FILE), { parts });
   await writeJson(join(directory, CREDIT_TABLE_FILE), { credits });
   const rest = Object.fromEntries(Object.entries(compiled).filter(([key]) => !TABLE_KEYS.has(key)));

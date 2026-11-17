@@ -4,6 +4,7 @@ import {
   CrosswalkFile,
   ModelFile,
   PartShape,
+  TrackSilhouette,
   PartTableFile,
   type BundleCredit,
   type BundleLod,
@@ -75,6 +76,7 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
     width,
     depth,
     restY: cells.bottomY,
+    groundY: cells.groundY,
     footprint: Uint32Array.from(cells.footprint),
     flat: Uint32Array.from(cells.flat),
     columnBottom: Int16Array.from(cells.columnBottom),
@@ -105,6 +107,7 @@ export class HttpAssetFetcher implements IAssetFetcher {
 @injectable()
 export class HttpPartBundleLoader implements IPartBundleLoader {
   private readonly indices = new Map<BundleLod, Promise<BundleIndex>>();
+  private readonly silhouettes = new Map<BundleLod, Promise<ReadonlyArray<TrackSilhouette>>>();
   private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
   private readonly meshes = new Map<string, Promise<PartMesh>>();
   private readonly pool = new FetchPool(MAX_CONCURRENT_FETCHES);
@@ -213,6 +216,17 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return shapeRecord(shape, studPrimitiveNamesOf(index));
   }
 
+  loadTrackSilhouettes(lod: BundleLod): Promise<ReadonlyArray<TrackSilhouette>> {
+    return this.cached(this.silhouettes, lod, async () => {
+      const index = await this.loadIndex(lod);
+      return Promise.all(
+        index.trackShapes.map((shape) =>
+          this.json(TrackSilhouette, `${lod}/${shape.silhouette.file}`),
+        ),
+      );
+    });
+  }
+
   async loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
     const index = await this.loadIndex(lod);
     const entry = index.models.find((model) => model.name === name);
@@ -296,9 +310,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     parts: ReadonlyArray<ManifestPart>,
   ): Promise<PartBundle> {
     const studPrimitiveNames = manifest.studPrimitives.map((primitive) => primitive.name);
-    const [studPrimitives, assets] = await Promise.all([
+    const [studPrimitives, assets, trackSilhouettes] = await Promise.all([
       this.studPrimitives(lod, manifest),
       Promise.all(parts.map((part) => this.partAsset(lod, part, studPrimitiveNames))),
+      this.loadTrackSilhouettes(lod),
     ]);
     return {
       bundleVersion: manifest.bundleVersion,
@@ -309,6 +324,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
       trackShapes: manifest.trackShapes,
+      trackSilhouettes,
       milsEdgeRules: manifest.milsEdgeRules,
     };
   }
@@ -337,8 +353,9 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     const compiledParts = new Map(compiled.map((part) => [part.partId, part.glb]));
     const studPrimitiveNames = manifest.studPrimitives.map((primitive) => primitive.name);
     const compiledCredits: BundleCredit[] = [];
-    const [studPrimitives, assets] = await Promise.all([
+    const [studPrimitives, trackSilhouettes, assets] = await Promise.all([
       this.studPrimitives(lod, manifest),
+      this.loadTrackSilhouettes(lod),
       Promise.all(
         partIds.map(async (id): Promise<PartAsset> => {
           const glb = compiledParts.get(id);
@@ -362,6 +379,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
       trackShapes: manifest.trackShapes,
+      trackSilhouettes,
       milsEdgeRules: manifest.milsEdgeRules,
     };
   }

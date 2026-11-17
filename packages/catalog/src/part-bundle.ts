@@ -4,6 +4,7 @@ import {
   type BundleManifest,
   type BundleModelEntry,
   type CatalogPart,
+  type TrackSilhouette,
   type BundleSource,
   type ManifestPart,
   type ModelSection,
@@ -99,6 +100,7 @@ export interface ModelCells {
   readonly width: number;
   readonly depth: number;
   readonly restY: number;
+  readonly groundY: number | null;
   readonly footprint: Uint32Array;
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
@@ -142,6 +144,7 @@ export type PartBundle = Pick<
 > & {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
+  readonly trackSilhouettes: ReadonlyArray<TrackSilhouette>;
 };
 
 export type FilterablePart = Pick<ManifestPart, "id" | "role" | "displayColor">;
@@ -199,6 +202,7 @@ export interface IPartBundleLoader {
   loadIndex(lod: BundleLod): Promise<BundleIndex>;
   loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>>;
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord>;
+  loadTrackSilhouettes(lod: BundleLod): Promise<ReadonlyArray<TrackSilhouette>>;
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord>;
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh>;
   loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null>;

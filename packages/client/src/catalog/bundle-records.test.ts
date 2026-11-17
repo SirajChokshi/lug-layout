@@ -1,12 +1,29 @@
 import { ASSET_FETCHER, BUNDLE_LODS, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
-import { headingFootprints, verticalRange } from "@brr/domain";
-import { ModelFile, PartShape, type BundleManifest, type ManifestPart } from "@brr/schema/bundle";
+import { headingFootprints, planTriangleCells, verticalRange, type BaseCells } from "@brr/domain";
+import {
+  STUD_LDU,
+  ZETA16_COEFFICIENT_COUNT,
+  ZETA16_ORDER,
+  pose16,
+  zeta16,
+  zeta16ToStuds,
+  type Pose16,
+} from "@brr/math";
+import {
+  ModelFile,
+  PartShape,
+  TrackSilhouette,
+  type BundleManifest,
+  type ManifestPart,
+  type TrackPartFrame,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { placedPlanCells, planTriangles, trackPlanTransform } from "../edit/track-footprint.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
@@ -56,6 +73,63 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
     ...(glb.document.extras.technic ? { technic: glb.document.extras.technic } : {}),
   };
+}
+
+const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
+const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
+const POSITION_FLOATS = 3;
+const SAMPLE_POSITIONS: ReadonlyArray<ReadonlyArray<number>> = [
+  [0],
+  [3, 1, 0, 0, -2],
+  [-7, 0, 2, -1, 4, 0, 1],
+];
+
+function samplePose(coefficients: ReadonlyArray<number>, heading: number): Pose16 {
+  const full = Array.from({ length: ZETA16_COEFFICIENT_COUNT }, (_, k) =>
+    BigInt(coefficients[k] ?? 0),
+  );
+  return pose16(zeta16(full), heading);
+}
+
+function meshPlanCells(
+  positions: Float32Array,
+  groups: ReadonlyArray<{ readonly indices: Uint32Array }>,
+  placement: Pose16,
+  frame: TrackPartFrame,
+): BaseCells {
+  const studs = zeta16ToStuds(placement.position);
+  const theta = placement.heading * HEADING_RADIANS;
+  const phi = theta + frame.headingHalfSteps * HALF_STEP_RADIANS;
+  const c = Math.cos(phi);
+  const s = Math.sin(phi);
+  const x = studs.x * STUD_LDU + Math.cos(theta) * frame.xLdu - Math.sin(theta) * frame.zLdu;
+  const z = studs.z * STUD_LDU + Math.sin(theta) * frame.xLdu + Math.cos(theta) * frame.zLdu;
+  const world: number[] = [];
+  for (const { indices } of groups) {
+    for (let t = 0; t + 3 <= indices.length; t += 3) {
+      const corners = [0, 1, 2].map((k) => (indices[t + k] ?? 0) * POSITION_FLOATS);
+      const [a = 0, b = 0, d = 0] = corners;
+      const area =
+        ((positions[b] ?? 0) - (positions[a] ?? 0)) *
+          ((positions[d + 2] ?? 0) - (positions[a + 2] ?? 0)) -
+        ((positions[b + 2] ?? 0) - (positions[a + 2] ?? 0)) *
+          ((positions[d] ?? 0) - (positions[a] ?? 0));
+      if (area === 0) continue;
+      for (const v of corners) {
+        const px = positions[v] ?? 0;
+        const pz = positions[v + 2] ?? 0;
+        world.push(c * px - s * pz + x, s * px + c * pz + z);
+      }
+    }
+  }
+  return planTriangleCells(Float64Array.from(world));
+}
+
+function cellKeys(cells: BaseCells): ReadonlyArray<string> {
+  return Array.from(
+    { length: cells.count },
+    (_, c) => `${cells.cellX[c]},${cells.cellZ[c]}`,
+  ).toSorted();
 }
 
 describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
@@ -109,7 +183,34 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
         footprints: Array.from(headingFootprints(positions, piece.partFrame.headingHalfSteps)),
         minY,
         maxY,
+        silhouette: { file: expect.stringMatching(/^silhouette-/u) },
       });
+    }
+  });
+
+  it("hold each track piece's plan silhouette, which covers exactly the cells its mesh covers at every pose", async () => {
+    const manifest = manifestOf(lod);
+    const parts = new Map(manifest.parts.map((part) => [part.id, part]));
+    const shapes = new Map(manifest.trackShapes.map((shape) => [shape.piece, shape]));
+    for (const piece of manifest.trackCatalog.pieces) {
+      const part = parts.get(piece.part);
+      const shape = shapes.get(piece.id);
+      if (!part || !shape) throw new Error(`track piece ${piece.id} has no part or shape`);
+      const { positions, groups } = readPartMesh(await glbOf(lod, part), part.file);
+      const silhouette = decodedOrThrow(
+        decode(TrackSilhouette, JSON.parse(await fetcher.text(`${lod}/${shape.silhouette.file}`))),
+        shape.silhouette.file,
+      );
+      expect(silhouette.piece).toBe(piece.id);
+      const plan = planTriangles(silhouette.plan);
+      for (const coefficients of SAMPLE_POSITIONS) {
+        for (let heading = 0; heading < ZETA16_ORDER; heading++) {
+          const placement = samplePose(coefficients, heading);
+          const baked = placedPlanCells(plan, trackPlanTransform(placement, piece.partFrame));
+          const fromMesh = meshPlanCells(positions, groups, placement, piece.partFrame);
+          expect(cellKeys(baked), `${piece.id} at heading ${heading}`).toEqual(cellKeys(fromMesh));
+        }
+      }
     }
   });
 });
