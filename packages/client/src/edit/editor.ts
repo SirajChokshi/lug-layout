@@ -36,7 +36,6 @@ import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
 import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
-import type { TrackEndView } from "./track-drawing.ts";
 import {
   PlacedChunks,
   type PlacedModel,
@@ -239,8 +238,8 @@ export interface RoadPlacementDump {
 
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
+  readonly trackEnds: ReturnType<TrackDrawing["openEnds"]>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
-  readonly trackEnds: ReadonlyArray<TrackEndView>;
   readonly placements: PlacementDump;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
@@ -1177,8 +1176,8 @@ export class Editor implements IEditor {
   dump(): EditorDump {
     return {
       refs: this.placeables.map((p) => p.id),
-      frameShifts: this.placeables.map((p) => p.frameShift),
       trackEnds: this.track?.openEnds() ?? [],
+      frameShifts: this.placeables.map((p) => p.frameShift),
       placements: dumpPlacements(this.world),
       roadPlacements: this.roadModels.map((model, id) => ({
         id,
