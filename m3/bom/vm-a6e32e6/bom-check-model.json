@@ -1,0 +1,3685 @@
+{
+ "reports": [
+  {
+   "setNum": "10128-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 10,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 6,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Bricks",
+     "exportOnly": 0,
+     "inventoryOnly": 6
+    },
+    {
+     "category": "Plates",
+     "exportOnly": 1,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Plants & Trees",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Stickers",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    }
+   ],
+   "expandedTotal": 336,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:2454",
+     "ldrawColour": "4",
+     "quantity": 5,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:2454",
+     "ldrawColour": "40",
+     "quantity": 1,
+     "expandedFrom": ""
+    }
+   ],
+   "inventory": {
+    "setNum": "10128-1",
+    "inventoryId": "61",
+    "versions": 1,
+    "versionsIdentical": true,
+    "minifigParts": 8,
+    "spares": 6
+   },
+   "comparison": {
+    "exportedTotal": 330,
+    "inventoryTotal": 327,
+    "exact": 278,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3069bpr0049/8",
+      "inventory": "3069bpr0030/8",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3794b/7",
+      "inventory": "3794a/7",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4459/0",
+      "inventory": "2780/0",
+      "quantity": 18
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "6014a/7",
+      "inventory": "6014b/7",
+      "quantity": 4
+     },
+     {
+      "kind": "letter-suffix-revision",
+      "exported": "3660a/4",
+      "inventory": "3660/4",
+      "quantity": 4
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3068b/8",
+      "inventory": "3068bpr0095/8",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3626bpr0001/14",
+      "inventory": "3626bpr0167/14",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "2585/0",
+      "inventory": "2585/7",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3022/15",
+      "inventory": "3022/7",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3962b/72",
+      "inventory": "3962b/8",
+      "quantity": 1
+     }
+    ],
+    "exportOnly": [
+     [
+      "3034/4",
+      1
+     ],
+     [
+      "3814/25",
+      1
+     ],
+     [
+      "3814/272",
+      1
+     ],
+     [
+      "3815/1",
+      1
+     ],
+     [
+      "3815/272",
+      1
+     ],
+     [
+      "3816/1",
+      1
+     ],
+     [
+      "3816/272",
+      1
+     ],
+     [
+      "3817/1",
+      1
+     ],
+     [
+      "3817/272",
+      1
+     ],
+     [
+      "3818/1",
+      1
+     ],
+     [
+      "3818/15",
+      1
+     ],
+     [
+      "3819/1",
+      1
+     ],
+     [
+      "3819/15",
+      1
+     ],
+     [
+      "3820/14",
+      4
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "2454a/4",
+      5
+     ],
+     [
+      "3020/4",
+      2
+     ],
+     [
+      "3471/2",
+      1
+     ],
+     [
+      "46212/40",
+      1
+     ],
+     [
+      "47522/9999",
+      1
+     ],
+     [
+      "970c05/272",
+      1
+     ],
+     [
+      "970c28/1",
+      1
+     ],
+     [
+      "973c27h01pr0008/272",
+      1
+     ],
+     [
+      "973c28h01pr1183/25",
+      1
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "10133-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 9,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 6,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Stickers",
+     "exportOnly": 3,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Transportation - Land",
+     "exportOnly": 0,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Minifig Accessories",
+     "exportOnly": 0,
+     "inventoryOnly": 2
+    }
+   ],
+   "expandedTotal": 419,
+   "unmapped": [],
+   "inventory": {
+    "setNum": "10133-1",
+    "inventoryId": "11260",
+    "versions": 1,
+    "versionsIdentical": true,
+    "minifigParts": 9,
+    "spares": 4
+   },
+   "comparison": {
+    "exportedTotal": 419,
+    "inventoryTotal": 409,
+    "exact": 374,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "2412a/0",
+      "inventory": "2412b/0",
+      "quantity": 12
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3794b/0",
+      "inventory": "3794a/0",
+      "quantity": 3
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4092/0",
+      "inventory": "4025/0",
+      "quantity": 2
+     },
+     {
+      "kind": "letter-suffix-revision",
+      "exported": "4093c/14",
+      "inventory": "4093a/14",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3626bpr0001/14",
+      "inventory": "3626bpr0126/14",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3626bpr0001/14",
+      "inventory": "3626bpr0270/14",
+      "quantity": 1
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "973p1r/15",
+      "inventory": "973c27h08pr0009/15",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "2431pr0028/8",
+      "inventory": "2431pr0028/72",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "30133/15",
+      "inventory": "30133/4",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3624/4",
+      "inventory": "3624/320",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3941/8",
+      "inventory": "3941/72",
+      "quantity": 3
+     }
+    ],
+    "exportOnly": [
+     [
+      "3815/1",
+      1
+     ],
+     [
+      "3815/272",
+      1
+     ],
+     [
+      "3816/1",
+      1
+     ],
+     [
+      "3816/272",
+      1
+     ],
+     [
+      "3817/1",
+      1
+     ],
+     [
+      "3817/272",
+      1
+     ],
+     [
+      "3818/15",
+      2
+     ],
+     [
+      "3819/15",
+      2
+     ],
+     [
+      "3820/0",
+      2
+     ],
+     [
+      "3820/14",
+      2
+     ],
+     [
+      "43822/0",
+      3
+     ],
+     [
+      "973p84/272",
+      1
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "2871a/71",
+      2
+     ],
+     [
+      "3962b/72",
+      2
+     ],
+     [
+      "53049/9999",
+      1
+     ],
+     [
+      "970c05/272",
+      1
+     ],
+     [
+      "970c28/1",
+      1
+     ],
+     [
+      "973c27h01pr0008/272",
+      1
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "10185-1",
+   "residualByCategory": [
+    {
+     "category": "Hinges, Arms and Turntables",
+     "exportOnly": 34,
+     "inventoryOnly": 0
+    },
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 18,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 3,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Tiles",
+     "exportOnly": 1,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Bars, Ladders and Fences",
+     "exportOnly": 1,
+     "inventoryOnly": 0
+    },
+    {
+     "category": "Plates",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    }
+   ],
+   "expandedTotal": 2414,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:3816b",
+     "ldrawColour": "1",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:3816b",
+     "ldrawColour": "378",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:3816b",
+     "ldrawColour": "379",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:3817b",
+     "ldrawColour": "1",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:3817b",
+     "ldrawColour": "378",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:3817b",
+     "ldrawColour": "379",
+     "quantity": 1,
+     "expandedFrom": ""
+    }
+   ],
+   "inventory": {
+    "setNum": "10185-1",
+    "inventoryId": "15814",
+    "versions": 2,
+    "versionsIdentical": false,
+    "minifigParts": 17,
+    "spares": 57
+   },
+   "comparison": {
+    "exportedTotal": 2408,
+    "inventoryTotal": 2358,
+    "exact": 2270,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "32123a/71",
+      "inventory": "32123b/71",
+      "quantity": 6
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4032b/70",
+      "inventory": "4032a/70",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4287a/15",
+      "inventory": "4287b/15",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4287a/71",
+      "inventory": "4287b/71",
+      "quantity": 4
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "59900/72",
+      "inventory": "4589/72",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "60596/0",
+      "inventory": "30179/0",
+      "quantity": 3
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "60596/15",
+      "inventory": "30179/15",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "60596/72",
+      "inventory": "30179/72",
+      "quantity": 5
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "60608/15",
+      "inventory": "3854/15",
+      "quantity": 8
+     },
+     {
+      "kind": "letter-suffix-revision",
+      "exported": "3048b/71",
+      "inventory": "3048c/71",
+      "quantity": 2
+     },
+     {
+      "kind": "letter-suffix-revision",
+      "exported": "3660a/71",
+      "inventory": "3660/71",
+      "quantity": 10
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "2429/15",
+      "inventory": "73983/15",
+      "quantity": 12
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "2429/19",
+      "inventory": "73983/19",
+      "quantity": 4
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "2429/71",
+      "inventory": "73983/71",
+      "quantity": 14
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "2429/72",
+      "inventory": "73983/72",
+      "quantity": 4
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "3814/15",
+      "inventory": "973c27h01/15",
+      "quantity": 1
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "4592/0",
+      "inventory": "298c02/0",
+      "quantity": 1
+     }
+    ],
+    "exportOnly": [
+     [
+      "2430/15",
+      12
+     ],
+     [
+      "2430/19",
+      4
+     ],
+     [
+      "2430/71",
+      14
+     ],
+     [
+      "2430/72",
+      4
+     ],
+     [
+      "3070b/71",
+      1
+     ],
+     [
+      "3815/1",
+      1
+     ],
+     [
+      "3815/378",
+      1
+     ],
+     [
+      "3815/379",
+      1
+     ],
+     [
+      "3818/0",
+      1
+     ],
+     [
+      "3818/15",
+      1
+     ],
+     [
+      "3818/19",
+      1
+     ],
+     [
+      "3818/73",
+      1
+     ],
+     [
+      "3819/0",
+      1
+     ],
+     [
+      "3819/15",
+      1
+     ],
+     [
+      "3819/19",
+      1
+     ],
+     [
+      "3819/73",
+      1
+     ],
+     [
+      "3820/14",
+      8
+     ],
+     [
+      "4593/0",
+      1
+     ],
+     [
+      "973pb0307/19",
+      1
+     ],
+     [
+      "973pb0322/0",
+      1
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "3024/71",
+      1
+     ],
+     [
+      "3068b/71",
+      1
+     ],
+     [
+      "970c24/379",
+      1
+     ],
+     [
+      "970c25/378",
+      1
+     ],
+     [
+      "970c28/1",
+      1
+     ],
+     [
+      "973c03h01pr1184/0",
+      1
+     ],
+     [
+      "973c26h01pr1155/19",
+      1
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "10190-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 13,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 9,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Tubes and Hoses",
+     "exportOnly": 0,
+     "inventoryOnly": 6
+    },
+    {
+     "category": "Windows and Doors",
+     "exportOnly": 2,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Bricks",
+     "exportOnly": 0,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Bars, Ladders and Fences",
+     "exportOnly": 2,
+     "inventoryOnly": 0
+    },
+    {
+     "category": "Tiles",
+     "exportOnly": 1,
+     "inventoryOnly": 0
+    }
+   ],
+   "expandedTotal": 1488,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:2454",
+     "ldrawColour": "19",
+     "quantity": 3,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:71944k01",
+     "ldrawColour": "0",
+     "quantity": 2,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:71944k02",
+     "ldrawColour": "0",
+     "quantity": 12,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:4343",
+     "ldrawColour": "71",
+     "quantity": 1,
+     "expandedFrom": "ldraw:73436"
+    },
+    {
+     "ldrawPart": "ldraw:4344",
+     "ldrawColour": "39",
+     "quantity": 1,
+     "expandedFrom": "ldraw:73436"
+    },
+    {
+     "ldrawPart": "ldraw:750",
+     "ldrawColour": "15",
+     "quantity": 8,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:755",
+     "ldrawColour": "15",
+     "quantity": 8,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:756",
+     "ldrawColour": "15",
+     "quantity": 192,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:973p1j",
+     "ldrawColour": "15",
+     "quantity": 1,
+     "expandedFrom": ""
+    }
+   ],
+   "inventory": {
+    "setNum": "10190-1",
+    "inventoryId": "14486",
+    "versions": 1,
+    "versionsIdentical": true,
+    "minifigParts": 12,
+    "spares": 27
+   },
+   "comparison": {
+    "exportedTotal": 1260,
+    "inventoryTotal": 1250,
+    "exact": 1224,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4032b/72",
+      "inventory": "4032a/72",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4460a/0",
+      "inventory": "4460b/0",
+      "quantity": 2
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "4592/0",
+      "inventory": "298c02/0",
+      "quantity": 2
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "973p7h/73",
+      "inventory": "973c32h01pr1169/73",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "2412b/71",
+      "inventory": "2412b/80",
+      "quantity": 2
+     }
+    ],
+    "exportOnly": [
+     [
+      "30178c01/0",
+      1
+     ],
+     [
+      "3070b/19",
+      1
+     ],
+     [
+      "3815/2",
+      1
+     ],
+     [
+      "3815/272",
+      1
+     ],
+     [
+      "3815/72",
+      1
+     ],
+     [
+      "3816/2",
+      1
+     ],
+     [
+      "3816/272",
+      1
+     ],
+     [
+      "3816/72",
+      1
+     ],
+     [
+      "3817/2",
+      1
+     ],
+     [
+      "3817/272",
+      1
+     ],
+     [
+      "3817/72",
+      1
+     ],
+     [
+      "3818/15",
+      1
+     ],
+     [
+      "3818/272",
+      1
+     ],
+     [
+      "3818/73",
+      1
+     ],
+     [
+      "3819/15",
+      1
+     ],
+     [
+      "3819/272",
+      1
+     ],
+     [
+      "3819/73",
+      1
+     ],
+     [
+      "3820/14",
+      6
+     ],
+     [
+      "4593/0",
+      2
+     ],
+     [
+      "73194c02/71",
+      1
+     ],
+     [
+      "973p7z/272",
+      1
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "2454a/19",
+      3
+     ],
+     [
+      "47899c01/71",
+      1
+     ],
+     [
+      "73194c01/71",
+      1
+     ],
+     [
+      "73590c02a/15",
+      4
+     ],
+     [
+      "76041c02/0",
+      1
+     ],
+     [
+      "78c02/0",
+      2
+     ],
+     [
+      "970c05/272",
+      1
+     ],
+     [
+      "970c12/72",
+      1
+     ],
+     [
+      "970c31/2",
+      1
+     ],
+     [
+      "973c05h01pr1166/272",
+      1
+     ],
+     [
+      "973c27h01pr1271/15",
+      1
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "10218-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 16,
+     "inventoryOnly": 4
+    },
+    {
+     "category": "Hinges, Arms and Turntables",
+     "exportOnly": 18,
+     "inventoryOnly": 0
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 9,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Wheels and Tyres",
+     "exportOnly": 2,
+     "inventoryOnly": 0
+    },
+    {
+     "category": "Panels",
+     "exportOnly": 1,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Tubes and Hoses",
+     "exportOnly": 0,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Bars, Ladders and Fences",
+     "exportOnly": 1,
+     "inventoryOnly": 0
+    }
+   ],
+   "expandedTotal": 2075,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:973p1b",
+     "ldrawColour": "15",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:973p7j",
+     "ldrawColour": "15",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:973p94",
+     "ldrawColour": "2",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:973pbj",
+     "ldrawColour": "4",
+     "quantity": 1,
+     "expandedFrom": ""
+    }
+   ],
+   "inventory": {
+    "setNum": "10218-1",
+    "inventoryId": "14858",
+    "versions": 2,
+    "versionsIdentical": false,
+    "minifigParts": 16,
+    "spares": 66
+   },
+   "comparison": {
+    "exportedTotal": 2071,
+    "inventoryTotal": 2034,
+    "exact": 1959,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "10201/0",
+      "inventory": "2436/0",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3626bpr0001/14",
+      "inventory": "3626cpr0001/14",
+      "quantity": 4
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3678a/0",
+      "inventory": "3678b/0",
+      "quantity": 6
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4485/1",
+      "inventory": "86035/1",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4865b/4",
+      "inventory": "4865a/4",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4865b/40",
+      "inventory": "4865a/40",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "59900/46",
+      "inventory": "4589/46",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "59900/71",
+      "inventory": "4589/71",
+      "quantity": 4
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "60897/1",
+      "inventory": "4085c/1",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "60897/15",
+      "inventory": "4085c/15",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "60897/71",
+      "inventory": "4085c/71",
+      "quantity": 6
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "88930/0",
+      "inventory": "61068/0",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "92410/71",
+      "inventory": "4532/71",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "98560/320",
+      "inventory": "3684/320",
+      "quantity": 7
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "99774/15",
+      "inventory": "6120/15",
+      "quantity": 2
+     },
+     {
+      "kind": "letter-suffix-revision",
+      "exported": "3660a/71",
+      "inventory": "3660/71",
+      "quantity": 2
+     },
+     {
+      "kind": "letter-suffix-revision",
+      "exported": "3852a/191",
+      "inventory": "3852b/191",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "6251/84",
+      "inventory": "6251pr0003/84",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "92586/484",
+      "inventory": "92586pr0002/484",
+      "quantity": 1
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "2429/71",
+      "inventory": "73983/71",
+      "quantity": 18
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "2807/0",
+      "inventory": "92851/47",
+      "quantity": 2
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "4592/0",
+      "inventory": "298c02/0",
+      "quantity": 1
+     }
+    ],
+    "exportOnly": [
+     [
+      "2430/71",
+      18
+     ],
+     [
+      "3815/1",
+      1
+     ],
+     [
+      "3815/320",
+      1
+     ],
+     [
+      "3815/71",
+      1
+     ],
+     [
+      "3816/1",
+      1
+     ],
+     [
+      "3816/320",
+      1
+     ],
+     [
+      "3816/71",
+      1
+     ],
+     [
+      "3817/1",
+      1
+     ],
+     [
+      "3817/320",
+      1
+     ],
+     [
+      "3817/71",
+      1
+     ],
+     [
+      "3818/15",
+      2
+     ],
+     [
+      "3818/2",
+      1
+     ],
+     [
+      "3818/320",
+      1
+     ],
+     [
+      "3819/15",
+      2
+     ],
+     [
+      "3819/2",
+      1
+     ],
+     [
+      "3819/320",
+      1
+     ],
+     [
+      "3820/14",
+      8
+     ],
+     [
+      "4593/0",
+      1
+     ],
+     [
+      "4720/47",
+      2
+     ],
+     [
+      "60581/15",
+      1
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "4215b/15",
+      1
+     ],
+     [
+      "75c09/0",
+      2
+     ],
+     [
+      "970c10/320",
+      1
+     ],
+     [
+      "970c14/71",
+      1
+     ],
+     [
+      "970c28/1",
+      1
+     ],
+     [
+      "973c10h01pr1633/4",
+      1
+     ],
+     [
+      "973c27h01pr1573/15",
+      1
+     ],
+     [
+      "973c27h01pr1580/15",
+      1
+     ],
+     [
+      "973c31h01pr1617/2",
+      1
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "10264-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 30,
+     "inventoryOnly": 6
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 15,
+     "inventoryOnly": 6
+    },
+    {
+     "category": "Bricks Curved",
+     "exportOnly": 0,
+     "inventoryOnly": 8
+    },
+    {
+     "category": "Bars, Ladders and Fences",
+     "exportOnly": 6,
+     "inventoryOnly": 0
+    },
+    {
+     "category": "Animals / Creatures",
+     "exportOnly": 2,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Minifig Headwear",
+     "exportOnly": 2,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Plates",
+     "exportOnly": 3,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Minifig Heads",
+     "exportOnly": 2,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Tiles Round and Curved",
+     "exportOnly": 2,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Plates Angled",
+     "exportOnly": 2,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Windscreens and Fuselage",
+     "exportOnly": 0,
+     "inventoryOnly": 4
+    },
+    {
+     "category": "Tiles",
+     "exportOnly": 1,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Plants & Trees",
+     "exportOnly": 1,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "String, Bands and Reels",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Tools",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    }
+   ],
+   "expandedTotal": 2603,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:30104k01",
+     "ldrawColour": "72",
+     "quantity": 2,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:30104k02",
+     "ldrawColour": "72",
+     "quantity": 5,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:41879b",
+     "ldrawColour": "30",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:4141242a",
+     "ldrawColour": "19",
+     "quantity": 1,
+     "expandedFrom": "ldraw:973d06"
+    }
+   ],
+   "inventory": {
+    "setNum": "10264-1",
+    "inventoryId": "30387",
+    "versions": 2,
+    "versionsIdentical": false,
+    "minifigParts": 24,
+    "spares": 79
+   },
+   "comparison": {
+    "exportedTotal": 2594,
+    "inventoryTotal": 2569,
+    "exact": 1979,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "2039/15",
+      "inventory": "11062/15",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "2335/4",
+      "inventory": "11055/4",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "2412a/71",
+      "inventory": "2412b/71",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "30041/71",
+      "inventory": "92107/71",
+      "quantity": 3
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "30056/0",
+      "inventory": "21229/0",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "32556a/19",
+      "inventory": "32556/19",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4079/4",
+      "inventory": "4079b/4",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4599a/0",
+      "inventory": "4599b/0",
+      "quantity": 4
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4599a/1",
+      "inventory": "4599b/1",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4599a/15",
+      "inventory": "4599b/15",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4599a/4",
+      "inventory": "4599b/4",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4599a/71",
+      "inventory": "4599b/71",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4716/71",
+      "inventory": "32905/71",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "26603/0",
+      "inventory": "26603pr0014/0",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3068b/15",
+      "inventory": "3068bpr0356/15",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3068b/4",
+      "inventory": "3068bpr0362/4",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3068bpr0201/15",
+      "inventory": "3068bpr0364/15",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3626cpr0677/14",
+      "inventory": "3626cpr0752/14",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3626cpr2107/14",
+      "inventory": "3626cpr1964/14",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3626cpr2125/14",
+      "inventory": "3626cpr2141/14",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "57895/47",
+      "inventory": "57895pr0016/47",
+      "quantity": 1
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "87079/15",
+      "inventory": "87079pr0185/15",
+      "quantity": 1
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "4592/0",
+      "inventory": "298c02/0",
+      "quantity": 6
+     },
+     {
+      "kind": "assembly-and-sub-part",
+      "exported": "6567c01/379",
+      "inventory": "13756/47",
+      "quantity": 4
+     },
+     {
+      "kind": "other-colour",
+      "exported": "11253/80",
+      "inventory": "11253/179",
+      "quantity": 4
+     },
+     {
+      "kind": "other-colour",
+      "exported": "11476/84",
+      "inventory": "11476/484",
+      "quantity": 8
+     },
+     {
+      "kind": "other-colour",
+      "exported": "11477/84",
+      "inventory": "11477/484",
+      "quantity": 4
+     },
+     {
+      "kind": "other-colour",
+      "exported": "15068/84",
+      "inventory": "15068/484",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "15573/84",
+      "inventory": "15573/484",
+      "quantity": 4
+     },
+     {
+      "kind": "other-colour",
+      "exported": "18920/71",
+      "inventory": "18920/179",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "2357/84",
+      "inventory": "2357/484",
+      "quantity": 10
+     },
+     {
+      "kind": "other-colour",
+      "exported": "2412b/0",
+      "inventory": "2412b/179",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "2412b/0",
+      "inventory": "2412b/71",
+      "quantity": 4
+     },
+     {
+      "kind": "other-colour",
+      "exported": "2431/84",
+      "inventory": "2431/484",
+      "quantity": 16
+     },
+     {
+      "kind": "other-colour",
+      "exported": "25269/84",
+      "inventory": "25269/484",
+      "quantity": 52
+     },
+     {
+      "kind": "other-colour",
+      "exported": "27263/84",
+      "inventory": "27263/484",
+      "quantity": 4
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3004/84",
+      "inventory": "3004/484",
+      "quantity": 48
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3005/84",
+      "inventory": "3005/484",
+      "quantity": 46
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3009/84",
+      "inventory": "3009/484",
+      "quantity": 47
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3010/84",
+      "inventory": "3010/484",
+      "quantity": 54
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3020/1067",
+      "inventory": "3020/84",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3023/84",
+      "inventory": "3023/484",
+      "quantity": 47
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3024/72",
+      "inventory": "3024/484",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3024/84",
+      "inventory": "3024/484",
+      "quantity": 32
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3069b/1067",
+      "inventory": "3069b/3",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3069b/1067",
+      "inventory": "3069b/484",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3069b/322",
+      "inventory": "3069b/484",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3069b/84",
+      "inventory": "3069b/484",
+      "quantity": 23
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3070b/71",
+      "inventory": "3070b/379",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3070b/84",
+      "inventory": "3070b/484",
+      "quantity": 16
+     },
+     {
+      "kind": "other-colour",
+      "exported": "32607/2",
+      "inventory": "32607/10",
+      "quantity": 24
+     },
+     {
+      "kind": "other-colour",
+      "exported": "33320/10",
+      "inventory": "33320/2",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "34173/80",
+      "inventory": "34173/179",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3666/71",
+      "inventory": "3666/484",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3666/84",
+      "inventory": "3666/484",
+      "quantity": 11
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3700/71",
+      "inventory": "3700/72",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3700/86",
+      "inventory": "3700/84",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3710/322",
+      "inventory": "3710/484",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3710/84",
+      "inventory": "3710/484",
+      "quantity": 7
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3710/84",
+      "inventory": "3710/73",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "4528/80",
+      "inventory": "4528/179",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "60623/322",
+      "inventory": "60623/73",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "6187/71",
+      "inventory": "6187/72",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "87079/84",
+      "inventory": "87079/484",
+      "quantity": 10
+     },
+     {
+      "kind": "other-colour",
+      "exported": "87087/84",
+      "inventory": "87087/484",
+      "quantity": 8
+     },
+     {
+      "kind": "other-colour",
+      "exported": "88286/92",
+      "inventory": "88286/84",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "98138/72",
+      "inventory": "98138/71",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "98138pr0018/1067",
+      "inventory": "98138pr0018/84",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "98138pr0056/86",
+      "inventory": "98138pr0056/84",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "98369/80",
+      "inventory": "98369/179",
+      "quantity": 1
+     }
+    ],
+    "exportOnly": [
+     [
+      "11303/272",
+      1
+     ],
+     [
+      "2546pat0001/1",
+      1
+     ],
+     [
+      "3024/84",
+      1
+     ],
+     [
+      "3068a/70",
+      1
+     ],
+     [
+      "3626bpr0006/14",
+      1
+     ],
+     [
+      "3626bpr0017/14",
+      1
+     ],
+     [
+      "3666/84",
+      2
+     ],
+     [
+      "3741/2",
+      1
+     ],
+     [
+      "3814/19",
+      1
+     ],
+     [
+      "3814/29",
+      1
+     ],
+     [
+      "3814/320",
+      1
+     ],
+     [
+      "3815/1",
+      2
+     ],
+     [
+      "3815/19",
+      1
+     ],
+     [
+      "3815/288",
+      1
+     ],
+     [
+      "3815/379",
+      1
+     ],
+     [
+      "3816/1",
+      2
+     ],
+     [
+      "3816/19",
+      1
+     ],
+     [
+      "3816/288",
+      1
+     ],
+     [
+      "3816/379",
+      1
+     ],
+     [
+      "3817/1",
+      2
+     ],
+     [
+      "3817/19",
+      1
+     ],
+     [
+      "3817/288",
+      1
+     ],
+     [
+      "3817/379",
+      1
+     ],
+     [
+      "3818/14",
+      1
+     ],
+     [
+      "3818/15",
+      1
+     ],
+     [
+      "3818/19",
+      1
+     ],
+     [
+      "3818/320",
+      1
+     ],
+     [
+      "3818/73",
+      2
+     ],
+     [
+      "3819/14",
+      1
+     ],
+     [
+      "3819/15",
+      1
+     ],
+     [
+      "3819/19",
+      1
+     ],
+     [
+      "3819/320",
+      1
+     ],
+     [
+      "3819/73",
+      2
+     ],
+     [
+      "3820/14",
+      12
+     ],
+     [
+      "4150pr0001/15",
+      1
+     ],
+     [
+      "43722/70",
+      2
+     ],
+     [
+      "4593/0",
+      6
+     ],
+     [
+      "64798/308",
+      1
+     ],
+     [
+      "92586/86",
+      1
+     ],
+     [
+      "973p7w/73",
+      2
+     ],
+     [
+      "973p86/15",
+      1
+     ],
+     [
+      "98138/86",
+      1
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "11477/71",
+      8
+     ],
+     [
+      "13760/379",
+      4
+     ],
+     [
+      "14769pr0001/15",
+      1
+     ],
+     [
+      "23186/308",
+      1
+     ],
+     [
+      "24855/2",
+      1
+     ],
+     [
+      "27062pat0002/14",
+      1
+     ],
+     [
+      "29685pr0001/15",
+      1
+     ],
+     [
+      "3068bpr0273/70",
+      1
+     ],
+     [
+      "3070b/72",
+      1
+     ],
+     [
+      "35660pat0002/272",
+      1
+     ],
+     [
+      "3626cpr2399/14",
+      1
+     ],
+     [
+      "3626cpr2586/14",
+      1
+     ],
+     [
+      "41879a/30",
+      1
+     ],
+     [
+      "43723/70",
+      2
+     ],
+     [
+      "60479/71",
+      1
+     ],
+     [
+      "92338/72",
+      1
+     ],
+     [
+      "92586pr0001/84",
+      1
+     ],
+     [
+      "96874/25",
+      1
+     ],
+     [
+      "970c24/379",
+      1
+     ],
+     [
+      "970c26/19",
+      1
+     ],
+     [
+      "970c28/1",
+      2
+     ],
+     [
+      "970c35/288",
+      1
+     ],
+     [
+      "973c01h01pr3433/29",
+      1
+     ],
+     [
+      "973c10h01pr4289/320",
+      1
+     ],
+     [
+      "973c26h01pr4023/19",
+      1
+     ],
+     [
+      "973c27h01pr4199/15",
+      1
+     ],
+     [
+      "973c32h01pr1244/73",
+      2
+     ],
+     [
+      "98138pr0056/84",
+      1
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "2150-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 38,
+     "inventoryOnly": 8
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 24,
+     "inventoryOnly": 8
+    },
+    {
+     "category": "Tiles",
+     "exportOnly": 0,
+     "inventoryOnly": 13
+    },
+    {
+     "category": "Minifig Accessories",
+     "exportOnly": 0,
+     "inventoryOnly": 6
+    },
+    {
+     "category": "Bricks",
+     "exportOnly": 0,
+     "inventoryOnly": 5
+    },
+    {
+     "category": "Flags, Banners and Signs",
+     "exportOnly": 2,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Windows and Doors",
+     "exportOnly": 1,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Plates Round Curved and Dishes",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Stickers",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    }
+   ],
+   "expandedTotal": 639,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:2454",
+     "ldrawColour": "4",
+     "quantity": 3,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:168265a",
+     "ldrawColour": "15",
+     "quantity": 2,
+     "expandedFrom": "ldraw:3897d01"
+    },
+    {
+     "ldrawPart": "ldraw:4521703u",
+     "ldrawColour": "47",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:4343",
+     "ldrawColour": "15",
+     "quantity": 1,
+     "expandedFrom": "ldraw:73436"
+    },
+    {
+     "ldrawPart": "ldraw:4344",
+     "ldrawColour": "39",
+     "quantity": 1,
+     "expandedFrom": "ldraw:73436"
+    },
+    {
+     "ldrawPart": "ldraw:973p73",
+     "ldrawColour": "2",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:973p83",
+     "ldrawColour": "14",
+     "quantity": 1,
+     "expandedFrom": ""
+    }
+   ],
+   "inventory": {
+    "setNum": "2150-1",
+    "inventoryId": "3360",
+    "versions": 1,
+    "versionsIdentical": true,
+    "minifigParts": 33,
+    "spares": 12
+   },
+   "comparison": {
+    "exportedTotal": 629,
+    "inventoryTotal": 610,
+    "exact": 535,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3070a/4",
+      "inventory": "3070b/4",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3070a/7",
+      "inventory": "3070b/7",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3755/4",
+      "inventory": "3755a/4",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4345apr0003/14",
+      "inventory": "4345bpr0001/14",
+      "quantity": 1
+     },
+     {
+      "kind": "letter-suffix-revision",
+      "exported": "3660a/4",
+      "inventory": "3660/4",
+      "quantity": 2
+     },
+     {
+      "kind": "print-or-pattern",
+      "exported": "3626bpr0001/14",
+      "inventory": "3626bpr0004/14",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3010/14",
+      "inventory": "3010/4",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3022/14",
+      "inventory": "3022/0",
+      "quantity": 3
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3680/14",
+      "inventory": "3680/0",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3710/14",
+      "inventory": "3710/4",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3730/14",
+      "inventory": "3730/0",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3731/14",
+      "inventory": "3731/0",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3742/4",
+      "inventory": "3742/14",
+      "quantity": 6
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3855/0",
+      "inventory": "3855/47",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "6141/46",
+      "inventory": "6141/36",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "6141/46",
+      "inventory": "6141/47",
+      "quantity": 1
+     }
+    ],
+    "exportOnly": [
+     [
+      "3814/1",
+      1
+     ],
+     [
+      "3815/0",
+      4
+     ],
+     [
+      "3815/1",
+      2
+     ],
+     [
+      "3815/7",
+      2
+     ],
+     [
+      "3816/0",
+      2
+     ],
+     [
+      "3816/1",
+      3
+     ],
+     [
+      "3816/15",
+      1
+     ],
+     [
+      "3816/7",
+      2
+     ],
+     [
+      "3817/0",
+      2
+     ],
+     [
+      "3817/1",
+      3
+     ],
+     [
+      "3817/15",
+      1
+     ],
+     [
+      "3817/7",
+      2
+     ],
+     [
+      "3818/0",
+      1
+     ],
+     [
+      "3818/1",
+      3
+     ],
+     [
+      "3818/14",
+      1
+     ],
+     [
+      "3818/15",
+      2
+     ],
+     [
+      "3818/5",
+      1
+     ],
+     [
+      "3819/0",
+      1
+     ],
+     [
+      "3819/1",
+      3
+     ],
+     [
+      "3819/14",
+      1
+     ],
+     [
+      "3819/15",
+      2
+     ],
+     [
+      "3819/5",
+      1
+     ],
+     [
+      "3820/0",
+      2
+     ],
+     [
+      "3820/14",
+      14
+     ],
+     [
+      "3897/15",
+      2
+     ],
+     [
+      "73194c02/15",
+      1
+     ],
+     [
+      "973p2a/15",
+      1
+     ],
+     [
+      "973p2k/15",
+      1
+     ],
+     [
+      "973p75/0",
+      1
+     ],
+     [
+      "973p82/1",
+      2
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "2454a/4",
+      3
+     ],
+     [
+      "3004/14",
+      2
+     ],
+     [
+      "3069bpr0099/15",
+      4
+     ],
+     [
+      "3070b/15",
+      4
+     ],
+     [
+      "3070b/4",
+      3
+     ],
+     [
+      "3070bpr0039/15",
+      2
+     ],
+     [
+      "3899/1",
+      2
+     ],
+     [
+      "47899c01/15",
+      1
+     ],
+     [
+      "57503/334",
+      1
+     ],
+     [
+      "57504/334",
+      1
+     ],
+     [
+      "57505/334",
+      1
+     ],
+     [
+      "57506/334",
+      1
+     ],
+     [
+      "6141/47",
+      1
+     ],
+     [
+      "71649/9999",
+      1
+     ],
+     [
+      "73194c01/15",
+      1
+     ],
+     [
+      "970c03/0",
+      2
+     ],
+     [
+      "970c17/7",
+      2
+     ],
+     [
+      "970c27/0",
+      1
+     ],
+     [
+      "970c28/0",
+      1
+     ],
+     [
+      "970c28/1",
+      2
+     ],
+     [
+      "973c01h01pr0083/14",
+      1
+     ],
+     [
+      "973c03h03pr0143/0",
+      1
+     ],
+     [
+      "973c27h01pr0003/15",
+      1
+     ],
+     [
+      "973c27h01pr0073/2",
+      1
+     ],
+     [
+      "973c28h01pr0002/1",
+      1
+     ],
+     [
+      "973c28h01pr0008/1",
+      2
+     ],
+     [
+      "973c36h01pr0005/15",
+      1
+     ],
+     [
+      "upn0270/15",
+      2
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "4554-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 35,
+     "inventoryOnly": 8
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 24,
+     "inventoryOnly": 8
+    },
+    {
+     "category": "Tiles",
+     "exportOnly": 0,
+     "inventoryOnly": 13
+    },
+    {
+     "category": "Minifig Accessories",
+     "exportOnly": 0,
+     "inventoryOnly": 13
+    },
+    {
+     "category": "Bricks",
+     "exportOnly": 0,
+     "inventoryOnly": 5
+    },
+    {
+     "category": "Flags, Banners and Signs",
+     "exportOnly": 2,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Windows and Doors",
+     "exportOnly": 1,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Stickers",
+     "exportOnly": 0,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Plates",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Plates Round Curved and Dishes",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    }
+   ],
+   "expandedTotal": 631,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:2454",
+     "ldrawColour": "14",
+     "quantity": 3,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:168265a",
+     "ldrawColour": "15",
+     "quantity": 2,
+     "expandedFrom": "ldraw:3897d01"
+    },
+    {
+     "ldrawPart": "ldraw:4521703u",
+     "ldrawColour": "47",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:4343",
+     "ldrawColour": "15",
+     "quantity": 1,
+     "expandedFrom": "ldraw:73436"
+    },
+    {
+     "ldrawPart": "ldraw:4344",
+     "ldrawColour": "39",
+     "quantity": 1,
+     "expandedFrom": "ldraw:73436"
+    },
+    {
+     "ldrawPart": "ldraw:973p18",
+     "ldrawColour": "1",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:973p19",
+     "ldrawColour": "1",
+     "quantity": 2,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:973p71",
+     "ldrawColour": "15",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:973p83",
+     "ldrawColour": "1",
+     "quantity": 1,
+     "expandedFrom": ""
+    }
+   ],
+   "inventory": {
+    "setNum": "4554-1",
+    "inventoryId": "11094",
+    "versions": 1,
+    "versionsIdentical": true,
+    "minifigParts": 33,
+    "spares": 2
+   },
+   "comparison": {
+    "exportedTotal": 618,
+    "inventoryTotal": 612,
+    "exact": 546,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3070a/14",
+      "inventory": "3070b/14",
+      "quantity": 4
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3755/14",
+      "inventory": "3755a/14",
+      "quantity": 1
+     },
+     {
+      "kind": "letter-suffix-revision",
+      "exported": "3660a/14",
+      "inventory": "3660/14",
+      "quantity": 2
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3855/0",
+      "inventory": "3855/47",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "6141/46",
+      "inventory": "6141/36",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "6141/46",
+      "inventory": "6141/47",
+      "quantity": 1
+     }
+    ],
+    "exportOnly": [
+     [
+      "3815/0",
+      3
+     ],
+     [
+      "3815/1",
+      2
+     ],
+     [
+      "3815/4",
+      2
+     ],
+     [
+      "3815/7",
+      1
+     ],
+     [
+      "3816/0",
+      3
+     ],
+     [
+      "3816/1",
+      2
+     ],
+     [
+      "3816/4",
+      2
+     ],
+     [
+      "3816/7",
+      1
+     ],
+     [
+      "3817/0",
+      3
+     ],
+     [
+      "3817/1",
+      2
+     ],
+     [
+      "3817/4",
+      2
+     ],
+     [
+      "3817/7",
+      1
+     ],
+     [
+      "3818/1",
+      5
+     ],
+     [
+      "3818/15",
+      2
+     ],
+     [
+      "3818/4",
+      1
+     ],
+     [
+      "3819/1",
+      5
+     ],
+     [
+      "3819/15",
+      2
+     ],
+     [
+      "3819/4",
+      1
+     ],
+     [
+      "3820/14",
+      16
+     ],
+     [
+      "3897/15",
+      2
+     ],
+     [
+      "73194c02/15",
+      1
+     ],
+     [
+      "973p1e/15",
+      1
+     ],
+     [
+      "973p2a/15",
+      1
+     ],
+     [
+      "973p84/1",
+      1
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "162323/9999",
+      1
+     ],
+     [
+      "164555/9999",
+      1
+     ],
+     [
+      "164557/9999",
+      1
+     ],
+     [
+      "2454a/14",
+      3
+     ],
+     [
+      "3004/14",
+      2
+     ],
+     [
+      "3023/4",
+      1
+     ],
+     [
+      "3069bpr0099/15",
+      4
+     ],
+     [
+      "3070b/15",
+      4
+     ],
+     [
+      "3070b/4",
+      3
+     ],
+     [
+      "3070bpr0039/15",
+      2
+     ],
+     [
+      "3899/1",
+      2
+     ],
+     [
+      "4449/0",
+      1
+     ],
+     [
+      "4449/15",
+      2
+     ],
+     [
+      "4449/6",
+      4
+     ],
+     [
+      "47899c01/15",
+      1
+     ],
+     [
+      "57503/334",
+      1
+     ],
+     [
+      "57504/334",
+      1
+     ],
+     [
+      "57505/334",
+      1
+     ],
+     [
+      "57506/334",
+      1
+     ],
+     [
+      "6141/47",
+      1
+     ],
+     [
+      "73194c01/15",
+      1
+     ],
+     [
+      "970c03/0",
+      3
+     ],
+     [
+      "970c17/7",
+      1
+     ],
+     [
+      "970c22/4",
+      2
+     ],
+     [
+      "970c28/1",
+      2
+     ],
+     [
+      "973c22h01pr0062/15",
+      1
+     ],
+     [
+      "973c27h01pr0003/15",
+      1
+     ],
+     [
+      "973c27h01pr0071/15",
+      1
+     ],
+     [
+      "973c28h01pr0005/1",
+      1
+     ],
+     [
+      "973c28h01pr0018/1",
+      1
+     ],
+     [
+      "973c28h01pr0019/1",
+      2
+     ],
+     [
+      "973c28h01pr0063/1",
+      1
+     ],
+     [
+      "upn0270/15",
+      2
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "4555-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 14,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 9,
+     "inventoryOnly": 3
+    },
+    {
+     "category": "Plants & Trees",
+     "exportOnly": 0,
+     "inventoryOnly": 8
+    },
+    {
+     "category": "Bricks",
+     "exportOnly": 1,
+     "inventoryOnly": 4
+    },
+    {
+     "category": "Supports, Girders and Cranes",
+     "exportOnly": 0,
+     "inventoryOnly": 4
+    },
+    {
+     "category": "Windows and Doors",
+     "exportOnly": 1,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Wheels and Tyres",
+     "exportOnly": 0,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Minifig Accessories",
+     "exportOnly": 0,
+     "inventoryOnly": 2
+    },
+    {
+     "category": "Tiles Special",
+     "exportOnly": 1,
+     "inventoryOnly": 0
+    },
+    {
+     "category": "Stickers",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "String, Bands and Reels",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Plates Round Curved and Dishes",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    }
+   ],
+   "expandedTotal": 393,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:168265a",
+     "ldrawColour": "7",
+     "quantity": 2,
+     "expandedFrom": "ldraw:4865d01"
+    },
+    {
+     "ldrawPart": "ldraw:973p73",
+     "ldrawColour": "2",
+     "quantity": 1,
+     "expandedFrom": ""
+    }
+   ],
+   "inventory": {
+    "setNum": "4555-1",
+    "inventoryId": "8276",
+    "versions": 1,
+    "versionsIdentical": true,
+    "minifigParts": 12,
+    "spares": 7
+   },
+   "comparison": {
+    "exportedTotal": 390,
+    "inventoryTotal": 394,
+    "exact": 346,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "2362b/15",
+      "inventory": "2362a/15",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "2878c02/0",
+      "inventory": "2878c01/0",
+      "quantity": 4
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3839a/0",
+      "inventory": "3839b/0",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4092/0",
+      "inventory": "4025/0",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4215a/14",
+      "inventory": "4215b/14",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "4215a/15",
+      "inventory": "4215b/15",
+      "quantity": 4
+     },
+     {
+      "kind": "other-colour",
+      "exported": "3823/143",
+      "inventory": "3823/41",
+      "quantity": 1
+     },
+     {
+      "kind": "other-colour",
+      "exported": "6141/46",
+      "inventory": "6141/0",
+      "quantity": 2
+     }
+    ],
+    "exportOnly": [
+     [
+      "2412b/7",
+      1
+     ],
+     [
+      "3008/14",
+      1
+     ],
+     [
+      "3815/0",
+      1
+     ],
+     [
+      "3815/1",
+      2
+     ],
+     [
+      "3816/0",
+      1
+     ],
+     [
+      "3816/1",
+      2
+     ],
+     [
+      "3817/0",
+      1
+     ],
+     [
+      "3817/1",
+      2
+     ],
+     [
+      "3818/1",
+      2
+     ],
+     [
+      "3818/15",
+      1
+     ],
+     [
+      "3819/1",
+      2
+     ],
+     [
+      "3819/15",
+      1
+     ],
+     [
+      "3820/14",
+      6
+     ],
+     [
+      "73194c02/15",
+      1
+     ],
+     [
+      "973p82/1",
+      1
+     ],
+     [
+      "973p84/1",
+      1
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "169675/9999",
+      1
+     ],
+     [
+      "2648/4",
+      2
+     ],
+     [
+      "2649/0",
+      2
+     ],
+     [
+      "3004/6",
+      4
+     ],
+     [
+      "3464/4",
+      2
+     ],
+     [
+      "3741/2",
+      2
+     ],
+     [
+      "3742/14",
+      6
+     ],
+     [
+      "3899/15",
+      2
+     ],
+     [
+      "56823c50/0",
+      1
+     ],
+     [
+      "6141/0",
+      1
+     ],
+     [
+      "73194c01/15",
+      1
+     ],
+     [
+      "970c03/0",
+      1
+     ],
+     [
+      "970c28/1",
+      2
+     ],
+     [
+      "973c27h01pr0073/2",
+      1
+     ],
+     [
+      "973c28h01pr0005/1",
+      1
+     ],
+     [
+      "973c28h01pr0008/1",
+      1
+     ]
+    ]
+   }
+  },
+  {
+   "setNum": "7936-1",
+   "residualByCategory": [
+    {
+     "category": "Minifig Upper Body",
+     "exportOnly": 5,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Minifig Lower Body",
+     "exportOnly": 1,
+     "inventoryOnly": 1
+    },
+    {
+     "category": "Stickers",
+     "exportOnly": 0,
+     "inventoryOnly": 1
+    }
+   ],
+   "expandedTotal": 147,
+   "unmapped": [
+    {
+     "ldrawPart": "ldraw:3816b",
+     "ldrawColour": "25",
+     "quantity": 1,
+     "expandedFrom": ""
+    },
+    {
+     "ldrawPart": "ldraw:3817b",
+     "ldrawColour": "25",
+     "quantity": 1,
+     "expandedFrom": ""
+    }
+   ],
+   "inventory": {
+    "setNum": "7936-1",
+    "inventoryId": "2499",
+    "versions": 1,
+    "versionsIdentical": true,
+    "minifigParts": 4,
+    "spares": 5
+   },
+   "comparison": {
+    "exportedTotal": 145,
+    "inventoryTotal": 142,
+    "exact": 126,
+    "pairings": [
+     {
+      "kind": "mould-or-alternate",
+      "exported": "30389b/14",
+      "inventory": "30389c/14",
+      "quantity": 1
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "3794a/15",
+      "inventory": "3794b/15",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "44822/72",
+      "inventory": "95120/72",
+      "quantity": 2
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "6014a/14",
+      "inventory": "6014b/14",
+      "quantity": 4
+     },
+     {
+      "kind": "mould-or-alternate",
+      "exported": "6015/0",
+      "inventory": "60700/0",
+      "quantity": 4
+     }
+    ],
+    "exportOnly": [
+     [
+      "3815/25",
+      1
+     ],
+     [
+      "3818/1",
+      1
+     ],
+     [
+      "3819/1",
+      1
+     ],
+     [
+      "3820/14",
+      2
+     ],
+     [
+      "973pb0278/25",
+      1
+     ]
+    ],
+    "inventoryOnly": [
+     [
+      "90600/9999",
+      1
+     ],
+     [
+      "970c34/25",
+      1
+     ],
+     [
+      "973c28h01pr1183/25",
+      1
+     ]
+    ]
+   }
+  }
+ ],
+ "partNames": {
+  "2039": "Lamp Post 2 x 2 x 7 with 6 Base Flutes",
+  "2335": "Flag 2 x 2 Square [Thin Clips]",
+  "2357": "Brick 2 x 2 Corner",
+  "2429": "Hinge Plate 1 x 4 Swivel Base",
+  "2430": "Hinge Plate 1 x 4 Swivel Top [Solid Pin]",
+  "2431": "Tile 1 x 4 with Groove",
+  "2436": "Bracket 1 x 2 - 1 x 4 [Square Corners]",
+  "2585": "String Reel 2 x 2 Winch Drum",
+  "2648": "Crane Grab Jaw",
+  "2649": "Crane Grab Grip",
+  "2780": "Technic Pin with Friction Ridges Lengthwise and Center Slots",
+  "2807": "Tyre for Bicycle Wheel",
+  "3004": "Brick 1 x 2",
+  "3005": "Brick 1 x 1",
+  "3008": "Brick 1 x 8",
+  "3009": "Brick 1 x 6",
+  "3010": "Brick 1 x 4",
+  "3020": "Plate 2 x 4",
+  "3022": "Plate 2 x 2",
+  "3023": "Plate 1 x 2",
+  "3024": "Plate 1 x 1",
+  "3034": "Plate 2 x 8",
+  "3464": "Wheel Centre Small with Stub Axles (Pulley Wheel)",
+  "3471": "Plant, Pine Tree, Large, 4 x 4 x 6 2/3",
+  "3624": "Cap, Police Style",
+  "3660": "Brick Sloped Inverted 45° 2 x 2 [Ovoid Bottom Pin, Bar-sized Stud Holes]",
+  "3666": "Plate 1 x 6",
+  "3680": "Turntable 2 x 2 Plate, Base",
+  "3684": "Brick Sloped 75° 2 x 2 x 3 [Hollow Studs]",
+  "3700": "Technic Brick 1 x 2 [1 Pin Hole]",
+  "3710": "Plate 1 x 4",
+  "3730": "Plate Special 2 x 2 with Towball Socket, Short, 4 Slots",
+  "3731": "Plate 2 x 2 with Towball",
+  "3741": "Plant, Flower Stem",
+  "3742": "Plant, Flower - Small",
+  "3755": "Brick 1 x 3 x 5 without Side Supports",
+  "3814": "Torso [Plain]",
+  "3815": "Hips",
+  "3816": "Leg, Right",
+  "3817": "Leg, Left",
+  "3818": "Arm, Right",
+  "3819": "Arm, Left",
+  "3820": "Minifig Hand",
+  "3823": "Windscreen 2 x 4 x 2",
+  "3854": "Window 1 x 2 x 3 Pane",
+  "3855": "Glass for Window 1 x 4 x 3",
+  "3897": "Road Sign Wide Rectangle",
+  "3899": "Equipment Cup / Mug [Plain]",
+  "3941": "Brick Round 2 x 2 with Axle Hole",
+  "4025": "Tile Special 6 x 4 with Beveled Edges and 5mm Pin (Train Bogie Plate)",
+  "4079": "Seat / Chair 2 x 2",
+  "4092": "Tile Special 6 x 4 with Beveled Edges and 7mm Pin (Train Bogie Plate)",
+  "4449": "Bag / Briefcase",
+  "4459": "Technic Pin with Friction Ridges Lengthwise, without Center Slots",
+  "4485": "Hat / Cap Long Peak [Plain]",
+  "4528": "Equipment Frying Pan",
+  "4532": "Cupboard 2 x 3 x 2 with Solid Studs",
+  "4589": "Cone 1 x 1 [No Top Groove]",
+  "4592": "Lever Small Base",
+  "4593": "Lever Small",
+  "4716": "Technic Worm Gear",
+  "4720": "Wheel Bicycle without Tire",
+  "6015": "Tyre 21 x 12 with Offset Tread Small Wide",
+  "6120": "Sports Ski with Hinge",
+  "6141": "Plate Round 1 x 1 with Solid Stud",
+  "6187": "Bar 1 x 4 x 2",
+  "6251": "Animal, Cat, Kitten Crouching [Plain]",
+  "10201": "Bracket 1 x 2 - 1 x 4 [Rounded Corners]",
+  "11055": "Flag 2 x 2 Square, Flat Clip Edge [Thick Clips]",
+  "11062": "Lamp Post 2 x 2 x 7 with 4 Base Flutes",
+  "11253": "Sports Roller Skate",
+  "11303": "Hat / Cap Short Curved Bill with Seams and Hole on Top",
+  "11476": "Plate Special 1 x 2 with Clip Horizontal on Side",
+  "11477": "Brick Curved 2 x 1 No Studs [1/2 Bow]",
+  "13756": "Glass for Windscreen 2 x 6 x 2",
+  "13760": "Windscreen 2 x 6 x 2 Train without Glass",
+  "15068": "Brick Curved 2 x 2 x 2/3",
+  "15573": "Plate Special 1 x 2 with 1 Stud with Groove and Inside Stud Holder (Jumper)",
+  "18920": "Equipment Scissors",
+  "21229": "Fence Spindled 4 x 4 x 2 Quarter Round with 3 Studs",
+  "23186": "Hair Swept Left Tousled [Plain]",
+  "24855": "Plant, Flower Stem with Bottom Bar",
+  "25269": "Tile Round 1 x 1 Quarter",
+  "26603": "Tile 2 x 3",
+  "27263": "Tile Special 2 x 2 Corner with Cut Corner - Facet",
+  "30041": "Plate Special 6 x 8 Trap Door Frame Horizontal",
+  "30056": "Fence Spindled 4 x 4 x 2 Quarter Round with 2 Studs",
+  "30133": "Minifig Neckwear Bandana Tied in Front",
+  "30179": "Door Frame 1 x 4 x 6 Type 1",
+  "32556": "Technic Pin Long without Friction Ridges",
+  "32607": "Plant, Plate 1 x 1 Round with 3 Leaves",
+  "32905": "Technic Worm Gear Type 2",
+  "33320": "Animal, Frog",
+  "34173": "Equipment Cutlery - Spoon, Rounded Bottom",
+  "43722": "Wedge Plate 3 x 2 Right",
+  "43723": "Wedge Plate 3 x 2 Left",
+  "43822": "Sticker Sheet for Set 10020-1",
+  "44822": "Hinge Tile 1 x 4 Locking Dual 1 Fingers on Top [4 Locking Ridges]",
+  "46212": "Brick 1 x 2 x 5 without Side Supports",
+  "47522": "Sticker Sheet for Set 10128-1",
+  "53049": "Sticker Sheet for Set 10133-1",
+  "57503": "Money / Coin with \"10\" Sans-serif Type",
+  "57504": "Money / Coin with \"20\" Sans-serif Type",
+  "57505": "Money / Coin with \"30\" Sans-serif Type",
+  "57506": "Money / Coin with \"40\" Sans-serif Type",
+  "57895": "Glass for Window 1 x 4 x 6",
+  "59900": "Cone 1 x 1 [Top Groove]",
+  "60479": "Plate 1 x 12",
+  "60581": "Panel 1 x 4 x 3 [Side Supports / Hollow Studs]",
+  "60596": "Door Frame 1 x 4 x 6 Type 2",
+  "60608": "Window 1 x 2 x 3 Pane with Thick Corner Tabs",
+  "60623": "Door 1 x 4 x 6 with 4 Panes and Stud Handle",
+  "60700": "Tyre 21 x 12 with Offset Tread Small Wide and Beveled Tread Edge",
+  "60897": "Plate Special 1 x 1 with Clip Vertical [Thick Open O Clip]",
+  "61068": "Brick Curved 2 x 4 x 2/3 No Studs [No Bottom Tubes]",
+  "64798": "Hair Swept Back with Widow's Peak [Plain]",
+  "71649": "Sticker Sheet for Set 2150-1",
+  "73983": "Hinge Plate 1 x 4 Swivel Top / Base - Solid Clip [Complete Assembly]",
+  "86035": "Hat / Cap Short Curved Peak",
+  "87079": "Tile 2 x 4 with Groove",
+  "87087": "Brick Special 1 x 1 with Stud on 1 Side",
+  "88286": "Hair Ponytail Long French Braided",
+  "88930": "Brick Curved 2 x 4 x 2/3 No Studs, with Bottom Tubes",
+  "90600": "Sticker Sheet for Set 7936-1",
+  "92107": "Plate Special 6 x 8 Trap Door Frame Horizontal [Long Pin Holders]",
+  "92338": "Chain 6L [5 Links]",
+  "92410": "Cupboard 2 x 3 x 2 with Hollow Studs",
+  "92586": "Animal, Dog, Alsatian / German Shepherd (Police Dog) [Plain]",
+  "92851": "Wheel Bicycle, Fixed Black Tire",
+  "95120": "Hinge Tile 1 x 4 Locking Dual 1 Fingers on Top [8 Locking Ridges]",
+  "96874": "Brick and Axle Separator v2.0",
+  "98138": "Tile Round 1 x 1",
+  "98369": "Equipment Cleaver, no Holes",
+  "98560": "Brick Sloped 75° 2 x 2 x 3 [Solid Studs]",
+  "99774": "Sports Ski without Hinge",
+  "162323": "Sticker Sheet 2 for Set 4558-1 (United States Cities)",
+  "164555": "Sticker Sheet 1 for Set 4554-1",
+  "164557": "Sticker Sheet 2 for Sets 4554-1/4558-1 (European Cities)",
+  "169675": "Sticker Sheet for Set 4555-1",
+  "14769pr0001": "Tile Round 2 x 2 with Bottom Stud Holder with Clock Print",
+  "2362a": "Panel 1 x 2 x 3 - Solid Studs",
+  "2362b": "Panel 1 x 2 x 3 [Hollow Studs]",
+  "2412a": "Tile Special 1 x 2 Grille without Bottom Groove",
+  "2412b": "Tile Special 1 x 2 Grille with Bottom Groove",
+  "2431pr0028": "Tile 1 x 4 with Train Controls Print",
+  "2454a": "Brick 1 x 2 x 5 with Blocked Open Studs and Bottom Stud Holder with Asymmetric Ridges",
+  "2546pat0001": "Animal, Bird, Parrot Marbled Green Pattern",
+  "26603pr0014": "Tile 2 x 3 with White 'CDDA TLVA ATA LLA LFA MTA CTA CTM TWA FTA' Print",
+  "27062pat0002": "Animal, Bird, Parrot, Wide Beak and Tail with Marbled Blue Pattern",
+  "2871a": "Train Motor Decorative Side 10 x 2 x 2 with Closed Hub Points (for 9V Train Motor)",
+  "2878c01": "Wheel Holder, Train with Wheels [Complete Assembly]",
+  "2878c02": "Wheel Holder, Train with Wheels, RC [Complete Assembly]",
+  "29685pr0001": "Animal, Rabbit / Bunny with Black Eyes and Mouth - Pink Nose Print",
+  "298c02": "Lever Small Base with Black Lever",
+  "30178c01": "Door 1 x 4 x 6 with 3 Panes (Complete)",
+  "30389b": "Hinge Brick 2 x 2 Locking with 1 Finger Vertical and Axle Hole [+ Opening]",
+  "30389c": "Hinge Brick 2 x 2 Locking with 1 Finger Vertical and Axle Hole [X Opening]",
+  "3048b": "Brick Sloped 45° 2 x 1 Triple Smooth",
+  "3048c": "Brick Sloped 45° 2 x 1 Triple with Ovoid Bottom Pin",
+  "3068a": "Tile 2 x 2 without Groove",
+  "3068b": "Tile 2 x 2 with Groove",
+  "3068bpr0095": "Tile 2 x 2 with Computer Monitor, White Power Switch Icon Print",
+  "3068bpr0201": "Tile 2 x 2 with Newspaper 'THE LEGO NEWS volume 3' Print",
+  "3068bpr0273": "Tile 2 x 2 with Suspension Bridge Print",
+  "3068bpr0356": "Tile 2 x 2 with Heartlake Park Map print",
+  "3068bpr0362": "Tile 2 x 2 with 'Rock & Roll' Print",
+  "3068bpr0364": "Tile 2 x 2 with 'THE LEGO NEWS' and 'The greatest hero ever!' Print",
+  "3069b": "Tile 1 x 2 with Groove",
+  "3069bpr0030": "Tile 1 x 2 with Computer Keyboard Standard Print",
+  "3069bpr0049": "Tile 1 x 2 with Simple Computer Keyboard Print",
+  "3069bpr0099": "Tile 1 x 2 with Mail Envelope, Letter, Address and Red Stamp Print",
+  "3070a": "Tile 1 x 1 without Groove",
+  "3070b": "Tile 1 x 1 with Groove",
+  "3070bpr0039": "Tile 1 x 1 with Computer Targeting Display Print",
+  "32123a": "Technic Bush 1/2 Smooth with Axle Hole Reduced",
+  "32123b": "Technic Bush 1/2 Smooth with Axle Hole Semi-Reduced",
+  "32556a": "Technic Pin Long without Friction Ridges - Single Slot",
+  "35660pat0002": "Hair and Hat / Cap, Ponytail Dark Orange Print",
+  "3626bpr0001": "Minifig Head Standard Grin Print [Blocked Open Stud]",
+  "3626bpr0004": "Minifig Head, Standard with Red Lips, Eyelashes Print [Blocked Open Stud]",
+  "3626bpr0006": "Minifig Head, Black Sunglasses and Standard Grin Print [Blocked Open Stud]",
+  "3626bpr0017": "Minifig Head Cavalry / Pirate, Beard with Gray Facial Hair Print [Blocked Open Stud]",
+  "3626bpr0126": "Minifig Head Doc / Director / Engineer, Gray Eyebrows, Glasses, Beard and Moustache Print",
+  "3626bpr0167": "Minifig Head Hockey Player, Beard Stubble Black Eyebrows, Wide Mouth, White Pupils Print [Blocked Open Stud]",
+  "3626bpr0270": "Minifig Head with Orange Beard around Mouth, White Smile, White Pupils Print [Blocked Open Stud]",
+  "3626cpr0001": "Minifig Head Standard Grin Print [Hollow Stud]",
+  "3626cpr0677": "Minifig Head Lil' Nelson / Boy / Girl / Elf, Brown Eyebrows and Freckles, Open Smile Print",
+  "3626cpr0752": "Minifig Head Tommy / Wade / Boy / Girl, Freckles, Smile / Worried Print",
+  "3626cpr1964": "Minifig Head Chuck, Glasses Rectangular, Gray Eyebrows and Moustache Print",
+  "3626cpr2107": "Minifig Head Commissioner James Gordon, Glasses with Dark Gray Eyebrows and Moustache, Dark Brown Cheek Lines Print",
+  "3626cpr2125": "Minifig Head Barbara Gordon, Eyebrows, Beauty Mark, Red Lips Print [Hollow Stud]",
+  "3626cpr2141": "Minifig Head Officer Noonan / Police Officer, Large Sunglasses, Thin Eyebrows Print",
+  "3626cpr2399": "Minifig Head Chef Enzo / Horace, Dark Tan Eyebrows, Moustache, Dark Tan and Gray Sideburns, Stubble and White Pupils Print",
+  "3626cpr2586": "Minifig Head Nanna, Peach Lips, Clean / Dirt Stains",
+  "3660a": "Brick Sloped Inverted 45° 2 x 2 [Round Bottom Pin]",
+  "3678a": "Brick Sloped 65° 2 x 2 x 2 Smooth without Bottom Tube",
+  "3678b": "Brick Sloped 65° 2 x 2 x 2 with Bottom Tube",
+  "3755a": "Brick 1 x 3 x 5 with Side Supports",
+  "3794a": "Plate Special 1 x 2 with 1 Stud without Groove (Jumper)",
+  "3794b": "Plate Special 1 x 2 with 1 Stud with Groove (Jumper)",
+  "3839a": "Plate Special 1 x 2 with Handles [Round Ends, Mid Attachment]",
+  "3839b": "Plate Special 1 x 2 with Handles [Flat Ends / Low Attachment]",
+  "3852a": "Equipment Hairbrush Long Handle [14mm]",
+  "3852b": "Equipment Hairbrush Short Handle [10mm]",
+  "3962b": "Equipment Radio [Extended Handle, Compact Speaker Grille]",
+  "4032a": "Plate Round 2 x 2 with Axle Hole Type 1 (+ Opening)",
+  "4032b": "Plate Round 2 x 2 with Axle Hole Type 2 (X Opening)",
+  "4079b": "Seat / Chair 2 x 2 with Center Sprue Mark",
+  "4085c": "Plate Special 1 x 1 with Clip Vertical [Thick U Clip]",
+  "4093a": "Vehicle Base, Train 6 x 28 with Two 1 x 2 Openings [3 Round Holes Each End]",
+  "4093c": "Vehicle Base, Train 6 x 28 with Two 1 x 2 Openings [6 Round Holes Each End and 1 Round Hole at Center]",
+  "4150pr0001": "Tile Round 2 x 2 with Clock Print",
+  "41879a": "Legs Short",
+  "4215a": "Panel 1 x 4 x 3 [Solid Studs]",
+  "4215b": "Panel 1 x 4 x 3 [Hollow Studs]",
+  "4287a": "Brick Sloped Inverted 34° 3 x 1 without Internal Stopper",
+  "4287b": "Brick Sloped Inverted 34° 3 x 1 with Internal Stopper",
+  "4345apr0003": "Box 2 x 2 x 2 [Solid Studs] with Mailbox Print",
+  "4345bpr0001": "Box 2 x 2 x 2 [Hollow Studs] with Mailbox Print",
+  "4460a": "Brick Sloped 75° 2 x 1 x 3 with Open Stud",
+  "4460b": "Brick Sloped 75° 2 x 1 x 3 with Hollow Stud",
+  "4599a": "Tap 1 x 1 with Hole in Spout",
+  "4599b": "Tap 1 x 1 without Hole in Spout",
+  "47899c01": "Door 1 x 4 x 5 Left with Trans-Clear Glass",
+  "4865a": "Panel 1 x 2 x 1 [Square Corners]",
+  "4865b": "Panel 1 x 2 x 1 [Rounded Corners]",
+  "56823c50": "String Cord Thin (0.5mm) 50cm",
+  "57895pr0016": "Glass for Window 1 x 4 x 6 with 'Dr. Jones Animal Care' Veterinarian Logo",
+  "6014a": "Wheel 11 x 12 with Hole Round for Wheels Holder Pin",
+  "6014b": "Wheel 11 x 12 with Hole Notched for Wheels Holder Pin",
+  "6251pr0003": "Animal, Cat, Kitten Crouching with Black Eyes, Dark Brown Stripes on Head, and White Muzzle Print",
+  "6567c01": "Windscreen 2 x 6 x 2 Train with Trans-Clear Glass",
+  "73194c01": "Door 1 x 4 x 5 Right with Trans-Clear Glass",
+  "73194c02": "Door 1 x 4 x 5 Right with Trans-Light Blue Glass",
+  "73590c02a": "Flexible Hose 8.5L with Tabbed Ends (Ends same color as Tube)",
+  "75c09": "Hose Rigid 3mm D. 9L / 7.2cm",
+  "76041c02": "Door 1 x 4 x 6 with 3 Panes with Trans-Brown Glass",
+  "78c02": "Hose, Ribbed 7mm D. 2L / 1.6cm",
+  "87079pr0185": "Tile 2 x 4 with Black Tire Half with Tan 'Jo's Garage' and Black 'BY ACCIDENT WE MEET' print",
+  "92586pr0001": "Animal, Dog, Alsatian / German Shepherd (Police Dog) with Black Eyes and Forehead Print",
+  "92586pr0002": "Animal, Dog, Alsatian / German Shepherd (Police Dog) with Black Eyes, Dark Tan Muzzle Print",
+  "970c03": "Hips and Black Legs",
+  "970c05": "Hips and Dark Blue Legs",
+  "970c10": "Hips and Dark Red Legs",
+  "970c12": "Hips and Dark Bluish Gray Legs",
+  "970c14": "Hips and Light Bluish Gray Legs",
+  "970c17": "Hips and Light Gray Legs",
+  "970c22": "Hips and Red Legs",
+  "970c24": "Hips and Sand Blue Legs",
+  "970c25": "Hips and Sand Green Legs",
+  "970c26": "Hips and Tan Legs",
+  "970c27": "Hips and White Legs",
+  "970c28": "Hips and Blue Legs",
+  "970c31": "Hips and Green Legs",
+  "970c34": "Hips and Orange Legs",
+  "970c35": "Hips and Dark Green Legs",
+  "973c01h01pr0083": "Torso Jacket with Train Logo and Tie Print, Yellow Arms and Hands",
+  "973c01h01pr3433": "Torso Tank Top, Horizontal White Stripes, Pink Cat Print, Yellow Arms and Hands",
+  "973c03h01pr1184": "Torso Formal Jacket, 2 Buttons and Pocket with White Cloth/Paper, Gray Tie Print, Black Arms, Yellow Hands",
+  "973c03h03pr0143": "Torso Leather Jacket, Zipper, Yellow Star Police Badge Print, Black Arms and Hands",
+  "973c05h01pr1166": "Torso Blazer over Light Blue Button Down Shirt Print, Dark Blue Arms, Yellow Hands",
+  "973c10h01pr1633": "Torso Corset with Gold Panel Front and Lace Up Back Print, Dark Red Arms, Yellow Hands",
+  "973c10h01pr4289": "Torso Jacket with Zipper and Pocket, Medium Blue Shirt Print, Dark Red Arms, Yellow Hands",
+  "973c22h01pr0062": "Torso Horizontal Red Stripes Print, Red Arms, Yellow Hands",
+  "973c26h01pr1155": "Torso Shirt Front Seamed with Patch Pockets Print, Tan Arms, Yellow Hands",
+  "973c26h01pr4023": "Torso Knit Sweater Print, Tan Arms, Yellow Hands",
+  "973c27h01": "Torso, White Arms, Yellow Hands [Plain]",
+  "973c27h01pr0003": "Torso Chef with 6 Buttons, Short Red Neckerchief Print, White Arms, Yellow Hands",
+  "973c27h01pr0008": "Torso Vest with Train Logo, Tie, Watch Fob Print (Conductor Charlie), White Arms, Yellow Hands",
+  "973c27h01pr0071": "Torso Red Necklace and Blue Undershirt Print, White Arms, Yellow Hands",
+  "973c27h01pr0073": "Torso Vest with Patch Pockets over White Shirt Print, White Arms, Yellow Hands",
+  "973c27h01pr1271": "Torso Overalls Green Print, White Arms, Yellow Hands",
+  "973c27h01pr1573": "Torso Hooded Sweatshirt with Medium Blue Pocket and Drawstring Front, Medium Blue Hood Back Print, White Arms, Yellow Hands",
+  "973c27h01pr1580": "Torso V-Neck Shirt with Blue Overalls, Front Pocket Print, White Arms, Yellow Hands",
+  "973c27h01pr4199": "Torso Lab Coat, Stethoscope, Pocket, Pens, Blue Shirt Print, White Arms, Yellow Hands",
+  "973c27h08pr0009": "Torso Overalls with Blue Stripes Print, White Arms, Dark Gray Hands",
+  "973c28h01pr0002": "Torso Hoodie, Tracksuit with Light Blue Pocket and Collar, Zipper Print, Blue Arms, Yellow Hands",
+  "973c28h01pr0005": "Torso Jacket, Red Tie, Gold Buttons and Train Logo Print, Blue Arms, Yellow Hands",
+  "973c28h01pr0008": "Torso Vest, Red with Train Logo Print, Blue Arms, Yellow Hands",
+  "973c28h01pr0018": "Torso Jacket and Tie Print, Blue Arms, Yellow Hands",
+  "973c28h01pr0019": "Torso Red Chevron and Train Logo Print, Blue Arms, Yellow Hands",
+  "973c28h01pr0063": "Torso Jacket with Train Logo and Red Scarf Print, Blue Arms, Yellow Hands",
+  "973c28h01pr1183": "Torso Vest with Reflective Safety Stripes, Pocket and Train Logo Print, Blue Arms, Yellow Hands",
+  "973c31h01pr1617": "Torso Sweater V-Neck over Button Down Blue Shirt Print, Green Arms, Yellow Hands",
+  "973c32h01pr1169": "Torso Suit Jacket, Two Buttons, Pink Top, Necklace Print, Medium Blue Arms, Yellow Hands",
+  "973c32h01pr1244": "Torso Mechanic Blue Overalls, Tools in Pocket Print, Plain Back, Medium Blue Arms, Yellow Hands",
+  "973c36h01pr0005": "Torso Shirt with Horse, Tree, and Sunset Print, Dark Pink Arms, Yellow Hands",
+  "973p1e": "Minifig Torso with Red Horizontal Stripes Print",
+  "973p1r": "Minifig Torso with Blue Striped Dungarees Print pocket",
+  "973p2a": "Minifig Torso with Chef Print",
+  "973p2k": "Minifig Torso with Palm Tree and Horse Print",
+  "973p75": "Minifig Torso with Zipper Jacket and Police Logo Print",
+  "973p7h": "Minifig Torso with Jacket, Pink Shirt, Ring on Necklace Print",
+  "973p7w": "Minifig Torso with V-Neck Shirt and Blue Overalls Print",
+  "973p7z": "Minifig Torso with Jacket over Lt Blue Button Down Shirt Print",
+  "973p82": "Minifig Torso with Red Vest and Train Logo Print",
+  "973p84": "Minifig Torso with Four Button Suit and Train Logo Print conductor",
+  "973p86": "Minifig Torso with Stethoscope and Pocket with Pens Print",
+  "973pb0278": "Torso Train, Safety Vest Reflective with Pocket and Train Logo Print",
+  "973pb0307": "Torso Shirt Front Seamed with Patch Pockets Print",
+  "973pb0322": "Torso Suit with 2 Buttons, Gray Sides, Gray Centerline and Tie Print",
+  "98138pr0018": "Tile Round 1 x 1 with Cookie Print",
+  "98138pr0056": "Tile Round 1 x 1 with Animal Track Print",
+  "upn0270": "Road Sign Rectangle, Round Pole"
+ }
+}
