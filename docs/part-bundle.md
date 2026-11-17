@@ -13,13 +13,15 @@ Every object is stored with `Cache-Control: public, max-age=31536000, immutable`
 
 ## CI
 
-`.github/workflows/part-bundle.yml` runs on every push to `main`, in the `part-bundles-production` environment:
+`.github/workflows/part-bundle.yml` runs on every push to `main`, in the `production` environment that #62's catalog deploy also uses:
 1. Checks the bucket for the three manifests of the commit's input key, and stops if they're all there. That covers every commit that doesn't touch the bundle inputs.
 2. Otherwise, restores the pinned LDraw inputs and builds the bundle, including the compiler.
 3. Uploads the objects the bucket doesn't have yet.
 4. Uploads the manifests last, so a manifest never names a missing object.
 
-The R2 keys are passed only to the check step and the upload step. Installs, the Rust toolchain, `cargo` build scripts and the LDraw restore never see them. Without credentials, the check step warns and nothing is published. It never reads `infra/cloudflare/part-bundles.json` in that case.
+The job uses #62's single Cloudflare account token. R2's S3 API takes the token's id as the access key and the SHA-256 hex digest of the token value as the secret, and the CLI derives both from `CLOUDFLARE_API_TOKEN_ID` and `CLOUDFLARE_API_TOKEN`. `CLOUDFLARE_ACCOUNT_ID`, the token and its id are passed only to the check step and the upload step. Installs, the Rust toolchain, `cargo` build scripts and the LDraw restore never see them. Without the token, the check step warns and nothing is published. It never reads `infra/cloudflare/part-bundles.json` in that case. The bucket name is that file's `production.bucket_name`.
+
+`production` has the owner as its required reviewer, so every push to `main` waits for approval before this job runs. For a merge that doesn't change bundle inputs, the manifests are already published, and Vercel doesn't wait for the job. For a merge that does, Production deploys only after the job is approved and has built and uploaded the bundle, about 6 minutes. If that takes longer than `PART_BUNDLE_WAIT_MINUTES`, the Vercel build fails and the previous deployment keeps serving. Approve the job, then redeploy in Vercel.
 
 ## Vercel
 
@@ -33,15 +35,14 @@ The R2 keys are passed only to the check step and the upload step. Installs, the
 ## Setup
 
 1. Apply `infra/cloudflare`. It creates the bucket, public on its r2.dev domain.
-2. Create an R2 API token with **Object Read & Write** on `brr-part-bundles` only.
-3. Under *Settings → Environments*, create `part-bundles-production`. Under *Deployment branches and tags*, allow `main` only. Add the secrets `CLOUDFLARE_ACCOUNT_ID`, `PART_BUNDLE_R2_ACCESS_KEY_ID` and `PART_BUNDLE_R2_SECRET_ACCESS_KEY`.
-4. In the Vercel project, set `VITE_BUNDLE_BASE_URL` for Production to the Terraform output `part_bundle_base_url`, and check that Root Directory is `apps/web`.
-5. To move to a custom domain later, follow the three steps in the infra README. r2.dev stays on until no deployment loads from it.
+2. Add nothing new. The job uses `production`'s `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_API_TOKEN_ID`, set up for #62 (*Credentials* in the infra README). The token's Workers R2 Storage permission covers the bucket.
+3. In the Vercel project, set `VITE_BUNDLE_BASE_URL` for Production to the Terraform output `part_bundle_base_urls.production`, and check that Root Directory is `apps/web`.
+4. To move to a custom domain later, follow the three steps in the infra README. r2.dev stays on until no deployment loads from it.
 
 ## Local development
 
 Nothing changes locally. `pnpm --filter @brr/asset-pipeline build` writes `tools/asset-pipeline/dist/bundle`, and `vite` serves it at `/bundle/`. To use the published bundle instead:
 
 ```sh
-VITE_BUNDLE_BASE_URL=<part_bundle_base_url> VITE_BUNDLE_MANIFEST_FILE=$(node tools/asset-pipeline/src/cli.ts manifest-file) pnpm --filter @brr/web dev
+VITE_BUNDLE_BASE_URL=<part_bundle_base_urls.production> VITE_BUNDLE_MANIFEST_FILE=$(node tools/asset-pipeline/src/cli.ts manifest-file) pnpm --filter @brr/web dev
 ```

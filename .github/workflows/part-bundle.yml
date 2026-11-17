@@ -16,7 +16,7 @@ jobs:
     name: Publish part bundle
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: part-bundles-production
+    environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -31,12 +31,12 @@ jobs:
         id: status
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PART_BUNDLE_R2_ACCESS_KEY_ID: ${{ secrets.PART_BUNDLE_R2_ACCESS_KEY_ID }}
-          PART_BUNDLE_R2_SECRET_ACCESS_KEY: ${{ secrets.PART_BUNDLE_R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
         run: node tools/asset-pipeline/src/cli.ts published
       - name: Report missing credentials
         if: steps.status.outputs.configured == 'false'
-        run: echo "::warning::Part bundle not published. The part-bundles-production environment has no R2 credentials; see docs/part-bundle.md."
+        run: echo "::warning::Part bundle not published. The production environment has no Cloudflare token; see docs/part-bundle.md."
       - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
         if: steps.status.outputs.published == 'false'
         with:
@@ -60,8 +60,8 @@ jobs:
         if: steps.status.outputs.published == 'false'
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PART_BUNDLE_R2_ACCESS_KEY_ID: ${{ secrets.PART_BUNDLE_R2_ACCESS_KEY_ID }}
-          PART_BUNDLE_R2_SECRET_ACCESS_KEY: ${{ secrets.PART_BUNDLE_R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
         run: node tools/asset-pipeline/src/cli.ts upload
       - name: Summary
         if: steps.status.outputs.configured == 'true'

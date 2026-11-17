@@ -30,7 +30,7 @@ import {
 } from "./catalog/produced-colors.ts";
 import { readPalette } from "./palette.ts";
 import { MANIFEST_FILE, publishBundle } from "./publish.ts";
-import { R2ObjectStore } from "./r2.ts";
+import { R2ObjectStore, sha256Hex } from "./r2.ts";
 import { isPartBundlePublished, uploadPartBundle, waitUntilServed } from "./remote-bundle.ts";
 import {
   geometryReports,
@@ -344,26 +344,32 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+const PART_BUNDLE_TARGET = "production";
+
 async function partBundleBucket(): Promise<string> {
   const store = await readFile(partBundleStorePath, "utf8").catch(() => {
     throw new Error(
       `${partBundleStorePath} is missing: apply the infra/cloudflare Terraform that creates the bucket first`,
     );
   });
-  return (JSON.parse(store) as { bucket_name: string }).bucket_name;
+  const targets = JSON.parse(store) as Readonly<Record<string, { readonly bucket_name: string }>>;
+  const bucket = targets[PART_BUNDLE_TARGET]?.bucket_name;
+  if (bucket === undefined)
+    throw new Error(`${partBundleStorePath} has no ${PART_BUNDLE_TARGET} bucket`);
+  return bucket;
 }
 
 async function partBundleStore(): Promise<R2ObjectStore | undefined> {
-  const accessKeyId = process.env["PART_BUNDLE_R2_ACCESS_KEY_ID"];
-  const secretAccessKey = process.env["PART_BUNDLE_R2_SECRET_ACCESS_KEY"];
-  if (!accessKeyId || !secretAccessKey) return undefined;
+  const tokenId = process.env["CLOUDFLARE_API_TOKEN_ID"];
+  const token = process.env["CLOUDFLARE_API_TOKEN"];
+  if (!tokenId || !token) return undefined;
   const endpoint =
     process.env["PART_BUNDLE_R2_ENDPOINT"] ||
     `https://${requiredEnv("CLOUDFLARE_ACCOUNT_ID")}.r2.cloudflarestorage.com`;
   return new R2ObjectStore({
     endpoint,
     bucket: await partBundleBucket(),
-    credentials: { accessKeyId, secretAccessKey },
+    credentials: { accessKeyId: tokenId, secretAccessKey: sha256Hex(token) },
   });
 }
 
@@ -394,7 +400,7 @@ async function publishedCommand(): Promise<void> {
 async function uploadCommand(): Promise<void> {
   const store = await partBundleStore();
   if (store === undefined) {
-    throw new Error("set PART_BUNDLE_R2_ACCESS_KEY_ID and PART_BUNDLE_R2_SECRET_ACCESS_KEY");
+    throw new Error("set CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN_ID");
   }
   const manifestFile = currentManifestFile();
   const { uploaded, present } = await uploadPartBundle(
