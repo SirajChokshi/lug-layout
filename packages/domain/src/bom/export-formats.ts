@@ -47,7 +47,21 @@ export function brickLinkWantedListXml(lines: ReadonlyArray<CatalogLine>): strin
   ].join("\n");
 }
 
-export function plainBomCsv(lines: ReadonlyArray<BomLine>, crosswalk: Crosswalk): string {
+export interface UncountedItem {
+  readonly source: string;
+  readonly item: string;
+  readonly ldrawColor: number | null;
+  readonly quantity: number | null;
+  readonly reason: string;
+}
+
+const KEYWORD_ONLY_NOTE = "BrickLink id from an LDraw keyword only";
+
+export function plainBomCsv(
+  lines: ReadonlyArray<BomLine>,
+  crosswalk: Crosswalk,
+  uncounted: ReadonlyArray<UncountedItem>,
+): string {
   return csv([
     [
       "LDraw part",
@@ -58,6 +72,7 @@ export function plainBomCsv(lines: ReadonlyArray<BomLine>, crosswalk: Crosswalk)
       "BrickLink part",
       "BrickLink colour",
       "Expanded from",
+      "Note",
     ],
     ...resolveLines(lines, crosswalk).map((line) => {
       const part = crosswalk.parts.get(line.part);
@@ -71,7 +86,19 @@ export function plainBomCsv(lines: ReadonlyArray<BomLine>, crosswalk: Crosswalk)
         part?.bricklink ?? null,
         color?.bricklink ?? null,
         line.expandedFrom,
+        part?.bricklink && part.bricklinkFromKeywordOnly ? KEYWORD_ONLY_NOTE : null,
       ];
     }),
+    ...uncounted.map((item) => [
+      item.item,
+      item.ldrawColor,
+      item.quantity,
+      null,
+      null,
+      null,
+      null,
+      null,
+      `not counted (${item.source}): ${item.reason}`,
+    ]),
   ]);
 }

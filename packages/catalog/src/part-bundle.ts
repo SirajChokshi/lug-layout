@@ -95,6 +95,17 @@ export interface BundleModelEntry {
   readonly inlinePartsResolvedToOfficial: ReadonlyArray<InlinePartResolution>;
   readonly instances: number;
   readonly sha256: string;
+  readonly notDrawn?: ReadonlyArray<NotDrawnSection>;
+}
+
+export interface NotDrawnSection {
+  readonly section: string;
+  readonly kind: string;
+  readonly reason: string;
+  readonly instances?: number;
+  readonly colors?: ReadonlyArray<{ readonly color: number; readonly instances: number }>;
+  readonly triangles?: number;
+  readonly quads?: number;
 }
 
 export interface InlinePartResolution {
@@ -166,6 +177,7 @@ export interface CatalogPartComponent {
 export interface CatalogPartIds {
   readonly rebrickable: string | null;
   readonly bricklink: string | null;
+  readonly bricklinkFromKeywordOnly?: boolean;
   readonly components?: ReadonlyArray<CatalogPartComponent>;
 }
 

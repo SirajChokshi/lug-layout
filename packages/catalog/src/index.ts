@@ -23,6 +23,7 @@ export type {
   ModelOrigin,
   ModelRole,
   ModelSection,
+  NotDrawnSection,
   ModelSet,
   PartAsset,
   PartBundle,

@@ -20,10 +20,12 @@ const inputs: CrosswalkInputs = {
     { r: "973pb0278", b: ["973pb0278"], l: [] },
     { r: "2495", b: ["2495"], l: ["2495"] },
     { r: "2496", b: ["2496"], l: ["2496"] },
+    { r: "2557c02", b: ["2557c02"], l: ["2557c01"] },
+    { r: "2557c03", b: ["2557c03"], l: ["2557c01"] },
   ],
   apiColors: [],
-  rebrickableParts: new Set(["3001", "4032a", "4032b", "74746"]),
-  elementCounts: new Map(),
+  rebrickableParts: new Set(["3001", "4032a", "4032b", "74746", "2889"]),
+  elementCounts: new Map([["2557c03", 9]]),
   ldrawParts: new Map([
     ["3001", facts("Brick  2 x  4")],
     ["72841", facts("=Brick  2 x  4 with Bottom Tubes", "BrickLink 3001")],
@@ -38,6 +40,8 @@ const inputs: CrosswalkInputs = {
     ["2495", facts("Minifig Hand Truck")],
     ["2496", facts("Minifig Hand Truck Wheel")],
     ["2495c01", shortcut("Minifig Hand Truck (Complete)", ["2495", 16], ["2496", 0])],
+    ["2889", facts("Animal Dog Alsatian Puppy")],
+    ["2557c01", facts("Train Coupling Assembly", "Rebrickable 2557c02")],
   ]),
   ldrawColors: [],
 };
@@ -68,6 +72,14 @@ describe("crosswalk derivation", () => {
       { part: "ldraw:2495", color: 16 },
       { part: "ldraw:2496", color: 0 },
     ]);
+  });
+
+  it("leaves a part unmapped when only a Rebrickable part of the same number exists", () => {
+    expect(crosswalk.parts["ldraw:2889"]).toBeUndefined();
+  });
+
+  it("prefers the file's own Rebrickable keyword among several API candidates", () => {
+    expect(crosswalk.parts["ldraw:2557c01"]?.rebrickable).toBe("2557c02");
   });
 
   it("never takes another file's keyword for a canonical part", () => {

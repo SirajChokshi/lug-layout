@@ -218,6 +218,7 @@ export class CityScene implements ICityScene {
       lod: tables.lod,
       placements,
       counter,
+      uncounted: [],
     };
   }
 

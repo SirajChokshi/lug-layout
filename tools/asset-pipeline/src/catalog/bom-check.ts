@@ -40,6 +40,7 @@ interface SetReport {
   readonly residualByCategory: ReadonlyArray<CategoryResidual>;
   readonly expandedTotal: number;
   readonly unmapped: ReadonlyArray<UnmappedLine>;
+  readonly notCounted: ReadonlyArray<string>;
   readonly inventory: Omit<SetInventory, "parts">;
   readonly comparison: InventoryComparison;
 }
@@ -61,12 +62,20 @@ async function exportedCounts(path: string): Promise<PartColorCounts> {
   return counts;
 }
 
+const NOT_COUNTED_NOTE = "not counted";
+
 async function plainLines(
   path: string,
-): Promise<{ expandedTotal: number; unmapped: UnmappedLine[] }> {
+): Promise<{ expandedTotal: number; unmapped: UnmappedLine[]; notCounted: string[] }> {
   let expandedTotal = 0;
   const unmapped: UnmappedLine[] = [];
+  const notCounted: string[] = [];
   for (const row of await csvRows(path)) {
+    const note = row["Note"] ?? "";
+    if (note.startsWith(NOT_COUNTED_NOTE)) {
+      notCounted.push(`${row["Quantity"] || "?"}× ${row["LDraw part"] ?? ""}: ${note}`);
+      continue;
+    }
     const quantity = Number(row["Quantity"]);
     expandedTotal += quantity;
     if (row["Rebrickable part"] === "" || row["Rebrickable colour"] === "") {
@@ -78,7 +87,7 @@ async function plainLines(
       });
     }
   }
-  return { expandedTotal, unmapped };
+  return { expandedTotal, unmapped, notCounted };
 }
 
 function sumPairings(comparison: InventoryComparison, kind: string): number {
@@ -97,6 +106,7 @@ function summaryTable(reports: ReadonlyArray<SetReport>): string {
     "Parts, shortcuts expanded",
     "Exported (Rebrickable CSV)",
     "Unmapped",
+    "Not counted (items)",
     "Inventory (non-spare, minifigs included)",
     "Exact",
     ...DIFFERENCE_KINDS,
@@ -110,6 +120,7 @@ function summaryTable(reports: ReadonlyArray<SetReport>): string {
       report.expandedTotal,
       comparison.exportedTotal,
       sumEntries(report.unmapped.map((line) => [line.ldrawPart, line.quantity] as const)),
+      report.notCounted.length,
       comparison.inventoryTotal,
       comparison.exact,
       ...DIFFERENCE_KINDS.map((kind) => sumPairings(comparison, kind)),

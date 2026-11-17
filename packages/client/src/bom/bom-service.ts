@@ -1,4 +1,9 @@
-import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr/catalog";
+import {
+  PART_BUNDLE_LOADER,
+  type BundleLod,
+  type IPartBundleLoader,
+  type NotDrawnSection,
+} from "@brr/catalog";
 import {
   brickLinkWantedListXml,
   plainBomCsv,
@@ -8,6 +13,7 @@ import {
   type BomLine,
   type CatalogBom,
   type PlacementRegion,
+  type UncountedItem,
 } from "@brr/domain";
 import { inject, injectable } from "inversify";
 
@@ -36,6 +42,28 @@ export interface BomInput {
   readonly lod: BundleLod;
   readonly placements: number;
   readonly counter: BomCounter;
+  readonly uncounted: ReadonlyArray<UncountedItem>;
+}
+
+export function notDrawnItems(
+  source: string,
+  sections: ReadonlyArray<NotDrawnSection>,
+  placements: number,
+): UncountedItem[] {
+  if (placements === 0) return [];
+  return sections.flatMap((section): UncountedItem[] => {
+    const reason = `${section.kind}: ${section.reason}`;
+    if (!section.colors || section.colors.length === 0) {
+      return [{ source, item: section.section, ldrawColor: null, quantity: null, reason }];
+    }
+    return section.colors.map(({ color, instances }) => ({
+      source,
+      item: section.section,
+      ldrawColor: color,
+      quantity: instances * placements,
+      reason,
+    }));
+  });
 }
 
 export interface IBomSource {
@@ -54,6 +82,7 @@ export interface BillOfMaterials {
   readonly placements: number;
   readonly parts: number;
   readonly ldraw: ReadonlyArray<BomLine>;
+  readonly uncounted: ReadonlyArray<UncountedItem>;
   readonly rebrickable: CatalogBom;
   readonly bricklink: CatalogBom;
   readonly files: BomFiles;
@@ -79,12 +108,13 @@ export class BomService implements IBomService {
       placements: input.placements,
       parts: input.counter.total(),
       ldraw,
+      uncounted: input.uncounted,
       rebrickable,
       bricklink,
       files: {
         rebrickableCsv: rebrickableCsv(rebrickable.lines),
         brickLinkXml: brickLinkWantedListXml(bricklink.lines),
-        plainCsv: plainBomCsv(ldraw, crosswalk),
+        plainCsv: plainBomCsv(ldraw, crosswalk, input.uncounted),
       },
     };
   }

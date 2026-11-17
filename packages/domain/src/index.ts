@@ -120,4 +120,9 @@ export {
   type ResolvedLine,
   type UnmappedLine,
 } from "./bom/catalog-ids.ts";
-export { brickLinkWantedListXml, plainBomCsv, rebrickableCsv } from "./bom/export-formats.ts";
+export {
+  brickLinkWantedListXml,
+  plainBomCsv,
+  rebrickableCsv,
+  type UncountedItem,
+} from "./bom/export-formats.ts";
