@@ -29,6 +29,7 @@ import {
   addShards,
   railEdgesMate,
   worldPlacements,
+  packedCellKey,
   type AppliedEdit,
   type EditKind,
   type GridPlacement,
@@ -108,6 +109,7 @@ import { CATALOG_SEARCH, CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
 import type { CatalogSearchView, ICatalogSearch } from "../catalog/catalog-search.ts";
 import { heldPlacements, latticePose16, latticeSnap } from "./model-track.ts";
 import {
+  LAID_TRACK_PLATES,
   TRACK_SYSTEM,
   TrackDrawing,
   type PieceSnap,
@@ -298,6 +300,7 @@ export interface GhostCheckView {
   readonly yPlates: number;
   readonly refusal: Refusal | null;
   readonly trackJoins: number;
+  readonly uncertifiedTrack: number;
 }
 
 export interface EditorStats {
@@ -939,7 +942,6 @@ export class Editor implements IEditor {
   private hoverYPlates = 0;
   private hoverRefusal: Refusal | null = null;
   private ghostCheck: PlacementCheck | null = null;
-  private ghostTrackJoins = 0;
   private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
   private tableY = 0;
   private trackCatalog: TrackCatalog = { n: ZETA16_ORDER, pieces: [] };
@@ -1052,7 +1054,8 @@ export class Editor implements IEditor {
       this.newTrack = () =>
         new TrackDrawing({ ...index, trackSilhouettes }, palette.parts, colors, {
           support: (cells) => this.placed.trackSupport(cells, []),
-          overlap: (cells, bottom, top) => this.placed.trackOverlap(cells, bottom, top),
+          overlap: (cells, bottom, top, exempt) =>
+            this.placed.trackOverlap(cells, bottom, top, exempt),
           neighbours: (cells) => this.placed.trackNeighbours(cells),
           laid: (piece, pieceId, cells, bottom, top) =>
             this.placed.addTrackPiece(piece, pieceId, cells, bottom, top),
@@ -2071,11 +2074,13 @@ export class Editor implements IEditor {
       check.yPlates,
       null,
     );
+    const track = this.active.track;
     this.update({
       ghost: {
         yPlates: check.yPlates,
         refusal: checkRefusal(this.active.label, check) ?? this.hoverRefusal,
-        trackJoins: this.ghostTrackJoins,
+        trackJoins: this.trackJoinsAt(this.active, check.yPlates),
+        uncertifiedTrack: track?.uncertified.length ?? 0,
       },
     });
     this.backend.placeGhost(
@@ -2110,16 +2115,18 @@ export class Editor implements IEditor {
     placeable: Placeable,
     x: number,
     z: number,
+    yPlates: number,
     rot: number,
     owner: number,
   ): ReadonlyArray<HeldTrackRequest> {
     const held = placeable.track;
     if (!held) return [];
-    return heldPlacements(held, x, z, rot).map((piece) => ({
+    return heldPlacements(held, x, z, yPlates, rot).map((piece) => ({
       owner,
       label: placeable.label,
       catalogIndex: piece.catalogIndex,
       placement: piece.placement,
+      plates: piece.plates,
     }));
   }
 
@@ -2132,6 +2139,7 @@ export class Editor implements IEditor {
             model.placeable,
             model.handle.x,
             model.handle.z,
+            model.handle.yPlates,
             model.handle.rot,
             this.placed.ownerOf(model),
           ),
@@ -2140,18 +2148,24 @@ export class Editor implements IEditor {
     this.update({ track: this.trackView() });
   }
 
-  private trackExempt(placeable: Placeable, x: number, z: number, rot: number): OwnerFilter {
+  private trackExempt(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    yPlates: number,
+    rot: number,
+  ): OwnerFilter {
     const track = this.track;
-    const requests = this.heldRequests(placeable, x, z, rot, 0);
+    const requests = this.heldRequests(placeable, x, z, yPlates, rot, 0);
     if (!track || requests.length === 0) return () => false;
-    const owners = new Set<number>();
-    for (const piece of track.joinedLaidPieces(requests)) {
-      const owner = this.placed.trackOwnerOf(piece);
-      if (owner !== null) owners.add(owner);
+    const cellsByOwner = new Map<number, ReadonlySet<number>>();
+    for (const joint of track.heldJoints(requests)) {
+      const owner = this.placed.trackOwnerOf(joint.laid);
+      if (owner !== null) cellsByOwner.set(owner, joint.heldCells);
     }
-    if (owners.size === 0) return () => false;
-    const cells = track.heldCells(requests);
-    return (owner, cellX, cellZ) => owners.has(owner) && cells.has(`${cellX},${cellZ}`);
+    if (cellsByOwner.size === 0) return () => false;
+    return (owner, cellX, cellZ) =>
+      cellsByOwner.get(owner)?.has(packedCellKey(cellX, cellZ)) ?? false;
   }
 
   private checkAt(
@@ -2162,6 +2176,17 @@ export class Editor implements IEditor {
     ignore: ReadonlyArray<PlacedModel>,
     at: LandingAt,
   ): PlacementCheck {
+    const guess = at.kind === "height" ? at.yPlates : LAID_TRACK_PLATES;
+    const first = this.placed.check(
+      placeable,
+      x,
+      z,
+      rot,
+      ignore,
+      at,
+      this.trackExempt(placeable, x, z, guess, rot),
+    );
+    if (first.yPlates === guess) return first;
     return this.placed.check(
       placeable,
       x,
@@ -2169,23 +2194,37 @@ export class Editor implements IEditor {
       rot,
       ignore,
       at,
-      this.trackExempt(placeable, x, z, rot),
+      this.trackExempt(placeable, x, z, first.yPlates, rot),
     );
   }
 
+  private trackJoinsAt(placeable: Placeable, yPlates: number): number {
+    const held = placeable.track;
+    const track = this.track;
+    if (!held || !track) return 0;
+    const targets = track.openEndPoses();
+    const frame = latticePose16(this.hoverX, this.hoverZ, this.placeRot);
+    return held.openEnds.filter((end) => {
+      if (yPlates + end.plates !== LAID_TRACK_PLATES) return false;
+      const pose = composePose16(frame, end.local);
+      return targets.some((target) => posesJoin16(pose, target));
+    }).length;
+  }
+
   private snapGhostToTrack(): void {
-    this.ghostTrackJoins = 0;
     const held = this.active?.track;
     const track = this.track;
-    if (!held || !track || !this.hovering || held.openEnds.length === 0) return;
+    if (!held || !track || !this.hovering) return;
+    const groundEnds = held.openEnds.filter((end) => end.plates === LAID_TRACK_PLATES);
+    if (groundEnds.length === 0) return;
     const targets = track.openEndPoses();
     const frame = latticePose16(this.hoverX, this.hoverZ, this.placeRot);
     let best: { readonly xLdu: number; readonly zLdu: number } | null = null;
     let bestDistance = TRACK_SNAP_RADIUS_LDU;
-    for (const local of held.openEnds) {
-      const free = zeta16ToStuds(composePose16(frame, local).position);
+    for (const end of groundEnds) {
+      const free = zeta16ToStuds(composePose16(frame, end.local).position);
       for (const target of targets) {
-        const snap = latticeSnap(local, target, this.placeRot);
+        const snap = latticeSnap(end.local, target, this.placeRot);
         if (!snap) continue;
         const at = zeta16ToStuds(target.position);
         const distance = Math.hypot(free.x - at.x, free.z - at.z) * STUD_LDU;
@@ -2197,11 +2236,6 @@ export class Editor implements IEditor {
     if (!best) return;
     this.hoverX = best.xLdu;
     this.hoverZ = best.zLdu;
-    const snapped = latticePose16(best.xLdu, best.zLdu, this.placeRot);
-    this.ghostTrackJoins = held.openEnds.filter((local) => {
-      const end = composePose16(snapped, local);
-      return targets.some((target) => posesJoin16(end, target));
-    }).length;
   }
 
   private snapGhostToRoad(): RoadSnapView | null {

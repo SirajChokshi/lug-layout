@@ -435,6 +435,7 @@ function catalogPart(
     title,
     author: "LDraw.org",
     license: "Licensed under CC BY 4.0 : see CAreadme.txt",
+    aliasOf: null,
     bounds: PLATE_BOUNDS,
     colors: [],
     studs: 0,

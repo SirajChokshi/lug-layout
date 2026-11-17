@@ -308,6 +308,7 @@ export const ManifestPart = v.object({
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
   baseplate: v.boolean(),
+  aliasOf: v.nullable(v.string()),
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 
@@ -349,6 +350,7 @@ export const PartShape = v.object({
   file: v.string(),
   bounds: Bounds,
   baseplate: v.boolean(),
+  aliasOf: v.nullable(v.string()),
   studs: v.array(StudRecord),
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),

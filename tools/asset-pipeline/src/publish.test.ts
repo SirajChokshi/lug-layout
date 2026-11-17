@@ -223,12 +223,19 @@ describe("publishBundle", () => {
         triangles: 0,
         vertices: 0,
         baseplate: false,
+        aliasOf: null,
       };
       const shape = { id: part.id, title: part.title, role: part.role, file: part.file };
       bundle.parts.push(part);
       bundle.files.set(part.file, glb(studGltf()));
       bundle.model.parts.push(part.id);
-      bundle.model.shapes.push({ ...shape, bounds: origin, baseplate: false, studs: [] });
+      bundle.model.shapes.push({
+        ...shape,
+        bounds: origin,
+        baseplate: false,
+        aliasOf: null,
+        studs: [],
+      });
     });
     const names = await readdir(directory);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));

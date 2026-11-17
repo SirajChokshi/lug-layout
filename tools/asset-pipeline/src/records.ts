@@ -54,6 +54,7 @@ function partShape(
     file: part.file,
     bounds: part.bounds,
     baseplate: part.baseplate,
+    aliasOf: part.aliasOf,
     studs,
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),
