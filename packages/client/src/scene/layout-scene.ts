@@ -28,7 +28,14 @@ import {
 import { inject, injectable } from "inversify";
 import { MergedParts } from "../edit/merged-parts.ts";
 import { PlacedChunks } from "../edit/placed-chunks.ts";
-import { modelPlaceable, partPlaceable, type Placeable } from "../edit/placeable.ts";
+import { groundGrid } from "../edit/ground.ts";
+import {
+  modelGround,
+  modelPlaceable,
+  partGround,
+  partPlaceable,
+  type Placeable,
+} from "../edit/placeable.ts";
 import { TrackDrawing, type TrackHost } from "../edit/track-drawing.ts";
 import { layoutClash } from "./layout-clashes.ts";
 import type { CityCamera } from "./city-scene.ts";
@@ -266,7 +273,7 @@ export class LayoutScene implements ILayoutScene {
     const farModels: PartMesh[] = [];
     const table = bundle.parts.find((p) => p.id === BASEPLATE_ID);
     if (!table) throw new Error(`the bundle has no ${BASEPLATE_ID}`);
-    const placeables = await this.loadPlaceables(
+    const { placeables, grid } = await this.loadPlaceables(
       lod,
       palette,
       farPalette,
@@ -275,7 +282,7 @@ export class LayoutScene implements ILayoutScene {
       table.boundsMin[1],
       bundle.trackCatalog,
     );
-    const baseplate = this.baseplate(bundle, palette, colors);
+    const baseplate = this.baseplate(bundle, palette, colors, grid);
     const track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors, BENCH_TABLE);
     this.capture.setPalette({
       detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
@@ -319,7 +326,12 @@ export class LayoutScene implements ILayoutScene {
     );
   }
 
-  private baseplate(bundle: PartBundle, palette: MergedParts, colors: ColorTable): Placeable {
+  private baseplate(
+    bundle: PartBundle,
+    palette: MergedParts,
+    colors: ColorTable,
+    grid: number,
+  ): Placeable {
     const part = bundle.parts.find((p) => p.id === BASEPLATE_ID);
     const color = bundle.colors.find((c) => c.name === BASEPLATE_COLOR_NAME);
     if (!part || !color)
@@ -335,6 +347,7 @@ export class LayoutScene implements ILayoutScene {
       palette.parts,
       colors,
       part.boundsMin[1],
+      grid,
     );
   }
 
@@ -346,13 +359,13 @@ export class LayoutScene implements ILayoutScene {
     colors: ColorTable,
     tableY: number,
     trackCatalog: TrackCatalog,
-  ): Promise<ReadonlyMap<string, Placeable>> {
+  ): Promise<{ readonly placeables: ReadonlyMap<string, Placeable>; readonly grid: number }> {
     const loaded = await Promise.all(
       layoutModelNames().map((name) =>
         Promise.all([this.loader.loadModel(lod, name), this.loader.loadModel("far", name)]),
       ),
     );
-    const placeables = new Map<string, Placeable>();
+    const models = [];
     for (const [{ bundle: modelBundle, entry, model }, far] of loaded) {
       if (model.lattice === null) continue;
       farPalette.remap(far.model, far.bundle.parts);
@@ -361,6 +374,15 @@ export class LayoutScene implements ILayoutScene {
         farModels.push(far.farMesh.mesh);
         farModel = farModels.length - 1;
       }
+      models.push({ entry, model: palette.remap(model, modelBundle.parts), farModel });
+    }
+    const grounds = [
+      partGround(palette.indexOf(BASEPLATE_ID), palette.parts),
+      ...models.map(({ entry, model }) => modelGround(model, palette.parts, entry.name)),
+    ];
+    const grid = groundGrid(grounds.filter((ground) => ground !== null));
+    const placeables = new Map<string, Placeable>();
+    for (const { entry, model, farModel } of models) {
       const credit = { name: entry.name, source: entry.source, sections: model.sections };
       placeables.set(
         entry.name,
@@ -368,17 +390,18 @@ export class LayoutScene implements ILayoutScene {
           entry.name,
           entry.name,
           entry.role,
-          palette.remap(model, modelBundle.parts),
+          model,
           credit,
           palette.parts,
           colors,
           farModel,
           tableY,
           trackCatalog,
+          grid,
         ),
       );
     }
-    return placeables;
+    return { placeables, grid };
   }
 
   private placeModels(
