@@ -1,0 +1,218 @@
+1:  9a96c07 ! 1:  d2b69e3 M3: parts list export for the world, a region or the editor's selection, on one crosswalk in the bundle
+    @@ apps/web/src/app.css: footer a {
+     
+      ## apps/web/src/app.tsx ##
+     @@
+    - import type {
+    -   IRunningGear,
+    -+  IBomService,
+    -+  IBomSource,
+    -   IImportScene,
+    -   ImportedModule,
+    -   IRunScene,
+    -@@ apps/web/src/app.tsx: import type {
+    + import {
+    +   LOOK_FEATURES,
+    +   type IRunningGear,
+    ++  type IBomService,
+    ++  type IBomSource,
+    +   type IImportScene,
+    +   type ImportedModule,
+    +   type IRunScene,
+    +@@ apps/web/src/app.tsx: import {
+      } from "@brr/client";
+      import { CreditLinks, partsCreditText, RunningGearPanel } from "@brr/ui";
+      import { useCallback, useEffect, useRef, useState } from "react";
+    @@ apps/web/src/main.tsx: function viewerScene(viewer: ViewerParams): ViewerChoice
+          }
+          case "model": {
+            const modelScene = container.get(MODEL_SCENE);
+    -       modelScene.selectModel(viewer.model ?? "");
+    +       modelScene.selectModel(viewer.model ?? "", viewer.modelView);
+     -      return { scene: modelScene, placements: null, run: null };
+     +      return { scene: modelScene, placements: null, run: null, bomSource: modelScene };
+          }
+    @@ apps/web/src/main.tsx: function root(): ReactNode {
+              editor={container.get(EDITOR)}
+              plans={container.get(PLAN_SERVICE)}
+     +        bomService={container.get(BOM_SERVICE)}
+    -         options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
+    +         options={{ api: params.api, pixelRatio: window.devicePixelRatio, look: params.look }}
+              disclaimer={TRADEMARK_DISCLAIMER}
+              showState={params.showEditState}
+            />
+    @@ apps/web/src/main.tsx: function root(): ReactNode {
+      }
+     
+      ## apps/web/src/viewer/viewer-params.ts ##
+    -@@
+    --import type { CityCamera, ConsistEntry, GraphicsApi, TrainRequest } from "@brr/client";
+    -+import type {
+    -+  CityCamera,
+    -+  ConsistEntry,
+    -+  GraphicsApi,
+    -+  PlacementRegion,
+    -+  TrainRequest,
+    -+} from "@brr/client";
+    +@@ apps/web/src/viewer/viewer-params.ts: import {
+    +   type LookFeature,
+    +   type LookSettings,
+    +   type ModelView,
+    ++  type PlacementRegion,
+    +   type TrainRequest,
+    + } from "@brr/client";
+      import type { BundleLod } from "@brr/schema/bundle";
+    - 
+    - export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run" | "import";
+     @@ apps/web/src/viewer/viewer-params.ts: export interface ViewerParams {
+        readonly originChunkX: number;
+        readonly originChunkZ: number;
+    @@ packages/catalog/src/http-part-bundle-loader.ts: export class HttpAssetFetcher i
+        private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
+     +  private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
+      
+    -   constructor(@inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher) {}
+    - 
+    +   constructor(
+    +     @inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher,
+     @@ packages/catalog/src/http-part-bundle-loader.ts: export class HttpPartBundleLoader implements IPartBundleLoader {
+          return this.bundle(lod, manifest, manifest.parts.filter(include));
+        }
+    @@ packages/catalog/src/http-part-bundle-loader.ts: export class HttpPartBundleLoad
+      ## packages/catalog/src/index.ts ##
+     @@ packages/catalog/src/index.ts: export { catalogModule } from "./catalog.module.ts";
+      export { directColorSrgb, isDirectColor } from "./colors.ts";
+    - export { BUNDLE_LODS, INHERIT_COLOR } from "./part-bundle.ts";
+    + export { BUNDLE_LODS, DEFAULT_BUNDLE_MANIFEST_FILE, INHERIT_COLOR } from "./part-bundle.ts";
+      export type {
+     +  BricklinkPartCandidates,
+     +  CatalogColorIds,
+    @@ packages/client/src/edit/editor.ts: import {
+     +  type IBomSource,
+     +} from "../bom/bom-service.ts";
+      import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
+    - import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
+    + import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
+      import { OrbitCamera } from "./orbit-camera.ts";
+     @@ packages/client/src/edit/editor.ts: export interface EditorOptions {
+    -   readonly pixelRatio: number;
+    +   readonly look: LookSettings;
+      }
+      
+     -export interface IEditor {
+    @@ packages/client/src/index.ts: export type {
+        CREDITS,
+        EDITOR,
+     @@ packages/client/src/index.ts: export {
+    - } from "./tokens.ts";
+    - export { TRACK_ITEM_ID } from "./edit/editor.ts";
+    +   type KeyPlatform,
+    + } from "./commands/key-chord.ts";
+      export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
+     +export type {
+     +  BillOfMaterials,
+    @@ packages/client/src/scene/model-scene.ts
+      import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
+      import { withStuds } from "./stud-stream.ts";
+      
+    + export type ModelView = "orbit" | "top";
+    + 
+     -export interface IModelScene extends IViewerScene {
+     +export interface IModelScene extends IViewerScene, IBomSource {
+    -   selectModel(name: string): void;
+    +   selectModel(name: string, view: ModelView): void;
+      }
+      
+    - const ORBIT_DISTANCE_FACTOR = 2.8;
+    - const ORBIT_ELEVATION_FACTOR = 0.9;
+    - const MIN_ORBIT_RADIUS_LDU = 200;
+    +@@ packages/client/src/scene/model-scene.ts: const MIN_ORBIT_RADIUS_LDU = 200;
+    + const TOP_VIEW_DISTANCE_FACTOR = 3.2;
+    + const TOP_VIEW_TILT_LDU = 0.001;
+    + 
+     +const MODEL_ORIGIN = 0;
+     +
+     +interface LoadedModel {
+    @@ packages/client/src/scene/model-scene.ts
+     +  readonly ldrawColor: Uint16Array;
+     +  readonly notDrawn: ReadonlyArray<NotDrawnSection>;
+     +}
+    - 
+    ++
+      @injectable()
+      export class ModelScene implements IModelScene {
+    +   private modelName = "";
+     @@ packages/client/src/scene/model-scene.ts: export class ModelScene implements IModelScene {
+        private centreY = 0;
+        private centreZ = 0;
+    @@ packages/ui/src/bom-panel.tsx (new)
+     
+      ## packages/ui/src/editor-app.tsx ##
+     @@
+    --import type { EditorOptions, IEditor, IPlanService } from "@brr/client";
+    -+import type { EditorOptions, IBomService, IEditor, IPlanService } from "@brr/client";
+    +-import type { EditorOptions, IEditor, IPlanService, ShellCommandId } from "@brr/client";
+    ++import type {
+    ++  EditorOptions,
+    ++  IBomService,
+    ++  IEditor,
+    ++  IPlanService,
+    ++  ShellCommandId,
+    ++} from "@brr/client";
+    + import { useCallback, useState } from "react";
+     +import { BomPanel } from "./bom-panel.tsx";
+      import { EditorCanvas } from "./editor-canvas.tsx";
+      import {
+        CreditsFooter,
+    -@@ packages/ui/src/editor-app.tsx: import { useEditorSnapshot } from "./use-editor.ts";
+    +@@ packages/ui/src/editor-app.tsx: import { useEditorKeys } from "./use-editor-keys.ts";
+      interface EditorAppProps {
+        readonly editor: IEditor;
+        readonly plans: IPlanService;
+    @@ packages/ui/src/editor-app.tsx: function PlanState({ plans }: { readonly plans:
+     +  showState,
+     +}: EditorAppProps) {
+        const snapshot = useEditorSnapshot(editor);
+    -   return (
+    -     <div
+    +   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
+    +   const closeOverlay = useCallback(() => setOverlay(null), []);
+     @@ packages/ui/src/editor-app.tsx: export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
+              <TrackPanel snapshot={snapshot} />
+              <Inspector snapshot={snapshot} />
+    @@ tools/asset-pipeline/src/cli.ts
+      import { decode, decodedOrThrow } from "@brr/schema/decode";
+      import { spawnSync } from "node:child_process";
+      import { createHash } from "node:crypto";
+    -@@ tools/asset-pipeline/src/cli.ts: import { readFile, rm, writeFile } from "node:fs/promises";
+    - import { dirname, join } from "node:path";
+    +@@ tools/asset-pipeline/src/cli.ts: import { dirname, join } from "node:path";
+      import { fileURLToPath } from "node:url";
+      import * as v from "valibot";
+    + import { bundleInputKey, remoteManifestFile } from "./bundle-key.ts";
+     +import { deriveCrosswalk } from "./catalog/crosswalk.ts";
+     +import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
+     +import { bomCheck } from "./catalog/bom-check.ts";
+    @@ tools/asset-pipeline/src/cli.ts: import {
+      import { readPalette } from "./palette.ts";
+     -import { MANIFEST_FILE, publishBundle } from "./publish.ts";
+     +import { attachCrosswalk, MANIFEST_FILE, publishBundle } from "./publish.ts";
+    + import { R2ObjectStore, sha256Hex } from "./r2.ts";
+      import {
+    -   geometryReports,
+    -   licenseAuditReport,
+    +   isPartBundlePublished,
+     @@ tools/asset-pipeline/src/cli.ts: const ldrawRoot = join(repoRoot, ".cache", "ldraw");
+      const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
+      const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
+    @@ tools/asset-pipeline/src/cli.ts: switch (command) {
+          break;
+        default:
+          process.stderr.write(
+    --      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]\n",
+    -+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|bom-check <dir> --out <file>\n",
+    +-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served\n",
+    ++      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
+          );
+          process.exitCode = 2;
+      }

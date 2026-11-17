@@ -1,0 +1,26 @@
+{
+ "standard/crosswalk.60cb2f987568c642.json": {
+  "Content-Type": "application/json",
+  "Cache-Control": "public, max-age=31536000, immutable"
+ },
+ "low/crosswalk.60cb2f987568c642.json": {
+  "Content-Type": "application/json",
+  "Cache-Control": "public, max-age=31536000, immutable"
+ },
+ "far/crosswalk.60cb2f987568c642.json": {
+  "Content-Type": "application/json",
+  "Cache-Control": "public, max-age=31536000, immutable"
+ },
+ "standard/manifest.9671f8c8baa12051.json": {
+  "Content-Type": "application/json",
+  "Cache-Control": "public, max-age=31536000, immutable"
+ },
+ "low/manifest.9671f8c8baa12051.json": {
+  "Content-Type": "application/json",
+  "Cache-Control": "public, max-age=31536000, immutable"
+ },
+ "far/manifest.9671f8c8baa12051.json": {
+  "Content-Type": "application/json",
+  "Cache-Control": "public, max-age=31536000, immutable"
+ }
+}
