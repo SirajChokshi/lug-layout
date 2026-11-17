@@ -43,7 +43,7 @@ import {
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { commandEnabled } from "../commands/editor-commands.ts";
+import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
 import { EDITOR } from "../tokens.ts";
 import type { IEditor } from "./editor.ts";
 
@@ -717,4 +717,71 @@ it("leaves road mode when the world turns read-only, and refuses road draw and e
   stroke(0);
   expect(editor.snapshot().placements).toBe(3);
   expect(editor.snapshot().unsavedEdits).toBe(false);
+}, 120_000);
+
+const READ_ONLY_REFUSED: ReadonlyArray<CommandId> = [
+  "rotate",
+  "delete",
+  "duplicate",
+  "draw-track",
+  "undo",
+];
+
+function editsOffered(snapshot: ReturnType<IEditor["snapshot"]>) {
+  return {
+    selected: snapshot.selection !== null,
+    offered: READ_ONLY_REFUSED.filter((id) => commandEnabled(id, snapshot)),
+  };
+}
+
+class HeldElsewhereLocks implements IWorldLocks {
+  readonly held = new Set<string>();
+
+  async hold(id: string): Promise<WorldLease> {
+    return {
+      exclusive: !this.held.has(id),
+      whenExclusive: new Promise<void>(() => undefined),
+      release: () => undefined,
+    };
+  }
+}
+
+it("offers none of the editing commands on a selection in a world another tab holds", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  const repository = new FlakyRepository();
+  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  const locks = new HeldElsewhereLocks();
+  container.rebind(WORLD_LOCKS).toConstantValue(locks);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  const selectBaseplate = () => {
+    editor.chooseItem(null);
+    editor.click(0, 0, 0);
+    return editor.snapshot();
+  };
+
+  editor.chooseItem(BASEPLATE);
+  editor.click(0, 0, 0);
+  expect(editsOffered(selectBaseplate())).toEqual({ selected: true, offered: READ_ONLY_REFUSED });
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
+  const first = editor.snapshot().world?.id;
+  if (!first) throw new Error("no current world");
+  expect(await editor.newWorld("Second")).toBe(true);
+
+  locks.held.add(first);
+  expect(await editor.openWorld(first)).toBe(true);
+  const readOnly = selectBaseplate();
+  expect(readOnly.readOnly).toBe(true);
+  expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
 }, 120_000);

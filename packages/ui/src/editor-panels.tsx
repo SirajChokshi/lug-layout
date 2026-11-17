@@ -242,6 +242,7 @@ export function PlacementToolbar({
         type="button"
         data-action="draw-track"
         aria-pressed={snapshot.mode === "track"}
+        disabled={!commandEnabled("draw-track", snapshot)}
         onClick={() => editor.chooseItem(snapshot.mode === "track" ? null : TRACK_ITEM_ID)}
       >
         Draw track ({shortcutText("draw-track")})
@@ -264,7 +265,7 @@ export function PlacementToolbar({
       </button>
       <button
         type="button"
-        disabled={snapshot.selection === null}
+        disabled={!commandEnabled("delete", snapshot)}
         onClick={(event) => editor.deleteSelection(event.timeStamp)}
       >
         Delete ({shortcutText("delete")})
@@ -272,7 +273,7 @@ export function PlacementToolbar({
       <button
         type="button"
         data-action="undo"
-        disabled={history.undo === null}
+        disabled={!commandEnabled("undo", snapshot)}
         onClick={(event) => editor.undo(event.timeStamp)}
       >
         Undo{history.undo === null ? "" : ` ${history.undo}`} ({shortcutText("undo")})
@@ -280,7 +281,7 @@ export function PlacementToolbar({
       <button
         type="button"
         data-action="redo"
-        disabled={history.redo === null}
+        disabled={!commandEnabled("redo", snapshot)}
         onClick={(event) => editor.redo(event.timeStamp)}
       >
         Redo{history.redo === null ? "" : ` ${history.redo}`} ({shortcutText("redo")})
