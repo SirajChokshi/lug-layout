@@ -146,6 +146,13 @@ export {
   type ShellCommandId,
 } from "./commands/editor-commands.ts";
 export {
+  searchPalette,
+  type CommandResult,
+  type ItemResult,
+  type PaletteResult,
+  type PaletteSources,
+} from "./commands/command-search.ts";
+export {
   chordKeys,
   chordText,
   keyPlatform,
