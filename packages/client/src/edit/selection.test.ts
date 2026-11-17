@@ -323,3 +323,39 @@ it("sets a selection's centre and rotation from the properties panel, each as on
   editor.undo(0);
   expect(poses(editor)).toEqual([plate]);
 }, 120_000);
+
+const NON_SQUARE_BASEPLATE = "ldraw:3334";
+
+it("brings a non-square baseplate back exactly where it started after 90°, 180°, 270° and 0° from the rotation buttons", async () => {
+  const editor = await startEditor();
+  editor.chooseItem(itemOf(editor, NON_SQUARE_BASEPLATE));
+  clickAt(editor, 0, 0);
+  editor.chooseItem(null);
+  editor.selectAll();
+  const home = poses(editor);
+  expect(home).toHaveLength(1);
+  const visits = [1, 2, 3, 0].map((rot) => {
+    editor.turnSelectionTo(rot, 0);
+    expect(editor.snapshot().lastRefusal).toBeNull();
+    return editor.snapshot().selection?.rot;
+  });
+  expect(visits).toEqual([1, 2, 3, 0]);
+  expect(poses(editor)).toEqual(home);
+}, 120_000);
+
+it("rounds a typed half-step position away from where the selection is, the same both ways", async () => {
+  const editor = await startEditor();
+  editor.chooseItem(itemOf(editor, BASEPLATE));
+  clickAt(editor, 0, 0);
+  editor.chooseItem(null);
+  editor.selectAll();
+  const start = editor.snapshot().selection;
+  if (!start) throw new Error("the baseplate was not selected");
+  const half = start.gridStuds / 2;
+
+  editor.moveSelectionTo(start.centreXStuds + half, start.centreZStuds, 0);
+  expect(editor.snapshot().selection?.centreXStuds).toBe(start.centreXStuds + start.gridStuds);
+  editor.undo(0);
+  editor.moveSelectionTo(start.centreXStuds - half, start.centreZStuds, 0);
+  expect(editor.snapshot().selection?.centreXStuds).toBe(start.centreXStuds - start.gridStuds);
+}, 120_000);

@@ -580,6 +580,10 @@ function itemCounts(models: ReadonlyArray<PlacedModel>): ReadonlyArray<SelectedI
   return [...counts].map(([item, count]) => ({ item, count }));
 }
 
+function snapOffset(ldu: number, grid: number): number {
+  return Math.sign(ldu) * Math.round(Math.abs(ldu) / grid) * grid + 0;
+}
+
 function pendingOf(model: PlacedModel): PendingPose {
   return { placeable: model.placeable, ...poseOf(model.handle) };
 }
@@ -1908,8 +1912,8 @@ export class Editor implements IEditor {
     const selection = this.state.selection;
     if (!selection || !Number.isFinite(xStuds) || !Number.isFinite(zStuds)) return;
     const grid = selection.gridStuds * STUD_LDU;
-    const dx = snapToGrid(xStuds * STUD_LDU, grid) - selection.centreXStuds * STUD_LDU;
-    const dz = snapToGrid(zStuds * STUD_LDU, grid) - selection.centreZStuds * STUD_LDU;
+    const dx = snapOffset((xStuds - selection.centreXStuds) * STUD_LDU, grid);
+    const dz = snapOffset((zStuds - selection.centreZStuds) * STUD_LDU, grid);
     if (dx === 0 && dz === 0) return;
     this.commitModels("move", this.translated(this.selectedModels(), dx, dz, false), eventTimeMs);
   }
@@ -1921,10 +1925,10 @@ export class Editor implements IEditor {
     if (models.length !== 1 || !model || !bounds) return;
     const turns = (((rot - model.handle.rot) % QUARTER_TURNS) + QUARTER_TURNS) % QUARTER_TURNS;
     if (turns === 0) return;
-    const pivot = rotationPivot(bounds, this.selectionGrid(models));
+    const pivot = this.rotationPivot ?? rotationPivot(bounds, this.selectionGrid(models));
     let to = poseOf(model.handle);
     for (let turn = 0; turn < turns; turn++) to = quarterTurnAbout(to, pivot);
-    this.commitModels("rotate", [{ model, to }], eventTimeMs);
+    if (this.commitModels("rotate", [{ model, to }], eventTimeMs)) this.rotationPivot = pivot;
   }
 
   copySelection(): void {
