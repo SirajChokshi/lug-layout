@@ -141,7 +141,7 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     id: "toggle-plan-view",
     title: "Switch between the 3D view and the true-scale 2D plan",
     group: "View",
-    keys: [{ key: "v" }],
+    keys: [{ key: "p" }],
     keywords: "plan top down 2d orthographic overhead",
   },
   {
