@@ -104,7 +104,8 @@ export type { SimBenchResult } from "@brr/sim";
 export { MM_PER_STUD } from "@brr/math";
 export {
   DEFAULT_MAX_OVERHANG_MM,
-  PLAN_GRID_MM,
+  DEFAULT_TABLE_HEIGHT_MM,
+  type DrawnTable,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,

@@ -125,6 +125,17 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           key("measure", "done"),
         ],
       };
+    case "table":
+      return {
+        tone: "place",
+        title: "Drawing tables",
+        detail: "edges land on the 8-stud grid",
+        hints: [
+          gesture("Drag", "draw, or drag an edge to resize"),
+          gesture("Del", "remove the table under the cursor"),
+          key("draw-tables", "done"),
+        ],
+      };
     default: {
       const unhandled: never = snapshot.mode;
       throw new Error(`unhandled mode ${String(unhandled)}`);

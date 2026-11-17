@@ -90,3 +90,31 @@ it("commits an unchecked plan, tables kept, when a placement box cannot be read"
   ]);
   expect(backend.issueBoxes).toEqual([]);
 });
+
+it("keeps every drawn table where it was drawn while later tables grow the room in any direction", () => {
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  container.rebind(SCENE_BACKEND).toConstantValue(new IssueBoxBackend());
+  const plans = container.get(PLAN_SERVICE);
+  const drawn = [
+    { minX: -160, minZ: 320, maxX: 2840, maxZ: 1820 },
+    { minX: 160, minZ: -800, maxX: 1120, maxZ: 160 },
+    { minX: -2400, minZ: 2000, maxX: -1600, maxZ: 2800 },
+    { minX: 3200, minZ: -1600, maxX: 4000, maxZ: -960 },
+  ];
+  const ids = drawn.map((rect) => plans.drawTable(rect));
+  const second = ids[1];
+  if (!second) throw new Error("no second table");
+  plans.updateTable(second.planId, second.tableId, {
+    rect: { x: -64, z: 0, width: 640, depth: 640 },
+  });
+
+  const [check] = plans.snapshot().checks;
+  expect(
+    check?.tables
+      .slice(0, 1)
+      .concat(check.tables.slice(2))
+      .map((t) => t.surface),
+  ).toEqual([drawn[0], drawn[2], drawn[3]]);
+  expect(check?.issues).toEqual([]);
+});

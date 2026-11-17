@@ -7,7 +7,7 @@ import {
   rot90Cos,
   rot90Sin,
 } from "@brr/math";
-import type { GroundGrid, GuideSegment, GuideKind, WorldBox } from "@brr/render";
+import type { GridArea, GroundGrid, GuideSegment, GuideKind, WorldBox } from "@brr/render";
 import type { LocalBox } from "./local-box.ts";
 
 export const GUIDE_GRID_STUDS = 8;
@@ -18,9 +18,10 @@ const GRID_LIFT_LDU = 0.5;
 const MM_PER_CM = 10;
 const TICK_HALF_LDU = STUD_LDU / 2;
 
-export function groundGrid(tableY: number): GroundGrid {
+export function groundGrid(tableY: number, areas: ReadonlyArray<GridArea> | null): GroundGrid {
   return {
     y: tableY + GRID_LIFT_LDU,
+    areas,
     levels: [
       { stepLdu: STUD_LDU, halfSteps: 48, color: 0x7d8f9c, opacity: 0.5, minPitchPx: 7 },
       { stepLdu: GUIDE_GRID_LDU, halfSteps: 40, color: 0x4f6270, opacity: 0.6, minPitchPx: 9 },
@@ -29,7 +30,7 @@ export function groundGrid(tableY: number): GroundGrid {
   };
 }
 
-export type LabelKind = "ruler" | "draft" | "ghost" | "selection";
+export type LabelKind = "ruler" | "draft" | "ghost" | "selection" | "table";
 
 export interface LabelView {
   readonly id: string;

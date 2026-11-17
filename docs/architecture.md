@@ -327,6 +327,8 @@ A plan region is a polygon in the world, aligned to the 32-stud grid, linked to 
 
 These are drawn in mm and snapped to the stud grid at 8 mm per stud. Room scans or imported floor plans come later.
 
+In the editor, tables are drawn and resized on the canvas (the table tool, B) in steps of the 8-stud guide grid, and their size and position can be typed in studs or cm. Both convert exactly to whole mm (8 mm per stud, 10 mm per cm), which is what the footprint stores. Drawing the first table starts a plan whose room just encloses it, from the chunk corner at or before its near corner. A table drawn outside the room grows the room to enclose it, moving the origin back by whole chunks when needed, so the region stays on the 32-stud grid and nothing already placed moves. The stud grid (1, 8 and 32 studs; the 8-stud step is the owner's guide grid, the others are the canonical stud and chunk) is drawn on the table tops of the active plan, and everywhere at table height when no plan is active.
+
 Extra plan rules:
 1. **Fits the footprint.** Every placement in the region lies on a table top, and nothing overhangs a table edge beyond the profile's limit (0 by default).
 2. **Reach.** Every point of the layout is within the maximum reach depth from an aisle or table edge you can access. The default depth is an owner decision (§12).

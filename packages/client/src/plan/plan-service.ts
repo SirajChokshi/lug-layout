@@ -1,7 +1,11 @@
 import {
   checkPlan,
+  mmRectFromWorld,
+  mmRectInWorld,
+  regionAround,
   regionOf,
   uncheckedPlan,
+  type LduRect,
   type PlacementKey,
   type PlanCheck,
   type PlanObstacle,
@@ -9,12 +13,17 @@ import {
   type PlanRegion,
   type PlanTable,
 } from "@brr/domain";
-import { lduFromMm } from "@brr/math";
+import { CHUNK_LDU, chunkOf, lduFromMm, mmFromLdu } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type PlanOverlay, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
 
-export const PLAN_GRID_MM = 100;
 export const DEFAULT_MAX_OVERHANG_MM = 0;
+export const DEFAULT_TABLE_HEIGHT_MM = 750;
+
+export interface DrawnTable {
+  readonly planId: string;
+  readonly tableId: string;
+}
 
 export interface PlacedForPlan {
   readonly key: PlacementKey;
@@ -58,6 +67,8 @@ export interface IPlanService {
   addTable(planId: string, table: TableInput): string;
   updateTable(planId: string, tableId: string, patch: Partial<TableInput>): void;
   removeTable(planId: string, tableId: string): void;
+  drawTable(rect: LduRect): DrawnTable;
+  placeTable(planId: string, tableId: string, rect: LduRect): void;
   addObstacle(planId: string, obstacle: ObstacleInput): string;
   updateObstacle(planId: string, obstacleId: string, patch: Partial<ObstacleInput>): void;
   removeObstacle(planId: string, obstacleId: string): void;
@@ -200,13 +211,61 @@ export class PlanService implements IPlanService {
   }
 
   updateTable(planId: string, tableId: string, patch: Partial<TableInput>): void {
-    this.replacePlan(planId, (plan) => ({
-      ...plan,
-      footprint: {
-        ...plan.footprint,
-        tables: plan.footprint.tables.map((t) => (t.id === tableId ? { ...t, ...patch } : t)),
-      },
-    }));
+    this.replacePlan(planId, (plan) => {
+      const updated = {
+        ...plan,
+        footprint: {
+          ...plan.footprint,
+          tables: plan.footprint.tables.map((t) => (t.id === tableId ? { ...t, ...patch } : t)),
+        },
+      };
+      return patch.rect ? regionAround(updated, mmRectInWorld(updated, patch.rect), 0) : updated;
+    });
+  }
+
+  drawTable(rect: LduRect): DrawnTable {
+    const planId = this.state.activePlanId ?? this.createPlanAround(rect);
+    const tableId = this.newId("table");
+    this.replacePlan(planId, (plan) => {
+      const grown = regionAround(plan, rect, 0);
+      const { tables } = grown.footprint;
+      const table = {
+        id: tableId,
+        name: `Table ${tables.length + 1}`,
+        rect: mmRectFromWorld(grown, rect),
+        heightMm: tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
+      };
+      return { ...grown, footprint: { ...grown.footprint, tables: [...tables, table] } };
+    });
+    return { planId, tableId };
+  }
+
+  placeTable(planId: string, tableId: string, rect: LduRect): void {
+    this.replacePlan(planId, (plan) => {
+      const grown = regionAround(plan, rect, 0);
+      const placed = mmRectFromWorld(grown, rect);
+      return {
+        ...grown,
+        footprint: {
+          ...grown.footprint,
+          tables: grown.footprint.tables.map((t) =>
+            t.id === tableId ? { ...t, rect: placed } : t,
+          ),
+        },
+      };
+    });
+  }
+
+  private createPlanAround(rect: LduRect): string {
+    const originChunkX = chunkOf(rect.minX);
+    const originChunkZ = chunkOf(rect.minZ);
+    return this.createPlan({
+      name: `Plan ${this.state.plans.length + 1}`,
+      roomWidthMm: mmFromLdu(rect.maxX - originChunkX * CHUNK_LDU),
+      roomDepthMm: mmFromLdu(rect.maxZ - originChunkZ * CHUNK_LDU),
+      originChunkX,
+      originChunkZ,
+    });
   }
 
   removeTable(planId: string, tableId: string): void {
@@ -299,7 +358,6 @@ export class PlanService implements IPlanService {
         },
         tables,
         obstacles,
-        gridStepLdu: lduFromMm(PLAN_GRID_MM),
         active: plan.id === activePlanId,
       };
     });

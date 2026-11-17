@@ -38,6 +38,7 @@ import {
   type ChunkTier,
   type FrameStats,
   type GraphicsApi,
+  type GridArea,
   type GuideSegment,
   type LookSettings,
   type ISceneBackend,
@@ -92,6 +93,7 @@ import {
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
+import { TableTool } from "./table-tool.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
@@ -117,7 +119,7 @@ import {
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
-export type EditorMode = "place" | "select" | "track" | "measure";
+export type EditorMode = "place" | "select" | "track" | "measure" | "table";
 
 export interface CatalogColorView {
   readonly code: number;
@@ -483,6 +485,7 @@ export interface IEditor {
   cycleTier(): void;
   setShowGrid(show: boolean): void;
   setMeasuring(on: boolean): void;
+  setTableTool(on: boolean): void;
   clearRulers(): void;
   projectLabels(out: Float64Array): void;
   dump(): EditorDump;
@@ -605,6 +608,7 @@ interface HeldPiece {
   readonly snap: PieceSnap | null;
 }
 const RULER_Y_LDU = 0;
+const HANDLE_TOLERANCE_PX = 8;
 
 interface PendingAction {
   readonly step: HistoryStep;
@@ -791,6 +795,8 @@ export class Editor implements IEditor {
   private selectedTrack: number | null = null;
   private rulers: Ruler[] = [];
   private draftRuler: Ruler | null = null;
+  private readonly tableTool: TableTool;
+  private gridAreasKey = "null";
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -816,6 +822,7 @@ export class Editor implements IEditor {
     @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
   ) {
     this.placed = new PlacedChunks(backend);
+    this.tableTool = new TableTool(plans);
   }
 
   subscribe(listener: () => void): () => void {
@@ -878,7 +885,8 @@ export class Editor implements IEditor {
         colorsAlpha: colors.toAlpha(),
         ldrawColors: ldrawColors(bundle),
       });
-      this.backend.setGroundGrid(groundGrid(this.tableY));
+      this.backend.setGroundGrid(groundGrid(this.tableY, this.gridAreas()));
+      this.plans.subscribe(() => this.plansChanged());
       const loadMs = performance.now() - started;
       await this.openFirstWorld();
       this.firstWorldFrame = true;
@@ -1265,10 +1273,16 @@ export class Editor implements IEditor {
   }
 
   dragStart(ndcX: number, ndcY: number): boolean {
+    if (this.state.mode === "table") {
+      if (!this.groundHit(ndcX, ndcY)) return false;
+      this.tableTool.begin(this.hitX, this.hitZ, this.handleToleranceLdu(ndcX, ndcY));
+      this.showGuides();
+      return true;
+    }
     if (this.state.mode === "measure") {
       if (!this.groundHit(ndcX, ndcY)) return false;
       this.draftRuler = { ax: this.hoverX, az: this.hoverZ, bx: this.hoverX, bz: this.hoverZ };
-      this.showRulers();
+      this.showGuides();
       return true;
     }
     const track = this.track;
@@ -1281,11 +1295,16 @@ export class Editor implements IEditor {
   }
 
   dragMove(ndcX: number, ndcY: number): void {
+    if (this.state.mode === "table") {
+      if (this.groundHit(ndcX, ndcY)) this.tableTool.move(this.hitX, this.hitZ);
+      this.showGuides();
+      return;
+    }
     const draft = this.draftRuler;
     if (draft) {
       if (this.groundHit(ndcX, ndcY)) {
         this.draftRuler = { ...draft, bx: this.hoverX, bz: this.hoverZ };
-        this.showRulers();
+        this.showGuides();
       }
       return;
     }
@@ -1303,12 +1322,18 @@ export class Editor implements IEditor {
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.state.mode === "table") {
+      if (this.groundHit(ndcX, ndcY)) this.tableTool.move(this.hitX, this.hitZ);
+      this.tableTool.end();
+      this.showGuides();
+      return;
+    }
     if (this.draftRuler) {
       this.dragMove(ndcX, ndcY);
       const ruler = this.draftRuler;
       this.draftRuler = null;
       if (ruler.ax !== ruler.bx || ruler.az !== ruler.bz) this.rulers = [...this.rulers, ruler];
-      this.showRulers();
+      this.showGuides();
       return;
     }
     const track = this.track;
@@ -1363,6 +1388,7 @@ export class Editor implements IEditor {
 
   chooseItem(id: string | null): void {
     if (this.state.mode === "measure") this.setMeasuring(false);
+    if (this.state.mode === "table") this.setTableTool(false);
     if (id !== null && this.readOnly) return;
     this.showRefusalCells(null);
     const track = this.track;
@@ -1607,6 +1633,10 @@ export class Editor implements IEditor {
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
     const moduleFit = this.snapGhostToModuleGrid();
+    if (this.state.mode === "table" && this.hovering) {
+      this.tableTool.hoverAt(this.hitX, this.hitZ, this.handleToleranceLdu(ndcX, ndcY));
+      this.showGuides();
+    }
     const snap = this.snapGhostToRoad();
     const track = this.track;
     if (this.held) this.showHeldPiece();
@@ -1635,7 +1665,7 @@ export class Editor implements IEditor {
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
-    if (this.state.mode === "measure") return;
+    if (this.state.mode === "measure" || this.state.mode === "table") return;
     if (this.state.mode === "track") {
       if (!this.held || this.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -1906,7 +1936,7 @@ export class Editor implements IEditor {
   }
 
   setShowGrid(show: boolean): void {
-    this.backend.setGroundGrid(show ? groundGrid(this.tableY) : null);
+    this.backend.setGroundGrid(show ? groundGrid(this.tableY, this.gridAreas()) : null);
     this.update({ showGrid: show });
   }
 
@@ -1919,20 +1949,62 @@ export class Editor implements IEditor {
       return;
     }
     this.draftRuler = null;
-    this.showRulers();
+    this.showGuides();
     this.update({ mode: "select" });
+  }
+
+  setTableTool(on: boolean): void {
+    if (on === (this.state.mode === "table")) return;
+    if (on) {
+      this.chooseItem(null);
+      this.select(null);
+      this.update({ mode: "table", activeItem: null });
+      this.showGuides();
+      return;
+    }
+    this.tableTool.cancel();
+    this.update({ mode: "select" });
+    this.showGuides();
+  }
+
+  private handleToleranceLdu(ndcX: number, ndcY: number): number {
+    const x = this.hitX;
+    const z = this.hitZ;
+    const offset = (2 * HANDLE_TOLERANCE_PX) / Math.max(this.canvas?.clientWidth ?? 1, 1);
+    const reached = this.groundHit(ndcX + offset, ndcY);
+    const tolerance = reached ? Math.hypot(this.hitX - x, this.hitZ - z) : STUD_LDU;
+    this.groundHit(ndcX, ndcY);
+    return Math.max(STUD_LDU, tolerance);
+  }
+
+  private gridAreas(): ReadonlyArray<GridArea> | null {
+    const snapshot = this.plans.snapshot();
+    const check = snapshot.checks.find((c) => c.regionId === snapshot.activePlanId);
+    if (!check) return null;
+    return check.tables.length > 0 ? check.tables.map((top) => top.surface) : [check.room];
+  }
+
+  private plansChanged(): void {
+    const areas = this.gridAreas();
+    const key = JSON.stringify(areas);
+    if (key !== this.gridAreasKey) {
+      this.gridAreasKey = key;
+      if (this.state.showGrid) this.backend.setGroundGrid(groundGrid(this.tableY, areas));
+    }
+    this.showGuides();
   }
 
   clearRulers(): void {
     this.rulers = [];
     this.draftRuler = null;
-    this.showRulers();
+    this.showGuides();
   }
 
-  private showRulers(): void {
+  private showGuides(): void {
     const guides: GuideSegment[] = [];
     for (const ruler of this.rulers) guides.push(...rulerGuides(ruler, RULER_Y_LDU, "ruler"));
     if (this.draftRuler) guides.push(...rulerGuides(this.draftRuler, RULER_Y_LDU, "draft"));
+    if (this.state.mode === "table") guides.push(...this.tableTool.guides(RULER_Y_LDU));
     this.backend.setGuides(guides);
     this.update({ rulers: this.rulers.length });
   }
@@ -1942,6 +2014,7 @@ export class Editor implements IEditor {
       rulerLabel(`ruler-${i}`, "ruler", ruler, RULER_Y_LDU),
     );
     if (this.draftRuler) labels.push(rulerLabel("draft", "draft", this.draftRuler, RULER_Y_LDU));
+    if (state.mode === "table") labels.push(...this.tableTool.labels(RULER_Y_LDU));
     const active = this.active;
     if (state.mode === "place" && active && state.hover) {
       const box = placedBox(
@@ -2055,9 +2128,13 @@ export class Editor implements IEditor {
   }
 
   deleteSelection(eventTimeMs: number): void {
+    if (this.state.mode === "table") {
+      this.tableTool.removeHovered();
+      return;
+    }
     if (this.state.mode === "measure") {
       this.rulers = this.rulers.slice(0, -1);
-      this.showRulers();
+      this.showGuides();
       return;
     }
     if (this.state.mode === "track") {

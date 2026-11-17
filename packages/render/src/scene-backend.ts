@@ -131,7 +131,6 @@ export interface PlanOverlay {
   readonly room: WorldBox;
   readonly tables: ReadonlyArray<WorldBox>;
   readonly obstacles: ReadonlyArray<WorldBox>;
-  readonly gridStepLdu: number;
   readonly active: boolean;
 }
 
@@ -143,9 +142,17 @@ export interface GridLevel {
   readonly minPitchPx: number;
 }
 
+export interface GridArea {
+  readonly minX: number;
+  readonly minZ: number;
+  readonly maxX: number;
+  readonly maxZ: number;
+}
+
 export interface GroundGrid {
   readonly y: number;
   readonly levels: ReadonlyArray<GridLevel>;
+  readonly areas: ReadonlyArray<GridArea> | null;
 }
 
 export type GuideKind = "ruler" | "dimension" | "draft";

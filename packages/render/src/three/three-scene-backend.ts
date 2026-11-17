@@ -129,7 +129,6 @@ const FLOOR_COLOR = 0xd8d2c8;
 const INACTIVE_FLOOR_COLOR = 0xe6e2dc;
 const ROOM_OUTLINE_COLOR = 0x3a3a3a;
 const TABLE_COLOR = 0xb58b5a;
-const TABLE_GRID_COLOR = 0x6b4f2e;
 const OBSTACLE_COLOR = 0xc0392b;
 const OBSTACLE_OPACITY = 0.45;
 const ISSUE_COLOR = 0xe0115f;
@@ -146,27 +145,6 @@ interface Anchored {
   readonly object: Group | LineSegments;
   readonly x: number;
   readonly z: number;
-}
-
-function gridLines(
-  table: WorldBox,
-  anchorX: number,
-  anchorZ: number,
-  gridOriginX: number,
-  gridOriginZ: number,
-  step: number,
-): number[] {
-  const out: number[] = [];
-  const y = table.maxY + GRID_LIFT_LDU;
-  const firstX = gridOriginX + Math.ceil((table.minX - gridOriginX) / step) * step;
-  for (let x = firstX; x <= table.maxX; x += step) {
-    out.push(x - anchorX, y, table.minZ - anchorZ, x - anchorX, y, table.maxZ - anchorZ);
-  }
-  const firstZ = gridOriginZ + Math.ceil((table.minZ - gridOriginZ) / step) * step;
-  for (let z = firstZ; z <= table.maxZ; z += step) {
-    out.push(table.minX - anchorX, y, z - anchorZ, table.maxX - anchorX, y, z - anchorZ);
-  }
-  return out;
 }
 
 function trackEndArrowGeometry(): ConeGeometry {
@@ -947,12 +925,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       ),
     );
     const tableMaterial = new MeshStandardNodeMaterial({ color: TABLE_COLOR, roughness: 0.8 });
-    const grid: number[] = [];
-    for (const table of overlay.tables) {
-      group.add(boxMesh(table, x, z, tableMaterial));
-      grid.push(...gridLines(table, x, z, room.minX, room.minZ, overlay.gridStepLdu));
-    }
-    if (grid.length > 0) group.add(lineSegments(grid, TABLE_GRID_COLOR));
+    for (const table of overlay.tables) group.add(boxMesh(table, x, z, tableMaterial));
     const obstacleMaterial = new MeshStandardNodeMaterial({
       color: OBSTACLE_COLOR,
       transparent: true,

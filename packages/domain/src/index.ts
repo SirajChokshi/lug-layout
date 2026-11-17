@@ -55,9 +55,11 @@ export {
 } from "./track/track-graph.ts";
 export { NEAR_MISS_RADIUS_LDU, endGaps, type EndGap, type TrackEnd } from "./track/end-gaps.ts";
 export {
+  mmRectFromWorld,
   mmRectInWorld,
   rectContains,
   rectsOverlap,
+  regionAround,
   regionOriginX,
   regionOriginZ,
   roomRect,

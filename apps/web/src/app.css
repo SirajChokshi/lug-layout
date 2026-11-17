@@ -1213,3 +1213,43 @@ footer a {
 .layout-hint {
   color: #556;
 }
+
+.measure-label-table {
+  background: rgb(107 79 46 / 0.92);
+}
+
+.table-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.stud-cm {
+  display: grid;
+  grid-template-columns: 110px 1fr 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.stud-cm-label {
+  color: #445;
+}
+
+.scaled-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.scaled-field input {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.scaled-unit {
+  color: #667;
+  font-size: 12px;
+}

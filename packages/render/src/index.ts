@@ -9,6 +9,7 @@ export type {
   FrameStats,
   GeometrySet,
   GraphicsApi,
+  GridArea,
   GridLevel,
   GroundGrid,
   GuideKind,

@@ -31,6 +31,7 @@ export type EditorActionId =
   | "cycle-tier"
   | "measure-frames"
   | "measure"
+  | "draw-tables"
   | "toggle-grid";
 
 export type ShellCommandId = "show-shortcuts" | "open-palette";
@@ -77,6 +78,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "u" }],
     keywords: "ruler distance length dimension tape",
+  },
+  {
+    id: "draw-tables",
+    title: "Draw tables: drag to draw, drag an edge or corner to resize",
+    group: "Tools",
+    keys: [{ key: "b" }],
+    keywords: "table board room plan size studs cm",
   },
   {
     id: "rotate",
@@ -308,6 +316,7 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
   if (id === "measure") return snapshot.mode === "measure";
+  if (id === "draw-tables") return snapshot.mode === "table";
   if (id === "toggle-grid") return snapshot.showGrid;
   return false;
 }
@@ -355,6 +364,7 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
     case "cycle-tier":
     case "measure-frames":
     case "measure":
+    case "draw-tables":
     case "toggle-grid":
       return true;
     default: {
@@ -466,6 +476,9 @@ export function runEditorAction(
       return;
     case "measure":
       editor.setMeasuring(editor.snapshot().mode !== "measure");
+      return;
+    case "draw-tables":
+      editor.setTableTool(editor.snapshot().mode !== "table");
       return;
     case "toggle-grid":
       editor.setShowGrid(!editor.snapshot().showGrid);

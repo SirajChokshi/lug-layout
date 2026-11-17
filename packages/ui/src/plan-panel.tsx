@@ -1,17 +1,21 @@
 import {
+  DEFAULT_TABLE_HEIGHT_MM,
   MM_PER_STUD,
+  type EditorSnapshot,
+  type IEditor,
   type IEditorCamera,
   type IPlanService,
   type MmRect,
   type PlanCheck,
   type PlanRegion,
   type PlanSnapshot,
+  type PlanTable,
 } from "@brr/client";
 import { useState, useSyncExternalStore } from "react";
 
 const DEFAULT_ROOM_MM = { width: 4000, depth: 3000 } as const;
 const DEFAULT_TABLE: MmRect = { x: 800, z: 800, width: 2400, depth: 1200 };
-const DEFAULT_TABLE_HEIGHT_MM = 750;
+const MM_PER_CM = 10;
 const DEFAULT_OBSTACLE: MmRect = { x: 0, z: 0, width: 400, depth: 400 };
 
 export function usePlanSnapshot(plans: IPlanService): PlanSnapshot {
@@ -53,6 +57,136 @@ function MmField({
         }}
       />
     </label>
+  );
+}
+
+function ScaledField({
+  label,
+  unit,
+  mm,
+  mmPerUnit,
+  name,
+  onCommit,
+}: {
+  readonly label: string;
+  readonly unit: string;
+  readonly mm: number;
+  readonly mmPerUnit: number;
+  readonly name: string;
+  readonly onCommit: (mm: number) => void;
+}) {
+  const shownValue = String(Math.round((mm / mmPerUnit) * 100) / 100);
+  const [draft, setDraft] = useState(shownValue);
+  const [shown, setShown] = useState(shownValue);
+  if (shown !== shownValue) {
+    setShown(shownValue);
+    setDraft(shownValue);
+  }
+  return (
+    <label className="scaled-field">
+      <input
+        type="number"
+        step="any"
+        name={name}
+        aria-label={`${label} in ${unit}`}
+        value={draft}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          const parsed = Number(event.target.value);
+          if (event.target.value.trim() !== "" && Number.isFinite(parsed)) {
+            onCommit(Math.round(parsed * mmPerUnit));
+          }
+        }}
+      />
+      <span className="scaled-unit">{unit}</span>
+    </label>
+  );
+}
+
+function StudCmFields({
+  label,
+  name,
+  mm,
+  onCommit,
+}: {
+  readonly label: string;
+  readonly name: string;
+  readonly mm: number;
+  readonly onCommit: (mm: number) => void;
+}) {
+  return (
+    <div className="stud-cm" data-field={name}>
+      <span className="stud-cm-label">{label}</span>
+      <ScaledField
+        label={label}
+        unit="studs"
+        name={`${name}-studs`}
+        mm={mm}
+        mmPerUnit={MM_PER_STUD}
+        onCommit={onCommit}
+      />
+      <ScaledField
+        label={label}
+        unit="cm"
+        name={`${name}-cm`}
+        mm={mm}
+        mmPerUnit={MM_PER_CM}
+        onCommit={onCommit}
+      />
+    </div>
+  );
+}
+
+function positive(mm: number): boolean {
+  return mm > 0;
+}
+
+function TableFields({
+  table,
+  onChange,
+}: {
+  readonly table: PlanTable;
+  readonly onChange: (patch: Partial<Pick<PlanTable, "rect" | "heightMm">>) => void;
+}) {
+  const { rect } = table;
+  return (
+    <div className="table-fields">
+      <StudCmFields
+        label="Width"
+        name={`${table.id}-width`}
+        mm={rect.width}
+        onCommit={(width) => positive(width) && onChange({ rect: { ...rect, width } })}
+      />
+      <StudCmFields
+        label="Depth"
+        name={`${table.id}-depth`}
+        mm={rect.depth}
+        onCommit={(depth) => positive(depth) && onChange({ rect: { ...rect, depth } })}
+      />
+      <StudCmFields
+        label="From left wall"
+        name={`${table.id}-x`}
+        mm={rect.x}
+        onCommit={(x) => onChange({ rect: { ...rect, x } })}
+      />
+      <StudCmFields
+        label="From back wall"
+        name={`${table.id}-z`}
+        mm={rect.z}
+        onCommit={(z) => onChange({ rect: { ...rect, z } })}
+      />
+      <div className="stud-cm">
+        <span className="stud-cm-label">Height</span>
+        <ScaledField
+          label="Height"
+          unit="cm"
+          name={`${table.id}-height`}
+          mm={table.heightMm}
+          mmPerUnit={MM_PER_CM}
+          onCommit={(heightMm) => positive(heightMm) && onChange({ heightMm })}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -136,17 +270,34 @@ function studsText(check: PlanCheck | undefined, tableId: string): string {
 }
 
 function TablesEditor({
+  editor,
+  snapshot,
   plan,
   check,
   plans,
 }: {
+  readonly editor: IEditor;
+  readonly snapshot: EditorSnapshot;
   readonly plan: PlanRegion;
   readonly check: PlanCheck | undefined;
   readonly plans: IPlanService;
 }) {
+  const drawing = snapshot.mode === "table";
   return (
     <section className="plan-section">
       <h3>Tables</h3>
+      <p className="plan-meta">
+        Draw a table on the canvas, or drag its edges and corners to resize it. Sizes snap to the
+        8-stud grid; type any size in studs or cm below.
+      </p>
+      <button
+        type="button"
+        data-action="draw-table"
+        aria-pressed={drawing}
+        onClick={() => editor.setTableTool(!drawing)}
+      >
+        {drawing ? "Done drawing tables (B)" : "Draw tables (B)"}
+      </button>
       {plan.footprint.tables.map((table) => (
         <div className="plan-item" key={table.id} data-table={table.id}>
           <div className="plan-item-head">
@@ -155,19 +306,10 @@ function TablesEditor({
               Remove
             </button>
           </div>
-          <div className="plan-grid">
-            <RectFields
-              prefix={table.id}
-              rect={table.rect}
-              onChange={(rect) => plans.updateTable(plan.id, table.id, { rect })}
-            />
-            <MmField
-              name={`${table.id}-height`}
-              label="height mm"
-              value={table.heightMm}
-              onCommit={(heightMm) => plans.updateTable(plan.id, table.id, { heightMm })}
-            />
-          </div>
+          <TableFields
+            table={table}
+            onChange={(patch) => plans.updateTable(plan.id, table.id, patch)}
+          />
           <p className="plan-meta" data-table-studs={table.id}>
             {studsText(check, table.id)}
           </p>
@@ -265,11 +407,15 @@ function IssueList({ check }: { readonly check: PlanCheck | undefined }) {
 
 function ActivePlan({
   camera,
+  editor,
+  editorSnapshot,
   plans,
   snapshot,
   plan,
 }: {
   readonly camera: IEditorCamera;
+  readonly editor: IEditor;
+  readonly editorSnapshot: EditorSnapshot;
   readonly plans: IPlanService;
   readonly snapshot: PlanSnapshot;
   readonly plan: PlanRegion;
@@ -309,7 +455,13 @@ function ActivePlan({
           Delete plan
         </button>
       </div>
-      <TablesEditor plan={plan} check={check} plans={plans} />
+      <TablesEditor
+        editor={editor}
+        snapshot={editorSnapshot}
+        plan={plan}
+        check={check}
+        plans={plans}
+      />
       <ObstaclesEditor plan={plan} plans={plans} />
       <IssueList check={check} />
     </>
@@ -318,9 +470,13 @@ function ActivePlan({
 
 export function PlanPanel({
   camera,
+  editor,
+  editorSnapshot,
   plans,
 }: {
   readonly camera: IEditorCamera;
+  readonly editor: IEditor;
+  readonly editorSnapshot: EditorSnapshot;
   readonly plans: IPlanService;
 }) {
   const snapshot = usePlanSnapshot(plans);
@@ -341,11 +497,29 @@ export function PlanPanel({
         </select>
       )}
       {active ? (
-        <ActivePlan camera={camera} plans={plans} snapshot={snapshot} plan={active} />
+        <ActivePlan
+          camera={camera}
+          editor={editor}
+          editorSnapshot={editorSnapshot}
+          plans={plans}
+          snapshot={snapshot}
+          plan={active}
+        />
       ) : (
-        <p className="plan-meta">
-          No plan yet. Outside plans the world is a sandbox and plan rules don't apply.
-        </p>
+        <>
+          <p className="plan-meta">
+            No plan yet. Outside plans the world is a sandbox and plan rules don't apply. Draw a
+            table to start one around it.
+          </p>
+          <button
+            type="button"
+            data-action="draw-table"
+            aria-pressed={editorSnapshot.mode === "table"}
+            onClick={() => editor.setTableTool(editorSnapshot.mode !== "table")}
+          >
+            Draw a table (B)
+          </button>
+        </>
       )}
       <NewPlanForm camera={camera} plans={plans} />
     </section>

@@ -1,4 +1,4 @@
-import { CHUNK_LDU, MM_PER_STUD, STUD_LDU, lduFromMm } from "@brr/math";
+import { CHUNK_LDU, MM_PER_STUD, STUD_LDU, lduFromMm, mmFromLdu } from "@brr/math";
 
 export interface MmRect {
   readonly x: number;
@@ -75,6 +75,54 @@ export function roomRect(region: PlanRegion): LduRect {
     width: region.footprint.roomWidthMm,
     depth: region.footprint.roomDepthMm,
   });
+}
+
+export function mmRectFromWorld(region: PlanRegion, rect: LduRect): MmRect {
+  const x = regionOriginX(region);
+  const z = regionOriginZ(region);
+  return {
+    x: mmFromLdu(rect.minX - x),
+    z: mmFromLdu(rect.minZ - z),
+    width: mmFromLdu(rect.maxX - rect.minX),
+    depth: mmFromLdu(rect.maxZ - rect.minZ),
+  };
+}
+
+function chunksToCover(gapLdu: number): number {
+  return gapLdu > 0 ? Math.ceil(gapLdu / CHUNK_LDU) : 0;
+}
+
+export function regionAround(region: PlanRegion, rect: LduRect, marginLdu: number): PlanRegion {
+  const room = roomRect(region);
+  const shiftX = chunksToCover(room.minX - (rect.minX - marginLdu));
+  const shiftZ = chunksToCover(room.minZ - (rect.minZ - marginLdu));
+  const shiftMmX = mmFromLdu(shiftX * CHUNK_LDU);
+  const shiftMmZ = mmFromLdu(shiftZ * CHUNK_LDU);
+  const shifted: PlanRegion = {
+    ...region,
+    originChunkX: region.originChunkX - shiftX,
+    originChunkZ: region.originChunkZ - shiftZ,
+  };
+  const move = <T extends { readonly rect: MmRect }>(item: T): T => ({
+    ...item,
+    rect: { ...item.rect, x: item.rect.x + shiftMmX, z: item.rect.z + shiftMmZ },
+  });
+  const { footprint } = region;
+  return {
+    ...shifted,
+    footprint: {
+      roomWidthMm: Math.max(
+        footprint.roomWidthMm + shiftMmX,
+        mmFromLdu(rect.maxX + marginLdu - regionOriginX(shifted)),
+      ),
+      roomDepthMm: Math.max(
+        footprint.roomDepthMm + shiftMmZ,
+        mmFromLdu(rect.maxZ + marginLdu - regionOriginZ(shifted)),
+      ),
+      tables: footprint.tables.map(move),
+      obstacles: footprint.obstacles.map(move),
+    },
+  };
 }
 
 export function studsInside(region: PlanRegion, rect: MmRect): StudRect {

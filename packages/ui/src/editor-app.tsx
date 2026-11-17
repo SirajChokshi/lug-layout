@@ -127,7 +127,7 @@ export function EditorApp({
       <LayoutBar editor={editor} snapshot={snapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} />
-      <PlanPanel camera={camera} plans={plans} />
+      <PlanPanel camera={camera} editor={editor} editorSnapshot={snapshot} plans={plans} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
