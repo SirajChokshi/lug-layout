@@ -21,6 +21,8 @@ import {
 } from "./editor-panels.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
+import { PlacementCursor, SoundToggle } from "./placement-cursor.tsx";
+import { usePlacementSounds, useSoundPreference } from "./placement-sounds.ts";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
@@ -109,11 +111,14 @@ export function EditorApp({
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   useSafeArea(camera, root);
   const compact = useCompactLayout();
+  const [sound, setSound] = useSoundPreference();
+  usePlacementSounds(snapshot, sound);
   return (
     <div
       ref={setRoot}
       className="editor"
       data-layout={compact ? "compact" : "wide"}
+      data-ghost-tone={snapshot.ghostFeedback?.tone ?? ""}
       data-status={snapshot.status}
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
       data-selection={snapshot.selection?.item ?? ""}
@@ -141,6 +146,7 @@ export function EditorApp({
       <ToolHud snapshot={snapshot} play={playSnapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
+      <PlacementCursor snapshot={snapshot} />
       <PlanPanel camera={camera} plans={plans} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />
@@ -149,7 +155,9 @@ export function EditorApp({
           snapshot={snapshot}
           play={playSnapshot}
           onShellCommand={toggleOverlay}
-        />
+        >
+          <SoundToggle on={sound} onChange={setSound} />
+        </PlacementToolbar>
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}

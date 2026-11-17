@@ -61,6 +61,9 @@ class RecordingBackend implements ISceneBackend {
   deleteChunk(): void {}
   setGhost(): void {}
   placeGhost(): void {}
+  setGhostTone(): void {}
+  cueGhost(): void {}
+  setSnapTargets(): void {}
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}

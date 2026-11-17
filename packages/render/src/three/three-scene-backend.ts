@@ -38,18 +38,23 @@ import {
   type FarModelPlacement,
   type GeometrySet,
   type FrameStats,
+  type GhostCue,
+  type GhostFootprint,
+  type GhostTone,
   type ISceneBackend,
   type LookSettings,
   type PartPalette,
   type PlanOverlay,
   type RebaseEvent,
   type SceneBackendConfig,
+  type SnapTarget,
   type StudInstances,
   type TrackEndKind,
   type TrackEndMarker,
   type WorldBox,
 } from "../scene-backend.ts";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
+import { GhostEffects } from "./ghost-effects.ts";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { LookPipeline } from "./look-pipeline.ts";
 import {
@@ -103,8 +108,8 @@ const CLASS_NOT_UPRIGHT = 1;
 const CLASS_VOXELIZED = 2;
 const INSTANCE_CLASSES = 4;
 const GHOST_OPACITY = 0.55;
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 const SELECTION_COLOR = 0xff8c00;
-const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
   joined: 0x1fbf4a,
   open: 0xffb000,
@@ -429,8 +434,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   private aspect = 1;
   private orthoHalfHeight = 0;
   private ghost: Group | undefined;
-  private ghostX = 0;
-  private ghostZ = 0;
+  private readonly ghostEffects = new GhostEffects(this.ghostMaterials);
   private readonly selection = new LineSegments(
     new EdgesGeometry(new BoxGeometry(1, 1, 1)),
     new LineBasicNodeMaterial({ color: SELECTION_COLOR, depthTest: false }),
@@ -513,6 +517,8 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.look = config.look;
     this.materials = new PlasticMaterials(config.look.plastic, 1);
     this.ghostMaterials = new PlasticMaterials(config.look.plastic, GHOST_OPACITY);
+    this.ghostEffects.useMaterials(this.ghostMaterials);
+    this.watchReducedMotion();
     this.scene.background = new Color(SKY_COLOR);
     this.light(renderer, config.look);
     if (config.look.gtao || config.look.outlines || config.look.bevel || config.look.oit) {
@@ -533,6 +539,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
     this.scene.add(this.trackEndGroup);
+    this.scene.add(this.ghostEffects.root);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -571,6 +578,13 @@ export class ThreeSceneBackend implements ISceneBackend {
     });
     sun.shadow.shadowNode = shadowNode;
     this.shadowNode = shadowNode;
+  }
+
+  private watchReducedMotion(): void {
+    if (typeof matchMedia !== "function") return;
+    const query = matchMedia(REDUCED_MOTION_QUERY);
+    this.ghostEffects.setReducedMotion(query.matches);
+    query.addEventListener("change", (event) => this.ghostEffects.setReducedMotion(event.matches));
   }
 
   private watchForFailure(renderer: WebGPURenderer, canvas: HTMLCanvasElement): void {
@@ -776,31 +790,42 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.chunkList = this.chunkList.filter((record) => record !== existing);
   }
 
-  setGhost(model: ChunkInstances | null): void {
+  setGhost(model: ChunkInstances | null, footprint?: GhostFootprint): void {
     if (this.ghost) {
       this.scene.remove(this.ghost);
       disposeInstancedChildren(this.ghost);
       this.ghost = undefined;
     }
-    if (!model) return;
+    if (!model) {
+      this.ghostEffects.attach(undefined, undefined);
+      return;
+    }
     const ghost = new Group();
     ghost.matrixAutoUpdate = false;
     ghost.visible = false;
     this.addInstances(ghost, undefined, undefined, model, this.ghostMaterials);
     this.ghost = ghost;
+    this.ghostEffects.attach(ghost, footprint);
     this.scene.add(ghost);
   }
 
   placeGhost(x: number, yLdu: number, z: number, rot: number): void {
-    const ghost = this.ghost;
-    if (!ghost) return;
-    this.ghostX = x;
-    this.ghostZ = z;
-    ghost.position.set(x - this.renderOriginX, yLdu, z - this.renderOriginZ);
-    ghost.rotation.set(0, rot * QUARTER_TURN_RADIANS, 0);
-    ghost.updateMatrix();
-    ghost.updateMatrixWorld(true);
-    ghost.visible = true;
+    if (!this.ghost) return;
+    const now = performance.now();
+    this.ghostEffects.place(x, yLdu, z, rot, now);
+    this.ghostEffects.animate(now, this.camera);
+  }
+
+  setGhostTone(tone: GhostTone): void {
+    this.ghostEffects.setTone(tone);
+  }
+
+  cueGhost(cue: GhostCue): void {
+    this.ghostEffects.play(cue, performance.now());
+  }
+
+  setSnapTargets(targets: ReadonlyArray<SnapTarget>): void {
+    this.ghostEffects.setTargets(targets);
   }
 
   setSelectionBox(box: WorldBox | null): void {
@@ -1446,16 +1471,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       node.group.updateMatrix();
       node.group.updateMatrixWorld(true);
     }
-    const ghost = this.ghost;
-    if (ghost) {
-      ghost.position.set(
-        this.ghostX - this.renderOriginX,
-        ghost.position.y,
-        this.ghostZ - this.renderOriginZ,
-      );
-      ghost.updateMatrix();
-      ghost.updateMatrixWorld(true);
-    }
+    this.ghostEffects.rebase(this.renderOriginX, this.renderOriginZ);
     this.selection.position.set(
       this.selectionCentreX - this.renderOriginX,
       this.selection.position.y,
@@ -1596,6 +1612,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
     this.throwIfFailed();
     this.assignTiers(out);
+    this.ghostEffects.animate(performance.now(), this.camera);
     renderer.info.reset();
     if (this.pipeline && this.camera === this.perspective) this.pipeline.render();
     else renderer.render(this.scene, this.camera);

@@ -30,6 +30,8 @@ function plasticMaterial(plastic: boolean, vertexColors: boolean, opacity: numbe
 export class PlasticMaterials {
   private readonly instanced = new Map<number, MeshStandardNodeMaterial>();
   private readonly fixed = new Map<number, MeshStandardNodeMaterial>();
+  readonly all: MeshStandardNodeMaterial[] = [];
+  readonly baseOpacities: number[] = [];
 
   constructor(
     private readonly plastic: boolean,
@@ -57,6 +59,8 @@ export class PlasticMaterials {
         (alpha / OPAQUE_ALPHA) * this.opacityScale,
       );
       cache.set(alpha, material);
+      this.all.push(material);
+      this.baseOpacities.push(material.opacity);
     }
     return material;
   }

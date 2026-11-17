@@ -124,6 +124,23 @@ export interface TrackEndMarker {
   readonly kind: TrackEndKind;
 }
 
+export type GhostTone = "neutral" | "valid" | "snapped" | "blocked";
+export type GhostCue = "drop" | "refuse";
+export type SnapTargetKind = "candidate" | "locked" | "blocked";
+
+export interface SnapTarget {
+  readonly box: WorldBox;
+  readonly kind: SnapTargetKind;
+}
+
+export interface GhostFootprint {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+  readonly bottomY: number;
+}
+
 export const RAY_FLOATS = 6;
 export const CAMERA_FOV_DEGREES = 40;
 
@@ -140,8 +157,11 @@ export interface ISceneBackend {
   setPalette(palette: PartPalette): void;
   setChunk(key: number, chunk: ChunkInstances): void;
   deleteChunk(key: number): void;
-  setGhost(model: ChunkInstances | null): void;
+  setGhost(model: ChunkInstances | null, footprint?: GhostFootprint): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
+  setGhostTone(tone: GhostTone): void;
+  cueGhost(cue: GhostCue): void;
+  setSnapTargets(targets: ReadonlyArray<SnapTarget>): void;
   setSelectionBox(box: WorldBox | null): void;
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void;

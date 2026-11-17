@@ -408,4 +408,27 @@ export class RoadNetwork {
     }
     return { joinedCells, joinedRoadCells, mismatchedCells, overlappingCells };
   }
+
+  seams(candidate: RoadPlacement): ReadonlyArray<RoadEdgeSegment> {
+    const cells = placedCells(candidate);
+    const own = new CellMap<boolean>();
+    for (const cell of cells) own.set(cell.cellX, cell.cellZ, true);
+    const edgeCells: EdgeCell[] = [];
+    for (const cell of cells) {
+      for (const [side, dx, dz] of SIDES) {
+        if (own.has(cell.cellX + dx, cell.cellZ + dz)) continue;
+        const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
+        if (!neighbour) continue;
+        edgeCells.push({
+          placement: candidate.id,
+          side,
+          line: edgeLine(side, cell.cellX, cell.cellZ),
+          along: alongEdge(side, cell.cellX, cell.cellZ),
+          topLdu: Math.max(cell.top, neighbour.top),
+          status: sameSurface(cell, neighbour) ? "joined" : "mismatch",
+        });
+      }
+    }
+    return mergeSegments(edgeCells);
+  }
 }

@@ -41,9 +41,11 @@ import {
   type EdgeMarker,
   type ChunkTier,
   type FrameStats,
+  type GhostFootprint,
   type GraphicsApi,
   type LookSettings,
   type ISceneBackend,
+  type SnapTarget,
   type WorldBox,
 } from "@brr/render";
 import { decode, issueText } from "@brr/schema/decode";
@@ -98,7 +100,14 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
-import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
+import {
+  partName,
+  moduleGhostFeedback,
+  roadGhostFeedback,
+  trackGhostFeedback,
+  type GhostFeedbackView,
+} from "./ghost-feedback.ts";
+import { cellExtent, snapToRoadEdge, touchingRoads, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import {
   ROAD_KIT_PREFIX,
@@ -370,6 +379,7 @@ export interface TrackView {
   readonly held: TrackPieceView | null;
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
+  readonly refusals: number;
   readonly solve: TrackSolveStats | null;
 }
 
@@ -436,6 +446,7 @@ export interface EditorSnapshot {
   readonly roadStroke: RoadStrokeView | null;
   readonly lastRoadStroke: RoadStrokeResult | null;
   readonly roadErase: boolean;
+  readonly ghostFeedback: GhostFeedbackView | null;
 }
 
 export interface EditorCredits {
@@ -517,6 +528,8 @@ const TRACK_PIECE_GROUP = "track-pieces";
 const TRACK_PIECE_GROUP_LABEL = "Track pieces";
 const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
 const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
+const SEAM_HEIGHT_LDU = 20;
+const SEAM_HALF_WIDTH_LDU = 6;
 const P95 = 0.95;
 const QUARTER_TURNS = 4;
 const ROAD_REFUSAL = "its road edges would mismatch or overlap placed road pieces";
@@ -623,6 +636,32 @@ interface EditorBomTables {
   readonly ldrawColors: ReadonlyArray<number>;
 }
 
+function seamBox(segment: RoadEdgeSegment): WorldBox {
+  const minY = segment.topLdu + MARKER_LIFT_LDU;
+  const maxY = minY + SEAM_HEIGHT_LDU;
+  const lo = segment.line - SEAM_HALF_WIDTH_LDU;
+  const hi = segment.line + SEAM_HALF_WIDTH_LDU;
+  switch (segment.side) {
+    case "minX":
+    case "maxX":
+      return { minX: lo, maxX: hi, minY, maxY, minZ: segment.from, maxZ: segment.to };
+    case "minZ":
+    case "maxZ":
+      return { minX: segment.from, maxX: segment.to, minY, maxY, minZ: lo, maxZ: hi };
+    default: {
+      const unhandled: never = segment.side;
+      throw new Error(`unhandled side ${String(unhandled)}`);
+    }
+  }
+}
+
+interface SeamPose {
+  readonly x: number;
+  readonly z: number;
+  readonly rot: number;
+  readonly network: RoadNetwork;
+}
+
 interface PendingAction {
   readonly step: HistoryStep;
   readonly action: EditAction;
@@ -658,6 +697,11 @@ interface OpenWorld {
 
 function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).replace(/\.+$/, "");
+}
+
+function footprintOf(placeable: Placeable): GhostFootprint {
+  const { min, max } = placeable.box;
+  return { minX: min[0], maxX: max[0], minZ: min[2], maxZ: max[2], bottomY: min[1] };
 }
 
 function snapToLattice(ldu: number): number {
@@ -758,6 +802,7 @@ export class Editor implements IEditor {
     roadStroke: null,
     lastRoadStroke: null,
     roadErase: false,
+    ghostFeedback: null,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -801,6 +846,14 @@ export class Editor implements IEditor {
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
+  private pointerNdcX = 0;
+  private pointerNdcY = 0;
+  private pointerInside = false;
+  private aimedX = Number.NaN;
+  private aimedZ = Number.NaN;
+  private seamPose: SeamPose | null = null;
+  private seamTargets: ReadonlyArray<SnapTarget> = [];
+  private trackRefusals = 0;
   private track: TrackDrawing | null = null;
   private newTrack: (() => TrackDrawing) | null = null;
   private roadDrawing: RoadDrawing | null = null;
@@ -1059,6 +1112,7 @@ export class Editor implements IEditor {
       const startMs = performance.now();
       this.camera.frame(startMs);
       this.watchView();
+      this.reaimIfViewMoved();
       this.backend.renderFrame(this.frameStats);
       const pending = this.pending;
       if (pending) {
@@ -1264,6 +1318,7 @@ export class Editor implements IEditor {
       held: this.heldView(track),
       drag: track.dragView(),
       lastCommit: this.lastTrackCommit,
+      refusals: this.trackRefusals,
       solve:
         samples.length === 0
           ? null
@@ -1299,6 +1354,11 @@ export class Editor implements IEditor {
 
   private targetTrackEnd(target: number | null, misses: ReadonlyArray<number> = []): void {
     if (`${target}|${misses.join(",")}` !== this.trackEndTarget) this.showTrackEnds(target, misses);
+  }
+
+  private showGhostFeedback(feedback: GhostFeedbackView | null): void {
+    this.backend.setGhostTone(feedback?.tone ?? "neutral");
+    this.update({ ghostFeedback: feedback });
   }
 
   private showTrackGhost(track: TrackDrawing): void {
@@ -1383,6 +1443,7 @@ export class Editor implements IEditor {
       target?.joins ? target.end : null,
       target && !target.joins ? [target.end] : [],
     );
+    this.showGhostFeedback(trackGhostFeedback(track.dragView()));
     this.update({ track: this.trackView() });
   }
 
@@ -1404,6 +1465,7 @@ export class Editor implements IEditor {
     }
     this.backend.setGhost(null);
     this.showTrackEnds(null);
+    this.showGhostFeedback(null);
     let instances = 0;
     let studs = 0;
     for (const key of commit.chunks) {
@@ -1430,8 +1492,10 @@ export class Editor implements IEditor {
       this.syncPlan();
       this.trackEdited();
     }
-    if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
-    else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    if (commit.refusal) {
+      this.lastTrackCommit = `refused-${commit.refusal}`;
+      this.trackRefusals++;
+    } else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.update({ track: this.trackView() });
   }
 
@@ -1485,6 +1549,7 @@ export class Editor implements IEditor {
           ? null
           : { catalogIndex: pieceIndex, connector: 0, heading: 0, snap: null };
       this.backend.setGhost(null);
+      this.showGhostFeedback(null);
       this.select(null);
       this.update({ mode: "track", activeItem: id, track: this.trackView() });
       this.showHeldPiece();
@@ -1504,11 +1569,18 @@ export class Editor implements IEditor {
     }
     const placeable = id === null ? null : (this.placeables.find((p) => p.id === id) ?? null);
     this.active = placeable;
-    this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
+    this.backend.setGhost(
+      placeable ? { ...placeable.parts, studs: placeable.studs } : null,
+      placeable ? footprintOf(placeable) : undefined,
+    );
+    this.backend.setSnapTargets([]);
     if (placeable) this.select(null);
     const { moduleFit, snap } = this.snapGhost();
     this.placeGhost();
     if (!moduleFit) this.showMarkers();
+    this.seamPose = null;
+    this.seamTargets = [];
+    this.showGhostFeedback(placeable ? roadGhostFeedback(null, null) : null);
     this.update({
       mode: placeable ? "place" : "select",
       activeItem: placeable?.id ?? null,
@@ -1516,6 +1588,7 @@ export class Editor implements IEditor {
       snap,
       ghostRot: this.placeRot,
     });
+    if (placeable) this.reaim();
   }
 
   private trackPieceIndex(track: TrackDrawing, id: string): number | null {
@@ -1734,7 +1807,12 @@ export class Editor implements IEditor {
   }
 
   pointerMove(ndcX: number, ndcY: number): void {
+    this.pointerNdcX = ndcX;
+    this.pointerNdcY = ndcY;
+    this.pointerInside = true;
     this.hovering = this.groundHit(ndcX, ndcY);
+    this.aimedX = this.hovering ? this.hoverX : Number.NaN;
+    this.aimedZ = this.hovering ? this.hoverZ : Number.NaN;
     const { moduleFit, snap } = this.snapGhost();
     if (this.state.mode === "road" && this.roadDrawing && this.hovering) {
       this.showRoadPreview(this.roadDrawing.hover(this.hitX, this.hitZ, ...this.roadNeighbours()));
@@ -1750,11 +1828,113 @@ export class Editor implements IEditor {
       snap,
       moduleFit,
       ghostRot: this.placeRot,
+      ghostFeedback: this.placementFeedback(snap, moduleFit),
     });
+  }
+
+  private reaimIfViewMoved(): void {
+    if (!this.pointerInside) return;
+    this.backend.rayThrough(this.pointerNdcX, this.pointerNdcY, this.ray);
+    const originY = this.ray[1] ?? 0;
+    const directionY = this.ray[4] ?? 0;
+    if (directionY >= 0) {
+      if (this.hovering) this.reaim();
+      return;
+    }
+    const t = -originY / directionY;
+    const x = snapToLattice((this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t);
+    const z = snapToLattice((this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t);
+    if (x === this.aimedX && z === this.aimedZ) return;
+    this.reaim();
+  }
+
+  private reaim(): void {
+    if (this.pointerInside) this.pointerMove(this.pointerNdcX, this.pointerNdcY);
+  }
+
+  private placementFeedback(
+    snap: RoadSnapView | null,
+    moduleFit: ModuleFitView | null,
+  ): GhostFeedbackView | null {
+    if (!this.active) return this.state.mode === "track" ? this.state.ghostFeedback : null;
+    const module = moduleGhostFeedback(moduleFit);
+    const road = roadGhostFeedback(snap, this.roadNeighbourName(snap));
+    const refusal: GhostFeedbackView | null =
+      this.hovering && this.hoverRefusal !== null
+        ? { tone: "blocked", message: this.hoverRefusal }
+        : null;
+    const feedback =
+      (module?.tone === "blocked" ? module : null) ??
+      (road.tone === "blocked" ? road : null) ??
+      refusal ??
+      module ??
+      road;
+    this.backend.setGhostTone(feedback.tone);
+    this.showSeams(snap);
+    return feedback;
+  }
+
+  private ghostRoad(): RoadPlacement | null {
+    const surface = this.active?.road;
+    if (!surface) return null;
+    return { id: -1, x: this.hoverX, z: this.hoverZ, yLdu: 0, rot: this.placeRot, surface };
+  }
+
+  private roadNeighbourName(snap: RoadSnapView | null): string | null {
+    const ghost = this.ghostRoad();
+    if (!ghost || !snap || snap.state === "free") return null;
+    const near = touchingRoads(this.roadExtents, cellExtent(ghost));
+    const first = near[0] === undefined ? undefined : this.roadModels[near[0]];
+    if (!first) return null;
+    return near.length === 1 ? partName(first.placeable) : `${near.length} road pieces`;
+  }
+
+  private showSeams(snap: RoadSnapView | null): void {
+    const ghost = this.ghostRoad();
+    const shown =
+      !ghost || !snap || snap.state === "free" || snap.overlappingCells > 0
+        ? null
+        : snap.state === "snapped"
+          ? "joined"
+          : "mismatch";
+    if (!ghost || shown === null) {
+      if (this.seamTargets.length > 0) this.backend.setSnapTargets([]);
+      this.seamPose = null;
+      this.seamTargets = [];
+      return;
+    }
+    const pose = this.seamPose;
+    if (
+      pose &&
+      pose.x === ghost.x &&
+      pose.z === ghost.z &&
+      pose.rot === ghost.rot &&
+      pose.network === this.roadNetwork
+    ) {
+      return;
+    }
+    const targets: SnapTarget[] = [];
+    for (const segment of this.roadNetwork.seams(ghost)) {
+      if (segment.status !== shown) continue;
+      targets.push({ box: seamBox(segment), kind: shown === "joined" ? "locked" : "blocked" });
+    }
+    this.seamPose = { x: ghost.x, z: ghost.z, rot: ghost.rot, network: this.roadNetwork };
+    this.seamTargets = targets;
+    this.backend.setSnapTargets(targets);
+  }
+
+  private settle(): void {
+    this.backend.cueGhost("drop");
+    this.backend.setGhostTone("neutral");
+    this.backend.setSnapTargets([]);
+    this.seamPose = null;
+    this.seamTargets = [];
+    this.update({ ghostFeedback: null });
   }
 
   pointerLeave(): void {
     this.hovering = false;
+    this.pointerInside = false;
     this.moduleGhost = null;
     this.showMarkers();
     this.update({ hover: null, moduleFit: null });
@@ -1775,11 +1955,22 @@ export class Editor implements IEditor {
       const { moduleFit, snap } = this.snapGhost();
       if (moduleFit?.occupied) {
         this.placeGhost();
-        this.update({ moduleFit, refusedClicks: this.state.refusedClicks + 1 });
+        this.backend.cueGhost("refuse");
+        this.update({
+          moduleFit,
+          refusedClicks: this.state.refusedClicks + 1,
+          ghostFeedback: this.placementFeedback(null, moduleFit),
+        });
         return;
       }
       this.placeGhost();
+      this.update({
+        hover: this.hoverView(),
+        snap,
+        ghostFeedback: this.placementFeedback(snap, moduleFit),
+      });
       if (snap?.state === "refused") {
+        this.backend.cueGhost("refuse");
         this.update({
           snap,
           refusedClicks: this.state.refusedClicks + 1,
@@ -1800,6 +1991,7 @@ export class Editor implements IEditor {
         return;
       }
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.placeRot, eventTimeMs);
+      this.settle();
       return;
     }
     this.backend.rayThrough(ndcX, ndcY, this.ray);
@@ -1823,6 +2015,7 @@ export class Editor implements IEditor {
   }
 
   private refuse(item: string, x: number, z: number, rot: number, reason: string): void {
+    this.backend.cueGhost("refuse");
     this.update({
       refusedClicks: this.state.refusedClicks + 1,
       lastRefusal: { item, x, z, rot, mismatchedCells: 0, overlappingCells: 0, reason },
@@ -2198,6 +2391,11 @@ export class Editor implements IEditor {
     }
     if (this.active) {
       this.ghostRot = (this.placeRot + 1) % QUARTER_TURNS;
+      if (this.pointerInside) {
+        this.update({ ghostRot: this.placeRot });
+        this.reaim();
+        return;
+      }
       if (this.hovering) {
         this.hoverX = snapToLattice(this.hitX);
         this.hoverZ = snapToLattice(this.hitZ);
@@ -2252,7 +2450,10 @@ export class Editor implements IEditor {
     if (!edit) return;
     const selected = this.selected;
     const restored = this.show(edit, eventTimeMs).added.at(-1);
-    if (this.active) return;
+    if (this.active) {
+      this.reaim();
+      return;
+    }
     if (restored) this.select(restored);
     else if (selected && !selected.handle.live) this.select(null);
   }

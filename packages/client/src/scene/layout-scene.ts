@@ -17,11 +17,15 @@ import {
   type EdgeMarker,
   type FarModelPlacement,
   type FrameStats,
+  type GhostCue,
+  type GhostFootprint,
+  type GhostTone,
   type ISceneBackend,
   type PartPalette,
   type PlanOverlay,
   type RebaseEvent,
   type SceneBackendConfig,
+  type SnapTarget,
   type TrackEndMarker,
   type WorldBox,
 } from "@brr/render";
@@ -126,11 +130,20 @@ class ChunkCapture implements ISceneBackend {
   setFarModel(id: number, placement: FarModelPlacement | null): void {
     this.inner.setFarModel(id, placement);
   }
-  setGhost(model: ChunkInstances | null): void {
-    this.inner.setGhost(model);
+  setGhost(model: ChunkInstances | null, footprint?: GhostFootprint): void {
+    this.inner.setGhost(model, footprint);
   }
   placeGhost(x: number, yLdu: number, z: number, rot: number): void {
     this.inner.placeGhost(x, yLdu, z, rot);
+  }
+  setGhostTone(tone: GhostTone): void {
+    this.inner.setGhostTone(tone);
+  }
+  cueGhost(cue: GhostCue): void {
+    this.inner.cueGhost(cue);
+  }
+  setSnapTargets(targets: ReadonlyArray<SnapTarget>): void {
+    this.inner.setSnapTargets(targets);
   }
   setSelectionBox(box: WorldBox | null): void {
     this.inner.setSelectionBox(box);
