@@ -1,4 +1,5 @@
-import type { StudioArchive } from "./brick-compiler.ts";
+import type { BricklinkPartCandidates } from "@brr/catalog";
+import type { StudioArchive } from "@brr/schema/bundle";
 
 export interface BricklinkToLdraw {
   ldrawCandidates(bricklinkId: string): ReadonlyArray<string>;
@@ -46,7 +47,7 @@ const FILE_META = /^0\s+FILE\s+(.+)$/iu;
 export class BricklinkPartsCrosswalk implements BricklinkToLdraw {
   private readonly candidates = new Map<string, ReadonlyArray<string>>();
 
-  constructor(bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>) {
+  constructor(bricklinkParts: BricklinkPartCandidates) {
     for (const [bricklinkId, ldrawIds] of Object.entries(bricklinkParts)) {
       const key = bricklinkId.toLowerCase();
       const merged = [...(this.candidates.get(key) ?? []), ...ldrawIds.map(withoutNamespace)];

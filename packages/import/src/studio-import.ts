@@ -1,4 +1,5 @@
-import type { BrickCompiler, StudioRejection } from "./brick-compiler.ts";
+import type { StudioRejection } from "@brr/schema/bundle";
+import type { BrickCompiler } from "./brick-compiler.ts";
 import type { StudioFileInput } from "./worker-protocol.ts";
 import type { LdrawMirror } from "./ldraw-mirror.ts";
 import { bundlePartId, ModelImportEngine, type ImportResult } from "./model-import.ts";

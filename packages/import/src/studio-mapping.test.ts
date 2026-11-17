@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StudioArchive } from "./brick-compiler.ts";
+import type { StudioArchive } from "@brr/schema/bundle";
 import { BricklinkPartsCrosswalk, mapStudioParts, type LdrawPartExists } from "./studio-mapping.ts";
 
 const crosswalk = new BricklinkPartsCrosswalk({

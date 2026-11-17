@@ -7,10 +7,6 @@ export {
   type InlinePart,
   type LdrawHeader,
   type PartOutcome,
-  type StudioArchive,
-  type StudioRead,
-  type StudioRejection,
-  type StudioRejectionKind,
 } from "./brick-compiler.ts";
 export {
   BricklinkPartsCrosswalk,

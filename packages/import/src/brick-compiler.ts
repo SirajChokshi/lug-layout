@@ -1,3 +1,5 @@
+import { StudioRead } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { runWasiCommand } from "./wasi-command.ts";
 
 export type CompileLod = "standard" | "low" | "far";
@@ -84,27 +86,6 @@ export interface InlineMeasured {
 
 export type InlineOutcome = (InlineMeasured | Need | Failure) & InlinePart;
 
-export interface StudioArchive {
-  readonly status: "read";
-  readonly entry: string;
-  readonly ldraw: string;
-  readonly studioVersion: string | null;
-  readonly convertedLines: number;
-  readonly unconvertedLines: ReadonlyArray<number>;
-  readonly bricklinkIds: Readonly<Record<string, string>>;
-  readonly customParts: ReadonlyArray<string>;
-}
-
-export type StudioRejectionKind = "notZip" | "encrypted" | "noModel";
-
-export interface StudioRejection {
-  readonly status: "rejected";
-  readonly kind: StudioRejectionKind;
-  readonly message: string;
-}
-
-export type StudioRead = StudioArchive | StudioRejection;
-
 export interface CompileOutput {
   readonly parts: ReadonlyArray<PartOutcome>;
   readonly inline: ReadonlyArray<InlineOutcome>;
@@ -143,21 +124,6 @@ function isBakeOutput(value: unknown): value is BakeOutput {
     isRecord(value["instances"]) &&
     Array.isArray(value["inlineParts"]) &&
     Array.isArray(value["looseGeometry"])
-  );
-}
-
-function isStudioRead(value: unknown): value is StudioRead {
-  if (!isRecord(value)) return false;
-  if (value["status"] === "rejected") {
-    return typeof value["kind"] === "string" && typeof value["message"] === "string";
-  }
-  return (
-    value["status"] === "read" &&
-    typeof value["entry"] === "string" &&
-    typeof value["ldraw"] === "string" &&
-    isRecord(value["bricklinkIds"]) &&
-    Array.isArray(value["customParts"]) &&
-    Array.isArray(value["unconvertedLines"])
   );
 }
 
@@ -203,11 +169,8 @@ export class BrickCompiler {
   }
 
   async readStudio(io: Uint8Array): Promise<StudioRead> {
-    const parsed: unknown = JSON.parse(
-      new TextDecoder().decode(await this.runBytes(framed({ op: "readStudio" }, io))),
-    );
-    if (!isStudioRead(parsed)) throw new Error("brick-compile readStudio output is malformed");
-    return parsed;
+    const output = new TextDecoder().decode(await this.runBytes(framed({ op: "readStudio" }, io)));
+    return decodedOrThrow(decode(StudioRead, JSON.parse(output)), "brick-compile readStudio");
   }
 
   async compile(request: CompileRequest): Promise<CompileOutput> {
