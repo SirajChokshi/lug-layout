@@ -291,7 +291,7 @@ describe("Coupled running gear on a circle", () => {
     sim.setThrottle(0, 500);
     run(sim, 6);
     const forward = runningGearErrors(session);
-    expect(forward.axle).toBeLessThan(0.01);
+    expect(forward.axle).toBeLessThan(1e-9);
     expect(forward.coupling).toBeLessThan(1e-6);
     sim.setThrottle(0, 0);
     run(sim, 4);
@@ -299,7 +299,7 @@ describe("Coupled running gear on a circle", () => {
     sim.setThrottle(0, 500);
     run(sim, 6);
     const backward = runningGearErrors(session);
-    expect(backward.axle).toBeLessThan(0.01);
+    expect(backward.axle).toBeLessThan(1e-9);
     expect(backward.coupling).toBeLessThan(1e-6);
   });
 

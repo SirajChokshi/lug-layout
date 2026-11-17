@@ -143,11 +143,14 @@ const P_REAR_COUPLER_YAW = 18;
 const POSE_SCRATCH = 19;
 const NEWTON_ITERATIONS = 12;
 const NEWTON_TOLERANCE_LDU = 1e-10;
+const CHORD_SLOPE_FACTOR = 3;
+const HALF = 0.5;
 export const PIVOT_POINT_FLOATS = 4;
 
 export class RunningGearPoser {
   private readonly geometry = new Float64Array(GEOMETRY_FIELDS);
   private readonly scratch = new Float64Array(POSE_SCRATCH);
+  private readonly halfRatio = Float64Array.of(HALF, HALF);
   private readonly ahead = new Float64Array(3);
   private aheadCoupled = false;
   private frontCouplerDistance = 0;
@@ -348,8 +351,12 @@ export class RunningGearPoser {
     }
     const lead = g[at + G_LEAD] ?? 0;
     const trail = g[at + G_TRAIL] ?? 0;
-    path.pointBehind(this.behind(lead, spread), s, P_LEAD);
-    path.pointBehind(this.behind(trail, spread), s, P_TRAIL);
+    this.axlesAround(
+      path,
+      (this.behind(lead, spread) + this.behind(trail, spread)) / 2,
+      lead - trail,
+      at === FRONT_GUIDE ? 0 : 1,
+    );
     const ax = s[P_LEAD] ?? 0;
     const az = s[P_LEAD + 1] ?? 0;
     const bx = s[P_TRAIL] ?? 0;
@@ -360,6 +367,29 @@ export class RunningGearPoser {
     s[yawOut] = yaw;
     s[pivotOut] = (ax + bx) / 2 + u * Math.cos(yaw) - w * Math.sin(yaw);
     s[pivotOut + 1] = (az + bz) / 2 + u * Math.sin(yaw) + w * Math.cos(yaw);
+  }
+
+  private axlesAround(
+    path: PathSampler,
+    middleBehind: number,
+    spacing: number,
+    side: number,
+  ): void {
+    const s = this.scratch;
+    let half = spacing * (this.halfRatio[side] ?? HALF);
+    for (let i = 0; i < NEWTON_ITERATIONS; i++) {
+      path.pointBehind(middleBehind - half, s, P_LEAD);
+      path.pointBehind(middleBehind + half, s, P_TRAIL);
+      const chord = Math.hypot(
+        (s[P_TRAIL] ?? 0) - (s[P_LEAD] ?? 0),
+        (s[P_TRAIL + 1] ?? 0) - (s[P_LEAD + 1] ?? 0),
+      );
+      const error = spacing - chord;
+      if (Math.abs(error) < NEWTON_TOLERANCE_LDU) break;
+      const along = 2 * half;
+      half += error / (2 * (1 - (CHORD_SLOPE_FACTOR * (along - chord)) / along));
+    }
+    if (spacing > 0) this.halfRatio[side] = half / spacing;
   }
 
   private coupler(at: number, out: number, yawOut: number, facing: number): void {

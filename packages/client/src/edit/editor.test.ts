@@ -23,6 +23,7 @@ import {
   type LookSettings,
   type RebaseEvent,
 } from "@brr/render";
+import { STUD_LDU, ZETA16_ORDER } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import type { Decoded } from "@brr/schema/decode";
@@ -978,6 +979,10 @@ const ROLLING_STOCK_MODELS = [
   "10017-1",
 ];
 const BASEPLATE_ROW = [-1920, -1280, -640, 0, 640, 1280, 1920];
+const ONTO_TRACK: ReadonlyArray<readonly [number, number]> = [
+  [0, 10],
+  [-1200, 800],
+];
 const TRACK_FROM: readonly [number, number] = [-1920, 0];
 const TRACK_TO: readonly [number, number] = [1920, 0];
 
@@ -988,6 +993,28 @@ function stock(model: string): string {
 function layTestLine(editor: IEditor, backend: HeadlessBackend) {
   for (const x of BASEPLATE_ROW) placeItem(editor, backend, BASEPLATE, x, 0);
   return drawTrack(editor, backend, TRACK_FROM, TRACK_TO);
+}
+
+function layTestOval(editor: IEditor, backend: HeadlessBackend) {
+  const side = 640;
+  for (const x of [-2.5, -1.5, -0.5, 0.5, 1.5].map((k) => k * side)) {
+    for (const z of [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map((k) => k * side)) {
+      placeItem(editor, backend, BASEPLATE, x, z);
+    }
+  }
+  drawTrack(editor, backend, [-400, 0], [400, 0]);
+  const ends = editor.dump().trackEnds;
+  const lattice = (ldu: number) => Math.round(ldu / STUD_LDU) * STUD_LDU;
+  const east = ends.find((end) => end.heading === 0);
+  const west = ends.find((end) => end.heading === ZETA16_ORDER / 2);
+  if (!east || !west)
+    throw new Error(`a straight run has an east and a west end: ${JSON.stringify(ends)}`);
+  return drawTrack(
+    editor,
+    backend,
+    [lattice(east.xLdu), lattice(east.zLdu)],
+    [lattice(west.xLdu), lattice(west.zLdu)],
+  );
 }
 
 function aimTrain(editor: IEditor, backend: HeadlessBackend, item: string, x: number, z: number) {
@@ -1036,34 +1063,40 @@ class InProcessSim implements ISimClient {
 }
 
 describe("rolling stock on track", () => {
-  it("stands every train model in the bundle whole on laid track, axles on the centreline", async () => {
+  it("stands every train model in the bundle whole on straight and curved track, axles on the centreline", async () => {
     const { editor, backend } = await startEditor(ROLLING_STOCK_MODELS);
-    expect(layTestLine(editor, backend)).toEqual({ pieces: 12, lastCommit: "laid" });
-    const stood = ROLLING_STOCK_MODELS.map((model) => {
-      const ghost = placeTrain(editor, backend, stock(model), 0, 10);
-      const [train] = editor.dump().trains;
-      const result = {
-        model,
-        ghost: ghost?.state,
-        refusal: ghost?.refusal?.message ?? null,
-        trains: editor.dump().trains.length,
-        integerHead: Number.isInteger(train?.offsetLdu),
-        onCentreline: (train?.axleOffCentreLdu ?? 1) < 1e-9,
-        drawn: backend.vehicles.size > 0,
-      };
-      editor.undo(0);
-      return result;
-    });
+    expect(layTestOval(editor, backend)).toEqual({ pieces: 20, lastCommit: "joined" });
+    const stood = ROLLING_STOCK_MODELS.flatMap((model) =>
+      ONTO_TRACK.map(([x, z]) => {
+        const ghost = placeTrain(editor, backend, stock(model), x, z);
+        const [train] = editor.dump().trains;
+        const result = {
+          model,
+          x,
+          ghost: ghost?.state,
+          refusal: ghost?.refusal?.message ?? null,
+          trains: editor.dump().trains.length,
+          integerHead: Number.isInteger(train?.offsetLdu),
+          onCentreline: (train?.axleOffCentreLdu ?? 1) < 1e-9,
+          drawn: backend.vehicles.size > 0,
+        };
+        editor.undo(0);
+        return result;
+      }),
+    );
     expect(stood).toEqual(
-      ROLLING_STOCK_MODELS.map((model) => ({
-        model,
-        ghost: "on-track",
-        refusal: null,
-        trains: 1,
-        integerHead: true,
-        onCentreline: true,
-        drawn: true,
-      })),
+      ROLLING_STOCK_MODELS.flatMap((model) =>
+        ONTO_TRACK.map(([x]) => ({
+          model,
+          x,
+          ghost: "on-track",
+          refusal: null,
+          trains: 1,
+          integerHead: true,
+          onCentreline: true,
+          drawn: true,
+        })),
+      ),
     );
     expect(backend.vehicles.size).toBe(0);
   }, 180_000);
