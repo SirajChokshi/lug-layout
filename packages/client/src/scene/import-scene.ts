@@ -4,12 +4,14 @@ import {
   type PartAsset,
   type PartBundle,
 } from "@brr/catalog";
-import { World } from "@brr/domain";
+import { BomCounter, countPlacements, World, type PlacementContents } from "@brr/domain";
 import type { BundleCredit, BundleLod } from "@brr/schema/bundle";
 import type { ImportResult } from "@brr/import";
 import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
+import { sceneRegion, type BomInput, type BomScope, type IBomSource } from "../bom/bom-service.ts";
+import type { UncountedItem } from "@brr/domain";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { withStuds } from "./stud-stream.ts";
@@ -37,7 +39,7 @@ export interface ImportedModule {
   readonly sceneMs: number;
 }
 
-export interface IImportScene extends IViewerScene {
+export interface IImportScene extends IViewerScene, IBomSource {
   importText(fileName: string, text: string): Promise<ImportedModule>;
   placements(): ReadonlyArray<ModulePlacement>;
 }
@@ -66,6 +68,7 @@ const NO_COLOR = 0;
 const GROUND_PLATES = 0;
 const NO_TURN = 0;
 const EMPTY_WORLD_EYE_LDU = { x: 800, y: 600, z: 800 } as const;
+const IMPORTED_WORLD_NAME = "imported-world";
 
 function emptyBounds(): Bounds {
   return {
@@ -115,6 +118,38 @@ class ChunkBuilder {
   ) {}
 }
 
+function importUncounted(result: ImportResult, placements: number): UncountedItem[] {
+  const source = result.report.fileName;
+  const parts = result.report.parts.flatMap((part): UncountedItem[] =>
+    part.kind === "bundle" || part.kind === "compiled"
+      ? []
+      : [
+          {
+            source,
+            item: part.reference,
+            ldrawColor: null,
+            quantity: part.instances * placements,
+            reason: `import ${part.kind}`,
+          },
+        ],
+  );
+  const loose = result.report.looseGeometry.map((geometry): UncountedItem => ({
+    source,
+    item: geometry.section,
+    ldrawColor: null,
+    quantity: null,
+    reason: `loose geometry outside any part (${geometry.triangles} triangles, ${geometry.quads} quads)`,
+  }));
+  const colors = result.report.unknownColors.map((issue): UncountedItem => ({
+    source,
+    item: "instances in an unknown colour",
+    ldrawColor: issue.code,
+    quantity: issue.instances * placements,
+    reason: "colour not in LDConfig; the importer does not draw these instances",
+  }));
+  return [...parts, ...loose, ...colors];
+}
+
 @injectable()
 export class ImportScene implements IImportScene {
   private lod: BundleLod = "standard";
@@ -127,6 +162,7 @@ export class ImportScene implements IImportScene {
   private base: PartBundle | undefined;
   private nextX = 0;
   private view = emptyBounds();
+  private ldconfigCodes: ReadonlyArray<number> = [];
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -138,6 +174,7 @@ export class ImportScene implements IImportScene {
     this.lod = lod;
     const bundle = await this.loader.loadPartSet(lod, [], []);
     this.base = bundle;
+    this.ldconfigCodes = bundle.colors.map((color) => color.code);
     return showChunks(this.backend, bundle, undefined, new ColorTable(bundle), [], null);
   }
 
@@ -192,6 +229,27 @@ export class ImportScene implements IImportScene {
       }
     }
     return out.toSorted((a, b) => a.module - b.module);
+  }
+
+  bomInput(scope: BomScope): BomInput {
+    const counter = new BomCounter(this.partIds, this.ldconfigCodes);
+    const placedCounts = new Map<number, number>();
+    const contents: PlacementContents = {
+      addTo: (target, refId) => {
+        const module = this.modules[refId];
+        if (!module) throw new Error(`world holds unknown module ${refId}`);
+        placedCounts.set(refId, (placedCounts.get(refId) ?? 0) + 1);
+        const slots = module.result.partIds.map((id) => this.partSlots.get(id) ?? -1);
+        const slotIndex = Uint32Array.from(module.result.partIndex, (local) => slots[local] ?? -1);
+        target.addInstances(slotIndex, module.result.ldrawColor, module.result.instanceCount, 1);
+      },
+    };
+    const placements = countPlacements(this.world, contents, counter, sceneRegion(scope));
+    const uncounted = [...placedCounts].flatMap(([refId, count]) => {
+      const module = this.modules[refId];
+      return module ? importUncounted(module.result, count) : [];
+    });
+    return { name: IMPORTED_WORLD_NAME, lod: this.lod, placements, counter, uncounted };
   }
 
   private show(bundle: PartBundle, latest: ImportResult): SceneSummary {

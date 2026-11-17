@@ -64,6 +64,25 @@ function compiledManifest() {
       features: [],
     },
     compiler: null,
+    crosswalk: { file: "crosswalk.json" },
+  };
+}
+
+function crosswalkFile() {
+  return {
+    format: 1,
+    sources: {},
+    parts: {
+      "ldraw:3001": {
+        rebrickable: "3001",
+        bricklink: "3001",
+        via: { rebrickable: "rebrickable-api", bricklink: "rebrickable-api" },
+      },
+    },
+    colors: { "4": { name: "Red", rebrickable: 4, bricklink: 5 } },
+    bricklinkParts: { "3001": ["ldraw:3001"] },
+    bricklinkPartVariants: {},
+    bricklinkColors: { "5": [4] },
   };
 }
 
@@ -129,6 +148,7 @@ interface CompiledBundle {
   readonly manifest: ReturnType<typeof compiledManifest>;
   readonly gltf: ReturnType<typeof studGltf>;
   readonly model: ReturnType<typeof modelFile>;
+  readonly crosswalk: ReturnType<typeof crosswalkFile>;
 }
 
 const inputs = { ldraw: source, omr: source, lockSha256: SHA256_ZERO, paletteSha256: SHA256_ZERO };
@@ -137,11 +157,17 @@ const directories: string[] = [];
 async function publish(edit: (bundle: CompiledBundle) => void) {
   const directory = await mkdtemp(join(tmpdir(), "brr-publish-"));
   directories.push(directory);
-  const bundle = { manifest: compiledManifest(), gltf: studGltf(), model: modelFile() };
+  const bundle = {
+    manifest: compiledManifest(),
+    gltf: studGltf(),
+    model: modelFile(),
+    crosswalk: crosswalkFile(),
+  };
   edit(bundle);
   await writeFile(join(directory, MANIFEST_FILE), JSON.stringify(bundle.manifest));
   await writeFile(join(directory, "stud.glb"), glb(bundle.gltf));
   await writeFile(join(directory, "model-scene.json"), JSON.stringify(bundle.model));
+  await writeFile(join(directory, "crosswalk.json"), JSON.stringify(bundle.crosswalk));
   return publishBundle(directory, inputs);
 }
 
@@ -151,7 +177,7 @@ afterEach(async () => {
 
 describe("publishBundle", () => {
   it("publishes a bundle whose every key is declared", async () => {
-    await expect(publish(() => undefined)).resolves.toMatchObject({ files: 2 });
+    await expect(publish(() => undefined)).resolves.toMatchObject({ files: 3 });
   });
 
   it.each([
@@ -175,6 +201,13 @@ describe("publishBundle", () => {
         Object.assign(model.instances, { scale: [] });
       },
       refusal: "model-scene.json: no schema declares $.instances.scale",
+    },
+    {
+      file: "the crosswalk",
+      edit: ({ crosswalk }: CompiledBundle) => {
+        Object.assign(crosswalk.parts["ldraw:3001"] ?? {}, { popularity: 9 });
+      },
+      refusal: "crosswalk.json: no schema declares $.parts.ldraw:3001.popularity",
     },
   ])("refuses an undeclared key nested in $file", async ({ edit, refusal }) => {
     await expect(publish(edit)).rejects.toThrow(refusal);
