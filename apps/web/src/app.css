@@ -1402,3 +1402,26 @@ footer a {
   color: #8a8f96;
   text-decoration: line-through;
 }
+
+.road-draw-modes {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+
+.road-draw-modes button {
+  flex: 1;
+  padding: 4px 8px;
+  font: inherit;
+  border: 1px solid #c3ccd6;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.road-draw-modes button[aria-pressed="true"] {
+  border-color: #1f6feb;
+  background: #dbe9ff;
+  color: #0b3d91;
+  font-weight: 700;
+}

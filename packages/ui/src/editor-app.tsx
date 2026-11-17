@@ -141,7 +141,7 @@ export function EditorApp({
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
-        <RoadDrawPanel snapshot={snapshot} />
+        <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <ModuleJoins editor={editor} snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />

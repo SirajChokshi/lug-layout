@@ -3,6 +3,7 @@ import measured from "../../../docs/verified-facts/geometry.json" with { type: "
 import { NO_STUD, RoadNetwork, type RoadPlacement, type RoadSurface } from "./road-joins.ts";
 import {
   extendRoadPath,
+  planRoadErase,
   planRoadTiles,
   roadKits,
   type ExistingRoadTile,
@@ -189,6 +190,34 @@ describe("road autotiling", () => {
       kind: "refuse",
       reason: "other-family",
     });
+  });
+
+  it("erases road tiles, downgrading the T beside them to its remaining arms and never touching another family", () => {
+    const world = new Map<string, ExistingRoadTile>([
+      ["1,0", { arms: 0b0011, sameKit: true }],
+      ["2,0", { arms: 0b1011, sameKit: true }],
+      ["3,0", { arms: 0b0011, sameKit: true }],
+      ["2,1", { arms: 0b1100, sameKit: true }],
+      ["2,2", { arms: 0b1100, sameKit: true }],
+      ["5,0", { arms: 0b0011, sameKit: false }],
+    ]);
+    const existingAt = (ix: number, iz: number) => world.get(`${ix},${iz}`) ?? null;
+    const planned = planRoadErase(six, path([2, 2], [2, 1]), existingAt);
+    expect(planned.filter((t) => t.kind === "remove").map((t) => [t.ix, t.iz])).toEqual([
+      [2, 2],
+      [2, 1],
+    ]);
+    const downgrade = planned.find((t) => t.kind === "lay");
+    expect(downgrade).toMatchObject({ ix: 2, iz: 0, arms: 0b0011, replaces: true });
+    expect(downgrade?.kind === "lay" && PARTS[downgrade.choices[0]?.ref ?? -1]).toBe("44336");
+    expect(planned).toHaveLength(3);
+    const eastward = planRoadErase(six, path([3, 0], [5, 0]), existingAt);
+    expect(eastward.map((t) => [t.kind, t.ix])).toEqual([
+      ["remove", 3],
+      ["lay", 2],
+    ]);
+    const curve = eastward.find((t) => t.kind === "lay");
+    expect(curve?.kind === "lay" && PARTS[curve.choices[0]?.ref ?? -1]).toBe("44342");
   });
 
   it("walks a diagonal drag as unit steps and steps back when the pointer returns", () => {
