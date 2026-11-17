@@ -118,7 +118,14 @@ import {
   type StudTotals,
   type ViewUpdate,
 } from "./placed-chunks.ts";
-import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
+import { groundGrid, snapToGrid, worldGround, type WorldGround } from "./ground.ts";
+import {
+  modelGround,
+  modelPlaceable,
+  partGround,
+  partPlaceable,
+  type Placeable,
+} from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import {
@@ -163,6 +170,12 @@ export interface CatalogPartView {
   readonly title: string;
 }
 
+export interface CatalogBaseplateView {
+  readonly plates: number;
+  readonly studsWide: number;
+  readonly studsDeep: number;
+}
+
 export interface CatalogItemView {
   readonly id: string;
   readonly label: string;
@@ -173,6 +186,7 @@ export interface CatalogItemView {
   readonly parts: number;
   readonly studsWide: number;
   readonly studsDeep: number;
+  readonly baseplate: CatalogBaseplateView | null;
 }
 
 export interface LatencySample {
@@ -201,6 +215,7 @@ export interface SelectionView {
   readonly chunkKey: number;
   readonly slot: number;
   readonly box: WorldBox;
+  readonly baseplate: WorldGround | null;
 }
 
 export interface HistoryView {
@@ -436,6 +451,7 @@ export interface EditorSnapshot {
   readonly catalog: ReadonlyArray<CatalogItemView>;
   readonly catalogSkipped: ReadonlyArray<SkippedCatalogModel>;
   readonly trackNotDrawable: ReadonlyArray<CatalogPartView>;
+  readonly baseplateGridStuds: number | null;
   readonly mode: EditorMode;
   readonly activeItem: string | null;
   readonly ghostRot: number;
@@ -723,10 +739,6 @@ function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).replace(/\.+$/, "");
 }
 
-function snapToLattice(ldu: number): number {
-  return Math.round(ldu / STUD_LDU) * STUD_LDU + 0;
-}
-
 function footprintArea(part: PartAsset): number {
   return (part.boundsMax[0] - part.boundsMin[0]) * (part.boundsMax[2] - part.boundsMin[2]);
 }
@@ -750,6 +762,11 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
     parts: placeable.parts.count,
     studsWide: moduleStuds ?? Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
     studsDeep: moduleStuds ?? Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+    baseplate: placeable.ground && {
+      plates: placeable.ground.plates,
+      studsWide: (placeable.ground.maxX - placeable.ground.minX) / STUD_LDU,
+      studsDeep: (placeable.ground.maxZ - placeable.ground.minZ) / STUD_LDU,
+    },
   };
 }
 
@@ -782,6 +799,7 @@ export class Editor implements IEditor {
     catalog: [],
     catalogSkipped: [],
     trackNotDrawable: [],
+    baseplateGridStuds: null,
     mode: "select",
     activeItem: null,
     ghostRot: 0,
@@ -865,6 +883,7 @@ export class Editor implements IEditor {
   private ghostCheck: PlacementCheck | null = null;
   private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
   private tableY = 0;
+  private baseplateGrid = STUD_LDU;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -1105,6 +1124,21 @@ export class Editor implements IEditor {
     const baseplate = groundParts[0];
     if (!baseplate) throw new Error("the bundle has no baseplate");
     this.tableY = baseplate.boundsMin[1];
+    const models = near.kept.map(({ bundle: modelBundle, entry, model }) => ({
+      entry,
+      credit: { name: entry.name, source: entry.source, sections: model.sections },
+      model: palette.remap(model, modelBundle.parts),
+      farModel: far?.meshIndex.get(entry.name) ?? null,
+    }));
+    const grounds = [
+      ...[...groundParts, ...roadParts].map((part) =>
+        partGround(palette.indexOf(part.id), palette.parts),
+      ),
+      ...models.map(({ entry, model }) => modelGround(model, palette.parts, entry.name)),
+    ];
+    const grid = groundGrid(grounds.filter((ground) => ground !== null));
+    this.baseplateGrid = grid;
+    this.update({ baseplateGridStuds: grid / STUD_LDU });
     const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
       if (part.producedColors.length === 0) {
         throw new Error(`${part.id} has no produced colour in the bundle`);
@@ -1118,22 +1152,23 @@ export class Editor implements IEditor {
           palette.parts,
           colors,
           this.tableY,
+          grid,
         ),
       );
     });
-    for (const { bundle: modelBundle, entry, model } of near.kept) {
-      const credit = { name: entry.name, source: entry.source, sections: model.sections };
+    for (const { entry, credit, model, farModel } of models) {
       const placeable = modelPlaceable(
         entry.name,
         entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : setLabel(entry),
         entry.role,
-        palette.remap(model, modelBundle.parts),
+        model,
         credit,
         palette.parts,
         colors,
-        far?.meshIndex.get(entry.name) ?? null,
+        farModel,
         this.tableY,
         bundle.trackCatalog,
+        grid,
       );
       this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
       placeables.push(placeable);
@@ -1285,6 +1320,7 @@ export class Editor implements IEditor {
       parts: track.kitParts().length,
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+      baseplate: null,
     };
   }
 
@@ -1306,6 +1342,7 @@ export class Editor implements IEditor {
         parts: 1,
         studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
         studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+        baseplate: null,
       };
     });
   }
@@ -1761,8 +1798,8 @@ export class Editor implements IEditor {
     const t = -originY / directionY;
     this.hitX = (this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t;
     this.hitZ = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
-    this.hoverX = snapToLattice(this.hitX);
-    this.hoverZ = snapToLattice(this.hitZ);
+    this.hoverX = snapToGrid(this.hitX, STUD_LDU);
+    this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
     return true;
   }
 
@@ -1826,9 +1863,14 @@ export class Editor implements IEditor {
   } {
     this.placeRot = this.ghostRot;
     const moduleFit = this.snapGhostToModuleGrid();
-    const snap = this.snapGhostToRoad();
-    this.snapGhostToTrack();
-    return { moduleFit, snap };
+    const joined = this.snapGhostToRoad();
+    if (joined) return { moduleFit, snap: joined };
+    const onTrack = this.snapGhostToTrack();
+    if (!onTrack && !moduleFit && this.active?.ground && this.hovering) {
+      this.hoverX = snapToGrid(this.hitX, this.baseplateGrid);
+      this.hoverZ = snapToGrid(this.hitZ, this.baseplateGrid);
+    }
+    return { moduleFit, snap: this.roadFit() };
   }
 
   private heldRequests(
@@ -1931,12 +1973,12 @@ export class Editor implements IEditor {
     }).length;
   }
 
-  private snapGhostToTrack(): void {
+  private snapGhostToTrack(): boolean {
     const held = this.active?.track;
     const track = this.track;
-    if (!held || !track || !this.hovering) return;
+    if (!held || !track || !this.hovering) return false;
     const groundEnds = held.openEnds.filter((end) => end.plates === LAID_TRACK_PLATES);
-    if (groundEnds.length === 0) return;
+    if (groundEnds.length === 0) return false;
     const targets = track.openEndPoses();
     const frame = latticePose16(this.hoverX, this.hoverZ, this.placeRot);
     let best: { readonly xLdu: number; readonly zLdu: number } | null = null;
@@ -1953,9 +1995,10 @@ export class Editor implements IEditor {
         bestDistance = distance;
       }
     }
-    if (!best) return;
+    if (!best) return false;
     this.hoverX = best.xLdu;
     this.hoverZ = best.zLdu;
+    return true;
   }
 
   private snapGhostToRoad(): RoadSnapView | null {
@@ -1970,18 +2013,22 @@ export class Editor implements IEditor {
       this.hoverX,
       this.hoverZ,
     );
-    if (snap) {
-      this.hoverX = snap.x;
-      this.hoverZ = snap.z;
-      this.placeRot = snap.rot;
-      return {
-        state: "snapped",
-        joinedCells: snap.joinedCells,
-        joinedRoadCells: snap.joinedRoadCells,
-        mismatchedCells: 0,
-        overlappingCells: 0,
-      };
-    }
+    if (!snap) return null;
+    this.hoverX = snap.x;
+    this.hoverZ = snap.z;
+    this.placeRot = snap.rot;
+    return {
+      state: "snapped",
+      joinedCells: snap.joinedCells,
+      joinedRoadCells: snap.joinedRoadCells,
+      mismatchedCells: 0,
+      overlappingCells: 0,
+    };
+  }
+
+  private roadFit(): RoadSnapView | null {
+    const surface = this.active?.road;
+    if (!surface || !this.hovering || !this.state.snapRoads) return null;
     const fit = this.roadNetwork.fit({
       id: -1,
       x: this.hoverX,
@@ -2477,6 +2524,15 @@ export class Editor implements IEditor {
             chunkKey: model.handle.chunkKey,
             slot: model.handle.slot,
             box: model.box,
+            baseplate:
+              model.placeable.ground &&
+              worldGround(
+                model.placeable.ground,
+                model.handle.x,
+                model.handle.yPlates * PLATE_LDU,
+                model.handle.z,
+                model.handle.rot,
+              ),
           }
         : null,
     });
@@ -2504,8 +2560,8 @@ export class Editor implements IEditor {
     if (this.active) {
       this.ghostRot = (this.placeRot + 1) % QUARTER_TURNS;
       if (this.hovering) {
-        this.hoverX = snapToLattice(this.hitX);
-        this.hoverZ = snapToLattice(this.hitZ);
+        this.hoverX = snapToGrid(this.hitX, STUD_LDU);
+        this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
       }
       const { moduleFit, snap } = this.snapGhost();
       this.placeGhost();
