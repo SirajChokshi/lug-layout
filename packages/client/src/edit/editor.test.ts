@@ -13,13 +13,17 @@ import {
 } from "@brr/catalog";
 import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
 import {
+  INSTANCE_MATRIX_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
   type BufferMemory,
+  type ChunkInstances,
   type ISceneBackend,
   type LookSettings,
   type RebaseEvent,
+  type SuperChunkMesh,
 } from "@brr/render";
+import { STUD_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import type { Decoded } from "@brr/schema/decode";
@@ -44,7 +48,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
-import { EDITOR } from "../tokens.ts";
+import { EDITOR, EDITOR_CAMERA } from "../tokens.ts";
 import type { IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -144,7 +148,15 @@ class ModelSubsetLoader implements IPartBundleLoader {
   }
 }
 
+interface RecordedSuperChunk {
+  readonly mesh: SuperChunkMesh;
+  visible: boolean;
+}
+
 class HeadlessBackend implements ISceneBackend {
+  focalPx = Number.POSITIVE_INFINITY;
+  readonly chunks = new Map<number, ChunkInstances>();
+  readonly superChunks = new Map<number, RecordedSuperChunk>();
   async init(): Promise<BackendInfo> {
     return {
       requestedApi: "webgl2",
@@ -155,13 +167,26 @@ class HeadlessBackend implements ISceneBackend {
     };
   }
   setPalette(): void {}
-  setChunk(): void {}
-  deleteChunk(): void {}
-  setSuperChunk(): void {}
-  setSuperChunkVisible(): void {}
-  deleteSuperChunk(): void {}
-  studPitchPx(): number {
-    return 0;
+  setChunk(key: number, chunk: ChunkInstances): void {
+    this.chunks.set(key, chunk);
+  }
+  deleteChunk(key: number): void {
+    this.chunks.delete(key);
+  }
+  setSuperChunk(key: number, mesh: SuperChunkMesh): void {
+    this.superChunks.set(key, { mesh, visible: this.superChunks.get(key)?.visible ?? false });
+  }
+  setSuperChunkVisible(key: number, visible: boolean): void {
+    const recorded = this.superChunks.get(key);
+    if (recorded) recorded.visible = visible;
+  }
+  deleteSuperChunk(key: number): void {
+    this.superChunks.delete(key);
+  }
+  studPitchesPx(distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    for (let i = 0; i < count; i++) {
+      out[i] = (STUD_LDU * this.focalPx) / Math.max(distancesLdu[i] ?? 0, 1);
+    }
   }
   setGhost(): void {}
   placeGhost(): void {}
@@ -204,7 +229,17 @@ async function startEditor(
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
 ) {
   const backend = new HeadlessBackend();
-  vi.stubGlobal("requestAnimationFrame", () => 0);
+  let pendingFrame: FrameRequestCallback | null = null;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    pendingFrame = callback;
+    return 1;
+  });
+  const frame = async (): Promise<void> => {
+    const callback = pendingFrame;
+    pendingFrame = null;
+    callback?.(performance.now());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
@@ -228,7 +263,14 @@ async function startEditor(
     superChunkLod: true,
     measuredFrames: 60,
   });
-  return { editor, backend, manifest: await realLoader.loadManifest("standard") };
+  return {
+    editor,
+    backend,
+    frame,
+    camera: container.get(EDITOR_CAMERA),
+    loader: realLoader,
+    manifest: await realLoader.loadManifest("standard"),
+  };
 }
 
 it("starts with every model in the bundle while keeping at most 16 bundle fetches in flight", async () => {
@@ -270,6 +312,114 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   ]);
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
+
+const PLATE_PART = "ldraw:3811";
+const SEAM_ROW_Z = 320;
+const SETTLE_FRAMES = 400;
+const RESIDENT_FOCAL_PX = Number.POSITIVE_INFINITY;
+const MIXED_FOCAL_PX = 400;
+const MESHED_FOCAL_PX = 180;
+const MIXED_SWEEP_X = [-6000, -3000, -1000, 0, 1000, 3000, 6000, 3000, 0, -3000, -6000];
+const VERTICES_PER_QUAD = 4;
+
+interface PlanRect {
+  readonly minX: number;
+  readonly minZ: number;
+  readonly maxX: number;
+  readonly maxZ: number;
+}
+
+function flatFaces(recorded: RecordedSuperChunk): PlanRect[] {
+  const { mesh } = recorded;
+  const rects: PlanRect[] = [];
+  for (let v = 0; v < mesh.vertexCount; v += VERTICES_PER_QUAD) {
+    const corners = [0, 1, 2, 3].map((k) => (v + k) * 3);
+    const ys = corners.map((o) => mesh.positions[o + 1] ?? 0);
+    if (ys.some((y) => y !== ys[0])) continue;
+    const xs = corners.map((o) => mesh.originX + (mesh.positions[o] ?? 0));
+    const zs = corners.map((o) => mesh.originZ + (mesh.positions[o + 2] ?? 0));
+    rects.push({
+      minX: Math.min(...xs),
+      minZ: Math.min(...zs),
+      maxX: Math.max(...xs),
+      maxZ: Math.max(...zs),
+    });
+  }
+  return rects;
+}
+
+it("draws every stud column of baseplates straddling a super-chunk boundary exactly once from any eye", async () => {
+  const { editor, backend, frame, camera, loader } = await startEditor([]);
+  const plate = (await loader.load("standard", (part) => part.id === PLATE_PART)).parts[0];
+  if (!plate) throw new Error(`${PLATE_PART} is not in the bundle`);
+  const [minX = 0, , minZ = 0] = plate.boundsMin;
+  const [maxX = 0, , maxZ = 0] = plate.boundsMax;
+  const width = maxX - minX;
+  for (const x of [-width - 40, -40, width - 40]) {
+    editor.chooseItem(BASEPLATE);
+    backend.aim(x, SEAM_ROW_Z);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+  }
+  editor.chooseItem(null);
+  const placed = editor.dump().placements;
+  expect(placed.x).toHaveLength(3);
+
+  const coverage = () => {
+    const instanceRects: PlanRect[] = [];
+    for (const chunk of backend.chunks.values()) {
+      for (let i = 0; i < chunk.count; i++) {
+        const x = chunk.originX + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0);
+        const z = chunk.originZ + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0);
+        instanceRects.push({ minX: x + minX, minZ: z + minZ, maxX: x + maxX, maxZ: z + maxZ });
+      }
+    }
+    const meshes = [...backend.superChunks.values()].filter((s) => s.visible).map(flatFaces);
+    const covers = (rect: PlanRect, x: number, z: number) =>
+      x > rect.minX && x < rect.maxX && z > rect.minZ && z < rect.maxZ;
+    let uncovered = 0;
+    let doubled = 0;
+    placed.x.forEach((px, p) => {
+      const pz = placed.z[p] ?? 0;
+      for (let x = px + minX + STUD_LDU / 2; x < px + maxX; x += STUD_LDU) {
+        for (let z = pz + minZ + STUD_LDU / 2; z < pz + maxZ; z += STUD_LDU) {
+          const drawn =
+            instanceRects.filter((rect) => covers(rect, x, z)).length +
+            meshes.filter((faces) => faces.some((rect) => covers(rect, x, z))).length;
+          if (drawn === 0) uncovered++;
+          if (drawn > 1) doubled++;
+        }
+      }
+    });
+    return { uncovered, doubled };
+  };
+
+  const settleAt = async (focalPx: number, x: number) => {
+    backend.focalPx = focalPx;
+    camera.lookAt(x, SEAM_ROW_Z, false);
+    await frame();
+    editor.measureFrames();
+    for (let i = 0; i < SETTLE_FRAMES && editor.snapshot().measuring; i++) await frame();
+    const measurement = editor.snapshot().measurement;
+    return {
+      focalPx,
+      x,
+      settled: measurement?.settled,
+      mixed:
+        measurement !== null &&
+        measurement.residentSuperChunks > 0 &&
+        measurement.residentSuperChunks < measurement.superChunks,
+      ...coverage(),
+    };
+  };
+
+  const results = [await settleAt(RESIDENT_FOCAL_PX, 0)];
+  for (const x of MIXED_SWEEP_X) results.push(await settleAt(MIXED_FOCAL_PX, x));
+  results.push(await settleAt(MESHED_FOCAL_PX, 0));
+
+  expect(results.filter((r) => !r.settled || r.uncovered > 0 || r.doubled > 0)).toEqual([]);
+  expect(results.some((r) => r.mixed)).toBe(true);
+}, 300_000);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
   const { editor, manifest } = await startEditor();

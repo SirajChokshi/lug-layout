@@ -218,7 +218,8 @@ function disposeTree(root: Group | LineSegments): void {
   });
 }
 const VECTOR_FLOATS = 3;
-const VOXEL_ROUGHNESS = 0.3;
+const VERTICES_PER_TRIANGLE = 3;
+const UINT16_VERTEX_LIMIT = 65_536;
 const RGBA_CHANNELS = 4;
 const UNORM8_MAX = 255;
 
@@ -409,10 +410,16 @@ class FarModelNode {
 
 class SuperChunkRecord {
   constructor(
-    readonly mesh: DisposableMesh,
+    readonly group: Group,
+    readonly meshes: ReadonlyArray<DisposableMesh>,
     readonly originX: number,
     readonly originZ: number,
   ) {}
+}
+
+interface AlphaGeometry {
+  readonly alpha: number;
+  readonly geometry: BufferGeometry;
 }
 
 @injectable()
@@ -453,12 +460,6 @@ export class ThreeSceneBackend implements ISceneBackend {
   private readonly superLayer = new Group();
   private readonly superChunks = new Map<number, SuperChunkRecord>();
   private superList: SuperChunkRecord[] = [];
-  private readonly voxelMaterial = new MeshStandardNodeMaterial({
-    roughness: VOXEL_ROUGHNESS,
-    metalness: 0,
-    vertexColors: true,
-    flatShading: true,
-  });
   private ghost: Group | undefined;
   private ghostX = 0;
   private ghostZ = 0;
@@ -790,13 +791,103 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setSuperChunk(key: number, mesh: SuperChunkMesh): void {
-    const visible = this.superChunks.get(key)?.mesh.visible ?? false;
+    const visible = this.superChunks.get(key)?.group.visible ?? false;
     this.deleteSuperChunk(key);
-    const geometry = new BufferGeometry();
-    geometry.setAttribute("position", new BufferAttribute(mesh.positions, VECTOR_FLOATS));
-    const colors = new Uint8Array(mesh.vertexCount * RGBA_CHANNELS);
+    const group = new Group();
+    group.matrixAutoUpdate = false;
+    group.visible = visible;
+    const meshes: DisposableMesh[] = [];
+    for (const { alpha, geometry } of this.superChunkGeometries(mesh)) {
+      const material = this.materials.vertexColored(alpha);
+      const object: DisposableMesh = new Mesh(geometry, material);
+      object.matrixAutoUpdate = false;
+      object.receiveShadow = this.look.shadows && !material.transparent;
+      group.add(object);
+      meshes.push(object);
+    }
+    const record = new SuperChunkRecord(group, meshes, mesh.originX, mesh.originZ);
+    this.placeSuperChunk(record);
+    this.superChunks.set(key, record);
+    this.superList.push(record);
+    this.superLayer.add(group);
+  }
+
+  private superChunkGeometries(mesh: SuperChunkMesh): AlphaGeometry[] {
+    const slotOfVertex = new Uint8Array(mesh.vertexCount);
     for (let v = 0; v < mesh.vertexCount; v++) {
-      const c = (mesh.colorIndex[v] ?? 0) * COLOR_CHANNELS;
+      slotOfVertex[v] = this.colorAlphaSlot[mesh.colorIndex[v] ?? 0] ?? 0;
+    }
+    const triangles = mesh.indexCount / VERTICES_PER_TRIANGLE;
+    const trianglesInSlot = new Uint32Array(this.alphaSlots.length);
+    for (let t = 0; t < triangles; t++) {
+      const slot = slotOfVertex[mesh.indices[t * VERTICES_PER_TRIANGLE] ?? 0] ?? 0;
+      trianglesInSlot[slot] = (trianglesInSlot[slot] ?? 0) + 1;
+    }
+    const result: AlphaGeometry[] = [];
+    for (let slot = 0; slot < trianglesInSlot.length; slot++) {
+      const count = trianglesInSlot[slot] ?? 0;
+      if (count === 0) continue;
+      const alpha = this.alphaSlots[slot] ?? OPAQUE_ALPHA;
+      if (count === triangles) {
+        result.push({
+          alpha,
+          geometry: this.voxelGeometry(mesh.positions, mesh.normals, mesh.colorIndex, mesh.indices),
+        });
+        continue;
+      }
+      result.push({ alpha, geometry: this.voxelSlotGeometry(mesh, slotOfVertex, slot, count) });
+    }
+    return result;
+  }
+
+  private voxelSlotGeometry(
+    mesh: SuperChunkMesh,
+    slotOfVertex: Uint8Array,
+    slot: number,
+    triangles: number,
+  ): BufferGeometry {
+    const remap = new Int32Array(mesh.vertexCount).fill(-1);
+    let vertices = 0;
+    const indexCount = triangles * VERTICES_PER_TRIANGLE;
+    const local = new Uint32Array(indexCount);
+    let written = 0;
+    for (let i = 0; i < mesh.indexCount; i += VERTICES_PER_TRIANGLE) {
+      if (slotOfVertex[mesh.indices[i] ?? 0] !== slot) continue;
+      for (let k = 0; k < VERTICES_PER_TRIANGLE; k++) {
+        const vertex = mesh.indices[i + k] ?? 0;
+        if ((remap[vertex] ?? -1) < 0) remap[vertex] = vertices++;
+        local[written++] = remap[vertex] ?? 0;
+      }
+    }
+    const positions = new Float32Array(vertices * VECTOR_FLOATS);
+    const normals = new Int8Array(vertices * VECTOR_FLOATS);
+    const colorIndex = new Uint16Array(vertices);
+    for (let v = 0; v < mesh.vertexCount; v++) {
+      const target = remap[v] ?? -1;
+      if (target < 0) continue;
+      for (let axis = 0; axis < VECTOR_FLOATS; axis++) {
+        positions[target * VECTOR_FLOATS + axis] = mesh.positions[v * VECTOR_FLOATS + axis] ?? 0;
+        normals[target * VECTOR_FLOATS + axis] = mesh.normals[v * VECTOR_FLOATS + axis] ?? 0;
+      }
+      colorIndex[target] = mesh.colorIndex[v] ?? 0;
+    }
+    const indices = vertices <= UINT16_VERTEX_LIMIT ? Uint16Array.from(local) : local;
+    return this.voxelGeometry(positions, normals, colorIndex, indices);
+  }
+
+  private voxelGeometry(
+    positions: Float32Array,
+    normals: Int8Array,
+    colorIndex: Uint16Array,
+    indices: Uint16Array | Uint32Array,
+  ): BufferGeometry {
+    const vertexCount = colorIndex.length;
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(positions, VECTOR_FLOATS));
+    geometry.setAttribute("normal", new BufferAttribute(normals, VECTOR_FLOATS, true));
+    const colors = new Uint8Array(vertexCount * RGBA_CHANNELS);
+    for (let v = 0; v < vertexCount; v++) {
+      const c = (colorIndex[v] ?? 0) * COLOR_CHANNELS;
       const o = v * RGBA_CHANNELS;
       colors[o] = Math.round((this.linearColors[c] ?? 0) * UNORM8_MAX);
       colors[o + 1] = Math.round((this.linearColors[c + 1] ?? 0) * UNORM8_MAX);
@@ -804,46 +895,47 @@ export class ThreeSceneBackend implements ISceneBackend {
       colors[o + 3] = UNORM8_MAX;
     }
     geometry.setAttribute("color", new BufferAttribute(colors, RGBA_CHANNELS, true));
-    geometry.setIndex(new BufferAttribute(mesh.indices, 1));
+    geometry.setIndex(new BufferAttribute(indices, 1));
     geometry.computeBoundingSphere();
-    const object: DisposableMesh = new Mesh(geometry, this.voxelMaterial);
-    object.matrixAutoUpdate = false;
-    object.visible = visible;
-    const record = new SuperChunkRecord(object, mesh.originX, mesh.originZ);
-    this.placeSuperChunk(record);
-    this.superChunks.set(key, record);
-    this.superList.push(record);
-    this.superLayer.add(object);
+    return geometry;
   }
 
   setSuperChunkVisible(key: number, visible: boolean): void {
     const record = this.superChunks.get(key);
-    if (record) record.mesh.visible = visible;
+    if (record) record.group.visible = visible;
   }
 
   deleteSuperChunk(key: number): void {
     const record = this.superChunks.get(key);
     if (!record) return;
-    this.superLayer.remove(record.mesh);
-    releaseRenderObjects(record.mesh);
-    record.mesh.geometry.dispose();
+    this.superLayer.remove(record.group);
+    for (const mesh of record.meshes) {
+      releaseRenderObjects(mesh);
+      mesh.geometry.dispose();
+    }
     this.superChunks.delete(key);
     this.superList = this.superList.filter((existing) => existing !== record);
   }
 
   private placeSuperChunk(record: SuperChunkRecord): void {
-    record.mesh.position.set(
+    record.group.position.set(
       record.originX - this.renderOriginX,
       0,
       record.originZ - this.renderOriginZ,
     );
-    record.mesh.updateMatrix();
-    record.mesh.updateMatrixWorld(true);
+    record.group.updateMatrix();
+    record.group.updateMatrixWorld(true);
   }
 
-  studPitchPx(distanceLdu: number): number {
-    if (this.camera === this.orthographic) return this.orthoStudPitchPx();
-    return (STUD_PITCH_LDU * this.focalLengthPx) / Math.max(distanceLdu, CAMERA_NEAR_LDU);
+  studPitchesPx(distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    if (this.camera === this.orthographic) {
+      out.fill(this.orthoStudPitchPx(), 0, count);
+      return;
+    }
+    const pitchLdu = STUD_PITCH_LDU * this.focalLengthPx;
+    for (let i = 0; i < count; i++) {
+      out[i] = pitchLdu / Math.max(distancesLdu[i] ?? 0, CAMERA_NEAR_LDU);
+    }
   }
 
   private orthoStudPitchPx(): number {
@@ -1697,7 +1789,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     out.rebaseCount = this.rebaseCount;
     let visibleSuperChunks = 0;
     for (let i = 0; i < this.superList.length; i++) {
-      if (this.superList[i]?.mesh.visible) visibleSuperChunks++;
+      if (this.superList[i]?.group.visible) visibleSuperChunks++;
     }
     out.superChunks = visibleSuperChunks;
     this.frame++;
