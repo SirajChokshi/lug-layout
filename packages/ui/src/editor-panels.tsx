@@ -277,6 +277,10 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       "Cursor on lattice (LDU)",
       snapshot.hover ? `${snapshot.hover.x}, ${snapshot.hover.z}` : "off the ground",
     ],
+    [
+      "Lands at (plates)",
+      snapshot.hover && snapshot.mode === "place" ? String(snapshot.hover.yPlates) : "–",
+    ],
     ["Placements", integer.format(snapshot.placements)],
     [
       "History (undo, redo)",
@@ -285,6 +289,13 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     ["Last edit latency", latencyText(snapshot.lastLatency, snapshot)],
     ["Rebuilt for it", rebuildText(snapshot.lastLatency)],
   );
+  if (snapshot.studs) {
+    rows.push(
+      ["Studs drawn", integer.format(snapshot.studs.drawn)],
+      ["Studs culled inside models", integer.format(snapshot.studs.culledInsideModels)],
+      ["Studs culled under footprints", integer.format(snapshot.studs.culledUnderFootprints)],
+    );
+  }
   if (stats) {
     rows.push(
       ["Frame rate (rAF)", `${stats.fps.toFixed(1)} fps`],

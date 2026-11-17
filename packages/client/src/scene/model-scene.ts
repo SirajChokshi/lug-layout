@@ -6,8 +6,10 @@ import { chunkKey } from "@brr/math";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 import { withStuds } from "./stud-stream.ts";
 
+export type ModelView = "above" | "below";
+
 export interface IModelScene extends IViewerScene {
-  selectModel(name: string): void;
+  selectModel(name: string, view: ModelView): void;
 }
 
 const ORBIT_DISTANCE_FACTOR = 2.8;
@@ -17,6 +19,7 @@ const MIN_ORBIT_RADIUS_LDU = 200;
 @injectable()
 export class ModelScene implements IModelScene {
   private modelName = "";
+  private elevationSign = 1;
   private centreX = 0;
   private centreY = 0;
   private centreZ = 0;
@@ -27,8 +30,9 @@ export class ModelScene implements IModelScene {
     @inject(SCENE_BACKEND) readonly backend: ISceneBackend,
   ) {}
 
-  selectModel(name: string): void {
+  selectModel(name: string, view: ModelView): void {
     this.modelName = name;
+    this.elevationSign = view === "below" ? -1 : 1;
   }
 
   async load(lod: BundleLod): Promise<SceneSummary> {
@@ -51,6 +55,7 @@ export class ModelScene implements IModelScene {
       bundle.parts,
       colors,
       undefined,
+      model.studCover,
     );
     return showChunks(
       this.backend,
@@ -96,7 +101,7 @@ export class ModelScene implements IModelScene {
     const distance = this.radius * ORBIT_DISTANCE_FACTOR;
     this.backend.setView(
       this.centreX + distance * Math.cos(angle),
-      this.centreY + this.radius * ORBIT_ELEVATION_FACTOR,
+      this.centreY + this.elevationSign * this.radius * ORBIT_ELEVATION_FACTOR,
       this.centreZ + distance * Math.sin(angle),
       this.centreX,
       this.centreY,

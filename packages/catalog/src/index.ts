@@ -1,7 +1,7 @@
 export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { directColorSrgb, isDirectColor } from "./colors.ts";
-export { BUNDLE_LODS, INHERIT_COLOR } from "./part-bundle.ts";
+export { BUNDLE_LODS, EMPTY_COLUMN, INHERIT_COLOR } from "./part-bundle.ts";
 export type {
   ColorGroup,
   CompiledPartGlb,
@@ -11,6 +11,8 @@ export type {
   IPartBundleLoader,
   MeshArrays,
   ModelBundle,
+  ModelCells,
+  ModelStudCover,
   PartModelLattice,
   PartAsset,
   PartBundle,

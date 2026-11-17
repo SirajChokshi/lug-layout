@@ -3,6 +3,8 @@ import * as v from "valibot";
 
 const MATRIX_FLOATS = 12;
 const STUD_PHASES = 20;
+const BITS_PER_WORD = 32;
+export const EMPTY_COLUMN = -1;
 const ALPHA_OPAQUE = 255;
 
 const Finite = v.pipe(v.number(), v.finite());
@@ -170,6 +172,66 @@ export const NotDrawnSection = v.variant("kind", [
 ]);
 export type NotDrawnSection = v.InferOutput<typeof NotDrawnSection>;
 
+const CellGridSize = v.tuple([Count, Count]);
+const ColumnPlates = v.pipe(Integer, v.minValue(EMPTY_COLUMN));
+
+function cellCount([width, depth]: readonly [number, number]): number {
+  return width * depth;
+}
+
+export const ModelFileCells = v.pipe(
+  v.object({
+    origin: v.tuple([Finite, Finite]),
+    size: CellGridSize,
+    bottomY: Finite,
+    footprint: v.array(Count),
+    flat: v.array(Count),
+    columnBottom: v.array(ColumnPlates),
+    columnTop: v.array(ColumnPlates),
+  }),
+  v.check(
+    ({ size, footprint, flat }) => [...footprint, ...flat].every((cell) => cell < cellCount(size)),
+    "a footprint cell lies outside the cell grid",
+  ),
+  v.check(
+    ({ size, columnBottom, columnTop }) =>
+      columnBottom.length === cellCount(size) && columnTop.length === cellCount(size),
+    "the column arrays do not cover the cell grid",
+  ),
+);
+export type ModelFileCells = v.InferOutput<typeof ModelFileCells>;
+
+export const ModelFileCover = v.pipe(
+  v.object({
+    studs: Count,
+    coveredStuds: Count,
+    keptOpenBelow: Count,
+    visibleBits: v.array(Count),
+    cells: v.nullable(ModelFileCells),
+  }),
+  v.check(
+    ({ studs, visibleBits }) => visibleBits.length === Math.ceil(studs / BITS_PER_WORD),
+    "the visible-stud bitset does not match the stud count",
+  ),
+);
+export type ModelFileCover = v.InferOutput<typeof ModelFileCover>;
+
+export const BundleModelCover = v.object({
+  studs: Count,
+  coveredStuds: Count,
+  keptOpenBelow: Count,
+  cells: v.nullable(
+    v.object({
+      footprintCells: Count,
+      flatCells: Count,
+      restY: Finite,
+      size: CellGridSize,
+      heightPlates: ColumnPlates,
+    }),
+  ),
+});
+export type BundleModelCover = v.InferOutput<typeof BundleModelCover>;
+
 export const ModelOrigin = v.picklist(["omr", "generated"]);
 export type ModelOrigin = v.InferOutput<typeof ModelOrigin>;
 
@@ -194,6 +256,7 @@ export const BundleModelEntry = v.object({
   lattice: v.nullable(ModelLattice),
   vehicles: Count,
   sha256: Sha256Hex,
+  cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
@@ -353,6 +416,7 @@ export const ModelFile = v.pipe(
     parts: v.array(v.string()),
     lattice: v.nullable(ModelLattice),
     vehicles: v.array(ModelVehicle),
+    cover: ModelFileCover,
     notDrawn: v.optional(v.array(NotDrawnSection)),
     instances: v.object({
       part: v.array(Count),

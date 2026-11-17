@@ -14,6 +14,7 @@ import type {
   ImportContext,
   IPartBundleLoader,
   ModelBundle,
+  ModelCells,
   PartModelLattice,
   PartAsset,
   PartBundle,
@@ -30,6 +31,23 @@ function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   if (lattice === null) return null;
   const [phaseX, phaseZ] = lattice.phase;
   return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
+}
+
+function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
+  if (cells === null) return null;
+  const [originX, originZ] = cells.origin;
+  const [width, depth] = cells.size;
+  return {
+    originX,
+    originZ,
+    width,
+    depth,
+    restY: cells.bottomY,
+    footprint: Uint32Array.from(cells.footprint),
+    flat: Uint32Array.from(cells.flat),
+    columnBottom: Int16Array.from(cells.columnBottom),
+    columnTop: Int16Array.from(cells.columnTop),
+  };
 }
 
 async function mapConcurrently<T, R>(
@@ -198,12 +216,19 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       return part;
     });
     const count = file.instances.part.length;
+    const { cover } = file;
     return {
       bundle: await this.bundle(lod, manifest, parts),
       entry,
       model: {
         sections: file.sections,
         lattice: modelLattice(file.lattice),
+        studCover: {
+          studs: cover.studs,
+          covered: cover.coveredStuds,
+          visibleBits: Uint32Array.from(cover.visibleBits),
+        },
+        cells: modelCells(cover.cells),
         instanceCount: count,
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),
