@@ -1349,6 +1349,7 @@ export class Editor implements IEditor {
       report,
     };
     this.syncPlan();
+    this.trackEdited();
     this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.held = { ...held, snap: null };
     this.showTrackEnds(null);
@@ -1371,7 +1372,7 @@ export class Editor implements IEditor {
 
   private throwSwitchAt(xLdu: number, zLdu: number, eventTimeMs: number): boolean {
     const track = this.track;
-    if (!track) return false;
+    if (!track || this.readOnly) return false;
     const placement = track.switchAt(xLdu, zLdu);
     if (placement === null) return false;
     const thrown = track.throwSwitch(placement);
@@ -1389,6 +1390,7 @@ export class Editor implements IEditor {
       report,
     };
     this.syncPlan();
+    this.trackEdited();
     this.lastTrackCommit = thrown.lever === "straight" ? "switch-straight" : "switch-branching";
     this.update({ track: this.trackView() });
     return true;
@@ -2068,7 +2070,7 @@ export class Editor implements IEditor {
 
   private setReadOnly(readOnly: boolean): void {
     this.readOnly = readOnly;
-    if (readOnly && this.active) this.chooseItem(null);
+    if (readOnly && (this.active || this.held)) this.chooseItem(null);
     this.update({ readOnly });
   }
 
