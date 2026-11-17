@@ -1,4 +1,5 @@
 import {
+  BOM_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -10,6 +11,7 @@ import {
   RUN_SCENE,
   RUNNING_GEAR,
   TRACK_SCENE,
+  type IBomSource,
   type IImportScene,
   type IRunScene,
   PLAN_SERVICE,
@@ -53,6 +55,7 @@ interface ViewerChoice {
   readonly placements: (() => PlacementDump) | null;
   readonly run: IRunScene | null;
   readonly importScene?: IImportScene;
+  readonly bomSource?: IBomSource;
 }
 
 function viewerScene(viewer: ViewerParams): ViewerChoice {
@@ -70,13 +73,14 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
         scene: city,
         placements: viewer.dumpWorld ? () => city.placementDump() : null,
         run: null,
+        bomSource: city,
       };
     }
     case "model": {
       const modelScene = container.get(MODEL_SCENE);
       modelScene.selectModel(viewer.model ?? "", viewer.modelView);
       modelScene.configureCamera({ distanceLdu: viewer.distanceLdu, zoom: viewer.zoom });
-      return { scene: modelScene, placements: null, run: null };
+      return { scene: modelScene, placements: null, run: null, bomSource: modelScene };
     }
     case "track": {
       const trackScene = container.get(TRACK_SCENE);
@@ -103,7 +107,13 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
       return { scene: container.get(PART_DISPLAY_SCENE), placements: null, run: null };
     case "import": {
       const importScene = container.get(IMPORT_SCENE);
-      return { scene: importScene, placements: null, run: null, importScene };
+      return {
+        scene: importScene,
+        placements: null,
+        run: null,
+        importScene,
+        bomSource: importScene,
+      };
     }
     case "edit":
       throw new Error("the editor is not a viewer scene");
@@ -134,6 +144,7 @@ function root(): ReactNode {
         editor={container.get(EDITOR)}
         camera={container.get(EDITOR_CAMERA)}
         plans={container.get(PLAN_SERVICE)}
+        bomService={container.get(BOM_SERVICE)}
         options={{
           api: params.api,
           pixelRatio: window.devicePixelRatio,
@@ -145,7 +156,8 @@ function root(): ReactNode {
       />
     );
   }
-  const { scene, placements, run, importScene } = viewerScene(params);
+  const { scene, placements, run, importScene, bomSource } = viewerScene(params);
+  const bom = bomSource ? { service: container.get(BOM_SERVICE), source: bomSource } : null;
   return (
     <App
       scene={scene}
@@ -154,6 +166,7 @@ function root(): ReactNode {
       run={run}
       runningGear={run ? container.get(RUNNING_GEAR) : null}
       importScene={importScene ?? null}
+      bom={bom}
     />
   );
 }

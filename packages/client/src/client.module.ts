@@ -13,6 +13,7 @@ import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import { PlanService } from "./plan/plan-service.ts";
+import { BomService } from "./bom/bom-service.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ImportScene } from "./scene/import-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
@@ -23,6 +24,7 @@ import { RunScene } from "./scene/run-scene.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import {
+  BOM_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -57,6 +59,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
+  bind(BOM_SERVICE).to(BomService).inSingletonScope();
 });
 
 export interface MainThreadConfig {

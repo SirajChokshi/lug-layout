@@ -5,6 +5,7 @@ import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
+import type { IBomService } from "./bom/bom-service.ts";
 import type { ICityScene } from "./scene/city-scene.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
 import type { IRunningGear } from "./running-gear/running-gear-editor.ts";
@@ -43,3 +44,4 @@ export const RUNNING_GEAR: ServiceIdentifier<IRunningGear> = Symbol.for("brr.cli
 export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
   "brr.client.TrademarkDisclaimer",
 );
+export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");

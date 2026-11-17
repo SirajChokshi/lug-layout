@@ -1,5 +1,6 @@
 import {
   BundleManifest,
+  CrosswalkFile,
   ModelFile,
   type BundleCredit,
   type BundleLod,
@@ -7,6 +8,7 @@ import {
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
+import { crosswalkMaps } from "./crosswalk.ts";
 import {
   parseFarMeshGlb,
   parseGlb,
@@ -15,7 +17,9 @@ import {
   readUint32Array,
 } from "./glb.ts";
 import type {
+  BricklinkPartCandidates,
   CompiledPartGlb,
+  CatalogCrosswalk,
   IAssetFetcher,
   ImportContext,
   IPartBundleLoader,
@@ -87,6 +91,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     BundleLod,
     Promise<ReadonlyArray<StudPrimitiveAsset>>
   >();
+  private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
 
   constructor(
     @inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher,
@@ -219,6 +224,28 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
     const manifest = await this.loadManifest(lod);
     return this.bundle(lod, manifest, manifest.parts.filter(include));
+  }
+
+  private crosswalkFile(lod: BundleLod): Promise<CrosswalkFile> {
+    const cached = this.crosswalks.get(lod);
+    if (cached) return cached;
+    const loading = this.loadManifest(lod).then(async ({ crosswalk }) =>
+      decodedOrThrow(
+        decode(CrosswalkFile, JSON.parse(await this.text(`${lod}/${crosswalk.file}`))),
+        `${lod}/${crosswalk.file}`,
+      ),
+    );
+    this.crosswalks.set(lod, loading);
+    loading.catch(() => this.crosswalks.delete(lod));
+    return loading;
+  }
+
+  async loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {
+    return crosswalkMaps(await this.crosswalkFile(lod));
+  }
+
+  async loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
+    return (await this.crosswalkFile(lod)).bricklinkParts;
   }
 
   async loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {

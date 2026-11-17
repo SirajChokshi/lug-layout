@@ -1,4 +1,10 @@
-import { BundleManifest, FarMeshGltfDocument, GltfDocument, ModelFile } from "@brr/schema/bundle";
+import {
+  BundleManifest,
+  CrosswalkFile,
+  FarMeshGltfDocument,
+  GltfDocument,
+  ModelFile,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
@@ -6,6 +12,7 @@ import { extname, join } from "node:path";
 import * as v from "valibot";
 
 export const MANIFEST_FILE = "manifest.json";
+export const CROSSWALK_FILE = "crosswalk.json";
 export const CONTENT_HASH_HEX_DIGITS = 16;
 
 const GLB_MAGIC = 0x46546c67;
@@ -61,6 +68,19 @@ export function contentAddressedName(file: string, digest: string): string {
   return `${file.slice(0, -extension.length)}.${digest.slice(0, CONTENT_HASH_HEX_DIGITS)}${extension}`;
 }
 
+export async function attachCrosswalk(directory: string, crosswalk: unknown): Promise<void> {
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (typeof compiled !== "object" || compiled === null) {
+    throw new Error(`${manifestPath} is not a compiled bundle`);
+  }
+  await writeFile(join(directory, CROSSWALK_FILE), JSON.stringify(crosswalk));
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...compiled, crosswalk: { file: CROSSWALK_FILE } }, null, 2)}\n`,
+  );
+}
+
 export async function publishBundle(
   directory: string,
   inputs: v.InferInput<typeof BundleManifest>["inputs"],
@@ -92,6 +112,11 @@ export async function publishBundle(
     }
   }
   if (manifest.compiler !== null) await publish(manifest.compiler.file);
+  decodeDeclared(
+    CrosswalkFile,
+    JSON.parse((await publish(manifest.crosswalk.file)).toString("utf8")),
+    manifest.crosswalk.file,
+  );
   const published = new Set(renamed.values());
   const unreferenced = (await readdir(directory)).filter(
     (name) => name !== MANIFEST_FILE && !published.has(name),
