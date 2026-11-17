@@ -6,6 +6,8 @@ export {
   DEFAULT_BUNDLE_MANIFEST_FILE,
   EMPTY_COLUMN,
   INHERIT_COLOR,
+  PIN_BOX_FLOATS,
+  PIN_ORIGIN_FLOATS,
 } from "./part-bundle.ts";
 export type {
   ColorGroup,

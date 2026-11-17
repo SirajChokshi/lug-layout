@@ -46,6 +46,7 @@ import {
   type Placeable,
 } from "./placeable.ts";
 import type { LaidTrackPiece } from "./track-drawing.ts";
+import { pinCells, type PinCells } from "./technic-pins.ts";
 
 export interface PlacedModel {
   readonly placement: PlacementRef;
@@ -282,7 +283,31 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
       }
     }
   }
-  return { base, volumes };
+  const pins = pinCells(placeable.pins, {
+    x: pose.x,
+    z: pose.z,
+    cos: pose.cos,
+    sin: pose.sin,
+    yLdu: 0,
+  });
+  return { base, volumes: withPins(volumes, pins) };
+}
+
+function withPins(volumes: CellVolumes, pins: CellVolumes): CellVolumes {
+  if (pins.count === 0) return volumes;
+  const count = volumes.count + pins.count;
+  const joined = {
+    count,
+    cellX: new Int32Array(count),
+    cellZ: new Int32Array(count),
+    bottomLdu: new Int32Array(count),
+    topLdu: new Int32Array(count),
+  };
+  for (const field of ["cellX", "cellZ", "bottomLdu", "topLdu"] as const) {
+    joined[field].set(volumes[field].subarray(0, volumes.count));
+    joined[field].set(pins[field].subarray(0, pins.count), volumes.count);
+  }
+  return joined;
 }
 
 function raised(volumes: CellVolumes, byLdu: number): CellVolumes {
@@ -304,6 +329,7 @@ class PlacedEntry implements PlacedModel {
   readonly studCulled: Uint8Array;
   readonly contributions = new Map<number, Contribution>();
   readonly candidate: CandidateCells;
+  readonly pinVolumes: PinCells;
   readonly footprintKeys = new Set<number>();
   readonly columnKeys = new Set<number>();
   readonly box: WorldBox;
@@ -353,6 +379,13 @@ class PlacedEntry implements PlacedModel {
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
     }
     this.candidate = candidateCells(placeable, this.pose);
+    this.pinVolumes = pinCells(placeable.pins, {
+      x: this.x,
+      z: this.z,
+      cos: this.cos,
+      sin: this.sin,
+      yLdu: this.yLdu,
+    });
     this.registerCells(chunkOrigins);
     this.box = this.worldBox();
   }
@@ -385,6 +418,27 @@ class PlacedEntry implements PlacedModel {
       if (onLattice[s] !== 1) continue;
       this.columnKeys.add(cellChunkKey(this.studCellX[s] ?? 0, this.studCellZ[s] ?? 0));
     }
+    const pins = this.pinVolumes;
+    for (let c = 0; c < pins.count; c++) {
+      this.columnKeys.add(cellChunkKey(pins.cellX[c] ?? 0, pins.cellZ[c] ?? 0));
+    }
+  }
+
+  pinCellsOf(pin: number): BaseCells {
+    const pins = this.pinVolumes;
+    const cellX: number[] = [];
+    const cellZ: number[] = [];
+    for (let c = 0; c < pins.count; c++) {
+      if (pins.pin[c] !== pin) continue;
+      cellX.push(pins.cellX[c] ?? 0);
+      cellZ.push(pins.cellZ[c] ?? 0);
+    }
+    return {
+      count: cellX.length,
+      cellX: Int32Array.from(cellX),
+      cellZ: Int32Array.from(cellZ),
+      flat: new Uint8Array(cellX.length),
+    };
   }
 
   stampColumns(volumes: VolumeIndex, support: SupportGrid, onlyChunk: number | null): void {
@@ -403,6 +457,13 @@ class PlacedEntry implements PlacedModel {
         if (cells.offLatticeTop) support.markOffLatticeTop(wx, wz);
         else if (cells.baseplate[cell] === 1 && yPlates === 0) support.markBaseplate(wx, wz);
       }
+    }
+    const pins = this.pinVolumes;
+    for (let c = 0; c < pins.count; c++) {
+      const cx = pins.cellX[c] ?? 0;
+      const cz = pins.cellZ[c] ?? 0;
+      if (onlyChunk !== null && cellChunkKey(cx, cz) !== onlyChunk) continue;
+      volumes.add(this.owner, cx, cz, pins.bottomLdu[c] ?? 0, pins.topLdu[c] ?? 0);
     }
     const onLattice = this.placeable.studLattice.onLattice;
     for (let s = 0; s < onLattice.length; s++) {
@@ -813,6 +874,11 @@ export class PlacedChunks {
 
   ownerOf(model: PlacedModel): number {
     return this.entryOf(model).owner;
+  }
+
+  pinCellsOf(owner: number, pin: number): BaseCells | null {
+    const known = this.owners.get(owner);
+    return known?.kind === "model" ? this.entryOf(known.model).pinCellsOf(pin) : null;
   }
 
   addTrackPiece(

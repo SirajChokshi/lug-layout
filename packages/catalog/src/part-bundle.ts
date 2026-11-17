@@ -49,7 +49,12 @@ export interface PartAsset {
   readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
   readonly holeMatrices: Float32Array;
+  readonly pinOrigins: Float32Array;
+  readonly pinBoxes: Float32Array;
 }
+
+export const PIN_ORIGIN_FLOATS = 3;
+export const PIN_BOX_FLOATS = 6;
 
 export interface StudPrimitiveAsset {
   readonly mesh: MeshArrays;

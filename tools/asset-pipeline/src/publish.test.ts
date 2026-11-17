@@ -92,6 +92,7 @@ function studGltf() {
       sources: [],
       studs: [],
       technicHoles: [],
+      technicPins: [],
       bounds: origin,
     },
   };

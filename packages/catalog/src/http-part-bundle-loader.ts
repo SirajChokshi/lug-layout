@@ -22,6 +22,7 @@ import type {
   PartFilter,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
+import { PIN_BOX_FLOATS, PIN_ORIGIN_FLOATS } from "./part-bundle.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
@@ -315,6 +316,18 @@ function toPartAsset(
     const hole = extras.technicHoles[i];
     if (hole) holeMatrices.set(hole.matrix, i * MATRIX_FLOATS);
   }
+  const pinCount = extras.technicPins.length;
+  const pinOrigins = new Float32Array(pinCount * PIN_ORIGIN_FLOATS);
+  const pinBoxes = new Float32Array(pinCount * PIN_BOX_FLOATS);
+  for (let i = 0; i < pinCount; i++) {
+    const pin = extras.technicPins[i];
+    if (!pin) continue;
+    pinOrigins.set(
+      [pin.matrix[3] ?? 0, pin.matrix[7] ?? 0, pin.matrix[11] ?? 0],
+      i * PIN_ORIGIN_FLOATS,
+    );
+    pinBoxes.set([...pin.bounds.min, ...pin.bounds.max], i * PIN_BOX_FLOATS);
+  }
   return {
     id: part.id,
     title: part.title,
@@ -331,5 +344,7 @@ function toPartAsset(
     studColors,
     studMatrices,
     holeMatrices,
+    pinOrigins,
+    pinBoxes,
   };
 }

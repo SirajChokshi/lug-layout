@@ -70,9 +70,47 @@ function localKey(x: number, y: number, z: number, axis: number): number {
   return ((lx * CHUNK_LDU + lz) * Y_RANGE_LDU + (y + Y_OFFSET_LDU)) * AXES + axis;
 }
 
+const PIN_SLOTS = 1 << 16;
+
+export interface PinRef {
+  readonly owner: number;
+  readonly pin: number;
+}
+
 export class TechnicJoins {
   private readonly byChunk = new Map<number, Map<number, number>>();
   private readonly owners = new Map<number, HoleEnds>();
+  private readonly pinsByChunk = new Map<number, Map<number, number>>();
+
+  addPins(owner: number, pins: HoleEnds, index: Int32Array): void {
+    for (let i = 0; i < pins.count; i++) {
+      const x = pins.x[i] ?? 0;
+      const z = pins.z[i] ?? 0;
+      const key = chunkKey(chunkOf(x), chunkOf(z));
+      let chunk = this.pinsByChunk.get(key);
+      if (!chunk) {
+        chunk = new Map();
+        this.pinsByChunk.set(key, chunk);
+      }
+      chunk.set(
+        localKey(x, pins.y[i] ?? 0, z, pins.axis[i] ?? 0),
+        owner * PIN_SLOTS + (index[i] ?? 0),
+      );
+    }
+  }
+
+  pinAt(x: number, y: number, z: number, axis: number): PinRef | null {
+    const found = this.pinsByChunk
+      .get(chunkKey(chunkOf(x), chunkOf(z)))
+      ?.get(localKey(x, y, z, axis));
+    return found === undefined
+      ? null
+      : { owner: Math.floor(found / PIN_SLOTS), pin: found % PIN_SLOTS };
+  }
+
+  holeOwnerAt(x: number, y: number, z: number, inward: number): number {
+    return this.ownerFacing(x, y, z, oppositeAxis(inward));
+  }
 
   add(owner: number, ends: HoleEnds): void {
     this.owners.set(owner, ends);

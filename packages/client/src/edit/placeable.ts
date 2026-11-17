@@ -18,6 +18,7 @@ import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
 import { modelTrack, type ModelTrack } from "./model-track.ts";
 import { roadSurface } from "./road-surface.ts";
 import { modelHoleEnds, type ModelHoleEnds } from "./technic-holes.ts";
+import { modelPins, type ModelPins } from "./technic-pins.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
 export type PlaceableLayer = "first" | "upper";
@@ -68,6 +69,7 @@ export interface Placeable {
   readonly track: ModelTrack | null;
   readonly ground: SeatedGround | null;
   readonly technic: ModelHoleEnds;
+  readonly pins: ModelPins;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -428,6 +430,7 @@ export function modelPlaceable(
     track: modelTrack(local, parts, trackCatalog),
     ground: seatedGround(ground, shift, name),
     technic: modelHoleEnds(local, parts),
+    pins: modelPins(local, parts),
   };
 }
 
@@ -495,5 +498,6 @@ export function partPlaceable(
     track: null,
     ground: seatedGround(ground, shift, part.id),
     technic: modelHoleEnds(local, parts),
+    pins: modelPins(local, parts),
   };
 }

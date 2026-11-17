@@ -464,6 +464,7 @@ export const PartExtras = v.object({
   ),
   studs: v.array(v.object({ primitive: v.string(), color: Integer, matrix: Matrix })),
   technicHoles: v.array(v.object({ primitive: v.string(), matrix: Matrix })),
+  technicPins: v.array(v.object({ primitive: v.string(), matrix: Matrix, bounds: Bounds })),
   bounds: Bounds,
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;

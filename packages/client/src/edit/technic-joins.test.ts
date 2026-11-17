@@ -237,3 +237,34 @@ it("stands a modular flush against a neighbour whose Technic holes take its prot
     turned.hover?.z,
   ]);
 }, 120_000);
+
+it("refuses a modular where a Technic pin would go into a wall with no free hole, either way round", async () => {
+  const editor = await startEditor(new TopDownBackend(), ["10185-1", "10218-1", "10190-1"]);
+  editor.chooseItem(GROCER);
+  aimAt(editor, 0, 0);
+  editor.click(0, 0, 0);
+  const depth = editor.snapshot().catalog.find((item) => item.id === GROCER)?.baseplate?.studsDeep;
+  if (depth === undefined) throw new Error(`${GROCER} has no baseplate`);
+
+  const aimTurned = (id: string, turns: number, x: number, z: number) => {
+    editor.chooseItem(id);
+    while (editor.snapshot().ghostRot !== turns) editor.rotate(0);
+    aimAt(editor, x, z);
+    const { ghost, hover } = editor.snapshot();
+    return { pins: ghost?.technicJoins, rule: ghost?.refusal?.rule, hover };
+  };
+  const intoHeldWall = aimTurned("omr:10218-1", 3, 0, -depth);
+  expect(intoHeldWall).toMatchObject({
+    pins: 0,
+    rule: "overlap",
+    hover: { x: 0, z: -depth * STUD_LDU },
+  });
+  const intoPlacedWall = aimTurned(MARKET, 2, depth, 0);
+  expect(intoPlacedWall).toMatchObject({
+    pins: 0,
+    rule: "overlap",
+    hover: { x: depth * STUD_LDU, z: 0 },
+  });
+  editor.click((depth * STUD_LDU) / NDC_TO_LDU, 0, 0);
+  expect(editor.snapshot().placements).toBe(1);
+}, 120_000);

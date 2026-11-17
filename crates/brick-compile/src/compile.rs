@@ -70,17 +70,33 @@ impl std::fmt::Display for CompileError {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct PinReference {
+    pub primitive: String,
+    pub matrix: Affine,
+    pub bounds: [Vec3; 2],
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct CompiledPart {
     pub path: String,
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
     pub technic_holes: Vec<ConnectorReference>,
+    pub technic_pins: Vec<PinReference>,
     pub body_bounds: Option<[Vec3; 2]>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
 }
 
 fn to_y_up(p: Vec3) -> Vec3 {
     Affine::LDRAW_TO_Y_UP.apply(p).map(|v| v + 0.0)
+}
+
+fn y_up_bounds([low, high]: [Vec3; 2]) -> [Vec3; 2] {
+    let [a, b] = [to_y_up(low), to_y_up(high)];
+    [
+        [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
+        [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
+    ]
 }
 
 pub fn license_gate(
@@ -153,14 +169,22 @@ pub fn compile_part<L: Library>(
             },
         })
         .collect();
+    let technic_pins = flattened
+        .technic_pins
+        .iter()
+        .zip(&flattened.technic_pin_bounds)
+        .filter_map(|(pin, bounds)| {
+            bounds.map(|bounds| PinReference {
+                primitive: pin.primitive.clone(),
+                matrix: Affine {
+                    m: pin.matrix.ldraw_to_y_up().m.map(|v| v + 0.0),
+                },
+                bounds: y_up_bounds(bounds),
+            })
+        })
+        .collect();
     let body_bounds = match flattened.body_bounds {
-        Some([low, high]) => {
-            let [a, b] = [to_y_up(low), to_y_up(high)];
-            Some([
-                [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
-                [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
-            ])
-        }
+        Some(bounds) => Some(y_up_bounds(bounds)),
         None if flattened.technic_pins.is_empty() => mesh
             .bounds()
             .map(|corners| corners.map(|corner| corner.map(f64::from))),
@@ -171,6 +195,7 @@ pub fn compile_part<L: Library>(
         mesh,
         studs,
         technic_holes,
+        technic_pins,
         body_bounds,
         flattened_files: flattened.files,
     })
@@ -200,6 +225,17 @@ impl CompiledPart {
             .iter()
             .map(|h| json!({ "primitive": h.primitive, "matrix": h.matrix.m }))
             .collect();
+        let technic_pins: Vec<Value> = self
+            .technic_pins
+            .iter()
+            .map(|p| {
+                json!({
+                    "primitive": p.primitive,
+                    "matrix": p.matrix.m,
+                    "bounds": { "min": p.bounds[0], "max": p.bounds[1] },
+                })
+            })
+            .collect();
         let [min, max] = self.mesh.bounds().unwrap_or([[0.0; 3]; 2]);
         json!({
             "unit": "LDU",
@@ -216,6 +252,7 @@ impl CompiledPart {
             "sources": sources,
             "studs": studs,
             "technicHoles": technic_holes,
+            "technicPins": technic_pins,
             "bounds": { "min": min, "max": max },
         })
     }

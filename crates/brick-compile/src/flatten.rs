@@ -54,6 +54,7 @@ pub struct Flattened {
     pub studs: Vec<StudReference>,
     pub technic_holes: Vec<ConnectorReference>,
     pub technic_pins: Vec<ConnectorReference>,
+    pub technic_pin_bounds: Vec<Option<[Vec3; 2]>>,
     pub body_bounds: Option<[Vec3; 2]>,
     pub files: Vec<VisitedFile>,
 }
@@ -78,7 +79,7 @@ struct Frame {
     color: u32,
     flipped: bool,
     culling: bool,
-    in_technic_pin: bool,
+    technic_pin: Option<usize>,
     depth: usize,
 }
 
@@ -140,7 +141,7 @@ impl<'a, L: Library> Flattener<'a, L> {
             color: INHERIT_COLOR,
             flipped: false,
             culling: true,
-            in_technic_pin: false,
+            technic_pin: None,
             depth: 0,
         };
         let file = self
@@ -208,15 +209,19 @@ impl<'a, L: Library> Flattener<'a, L> {
                             matrix: child_matrix,
                         });
                     }
-                    let technic_pin = self
-                        .technic_pin_primitives
-                        .iter()
-                        .any(|pin| pin == reference);
-                    if technic_pin {
+                    let mut technic_pin = frame.technic_pin;
+                    if technic_pin.is_none()
+                        && self
+                            .technic_pin_primitives
+                            .iter()
+                            .any(|pin| pin == reference)
+                    {
+                        technic_pin = Some(out.technic_pins.len());
                         out.technic_pins.push(ConnectorReference {
                             primitive: reference.clone(),
                             matrix: child_matrix,
                         });
+                        out.technic_pin_bounds.push(None);
                     }
                     let child_path =
                         self.resolve(reference)
@@ -235,7 +240,7 @@ impl<'a, L: Library> Flattener<'a, L> {
                         color: child_color,
                         flipped: frame.flipped ^ (matrix.determinant() < 0.0) ^ inverted,
                         culling: frame.culling && certified,
-                        in_technic_pin: frame.in_technic_pin || technic_pin,
+                        technic_pin,
                         depth: frame.depth + 1,
                     };
                     self.walk(&child_path, &child, &child_frame, out)?;
@@ -293,17 +298,18 @@ fn emit(
         frame.matrix.apply(points[1]),
         frame.matrix.apply(points[2]),
     ];
-    if !frame.in_technic_pin {
-        let [low, high] = out.body_bounds.unwrap_or([transformed[0], transformed[0]]);
-        let mut bounds = [low, high];
-        for point in transformed {
-            for axis in 0..3 {
-                bounds[0][axis] = bounds[0][axis].min(point[axis]);
-                bounds[1][axis] = bounds[1][axis].max(point[axis]);
-            }
+    let slot = match frame.technic_pin {
+        Some(pin) => &mut out.technic_pin_bounds[pin],
+        None => &mut out.body_bounds,
+    };
+    let mut bounds = slot.unwrap_or([transformed[0], transformed[0]]);
+    for point in transformed {
+        for axis in 0..3 {
+            bounds[0][axis] = bounds[0][axis].min(point[axis]);
+            bounds[1][axis] = bounds[1][axis].max(point[axis]);
         }
-        out.body_bounds = Some(bounds);
     }
+    *slot = Some(bounds);
     let clockwise = (winding == Winding::Cw) ^ frame.flipped;
     let ordered = if clockwise {
         [transformed[0], transformed[2], transformed[1]]

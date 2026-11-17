@@ -34,7 +34,10 @@ import {
   STUD_LDU,
   ZETA16_ORDER,
   composePose16,
+  isRot90,
   posesJoin16,
+  rot90Cos,
+  rot90Sin,
   zeta16ToStuds,
 } from "@brr/math";
 import {
@@ -82,6 +85,7 @@ import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import { STUD_SNAP_RADIUS_STUDS, acceptable, connectionMarkers, snapToStuds } from "./stud-snap.ts";
 import { holeMarkers } from "./technic-holes.ts";
+import { pinCells } from "./technic-pins.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
@@ -1154,7 +1158,7 @@ export class Editor implements IEditor {
           yPlates,
           shifts,
           (dx, dz) =>
-            this.trackExempt(
+            this.connectorExempt(
               placeable,
               hoverX + dx * STUD_LDU,
               hoverZ + dz * STUD_LDU,
@@ -1236,18 +1240,95 @@ export class Editor implements IEditor {
     const joins = new TechnicJoins();
     for (const model of this.placed.models()) {
       const { handle, placeable } = model;
-      if (placeable.technic.count === 0) continue;
-      joins.add(
-        this.placed.ownerOf(model),
-        placedHoleEnds(placeable.technic, {
-          x: handle.x,
-          z: handle.z,
-          yLdu: handle.yPlates * PLATE_LDU,
-          rot: handle.rot,
-        }),
-      );
+      const at = { x: handle.x, z: handle.z, yLdu: handle.yPlates * PLATE_LDU, rot: handle.rot };
+      const owner = this.placed.ownerOf(model);
+      if (placeable.technic.count > 0) joins.add(owner, placedHoleEnds(placeable.technic, at));
+      const { certified, certifiedPin } = placeable.pins;
+      if (certified.count > 0) joins.addPins(owner, placedHoleEnds(certified, at), certifiedPin);
     }
     this.technicJoins = joins;
+  }
+
+  private connectorExempt(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    yPlates: number,
+    rot: number,
+  ): OwnerFilter {
+    const track = this.trackExempt(placeable, x, z, yPlates, rot);
+    const pins = this.pinExempt(placeable, x, z, yPlates, rot);
+    if (pins.size === 0) return track;
+    return (owner, cellX, cellZ) =>
+      track(owner, cellX, cellZ) || (pins.get(owner)?.has(packedCellKey(cellX, cellZ)) ?? false);
+  }
+
+  private pinExempt(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    yPlates: number,
+    rot: number,
+  ): Map<number, Set<number>> {
+    const exempt = new Map<number, Set<number>>();
+    const joins = this.technicJoins;
+    const exemptCells = (owner: number, cells: BaseCells): void => {
+      let set = exempt.get(owner);
+      if (!set) {
+        set = new Set();
+        exempt.set(owner, set);
+      }
+      for (let c = 0; c < cells.count; c++) {
+        set.add(packedCellKey(cells.cellX[c] ?? 0, cells.cellZ[c] ?? 0));
+      }
+    };
+    const at = { x, z, yLdu: yPlates * PLATE_LDU, rot };
+    const { certified, certifiedPin } = placeable.pins;
+    const ownPins = placedHoleEnds(certified, at);
+    const ownPinKeys = new Set<string>();
+    for (let i = 0; i < ownPins.count; i++) {
+      ownPinKeys.add(`${ownPins.x[i]},${ownPins.y[i]},${ownPins.z[i]},${ownPins.axis[i]}`);
+    }
+    if (ownPins.count > 0 && isRot90(rot)) {
+      const cos = rot90Cos(rot);
+      const sin = rot90Sin(rot);
+      const cells = pinCells(placeable.pins, { x, z, cos, sin, yLdu: at.yLdu });
+      for (let i = 0; i < ownPins.count; i++) {
+        const px = ownPins.x[i] ?? 0;
+        const py = ownPins.y[i] ?? 0;
+        const pz = ownPins.z[i] ?? 0;
+        const axis = ownPins.axis[i] ?? 0;
+        const owner = joins.holeOwnerAt(px, py, pz, axis);
+        if (owner < 0 || joins.pinAt(px, py, pz, axis) !== null) continue;
+        const pin = certifiedPin[i] ?? -1;
+        const own: number[] = [];
+        const ownZ: number[] = [];
+        for (let c = 0; c < cells.count; c++) {
+          if (cells.pin[c] !== pin) continue;
+          own.push(cells.cellX[c] ?? 0);
+          ownZ.push(cells.cellZ[c] ?? 0);
+        }
+        exemptCells(owner, {
+          count: own.length,
+          cellX: Int32Array.from(own),
+          cellZ: Int32Array.from(ownZ),
+          flat: new Uint8Array(own.length),
+        });
+      }
+    }
+    const holes = placedHoleEnds(placeable.technic, at);
+    for (let i = 0; i < holes.count; i++) {
+      const hx = holes.x[i] ?? 0;
+      const hy = holes.y[i] ?? 0;
+      const hz = holes.z[i] ?? 0;
+      const axis = holes.axis[i] ?? 0;
+      if (ownPinKeys.has(`${hx},${hy},${hz},${axis}`)) continue;
+      const placed = joins.pinAt(hx, hy, hz, axis);
+      if (!placed) continue;
+      const cells = this.placed.pinCellsOf(placed.owner, placed.pin);
+      if (cells) exemptCells(placed.owner, cells);
+    }
+    return exempt;
   }
 
   private aimGhost(): GhostAim {
@@ -1412,7 +1493,7 @@ export class Editor implements IEditor {
       rot,
       ignore,
       at,
-      this.trackExempt(placeable, x, z, guess, rot),
+      this.connectorExempt(placeable, x, z, guess, rot),
     );
     if (first.yPlates === guess) return first;
     return this.placed.check(
@@ -1422,7 +1503,7 @@ export class Editor implements IEditor {
       rot,
       ignore,
       at,
-      this.trackExempt(placeable, x, z, first.yPlates, rot),
+      this.connectorExempt(placeable, x, z, first.yPlates, rot),
     );
   }
 

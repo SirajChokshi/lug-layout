@@ -101,3 +101,15 @@ describe("TechnicJoins", () => {
     expect([AXIS_POS_X, AXIS_NEG_X]).toContain(held.axis[0]);
   });
 });
+
+describe("TechnicJoins pins", () => {
+  it("finds a placed pin half by its origin and direction, and a hole end by its inward axis", () => {
+    const index = new TechnicJoins();
+    index.add(4, placedHoleEnds(edgeBrick, { x: 0, z: 0, yLdu: 0, rot: 0 }));
+    index.addPins(4, ends([[0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_POS_Z]]), Int32Array.of(7));
+    expect(index.pinAt(0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_POS_Z)).toEqual({ owner: 4, pin: 7 });
+    expect(index.pinAt(0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_NEG_Z)).toBeNull();
+    expect(index.holeOwnerAt(0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_NEG_Z)).toBe(4);
+    expect(index.holeOwnerAt(0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_POS_Z)).toBe(-1);
+  });
+});

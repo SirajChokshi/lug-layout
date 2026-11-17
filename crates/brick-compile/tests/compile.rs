@@ -189,7 +189,7 @@ fn technic_brick_hole_ends_are_recorded_facing_into_the_part_and_still_meshed() 
 }
 
 #[test]
-fn technic_pin_halves_are_left_out_of_the_body_and_a_loose_pin_has_no_body() {
+fn technic_pin_halves_are_recorded_with_their_own_boxes_and_left_out_of_the_body() {
     let library = fixture_library();
     let options = CompileOptions {
         technic_pin_primitives: ["confric5.dat", "connect.dat"].map(String::from).to_vec(),
@@ -198,6 +198,31 @@ fn technic_pin_halves_are_left_out_of_the_body_and_a_loose_pin_has_no_body() {
     let loose = compile_part(&library, "2780.dat", &options).expect("2780 compiles");
     assert!(loose.mesh.bounds().is_some());
     assert_eq!(loose.body_bounds, None);
+    assert_eq!(loose.technic_pins.len(), 2);
+    let origins: Vec<[f64; 3]> = loose
+        .technic_pins
+        .iter()
+        .map(|pin| [pin.matrix.m[3], pin.matrix.m[7], pin.matrix.m[11]])
+        .collect();
+    assert_eq!(origins[0], origins[1]);
+    let centre = |pin: &brick_compile::compile::PinReference, axis: usize| {
+        (pin.bounds[0][axis] + pin.bounds[1][axis]) / 2.0 - origins[0][axis]
+    };
+    let along = (0..3)
+        .max_by(|&a, &b| {
+            centre(&loose.technic_pins[0], a)
+                .abs()
+                .total_cmp(&centre(&loose.technic_pins[0], b).abs())
+        })
+        .expect("three axes");
+    assert!(centre(&loose.technic_pins[0], along) * centre(&loose.technic_pins[1], along) < 0.0);
+    let [mesh_min, mesh_max] = loose.mesh.bounds().expect("2780 has geometry");
+    for axis in 0..3 {
+        let low = loose.technic_pins[0].bounds[0][axis].min(loose.technic_pins[1].bounds[0][axis]);
+        let high = loose.technic_pins[0].bounds[1][axis].max(loose.technic_pins[1].bounds[1][axis]);
+        assert!((low - f64::from(mesh_min[axis])).abs() < 1e-3);
+        assert!((high - f64::from(mesh_max[axis])).abs() < 1e-3);
+    }
 
     let half = compile_part(&library, "4274.dat", &options).expect("4274 compiles");
     let [mesh_min, mesh_max] = half.mesh.bounds().expect("4274 has geometry");
