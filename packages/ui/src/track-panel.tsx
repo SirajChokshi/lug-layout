@@ -158,29 +158,31 @@ function commitText(track: TrackView): string {
 function heightRows(track: TrackView): ReadonlyArray<readonly [string, string]> {
   const { height } = track;
   const gaps = track.crossings.map((c) => c.gapLdu);
-  return [
+  const rows: Array<readonly [string, string]> = [
     [
-      "Clearance over track",
-      `${oneDecimal.format(height.train.heightLdu)} LDU above the lower rails for ${height.train.model}, the tallest bundled train: draw at least ${heightText(clearancePlates(height))} over ground-level track`,
+      "Over track",
+      `≥ ${plates(clearancePlates(height))}: ${height.train.model} stands ${oneDecimal.format(height.train.heightLdu)} LDU above its rails`,
     ],
     [
       "Minifig headroom",
       height.minifig
-        ? `${oneDecimal.format(height.minifig.heightLdu)} LDU (${heightText(Math.ceil(height.minifig.heightLdu / PLATE_LDU))}) head to feet, measured on ${height.minifig.model}; hats and hair add more`
-        : "no minifig found in the bundled sets",
+        ? `${oneDecimal.format(height.minifig.heightLdu)} LDU head to feet (${height.minifig.model}), hats extra`
+        : "no minifig in the bundled sets",
     ],
-    ["Piers", integer.format(track.piers)],
-    ...track.pierBom.map((line): readonly [string, string] => [
-      `${line.partId} ${line.title} (Light Bluish Gray)`,
-      `× ${line.count}`,
-    ]),
     [
-      "Over/under crossings",
-      gaps.length === 0
+      "Piers",
+      track.piers === 0
         ? "none"
-        : `${integer.format(gaps.length)}, tightest ${integer.format(Math.min(...gaps))} LDU clear`,
+        : `${integer.format(track.piers)}: ${track.pierBom.map((line) => `${integer.format(line.count)} × ${line.partId.replace("ldraw:", "")}`).join(", ")} (${track.pierBom.map((line) => line.title).join(", ")}, Light Bluish Gray)`,
     ],
   ];
+  if (gaps.length > 0) {
+    rows.push([
+      "Over/under",
+      `${integer.format(gaps.length)}, tightest ${integer.format(Math.min(...gaps))} LDU clear`,
+    ]);
+  }
+  return rows;
 }
 
 function HeightControls({
@@ -263,7 +265,12 @@ export function TrackPanel({
     ["Exact joins", integer.format(track.joins)],
     ["Open ends", integer.format(track.openEnds)],
     ["Coincident ends not joined", integer.format(track.coincidentEndIssues)],
-    ["Last release", commitText(track)],
+    [
+      "Last release",
+      snapshot.lastRefusal?.action === "track" && track.lastCommit?.startsWith("refused")
+        ? snapshot.lastRefusal.message
+        : commitText(track),
+    ],
     [
       "Selected piece",
       track.selected
@@ -300,7 +307,7 @@ export function TrackPanel({
           ramps toward it and stands on real-brick piers.
         </p>
       )}
-      <HeightControls editor={editor} height={track.height} />
+      {snapshot.mode === "track" && <HeightControls editor={editor} height={track.height} />}
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>
