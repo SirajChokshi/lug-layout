@@ -28,7 +28,11 @@ function degrees(rot: number): string {
 
 function itemLabel(snapshot: EditorSnapshot, id: string | null): string {
   if (id === null) return "none";
-  return snapshot.catalog.find((item) => item.id === id)?.label ?? id;
+  return (
+    snapshot.catalog.find((item) => item.id === id)?.label ??
+    snapshot.roadKits.find((kit) => kit.id === id)?.label ??
+    id
+  );
 }
 
 interface PanelProps {
@@ -241,6 +245,15 @@ export function PlacementToolbar({
         onClick={() => editor.chooseItem(snapshot.mode === "track" ? null : TRACK_ITEM_ID)}
       >
         Draw track ({shortcutText("draw-track")})
+      </button>
+      <button
+        type="button"
+        data-action="draw-road-tool"
+        aria-pressed={snapshot.mode === "road"}
+        disabled={!commandEnabled("draw-road", snapshot)}
+        onClick={() => editor.chooseItem(snapshot.mode === "road" ? null : snapshot.roadKit)}
+      >
+        Draw road ({shortcutText("draw-road")})
       </button>
       <button
         type="button"

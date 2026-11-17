@@ -33,13 +33,17 @@ import {
   type WorldShardV1,
 } from "@brr/schema/world";
 import {
+  WORLD_LOCKS,
   WORLD_REPOSITORY,
+  type IWorldLocks,
   type IWorldRepository,
+  type WorldLease,
   type StoredWorld,
   type WorldChange,
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { commandEnabled } from "../commands/editor-commands.ts";
 import { EDITOR } from "../tokens.ts";
 import type { IEditor } from "./editor.ts";
 
@@ -644,4 +648,71 @@ it("takes a 10185-1 Green Grocer flush against a rail edge when none of its part
     yPlates: [0, 0],
     rot: [0, 2],
   });
+}, 120_000);
+
+class OtherTabLocks implements IWorldLocks {
+  readonly heldElsewhere = new Set<string>();
+
+  async hold(id: string): Promise<WorldLease> {
+    return {
+      exclusive: !this.heldElsewhere.has(id),
+      whenExclusive: new Promise<void>(() => undefined),
+      release: () => undefined,
+    };
+  }
+}
+
+it("leaves road mode when the world turns read-only, and refuses road strokes there", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  const repository = new FlakyRepository();
+  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  const locks = new OtherTabLocks();
+  container.rebind(WORLD_LOCKS).toConstantValue(locks);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
+  if (!kit) throw new Error("no Dark Bluish Grey road kit");
+  const tile = 640;
+  const stroke = (row: number) => {
+    backend.aim(tile / 2, row * tile + tile / 2);
+    editor.dragStart(0, 0);
+    for (const column of [1, 2]) {
+      backend.aim(column * tile + tile / 2, row * tile + tile / 2);
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
+  };
+
+  editor.chooseItem(kit.id);
+  stroke(0);
+  expect(editor.snapshot().placements).toBe(3);
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(3));
+  const first = editor.snapshot().world?.id;
+  if (!first) throw new Error("no current world");
+  expect(await editor.newWorld("Second")).toBe(true);
+  editor.chooseItem(kit.id);
+  expect(editor.snapshot().mode).toBe("road");
+
+  locks.heldElsewhere.add(first);
+  expect(await editor.openWorld(first)).toBe(true);
+  const readOnly = editor.snapshot();
+  expect([readOnly.readOnly, readOnly.mode, readOnly.placements]).toEqual([true, "select", 3]);
+  expect(commandEnabled("draw-road", readOnly)).toBe(false);
+  editor.chooseItem(kit.id);
+  expect(editor.snapshot().mode).toBe("select");
+  stroke(1);
+  expect(editor.snapshot().placements).toBe(3);
+  expect(editor.snapshot().unsavedEdits).toBe(false);
 }, 120_000);

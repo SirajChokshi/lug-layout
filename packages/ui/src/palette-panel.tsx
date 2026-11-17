@@ -14,6 +14,7 @@ import {
   type PaletteFilter,
   type PaletteHit,
 } from "@brr/client";
+import { RoadKitList } from "./road-draw-panel.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -222,6 +223,9 @@ function CategorySection({
           title={CATEGORY_LABEL[category]}
           count={colorCount(entries)}
         >
+          {category === "road" && (
+            <RoadKitList editor={editor} snapshot={snapshot} kits={snapshot.roadKits} />
+          )}
           <ul className="palette-rows">
             {entries.map((entry) => (
               <SwatchRow

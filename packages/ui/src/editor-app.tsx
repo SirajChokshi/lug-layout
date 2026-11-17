@@ -21,6 +21,7 @@ import {
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
 import { TrackPanel } from "./track-panel.tsx";
@@ -126,6 +127,8 @@ export function EditorApp({
       }
       data-world={snapshot.world?.id ?? ""}
       data-save={snapshot.world?.save ?? ""}
+      data-road-pieces={snapshot.roads.placements}
+      data-mode={snapshot.mode}
     >
       <EditorCanvas editor={editor} camera={camera} options={options} />
       <ToolHud snapshot={snapshot} />
@@ -138,6 +141,7 @@ export function EditorApp({
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
+        <RoadDrawPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <ModuleJoins editor={editor} snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />
