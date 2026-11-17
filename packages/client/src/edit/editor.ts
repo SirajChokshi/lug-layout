@@ -38,6 +38,7 @@ import {
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
+  type ChunkInstances,
   type EdgeMarker,
   type ChunkTier,
   type FrameStats,
@@ -144,6 +145,7 @@ export interface CatalogItemView {
   readonly studsDeep: number;
   readonly aliases: ReadonlyArray<string>;
   readonly elements: ReadonlyArray<string>;
+  readonly displayColor: boolean;
 }
 
 export interface LatencySample {
@@ -456,6 +458,11 @@ export interface EditorDump {
   readonly studs: StudTotals;
 }
 
+export interface CatalogItemModel {
+  readonly model: ChunkInstances;
+  readonly box: WorldBox;
+}
+
 export interface EditorOptions {
   readonly api: GraphicsApi;
   readonly pixelRatio: number;
@@ -495,6 +502,7 @@ export interface IEditor extends IBomSource {
   measureFrames(): void;
   cycleTier(): void;
   trackRoutes(): ReadonlyArray<TrackRouteView>;
+  catalogItemModel(itemId: string): CatalogItemModel | null;
   dump(): EditorDump;
 }
 
@@ -670,9 +678,8 @@ function catalogItem(
 ): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
-  const produced = colored
-    ? parts.find((part) => part.id === placeable.group)?.producedColors
-    : undefined;
+  const part = colored ? parts.find((p) => p.id === placeable.group) : undefined;
+  const produced = part?.producedColors;
   const ldrawNumber = placeable.group.replace(/^ldraw:/u, "");
   return {
     id: placeable.id,
@@ -687,6 +694,7 @@ function catalogItem(
     aliases: produced && produced.rebrickable !== ldrawNumber ? [produced.rebrickable] : [],
     elements:
       produced?.colors.find((color) => color.ldraw === placeable.worldColor)?.elements ?? [],
+    displayColor: part !== undefined && part.producedColor === placeable.worldColor,
   };
 }
 
@@ -1179,6 +1187,7 @@ export class Editor implements IEditor {
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
       aliases: [],
       elements: [],
+      displayColor: false,
     };
   }
 
@@ -1202,6 +1211,7 @@ export class Editor implements IEditor {
         studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
         aliases: [],
         elements: [],
+        displayColor: false,
       };
     });
   }
@@ -2727,6 +2737,16 @@ export class Editor implements IEditor {
 
   trackRoutes(): ReadonlyArray<TrackRouteView> {
     return this.track?.routes() ?? [];
+  }
+
+  catalogItemModel(itemId: string): CatalogItemModel | null {
+    const placeable = this.placeables.find((p) => p.id === itemId);
+    if (!placeable) return null;
+    const { min, max } = placeable.box;
+    return {
+      model: { ...placeable.parts, studs: placeable.studs },
+      box: { minX: min[0], minY: min[1], minZ: min[2], maxX: max[0], maxY: max[1], maxZ: max[2] },
+    };
   }
 
   dump(): EditorDump {

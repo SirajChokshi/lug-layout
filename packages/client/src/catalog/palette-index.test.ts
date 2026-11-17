@@ -28,6 +28,7 @@ function plate(
     studsDeep: studs,
     aliases: produced.rebrickable ? [produced.rebrickable] : [],
     elements: produced.elements?.[color.code] ?? [],
+    displayColor: color === colors[0],
   }));
 }
 
@@ -55,6 +56,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     studsDeep: 90,
     aliases: [],
     elements: [],
+    displayColor: false,
   },
   {
     id: "track:lego-9v",
@@ -68,6 +70,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     studsDeep: 8,
     aliases: [],
     elements: [],
+    displayColor: false,
   },
 ];
 

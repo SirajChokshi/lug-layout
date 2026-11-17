@@ -23,6 +23,7 @@ function baseplate(
     studsDeep: studs,
     aliases: [],
     elements: [],
+    displayColor: false,
   };
 }
 
@@ -43,6 +44,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     studsDeep: 32,
     aliases: ["44336pr0001"],
     elements: [],
+    displayColor: false,
   },
 ];
 
