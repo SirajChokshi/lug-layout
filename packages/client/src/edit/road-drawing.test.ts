@@ -105,8 +105,8 @@ class TopDownBackend implements ISceneBackend {
   setSuperChunk(): void {}
   setSuperChunkVisible(): void {}
   deleteSuperChunk(): void {}
-  studPitchPx(): number {
-    return Number.POSITIVE_INFINITY;
+  studPitchesPx(_distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    out.fill(Number.POSITIVE_INFINITY, 0, count);
   }
   setGhost(): void {}
   placeGhost(): void {}

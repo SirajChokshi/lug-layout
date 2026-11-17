@@ -130,8 +130,8 @@ class ChunkCapture implements ISceneBackend {
   deleteSuperChunk(key: number): void {
     this.inner.deleteSuperChunk(key);
   }
-  studPitchPx(distanceLdu: number): number {
-    return this.inner.studPitchPx(distanceLdu);
+  studPitchesPx(distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    this.inner.studPitchesPx(distancesLdu, count, out);
   }
   forceTier(tier: ChunkTier | null): void {
     this.inner.forceTier(tier);

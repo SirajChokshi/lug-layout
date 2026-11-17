@@ -23,6 +23,8 @@ const CANVAS_OPTIONS: EditorOptions = {
   pixelRatio: 1,
   look: { plastic: false, gtao: false, outlines: false, bevel: false, shadows: false, oit: false },
   tier: null,
+  superChunkLod: true,
+  measuredFrames: 60,
 };
 
 function services() {

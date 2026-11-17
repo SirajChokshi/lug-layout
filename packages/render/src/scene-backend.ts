@@ -79,6 +79,7 @@ export interface SuperChunkMesh {
   readonly vertexCount: number;
   readonly indexCount: number;
   readonly positions: Float32Array;
+  readonly normals: Int8Array;
   readonly colorIndex: Uint16Array;
   readonly indices: Uint16Array | Uint32Array;
 }
@@ -155,7 +156,7 @@ export interface ISceneBackend {
   setSuperChunk(key: number, mesh: SuperChunkMesh): void;
   setSuperChunkVisible(key: number, visible: boolean): void;
   deleteSuperChunk(key: number): void;
-  studPitchPx(distanceLdu: number): number;
+  studPitchesPx(distancesLdu: Float64Array, count: number, out: Float64Array): void;
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
   setSelectionBox(box: WorldBox | null): void;

@@ -43,8 +43,8 @@ class RecordingBackend implements ISceneBackend {
   setSuperChunk(): void {}
   setSuperChunkVisible(): void {}
   deleteSuperChunk(): void {}
-  studPitchPx(): number {
-    return 0;
+  studPitchesPx(_distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    out.fill(0, 0, count);
   }
   forceTier(): void {}
   setFarModel(): void {}

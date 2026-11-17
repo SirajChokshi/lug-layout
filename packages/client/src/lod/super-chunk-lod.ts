@@ -42,6 +42,7 @@ const IDLE_SLICE_MS = 4;
 const MAX_CELL_PX = 3;
 const LEVEL_HYSTERESIS = 1.25;
 const INDICES_PER_TRIANGLE = 3;
+const INITIAL_PITCH_SLOTS = 64;
 
 class SuperChunkState {
   readonly models: VoxelPlacement[] = [];
@@ -49,6 +50,10 @@ class SuperChunkState {
   readonly minZ: number;
   readonly maxX: number;
   readonly maxZ: number;
+  reachMinX: number;
+  reachMinZ: number;
+  reachMaxX: number;
+  reachMaxZ: number;
   maxY = 0;
   unvoxelized = 0;
   wantsChunks: boolean;
@@ -60,7 +65,7 @@ class SuperChunkState {
   meshVisible = false;
   meshTriangles = 0;
   dirtySinceMs = 0;
-  studPitchPx = 0;
+  private readonly measuredPitchPx = new Float64Array(1);
 
   constructor(
     readonly key: number,
@@ -72,7 +77,19 @@ class SuperChunkState {
     this.minZ = superZ * SUPER_CHUNK_LDU;
     this.maxX = this.minX + SUPER_CHUNK_LDU;
     this.maxZ = this.minZ + SUPER_CHUNK_LDU;
+    this.reachMinX = this.minX;
+    this.reachMinZ = this.minZ;
+    this.reachMaxX = this.maxX;
+    this.reachMaxZ = this.maxZ;
     this.wantsChunks = wantsChunks;
+  }
+
+  get studPitchPx(): number {
+    return this.measuredPitchPx[0] ?? 0;
+  }
+
+  set studPitchPx(pitchPx: number) {
+    this.measuredPitchPx[0] = pitchPx;
   }
 
   get meshCurrent(): boolean {
@@ -92,8 +109,17 @@ class SuperChunkState {
     this.version++;
     let maxY = 0;
     let unvoxelized = 0;
+    this.reachMinX = this.minX;
+    this.reachMinZ = this.minZ;
+    this.reachMaxX = this.maxX;
+    this.reachMaxZ = this.maxZ;
     for (const model of this.models) {
-      maxY = Math.max(maxY, model.box.maxY);
+      const { box } = model;
+      maxY = Math.max(maxY, box.maxY);
+      this.reachMinX = Math.min(this.reachMinX, box.minX);
+      this.reachMinZ = Math.min(this.reachMinZ, box.minZ);
+      this.reachMaxX = Math.max(this.reachMaxX, box.maxX);
+      this.reachMaxZ = Math.max(this.reachMaxZ, box.maxZ);
       if (!model.voxels) unvoxelized++;
     }
     this.maxY = maxY;
@@ -117,6 +143,24 @@ function superOf(ldu: number): number {
   return Math.floor(ldu / SUPER_CHUNK_LDU);
 }
 
+function ownerSuperX(box: WorldBox): number {
+  return superOf((box.minX + box.maxX) / 2);
+}
+
+function ownerSuperZ(box: WorldBox): number {
+  return superOf((box.minZ + box.maxZ) / 2);
+}
+
+export function ownerSuperChunk(box: WorldBox): number {
+  return superChunkKey(ownerSuperX(box), ownerSuperZ(box));
+}
+
+function outside(value: number, lo: number, hi: number): number {
+  if (value < lo) return lo - value;
+  if (value > hi) return value - hi;
+  return 0;
+}
+
 function rot90(rot: number): Rot90 {
   if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
   return rot;
@@ -130,6 +174,8 @@ export class SuperChunkLod implements IdleWork {
   private eyeX = 0;
   private eyeY = 0;
   private eyeZ = 0;
+  private distancesLdu = new Float64Array(INITIAL_PITCH_SLOTS);
+  private pitchesPx = new Float64Array(INITIAL_PITCH_SLOTS);
   private enabled = true;
   private readonly idle = new IdleWorkLoop(this, IDLE_SLICE_MS);
   readonly stats: SuperChunkLodStats = {
@@ -165,8 +211,9 @@ export class SuperChunkLod implements IdleWork {
     return true;
   }
 
-  private wantsDetail(state: SuperChunkState, pitchPx: number): boolean {
+  private wantsDetail(state: SuperChunkState): boolean {
     if (!this.enabled || state.unvoxelized > 0) return true;
+    const pitchPx = state.studPitchPx;
     return state.wantsChunks ? pitchPx >= DETAIL_LEAVE_STUD_PX : pitchPx >= DETAIL_ENTER_STUD_PX;
   }
 
@@ -175,42 +222,33 @@ export class SuperChunkLod implements IdleWork {
   }
 
   add(model: VoxelPlacement): void {
-    const now = performance.now();
-    this.forEachSuper(model.box, (superX, superZ) => {
-      const state = this.stateAt(superX, superZ);
-      state.models.push(model);
-      state.touch(now);
-    });
+    const state = this.stateAt(ownerSuperX(model.box), ownerSuperZ(model.box));
+    state.models.push(model);
+    state.touch(performance.now());
     if (this.enabled) this.idle.wake();
   }
 
   remove(model: VoxelPlacement): void {
-    const now = performance.now();
-    this.forEachSuper(model.box, (superX, superZ) => {
-      const key = superChunkKey(superX, superZ);
-      const state = this.states.get(key);
-      if (!state) return;
-      const index = state.models.indexOf(model);
-      if (index >= 0) state.models.splice(index, 1);
-      state.touch(now);
-      if (state.models.length === 0) this.drop(state);
-    });
+    const state = this.states.get(ownerSuperChunk(model.box));
+    if (!state) return;
+    const index = state.models.indexOf(model);
+    if (index >= 0) state.models.splice(index, 1);
+    state.touch(performance.now());
+    if (state.models.length === 0) this.drop(state);
     if (this.enabled) this.idle.wake();
+  }
+
+  clear(): void {
+    this.job = null;
+    for (const state of this.stateList) this.backend.deleteSuperChunk(state.key);
+    this.states.clear();
+    this.stateList = [];
+    this.tally();
   }
 
   work(deadlineMs: number): boolean {
     this.buildMeshes(deadlineMs);
     return this.job !== null || this.nextToMesh() !== null;
-  }
-
-  private forEachSuper(box: WorldBox, visit: (superX: number, superZ: number) => void): void {
-    const loX = superOf(box.minX);
-    const hiX = superOf(box.maxX);
-    const loZ = superOf(box.minZ);
-    const hiZ = superOf(box.maxZ);
-    for (let superX = loX; superX <= hiX; superX++) {
-      for (let superZ = loZ; superZ <= hiZ; superZ++) visit(superX, superZ);
-    }
   }
 
   private stateAt(superX: number, superZ: number): SuperChunkState {
@@ -219,7 +257,10 @@ export class SuperChunkLod implements IdleWork {
     if (existing) return existing;
     const state = new SuperChunkState(key, superX, superZ, false);
     state.dirtySinceMs = performance.now();
-    state.wantsChunks = this.wantsDetail(state, this.studPitchPx(state));
+    this.measureDistance(0, state);
+    this.backend.studPitchesPx(this.distancesLdu, 1, this.pitchesPx);
+    state.studPitchPx = this.pitchesPx[0] ?? 0;
+    state.wantsChunks = this.wantsDetail(state);
     this.states.set(key, state);
     this.stateList.push(state);
     return state;
@@ -232,26 +273,43 @@ export class SuperChunkLod implements IdleWork {
     this.stateList = this.stateList.filter((s) => s !== state);
   }
 
-  private studPitchPx(state: SuperChunkState): number {
-    const dx = Math.max(state.minX - this.eyeX, 0, this.eyeX - state.maxX);
-    const dz = Math.max(state.minZ - this.eyeZ, 0, this.eyeZ - state.maxZ);
-    const dy = Math.max(-this.eyeY, 0, this.eyeY - state.maxY);
-    return this.backend.studPitchPx(Math.hypot(dx, dy, dz));
+  private measureDistance(slot: number, state: SuperChunkState): void {
+    const dx = outside(this.eyeX, state.reachMinX, state.reachMaxX);
+    const dy = outside(this.eyeY, 0, state.maxY);
+    const dz = outside(this.eyeZ, state.reachMinZ, state.reachMaxZ);
+    this.distancesLdu[slot] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  private reservePitchSlots(count: number): void {
+    if (this.distancesLdu.length >= count) return;
+    const size = Math.max(count, this.distancesLdu.length * 2);
+    this.distancesLdu = new Float64Array(size);
+    this.pitchesPx = new Float64Array(size);
   }
 
   update(eyeX: number, eyeY: number, eyeZ: number, deadlineMs: number): void {
     this.eyeX = eyeX;
     this.eyeY = eyeY;
     this.eyeZ = eyeZ;
-    for (let i = 0; i < this.stateList.length; i++) {
+    const count = this.stateList.length;
+    this.reservePitchSlots(count);
+    for (let i = 0; i < count; i++) {
       const state = this.stateList[i];
-      if (state) this.retier(state);
+      if (state) this.measureDistance(i, state);
+    }
+    this.backend.studPitchesPx(this.distancesLdu, count, this.pitchesPx);
+    for (let i = 0; i < count; i++) {
+      const state = this.stateList[i];
+      if (!state) continue;
+      state.studPitchPx = this.pitchesPx[i] ?? 0;
+      this.retier(state);
     }
     this.loadChunks(deadlineMs);
     this.tally();
   }
 
-  private releveled(state: SuperChunkState, pitch: number): void {
+  private releveled(state: SuperChunkState): void {
+    const pitch = state.studPitchPx;
     const finer = levelFor(pitch * LEVEL_HYSTERESIS);
     const coarser = levelFor(pitch / LEVEL_HYSTERESIS);
     if (state.level >= finer && state.level <= coarser) return;
@@ -262,10 +320,8 @@ export class SuperChunkLod implements IdleWork {
   }
 
   private retier(state: SuperChunkState): void {
-    const pitch = this.studPitchPx(state);
-    state.studPitchPx = pitch;
-    this.releveled(state, pitch);
-    const wants = this.wantsDetail(state, pitch);
+    this.releveled(state);
+    const wants = this.wantsDetail(state);
     this.releaseHiddenMesh(state);
     if (this.enabled && state.needsMesh && !state.meshCurrent) this.idle.wake();
     if (wants === state.wantsChunks) return;

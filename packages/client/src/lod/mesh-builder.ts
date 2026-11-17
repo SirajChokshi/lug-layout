@@ -3,11 +3,13 @@ const VERTICES_PER_QUAD = 4;
 const INDICES_PER_QUAD = 6;
 const FLOATS_PER_VERTEX = 3;
 const UINT16_VERTEX_LIMIT = 65_536;
+const SNORM8_ONE = 127;
 
 export interface VoxelMeshArrays {
   readonly vertexCount: number;
   readonly indexCount: number;
   readonly positions: Float32Array;
+  readonly normals: Int8Array;
   readonly colorIndex: Uint16Array;
   readonly indices: Uint16Array | Uint32Array;
 }
@@ -15,6 +17,7 @@ export interface VoxelMeshArrays {
 export class QuadMeshBuilder {
   private quadCapacity = INITIAL_QUADS;
   private positions = new Float32Array(INITIAL_QUADS * VERTICES_PER_QUAD * FLOATS_PER_VERTEX);
+  private normals = new Int8Array(INITIAL_QUADS * VERTICES_PER_QUAD * FLOATS_PER_VERTEX);
   private colorIndex = new Uint16Array(INITIAL_QUADS * VERTICES_PER_QUAD);
   quads = 0;
 
@@ -27,6 +30,9 @@ export class QuadMeshBuilder {
     const positions = new Float32Array(this.quadCapacity * VERTICES_PER_QUAD * FLOATS_PER_VERTEX);
     positions.set(this.positions);
     this.positions = positions;
+    const normals = new Int8Array(this.quadCapacity * VERTICES_PER_QUAD * FLOATS_PER_VERTEX);
+    normals.set(this.normals);
+    this.normals = normals;
     const colorIndex = new Uint16Array(this.quadCapacity * VERTICES_PER_QUAD);
     colorIndex.set(this.colorIndex);
     this.colorIndex = colorIndex;
@@ -36,6 +42,7 @@ export class QuadMeshBuilder {
     corner: Float64Array,
     edgeU: Float64Array,
     edgeV: Float64Array,
+    normalAxis: number,
     normalSign: number,
     color: number,
   ): void {
@@ -49,6 +56,7 @@ export class QuadMeshBuilder {
       for (let axis = 0; axis < FLOATS_PER_VERTEX; axis++) {
         this.positions[o + axis] =
           (corner[axis] ?? 0) + alongU * (edgeU[axis] ?? 0) + alongV * (edgeV[axis] ?? 0);
+        this.normals[o + axis] = axis === normalAxis ? normalSign * SNORM8_ONE : 0;
       }
       this.colorIndex[firstVertex + k] = color;
     }
@@ -76,6 +84,7 @@ export class QuadMeshBuilder {
       vertexCount,
       indexCount,
       positions: this.positions.slice(0, vertexCount * FLOATS_PER_VERTEX),
+      normals: this.normals.slice(0, vertexCount * FLOATS_PER_VERTEX),
       colorIndex: this.colorIndex.slice(0, vertexCount),
       indices,
     };
