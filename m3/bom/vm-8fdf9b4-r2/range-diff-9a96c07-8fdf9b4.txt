@@ -1,4 +1,4 @@
-1:  9a96c07 ! 1:  d2b69e3 M3: parts list export for the world, a region or the editor's selection, on one crosswalk in the bundle
+1:  9a96c07 ! 1:  8fdf9b4 M3: parts list export for the world, a region or the editor's selection, on one crosswalk in the bundle
     @@ apps/web/src/app.css: footer a {
      
       ## apps/web/src/app.tsx ##
@@ -161,11 +161,12 @@
     ++} from "@brr/client";
     + import { useCallback, useState } from "react";
      +import { BomPanel } from "./bom-panel.tsx";
+    + import { CommandPalette } from "./command-palette.tsx";
       import { EditorCanvas } from "./editor-canvas.tsx";
       import {
-        CreditsFooter,
+    -   CreditsFooter,
     -@@ packages/ui/src/editor-app.tsx: import { useEditorSnapshot } from "./use-editor.ts";
-    +@@ packages/ui/src/editor-app.tsx: import { useEditorKeys } from "./use-editor-keys.ts";
+    +@@ packages/ui/src/editor-app.tsx: import { useRecentItems } from "./use-recent-items.ts";
       interface EditorAppProps {
         readonly editor: IEditor;
         readonly plans: IPlanService;
@@ -175,8 +176,8 @@
         const snapshot = useEditorSnapshot(editor);
     -   return (
     -     <div
+    +   const recent = useRecentItems(snapshot.activeItem);
     +   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
-    +   const closeOverlay = useCallback(() => setOverlay(null), []);
      @@ packages/ui/src/editor-app.tsx: export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
               <TrackPanel snapshot={snapshot} />
               <Inspector snapshot={snapshot} />

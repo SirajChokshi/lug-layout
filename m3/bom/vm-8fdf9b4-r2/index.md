@@ -1,6 +1,6 @@
-# #29 at d2b69e3: the crosswalk on #79's R2 path, and one export rerun
+# #29 at 8fdf9b4: the crosswalk on #79's R2 path, and one export rerun
 
-- **Code:** `siraj/m3-bom-export-fdde` at `d2b69e34bbb3a1ba8cbe7d5b8a35c3c6e387a14c`, a conflict-only rebase of `9a96c07` onto `main` at `4f083af` (#79 R2 bundle, #41 look pass, #90 keyboard). `range-diff-9a96c07-d2b69e3.txt` is `git range-diff f6db3a6..9a96c07 4f083af..d2b69e3`.
+- **Code:** `siraj/m3-bom-export-fdde` at `8fdf9b4dbdfbbbb865402ed156a5e4da7a27d56c`, a conflict-only rebase of `9a96c07` onto `main` at `f982e6d` (#79 R2 bundle, #41 look pass, #90 keyboard, #95 command palette). `range-diff-9a96c07-8fdf9b4.txt` is `git range-diff f6db3a6..9a96c07 f982e6d..8fdf9b4`.
 - **Bundle:** `pnpm --filter @brr/asset-pipeline build` at that commit. The crosswalk is `crosswalk.60cb2f987568c642.json`, byte-identical to the 9a96c07 run.
 
 ## Published and fetched through #79's R2 path
