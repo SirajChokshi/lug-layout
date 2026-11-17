@@ -1,0 +1,137 @@
+{
+ "bundle": "f50f2c726ae0f0d1",
+ "crosswalk": "crosswalk.60cb2f987568c642.json",
+ "entries": 20630,
+ "rebrickable": 16160,
+ "bricklink": 17518,
+ "R1_chosenAmongSeveral": 100,
+ "R1_byOwnKeyword": 70,
+ "R1_byExactId": 30,
+ "R1_unjustified": [],
+ "R1_unmappedWithAlternatives": [
+  "21019p00",
+  "238",
+  "3002peye",
+  "3005-e",
+  "3010p20b",
+  "3010p20c",
+  "3010p20w",
+  "3048",
+  "3949",
+  "4180",
+  "4188571c",
+  "50",
+  "73200pc44",
+  "73200ps5",
+  "99"
+ ],
+ "N5_placeholderIds": 0,
+ "N6_flagged": 737,
+ "N6_flaggedStillMappedElsewhere": 69,
+ "N6_mappedToRejectedId": [],
+ "N6_reverseLeaks": [],
+ "examples": {
+  "37365p01": {
+   "rebrickable": null,
+   "bricklink": null,
+   "via": {
+    "rebrickable": null,
+    "bricklink": null
+   },
+   "rejectedAssemblyIds": {
+    "assemblies": [
+     "ldraw:37364p01"
+    ],
+    "rebrickable": [],
+    "bricklink": [
+     "970cm00pb018"
+    ]
+   }
+  },
+  "3815bpc44": {
+   "rebrickable": null,
+   "bricklink": null,
+   "via": {
+    "rebrickable": null,
+    "bricklink": null
+   },
+   "rejectedAssemblyIds": {
+    "assemblies": [
+     "ldraw:73200bpc44",
+     "ldraw:73200pc44"
+    ],
+    "rebrickable": [],
+    "bricklink": [
+     "970c00pb0099"
+    ]
+   }
+  },
+  "20460bp00": {
+   "rebrickable": null,
+   "bricklink": null,
+   "via": {
+    "rebrickable": null,
+    "bricklink": null
+   },
+   "rejectedAssemblyIds": {
+    "assemblies": [
+     "ldraw:21019bp00"
+    ],
+    "rebrickable": [
+     "970c28pat27"
+    ],
+    "bricklink": [
+     "970c00pb0965"
+    ]
+   }
+  },
+  "973p8z": {
+   "rebrickable": null,
+   "bricklink": null,
+   "via": {
+    "rebrickable": null,
+    "bricklink": null
+   },
+   "rejectedAssemblyIds": {
+    "assemblies": [
+     "ldraw:76382p8z"
+    ],
+    "rebrickable": [
+     "973c32h01pr1244"
+    ],
+    "bricklink": [
+     "973pb0410c01"
+    ]
+   }
+  },
+  "4180": {
+   "rebrickable": null,
+   "bricklink": null,
+   "via": {
+    "rebrickable": "moved:4180c02",
+    "bricklink": null
+   },
+   "rebrickableAlternatives": [
+    "4180c01",
+    "4180c04"
+   ]
+  },
+  "3626bp8d": {
+   "rebrickable": "3626bpr0386",
+   "bricklink": "3626pb0267",
+   "via": {
+    "rebrickable": "rebrickable-api",
+    "bricklink": "rebrickable-api"
+   },
+   "rebrickableAlternatives": [
+    "3626cpr0386"
+   ]
+  }
+ },
+ "bricklinkParts_970cm00pb018": [
+  "ldraw:37364p01"
+ ],
+ "bricklinkParts_973pb0410c01": [
+  "ldraw:76382p8z"
+ ]
+}

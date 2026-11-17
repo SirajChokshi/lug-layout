@@ -1,0 +1,20 @@
+{
+ "worldPlacements": 2035,
+ "regionPlacements": 250,
+ "method": "per colour index in the app's dumped World, its part counts must equal exactly one exported LDraw colour's part counts, one-to-one; that mapping is then applied to the Region's placements",
+ "worldEqualsByPartAndColour": true,
+ "regionEqualsByPartAndColour": true,
+ "colourIndexToLdraw": {
+  "0": 72,
+  "1": 2,
+  "9": 71,
+  "7": 28,
+  "5": 14,
+  "3": 15,
+  "8": 70,
+  "10": 0,
+  "2": 4,
+  "4": 19,
+  "6": 1
+ }
+}

@@ -1,0 +1,456 @@
+[
+ {
+  "set": "7936-1",
+  "instances": 147,
+  "manifestInstances": 147,
+  "rebrickableParts": 143,
+  "rebrickableUnmappedParts": 4,
+  "rebrickableUnmappedIds": [
+   "ldraw:3816b",
+   "ldraw:3817b",
+   "ldraw:61409"
+  ],
+  "bricklinkParts": 143,
+  "bricklinkUnmappedParts": 4,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "10264-1",
+  "instances": 2567,
+  "manifestInstances": 2567,
+  "rebrickableParts": 2572,
+  "rebrickableUnmappedParts": 31,
+  "rebrickableUnmappedIds": [
+   "ldraw:2446",
+   "ldraw:2447",
+   "ldraw:30104k01",
+   "ldraw:30104k02",
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817",
+   "ldraw:4141242a",
+   "ldraw:41879b",
+   "ldraw:61409",
+   "ldraw:63965"
+  ],
+  "bricklinkParts": 2572,
+  "bricklinkUnmappedParts": 31,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "10185-1",
+  "instances": 2405,
+  "manifestInstances": 2405,
+  "rebrickableParts": 2394,
+  "rebrickableUnmappedParts": 20,
+  "rebrickableUnmappedIds": [
+   "ldraw:3308",
+   "ldraw:3660a",
+   "ldraw:3816b",
+   "ldraw:3817b",
+   "ldraw:4485",
+   "ldraw:973p8z"
+  ],
+  "bricklinkParts": 2394,
+  "bricklinkUnmappedParts": 20,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "10190-1",
+  "instances": 1484,
+  "manifestInstances": 1484,
+  "rebrickableParts": 1246,
+  "rebrickableUnmappedParts": 242,
+  "rebrickableUnmappedIds": [
+   "ldraw:2454",
+   "ldraw:3308",
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817",
+   "ldraw:4343",
+   "ldraw:4344",
+   "ldraw:71944k01",
+   "ldraw:71944k02",
+   "ldraw:750",
+   "ldraw:755",
+   "ldraw:756",
+   "ldraw:973p1j"
+  ],
+  "bricklinkParts": 1245,
+  "bricklinkUnmappedParts": 243,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "10218-1",
+  "instances": 2042,
+  "manifestInstances": 2042,
+  "rebrickableParts": 2058,
+  "rebrickableUnmappedParts": 17,
+  "rebrickableUnmappedIds": [
+   "ldraw:3660",
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817",
+   "ldraw:4485",
+   "ldraw:63965",
+   "ldraw:973p1b",
+   "ldraw:973p7j",
+   "ldraw:973p94",
+   "ldraw:973pbj"
+  ],
+  "bricklinkParts": 2060,
+  "bricklinkUnmappedParts": 15,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "2150-1",
+  "instances": 625,
+  "manifestInstances": 625,
+  "rebrickableParts": 600,
+  "rebrickableUnmappedParts": 39,
+  "rebrickableUnmappedIds": [
+   "ldraw:168265a",
+   "ldraw:2454",
+   "ldraw:3660",
+   "ldraw:3741",
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817",
+   "ldraw:4343",
+   "ldraw:4344",
+   "ldraw:4485",
+   "ldraw:4521703u",
+   "ldraw:973p73",
+   "ldraw:973p83"
+  ],
+  "bricklinkParts": 600,
+  "bricklinkUnmappedParts": 39,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "4554-1",
+  "instances": 617,
+  "manifestInstances": 617,
+  "rebrickableParts": 590,
+  "rebrickableUnmappedParts": 41,
+  "rebrickableUnmappedIds": [
+   "ldraw:168265a",
+   "ldraw:2454",
+   "ldraw:3660",
+   "ldraw:3741",
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817",
+   "ldraw:4343",
+   "ldraw:4344",
+   "ldraw:4521703u",
+   "ldraw:973p18",
+   "ldraw:973p19",
+   "ldraw:973p71",
+   "ldraw:973p83"
+  ],
+  "bricklinkParts": 590,
+  "bricklinkUnmappedParts": 41,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "4555-1",
+  "instances": 390,
+  "manifestInstances": 390,
+  "rebrickableParts": 380,
+  "rebrickableUnmappedParts": 13,
+  "rebrickableUnmappedIds": [
+   "ldraw:168265a",
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817",
+   "ldraw:4485",
+   "ldraw:973p73"
+  ],
+  "bricklinkParts": 380,
+  "bricklinkUnmappedParts": 13,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "10128-1",
+  "instances": 336,
+  "manifestInstances": 336,
+  "rebrickableParts": 320,
+  "rebrickableUnmappedParts": 16,
+  "rebrickableUnmappedIds": [
+   "ldraw:2454",
+   "ldraw:3660",
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817"
+  ],
+  "bricklinkParts": 320,
+  "bricklinkUnmappedParts": 16,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "10133-1",
+  "instances": 419,
+  "manifestInstances": 419,
+  "rebrickableParts": 413,
+  "rebrickableUnmappedParts": 6,
+  "rebrickableUnmappedIds": [
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817"
+  ],
+  "bricklinkParts": 413,
+  "bricklinkUnmappedParts": 6,
+  "appExportEqualsIndependent": true
+ },
+ {
+  "set": "10014-1",
+  "instances": 170,
+  "manifestInstances": 170,
+  "rebrickableParts": 170,
+  "rebrickableUnmappedParts": 0,
+  "rebrickableUnmappedIds": [],
+  "bricklinkParts": 170,
+  "bricklinkUnmappedParts": 0
+ },
+ {
+  "set": "10020-1",
+  "instances": 444,
+  "manifestInstances": 444,
+  "rebrickableParts": 434,
+  "rebrickableUnmappedParts": 10,
+  "rebrickableUnmappedIds": [
+   "ldraw:3660",
+   "ldraw:3815",
+   "ldraw:3816",
+   "ldraw:3817",
+   "ldraw:4188571b"
+  ],
+  "bricklinkParts": 430,
+  "bricklinkUnmappedParts": 14
+ },
+ {
+  "set": "10022-1_Dining-Car",
+  "instances": 320,
+  "manifestInstances": 320,
+  "rebrickableParts": 315,
+  "rebrickableUnmappedParts": 5,
+  "rebrickableUnmappedIds": [
+   "ldraw:4188571a",
+   "ldraw:4188571b",
+   "ldraw:4188571k"
+  ],
+  "bricklinkParts": 315,
+  "bricklinkUnmappedParts": 5
+ },
+ {
+  "set": "10025-1_Baggage-Car",
+  "instances": 282,
+  "manifestInstances": 282,
+  "rebrickableParts": 278,
+  "rebrickableUnmappedParts": 4,
+  "rebrickableUnmappedIds": [
+   "ldraw:4188571b",
+   "ldraw:4188571f"
+  ],
+  "bricklinkParts": 278,
+  "bricklinkUnmappedParts": 4
+ },
+ {
+  "set": "10205-1",
+  "instances": 229,
+  "manifestInstances": 229,
+  "rebrickableParts": 221,
+  "rebrickableUnmappedParts": 8,
+  "rebrickableUnmappedIds": [
+   "ldraw:3660",
+   "ldraw:4159998b"
+  ],
+  "bricklinkParts": 221,
+  "bricklinkUnmappedParts": 8
+ },
+ {
+  "set": "10013-1",
+  "instances": 162,
+  "manifestInstances": 162,
+  "rebrickableParts": 116,
+  "rebrickableUnmappedParts": 46,
+  "rebrickableUnmappedIds": [
+   "ldraw:30104k01",
+   "ldraw:30104k02"
+  ],
+  "bricklinkParts": 116,
+  "bricklinkUnmappedParts": 46
+ },
+ {
+  "set": "10016-1",
+  "instances": 120,
+  "manifestInstances": 120,
+  "rebrickableParts": 120,
+  "rebrickableUnmappedParts": 0,
+  "rebrickableUnmappedIds": [],
+  "bricklinkParts": 120,
+  "bricklinkUnmappedParts": 0
+ },
+ {
+  "set": "10017-1",
+  "instances": 208,
+  "manifestInstances": 208,
+  "rebrickableParts": 193,
+  "rebrickableUnmappedParts": 15,
+  "rebrickableUnmappedIds": [
+   "ldraw:3660"
+  ],
+  "bricklinkParts": 193,
+  "bricklinkUnmappedParts": 15
+ },
+ {
+  "set": "switch-then-reversed-curve",
+  "instances": 5,
+  "manifestInstances": 5,
+  "rebrickableParts": 0,
+  "rebrickableUnmappedParts": 5,
+  "rebrickableUnmappedIds": [
+   "ldraw:74746",
+   "ldraw:74747",
+   "ldraw:75541-f2"
+  ],
+  "bricklinkParts": 0,
+  "bricklinkUnmappedParts": 5
+ },
+ {
+  "set": "road-baseplates",
+  "instances": 5,
+  "manifestInstances": 5,
+  "rebrickableParts": 0,
+  "rebrickableUnmappedParts": 5,
+  "rebrickableUnmappedIds": [
+   "ldraw:2358",
+   "ldraw:30225b",
+   "ldraw:44336",
+   "ldraw:606",
+   "ldraw:610"
+  ],
+  "bricklinkParts": 0,
+  "bricklinkUnmappedParts": 5
+ },
+ {
+  "set": "r40-circle-9v",
+  "instances": 16,
+  "manifestInstances": 16,
+  "rebrickableParts": 0,
+  "rebrickableUnmappedParts": 16,
+  "rebrickableUnmappedIds": [
+   "ldraw:74747"
+  ],
+  "bricklinkParts": 0,
+  "bricklinkUnmappedParts": 16
+ },
+ {
+  "set": "oval-passing-siding-9v",
+  "instances": 34,
+  "manifestInstances": 34,
+  "rebrickableParts": 0,
+  "rebrickableUnmappedParts": 34,
+  "rebrickableUnmappedIds": [
+   "ldraw:74746",
+   "ldraw:74747",
+   "ldraw:75541-f2",
+   "ldraw:75542-f2"
+  ],
+  "bricklinkParts": 0,
+  "bricklinkUnmappedParts": 34
+ },
+ {
+  "set": "passing-loop",
+  "instances": 34,
+  "manifestInstances": 34,
+  "rebrickableParts": 0,
+  "rebrickableUnmappedParts": 34,
+  "rebrickableUnmappedIds": [
+   "ldraw:74746",
+   "ldraw:74747",
+   "ldraw:75541-f2",
+   "ldraw:75542-f2"
+  ],
+  "bricklinkParts": 0,
+  "bricklinkUnmappedParts": 34
+ },
+ {
+  "set": "figure-eight",
+  "instances": 33,
+  "manifestInstances": 33,
+  "rebrickableParts": 0,
+  "rebrickableUnmappedParts": 33,
+  "rebrickableUnmappedIds": [
+   "ldraw:32087",
+   "ldraw:74746",
+   "ldraw:74747"
+  ],
+  "bricklinkParts": 0,
+  "bricklinkUnmappedParts": 33
+ },
+ {
+  "set": "plastic-oval",
+  "instances": 24,
+  "manifestInstances": 24,
+  "rebrickableParts": 0,
+  "rebrickableUnmappedParts": 24,
+  "rebrickableUnmappedIds": [
+   "ldraw:53400",
+   "ldraw:53401"
+  ],
+  "bricklinkParts": 0,
+  "bricklinkUnmappedParts": 24
+ },
+ {
+  "set": "mils-road-straight",
+  "instances": 156,
+  "manifestInstances": 156,
+  "rebrickableParts": 156,
+  "rebrickableUnmappedParts": 0,
+  "rebrickableUnmappedIds": [],
+  "bricklinkParts": 156,
+  "bricklinkUnmappedParts": 0
+ },
+ {
+  "set": "mils-road-crosswalk",
+  "instances": 156,
+  "manifestInstances": 156,
+  "rebrickableParts": 156,
+  "rebrickableUnmappedParts": 0,
+  "rebrickableUnmappedIds": [],
+  "bricklinkParts": 156,
+  "bricklinkUnmappedParts": 0
+ },
+ {
+  "set": "mils-road-curve",
+  "instances": 156,
+  "manifestInstances": 156,
+  "rebrickableParts": 156,
+  "rebrickableUnmappedParts": 0,
+  "rebrickableUnmappedIds": [],
+  "bricklinkParts": 156,
+  "bricklinkUnmappedParts": 0
+ },
+ {
+  "set": "mils-road-t-junction",
+  "instances": 125,
+  "manifestInstances": 125,
+  "rebrickableParts": 125,
+  "rebrickableUnmappedParts": 0,
+  "rebrickableUnmappedIds": [],
+  "bricklinkParts": 125,
+  "bricklinkUnmappedParts": 0
+ },
+ {
+  "set": "mils-road-crossroads",
+  "instances": 94,
+  "manifestInstances": 94,
+  "rebrickableParts": 94,
+  "rebrickableUnmappedParts": 0,
+  "rebrickableUnmappedIds": [],
+  "bricklinkParts": 94,
+  "bricklinkUnmappedParts": 0
+ }
+]
