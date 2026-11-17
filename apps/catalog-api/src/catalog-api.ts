@@ -5,7 +5,7 @@ import type {
   SearchResponse,
 } from "@brr/schema/catalog-api";
 import type * as v from "valibot";
-import { BundleSearchDirectory, type BundleReader } from "./bundle-search.ts";
+import { BundleSearchDirectory } from "./bundle-search.ts";
 import {
   searchCatalog,
   setInventory,
@@ -43,7 +43,7 @@ export interface CatalogEnv {
   readonly CATALOG_RELEASES: R2Bucket;
   readonly QUERY_RATE_LIMIT: RateLimit;
   readonly FILE_RATE_LIMIT: RateLimit;
-  readonly PART_BUNDLES: BundleReader;
+  readonly PART_BUNDLE_BASE_URL: string;
 }
 
 export const DATA_ATTRIBUTION = "Catalog data from Rebrickable (https://rebrickable.com)";
@@ -132,14 +132,14 @@ async function respondBundleSearch(
   const cached = await edgeCache.match(cacheKey);
   if (cached !== undefined) return tagged(cached, "HIT");
   if (!(await allowed(env.QUERY_RATE_LIMIT, request))) return tooManyRequests();
-  const loaded = await bundleIndexes.find(env.PART_BUNDLES, route.manifest);
+  const loaded = await bundleIndexes.find(env.PART_BUNDLE_BASE_URL, route.manifest);
   switch (loaded.kind) {
     case "missing":
       return problem(404, `part bundle manifest ${route.manifest} is not published`, NO_STORE);
     case "unreadable":
       return problem(
         502,
-        `part bundle manifest ${route.manifest} does not decode: ${loaded.message}`,
+        `part bundle manifest ${route.manifest} is unusable: ${loaded.message}`,
         NO_STORE,
       );
     case "found":

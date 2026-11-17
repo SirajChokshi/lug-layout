@@ -10,8 +10,6 @@ import {
 import { decode, issueText } from "@brr/schema/decode";
 import * as v from "valibot";
 
-export type BundleReader = Pick<R2Bucket, "get">;
-
 const SearchedIndex = v.pick(BundleIndex, ["colors", "models", "catalogParts", "trackCatalog"]);
 type SearchedIndex = v.InferOutput<typeof SearchedIndex>;
 
@@ -43,6 +41,8 @@ const IDENTIFIER_WORD = 3;
 const WHOLE_WORD = 2;
 const PREFIX_WORD = 1;
 const KEPT_INDEXES = 4;
+const MANIFEST_EDGE_TTL_SECONDS = 31_536_000;
+const NOT_PUBLISHED = 404;
 const LDRAW_NAMESPACE = /^ldraw:/u;
 const queryWord = /[\p{L}\p{N}]+/gu;
 const sizeWords = /(\d+)\s*x\s*(\d+)/gu;
@@ -180,14 +180,14 @@ export function bundleSearchObjectKey(key: BundleManifestKey): string {
 export class BundleSearchDirectory {
   private readonly loaded = new Map<BundleManifestKey, Promise<LoadedIndex>>();
 
-  async find(bundles: BundleReader, key: BundleManifestKey): Promise<LoadedIndex> {
+  async find(bundleBaseUrl: string, key: BundleManifestKey): Promise<LoadedIndex> {
     const known = this.loaded.get(key);
     if (known !== undefined) {
       this.loaded.delete(key);
       this.loaded.set(key, known);
       return known;
     }
-    const loading = readIndex(bundles, key);
+    const loading = readIndex(bundleBaseUrl, key);
     this.loaded.set(key, loading);
     try {
       const result = await loading;
@@ -208,12 +208,27 @@ export class BundleSearchDirectory {
   }
 }
 
-async function readIndex(bundles: BundleReader, key: BundleManifestKey): Promise<LoadedIndex> {
-  const object = await bundles.get(bundleSearchObjectKey(key));
-  if (object === null) return { kind: "missing" };
+async function readIndex(bundleBaseUrl: string, key: BundleManifestKey): Promise<LoadedIndex> {
+  const url = new URL(bundleSearchObjectKey(key), bundleBaseUrl);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      cf: { cacheEverything: true, cacheTtl: MANIFEST_EDGE_TTL_SECONDS },
+    });
+  } catch (error) {
+    return { kind: "unreadable", message: `the part bundle is unreachable: ${String(error)}` };
+  }
+  if (response.status === NOT_PUBLISHED) {
+    await response.body?.cancel();
+    return { kind: "missing" };
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    return { kind: "unreadable", message: `the part bundle answered ${response.status}` };
+  }
   let parsed: unknown;
   try {
-    parsed = await object.json();
+    parsed = await response.json();
   } catch (error) {
     return { kind: "unreadable", message: `manifest is not JSON: ${String(error)}` };
   }
