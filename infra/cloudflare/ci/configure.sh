@@ -26,6 +26,8 @@ if [[ ! "$CLOUDFLARE_API_TOKEN_ID" =~ ^[0-9a-f]{32}$ ]]; then
   exit 1
 fi
 
+echo "::add-mask::$(printf '%s' "$CLOUDFLARE_API_TOKEN" | sha256sum | cut -d " " -f 1)"
+
 backend_config="$out_dir/backend.hcl"
 endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
 sed -E "s#https://[0-9a-f]{32}\.r2\.cloudflarestorage\.com#${endpoint}#" \
