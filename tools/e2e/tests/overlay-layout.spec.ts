@@ -31,6 +31,9 @@ interface OverlayBox {
 async function openEditor(page: Page): Promise<void> {
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("requestfailed", (request) =>
+    pageErrors.push(`${request.url()} failed: ${request.failure()?.errorText ?? "unknown"}`),
+  );
   await page.goto("/?api=webgl2");
   const editor = page.locator(".editor");
   await expect(editor).toHaveAttribute("data-status", /^(?:ready|error)$/u, {
