@@ -1,5 +1,6 @@
 import type { BundleColor, BundleLod, NotDrawnSection } from "@brr/schema/bundle";
 import {
+  BUNDLE_BASE_URL,
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
   type ModelBundle,
@@ -99,6 +100,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
+import { thumbnailUrls } from "../catalog/thumbnail-urls.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import {
@@ -144,6 +146,7 @@ export interface CatalogItemView {
   readonly parts: number;
   readonly studsWide: number;
   readonly studsDeep: number;
+  readonly thumbnail: string | null;
 }
 
 export interface LatencySample {
@@ -678,7 +681,11 @@ function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor 
   return color;
 }
 
-function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): CatalogItemView {
+function catalogItem(
+  placeable: Placeable,
+  colors: ReadonlyArray<BundleColor>,
+  thumbnails: ReadonlyMap<string, string>,
+): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
   return {
@@ -691,6 +698,7 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
     parts: placeable.parts.count,
     studsWide: moduleStuds ?? Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
     studsDeep: moduleStuds ?? Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+    thumbnail: thumbnails.get(placeable.id) ?? null,
   };
 }
 
@@ -841,6 +849,7 @@ export class Editor implements IEditor {
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
     @inject(CREDITS) private readonly credits: ICredits,
     @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
+    @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -896,6 +905,11 @@ export class Editor implements IEditor {
         colorsAlpha: colors.toAlpha(),
         ldrawColors: ldrawColors(bundle),
       });
+      const thumbnails = thumbnailUrls(
+        this.bundleBaseUrl,
+        EDITOR_LOD,
+        (await this.loader.loadManifest(EDITOR_LOD)).thumbnails,
+      );
       const loadMs = performance.now() - started;
       await this.openFirstWorld();
       this.firstWorldFrame = true;
@@ -905,7 +919,7 @@ export class Editor implements IEditor {
         bundleVersion: bundle.bundleVersion,
         backend,
         catalog: [
-          ...this.placeables.map((placeable) => catalogItem(placeable, bundle.colors)),
+          ...this.placeables.map((placeable) => catalogItem(placeable, bundle.colors, thumbnails)),
           this.trackItem(this.track, palette.parts),
           ...this.trackPieceItems(this.track, palette.parts),
         ],
@@ -1216,6 +1230,7 @@ export class Editor implements IEditor {
       parts: track.kitParts().length,
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+      thumbnail: null,
     };
   }
 
@@ -1237,6 +1252,7 @@ export class Editor implements IEditor {
         parts: 1,
         studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
         studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+        thumbnail: null,
       };
     });
   }
