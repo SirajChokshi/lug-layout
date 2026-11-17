@@ -26,6 +26,7 @@ export function roadSurface(
   partBoxes: Float32Array,
   box: LocalBox,
   parts: ReadonlyArray<PartAsset>,
+  roadOnly: boolean,
 ): RoadSurface {
   const minX = exactLdu(box.min[0], "surface min x");
   const minZ = exactLdu(box.min[2], "surface min z");
@@ -38,12 +39,13 @@ export function roadSurface(
   const owner = new Int32Array(cellCount).fill(NO_OWNER);
   for (let i = 0; i < instances.count; i++) {
     const b = i * BOX_FLOATS;
-    const boxTop = exactLdu(partBoxes[b + 4] ?? 0, "part top");
+    const isRoad = parts[instances.partIndex[i] ?? 0]?.role === "road" ? 1 : 0;
+    const rawTop = partBoxes[b + 4] ?? 0;
+    const boxTop = roadOnly && !isRoad ? Math.ceil(rawTop) : exactLdu(rawTop, "part top");
     const fromColumn = Math.ceil(((partBoxes[b] ?? 0) - minX - HALF_STUD_LDU) / STUD_LDU);
     const toColumn = Math.floor(((partBoxes[b + 3] ?? 0) - minX - HALF_STUD_LDU) / STUD_LDU);
     const fromRow = Math.ceil(((partBoxes[b + 2] ?? 0) - minZ - HALF_STUD_LDU) / STUD_LDU);
     const toRow = Math.floor(((partBoxes[b + 5] ?? 0) - minZ - HALF_STUD_LDU) / STUD_LDU);
-    const isRoad = parts[instances.partIndex[i] ?? 0]?.role === "road" ? 1 : 0;
     for (let row = Math.max(0, fromRow); row <= Math.min(rows - 1, toRow); row++) {
       for (
         let column = Math.max(0, fromColumn);
@@ -85,5 +87,5 @@ export function roadSurface(
       road[cell] = base < (top[cell] ?? 0) ? 1 : 0;
     }
   }
-  return { minX, minZ, columns, rows, top, stud, road };
+  return { minX, minZ, columns, rows, top, stud, road, roadOnly };
 }

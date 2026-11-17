@@ -384,6 +384,7 @@ export function modelPlaceable(
   };
   const box = shiftedBox(lattice.aabbMin, lattice.aabbMax, shift);
   const partBoxes = instanceBoxes(local, parts);
+  const seated = seatedGround(ground, shift);
   const isModule = role === "mils-module";
   const id = isModule ? `generated:${name}` : `omr:${name}`;
   const studs = withStuds(local, parts, colors, undefined, model.studCover).studs;
@@ -411,10 +412,32 @@ export function modelPlaceable(
     partBoxes,
     frameShift: shift,
     credit: isModule ? null : credit,
-    road: isModule ? roadSurface(local, partBoxes, box, parts) : null,
+    road: isModule
+      ? roadSurface(local, partBoxes, box, parts, false)
+      : setRoad(local, partBoxes, box, parts, seated),
     track: modelTrack(local, parts, trackCatalog),
-    ground: seatedGround(ground, shift),
+    ground: seated,
   };
+}
+
+function setRoad(
+  instances: ChunkPartInstances,
+  partBoxes: Float32Array,
+  box: LocalBox,
+  parts: ReadonlyArray<PartAsset>,
+  ground: SeatedGround | null,
+): RoadSurface | null {
+  if (!ground) return null;
+  let carriesRoad = false;
+  for (let i = 0; i < instances.count && !carriesRoad; i++) {
+    carriesRoad = parts[instances.partIndex[i] ?? 0]?.role === "road";
+  }
+  if (!carriesRoad) return null;
+  const outline: LocalBox = {
+    min: [ground.minX, box.min[1], ground.minZ],
+    max: [ground.maxX, box.max[1], ground.maxZ],
+  };
+  return roadSurface(instances, partBoxes, outline, parts, true);
 }
 
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
@@ -473,7 +496,7 @@ export function partPlaceable(
     partBoxes,
     frameShift: shift,
     credit: null,
-    road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
+    road: isRoad ? roadSurface(local, partBoxes, box, parts, false) : null,
     track: null,
     ground: seatedGround(ground, shift),
   };

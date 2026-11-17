@@ -10,6 +10,7 @@ export interface RoadSurface {
   readonly top: Int32Array;
   readonly stud: Int32Array;
   readonly road: Uint8Array;
+  readonly roadOnly: boolean;
 }
 
 export interface RoadPlacement {
@@ -54,6 +55,7 @@ interface Cell {
   readonly top: number;
   readonly stud: number;
   readonly road: number;
+  readonly loose: boolean;
 }
 
 interface PlacedCell extends Cell {
@@ -108,13 +110,15 @@ export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell>
       const worldX = placement.x + cos * localX + sin * localZ;
       const worldZ = placement.z - sin * localX + cos * localZ;
       const stud = surface.stud[index] ?? NO_STUD;
+      const road = surface.road[index] ?? 0;
       cells.push({
         placement: placement.id,
         cellX: Math.floor(worldX / STUD_LDU),
         cellZ: Math.floor(worldZ / STUD_LDU),
         top: (surface.top[index] ?? 0) + placement.yLdu,
         stud: stud === NO_STUD ? NO_STUD : stud + placement.yLdu,
-        road: surface.road[index] ?? 0,
+        road,
+        loose: surface.roadOnly && road === 0,
       });
     }
   }
@@ -215,6 +219,10 @@ export class RoadNetwork {
       for (const cell of cells) {
         const existing = this.cells.get(cell.cellX, cell.cellZ);
         if (existing && existing.placement !== cell.placement) {
+          if (existing.loose || cell.loose) {
+            if (existing.loose && !cell.loose) this.cells.set(cell.cellX, cell.cellZ, cell);
+            continue;
+          }
           const low = Math.min(existing.placement, cell.placement);
           const high = Math.max(existing.placement, cell.placement);
           this.overlapPairs.add(`${low},${high}`);
@@ -236,7 +244,7 @@ export class RoadNetwork {
           const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
           if (neighbour?.placement === cell.placement) continue;
           let status: RoadCellStatus;
-          if (!neighbour) {
+          if (!neighbour || cell.loose || neighbour.loose) {
             if (cell.road === 0) continue;
             status = "open";
             openCells++;
@@ -252,7 +260,7 @@ export class RoadNetwork {
             side,
             line: edgeLine(side, cell.cellX, cell.cellZ),
             along: alongEdge(side, cell.cellX, cell.cellZ),
-            topLdu: Math.max(cell.top, neighbour?.top ?? cell.top),
+            topLdu: status === "open" ? cell.top : Math.max(cell.top, neighbour?.top ?? cell.top),
             status,
           });
         }
@@ -279,11 +287,12 @@ export class RoadNetwork {
     let mismatchedCells = 0;
     let overlappingCells = 0;
     for (const cell of cells) {
-      if (this.cells.has(cell.cellX, cell.cellZ)) overlappingCells++;
+      const under = this.cells.get(cell.cellX, cell.cellZ);
+      if (under && !under.loose && !cell.loose) overlappingCells++;
       for (const [, dx, dz] of SIDES) {
         if (own.has(cell.cellX + dx, cell.cellZ + dz)) continue;
         const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
-        if (!neighbour) continue;
+        if (!neighbour || neighbour.loose || cell.loose) continue;
         if (sameSurface(cell, neighbour)) joinedCells++;
         else mismatchedCells++;
       }
