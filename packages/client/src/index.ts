@@ -136,5 +136,5 @@ export {
   PLAN_SERVICE,
 } from "./tokens.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
-export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
+export type { ClosureState, RunBlock, TrackDragView } from "./edit/track-drawing.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";

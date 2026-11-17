@@ -28,6 +28,8 @@ export interface PlaceableCells {
   readonly baseplate: Uint8Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly bottomLdu: Int32Array;
+  readonly topLdu: Int32Array;
   readonly footprintCells: number;
   readonly flatCells: number;
   readonly heightPlates: number;
@@ -134,6 +136,7 @@ function modelCells(
   label: string,
   restPlatesInFrame: number,
   withFootprint: boolean,
+  tableY: number,
 ): PlaceableCells {
   const footprint = new Uint8Array(cells.width * cells.depth);
   if (withFootprint) {
@@ -156,6 +159,15 @@ function modelCells(
     columnTop[i] = Math.max(0, Math.ceil(top + restPlatesInFrame));
     heightPlates = Math.max(heightPlates, columnTop[i] ?? 0);
   }
+  const bottomLdu = new Int32Array(columnTop.length);
+  const topLdu = new Int32Array(columnTop.length);
+  for (let i = 0; i < columnTop.length; i++) {
+    const top = columnTop[i] ?? EMPTY_COLUMN;
+    if (top === EMPTY_COLUMN) continue;
+    const bottom = columnBottom[i] ?? 0;
+    bottomLdu[i] = baseplate[i] === 1 && bottom === 0 ? tableY : bottom * PLATE_LDU;
+    topLdu[i] = top * PLATE_LDU;
+  }
   return {
     cellX0: wholeCells(cells.originX + shift[0], `${label} cell origin x`),
     cellZ0: wholeCells(cells.originZ + shift[2], `${label} cell origin z`),
@@ -165,6 +177,8 @@ function modelCells(
     baseplate,
     columnBottom,
     columnTop,
+    bottomLdu,
+    topLdu,
     footprintCells: withFootprint ? cells.footprint.length : 0,
     flatCells: withFootprint ? cells.flat.length : 0,
     heightPlates,
@@ -172,7 +186,7 @@ function modelCells(
   };
 }
 
-function partCells(part: PartAsset, shift: Vec3Tuple): PlaceableCells {
+function partCells(part: PartAsset, shift: Vec3Tuple, tableY: number): PlaceableCells {
   const cellX0 = wholeCells(part.boundsMin[0], `${part.id} min x`);
   const cellZ0 = wholeCells(part.boundsMin[2], `${part.id} min z`);
   const width = wholeCells(part.boundsMax[0], `${part.id} max x`) - cellX0;
@@ -188,6 +202,8 @@ function partCells(part: PartAsset, shift: Vec3Tuple): PlaceableCells {
     baseplate: new Uint8Array(width * depth).fill(isBaseplatePart(part) ? 1 : 0),
     columnBottom: new Int16Array(width * depth),
     columnTop: new Int16Array(width * depth).fill(heightPlates),
+    bottomLdu: new Int32Array(width * depth).fill(tableY),
+    topLdu: new Int32Array(width * depth).fill(Math.ceil(topY)),
     footprintCells: 0,
     flatCells: 0,
     heightPlates,
@@ -283,6 +299,7 @@ export function modelPlaceable(
   credit: ModelCredit,
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
+  tableY: number,
 ): Placeable {
   const { lattice, cells } = model;
   if (lattice === null || cells === null) {
@@ -325,6 +342,7 @@ export function modelPlaceable(
       name,
       ((cells.groundY ?? cells.restY) - restingOn) / PLATE_LDU,
       !isModule,
+      tableY,
     ),
     box,
     partBoxes,
@@ -384,7 +402,7 @@ export function partPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: 0,
-    cells: partCells(part, shift),
+    cells: partCells(part, shift, tableY),
     box,
     partBoxes,
     frameShift: shift,

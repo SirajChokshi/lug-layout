@@ -1,12 +1,11 @@
-import { CHUNK_STUDS } from "@brr/math";
-import { cellChunkKey, type OccupancyGrid } from "./occupancy.ts";
+import { CHUNK_STUDS, PLATE_LDU } from "@brr/math";
+import { NO_TOP, cellChunkKey, type VolumeIndex } from "./volume-index.ts";
 
 const CELLS_PER_CHUNK = CHUNK_STUDS * CHUNK_STUDS;
 export const NO_STUD_TOP = -0x8000;
 const MAX_STUD_PLATES = 0x7fff;
-const COVERED = 1;
-const BASEPLATE = 2;
-const OFF_LATTICE_TOP = 4;
+const BASEPLATE = 1;
+const OFF_LATTICE_TOP = 2;
 
 function cellIndex(cellX: number, cellZ: number): number {
   const x = cellX - Math.floor(cellX / CHUNK_STUDS) * CHUNK_STUDS;
@@ -27,10 +26,6 @@ export class SupportGrid {
     return chunk ? (chunk.studTop[cellIndex(cellX, cellZ)] ?? NO_STUD_TOP) : NO_STUD_TOP;
   }
 
-  coveredAt(cellX: number, cellZ: number): boolean {
-    return (this.flagsAt(cellX, cellZ) & COVERED) !== 0;
-  }
-
   offLatticeTopAt(cellX: number, cellZ: number): boolean {
     return (this.flagsAt(cellX, cellZ) & OFF_LATTICE_TOP) !== 0;
   }
@@ -38,23 +33,17 @@ export class SupportGrid {
   markOffLatticeTop(cellX: number, cellZ: number): void {
     const chunk = this.chunkFor(cellX, cellZ);
     const i = cellIndex(cellX, cellZ);
-    chunk.flags[i] = (chunk.flags[i] ?? 0) | COVERED | OFF_LATTICE_TOP;
+    chunk.flags[i] = (chunk.flags[i] ?? 0) | OFF_LATTICE_TOP;
   }
 
   baseplateAt(cellX: number, cellZ: number): boolean {
     return (this.flagsAt(cellX, cellZ) & BASEPLATE) !== 0;
   }
 
-  cover(cellX: number, cellZ: number): void {
-    const chunk = this.chunkFor(cellX, cellZ);
-    const i = cellIndex(cellX, cellZ);
-    chunk.flags[i] = (chunk.flags[i] ?? 0) | COVERED;
-  }
-
   markBaseplate(cellX: number, cellZ: number): void {
     const chunk = this.chunkFor(cellX, cellZ);
     const i = cellIndex(cellX, cellZ);
-    chunk.flags[i] = (chunk.flags[i] ?? 0) | COVERED | BASEPLATE;
+    chunk.flags[i] = (chunk.flags[i] ?? 0) | BASEPLATE;
   }
 
   raiseStud(cellX: number, cellZ: number, basePlates: number): void {
@@ -122,7 +111,7 @@ export type UpperSupport =
 export function upperSupport(
   base: BaseCells,
   yPlates: number,
-  occupancy: OccupancyGrid,
+  volumes: VolumeIndex,
   support: SupportGrid,
 ): UpperSupport {
   if (base.count === 0) return { kind: "no-base" };
@@ -133,8 +122,8 @@ export function upperSupport(
   for (let c = 0; c < base.count; c++) {
     const x = base.cellX[c] ?? 0;
     const z = base.cellZ[c] ?? 0;
-    const covered = support.coveredAt(x, z);
-    if (!covered) {
+    const top = volumes.topAt(x, z);
+    if (top === NO_TOP) {
       if (yPlates === 0) overTable++;
       continue;
     }
@@ -143,7 +132,7 @@ export function upperSupport(
       return { kind: "flat-on-studs", cellX: x, cellZ: z, yPlates };
     if (studHere) engaged++;
     else if (support.offLatticeTopAt(x, z)) offLattice++;
-    else if (occupancy.topAt(x, z) === yPlates) touching++;
+    else if (top === yPlates * PLATE_LDU) touching++;
   }
   if (engaged > 0) return { kind: "studs", engaged };
   if (touching === base.count) return { kind: "flat", cells: touching };
@@ -154,25 +143,6 @@ export function upperSupport(
 
 export function isSupported(verdict: UpperSupport): boolean {
   return verdict.kind === "studs" || verdict.kind === "flat";
-}
-
-export type FirstLayerSupport =
-  | { readonly kind: "on-table" }
-  | {
-      readonly kind: "blocked";
-      readonly cellX: number;
-      readonly cellZ: number;
-      readonly topPlates: number;
-    };
-
-export function firstLayerSupport(raised: BaseCells, occupancy: OccupancyGrid): FirstLayerSupport {
-  for (let c = 0; c < raised.count; c++) {
-    const x = raised.cellX[c] ?? 0;
-    const z = raised.cellZ[c] ?? 0;
-    const top = occupancy.topAt(x, z);
-    if (top > 0) return { kind: "blocked", cellX: x, cellZ: z, topPlates: top };
-  }
-  return { kind: "on-table" };
 }
 
 export type TrackSupport =

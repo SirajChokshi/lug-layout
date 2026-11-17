@@ -24,6 +24,7 @@ import {
   TrackDrawing,
   type TrackCommit,
   type TrackFootprint,
+  type TrackHost,
   type TrackSupportProbe,
 } from "./track-drawing.ts";
 
@@ -94,10 +95,13 @@ function grow(extent: Extent, x: number, z: number): void {
   extent.maxZ = Math.max(extent.maxZ, z);
 }
 
-const onBaseplates = (cells: BaseCells): TrackSupport => ({
-  kind: "on-baseplate",
-  cells: cells.count,
-});
+const openTable: TrackHost = {
+  support: (cells: BaseCells): TrackSupport => ({ kind: "on-baseplate", cells: cells.count }),
+  overlap: () => null,
+  neighbours: () => new Set(),
+  laid: () => undefined,
+  relaid: () => undefined,
+};
 
 const container = new Container();
 let drawing: TrackDrawing;
@@ -121,12 +125,7 @@ beforeAll(async () => {
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
   trackBundle = bundle;
-  drawing = new TrackDrawing(
-    bundle.trackCatalog,
-    bundle.parts,
-    new ColorTable(bundle),
-    onBaseplates,
-  );
+  drawing = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle), openTable);
   drag([180, 190], [260, 190]);
   drag([260, 190], [260, 270]);
   drag([260, 270], [180, 270]);
@@ -221,7 +220,7 @@ function drawingOn(grid: SupportGrid): TrackDrawing {
     trackBundle.trackCatalog,
     trackBundle.parts,
     new ColorTable(trackBundle),
-    probeOn(grid),
+    { ...openTable, support: probeOn(grid) },
   );
 }
 
