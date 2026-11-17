@@ -264,7 +264,7 @@ export function PlacementToolbar({
       </button>
       <button
         type="button"
-        disabled={snapshot.selection === null}
+        disabled={!commandEnabled("delete", snapshot)}
         onClick={(event) => editor.deleteSelection(event.timeStamp)}
       >
         Delete ({shortcutText("delete")})
