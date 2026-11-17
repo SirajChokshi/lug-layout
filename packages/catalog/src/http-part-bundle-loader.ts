@@ -4,7 +4,10 @@ import {
   ModelFile,
   type BundleCredit,
   type BundleLod,
+  decodeSolidSidecar,
+  type CoarseSolid,
   type ManifestPart,
+  type SolidSampleArrays,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
@@ -20,6 +23,8 @@ import type {
   PartAsset,
   PartBundle,
   PartFilter,
+  CoarseSolidCells,
+  PartSolidCells,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
@@ -34,7 +39,35 @@ function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
 }
 
-function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
+function coarseSolid(solid: CoarseSolid): CoarseSolidCells {
+  return {
+    samplesPerStud: solid.samplesPerStud,
+    stepsPerLdu: solid.stepsPerLdu,
+    cells: Int32Array.from(solid.cells),
+    coarseStart: Int32Array.from(solid.coarseStart),
+    coarseSpans: Int32Array.from(solid.coarseSpans),
+  };
+}
+
+function partSolidCells(solid: ManifestPart["solid"]): PartSolidCells | null {
+  if (!solid) return null;
+  const [originX, originZ] = solid.origin;
+  const [width, depth] = solid.size;
+  return {
+    ...coarseSolid(solid),
+    lists: Int32Array.from(solid.lists),
+    patterns: Int32Array.from(solid.patterns),
+    originX,
+    originZ,
+    width,
+    depth,
+  };
+}
+
+function modelCells(
+  cells: ModelFile["cover"]["cells"],
+  loadSamples: (solid: CoarseSolid) => Promise<SolidSampleArrays>,
+): ModelCells | null {
   if (cells === null) return null;
   const [originX, originZ] = cells.origin;
   const [width, depth] = cells.size;
@@ -49,6 +82,7 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
     flat: Uint32Array.from(cells.flat),
     columnBottom: Int16Array.from(cells.columnBottom),
     columnTop: Int16Array.from(cells.columnTop),
+    solid: { ...coarseSolid(cells.solid), loadSamples: () => loadSamples(cells.solid) },
   };
 }
 
@@ -233,7 +267,13 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
           covered: cover.coveredStuds,
           visibleBits: Uint32Array.from(cover.visibleBits),
         },
-        cells: modelCells(cover.cells),
+        cells: modelCells(cover.cells, async (solid) => {
+          const sidecar = entry.solidSamples;
+          if (!sidecar) throw new Error(`${entry.name} has a coarse solid but no sample sidecar`);
+          const bytes = await this.fetcher.bytes(`${lod}/${sidecar.file}`);
+          const perCell = solid.samplesPerStud * solid.samplesPerStud;
+          return decodeSolidSidecar(bytes, sidecar, solid.coarseStart.length - 1, perCell);
+        }),
         instanceCount: count,
         partIndex: Uint16Array.from(file.instances.part),
         ldrawColor: Uint16Array.from(file.instances.color),
@@ -287,6 +327,7 @@ function toPartAsset(
     | "displayColor"
     | "producedColors"
     | "trackEnds"
+    | "solid"
     | "baseplate"
     | "aliasOf"
   >,
@@ -318,6 +359,7 @@ function toPartAsset(
     baseplate: part.baseplate,
     aliasOf: part.aliasOf,
     trackEnds: part.trackEnds,
+    solid: partSolidCells(part.solid),
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
     studPrimitiveIndex,

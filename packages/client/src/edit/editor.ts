@@ -295,6 +295,12 @@ export interface EditorSnapshot {
   readonly lastRefusal: RefusedEdit | null;
   readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
+  readonly solids: SolidLoadView;
+}
+
+export interface SolidLoadView {
+  readonly loaded: number;
+  readonly total: number;
 }
 
 export interface EditorCredits {
@@ -533,6 +539,7 @@ export class Editor implements IEditor {
     lastRefusal: null,
     ghost: null,
     track: null,
+    solids: { loaded: 0, total: 0 },
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -619,11 +626,11 @@ export class Editor implements IEditor {
       this.plans.setTableTopY(this.baseplateBottomY());
       this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors, {
         support: (cells) => this.placed.trackSupport(cells, []),
-        overlap: (cells, bottom, top, exempt) =>
-          this.placed.trackOverlap(cells, bottom, top, exempt),
+        overlap: (cells, bottom, top, shell, exempt) =>
+          this.placed.trackOverlap(cells, bottom, top, shell, exempt),
         neighbours: (cells) => this.placed.trackNeighbours(cells),
-        laid: (piece, pieceId, cells, bottom, top) =>
-          this.placed.addTrackPiece(piece, pieceId, cells, bottom, top),
+        laid: (piece, pieceId, cells, bottom, top, shell) =>
+          this.placed.addTrackPiece(piece, pieceId, cells, bottom, top, shell),
         relaid: (pieces) => this.placed.replaceTrackPieces(pieces),
       });
       this.backend.setPalette({
@@ -656,8 +663,35 @@ export class Editor implements IEditor {
       this.resizeToCanvas();
       this.camera.frame(performance.now());
       requestAnimationFrame(this.step);
+      void this.prefetchSolids();
     } catch (error) {
       this.update({ status: "error", error: String(error) });
+    }
+  }
+
+  private solidLoadView(): SolidLoadView {
+    let loaded = 0;
+    for (const placeable of this.placeables) if (placeable.solid.samples) loaded++;
+    return { loaded, total: this.placeables.length };
+  }
+
+  private loadSolid(placeable: Placeable): Promise<void> {
+    return placeable.solid.load().then(() => {
+      this.update({ solids: this.solidLoadView() });
+      if (this.active === placeable) this.placeGhost();
+    });
+  }
+
+  private async prefetchSolids(): Promise<void> {
+    this.update({ solids: this.solidLoadView() });
+    for (const placeable of this.placeables) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      try {
+        await this.loadSolid(placeable);
+      } catch (error) {
+        this.update({ status: "error", error: String(error) });
+        return;
+      }
     }
   }
 
@@ -978,6 +1012,11 @@ export class Editor implements IEditor {
     }
     const placeable = id === null ? null : (this.placeables.find((p) => p.id === id) ?? null);
     this.active = placeable;
+    if (placeable && !placeable.solid.samples) {
+      this.loadSolid(placeable).catch((error: unknown) =>
+        this.update({ status: "error", error: String(error) }),
+      );
+    }
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
     this.placeGhost();

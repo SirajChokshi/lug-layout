@@ -291,6 +291,9 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     );
   }
   if (snapshot.loadMs !== null) rows.push(["Load", `${integer.format(snapshot.loadMs)} ms`]);
+  if (snapshot.solids.total > 0) {
+    rows.push(["Exact shapes loaded", `${snapshot.solids.loaded} of ${snapshot.solids.total}`]);
+  }
   rows.push(
     [
       "Mode",

@@ -1,4 +1,5 @@
 import { CHUNK_STUDS, chunkKey } from "@brr/math";
+import type { Contact } from "./solid-samples.ts";
 
 const CELLS_PER_CHUNK = CHUNK_STUDS * CHUNK_STUDS;
 const RECORD_FIELDS = 4;
@@ -101,29 +102,23 @@ export class VolumeIndex {
     return found;
   }
 
-  firstOverlap(
+  ownersOverlapping(
     cellX: number,
     cellZ: number,
     bottomLdu: number,
     topLdu: number,
-    ignore: OwnerFilter,
-    out: VolumeHit,
-  ): boolean {
+    out: number[],
+  ): void {
+    out.length = 0;
     const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
-    if (!chunk) return false;
+    if (!chunk) return;
     for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
       const owner = chunk.records[r + OWNER] ?? 0;
       const b = chunk.records[r + BOTTOM] ?? 0;
       const t = chunk.records[r + TOP] ?? 0;
-      if (!ignore(owner, cellX, cellZ) && Math.max(b, bottomLdu) < Math.min(t, topLdu)) {
-        out.owner = owner;
-        out.bottomLdu = b;
-        out.topLdu = t;
-        return true;
-      }
+      if (Math.max(b, bottomLdu) < Math.min(t, topLdu) && !out.includes(owner)) out.push(owner);
       r = chunk.records[r + NEXT] ?? NO_RECORD;
     }
-    return false;
   }
 
   ownersAt(cellX: number, cellZ: number, out: Set<number>): void {
@@ -151,6 +146,8 @@ export interface CellVolumes {
 export interface Overlap {
   readonly cellX: number;
   readonly cellZ: number;
+  readonly xLdu: number;
+  readonly zLdu: number;
   readonly owner: number;
   readonly bottomLdu: number;
   readonly topLdu: number;
@@ -158,28 +155,46 @@ export interface Overlap {
   readonly candidateTopLdu: number;
 }
 
-export function firstOverlap(
+const contactOwners: number[] = [];
+const contactTested: number[] = [];
+const contactScratch: Contact = {
+  xLdu: 0,
+  zLdu: 0,
+  bottomLdu: 0,
+  topLdu: 0,
+  candidateBottomLdu: 0,
+  candidateTopLdu: 0,
+};
+
+export type MeetsIn = (owner: number, cellX: number, cellZ: number, out: Contact) => boolean;
+
+export function firstContact(
   volumes: CellVolumes,
   index: VolumeIndex,
   ignore: OwnerFilter,
+  meets: MeetsIn,
 ): Overlap | null {
-  const hit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
+  const owners = contactOwners;
+  const tested = contactTested;
+  const contact = contactScratch;
+  tested.length = 0;
+  let lastX = Number.NaN;
+  let lastZ = Number.NaN;
   for (let c = 0; c < volumes.count; c++) {
     const x = volumes.cellX[c] ?? 0;
     const z = volumes.cellZ[c] ?? 0;
     const bottom = volumes.bottomLdu[c] ?? 0;
     const top = volumes.topLdu[c] ?? 0;
     if (top <= bottom) continue;
-    if (index.firstOverlap(x, z, bottom, top, ignore, hit)) {
-      return {
-        cellX: x,
-        cellZ: z,
-        owner: hit.owner,
-        bottomLdu: hit.bottomLdu,
-        topLdu: hit.topLdu,
-        candidateBottomLdu: bottom,
-        candidateTopLdu: top,
-      };
+    if (x !== lastX || z !== lastZ) tested.length = 0;
+    lastX = x;
+    lastZ = z;
+    index.ownersOverlapping(x, z, bottom, top, owners);
+    for (let o = 0; o < owners.length; o++) {
+      const owner = owners[o] ?? 0;
+      if (tested.includes(owner) || ignore(owner, x, z)) continue;
+      tested.push(owner);
+      if (meets(owner, x, z, contact)) return { cellX: x, cellZ: z, owner, ...contact };
     }
   }
   return null;

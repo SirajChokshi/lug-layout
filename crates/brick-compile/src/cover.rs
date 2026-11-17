@@ -5,6 +5,7 @@ use crate::affine::{Affine, Vec3};
 use crate::flatten::INHERIT_COLOR;
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
+use crate::solid::{solid_samples, SolidGrid, SolidInstance, SolidSamples};
 
 pub const PLATE_LDU: f64 = 8.0;
 pub const EMPTY_COLUMN: i32 = -1;
@@ -246,6 +247,14 @@ impl PartSolid {
             .is_some_and(|tree| tree.hits(origin, direction, reach, self, counts))
     }
 
+    pub(crate) fn triangles(&self) -> &[[Vec3; 3]] {
+        &self.triangles
+    }
+
+    pub(crate) fn blocks(&self, origin: Vec3, direction: Vec3) -> bool {
+        self.hits(origin, direction, f64::INFINITY, &|_| true)
+    }
+
     fn lowest_y(&self, matrix: &Affine) -> f64 {
         self.triangles
             .iter()
@@ -394,6 +403,7 @@ pub struct ModelCells {
     pub flat: Vec<usize>,
     pub column_bottom: Vec<i32>,
     pub column_top: Vec<i32>,
+    pub solid: SolidSamples,
 }
 
 impl ModelCells {
@@ -437,7 +447,7 @@ fn up_of(matrix: &Affine) -> Vec3 {
     unit([matrix.m[1], matrix.m[5], matrix.m[9]])
 }
 
-fn inverse(matrix: &Affine) -> Option<Affine> {
+pub(crate) fn inverse(matrix: &Affine) -> Option<Affine> {
     let m = &matrix.m;
     let determinant = matrix.determinant();
     if determinant.abs() < f64::EPSILON {
@@ -769,6 +779,7 @@ fn ground_top(instances: &[CoverInstance], boxes: &[[Vec3; 2]], rest_y: f64) -> 
 pub fn model_cover(
     instances: &[CoverInstance],
     solids: &[PartSolid],
+    with_studs: &[PartSolid],
     opacity: &Opacity,
     phase: Option<[u32; 2]>,
     stud: StudShape,
@@ -814,8 +825,27 @@ pub fn model_cover(
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
     let ground_y = ground_top(instances, &boxes, rest_y);
-    let cells =
-        phase.map(|phase| model_cells(&boxes, &mut coverers, aabb, rest_y, ground_y, phase));
+    let placed: Vec<SolidInstance> = instances
+        .iter()
+        .map(|instance| SolidInstance {
+            matrix: instance.matrix,
+            part: instance.part,
+        })
+        .collect();
+    let cells = phase.map(|phase| {
+        model_cells(
+            &boxes,
+            &mut coverers,
+            SolidModel {
+                instances: &placed,
+                parts: with_studs,
+            },
+            aabb,
+            rest_y,
+            ground_y,
+            phase,
+        )
+    });
     ModelCover {
         visible,
         open_below,
@@ -823,9 +853,15 @@ pub fn model_cover(
     }
 }
 
+struct SolidModel<'a> {
+    instances: &'a [SolidInstance<'a>],
+    parts: &'a [PartSolid],
+}
+
 fn model_cells(
     boxes: &[[Vec3; 2]],
     coverers: &mut Coverers,
+    solid: SolidModel,
     aabb: Bounds,
     bottom_y: f64,
     ground_y: Option<f64>,
@@ -892,6 +928,16 @@ fn model_cells(
         flat,
         column_bottom,
         column_top,
+        solid: solid_samples(
+            solid.instances,
+            solid.parts,
+            SolidGrid {
+                origin,
+                width,
+                depth,
+                datum_y,
+            },
+        ),
     }
 }
 
@@ -987,6 +1033,7 @@ mod tests {
             .collect();
         model_cover(
             &instances,
+            solids,
             solids,
             &Opacity::new([TRANS_CLEAR]),
             phase,
@@ -1102,6 +1149,7 @@ mod tests {
                 .collect();
             model_cover(
                 &instances,
+                &solids,
                 &solids,
                 &Opacity::new([TRANS_CLEAR]),
                 Some([10, 10]),

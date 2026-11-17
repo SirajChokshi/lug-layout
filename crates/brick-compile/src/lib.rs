@@ -11,6 +11,7 @@ pub mod license;
 pub mod mesh;
 pub mod model;
 pub mod occlusion;
+pub mod solid;
 pub mod surface;
 pub mod vehicle;
 
