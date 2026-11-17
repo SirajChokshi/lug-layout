@@ -379,6 +379,40 @@ describe("draw road", () => {
     },
   );
 
+  it("erases a branch in one stroke under an Erasing HUD, turning the T it leaves back into a straight, and one undo restores both", () => {
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [0, 0],
+      [4, 0],
+    ]);
+    drag(editor, [
+      [2, 0],
+      [2, 2],
+    ]);
+    const itemAt = (ix: number, iz: number) =>
+      editor.dump().roadPlacements.find((p) => p.x === centre(ix) && p.z === centre(iz))?.item;
+    expect(itemAt(2, 0)).toBe("ldraw:44341p02@72");
+    editor.setRoadErase(true);
+    const hud = toolHints(editor.snapshot());
+    expect(hud.title).toBe("Erasing road");
+    expect(hud.hints).not.toContainEqual(expect.objectContaining({ command: "rotate" }));
+    drag(editor, [
+      [2, 2],
+      [2, 1],
+    ]);
+    expect(editor.snapshot().placements).toBe(5);
+    expect(itemAt(2, 0)).toBe("ldraw:44336p04@72");
+    expect(itemAt(2, 1)).toBeUndefined();
+    expect(editor.snapshot().roads.mismatchedCells).toBe(0);
+    editor.undo(0);
+    expect(editor.snapshot().placements).toBe(7);
+    expect(itemAt(2, 0)).toBe("ldraw:44341p02@72");
+    editor.setRoadErase(false);
+    editor.undo(0);
+    editor.undo(0);
+    editor.chooseItem(null);
+  });
+
   it("lays nothing and says why when a stroke needs a curve the kit doesn't have", () => {
     editor.chooseItem(kitId(editor, (_, edge) => edge === "7 + 8 road + 2 + 8 road + 7"));
     drag(editor, [
