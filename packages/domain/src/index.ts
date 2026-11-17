@@ -35,6 +35,7 @@ export {
   type HistoryStep,
   type PlacementPose,
   type PlacementRef,
+  type PendingChange,
   type PlacementRequest,
 } from "./edit-history.ts";
 export { runningGearSpanProblem, type RunningGearSpan } from "./running-gear-span.ts";
@@ -125,3 +126,20 @@ export {
   type SearchBudget,
 } from "./track/closure.ts";
 export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";
+export {
+  NO_STUD_TOP,
+  SupportGrid,
+  firstLayerSupport,
+  isSupported,
+  trackSupport,
+  upperSupport,
+  type BaseCells,
+  type FirstLayerSupport,
+  type TrackSupport,
+  type UpperSupport,
+} from "./support.ts";
+export {
+  PLAN_TRIANGLE_FLOATS,
+  REPRESENTATION_EPSILON_LDU,
+  planTriangleCells,
+} from "./cell-raster.ts";

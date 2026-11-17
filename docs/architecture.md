@@ -282,9 +282,9 @@ Failing a badge never blocks placement. Users fix their bricks in their own CAD 
 ### 7.2 Layout rules (live and exact; they decide whether a layout is "Valid")
 1. **Real catalog items only.** `thirdParty` parts are refused unless `allowThirdParty` is on, which it isn't in this release.
 2. **Lattice placement.** Models, plates and baseplates sit on the 20-LDU lattice with 90° rotations, at whole plate heights.
-3. **Support.** A placed model's base footprint engages at least one stud of what lies beneath it, or rests fully on a flat area at one height.
-4. **No overlap.** Placements' occupancy and keep-out volumes don't intersect, except at declared connectors.
-5. **Track.** Ends join exactly (§5.3). Open ends are errors unless capped by a buffer part or marked open by the user. Track at an angle off the lattice can't claim stud support and must rest on flat support. A connected run stays at one height (the MVP is flat).
+3. **Support and first layer.** Only the first layer rests on the table: baseplates, road plates (the classic road baseplates and the 60304-system plates), and models that bring their own baseplate. Everything else rests on placed things. A placed model's base footprint engages at least one stud of what lies beneath it, or rests fully on a flat area at one height; the bare table never counts as that flat area. Track rests on a baseplate surface.
+4. **No overlap.** Placements' occupancy and keep-out volumes don't intersect, except at declared connectors. A placement that would intersect is refused, with the reason; nothing is lifted or stacked to make room.
+5. **Track.** Ends join exactly (§5.3). Open ends are errors unless capped by a buffer part or marked open by the user. Track sits on a baseplate. Track at an angle off the lattice can't claim stud support and rests directly on the baseplate surface. A connected run stays at one height (the MVP is flat).
 6. **Clearance.** The profile's parallel spacing is respected, and the swept envelope of the widest and longest consist placed on a layout is checked along curves and switches. S-curves without a straight between them get a warning.
 7. **Roads.** Road edges that meet have equal lane and curb patterns. Level crossings must use real crossing parts.
 8. **Modules** (when a profile is active): modules are on the 32-stud grid, edge connectors are present and aligned, and the surface height matches the profile.
@@ -293,8 +293,27 @@ Failing a badge never blocks placement. Users fix their bricks in their own CAD 
 Layouts can always be saved in an invalid state. They then show as **Draft** with a list of issues.
 
 **How strictly rules apply depends on the mode (D4).**
-- In the **sandbox** (outside plan regions), rules 1 to 9 show as warnings. Building never stops.
+- In the **sandbox** (outside plan regions), rules 1, 2 and 5 to 9 show as warnings. Building never stops for them.
 - Inside a **plan region**, the same rules are errors, and a region can only reach "Buildable as planned" (§7.3) with zero errors.
+- **Rules 3 and 4 apply everywhere** and are hard: the editor refuses a placement, rotation, removal, undo, redo or track run that would break them, and says why (P4).
+
+**Placement decisions (owner, 2026-11-16).** These settle rules 3 to 5. They replace the §12 item 14 default for those rules.
+
+| # | Decision |
+|---|---|
+| P1 | **First layer:** only baseplates and road plates rest on the table. Track must sit on a baseplate. |
+| P2 | **A model that has its own baseplate counts as first layer** (OMR modular buildings, MILS modules, road modules). |
+| P3 | **On overlap, refuse the placement and explain why.** Never auto-lift or auto-stack. |
+| P4 | **The rules apply everywhere,** in the sandbox and in plan regions alike. |
+| P5 | **Off-grid track rests directly on a baseplate surface for now.** Track layout and ballasting get a separate, careful design later. |
+
+*Rule 3 status (PR A, on #44, #45 and #53):*
+- **Baseplate** means a part thinner than one plate that has studs, measured from its compiled geometry (3811 and the classic road baseplates; 4 LDU with the top face at y = 0). A road plate (69958, 71772) rests on the table, so its bottom is the 3811's bottom face.
+- **The bake marks a model as first layer** when every upright part on its rest plane is a baseplate and their tops agree. It records that top as `groundY`, measures the model's columns from it, and the editor puts it at the baseplate datum. Among the starter sets that is 10128-1, 10185-1, 10190-1, 10218-1, 10264-1, 4555-1 and the MILS road modules. 2150-1, 4554-1 and 7936-1 must stand on baseplates. 10133-1 stands on wheels, has no base cells and can't be placed on studs.
+- **Upper models** land on the highest column under them (#53). They're supported when at least one anti-stud footprint cell meets a whole-plate stud at exactly that height, or when every footprint cell touches a stud-free top at that height. A solid-bottom cell over studs is refused.
+- **First-layer items** go at yPlates 0. One is refused where it would rise into a cell that already holds something above the datum. Baseplate-on-baseplate overlap is rule 4's job.
+- **Track** needs a baseplate under every stud cell its plan silhouette covers. The silhouette is the piece's own mesh, projected at the exact solver pose. A cell counts when a face overlaps its interior by more than the 1e-6 LDU representation ε of §5.3; touching an edge doesn't count.
+- **Removing, rotating or undoing** is refused if it would leave a placed model with no support or a laid track piece off the baseplates.
 
 ### 7.3 Plan regions and "Buildable as planned"
 A plan region is a polygon in the world, aligned to the 32-stud grid, linked to a **physical footprint**:
