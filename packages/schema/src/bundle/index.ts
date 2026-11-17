@@ -303,6 +303,7 @@ export const ManifestPart = v.object({
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
+  baseplate: v.boolean(),
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 
@@ -343,6 +344,7 @@ export const PartShape = v.object({
   role: PartRole,
   file: v.string(),
   bounds: Bounds,
+  baseplate: v.boolean(),
   studs: v.array(StudRecord),
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
@@ -388,7 +390,7 @@ export const TrackPlan = v.pipe(
 );
 export type TrackPlan = v.InferOutput<typeof TrackPlan>;
 
-export const TrackSilhouette = v.object({ piece: v.string(), plan: TrackPlan });
+export const TrackSilhouette = v.object({ piece: v.string(), plan: TrackPlan, support: TrackPlan });
 export type TrackSilhouette = v.InferOutput<typeof TrackSilhouette>;
 
 export const StudPrimitive = v.object({

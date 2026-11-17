@@ -1,10 +1,17 @@
 import { ASSET_FETCHER, BUNDLE_LODS, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
-import { headingFootprints, planTriangleCells, verticalRange, type BaseCells } from "@brr/domain";
+import {
+  HALF_PLANE_FLOATS,
+  headingFootprints,
+  placedPlanCells,
+  verticalRange,
+  type BaseCells,
+} from "@brr/domain";
 import {
   STUD_LDU,
   ZETA16_COEFFICIENT_COUNT,
   ZETA16_ORDER,
+  composePose16,
   pose16,
   zeta16,
   zeta16ToStuds,
@@ -23,7 +30,7 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { placedPlanCells, planTriangles, trackPlanTransform } from "../edit/track-footprint.ts";
+import { planTriangles, supportCells, trackPlanTransform } from "../edit/track-footprint.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
@@ -67,6 +74,7 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
     role: part.role,
     file: part.file,
     bounds: glb.document.extras.bounds,
+    baseplate: part.baseplate,
     studs: glb.document.extras.studs,
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),
@@ -78,6 +86,7 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const POSITION_FLOATS = 3;
+const NO_CLIP_PLANES = new Float64Array(0);
 const SAMPLE_POSITIONS: ReadonlyArray<ReadonlyArray<number>> = [
   [0],
   [3, 1, 0, 0, -2],
@@ -91,11 +100,24 @@ function samplePose(coefficients: ReadonlyArray<number>, heading: number): Pose1
   return pose16(zeta16(full), heading);
 }
 
+function connectorPlanes(placement: Pose16, connectors: ReadonlyArray<Pose16>): Float64Array {
+  const planes = new Float64Array(connectors.length * HALF_PLANE_FLOATS);
+  connectors.forEach((connector, i) => {
+    const end = composePose16(placement, connector);
+    const at = zeta16ToStuds(end.position);
+    const nx = Math.cos(end.heading * HEADING_RADIANS);
+    const nz = Math.sin(end.heading * HEADING_RADIANS);
+    planes.set([nx, nz, (nx * at.x + nz * at.z) * STUD_LDU], i * HALF_PLANE_FLOATS);
+  });
+  return planes;
+}
+
 function meshPlanCells(
   positions: Float32Array,
   groups: ReadonlyArray<{ readonly indices: Uint32Array }>,
   placement: Pose16,
   frame: TrackPartFrame,
+  clip: Float64Array,
 ): BaseCells {
   const studs = zeta16ToStuds(placement.position);
   const theta = placement.heading * HEADING_RADIANS;
@@ -122,7 +144,7 @@ function meshPlanCells(
       }
     }
   }
-  return planTriangleCells(Float64Array.from(world));
+  return placedPlanCells(Float64Array.from(world), { cos: 1, sin: 0, x: 0, z: 0 }, clip);
 }
 
 function cellKeys(cells: BaseCells): ReadonlyArray<string> {
@@ -188,7 +210,7 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
     }
   });
 
-  it("hold each track piece's plan silhouette, which covers exactly the cells its mesh covers at every pose", async () => {
+  it("hold each track piece's plan and support silhouettes, covering exactly the cells its mesh covers, whole and within its connector span, at every pose", async () => {
     const manifest = manifestOf(lod);
     const parts = new Map(manifest.parts.map((part) => [part.id, part]));
     const shapes = new Map(manifest.trackShapes.map((shape) => [shape.piece, shape]));
@@ -203,14 +225,30 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
       );
       expect(silhouette.piece).toBe(piece.id);
       const plan = planTriangles(silhouette.plan);
+      const support = planTriangles(silhouette.support);
+      const connectors = piece.connectors.map((connector) => connector.pose);
       for (const coefficients of SAMPLE_POSITIONS) {
         for (let heading = 0; heading < ZETA16_ORDER; heading++) {
           const placement = samplePose(coefficients, heading);
-          const baked = placedPlanCells(plan, trackPlanTransform(placement, piece.partFrame));
-          const fromMesh = meshPlanCells(positions, groups, placement, piece.partFrame);
-          expect(cellKeys(baked), `${piece.id} at heading ${heading}`).toEqual(cellKeys(fromMesh));
+          const frame = piece.partFrame;
+          const where = `${piece.id} at heading ${heading}`;
+          const labelled = (cells: BaseCells) => ({ where, cells: cellKeys(cells) });
+          expect(
+            labelled(placedPlanCells(plan, trackPlanTransform(placement, frame), NO_CLIP_PLANES)),
+          ).toEqual(labelled(meshPlanCells(positions, groups, placement, frame, NO_CLIP_PLANES)));
+          expect(labelled(supportCells(support, placement, frame))).toEqual(
+            labelled(
+              meshPlanCells(
+                positions,
+                groups,
+                placement,
+                frame,
+                connectorPlanes(placement, connectors),
+              ),
+            ),
+          );
         }
       }
     }
-  });
+  }, 60_000);
 });

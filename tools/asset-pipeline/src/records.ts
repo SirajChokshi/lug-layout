@@ -17,7 +17,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as v from "valibot";
 import { MANIFEST_FILE } from "./publish.ts";
-import { planSilhouette, type PlanMesh } from "./track-silhouette.ts";
+import { trackPlans, type PlanMesh } from "./track-silhouette.ts";
 
 export const PART_TABLE_FILE = "parts.json";
 export const CREDIT_TABLE_FILE = "credits.json";
@@ -53,6 +53,7 @@ function partShape(
     role: part.role,
     file: part.file,
     bounds: part.bounds,
+    baseplate: part.baseplate,
     studs,
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),
@@ -130,7 +131,11 @@ export async function attachRecords(directory: string): Promise<void> {
     silhouetteFiles.add(file);
     const silhouette: TrackSilhouette = {
       piece: piece.id,
-      plan: planSilhouette(mesh, headingHalfSteps),
+      ...trackPlans(
+        mesh,
+        piece.partFrame,
+        piece.connectors.map((connector) => connector.pose),
+      ),
     };
     await writeJson(join(directory, file), silhouette);
     trackShapes.push({

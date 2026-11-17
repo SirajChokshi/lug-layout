@@ -31,6 +31,7 @@ export interface PlaceableCells {
   readonly footprintCells: number;
   readonly flatCells: number;
   readonly heightPlates: number;
+  readonly offLatticeTop: boolean;
 }
 
 export interface StudLattice {
@@ -171,6 +172,7 @@ function modelCells(
     footprintCells: withFootprint ? cells.footprint.length : 0,
     flatCells: withFootprint ? cells.flat.length : 0,
     heightPlates,
+    offLatticeTop: false,
   };
 }
 
@@ -229,6 +231,7 @@ function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: strin
     depth: size,
     footprint: new Uint8Array(size * size),
     baseplate,
+    offLatticeTop: cells.offLatticeTop,
     columnBottom,
     columnTop,
     footprintCells: 0,
@@ -267,7 +270,8 @@ function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
   const cellZ0 = wholeCells(part.boundsMin[2], `${part.id} min z`);
   const width = wholeCells(part.boundsMax[0], `${part.id} max x`) - cellX0;
   const depth = wholeCells(part.boundsMax[2], `${part.id} max z`) - cellZ0;
-  const heightPlates = Math.max(0, Math.ceil((part.boundsMax[1] + shift[1]) / PLATE_LDU));
+  const topY = part.boundsMax[1] + shift[1];
+  const heightPlates = Math.max(0, Math.ceil(topY / PLATE_LDU));
   return {
     cellX0,
     cellZ0,
@@ -280,6 +284,7 @@ function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
     footprintCells: 0,
     flatCells: 0,
     heightPlates,
+    offLatticeTop: topY % PLATE_LDU !== 0,
   };
 }
 
@@ -443,7 +448,7 @@ export function modelPlaceable(
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 
 export function isBaseplatePart(part: PartShapeAsset): boolean {
-  return part.boundsMax[1] - part.boundsMin[1] < PLATE_LDU;
+  return part.baseplate;
 }
 
 function restingOnTable(part: PartShapeAsset, tableY: number): number {
