@@ -56,15 +56,21 @@ variable "route_pattern" {
   }
 }
 
-variable "part_bundle_domain" {
-  description = "Custom domain serving the part bundle bucket, for example parts.example.org, in zone_id. Null serves it on the bucket's r2.dev domain, which Cloudflare rate-limits."
-  type        = string
-  default     = null
+variable "part_bundle_domains" {
+  description = "Custom domain per part bundle bucket in zone_id, keyed like part-bundles.json: production, preview. For example { production = \"parts.example.org\" }."
+  type        = map(string)
+  default     = {}
 
   validation {
-    condition     = var.part_bundle_domain == null || var.zone_id != null
-    error_message = "part_bundle_domain needs zone_id."
+    condition     = length(var.part_bundle_domains) == 0 || var.zone_id != null
+    error_message = "part_bundle_domains needs zone_id."
   }
+}
+
+variable "part_bundle_r2_dev" {
+  description = "Part bundle buckets that stay public on their r2.dev domain. Keep a bucket here while any deployment, including a rollback target, still loads from its r2.dev URL; adding a custom domain doesn't remove it."
+  type        = set(string)
+  default     = ["production", "preview"]
 }
 
 variable "worker_bundle" {
