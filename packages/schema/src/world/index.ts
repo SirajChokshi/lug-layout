@@ -271,6 +271,27 @@ export const TrackRecordV1 = v.strictObject(
 );
 export type TrackRecordV1 = v.InferOutput<typeof TrackRecordV1>;
 
+export const TrainCarV1 = v.strictObject(
+  {
+    ref: v.pipe(v.string(), v.regex(CATALOG_REF, "is not a namespaced catalog id")),
+    reversed: v.boolean(),
+  },
+  strictMessage,
+);
+export type TrainCarV1 = v.InferOutput<typeof TrainCarV1>;
+
+export const TrainRecordV1 = v.strictObject(
+  {
+    track: Count,
+    route: Count,
+    forward: v.boolean(),
+    offsetLdu: Count,
+    cars: v.pipe(v.array(TrainCarV1), v.minLength(1, "must hold at least one car")),
+  },
+  strictMessage,
+);
+export type TrainRecordV1 = v.InferOutput<typeof TrainRecordV1>;
+
 export const WorldShardV1 = v.pipe(
   v.strictObject(
     {
@@ -279,6 +300,7 @@ export const WorldShardV1 = v.pipe(
       superChunk: SuperChunk,
       placements: v.array(PlacementRecordV1),
       track: v.array(TrackRecordV1),
+      trains: v.optional(v.pipe(v.array(TrainRecordV1), v.minLength(1, "is listed but empty"))),
     },
     strictMessage,
   ),
@@ -310,6 +332,17 @@ export const WorldShardV1 = v.pipe(
       "must all lie inside the shard's super-chunk",
     ),
     ["track"],
+  ),
+  v.forward(
+    v.partialCheck(
+      [["track"], ["trains"]],
+      (shard) =>
+        (shard.trains ?? []).every((train) =>
+          shard.track.some((piece) => piece.index === train.track),
+        ),
+      "must each stand on a track piece filed in the same shard",
+    ),
+    ["trains"],
   ),
 );
 export type WorldShardV1 = v.InferOutput<typeof WorldShardV1>;
@@ -395,21 +428,34 @@ function comparePlacements(a: PlacementRecordV1, b: PlacementRecordV1): number {
   return a.color - b.color || a.x - b.x || a.z - b.z || a.yPlates - b.yPlates || a.rot - b.rot;
 }
 
+function compareTrains(a: TrainRecordV1, b: TrainRecordV1): number {
+  return (
+    a.track - b.track ||
+    a.route - b.route ||
+    Number(a.forward) - Number(b.forward) ||
+    a.offsetLdu - b.offsetLdu
+  );
+}
+
 export function worldShard(
   superChunk: SuperChunk,
   placements: ReadonlyArray<PlacementRecordV1>,
   track: ReadonlyArray<TrackRecordV1>,
+  trains: ReadonlyArray<TrainRecordV1> = [],
 ): WorldShardV1 {
   const sortedPlacements = [...placements];
   sortedPlacements.sort(comparePlacements);
   const sortedTrack = [...track];
   sortedTrack.sort((a, b) => a.index - b.index);
+  const sortedTrains = [...trains];
+  sortedTrains.sort(compareTrains);
   return {
     format: SHARD_FORMAT,
     schemaVersion: WORLD_SCHEMA_VERSION,
     superChunk,
     placements: sortedPlacements,
     track: sortedTrack,
+    ...(sortedTrains.length > 0 ? { trains: sortedTrains } : {}),
   };
 }
 
@@ -417,18 +463,20 @@ interface ShardGroup {
   readonly superChunk: SuperChunk;
   readonly placements: PlacementRecordV1[];
   readonly track: TrackRecordV1[];
+  readonly trains: TrainRecordV1[];
 }
 
 export function worldShards(
   placements: ReadonlyArray<PlacementRecordV1>,
   track: ReadonlyArray<TrackRecordV1>,
+  trains: ReadonlyArray<TrainRecordV1> = [],
 ): WorldShardV1[] {
   const groups = new Map<string, ShardGroup>();
   const groupOf = (superChunk: SuperChunk): ShardGroup => {
     const name = shardName(superChunk);
     const found = groups.get(name);
     if (found) return found;
-    const group: ShardGroup = { superChunk, placements: [], track: [] };
+    const group: ShardGroup = { superChunk, placements: [], track: [], trains: [] };
     groups.set(name, group);
     return group;
   };
@@ -436,8 +484,13 @@ export function worldShards(
     groupOf(superChunkOf(placement.x, placement.z)).placements.push(placement);
   }
   for (const piece of track) groupOf(superChunkOfTrack(piece.position)).track.push(piece);
+  for (const train of trains) {
+    const piece = track.find((record) => record.index === train.track);
+    if (!piece) throw new Error(`a train stands on track piece ${train.track}, which isn't laid`);
+    groupOf(superChunkOfTrack(piece.position)).trains.push(train);
+  }
   const shards = [...groups.values()].map((group) =>
-    worldShard(group.superChunk, group.placements, group.track),
+    worldShard(group.superChunk, group.placements, group.track, group.trains),
   );
   shards.sort((a, b) => compareSuperChunks(a.superChunk, b.superChunk));
   return shards;
@@ -447,6 +500,12 @@ export function worldTrack(shards: ReadonlyArray<WorldShardV1>): TrackRecordV1[]
   const track = shards.flatMap((shard) => shard.track);
   track.sort((a, b) => a.index - b.index);
   return track;
+}
+
+export function worldTrains(shards: ReadonlyArray<WorldShardV1>): TrainRecordV1[] {
+  const trains = shards.flatMap((shard) => shard.trains ?? []);
+  trains.sort(compareTrains);
+  return trains;
 }
 
 export function worldHeader(manifest: WorldManifestV1): WorldHeader {

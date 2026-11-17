@@ -36,6 +36,7 @@ const KIND_LABELS: Readonly<Record<CatalogItemView["kind"], string>> = {
   "mils-module": "MILS module",
   model: "Set",
   track: "Track",
+  "rolling-stock": "Rolling stock",
 };
 
 function displayName(text: string): string {

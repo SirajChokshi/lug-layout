@@ -1,6 +1,6 @@
 import type { CatalogItemView } from "../edit/editor.ts";
 
-export type PaletteCategory = "track" | "baseplates" | "road" | "mils" | "sets";
+export type PaletteCategory = "track" | "baseplates" | "road" | "mils" | "sets" | "trains";
 export type PaletteFilter = PaletteCategory | "all";
 
 export const PALETTE_CATEGORIES: ReadonlyArray<PaletteCategory> = [
@@ -9,6 +9,7 @@ export const PALETTE_CATEGORIES: ReadonlyArray<PaletteCategory> = [
   "road",
   "mils",
   "sets",
+  "trains",
 ];
 
 export interface PaletteEntry {
@@ -69,6 +70,7 @@ const CATEGORY_OF: Readonly<Record<CatalogItemView["kind"], PaletteCategory>> = 
   "road-plate": "road",
   "mils-module": "mils",
   model: "sets",
+  "rolling-stock": "trains",
 };
 
 export const CATEGORY_LABEL: Readonly<Record<PaletteCategory, string>> = {
@@ -77,6 +79,7 @@ export const CATEGORY_LABEL: Readonly<Record<PaletteCategory, string>> = {
   road: "Road",
   mils: "MILS modules",
   sets: "Sets",
+  trains: "Rolling stock",
 };
 
 export function colorDisplayName(name: string): string {

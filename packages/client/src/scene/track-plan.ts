@@ -11,7 +11,7 @@ export interface TrackPlanLayout {
   readonly catalogPieces: ReadonlyArray<TrackPiece>;
 }
 
-function pieceSpec(piece: TrackPiece): TrackPieceSpec {
+export function pieceSpec(piece: TrackPiece): TrackPieceSpec {
   return {
     connectors: piece.connectors.map((connector) => connector.pose),
     routes: piece.routes,

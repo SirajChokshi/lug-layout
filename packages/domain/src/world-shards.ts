@@ -10,6 +10,7 @@ import {
   type PlacementRecordV1,
   type SuperChunk,
   type TrackRecordV1,
+  type TrainRecordV1,
   type WorldShardV1,
 } from "@brr/schema/world";
 import { SLOT_LIVE, type PlacementHandle, type World } from "./world.ts";
@@ -84,11 +85,16 @@ export class DirtyShards {
     world: World,
     refs: ReadonlyArray<string>,
     track: ReadonlyArray<TrackRecordV1>,
+    trains: ReadonlyArray<TrainRecordV1> = [],
   ): ShardChange {
     const names = new Set(this.dirty.keys());
+    const dirtyTrack = track.filter((piece) =>
+      names.has(shardName(superChunkOfTrack(piece.position))),
+    );
     const put = worldShards(
       worldPlacements(world, refs, names),
-      track.filter((piece) => names.has(shardName(superChunkOfTrack(piece.position)))),
+      dirtyTrack,
+      trains.filter((train) => dirtyTrack.some((piece) => piece.index === train.track)),
     );
     for (const shard of put) names.delete(shardName(shard.superChunk));
     const drop = [...names].flatMap((name) => {

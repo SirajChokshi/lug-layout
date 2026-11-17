@@ -11,7 +11,8 @@ export type RefusalRule =
   | "carries"
   | "track-support"
   | "rail-edge"
-  | "track-end";
+  | "track-end"
+  | "rolling-stock";
 
 export interface Refusal {
   readonly rule: RefusalRule;

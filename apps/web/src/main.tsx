@@ -100,6 +100,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
     case "run": {
       const runScene = container.get(RUN_SCENE);
       runScene.configure({
+        world: viewer.world,
         plan: viewer.track ?? "",
         consist: viewer.consist,
         trains: viewer.trains,

@@ -19,6 +19,10 @@ export function plateDepthBelowOrigin(part: PartAsset): number {
   return wholeMultiple(-part.boundsMin[1], PLATE_LDU, "depth below origin", part.id);
 }
 
+export function railTopLdu(rail: PartAsset, yPlates: number): number {
+  return (yPlates + plateDepthBelowOrigin(rail)) * PLATE_LDU + rail.boundsMax[1];
+}
+
 export function footprintOf(part: PartAsset, index: number): PartFootprint {
   const [minX, , minZ] = part.boundsMin;
   const [maxX, , maxZ] = part.boundsMax;

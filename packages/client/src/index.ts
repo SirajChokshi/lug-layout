@@ -78,8 +78,17 @@ export type {
   TrackPieceView,
   TrackSolveStats,
   TrackView,
+  TrainsView,
   WorldFileView,
 } from "./edit/editor.ts";
+export {
+  ROLLING_STOCK_PREFIX,
+  type TrainCar,
+  type TrainGhostState,
+  type TrainGhostView,
+  type TrainVehicleView,
+  type TrainView,
+} from "./edit/rolling-stock.ts";
 export type { RoadShape } from "@brr/domain";
 export type {
   RoadKitView,

@@ -254,6 +254,23 @@ function CategorySection({
         </Section>
       );
     }
+    case "trains": {
+      const items = entries.flatMap((entry) => entry.items);
+      return (
+        <Section id="trains" title={CATEGORY_LABEL[category]} count={`${items.length} models`}>
+          <ul>
+            {items.map((item) => (
+              <ItemButton key={item.id} item={item} editor={editor} snapshot={snapshot} />
+            ))}
+          </ul>
+          <p className="palette-hint">
+            Rolling stock stands only on laid track, never on studs. Point at a track and click: the
+            whole train goes on the rails where it fits, exactly on the centreline. R turns it to
+            face the other way. Point just behind a placed train to couple a car on.
+          </p>
+        </Section>
+      );
+    }
     default: {
       const unhandled: never = category;
       throw new Error(`unhandled palette category ${String(unhandled)}`);

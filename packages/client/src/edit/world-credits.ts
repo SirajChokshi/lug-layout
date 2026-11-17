@@ -12,8 +12,15 @@ export function exportFileName(worldName: string): string {
   return `${stem === "" ? "world" : stem}${WORLD_ARCHIVE_EXTENSION}`;
 }
 
-export function creditsForWorld(view: CreditsView, placed: ReadonlyArray<Placeable>): CreditsView {
-  const placedSets = new Set(placed.flatMap((p) => (p.credit ? [p.credit.name] : [])));
+export function creditsForWorld(
+  view: CreditsView,
+  placed: ReadonlyArray<Placeable>,
+  rollingStock: ReadonlyArray<string> = [],
+): CreditsView {
+  const placedSets = new Set([
+    ...placed.flatMap((p) => (p.credit ? [p.credit.name] : [])),
+    ...rollingStock,
+  ]);
   return {
     ...view,
     sets: view.sets.filter((set) => placedSets.has(set.name)),

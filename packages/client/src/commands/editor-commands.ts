@@ -398,6 +398,7 @@ export function commandEnabled(
         !snapshot.readOnly &&
         (snapshot.mode === "place" ||
           snapshot.mode === "road" ||
+          snapshot.mode === "train" ||
           snapshot.selection !== null ||
           snapshot.track?.held != null)
       );
@@ -408,7 +409,9 @@ export function commandEnabled(
     case "delete":
       return (
         !snapshot.readOnly &&
-        (snapshot.selection !== null || (snapshot.track?.selected ?? null) !== null)
+        (snapshot.selection !== null ||
+          (snapshot.track?.selected ?? null) !== null ||
+          snapshot.trains.selected !== null)
       );
     case "duplicate":
       return snapshot.selection !== null && !snapshot.readOnly;

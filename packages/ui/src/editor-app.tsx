@@ -19,6 +19,7 @@ import {
   ModuleJoins,
   PlacementRules,
   RoadJoins,
+  TrainPanel,
 } from "./editor-panels.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
@@ -137,6 +138,7 @@ export function EditorApp({
       data-save={snapshot.world?.save ?? ""}
       data-road-pieces={snapshot.roads.placements}
       data-mode={snapshot.mode}
+      data-trains={snapshot.trains.placed.length}
     >
       <EditorCanvas editor={editor} camera={camera} play={play} options={options} />
       <ToolHud snapshot={snapshot} play={playSnapshot} />
@@ -162,6 +164,7 @@ export function EditorApp({
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <PlacementRules snapshot={snapshot} />
+        <TrainPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <ModuleJoins editor={editor} snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />

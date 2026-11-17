@@ -16,6 +16,7 @@ import {
   SCENE_BACKEND,
   type BackendInfo,
   type BufferMemory,
+  type ChunkInstances,
   type FarModelPlacement,
   type ISceneBackend,
   type LookSettings,
@@ -45,7 +46,15 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
-import { EDITOR } from "../tokens.ts";
+import { EDITOR, RUN_SCENE, SIM_CLIENT } from "../tokens.ts";
+import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
+import {
+  loadSession,
+  type SimBenchResult,
+  type SimFrameMessage,
+  type SimLoad,
+  type SimLoaded,
+} from "@brr/sim";
 import { TRACK_ITEM_ID, type IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -158,15 +167,25 @@ class HeadlessBackend implements ISceneBackend {
   setPalette(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
-  setGhost(): void {}
+  ghost: ChunkInstances | null = null;
+  setGhost(model: ChunkInstances | null): void {
+    this.ghost = model;
+  }
   placeGhost(): void {}
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
-  setVehicle(): void {}
-  setVehiclePose(): void {}
-  deleteVehicle(): void {}
+  readonly vehicles = new Map<number, ReadonlyArray<number>>();
+  setVehicle(vehicle: number): void {
+    this.vehicles.set(vehicle, []);
+  }
+  setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void {
+    this.vehicles.set(vehicle, [x, y, z, yaw]);
+  }
+  deleteVehicle(vehicle: number): void {
+    this.vehicles.delete(vehicle);
+  }
   setIssueBoxes(): void {}
   private aimX = 0;
   private aimZ = 0;
@@ -249,18 +268,17 @@ it("starts without the far tier when its files cannot be fetched", async () => {
   expect(snapshot.catalog.map((item) => item.id)).toContain(`omr:${PLACEABLE_SET}`);
 }, 120_000);
 
-it("starts with a stud-less set in the bundle, leaving it out of the catalog and reporting it as skipped", async () => {
+it("offers a stud-less train as rolling stock for the track instead of skipping it as a set", async () => {
   const { editor } = await startEditor();
 
   const snapshot = editor.snapshot();
   expect(snapshot.error).toBeNull();
   expect(snapshot.status).toBe("ready");
-  const ids = snapshot.catalog.map((item) => item.id);
-  expect(ids).toContain(`omr:${PLACEABLE_SET}`);
-  expect(ids).not.toContain(`omr:${STUDLESS_SET}`);
-  expect(snapshot.catalogSkipped).toEqual([
-    { name: STUDLESS_SET, reason: "no stud lattice from the bake" },
-  ]);
+  const items = snapshot.catalog.map((item) => [item.id, item.kind]);
+  expect(items).toContainEqual([`omr:${PLACEABLE_SET}`, "model"]);
+  expect(items).toContainEqual([`rolling-stock:omr:${STUDLESS_SET}`, "rolling-stock"]);
+  expect(items.map(([id]) => id)).not.toContain(`omr:${STUDLESS_SET}`);
+  expect(snapshot.catalogSkipped).toEqual([]);
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
 
@@ -937,5 +955,265 @@ describe("placement rules across a world switch", () => {
     editor.deleteSelection(0);
     expect(editor.snapshot().placements).toBe(2);
     expect(editor.snapshot().lastRefusal?.rule).toBe("carries");
+  }, 120_000);
+});
+
+const LOCOMOTIVE = "10133-1";
+const CAR = "10017-1";
+const ROLLING_STOCK_MODELS = [
+  "10133-1",
+  "10014-1",
+  "10020-1",
+  "10022-1_Dining-Car",
+  "10025-1_Baggage-Car",
+  "10205-1",
+  "10013-1",
+  "10016-1",
+  "10017-1",
+];
+const BASEPLATE_ROW = [-1920, -1280, -640, 0, 640, 1280, 1920];
+const TRACK_FROM: readonly [number, number] = [-1920, 0];
+const TRACK_TO: readonly [number, number] = [1920, 0];
+
+function stock(model: string): string {
+  return `rolling-stock:omr:${model}`;
+}
+
+function layTestLine(editor: IEditor, backend: HeadlessBackend) {
+  for (const x of BASEPLATE_ROW) placeItem(editor, backend, BASEPLATE, x, 0);
+  return drawTrack(editor, backend, TRACK_FROM, TRACK_TO);
+}
+
+function aimTrain(editor: IEditor, backend: HeadlessBackend, item: string, x: number, z: number) {
+  if (editor.snapshot().activeItem !== item) editor.chooseItem(item);
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  return editor.snapshot().trains.ghost;
+}
+
+function placeTrain(editor: IEditor, backend: HeadlessBackend, item: string, x: number, z: number) {
+  const ghost = aimTrain(editor, backend, item, x, z);
+  editor.click(0, 0, 0);
+  return ghost;
+}
+
+function vehiclePoses(backend: HeadlessBackend): ReadonlyArray<ReadonlyArray<number>> {
+  return [...backend.vehicles.entries()].toSorted(([a], [b]) => a - b).map(([, pose]) => pose);
+}
+
+class InProcessSim implements ISimClient {
+  private frame: SimFrameMessage | null = null;
+
+  async load(load: SimLoad): Promise<SimLoaded> {
+    const { session, loaded } = loadSession(load);
+    const data = new Float64Array(session.layout.floats);
+    session.writeFrame(data);
+    this.frame = { tick: 0, stateHash: 0, batchTicks: 0, batchStepMs: 0, data };
+    return loaded;
+  }
+  run(): void {}
+  async command(): Promise<boolean> {
+    return true;
+  }
+  latestFrame(): SimFrameMessage | null {
+    return this.frame;
+  }
+  nextFrame(): Promise<SimFrameMessage> {
+    return this.frame ? Promise.resolve(this.frame) : Promise.reject(new Error("not loaded"));
+  }
+  tickCost(): SimTickCost {
+    return { ticks: 0, stepMs: 0, frames: 0 };
+  }
+  bench(): Promise<SimBenchResult> {
+    return Promise.reject(new Error("no bench in this test"));
+  }
+}
+
+describe("rolling stock on track", () => {
+  it("stands every train model in the bundle whole on laid track, axles on the centreline", async () => {
+    const { editor, backend } = await startEditor(ROLLING_STOCK_MODELS);
+    expect(layTestLine(editor, backend)).toEqual({ pieces: 12, lastCommit: "laid" });
+    const stood = ROLLING_STOCK_MODELS.map((model) => {
+      const ghost = placeTrain(editor, backend, stock(model), 0, 10);
+      const [train] = editor.dump().trains;
+      const result = {
+        model,
+        ghost: ghost?.state,
+        refusal: ghost?.refusal?.message ?? null,
+        trains: editor.dump().trains.length,
+        integerHead: Number.isInteger(train?.offsetLdu),
+        onCentreline: (train?.axleOffCentreLdu ?? 1) < 1e-9,
+        drawn: backend.vehicles.size > 0,
+      };
+      editor.undo(0);
+      return result;
+    });
+    expect(stood).toEqual(
+      ROLLING_STOCK_MODELS.map((model) => ({
+        model,
+        ghost: "on-track",
+        refusal: null,
+        trains: 1,
+        integerHead: true,
+        onCentreline: true,
+        drawn: true,
+      })),
+    );
+    expect(backend.vehicles.size).toBe(0);
+  }, 180_000);
+
+  it("refuses rolling stock on baseplates, the bare table, and track another train holds", async () => {
+    const { editor, backend } = await startEditor([LOCOMOTIVE, CAR]);
+    layTestLine(editor, backend);
+    placeTrain(editor, backend, stock(LOCOMOTIVE), 0, 0);
+    expect(editor.dump().trains).toHaveLength(1);
+    const attempts = (
+      [
+        [stock(CAR), 0, 200],
+        [stock(CAR), 4000, 0],
+        [stock(LOCOMOTIVE), 100, 0],
+      ] as const
+    ).map(([item, x, z]) => {
+      const before = editor.snapshot().refusals;
+      const ghost = placeTrain(editor, backend, item, x, z);
+      return {
+        state: ghost?.state,
+        rule: ghost?.refusal?.rule,
+        counted: editor.snapshot().refusals - before,
+      };
+    });
+    expect(attempts).toEqual([
+      { state: "off-track", rule: "rolling-stock", counted: 1 },
+      { state: "off-track", rule: "rolling-stock", counted: 1 },
+      { state: "on-track", rule: "rolling-stock", counted: 1 },
+    ]);
+    expect(editor.snapshot().lastRefusal?.message).toContain("already occupies");
+    expect(editor.dump().trains.map((train) => train.cars.length)).toEqual([1]);
+  }, 120_000);
+
+  it("couples a car behind a train and undoes it in the one history with world edits", async () => {
+    const { editor, backend } = await startEditor([LOCOMOTIVE, CAR]);
+    layTestLine(editor, backend);
+    placeTrain(editor, backend, stock(LOCOMOTIVE), 400, 0);
+    const alone = vehiclePoses(backend);
+    expect(aimTrain(editor, backend, stock(CAR), -300, 0)?.couplesTo).toBe(1);
+    editor.click(0, 0, 0);
+    const cars = () => editor.dump().trains.map((train) => train.cars.map((car) => car.model));
+    expect(cars()).toEqual([[`omr:${LOCOMOTIVE}`, `omr:${CAR}`]]);
+    expect(vehiclePoses(backend).slice(0, alone.length)).toEqual(alone);
+    editor.chooseItem(null);
+    placeItem(editor, backend, BASEPLATE, 0, 1280);
+    expect(editor.snapshot().history).toMatchObject({ undo: "place", undoDepth: 10 });
+
+    editor.undo(0);
+    expect([editor.snapshot().placements, cars()]).toEqual([
+      7,
+      [[`omr:${LOCOMOTIVE}`, `omr:${CAR}`]],
+    ]);
+    editor.undo(0);
+    expect(cars()).toEqual([[`omr:${LOCOMOTIVE}`]]);
+    expect(vehiclePoses(backend)).toEqual(alone);
+    editor.undo(0);
+    expect([cars(), backend.vehicles.size]).toEqual([[], 0]);
+    editor.redo(0);
+    editor.redo(0);
+    editor.redo(0);
+    expect([editor.snapshot().placements, cars().length]).toEqual([8, 1]);
+
+    backend.aim(400, 0);
+    editor.click(0, 0, 0);
+    expect(editor.snapshot().trains.selected).toBe(1);
+    editor.deleteSelection(0);
+    expect(cars()).toEqual([]);
+    editor.undo(0);
+    expect(cars()).toEqual([[`omr:${LOCOMOTIVE}`, `omr:${CAR}`]]);
+  }, 120_000);
+
+  it("refuses lifting track out from under a train, and keeps it on the rails when other track is lifted", async () => {
+    const { editor, backend } = await startEditor([LOCOMOTIVE]);
+    layTestLine(editor, backend);
+    placeTrain(editor, backend, stock(LOCOMOTIVE), 0, 0);
+    const [before] = editor.dump().trains;
+    const poses = vehiclePoses(backend);
+    const removePieceAt = (x: number) => {
+      editor.chooseItem(TRACK_ITEM_ID);
+      backend.aim(x, 0);
+      editor.pointerMove(0, 0);
+      editor.dragStart(0, 0);
+      editor.dragEnd(0, 0, 0);
+      editor.deleteSelection(0);
+      editor.chooseItem(null);
+      return editor.snapshot().track?.pieces;
+    };
+    expect(removePieceAt(0)).toBe(12);
+    expect(editor.snapshot().lastRefusal?.rule).toBe("rolling-stock");
+    expect(removePieceAt(-1440)).toBe(11);
+    const [after] = editor.dump().trains;
+    expect(after?.track).toBe((before?.track ?? 0) - 1);
+    expect(after?.offsetLdu).toBe(before?.offsetLdu);
+    expect(vehiclePoses(backend)).toEqual(poses);
+  }, 120_000);
+
+  it("saves the train with the world, reopens it in place, and the run viewer starts it exactly there", async () => {
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    const container = new Container();
+    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+    container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+    const realLoader = container.get(PART_BUNDLE_LOADER);
+    container
+      .rebind(PART_BUNDLE_LOADER)
+      .toConstantValue(new ModelSubsetLoader(realLoader, [LOCOMOTIVE, CAR]));
+    const backend = new HeadlessBackend();
+    container.rebind(SCENE_BACKEND).toConstantValue(backend);
+    const repository = new FlakyRepository();
+    container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+    const editor = container.get(EDITOR);
+    const canvas = {
+      clientWidth: 640,
+      clientHeight: 480,
+      dataset: {},
+    } as unknown as HTMLCanvasElement;
+    await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+    layTestLine(editor, backend);
+    placeTrain(editor, backend, stock(LOCOMOTIVE), 300, 0);
+    placeTrain(editor, backend, stock(CAR), -400, 0);
+    placeTrain(editor, backend, stock(CAR), 1700, 0);
+    expect(editor.dump().trains.map((train) => train.cars.length)).toEqual([2, 1]);
+    const placed = editor.dump().trains;
+    const poses = vehiclePoses(backend);
+    await vi.waitFor(() => expect(editor.snapshot().world?.save).toBe("saved"));
+    const world = editor.snapshot().world?.id;
+    if (!world) throw new Error("no saved world");
+
+    expect(await editor.newWorld("Other")).toBe(true);
+    expect([editor.dump().trains, backend.vehicles.size]).toEqual([[], 0]);
+    expect(await editor.openWorld(world)).toBe(true);
+    expect(editor.dump().trains).toEqual(placed);
+    expect(vehiclePoses(backend)).toEqual(poses);
+
+    const runBackend = new HeadlessBackend();
+    container.rebind(SCENE_BACKEND).toConstantValue(runBackend);
+    container.rebind(SIM_CLIENT).toConstantValue(new InProcessSim());
+    const run = container.get(RUN_SCENE);
+    run.configure({
+      world,
+      plan: "",
+      consist: [],
+      trains: [],
+      speedLduPerS: 400,
+      accelerationLduPerS2: 150,
+      brakingLduPerS2: 300,
+      follow: false,
+      start: false,
+      autopilotSeed: null,
+      followDistanceLdu: 1400,
+    });
+    await run.load("standard");
+    run.onFrame();
+    const started = vehiclePoses(runBackend);
+    expect(started).toHaveLength(poses.length);
+    started.forEach((pose, i) =>
+      pose.forEach((value, k) => expect(value).toBeCloseTo(poses[i]?.[k] ?? Number.NaN, 9)),
+    );
   }, 120_000);
 });

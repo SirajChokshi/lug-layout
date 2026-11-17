@@ -251,3 +251,22 @@ export {
   type PathSampler,
   type VehicleGeometry,
 } from "./track-path/running-gear.ts";
+export {
+  advanceAlong,
+  clearAhead,
+  clearBehind,
+  nearestTrackPoint,
+  NO_STEP,
+  onlySuccessor,
+  pointDistance,
+  pointEdge,
+  pointOffset,
+  TRACK_POINT_FLOATS,
+  TrainPath,
+} from "./rolling-stock/train-path.ts";
+export {
+  fitTrain,
+  placementsUnder,
+  trainsOverlap,
+  type TrainFit,
+} from "./rolling-stock/train-fit.ts";

@@ -474,7 +474,11 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     ],
     [
       "Placement refused",
-      snapshot.ghost?.refusal && snapshot.mode === "place" ? snapshot.ghost.refusal.message : "–",
+      snapshot.mode === "train"
+        ? (snapshot.trains.ghost?.refusal?.message ?? "–")
+        : snapshot.ghost?.refusal && snapshot.mode === "place"
+          ? snapshot.ghost.refusal.message
+          : "–",
     ],
     ["Last refusal", snapshot.lastRefusal?.message ?? "none"],
     ["Placements", integer.format(snapshot.placements)],
@@ -549,14 +553,26 @@ export function EditorFooter({ disclaimer }: { readonly disclaimer: string }) {
   );
 }
 
+function trainGhostText(snapshot: EditorSnapshot): string {
+  const ghost = snapshot.trains.ghost;
+  if (ghost === null) return "point at laid track";
+  if (ghost.refusal) return `refused: ${ghost.refusal.message}`;
+  const coupled = snapshot.trains.placed.find((train) => train.id === ghost.couplesTo);
+  if (coupled) return `on the rails, couples behind ${coupled.label}`;
+  return `on the rails of track piece ${(ghost.track ?? 0) + 1}, head ${ghost.offsetLdu ?? 0} LDU along route ${ghost.route ?? 0} ${ghost.forward ? "forward" : "backward"}`;
+}
+
 export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const { ghost, lastRefusal } = snapshot;
+  const trainGhost = snapshot.trains.ghost;
   const ghostText =
-    snapshot.mode !== "place" || ghost === null
-      ? "no item in hand"
-      : ghost.refusal
-        ? `refused: ${ghost.refusal.message}`
-        : `lands at ${ghost.yPlates} plates, supported${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}`;
+    snapshot.mode === "train"
+      ? trainGhostText(snapshot)
+      : snapshot.mode !== "place" || ghost === null
+        ? "no item in hand"
+        : ghost.refusal
+          ? `refused: ${ghost.refusal.message}`
+          : `lands at ${ghost.yPlates} plates, supported${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}`;
   return (
     <section
       className="inspector placement-rules"
@@ -566,11 +582,21 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       data-ghost-uncertified-track={ghost?.uncertifiedTrack ?? 0}
       data-refusals={snapshot.refusals}
       data-last-refusal-rule={lastRefusal?.rule ?? ""}
+      data-train-ghost={
+        snapshot.mode === "train" && trainGhost
+          ? trainGhost.refusal
+            ? `refused-${trainGhost.state}`
+            : trainGhost.couplesTo === null
+              ? "on-track"
+              : "couples"
+          : ""
+      }
     >
       <h2>Placement rules</h2>
       <p className="toolbar-hint">
         Only baseplates, road plates and models with their own baseplate rest on the table.
-        Everything else rests on studs or a flat top, and track sits on a baseplate.
+        Everything else rests on studs or a flat top, track sits on a baseplate, and rolling stock
+        stands only on track.
       </p>
       <dl>
         <div>
@@ -588,6 +614,59 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
           </div>
         )}
       </dl>
+    </section>
+  );
+}
+
+function runTrainsHref(worldId: string): string {
+  const next = new URLSearchParams({ run: "1", world: worldId });
+  const api = new URLSearchParams(window.location.search).get("api");
+  if (api !== null) next.set("api", api);
+  return `?${next.toString()}`;
+}
+
+export function TrainPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) {
+  const { trains, world } = snapshot;
+  if (trains.placed.length === 0 && snapshot.mode !== "train") return null;
+  const saved = world?.id != null && world.save === "saved";
+  return (
+    <section
+      className="inspector train-panel"
+      aria-label="Trains"
+      data-trains={trains.placed.length}
+      data-selected-train={trains.selected ?? ""}
+    >
+      <h2>Trains</h2>
+      {trains.placed.length === 0 ? (
+        <p className="toolbar-hint">No rolling stock on the track yet.</p>
+      ) : (
+        <ul className="train-list">
+          {trains.placed.map((train) => (
+            <li key={train.id} data-train={train.id} aria-current={trains.selected === train.id}>
+              {train.label} · {Number(train.lengthStuds.toFixed(1))} studs
+            </li>
+          ))}
+        </ul>
+      )}
+      {trains.placed.length > 0 &&
+        (saved && world.id !== null ? (
+          <a
+            className="palette-primary"
+            href={runTrainsHref(world.id)}
+            target="_blank"
+            rel="noopener"
+            data-run-trains
+          >
+            Run these trains
+          </a>
+        ) : (
+          <p className="toolbar-hint" data-run-trains-waiting>
+            Saving the world before it can run…
+          </p>
+        ))}
+      <p className="toolbar-hint">
+        The run viewer starts every train exactly where it stands here.
+      </p>
     </section>
   );
 }
