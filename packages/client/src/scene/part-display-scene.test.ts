@@ -56,6 +56,8 @@ class RecordingBackend implements ISceneBackend {
   bufferMemory(): BufferMemory {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
+  forceTier(): void {}
+  setFarModel(): void {}
 }
 
 it("shows every palette part on the integer lattice when resolved through the real modules", async () => {

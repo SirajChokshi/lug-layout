@@ -19,6 +19,7 @@ import {
 import {
   INSTANCE_MATRIX_FLOATS,
   type ChunkInstances,
+  type FarModelPlacement,
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
@@ -177,6 +178,7 @@ class PlacedEntry implements PlacedModel {
   readonly sin: number;
 
   constructor(
+    readonly id: number,
     readonly placement: PlacementRef,
     readonly handle: PlacementHandle,
     readonly placeable: Placeable,
@@ -344,6 +346,33 @@ class PlacedEntry implements PlacedModel {
     return new Set([...this.contributions.keys(), ...this.footprintKeys]);
   }
 
+  farModelPlacement(farModel: number): FarModelPlacement {
+    const [sx, sy, sz] = this.placeable.frameShift;
+    const originX = chunkOf(this.x) * CHUNK_LDU;
+    const originZ = chunkOf(this.z) * CHUNK_LDU;
+    const { cos, sin } = this;
+    return {
+      modelIndex: farModel,
+      originX,
+      originZ,
+      matrix: Float32Array.of(
+        cos,
+        0,
+        sin,
+        this.x - originX + cos * sx + sin * sz,
+        0,
+        1,
+        0,
+        this.yLdu + sy,
+        -sin,
+        0,
+        cos,
+        this.z - originZ - sin * sx + cos * sz,
+      ),
+      chunkKeys: [...this.contributions.keys()],
+    };
+  }
+
   rayHit(ray: Float64Array): number {
     const box = this.box;
     if (
@@ -501,6 +530,7 @@ export class PlacedChunks {
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private readonly occupancy = new OccupancyGrid();
+  private nextId = 0;
 
   constructor(private readonly backend: ISceneBackend) {}
 
@@ -597,8 +627,11 @@ export class PlacedChunks {
     handle: PlacementHandle,
     placeable: Placeable,
   ): PlacedEntry {
-    const entry = new PlacedEntry(placement, handle, placeable, this.chunkOrigins);
+    const entry = new PlacedEntry(this.nextId++, placement, handle, placeable, this.chunkOrigins);
     this.entries.push(entry);
+    if (placeable.farModel !== null) {
+      this.backend.setFarModel(entry.id, entry.farModelPlacement(placeable.farModel));
+    }
     for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
@@ -611,6 +644,7 @@ export class PlacedChunks {
     const entry = this.entries[index];
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
+    this.backend.setFarModel(entry.id, null);
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
     for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
@@ -649,6 +683,7 @@ export class PlacedChunks {
       studCount += entry.markCulled(key, covers, closers);
     }
     this.chunkStuds.set(key, { drawn: studCount, culled: studsBefore - studCount });
+    const voxelizedFlags = new Uint8Array(partCount);
     const chunk: ChunkInstances = {
       originX,
       originZ,
@@ -656,6 +691,7 @@ export class PlacedChunks {
       partIndex: new Uint16Array(partCount),
       colorIndex: new Uint16Array(partCount),
       matrices: new Float32Array(partCount * INSTANCE_MATRIX_FLOATS),
+      voxelized: voxelizedFlags,
       studs: {
         count: studCount,
         primitiveIndex: new Uint8Array(studCount),
@@ -686,10 +722,12 @@ export class PlacedChunks {
         partSlot,
         selectedParts,
       );
+      const voxelized = entry.placeable.farModel === null ? 0 : 1;
       for (let slot = firstPart; slot < partSlot; slot++) {
         const i = selectedParts[slot] ?? 0;
         chunk.partIndex[slot] = parts.partIndex[i] ?? 0;
         chunk.colorIndex[slot] = parts.colorIndex[i] ?? 0;
+        voxelizedFlags[slot] = voxelized;
       }
       const firstStud = studSlot;
       studSlot = entry.writeInto(

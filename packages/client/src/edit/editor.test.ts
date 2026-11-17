@@ -139,6 +139,8 @@ class HeadlessBackend implements ISceneBackend {
   bufferMemory(): BufferMemory {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
+  forceTier(): void {}
+  setFarModel(): void {}
 }
 
 afterEach(() => {
@@ -161,7 +163,7 @@ async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDL
     dataset: {},
   } as unknown as HTMLCanvasElement;
 
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK });
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
   return { editor, backend, manifest: await realLoader.loadManifest("standard") };
 }
 
@@ -349,7 +351,7 @@ async function editorWithFailingSaves() {
     clientHeight: 480,
     dataset: {},
   } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK });
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
   expect(editor.snapshot().status).toBe("ready");
 
   editor.chooseItem(BASEPLATE);

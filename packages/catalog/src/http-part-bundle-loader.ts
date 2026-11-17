@@ -7,7 +7,13 @@ import {
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
-import { parseGlb, readInheritColorMesh, readPartMesh } from "./glb.ts";
+import {
+  parseFarMeshGlb,
+  parseGlb,
+  readInheritColorMesh,
+  readPartMesh,
+  readUint32Array,
+} from "./glb.ts";
 import type {
   CompiledPartGlb,
   IAssetFetcher,
@@ -16,6 +22,7 @@ import type {
   ModelBundle,
   ModelCells,
   PartModelLattice,
+  ModelFarMesh,
   PartAsset,
   PartBundle,
   PartFilter,
@@ -222,8 +229,13 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     });
     const count = file.instances.part.length;
     const { cover } = file;
+    const [bundle, farMesh] = await Promise.all([
+      this.bundle(lod, manifest, parts),
+      entry.farMesh ? this.farMesh(`${lod}/${entry.farMesh.file}`) : undefined,
+    ]);
     return {
-      bundle: await this.bundle(lod, manifest, parts),
+      bundle,
+      farMesh,
       entry,
       model: {
         sections: file.sections,
@@ -246,6 +258,26 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
             instances: Uint32Array.from(bogie.instances),
           })),
         })),
+      },
+    };
+  }
+
+  private async farMesh(path: string): Promise<ModelFarMesh> {
+    const glb = parseFarMeshGlb(await this.fetcher.bytes(path), path);
+    const { extras } = glb.document;
+    const cellIndex = readUint32Array(glb, extras.arrays.voxelCells);
+    const ldrawColor = readUint32Array(glb, extras.arrays.voxelColors);
+    if (cellIndex.length !== extras.voxels.count || ldrawColor.length !== extras.voxels.count) {
+      throw new Error(`${path}: voxel arrays do not hold ${extras.voxels.count} cells`);
+    }
+    return {
+      mesh: readPartMesh(glb, path),
+      voxels: {
+        origin: extras.voxels.origin,
+        cellLdu: extras.voxels.cellLdu,
+        dims: extras.voxels.dims,
+        cellIndex,
+        ldrawColor,
       },
     };
   }

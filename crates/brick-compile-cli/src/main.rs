@@ -4,15 +4,19 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::affine::{Affine, Vec3};
-use brick_compile::colors::parse_ldconfig;
-use brick_compile::compile::modified_note;
+use brick_compile::colors::{parse_ldconfig, Colour};
+use brick_compile::compile::{modified_note, MODIFIED_NOTE};
 use brick_compile::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
+use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, ModelInstance};
 use brick_compile::vehicle::{
     detect_vehicles, GuideKind, RailHeadBand, Vehicle, VehicleSignatures,
+};
+use brick_compile::voxel::{
+    greedy_mesh, voxelize, VoxelError, VoxelPart, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE,
 };
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
 use serde_json::{json, Value};
@@ -330,6 +334,107 @@ fn vehicle_json(vehicle: &Vehicle) -> Value {
     })
 }
 
+const OPAQUE_ALPHA: u8 = 255;
+
+struct FarMeshInputs<'a> {
+    library: &'a FsLibrary,
+    options: CompileOptions,
+    translucent: HashSet<u32>,
+    standard_parts: HashMap<String, CompiledPart>,
+    out: &'a Path,
+}
+
+fn far_mesh(
+    inputs: &mut FarMeshInputs,
+    name: &str,
+    drawn: &[ModelInstance],
+    model_ldraw: &Value,
+    credits: &mut BTreeMap<String, Value>,
+) -> Result<Option<Value>, String> {
+    for instance in drawn {
+        if !inputs.standard_parts.contains_key(&instance.part) {
+            let compiled = compile_part(inputs.library, &instance.part, &inputs.options)
+                .map_err(|e| e.to_string())?;
+            inputs
+                .standard_parts
+                .insert(instance.part.clone(), compiled);
+        }
+    }
+    let parts: Vec<VoxelPart> = drawn
+        .iter()
+        .map(|instance| {
+            let compiled = &inputs.standard_parts[&instance.part];
+            VoxelPart {
+                mesh: &compiled.mesh,
+                studs: &compiled.studs,
+                color: instance.color,
+                matrix: &instance.matrix,
+            }
+        })
+        .collect();
+    let grid = match voxelize(&parts, &inputs.translucent) {
+        Ok(grid) => grid,
+        Err(VoxelError::Lattice(LatticeError::NoIntegerPhaseStuds)) => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut sources: BTreeMap<String, Value> = BTreeMap::new();
+    for instance in drawn {
+        let compiled = &inputs.standard_parts[&instance.part];
+        record_credits(credits, compiled);
+        for file in &compiled.flattened_files {
+            sources.entry(file.path.clone()).or_insert_with(|| {
+                json!({ "path": file.path, "author": file.header.author, "license": file.header.license })
+            });
+        }
+    }
+    let mut ldraw = model_ldraw.clone();
+    ldraw["note"] = json!(format!("{MODIFIED_NOTE}; {VOXEL_NOTE}"));
+    ldraw["sources"] = json!(sources.into_values().collect::<Vec<_>>());
+    let mesh = greedy_mesh(&grid);
+    let dims = grid.dims.map(|d| d as u64);
+    let voxels = json!({
+        "cellLdu": CELL_LDU,
+        "cellMarginLdu": CELL_MARGIN_LDU,
+        "origin": grid.origin,
+        "dims": dims,
+        "count": grid.count(),
+        "cellIndex": "x + dims[0] * (y + dims[1] * z)",
+        "geometry": "standard LOD body triangles, studs excluded",
+    });
+    let file = format!("model-{}-far.glb", stem(name));
+    let bytes = glb::write_with_arrays(
+        &file,
+        &mesh,
+        json!({ "unit": "LDU", "upAxis": "+Y", "model": name, "ldraw": ldraw, "voxels": voxels }),
+        &[
+            UintArray {
+                name: "voxelCells",
+                values: &grid.cells,
+            },
+            UintArray {
+                name: "voxelColors",
+                values: &grid.colors,
+            },
+        ],
+    );
+    fs::write(inputs.out.join(&file), bytes).map_err(|e| e.to_string())?;
+    Ok(Some(json!({
+        "file": file,
+        "voxels": grid.count(),
+        "triangles": mesh.triangle_count(),
+        "origin": grid.origin,
+        "dims": dims,
+    })))
+}
+
+fn translucent_codes(colors: &[Colour]) -> HashSet<u32> {
+    colors
+        .iter()
+        .filter(|c| c.alpha < OPAQUE_ALPHA)
+        .map(|c| c.code)
+        .collect()
+}
+
 fn run(args: &Args) -> Result<(), String> {
     let mut files = HashMap::new();
     collect(&args.ldraw, &args.ldraw, &mut files).map_err(|e| e.to_string())?;
@@ -477,6 +582,24 @@ fn run(args: &Args) -> Result<(), String> {
 
     let signatures = vehicle_signatures(&palette)?;
     let rails = rail_head_bands(&geometry)?;
+    let ldconfig_colours = library
+        .source(LDCONFIG)
+        .map(parse_ldconfig)
+        .unwrap_or_default();
+    if ldconfig_colours.is_empty() {
+        return Err("LDConfig.ldr is missing or has no !COLOUR lines".into());
+    }
+    let mut far_inputs = (args.lod == Lod::Far).then(|| FarMeshInputs {
+        library: &library,
+        options: CompileOptions {
+            lod: Lod::Standard,
+            ..part_options.clone()
+        },
+        translucent: translucent_codes(&ldconfig_colours),
+        standard_parts: HashMap::new(),
+        out: &args.out,
+    });
+
     let mut models = Vec::new();
     for entry in palette["models"].as_array().cloned().unwrap_or_default() {
         let name = entry["name"]
@@ -733,6 +856,19 @@ fn run(args: &Args) -> Result<(), String> {
         if !entry["role"].is_null() {
             manifest_entry["role"] = entry["role"].clone();
         }
+        if let Some(inputs) = far_inputs.as_mut() {
+            let model_ldraw = json!({
+                "file": file,
+                "name": name,
+                "source": entry["source"],
+                "authors": authors,
+                "licenses": licenses,
+                "sections": sections,
+            });
+            manifest_entry["farMesh"] = far_mesh(inputs, name, &drawn, &model_ldraw, &mut credits)
+                .map_err(|e| format!("{file}: {e}"))?
+                .unwrap_or(Value::Null);
+        }
         models.push(manifest_entry);
     }
 
@@ -752,9 +888,6 @@ fn run(args: &Args) -> Result<(), String> {
             })
         })
         .collect();
-    if colors.is_empty() {
-        return Err("LDConfig.ldr is missing or has no !COLOUR lines".into());
-    }
 
     let manifest = json!({
         "unit": "LDU",

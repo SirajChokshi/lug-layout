@@ -13,6 +13,7 @@ pub mod model;
 pub mod occlusion;
 pub mod surface;
 pub mod vehicle;
+pub mod voxel;
 
 pub use compile::{compile_part, CompileError, CompileOptions, CompiledPart};
 pub use flatten::{Library, Lod};

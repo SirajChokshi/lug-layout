@@ -1,4 +1,10 @@
-import { directColorSrgb, isDirectColor, type PartBundle, type PartFilter } from "@brr/catalog";
+import {
+  directColorSrgb,
+  isDirectColor,
+  type ModelFarMesh,
+  type PartBundle,
+  type PartFilter,
+} from "@brr/catalog";
 import type { BundleLod, ModelSection } from "@brr/schema/bundle";
 import {
   COLOR_CHANNELS,
@@ -27,6 +33,12 @@ export interface SceneSummary {
   readonly creditedFiles: number;
   readonly model: ModelCredit | null;
   readonly track: TrackSummary | null;
+  readonly farModel: FarModelSummary | null;
+}
+
+export interface FarModelSummary {
+  readonly voxels: number;
+  readonly triangles: number;
 }
 
 export interface TrackSummary {
@@ -134,11 +146,13 @@ export function ldrawColors(bundle: PartBundle): ReadonlyMap<number, LdrawColor>
 function partPalette(
   bundle: PartBundle,
   far: PartBundle | undefined,
+  farModel: ModelFarMesh | undefined,
   colors: ColorTable,
 ): PartPalette {
   return {
     detailed: { parts: bundle.parts, studPrimitives: bundle.studPrimitives },
     ...(far ? { far: { parts: far.parts, studPrimitives: far.studPrimitives } } : {}),
+    ...(farModel ? { farModels: [farModel.mesh] } : {}),
     colorsSrgb: colors.toSrgb(),
     colorsAlpha: colors.toAlpha(),
     ldrawColors: ldrawColors(bundle),
@@ -150,6 +164,7 @@ function summarize(
   chunks: ReadonlyArray<InstanceList>,
   studs: ReadonlyArray<StudList>,
   model: ModelCredit | null,
+  farModel: ModelFarMesh | undefined,
 ): SceneSummary {
   const instances = new Float64Array(bundle.parts.length);
   for (const chunk of chunks) {
@@ -191,6 +206,12 @@ function summarize(
     creditedFiles: bundle.credits.length,
     model,
     track: null,
+    farModel: farModel
+      ? {
+          voxels: farModel.voxels.cellIndex.length,
+          triangles: farModel.mesh.groups.reduce((sum, g) => sum + g.indices.length / 3, 0),
+        }
+      : null,
   };
 }
 
@@ -206,8 +227,9 @@ export function showChunks(
   colors: ColorTable,
   chunks: ReadonlyArray<KeyedChunk>,
   model: ModelCredit | null,
+  farModel?: ModelFarMesh,
 ): SceneSummary {
-  backend.setPalette(partPalette(bundle, far, colors));
+  backend.setPalette(partPalette(bundle, far, farModel, colors));
   for (const chunk of chunks) backend.setChunk(chunk.key, chunk.instances);
   const instances = chunks.map((chunk) => chunk.instances);
   return summarize(
@@ -215,5 +237,6 @@ export function showChunks(
     instances,
     instances.map((chunk) => chunk.studs),
     model,
+    farModel,
   );
 }

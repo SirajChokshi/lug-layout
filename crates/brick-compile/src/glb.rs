@@ -18,7 +18,21 @@ fn pad_to_four(bytes: &mut Vec<u8>, fill: u8) {
     }
 }
 
+pub struct UintArray<'a> {
+    pub name: &'a str,
+    pub values: &'a [u32],
+}
+
 pub fn write(name: &str, mesh: &Mesh, extras: Value) -> Vec<u8> {
+    write_with_arrays(name, mesh, extras, &[])
+}
+
+pub fn write_with_arrays(
+    name: &str,
+    mesh: &Mesh,
+    mut extras: Value,
+    arrays: &[UintArray],
+) -> Vec<u8> {
     let mut bin: Vec<u8> = Vec::new();
     let mut buffer_views = Vec::new();
     let mut accessors = Vec::new();
@@ -76,6 +90,22 @@ pub fn write(name: &str, mesh: &Mesh, extras: Value) -> Vec<u8> {
             "mode": MODE_TRIANGLES,
             "extras": { "ldrawColor": group.color },
         }));
+    }
+
+    let mut array_accessors = serde_json::Map::new();
+    for array in arrays {
+        let bytes: Vec<u8> = array.values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let view = push_view(&mut bin, &bytes, TARGET_ARRAY_BUFFER);
+        accessors.push(json!({
+            "bufferView": view,
+            "componentType": COMPONENT_UNSIGNED_INT,
+            "count": array.values.len(),
+            "type": "SCALAR",
+        }));
+        array_accessors.insert(array.name.to_string(), json!(accessors.len() - 1));
+    }
+    if !arrays.is_empty() {
+        extras["arrays"] = Value::Object(array_accessors);
     }
 
     let document = json!({

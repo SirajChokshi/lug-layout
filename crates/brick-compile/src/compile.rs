@@ -6,6 +6,7 @@ use crate::glb;
 use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
+use crate::voxel::VOXEL_NOTE;
 
 pub const MODIFIED_NOTE: &str =
     "Modified from LDraw: sub-files flattened, BFC winding resolved, studs extracted, converted to +Y up";
@@ -16,7 +17,7 @@ pub fn modified_note(lod: Lod) -> String {
         Lod::Standard => MODIFIED_NOTE.to_string(),
         Lod::Low => format!("{MODIFIED_NOTE}, {LOW_PRIMITIVES}"),
         Lod::Far => {
-            format!("{MODIFIED_NOTE}, {LOW_PRIMITIVES}, triangles hidden from above removed")
+            format!("{MODIFIED_NOTE}, {LOW_PRIMITIVES}, triangles hidden from above removed; {VOXEL_NOTE}")
         }
     }
 }

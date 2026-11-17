@@ -187,7 +187,18 @@ function trackRows(track: TrackSummary | null): ReadonlyArray<readonly [string, 
   ];
 }
 
-function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]> {
+const NO_FAR_MESH_TEXT = "none in the bake (no stud lattice), so far chunks draw shells";
+
+function farModelText(report: ViewerReport, params: ViewerParams): string | null {
+  const far = report.summary.farModel;
+  if (!far) return params.mode === "model" ? NO_FAR_MESH_TEXT : null;
+  return `${integer.format(far.voxels)} voxels of 20×8×20 LDU, ${integer.format(far.triangles)} triangles`;
+}
+
+function hudRows(
+  report: ViewerReport,
+  params: ViewerParams,
+): ReadonlyArray<readonly [string, string]> {
   const { backend, summary, frame, timings, liveFps } = report;
   const api =
     backend.activeApi === backend.requestedApi
@@ -213,7 +224,11 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
     ["GPU buffers allocated so far, JS heap", memoryText(report.memory)],
     ["Render origin (chunks), rebases", renderOriginText(report)],
     ...trackRows(summary.track),
+    ["Tier", params.tier ?? "auto (near ≥ 12 px stud pitch, mid ≥ 3 px, else far)"],
+    ["Projected stud pitch, nearest chunk", `${report.frame.nearestStudPitchPx.toFixed(1)} px`],
   ];
+  const farModel = farModelText(report, params);
+  if (farModel !== null) rows.push(["Voxel far mesh", farModel]);
   if (timings) {
     rows.push(
       ["Chunk tiers near/mid/far (median)", tierText(timings.medianChunkTiers)],
@@ -287,7 +302,7 @@ export function App({ scene, params, placements, run, runningGear, importScene }
         {error && <p className="error">{error}</p>}
         {report && !error && (
           <dl>
-            {[...hudRows(report), ...runRows(runStatus)].map(([label, value]) => (
+            {[...hudRows(report, params), ...runRows(runStatus)].map(([label, value]) => (
               <div key={label}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>

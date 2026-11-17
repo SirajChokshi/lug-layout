@@ -44,8 +44,14 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
       id="edit-state"
       data-placements={snapshot.placements}
       data-samples={snapshot.latencies.length}
+      data-measuring={snapshot.measuring ? "1" : "0"}
     >
-      {JSON.stringify({ latencies: snapshot.latencies, world: editor.dump() })}
+      {JSON.stringify({
+        latencies: snapshot.latencies,
+        stats: snapshot.stats,
+        measurement: snapshot.measurement,
+        world: editor.dump(),
+      })}
     </pre>
   );
 }
