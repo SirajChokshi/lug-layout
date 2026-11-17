@@ -402,3 +402,36 @@ describe("unsaved edits after a failed save", () => {
     expect(editor.snapshot().world?.name).toBe("Other");
   });
 });
+
+it.each([2, 3])(
+  "chains %i rail modules end to end, flush on the ground with their rail edges joined",
+  async (count) => {
+    const { editor, backend } = await startEditor(["mils-rail-straight"]);
+    const moduleLdu = 640;
+    for (let column = 0; column < count; column++) {
+      editor.chooseItem("generated:mils-rail-straight");
+      backend.aim(column * moduleLdu + moduleLdu / 2, moduleLdu / 2);
+      editor.pointerMove(0, 0);
+      editor.click(0, 0, 0);
+    }
+    const { placements } = editor.dump();
+    const { modules, lastRefusal, error } = editor.snapshot();
+    const columns = Array.from({ length: count }, (_, column) => column);
+    expect({
+      x: placements.x.toSorted((a, b) => a - b),
+      yPlates: placements.yPlates,
+      seams: modules.joined / 2,
+      mismatched: modules.mismatched,
+      lastRefusal,
+      error,
+    }).toEqual({
+      x: columns.map((column) => column * moduleLdu + moduleLdu / 2),
+      yPlates: columns.map(() => 0),
+      seams: count - 1,
+      mismatched: 0,
+      lastRefusal: null,
+      error: null,
+    });
+  },
+  120_000,
+);

@@ -166,6 +166,66 @@ function modelCells(
   };
 }
 
+function requireOnlyTrackPastModuleEdges(
+  instances: ChunkPartInstances,
+  partBoxes: Float32Array,
+  parts: ReadonlyArray<PartAsset>,
+  surface: ModuleSurface,
+  label: string,
+): void {
+  const maxX = surface.minX + surface.studs * STUD_LDU;
+  const maxZ = surface.minZ + surface.studs * STUD_LDU;
+  for (let i = 0; i < instances.count; i++) {
+    const part = parts[instances.partIndex[i] ?? 0];
+    if (!part || part.role === "track") continue;
+    const b = i * BOX_FLOATS;
+    const inside =
+      (partBoxes[b] ?? 0) >= surface.minX &&
+      (partBoxes[b + 2] ?? 0) >= surface.minZ &&
+      (partBoxes[b + 3] ?? 0) <= maxX &&
+      (partBoxes[b + 5] ?? 0) <= maxZ;
+    if (!inside) {
+      throw new Error(
+        `${label}: ${part.id} reaches past the module's baseplate, where only a track end may`,
+      );
+    }
+  }
+}
+
+function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: string): PlaceableCells {
+  const cellX0 = wholeCells(surface.minX, `${label} baseplate min x`);
+  const cellZ0 = wholeCells(surface.minZ, `${label} baseplate min z`);
+  const size = surface.studs;
+  const columnBottom = new Int16Array(size * size).fill(EMPTY_COLUMN);
+  const columnTop = new Int16Array(size * size).fill(EMPTY_COLUMN);
+  let heightPlates = 0;
+  for (let j = 0; j < size; j++) {
+    const fromJ = cellZ0 - cells.cellZ0 + j;
+    for (let i = 0; i < size; i++) {
+      const fromI = cellX0 - cells.cellX0 + i;
+      if (fromI < 0 || fromJ < 0 || fromI >= cells.width || fromJ >= cells.depth) continue;
+      const from = fromJ * cells.width + fromI;
+      const top = cells.columnTop[from] ?? EMPTY_COLUMN;
+      if (top === EMPTY_COLUMN) continue;
+      columnBottom[j * size + i] = cells.columnBottom[from] ?? 0;
+      columnTop[j * size + i] = top;
+      heightPlates = Math.max(heightPlates, top);
+    }
+  }
+  return {
+    cellX0,
+    cellZ0,
+    width: size,
+    depth: size,
+    footprint: new Uint8Array(size * size),
+    columnBottom,
+    columnTop,
+    footprintCells: 0,
+    flatCells: 0,
+    heightPlates,
+  };
+}
+
 function partCells(part: PartAsset, shift: Vec3): PlaceableCells {
   const cellX0 = wholeCells(part.boundsMin[0], `${part.id} min x`);
   const cellZ0 = wholeCells(part.boundsMin[2], `${part.id} min z`);
@@ -336,6 +396,10 @@ export function modelPlaceable(
   const isModule = role === "mils-module";
   const id = isModule ? `generated:${name}` : `omr:${name}`;
   const studs = withStuds(local, parts, colors, undefined, model.studCover).studs;
+  const module = isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null;
+  if (module) requireOnlyTrackPastModuleEdges(local, partBoxes, parts, module, name);
+  const restPlates = (cells.restY - restingOn) / PLATE_LDU;
+  const placedCells = modelCells(cells, shift, name, restPlates, !isModule);
   return {
     id,
     label,
@@ -347,14 +411,14 @@ export function modelPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
-    cells: modelCells(cells, shift, name, (cells.restY - restingOn) / PLATE_LDU, !isModule),
+    cells: module ? moduleCells(placedCells, module, name) : placedCells,
     box,
     partBoxes,
     frameShift: shift,
     farModel,
     credit: isModule ? null : credit,
     road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
-    module: isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null,
+    module,
   };
 }
 
