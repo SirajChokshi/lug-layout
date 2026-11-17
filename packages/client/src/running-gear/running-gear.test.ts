@@ -3,6 +3,8 @@ import {
   catalogModule,
   PART_BUNDLE_LOADER,
   BUNDLE_BASE_URL,
+  BUNDLE_MANIFEST_FILE,
+  DEFAULT_BUNDLE_MANIFEST_FILE,
   type PartVehicle,
   type IAssetFetcher,
 } from "@brr/catalog";
@@ -44,6 +46,7 @@ function bundleLoader() {
   const container = new Container();
   container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue("unused/");
+  container.bind(BUNDLE_MANIFEST_FILE).toConstantValue(DEFAULT_BUNDLE_MANIFEST_FILE);
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   return container.get(PART_BUNDLE_LOADER);
 }

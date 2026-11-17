@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "ignoreCommand": "git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- :/ ':/!*.md' ':/!*.test.ts*' ':/!*.bench.ts' ':/!.cursor' ':/!.github' ':/!infra' ':/!apps/catalog-api' ':/!docs/research' || exit 1",
+  "installCommand": "pnpm install --frozen-lockfile --filter @brr/web... --filter @brr/asset-pipeline...",
+  "buildCommand": "VITE_BUNDLE_MANIFEST_FILE=\"$(node ../../tools/asset-pipeline/src/cli.ts await-served)\" && export VITE_BUNDLE_MANIFEST_FILE && pnpm run build",
+  "outputDirectory": "dist"
+}

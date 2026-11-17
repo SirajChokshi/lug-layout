@@ -1,4 +1,9 @@
-import { BUNDLE_BASE_URL, catalogModule } from "@brr/catalog";
+import {
+  BUNDLE_BASE_URL,
+  BUNDLE_MANIFEST_FILE,
+  catalogModule,
+  DEFAULT_BUNDLE_MANIFEST_FILE,
+} from "@brr/catalog";
 import { renderModule } from "@brr/render";
 import type { RpcPort } from "@brr/rpc";
 import { ContainerModule } from "inversify";
@@ -52,6 +57,7 @@ const clientModule = new ContainerModule(({ bind }) => {
 export interface MainThreadConfig {
   readonly bundleBaseUrl: string;
   readonly createImportWorker?: ImportWorkerFactory;
+  readonly bundleManifestFile?: string;
   readonly startSimWorker?: () => RpcPort;
 }
 
@@ -64,6 +70,9 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
       }
       return config.createImportWorker();
     });
+    bind(BUNDLE_MANIFEST_FILE).toConstantValue(
+      config.bundleManifestFile ?? DEFAULT_BUNDLE_MANIFEST_FILE,
+    );
     bind(SIM_WORKER_PORT)
       .toDynamicValue(() => {
         if (!config.startSimWorker) throw new Error("this composition root starts no sim worker");
