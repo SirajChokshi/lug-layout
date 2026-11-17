@@ -302,3 +302,67 @@ it("recomputes the view footprint only when the view has changed", () => {
   expect(camera.footprint(again)).toBe(true);
   expect(camera.footprint(again)).toBe(false);
 });
+
+describe.each([
+  [900, 0, 0, 0],
+  [0, 0, 900, 0],
+  [0, 330, 0, 0],
+  [800, 0, 100, 360],
+])(
+  "3D Fit all with panels on one side (left %i, top %i, right %i, bottom %i)",
+  (left, top, right, bottom) => {
+    it("keeps every corner of varied boxes inside the uncovered area from varied angles", () => {
+      let seed = left * 7 + top * 13 + right * 17 + bottom * 19 + 1;
+      const random = (): number => {
+        seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+        return seed / 2_147_483_648;
+      };
+      const safe = {
+        left: -1 + (2 * left) / WIDTH_PX,
+        right: 1 - (2 * right) / WIDTH_PX,
+        bottom: -1 + (2 * bottom) / HEIGHT_PX,
+        top: 1 - (2 * top) / HEIGHT_PX,
+      };
+      for (let fit = 0; fit < 40; fit++) {
+        const camera = settledCamera("orbit");
+        camera.setSafeArea(left, top, right, bottom);
+        camera.orbit((random() - 0.5) * 1_200, (random() - 0.5) * 400);
+        const [sizeX, sizeY, sizeZ] = [
+          50 + random() * 5_000,
+          8 + random() * 3_000,
+          50 + random() * 5_000,
+        ];
+        const [centreX, centreZ] = [(random() - 0.5) * 20_000, (random() - 0.5) * 20_000];
+        const box = {
+          minX: centreX - sizeX / 2,
+          minY: 0,
+          minZ: centreZ - sizeZ / 2,
+          maxX: centreX + sizeX / 2,
+          maxY: sizeY,
+          maxZ: centreZ + sizeZ / 2,
+        };
+
+        camera.frame(box);
+        camera.step(SETTLED_MS + 1);
+        camera.step(SETTLED_MS * 2);
+
+        const project = projector(camera);
+        let fill = 0;
+        for (const x of [box.minX, box.maxX]) {
+          for (const y of [box.minY, box.maxY]) {
+            for (const z of [box.minZ, box.maxZ]) {
+              const [ndcX, ndcY] = project(x, y, z);
+              fill = Math.max(
+                fill,
+                Math.abs(ndcX - (safe.left + safe.right) / 2) / ((safe.right - safe.left) / 2),
+                Math.abs(ndcY - (safe.bottom + safe.top) / 2) / ((safe.top - safe.bottom) / 2),
+              );
+            }
+          }
+        }
+        expect(fill).toBeLessThanOrEqual(1);
+        expect(fill).toBeGreaterThan(0.85);
+      }
+    });
+  },
+);

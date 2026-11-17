@@ -308,8 +308,12 @@ export class ViewCamera {
   }
 
   private projectedFitDistance(width: number, height: number, depth: number, pose: Pose): number {
-    const tanX = (this.tanHalfFov * this.aspect * this.safeWidthShare) / FRAME_MARGIN;
-    const tanY = (this.tanHalfFov * this.safeHeightShare) / FRAME_MARGIN;
+    const tanX = this.tanHalfFov * this.aspect;
+    const tanY = this.tanHalfFov;
+    const centreX = (this.safeLeftPx - this.safeRightPx) / this.widthPx;
+    const centreY = (this.safeBottomPx - this.safeTopPx) / this.heightPx;
+    const reachX = (this.safeWidthShare / FRAME_MARGIN) * tanX;
+    const reachY = (this.safeHeightShare / FRAME_MARGIN) * tanY;
     const cosPitch = Math.cos(pose.pitch);
     const sinPitch = Math.sin(pose.pitch);
     const cosYaw = Math.cos(pose.yaw);
@@ -324,8 +328,8 @@ export class ViewCamera {
       const ahead = -qx * cosPitch * cosYaw - qy * sinPitch - qz * cosPitch * sinYaw;
       distance = Math.max(
         distance,
-        Math.abs(across) / tanX - ahead,
-        Math.abs(along) / tanY - ahead,
+        Math.abs(across - centreX * tanX * ahead) / reachX - ahead,
+        Math.abs(along - centreY * tanY * ahead) / reachY - ahead,
       );
     }
     return distance;
