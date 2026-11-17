@@ -336,6 +336,28 @@ const poses = {
   aerial: { yaw: Math.PI / 4, pitch: 0.9, distance: 60000, at: [((SIDE - 1) * PITCH) / 2, ((SIDE - 1) * PITCH) / 2] },
 };
 
+async function heapSnapshot(label) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("HeapProfiler.enable");
+  await cdp.send("HeapProfiler.collectGarbage");
+  const chunks = [];
+  cdp.on("HeapProfiler.addHeapSnapshotChunk", (e) => chunks.push(e.chunk));
+  await cdp.send("HeapProfiler.takeHeapSnapshot", { reportProgress: false });
+  writeFileSync(`${OUT}/${label}.heapsnapshot`, chunks.join(""));
+  const { usedSize } = await cdp.send("Runtime.getHeapUsage");
+  console.log(`heap snapshot ${label}: used ${(usedSize / 2 ** 20).toFixed(0)} MiB`);
+  await cdp.detach();
+}
+
+async function heapAfterGc() {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("HeapProfiler.enable");
+  await cdp.send("HeapProfiler.collectGarbage");
+  const usage = await cdp.send("Runtime.getHeapUsage");
+  await cdp.detach();
+  return usage;
+}
+
 const results = existsSync(`${OUT}/results.json`) && args.append ? JSON.parse(readFileSync(`${OUT}/results.json`, "utf8")) : [];
 async function measure(label) {
   const saved = { ...cam };
@@ -352,11 +374,12 @@ async function measure(label) {
     const text = await page.locator("#measurement").textContent();
     const m = JSON.parse(text);
     const hud = await page.locator(".editor-hud").innerText();
-    const entry = { label, pose: name, url, viewport: [WIDTH, HEIGHT], measurement: m, hud };
+    const heapAfterGcBytes = await heapAfterGc();
+    const entry = { label, pose: name, url, viewport: [WIDTH, HEIGHT], measurement: m, heapAfterGcBytes, hud };
     results.push(entry);
     writeFileSync(`${OUT}/results.json`, JSON.stringify(results, null, 1));
     await page.screenshot({ path: `${OUT}/${label}-${name}.png` });
-    console.log(label, name, `median ${m.medianFrameMs.toFixed(1)} p95 ${m.p95FrameMs.toFixed(1)} draws ${m.drawCalls} tris ${m.triangles} live ${m.liveChunks} superDrawn ${m.superChunksDrawn} heap ${(m.jsHeapBytes / 2 ** 20).toFixed(0)}MiB gpu ${((m.gpuVertexIndexBytes + m.gpuOtherBytes) / 2 ** 20).toFixed(0)}MiB settle ${m.settleMs.toFixed(0)}`);
+    console.log(label, name, `median ${m.medianFrameMs.toFixed(1)} p95 ${m.p95FrameMs.toFixed(1)} draws ${m.drawCalls} tris ${m.triangles} live ${m.liveChunks} superDrawn ${m.superChunksDrawn} heap ${(m.jsHeapBytes / 2 ** 20).toFixed(0)}MiB gc-heap ${(heapAfterGcBytes.usedSize / 2 ** 20).toFixed(0)}MiB backing ${((heapAfterGcBytes.backingStorageSize ?? 0) / 2 ** 20).toFixed(0)}MiB gpu ${((m.gpuVertexIndexBytes + m.gpuOtherBytes) / 2 ** 20).toFixed(0)}MiB settle ${m.settleMs.toFixed(0)}`);
   }
   await zoomTo(20000);
   await orbitTo(saved.yaw, 1.2);
@@ -421,7 +444,9 @@ for (let b = 1; b < bounds.length; b++) {
   if (count !== 2 * bounds[b]) throw new Error("placement count mismatch");
   if (CHECKPOINTS.includes(bounds[b])) {
     await page.keyboard.press("Escape");
+    if (args.heap) await heapSnapshot(`m${bounds[b]}-built`);
     await measure(`m${bounds[b]}`);
+    if (args.heap) await heapSnapshot(`m${bounds[b]}-measured`);
   }
 }
 const done = all.length;
