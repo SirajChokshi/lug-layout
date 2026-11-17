@@ -2319,6 +2319,8 @@ export class Editor implements IEditor {
     track: TrackDrawing | null = this.newTrack?.() ?? null,
   ): void {
     this.select(null);
+    this.selectedTrack = null;
+    this.showRefusalCells(null);
     this.placed.clear();
     for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
     this.track = track;

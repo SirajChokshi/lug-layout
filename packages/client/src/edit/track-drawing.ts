@@ -932,6 +932,7 @@ export class TrackDrawing {
       if (!part) continue;
       const placement = pose16(decodeTrackPosition(record.position), record.heading);
       const index = this.layout.place(part.catalogIndex, placement, record.yPlates);
+      this.pieceCells[index] = this.cellsOf(part, placement);
       const centre = partCentre({ part, placement });
       const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
       const members = this.chunkMembers.get(key) ?? [];
