@@ -179,6 +179,8 @@ export {
   type KeyInput,
   type KeyPlatform,
 } from "./commands/key-chord.ts";
+export { FOOTPRINT_FLOATS } from "./camera/editor-camera.ts";
+export { overviewOf, type OverviewItem, type OverviewView } from "./camera/overview.ts";
 export type {
   CameraSnapshot,
   IEditorCamera,

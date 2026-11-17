@@ -25,6 +25,9 @@ const MAX_GRAB_DISTANCE_FACTOR = 12;
 const FULL_TURN = Math.PI * 2;
 export const GROUND_Y_LDU = 0;
 const MIN_SAFE_SHARE = 0.25;
+const SCREEN_CORNERS_NDC = [-1, -1, 1, -1, 1, 1, -1, 1] as const;
+const CORNER_FLOATS = SCREEN_CORNERS_NDC.length;
+export const FOOTPRINT_FLOATS = CORNER_FLOATS + 2;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -407,6 +410,29 @@ export class ViewCamera {
     out[0] = (ray[0] ?? 0) + (ray[3] ?? 0) * t;
     out[1] = (ray[2] ?? 0) + (ray[5] ?? 0) * t;
     return true;
+  }
+
+  footprint(out: Float64Array): void {
+    for (let corner = 0; corner < CORNER_FLOATS; corner += 2) {
+      const ndcX = SCREEN_CORNERS_NDC[corner] ?? 0;
+      const ndcY = SCREEN_CORNERS_NDC[corner + 1] ?? 0;
+      if (!this.groundHit(ndcX, ndcY, this.hit)) this.horizonPoint(ndcX, ndcY, this.hit);
+      out[corner] = this.hit[0] ?? 0;
+      out[corner + 1] = this.hit[1] ?? 0;
+    }
+    out[CORNER_FLOATS] = this.pose.targetX;
+    out[CORNER_FLOATS + 1] = this.pose.targetZ;
+  }
+
+  private horizonPoint(ndcX: number, ndcY: number, out: Float64Array): void {
+    const ray = this.ray;
+    this.rayThrough(ndcX, ndcY, ray);
+    const dirX = ray[3] ?? 0;
+    const dirZ = ray[5] ?? 0;
+    const reach =
+      (this.pose.distance * MAX_GRAB_DISTANCE_FACTOR) / Math.max(Math.hypot(dirX, dirZ), 1e-9);
+    out[0] = (ray[0] ?? 0) + dirX * reach;
+    out[1] = (ray[2] ?? 0) + dirZ * reach;
   }
 
   private eyeDistance(): number {

@@ -16,6 +16,7 @@ import {
   ModuleJoins,
   RoadJoins,
 } from "./editor-panels.tsx";
+import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
@@ -124,6 +125,7 @@ export function EditorApp({
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} />
       <PlanPanel camera={camera} plans={plans} />
+      <Minimap camera={camera} plans={plans} snapshot={snapshot} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
