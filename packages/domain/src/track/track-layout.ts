@@ -26,6 +26,14 @@ const INITIAL_CAPACITY = 64;
 const INT64_BITS = 64;
 const INT16_MIN = -(2 ** 15);
 const INT16_MAX = 2 ** 15 - 1;
+const INT8_MIN = -(2 ** 7);
+const INT8_MAX = 2 ** 7 - 1;
+const RAMP_CONNECTORS = 2;
+const RAMP_HIGH_END = 1;
+
+function isIntegerIn(value: number, min: number, max: number): boolean {
+  return Number.isInteger(value) && value >= min && value <= max;
+}
 
 function checkPiece(spec: TrackPieceSpec, index: number): void {
   const connectorCount = spec.connectors.length;
@@ -50,6 +58,7 @@ export class TrackLayout {
   private pieceOf = new Uint32Array(INITIAL_CAPACITY);
   private headingOf = new Uint8Array(INITIAL_CAPACITY);
   private yPlatesOf = new Int16Array(INITIAL_CAPACITY);
+  private riseOf = new Int8Array(INITIAL_CAPACITY);
   private positionOf = new BigInt64Array(INITIAL_CAPACITY * ZETA16_COEFFICIENT_COUNT);
 
   constructor(readonly pieces: ReadonlyArray<TrackPieceSpec>) {
@@ -60,12 +69,23 @@ export class TrackLayout {
     return this.size;
   }
 
-  place(piece: number, placement: Pose16, yPlates: number): number {
+  place(piece: number, placement: Pose16, yPlates: number, risePlates = 0): number {
     const spec = this.pieces[piece];
     if (!spec || !Number.isInteger(piece))
       throw new RangeError(`track piece ${piece} is not in the layout's piece table`);
-    if (!Number.isInteger(yPlates) || yPlates < INT16_MIN || yPlates > INT16_MAX) {
+    if (!isIntegerIn(yPlates, INT16_MIN, INT16_MAX)) {
       throw new RangeError(`track height ${yPlates} plates is not an int16`);
+    }
+    if (!isIntegerIn(risePlates, INT8_MIN, INT8_MAX)) {
+      throw new RangeError(`track rise ${risePlates} plates is not an int8`);
+    }
+    if (risePlates !== 0 && spec.connectors.length !== RAMP_CONNECTORS) {
+      throw new RangeError(
+        `track piece ${piece} has ${spec.connectors.length} ends, so it can only be laid level`,
+      );
+    }
+    if (!isIntegerIn(yPlates + risePlates, INT16_MIN, INT16_MAX)) {
+      throw new RangeError(`track end height ${yPlates + risePlates} plates is not an int16`);
     }
     for (const coefficient of placement.position) {
       if (BigInt.asIntN(INT64_BITS, coefficient) !== coefficient) {
@@ -77,6 +97,7 @@ export class TrackLayout {
     this.pieceOf[slot] = piece;
     this.headingOf[slot] = pose16(placement.position, placement.heading).heading;
     this.yPlatesOf[slot] = yPlates;
+    this.riseOf[slot] = risePlates;
     this.positionOf.set(placement.position, slot * ZETA16_COEFFICIENT_COUNT);
     return slot;
   }
@@ -85,7 +106,7 @@ export class TrackLayout {
     const local = this.pieces[piece]?.connectors[connector];
     if (!local) throw new RangeError(`track piece ${piece} has no connector ${connector}`);
     const placement = attachPose16(local, this.connectorPose(target.placement, target.connector));
-    return this.place(piece, placement, this.yPlates(target.placement));
+    return this.place(piece, placement, this.endYPlates(target.placement, target.connector));
   }
 
   piece(placement: number): number {
@@ -96,6 +117,20 @@ export class TrackLayout {
   yPlates(placement: number): number {
     this.checkPlacement(placement);
     return this.yPlatesOf[placement] ?? 0;
+  }
+
+  rise(placement: number): number {
+    this.checkPlacement(placement);
+    return this.riseOf[placement] ?? 0;
+  }
+
+  endYPlates(placement: number, connector: number): number {
+    const connectorCount = this.pieces[this.piece(placement)]?.connectors.length ?? 0;
+    if (!isIntegerIn(connector, 0, connectorCount - 1)) {
+      throw new RangeError(`placement ${placement} has no connector ${connector}`);
+    }
+    const base = this.yPlates(placement);
+    return connector === RAMP_HIGH_END ? base + this.rise(placement) : base;
   }
 
   pose(placement: number): Pose16 {
@@ -130,6 +165,9 @@ export class TrackLayout {
     const yPlatesOf = new Int16Array(this.capacity);
     yPlatesOf.set(this.yPlatesOf);
     this.yPlatesOf = yPlatesOf;
+    const riseOf = new Int8Array(this.capacity);
+    riseOf.set(this.riseOf);
+    this.riseOf = riseOf;
     const positionOf = new BigInt64Array(this.capacity * ZETA16_COEFFICIENT_COUNT);
     positionOf.set(this.positionOf);
     this.positionOf = positionOf;
