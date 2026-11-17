@@ -1,10 +1,11 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   RELEASE_ID_HEX_DIGITS,
@@ -122,14 +123,19 @@ function fireSetSearch(release: string): string {
   return `/v1/catalogs/${release}/search?q=fire&kind=set`;
 }
 
-function wrangler(args: ReadonlyArray<string>): string {
-  const result = spawnSync(join(packageRoot, "node_modules", ".bin", "wrangler"), args, {
+const execFileAsync = promisify(execFile);
+
+async function run(command: string, args: ReadonlyArray<string>): Promise<string> {
+  const { stdout } = await execFileAsync(command, args, {
     cwd: packageRoot,
     encoding: "utf8",
     env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
   });
-  expect({ status: result.status, stderr: result.stderr }).toMatchObject({ status: 0 });
-  return result.stdout;
+  return stdout;
+}
+
+function wrangler(args: ReadonlyArray<string>): Promise<string> {
+  return run(join(packageRoot, "node_modules", ".bin", "wrangler"), args);
 }
 
 async function getJson<Schema extends v.GenericSchema>(
@@ -327,25 +333,20 @@ describe("catalog API over a loaded release", () => {
     source.close();
   });
 
-  it("loads a release through the CLI into local D1 and R2 by file import", () => {
+  it("loads a release through the CLI into local D1 and R2 by file import", async () => {
     const state = join(scratch, "state");
-    const output = spawnSync(
-      process.execPath,
-      [
-        "scripts/load-release.ts",
-        "--sqlite",
-        currentPath,
-        "--source",
-        "rebrickable-db@ad9943cc slice",
-        "--local",
-        "--persist-to",
-        state,
-      ],
-      { cwd: packageRoot, encoding: "utf8" },
-    );
-    expect({ status: output.status, stderr: output.stderr }).toMatchObject({ status: 0 });
+    await run(process.execPath, [
+      "scripts/load-release.ts",
+      "--sqlite",
+      currentPath,
+      "--source",
+      "rebrickable-db@ad9943cc slice",
+      "--local",
+      "--persist-to",
+      state,
+    ]);
     const rows = JSON.parse(
-      wrangler([
+      await wrangler([
         "d1",
         "execute",
         "CATALOG_DB",
@@ -358,7 +359,7 @@ describe("catalog API over a loaded release", () => {
       ]),
     ) as Array<{ results: Array<{ release_id: string; set_num: string }> }>;
     expect(rows[0]?.results).toEqual([{ release_id: current.id, set_num: "4558-1" }]);
-    const header = wrangler([
+    const header = await wrangler([
       "r2",
       "object",
       "get",
