@@ -271,13 +271,12 @@ async function zoomTo(distance) {
   }
 }
 
-const catalogBoxes = new Map();
-for (const item of ["ldraw:3811", ...ORDER]) {
-  catalogBoxes.set(item, await page.locator(`[data-item="${item}"]`).boundingBox());
-}
 let ghostRot = 0;
 async function choose(item) {
-  const box = catalogBoxes.get(item);
+  const button = page.locator(`[data-item="${item}"]`);
+  await button.scrollIntoViewIfNeeded();
+  const box = await button.boundingBox();
+  if (!box) throw new Error(`catalog item ${item} is not on screen`);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   const active = await page.locator(`[data-item="${item}"]`).getAttribute("aria-pressed");
   if (active !== "true") throw new Error(`catalog item ${item} did not activate`);
