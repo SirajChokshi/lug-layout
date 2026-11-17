@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ViewCamera, type ViewMode } from "./view-camera.ts";
+import { FOOTPRINT_FLOATS, ViewCamera, type ViewMode } from "./view-camera.ts";
 
 const WIDTH_PX = 1280;
 const HEIGHT_PX = 720;
@@ -166,5 +166,45 @@ describe("after framing a tall model in 3D, so the orbit pivot is off the ground
     const safeCentre = ground(camera, (420 - 380) / WIDTH_PX, (80 - 60) / HEIGHT_PX);
     expect(safeCentre[0]).toBeCloseTo(point[0], 3);
     expect(safeCentre[1]).toBeCloseTo(point[1], 3);
+  });
+});
+
+it("the view footprint stays a finite quad around the target even with the horizon in view", () => {
+  const camera = settledCamera("orbit");
+  camera.orbit(0, -1_000);
+  const footprint = new Float64Array(FOOTPRINT_FLOATS);
+
+  camera.footprint(footprint);
+
+  expect(footprint.every(Number.isFinite)).toBe(true);
+  const targetX = footprint[FOOTPRINT_FLOATS - 2] ?? Number.NaN;
+  const targetZ = footprint[FOOTPRINT_FLOATS - 1] ?? Number.NaN;
+  const corners = FOOTPRINT_FLOATS / 2 - 1;
+  for (let i = 0; i < corners; i++) {
+    const ax = footprint[2 * i] ?? 0;
+    const az = footprint[2 * i + 1] ?? 0;
+    const bx = footprint[(2 * i + 2) % (2 * corners)] ?? 0;
+    const bz = footprint[(2 * i + 3) % (2 * corners)] ?? 0;
+    expect((bx - ax) * (targetZ - az) - (bz - az) * (targetX - ax)).toBeLessThan(0);
+  }
+});
+
+it("the view footprint outlines the ground the panels leave uncovered, not the whole canvas", () => {
+  const camera = settledCamera("plan");
+  const [left, top, right, bottom] = [420, 60, 380, 80];
+  camera.setSafeArea(left, top, right, bottom);
+  const footprint = new Float64Array(FOOTPRINT_FLOATS);
+
+  camera.footprint(footprint);
+
+  const corners = [
+    ground(camera, -1 + (2 * left) / WIDTH_PX, -1 + (2 * bottom) / HEIGHT_PX),
+    ground(camera, 1 - (2 * right) / WIDTH_PX, -1 + (2 * bottom) / HEIGHT_PX),
+    ground(camera, 1 - (2 * right) / WIDTH_PX, 1 - (2 * top) / HEIGHT_PX),
+    ground(camera, -1 + (2 * left) / WIDTH_PX, 1 - (2 * top) / HEIGHT_PX),
+  ];
+  corners.forEach(([x, z], i) => {
+    expect(footprint[2 * i]).toBeCloseTo(x, 6);
+    expect(footprint[2 * i + 1]).toBeCloseTo(z, 6);
   });
 });
