@@ -58,9 +58,9 @@ export class TrackGraph {
     for (let p = 0; p < placementCount; p++) {
       const first = endStart[p] ?? 0;
       const last = endStart[p + 1] ?? 0;
-      const yPlates = layout.yPlates(p);
       for (let end = first; end < last; end++) {
         const connector = end - first;
+        const yPlates = layout.endYPlates(p, connector);
         const pose = layout.connectorPose(p, connector);
         const studs = zeta16ToStuds(pose.position);
         poses.push(pose);
