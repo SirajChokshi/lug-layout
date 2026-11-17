@@ -12,7 +12,7 @@ import {
 } from "@brr/client";
 import type { BundleLod } from "@brr/schema/bundle";
 
-export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run" | "import";
+export type AppMode = "edit" | "parts" | "model" | "city" | "layout" | "track" | "run" | "import";
 
 export type MeasurePace = "frame" | "tight";
 
@@ -126,6 +126,7 @@ function originChunks(value: string | null): readonly [number, number] {
 function appMode(params: URLSearchParams): AppMode {
   const scene = params.get("scene");
   if (scene === "city") return "city";
+  if (scene === "layout") return "layout";
   if (params.get("track") !== null) return params.get("run") === "1" ? "run" : "track";
   if (params.get("model") !== null) return "model";
   if (scene === "parts") return "parts";
