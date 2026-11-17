@@ -16,6 +16,13 @@ export class MergedParts {
     return this.byId.get(id) ?? -1;
   }
 
+  replace(index: number, part: PartAsset): void {
+    if (this.assets[index]?.id !== part.id) {
+      throw new Error(`palette slot ${index} does not hold ${part.id}`);
+    }
+    this.assets[index] = part;
+  }
+
   private add(part: PartAsset): number {
     const existing = this.byId.get(part.id);
     if (existing !== undefined) return existing;
