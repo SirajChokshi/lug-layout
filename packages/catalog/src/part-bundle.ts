@@ -33,7 +33,7 @@ export interface PartMesh {
   readonly groups: ReadonlyArray<ColorGroup>;
 }
 
-export interface PartAsset {
+export interface PartShapeAsset {
   readonly id: string;
   readonly title: string;
   readonly role: PartRole;
@@ -42,10 +42,13 @@ export interface PartAsset {
   readonly producedColor: number | undefined;
   readonly producedColors: ReadonlyArray<number>;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
-  readonly mesh: PartMesh;
   readonly studPrimitiveIndex: Uint8Array;
   readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
+}
+
+export interface PartAsset extends PartShapeAsset {
+  readonly mesh: PartMesh;
 }
 
 export interface StudPrimitiveAsset {
@@ -113,7 +116,13 @@ export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {
 
 export type PartBundle = Pick<
   BundleManifest,
-  "bundleVersion" | "colors" | "credits" | "models" | "trackCatalog" | "milsEdgeRules"
+  | "bundleVersion"
+  | "colors"
+  | "credits"
+  | "models"
+  | "trackCatalog"
+  | "trackShapes"
+  | "milsEdgeRules"
 > & {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;

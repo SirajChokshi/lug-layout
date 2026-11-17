@@ -1,4 +1,4 @@
-import type { PartAsset } from "@brr/catalog";
+import type { PartShapeAsset } from "@brr/catalog";
 import { NO_TOP } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { ChunkPartInstances } from "../scene/placements.ts";
@@ -15,7 +15,7 @@ export interface ModuleSurface {
 function groundFootprint(
   instances: ChunkPartInstances,
   partBoxes: Float32Array,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   label: string,
 ) {
   let minX = Number.POSITIVE_INFINITY;
@@ -50,7 +50,7 @@ export function moduleSurface(
   instances: ChunkPartInstances,
   partBoxes: Float32Array,
   ldrawColor: Uint16Array,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
   label: string,
 ): ModuleSurface {
   const { minX, minZ, studs } = groundFootprint(instances, partBoxes, parts, label);
