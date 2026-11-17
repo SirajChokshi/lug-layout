@@ -5,7 +5,7 @@ const QUARTER_TURNS = 4;
 const INT16_MIN = -(2 ** 15);
 const INT16_MAX = 2 ** 15 - 1;
 
-export type EditKind = "place" | "rotate" | "remove" | "move" | "draw-track";
+export type EditKind = "place" | "rotate" | "remove" | "move" | "draw-track" | "clear";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
