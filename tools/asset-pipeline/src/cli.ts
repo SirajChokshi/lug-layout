@@ -19,6 +19,7 @@ import {
   verifyAuditInputs,
   verifyClosure,
   verifyModels,
+  verifyOmrErrata,
   type InputLock,
   type ModelRoots,
 } from "./fetch-ldraw.ts";
@@ -28,7 +29,7 @@ import {
   readProducedColorInputs,
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
-import { readPalette } from "./palette.ts";
+import { readOmrErrata, readPalette } from "./palette.ts";
 import { MANIFEST_FILE, publishBundle } from "./publish.ts";
 import { R2ObjectStore, sha256Hex } from "./r2.ts";
 import {
@@ -50,6 +51,7 @@ const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
 const palettePath = join(toolRoot, "palette.json");
 const lockPath = join(toolRoot, "ldraw.lock.json");
+const omrErrataPath = join(toolRoot, "omr-errata.json");
 const fixturesRoot = join(repoRoot, "packages", "test-fixtures");
 const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
@@ -94,7 +96,7 @@ async function fetchCommand(): Promise<void> {
 async function writeAttribution(lock: InputLock, palette: Palette): Promise<void> {
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
-    await renderModelAttribution(palette, modelRoots),
+    await renderModelAttribution(palette, modelRoots, await readOmrErrata(omrErrataPath)),
     await renderTestDataAttribution(repoRoot, TEST_DATA_DIRECTORIES),
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
@@ -139,13 +141,14 @@ async function verifyCommand(): Promise<void> {
   const problems = [
     ...(await verifyClosure(await readLock(), ldrawRoot)),
     ...(await verifyModels(palette, modelRoots)),
+    ...(await verifyOmrErrata(await readOmrErrata(omrErrataPath), palette, modelRoots)),
   ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
     process.exitCode = 1;
     return;
   }
-  process.stdout.write("LDraw inputs match ldraw.lock.json\n");
+  process.stdout.write("LDraw inputs match ldraw.lock.json and omr-errata.json\n");
 }
 
 async function factsCommand(check: boolean): Promise<void> {
@@ -321,6 +324,8 @@ async function bundleCommand(): Promise<void> {
       fixturesRoot,
       "--omr",
       omrRoot,
+      "--omr-errata",
+      omrErrataPath,
       "--geometry",
       join(repoRoot, "docs", "verified-facts", "geometry.json"),
       "--palette",
