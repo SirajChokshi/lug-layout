@@ -1,0 +1,268 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n437d11a245e88dd5\nParts\n22\nModules\n2\nStud instances (drawn of total)\n124 of 124\nScene triangles\n12,220\nLoad\n42 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.1 MiB, other 0.0 MiB, JS heap 47.3 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n20\nDrawn triangles\n12,221\nScene coverage\n7%\nFrame rate (rAF)\n6.2 fps\nParts list\nWorld\nRegion (LDU, placement origins)\nBuild parts list",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 180,
+        "z": -20,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "whale.io!modelv2.ldr",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "whale",
+            "title": "Untitled Model"
+          }
+        ],
+        "instanceCount": 22,
+        "drawnInstanceCount": 22,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3034.dat",
+            "official": "3034.dat",
+            "instances": 2,
+            "partId": "ldraw:3034"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "official": "3001.dat",
+            "instances": 3,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3002.dat",
+            "official": "3002.dat",
+            "instances": 1,
+            "partId": "ldraw:3002"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "official": "3003.dat",
+            "instances": 3,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "official": "3020.dat",
+            "instances": 2,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2456.dat",
+            "official": "2456.dat",
+            "instances": 1,
+            "partId": "ldraw:2456"
+          },
+          {
+            "kind": "bundle",
+            "reference": "87087.dat",
+            "official": "87087.dat",
+            "instances": 2,
+            "partId": "ldraw:87087"
+          },
+          {
+            "kind": "compiled",
+            "reference": "98138p2l.dat",
+            "official": "98138p2l.dat",
+            "instances": 2,
+            "partId": "ldraw:98138p2l",
+            "file": "parts/98138p2l.dat",
+            "header": {
+              "author": "Vincent Messenet [Cheenzo]",
+              "ldrawOrg": "Part UPDATE 2024-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "98138p2l.dat",
+              "title": "Tile 1 x 1 Round with Half Circle Within a Black Half Circle Pattern"
+            },
+            "sourceFiles": 21
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "official": "3022.dat",
+            "instances": 1,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2420.dat",
+            "official": "2420.dat",
+            "instances": 2,
+            "partId": "ldraw:2420"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "official": "3004.dat",
+            "instances": 1,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6215.dat",
+            "official": "6215.dat",
+            "instances": 2,
+            "partId": "ldraw:6215"
+          }
+        ],
+        "inlineParts": [],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 22,
+        "fetched": {
+          "requests": 39,
+          "found": 21,
+          "notFound": 18,
+          "bytes": 22153
+        },
+        "timings": {
+          "bakeMs": 1.800000000745058,
+          "resolveMs": 751.8000000007451,
+          "totalMs": 753.6000000014901
+        },
+        "studio": {
+          "file": "whale.io",
+          "entry": "modelv2.ldr",
+          "studioVersion": "2.26.7_1",
+          "convertedLines": 22,
+          "unconvertedLines": [],
+          "parts": [
+            {
+              "studio": "2420.dat",
+              "bricklinkId": "2420",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "2456.dat",
+              "bricklinkId": "2456",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3001.dat",
+              "bricklinkId": "3001",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3002.dat",
+              "bricklinkId": "3002",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3003.dat",
+              "bricklinkId": "3003",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3004.dat",
+              "bricklinkId": "3004",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3020.dat",
+              "bricklinkId": "3020",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3022.dat",
+              "bricklinkId": "3022",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3034.dat",
+              "bricklinkId": "3034",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6215.dat",
+              "bricklinkId": "6215",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "87087.dat",
+              "bricklinkId": "87087",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "98138p2l.dat",
+              "bricklinkId": "98138p2l",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            }
+          ],
+          "unknownColors": []
+        },
+        "importMs": 1435.8999999985099,
+        "sceneMs": 280.80000000074506
+      }
+    ]
+  }
+}
