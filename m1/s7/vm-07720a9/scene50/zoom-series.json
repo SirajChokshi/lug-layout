@@ -1,0 +1,576 @@
+[
+  {
+    "step": 0,
+    "wheel": 0,
+    "pitchPx": 51.3,
+    "stats": {
+      "fps": 0.4608932110431596,
+      "drawCalls": 4044,
+      "triangles": 4769952,
+      "nearChunks": 35,
+      "midChunks": 168,
+      "farChunks": 12,
+      "nearestStudPitchPx": 51.326592023775206
+    }
+  },
+  {
+    "step": 1,
+    "wheel": 60,
+    "pitchPx": 54.7,
+    "stats": {
+      "fps": 0.4856019035592863,
+      "drawCalls": 3957,
+      "triangles": 4686008,
+      "nearChunks": 36,
+      "midChunks": 165,
+      "farChunks": 14,
+      "nearestStudPitchPx": 54.691434184972984
+    }
+  },
+  {
+    "step": 2,
+    "wheel": 120,
+    "pitchPx": 58.1,
+    "stats": {
+      "fps": 0.4992261993910369,
+      "drawCalls": 3940,
+      "triangles": 4776459,
+      "nearChunks": 37,
+      "midChunks": 162,
+      "farChunks": 16,
+      "nearestStudPitchPx": 58.11320372564393
+    }
+  },
+  {
+    "step": 3,
+    "wheel": 180,
+    "pitchPx": 59.4,
+    "stats": {
+      "fps": 0.47341760166626295,
+      "drawCalls": 3925,
+      "triangles": 5006743,
+      "nearChunks": 38,
+      "midChunks": 159,
+      "farChunks": 18,
+      "nearestStudPitchPx": 59.42949284547809
+    }
+  },
+  {
+    "step": 4,
+    "wheel": 240,
+    "pitchPx": 57.8,
+    "stats": {
+      "fps": 0.4508566275924256,
+      "drawCalls": 3977,
+      "triangles": 5184598,
+      "nearChunks": 39,
+      "midChunks": 153,
+      "farChunks": 23,
+      "nearestStudPitchPx": 57.83444350102557
+    }
+  },
+  {
+    "step": 5,
+    "wheel": 300,
+    "pitchPx": 54.7,
+    "stats": {
+      "fps": 0.4491354143274197,
+      "drawCalls": 3949,
+      "triangles": 5359952,
+      "nearChunks": 39,
+      "midChunks": 152,
+      "farChunks": 24,
+      "nearestStudPitchPx": 54.684641250261954
+    }
+  },
+  {
+    "step": 6,
+    "wheel": 360,
+    "pitchPx": 51.5,
+    "stats": {
+      "fps": 0.4604051565377532,
+      "drawCalls": 4006,
+      "triangles": 5481653,
+      "nearChunks": 40,
+      "midChunks": 147,
+      "farChunks": 28,
+      "nearestStudPitchPx": 51.5483597781917
+    }
+  },
+  {
+    "step": 7,
+    "wheel": 420,
+    "pitchPx": 48.6,
+    "stats": {
+      "fps": 0.4403152657303351,
+      "drawCalls": 4123,
+      "triangles": 5683631,
+      "nearChunks": 41,
+      "midChunks": 143,
+      "farChunks": 31,
+      "nearestStudPitchPx": 48.59195077574297
+    }
+  },
+  {
+    "step": 8,
+    "wheel": 480,
+    "pitchPx": 45.8,
+    "stats": {
+      "fps": 0.4293503928556781,
+      "drawCalls": 4108,
+      "triangles": 5595301,
+      "nearChunks": 41,
+      "midChunks": 142,
+      "farChunks": 32,
+      "nearestStudPitchPx": 45.80509817096372
+    }
+  },
+  {
+    "step": 9,
+    "wheel": 540,
+    "pitchPx": 43.2,
+    "stats": {
+      "fps": 0.43643346571800934,
+      "drawCalls": 4122,
+      "triangles": 5529698,
+      "nearChunks": 39,
+      "midChunks": 143,
+      "farChunks": 33,
+      "nearestStudPitchPx": 43.17807754075588
+    }
+  },
+  {
+    "step": 10,
+    "wheel": 600,
+    "pitchPx": 40.6,
+    "stats": {
+      "fps": 0.42392640637612095,
+      "drawCalls": 4301,
+      "triangles": 5717999,
+      "nearChunks": 39,
+      "midChunks": 143,
+      "farChunks": 33,
+      "nearestStudPitchPx": 40.633161060939265
+    }
+  },
+  {
+    "step": 11,
+    "wheel": 660,
+    "pitchPx": 37.6,
+    "stats": {
+      "fps": 0.41671875651136,
+      "drawCalls": 4360,
+      "triangles": 5790104,
+      "nearChunks": 38,
+      "midChunks": 143,
+      "farChunks": 34,
+      "nearestStudPitchPx": 37.60532500908088
+    }
+  },
+  {
+    "step": 12,
+    "wheel": 720,
+    "pitchPx": 34.1,
+    "stats": {
+      "fps": 0.38590668776278797,
+      "drawCalls": 4570,
+      "triangles": 5986638,
+      "nearChunks": 36,
+      "midChunks": 145,
+      "farChunks": 34,
+      "nearestStudPitchPx": 34.1411972994741
+    }
+  },
+  {
+    "step": 13,
+    "wheel": 780,
+    "pitchPx": 30.6,
+    "stats": {
+      "fps": 0.3932054105062758,
+      "drawCalls": 4761,
+      "triangles": 5953624,
+      "nearChunks": 32,
+      "midChunks": 148,
+      "farChunks": 35,
+      "nearestStudPitchPx": 30.63139716422255
+    }
+  },
+  {
+    "step": 14,
+    "wheel": 840,
+    "pitchPx": 28,
+    "stats": {
+      "fps": 0.4085968783197874,
+      "drawCalls": 4639,
+      "triangles": 5688075,
+      "nearChunks": 29,
+      "midChunks": 148,
+      "farChunks": 38,
+      "nearestStudPitchPx": 28.038541315460787
+    }
+  },
+  {
+    "step": 15,
+    "wheel": 900,
+    "pitchPx": 27.3,
+    "stats": {
+      "fps": 0.4417156234815299,
+      "drawCalls": 4719,
+      "triangles": 5381978,
+      "nearChunks": 31,
+      "midChunks": 145,
+      "farChunks": 39,
+      "nearestStudPitchPx": 27.257752028226708
+    }
+  },
+  {
+    "step": 16,
+    "wheel": 960,
+    "pitchPx": 27.8,
+    "stats": {
+      "fps": 0.403616402970374,
+      "drawCalls": 4657,
+      "triangles": 5230806,
+      "nearChunks": 28,
+      "midChunks": 141,
+      "farChunks": 46,
+      "nearestStudPitchPx": 27.811409436022256
+    }
+  },
+  {
+    "step": 17,
+    "wheel": 1020,
+    "pitchPx": 26.9,
+    "stats": {
+      "fps": 0.455622380171546,
+      "drawCalls": 4649,
+      "triangles": 5355813,
+      "nearChunks": 28,
+      "midChunks": 140,
+      "farChunks": 47,
+      "nearestStudPitchPx": 26.917526461772745
+    }
+  },
+  {
+    "step": 18,
+    "wheel": 1080,
+    "pitchPx": 25.4,
+    "stats": {
+      "fps": 0.4316857327865314,
+      "drawCalls": 4820,
+      "triangles": 5451035,
+      "nearChunks": 27,
+      "midChunks": 140,
+      "farChunks": 48,
+      "nearestStudPitchPx": 25.375131265681958
+    }
+  },
+  {
+    "step": 19,
+    "wheel": 1140,
+    "pitchPx": 23.9,
+    "stats": {
+      "fps": 0.41830502802617614,
+      "drawCalls": 4898,
+      "triangles": 5620638,
+      "nearChunks": 26,
+      "midChunks": 136,
+      "farChunks": 53,
+      "nearestStudPitchPx": 23.91983273121918
+    }
+  },
+  {
+    "step": 20,
+    "wheel": 1200,
+    "pitchPx": 22.5,
+    "stats": {
+      "fps": 0.4844022476263416,
+      "drawCalls": 4701,
+      "triangles": 5112206,
+      "nearChunks": 22,
+      "midChunks": 136,
+      "farChunks": 57,
+      "nearestStudPitchPx": 22.547979016999506
+    }
+  },
+  {
+    "step": 21,
+    "wheel": 1260,
+    "pitchPx": 21.3,
+    "stats": {
+      "fps": 0.4592211609107805,
+      "drawCalls": 4819,
+      "triangles": 5341464,
+      "nearChunks": 20,
+      "midChunks": 137,
+      "farChunks": 58,
+      "nearestStudPitchPx": 21.254804055861666
+    }
+  },
+  {
+    "step": 22,
+    "wheel": 1320,
+    "pitchPx": 19.9,
+    "stats": {
+      "fps": 0.4829518014098717,
+      "drawCalls": 4905,
+      "triangles": 4986524,
+      "nearChunks": 14,
+      "midChunks": 140,
+      "farChunks": 61,
+      "nearestStudPitchPx": 19.852149718814587
+    }
+  },
+  {
+    "step": 23,
+    "wheel": 1380,
+    "pitchPx": 17.8,
+    "stats": {
+      "fps": 0.4792715073088905,
+      "drawCalls": 5022,
+      "triangles": 5046706,
+      "nearChunks": 10,
+      "midChunks": 141,
+      "farChunks": 64,
+      "nearestStudPitchPx": 17.80896849255082
+    }
+  },
+  {
+    "step": 24,
+    "wheel": 1440,
+    "pitchPx": 15.9,
+    "stats": {
+      "fps": 0.5185646131506985,
+      "drawCalls": 4676,
+      "triangles": 4460225,
+      "nearChunks": 9,
+      "midChunks": 135,
+      "farChunks": 71,
+      "nearestStudPitchPx": 15.874456148430168
+    }
+  },
+  {
+    "step": 25,
+    "wheel": 1500,
+    "pitchPx": 14.3,
+    "stats": {
+      "fps": 0.5252928507645067,
+      "drawCalls": 4731,
+      "triangles": 4552840,
+      "nearChunks": 5,
+      "midChunks": 131,
+      "farChunks": 79,
+      "nearestStudPitchPx": 14.255272391134138
+    }
+  },
+  {
+    "step": 26,
+    "wheel": 1560,
+    "pitchPx": 12.7,
+    "stats": {
+      "fps": 0.4960563520014957,
+      "drawCalls": 4735,
+      "triangles": 4428128,
+      "nearChunks": 1,
+      "midChunks": 129,
+      "farChunks": 85,
+      "nearestStudPitchPx": 12.689550897320329
+    }
+  },
+  {
+    "step": 27,
+    "wheel": 1620,
+    "pitchPx": 11.3,
+    "stats": {
+      "fps": 0.563793200654237,
+      "drawCalls": 4453,
+      "triangles": 4091717,
+      "nearChunks": 0,
+      "midChunks": 123,
+      "farChunks": 92,
+      "nearestStudPitchPx": 11.258462871150833
+    }
+  },
+  {
+    "step": 28,
+    "wheel": 1680,
+    "pitchPx": 9.9,
+    "stats": {
+      "fps": 0.5918910920390648,
+      "drawCalls": 3999,
+      "triangles": 3658261,
+      "nearChunks": 0,
+      "midChunks": 114,
+      "farChunks": 101,
+      "nearestStudPitchPx": 9.905898677716944
+    }
+  },
+  {
+    "step": 29,
+    "wheel": 1740,
+    "pitchPx": 9,
+    "stats": {
+      "fps": 0.6820817133894373,
+      "drawCalls": 3673,
+      "triangles": 3352488,
+      "nearChunks": 0,
+      "midChunks": 101,
+      "farChunks": 114,
+      "nearestStudPitchPx": 8.965944329424623
+    }
+  },
+  {
+    "step": 30,
+    "wheel": 1800,
+    "pitchPx": 8.2,
+    "stats": {
+      "fps": 0.7544322897019993,
+      "drawCalls": 3358,
+      "triangles": 3012228,
+      "nearChunks": 0,
+      "midChunks": 89,
+      "farChunks": 126,
+      "nearestStudPitchPx": 8.151186656097666
+    }
+  },
+  {
+    "step": 31,
+    "wheel": 1860,
+    "pitchPx": 7.3,
+    "stats": {
+      "fps": 0.8407600470822993,
+      "drawCalls": 2894,
+      "triangles": 2601691,
+      "nearChunks": 0,
+      "midChunks": 78,
+      "farChunks": 137,
+      "nearestStudPitchPx": 7.349085043891471
+    }
+  },
+  {
+    "step": 32,
+    "wheel": 1920,
+    "pitchPx": 6.6,
+    "stats": {
+      "fps": 0.8975854950187007,
+      "drawCalls": 2403,
+      "triangles": 2340906,
+      "nearChunks": 0,
+      "midChunks": 67,
+      "farChunks": 148,
+      "nearestStudPitchPx": 6.602446527949871
+    }
+  },
+  {
+    "step": 33,
+    "wheel": 1980,
+    "pitchPx": 5.9,
+    "stats": {
+      "fps": 1.0854227721688823,
+      "drawCalls": 2109,
+      "triangles": 2046756,
+      "nearChunks": 0,
+      "midChunks": 56,
+      "farChunks": 159,
+      "nearestStudPitchPx": 5.914461928805898
+    }
+  },
+  {
+    "step": 34,
+    "wheel": 2040,
+    "pitchPx": 5.3,
+    "stats": {
+      "fps": 1.2086052695184308,
+      "drawCalls": 1829,
+      "triangles": 1832462,
+      "nearChunks": 0,
+      "midChunks": 44,
+      "farChunks": 171,
+      "nearestStudPitchPx": 5.296191543846195
+    }
+  },
+  {
+    "step": 35,
+    "wheel": 2100,
+    "pitchPx": 4.7,
+    "stats": {
+      "fps": 1.4118311449935734,
+      "drawCalls": 1412,
+      "triangles": 1468572,
+      "nearChunks": 0,
+      "midChunks": 34,
+      "farChunks": 181,
+      "nearestStudPitchPx": 4.74832344114471
+    }
+  },
+  {
+    "step": 36,
+    "wheel": 2160,
+    "pitchPx": 4.3,
+    "stats": {
+      "fps": 1.6832183134163055,
+      "drawCalls": 1060,
+      "triangles": 1166064,
+      "nearChunks": 0,
+      "midChunks": 25,
+      "farChunks": 190,
+      "nearestStudPitchPx": 4.266233275921552
+    }
+  },
+  {
+    "step": 37,
+    "wheel": 2220,
+    "pitchPx": 3.8,
+    "stats": {
+      "fps": 2.108370229813183,
+      "drawCalls": 744,
+      "triangles": 895711,
+      "nearChunks": 0,
+      "midChunks": 16,
+      "farChunks": 199,
+      "nearestStudPitchPx": 3.8431161349222878
+    }
+  },
+  {
+    "step": 38,
+    "wheel": 2280,
+    "pitchPx": 3.5,
+    "stats": {
+      "fps": 2.996703626009715,
+      "drawCalls": 345,
+      "triangles": 538692,
+      "nearChunks": 0,
+      "midChunks": 8,
+      "farChunks": 207,
+      "nearestStudPitchPx": 3.471698869685778
+    }
+  },
+  {
+    "step": 39,
+    "wheel": 2340,
+    "pitchPx": 3.1,
+    "stats": {
+      "fps": 3.372112628563912,
+      "drawCalls": 242,
+      "triangles": 449367,
+      "nearChunks": 0,
+      "midChunks": 4,
+      "farChunks": 211,
+      "nearestStudPitchPx": 3.145075154147776
+    }
+  },
+  {
+    "step": 40,
+    "wheel": 2400,
+    "pitchPx": 2.9,
+    "stats": {
+      "fps": 3.923107100818119,
+      "drawCalls": 101,
+      "triangles": 329191,
+      "nearChunks": 0,
+      "midChunks": 0,
+      "farChunks": 215,
+      "nearestStudPitchPx": 2.8570505459858953
+    }
+  }
+]
