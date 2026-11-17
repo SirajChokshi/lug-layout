@@ -2,6 +2,7 @@ import type { PartAsset } from "@brr/catalog";
 import type { Vec3 } from "@brr/schema/bundle";
 import { CHUNK_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
+import { Unplaceable } from "./unplaceable.ts";
 
 export interface GroundFootprint {
   readonly topY: number;
@@ -10,7 +11,6 @@ export interface GroundFootprint {
   readonly minZ: number;
   readonly maxZ: number;
   readonly plates: number;
-  readonly spacings: ReadonlyArray<number>;
 }
 
 export interface GroundInstances {
@@ -65,41 +65,34 @@ export function groundFootprint(
   const maxX = Math.max(...first.map((box) => box.max[0]));
   const minZ = Math.min(...first.map((box) => box.min[2]));
   const maxZ = Math.max(...first.map((box) => box.max[2]));
-  return {
-    topY,
-    minX,
-    maxX,
-    minZ,
-    maxZ,
-    plates: first.length,
-    spacings: [
-      maxX - minX,
-      maxZ - minZ,
-      ...first.flatMap((box) => [
-        box.max[0] - box.min[0],
-        box.max[2] - box.min[2],
-        box.min[0] - minX,
-        box.min[2] - minZ,
-      ]),
-    ],
-  };
+  return { topY, minX, maxX, minZ, maxZ, plates: first.length };
 }
 
 function greatestCommonDivisor(a: number, b: number): number {
   return b === 0 ? a : greatestCommonDivisor(b, a % b);
 }
 
-export function groundGrid(footprints: ReadonlyArray<GroundFootprint>): number {
-  let grid = CHUNK_LDU;
-  for (const footprint of footprints) {
-    for (const spacing of footprint.spacings) {
-      if (!Number.isInteger(spacing / STUD_LDU)) {
-        throw new Error(`a baseplate spacing of ${spacing} LDU is not a whole number of studs`);
-      }
-      grid = greatestCommonDivisor(grid, spacing);
-    }
+export interface SeatGrid {
+  readonly x: number;
+  readonly z: number;
+}
+
+export function sideGrid(side: number): number {
+  if (!Number.isInteger(side / STUD_LDU) || side <= 0) {
+    throw new Unplaceable(
+      `its baseplate outline is ${side} LDU across, not a whole number of studs`,
+    );
   }
-  return grid;
+  return greatestCommonDivisor(CHUNK_LDU, side);
+}
+
+export function seatGrid(ground: GroundFootprint): SeatGrid {
+  return { x: sideGrid(ground.maxX - ground.minX), z: sideGrid(ground.maxZ - ground.minZ) };
+}
+
+export function rotatedGrid(grid: SeatGrid, rot: number): SeatGrid {
+  if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+  return rot % 2 === 0 ? grid : { x: grid.z, z: grid.x };
 }
 
 export function pivotOnGrid(min: number, side: number, grid: number): number {
@@ -116,6 +109,7 @@ export interface SeatedGround {
   readonly minZ: number;
   readonly maxZ: number;
   readonly plates: number;
+  readonly grid: SeatGrid;
 }
 
 export interface WorldGround {
@@ -147,4 +141,87 @@ export function worldGround(
     maxZ: Math.max(az, bz) + 0,
     topY: yLdu,
   };
+}
+
+interface AxisSpan {
+  readonly min: number;
+  readonly max: number;
+}
+
+function overlapsAcross(a: AxisSpan, b: AxisSpan, reach: number): boolean {
+  return a.min < b.max + reach && b.min < a.max + reach;
+}
+
+function flushMins(edges: AxisSpan, side: number): ReadonlyArray<number> {
+  return [edges.max, edges.min - side, edges.min, edges.max - side];
+}
+
+function nearest(wanted: number, candidates: ReadonlyArray<number>): number {
+  let best = candidates[0] ?? wanted;
+  for (const candidate of candidates) {
+    if (Math.abs(candidate - wanted) < Math.abs(best - wanted)) best = candidate;
+  }
+  return best;
+}
+
+export function snapOutline(
+  ground: SeatedGround,
+  x: number,
+  z: number,
+  rot: number,
+  neighbours: ReadonlyArray<WorldGround>,
+): { readonly x: number; readonly z: number } {
+  const corner = worldGround(ground, 0, 0, 0, rot);
+  const grid = rotatedGrid(ground.grid, rot);
+  const sideX = corner.maxX - corner.minX;
+  const sideZ = corner.maxZ - corner.minZ;
+  const minX = x + corner.minX;
+  const minZ = z + corner.minZ;
+  const spanX = { min: minX, max: minX + sideX };
+  const spanZ = { min: minZ, max: minZ + sideZ };
+  const xs = [snapToGrid(minX, grid.x)];
+  const zs = [snapToGrid(minZ, grid.z)];
+  for (const n of neighbours) {
+    if (overlapsAcross(spanZ, { min: n.minZ, max: n.maxZ }, grid.z)) {
+      xs.push(...flushMins({ min: n.minX, max: n.maxX }, sideX));
+    }
+    if (overlapsAcross(spanX, { min: n.minX, max: n.maxX }, grid.x)) {
+      zs.push(...flushMins({ min: n.minZ, max: n.maxZ }, sideZ));
+    }
+  }
+  return { x: nearest(minX, xs) - corner.minX, z: nearest(minZ, zs) - corner.minZ };
+}
+
+function seatedOnAxis(
+  min: number,
+  side: number,
+  grid: number,
+  edges: ReadonlyArray<AxisSpan>,
+): boolean {
+  return Number.isInteger(min / grid) || edges.some((edge) => flushMins(edge, side).includes(min));
+}
+
+export function onSeatGrid(
+  ground: SeatedGround,
+  x: number,
+  z: number,
+  rot: number,
+  neighbours: ReadonlyArray<WorldGround>,
+): boolean {
+  const placed = worldGround(ground, x, 0, z, rot);
+  const grid = rotatedGrid(ground.grid, rot);
+  return (
+    seatedOnAxis(
+      placed.minX,
+      placed.maxX - placed.minX,
+      grid.x,
+      neighbours.map((n) => ({ min: n.minX, max: n.maxX })),
+    ) &&
+    seatedOnAxis(
+      placed.minZ,
+      placed.maxZ - placed.minZ,
+      grid.z,
+      neighbours.map((n) => ({ min: n.minZ, max: n.maxZ })),
+    )
+  );
 }

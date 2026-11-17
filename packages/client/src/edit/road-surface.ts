@@ -4,19 +4,20 @@ import { STUD_LDU } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
+import { Unplaceable } from "./unplaceable.ts";
 
 const HALF_STUD_LDU = STUD_LDU / 2;
 const NO_OWNER = -1;
 
 function exactLdu(value: number, what: string): number {
   const rounded = Math.round(value);
-  if (rounded !== value) throw new Error(`${what} is ${value} LDU, not a whole LDU`);
+  if (rounded !== value) throw new Unplaceable(`${what} is ${value} LDU, not a whole LDU`);
   return rounded + 0;
 }
 
 function wholeCells(ldu: number, what: string): number {
   const cells = ldu / STUD_LDU;
-  if (!Number.isInteger(cells)) throw new Error(`${what} spans ${ldu} LDU, not whole studs`);
+  if (!Number.isInteger(cells)) throw new Unplaceable(`${what} spans ${ldu} LDU, not whole studs`);
   return cells;
 }
 

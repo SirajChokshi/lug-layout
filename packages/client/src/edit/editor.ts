@@ -64,20 +64,23 @@ import {
   type StudTotals,
   type ViewUpdate,
 } from "./placed-chunks.ts";
-import { groundGrid, snapToGrid, worldGround, type WorldGround } from "./ground.ts";
 import {
-  modelGround,
-  modelPlaceable,
-  partGround,
-  partPlaceable,
-  type Placeable,
-} from "./placeable.ts";
+  onSeatGrid,
+  rotatedGrid,
+  snapOutline,
+  snapToGrid,
+  worldGround,
+  type WorldGround,
+} from "./ground.ts";
+import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
+import { Unplaceable } from "./unplaceable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import {
   carriesRefusal,
   checkRefusal,
+  offGridRefusal,
   trackCarriedRefusal,
   trackRunRefusal,
   type Refusal,
@@ -103,6 +106,8 @@ export interface CatalogBaseplateView {
   readonly plates: number;
   readonly studsWide: number;
   readonly studsDeep: number;
+  readonly gridStudsWide: number;
+  readonly gridStudsDeep: number;
 }
 
 export interface CatalogItemView {
@@ -276,7 +281,6 @@ export interface EditorSnapshot {
   readonly catalog: ReadonlyArray<CatalogItemView>;
   readonly catalogSkipped: ReadonlyArray<SkippedCatalogModel>;
   readonly trackNotDrawable: ReadonlyArray<CatalogPartView>;
-  readonly baseplateGridStuds: number | null;
   readonly mode: EditorMode;
   readonly activeItem: string | null;
   readonly ghostRot: number;
@@ -494,6 +498,8 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
       plates: placeable.ground.plates,
       studsWide: (placeable.ground.maxX - placeable.ground.minX) / STUD_LDU,
       studsDeep: (placeable.ground.maxZ - placeable.ground.minZ) / STUD_LDU,
+      gridStudsWide: placeable.ground.grid.x / STUD_LDU,
+      gridStudsDeep: placeable.ground.grid.z / STUD_LDU,
     },
   };
 }
@@ -520,7 +526,6 @@ export class Editor implements IEditor {
     catalog: [],
     catalogSkipped: [],
     trackNotDrawable: [],
-    baseplateGridStuds: null,
     mode: "select",
     activeItem: null,
     ghostRot: 0,
@@ -567,7 +572,6 @@ export class Editor implements IEditor {
   private ghostCheck: PlacementCheck | null = null;
   private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
   private tableY = 0;
-  private baseplateGrid = STUD_LDU;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -705,24 +709,33 @@ export class Editor implements IEditor {
     if (!baseplate) throw new Error("the bundle has no baseplate");
     this.tableY = baseplate.boundsMin[1];
     const skipped: SkippedModel[] = [];
-    const models = [];
+    const models: Placeable[] = [];
     for (const { bundle: modelBundle, entry, model } of loaded) {
       const credit = { name: entry.name, source: entry.source, sections: model.sections };
       if (model.lattice === null || model.cells === null) {
         skipped.push({ name: entry.name, reason: NO_LATTICE_REASON, credit });
         continue;
       }
-      models.push({ entry, credit, model: palette.remap(model, modelBundle.parts) });
+      const remapped = palette.remap(model, modelBundle.parts);
+      try {
+        models.push(
+          modelPlaceable(
+            entry.name,
+            entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
+            entry.role,
+            remapped,
+            credit,
+            palette.parts,
+            colors,
+            this.tableY,
+            bundle.trackCatalog,
+          ),
+        );
+      } catch (error) {
+        if (!(error instanceof Unplaceable)) throw error;
+        skipped.push({ name: entry.name, reason: error.message, credit });
+      }
     }
-    const grounds = [
-      ...[...groundParts, ...roadParts].map((part) =>
-        partGround(palette.indexOf(part.id), palette.parts),
-      ),
-      ...models.map(({ entry, model }) => modelGround(model, palette.parts, entry.name)),
-    ];
-    const grid = groundGrid(grounds.filter((ground) => ground !== null));
-    this.baseplateGrid = grid;
-    this.update({ baseplateGridStuds: grid / STUD_LDU });
     const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
       if (part.producedColors.length === 0) {
         throw new Error(`${part.id} has no produced colour in the bundle`);
@@ -736,26 +749,10 @@ export class Editor implements IEditor {
           palette.parts,
           colors,
           this.tableY,
-          grid,
         ),
       );
     });
-    for (const { entry, credit, model } of models) {
-      placeables.push(
-        modelPlaceable(
-          entry.name,
-          entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
-          entry.role,
-          model,
-          credit,
-          palette.parts,
-          colors,
-          this.tableY,
-          bundle.trackCatalog,
-          grid,
-        ),
-      );
-    }
+    placeables.push(...models);
     return { placeables, skipped };
   }
 
@@ -997,9 +994,65 @@ export class Editor implements IEditor {
     const t = -originY / directionY;
     this.hitX = (this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t;
     this.hitZ = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
+    this.snapHoverToLattice();
+    return true;
+  }
+
+  private snapHoverToLattice(): void {
     this.hoverX = snapToGrid(this.hitX, STUD_LDU);
     this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
-    return true;
+  }
+
+  private snapOutlineToGrid(): void {
+    const ground = this.active?.ground;
+    if (!ground || !this.hovering) return;
+    const snapped = snapOutline(
+      ground,
+      this.hitX,
+      this.hitZ,
+      this.ghostRot,
+      this.groundOutlines(null),
+    );
+    this.hoverX = snapped.x;
+    this.hoverZ = snapped.z;
+  }
+
+  private groundOutlines(except: PlacedModel | null): ReadonlyArray<WorldGround> {
+    const outlines: WorldGround[] = [];
+    for (const model of this.placed.models()) {
+      const ground = model.placeable.ground;
+      if (!ground || model === except) continue;
+      const { x, z, yPlates, rot } = model.handle;
+      outlines.push(worldGround(ground, x, yPlates * PLATE_LDU, z, rot));
+    }
+    return outlines;
+  }
+
+  private joinsRoadExactly(placeable: Placeable): boolean {
+    const surface = placeable.road;
+    if (!surface) return false;
+    const fit = this.roadNetwork.fit({
+      id: -1,
+      x: this.hoverX,
+      z: this.hoverZ,
+      yLdu: 0,
+      rot: this.ghostRot,
+      surface,
+    });
+    return fit.joinedCells > 0 && fit.mismatchedCells === 0 && fit.overlappingCells === 0;
+  }
+
+  private ghostRefusal(placeable: Placeable, check: PlacementCheck): Refusal | null {
+    const refusal = checkRefusal(placeable.label, check);
+    if (refusal) return refusal;
+    const ground = placeable.ground;
+    if (!ground) return null;
+    if (onSeatGrid(ground, this.hoverX, this.hoverZ, this.ghostRot, this.groundOutlines(null))) {
+      return null;
+    }
+    if (this.trackJoinsAt(placeable, check.yPlates) > 0) return null;
+    if (this.joinsRoadExactly(placeable)) return null;
+    return offGridRefusal(placeable.label, rotatedGrid(ground.grid, this.ghostRot));
   }
 
   private cursorLanding(): LandingAt {
@@ -1026,7 +1079,7 @@ export class Editor implements IEditor {
     this.update({
       ghost: {
         yPlates: check.yPlates,
-        refusal: checkRefusal(this.active.label, check),
+        refusal: this.ghostRefusal(this.active, check),
         trackJoins: this.trackJoinsAt(this.active, check.yPlates),
         uncertifiedTrack: track?.uncertified.length ?? 0,
       },
@@ -1214,23 +1267,24 @@ export class Editor implements IEditor {
     const joined = this.snapGhostToRoad();
     const onTrack = this.snapGhostToTrack();
     if (joined || onTrack) return joined ?? this.roadFit();
-    if (this.active?.ground && this.hovering) {
-      this.hoverX = snapToGrid(this.hitX, this.baseplateGrid);
-      this.hoverZ = snapToGrid(this.hitZ, this.baseplateGrid);
-    }
+    this.snapOutlineToGrid();
     return this.roadFit();
+  }
+
+  private snapHover(): void {
+    const snap = this.snapGhost();
+    this.placeGhost();
+    this.update({ hover: this.hoverView(), snap });
   }
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
-    const snap = this.snapGhost();
     const track = this.track;
     if (this.state.mode === "track" && track && !track.dragView() && this.selectedTrack === null) {
       const end = this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null;
       this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
     }
-    this.placeGhost();
-    this.update({ hover: this.hoverView(), snap });
+    this.snapHover();
   }
 
   pointerLeave(): void {
@@ -1243,9 +1297,8 @@ export class Editor implements IEditor {
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
-      const snap = this.snapGhost();
-      this.placeGhost();
-      this.update({ snap });
+      this.snapHover();
+      const snap = this.state.snap;
       if (snap?.state === "refused") {
         this.refuse("place", this.active.id, {
           rule: "road",
@@ -1254,7 +1307,7 @@ export class Editor implements IEditor {
         return;
       }
       const check = this.ghostCheck;
-      const refusal = check ? checkRefusal(this.active.label, check) : null;
+      const refusal = check ? this.ghostRefusal(this.active, check) : null;
       if (refusal) {
         this.refuse("place", this.active.id, refusal);
         return;
@@ -1440,7 +1493,8 @@ export class Editor implements IEditor {
   rotate(eventTimeMs: number): void {
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
-      this.placeGhost();
+      this.snapHoverToLattice();
+      this.snapHover();
       this.update({ ghostRot: this.ghostRot, hover: this.hoverView() });
       return;
     }
@@ -1448,7 +1502,11 @@ export class Editor implements IEditor {
     if (!model) return;
     const pose = model.handle;
     const rot = (pose.rot + 1) % QUARTER_TURNS;
-    const check = this.checkAt(model.placeable, pose.x, pose.z, rot, [model], {
+    const ground = model.placeable.ground;
+    const { x, z } = ground
+      ? snapOutline(ground, pose.x, pose.z, rot, this.groundOutlines(model))
+      : pose;
+    const check = this.checkAt(model.placeable, x, z, rot, [model], {
       kind: "height",
       yPlates: pose.yPlates,
     });
@@ -1458,7 +1516,7 @@ export class Editor implements IEditor {
       return;
     }
     const yPlates = check.yPlates;
-    const moved = { placeable: model.placeable, x: pose.x, z: pose.z, yPlates, rot };
+    const moved = { placeable: model.placeable, x, z, yPlates, rot };
     const refusal = this.removalRefusal([model], model.placeable.label, [moved]);
     if (refusal) {
       this.refuse("rotate", model.placeable.id, refusal);
@@ -1467,7 +1525,7 @@ export class Editor implements IEditor {
     const edit = this.history.commit("rotate", [
       {
         placement: model.placement,
-        to: { refId: pose.refId, colorId: pose.colorId, x: pose.x, z: pose.z, yPlates, rot },
+        to: { refId: pose.refId, colorId: pose.colorId, x, z, yPlates, rot },
       },
     ]);
     this.select(this.show(edit, eventTimeMs).added[0] ?? null);

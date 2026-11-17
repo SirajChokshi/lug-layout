@@ -221,14 +221,16 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   );
 }
 
+function moduleGridText(wide: number, deep: number): string {
+  return wide === deep ? `${wide}-stud` : `${wide}×${deep}-stud`;
+}
+
 function seatText(snapshot: EditorSnapshot): string {
-  const grid = snapshot.baseplateGridStuds;
   const item = snapshot.catalog.find((entry) => entry.id === snapshot.activeItem);
-  if (!item) return grid === null ? "none" : `baseplate grid ${grid} studs`;
+  if (!item) return "none";
   if (!item.baseplate) return "no baseplate of its own, on the stud lattice";
-  const { plates, studsWide, studsDeep } = item.baseplate;
-  const gridText = grid === null ? "" : `, edges on the ${grid}-stud baseplate grid`;
-  return `${plates} baseplate${plates === 1 ? "" : "s"}, ${studsWide}×${studsDeep} studs, top at y = 0${gridText}`;
+  const { plates, studsWide, studsDeep, gridStudsWide, gridStudsDeep } = item.baseplate;
+  return `${plates} baseplate${plates === 1 ? "" : "s"}, ${studsWide}×${studsDeep} studs, top at y = 0, edges on the ${moduleGridText(gridStudsWide, gridStudsDeep)} module grid`;
 }
 
 function snapText(snapshot: EditorSnapshot): string {

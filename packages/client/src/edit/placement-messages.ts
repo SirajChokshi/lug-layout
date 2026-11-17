@@ -1,5 +1,7 @@
 import type { UpperSupport } from "@brr/domain";
 import type { LostSupport, PlacedOverlap, PlacementCheck, VolumeOwner } from "./placed-chunks.ts";
+import { STUD_LDU } from "@brr/math";
+import type { SeatGrid } from "./ground.ts";
 import type { OffBaseplate, RunBlock } from "./track-drawing.ts";
 
 export type RefusalRule =
@@ -8,7 +10,8 @@ export type RefusalRule =
   | "support"
   | "overlap"
   | "carries"
-  | "track-support";
+  | "track-support"
+  | "grid";
 
 export interface Refusal {
   readonly rule: RefusalRule;
@@ -86,6 +89,16 @@ export function supportRefusal(
 export function checkRefusal(label: string, check: PlacementCheck): Refusal | null {
   if (check.overlap) return overlapRefusal(label, check.overlap);
   return check.support ? supportRefusal(label, check.support, check.restsOn) : null;
+}
+
+export function offGridRefusal(label: string, grid: SeatGrid): Refusal {
+  const x = grid.x / STUD_LDU;
+  const z = grid.z / STUD_LDU;
+  const steps = x === z ? `${x}-stud` : `${x}-stud (x) by ${z}-stud (z)`;
+  return {
+    rule: "grid",
+    message: `${label} would sit with its baseplate edges off the ${steps} module grid. Only an exact track join may hold a set off that grid.`,
+  };
 }
 
 export function carriesRefusal(label: string, lost: ReadonlyArray<LostSupport>): Refusal | null {

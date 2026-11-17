@@ -283,7 +283,6 @@ async function heldTrack(name: string): Promise<ModelTrack | null> {
     new ColorTable(bundle),
     baseplate.boundsMin[1],
     trackBundle.trackCatalog,
-    STUD_LDU,
   ).track;
 }
 

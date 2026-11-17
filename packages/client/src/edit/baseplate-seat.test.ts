@@ -10,7 +10,7 @@ import {
   type PartBundle,
   type PartFilter,
 } from "@brr/catalog";
-import { STUD_LDU } from "@brr/math";
+import { CHUNK_LDU, STUD_LDU } from "@brr/math";
 import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
 import {
   INSTANCE_MATRIX_FLOATS,
@@ -42,6 +42,9 @@ const SWEEP_LDU = 700;
 const SWEEP_STEP_LDU = 40;
 const OFF_LATTICE = [7, 3] as const;
 const PLATE_SPACING_LDU = 4000;
+const RUN_MODULES = 3;
+const MILS_MODULE_LDU = CHUNK_LDU;
+const JITTER_LDU = 0.5;
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -71,6 +74,42 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
     return this.loader.loadModel(lod, name);
+  }
+
+  importContext(lod: BundleLod): Promise<ImportContext> {
+    return this.loader.importContext(lod);
+  }
+
+  loadPartSet(
+    lod: BundleLod,
+    partIds: ReadonlyArray<string>,
+    compiled: ReadonlyArray<CompiledPartGlb>,
+  ): Promise<PartBundle> {
+    return this.loader.loadPartSet(lod, partIds, compiled);
+  }
+}
+
+class JitteredBaseplates implements IPartBundleLoader {
+  constructor(private readonly loader: IPartBundleLoader) {}
+
+  loadManifest(lod: BundleLod): Promise<BundleManifest> {
+    return this.loader.loadManifest(lod);
+  }
+
+  load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
+    return this.loader.load(lod, include);
+  }
+
+  async loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
+    const loaded = await this.loader.loadModel(lod, name);
+    const { model, bundle } = loaded;
+    const matrices = Float32Array.from(model.matrices);
+    for (let i = 0; i < model.instanceCount; i++) {
+      if (!bundle.parts[model.partIndex[i] ?? 0]?.baseplate) continue;
+      const x = i * INSTANCE_MATRIX_FLOATS + 3;
+      matrices[x] = (matrices[x] ?? 0) + JITTER_LDU;
+    }
+    return { ...loaded, model: { ...model, matrices } };
   }
 
   importContext(lod: BundleLod): Promise<ImportContext> {
@@ -171,7 +210,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startEditor(backend: ISceneBackend): Promise<IEditor> {
+async function startEditor(
+  backend: ISceneBackend,
+  wrap: (loader: IPartBundleLoader) => IPartBundleLoader = (loader) => loader,
+): Promise<IEditor> {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
@@ -179,7 +221,7 @@ async function startEditor(backend: ISceneBackend): Promise<IEditor> {
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container
     .rebind(PART_BUNDLE_LOADER)
-    .toConstantValue(new ModelSubsetLoader(realLoader, [SET_ON_BASEPLATES]));
+    .toConstantValue(wrap(new ModelSubsetLoader(realLoader, [SET_ON_BASEPLATES])));
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const editor = container.get(EDITOR);
   const canvas = {
@@ -210,28 +252,39 @@ function setPlates(backend: TopDownBackend, standalone: PlacedPlate): PlacedPlat
   return backend.plates().filter((plate) => plate.id !== standalone.id);
 }
 
-it("seats a set by its own baseplates: tops flush with a standalone baseplate, edges pulled flush onto the shared grid at any rotation", async () => {
+function itemGrid(editor: IEditor, id: string, rot: number): { x: number; z: number } {
+  const baseplate = editor.snapshot().catalog.find((item) => item.id === id)?.baseplate;
+  if (!baseplate) throw new Error(`${id} has no baseplate of its own`);
+  const wide = baseplate.gridStudsWide * STUD_LDU;
+  const deep = baseplate.gridStudsDeep * STUD_LDU;
+  return rot % 2 === 0 ? { x: wide, z: deep } : { x: deep, z: wide };
+}
+
+it("seats a set by its own baseplates: tops flush with a standalone baseplate, edges pulled flush onto its module grid at any rotation", async () => {
   const backend = new TopDownBackend();
   const editor = await startEditor(backend);
   expect(editor.snapshot().error).toBeNull();
-  const gridStuds = editor.snapshot().baseplateGridStuds;
-  if (gridStuds === null) throw new Error("the editor reports no baseplate grid");
-  const grid = gridStuds * STUD_LDU;
-  const imprecision = grid / 2 - 3;
+  const set = `omr:${SET_ON_BASEPLATES}`;
 
   chooseGroup(editor, BASEPLATE);
-  clickAt(editor, 13, -7);
+  const plateItem = editor.snapshot().activeItem ?? "";
+  expect(itemGrid(editor, plateItem, 0)).toEqual({ x: MILS_MODULE_LDU, z: MILS_MODULE_LDU });
+  clickAt(editor, MILS_MODULE_LDU / 2 - 13, 7 - MILS_MODULE_LDU / 2);
   const [standalone, ...others] = backend.plates();
   if (!standalone) throw new Error("the standalone baseplate was not drawn");
   expect(others).toEqual([]);
   expect(standalone.topY).toBe(0);
+  for (const edge of [standalone.minX, standalone.maxX, standalone.minZ, standalone.maxZ]) {
+    expect(onGrid(edge, MILS_MODULE_LDU)).toBe(true);
+  }
 
-  editor.chooseItem(`omr:${SET_ON_BASEPLATES}`);
+  editor.chooseItem(set);
   for (const [rot, side] of [
     [0, "maxX"],
     [1, "minX"],
   ] as const) {
     while (editor.snapshot().ghostRot !== rot) editor.rotate(0);
+    const grid = itemGrid(editor, set, rot);
     clickAt(editor, 0, FAR_Z);
     const probeX = editor.snapshot().hover?.x ?? 0;
     const probe = setPlates(backend, standalone).filter((plate) => plate.minZ > FAR_Z / 2);
@@ -244,9 +297,10 @@ it("seats a set by its own baseplates: tops flush with a standalone baseplate, e
     expect(setPlates(backend, standalone).filter((plate) => plate.minZ > FAR_Z / 2)).toEqual([]);
 
     const target = standalone[side];
-    clickAt(editor, target - offset + imprecision, 29);
+    clickAt(editor, target - offset + grid.x / 2 - 3, 29);
+    expect(editor.snapshot().lastRefusal).toBeNull();
     const placed = setPlates(backend, standalone).filter((plate) =>
-      side === "maxX" ? plate.minX >= target - grid : plate.maxX <= target + grid,
+      side === "maxX" ? plate.minX >= target - grid.x : plate.maxX <= target + grid.x,
     );
     expect(placed.length).toBe(probe.length);
     const touching =
@@ -254,22 +308,38 @@ it("seats a set by its own baseplates: tops flush with a standalone baseplate, e
         ? Math.min(...placed.map((plate) => plate.minX))
         : Math.max(...placed.map((plate) => plate.maxX));
     expect(touching).toBe(target);
+    const outline = {
+      minX: Math.min(...placed.map((plate) => plate.minX)),
+      minZ: Math.min(...placed.map((plate) => plate.minZ)),
+    };
+    expect(onGrid(outline.minX, grid.x)).toBe(true);
+    expect(onGrid(outline.minZ, grid.z)).toBe(true);
   }
 
-  for (const plate of backend.plates()) {
-    expect(plate.topY).toBe(standalone.topY);
-    for (const edge of [plate.minX, plate.maxX, plate.minZ, plate.maxZ]) {
-      expect(onGrid(edge - standalone.minX, grid)).toBe(true);
-    }
-  }
+  for (const plate of backend.plates()) expect(plate.topY).toBe(standalone.topY);
+}, 120_000);
+
+it("skips a set whose baseplates sit off the stud lattice, with the reason, and keeps the editor working", async () => {
+  const backend = new TopDownBackend();
+  const editor = await startEditor(backend, (loader) => new JitteredBaseplates(loader));
+  const snapshot = editor.snapshot();
+  expect(snapshot.status).toBe("ready");
+  expect(snapshot.catalog.map((item) => item.id)).not.toContain(`omr:${SET_ON_BASEPLATES}`);
+  const skipped = snapshot.catalogSkipped.find((entry) => entry.name === SET_ON_BASEPLATES);
+  expect(skipped?.reason).toMatch(/20 LDU/);
+
+  chooseGroup(editor, BASEPLATE);
+  clickAt(editor, 0, 0);
+  expect(backend.plates()).toHaveLength(1);
 }, 120_000);
 
 it("lets a set that carries track snap exactly onto drawn track off the baseplate grid before the grid snap applies", async () => {
   const editor = await startEditor(new TopDownBackend());
   expect(editor.snapshot().error).toBeNull();
   chooseGroup(editor, BASEPLATE);
-  clickAt(editor, 2 * STRAIGHT_LDU, 0);
-  clickAt(editor, 4 * STRAIGHT_LDU, 0);
+  for (let module = 0; module < RUN_MODULES; module++) {
+    clickAt(editor, (module + 0.5) * MILS_MODULE_LDU, MILS_MODULE_LDU / 2);
+  }
   editor.chooseItem(TRACK_ITEM_ID);
   const [startX, startZ] = RUN_START;
   const endX = startX + RUN_STRAIGHTS * STRAIGHT_LDU;

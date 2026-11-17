@@ -12,10 +12,17 @@ import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
-import { groundFootprint, pivotOnGrid, type GroundFootprint, type SeatedGround } from "./ground.ts";
+import {
+  groundFootprint,
+  pivotOnGrid,
+  seatGrid,
+  type GroundFootprint,
+  type SeatedGround,
+} from "./ground.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { modelTrack, type ModelTrack } from "./model-track.ts";
 import { roadSurface } from "./road-surface.ts";
+import { Unplaceable } from "./unplaceable.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
 export type PlaceableLayer = "first" | "upper";
@@ -128,7 +135,9 @@ function studLattice(studs: StudInstances): StudLattice {
 function wholeCells(ldu: number, what: string): number {
   const cells = ldu / STUD_LDU;
   if (!Number.isInteger(cells)) {
-    throw new Error(`${what} ${ldu} LDU is not on the 20 LDU cell grid after the lattice shift`);
+    throw new Unplaceable(
+      `${what} ${ldu} LDU is not on the 20 LDU cell grid after the lattice shift`,
+    );
   }
   return cells;
 }
@@ -287,24 +296,15 @@ function shiftedBox(min: Vec3, max: Vec3, shift: Vec3): LocalBox {
   };
 }
 
-export function seatOnGround(
-  ground: GroundFootprint,
-  grid: number,
-  shiftX: number,
-  shiftZ: number,
-): Vec3 {
+export function seatOnGround(ground: GroundFootprint, shiftX: number, shiftZ: number): Vec3 {
   return [
-    shiftX - pivotOnGrid(ground.minX + shiftX, ground.maxX - ground.minX, grid),
+    shiftX - pivotOnGrid(ground.minX + shiftX, ground.maxX - ground.minX, STUD_LDU),
     0 - ground.topY,
-    shiftZ - pivotOnGrid(ground.minZ + shiftZ, ground.maxZ - ground.minZ, grid),
+    shiftZ - pivotOnGrid(ground.minZ + shiftZ, ground.maxZ - ground.minZ, STUD_LDU),
   ];
 }
 
-function seatedGround(
-  ground: GroundFootprint | null,
-  shift: Vec3,
-  label: string,
-): SeatedGround | null {
+function seatedGround(ground: GroundFootprint | null, shift: Vec3): SeatedGround | null {
   if (!ground) return null;
   const seated = {
     minX: ground.minX + shift[0],
@@ -312,9 +312,12 @@ function seatedGround(
     minZ: ground.minZ + shift[2],
     maxZ: ground.maxZ + shift[2],
     plates: ground.plates,
+    grid: seatGrid(ground),
   };
   for (const edge of [seated.minX, seated.maxX, seated.minZ, seated.maxZ]) {
-    wholeCells(edge, `${label} baseplate edge`);
+    if (!Number.isInteger(edge / STUD_LDU)) {
+      throw new Unplaceable(`a baseplate edge lands at ${edge} LDU, off the 20 LDU stud lattice`);
+    }
   }
   return seated;
 }
@@ -326,14 +329,13 @@ function modelInstances(model: PartModel) {
 export function modelGround(
   model: PartModel,
   parts: ReadonlyArray<PartAsset>,
-  name: string,
 ): GroundFootprint | null {
   const groundY = model.cells?.groundY ?? null;
   if (groundY === null) return null;
   const ground = groundFootprint(modelInstances(model), parts);
   if (ground?.topY !== groundY) {
-    throw new Error(
-      `${name}: the bake stands it on baseplates topping out at y = ${groundY}, but its lowest baseplate layer tops out at ${ground?.topY ?? "nothing"}`,
+    throw new Unplaceable(
+      `the bake stands it on baseplates topping out at y = ${groundY}, but its lowest baseplate layer tops out at ${ground?.topY ?? "nothing"}`,
     );
   }
   return ground;
@@ -341,7 +343,7 @@ export function modelGround(
 
 function restingY(cells: ModelCells, name: string, role: ModelRole | undefined): number {
   if (role === "mils-module" && cells.groundY === null) {
-    throw new Error(`MILS module ${name} does not stand on its own baseplate`);
+    throw new Unplaceable(`MILS module ${name} does not stand on its own baseplate`);
   }
   return cells.groundY ?? cells.restY;
 }
@@ -356,16 +358,17 @@ export function modelPlaceable(
   colors: ColorTable,
   tableY: number,
   trackCatalog: TrackCatalog,
-  grid: number,
 ): Placeable {
   const { lattice, cells } = model;
   if (lattice === null || cells === null) {
-    throw new Error(`model ${name} has no stud lattice from the bake, so it cannot be placed`);
+    throw new Unplaceable(
+      `model ${name} has no stud lattice from the bake, so it cannot be placed`,
+    );
   }
   const restingOn = restingY(cells, name, role);
-  const ground = modelGround(model, parts, name);
+  const ground = modelGround(model, parts);
   const shift = ground
-    ? seatOnGround(ground, grid, phaseShift(lattice.phaseX), phaseShift(lattice.phaseZ))
+    ? seatOnGround(ground, phaseShift(lattice.phaseX), phaseShift(lattice.phaseZ))
     : modelFrameShift(lattice, cells, restingOn);
   const colorIndex = new Uint16Array(model.instanceCount);
   for (let i = 0; i < model.instanceCount; i++) {
@@ -410,7 +413,7 @@ export function modelPlaceable(
     credit: isModule ? null : credit,
     road: isModule ? roadSurface(local, partBoxes, box, parts) : null,
     track: modelTrack(local, parts, trackCatalog),
-    ground: seatedGround(ground, shift, name),
+    ground: seatedGround(ground, shift),
   };
 }
 
@@ -438,12 +441,9 @@ export function partPlaceable(
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
   tableY: number,
-  grid: number,
 ): Placeable {
   const ground = partGround(partIndex, parts);
-  const shift: Vec3 = ground
-    ? seatOnGround(ground, grid, 0, 0)
-    : [0, tableY - part.boundsMin[1], 0];
+  const shift: Vec3 = ground ? seatOnGround(ground, 0, 0) : [0, tableY - part.boundsMin[1], 0];
   const local: ChunkPartInstances = {
     originX: 0,
     originZ: 0,
@@ -475,6 +475,6 @@ export function partPlaceable(
     credit: null,
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
     track: null,
-    ground: seatedGround(ground, shift, part.id),
+    ground: seatedGround(ground, shift),
   };
 }
