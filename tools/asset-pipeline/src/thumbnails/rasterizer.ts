@@ -1,9 +1,9 @@
 import type { Vec3 } from "@brr/schema/bundle";
-import { MATRIX_FLOATS, type Mesh } from "./glb-mesh.ts";
 
 export const THUMBNAIL_PX = 112;
 export const SUPERSAMPLE = 3;
 export const INHERIT_COLOR = 16;
+export const MATRIX_FLOATS = 12;
 
 const FOV_DEGREES = 30;
 const VIEW_DIRECTION: Vec3 = [0.9, 0.85, 1.15];
@@ -42,6 +42,17 @@ export interface ThumbnailColor {
   readonly code: number;
   readonly rgb: string;
   readonly alpha: number;
+}
+
+export interface ColorGroup {
+  readonly ldrawColor: number;
+  readonly indices: Uint32Array;
+}
+
+export interface Mesh {
+  readonly positions: Float32Array;
+  readonly normals: Float32Array;
+  readonly groups: ReadonlyArray<ColorGroup>;
 }
 
 export interface Box {
