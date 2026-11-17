@@ -90,12 +90,13 @@ function view(snapshot: EditorSnapshot): ToolHintView {
       return {
         tone: "place",
         title: "Drawing road",
-        detail: snapshot.roadKits.find((kit) => kit.id === snapshot.roadKit)?.label ?? null,
+        detail: `${snapshot.roadKits.find((kit) => kit.id === snapshot.roadKit)?.label ?? "no kit"}, lone tiles at ${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
         hints: [
           gesture("Drag", "lay road"),
           key("rotate", "turn a lone tile"),
           key("undo", "undo"),
           key("draw-road", "done"),
+          key("select-tool", "stop"),
         ],
       };
     case "select": {
@@ -122,6 +123,7 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           gesture("Click", "select a model"),
           key("open-palette", "find a part"),
           key("draw-track", "draw track"),
+          key("draw-road", "draw road"),
           key("show-shortcuts", "all shortcuts"),
         ],
       };

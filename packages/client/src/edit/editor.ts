@@ -910,6 +910,7 @@ export class Editor implements IEditor {
   }
 
   private enterRoadMode(id: string): void {
+    if (this.roadDrawing) this.roadDrawing.preferredRot = this.ghostRot;
     if (this.state.mode === "track") {
       this.track?.cancelDrag();
       this.showEndMarker(null);
@@ -1256,9 +1257,11 @@ export class Editor implements IEditor {
   rotate(eventTimeMs: number): void {
     const roads = this.roadDrawing;
     if (this.state.mode === "road" && roads) {
-      roads.preferredRot = (roads.preferredRot + 1) % QUARTER_TURNS;
+      this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
+      this.placeRot = this.ghostRot;
+      roads.preferredRot = this.ghostRot;
       this.showRoadPreview(roads.rerun(...this.roadNeighbours()));
-      this.update({ ghostRot: roads.preferredRot });
+      this.update({ ghostRot: this.ghostRot });
       return;
     }
     if (this.active) {
