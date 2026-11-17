@@ -1,8 +1,13 @@
 import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import type { Mesh } from "./glb-mesh.ts";
 import { encodePng, readPngHeader } from "./png.ts";
-import { INHERIT_COLOR, renderThumbnail, THUMBNAIL_PX, type ThumbnailScene } from "./rasterizer.ts";
+import {
+  INHERIT_COLOR,
+  renderThumbnail,
+  THUMBNAIL_PX,
+  type Mesh,
+  type ThumbnailScene,
+} from "./rasterizer.ts";
 
 const RED = 4;
 const TRANS_CLEAR = 47;
