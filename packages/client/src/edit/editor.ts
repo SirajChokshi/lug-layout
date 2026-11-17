@@ -18,6 +18,7 @@ import {
   type BaseCells,
   type HistoryStep,
   type OwnerFilter,
+  type TrackPieceAt,
   type TrackRequest,
   type RoadEdgeSegment,
   type RoadJoinReport,
@@ -357,6 +358,7 @@ export interface IEditor {
   planOriginHere(): { readonly chunkX: number; readonly chunkZ: number };
   viewPlanFromAbove(planId: string): void;
   dump(): EditorDump;
+  clearWorld(eventTimeMs: number): void;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
@@ -1608,6 +1610,24 @@ export class Editor implements IEditor {
       aspect,
     );
     this.camera.apply(this.backend);
+  }
+
+  clearWorld(eventTimeMs: number): void {
+    const lift = this.laidTrack();
+    const models = this.placed.models();
+    if (models.length === 0 && lift.length === 0) return;
+    this.abandonTrackDrag();
+    this.select(null);
+    const requests = models.map((model) => ({ placement: model.placement, to: null }));
+    this.show(this.history.commit("clear", requests, { lift, lay: [] }), eventTimeMs);
+  }
+
+  private laidTrack(): ReadonlyArray<TrackPieceAt> {
+    const drawing = this.track;
+    if (!drawing) return [];
+    const pieces: TrackPieceAt[] = [];
+    for (let index = 0; index < drawing.pieceCount; index++) pieces.push(drawing.laidPiece(index));
+    return pieces;
   }
 
   dump(): EditorDump {
