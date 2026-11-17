@@ -29,4 +29,4 @@ fi
 
 VITE_BUNDLE_MANIFEST_FILE="$(node "$pipeline_cli" await-served)"
 export VITE_BUNDLE_MANIFEST_FILE
-exec pnpm run build
+echo "reached the app build"; exit 3
