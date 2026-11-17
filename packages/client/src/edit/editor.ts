@@ -35,6 +35,7 @@ import {
   type HistoryStep,
   type ModuleEdgeKind,
   type ModuleSide,
+  type PlacementPose,
   type PlacementTarget,
   type PlacementContents,
   type PendingChange,
@@ -118,6 +119,7 @@ import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
   ROAD_KIT_PREFIX,
   RoadDrawing,
+  type RoadPlacementRules,
   type RoadKitView,
   type RoadPreview,
   type RoadStrokeView,
@@ -1030,10 +1032,13 @@ export class Editor implements IEditor {
         );
       this.track = this.newTrack();
       this.bomTables = { palette, colors, ldrawColors: index.colors.map((color) => color.code) };
-      this.roadDrawing = new RoadDrawing(this.loadedPlaceables(), (family, placeable) =>
-        family === "mils"
-          ? "MILS road modules"
-          : `${colorOf(index.colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
+      this.roadDrawing = new RoadDrawing(
+        this.loadedPlaceables(),
+        (family, placeable) =>
+          family === "mils"
+            ? "MILS road modules"
+            : `${colorOf(index.colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
+        this.roadRules,
       );
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives },
@@ -2569,11 +2574,11 @@ export class Editor implements IEditor {
   rotate(eventTimeMs: number, direction: TurnDirection = 1): void {
     const roads = this.roadDrawing;
     if (this.state.mode === "road" && roads) {
-      this.ghostRot = quarterTurned(this.ghostRot, direction);
-      this.placeRot = this.ghostRot;
-      roads.preferredRot = this.ghostRot;
+      this.placeRot = quarterTurned(this.placeRot, direction);
+      this.ghostRot = this.placeRot;
+      roads.preferredRot = this.placeRot;
       this.showRoadPreview(roads.rerun(...this.roadNeighbours()));
-      this.update({ ghostRot: this.ghostRot });
+      this.update({ ghostRot: this.placeRot });
       return;
     }
     const held = this.held;
@@ -2735,8 +2740,8 @@ export class Editor implements IEditor {
   ): Refusal | null {
     const carried = carriesRefusal(label, this.placed.lostSupport(removed, moved));
     if (carried) return carried;
-    const off = this.track?.unsupportedPieces((cells) =>
-      this.placed.trackSupport(cells, removed, moved),
+    const off = this.placed.trackSupportWithout(removed, moved, (support) =>
+      this.track?.unsupportedPieces(support),
     );
     const first = off?.[0];
     return first ? trackCarriedRefusal(label, first) : null;
@@ -2764,20 +2769,61 @@ export class Editor implements IEditor {
     for (const change of changes) {
       const to = change.to;
       if (!to) continue;
-      const placeable = this.placeableAt(to.refId);
-      const check = this.placed.check(placeable, to.x, to.z, to.rot, removed);
-      const refusal = supportRefusal(placeable.label, check.verdict);
-      if (refusal) return { ...refusal, item: placeable.id };
-      if (check.yPlates !== to.yPlates) {
-        return {
-          rule: "support",
-          item: placeable.id,
-          message: `${placeable.label} was at ${to.yPlates} plates but would now land at ${check.yPlates}.`,
-        };
-      }
+      const refusal = this.poseRefusal(to, removed);
+      if (refusal) return { ...refusal, item: this.placeableAt(to.refId).id };
     }
     return null;
   }
+
+  private poseRefusal(to: PlacementPose, removed: ReadonlyArray<PlacedModel>): Refusal | null {
+    const placeable = this.placeableAt(to.refId);
+    const check = this.placed.check(placeable, to.x, to.z, to.rot, removed);
+    const refusal = supportRefusal(placeable.label, check.verdict);
+    if (refusal) return refusal;
+    if (check.yPlates === to.yPlates) return null;
+    return {
+      rule: "support",
+      message: `${placeable.label} was at ${to.yPlates} plates but would now land at ${check.yPlates}.`,
+    };
+  }
+
+  private readonly roadRules: RoadPlacementRules = {
+    carried: (plate) => {
+      const track = this.track;
+      const pieces = track
+        ? track.piecesIn(plate.box).map((piece) => ({ thing: piece, box: track.pieceBox(piece) }))
+        : [];
+      const models = this.placed
+        .models()
+        .filter(
+          (model) =>
+            model.placeable.layer !== "first" &&
+            model.box.minX < plate.box.maxX &&
+            model.box.maxX > plate.box.minX &&
+            model.box.minZ < plate.box.maxZ &&
+            model.box.maxZ > plate.box.minZ,
+        )
+        .map((model) => ({ thing: model, box: model.box }));
+      return [...pieces, ...models];
+    },
+    layRefusal: (pose, lifted) => this.poseRefusal(pose, lifted)?.message ?? null,
+    carriedRefusal: (thing, lifted, poses) => {
+      const first = lifted[0];
+      if (!first) return null;
+      const label = first.placeable.label;
+      const moved = poses.map((pose) => ({ placeable: this.placeableAt(pose.refId), ...pose }));
+      if (typeof thing === "number") {
+        const off = this.placed.trackSupportWithout(
+          lifted,
+          moved,
+          (support) => this.track?.unsupportedPiece(thing, support) ?? null,
+        );
+        return off ? trackCarriedRefusal(label, off).message : null;
+      }
+      const lost = this.placed.lostSupport(lifted, moved).filter((loss) => loss.model === thing);
+      return carriesRefusal(label, lost)?.message ?? null;
+    },
+  };
 
   private refuse(action: RefusedAction, item: string, refusal: Refusal): void {
     this.update({
@@ -2850,6 +2896,7 @@ export class Editor implements IEditor {
   }
 
   private trackEdited(): void {
+    this.roadDrawing?.worldChanged();
     this.dirty.touchTrack(this.trackRecords());
     this.scheduleSave();
   }

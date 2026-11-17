@@ -509,22 +509,43 @@ export class TrackDrawing {
     return null;
   }
 
+  piecesIn(box: WorldBox): ReadonlyArray<number> {
+    const pieces: number[] = [];
+    this.pieceCells.forEach((cells, piece) => {
+      for (let c = 0; c < cells.count; c++) {
+        const x = (cells.cellX[c] ?? 0) * STUD_LDU;
+        const z = (cells.cellZ[c] ?? 0) * STUD_LDU;
+        const inX = x + STUD_LDU > box.minX && x - STUD_LDU < box.maxX;
+        if (inX && z + STUD_LDU > box.minZ && z - STUD_LDU < box.maxZ) {
+          pieces.push(piece);
+          return;
+        }
+      }
+    });
+    return pieces;
+  }
+
   unsupportedPieces(probe: TrackSupportProbe): ReadonlyArray<OffBaseplate> {
     const off: OffBaseplate[] = [];
     for (let p = 0; p < this.layout.count; p++) {
-      const cells = this.pieceCells[p];
-      if (!cells) continue;
-      const support = probe(cells);
-      if (support.kind === "on-baseplate") continue;
-      off.push({
-        piece: p,
-        pieceId: this.placedAt(p).part.piece.id,
-        pieces: this.layout.count,
-        cells: support.cells,
-        missing: support.missing,
-      });
+      const piece = this.unsupportedPiece(p, probe);
+      if (piece) off.push(piece);
     }
     return off;
+  }
+
+  unsupportedPiece(p: number, probe: TrackSupportProbe): OffBaseplate | null {
+    const cells = this.pieceCells[p];
+    if (!cells) return null;
+    const support = probe(cells);
+    if (support.kind === "on-baseplate") return null;
+    return {
+      piece: p,
+      pieceId: this.placedAt(p).part.piece.id,
+      pieces: this.layout.count,
+      cells: support.cells,
+      missing: support.missing,
+    };
   }
 
   private newRunStart(drag: Drag, hitX: number, hitZ: number): Pose16 | null {

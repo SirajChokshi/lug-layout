@@ -896,9 +896,17 @@ export class PlacedChunks {
     ignore: ReadonlyArray<PlacedModel>,
     moved: ReadonlyArray<PendingPose> = [],
   ): TrackSupport {
+    return this.trackSupportWithout(ignore, moved, (support) => support(cells));
+  }
+
+  trackSupportWithout<T>(
+    ignore: ReadonlyArray<PlacedModel>,
+    moved: ReadonlyArray<PendingPose>,
+    read: (support: (cells: BaseCells) => TrackSupport) => T,
+  ): T {
     return this.withExcluded(
       this.entriesOf(ignore),
-      () => trackSupport(cells, this.support),
+      () => read((cells) => trackSupport(cells, this.support)),
       moved.map((pose) => this.pendingEntry(pose)),
     );
   }
