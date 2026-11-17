@@ -116,7 +116,7 @@ jobs:
       - name: Refuse plans that destroy catalog data
         if: steps.report.outputs.refused == 'true'
         run: |
-          echo "::error::The plan destroys the D1 database or the R2 release bucket."
+          echo "::error::The plan destroys the D1 database or an R2 bucket."
           exit 1
 
   apply:
@@ -181,7 +181,7 @@ jobs:
       - name: Refuse plans that destroy catalog data
         if: steps.report.outputs.refused == 'true'
         run: |
-          echo "::error::The plan destroys the D1 database or the R2 release bucket."
+          echo "::error::The plan destroys the D1 database or an R2 bucket."
           exit 1
       - name: Terraform apply
         if: steps.guard.outputs.apply == 'true'

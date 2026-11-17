@@ -3,6 +3,42 @@ locals {
   d1          = one(local.wrangler.d1_databases)
   r2          = one(local.wrangler.r2_buckets)
   bundle_path = abspath("${path.module}/${var.worker_bundle}")
+  part_bundle = jsondecode(file("${path.module}/part-bundles.json"))
+}
+
+resource "cloudflare_r2_bucket" "part_bundles" {
+  account_id = var.account_id
+  name       = local.part_bundle.bucket_name
+  location   = var.r2_location
+}
+
+resource "cloudflare_r2_bucket_cors" "part_bundles" {
+  account_id  = var.account_id
+  bucket_name = cloudflare_r2_bucket.part_bundles.name
+  rules = [
+    {
+      allowed = {
+        methods = ["GET", "HEAD"]
+        origins = ["*"]
+      }
+      max_age_seconds = 86400
+    },
+  ]
+}
+
+resource "cloudflare_r2_custom_domain" "part_bundles" {
+  count       = var.part_bundle_domain == null ? 0 : 1
+  account_id  = var.account_id
+  bucket_name = cloudflare_r2_bucket.part_bundles.name
+  domain      = var.part_bundle_domain
+  zone_id     = var.zone_id
+  enabled     = true
+}
+
+resource "cloudflare_r2_managed_domain" "part_bundles" {
+  account_id  = var.account_id
+  bucket_name = cloudflare_r2_bucket.part_bundles.name
+  enabled     = var.part_bundle_domain == null
 }
 
 resource "cloudflare_r2_bucket" "catalog_releases" {

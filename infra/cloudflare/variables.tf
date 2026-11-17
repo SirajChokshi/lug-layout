@@ -56,6 +56,17 @@ variable "route_pattern" {
   }
 }
 
+variable "part_bundle_domain" {
+  description = "Custom domain serving the part bundle bucket, for example parts.example.org, in zone_id. Null serves it on the bucket's r2.dev domain, which Cloudflare rate-limits."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.part_bundle_domain == null || var.zone_id != null
+    error_message = "part_bundle_domain needs zone_id."
+  }
+}
+
 variable "worker_bundle" {
   description = "Worker module built by `pnpm --filter @brr/catalog-api build`."
   type        = string

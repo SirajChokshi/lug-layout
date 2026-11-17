@@ -1,6 +1,6 @@
-# Catalog search on Cloudflare
+# Catalog search and part bundle on Cloudflare
 
-Terraform for the server-side catalog search (`apps/catalog-api`):
+Terraform for the server-side catalog search (`apps/catalog-api`) and for the bucket that serves the compiled part bundle to the web app:
 
 | Resource | Name | Purpose |
 |---|---|---|
@@ -9,8 +9,12 @@ Terraform for the server-side catalog search (`apps/catalog-api`):
 | `cloudflare_workers_script.catalog_api` | `brr-catalog-api` | The Worker, bound to D1 (`CATALOG_DB`), R2 (`CATALOG_RELEASES`) and two rate limiters (`QUERY_RATE_LIMIT` for D1 queries, `FILE_RATE_LIMIT` for release-file reads from R2). |
 | `cloudflare_workers_script_subdomain.catalog_api` | | `brr-catalog-api.<account>.workers.dev` on or off. |
 | `cloudflare_workers_route.catalog_api` | | Optional zone route. Needed for the edge cache: the Cache API does nothing on workers.dev, so there every uncached request reaches D1 or R2. |
+| `cloudflare_r2_bucket.part_bundles` | `brr-part-bundles` | The compiled part bundle (GLBs, model JSON, one manifest per LOD) under content-addressed keys. CI writes it; deployed apps read it. Never pruned, so every deployed app keeps its parts. |
+| `cloudflare_r2_bucket_cors.part_bundles` | | `GET` and `HEAD` from any origin, so the app on Vercel can read the bucket. |
+| `cloudflare_r2_custom_domain.part_bundles` | `part_bundle_domain` | Public domain for the bucket in `zone_id`, when `part_bundle_domain` is set. |
+| `cloudflare_r2_managed_domain.part_bundles` | `pub-….r2.dev` | The bucket's r2.dev domain, enabled only when `part_bundle_domain` is null. Cloudflare rate-limits r2.dev, so set `part_bundle_domain` for production. |
 
-Names, the compatibility date, the rate limits and observability come from `apps/catalog-api/wrangler.json`, so `wrangler dev`, the loader and Terraform can't drift apart. Terraform uploads the Worker bundle; nothing here runs `wrangler deploy`. `pnpm check:infra` (run by CI and `pnpm check`) checks formatting and validates the configuration with the pinned provider.
+Names, the compatibility date, the rate limits and observability come from `apps/catalog-api/wrangler.json`, so `wrangler dev`, the loader and Terraform can't drift apart. The part bundle bucket's name comes from `part-bundles.json`, which the asset pipeline's uploader reads too. Terraform uploads the Worker bundle; nothing here runs `wrangler deploy`. `pnpm check:infra` (run by CI and `pnpm check`) checks formatting and validates the configuration with the pinned provider.
 
 Why wrangler is used only for `dev` and the loader:
 - **The code upload stays in Terraform.** `wrangler deploy` uploads the script together with its bindings and settings. If it ran next to Terraform, the two would overwrite each other's view of the same `cloudflare_workers_script`, and every plan would show drift. With one owner, a plan shows exactly what an apply changes, including a new bundle (`content_sha256`).
@@ -26,8 +30,10 @@ The dashboard's **Edit** is the API's **Write**: Account · D1 · Edit is the pe
 1. **Terraform token**, for `plan` and `apply` only. A custom API token (*My Profile → API Tokens*) limited to this account, in `CLOUDFLARE_API_TOKEN` or `cloudflare_api_token` in `terraform.tfvars`:
    - Account · **Workers Scripts · Edit** (`Workers Scripts Write`: script, bindings, workers.dev toggle, rate limiters)
    - Account · **D1 · Edit** (`D1 Write`: the database)
-   - Account · **Workers R2 Storage · Edit** (`Workers R2 Storage Write`: the release bucket)
+   - Account · **Workers R2 Storage · Edit** (`Workers R2 Storage Write`: the release bucket, the part bundle bucket and its custom domain)
    - Zone · **Workers Routes · Edit** (`Workers Routes Write`), scoped to the zone, only if you set `route_pattern`
+
+   The schema names no group for the R2 bucket CORS endpoints, the r2.dev managed-domain endpoints or custom-domain create and update, and a custom domain also adds a DNS record to the zone. Those are unverified until the first apply that creates them. If it fails with an authorization error, report the endpoint rather than widening the token blindly.
 
    *Workers R2 Storage · Edit* is account-wide, so this token can also reach the state bucket. Keep it out of the loader. In GitHub Actions only the apply job sees it, through the protected `production` environment; the `check` job and PR plans never do.
 2. **Loader credentials**, for `load-release --remote`:
@@ -75,7 +81,7 @@ Two workflows replace the manual steps above. Neither commits or prints a secret
 | Terraform plan | pull requests from this repository | `production-plan` | Downloads the bundle, `init` against the R2 backend, `plan -lock=false`, then posts a summary (resource addresses and actions only, never attribute values) as one PR comment that later runs update. |
 | Terraform apply | push to `main` | `production` | Skips if the commit is no longer on `main`, or if main's tip has different deploy inputs. Otherwise downloads the bundle, `init`, `plan`, then `apply` of exactly that plan. |
 
-Pull requests from forks build but never plan, so they never get a secret. The workflow uses `pull_request`, never `pull_request_target`. Plan and apply both refuse a plan that destroys or replaces the D1 database or the release bucket. Do that locally, on purpose. If `production-plan` lacks a secret, the PR plan is skipped with a warning and a comment naming the secret. If `production` lacks one, apply fails.
+Pull requests from forks build but never plan, so they never get a secret. The workflow uses `pull_request`, never `pull_request_target`. Plan and apply both refuse a plan that destroys or replaces the D1 database or either R2 bucket (`ci/plan-report.sh` matches every `cloudflare_r2_bucket`, so `brr-part-bundles` is covered too). Do that locally, on purpose. If `production-plan` lacks a secret, the PR plan is skipped with a warning and a comment naming the secret. If `production` lacks one, apply fails.
 
 Push runs share one run-level concurrency group, `catalog-deploy-main`, with `cancel-in-progress: false`. A run joins the group when it is created, so builds and applies run one whole run at a time, in push order, and never overlap. GitHub keeps one run in the group and one waiting. A newer push replaces the waiting run, which shows as cancelled; nothing is lost, because the newer commit contains it. Before applying, `ci/apply-guard.sh` compares the run's commit with main's tip, using a full-history checkout. It skips with a notice if the commit isn't an ancestor of the tip, or if `git diff` shows the deploy inputs differ between them. When the inputs differ, a newer push changed them and started its own run, queued behind this one. Otherwise the commit's deploy inputs are the tip's, so it applies even when unrelated commits have landed on `main` since. Re-running an old run therefore can't roll production back. Each pull request has its own group, and a new push to it cancels the stale run.
 
@@ -114,7 +120,7 @@ Every secret is an environment secret. Nothing goes in repository secrets.
 
 PR plans get read-only credentials because anyone who can push a branch can change a workflow on it and read that job's secrets. That's also why `production` must be limited to `main`. Read-only should be enough for a plan, since `-lock=false` writes nothing to state and the refresh only reads, **but this hasn't been checked against a live account yet**. If a plan fails with an authorization error, report it rather than giving PR plans an Edit token.
 
-The non-secret Terraform variables (`d1_primary_location_hint`, `r2_location`, `workers_dev_enabled`, `zone_id`, `route_pattern`) come from the repository variable `CATALOG_TFVARS_JSON`, a JSON object like `{"d1_primary_location_hint":"wnam","r2_location":"wnam"}`. It may not contain `account_id` or `cloudflare_api_token`. Leave it unset for the defaults in `variables.tf`. It must match what earlier applies used: a different `d1_primary_location_hint` can plan a new database, which the workflow refuses.
+The non-secret Terraform variables (`d1_primary_location_hint`, `r2_location`, `workers_dev_enabled`, `zone_id`, `route_pattern`, `part_bundle_domain`) come from the repository variable `CATALOG_TFVARS_JSON`, a JSON object like `{"d1_primary_location_hint":"wnam","r2_location":"wnam"}`. It may not contain `account_id` or `cloudflare_api_token`. Leave it unset for the defaults in `variables.tf`. It must match what earlier applies used: a different `d1_primary_location_hint` can plan a new database, which the workflow refuses.
 
 ### One-time setup
 
@@ -148,3 +154,13 @@ It then uploads the file to R2, and only after that imports one SQL file into D1
 A D1 import is all or nothing, so a failed load leaves the previous release serving. While D1 ingests the file it doesn't answer queries; responses already in the edge cache keep serving. `--local` does the same against `wrangler dev` state.
 
 Older releases stay in D1 until their tables are dropped by hand; their SQLite files stay in R2 for good.
+
+## Part bundle bucket
+
+`brr-part-bundles` holds the compiled part bundle that the web app loads at runtime: content-addressed objects at `<lod>/<file>.<sha256 prefix>.glb|json` and one manifest per LOD. Nothing in it is generated by hand and nothing generated is committed. The asset pipeline's uploader writes it from CI with an R2 API token that has **Object Read & Write** on this bucket only. Terraform owns only the bucket and how it is reached:
+
+- **Public access.** Browsers fetch the objects directly, so the bucket needs a public domain. Set `part_bundle_domain` (with `zone_id`) to serve it on a custom domain, which goes through Cloudflare's cache. With `part_bundle_domain` null, Terraform enables the bucket's r2.dev domain instead; Cloudflare rate-limits r2.dev and recommends a custom domain for production, so use it only until a domain exists. Switching from r2.dev to a custom domain turns r2.dev off in the same apply.
+- **CORS.** `GET` and `HEAD` from any origin. The objects are public and immutable, and the app's origin differs between production and preview deployments.
+- **Caching.** The uploader stores every object with `Cache-Control: public, max-age=31536000, immutable`. Manifests can be immutable too, because their name changes whenever their inputs do.
+- **The app's URL.** The `part_bundle_base_url` output is the value the web app's `VITE_BUNDLE_BASE_URL` needs.
+

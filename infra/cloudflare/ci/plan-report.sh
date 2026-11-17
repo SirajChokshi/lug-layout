@@ -45,7 +45,7 @@ if ((${#destroyed_data[@]} > 0)); then
   addresses="$(printf "\`%s\`, " "${destroyed_data[@]}")"
   {
     echo
-    echo "**Refused:** this plan destroys catalog data: ${addresses%, }. The deploy workflow never applies such a plan. If it is intended, apply it locally (\`infra/cloudflare/README.md\`)."
+    echo "**Refused:** this plan destroys stored data: ${addresses%, }. The deploy workflow never applies such a plan. If it is intended, apply it locally (\`infra/cloudflare/README.md\`)."
   } >>"$report"
   echo "refused=true" >>"$output"
 else
