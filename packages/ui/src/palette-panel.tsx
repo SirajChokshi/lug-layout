@@ -16,6 +16,7 @@ import {
   type PaletteHit,
 } from "@brr/client";
 import { hoverPrefetch } from "./hover-prefetch.ts";
+import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -76,6 +77,7 @@ function Swatches({
           style={{ background: item.color?.rgb ?? "transparent" }}
           disabled={snapshot.readOnly}
           onClick={() => editor.chooseItem(item.id)}
+          {...paletteDragProps(editor, item)}
         />
       ))}
     </div>
@@ -119,6 +121,7 @@ function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: 
         disabled={snapshot.readOnly}
         onClick={() => editor.chooseItem(item.id)}
         {...hoverPrefetch(editor, item.id)}
+        {...paletteDragProps(editor, item)}
       >
         <span className="catalog-name">{item.label}</span>
         <span className="catalog-meta">
@@ -309,6 +312,7 @@ function ResultRow({
         {...(first ? hoverPrefetch(editor, first.id) : {})}
         aria-pressed={hit.items.some((item) => item.id === snapshot.activeItem)}
         onClick={() => first && onPick(first)}
+        {...(first ? paletteDragProps(editor, first) : {})}
       >
         <span className="palette-result-title">
           {entry.partNumber && <span className="palette-number">{entry.partNumber}</span>}
@@ -427,6 +431,9 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
           ))}
         </div>
       </div>
+      <p className="palette-hint palette-how">
+        Click a part and then the ground to place copies, or drag it straight onto the layout.
+      </p>
       {searching ? (
         <ul
           id="palette-results"
