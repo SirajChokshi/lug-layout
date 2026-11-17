@@ -1,12 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   CATEGORY_LABEL,
   PALETTE_CATEGORIES,
@@ -306,21 +298,6 @@ function trackTerms(track: EditorSnapshot["track"]): ReadonlyArray<string> {
   return (track?.bom ?? []).flatMap((line) => [line.piece.replace(/^[a-z]+:/u, ""), line.title]);
 }
 
-function useSlashToSearch(input: RefObject<HTMLInputElement | null>): void {
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent): void => {
-      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
-      const target = event.target;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      event.preventDefault();
-      input.current?.focus();
-      input.current?.select();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [input]);
-}
-
 const FILTERS: ReadonlyArray<PaletteFilter> = ["all", ...PALETTE_CATEGORIES];
 
 function filterLabel(filter: PaletteFilter): string {
@@ -331,8 +308,6 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PaletteFilter>("all");
   const [highlight, setHighlight] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  useSlashToSearch(inputRef);
   const { catalog } = snapshot;
   const trackKey = trackTerms(snapshot.track).join("\n");
   const index = useMemo(
@@ -395,10 +370,9 @@ export function PalettePanel({ editor, snapshot }: PaletteProps) {
       <div className="palette-head">
         <h2>Palette</h2>
         <input
-          ref={inputRef}
           type="search"
           className="palette-search"
-          placeholder="Search: 3811, tan 16x16, crossroads, -sand  ( / )"
+          placeholder="Search: 3811, tan 16x16, crossroads, -sand"
           title='Words must all match. "Quote a phrase", -word excludes, #3811 matches numbers only.'
           aria-label="Search the palette"
           aria-controls="palette-results"
