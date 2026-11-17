@@ -1,0 +1,70 @@
+1:  713a69c ! 1:  8eeb422 M3: parts list export for the world, a region or the editor's selection, on one crosswalk in the bundle
+    @@ packages/catalog/src/http-part-bundle-loader.ts: import {
+        IAssetFetcher,
+        ImportContext,
+        IPartBundleLoader,
+    -@@ packages/catalog/src/http-part-bundle-loader.ts: export class HttpAssetFetcher implements IAssetFetcher {
+    - @injectable()
+    - export class HttpPartBundleLoader implements IPartBundleLoader {
+    -   private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
+    +@@ packages/catalog/src/http-part-bundle-loader.ts: export class HttpPartBundleLoader implements IPartBundleLoader {
+    +     BundleLod,
+    +     Promise<ReadonlyArray<StudPrimitiveAsset>>
+    +   >();
+     +  private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
+      
+        constructor(
+    @@ packages/catalog/src/http-part-bundle-loader.ts: export class HttpPartBundleLoad
+     +    if (cached) return cached;
+     +    const loading = this.loadManifest(lod).then(async ({ crosswalk }) =>
+     +      decodedOrThrow(
+    -+        decode(CrosswalkFile, JSON.parse(await this.fetcher.text(`${lod}/${crosswalk.file}`))),
+    ++        decode(CrosswalkFile, JSON.parse(await this.text(`${lod}/${crosswalk.file}`))),
+     +        `${lod}/${crosswalk.file}`,
+     +      ),
+     +    );
+     +    this.crosswalks.set(lod, loading);
+    ++    loading.catch(() => this.crosswalks.delete(lod));
+     +    return loading;
+     +  }
+     +
+    @@ packages/client/src/edit/editor.ts: export class Editor implements IEditor {
+     +      this.bomTables = { palette, colors, ldrawColors: bundle.colors.map((color) => color.code) };
+            this.backend.setPalette({
+              detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
+    -         far: { parts: farPalette.parts, studPrimitives: farBundle.studPrimitives },
+    +         ...(far
+     @@ packages/client/src/edit/editor.ts: export class Editor implements IEditor {
+    -         farModels.push(far.farMesh.mesh);
+    -         farModel = farModels.length - 1;
+    -       }
+    +     });
+    +     for (const { bundle: modelBundle, entry, model } of near.kept) {
+    +       const credit = { name: entry.name, source: entry.source, sections: model.sections };
+     -      placeables.push(
+     -        modelPlaceable(
+     -          entry.name,
+    @@ packages/client/src/edit/editor.ts: export class Editor implements IEditor {
+     -          credit,
+     -          palette.parts,
+     -          colors,
+    --          farModel,
+    +-          far?.meshIndex.get(entry.name) ?? null,
+     -        ),
+     +      const placeable = modelPlaceable(
+     +        entry.name,
+    @@ packages/client/src/edit/editor.ts: export class Editor implements IEditor {
+     +        credit,
+     +        palette.parts,
+     +        colors,
+    -+        farModel,
+    ++        far?.meshIndex.get(entry.name) ?? null,
+            );
+     +      this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
+     +      placeables.push(placeable);
+          }
+    -     return { placeables, skipped };
+    +     return { placeables, skipped: near.skipped };
+        }
+     @@ packages/client/src/edit/editor.ts: export class Editor implements IEditor {
+          this.update({ snapRoads: snap, snap: null });
