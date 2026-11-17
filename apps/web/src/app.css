@@ -803,15 +803,18 @@ footer a {
   border-top: 1px solid rgb(0 0 0 / 0.12);
 }
 
+.side-panel:has(> .bom) {
+  overflow-y: auto;
+}
+
 .side-panel > .catalog {
   min-height: 160px;
 }
 
 .side-panel > .bom {
-  min-height: 0;
+  flex-shrink: 0;
   margin-top: 0;
   border-top: 0;
-  overflow-y: auto;
 }
 
 .bom h2 {
