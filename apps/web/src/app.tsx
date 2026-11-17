@@ -73,13 +73,13 @@ function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, stri
         : "none yet",
     ],
   ];
-  if (status.vehicle) {
-    const { lengthLdu, frontBogieLdu, rearBogieLdu } = status.vehicle;
+  status.vehicles.forEach((vehicle, v) => {
+    const { lengthLdu, frontBogieLdu, rearBogieLdu } = vehicle.spec;
     rows.push([
-      "Vehicle (LDU)",
-      `length ${lengthLdu.toFixed(1)}, bogies at ${frontBogieLdu.toFixed(1)} and ${rearBogieLdu.toFixed(1)} from ${status.wheelsets} wheelsets; ${status.vehicleInstances} parts touch the wheels, ${status.excludedInstances} stand apart and stay off the train`,
+      `Vehicle ${v + 1} (LDU)`,
+      `${vehicle.model}${vehicle.reversed ? " reversed" : ""}: length ${lengthLdu.toFixed(2)}, guides at ${frontBogieLdu.toFixed(2)} and ${rearBogieLdu.toFixed(2)}, ${vehicle.wheelsets} wheelsets, ${vehicle.bogieBodies} pivoting bogies`,
     ]);
-  }
+  });
   const spans: string[] = [];
   for (let p = 0; p + 3 < status.bogiePointsLdu.length; p += 4) {
     const [fx = 0, fz = 0, rx = 0, rz = 0] = status.bogiePointsLdu.slice(p, p + 4);

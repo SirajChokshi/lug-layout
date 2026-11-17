@@ -1,3 +1,10 @@
+export {
+  VEHICLE_POSE_FLOATS,
+  type CouplerGeometry,
+  type CouplerMount,
+  type GuideGeometry,
+  type VehicleGeometry,
+} from "./running-gear.ts";
 export { simTrackFromGraph, type TrackGraphTopology } from "./graph-track.ts";
 export { loadSession, type LoadedSession } from "./load.ts";
 export type {

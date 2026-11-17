@@ -7,6 +7,7 @@ import type {
   TrackEnd,
   Vec3Tuple,
 } from "./part-bundle.ts";
+import { parseBakedVehicle, type BakedVehicle } from "./model-vehicle.ts";
 import { parseTrackCatalog, type TrackCatalog } from "./track-catalog.ts";
 
 export interface ManifestPart {
@@ -61,6 +62,7 @@ export interface ModelFile {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly parts: ReadonlyArray<string>;
   readonly lattice: ModelFileLattice | null;
+  readonly vehicles: ReadonlyArray<BakedVehicle>;
   readonly instances: {
     readonly part: ReadonlyArray<number>;
     readonly color: ReadonlyArray<number>;
@@ -221,5 +223,12 @@ export function parseModelFile(value: unknown, label: string): ModelFile {
   ) {
     throw new Error(`${label}: model instance arrays are inconsistent`);
   }
-  return value as unknown as ModelFile;
+  const rawVehicles = value["vehicles"];
+  if (!Array.isArray(rawVehicles)) throw new Error(`${label}: model file has no vehicles list`);
+  return {
+    ...(value as unknown as ModelFile),
+    vehicles: rawVehicles.map((vehicle, v) =>
+      parseBakedVehicle(vehicle, `${label}: vehicles[${v}]`, part.length),
+    ),
+  };
 }

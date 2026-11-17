@@ -6,6 +6,7 @@ import {
   type SimPathSegment,
 } from "./route-geometry.ts";
 import { replay, SimSession, type SimScenario } from "./sim-session.ts";
+import type { VehicleGeometry } from "./running-gear.ts";
 import { backwardEdge, buildSimTrack, forwardEdge, NO_SWITCH, type SimRoute } from "./sim-track.ts";
 import {
   POSE_FLOATS_PER_VEHICLE,
@@ -136,6 +137,213 @@ describe("Placing a train", () => {
       sim.writeVehiclePoses(reversed);
       for (let i = 0; i < poses.length; i++) expect(reversed[i]).toBeCloseTo(poses[i] ?? 0, 6);
     }
+  });
+});
+
+const BOGIE_CAR: VehicleGeometry = {
+  front: {
+    pivotXLdu: 180,
+    pivotZLdu: 0,
+    leadAxleXLdu: 240,
+    trailAxleXLdu: 120,
+    axleZLdu: 0,
+    pivots: true,
+  },
+  rear: {
+    pivotXLdu: -180,
+    pivotZLdu: 0,
+    leadAxleXLdu: -120,
+    trailAxleXLdu: -240,
+    axleZLdu: 0,
+    pivots: true,
+  },
+  frontCoupler: { xLdu: 353, zLdu: 0, mount: "frontBogie" },
+  rearCoupler: { xLdu: -353, zLdu: 0, mount: "rearBogie" },
+};
+
+const FIXED_AXLE_CAR: VehicleGeometry = {
+  front: {
+    pivotXLdu: 90,
+    pivotZLdu: 0,
+    leadAxleXLdu: 90,
+    trailAxleXLdu: 90,
+    axleZLdu: 0,
+    pivots: false,
+  },
+  rear: {
+    pivotXLdu: -90,
+    pivotZLdu: 0,
+    leadAxleXLdu: -90,
+    trailAxleXLdu: -90,
+    axleZLdu: 0,
+    pivots: false,
+  },
+  frontCoupler: { xLdu: 195, zLdu: 0, mount: "body" },
+  rearCoupler: { xLdu: -195, zLdu: 0, mount: "body" },
+};
+
+function specOf(geometry: VehicleGeometry): TrainSpec["vehicles"][number] {
+  const front = geometry.frontCoupler.xLdu;
+  return {
+    lengthLdu: front - geometry.rearCoupler.xLdu,
+    frontBogieLdu: front - geometry.front.pivotXLdu,
+    rearBogieLdu: front - geometry.rear.pivotXLdu,
+    geometry,
+  };
+}
+
+function coupledCircle(): SimScenario {
+  return {
+    ...circle(),
+    capacity: { trains: 1, vehicles: 3 },
+    trains: [
+      {
+        spec: {
+          ...TRAIN,
+          vehicles: [specOf(BOGIE_CAR), specOf(FIXED_AXLE_CAR), specOf(BOGIE_CAR)],
+        },
+        placement: { edge: forwardEdge(8), offsetLdu: 100 },
+      },
+    ],
+  };
+}
+
+function placeLocal(
+  pose: Float64Array,
+  o: number,
+  x: number,
+  z: number,
+): readonly [number, number] {
+  const yaw = pose[o + 2] ?? 0;
+  return [
+    (pose[o] ?? 0) + x * Math.cos(yaw) - z * Math.sin(yaw),
+    (pose[o + 1] ?? 0) + x * Math.sin(yaw) + z * Math.cos(yaw),
+  ];
+}
+
+function runningGearErrors(session: SimSession): { axle: number; coupling: number } {
+  const { layout } = session;
+  const frame = new Float64Array(layout.floats);
+  session.writeFrame(frame);
+  const cars = [BOGIE_CAR, FIXED_AXLE_CAR, BOGIE_CAR];
+  let axle = 0;
+  let coupling = 0;
+  let ahead: { x: number; z: number; normal: number } | null = null;
+  for (let v = 0; v < cars.length; v++) {
+    const car = cars[v] ?? BOGIE_CAR;
+    const o = layout.vehiclePoseStart + v * layout.vehiclePoseFloats;
+    for (const [guide, at] of [
+      [car.front, o + 3],
+      [car.rear, o + 6],
+    ] as const) {
+      const axles = guide.pivots ? [guide.leadAxleXLdu, guide.trailAxleXLdu] : [guide.pivotXLdu];
+      for (const x of axles) {
+        const [ax, az] = guide.pivots
+          ? placeLocal(frame, at, x - guide.pivotXLdu, 0)
+          : placeLocal(frame, o, x, 0);
+        axle = Math.max(axle, Math.abs(Math.hypot(ax, az) - RADIUS));
+      }
+    }
+    const face = (end: "front" | "rear"): { x: number; z: number; normal: number } => {
+      const coupler = end === "front" ? car.frontCoupler : car.rearCoupler;
+      const facing = end === "front" ? 0 : Math.PI;
+      if (coupler.mount === "body") {
+        const [x, z] = placeLocal(frame, o, coupler.xLdu, coupler.zLdu);
+        return { x, z, normal: (frame[o + 2] ?? 0) + facing };
+      }
+      const guide = coupler.mount === "frontBogie" ? car.front : car.rear;
+      const at = coupler.mount === "frontBogie" ? o + 3 : o + 6;
+      const [x, z] = placeLocal(
+        frame,
+        at,
+        coupler.xLdu - guide.pivotXLdu,
+        coupler.zLdu - guide.pivotZLdu,
+      );
+      return { x, z, normal: (frame[at + 2] ?? 0) + facing };
+    };
+    if (ahead) {
+      const front = face("front");
+      const nx = Math.cos(front.normal) - Math.cos(ahead.normal);
+      const nz = Math.sin(front.normal) - Math.sin(ahead.normal);
+      const gap = ((ahead.x - front.x) * nx + (ahead.z - front.z) * nz) / Math.hypot(nx, nz);
+      coupling = Math.max(coupling, Math.abs(gap));
+    }
+    ahead = face("rear");
+  }
+  return { axle, coupling };
+}
+
+function vehiclePoses(session: SimSession): Float64Array {
+  const frame = new Float64Array(session.layout.floats);
+  session.writeFrame(frame);
+  const { vehiclePoseStart, vehiclePoseFloats, vehicles } = session.layout;
+  return frame.slice(vehiclePoseStart, vehiclePoseStart + vehicles * vehiclePoseFloats);
+}
+
+describe("Coupled running gear on a circle", () => {
+  it("keeps every axle on the circle and the coupling faces in contact, both ways", () => {
+    const session = new SimSession(coupledCircle());
+    const sim = session.simulation;
+    sim.setThrottle(0, 500);
+    run(sim, 6);
+    const forward = runningGearErrors(session);
+    expect(forward.axle).toBeLessThan(0.01);
+    expect(forward.coupling).toBeLessThan(1e-6);
+    sim.setThrottle(0, 0);
+    run(sim, 4);
+    expect(sim.reverse(0)).toBe(true);
+    sim.setThrottle(0, 500);
+    run(sim, 6);
+    const backward = runningGearErrors(session);
+    expect(backward.axle).toBeLessThan(0.01);
+    expect(backward.coupling).toBeLessThan(1e-6);
+  });
+
+  it("leaves every body and bogie where it stood when a stopped train reverses", () => {
+    const session = new SimSession(coupledCircle());
+    const sim = session.simulation;
+    sim.setThrottle(0, 500);
+    run(sim, 6);
+    sim.setThrottle(0, 0);
+    run(sim, 4);
+    const before = vehiclePoses(session);
+    expect(sim.reverse(0)).toBe(true);
+    const after = vehiclePoses(session);
+    let worst = 0;
+    for (let v = 0; v < session.layout.vehicles; v++) {
+      for (const at of [0, 3, 6]) {
+        const o = v * session.layout.vehiclePoseFloats + at;
+        const moved = Math.hypot(
+          (after[o] ?? 0) - (before[o] ?? 0),
+          (after[o + 1] ?? 0) - (before[o + 1] ?? 0),
+        );
+        worst = Math.max(worst, moved);
+      }
+    }
+    expect(worst).toBeLessThan(0.1);
+  });
+
+  it("gives the body length as head to solved tail, the distance a stopped reverse moves the head", () => {
+    const session = new SimSession(coupledCircle());
+    const sim = session.simulation;
+    sim.setThrottle(0, 500);
+    run(sim, 6);
+    sim.setThrottle(0, 0);
+    run(sim, 4);
+    const circumference = 2 * Math.PI * RADIUS;
+    const arcLength = circumference / ARC_STEPS;
+    const headAlong = (): number => {
+      const edge = sim.trainEdge[0] ?? 0;
+      const offset = sim.trainOffset[0] ?? 0;
+      const route = Math.floor(edge / 2);
+      return edge % 2 === 0 ? route * arcLength + offset : (route + 1) * arcLength - offset;
+    };
+    const head = headAlong();
+    const length = sim.bodyLengthLdu(0);
+    expect(sim.reverse(0)).toBe(true);
+    const moved = (((head - headAlong()) % circumference) + circumference) % circumference;
+    expect(moved).toBeCloseTo(length, 6);
+    expect(sim.bodyLengthLdu(0)).toBeCloseTo(length, 6);
   });
 });
 

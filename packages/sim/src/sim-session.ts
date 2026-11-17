@@ -7,6 +7,7 @@ import {
   type TrainPlacement,
   type TrainSpec,
 } from "./simulation.ts";
+import { VEHICLE_POSE_FLOATS } from "./running-gear.ts";
 
 export type SimCommand =
   | { readonly kind: "throttle"; readonly train: number; readonly speedLduPerS: number }
@@ -48,6 +49,8 @@ export interface SimFrameLayout {
   readonly sharedPieceTicksIndex: number;
   readonly minBogieSeparationIndex: number;
   readonly checkedTicksIndex: number;
+  readonly vehiclePoseStart: number;
+  readonly vehiclePoseFloats: number;
   readonly floats: number;
 }
 
@@ -62,6 +65,7 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
   const sharedPieceTicksIndex = routeStateStart + trains;
   const minBogieSeparationIndex = sharedPieceTicksIndex + 1;
   const checkedTicksIndex = minBogieSeparationIndex + 1;
+  const vehiclePoseStart = checkedTicksIndex + 1;
   return {
     poseFloatsPerVehicle: POSE_FLOATS_PER_VEHICLE,
     vehicles,
@@ -77,7 +81,9 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
     sharedPieceTicksIndex,
     minBogieSeparationIndex,
     checkedTicksIndex,
-    floats: checkedTicksIndex + 1,
+    vehiclePoseStart,
+    vehiclePoseFloats: VEHICLE_POSE_FLOATS,
+    floats: vehiclePoseStart + vehicles * VEHICLE_POSE_FLOATS,
   };
 }
 
@@ -112,7 +118,7 @@ export class SimSession {
   writeFrame(out: Float64Array): void {
     const sim = this.simulation;
     const layout = this.layout;
-    sim.writeVehiclePoses(out);
+    sim.writePoses(out, layout.poseStart, out, layout.vehiclePoseStart);
     for (let t = 0; t < layout.trains; t++) {
       out[layout.trainEdgeStart + t] = sim.trainEdge[t] ?? 0;
       out[layout.trainOffsetStart + t] = sim.trainOffset[t] ?? 0;

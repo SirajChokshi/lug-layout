@@ -3,14 +3,20 @@ import {
   type BundleLod,
   type IPartBundleLoader,
   type PartBundle,
+  type PartModel,
   type TrackPiece,
 } from "@brr/catalog";
 import { TrackGraph, type TrackLayout } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
-import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
-import type { SimFrameLayout, SimLoad, SimLoaded, TrainSpec } from "@brr/sim";
+import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";
+import type { SimFrameLayout, SimLoad, SimLoaded, TrainSpec, VehicleSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
-import { vehicleFromModel, type ModelVehicle } from "../sim/model-vehicle.ts";
+import {
+  consistVehicles,
+  type ConsistEntry,
+  type ConsistVehicle,
+  type RigidBodyInstances,
+} from "../sim/consist.ts";
 import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { SIM_CLIENT } from "../tokens.ts";
@@ -27,7 +33,7 @@ export interface TrainRequest {
 
 export interface RunRequest {
   readonly plan: string;
-  readonly model: string;
+  readonly consist: ReadonlyArray<ConsistEntry>;
   readonly trains: ReadonlyArray<TrainRequest>;
   readonly speedLduPerS: number;
   readonly accelerationLduPerS2: number;
@@ -35,6 +41,7 @@ export interface RunRequest {
   readonly follow: boolean;
   readonly start: boolean;
   readonly autopilotSeed: number | null;
+  readonly followDistanceLdu: number;
 }
 
 export type TrainRouteStatus = "manual" | "waiting" | "routed" | "arrived" | "reversing";
@@ -62,12 +69,17 @@ export interface RunStatus {
   readonly minBogieSeparationLdu: number;
   readonly checkedTicks: number;
   readonly tickCost: SimTickCost;
-  readonly vehicle: ModelVehicle["spec"] | null;
-  readonly wheelsets: number;
-  readonly vehicleInstances: number;
-  readonly excludedInstances: number;
+  readonly vehicles: ReadonlyArray<RunVehicleStatus>;
   readonly maxEndResidualLdu: number;
   readonly maxEndHeadingResidualRadians: number;
+}
+
+export interface RunVehicleStatus {
+  readonly model: string;
+  readonly reversed: boolean;
+  readonly spec: VehicleSpec;
+  readonly wheelsets: number;
+  readonly bogieBodies: number;
 }
 
 export interface IRunScene extends IViewerScene {
@@ -79,13 +91,38 @@ export interface IRunScene extends IViewerScene {
 const ORBIT_DISTANCE_FACTOR = 0.9;
 const ORBIT_ELEVATION_FACTOR = 1.1;
 const MIN_ORBIT_RADIUS_LDU = 400;
-const FOLLOW_DISTANCE_LDU = 1400;
-const FOLLOW_HEIGHT_LDU = 650;
+const FOLLOW_HEIGHT_PER_DISTANCE = 650 / 1400;
 const FOLLOW_SWING_RADIANS = 0.9;
 
-function mergedBundle(track: PartBundle, model: PartBundle): PartBundle {
-  return { ...track, parts: [...track.parts, ...model.parts] };
+function mergedBundle(track: PartBundle, models: ReadonlyArray<PartBundle>): PartBundle {
+  const parts = [...track.parts];
+  const known = new Set(parts.map((part) => part.id));
+  for (const model of models) {
+    for (const part of model.parts) {
+      if (known.has(part.id)) continue;
+      known.add(part.id);
+      parts.push(part);
+    }
+  }
+  return { ...track, parts };
 }
+
+function railPartFor(layout: TrackLayout, pieces: ReadonlyArray<TrackPiece>): string {
+  const system = pieces[layout.piece(0)]?.system;
+  const straight = pieces.find((piece) => piece.system === system && piece.kind === "straight");
+  if (!straight)
+    throw new Error(`track system ${String(system)} has no straight to measure rails on`);
+  return straight.part;
+}
+
+interface PlacedVehicle {
+  readonly vehicle: ConsistVehicle;
+  readonly body: number;
+  readonly frontBogie: number;
+  readonly rearBogie: number;
+}
+
+const NO_BODY = -1;
 
 function railTopY(
   layout: TrackLayout,
@@ -103,7 +140,8 @@ export class RunScene implements IRunScene {
   private request: RunRequest | undefined;
   private frameLayout: SimFrameLayout | undefined;
   private loaded: SimLoaded | undefined;
-  private vehicle: ModelVehicle | undefined;
+  private consist: ReadonlyArray<ConsistVehicle> = [];
+  private placed: PlacedVehicle[] = [];
   private railY = 0;
   private centreX = 0;
   private centreZ = 0;
@@ -122,50 +160,74 @@ export class RunScene implements IRunScene {
   async load(lod: BundleLod): Promise<SceneSummary> {
     const request = this.request;
     if (!request) throw new Error("RunScene.load called before configure");
-    const [trackBundle, modelBundle] = await Promise.all([
+    const models = [...new Set(request.consist.map((entry) => entry.model))];
+    const [trackBundle, ...modelBundles] = await Promise.all([
       this.loader.load(lod, TRACK_PARTS),
-      this.loader.loadModel(lod, request.model),
+      ...models.map((model) => this.loader.loadModel(lod, model)),
     ]);
-    const bundle = mergedBundle(trackBundle, modelBundle.bundle);
+    const modelByName = new Map(models.map((name, i) => [name, modelBundles[i]]));
+    const bundle = mergedBundle(
+      trackBundle,
+      modelBundles.map((model) => model.bundle),
+    );
     const { layout, catalogPieces } = buildTrackPlan(request.plan, trackBundle.trackCatalog);
     const graph = new TrackGraph(layout);
     this.frame(graph);
     const colors = new ColorTable(bundle);
     const chunks = trackChunks(layout, catalogPieces, bundle, colors);
-    const vehicle = vehicleFromModel(modelBundle.model, modelBundle.bundle.parts);
-    this.vehicle = vehicle;
+    const railPart = railPartFor(layout, catalogPieces);
     this.railY = railTopY(layout, catalogPieces, bundle);
-    const model = modelBundle.model;
-    const partOffset = trackBundle.parts.length;
-    const count = vehicle.instances.length;
-    const partIndex = new Uint16Array(count);
-    const colorIndex = new Uint16Array(count);
-    for (let slot = 0; slot < count; slot++) {
-      const i = vehicle.instances[slot] ?? 0;
-      partIndex[slot] = (model.partIndex[i] ?? 0) + partOffset;
-      colorIndex[slot] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
-    }
-    const body = withStuds(
-      {
-        originX: 0,
-        originZ: 0,
-        count,
-        partIndex,
-        colorIndex,
-        matrices: vehicle.matrices,
-      },
-      bundle.parts,
-      colors,
-      undefined,
-    );
-    const summary = showChunks(this.backend, bundle, undefined, colors, chunks, {
-      name: modelBundle.entry.name,
-      source: modelBundle.entry.source,
-      sections: modelBundle.model.sections,
+    const first = modelBundles[0];
+    const consist = request.consist.flatMap((entry) => {
+      const loaded = modelByName.get(entry.model);
+      if (!loaded) throw new Error(`model ${entry.model} did not load`);
+      return consistVehicles(loaded.model, entry.model, entry.reversed, railPart).map(
+        (vehicle) => ({ vehicle, loaded }),
+      );
     });
-    for (let t = 0; t < request.trains.length; t++) this.backend.setVehicle(t, body);
+    this.consist = consist.map(({ vehicle }) => vehicle);
+    const rigidChunks = consist.map(({ vehicle, loaded }) => {
+      const chunk = (rigid: RigidBodyInstances | null): ChunkInstances | null =>
+        rigid ? this.rigidChunk(rigid, loaded.model, loaded.bundle, bundle, colors) : null;
+      return {
+        body: chunk(vehicle.body),
+        frontBogie: chunk(vehicle.frontBogie),
+        rearBogie: chunk(vehicle.rearBogie),
+        parts:
+          vehicle.body.instances.length +
+          (vehicle.frontBogie?.instances.length ?? 0) +
+          (vehicle.rearBogie?.instances.length ?? 0),
+      };
+    });
+    const summary = showChunks(this.backend, bundle, undefined, colors, chunks, {
+      name: request.consist.map((entry) => entry.model).join(" + "),
+      source: first?.entry.source ?? "",
+      sections: modelBundles.flatMap((model) => model.model.sections),
+    });
+    let nextBody = 0;
+    let drawnParts = 0;
+    this.placed = [];
+    for (let t = 0; t < request.trains.length; t++) {
+      consist.forEach(({ vehicle }, v) => {
+        const prepared = rigidChunks[v];
+        if (!prepared) return;
+        const show = (chunk: ChunkInstances | null): number => {
+          if (!chunk) return NO_BODY;
+          const id = nextBody++;
+          this.backend.setVehicle(id, chunk);
+          return id;
+        };
+        drawnParts += prepared.parts;
+        this.placed.push({
+          vehicle,
+          body: show(prepared.body),
+          frontBogie: show(prepared.frontBogie),
+          rearBogie: show(prepared.rearBogie),
+        });
+      });
+    }
     const spec: TrainSpec = {
-      vehicles: [vehicle.spec],
+      vehicles: consist.map(({ vehicle }) => vehicle.spec),
       maxSpeedLduPerS: request.speedLduPerS,
       accelerationLduPerS2: request.accelerationLduPerS2,
       brakingLduPerS2: request.brakingLduPerS2,
@@ -173,7 +235,10 @@ export class RunScene implements IRunScene {
     const load: SimLoad = {
       graph: simTopology(graph),
       routeSegments: routeSegments(graph, layout, catalogPieces),
-      capacity: { trains: request.trains.length, vehicles: request.trains.length },
+      capacity: {
+        trains: request.trains.length,
+        vehicles: request.trains.length * consist.length,
+      },
       trains: request.trains.map((train) => ({
         spec,
         placement: { edge: train.edge, offsetLdu: train.offsetLdu },
@@ -194,7 +259,7 @@ export class RunScene implements IRunScene {
     }
     return {
       ...summary,
-      parts: summary.parts + count * request.trains.length,
+      parts: summary.parts + drawnParts,
       track: summarizeTrack(request.plan, graph, layout, catalogPieces),
     };
   }
@@ -205,19 +270,56 @@ export class RunScene implements IRunScene {
     if (!frame || !layout) return;
     const data = frame.data;
     for (let v = 0; v < layout.vehicles; v++) {
-      const o = layout.poseStart + v * layout.poseFloatsPerVehicle;
-      const fx = data[o] ?? 0;
-      const fz = data[o + 1] ?? 0;
-      const rx = data[o + 2] ?? 0;
-      const rz = data[o + 3] ?? 0;
-      this.backend.setVehiclePose(
-        v,
-        (fx + rx) / 2,
-        this.railY,
-        (fz + rz) / 2,
-        Math.atan2(fz - rz, fx - rx),
-      );
+      const placed = this.placed[v];
+      if (!placed) continue;
+      const o = layout.vehiclePoseStart + v * layout.vehiclePoseFloats;
+      const y = this.railY - placed.vehicle.railTopY;
+      this.backend.setVehiclePose(placed.body, data[o] ?? 0, y, data[o + 1] ?? 0, data[o + 2] ?? 0);
+      if (placed.frontBogie !== NO_BODY) {
+        this.backend.setVehiclePose(
+          placed.frontBogie,
+          data[o + 3] ?? 0,
+          y,
+          data[o + 4] ?? 0,
+          data[o + 5] ?? 0,
+        );
+      }
+      if (placed.rearBogie !== NO_BODY) {
+        this.backend.setVehiclePose(
+          placed.rearBogie,
+          data[o + 6] ?? 0,
+          y,
+          data[o + 7] ?? 0,
+          data[o + 8] ?? 0,
+        );
+      }
     }
+  }
+
+  private rigidChunk(
+    rigid: RigidBodyInstances,
+    model: PartModel,
+    modelBundle: PartBundle,
+    bundle: PartBundle,
+    colors: ColorTable,
+  ): ChunkInstances {
+    const count = rigid.instances.length;
+    const partIndex = new Uint16Array(count);
+    const colorIndex = new Uint16Array(count);
+    for (let k = 0; k < count; k++) {
+      const i = rigid.instances[k] ?? 0;
+      const id = modelBundle.parts[model.partIndex[i] ?? 0]?.id;
+      const merged = bundle.parts.findIndex((part) => part.id === id);
+      if (merged < 0) throw new Error(`part ${String(id)} is missing from the run bundle`);
+      partIndex[k] = merged;
+      colorIndex[k] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
+    }
+    return withStuds(
+      { originX: 0, originZ: 0, count, partIndex, colorIndex, matrices: rigid.matrices },
+      bundle.parts,
+      colors,
+      undefined,
+    );
   }
 
   status(): RunStatus | null {
@@ -235,22 +337,24 @@ export class RunScene implements IRunScene {
       trainEdge: pick(layout.trainEdgeStart),
       trainOffsetLdu: pick(layout.trainOffsetStart),
       trainSpeedLduPerS: pick(layout.trainSpeedStart),
-      bogiePointsLdu: Array.from(
-        frame.data.subarray(
-          layout.poseStart,
-          layout.poseStart + layout.vehicles * layout.poseFloatsPerVehicle,
-        ),
-      ),
+      bogiePointsLdu: Array.from({ length: layout.vehicles * 4 }, (_, k) => {
+        const o = layout.vehiclePoseStart + Math.floor(k / 4) * layout.vehiclePoseFloats;
+        const offsets = [3, 4, 6, 7];
+        return frame.data[o + (offsets[k % 4] ?? 0)] ?? 0;
+      }),
       arrivals: pick(layout.arrivalsStart),
       routeStates: pick(layout.routeStateStart).map((code) => ROUTE_STATUSES[code] ?? "manual"),
       sharedPieceTicks: frame.data[layout.sharedPieceTicksIndex] ?? 0,
       minBogieSeparationLdu: frame.data[layout.minBogieSeparationIndex] ?? 0,
       checkedTicks: frame.data[layout.checkedTicksIndex] ?? 0,
       tickCost: this.sim.tickCost(),
-      vehicle: this.vehicle?.spec ?? null,
-      wheelsets: this.vehicle?.wheelsets ?? 0,
-      vehicleInstances: this.vehicle?.instances.length ?? 0,
-      excludedInstances: this.vehicle?.excludedInstances ?? 0,
+      vehicles: this.consist.map((vehicle) => ({
+        model: vehicle.model,
+        reversed: vehicle.reversed,
+        spec: vehicle.spec,
+        wheelsets: vehicle.wheelsets,
+        bogieBodies: (vehicle.frontBogie ? 1 : 0) + (vehicle.rearBogie ? 1 : 0),
+      })),
       maxEndResidualLdu: loaded.maxEndResidualLdu,
       maxEndHeadingResidualRadians: loaded.maxEndHeadingResidualRadians,
     };
@@ -260,20 +364,17 @@ export class RunScene implements IRunScene {
     const frame = this.sim.latestFrame();
     const layout = this.frameLayout;
     if (!frame || !layout || layout.vehicles === 0) return false;
-    const o = layout.poseStart;
+    const o = layout.vehiclePoseStart;
     const data = frame.data;
-    const fx = data[o] ?? 0;
-    const fz = data[o + 1] ?? 0;
-    const rx = data[o + 2] ?? 0;
-    const rz = data[o + 3] ?? 0;
-    const x = (fx + rx) / 2;
-    const z = (fz + rz) / 2;
-    const angle =
-      Math.atan2(fz - rz, fx - rx) + Math.PI + FOLLOW_SWING_RADIANS * Math.sin(t * 2 * Math.PI);
+    const x = data[o] ?? 0;
+    const z = data[o + 1] ?? 0;
+    const outward = Math.atan2(z - this.centreZ, x - this.centreX);
+    const angle = outward + FOLLOW_SWING_RADIANS * Math.sin(t * 2 * Math.PI);
+    const distance = this.request?.followDistanceLdu ?? 0;
     this.backend.setView(
-      x + FOLLOW_DISTANCE_LDU * Math.cos(angle),
-      this.railY + FOLLOW_HEIGHT_LDU,
-      z + FOLLOW_DISTANCE_LDU * Math.sin(angle),
+      x + distance * Math.cos(angle),
+      this.railY + distance * FOLLOW_HEIGHT_PER_DISTANCE,
+      z + distance * Math.sin(angle),
       x,
       this.railY,
       z,

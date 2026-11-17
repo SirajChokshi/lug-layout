@@ -27,6 +27,13 @@ export type {
   TrackEnd,
   Vec3Tuple,
 } from "./part-bundle.ts";
+export type {
+  BakedVehicle,
+  VehicleBogie,
+  VehicleCoupler,
+  VehicleGuideKind,
+  VehicleRailContact,
+} from "./model-vehicle.ts";
 export { ASSET_FETCHER, BUNDLE_BASE_URL, PART_BUNDLE_LOADER } from "./tokens.ts";
 export { parseTrackCatalog } from "./track-catalog.ts";
 export type {

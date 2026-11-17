@@ -11,6 +11,9 @@ use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{parse as parse_ldraw, Header};
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::bake_model;
+use brick_compile::vehicle::{
+    detect_vehicles, GuideKind, RailHeadBand, Vehicle, VehicleSignatures,
+};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
 use serde_json::{json, Value};
 
@@ -171,6 +174,79 @@ fn compile_entry(
     Ok((summary, part_shape(&compiled)))
 }
 
+fn string_list(value: &Value, label: &str) -> Result<Vec<String>, String> {
+    value
+        .as_array()
+        .ok_or(format!("{label} must be an array"))?
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or(format!("{label} must hold strings"))
+        })
+        .collect()
+}
+
+fn vehicle_signatures(palette: &Value) -> Result<VehicleSignatures, String> {
+    let parts = &palette["vehicleParts"];
+    Ok(VehicleSignatures {
+        bogie_pivots: string_list(&parts["bogiePivots"], "vehicleParts.bogiePivots")?,
+        pivot_pins: string_list(&parts["pivotPins"], "vehicleParts.pivotPins")?,
+        wheelsets: string_list(&parts["wheelsets"], "vehicleParts.wheelsets")?,
+        wheels: string_list(&parts["wheels"], "vehicleParts.wheels")?,
+        couplers: string_list(&parts["couplers"], "vehicleParts.couplers")?,
+    })
+}
+
+fn rail_head_bands(geometry: &Value) -> Result<Vec<RailHeadBand>, String> {
+    geometry["rails"]
+        .as_array()
+        .ok_or("geometry.rails must be an array")?
+        .iter()
+        .map(|rail| {
+            let part = rail["part"]
+                .as_str()
+                .ok_or("rails[].part must be a string")?;
+            let heads = rail["railHeads"]
+                .as_array()
+                .ok_or("rails[].railHeads must be an array")?;
+            let outward = heads
+                .iter()
+                .find(|head| head["from"].as_f64().is_some_and(|from| from > 0.0))
+                .ok_or(format!("rail {part} has no rail head on the +z side"))?;
+            Ok(RailHeadBand {
+                rail_part: format!("ldraw:{}", stem(part)),
+                inner: outward["from"]
+                    .as_f64()
+                    .ok_or("railHeads[].from must be a number")?,
+                outer: outward["to"]
+                    .as_f64()
+                    .ok_or("railHeads[].to must be a number")?,
+            })
+        })
+        .collect()
+}
+
+fn vehicle_json(vehicle: &Vehicle) -> Value {
+    let coupler = |c: &Option<brick_compile::vehicle::Coupler>| {
+        c.as_ref()
+            .map(|c| json!({ "instance": c.instance, "face": c.face, "bogie": c.bogie, "obsoleteSources": c.obsolete_sources }))
+            .unwrap_or(Value::Null)
+    };
+    json!({
+        "origin": vehicle.origin,
+        "yaw": vehicle.yaw,
+        "guideKind": match vehicle.guide_kind { GuideKind::BogiePivot => "bogiePivot", GuideKind::FixedAxle => "fixedAxle" },
+        "guides": vehicle.guides,
+        "body": vehicle.body,
+        "bogies": vehicle.bogies.iter().map(|b| json!({ "instances": b.instances, "pivot": b.pivot, "axles": b.axles })).collect::<Vec<_>>(),
+        "fixedAxles": vehicle.fixed_axles,
+        "frontCoupler": coupler(&vehicle.front_coupler),
+        "rearCoupler": coupler(&vehicle.rear_coupler),
+        "railContacts": vehicle.rail_contacts.iter().map(|r| json!({ "railPart": r.rail_part, "railTopY": r.rail_top_y, "spreadLdu": r.spread })).collect::<Vec<_>>(),
+    })
+}
+
 fn run(args: &Args) -> Result<(), String> {
     let mut files = HashMap::new();
     collect(&args.ldraw, &args.ldraw, &mut files).map_err(|e| e.to_string())?;
@@ -263,6 +339,8 @@ fn run(args: &Args) -> Result<(), String> {
         }
     }
 
+    let signatures = vehicle_signatures(&palette)?;
+    let rails = rail_head_bands(&geometry)?;
     let mut models = Vec::new();
     for entry in palette["models"].as_array().cloned().unwrap_or_default() {
         let name = entry["name"]
@@ -280,6 +358,11 @@ fn run(args: &Args) -> Result<(), String> {
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let text = String::from_utf8_lossy(&source);
         let baked = bake_model(&text).map_err(|e| format!("{file}: {e}"))?;
+        let vehicles: Vec<Value> = detect_vehicles(&library, &baked.instances, &signatures, &rails)
+            .map_err(|e| format!("{file}: {e}"))?
+            .iter()
+            .map(vehicle_json)
+            .collect();
         let mut model_parts: Vec<Value> = Vec::new();
         let mut model_part_index: HashMap<usize, usize> = HashMap::new();
         let mut instance_parts = Vec::with_capacity(baked.instances.len());
@@ -365,6 +448,7 @@ fn run(args: &Args) -> Result<(), String> {
             "parts": model_parts,
             "lattice": lattice_json,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
+            "vehicles": vehicles,
         });
         fs::write(
             args.out.join(&model_file),
@@ -385,6 +469,7 @@ fn run(args: &Args) -> Result<(), String> {
             "inlinePartsResolvedToOfficial": inline_parts,
             "instances": baked.instances.len(),
             "lattice": lattice_json,
+            "vehicles": vehicles.len(),
         });
         if !entry["role"].is_null() {
             manifest_entry["role"] = entry["role"].clone();

@@ -1,6 +1,14 @@
 import { Autopilot } from "./blocks/autopilot.ts";
 import { BlockKeeper } from "./blocks/block-keeper.ts";
 import { BlockMap, NO_BLOCK, type BlockTopology } from "./blocks/block-map.ts";
+import {
+  GEOMETRY_FIELDS,
+  packGeometry,
+  packSpecOnlyGeometry,
+  RunningGearPoser,
+  type PathSampler,
+  type VehicleGeometry,
+} from "./running-gear.ts";
 import { trackPoint, type SimTrack } from "./sim-track.ts";
 
 export const SIM_TICK_HZ = 60;
@@ -14,6 +22,7 @@ export interface VehicleSpec {
   readonly lengthLdu: number;
   readonly frontBogieLdu: number;
   readonly rearBogieLdu: number;
+  readonly geometry?: VehicleGeometry;
 }
 
 export interface TrainSpec {
@@ -41,6 +50,7 @@ export interface SimRailway {
 const AUTOPILOT_DWELL_SECONDS = 3;
 const AUTOPILOT_RETRY_SECONDS = 2;
 const NOBODY = -1;
+const NOT_SOLVED = -1;
 
 export class Simulation {
   private tickCount = 0;
@@ -51,7 +61,8 @@ export class Simulation {
   readonly trainOffset: Float64Array;
   readonly trainSpeed: Float64Array;
   readonly trainThrottle: Float64Array;
-  private readonly trainLength: Float64Array;
+  private readonly trainSolvedLength: Float64Array;
+  private readonly trainSolvedTick: Int32Array;
   private readonly trainMaxSpeed: Float64Array;
   private readonly trainAcceleration: Float64Array;
   private readonly trainBraking: Float64Array;
@@ -60,6 +71,14 @@ export class Simulation {
   private readonly trainVehicleCount: Int32Array;
   private readonly vehicleFrontBogie: Float64Array;
   private readonly vehicleRearBogie: Float64Array;
+  private readonly vehicleGeometry: Float64Array;
+  private readonly vehicleGeometryAt: Int32Array;
+  private readonly poser = new RunningGearPoser();
+  private samplingTrain = 0;
+  private readonly pathSampler: PathSampler = {
+    pointBehind: (distance, out, outIndex) =>
+      this.pointBehind(this.samplingTrain, distance, out, outIndex),
+  };
   private readonly pathEdges: Int32Array;
   private readonly pathTop: Int32Array;
   private readonly pathCount: Int32Array;
@@ -113,7 +132,8 @@ export class Simulation {
     this.trainOffset = new Float64Array(capacity.trains);
     this.trainSpeed = new Float64Array(capacity.trains);
     this.trainThrottle = new Float64Array(capacity.trains);
-    this.trainLength = new Float64Array(capacity.trains);
+    this.trainSolvedLength = new Float64Array(capacity.trains);
+    this.trainSolvedTick = new Int32Array(capacity.trains).fill(NOT_SOLVED);
     this.trainMaxSpeed = new Float64Array(capacity.trains);
     this.trainAcceleration = new Float64Array(capacity.trains);
     this.trainBraking = new Float64Array(capacity.trains);
@@ -122,6 +142,8 @@ export class Simulation {
     this.trainVehicleCount = new Int32Array(capacity.trains);
     this.vehicleFrontBogie = new Float64Array(capacity.vehicles);
     this.vehicleRearBogie = new Float64Array(capacity.vehicles);
+    this.vehicleGeometry = new Float64Array(capacity.vehicles * GEOMETRY_FIELDS);
+    this.vehicleGeometryAt = new Int32Array(capacity.vehicles);
     this.pathEdges = new Int32Array(capacity.trains * PATH_CAPACITY);
     this.pathTop = new Int32Array(capacity.trains);
     this.pathCount = new Int32Array(capacity.trains);
@@ -176,6 +198,20 @@ export class Simulation {
       }
       this.vehicleFrontBogie[this.vehicleCount] = length + vehicle.frontBogieLdu;
       this.vehicleRearBogie[this.vehicleCount] = length + vehicle.rearBogieLdu;
+      const at = this.vehicleCount * GEOMETRY_FIELDS;
+      this.vehicleGeometryAt[this.vehicleCount] = at;
+      if (vehicle.geometry) {
+        assertGeometryMatchesSpec(vehicle);
+        packGeometry(vehicle.geometry, this.vehicleGeometry, at);
+      } else {
+        packSpecOnlyGeometry(
+          vehicle.lengthLdu,
+          vehicle.frontBogieLdu,
+          vehicle.rearBogieLdu,
+          this.vehicleGeometry,
+          at,
+        );
+      }
       this.vehicleCount++;
       length += vehicle.lengthLdu;
     }
@@ -186,7 +222,7 @@ export class Simulation {
     this.trainOffset[train] = offsetLdu;
     this.trainSpeed[train] = 0;
     this.trainThrottle[train] = 0;
-    this.trainLength[train] = length;
+    this.trainSolvedTick[train] = NOT_SOLVED;
     this.trainMaxSpeed[train] = spec.maxSpeedLduPerS;
     this.trainAcceleration[train] = spec.accelerationLduPerS2;
     this.trainBraking[train] = spec.brakingLduPerS2;
@@ -225,7 +261,8 @@ export class Simulation {
   }
 
   bodyLengthLdu(train: number): number {
-    return this.trainLength[train] ?? 0;
+    if (this.trainSolvedTick[train] !== this.tickCount) this.poseTrain(train, null, 0, null, 0);
+    return this.trainSolvedLength[train] ?? 0;
   }
 
   private applyThrottle(train: number, speedLduPerS: number): void {
@@ -245,7 +282,7 @@ export class Simulation {
   reverse(train: number): boolean {
     this.assertTrain(train);
     if ((this.trainSpeed[train] ?? 0) !== 0) return false;
-    const length = this.trainLength[train] ?? 0;
+    const length = this.poseTrain(train, null, 0, null, 0);
     const base = train * PATH_CAPACITY;
     const count = this.pathCount[train] ?? 0;
     let slot = this.pathTop[train] ?? 0;
@@ -271,6 +308,7 @@ export class Simulation {
     this.trainEdge[train] = this.track.reverseEdge[tailEdge] ?? 0;
     this.trainOffset[train] = (this.track.edgeLength[tailEdge] ?? 0) - tailOffset;
     this.trainReversed[train] = this.trainReversed[train] === 1 ? 0 : 1;
+    this.trainSolvedTick[train] = NOT_SOLVED;
     this.blocks?.reseat(
       train,
       this.trainEdge[train] ?? 0,
@@ -305,19 +343,47 @@ export class Simulation {
   }
 
   writeVehiclePoses(out: Float64Array): void {
+    this.writePoses(out, 0, null, 0);
+  }
+
+  writeCoupledVehiclePoses(out: Float64Array, start: number): void {
+    this.writePoses(null, 0, out, start);
+  }
+
+  writePoses(
+    pivots: Float64Array | null,
+    pivotStart: number,
+    poses: Float64Array | null,
+    poseStart: number,
+  ): void {
     for (let t = 0; t < this.trainCount; t++) {
-      const first = this.trainVehicleStart[t] ?? 0;
-      const count = this.trainVehicleCount[t] ?? 0;
-      const reversed = this.trainReversed[t] === 1;
-      const length = this.trainLength[t] ?? 0;
-      for (let v = first; v < first + count; v++) {
-        const front = this.vehicleFrontBogie[v] ?? 0;
-        const rear = this.vehicleRearBogie[v] ?? 0;
-        const o = v * POSE_FLOATS_PER_VEHICLE;
-        this.pointBehind(t, reversed ? length - front : front, out, o);
-        this.pointBehind(t, reversed ? length - rear : rear, out, o + 2);
-      }
+      this.poseTrain(t, pivots, pivotStart, poses, poseStart);
     }
+  }
+
+  private poseTrain(
+    train: number,
+    pivots: Float64Array | null,
+    pivotStart: number,
+    poses: Float64Array | null,
+    poseStart: number,
+  ): number {
+    this.samplingTrain = train;
+    const length = this.poser.writeTrain(
+      this.pathSampler,
+      this.vehicleGeometry,
+      this.vehicleGeometryAt,
+      this.trainVehicleStart[train] ?? 0,
+      this.trainVehicleCount[train] ?? 0,
+      this.trainReversed[train] === 1,
+      pivots,
+      pivotStart,
+      poses,
+      poseStart,
+    );
+    this.trainSolvedLength[train] = length;
+    this.trainSolvedTick[train] = this.tickCount;
+    return length;
   }
 
   stateHash(): number {
@@ -460,6 +526,7 @@ export class Simulation {
 
   private measureSeparation(edgePlacement: Int32Array): void {
     const tick = this.tickCount;
+    this.writeVehiclePoses(this.poseScratch);
     let shared = false;
     for (let t = 0; t < this.trainCount; t++) {
       const base = t * PATH_CAPACITY;
@@ -481,7 +548,6 @@ export class Simulation {
     const counters = this.separationCounters;
     if (shared) counters[0] = (counters[0] ?? 0) + 1;
     let nearest = counters[1] ?? Number.POSITIVE_INFINITY;
-    this.writeVehiclePoses(this.poseScratch);
     const poses = this.poseScratch;
     for (let t = 0; t < this.trainCount; t++) {
       const firstA = this.trainVehicleStart[t] ?? 0;
@@ -510,5 +576,24 @@ export class Simulation {
     this.placementTick[placement] = tick;
     this.placementTrain[placement] = train;
     return false;
+  }
+}
+
+const GEOMETRY_TOLERANCE_LDU = 1e-6;
+
+function close(a: number, b: number): boolean {
+  return Math.abs(a - b) <= GEOMETRY_TOLERANCE_LDU;
+}
+
+function assertGeometryMatchesSpec(vehicle: VehicleSpec): void {
+  const geometry = vehicle.geometry;
+  if (!geometry) return;
+  const front = geometry.frontCoupler.xLdu;
+  if (
+    !close(front - geometry.rearCoupler.xLdu, vehicle.lengthLdu) ||
+    !close(front - geometry.front.pivotXLdu, vehicle.frontBogieLdu) ||
+    !close(front - geometry.rear.pivotXLdu, vehicle.rearBogieLdu)
+  ) {
+    throw new Error("a vehicle's geometry disagrees with its length and bogie distances");
   }
 }
