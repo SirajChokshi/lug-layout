@@ -1105,6 +1105,65 @@ footer a {
   margin: 0 0 6px;
 }
 
+.world-menu > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.world-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.world-menu > summary::before {
+  content: "▸";
+  color: #1f6feb;
+  transition: transform 120ms ease-out;
+}
+
+.world-menu[open] > summary {
+  margin-bottom: 8px;
+}
+
+.world-menu[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.world-menu > summary h2 {
+  margin: 0;
+}
+
+.world-glance {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.world-glance strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-status {
+  flex-shrink: 0;
+  color: #556;
+  font-size: 12px;
+}
+
+.world-status[data-save="failed"],
+.world-status[data-save="off"] {
+  color: #b0141c;
+  font-weight: 600;
+}
+
 .world-name span,
 .world-note {
   color: #556;
