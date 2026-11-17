@@ -3,11 +3,13 @@ import {
   MODULE_SIDES,
   ModuleGrid,
   NO_TOP,
+  type GridPlacement,
   type ModuleEdge,
   type ModuleEdgeStatus,
   type ModuleFit,
   type ModuleJoinReport,
   type ModuleSide,
+  type RailEdgeClash,
 } from "@brr/domain";
 import type { MilsEdgeRules } from "@brr/schema/bundle";
 import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
@@ -147,6 +149,20 @@ export class ModuleLayout {
     });
   }
 
+  placement(surface: ModuleSurface, x: number, z: number, rot: number): GridPlacement | null {
+    const min = footprintMin(surface, rot);
+    const column = (x + min.x) / this.sizeLdu;
+    const row = (z + min.z) / this.sizeLdu;
+    if (!this.fitsGrid(surface) || !Number.isInteger(column) || !Number.isInteger(row)) {
+      return null;
+    }
+    return { column, row, edges: this.edges(surface, x, z, rot) };
+  }
+
+  railEdgeClash(placement: GridPlacement): RailEdgeClash | null {
+    return this.grid.railEdgeClash(placement);
+  }
+
   candidate(surface: ModuleSurface, rot: number, hitX: number, hitZ: number): ModuleCandidate {
     const pose = this.pose(surface, rot, hitX, hitZ);
     const edges = this.edges(surface, pose.x, pose.z, rot);
@@ -178,14 +194,12 @@ export class ModuleLayout {
       const surface = model.placeable.module;
       if (!surface) continue;
       const { x, z, rot } = model.handle;
-      const min = footprintMin(surface, rot);
-      const column = (x + min.x) / this.sizeLdu;
-      const row = (z + min.z) / this.sizeLdu;
-      if (!this.fitsGrid(surface) || !Number.isInteger(column) || !Number.isInteger(row)) {
+      const placement = this.placement(surface, x, z, rot);
+      if (!placement) {
         offGrid++;
         continue;
       }
-      const edges = this.edges(surface, x, z, rot);
+      const { column, row, edges } = placement;
       cells.push({ id: gridModules.length, column, row, edges });
       gridModules.push({
         item: model.placeable.id,

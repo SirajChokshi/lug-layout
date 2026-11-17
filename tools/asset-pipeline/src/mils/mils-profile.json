@@ -103,7 +103,7 @@
       }
     },
     "rail": {
-      "source": "Project decision, not MILS: MILS has no train rules (docs/verified-facts.md, \"MILS has City or Train rules\": REFUTED, S5). One 9V straight pair centred on two opposite edges, resting on the 4-plate surface; the piece frame comes from docs/verified-facts/track-catalog.json"
+      "source": "Project decision, not MILS: MILS has no train rules (docs/verified-facts.md, \"MILS has City or Train rules\": REFUTED, S5). One 9V straight pair centred on two opposite edges, resting on the 4-plate surface, laid from the exact connector poses in docs/verified-facts/track-catalog.json so that its ends sit on the edge centres, as on MILS train modules built from 16-stud track sections (docs/verified-facts.md S18)"
     }
   },
   "build": {
