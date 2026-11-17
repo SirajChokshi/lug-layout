@@ -31,6 +31,22 @@ function saveText(world: WorldFileView): string {
   }
 }
 
+function saveGlance(save: WorldFileView["save"]): string {
+  switch (save) {
+    case "saving":
+      return "Saving…";
+    case "saved":
+      return "Saved";
+    case "failed":
+    case "off":
+      return "Not saved";
+    default: {
+      const unhandled: never = save;
+      throw new Error(`unhandled ${String(unhandled)}`);
+    }
+  }
+}
+
 function downloadFile(fileName: string, bytes: Uint8Array): void {
   const url = URL.createObjectURL(new Blob([bytes.slice()], { type: "application/zip" }));
   const link = document.createElement("a");
@@ -88,11 +104,14 @@ function useUnloadGuard(unsavedEdits: boolean): void {
 
 export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
   const [newName, setNewName] = useState("");
+  const [open, setOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
   const { world, worlds, bundleVersion, storageError, readOnly } = snapshot;
   const ready = snapshot.status === "ready" && world !== null;
   const stored = ready && storageError === null;
   const nameIssue = editor.worldNameIssue(newName);
+  const needsAttention =
+    storageError !== null || readOnly || world?.save === "failed" || snapshot.fileError !== null;
   useUnloadGuard(snapshot.unsavedEdits);
 
   const onNew = (event: FormEvent<HTMLFormElement>): void => {
@@ -130,11 +149,26 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
   };
 
   return (
-    <section className="world-menu" aria-label="World">
-      <h2>World</h2>
+    <details
+      className="world-menu"
+      aria-label="World"
+      open={open || needsAttention}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary title={open ? "Fold the world menu" : "Open, create, export or import worlds"}>
+        <h2>World</h2>
+        {world && (
+          <span className="world-glance">
+            <strong>{world.name}</strong>
+            <span className="world-status" data-save={world.save}>
+              {saveGlance(world.save)}
+            </span>
+          </span>
+        )}
+      </summary>
       {world && (
         <p className="world-name" data-world-id={world.id ?? ""} data-save={world.save}>
-          <strong>{world.name}</strong> <span>{saveText(world)}</span>
+          <span>{saveText(world)}</span>
           {world.save === "failed" && (
             <button type="button" className="world-retry" onClick={() => void editor.retrySave()}>
               Retry
@@ -205,6 +239,6 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
         />
       </div>
       {snapshot.fileError !== null && <p className="error">{snapshot.fileError}</p>}
-    </section>
+    </details>
   );
 }
