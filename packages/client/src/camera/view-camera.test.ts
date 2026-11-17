@@ -1,3 +1,4 @@
+import { CAMERA_FOV_DEGREES } from "@brr/render";
 import { describe, expect, it } from "vitest";
 import { FOOTPRINT_FLOATS, ViewCamera, type ViewMode } from "./view-camera.ts";
 
@@ -7,7 +8,7 @@ const SETTLED_MS = 5_000;
 const LDU_TOLERANCE_DIGITS = 6;
 
 function settledCamera(mode: ViewMode): ViewCamera {
-  const camera = new ViewCamera();
+  const camera = new ViewCamera(CAMERA_FOV_DEGREES);
   camera.resize(WIDTH_PX, HEIGHT_PX);
   camera.step(0);
   camera.setMode(mode);
@@ -208,3 +209,160 @@ it("the view footprint outlines the ground the panels leave uncovered, not the w
     expect(footprint[2 * i + 1]).toBeCloseTo(z, 6);
   });
 });
+
+function dot(a: ReadonlyArray<number>, b: ReadonlyArray<number>): number {
+  return a.reduce((sum, v, i) => sum + v * (b[i] ?? 0), 0);
+}
+
+function projector(
+  camera: ViewCamera,
+): (x: number, y: number, z: number) => readonly [number, number] {
+  const [eyeX = 0, eyeY = 0, eyeZ = 0, ...forward] = ray(camera, 0, 0);
+  const perUnit = (ndcX: number, ndcY: number): ReadonlyArray<number> => {
+    const direction = ray(camera, ndcX, ndcY).slice(3);
+    const ahead = dot(direction, forward);
+    return direction.map((d, i) => d / ahead - (forward[i] ?? 0));
+  };
+  const across = perUnit(1, 0);
+  const along = perUnit(0, 1);
+  return (x, y, z) => {
+    const v = [x - eyeX, y - eyeY, z - eyeZ];
+    const depth = dot(v, forward);
+    return [
+      dot(v, across) / dot(across, across) / depth,
+      dot(v, along) / dot(along, along) / depth,
+    ];
+  };
+}
+
+it("3D Fit all fits the box as projected, inside the uncovered area and nearly filling it", () => {
+  const camera = settledCamera("orbit");
+  const [left, top, right, bottom] = [420, 60, 380, 150];
+  camera.setSafeArea(left, top, right, bottom);
+  camera.orbit(-150, 80);
+  const box = { minX: -2_400, minY: 0, minZ: -640, maxX: 1_280, maxY: 960, maxZ: 1_920 };
+
+  camera.frame(box);
+  camera.step(SETTLED_MS + 1);
+  camera.step(SETTLED_MS * 2);
+
+  const project = projector(camera);
+  const safe = {
+    left: -1 + (2 * left) / WIDTH_PX,
+    right: 1 - (2 * right) / WIDTH_PX,
+    bottom: -1 + (2 * bottom) / HEIGHT_PX,
+    top: 1 - (2 * top) / HEIGHT_PX,
+  };
+  let fill = 0;
+  for (const x of [box.minX, box.maxX]) {
+    for (const y of [box.minY, box.maxY]) {
+      for (const z of [box.minZ, box.maxZ]) {
+        const [ndcX, ndcY] = project(x, y, z);
+        expect(ndcX).toBeGreaterThanOrEqual(safe.left);
+        expect(ndcX).toBeLessThanOrEqual(safe.right);
+        expect(ndcY).toBeGreaterThanOrEqual(safe.bottom);
+        expect(ndcY).toBeLessThanOrEqual(safe.top);
+        fill = Math.max(
+          fill,
+          (ndcX - (safe.left + safe.right) / 2) / ((safe.right - safe.left) / 2),
+          (ndcY - (safe.bottom + safe.top) / 2) / ((safe.top - safe.bottom) / 2),
+        );
+      }
+    }
+  }
+  expect(fill).toBeGreaterThan(0.8);
+});
+
+it("starts north up in 3D: up the screen is -z on the ground, right is +x", () => {
+  const camera = settledCamera("orbit");
+
+  const centre = ground(camera, 0, 0);
+  const up = ground(camera, 0, 0.5);
+  const right = ground(camera, 0.5, 0);
+
+  expect(up[0]).toBeCloseTo(centre[0], 6);
+  expect(up[1]).toBeLessThan(centre[1]);
+  expect(right[0]).toBeGreaterThan(centre[0]);
+  expect(right[1]).toBeCloseTo(centre[1], 6);
+});
+
+it("recomputes the view footprint only when the view has changed", () => {
+  const camera = settledCamera("orbit");
+  const first = new Float64Array(FOOTPRINT_FLOATS);
+  const again = new Float64Array(FOOTPRINT_FLOATS);
+
+  expect(camera.footprint(first)).toBe(true);
+  expect(camera.footprint(again)).toBe(false);
+  expect([...again]).toEqual([...first]);
+
+  camera.orbit(30, 0);
+  expect(camera.footprint(again)).toBe(true);
+  expect([...again]).not.toEqual([...first]);
+  camera.setSafeArea(200, 0, 0, 0);
+  expect(camera.footprint(again)).toBe(true);
+  expect(camera.footprint(again)).toBe(false);
+});
+
+describe.each([
+  [900, 0, 0, 0],
+  [0, 0, 900, 0],
+  [0, 330, 0, 0],
+  [800, 0, 100, 360],
+])(
+  "3D Fit all with panels on one side (left %i, top %i, right %i, bottom %i)",
+  (left, top, right, bottom) => {
+    it("keeps every corner of varied boxes inside the uncovered area from varied angles", () => {
+      let seed = left * 7 + top * 13 + right * 17 + bottom * 19 + 1;
+      const random = (): number => {
+        seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+        return seed / 2_147_483_648;
+      };
+      const safe = {
+        left: -1 + (2 * left) / WIDTH_PX,
+        right: 1 - (2 * right) / WIDTH_PX,
+        bottom: -1 + (2 * bottom) / HEIGHT_PX,
+        top: 1 - (2 * top) / HEIGHT_PX,
+      };
+      for (let fit = 0; fit < 40; fit++) {
+        const camera = settledCamera("orbit");
+        camera.setSafeArea(left, top, right, bottom);
+        camera.orbit((random() - 0.5) * 1_200, (random() - 0.5) * 400);
+        const [sizeX, sizeY, sizeZ] = [
+          50 + random() * 5_000,
+          8 + random() * 3_000,
+          50 + random() * 5_000,
+        ];
+        const [centreX, centreZ] = [(random() - 0.5) * 20_000, (random() - 0.5) * 20_000];
+        const box = {
+          minX: centreX - sizeX / 2,
+          minY: 0,
+          minZ: centreZ - sizeZ / 2,
+          maxX: centreX + sizeX / 2,
+          maxY: sizeY,
+          maxZ: centreZ + sizeZ / 2,
+        };
+
+        camera.frame(box);
+        camera.step(SETTLED_MS + 1);
+        camera.step(SETTLED_MS * 2);
+
+        const project = projector(camera);
+        let fill = 0;
+        for (const x of [box.minX, box.maxX]) {
+          for (const y of [box.minY, box.maxY]) {
+            for (const z of [box.minZ, box.maxZ]) {
+              const [ndcX, ndcY] = project(x, y, z);
+              fill = Math.max(
+                fill,
+                Math.abs(ndcX - (safe.left + safe.right) / 2) / ((safe.right - safe.left) / 2),
+                Math.abs(ndcY - (safe.bottom + safe.top) / 2) / ((safe.top - safe.bottom) / 2),
+              );
+            }
+          }
+        }
+        expect(fill).toBeLessThanOrEqual(1);
+        expect(fill).toBeGreaterThan(0.85);
+      }
+    });
+  },
+);

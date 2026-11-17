@@ -190,11 +190,6 @@ function drawView(
   context.fill();
 }
 
-function sameFootprint(a: Float64Array, b: Float64Array): boolean {
-  for (let i = 0; i < FOOTPRINT_FLOATS; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
 function gestureScale(event: Event): number | null {
   return "scale" in event && typeof event.scale === "number" ? event.scale : null;
 }
@@ -227,7 +222,6 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
     const layerContext = layer.getContext("2d");
     if (!layerContext) return;
     const footprint = new Float64Array(FOOTPRINT_FLOATS);
-    const drawn = new Float64Array(FOOTPRINT_FLOATS).fill(Number.NaN);
     const map: MapTransform = {
       widthPx: 0,
       heightPx: 0,
@@ -254,16 +248,15 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
     const draw = (): void => {
       frame = requestAnimationFrame(draw);
       if (map.widthPx === 0 || map.heightPx === 0) return;
-      camera.viewFootprint(footprint);
+      const moved = camera.viewFootprint(footprint);
       const relayout = fitTransform(
         map,
         overview.bounds,
         footprint[FOOTPRINT_FLOATS - 2] ?? 0,
         footprint[FOOTPRINT_FLOATS - 1] ?? 0,
       );
-      if (!relayout && sameFootprint(footprint, drawn)) return;
+      if (!relayout && !moved) return;
       if (relayout) drawContent(layerContext, map, overview, routes, catalog);
-      drawn.set(footprint);
       context.clearRect(0, 0, map.widthPx, map.heightPx);
       context.drawImage(layer, 0, 0, map.widthPx, map.heightPx);
       drawView(context, map, footprint);

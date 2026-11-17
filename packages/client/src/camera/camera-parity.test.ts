@@ -1,4 +1,4 @@
-import { RAY_FLOATS, SCENE_BACKEND } from "@brr/render";
+import { CAMERA_FOV_DEGREES, RAY_FLOATS, SCENE_BACKEND } from "@brr/render";
 import { Container } from "inversify";
 import { expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
@@ -21,7 +21,7 @@ it.each<ViewMode>(["orbit", "plan"])(
     container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
     const backend = container.get(SCENE_BACKEND);
     backend.resize(WIDTH_PX, HEIGHT_PX);
-    const camera = new ViewCamera();
+    const camera = new ViewCamera(CAMERA_FOV_DEGREES);
     camera.resize(WIDTH_PX, HEIGHT_PX);
     camera.step(0);
     camera.setMode(mode);
