@@ -4,7 +4,6 @@ import type {
   BundleLod,
   BundleModelEntry,
   NotDrawnSection,
-  ProducedColors,
 } from "@brr/schema/bundle";
 import {
   BUNDLE_BASE_URL,
@@ -47,6 +46,7 @@ import {
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
+  type ChunkInstances,
   type EdgeMarker,
   type ChunkTier,
   type FrameStats,
@@ -159,6 +159,7 @@ export interface CatalogItemView {
   readonly thumbnail: string | null;
   readonly aliases: ReadonlyArray<string>;
   readonly elements: ReadonlyArray<string>;
+  readonly displayColor: boolean;
 }
 
 export interface LatencySample {
@@ -479,6 +480,11 @@ export interface EditorDump {
   readonly studs: StudTotals;
 }
 
+export interface CatalogItemModel {
+  readonly model: ChunkInstances;
+  readonly box: WorldBox;
+}
+
 export interface EditorOptions {
   readonly api: GraphicsApi;
   readonly pixelRatio: number;
@@ -523,6 +529,7 @@ export interface IEditor extends IBomSource {
   playSetup(): PlaySetup | null;
   loadPlayMeshes(): void;
   searchCatalog(query: string): void;
+  catalogItemModel(itemId: string): Promise<CatalogItemModel | null>;
   dump(): EditorDump;
 }
 
@@ -697,10 +704,11 @@ function catalogItem(
   placeable: Placeable,
   colors: ReadonlyArray<BundleColor>,
   thumbnails: ReadonlyMap<string, string>,
-  produced: ProducedColors | undefined,
+  part: PartShapeAsset | undefined,
 ): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
+  const produced = part?.producedColors;
   const ldrawNumber = placeable.group.replace(/^ldraw:/u, "");
   return {
     id: placeable.id,
@@ -716,6 +724,7 @@ function catalogItem(
     aliases: produced && produced.rebrickable !== ldrawNumber ? [produced.rebrickable] : [],
     elements:
       produced?.colors.find((color) => color.ldraw === placeable.worldColor)?.elements ?? [],
+    displayColor: part !== undefined && part.producedColor === placeable.worldColor,
   };
 }
 
@@ -724,13 +733,13 @@ function placeableSlot(
   model: string | null,
   colors: ReadonlyArray<BundleColor>,
   thumbnails: ReadonlyMap<string, string>,
-  produced: ProducedColors | undefined = undefined,
+  part: PartShapeAsset | undefined = undefined,
 ): CatalogSlot {
   return {
     id: placeable.id,
     group: placeable.group,
     worldColor: placeable.worldColor,
-    view: catalogItem(placeable, colors, thumbnails, produced),
+    view: catalogItem(placeable, colors, thumbnails, part),
     model,
     credit: placeable.credit,
   };
@@ -761,6 +770,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
       thumbnail: thumbnails.get(id) ?? null,
       aliases: [],
       elements: [],
+      displayColor: false,
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -1130,15 +1140,7 @@ export class Editor implements IEditor {
     });
     const slots: CatalogSlot[] = placeables.flatMap((placeable) =>
       placeable
-        ? [
-            placeableSlot(
-              placeable,
-              null,
-              index.colors,
-              thumbnails,
-              shapeOf(placeable.group).producedColors,
-            ),
-          ]
+        ? [placeableSlot(placeable, null, index.colors, thumbnails, shapeOf(placeable.group))]
         : [],
     );
     const records = new Map(startRecords.map((record) => [record.entry.name, record]));
@@ -1447,6 +1449,7 @@ export class Editor implements IEditor {
       thumbnail: null,
       aliases: [],
       elements: [],
+      displayColor: false,
     };
   }
 
@@ -1471,6 +1474,7 @@ export class Editor implements IEditor {
         thumbnail: null,
         aliases: [],
         elements: [],
+        displayColor: false,
       };
     });
   }
@@ -3162,6 +3166,19 @@ export class Editor implements IEditor {
     const play = this.play;
     if (!track || !play) return null;
     return { ...play, track: track.playTrack() };
+  }
+
+  async catalogItemModel(itemId: string): Promise<CatalogItemModel | null> {
+    const refId = this.slots.findIndex((slot) => slot.id === itemId);
+    if (refId < 0) return null;
+    const placeable = await this.ensurePlaceable(refId).catch(() => null);
+    if (!placeable) return null;
+    await this.meshes?.whenLoaded(new Set(placeable.parts.partIndex), "low");
+    const { min, max } = placeable.box;
+    return {
+      model: { ...placeable.parts, studs: placeable.studs },
+      box: { minX: min[0], minY: min[1], minZ: min[2], maxX: max[0], maxY: max[1], maxZ: max[2] },
+    };
   }
 
   dump(): EditorDump {

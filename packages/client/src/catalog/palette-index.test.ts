@@ -29,6 +29,7 @@ function plate(
     thumbnail: null,
     aliases: produced.rebrickable ? [produced.rebrickable] : [],
     elements: produced.elements?.[color.code] ?? [],
+    displayColor: color === colors[0],
   }));
 }
 
@@ -57,6 +58,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     thumbnail: null,
     aliases: [],
     elements: [],
+    displayColor: false,
   },
   {
     id: "track:lego-9v",
@@ -71,6 +73,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     thumbnail: null,
     aliases: [],
     elements: [],
+    displayColor: false,
   },
 ];
 

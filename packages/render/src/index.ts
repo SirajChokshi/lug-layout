@@ -10,6 +10,7 @@ export type {
   GeometrySet,
   GraphicsApi,
   ISceneBackend,
+  IThumbnailRenderer,
   LdrawColor,
   LookFeature,
   LookSettings,
@@ -22,6 +23,7 @@ export type {
   StudInstances,
   TrackEndKind,
   TrackEndMarker,
+  ThumbnailRequest,
   WorldBox,
 } from "./scene-backend.ts";
 export {
@@ -32,5 +34,5 @@ export {
   LOOK_FEATURES,
   RAY_FLOATS,
 } from "./scene-backend.ts";
-export { SCENE_BACKEND } from "./tokens.ts";
+export { SCENE_BACKEND, THUMBNAIL_RENDERER } from "./tokens.ts";
 export { renderModule } from "./render.module.ts";

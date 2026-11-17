@@ -18,11 +18,14 @@ import {
   TRACK_PIECE_PREFIX,
   colorDisplayName,
   paletteResults,
+  commonestColor,
+  displayItem,
   itemInColor,
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
   type IPaletteMemory,
+  type IPaletteThumbnails,
   type PaletteCategory,
   type PaletteColorChoice,
   type PaletteEntry,
@@ -41,6 +44,7 @@ const PALETTE_FIELDS = [
   "catalogSkipped",
   "activeItem",
   "mode",
+  "status",
   "track",
   "trackNotDrawable",
   "readOnly",
@@ -90,9 +94,32 @@ function FavoriteStar({ entryKey, title }: { readonly entryKey: string; readonly
   );
 }
 
+const ThumbnailsContext = createContext<IPaletteThumbnails | null>(null);
+
+const NO_THUMBNAILS: ReadonlyMap<string, string> = new Map();
+
+function RenderedThumbnail({ item }: { readonly item: CatalogItemView | undefined }) {
+  const thumbnails = useContext(ThumbnailsContext);
+  const urls = useSyncExternalStore(
+    (listener) => thumbnails?.subscribe(listener) ?? (() => {}),
+    () => thumbnails?.snapshot() ?? NO_THUMBNAILS,
+  );
+  const id = item?.kind === "track" ? undefined : item?.id;
+  useEffect(() => {
+    if (id !== undefined) thumbnails?.request(id);
+  }, [thumbnails, id]);
+  const url = id === undefined ? undefined : urls.get(id);
+  return url ? (
+    <img className="palette-thumb" src={url} alt="" data-thumb={id} />
+  ) : (
+    <span className="palette-thumb palette-thumb-empty" aria-hidden="true" />
+  );
+}
+
 interface Paint {
   readonly current: number | null;
   readonly choose: (code: number | null) => void;
+  readonly fallback?: number | null;
 }
 
 function Section({
@@ -125,7 +152,7 @@ function swatchTitle(item: CatalogItemView): string {
 }
 
 function Thumbnail({ item }: { readonly item: CatalogItemView | undefined }) {
-  if (!item?.thumbnail) return null;
+  if (!item?.thumbnail) return <RenderedThumbnail item={item} />;
   return (
     <img
       className="palette-thumb"
@@ -189,9 +216,15 @@ function SwatchRow({
   readonly items: ReadonlyArray<CatalogItemView>;
   readonly paint: Paint;
 }) {
-  const painted = paint.current === null ? entry.items[0] : itemInColor(entry, paint.current);
+  const painted =
+    paint.current === null
+      ? displayItem(entry, paint.fallback ?? null)
+      : itemInColor(entry, paint.current);
   const unavailable = paint.current !== null && painted === undefined;
-  const shown = items.find((item) => item.id === snapshot.activeItem) ?? painted ?? items[0];
+  const shown =
+    items.find((item) => item.id === snapshot.activeItem) ??
+    painted ??
+    displayItem(entry, paint.fallback ?? null);
   return (
     <li className="palette-row" data-group={entry.key} data-unavailable={unavailable}>
       <Thumbnail item={shown} />
@@ -269,6 +302,7 @@ function itemMeta(item: CatalogItemView): string {
 function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: CatalogItemView }) {
   return (
     <li className="palette-item-row">
+      <Thumbnail item={item} />
       <button
         type="button"
         className="catalog-item"
@@ -280,7 +314,6 @@ function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: 
         {...hoverPrefetch(editor, item.id)}
         {...paletteDragProps(editor, item)}
       >
-        <Thumbnail item={item} />
         <span className="catalog-name">{item.label}</span>
         <span className="catalog-meta">
           {snapshot.pendingItem === item.id ? "loading…" : itemMeta(item)}
@@ -386,7 +419,8 @@ function PaintedSection({
 }) {
   const noun = category === "road" ? "road plates" : "baseplates";
   const offered = choices.some((choice) => choice.color.code === paint.current);
-  const sectionPaint = offered ? paint : { ...paint, current: null };
+  const fallback = commonestColor(choices);
+  const sectionPaint = offered ? { ...paint, fallback } : { ...paint, current: null, fallback };
   const current = sectionPaint.current;
   const made = current === null ? entries : entries.filter((entry) => itemInColor(entry, current));
   const unmade = current === null ? [] : entries.filter((entry) => !itemInColor(entry, current));
@@ -479,7 +513,11 @@ function paintedItem(
   items: ReadonlyArray<CatalogItemView>,
   current: number | null,
 ): CatalogItemView | undefined {
-  return items.find((item) => item.color?.code === current) ?? items[0];
+  return (
+    items.find((item) => item.color !== null && item.color.code === current) ??
+    items.find((item) => item.displayColor) ??
+    items[0]
+  );
 }
 
 function hitItemsText(hit: PaletteHit): string {
@@ -520,6 +558,7 @@ function ResultRow({
       aria-selected={highlighted}
       role="option"
     >
+      <Thumbnail item={first} />
       <button
         type="button"
         className="palette-result-main"
@@ -630,7 +669,8 @@ export const PalettePanel = memo(function PalettePanel({
   editor,
   snapshot,
   memory,
-}: PaletteProps & { readonly memory: IPaletteMemory }) {
+  thumbnails,
+}: PaletteProps & { readonly memory: IPaletteMemory; readonly thumbnails: IPaletteThumbnails }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [highlight, setHighlight] = useState(0);
@@ -712,111 +752,113 @@ export const PalettePanel = memo(function PalettePanel({
   const sections = PALETTE_CATEGORIES.filter((category) => tab === "all" || tab === category);
   return (
     <FavoritesContext value={favorites}>
-      <nav className="catalog palette" aria-label="Palette">
-        <div className="palette-head">
-          <h2>Palette</h2>
-          <input
-            type="search"
-            className="palette-search"
-            placeholder="Search: 3811, tan 16x16, crossroads, -sand"
-            title='Words must all match. "Quote a phrase", -word excludes, #3811 matches numbers only.'
-            aria-label="Search the palette"
-            aria-controls="palette-results"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setHighlight(0);
-            }}
-            onKeyDown={onSearchKey}
-          />
-          <div className="palette-tabs" role="tablist" aria-label="Palette categories">
-            {TABS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="tab"
-                className="palette-tab"
-                data-filter={option}
-                aria-selected={tab === option}
-                aria-label={option === "favorites" ? "Favourites" : undefined}
-                onClick={() => {
-                  setTab(option);
-                  setHighlight(0);
-                }}
-              >
-                {tabLabel(option)}
-                <span className="palette-tab-count">{counts.get(option) ?? 0}</span>
-              </button>
-            ))}
+      <ThumbnailsContext value={snapshot.status === "ready" ? thumbnails : null}>
+        <nav className="catalog palette" aria-label="Palette">
+          <div className="palette-head">
+            <h2>Palette</h2>
+            <input
+              type="search"
+              className="palette-search"
+              placeholder="Search: 3811, tan 16x16, crossroads, -sand"
+              title='Words must all match. "Quote a phrase", -word excludes, #3811 matches numbers only.'
+              aria-label="Search the palette"
+              aria-controls="palette-results"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setHighlight(0);
+              }}
+              onKeyDown={onSearchKey}
+            />
+            <div className="palette-tabs" role="tablist" aria-label="Palette categories">
+              {TABS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="tab"
+                  className="palette-tab"
+                  data-filter={option}
+                  aria-selected={tab === option}
+                  aria-label={option === "favorites" ? "Favourites" : undefined}
+                  onClick={() => {
+                    setTab(option);
+                    setHighlight(0);
+                  }}
+                >
+                  {tabLabel(option)}
+                  <span className="palette-tab-count">{counts.get(option) ?? 0}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-        <RecentStrip
-          editor={editor}
-          snapshot={snapshot}
-          recents={remembered.recents}
-          onForget={() => memory.forgetRecents()}
-        />
-        <p className="palette-hint palette-how">
-          Click a part and then the ground to place copies, or drag it straight onto the layout.
-        </p>
-        {listing ? (
-          <ul
-            id="palette-results"
-            className="palette-results"
-            role="listbox"
-            aria-label={searching ? "Search results" : "Favourites"}
-            data-results={hits.length}
-          >
-            {hits.map((hit, i) => (
-              <ResultRow
-                key={hit.entry.key}
-                hit={hit}
-                highlighted={searching && i === shownHighlight}
+          <RecentStrip
+            editor={editor}
+            snapshot={snapshot}
+            recents={remembered.recents}
+            onForget={() => memory.forgetRecents()}
+          />
+          <p className="palette-hint palette-how">
+            Click a part and then the ground to place copies, or drag it straight onto the layout.
+          </p>
+          {listing ? (
+            <ul
+              id="palette-results"
+              className="palette-results"
+              role="listbox"
+              aria-label={searching ? "Search results" : "Favourites"}
+              data-results={hits.length}
+            >
+              {hits.map((hit, i) => (
+                <ResultRow
+                  key={hit.entry.key}
+                  hit={hit}
+                  highlighted={searching && i === shownHighlight}
+                  editor={editor}
+                  snapshot={snapshot}
+                  paint={paint}
+                  onPick={pick}
+                />
+              ))}
+            </ul>
+          ) : (
+            sections.map((category) => (
+              <CategorySection
+                key={category}
+                category={category}
+                entries={index.entries(category)}
+                choices={index.colorChoices(category)}
                 editor={editor}
                 snapshot={snapshot}
                 paint={paint}
-                onPick={pick}
               />
-            ))}
-          </ul>
-        ) : (
-          sections.map((category) => (
-            <CategorySection
-              key={category}
-              category={category}
-              entries={index.entries(category)}
-              choices={index.colorChoices(category)}
-              editor={editor}
-              snapshot={snapshot}
-              paint={paint}
-            />
-          ))
-        )}
-        {searching && results.status === "offline" && (
-          <p className="palette-hint" data-search-offline>
-            Search offline: showing palette matches only.
-          </p>
-        )}
-        {searching && hits.length === 0 && (
-          <p className="palette-hint" data-no-results>
-            Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part number
-            like 3811, a size like 16x16, or a colour like tan.
-          </p>
-        )}
-        {!searching && tab === "favorites" && hits.length === 0 && (
-          <p className="palette-hint" data-no-favorites>
-            No favourites yet. Star a part with ☆ to keep it here.
-          </p>
-        )}
-        {snapshot.catalogSkipped.length > 0 && (
-          <p
-            className="catalog-skipped"
-            data-catalog-skipped={snapshot.catalogSkipped.map((model) => model.name).join(",")}
-          >
-            Not placeable: {skippedText(snapshot)}
-          </p>
-        )}
-      </nav>
+            ))
+          )}
+          {searching && results.status === "offline" && (
+            <p className="palette-hint" data-search-offline>
+              Search offline: showing palette matches only.
+            </p>
+          )}
+          {searching && hits.length === 0 && (
+            <p className="palette-hint" data-no-results>
+              Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part
+              number like 3811, a size like 16x16, or a colour like tan.
+            </p>
+          )}
+          {!searching && tab === "favorites" && hits.length === 0 && (
+            <p className="palette-hint" data-no-favorites>
+              No favourites yet. Star a part with ☆ to keep it here.
+            </p>
+          )}
+          {snapshot.catalogSkipped.length > 0 && (
+            <p
+              className="catalog-skipped"
+              data-catalog-skipped={snapshot.catalogSkipped.map((model) => model.name).join(",")}
+            >
+              Not placeable: {skippedText(snapshot)}
+            </p>
+          )}
+        </nav>
+      </ThumbnailsContext>
     </FavoritesContext>
   );
 }, samePaletteInputs);
