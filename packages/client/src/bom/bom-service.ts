@@ -98,7 +98,10 @@ export class BomService implements IBomService {
 
   async billOfMaterials(source: IBomSource, scope: BomScope): Promise<BillOfMaterials> {
     const input = source.bomInput(scope);
-    const crosswalk = await this.loader.loadCrosswalk(input.lod);
+    const [crosswalk, { disclaimer }] = await Promise.all([
+      this.loader.loadCrosswalk(input.lod),
+      this.loader.loadManifest(input.lod),
+    ]);
     const ldraw = input.counter.lines();
     const rebrickable = toCatalog(ldraw, crosswalk, "rebrickable");
     const bricklink = toCatalog(ldraw, crosswalk, "bricklink");
@@ -113,8 +116,8 @@ export class BomService implements IBomService {
       bricklink,
       files: {
         rebrickableCsv: rebrickableCsv(rebrickable.lines),
-        brickLinkXml: brickLinkWantedListXml(bricklink.lines),
-        plainCsv: plainBomCsv(ldraw, crosswalk, input.uncounted),
+        brickLinkXml: brickLinkWantedListXml(bricklink.lines, disclaimer),
+        plainCsv: plainBomCsv(ldraw, crosswalk, input.uncounted, disclaimer),
       },
     };
   }

@@ -23,11 +23,23 @@ function xmlText(value: string | number): string {
     .replaceAll("'", "&apos;");
 }
 
+const NOT_ALLOWED_IN_XML_COMMENT = /--|-$/u;
+
+function xmlComment(text: string): string {
+  if (NOT_ALLOWED_IN_XML_COMMENT.test(text)) {
+    throw new Error(`text cannot be written as an XML comment: ${text}`);
+  }
+  return `<!-- ${text} -->`;
+}
+
 export function rebrickableCsv(lines: ReadonlyArray<CatalogLine>): string {
   return csv([["Part", "Color", "Quantity"], ...lines.map((l) => [l.part, l.color, l.quantity])]);
 }
 
-export function brickLinkWantedListXml(lines: ReadonlyArray<CatalogLine>): string {
+export function brickLinkWantedListXml(
+  lines: ReadonlyArray<CatalogLine>,
+  disclaimer: string,
+): string {
   const items = lines.map((line) =>
     [
       "  <ITEM>",
@@ -40,6 +52,7 @@ export function brickLinkWantedListXml(lines: ReadonlyArray<CatalogLine>): strin
   );
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
+    xmlComment(disclaimer),
     "<INVENTORY>",
     ...items,
     "</INVENTORY>",
@@ -61,6 +74,7 @@ export function plainBomCsv(
   lines: ReadonlyArray<BomLine>,
   crosswalk: Crosswalk,
   uncounted: ReadonlyArray<UncountedItem>,
+  disclaimer: string,
 ): string {
   return csv([
     [
@@ -100,5 +114,6 @@ export function plainBomCsv(
       null,
       `not counted (${item.source}): ${item.reason}`,
     ]),
+    [null, null, null, null, null, null, null, null, disclaimer],
   ]);
 }
