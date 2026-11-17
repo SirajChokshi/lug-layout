@@ -112,6 +112,7 @@ function project(wx, wz) {
   const cx = px * rx + py * ry + pz * rz;
   const cy = px * ux + py * uy + pz * uz;
   const cz = px * fx + py * fy + pz * fz;
+  if (cz <= 0) return [Number.NaN, Number.NaN];
   const aspect = canvasBox.width / canvasBox.height;
   const t = Math.tan(FOV / 2);
   const ndcX = cx / (cz * t * aspect);
@@ -147,7 +148,7 @@ function inSafe(x, y) {
 async function aimAt(tx, tz) {
   let [x, y] = project(tx, tz);
   for (let attempt = 0; attempt < 12; attempt++) {
-    if (!inSafe(x, y)) return null;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !inSafe(x, y)) return null;
     const h = await moveTo(x, y);
     if (h && h.x === tx && h.z === tz) return [x, y];
     await page.waitForTimeout(5);
@@ -160,11 +161,48 @@ async function aimAt(tx, tz) {
     x += qx - gx;
     y += qy - gy;
     if (attempt > 3) {
-      x += (Math.random() - 0.5) * 0.5;
-      y += (Math.random() - 0.5) * 0.5;
+      x += Math.random() * 2 - 1;
+      y += Math.random() * 2 - 1;
     }
   }
   return null;
+}
+
+const HOP_GROUND_FRACTION = 0.3;
+const MIN_HOP_LDU = 200;
+
+function snap(ldu) {
+  return Math.round(ldu / 20) * 20;
+}
+
+function inHopBox(x, y) {
+  const w = safe.x1 - safe.x0;
+  const h = safe.y1 - safe.y0;
+  return (
+    x > centre.x - 0.3 * w &&
+    x < centre.x + 0.3 * w &&
+    y > centre.y - 0.15 * h &&
+    y < centre.y + 0.35 * h
+  );
+}
+
+async function hopTowards(tx, tz) {
+  const dx = tx - cam.tx;
+  const dz = tz - cam.tz;
+  const full = Math.hypot(dx, dz);
+  let step = Math.min(full, cam.distance * HOP_GROUND_FRACTION);
+  while (step >= MIN_HOP_LDU) {
+    const hx = snap(cam.tx + (dx / full) * step);
+    const hz = snap(cam.tz + (dz / full) * step);
+    const [px, py] = project(hx, hz);
+    if (Number.isFinite(px) && Number.isFinite(py) && inHopBox(px, py)) {
+      const h = await moveTo(px, py);
+      if (h) return h;
+    }
+    step /= 2;
+  }
+  await page.screenshot({ path: `${OUT}/fail.png` });
+  throw new Error(`cannot hop from ${cam.tx},${cam.tz} towards ${tx},${tz}; cam ${JSON.stringify(cam)}`);
 }
 
 async function centreOn(tx, tz) {
@@ -178,21 +216,7 @@ async function centreOn(tx, tz) {
       cam.ty = 0;
       return;
     }
-    const [x, y] = project(tx, tz);
-    const dx = x - centre.x;
-    const dy = y - centre.y;
-    const scale = Math.min(
-      ((safe.x1 - safe.x0) / 2 - 20) / Math.max(Math.abs(dx), 1),
-      ((safe.y1 - safe.y0) / 2 - 20) / Math.max(Math.abs(dy), 1),
-      1,
-    );
-    const hx = centre.x + dx * scale;
-    const hy = centre.y + dy * scale;
-    const h = await moveTo(hx, hy);
-    if (!h) {
-      await page.screenshot({ path: `${OUT}/fail.png` });
-      throw new Error(`cannot hover towards ${tx},${tz} at ${hx},${hy}; safe ${JSON.stringify(safe)} cam ${JSON.stringify(cam)}`);
-    }
+    const h = await hopTowards(tx, tz);
     await page.keyboard.press("c");
     cam.tx = h.x;
     cam.tz = h.z;
@@ -278,7 +302,7 @@ function moduleAt(cell) {
   const x = cell.col * PITCH + CHUNK / 2;
   const z = cell.row * PITCH + CHUNK / 2;
   const item = ORDER[(cell.col + 3 * cell.row) % ORDER.length];
-  const rot = WIDE.has(item) ? ((cell.col + cell.row) % 2) * 2 : (cell.col + cell.row) % 4;
+  const rot = WIDE.has(item) ? (cell.row % 2) * 2 : cell.row % 4;
   return { x, z, item, rot };
 }
 
