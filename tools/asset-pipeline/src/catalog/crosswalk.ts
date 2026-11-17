@@ -149,12 +149,26 @@ function addAssemblyId(ids: Map<string, Set<string>>, id: string, assembly: stri
 }
 
 function assemblyIdsByPiece(inputs: CrosswalkInputs): AssemblyIdsByPiece {
+  const bricklinkOf = new Map<string, ReadonlyArray<string>>();
+  const rebrickableOf = new Map<string, string[]>();
+  for (const part of inputs.apiParts) {
+    bricklinkOf.set(part.r, part.b);
+    for (const bricklink of part.b) pushTo(rebrickableOf, bricklink, part.r);
+  }
   const byPiece = new Map<string, AssemblyIds>();
   for (const [assembly, facts] of inputs.ldrawParts) {
     if (facts.components.length < 2) continue;
-    const rebrickable = keywordIds(facts, REBRICKABLE_KEYWORD);
-    const bricklink = keywordIds(facts, BRICKLINK_KEYWORD);
-    if (rebrickable.length === 0 && bricklink.length === 0) continue;
+    const ownRebrickable = keywordIds(facts, REBRICKABLE_KEYWORD);
+    const ownBrickLink = keywordIds(facts, BRICKLINK_KEYWORD);
+    if (ownRebrickable.length === 0 && ownBrickLink.length === 0) continue;
+    const rebrickable = sortedUnique([
+      ...ownRebrickable,
+      ...ownBrickLink.flatMap((id) => rebrickableOf.get(id) ?? []),
+    ]);
+    const bricklink = sortedUnique([
+      ...ownBrickLink,
+      ...ownRebrickable.flatMap((id) => bricklinkOf.get(id) ?? []),
+    ]);
     for (const { id: piece } of facts.components) {
       if (piece === assembly) continue;
       const ids = byPiece.get(piece) ?? { rebrickable: new Map(), bricklink: new Map() };

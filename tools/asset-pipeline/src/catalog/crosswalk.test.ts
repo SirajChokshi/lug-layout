@@ -54,19 +54,12 @@ const inputs: CrosswalkInputs = {
     ["2889", facts("Animal Dog Alsatian Puppy")],
     ["2557c01", facts("Train Coupling Assembly", "Rebrickable 2557c02")],
     ["3815bpc44", facts("Minifig Hips with Pattern")],
-    [
-      "37365p01",
-      facts(
-        "Minifig Leg Medium Right with Pattern",
-        "Bricklink 970cm00pb018",
-        "Rebrickable 37364c04pr0001",
-      ),
-    ],
+    ["37365p01", facts("Minifig Leg Medium Right with Pattern", "Bricklink 970cm00pb018")],
     [
       "37364p01",
       {
         title: "Minifig Hips and Legs Medium with Pattern",
-        keywords: ["Bricklink 970cm00pb018", "Rebrickable 37364c04pr0001"],
+        keywords: ["Rebrickable 37364c04pr0001"],
         ldrawOrg: "Part",
         components: [
           { id: "3815b", color: 16 },
@@ -133,7 +126,7 @@ describe("crosswalk derivation", () => {
       bricklink: null,
       rejectedAssemblyIds: {
         assemblies: ["ldraw:37364p01"],
-        rebrickable: ["37364c04pr0001"],
+        rebrickable: [],
         bricklink: ["970cm00pb018"],
       },
     });
