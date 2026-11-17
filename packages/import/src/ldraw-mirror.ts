@@ -50,9 +50,10 @@ export class LdrawMirror {
   }
 
   url(path: string): string {
-    return [this.baseUrl, this.source.repo, this.source.commit, this.source.root, path]
+    const key = [this.source.repo, this.source.commit, this.source.root, path]
       .filter((segment) => segment !== "")
       .join("/");
+    return `${this.baseUrl}/${key.split("/").map(encodeURIComponent).join("/")}`;
   }
 
   async file(path: string): Promise<string | undefined> {

@@ -12,7 +12,7 @@ import {
 import { readTarGz } from "../catalog/tar.ts";
 import type { InputLock } from "../fetch-ldraw.ts";
 import { parseLdraw } from "../ldraw/parse.ts";
-import { sha256Hex, type ObjectStore } from "../r2.ts";
+import { encodeObjectPath, sha256Hex, type ObjectStore } from "../r2.ts";
 import { isCaLicense } from "../verify/license-audit.ts";
 
 const LIBRARY_DIRECTORIES = ["parts/", "p/"] as const;
@@ -231,10 +231,14 @@ export function isLibraryPublished(store: ObjectStore, source: GithubMirror): Pr
   return store.has(libraryIndexKey(source));
 }
 
-export function httpReader(baseUrl: string): ObjectReader {
+export function publicObjectUrl(baseUrl: string, key: string): string {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(encodeObjectPath(key), base).href;
+}
+
+export function httpReader(baseUrl: string): ObjectReader {
   return async (key) => {
-    const url = new URL(key, base).href;
+    const url = publicObjectUrl(baseUrl, key);
     const response = await fetch(url);
     if (response.status === HTTP_NOT_FOUND) return undefined;
     if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);

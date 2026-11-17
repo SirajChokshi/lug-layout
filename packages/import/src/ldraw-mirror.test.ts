@@ -12,21 +12,29 @@ it.each([
   {
     name: "below the configured library URL",
     baseUrl: "https://library.example.org/",
+    path: "parts/3001.dat",
     expected: `https://library.example.org/${LIBRARY_PATH}/parts/3001.dat`,
   },
   {
     name: "from the GitHub raw mirror when no library URL is configured",
     baseUrl: undefined,
+    path: "parts/3001.dat",
     expected: `https://raw.githubusercontent.com/${LIBRARY_PATH}/parts/3001.dat`,
   },
-])("fetches library files $name", async ({ baseUrl, expected }) => {
+  {
+    name: "whose names hold URL delimiters, such as box3#8p.dat",
+    baseUrl: "https://library.example.org",
+    path: "p/box3#8p.dat",
+    expected: `https://library.example.org/${LIBRARY_PATH}/p/box3%238p.dat`,
+  },
+])("fetches library files $name", async ({ baseUrl, path, expected }) => {
   const requested: string[] = [];
   const fetchUrl: FetchFunction = async (url) => {
     requested.push(url);
     return new Response("0 Brick 2 x 4\n");
   };
 
-  const text = await new LdrawMirror(SOURCE, fetchUrl, baseUrl).file("parts/3001.dat");
+  const text = await new LdrawMirror(SOURCE, fetchUrl, baseUrl).file(path);
 
   expect(requested).toEqual([expected]);
   expect(text).toBe("0 Brick 2 x 4\n");

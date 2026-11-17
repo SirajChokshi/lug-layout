@@ -9,6 +9,7 @@ import {
   isLibraryPublished,
   libraryIndexKey,
   pinnedArchive,
+  publicObjectUrl,
   uploadLibrary,
   verifyServedLibrary,
 } from "./ldraw-library.ts";
@@ -127,7 +128,7 @@ async function servedCommand(required: boolean): Promise<void> {
     await writeStepOutput("served", "false");
     return;
   }
-  const url = new URL(key, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`).href;
+  const url = publicObjectUrl(baseUrl, key);
   const served = await fetch(url, { method: "HEAD" }).then(
     (response) => response.ok,
     () => false,
