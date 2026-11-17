@@ -471,6 +471,28 @@ function addTo(index: Map<number, Set<PlacedEntry>>, key: number, entry: PlacedE
   set.add(entry);
 }
 
+export interface PlacementSource {
+  readonly placement: PlacementRef;
+  readonly handle: PlacementHandle;
+  readonly placeable: Placeable;
+}
+
+function byPlacementValue(a: PlacedEntry, b: PlacedEntry): number {
+  if (a.placeable.group !== b.placeable.group)
+    return a.placeable.group < b.placeable.group ? -1 : 1;
+  return (
+    a.placeable.worldColor - b.placeable.worldColor ||
+    a.x - b.x ||
+    a.z - b.z ||
+    a.yLdu - b.yLdu ||
+    a.handle.rot - b.handle.rot
+  );
+}
+
+function inWorldOrder(entries: ReadonlySet<PlacedEntry>): PlacedEntry[] {
+  return [...entries].toSorted(byPlacementValue);
+}
+
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
@@ -550,6 +572,26 @@ export class PlacedChunks {
     }
   }
 
+  addAll(placements: ReadonlyArray<PlacementSource>): RebuildReport {
+    const keys = new Set<number>();
+    for (const { placement, handle, placeable } of placements) {
+      for (const key of this.insert(placement, handle, placeable).rebuildKeys()) keys.add(key);
+    }
+    return this.rebuild([...keys].toSorted((a, b) => a - b));
+  }
+
+  clear(): void {
+    for (const key of new Set([...this.byChunk.keys(), ...this.chunkStuds.keys()])) {
+      this.backend.deleteChunk(key);
+    }
+    for (const key of this.byColumnChunk.keys()) this.occupancy.clearChunk(key);
+    this.byChunk.clear();
+    this.byFootprintChunk.clear();
+    this.byColumnChunk.clear();
+    this.chunkStuds.clear();
+    this.entries.length = 0;
+  }
+
   private insert(
     placement: PlacementRef,
     handle: PlacementHandle,
@@ -594,7 +636,7 @@ export class PlacedChunks {
     if (!origin) throw new Error(`chunk ${key} has no recorded origin`);
     const originX = origin[0] * CHUNK_LDU;
     const originZ = origin[1] * CHUNK_LDU;
-    const entries = this.byChunk.get(key) ?? new Set<PlacedEntry>();
+    const entries = inWorldOrder(this.byChunk.get(key) ?? new Set<PlacedEntry>());
     const covers = [...(this.byFootprintChunk.get(key) ?? [])];
     const closers = covers.length > 0 ? this.columnsAround(key) : [];
     let partCount = 0;

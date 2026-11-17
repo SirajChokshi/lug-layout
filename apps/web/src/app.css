@@ -987,3 +987,150 @@ footer a {
 .import-panel pre {
   display: none;
 }
+
+.world-menu p {
+  margin: 0 0 6px;
+}
+
+.world-name span,
+.world-note {
+  color: #556;
+  font-size: 12px;
+}
+
+.world-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.world-new {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.world-new input {
+  flex: 1;
+  min-width: 0;
+}
+
+.world-actions button,
+.go-to button,
+.world-new input,
+.go-to input {
+  font: inherit;
+  padding: 5px 8px;
+  border: 1px solid #c3ccd6;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: inherit;
+}
+
+.world-actions button {
+  cursor: pointer;
+}
+
+.world-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.world-import {
+  display: none;
+}
+
+.go-to {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+}
+
+.go-to input {
+  min-width: 0;
+}
+
+.world-warning {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #fff4d6;
+  color: #6b4a00;
+  font-size: 12px;
+}
+
+.world-list {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.world-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.world-row.current .world-row-name {
+  font-weight: 600;
+}
+
+.world-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-row-name span {
+  color: #556;
+}
+
+.world-row button {
+  font: inherit;
+  padding: 2px 6px;
+  border: 1px solid #c3ccd6;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: inherit;
+  cursor: pointer;
+}
+
+.world-row button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.world-name-issue {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #b0141c;
+  font-size: 12px;
+}
+
+.catalog-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.world-retry {
+  margin-left: 6px;
+  font: inherit;
+  font-size: 12px;
+  padding: 1px 8px;
+  border: 1px solid #b0141c;
+  border-radius: 6px;
+  background: #fff;
+  color: #b0141c;
+  cursor: pointer;
+}
+
+.palette-swatch:disabled {
+  cursor: default;
+  opacity: 0.4;
+}

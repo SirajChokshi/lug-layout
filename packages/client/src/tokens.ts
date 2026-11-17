@@ -40,3 +40,6 @@ export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore
   "brr.client.RunningGearOverrides",
 );
 export const RUNNING_GEAR: ServiceIdentifier<IRunningGear> = Symbol.for("brr.client.RunningGear");
+export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
+  "brr.client.TrademarkDisclaimer",
+);

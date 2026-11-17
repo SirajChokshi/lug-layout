@@ -1,6 +1,7 @@
 import { roomRect, type LduRect } from "@brr/domain";
 import { chunkOf } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
+import type { SavedViewV1 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
@@ -45,6 +46,8 @@ export interface IEditorCamera {
   lookAt(x: number, z: number, animate: boolean): void;
   viewPlan(planId: string): void;
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number };
+  savedView(): SavedViewV1;
+  restoreView(view: SavedViewV1 | null): void;
 }
 
 const DOM_DELTA_LINE = 1;
@@ -226,5 +229,15 @@ export class EditorCamera implements IEditorCamera {
 
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number } {
     return { chunkX: chunkOf(this.view.targetX()), chunkZ: chunkOf(this.view.targetZ()) };
+  }
+
+  savedView(): SavedViewV1 {
+    return this.view.savedView();
+  }
+
+  restoreView(view: SavedViewV1 | null): void {
+    this.view.restore(view);
+    if (this.state.mode !== "orbit") this.update({ mode: "orbit" });
+    this.view.apply(this.backend);
   }
 }

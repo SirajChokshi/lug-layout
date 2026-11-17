@@ -97,6 +97,13 @@ export class EditHistory {
     return this.undone.at(-1)?.kind ?? null;
   }
 
+  adopt(handle: PlacementHandle): PlacementRef {
+    if (!handle.live) throw new Error("only a placement in the world can be adopted");
+    const ref = new Ref(this);
+    ref.handle = handle;
+    return ref;
+  }
+
   place(pose: PlacementPose): AppliedEdit {
     return this.commit("place", [{ placement: null, to: pose }]);
   }

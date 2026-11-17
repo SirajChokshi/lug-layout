@@ -11,6 +11,7 @@ import {
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
 import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
+import { useState, type FormEvent } from "react";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
@@ -284,12 +285,41 @@ export function PlacementToolbar({
       >
         Shortcuts ({shortcutText("show-shortcuts")})
       </button>
+      <GoTo editor={editor} />
       <p className="toolbar-hint">
         Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the
         wheel zooms at the cursor. Arrows pan, Shift-arrows orbit, double-click frames the
         selection.
       </p>
     </div>
+  );
+}
+
+function GoTo({ editor }: { readonly editor: IEditor }) {
+  const [x, setX] = useState("0");
+  const [z, setZ] = useState("0");
+  const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    editor.goTo(Number(x), Number(z));
+  };
+  return (
+    <form className="go-to" onSubmit={onSubmit}>
+      <input
+        type="number"
+        step={20}
+        value={x}
+        aria-label="Go to x (LDU)"
+        onChange={(event) => setX(event.currentTarget.value)}
+      />
+      <input
+        type="number"
+        step={20}
+        value={z}
+        aria-label="Go to z (LDU)"
+        onChange={(event) => setZ(event.currentTarget.value)}
+      />
+      <button type="submit">Go to x, z</button>
+    </form>
   );
 }
 
@@ -381,6 +411,10 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     );
   }
   if (snapshot.loadMs !== null) rows.push(["Load", `${integer.format(snapshot.loadMs)} ms`]);
+  if (snapshot.world) rows.push(["World open", `${snapshot.world.openMs.toFixed(1)} ms`]);
+  if (snapshot.coldStartMs !== null) {
+    rows.push(["First world frame", `${integer.format(snapshot.coldStartMs)} ms after navigation`]);
+  }
   rows.push(
     [
       "Mode",
@@ -419,6 +453,10 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       ["Frame rate (rAF)", `${stats.fps.toFixed(1)} fps`],
       ["Draw calls", integer.format(stats.drawCalls)],
       ["Drawn triangles", integer.format(stats.triangles)],
+      [
+        "Render origin (chunks), rebases",
+        `(${stats.renderOriginChunkX}, ${stats.renderOriginChunkZ}); ${stats.rebases}`,
+      ],
     );
   }
   return (

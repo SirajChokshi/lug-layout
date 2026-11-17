@@ -6,6 +6,7 @@ import {
 } from "@brr/catalog";
 import { renderModule } from "@brr/render";
 import type { RpcPort } from "@brr/rpc";
+import { storageModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
 import { CreditsService } from "./credits/credits-service.ts";
@@ -38,6 +39,7 @@ import {
   SIM_WORKER_PORT,
   TRACK_SCENE,
   PLAN_SERVICE,
+  TRADEMARK_DISCLAIMER,
 } from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
@@ -62,6 +64,7 @@ export interface MainThreadConfig {
   readonly createImportWorker?: ImportWorkerFactory;
   readonly bundleManifestFile?: string;
   readonly startSimWorker?: () => RpcPort;
+  readonly disclaimer: string;
 }
 
 export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
@@ -82,6 +85,7 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
         return config.startSimWorker();
       })
       .inSingletonScope();
+    bind(TRADEMARK_DISCLAIMER).toConstantValue(config.disclaimer);
   });
-  return [configModule, catalogModule, renderModule, clientModule];
+  return [configModule, catalogModule, renderModule, storageModule, clientModule];
 }

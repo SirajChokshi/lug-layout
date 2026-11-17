@@ -43,6 +43,7 @@ container.load(
     ...(import.meta.env.VITE_BUNDLE_MANIFEST_FILE === undefined
       ? {}
       : { bundleManifestFile: import.meta.env.VITE_BUNDLE_MANIFEST_FILE }),
+    disclaimer: TRADEMARK_DISCLAIMER,
   }),
 );
 const params = readViewerParams(location.search);

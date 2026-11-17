@@ -125,3 +125,10 @@ export {
   type SearchBudget,
 } from "./track/closure.ts";
 export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";
+export {
+  DirtyShards,
+  addShards,
+  worldPlacements,
+  type PlacementTarget,
+  type ShardChange,
+} from "./world-shards.ts";

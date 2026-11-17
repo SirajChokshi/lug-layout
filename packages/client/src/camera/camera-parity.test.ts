@@ -18,7 +18,7 @@ it.each<ViewMode>(["orbit", "plan"])(
   "the camera's own rays match the renderer's in the %s view, so anchors land where the editor picks",
   (mode) => {
     const container = new Container();
-    container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
     const backend = container.get(SCENE_BACKEND);
     backend.resize(WIDTH_PX, HEIGHT_PX);
     const camera = new ViewCamera();

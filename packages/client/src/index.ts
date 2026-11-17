@@ -49,6 +49,7 @@ export type {
   EditorStatus,
   HistoryView,
   HoverView,
+  ExportedWorld,
   IEditor,
   LatencySample,
   ModuleFitView,
@@ -61,12 +62,14 @@ export type {
   RoadSnapState,
   RoadSnapView,
   PlaceableCoverView,
+  SaveState,
   SelectionView,
   SkippedCatalogModel,
   TrackBomLine,
   TrackCommitResult,
   TrackSolveStats,
   TrackView,
+  WorldFileView,
 } from "./edit/editor.ts";
 export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";

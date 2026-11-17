@@ -44,7 +44,7 @@ class IssueBoxBackend implements ISceneBackend {
 
 it("commits an unchecked plan, tables kept, when a placement box cannot be read", () => {
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   const backend = new IssueBoxBackend();
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const plans = container.get(PLAN_SERVICE);
