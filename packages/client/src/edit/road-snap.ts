@@ -11,8 +11,12 @@ export interface CellExtent {
 export interface RoadSnap {
   readonly x: number;
   readonly z: number;
+  readonly rot: number;
   readonly joinedCells: number;
+  readonly joinedRoadCells: number;
 }
+
+const QUARTER_TURNS = 4;
 
 export function cellExtent(placement: RoadPlacement): CellExtent {
   let minX = Number.POSITIVE_INFINITY;
@@ -39,36 +43,73 @@ function* alongSide(placed: CellExtent, ghost: CellExtent): Generator<readonly [
   }
 }
 
+function cornerFlush(placed: CellExtent, ghost: CellExtent, x: number, z: number): boolean {
+  const besideX = x + ghost.minX === placed.maxX || x + ghost.maxX === placed.minX;
+  if (besideX) return z + ghost.minZ === placed.minZ || z + ghost.maxZ === placed.maxZ;
+  return x + ghost.minX === placed.minX || x + ghost.maxX === placed.maxX;
+}
+
+function within(extent: CellExtent, ghost: CellExtent, x: number, z: number): boolean {
+  return (
+    x >= extent.minX - (ghost.maxX - ghost.minX) &&
+    x <= extent.maxX + (ghost.maxX - ghost.minX) &&
+    z >= extent.minZ - (ghost.maxZ - ghost.minZ) &&
+    z <= extent.maxZ + (ghost.maxZ - ghost.minZ)
+  );
+}
+
+interface Ranked {
+  readonly snap: RoadSnap;
+  readonly distance: number;
+  readonly turn: number;
+}
+
+function better(candidate: Ranked, best: Ranked | null): boolean {
+  if (!best) return true;
+  if (candidate.snap.joinedRoadCells !== best.snap.joinedRoadCells) {
+    return candidate.snap.joinedRoadCells > best.snap.joinedRoadCells;
+  }
+  if (candidate.distance !== best.distance) return candidate.distance < best.distance;
+  return candidate.turn < best.turn;
+}
+
 export function snapToRoadEdge(
   network: RoadNetwork,
   placed: ReadonlyArray<CellExtent>,
   surface: RoadSurface,
-  rot: number,
+  preferredRot: number,
   yLdu: number,
   cursorX: number,
   cursorZ: number,
 ): RoadSnap | null {
-  const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu, rot, surface });
-  let best: RoadSnap | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const extent of placed) {
-    for (const [x, z] of alongSide(extent, ghost)) {
-      const inside =
-        cursorX >= x + ghost.minX &&
-        cursorX <= x + ghost.maxX &&
-        cursorZ >= z + ghost.minZ &&
-        cursorZ <= z + ghost.maxZ;
-      if (!inside) continue;
-      const distance = Math.hypot(
-        cursorX - (x + (ghost.minX + ghost.maxX) / 2),
-        cursorZ - (z + (ghost.minZ + ghost.maxZ) / 2),
-      );
-      if (distance >= bestDistance) continue;
-      const fit = network.fit({ id: -1, x, z, yLdu, rot, surface });
-      if (fit.joinedCells === 0 || fit.mismatchedCells > 0 || fit.overlappingCells > 0) continue;
-      best = { x, z, joinedCells: fit.joinedCells };
-      bestDistance = distance;
+  let best: Ranked | null = null;
+  for (let turn = 0; turn < QUARTER_TURNS; turn++) {
+    const rot = (preferredRot + turn) % QUARTER_TURNS;
+    const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu, rot, surface });
+    for (const extent of placed) {
+      if (!within(extent, ghost, cursorX, cursorZ)) continue;
+      for (const [x, z] of alongSide(extent, ghost)) {
+        const inside =
+          cursorX >= x + ghost.minX &&
+          cursorX <= x + ghost.maxX &&
+          cursorZ >= z + ghost.minZ &&
+          cursorZ <= z + ghost.maxZ;
+        if (!inside) continue;
+        const distance = Math.hypot(
+          cursorX - (x + (ghost.minX + ghost.maxX) / 2),
+          cursorZ - (z + (ghost.minZ + ghost.maxZ) / 2),
+        );
+        const fit = network.fit({ id: -1, x, z, yLdu, rot, surface });
+        if (fit.joinedCells === 0 || fit.mismatchedCells > 0 || fit.overlappingCells > 0) continue;
+        if (fit.joinedRoadCells === 0 && !cornerFlush(extent, ghost, x, z)) continue;
+        const candidate: Ranked = {
+          snap: { x, z, rot, joinedCells: fit.joinedCells, joinedRoadCells: fit.joinedRoadCells },
+          distance,
+          turn,
+        };
+        if (better(candidate, best)) best = candidate;
+      }
     }
   }
-  return best;
+  return best?.snap ?? null;
 }

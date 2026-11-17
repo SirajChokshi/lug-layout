@@ -133,6 +133,7 @@ export type RoadSnapState = "snapped" | "free" | "refused";
 export interface RoadSnapView {
   readonly state: RoadSnapState;
   readonly joinedCells: number;
+  readonly joinedRoadCells: number;
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
 }
@@ -465,6 +466,7 @@ export class Editor implements IEditor {
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
   private ghostRot = 0;
+  private placeRot = 0;
   private hoverX = 0;
   private hoverZ = 0;
   private hoverYPlates = 0;
@@ -846,6 +848,7 @@ export class Editor implements IEditor {
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
+    this.placeRot = this.ghostRot;
     this.placeGhost();
     this.update({ mode: placeable ? "place" : "select", activeItem: placeable?.id ?? null });
   }
@@ -869,14 +872,14 @@ export class Editor implements IEditor {
       this.active,
       this.hoverX,
       this.hoverZ,
-      this.ghostRot,
+      this.placeRot,
       null,
     );
     this.backend.placeGhost(
       this.hoverX,
       this.hoverYPlates * PLATE_LDU + GHOST_LIFT_LDU,
       this.hoverZ,
-      this.ghostRot,
+      this.placeRot,
     );
   }
 
@@ -886,6 +889,7 @@ export class Editor implements IEditor {
   }
 
   private snapGhostToRoad(): RoadSnapView | null {
+    this.placeRot = this.ghostRot;
     const surface = this.active?.road;
     if (!surface || !this.hovering || !this.state.snapRoads) return null;
     const snap = snapToRoadEdge(
@@ -900,9 +904,11 @@ export class Editor implements IEditor {
     if (snap) {
       this.hoverX = snap.x;
       this.hoverZ = snap.z;
+      this.placeRot = snap.rot;
       return {
         state: "snapped",
         joinedCells: snap.joinedCells,
+        joinedRoadCells: snap.joinedRoadCells,
         mismatchedCells: 0,
         overlappingCells: 0,
       };
@@ -928,7 +934,7 @@ export class Editor implements IEditor {
       this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
     }
     this.placeGhost();
-    this.update({ hover: this.hoverView(), snap });
+    this.update({ hover: this.hoverView(), snap, ghostRot: this.placeRot });
   }
 
   pointerLeave(): void {
@@ -951,14 +957,14 @@ export class Editor implements IEditor {
             item: this.active.id,
             x: this.hoverX,
             z: this.hoverZ,
-            rot: this.ghostRot,
+            rot: this.placeRot,
             mismatchedCells: snap.mismatchedCells,
             overlappingCells: snap.overlappingCells,
           },
         });
         return;
       }
-      this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
+      this.placeAt(this.active, this.hoverX, this.hoverZ, this.placeRot, eventTimeMs);
       return;
     }
     this.backend.rayThrough(ndcX, ndcY, this.ray);
@@ -1129,9 +1135,14 @@ export class Editor implements IEditor {
 
   rotate(eventTimeMs: number): void {
     if (this.active) {
-      this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
+      this.ghostRot = (this.placeRot + 1) % QUARTER_TURNS;
+      if (this.hovering) {
+        this.hoverX = snapToLattice(this.hitX);
+        this.hoverZ = snapToLattice(this.hitZ);
+      }
+      const snap = this.snapGhostToRoad();
       this.placeGhost();
-      this.update({ ghostRot: this.ghostRot, hover: this.hoverView() });
+      this.update({ ghostRot: this.placeRot, snap, hover: this.hoverView() });
       return;
     }
     const model = this.selected;
