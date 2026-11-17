@@ -1,0 +1,47 @@
+┌─────────┬───────┬─────────┬───────────────────────────┬───────────────────────────┬───────────────────────┐
+│ (index) │ piece │ line    │ from                      │ to                        │ riser under far end   │
+├─────────┼───────┼─────────┼───────────────────────────┼───────────────────────────┼───────────────────────┤
+│ 0       │ 0     │ 'lower' │ '(48, 0) studs at 0 pl'   │ '(32, 0) studs at 0 pl'   │ 'on baseplate'        │
+│ 1       │ 1     │ 'lower' │ '(32, 0) studs at 0 pl'   │ '(16, 0) studs at 0 pl'   │ 'on baseplate'        │
+│ 2       │ 2     │ 'lower' │ '(16, 0) studs at 0 pl'   │ '(0, 0) studs at 0 pl'    │ 'on baseplate'        │
+│ 3       │ 3     │ 'lower' │ '(0, 0) studs at 0 pl'    │ '(-16, 0) studs at 0 pl'  │ 'on baseplate'        │
+│ 4       │ 4     │ 'lower' │ '(-16, 0) studs at 0 pl'  │ '(-32, 0) studs at 0 pl'  │ 'on baseplate'        │
+│ 5       │ 5     │ 'lower' │ '(-32, 0) studs at 0 pl'  │ '(-48, 0) studs at 0 pl'  │ 'on baseplate'        │
+│ 6       │ 6     │ 'upper' │ '(0, -248) studs at 0 pl' │ '(0, -232) studs at 1 pl' │ '0 × 3001 + 1 × 3020' │
+│ 7       │ 7     │ 'upper' │ '(0, -232) studs at 1 pl' │ '(0, -216) studs at 2 pl' │ '0 × 3001 + 2 × 3020' │
+│ 8       │ 8     │ 'upper' │ '(0, -216) studs at 2 pl' │ '(0, -200) studs at 3 pl' │ '1 × 3001 + 0 × 3020' │
+│ 9       │ 9     │ 'upper' │ '(0, -200) studs at 3 pl' │ '(0, -184) studs at 4 pl' │ '1 × 3001 + 1 × 3020' │
+│ 10      │ 10    │ 'upper' │ '(0, -184) studs at 4 pl' │ '(0, -168) studs at 5 pl' │ '1 × 3001 + 2 × 3020' │
+│ 11      │ 11    │ 'upper' │ '(0, -168) studs at 5 pl' │ '(0, -152) studs at 6 pl' │ '2 × 3001 + 0 × 3020' │
+│ 12      │ 12    │ 'upper' │ '(0, -152) studs at 6 pl' │ '(0, -136) studs at 7 pl' │ '2 × 3001 + 1 × 3020' │
+│ 13      │ 13    │ 'upper' │ '(0, -136) studs at 7 pl' │ '(0, -120) studs at 8 pl' │ '2 × 3001 + 2 × 3020' │
+│ 14      │ 14    │ 'upper' │ '(0, -120) studs at 8 pl' │ '(0, -104) studs at 9 pl' │ '3 × 3001 + 0 × 3020' │
+│ 15      │ 15    │ 'upper' │ '(0, -104) studs at 9 pl' │ '(0, -88) studs at 10 pl' │ '3 × 3001 + 1 × 3020' │
+│ 16      │ 16    │ 'upper' │ '(0, -88) studs at 10 pl' │ '(0, -72) studs at 11 pl' │ '3 × 3001 + 2 × 3020' │
+│ 17      │ 17    │ 'upper' │ '(0, -72) studs at 11 pl' │ '(0, -56) studs at 12 pl' │ '4 × 3001 + 0 × 3020' │
+│ 18      │ 18    │ 'upper' │ '(0, -56) studs at 12 pl' │ '(0, -40) studs at 13 pl' │ '4 × 3001 + 1 × 3020' │
+│ 19      │ 19    │ 'upper' │ '(0, -40) studs at 13 pl' │ '(0, -24) studs at 14 pl' │ '4 × 3001 + 2 × 3020' │
+│ 20      │ 20    │ 'upper' │ '(0, -24) studs at 14 pl' │ '(0, -8) studs at 15 pl'  │ '5 × 3001 + 0 × 3020' │
+│ 21      │ 21    │ 'upper' │ '(0, -8) studs at 15 pl'  │ '(0, 8) studs at 15 pl'   │ '5 × 3001 + 0 × 3020' │
+│ 22      │ 22    │ 'upper' │ '(0, 8) studs at 15 pl'   │ '(0, 24) studs at 14 pl'  │ '4 × 3001 + 2 × 3020' │
+│ 23      │ 23    │ 'upper' │ '(0, 24) studs at 14 pl'  │ '(0, 40) studs at 13 pl'  │ '4 × 3001 + 1 × 3020' │
+│ 24      │ 24    │ 'upper' │ '(0, 40) studs at 13 pl'  │ '(0, 56) studs at 12 pl'  │ '4 × 3001 + 0 × 3020' │
+│ 25      │ 25    │ 'upper' │ '(0, 56) studs at 12 pl'  │ '(0, 72) studs at 11 pl'  │ '3 × 3001 + 2 × 3020' │
+│ 26      │ 26    │ 'upper' │ '(0, 72) studs at 11 pl'  │ '(0, 88) studs at 10 pl'  │ '3 × 3001 + 1 × 3020' │
+│ 27      │ 27    │ 'upper' │ '(0, 88) studs at 10 pl'  │ '(0, 104) studs at 9 pl'  │ '3 × 3001 + 0 × 3020' │
+│ 28      │ 28    │ 'upper' │ '(0, 104) studs at 9 pl'  │ '(0, 120) studs at 8 pl'  │ '2 × 3001 + 2 × 3020' │
+│ 29      │ 29    │ 'upper' │ '(0, 120) studs at 8 pl'  │ '(0, 136) studs at 7 pl'  │ '2 × 3001 + 1 × 3020' │
+│ 30      │ 30    │ 'upper' │ '(0, 136) studs at 7 pl'  │ '(0, 152) studs at 6 pl'  │ '2 × 3001 + 0 × 3020' │
+│ 31      │ 31    │ 'upper' │ '(0, 152) studs at 6 pl'  │ '(0, 168) studs at 5 pl'  │ '1 × 3001 + 2 × 3020' │
+│ 32      │ 32    │ 'upper' │ '(0, 168) studs at 5 pl'  │ '(0, 184) studs at 4 pl'  │ '1 × 3001 + 1 × 3020' │
+│ 33      │ 33    │ 'upper' │ '(0, 184) studs at 4 pl'  │ '(0, 200) studs at 3 pl'  │ '1 × 3001 + 0 × 3020' │
+│ 34      │ 34    │ 'upper' │ '(0, 200) studs at 3 pl'  │ '(0, 216) studs at 2 pl'  │ '0 × 3001 + 2 × 3020' │
+│ 35      │ 35    │ 'upper' │ '(0, 216) studs at 2 pl'  │ '(0, 232) studs at 1 pl'  │ '0 × 3001 + 1 × 3020' │
+│ 36      │ 36    │ 'upper' │ '(0, 232) studs at 1 pl'  │ '(0, 248) studs at 0 pl'  │ 'on baseplate'        │
+└─────────┴───────┴─────────┴───────────────────────────┴───────────────────────────┴───────────────────────┘
+joins 35, open ends 4, coincident-end issues 0
+upper piece 21 spans (0, -8) studs at 15 pl → (0, 8) studs at 15 pl
+  envelope 96 LDU → {"kind":"clear","upper":1,"gapLdu":96}
+  envelope 97 LDU → {"kind":"low","upper":1,"gapLdu":96,"needLdu":97}
+  envelope 120 LDU → {"kind":"low","upper":1,"gapLdu":96,"needLdu":120}
+negative control: a level piece at 0 plates after a 0→1 ramp: joins 0, open ends 4
