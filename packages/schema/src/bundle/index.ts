@@ -481,6 +481,7 @@ export const BundleIndex = v.object({
     paletteSha256: Sha256Hex,
   }),
   trackCatalog: TrackCatalog,
+  baseplateGrid: v.pipe(Integer, v.minValue(1)),
   trackShapes: v.array(TrackShape),
   milsEdgeRules: MilsEdgeRules,
   compiler: v.nullable(BundleCompiler),

@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./heading-footprints": "./src/track/heading-footprints.ts"
+    "./heading-footprints": "./src/track/heading-footprints.ts",
+    "./ground-grid": "./src/ground-grid.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && tsc -p bench/tsconfig.json",

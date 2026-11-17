@@ -5,13 +5,14 @@ import {
   type PartModel,
   type PartModelLattice,
 } from "@brr/catalog";
-import type { RoadSurface } from "@brr/domain";
+import { groundFootprint, type GroundFootprint, type RoadSurface } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { ModelRole, TrackCatalog, Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
+import { pivotOnGrid, type SeatedGround } from "./ground.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
 import { modelTrack, type ModelTrack } from "./model-track.ts";
@@ -66,6 +67,7 @@ export interface Placeable {
   readonly module: ModuleSurface | null;
   readonly tongueBoxes: Float32Array | null;
   readonly track: ModelTrack | null;
+  readonly ground: SeatedGround | null;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -290,10 +292,10 @@ function trackTongueBoxes(
 }
 
 function partCells(part: PartShapeAsset, shift: Vec3, tableY: number): PlaceableCells {
-  const cellX0 = wholeCells(part.boundsMin[0], `${part.id} min x`);
-  const cellZ0 = wholeCells(part.boundsMin[2], `${part.id} min z`);
-  const width = wholeCells(part.boundsMax[0], `${part.id} max x`) - cellX0;
-  const depth = wholeCells(part.boundsMax[2], `${part.id} max z`) - cellZ0;
+  const cellX0 = wholeCells(part.boundsMin[0] + shift[0], `${part.id} min x`);
+  const cellZ0 = wholeCells(part.boundsMin[2] + shift[2], `${part.id} min z`);
+  const width = wholeCells(part.boundsMax[0] + shift[0], `${part.id} max x`) - cellX0;
+  const depth = wholeCells(part.boundsMax[2] + shift[2], `${part.id} max z`) - cellZ0;
   const topY = part.boundsMax[1] + shift[1];
   const heightPlates = Math.max(0, Math.ceil(topY / PLATE_LDU));
   return {
@@ -387,6 +389,58 @@ function shiftedBox(min: Vec3, max: Vec3, shift: Vec3): LocalBox {
   };
 }
 
+export function seatOnGround(
+  ground: GroundFootprint,
+  grid: number,
+  shiftX: number,
+  shiftZ: number,
+): Vec3 {
+  return [
+    shiftX - pivotOnGrid(ground.minX + shiftX, ground.maxX - ground.minX, grid),
+    0 - ground.topY,
+    shiftZ - pivotOnGrid(ground.minZ + shiftZ, ground.maxZ - ground.minZ, grid),
+  ];
+}
+
+function seatedGround(
+  ground: GroundFootprint | null,
+  shift: Vec3,
+  label: string,
+): SeatedGround | null {
+  if (!ground) return null;
+  const seated = {
+    minX: ground.minX + shift[0],
+    maxX: ground.maxX + shift[0],
+    minZ: ground.minZ + shift[2],
+    maxZ: ground.maxZ + shift[2],
+    plates: ground.plates,
+  };
+  for (const edge of [seated.minX, seated.maxX, seated.minZ, seated.maxZ]) {
+    wholeCells(edge, `${label} baseplate edge`);
+  }
+  return seated;
+}
+
+function modelInstances(model: PartModel) {
+  return { count: model.instanceCount, partIndex: model.partIndex, matrices: model.matrices };
+}
+
+export function modelGround(
+  model: PartModel,
+  parts: ReadonlyArray<PartShapeAsset>,
+  name: string,
+): GroundFootprint | null {
+  const groundY = model.cells?.groundY ?? null;
+  if (groundY === null) return null;
+  const ground = groundFootprint(modelInstances(model), parts);
+  if (ground?.topY !== groundY) {
+    throw new Error(
+      `${name}: the bake stands it on baseplates topping out at y = ${groundY}, but its lowest baseplate layer tops out at ${ground?.topY ?? "nothing"}`,
+    );
+  }
+  return ground;
+}
+
 function restingY(cells: ModelCells, name: string, role: ModelRole | undefined): number {
   if (role === "mils-module" && cells.groundY === null) {
     throw new Error(`MILS module ${name} does not stand on its own baseplate`);
@@ -416,13 +470,17 @@ export function modelPlaceable(
   farModel: number | null,
   tableY: number,
   trackCatalog: TrackCatalog,
+  grid: number,
 ): Placeable {
   const { lattice, cells } = model;
   if (lattice === null || cells === null) {
     throw new Error(`model ${name} has no stud lattice from the bake, so it cannot be placed`);
   }
   const restingOn = restingY(cells, name, role);
-  const shift = modelFrameShift(lattice, cells, restingOn);
+  const ground = modelGround(model, parts, name);
+  const shift = ground
+    ? seatOnGround(ground, grid, phaseShift(lattice.phaseX), phaseShift(lattice.phaseZ))
+    : modelFrameShift(lattice, cells, restingOn);
   const colorIndex = new Uint16Array(model.instanceCount);
   for (let i = 0; i < model.instanceCount; i++) {
     colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
@@ -466,6 +524,7 @@ export function modelPlaceable(
     module,
     tongueBoxes: module ? trackTongueBoxes(local, partBoxes, parts, module) : null,
     track: modelTrack(local, parts, trackCatalog),
+    ground: seatedGround(ground, shift, name),
   };
 }
 
@@ -475,14 +534,14 @@ export function isBaseplatePart(part: PartShapeAsset): boolean {
   return part.baseplate;
 }
 
-function restingOnTable(part: PartShapeAsset, tableY: number): number {
-  if (!isBaseplatePart(part)) return tableY - part.boundsMin[1];
-  if (part.boundsMax[1] !== 0) {
-    throw new Error(
-      `${part.id} is a baseplate whose top face is at y = ${part.boundsMax[1]}, not 0`,
-    );
-  }
-  return 0;
+export function partGround(
+  partIndex: number,
+  parts: ReadonlyArray<PartShapeAsset>,
+): GroundFootprint | null {
+  return groundFootprint(
+    { count: 1, partIndex: Uint16Array.of(partIndex), matrices: IDENTITY_MATRIX },
+    parts,
+  );
 }
 
 export function partPlaceable(
@@ -493,8 +552,12 @@ export function partPlaceable(
   parts: ReadonlyArray<PartShapeAsset>,
   colors: ColorTable,
   tableY: number,
+  grid: number,
 ): Placeable {
-  const shift: Vec3 = [0, restingOnTable(part, tableY), 0];
+  const ground = partGround(partIndex, parts);
+  const shift: Vec3 = ground
+    ? seatOnGround(ground, grid, 0, 0)
+    : [0, tableY - part.boundsMin[1], 0];
   const local: ChunkPartInstances = {
     originX: 0,
     originZ: 0,
@@ -529,5 +592,6 @@ export function partPlaceable(
     module: null,
     tongueBoxes: null,
     track: null,
+    ground: seatedGround(ground, shift, part.id),
   };
 }

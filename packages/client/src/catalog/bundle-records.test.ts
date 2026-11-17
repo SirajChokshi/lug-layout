@@ -1,7 +1,14 @@
-import { ASSET_FETCHER, BUNDLE_LODS, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import {
+  ASSET_FETCHER,
+  BUNDLE_LODS,
+  PART_BUNDLE_LOADER,
+  type IAssetFetcher,
+  type IPartBundleLoader,
+} from "@brr/catalog";
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import {
   HALF_PLANE_FLOATS,
+  groundGrid,
   headingFootprints,
   placedPlanCells,
   verticalRange,
@@ -30,6 +37,7 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { modelGround, partGround } from "../edit/placeable.ts";
 import { placedPlan, planTriangles } from "../edit/track-footprint.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -47,12 +55,13 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 
 const fetcher = new BundleDirectoryFetcher();
 const manifests = new Map<string, BundleManifest>();
+let loader: IPartBundleLoader;
 
 beforeAll(async () => {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
-  const loader = container.get(PART_BUNDLE_LOADER);
+  loader = container.get(PART_BUNDLE_LOADER);
   for (const lod of BUNDLE_LODS) manifests.set(lod, await loader.loadManifest(lod));
 });
 
@@ -252,5 +261,23 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
         }
       }
     }
+  }, 60_000);
+
+  it("hold the baseplate grid the editor measures from every ground part and every set's own baseplates", async () => {
+    const index = await loader.loadIndex(lod);
+    const shapes = await Promise.all(
+      index.catalogParts
+        .filter((part) => part.role === "ground" || part.role === "road")
+        .map((part) => loader.loadPartShape(lod, part)),
+    );
+    const sets = index.models.filter(
+      (entry) => (entry.role === "mils-module" || entry.origin === "omr") && entry.lattice !== null,
+    );
+    const records = await Promise.all(sets.map((entry) => loader.loadModelRecord(lod, entry.name)));
+    const grounds = [
+      ...shapes.map((_, i) => partGround(i, shapes)),
+      ...records.map((record) => modelGround(record.model, record.parts, record.entry.name)),
+    ];
+    expect(index.baseplateGrid).toBe(groundGrid(grounds.filter((ground) => ground !== null)));
   }, 60_000);
 });

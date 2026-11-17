@@ -387,6 +387,7 @@ async function heldTrack(name: string): Promise<ModelTrack | null> {
     null,
     baseplate.boundsMin[1],
     trackBundle.trackCatalog,
+    STUD_LDU,
   ).track;
 }
 

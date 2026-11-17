@@ -217,3 +217,10 @@ export {
   type PlaneTransform,
 } from "./cell-raster.ts";
 export { planTrianglesOverlap, type PlanBox } from "./plan-overlap.ts";
+export {
+  groundFootprint,
+  groundGrid,
+  type GroundFootprint,
+  type GroundInstances,
+  type GroundPart,
+} from "./ground-grid.ts";

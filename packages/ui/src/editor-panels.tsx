@@ -372,6 +372,16 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
             {ldu(selection.box.maxZ)}
           </dd>
         </div>
+        {selection.baseplate && (
+          <div>
+            <dt>Baseplate x, z (LDU), top</dt>
+            <dd data-selection-baseplate>
+              {ldu(selection.baseplate.minX)}…{ldu(selection.baseplate.maxX)},{" "}
+              {ldu(selection.baseplate.minZ)}…{ldu(selection.baseplate.maxZ)}, y ={" "}
+              {ldu(selection.baseplate.topY)}
+            </dd>
+          </div>
+        )}
         <div>
           <dt>Chunk key, slot</dt>
           <dd>
@@ -381,6 +391,16 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       </dl>
     </section>
   );
+}
+
+function seatText(snapshot: EditorSnapshot): string {
+  const grid = snapshot.baseplateGridStuds;
+  const item = snapshot.catalog.find((entry) => entry.id === snapshot.activeItem);
+  if (!item) return grid === null ? "none" : `baseplate grid ${grid} studs`;
+  if (!item.baseplate) return "no baseplate of its own, on the stud lattice";
+  const { plates, studsWide, studsDeep } = item.baseplate;
+  const gridText = grid === null ? "" : `, edges on the ${grid}-stud baseplate grid`;
+  return `${plates} baseplate${plates === 1 ? "" : "s"}, ${studsWide}×${studsDeep} studs, top at y = 0${gridText}`;
 }
 
 function snapText(snapshot: EditorSnapshot): string {
@@ -466,6 +486,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
         : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
     ],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
+    ["Baseplate seat", seatText(snapshot)],
     ["Road-edge snap", snapText(snapshot)],
     ["Module fit", moduleFitText(snapshot.moduleFit)],
     [

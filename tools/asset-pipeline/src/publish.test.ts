@@ -57,6 +57,7 @@ function compiledManifest() {
     disclaimer: "not affiliated",
     catalogParts: [],
     trackCatalog: { n: 16, pieces: [] },
+    baseplateGrid: 160,
     trackShapes: [],
     milsEdgeRules: {
       source: "test",

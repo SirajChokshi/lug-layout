@@ -1,6 +1,12 @@
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import { headingFootprints, verticalRange } from "@brr/domain/heading-footprints";
 import {
+  groundFootprint,
+  groundGrid,
+  type GroundFootprint,
+  type GroundPart,
+} from "@brr/domain/ground-grid";
+import {
   BundleCredit,
   BundleModelEntry,
   ManifestPart,
@@ -34,6 +40,25 @@ const CompiledTables = v.object({
 });
 
 const RawModelFile = v.object({ parts: v.array(v.string()) });
+
+const GroundedModelFile = v.object({
+  instances: v.object({ part: v.array(v.number()), matrix: v.array(v.number()) }),
+  cover: v.object({ cells: v.nullish(v.object({ groundY: v.nullable(v.number()) })) }),
+});
+
+const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
+const GROUND_ROLES: ReadonlySet<PartRole> = new Set(["ground", "road"]);
+
+function groundPart(part: {
+  readonly baseplate: boolean;
+  readonly bounds: { readonly min: ArrayLike<number>; readonly max: ArrayLike<number> };
+}): GroundPart {
+  return { baseplate: part.baseplate, boundsMin: part.bounds.min, boundsMax: part.bounds.max };
+}
+
+function standsOnBaseplates(model: BundleModelEntry): boolean {
+  return (model.role === "mils-module" || model.origin === "omr") && model.lattice !== null;
+}
 
 export function shapeFileName(partId: string): string {
   return `shape-${partId.replace(UNSAFE_FILE_CHARACTERS, "_")}.json`;
@@ -104,11 +129,39 @@ export async function attachRecords(directory: string): Promise<void> {
     if (!shape) throw new Error(`${where}: part ${id} is not in the bundle`);
     return shape;
   };
+  const grounds: GroundFootprint[] = [];
+  for (const part of parts) {
+    if (!GROUND_ROLES.has(part.role)) continue;
+    const ground = groundFootprint(
+      { count: 1, partIndex: Uint16Array.of(0), matrices: IDENTITY_MATRIX },
+      [groundPart(part)],
+    );
+    if (ground) grounds.push(ground);
+  }
   for (const model of models) {
     const path = join(directory, model.file);
     const raw: Record<string, unknown> = JSON.parse(await readFile(path, "utf8"));
     const { parts: ids } = decodedOrThrow(decode(RawModelFile, raw), model.file);
-    await writeJson(path, { ...raw, shapes: ids.map((id) => shapeOf(id, model.file)) });
+    const modelShapes = ids.map((id) => shapeOf(id, model.file));
+    await writeJson(path, { ...raw, shapes: modelShapes });
+    if (!standsOnBaseplates(model)) continue;
+    const { instances, cover } = decodedOrThrow(decode(GroundedModelFile, raw), model.file);
+    const groundY = cover.cells?.groundY ?? null;
+    if (groundY === null) continue;
+    const ground = groundFootprint(
+      {
+        count: instances.part.length,
+        partIndex: Uint16Array.from(instances.part),
+        matrices: Float32Array.from(instances.matrix),
+      },
+      modelShapes.map(groundPart),
+    );
+    if (ground?.topY !== groundY) {
+      throw new Error(
+        `${model.name}: the bake stands it on baseplates topping out at y = ${groundY}, but its lowest baseplate layer tops out at ${ground?.topY ?? "nothing"}`,
+      );
+    }
+    grounds.push(ground);
   }
   const catalogParts: CatalogPart[] = [];
   const shapeFiles = new Set<string>();
@@ -153,6 +206,7 @@ export async function attachRecords(directory: string): Promise<void> {
       {
         ...rest,
         catalogParts,
+        baseplateGrid: groundGrid(grounds),
         trackShapes,
         partTable: { file: PART_TABLE_FILE },
         creditTable: { file: CREDIT_TABLE_FILE },

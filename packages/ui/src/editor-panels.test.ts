@@ -45,6 +45,7 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
       chunkKey: 0,
       slot: 0,
       box: { minX: 0, minY: 0, minZ: 0, maxX: 640, maxY: 8, maxZ: 640 },
+      baseplate: null,
     },
     history: { undo: "place", redo: "place", undoDepth: 1, redoDepth: 1 },
     catalog: [
@@ -59,6 +60,7 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
         studsWide: 0,
         studsDeep: 0,
         thumbnail: null,
+        baseplate: null,
       },
     ],
     roadKit: "road",

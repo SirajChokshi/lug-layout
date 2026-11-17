@@ -40,6 +40,7 @@ export {
 } from "./credits/credits-view.ts";
 export type {
   CatalogColorView,
+  CatalogBaseplateView,
   CatalogItemView,
   CatalogPartView,
   EditAction,
@@ -97,6 +98,7 @@ export type {
   StudioPart,
   StudioReport,
 } from "@brr/import";
+export type { WorldGround } from "./edit/ground.ts";
 export type {
   IRunScene,
   RunRequest,
