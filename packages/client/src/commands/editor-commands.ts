@@ -40,6 +40,7 @@ export interface CommandSpec {
   readonly keys: ReadonlyArray<KeyChord>;
   readonly keywords?: string;
   readonly whileTyping?: boolean;
+  readonly repeats?: boolean;
 }
 
 export interface PointerGesture {
@@ -91,6 +92,7 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "z", mod: true }],
     keywords: "back revert",
+    repeats: true,
   },
   {
     id: "redo",
@@ -101,6 +103,7 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
       { key: "y", mod: true },
     ],
     keywords: "again forward",
+    repeats: true,
   },
   {
     id: "focus",
@@ -130,36 +133,58 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keys: [{ key: "c" }],
     keywords: "center look at",
   },
-  { id: "pan-left", title: "Pan left", group: "View", keys: [{ key: "ArrowLeft" }] },
-  { id: "pan-right", title: "Pan right", group: "View", keys: [{ key: "ArrowRight" }] },
-  { id: "pan-forward", title: "Pan forward", group: "View", keys: [{ key: "ArrowUp" }] },
-  { id: "pan-back", title: "Pan back", group: "View", keys: [{ key: "ArrowDown" }] },
+  { id: "pan-left", title: "Pan left", group: "View", keys: [{ key: "ArrowLeft" }], repeats: true },
+  {
+    id: "pan-right",
+    title: "Pan right",
+    group: "View",
+    keys: [{ key: "ArrowRight" }],
+    repeats: true,
+  },
+  {
+    id: "pan-forward",
+    title: "Pan forward",
+    group: "View",
+    keys: [{ key: "ArrowUp" }],
+    repeats: true,
+  },
+  { id: "pan-back", title: "Pan back", group: "View", keys: [{ key: "ArrowDown" }], repeats: true },
   {
     id: "orbit-left",
     title: "Orbit left",
     group: "View",
     keys: [{ key: "ArrowLeft", shift: true }],
+    repeats: true,
   },
   {
     id: "orbit-right",
     title: "Orbit right",
     group: "View",
     keys: [{ key: "ArrowRight", shift: true }],
+    repeats: true,
   },
   {
     id: "tilt-down",
     title: "Tilt to look down from above",
     group: "View",
     keys: [{ key: "ArrowUp", shift: true }],
+    repeats: true,
   },
   {
     id: "tilt-up",
     title: "Tilt toward the horizon",
     group: "View",
     keys: [{ key: "ArrowDown", shift: true }],
+    repeats: true,
   },
-  { id: "zoom-in", title: "Zoom in", group: "View", keys: [{ key: "=" }, { key: "+" }] },
-  { id: "zoom-out", title: "Zoom out", group: "View", keys: [{ key: "-" }] },
+  {
+    id: "zoom-in",
+    title: "Zoom in",
+    group: "View",
+    keys: [{ key: "=" }, { key: "+" }],
+    repeats: true,
+  },
+  { id: "zoom-out", title: "Zoom out", group: "View", keys: [{ key: "-" }], repeats: true },
   {
     id: "toggle-joins",
     title: "Show road join markers",

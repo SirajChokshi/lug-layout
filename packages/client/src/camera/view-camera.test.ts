@@ -17,9 +17,12 @@ function settledCamera(mode: ViewMode): ViewCamera {
 }
 
 function ground(camera: ViewCamera, ndcX: number, ndcY: number): readonly [number, number] {
-  const out = new Float64Array(2);
-  expect(camera.groundHit(ndcX, ndcY, out)).toBe(true);
-  return [out[0] ?? Number.NaN, out[1] ?? Number.NaN];
+  const out = new Float64Array(6);
+  camera.rayThrough(ndcX, ndcY, out);
+  const [originX = 0, originY = 0, originZ = 0, dirX = 0, dirY = 0, dirZ = 0] = out;
+  expect(dirY).toBeLessThan(0);
+  const t = -originY / dirY;
+  return [originX + dirX * t, originZ + dirZ * t];
 }
 
 function ray(camera: ViewCamera, ndcX: number, ndcY: number): ReadonlyArray<number> {
@@ -116,4 +119,52 @@ it("framing a layout in the 2D plan shows all of it, filling the tighter axis", 
     (box.maxZ - box.minZ) / (bottom - top),
   );
   expect(fill).toBeGreaterThan(0.85);
+});
+
+describe("after framing a tall model in 3D, so the orbit pivot is off the ground", () => {
+  const tallBox = { minX: -320, minY: 0, minZ: -480, maxX: 640, maxY: 1_680, maxZ: 320 };
+
+  function framedOnTallBox(): ViewCamera {
+    const camera = settledCamera("orbit");
+    camera.setSafeArea(420, 60, 380, 80);
+    camera.frame(tallBox);
+    camera.step(SETTLED_MS + 1);
+    camera.step(SETTLED_MS * 2);
+    return camera;
+  }
+
+  it("dragging the ground still carries the grabbed ground point with the cursor", () => {
+    const camera = framedOnTallBox();
+    const grabbed = ground(camera, -0.3, -0.4);
+
+    camera.grabPan(-0.3, -0.4, 0.35, -0.1);
+
+    const underCursor = ground(camera, 0.35, -0.1);
+    expect(underCursor[0]).toBeCloseTo(grabbed[0], LDU_TOLERANCE_DIGITS);
+    expect(underCursor[1]).toBeCloseTo(grabbed[1], LDU_TOLERANCE_DIGITS);
+  });
+
+  it("zooming at the cursor still keeps the ground point under it", () => {
+    const camera = framedOnTallBox();
+    const before = ground(camera, 0.5, -0.6);
+
+    camera.zoomAt(0.5, -0.6, -0.7);
+
+    const after = ground(camera, 0.5, -0.6);
+    expect(after[0]).toBeCloseTo(before[0], LDU_TOLERANCE_DIGITS);
+    expect(after[1]).toBeCloseTo(before[1], LDU_TOLERANCE_DIGITS);
+  });
+
+  it("centring on a ground point puts it at the centre of the uncovered area", () => {
+    const camera = framedOnTallBox();
+    const point = ground(camera, 0.6, -0.5);
+
+    camera.centreOn(...point);
+    camera.step(SETTLED_MS * 3);
+    camera.step(SETTLED_MS * 4);
+
+    const safeCentre = ground(camera, (420 - 380) / WIDTH_PX, (80 - 60) / HEIGHT_PX);
+    expect(safeCentre[0]).toBeCloseTo(point[0], 3);
+    expect(safeCentre[1]).toBeCloseTo(point[1], 3);
+  });
 });

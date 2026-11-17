@@ -72,7 +72,13 @@ function wheelPixels(delta: number, deltaMode: number): number {
 }
 
 function looksLikeTrackpad(input: WheelInput): boolean {
-  return input.deltaMode === 0 && input.deltaX !== 0 && !input.shiftKey && !input.ctrlKey;
+  return (
+    input.deltaMode === 0 &&
+    input.deltaX !== 0 &&
+    input.deltaY !== 0 &&
+    !input.shiftKey &&
+    !input.ctrlKey
+  );
 }
 
 function flatBox(rect: LduRect): WorldBox {

@@ -1,5 +1,6 @@
 import {
   commandForKey,
+  commandSpec,
   isShellCommand,
   runEditorAction,
   type IEditor,
@@ -18,7 +19,7 @@ const NON_TEXT_INPUTS = new Set([
   "color",
 ]);
 
-function isTyping(target: EventTarget | null): boolean {
+export function isTyping(target: EventTarget | null): boolean {
   if (target instanceof HTMLInputElement) return !NON_TEXT_INPUTS.has(target.type);
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
   return target instanceof HTMLElement && target.isContentEditable;
@@ -41,6 +42,10 @@ export function useEditorKeys(
       if (event.defaultPrevented || event.isComposing) return;
       const id = commandForKey(event, isTyping(event.target));
       if (id === null) return;
+      if (event.repeat && commandSpec(id).repeats !== true) {
+        event.preventDefault();
+        return;
+      }
       event.preventDefault();
       if (isShellCommand(id)) onShellCommand(id);
       else if (overlayOpen) {

@@ -22,6 +22,7 @@ const MAX_FRAME_STEP_MS = 100;
 const GRAZING_RAY_Y = -1e-3;
 const MAX_GRAB_DISTANCE_FACTOR = 12;
 const FULL_TURN = Math.PI * 2;
+export const GROUND_Y_LDU = 0;
 const MIN_SAFE_SHARE = 0.25;
 
 function clamp(value: number, min: number, max: number): number {
@@ -69,6 +70,7 @@ export class ViewCamera {
   private lastStepMs = Number.NaN;
   private glideLog = 0;
   private glideX = 0;
+  private glideY = 0;
   private glideZ = 0;
   private widthPx = 1;
   private heightPx = 1;
@@ -157,9 +159,9 @@ export class ViewCamera {
     this.settle();
     this.glideLog = 0;
     if (this.groundHit(ndcX, ndcY, this.hit)) {
-      this.zoomAbout(this.hit[0] ?? 0, this.hit[1] ?? 0, logScale);
+      this.zoomAbout(this.hit[0] ?? 0, GROUND_Y_LDU, this.hit[1] ?? 0, logScale);
     } else {
-      this.zoomAbout(this.pose.targetX, this.pose.targetZ, logScale);
+      this.zoomAbout(this.pose.targetX, this.pose.targetY, this.pose.targetZ, logScale);
     }
   }
 
@@ -175,20 +177,23 @@ export class ViewCamera {
     this.settle();
     if (this.groundHit(ndcX, ndcY, this.hit)) {
       this.glideX = this.hit[0] ?? 0;
+      this.glideY = GROUND_Y_LDU;
       this.glideZ = this.hit[1] ?? 0;
     } else {
       this.glideX = this.pose.targetX;
+      this.glideY = this.pose.targetY;
       this.glideZ = this.pose.targetZ;
     }
     this.glideLog += logScale;
   }
 
-  private zoomAbout(anchorX: number, anchorZ: number, logScale: number): boolean {
+  private zoomAbout(anchorX: number, anchorY: number, anchorZ: number, logScale: number): boolean {
     const before = this.pose.distance;
     const after = clamp(before * Math.exp(logScale), MIN_DISTANCE_LDU, MAX_DISTANCE_LDU);
     const scale = after / before;
     this.pose.distance = after;
     this.pose.targetX = anchorX + (this.pose.targetX - anchorX) * scale;
+    this.pose.targetY = anchorY + (this.pose.targetY - anchorY) * scale;
     this.pose.targetZ = anchorZ + (this.pose.targetZ - anchorZ) * scale;
     return after !== before;
   }
@@ -197,6 +202,7 @@ export class ViewCamera {
     this.settle();
     this.glideLog = 0;
     this.pose.targetX = x;
+    this.pose.targetY = GROUND_Y_LDU;
     this.pose.targetZ = z;
   }
 
@@ -209,7 +215,9 @@ export class ViewCamera {
   centreOn(x: number, z: number): void {
     if (!this.tweening) this.to.copy(this.pose);
     this.to.targetX = x;
+    this.to.targetY = GROUND_Y_LDU;
     this.to.targetZ = z;
+    this.offsetToSafeCentre(this.to);
     this.startTween();
   }
 
@@ -321,7 +329,7 @@ export class ViewCamera {
     const share = 1 - Math.exp(-dtMs / ZOOM_GLIDE_TIME_CONSTANT_MS);
     let part = this.glideLog * share;
     if (Math.abs(this.glideLog - part) < ZOOM_GLIDE_DONE) part = this.glideLog;
-    const moved = this.zoomAbout(this.glideX, this.glideZ, part);
+    const moved = this.zoomAbout(this.glideX, this.glideY, this.glideZ, part);
     this.glideLog = moved ? this.glideLog - part : 0;
   }
 
@@ -373,7 +381,7 @@ export class ViewCamera {
     this.rayThrough(ndcX, ndcY, ray);
     const dirY = ray[4] ?? 0;
     if (dirY > GRAZING_RAY_Y) return false;
-    const t = (this.pose.targetY - (ray[1] ?? 0)) / dirY;
+    const t = (GROUND_Y_LDU - (ray[1] ?? 0)) / dirY;
     if (!this.orthographic && t > this.pose.distance * MAX_GRAB_DISTANCE_FACTOR) return false;
     out[0] = (ray[0] ?? 0) + (ray[3] ?? 0) * t;
     out[1] = (ray[2] ?? 0) + (ray[5] ?? 0) * t;

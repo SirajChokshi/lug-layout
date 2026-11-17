@@ -1,5 +1,6 @@
 import type { EditorOptions, IEditor, IEditorCamera } from "@brr/client";
 import { useEffect, useRef } from "react";
+import { isTyping } from "./use-editor-keys.ts";
 
 const CLICK_SLOP_PX = 4;
 const LEFT_BUTTON = 0;
@@ -188,24 +189,27 @@ export function EditorCanvas({ editor, camera, options }: EditorCanvasProps) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const isSpace = (event: KeyboardEvent): boolean =>
-      event.key === " " && !(event.target instanceof HTMLInputElement);
+    const isSpace = (event: KeyboardEvent): boolean => event.key === " " && !isTyping(event.target);
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!isSpace(event)) return;
       event.preventDefault();
       pointer.current.spaceHeld = true;
       if (canvas) canvas.dataset["space"] = "";
     };
-    const onKeyUp = (event: KeyboardEvent): void => {
-      if (event.key !== " ") return;
+    const release = (): void => {
       pointer.current.spaceHeld = false;
       if (canvas) delete canvas.dataset["space"];
     };
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key === " ") release();
+    };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", release);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", release);
     };
   }, []);
 
