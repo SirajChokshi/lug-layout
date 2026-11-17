@@ -160,6 +160,7 @@ export {
   FOOTPRINT_FLOATS,
   HEADING_FOOTPRINT_FLOATS,
   headingFootprints,
+  planHull,
   verticalRange,
 } from "./track/heading-footprints.ts";
 export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";

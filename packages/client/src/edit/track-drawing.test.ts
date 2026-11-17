@@ -6,6 +6,7 @@ import {
 } from "@brr/catalog";
 import { layMoves, runMoves, solveClosure, type TrackSegment } from "@brr/domain";
 import { lduFromMm, pose16, STUD_LDU, zeta16, type Pose16 } from "@brr/math";
+import type { TrackShape } from "@brr/schema/bundle";
 import {
   INSTANCE_MATRIX_FLOATS,
   SCENE_BACKEND,
@@ -402,13 +403,25 @@ function laidFootprints(layout: TrackDrawing, parts: ReadonlyArray<PartAsset>): 
   return cells;
 }
 
-function joined(layout: TrackDrawing, a: number, b: number): boolean {
+function pieceEnds(layout: TrackDrawing): ReadonlyArray<ReadonlyArray<TrackEndView>> {
   const routes = layout.routes();
-  const ra = routes[a];
-  const rb = routes[b];
-  if (!ra || !rb) throw new Error("every kit piece has one route");
-  return [ra.from, ra.to].some((p) =>
-    [rb.from, rb.to].some(
+  const refs = layout
+    .planFootprints()
+    .toSorted((a, b) => a.key.slot - b.key.slot)
+    .map((f) => f.ref);
+  let next = 0;
+  return refs.map((ref) => {
+    const part = layout.pieceParts().find((p) => p.piece.id === ref);
+    const count = part?.piece.routes.length ?? 0;
+    const own = routes.slice(next, next + count).flatMap((r) => [r.from, r.to]);
+    next += count;
+    return own;
+  });
+}
+
+function joined(ends: ReadonlyArray<ReadonlyArray<TrackEndView>>, a: number, b: number): boolean {
+  return (ends[a] ?? []).some((p) =>
+    (ends[b] ?? []).some(
       (q) =>
         Math.abs(p.xLdu - q.xLdu) < COINCIDENT_LDU && Math.abs(p.zLdu - q.zLdu) < COINCIDENT_LDU,
     ),
@@ -421,10 +434,11 @@ function crossings(
   rects: ReadonlyArray<Rect> = [],
 ): ReadonlyArray<string> {
   const cells = laidFootprints(layout, parts);
+  const ends = pieceEnds(layout);
   const found: string[] = [];
   for (let a = 0; a < cells.length; a++) {
     for (let b = a + 1; b < cells.length; b++) {
-      if (joined(layout, a, b)) continue;
+      if (joined(ends, a, b)) continue;
       const other = cells[b] ?? new Set<number>();
       for (const key of cells[a] ?? []) {
         if (other.has(key)) {
@@ -566,4 +580,212 @@ it("suggests nothing and lays nothing when a road plate leaves no room to reach 
   expect(ghost).toBeNull();
   expect(commit).toMatchObject({ laid: 0, refusal: "blocked" });
   expect(layout.pieceCount).toBe(before);
+});
+
+const RIGHT_SWITCH = "ldraw:75541-f1";
+const NINE_VOLT_CURVE = "ldraw:74747";
+const NINE_VOLT_STRAIGHT = "ldraw:74746";
+const SWITCH_ENTRY = 0;
+const CURVE_REVERSED = 1;
+const LADDER_RUNGS = 3;
+const ROAD_PLATE_16 = "ldraw:69958";
+const ROAD_BASEPLATE_32 = "ldraw:44336p04";
+const CLEARANCE_MARGIN_LDU = 4;
+const SWEEP_STEPS = 16;
+const HALF_TURN_CURVES = 8;
+
+function placeableIndex(layout: TrackDrawing, id: string): number {
+  const part = layout.pieceParts().find((p) => p.piece.id === id);
+  if (!part) throw new Error(`${id} is not placeable`);
+  return part.catalogIndex;
+}
+
+function snapOnto(layout: TrackDrawing, id: string, connector: number, end: TrackEndView): void {
+  const piece = placeableIndex(layout, id);
+  const snap = layout.snapPiece(piece, connector, end.xLdu, end.zLdu, studPose(0, 0, 0));
+  if (snap.end === null) throw new Error(`${id} did not snap onto the open end`);
+  layout.placePiece(piece, snap.placement);
+}
+
+function sameEnd(a: TrackEndView, b: TrackEndView): boolean {
+  return Math.abs(a.xLdu - b.xLdu) < COINCIDENT_LDU && Math.abs(a.zLdu - b.zLdu) < COINCIDENT_LDU;
+}
+
+function newEndsAfter(layout: TrackDrawing, before: ReadonlyArray<TrackEndView>) {
+  return layout.openEnds().filter((e) => !before.some((b) => sameEnd(b, e)));
+}
+
+function addRung(layout: TrackDrawing, entry: TrackEndView) {
+  const before = layout.openEnds().filter((e) => !sameEnd(e, entry));
+  snapOnto(layout, RIGHT_SWITCH, SWITCH_ENTRY, entry);
+  const switchEnds = newEndsAfter(layout, before);
+  const straight = switchEnds.find((e) => Math.abs(e.zLdu - entry.zLdu) < COINCIDENT_LDU);
+  const diverging = switchEnds.find((e) => straight === undefined || !sameEnd(e, straight));
+  if (!straight || !diverging) throw new Error("the switch has no straight and diverging end");
+  const withStraight = [...before, straight];
+  snapOnto(layout, NINE_VOLT_CURVE, CURVE_REVERSED, diverging);
+  const [parallel] = newEndsAfter(layout, withStraight);
+  if (!parallel || parallel.heading !== entry.heading) {
+    throw new Error("a reversed curve after the switch's diverging route runs parallel");
+  }
+  return { straight, parallel };
+}
+
+function buildLadder(layout: TrackDrawing, rungs: number): ReadonlyArray<TrackEndView> {
+  layout.placePiece(placeableIndex(layout, RIGHT_SWITCH), studPose(0, 0, 0));
+  const west = endAt(layout, 0, 0);
+  const first = layout.openEnds().filter((e) => !sameEnd(e, west));
+  const straight = first.find((e) => Math.abs(e.zLdu) < COINCIDENT_LDU);
+  const diverging = first.find((e) => straight === undefined || !sameEnd(e, straight));
+  if (!straight || !diverging) throw new Error("the switch has no straight and diverging end");
+  snapOnto(layout, NINE_VOLT_CURVE, CURVE_REVERSED, diverging);
+  const [firstParallel] = newEndsAfter(layout, [west, straight]);
+  if (!firstParallel) throw new Error("the reversed curve left no open end");
+  const tracks: TrackEndView[] = [straight];
+  let current = firstParallel;
+  for (let rung = 1; rung < rungs; rung++) {
+    const next = addRung(layout, current);
+    tracks.push(next.straight);
+    current = next.parallel;
+  }
+  tracks.push(current);
+  return tracks;
+}
+
+function straightHalfWidthLdu(bundle: { trackShapes: ReadonlyArray<TrackShape> }): number {
+  const shape = bundle.trackShapes.find((s) => s.piece === NINE_VOLT_STRAIGHT);
+  if (!shape) throw new Error("the bundle has no straight track shape");
+  return Math.max(-(shape.footprints[1] ?? 0), shape.footprints[3] ?? 0);
+}
+
+function closesWithFewest(layout: TrackDrawing, from: TrackEndView, to: TrackEndView): void {
+  const fewest = unobstructedFewest(layout, from, to);
+  const before = layout.pieceCount;
+  const { view, commit } = closeFrom(layout, from, to);
+  expect(view?.closure).toBe("exact");
+  expect(commit.joined).toBe(true);
+  expect(layout.pieceCount - before).toBe(fewest);
+}
+
+function studsOf(ldu: number): number {
+  return Math.round(ldu / STUD_LDU);
+}
+
+it("closes every track of a 9V switch ladder alongside the switches and curves of its neighbours", async () => {
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const tracks = buildLadder(layout, LADDER_RUNGS);
+  const straightStuds = Number(layout.kit.straightStuds);
+  const farX = Math.max(...tracks.map((t) => studsOf(t.xLdu))) + 4 * straightStuds;
+  for (const track of tracks) {
+    layRun(layout, studPose(farX, studsOf(track.zLdu), 0), [{ kind: "straight", count: 3 }]);
+  }
+  expect(crossings(layout, bundle.parts)).toEqual([]);
+
+  for (const track of tracks) {
+    closesWithFewest(layout, track, endAt(layout, farX, studsOf(track.zLdu)));
+  }
+  expect(crossings(layout, bundle.parts)).toEqual([]);
+});
+
+it("closes gaps in parallel straights laid at the switch's parallel spacing", async () => {
+  const bundle = await trackAndRoadBundle();
+  const probe = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const [main, siding] = buildLadder(probe, 1);
+  if (!main || !siding) throw new Error("one rung gives two tracks");
+  const spacing = studsOf(siding.zLdu - main.zLdu);
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const straightStuds = Number(layout.kit.straightStuds);
+  const gapStart = 3 * straightStuds;
+  const gapEnd = 7 * straightStuds;
+  layRun(layout, studPose(0, 0, 0), [{ kind: "straight", count: 10 }]);
+  for (const z of [spacing, -spacing]) {
+    layRun(layout, studPose(0, z, 0), [{ kind: "straight", count: 3 }]);
+    layRun(layout, studPose(gapEnd, z, 0), [{ kind: "straight", count: 3 }]);
+  }
+  for (const z of [spacing, -spacing]) {
+    closesWithFewest(layout, endAt(layout, gapStart, z), endAt(layout, gapEnd, z));
+  }
+  expect(crossings(layout, bundle.parts)).toEqual([]);
+});
+
+it("closes straights flush along a road plate's edge", async () => {
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const straightStuds = Number(layout.kit.straightStuds);
+  const plate = bundle.parts.find((part) => part.id === ROAD_BASEPLATE_32);
+  if (!plate) throw new Error(`${ROAD_BASEPLATE_32} is not in the bundle`);
+  const flushStuds = Math.ceil(straightHalfWidthLdu(bundle) / STUD_LDU);
+  const centreOffset = flushStuds + plate.boundsMax[2] / STUD_LDU;
+  const gapEnd = 6 * straightStuds;
+  layRun(layout, studPose(0, 0, 0), [{ kind: "straight", count: 1 }]);
+  layRun(layout, studPose(gapEnd, 0, 0), [{ kind: "straight", count: 1 }]);
+  const plates = [
+    plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, centreOffset),
+    plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, -centreOffset),
+  ];
+  layout.setObstacles(Float64Array.from(plates.flat()));
+
+  closesWithFewest(layout, endAt(layout, straightStuds, 0), endAt(layout, gapEnd, 0));
+  expect(crossings(layout, bundle.parts, plates)).toEqual([]);
+});
+
+function plateClear(cells: ReadonlyArray<Set<number>>, rect: Rect): boolean {
+  const [minX, minZ, maxX, maxZ] = rect;
+  for (const piece of cells) {
+    for (const key of piece) {
+      const x = (Math.floor(key / RASTER_KEY_STRIDE) - RASTER_KEY_OFFSET + 0.5) * RASTER_CELL_LDU;
+      const z = ((key % RASTER_KEY_STRIDE) - RASTER_KEY_OFFSET + 0.5) * RASTER_CELL_LDU;
+      if (
+        x > minX - CLEARANCE_MARGIN_LDU &&
+        x < maxX + CLEARANCE_MARGIN_LDU &&
+        z > minZ - CLEARANCE_MARGIN_LDU &&
+        z < maxZ + CLEARANCE_MARGIN_LDU
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+it("closes a half circle past a road plate set as tight to its outside as the stud grid allows, all the way round", async () => {
+  const bundle = await trackAndRoadBundle();
+  const straightStuds = Number(
+    new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)).kit.straightStuds,
+  );
+  const sides: Run = [{ kind: "straight", count: 4 }];
+  const halfCircle: Run = [{ kind: "turn", sign: 1, curves: HALF_TURN_CURVES }];
+  const base = (): TrackDrawing => {
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    layRun(layout, layRun(layout, layRun(layout, studPose(0, 0, 0), sides), halfCircle), sides);
+    return layout;
+  };
+  const shape = base();
+  const top = shape.openEnds().reduce((a, b) => (a.zLdu > b.zLdu ? a : b));
+  const bottom = shape.openEnds().reduce((a, b) => (a.zLdu < b.zLdu ? a : b));
+  const diameter = studsOf(top.zLdu - bottom.zLdu);
+  layRun(shape, latticeEndPose(top), halfCircle);
+  const cells = laidFootprints(shape, bundle.parts);
+  const centreZ = diameter / 2;
+  const reach = diameter + straightStuds;
+  for (let step = 1; step < SWEEP_STEPS; step++) {
+    const angle = Math.PI / 2 + (step * Math.PI) / SWEEP_STEPS;
+    let rect: Rect | null = null;
+    for (let t = diameter / 2; t <= reach && !rect; t++) {
+      const candidate = plateRect(
+        bundle.parts,
+        ROAD_PLATE_16,
+        Math.round(t * Math.cos(angle)),
+        Math.round(centreZ + t * Math.sin(angle)),
+      );
+      if (plateClear(cells, candidate)) rect = candidate;
+    }
+    if (!rect) throw new Error(`no clear plate position at step ${step}`);
+    const layout = base();
+    layout.setObstacles(Float64Array.from(rect));
+    expect(crossings(layout, bundle.parts, [rect]), `plate at sweep step ${step}`).toEqual([]);
+    closesWithFewest(layout, endAt(layout, 0, diameter), endAt(layout, 0, 0));
+    expect(crossings(layout, bundle.parts, [rect])).toEqual([]);
+  }
 });

@@ -1,5 +1,5 @@
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
-import { headingFootprints, verticalRange } from "@brr/domain/heading-footprints";
+import { headingFootprints, planHull, verticalRange } from "@brr/domain/heading-footprints";
 import {
   BundleCredit,
   BundleModelEntry,
@@ -64,6 +64,7 @@ function trackShape(piece: string, positions: Float32Array, headingHalfSteps: nu
   return {
     piece,
     footprints: Array.from(headingFootprints(positions, headingHalfSteps)),
+    hull: Array.from(planHull(positions, headingHalfSteps)),
     minY,
     maxY,
   };

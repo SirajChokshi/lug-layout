@@ -12,9 +12,11 @@ export interface PlacementFrame {
 
 export interface TrackOutlineSource {
   readonly footprints: ArrayLike<number>;
+  readonly hull?: ArrayLike<number>;
 }
 
 const FOOTPRINT_FLOATS = 4;
+const MIN_POLYGON_FLOATS = 3 * OUTLINE_POINT_FLOATS;
 
 function clipped(polygon: ReadonlyArray<number>, a: number, b: number, d: number): number[] {
   const out: number[] = [];
@@ -46,6 +48,7 @@ function translated(polygon: ArrayLike<number>, frame: PlacementFrame): Float64A
 }
 
 export function footprintOutline(shape: TrackOutlineSource, frame: PlacementFrame): Float64Array {
+  if (shape.hull && shape.hull.length >= MIN_POLYGON_FLOATS) return translated(shape.hull, frame);
   const { footprints } = shape;
   const minX = footprints[0] ?? 0;
   const minZ = footprints[1] ?? 0;

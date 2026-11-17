@@ -1,6 +1,6 @@
 import { ASSET_FETCHER, BUNDLE_LODS, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
-import { headingFootprints, verticalRange } from "@brr/domain";
+import { headingFootprints, planHull, verticalRange } from "@brr/domain";
 import { ModelFile, PartShape, type BundleManifest, type ManifestPart } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { Container } from "inversify";
@@ -93,7 +93,7 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
     }
   });
 
-  it("hold each track piece's footprints at all 16 headings and its height range, as its mesh gives them", async () => {
+  it("hold each track piece's footprints at all 16 headings, its plan hull and its height range, as its mesh gives them", async () => {
     const manifest = manifestOf(lod);
     const parts = new Map(manifest.parts.map((part) => [part.id, part]));
     expect(manifest.trackShapes.map((shape) => shape.piece)).toEqual(
@@ -107,6 +107,7 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
       expect(manifest.trackShapes.find((shape) => shape.piece === piece.id)).toEqual({
         piece: piece.id,
         footprints: Array.from(headingFootprints(positions, piece.partFrame.headingHalfSteps)),
+        hull: Array.from(planHull(positions, piece.partFrame.headingHalfSteps)),
         minY,
         maxY,
       });

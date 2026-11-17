@@ -44,3 +44,52 @@ export function verticalRange(positions: Float32Array): readonly [number, number
   }
   return [minY, maxY];
 }
+
+const HULL_POINT_FLOATS = 2;
+
+function turn(points: Float64Array, a: number, b: number, c: number): number {
+  const ax = points[2 * a] ?? 0;
+  const az = points[2 * a + 1] ?? 0;
+  return (
+    ((points[2 * b] ?? 0) - ax) * ((points[2 * c + 1] ?? 0) - az) -
+    ((points[2 * b + 1] ?? 0) - az) * ((points[2 * c] ?? 0) - ax)
+  );
+}
+
+export function convexHull(points: Float64Array): Float64Array {
+  const count = points.length / HULL_POINT_FLOATS;
+  const order = Array.from({ length: count }, (_v, i) => i).toSorted(
+    (a, b) =>
+      (points[2 * a] ?? 0) - (points[2 * b] ?? 0) ||
+      (points[2 * a + 1] ?? 0) - (points[2 * b + 1] ?? 0),
+  );
+  const hull: number[] = [];
+  const push = (i: number, floor: number): void => {
+    while (
+      hull.length >= floor + 2 &&
+      turn(points, hull[hull.length - 2] ?? 0, hull[hull.length - 1] ?? 0, i) <= 0
+    ) {
+      hull.pop();
+    }
+    hull.push(i);
+  };
+  for (const i of order) push(i, 0);
+  const lower = hull.length - 1;
+  for (let k = order.length - 2; k >= 0; k--) push(order[k] ?? 0, lower);
+  hull.pop();
+  return Float64Array.from(hull.flatMap((i) => [points[2 * i] ?? 0, points[2 * i + 1] ?? 0]));
+}
+
+export function planHull(positions: Float32Array, headingHalfSteps: number): Float64Array {
+  const phi = headingHalfSteps * HALF_STEP_RADIANS;
+  const c = Math.cos(phi);
+  const s = Math.sin(phi);
+  const points = new Float64Array((positions.length / 3) * HULL_POINT_FLOATS);
+  for (let i = 0, p = 0; i < positions.length; i += 3, p += HULL_POINT_FLOATS) {
+    const x = positions[i] ?? 0;
+    const z = positions[i + 2] ?? 0;
+    points[p] = c * x - s * z;
+    points[p + 1] = s * x + c * z;
+  }
+  return convexHull(points);
+}

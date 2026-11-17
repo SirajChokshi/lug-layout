@@ -356,9 +356,16 @@ export type CatalogPart = v.InferOutput<typeof CatalogPart>;
 
 export const PART_FOOTPRINT_FLOATS = 4;
 
+const TRACK_HULL_MIN_FLOATS = 6;
+
 export const TrackShape = v.object({
   piece: v.string(),
   footprints: v.pipe(v.array(Finite), v.length(ZETA16_ORDER * PART_FOOTPRINT_FLOATS)),
+  hull: v.pipe(
+    v.array(Finite),
+    v.minLength(TRACK_HULL_MIN_FLOATS, "needs at least three points"),
+    v.check((hull) => hull.length % 2 === 0, "must hold x, z pairs"),
+  ),
   minY: Finite,
   maxY: Finite,
 });
