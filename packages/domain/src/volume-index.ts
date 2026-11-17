@@ -25,6 +25,11 @@ export function cellChunkKey(cellX: number, cellZ: number): number {
 }
 
 class VolumeChunk {
+  constructor(
+    readonly chunkX: number,
+    readonly chunkZ: number,
+  ) {}
+
   readonly heads = new Int32Array(CELLS_PER_CHUNK).fill(NO_RECORD);
   records = new Int32Array(INITIAL_RECORDS * RECORD_FIELDS);
   count = 0;
@@ -54,22 +59,34 @@ export type OwnerFilter = (owner: number, cellX: number, cellZ: number) => boole
 
 export class VolumeIndex {
   private readonly byKey = new Map<number, VolumeChunk>();
+  private readonly byChunkX = new Map<number, Map<number, VolumeChunk>>();
+
+  private chunkAt(cellX: number, cellZ: number): VolumeChunk | undefined {
+    return this.byChunkX.get(chunkOfCell(cellX))?.get(chunkOfCell(cellZ));
+  }
 
   add(owner: number, cellX: number, cellZ: number, bottomLdu: number, topLdu: number): void {
     if (!Number.isInteger(bottomLdu) || !Number.isInteger(topLdu) || topLdu <= bottomLdu) {
       throw new RangeError(`volume [${bottomLdu}, ${topLdu}) LDU is not a non-empty integer span`);
     }
-    const key = cellChunkKey(cellX, cellZ);
-    let chunk = this.byKey.get(key);
+    let chunk = this.chunkAt(cellX, cellZ);
     if (!chunk) {
-      chunk = new VolumeChunk();
-      this.byKey.set(key, chunk);
+      const chunkX = chunkOfCell(cellX);
+      const chunkZ = chunkOfCell(cellZ);
+      chunk = new VolumeChunk(chunkX, chunkZ);
+      let rows = this.byChunkX.get(chunkX);
+      if (!rows) {
+        rows = new Map<number, VolumeChunk>();
+        this.byChunkX.set(chunkX, rows);
+      }
+      rows.set(chunkZ, chunk);
+      this.byKey.set(chunkKey(chunkX, chunkZ), chunk);
     }
     chunk.push(cellIndex(cellX, cellZ), owner, bottomLdu, topLdu);
   }
 
   topAt(cellX: number, cellZ: number): number {
-    const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
+    const chunk = this.chunkAt(cellX, cellZ);
     if (!chunk) return NO_VOLUME_TOP;
     let top = NO_VOLUME_TOP;
     for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
@@ -81,7 +98,7 @@ export class VolumeIndex {
   }
 
   topOwnerAt(cellX: number, cellZ: number, ignore: OwnerFilter, out: VolumeHit): boolean {
-    const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
+    const chunk = this.chunkAt(cellX, cellZ);
     if (!chunk) return false;
     let found = false;
     for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
@@ -109,7 +126,7 @@ export class VolumeIndex {
     ignore: OwnerFilter,
     out: VolumeHit,
   ): boolean {
-    const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
+    const chunk = this.chunkAt(cellX, cellZ);
     if (!chunk) return false;
     for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
       const owner = chunk.records[r + OWNER] ?? 0;
@@ -127,7 +144,7 @@ export class VolumeIndex {
   }
 
   ownersAt(cellX: number, cellZ: number, out: Set<number>): void {
-    const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
+    const chunk = this.chunkAt(cellX, cellZ);
     if (!chunk) return;
     for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
       out.add(chunk.records[r + OWNER] ?? 0);
@@ -136,7 +153,10 @@ export class VolumeIndex {
   }
 
   clearChunk(key: number): void {
+    const chunk = this.byKey.get(key);
+    if (!chunk) return;
     this.byKey.delete(key);
+    this.byChunkX.get(chunk.chunkX)?.delete(chunk.chunkZ);
   }
 }
 
@@ -158,12 +178,14 @@ export interface Overlap {
   readonly candidateTopLdu: number;
 }
 
+const overlapHit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
+
 export function firstOverlap(
   volumes: CellVolumes,
   index: VolumeIndex,
   ignore: OwnerFilter,
 ): Overlap | null {
-  const hit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
+  const hit = overlapHit;
   for (let c = 0; c < volumes.count; c++) {
     const x = volumes.cellX[c] ?? 0;
     const z = volumes.cellZ[c] ?? 0;
