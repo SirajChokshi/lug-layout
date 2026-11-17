@@ -43,7 +43,7 @@ import {
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { commandEnabled } from "../commands/editor-commands.ts";
+import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
 import { EDITOR } from "../tokens.ts";
 import type { IEditor } from "./editor.ts";
 
@@ -719,11 +719,18 @@ it("leaves road mode when the world turns read-only, and refuses road draw and e
   expect(editor.snapshot().unsavedEdits).toBe(false);
 }, 120_000);
 
+const READ_ONLY_REFUSED: ReadonlyArray<CommandId> = [
+  "rotate",
+  "delete",
+  "duplicate",
+  "draw-track",
+  "undo",
+];
+
 function editsOffered(snapshot: ReturnType<IEditor["snapshot"]>) {
   return {
     selected: snapshot.selection !== null,
-    rotate: commandEnabled("rotate", snapshot),
-    delete: commandEnabled("delete", snapshot),
+    offered: READ_ONLY_REFUSED.filter((id) => commandEnabled(id, snapshot)),
   };
 }
 
@@ -739,7 +746,7 @@ class HeldElsewhereLocks implements IWorldLocks {
   }
 }
 
-it("disables Rotate and Delete on a selection in a world another tab holds", async () => {
+it("offers none of the editing commands on a selection in a world another tab holds", async () => {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
@@ -766,7 +773,7 @@ it("disables Rotate and Delete on a selection in a world another tab holds", asy
 
   editor.chooseItem(BASEPLATE);
   editor.click(0, 0, 0);
-  expect(editsOffered(selectBaseplate())).toEqual({ selected: true, rotate: true, delete: true });
+  expect(editsOffered(selectBaseplate())).toEqual({ selected: true, offered: READ_ONLY_REFUSED });
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
   const first = editor.snapshot().world?.id;
   if (!first) throw new Error("no current world");
@@ -776,5 +783,5 @@ it("disables Rotate and Delete on a selection in a world another tab holds", asy
   expect(await editor.openWorld(first)).toBe(true);
   const readOnly = selectBaseplate();
   expect(readOnly.readOnly).toBe(true);
-  expect(editsOffered(readOnly)).toEqual({ selected: true, rotate: false, delete: false });
+  expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
 }, 120_000);

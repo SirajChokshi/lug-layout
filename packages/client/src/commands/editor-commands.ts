@@ -320,18 +320,18 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
     case "next-connector":
       return snapshot.track?.held != null;
     case "delete":
-      return snapshot.selection !== null && !snapshot.readOnly;
     case "duplicate":
+      return snapshot.selection !== null && !snapshot.readOnly;
     case "focus":
       return snapshot.selection !== null;
     case "undo":
-      return snapshot.history.undo !== null;
+      return snapshot.history.undo !== null && !snapshot.readOnly;
     case "redo":
-      return snapshot.history.redo !== null;
+      return snapshot.history.redo !== null && !snapshot.readOnly;
     case "centre":
       return snapshot.hover !== null;
     case "draw-track":
-      return snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
+      return !snapshot.readOnly && snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
     case "draw-road":
       return snapshot.roadKit !== null && !snapshot.readOnly;
     case "select-tool":
