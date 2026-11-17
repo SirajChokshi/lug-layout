@@ -15,6 +15,7 @@ import {
   type BackendInfo,
   type BufferMemory,
   type ISceneBackend,
+  type LookSettings,
   type RebaseEvent,
 } from "@brr/render";
 import { Container } from "inversify";
@@ -26,6 +27,14 @@ import { EDITOR } from "../tokens.ts";
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
 const STUDLESS_SET = "10016-1";
+const NO_LOOK: LookSettings = {
+  plastic: false,
+  gtao: false,
+  outlines: false,
+  bevel: false,
+  shadows: false,
+  oit: false,
+};
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -72,7 +81,13 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
 class HeadlessBackend implements ISceneBackend {
   async init(): Promise<BackendInfo> {
-    return { requestedApi: "webgl2", activeApi: "webgl2", adapter: "none", backgroundSrgb: 0 };
+    return {
+      requestedApi: "webgl2",
+      activeApi: "webgl2",
+      adapter: "none",
+      backgroundSrgb: 0,
+      look: NO_LOOK,
+    };
   }
   setPalette(): void {}
   setChunk(): void {}
@@ -119,7 +134,7 @@ async function startEditor() {
     dataset: {},
   } as unknown as HTMLCanvasElement;
 
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1 });
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK });
   return { editor, manifest: await realLoader.loadManifest("standard") };
 }
 
