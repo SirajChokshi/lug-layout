@@ -4,6 +4,7 @@ import type {
   EditorSnapshot,
   IEditor,
   LatencySample,
+  RoadIssueView,
 } from "@brr/client";
 import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
 
@@ -56,21 +57,115 @@ function CatalogEntry({
   );
 }
 
+const CATALOG_GROUPS: ReadonlyArray<readonly [CatalogItemView["kind"], string]> = [
+  ["baseplate", "Baseplate"],
+  ["road-plate", "Road plates"],
+  ["road-module", "MILS road modules"],
+  ["model", "Sets"],
+];
+
 export function CatalogList({ editor, snapshot }: PanelProps) {
   return (
     <nav className="catalog" aria-label="Catalog">
       <h2>Catalog</h2>
-      <ul>
-        {snapshot.catalog.map((item) => (
-          <CatalogEntry
-            key={item.id}
-            item={item}
-            active={snapshot.activeItem === item.id}
-            onChoose={(id) => editor.chooseItem(id)}
-          />
-        ))}
-      </ul>
+      {CATALOG_GROUPS.map(([kind, heading]) => {
+        const items = snapshot.catalog.filter((item) => item.kind === kind);
+        if (items.length === 0) return null;
+        return (
+          <section key={kind} className="catalog-group">
+            <h3>{heading}</h3>
+            <ul>
+              {items.map((item) => (
+                <CatalogEntry
+                  key={item.id}
+                  item={item}
+                  active={snapshot.activeItem === item.id}
+                  onChoose={(id) => editor.chooseItem(id)}
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </nav>
+  );
+}
+
+function issueText(issue: RoadIssueView): string {
+  const axis = issue.side === "minX" || issue.side === "maxX" ? "x" : "z";
+  const along = axis === "x" ? "z" : "x";
+  return `${issue.item.replace(/^[a-z]+:/u, "")} ${issue.side} edge at ${axis} = ${issue.line}, ${along} ${issue.from}…${issue.to}, top ${issue.topLdu} LDU`;
+}
+
+export function RoadJoins({ editor, snapshot }: PanelProps) {
+  const { roads } = snapshot;
+  return (
+    <section className="road-joins" aria-label="Road joins">
+      <h2>Road joins</h2>
+      <label className="road-joins-toggle">
+        <input
+          type="checkbox"
+          checked={snapshot.showJoins}
+          onChange={(event) => editor.setShowJoins(event.target.checked)}
+        />
+        Show join markers (green joined, amber open, red mismatch)
+      </label>
+      <label className="road-joins-toggle">
+        <input
+          type="checkbox"
+          checked={snapshot.snapRoads}
+          onChange={(event) => editor.setSnapRoads(event.target.checked)}
+        />
+        Snap road pieces to matching road edges and refuse clicks that would mismatch
+      </label>
+      <dl>
+        <div>
+          <dt>Road pieces</dt>
+          <dd>{roads.placements}</dd>
+        </div>
+        <div>
+          <dt>Last join check</dt>
+          <dd data-road="check-ms">{roads.checkMs.toFixed(1)} ms</dd>
+        </div>
+        <div>
+          <dt>Joined edge cells</dt>
+          <dd data-road="joined">{roads.joinedCells}</dd>
+        </div>
+        <div>
+          <dt>Open road edge cells</dt>
+          <dd data-road="open">{roads.openCells}</dd>
+        </div>
+        <div>
+          <dt>Mismatched edge cells</dt>
+          <dd data-road="mismatch">{roads.mismatchedCells}</dd>
+        </div>
+        <div>
+          <dt>Overlapping pieces</dt>
+          <dd data-road="overlap">{roads.overlaps}</dd>
+        </div>
+        <div>
+          <dt>Refused clicks</dt>
+          <dd data-road="refused">
+            {snapshot.refusedClicks}
+            {snapshot.lastRefusal &&
+              ` (last: ${snapshot.lastRefusal.item.replace(/^[a-z]+:/u, "")} at ${snapshot.lastRefusal.x}, ${snapshot.lastRefusal.z}, ${snapshot.lastRefusal.mismatchedCells} mismatched, ${snapshot.lastRefusal.overlappingCells} overlapping)`}
+          </dd>
+        </div>
+      </dl>
+      {roads.issues.length > 0 && (
+        <ul className="road-issues">
+          {roads.issues.map((issue) => (
+            <li
+              key={`${issue.item}-${issue.side}-${issue.line}-${issue.from}`}
+              className={issue.status}
+            >
+              {issue.status === "open" ? "Open: " : "Mismatch: "}
+              {issueText(issue)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -176,6 +271,25 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   );
 }
 
+function snapText(snapshot: EditorSnapshot): string {
+  const { snap } = snapshot;
+  if (!snap) return "none";
+  switch (snap.state) {
+    case "snapped":
+      return `snapped, ${snap.joinedCells} edge cells join`;
+    case "free":
+      return snap.joinedCells > 0
+        ? `exact here, ${snap.joinedCells} edge cells join`
+        : "free, touches no road";
+    case "refused":
+      return `click refused: ${snap.mismatchedCells} mismatched, ${snap.overlappingCells} overlapping cells`;
+    default: {
+      const unhandled: never = snap.state;
+      throw new Error(`unhandled snap state ${String(unhandled)}`);
+    }
+  }
+}
+
 function latencyText(sample: LatencySample | null, snapshot: EditorSnapshot): string {
   if (!sample) return "none yet";
   const action = sample.step === "do" ? sample.action : `${sample.step} ${sample.action}`;
@@ -208,6 +322,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       snapshot.mode === "place" ? `place ${itemLabel(snapshot, snapshot.activeItem)}` : "select",
     ],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
+    ["Road-edge snap", snapText(snapshot)],
     [
       "Cursor on lattice (LDU)",
       snapshot.hover ? `${snapshot.hover.x}, ${snapshot.hover.z}` : "off the ground",

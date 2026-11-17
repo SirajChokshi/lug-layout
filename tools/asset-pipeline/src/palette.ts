@@ -7,6 +7,7 @@ export type ModelOrigin = "omr" | "generated";
 export interface PaletteModel {
   readonly name: string;
   readonly origin: ModelOrigin;
+  readonly role?: "road-module";
   readonly file: string;
   readonly sha256: string;
   readonly source: string;

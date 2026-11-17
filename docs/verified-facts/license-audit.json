@@ -12,20 +12,20 @@
     "root": ""
   },
   "bundleClosure": {
-    "files": 1784,
+    "files": 1806,
     "licenses": {
-      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 118,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 1666
+      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 119,
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 1687
     },
     "withoutLicense": [],
     "nonCaLicense": [],
     "unofficial": []
   },
   "auditClosure": {
-    "files": 382,
+    "files": 394,
     "licenses": {
       "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 3,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 379
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 391
     },
     "withoutLicense": [],
     "nonCaLicense": [],
@@ -46,7 +46,7 @@
   "ldcadShadow": {
     "licenseFileFirstLine": "Attribution-ShareAlike 4.0 International",
     "patchFileLicenses": {
-      "CC BY-SA 4.0, see LICENSE.md": 21
+      "CC BY-SA 4.0, see LICENSE.md": 27
     }
   },
   "parts": [
@@ -1524,6 +1524,105 @@
       "missingDependencies": [],
       "unofficialDependencies": [],
       "ldcad": null
+    },
+    {
+      "id": "3001",
+      "group": "mils-road-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 2 x 4",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2004-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 10,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3001s01.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3003",
+      "group": "mils-road-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 2 x 2",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2022-05",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 12,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3003.dat",
+          "s/3003s01.dat",
+          "s/3003s02.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "87079",
+      "group": "mils-road-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 2 x 4",
+        "author": "Tim Gould [timgould]",
+        "ldrawOrg": "Part UPDATE 2025-04",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "with Groove"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/87079s01.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "91405",
+      "group": "mils-road-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 16 x 16 with Underside Ribs",
+        "author": "Donald Sutter [technog]",
+        "ldrawOrg": "Part UPDATE 2010-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 22,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "91405.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
     }
   ]
 }
