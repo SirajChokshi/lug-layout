@@ -33,6 +33,7 @@ import {
 } from "@brr/domain";
 import { BRICK_LDU, CHUNK_LDU, PLATE_LDU, STUD_LDU, ZETA16_ORDER, pose16, zeta16 } from "@brr/math";
 import {
+  CAMERA_FOV_DEGREES,
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
@@ -2336,7 +2337,7 @@ export class Editor implements IEditor {
       {
         name,
         bundleVersion: this.bundleVersion,
-        view: new ViewCamera().savedView(),
+        view: new ViewCamera(CAMERA_FOV_DEGREES).savedView(),
         disclaimer: this.disclaimer,
       },
       [],
