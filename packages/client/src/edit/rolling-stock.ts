@@ -146,6 +146,7 @@ interface DrawnTrain {
 }
 
 const NO_ID = -1;
+const FIRST_PLACED_VEHICLE_ID = -2;
 const POSE_BODY_X = 0;
 const POSE_BODY_Z = 1;
 const POSE_BODY_YAW = 2;
@@ -407,7 +408,7 @@ export class RollingStock {
   private readonly scratch = new Float64Array(2);
   private readonly point = new Float64Array(TRACK_POINT_FLOATS);
   private nextTrain = 1;
-  private nextVehicle = 1;
+  private nextVehicle = FIRST_PLACED_VEHICLE_ID;
 
   constructor(
     models: ReadonlyArray<RollingStockModel>,
@@ -778,7 +779,7 @@ export class RollingStock {
       const y = this.railTopLdu - v.vehicle.railTopY;
       const show = (chunk: ChunkInstances | null, p: number): void => {
         if (!chunk) return;
-        const id = this.nextVehicle++;
+        const id = this.nextVehicle--;
         this.draw.setVehicle(id, chunk);
         this.draw.setVehiclePose(
           id,

@@ -48,7 +48,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
-import { EDITOR, RUN_SCENE, SIM_CLIENT } from "../tokens.ts";
+import { EDITOR, RUN_SCENE, SIM_CLIENT, TRAIN_PLAY } from "../tokens.ts";
 import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
 import {
   loadSession,
@@ -995,6 +995,10 @@ function layTestLine(editor: IEditor, backend: HeadlessBackend) {
   return drawTrack(editor, backend, TRACK_FROM, TRACK_TO);
 }
 
+function lattice(ldu: number): number {
+  return Math.round(ldu / STUD_LDU) * STUD_LDU;
+}
+
 function layTestOval(editor: IEditor, backend: HeadlessBackend) {
   const side = 640;
   for (const x of [-2.5, -1.5, -0.5, 0.5, 1.5].map((k) => k * side)) {
@@ -1004,7 +1008,6 @@ function layTestOval(editor: IEditor, backend: HeadlessBackend) {
   }
   drawTrack(editor, backend, [-400, 0], [400, 0]);
   const ends = editor.dump().trackEnds;
-  const lattice = (ldu: number) => Math.round(ldu / STUD_LDU) * STUD_LDU;
   const east = ends.find((end) => end.heading === 0);
   const west = ends.find((end) => end.heading === ZETA16_ORDER / 2);
   if (!east || !west)
@@ -1031,7 +1034,9 @@ function placeTrain(editor: IEditor, backend: HeadlessBackend, item: string, x: 
 }
 
 function vehiclePoses(backend: HeadlessBackend): ReadonlyArray<ReadonlyArray<number>> {
-  return [...backend.vehicles.entries()].toSorted(([a], [b]) => a - b).map(([, pose]) => pose);
+  return [...backend.vehicles.entries()]
+    .toSorted(([a], [b]) => Math.abs(a) - Math.abs(b))
+    .map(([, pose]) => pose);
 }
 
 class InProcessSim implements ISimClient {
@@ -1191,6 +1196,42 @@ describe("rolling stock on track", () => {
     expect(after?.track).toBe((before?.track ?? 0) - 1);
     expect(after?.offsetLdu).toBe(before?.offsetLdu);
     expect(vehiclePoses(backend)).toEqual(poses);
+  }, 120_000);
+
+  it("keeps placed rolling stock drawn while a train is played and after play stops", async () => {
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    const container = new Container();
+    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+    container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+    const realLoader = container.get(PART_BUNDLE_LOADER);
+    container
+      .rebind(PART_BUNDLE_LOADER)
+      .toConstantValue(new ModelSubsetLoader(realLoader, [LOCOMOTIVE]));
+    const backend = new HeadlessBackend();
+    container.rebind(SCENE_BACKEND).toConstantValue(backend);
+    container.rebind(SIM_CLIENT).toConstantValue(new InProcessSim());
+    const editor = container.get(EDITOR);
+    const canvas = {
+      clientWidth: 640,
+      clientHeight: 480,
+      dataset: {},
+    } as unknown as HTMLCanvasElement;
+    await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+    layTestLine(editor, backend);
+    placeTrain(editor, backend, stock(LOCOMOTIVE), -1000, 0);
+    editor.chooseItem(null);
+    const placed = new Map(backend.vehicles);
+    const play = container.get(TRAIN_PLAY);
+    const setup = editor.playSetup();
+    if (!setup) throw new Error("no play setup");
+    play.offer(setup);
+    play.chooseSet("bnsf-locomotive");
+    await play.start(setup);
+    expect(play.snapshot().status).toBe("running");
+    expect(backend.vehicles.size).toBeGreaterThan(placed.size);
+    for (const [id, pose] of placed) expect(backend.vehicles.get(id)).toEqual(pose);
+    play.stop();
+    expect(new Map(backend.vehicles)).toEqual(placed);
   }, 120_000);
 
   it("saves the train with the world, reopens it in place, and the run viewer starts it exactly there", async () => {
