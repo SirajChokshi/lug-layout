@@ -46,6 +46,7 @@ function modelCells(cells: ModelFileCells | null): ModelCells | null {
     width,
     depth,
     restY: cells.bottomY,
+    groundY: cells.groundY,
     footprint: Uint32Array.from(cells.footprint),
     flat: Uint32Array.from(cells.flat),
     columnBottom: Int16Array.from(cells.columnBottom),

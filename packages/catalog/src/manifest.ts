@@ -78,6 +78,7 @@ export interface ModelFileCells {
   readonly origin: readonly [number, number];
   readonly size: readonly [number, number];
   readonly bottomY: number;
+  readonly groundY: number | null;
   readonly footprint: ReadonlyArray<number>;
   readonly flat: ReadonlyArray<number>;
   readonly columnBottom: ReadonlyArray<number>;
@@ -295,6 +296,7 @@ function isModelFileCells(value: unknown): value is ModelFileCells {
     Number.isInteger(width) &&
     Number.isInteger(depth) &&
     typeof value["bottomY"] === "number" &&
+    (value["groundY"] === null || typeof value["groundY"] === "number") &&
     isCellIndexList(value["footprint"], cellCount) &&
     isCellIndexList(value["flat"], cellCount) &&
     columns(value["columnBottom"]) &&
