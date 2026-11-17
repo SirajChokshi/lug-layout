@@ -467,6 +467,7 @@ export class Editor implements IEditor {
   private track: TrackDrawing | null = null;
   private lastTrackCommit: TrackCommitResult | null = null;
   private trackEndTarget: number | null = null;
+  private trackEndRefused: number | null = null;
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -742,10 +743,11 @@ export class Editor implements IEditor {
     };
   }
 
-  private showTrackEnds(target: number | null): void {
+  private showTrackEnds(target: number | null, refused: number | null = null): void {
     const track = this.track;
     if (!track) return;
     this.trackEndTarget = target;
+    this.trackEndRefused = refused;
     const gapped = track.gappedEnds();
     this.backend.setTrackEnds(
       track.openEnds().map((end, index) => ({
@@ -753,13 +755,15 @@ export class Editor implements IEditor {
         yLdu: 0,
         zLdu: end.zLdu,
         headingRadians: end.heading * TRACK_HEADING_RADIANS,
-        kind: index === target ? "target" : gapped.has(index) ? "gap" : "open",
+        kind: index === target ? "target" : index === refused || gapped.has(index) ? "gap" : "open",
       })),
     );
   }
 
-  private targetTrackEnd(target: number | null): void {
-    if (target !== this.trackEndTarget) this.showTrackEnds(target);
+  private targetTrackEnd(target: number | null, refused: number | null = null): void {
+    if (target !== this.trackEndTarget || refused !== this.trackEndRefused) {
+      this.showTrackEnds(target, refused);
+    }
   }
 
   private showTrackGhost(track: TrackDrawing): void {
@@ -782,7 +786,11 @@ export class Editor implements IEditor {
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
     this.showTrackGhost(track);
-    this.targetTrackEnd(track.dragTargetEnd());
+    const target = track.dragTarget();
+    this.targetTrackEnd(
+      target?.joins ? target.end : null,
+      target && !target.joins ? target.end : null,
+    );
     this.update({ track: this.trackView() });
   }
 

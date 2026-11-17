@@ -177,3 +177,44 @@ it("fits a table cut to the oval's geometry and overhangs one cut two millimetre
   expect(fitIssues({ x, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
   expect(fitIssues({ x: x + SHRINK_MM, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
 });
+
+it("marks a drag target as joining only when the closure solver finds an exact join", async () => {
+  const bundle = await container
+    .get(PART_BUNDLE_LOADER)
+    .load("standard", (part) => part.role === "track");
+  const layout = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle));
+  const lay = (from: readonly [number, number], to: readonly [number, number]): void => {
+    layout.beginDrag(
+      from[0] * STUD_LDU,
+      from[1] * STUD_LDU,
+      from[0] * STUD_LDU,
+      from[1] * STUD_LDU,
+    );
+    layout.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
+    layout.endDrag();
+  };
+  const aim = (from: readonly [number, number], to: readonly [number, number]) => {
+    layout.beginDrag(
+      from[0] * STUD_LDU,
+      from[1] * STUD_LDU,
+      from[0] * STUD_LDU,
+      from[1] * STUD_LDU,
+    );
+    layout.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
+    const target = layout.dragTarget();
+    const closure = layout.dragView()?.closure ?? null;
+    layout.cancelDrag();
+    return { target, closure };
+  };
+  lay([0, 0], [48, 0]);
+  lay([51, 2], [99, 2]);
+  lay([160, 0], [208, 0]);
+
+  const refused = aim([51, 2], [48, 0]);
+  expect(refused.closure).toBe("impossible");
+  expect(refused.target).toEqual({ end: expect.any(Number), joins: false });
+
+  const exact = aim([48, 0], [160, 0]);
+  expect(exact.closure).toBe("exact");
+  expect(exact.target).toEqual({ end: expect.any(Number), joins: true });
+});

@@ -101,8 +101,8 @@ const TRACK_END_COLORS: Readonly<Record<TrackEndKind, number>> = {
   gap: 0xe0202a,
   target: 0x1fbf4a,
 };
-const TRACK_END_ARROW_RADIUS_LDU = 26;
-const TRACK_END_ARROW_LENGTH_LDU = 70;
+const TRACK_END_ARROW_RADIUS_LDU = 16;
+const TRACK_END_ARROW_LENGTH_LDU = 30;
 const TRACK_END_ARROW_LIFT_LDU = 44;
 const TRACK_END_ARROW_SEGMENTS = 12;
 const TRACK_END_POST_WIDTH_LDU = 8;
