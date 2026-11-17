@@ -1,12 +1,6 @@
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { cpus } from "node:os";
-import {
-  buildSimTrack,
-  forwardEdge,
-  backwardEdge,
-  NO_SWITCH,
-  type SimRoute,
-} from "../src/sim-track.ts";
+import { buildSimTrack, forwardEdge, backwardEdge, NO_SWITCH, type SimRoute } from "@brr/domain";
 import { Simulation, SIM_TICK_HZ, type TrainSpec } from "../src/simulation.ts";
 
 const RING_PIECES = 64;
