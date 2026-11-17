@@ -34,7 +34,16 @@ const startSimWorker = (): Worker =>
   new Worker(new URL("@brr/sim-worker/entry", import.meta.url), { type: "module" });
 const createImportWorker = (): Worker =>
   new Worker(new URL("@brr/import-worker/entry", import.meta.url), { type: "module" });
-container.load(...mainThreadModules({ bundleBaseUrl, startSimWorker, createImportWorker }));
+container.load(
+  ...mainThreadModules({
+    bundleBaseUrl,
+    startSimWorker,
+    createImportWorker,
+    ...(import.meta.env.VITE_BUNDLE_MANIFEST_FILE === undefined
+      ? {}
+      : { bundleManifestFile: import.meta.env.VITE_BUNDLE_MANIFEST_FILE }),
+  }),
+);
 const params = readViewerParams(location.search);
 
 interface ViewerChoice {

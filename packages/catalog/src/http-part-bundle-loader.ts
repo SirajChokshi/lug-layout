@@ -20,7 +20,7 @@ import type {
   PartFilter,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
-import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
+import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
@@ -73,15 +73,18 @@ export class HttpAssetFetcher implements IAssetFetcher {
 export class HttpPartBundleLoader implements IPartBundleLoader {
   private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
 
-  constructor(@inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher) {}
+  constructor(
+    @inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher,
+    @inject(BUNDLE_MANIFEST_FILE) private readonly manifestFile: string,
+  ) {}
 
   loadManifest(lod: BundleLod): Promise<BundleManifest> {
     const cached = this.manifests.get(lod);
     if (cached) return cached;
     const loading = this.fetcher
-      .text(`${lod}/manifest.json`)
+      .text(`${lod}/${this.manifestFile}`)
       .then((text) =>
-        decodedOrThrow(decode(BundleManifest, JSON.parse(text)), `${lod}/manifest.json`),
+        decodedOrThrow(decode(BundleManifest, JSON.parse(text)), `${lod}/${this.manifestFile}`),
       );
     this.manifests.set(lod, loading);
     return loading;

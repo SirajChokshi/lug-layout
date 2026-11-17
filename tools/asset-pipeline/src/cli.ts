@@ -2,10 +2,11 @@ import { BundleLod, BundleManifest, TrackCatalog, type Palette } from "@brr/sche
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as v from "valibot";
+import { bundleInputKey, remoteManifestFile } from "./bundle-key.ts";
 import {
   fetchAuditInputs,
   fetchClosure,
@@ -29,6 +30,13 @@ import {
 } from "./catalog/produced-colors.ts";
 import { readPalette } from "./palette.ts";
 import { MANIFEST_FILE, publishBundle } from "./publish.ts";
+import { R2ObjectStore, sha256Hex } from "./r2.ts";
+import {
+  isPartBundlePublished,
+  unservedManifests,
+  uploadPartBundle,
+  waitUntilServed,
+} from "./remote-bundle.ts";
 import {
   geometryReports,
   licenseAuditReport,
@@ -50,6 +58,7 @@ const omrRoot = join(repoRoot, ".cache", "omr");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const TEST_DATA_DIRECTORIES = [join("packages", "import", "test-data")];
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
+const bundleRoot = join(toolRoot, "dist", "bundle");
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(lockPath, "utf8")) as InputLock;
@@ -295,7 +304,7 @@ async function bundleCommand(): Promise<void> {
     "brick-compile-wasm",
   ]);
   for (const lod of BundleLod.options) {
-    const out = join(toolRoot, "dist", "bundle", lod);
+    const out = join(bundleRoot, lod);
     await rm(out, { recursive: true, force: true });
     runCargo([
       "run",
@@ -329,6 +338,117 @@ async function bundleCommand(): Promise<void> {
   }
 }
 
+const partBundleStorePath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
+const DEFAULT_WAIT_MINUTES = 20;
+const WAIT_INTERVAL_MS = 15_000;
+const MS_PER_MINUTE = 60_000;
+
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === "") throw new Error(`${name} is not set`);
+  return value;
+}
+
+async function partBundleBucket(): Promise<string> {
+  const store = await readFile(partBundleStorePath, "utf8").catch(() => {
+    throw new Error(
+      `${partBundleStorePath} is missing: apply the infra/cloudflare Terraform that creates the bucket first`,
+    );
+  });
+  const { bucket_name: bucket } = JSON.parse(store) as { readonly bucket_name?: string };
+  if (bucket === undefined) throw new Error(`${partBundleStorePath} has no bucket_name`);
+  return bucket;
+}
+
+async function partBundleStore(): Promise<R2ObjectStore | undefined> {
+  const tokenId = process.env["CLOUDFLARE_API_TOKEN_ID"];
+  const token = process.env["CLOUDFLARE_API_TOKEN"];
+  if (!tokenId || !token) return undefined;
+  const secretAccessKey = sha256Hex(token);
+  if (process.env["GITHUB_ACTIONS"]) process.stdout.write(`::add-mask::${secretAccessKey}\n`);
+  const endpoint =
+    process.env["PART_BUNDLE_R2_ENDPOINT"] ||
+    `https://${requiredEnv("CLOUDFLARE_ACCOUNT_ID")}.r2.cloudflarestorage.com`;
+  return new R2ObjectStore({
+    endpoint,
+    bucket: await partBundleBucket(),
+    credentials: { accessKeyId: tokenId, secretAccessKey },
+  });
+}
+
+async function writeStepOutput(name: string, value: string): Promise<void> {
+  const output = process.env["GITHUB_OUTPUT"];
+  if (output) await appendFile(output, `${name}=${value}\n`);
+}
+
+function currentManifestFile(): string {
+  return remoteManifestFile(bundleInputKey(repoRoot));
+}
+
+async function publishedCommand(): Promise<void> {
+  const manifestFile = currentManifestFile();
+  await writeStepOutput("manifest_file", manifestFile);
+  const store = await partBundleStore();
+  if (store === undefined) {
+    process.stdout.write("part bundle store credentials are not set; nothing to publish to\n");
+    await writeStepOutput("configured", "false");
+    return;
+  }
+  const published = await isPartBundlePublished(store, BundleLod.options, manifestFile);
+  process.stdout.write(`${manifestFile}: ${published ? "published" : "not published"}\n`);
+  await writeStepOutput("configured", "true");
+  await writeStepOutput("published", String(published));
+}
+
+async function uploadCommand(): Promise<void> {
+  const store = await partBundleStore();
+  if (store === undefined) {
+    throw new Error("set CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN_ID");
+  }
+  const manifestFile = currentManifestFile();
+  const { uploaded, present } = await uploadPartBundle(
+    store,
+    bundleRoot,
+    BundleLod.options,
+    manifestFile,
+  );
+  process.stdout.write(`${manifestFile}: ${uploaded} uploaded, ${present} already present\n`);
+}
+
+async function servedCommand(): Promise<void> {
+  const manifestFile = currentManifestFile();
+  const baseUrl = process.env["PART_BUNDLE_BASE_URL"];
+  if (!baseUrl) {
+    process.stdout.write(
+      "PART_BUNDLE_BASE_URL is not set; the publish job checks the bucket itself\n",
+    );
+    await writeStepOutput("served", "false");
+    return;
+  }
+  const missing = await unservedManifests(baseUrl, BundleLod.options, manifestFile);
+  process.stdout.write(
+    missing.length === 0
+      ? `${manifestFile}: served from ${baseUrl}\n`
+      : `${manifestFile}: not served: ${missing.join(", ")}\n`,
+  );
+  await writeStepOutput("served", String(missing.length === 0));
+}
+
+async function awaitServedCommand(): Promise<void> {
+  const baseUrl = requiredEnv("VITE_BUNDLE_BASE_URL");
+  const manifestFile = currentManifestFile();
+  const minutes = Number(process.env["PART_BUNDLE_WAIT_MINUTES"] ?? DEFAULT_WAIT_MINUTES);
+  await waitUntilServed(baseUrl, BundleLod.options, manifestFile, {
+    timeoutMs: minutes * MS_PER_MINUTE,
+    intervalMs: WAIT_INTERVAL_MS,
+    onWait: (missing) =>
+      process.stderr.write(
+        `waiting for CI to publish ${missing.length} manifests ${manifestFile}\n`,
+      ),
+  });
+  process.stdout.write(`${manifestFile}\n`);
+}
+
 const command = process.argv[2];
 switch (command) {
   case "fetch":
@@ -355,9 +475,24 @@ switch (command) {
       process.argv.includes("--check"),
     );
     break;
+  case "manifest-file":
+    process.stdout.write(`${currentManifestFile()}\n`);
+    break;
+  case "published":
+    await publishedCommand();
+    break;
+  case "upload":
+    await uploadCommand();
+    break;
+  case "served":
+    await servedCommand();
+    break;
+  case "await-served":
+    await awaitServedCommand();
+    break;
   default:
     process.stderr.write(
-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]\n",
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served\n",
     );
     process.exitCode = 2;
 }

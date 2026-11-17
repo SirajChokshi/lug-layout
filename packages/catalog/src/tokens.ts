@@ -3,6 +3,9 @@ import type { ICatalogApi } from "./catalog-api-client.ts";
 import type { IAssetFetcher, IPartBundleLoader } from "./part-bundle.ts";
 
 export const BUNDLE_BASE_URL: ServiceIdentifier<string> = Symbol.for("brr.catalog.BundleBaseUrl");
+export const BUNDLE_MANIFEST_FILE: ServiceIdentifier<string> = Symbol.for(
+  "brr.catalog.BundleManifestFile",
+);
 export const ASSET_FETCHER: ServiceIdentifier<IAssetFetcher> = Symbol.for(
   "brr.catalog.AssetFetcher",
 );
