@@ -82,17 +82,65 @@ interface Contribution {
 }
 
 class LatticePose {
-  readonly cos: number;
-  readonly sin: number;
+  x = 0;
+  z = 0;
+  cos = 1;
+  sin = 0;
 
-  constructor(
-    readonly x: number,
-    readonly z: number,
-    rot: number,
-  ) {
+  constructor(x: number, z: number, rot: number) {
+    this.at(x, z, rot);
+  }
+
+  at(x: number, z: number, rot: number): this {
     if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+    this.x = x;
+    this.z = z;
     this.cos = rot90Cos(rot);
     this.sin = rot90Sin(rot);
+    return this;
+  }
+
+  worldBox(
+    local: ArrayLike<number>,
+    from: number,
+    yLdu: number,
+    out: Float64Array,
+    to: number,
+  ): void {
+    this.worldBoxOf(
+      local[from] ?? 0,
+      local[from + 1] ?? 0,
+      local[from + 2] ?? 0,
+      local[from + 3] ?? 0,
+      local[from + 4] ?? 0,
+      local[from + 5] ?? 0,
+      yLdu,
+      out,
+      to,
+    );
+  }
+
+  worldBoxOf(
+    loX: number,
+    loY: number,
+    loZ: number,
+    hiX: number,
+    hiY: number,
+    hiZ: number,
+    yLdu: number,
+    out: Float64Array,
+    to: number,
+  ): void {
+    const ax = this.x + this.cos * loX + this.sin * loZ;
+    const az = this.z - this.sin * loX + this.cos * loZ;
+    const bx = this.x + this.cos * hiX + this.sin * hiZ;
+    const bz = this.z - this.sin * hiX + this.cos * hiZ;
+    out[to] = Math.min(ax, bx);
+    out[to + 1] = yLdu + loY;
+    out[to + 2] = Math.min(az, bz);
+    out[to + 3] = Math.max(ax, bx);
+    out[to + 4] = yLdu + hiY;
+    out[to + 5] = Math.max(az, bz);
   }
 
   worldCellX(localCellX: number, localCellZ: number): number {
@@ -119,6 +167,10 @@ class LatticePose {
     return Math.floor((this.sin * dx + this.cos * dz) / STUD_LDU);
   }
 }
+
+const EMPTY_BOXES = new Float32Array(0);
+const scratchBox = new Float64Array(BOX_FLOATS);
+const scratchTongue = new Float64Array(BOX_FLOATS);
 
 const NEIGHBOUR_DX = Int8Array.of(-1, 0, 1, -1, 1, -1, 0, 1);
 const NEIGHBOUR_DZ = Int8Array.of(-1, -1, -1, 0, 0, 1, 1, 1);
@@ -155,20 +207,33 @@ function cellIndex(
   return j * cells.width + i;
 }
 
-function columnOverlaps(
-  cells: Placeable["cells"],
+function boxesOverlap(a: Float64Array, ao: number, b: Float64Array, bo: number): boolean {
+  return (
+    (a[ao] ?? 0) < (b[bo + 3] ?? 0) &&
+    (b[bo] ?? 0) < (a[ao + 3] ?? 0) &&
+    (a[ao + 1] ?? 0) < (b[bo + 4] ?? 0) &&
+    (b[bo + 1] ?? 0) < (a[ao + 4] ?? 0) &&
+    (a[ao + 2] ?? 0) < (b[bo + 5] ?? 0) &&
+    (b[bo + 2] ?? 0) < (a[ao + 5] ?? 0)
+  );
+}
+
+function partsOverlap(
+  placeable: Placeable,
   pose: LatticePose,
-  yPlates: number,
-  worldCellX: number,
-  worldCellZ: number,
-  fromPlates: number,
-  toPlates: number,
+  yLdu: number,
+  box: Float64Array,
+  from: number,
 ): boolean {
-  const cell = cellIndex(cells, pose, worldCellX, worldCellZ);
-  if (cell < 0) return false;
-  const top = cells.columnTop[cell] ?? EMPTY_COLUMN;
-  if (top === EMPTY_COLUMN) return false;
-  return yPlates + (cells.columnBottom[cell] ?? 0) < toPlates && yPlates + top > fromPlates;
+  const { min, max } = placeable.box;
+  pose.worldBoxOf(min[0], min[1], min[2], max[0], max[1], max[2], yLdu, scratchBox, 0);
+  if (!boxesOverlap(scratchBox, 0, box, from)) return false;
+  const boxes = placeable.partBoxes;
+  for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+    pose.worldBox(boxes, b, yLdu, scratchBox, 0);
+    if (boxesOverlap(scratchBox, 0, box, from)) return true;
+  }
+  return false;
 }
 
 function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: LatticePose): number {
@@ -197,8 +262,7 @@ class PlacedEntry implements PlacedModel {
   readonly contributions = new Map<number, Contribution>();
   readonly footprintKeys = new Set<number>();
   readonly columnKeys = new Set<number>();
-  readonly tongueCellX: Int32Array;
-  readonly tongueCellZ: Int32Array;
+  readonly tongueBoxes: Float64Array;
   readonly box: WorldBox;
   readonly pose: LatticePose;
   readonly x: number;
@@ -246,35 +310,16 @@ class PlacedEntry implements PlacedModel {
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
     }
     this.registerCells(chunkOrigins);
-    const tongues = placeable.tongues;
-    const tongueCount = tongues?.count ?? 0;
-    this.tongueCellX = new Int32Array(tongueCount);
-    this.tongueCellZ = new Int32Array(tongueCount);
-    for (let k = 0; k < tongueCount; k++) {
-      const lx = tongues?.cellX[k] ?? 0;
-      const lz = tongues?.cellZ[k] ?? 0;
-      this.tongueCellX[k] = this.pose.worldCellX(lx, lz);
-      this.tongueCellZ[k] = this.pose.worldCellZ(lx, lz);
+    const tongues = placeable.tongueBoxes ?? EMPTY_BOXES;
+    this.tongueBoxes = new Float64Array(tongues.length);
+    for (let b = 0; b < tongues.length; b += BOX_FLOATS) {
+      this.pose.worldBox(tongues, b, this.yLdu, this.tongueBoxes, b);
     }
     this.box = this.worldBox();
   }
 
-  columnOverlaps(worldCellX: number, worldCellZ: number, from: number, to: number): boolean {
-    const { cells } = this.placeable;
-    return columnOverlaps(cells, this.pose, this.handle.yPlates, worldCellX, worldCellZ, from, to);
-  }
-
-  tongueOverlaps(worldCellX: number, worldCellZ: number, from: number, to: number): boolean {
-    const tongues = this.placeable.tongues;
-    if (!tongues) return false;
-    const yPlates = this.handle.yPlates;
-    for (let k = 0; k < tongues.count; k++) {
-      if (this.tongueCellX[k] !== worldCellX || this.tongueCellZ[k] !== worldCellZ) continue;
-      if (yPlates + (tongues.bottom[k] ?? 0) < to && yPlates + (tongues.top[k] ?? 0) > from) {
-        return true;
-      }
-    }
-    return false;
+  partsOverlap(box: Float64Array, from: number): boolean {
+    return partsOverlap(this.placeable, this.pose, this.yLdu, box, from);
   }
 
   private registerCells(chunkOrigins: Map<number, readonly [number, number]>): void {
@@ -590,7 +635,8 @@ export class PlacedChunks {
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private readonly occupancy = new OccupancyGrid();
   private nextId = 0;
-  private readonly tongued = new Set<PlacedEntry>();
+  private readonly tongued: PlacedEntry[] = [];
+  private readonly probe = new LatticePose(0, 0, 0);
 
   constructor(private readonly backend: ISceneBackend) {}
 
@@ -621,9 +667,12 @@ export class PlacedChunks {
     rot: number,
     ignore: PlacedModel | null,
   ): number {
-    const ignored = this.entries.find((entry) => entry === ignore) ?? null;
+    let ignored: PlacedEntry | null = null;
+    for (let e = 0; e < this.entries.length; e++) {
+      if (this.entries[e] === ignore) ignored = this.entries[e] ?? null;
+    }
     if (ignored) this.restamp(ignored.columnKeys, ignored);
-    const yPlates = restingHeight(this.occupancy, placeable, new LatticePose(x, z, rot));
+    const yPlates = restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
     if (ignored) this.restamp(ignored.columnKeys, null);
     return yPlates;
   }
@@ -637,37 +686,25 @@ export class PlacedChunks {
     ignore: PlacedModel | null,
     mates: (other: PlacedModel) => boolean,
   ): TongueClash | null {
-    const pose = new LatticePose(x, z, rot);
-    const { cells } = placeable;
-    for (const entry of this.tongued) {
-      if (entry === ignore || mates(entry)) continue;
-      const tongues = entry.placeable.tongues;
-      if (!tongues) continue;
-      for (let k = 0; k < tongues.count; k++) {
-        const wx = entry.tongueCellX[k] ?? 0;
-        const wz = entry.tongueCellZ[k] ?? 0;
-        const from = entry.handle.yPlates + (tongues.bottom[k] ?? 0);
-        const to = entry.handle.yPlates + (tongues.top[k] ?? 0);
-        if (columnOverlaps(cells, pose, yPlates, wx, wz, from, to)) {
+    const pose = this.probe.at(x, z, rot);
+    const yLdu = yPlates * PLATE_LDU;
+    for (let e = 0; e < this.tongued.length; e++) {
+      const entry = this.tongued[e];
+      if (!entry || entry === ignore || mates(entry)) continue;
+      const tongues = entry.tongueBoxes;
+      for (let b = 0; b < tongues.length; b += BOX_FLOATS) {
+        if (partsOverlap(placeable, pose, yLdu, tongues, b)) {
           return { other: entry, ownTongue: false };
         }
       }
     }
-    const tongues = placeable.tongues;
-    for (let k = 0; k < (tongues?.count ?? 0); k++) {
-      const lx = tongues?.cellX[k] ?? 0;
-      const lz = tongues?.cellZ[k] ?? 0;
-      const wx = pose.worldCellX(lx, lz);
-      const wz = pose.worldCellZ(lx, lz);
-      const from = yPlates + (tongues?.bottom[k] ?? 0);
-      const to = yPlates + (tongues?.top[k] ?? 0);
-      for (const entry of this.byColumnChunk.get(cellChunkKey(wx, wz)) ?? []) {
-        if (entry === ignore || mates(entry)) continue;
-        if (entry.columnOverlaps(wx, wz, from, to)) return { other: entry, ownTongue: true };
-      }
-      for (const entry of this.tongued) {
-        if (entry === ignore || mates(entry)) continue;
-        if (entry.tongueOverlaps(wx, wz, from, to)) return { other: entry, ownTongue: true };
+    const own = placeable.tongueBoxes ?? EMPTY_BOXES;
+    for (let b = 0; b < own.length; b += BOX_FLOATS) {
+      pose.worldBox(own, b, yLdu, scratchTongue, 0);
+      for (let e = 0; e < this.entries.length; e++) {
+        const entry = this.entries[e];
+        if (!entry || entry === ignore || mates(entry)) continue;
+        if (entry.partsOverlap(scratchTongue, 0)) return { other: entry, ownTongue: true };
       }
     }
     return null;
@@ -723,7 +760,7 @@ export class PlacedChunks {
     this.byChunk.clear();
     this.byFootprintChunk.clear();
     this.byColumnChunk.clear();
-    this.tongued.clear();
+    this.tongued.length = 0;
     this.chunkStuds.clear();
     this.entries.length = 0;
   }
@@ -741,7 +778,7 @@ export class PlacedChunks {
     for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
-    if (entry.tongueCellX.length > 0) this.tongued.add(entry);
+    if (entry.tongueBoxes.length > 0) this.tongued.push(entry);
     entry.stampColumns(this.occupancy, null);
     return entry;
   }
@@ -755,7 +792,8 @@ export class PlacedChunks {
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
     for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
-    this.tongued.delete(entry);
+    const tongued = this.tongued.indexOf(entry);
+    if (tongued >= 0) this.tongued.splice(tongued, 1);
     this.restamp(entry.columnKeys, null);
     return entry;
   }

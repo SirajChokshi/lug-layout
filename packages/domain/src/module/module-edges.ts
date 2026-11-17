@@ -133,71 +133,71 @@ export function edgesJoin(a: ModuleEdge, b: ModuleEdge): boolean {
   return a.kind !== "other" || sameSamples(a, b);
 }
 
-function facing(side: ModuleSide): {
+interface Across {
   readonly side: ModuleSide;
+  readonly index: number;
   readonly dc: number;
   readonly dr: number;
-} {
-  switch (side) {
-    case "minX":
-      return { side: "maxX", dc: -1, dr: 0 };
-    case "maxX":
-      return { side: "minX", dc: 1, dr: 0 };
-    case "minZ":
-      return { side: "maxZ", dc: 0, dr: -1 };
-    case "maxZ":
-      return { side: "minZ", dc: 0, dr: 1 };
-    default: {
-      const unhandled: never = side;
-      throw new Error(`unhandled side ${String(unhandled)}`);
-    }
-  }
+}
+
+const ACROSS: Readonly<Record<ModuleSide, Across>> = {
+  minX: { side: "maxX", index: 1, dc: -1, dr: 0 },
+  maxX: { side: "minX", index: 0, dc: 1, dr: 0 },
+  minZ: { side: "maxZ", index: 3, dc: 0, dr: -1 },
+  maxZ: { side: "minZ", index: 2, dc: 0, dr: 1 },
+};
+
+function facing(side: ModuleSide): Across {
+  return ACROSS[side];
 }
 
 export function railEdgesMate(a: GridPlacement, b: GridPlacement): boolean {
-  return MODULE_SIDES.some((side, index) => {
+  for (let index = 0; index < MODULE_SIDES.length; index++) {
+    const side = MODULE_SIDES[index];
+    if (side === undefined) continue;
     const across = facing(side);
-    if (b.column !== a.column + across.dc || b.row !== a.row + across.dr) return false;
-    return (
-      a.edges[index]?.kind === RAIL_EDGE && b.edges[sideIndex(across.side)]?.kind === RAIL_EDGE
-    );
-  });
-}
-
-function cellKey(column: number, row: number): string {
-  return `${column},${row}`;
-}
-
-function sideIndex(side: ModuleSide): number {
-  return MODULE_SIDES.indexOf(side);
+    if (b.column !== a.column + across.dc || b.row !== a.row + across.dr) continue;
+    return a.edges[index]?.kind === RAIL_EDGE && b.edges[across.index]?.kind === RAIL_EDGE;
+  }
+  return false;
 }
 
 export class ModuleGrid {
-  private readonly cells = new Map<string, GridModule>();
+  private readonly columns = new Map<number, Map<number, GridModule>>();
 
   constructor(modules: ReadonlyArray<GridModule>) {
-    for (const module of modules) this.cells.set(cellKey(module.column, module.row), module);
+    for (const module of modules) {
+      const rows = this.columns.get(module.column) ?? new Map<number, GridModule>();
+      rows.set(module.row, module);
+      this.columns.set(module.column, rows);
+    }
+  }
+
+  private *modules(): Generator<GridModule> {
+    for (const rows of this.columns.values()) yield* rows.values();
   }
 
   occupant(column: number, row: number): GridModule | null {
-    return this.cells.get(cellKey(column, row)) ?? null;
+    return this.columns.get(column)?.get(row) ?? null;
   }
 
   private check(column: number, row: number, side: ModuleSide, edge: ModuleEdge): SideCheck {
     const across = facing(side);
     const neighbour = this.occupant(column + across.dc, row + across.dr);
-    const other = neighbour?.edges[sideIndex(across.side)];
+    const other = neighbour?.edges[across.index];
     if (!other) return { status: "open", facing: null };
     return { status: edgesJoin(edge, other) ? "joined" : "mismatch", facing: other.kind };
   }
 
   railEdgeClash(placement: GridPlacement): RailEdgeClash | null {
-    for (const [index, side] of MODULE_SIDES.entries()) {
+    for (let index = 0; index < MODULE_SIDES.length; index++) {
+      const side = MODULE_SIDES[index];
       const edge = placement.edges[index];
+      if (side === undefined || edge === undefined) continue;
       const across = facing(side);
       const neighbour = this.occupant(placement.column + across.dc, placement.row + across.dr);
-      const other = neighbour?.edges[sideIndex(across.side)];
-      if (!edge || !neighbour || !other) continue;
+      const other = neighbour?.edges[across.index];
+      if (!neighbour || !other) continue;
       if ((edge.kind === RAIL_EDGE) !== (other.kind === RAIL_EDGE)) {
         return { side, kind: edge.kind, facing: other.kind, neighbour: neighbour.id };
       }
@@ -223,7 +223,9 @@ export class ModuleGrid {
     let joined = 0;
     let mismatched = 0;
     let open = 0;
-    for (const module of this.cells.values()) {
+    let modules = 0;
+    for (const module of this.modules()) {
+      modules++;
       MODULE_SIDES.forEach((side, index) => {
         const edge = module.edges[index];
         if (!edge) return;
@@ -234,6 +236,6 @@ export class ModuleGrid {
         else mismatched++;
       });
     }
-    return { modules: this.cells.size, joined, mismatched, open, edges };
+    return { modules, joined, mismatched, open, edges };
   }
 }

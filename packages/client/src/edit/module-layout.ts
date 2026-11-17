@@ -100,6 +100,7 @@ export class ModuleLayout {
   private placedMarkers: ReadonlyArray<EdgeMarker> = [];
   private latest: ModuleJoinReport;
   private offGridCount = 0;
+  private placements = new Map<PlacedModel, GridPlacement>();
 
   constructor(private readonly rules: MilsEdgeRules) {
     this.latest = this.grid.report();
@@ -159,6 +160,10 @@ export class ModuleLayout {
     return { column, row, edges: this.edges(surface, x, z, rot) };
   }
 
+  placementOf(model: PlacedModel): GridPlacement | null {
+    return this.placements.get(model) ?? null;
+  }
+
   railEdgeClash(placement: GridPlacement): RailEdgeClash | null {
     return this.grid.railEdgeClash(placement);
   }
@@ -190,6 +195,7 @@ export class ModuleLayout {
       edges: ReadonlyArray<ModuleEdge>;
     }> = [];
     let offGrid = 0;
+    const placements = new Map<PlacedModel, GridPlacement>();
     for (const model of models) {
       const surface = model.placeable.module;
       if (!surface) continue;
@@ -199,6 +205,7 @@ export class ModuleLayout {
         offGrid++;
         continue;
       }
+      placements.set(model, placement);
       const { column, row, edges } = placement;
       cells.push({ id: gridModules.length, column, row, edges });
       gridModules.push({
@@ -211,6 +218,7 @@ export class ModuleLayout {
       });
     }
     this.grid = new ModuleGrid(cells);
+    this.placements = placements;
     this.gridModules = gridModules;
     this.offGridCount = offGrid;
     this.latest = this.grid.report();

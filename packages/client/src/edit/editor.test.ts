@@ -628,3 +628,20 @@ it.each([
   },
   120_000,
 );
+
+it("takes a 10185-1 Green Grocer flush against a rail edge when none of its parts reach the track end", async () => {
+  const { editor, backend } = await startEditor(["mils-rail-straight", "10185-1"]);
+  const place = placer(editor, backend);
+  place(RAIL_MODULE, 320, 320);
+  editor.chooseItem("omr:10185-1");
+  editor.rotate(0);
+  editor.rotate(0);
+  const flush = place("omr:10185-1", 960, 320);
+  const { placements } = editor.dump();
+
+  expect({ flush, yPlates: placements.yPlates, rot: placements.rot.toSorted() }).toEqual({
+    flush: { placements: 2, refusedClicks: 0, reason: null },
+    yPlates: [0, 0],
+    rot: [0, 2],
+  });
+}, 120_000);
