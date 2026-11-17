@@ -258,7 +258,7 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
 
 export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
   { gesture: "Click", action: "Place the part in hand, or select a model" },
-  { gesture: "Drag", action: "Lay a run of track while drawing track" },
+  { gesture: "Drag", action: "Lay a run of track or road while drawing it" },
   { gesture: "Right-drag", action: "Orbit (pan in the 2D plan)" },
   {
     gesture: "Shift-, Space- or middle-drag",

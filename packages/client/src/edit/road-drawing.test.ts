@@ -25,6 +25,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR } from "../tokens.ts";
+import { toolHints } from "../commands/tool-hints.ts";
 import type { IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -287,6 +288,24 @@ describe("draw road", () => {
     expect(snapshot.lastRoadStroke?.stroke.issues).toContainEqual(
       expect.objectContaining({ problem: "overlap", blocker: expect.stringContaining("4186") }),
     );
+    editor.undo(0);
+    editor.chooseItem(null);
+  });
+
+  it("gives the road tool its own hints and keeps its last turn in the HUD after laying", () => {
+    editor.chooseItem(null);
+    expect(toolHints(editor.snapshot()).hints).toContainEqual(
+      expect.objectContaining({ command: "draw-road" }),
+    );
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    expect(toolHints(editor.snapshot()).title).toBe("Drawing road");
+    const turnsBefore = editor.snapshot().ghostRot;
+    editor.rotate(0);
+    drag(editor, [[0, 0]]);
+    editor.pointerMove(...ndc([3, 3]));
+    const turned = (turnsBefore + 1) % 4;
+    expect(editor.snapshot().ghostRot).toBe(turned);
+    expect(editor.dump().roadPlacements.at(-1)?.rot).toBe(turned);
     editor.undo(0);
     editor.chooseItem(null);
   });
