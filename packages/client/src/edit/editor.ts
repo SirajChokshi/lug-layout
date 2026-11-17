@@ -35,12 +35,7 @@ import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
-import {
-  TRACK_SYSTEM,
-  TrackDrawing,
-  type TrackDragView,
-  type TrackEndView,
-} from "./track-drawing.ts";
+import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
 import {
   PlacedChunks,
   type PlacedModel,
@@ -51,6 +46,7 @@ import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
+import type { TrackEndView } from "./track-drawing.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
