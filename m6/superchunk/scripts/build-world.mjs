@@ -283,16 +283,32 @@ async function choose(item) {
 }
 
 const tally = { moves: 0, aims: 0, centres: 0, zooms: 0 };
+async function placementCount() {
+  return page.evaluate(() => {
+    const dt = [...document.querySelectorAll(".editor-hud dt")].find((d) => d.textContent === "Placements");
+    return Number(dt?.nextElementSibling?.textContent?.replace(/,/g, "") ?? "0");
+  });
+}
+
 async function placeAt(tx, tz) {
   tally.aims++;
-  let aim = await aimAt(tx, tz);
-  if (!aim) {
-    await centreOn(tx, tz);
-    aim = await aimAt(tx, tz);
+  const before = await placementCount();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let aim = await aimAt(tx, tz);
+    if (!aim) {
+      await centreOn(tx, tz);
+      aim = await aimAt(tx, tz);
+    }
+    if (!aim) throw new Error(`cannot aim at ${tx},${tz}`);
+    await page.mouse.click(aim[0], aim[1]);
+    if (cam.distance < BUILD_DISTANCE) await zoomTo(BUILD_DISTANCE);
+    for (let wait = 0; wait < 40; wait++) {
+      if ((await placementCount()) > before) return;
+      await page.waitForTimeout(50);
+    }
+    tally.retries = (tally.retries ?? 0) + 1;
   }
-  if (!aim) throw new Error(`cannot aim at ${tx},${tz}`);
-  await page.mouse.click(aim[0], aim[1]);
-  if (cam.distance < BUILD_DISTANCE) await zoomTo(BUILD_DISTANCE);
+  throw new Error(`placement at ${tx},${tz} did not register`);
 }
 
 async function setRotation(rot) {
