@@ -7,7 +7,7 @@ import {
   type PartMesh,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleLod } from "@brr/schema/bundle";
+import type { BundleLod, TrackCatalog } from "@brr/schema/bundle";
 import { EditHistory, World } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import {
@@ -291,6 +291,7 @@ export class LayoutScene implements ILayoutScene {
       farModels,
       colors,
       table.boundsMin[1],
+      bundle.trackCatalog,
     );
     const baseplate = this.baseplate(bundle, palette, colors);
     const track = new TrackDrawing(bundle, palette.parts, colors, BENCH_TABLE);
@@ -362,6 +363,7 @@ export class LayoutScene implements ILayoutScene {
     farModels: PartMesh[],
     colors: ColorTable,
     tableY: number,
+    trackCatalog: TrackCatalog,
   ): Promise<ReadonlyMap<string, Placeable>> {
     const loaded = await Promise.all(
       layoutModelNames().map((name) =>
@@ -390,6 +392,7 @@ export class LayoutScene implements ILayoutScene {
           colors,
           farModel,
           tableY,
+          trackCatalog,
         ),
       );
     }

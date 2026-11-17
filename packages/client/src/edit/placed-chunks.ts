@@ -948,13 +948,21 @@ export class PlacedChunks {
     rot: number,
     ignore: ReadonlyArray<PlacedModel>,
     at: LandingAt,
+    exempt: OwnerFilter = keepEveryOwner,
   ): PlacementCheck {
     const cells = this.candidate.at(placeable, x, z, rot);
-    if (ignore.length === 0) return this.checkCells(placeable, cells, at);
-    return this.withExcluded(this.entriesOf(ignore), () => this.checkCells(placeable, cells, at));
+    if (ignore.length === 0) return this.checkCells(placeable, cells, at, exempt);
+    return this.withExcluded(this.entriesOf(ignore), () =>
+      this.checkCells(placeable, cells, at, exempt),
+    );
   }
 
-  private checkCells(placeable: Placeable, cells: CandidateScratch, at: LandingAt): PlacementCheck {
+  private checkCells(
+    placeable: Placeable,
+    cells: CandidateScratch,
+    at: LandingAt,
+    exempt: OwnerFilter,
+  ): PlacementCheck {
     const first = placeable.layer === "first";
     const lands = this.lands;
     if (first) {
@@ -968,7 +976,7 @@ export class PlacedChunks {
     const support = first
       ? null
       : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
-    const hit = firstOverlap(cells.raised(yPlates * PLATE_LDU), this.volumes, keepEveryOwner);
+    const hit = firstOverlap(cells.raised(yPlates * PLATE_LDU), this.volumes, exempt);
     return { yPlates, support, restsOn, overlap: hit ? this.placedOverlap(hit) : null };
   }
 
@@ -995,6 +1003,15 @@ export class PlacedChunks {
       if (known?.kind === "track") pieces.add(known.piece);
     }
     return pieces;
+  }
+
+  trackOwnerOf(piece: number): number | null {
+    for (const stamp of this.trackStamps.values()) if (stamp.piece === piece) return stamp.owner;
+    return null;
+  }
+
+  ownerOf(model: PlacedModel): number {
+    return this.entryOf(model).owner;
   }
 
   addTrackPiece(

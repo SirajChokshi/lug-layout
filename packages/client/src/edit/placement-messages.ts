@@ -121,6 +121,11 @@ export function carriesRefusal(label: string, lost: ReadonlyArray<LostSupport>):
   };
 }
 
+function crossedText(other: number, inModel: string | null): string {
+  if (inModel !== null) return `the track in ${inModel}`;
+  return other < 0 ? `piece ${-other} of this run` : `laid track piece ${other + 1}`;
+}
+
 export function trackRunRefusal(block: RunBlock): Refusal {
   const at = `piece ${block.piece + 1} of ${block.pieces} (${block.pieceId})`;
   switch (block.kind) {
@@ -137,7 +142,7 @@ export function trackRunRefusal(block: RunBlock): Refusal {
     case "crosses-track":
       return {
         rule: "overlap",
-        message: `Track run refused: ${at} crosses ${block.other < 0 ? `piece ${-block.other} of this run` : `laid track piece ${block.other + 1}`} (${block.otherId}) without joining it. Track only crosses through a real crossing part.`,
+        message: `Track run refused: ${at} crosses ${crossedText(block.other, block.inModel)} (${block.otherId}) without joining it. Track only crosses through a real crossing part.`,
       };
     default: {
       const unhandled: never = block;

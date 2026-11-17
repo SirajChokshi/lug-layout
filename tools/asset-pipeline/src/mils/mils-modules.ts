@@ -13,11 +13,18 @@ import {
   type TrackPiece,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
-import { attachPose16, composePose16, pose16, pose16Equals, zeta16, type Pose16 } from "@brr/math";
+import {
+  CERTIFIED_RESIDUAL_LIMIT_LDU,
+  attachPose16,
+  composePose16,
+  pose16,
+  pose16Equals,
+  zeta16,
+  type Pose16,
+} from "@brr/math";
 import type { Affine } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { ldrawPlacement } from "../track/catalog-scenes.ts";
-import { CERTIFIED_RESIDUAL_LIMIT_LDU } from "../track/track-ends.ts";
 import { measureBaseplate, type BaseplateMeasurement } from "../verify/geometry.ts";
 
 const LDU_PER_STUD = 20;

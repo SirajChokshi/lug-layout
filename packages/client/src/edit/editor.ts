@@ -4,6 +4,7 @@ import type {
   BundleLod,
   BundleModelEntry,
   NotDrawnSection,
+  TrackCatalog,
 } from "@brr/schema/bundle";
 import {
   BUNDLE_BASE_URL,
@@ -38,12 +39,24 @@ import {
   type PlacementPose,
   type PlacementTarget,
   type PlacementContents,
+  type OwnerFilter,
   type PendingChange,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
 } from "@brr/domain";
-import { BRICK_LDU, CHUNK_LDU, PLATE_LDU, STUD_LDU, ZETA16_ORDER, pose16, zeta16 } from "@brr/math";
+import {
+  BRICK_LDU,
+  CHUNK_LDU,
+  PLATE_LDU,
+  STUD_LDU,
+  ZETA16_ORDER,
+  composePose16,
+  pose16,
+  posesJoin16,
+  zeta16,
+  zeta16ToStuds,
+} from "@brr/math";
 import {
   CAMERA_FOV_DEGREES,
   RAY_FLOATS,
@@ -93,11 +106,13 @@ import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
 import { CATALOG_SEARCH, CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
 import type { CatalogSearchView, ICatalogSearch } from "../catalog/catalog-search.ts";
+import { heldPlacements, latticePose16, latticeSnap } from "./model-track.ts";
 import {
   TRACK_SYSTEM,
   TrackDrawing,
   type PieceSnap,
   type SwitchLeverView,
+  type HeldTrackRequest,
   type TrackDragView,
   type TrackGapView,
   type TrackRouteView,
@@ -282,6 +297,7 @@ export interface RefusedEdit {
 export interface GhostCheckView {
   readonly yPlates: number;
   readonly refusal: Refusal | null;
+  readonly trackJoins: number;
 }
 
 export interface EditorStats {
@@ -558,6 +574,7 @@ const TRACK_PIECE_GROUP = "track-pieces";
 const TRACK_PIECE_GROUP_LABEL = "Track pieces";
 const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
 const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
+const TRACK_SNAP_RADIUS_LDU = 3 * STUD_LDU;
 const P95 = 0.95;
 const DEGREES_PER_QUARTER_TURN = 90;
 const EDGE_KIND_NAMES: Readonly<Record<ModuleEdgeKind, string>> = {
@@ -922,8 +939,10 @@ export class Editor implements IEditor {
   private hoverYPlates = 0;
   private hoverRefusal: Refusal | null = null;
   private ghostCheck: PlacementCheck | null = null;
+  private ghostTrackJoins = 0;
   private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
   private tableY = 0;
+  private trackCatalog: TrackCatalog = { n: ZETA16_ORDER, pieces: [] };
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -1002,6 +1021,7 @@ export class Editor implements IEditor {
       this.update({ tier: options.tier });
       const index = await this.loader.loadIndex(EDITOR_LOD);
       this.bundleVersion = index.bundleVersion;
+      this.trackCatalog = index.trackCatalog;
       const colorSource = { colors: index.colors, parts: [] };
       const colors = new ColorTable(colorSource);
       for (const color of index.colors) colors.indexOfCode(color.code);
@@ -1254,6 +1274,7 @@ export class Editor implements IEditor {
       colors,
       null,
       this.tableY,
+      this.trackCatalog,
     );
     if (this.palette === palette && this.installedColors > 0) {
       this.backend.addParts(palette.parts.slice(before));
@@ -2032,7 +2053,7 @@ export class Editor implements IEditor {
 
   private placeGhost(): void {
     if (!this.active || !this.hovering) return;
-    const check = this.placed.check(
+    const check = this.checkAt(
       this.active,
       this.hoverX,
       this.hoverZ,
@@ -2054,6 +2075,7 @@ export class Editor implements IEditor {
       ghost: {
         yPlates: check.yPlates,
         refusal: checkRefusal(this.active.label, check) ?? this.hoverRefusal,
+        trackJoins: this.ghostTrackJoins,
       },
     });
     this.backend.placeGhost(
@@ -2080,7 +2102,106 @@ export class Editor implements IEditor {
     this.placeRot = this.ghostRot;
     const moduleFit = this.snapGhostToModuleGrid();
     const snap = this.snapGhostToRoad();
+    this.snapGhostToTrack();
     return { moduleFit, snap };
+  }
+
+  private heldRequests(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    owner: number,
+  ): ReadonlyArray<HeldTrackRequest> {
+    const held = placeable.track;
+    if (!held) return [];
+    return heldPlacements(held, x, z, rot).map((piece) => ({
+      owner,
+      label: placeable.label,
+      catalogIndex: piece.catalogIndex,
+      placement: piece.placement,
+    }));
+  }
+
+  private syncHeldTrack(): void {
+    this.track?.syncHeld(
+      this.placed
+        .models()
+        .flatMap((model) =>
+          this.heldRequests(
+            model.placeable,
+            model.handle.x,
+            model.handle.z,
+            model.handle.rot,
+            this.placed.ownerOf(model),
+          ),
+        ),
+    );
+    this.update({ track: this.trackView() });
+  }
+
+  private trackExempt(placeable: Placeable, x: number, z: number, rot: number): OwnerFilter {
+    const track = this.track;
+    const requests = this.heldRequests(placeable, x, z, rot, 0);
+    if (!track || requests.length === 0) return () => false;
+    const owners = new Set<number>();
+    for (const piece of track.joinedLaidPieces(requests)) {
+      const owner = this.placed.trackOwnerOf(piece);
+      if (owner !== null) owners.add(owner);
+    }
+    if (owners.size === 0) return () => false;
+    const cells = track.heldCells(requests);
+    return (owner, cellX, cellZ) => owners.has(owner) && cells.has(`${cellX},${cellZ}`);
+  }
+
+  private checkAt(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    ignore: ReadonlyArray<PlacedModel>,
+    at: LandingAt,
+  ): PlacementCheck {
+    return this.placed.check(
+      placeable,
+      x,
+      z,
+      rot,
+      ignore,
+      at,
+      this.trackExempt(placeable, x, z, rot),
+    );
+  }
+
+  private snapGhostToTrack(): void {
+    this.ghostTrackJoins = 0;
+    const held = this.active?.track;
+    const track = this.track;
+    if (!held || !track || !this.hovering || held.openEnds.length === 0) return;
+    const targets = track.openEndPoses();
+    const frame = latticePose16(this.hoverX, this.hoverZ, this.placeRot);
+    let best: { readonly xLdu: number; readonly zLdu: number } | null = null;
+    let bestDistance = TRACK_SNAP_RADIUS_LDU;
+    for (const local of held.openEnds) {
+      const free = zeta16ToStuds(composePose16(frame, local).position);
+      for (const target of targets) {
+        const snap = latticeSnap(local, target, this.placeRot);
+        if (!snap) continue;
+        const at = zeta16ToStuds(target.position);
+        const distance = Math.hypot(free.x - at.x, free.z - at.z) * STUD_LDU;
+        if (distance > bestDistance) continue;
+        best = snap;
+        bestDistance = distance;
+      }
+    }
+    if (!best) return;
+    this.hoverX = best.xLdu;
+    this.hoverZ = best.zLdu;
+    const snapped = latticePose16(best.xLdu, best.zLdu, this.placeRot);
+    this.ghostTrackJoins = held.openEnds.filter((local) => {
+      const end = composePose16(snapped, local);
+      return targets.some((target) => posesJoin16(end, target));
+    }).length;
   }
 
   private snapGhostToRoad(): RoadSnapView | null {
@@ -2295,7 +2416,7 @@ export class Editor implements IEditor {
         colorId: placeable.worldColor,
         x,
         z,
-        yPlates: this.placed.check(placeable, x, z, rot, [], this.cursorLanding()).yPlates,
+        yPlates: this.checkAt(placeable, x, z, rot, [], this.cursorLanding()).yPlates,
         rot,
       }),
       eventTimeMs,
@@ -2341,6 +2462,7 @@ export class Editor implements IEditor {
     }
     this.refreshModules();
     this.refreshRoads();
+    this.syncHeldTrack();
     this.placeGhost();
     this.update({
       selectionRefusal: null,
@@ -2641,7 +2763,7 @@ export class Editor implements IEditor {
       refuseTurn(riderRefusal(label, rider.placeable.label));
       return;
     }
-    const check = this.placed.check(model.placeable, pose.x, pose.z, rot, [model], {
+    const check = this.checkAt(model.placeable, pose.x, pose.z, rot, [model], {
       kind: "height",
       yPlates: pose.yPlates,
     });
@@ -2795,7 +2917,7 @@ export class Editor implements IEditor {
 
   private poseRefusal(to: PlacementPose, removed: ReadonlyArray<PlacedModel>): Refusal | null {
     const placeable = this.placeableAt(to.refId);
-    const check = this.placed.check(placeable, to.x, to.z, to.rot, removed, {
+    const check = this.checkAt(placeable, to.x, to.z, to.rot, removed, {
       kind: "height",
       yPlates: to.yPlates,
     });

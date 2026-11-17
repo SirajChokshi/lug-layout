@@ -1,3 +1,4 @@
+import type { PartShapeAsset } from "@brr/catalog";
 import type { TrackPartFrame, TrackPlan } from "@brr/schema/bundle";
 import {
   PLAN_TRIANGLE_FLOATS,
@@ -21,6 +22,12 @@ export function planTriangles(plan: TrackPlan): Float64Array {
     out[i * PLAN_VERTEX_FLOATS + 1] = vertices[vertex * PLAN_VERTEX_FLOATS + 1] ?? 0;
   });
   return out;
+}
+
+export function localBoundsTriangles(part: PartShapeAsset): Float64Array {
+  const [x0, , z0] = part.boundsMin;
+  const [x1, , z1] = part.boundsMax;
+  return Float64Array.of(x0, z0, x1, z0, x1, z1, x0, z0, x1, z1, x0, z1);
 }
 
 export function trackPlanTransform(placement: Pose16, frame: TrackPartFrame): PlaneTransform {
