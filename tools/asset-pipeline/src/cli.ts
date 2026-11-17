@@ -3,6 +3,7 @@ import {
   BundleManifest,
   MilsEdgeRules,
   TrackCatalog,
+  type CatalogSourceUse,
   type Palette,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -13,8 +14,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as v from "valibot";
 import { bundleInputKey, remoteManifestFile } from "./bundle-key.ts";
+import { deriveCrosswalk } from "./catalog/crosswalk.ts";
+import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
+import { bomCheck } from "./catalog/bom-check.ts";
 import {
+  catalogSourceDirectory,
   fetchAuditInputs,
+  fetchCatalogSources,
   fetchClosure,
   modelPath,
   omrFiles,
@@ -23,8 +29,10 @@ import {
   renderTestDataAttribution,
   restoreFiles,
   verifyAuditInputs,
+  verifyCatalogSources,
   verifyClosure,
   verifyModels,
+  type CatalogLock,
   type InputLock,
   type ModelRoots,
 } from "./fetch-ldraw.ts";
@@ -35,7 +43,7 @@ import {
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
 import { readPalette } from "./palette.ts";
-import { MANIFEST_FILE, publishBundle } from "./publish.ts";
+import { attachCrosswalk, MANIFEST_FILE, publishBundle } from "./publish.ts";
 import { R2ObjectStore, sha256Hex } from "./r2.ts";
 import {
   isPartBundlePublished,
@@ -62,6 +70,7 @@ const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
 const omrRoot = join(repoRoot, ".cache", "omr");
+const catalogRoot = join(repoRoot, ".cache", "catalog");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const TEST_DATA_DIRECTORIES = [join("packages", "import", "test-data")];
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
@@ -92,7 +101,8 @@ async function fetchCommand(): Promise<void> {
   );
   const closure = await fetchClosure(palette, ldrawRoot, modelSources);
   const audit = await fetchAuditInputs(palette, auditRoot, connectivityRoot);
-  const lock: InputLock = { ...closure, audit };
+  const catalog = await fetchCatalogSources(palette.catalogSources, catalogRoot);
+  const lock: InputLock = { ...closure, audit, catalog };
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
   await writeAttribution(lock, palette);
   process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
@@ -109,6 +119,27 @@ async function writeAttribution(lock: InputLock, palette: Palette): Promise<void
 
 async function attributionCommand(): Promise<void> {
   await writeAttribution(await readLock(), await readPalette(palettePath));
+}
+
+function catalogLock(lock: InputLock): CatalogLock {
+  if (lock.catalog === undefined) {
+    throw new Error("ldraw.lock.json has no catalog sources; run fetch-ldraw");
+  }
+  return lock.catalog;
+}
+
+async function restoreCatalog(lock: InputLock, use: CatalogSourceUse): Promise<void> {
+  for (const [name, entry] of Object.entries(catalogLock(lock))) {
+    if (entry.use !== use) continue;
+    const { present, downloaded, pruned } = await restoreFiles(
+      entry.source,
+      entry.files,
+      catalogSourceDirectory(catalogRoot, name),
+    );
+    process.stdout.write(
+      `catalog ${name}: ${present} present, ${downloaded} downloaded, ${pruned} pruned\n`,
+    );
+  }
 }
 
 async function restoreCommand(): Promise<void> {
@@ -139,13 +170,16 @@ async function restoreCommand(): Promise<void> {
     );
   }
   await restoreModels(await readPalette(palettePath));
+  await restoreCatalog(lock, "crosswalk");
 }
 
 async function verifyCommand(): Promise<void> {
   const palette = await readPalette(palettePath);
+  const lock = await readLock();
   const problems = [
-    ...(await verifyClosure(await readLock(), ldrawRoot)),
+    ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyModels(palette, modelRoots)),
+    ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
   ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
@@ -305,6 +339,12 @@ async function bundleCommand(): Promise<void> {
     lockSha256: await fileSha256(lockPath),
     paletteSha256: await fileSha256(palettePath),
   };
+  const lock = await readLock();
+  const catalog = catalogLock(lock);
+  const crosswalk = deriveCrosswalk(
+    await readCrosswalkInputs(catalog, catalogRoot, lock.source, ldrawRoot),
+    crosswalkSources(catalog),
+  );
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
   runCargo([
     "build",
@@ -347,6 +387,7 @@ async function bundleCommand(): Promise<void> {
       coverCache,
     ]);
     await addVerifiedFacts(out);
+    await attachCrosswalk(out, crosswalk);
     const { bundleVersion, files } = await publishBundle(out, inputs);
     process.stdout.write(
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
@@ -482,6 +523,29 @@ switch (command) {
   case "bundle":
     await bundleCommand();
     break;
+  case "bom-check": {
+    const exportDirectory = process.argv[3];
+    const outIndex = process.argv.indexOf("--out");
+    const out = outIndex > 0 ? process.argv[outIndex + 1] : undefined;
+    if (exportDirectory === undefined || out === undefined) {
+      process.stderr.write("usage: cli.ts bom-check <export-directory> --out <report.json>\n");
+      process.exitCode = 2;
+      break;
+    }
+    const lock = await readLock();
+    await restoreCatalog(lock, "inventory-check");
+    const problems = await verifyCatalogSources(catalogLock(lock), catalogRoot, "inventory-check");
+    if (problems.length > 0) throw new Error(problems.join("\n"));
+    process.stdout.write(
+      await bomCheck({
+        exportDirectory,
+        out,
+        inventoryDirectory: catalogSourceDirectory(catalogRoot, "rebrickable-inventories"),
+        partsCsv: join(catalogSourceDirectory(catalogRoot, "rebrickable-dump"), "parts.csv.gz"),
+      }),
+    );
+    break;
+  }
   case "facts":
     await factsCommand(process.argv.includes("--check"));
     break;
@@ -508,7 +572,7 @@ switch (command) {
     break;
   default:
     process.stderr.write(
-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served\n",
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
     );
     process.exitCode = 2;
 }

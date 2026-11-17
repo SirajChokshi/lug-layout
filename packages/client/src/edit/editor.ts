@@ -1,4 +1,4 @@
-import type { BundleColor, BundleLod } from "@brr/schema/bundle";
+import type { BundleColor, BundleLod, NotDrawnSection } from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
@@ -11,6 +11,8 @@ import {
 import { MergedParts } from "./merged-parts.ts";
 import {
   DirtyShards,
+  BomCounter,
+  countPlacements,
   EditHistory,
   MODULE_SIDES,
   RoadNetwork,
@@ -24,6 +26,7 @@ import {
   type ModuleEdgeKind,
   type ModuleSide,
   type PlacementTarget,
+  type PlacementContents,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
@@ -65,6 +68,12 @@ import {
   type WorldLease,
 } from "@brr/storage";
 import { inject, injectable } from "inversify";
+import {
+  notDrawnItems,
+  type BomInput,
+  type BomScope,
+  type IBomSource,
+} from "../bom/bom-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import type { ICredits } from "../credits/credits-service.ts";
@@ -434,7 +443,7 @@ export interface EditorOptions {
   readonly tier: ChunkTier | null;
 }
 
-export interface IEditor {
+export interface IEditor extends IBomSource {
   start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void>;
   subscribe(listener: () => void): () => void;
   snapshot(): EditorSnapshot;
@@ -572,6 +581,15 @@ interface HeldPiece {
   readonly connector: number;
   readonly heading: number;
   readonly snap: PieceSnap | null;
+}
+
+const EDITOR_WORLD_NAME = "editor-world";
+const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
+
+interface EditorBomTables {
+  readonly palette: MergedParts;
+  readonly colors: ColorTable;
+  readonly ldrawColors: ReadonlyArray<number>;
 }
 
 interface PendingAction {
@@ -764,6 +782,8 @@ export class Editor implements IEditor {
   private readonly measuredFrameMs = new Float64Array(MEASURED_FRAMES);
   private readonly measuredCpuMs = new Float64Array(MEASURED_FRAMES);
   private statsSince = 0;
+  private bomTables: EditorBomTables | null = null;
+  private readonly notDrawnByPlaceable = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -817,6 +837,7 @@ export class Editor implements IEditor {
       this.plans.setTableTopY(this.baseplateBottomY());
       this.newTrack = () => new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
       this.track = this.newTrack();
+      this.bomTables = { palette, colors, ldrawColors: bundle.colors.map((color) => color.code) };
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         ...(far
@@ -950,18 +971,18 @@ export class Editor implements IEditor {
     });
     for (const { bundle: modelBundle, entry, model } of near.kept) {
       const credit = { name: entry.name, source: entry.source, sections: model.sections };
-      placeables.push(
-        modelPlaceable(
-          entry.name,
-          entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : setLabel(entry),
-          entry.role,
-          palette.remap(model, modelBundle.parts),
-          credit,
-          palette.parts,
-          colors,
-          far?.meshIndex.get(entry.name) ?? null,
-        ),
+      const placeable = modelPlaceable(
+        entry.name,
+        entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : setLabel(entry),
+        entry.role,
+        palette.remap(model, modelBundle.parts),
+        credit,
+        palette.parts,
+        colors,
+        far?.meshIndex.get(entry.name) ?? null,
       );
+      this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
+      placeables.push(placeable);
     }
     return { placeables, skipped: near.skipped };
   }
@@ -1880,6 +1901,58 @@ export class Editor implements IEditor {
 
   setSnapRoads(snap: boolean): void {
     this.update({ snapRoads: snap, snap: null });
+  }
+
+  bomInput(scope: BomScope): BomInput {
+    const tables = this.bomTables;
+    if (!tables) throw new Error("the editor has not loaded");
+    const counter = new BomCounter(
+      tables.palette.parts.map((part) => part.id),
+      tables.ldrawColors,
+    );
+    const placedCounts = new Map<number, number>();
+    const contents: PlacementContents = {
+      addTo: (target, refId) => {
+        const placeable = this.placeables[refId];
+        if (!placeable) throw new Error(`world holds unknown placeable ${refId}`);
+        placedCounts.set(refId, (placedCounts.get(refId) ?? 0) + 1);
+        const { parts } = placeable;
+        for (let i = 0; i < parts.count; i++) {
+          target.add(parts.partIndex[i] ?? 0, tables.colors.codeAt(parts.colorIndex[i] ?? 0), 1);
+        }
+      },
+    };
+    const uncounted = (): BomInput["uncounted"] =>
+      [...placedCounts].flatMap(([refId, count]) => {
+        const placeable = this.placeables[refId];
+        if (!placeable) return [];
+        return notDrawnItems(placeable.id, this.notDrawnByPlaceable.get(placeable) ?? [], count);
+      });
+    if (scope.kind !== "selection") {
+      const placements = countPlacements(
+        this.world,
+        contents,
+        counter,
+        scope.kind === "region" ? scope.region : null,
+      );
+      return {
+        name: EDITOR_WORLD_NAME,
+        lod: "standard",
+        placements,
+        counter,
+        uncounted: uncounted(),
+      };
+    }
+    const selected = this.selected;
+    if (!selected?.handle.live) throw new Error("nothing is selected");
+    contents.addTo(counter, selected.handle.refId, selected.handle.colorId);
+    return {
+      name: `selection-${selected.placeable.id.replace(FILE_NAME_UNSAFE, "_")}`,
+      lod: "standard",
+      placements: 1,
+      counter,
+      uncounted: uncounted(),
+    };
   }
 
   private select(model: PlacedModel | null): void {

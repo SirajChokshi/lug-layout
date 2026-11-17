@@ -169,7 +169,13 @@ export const NotDrawnSection = v.variant("kind", [
     quads: Count,
     reason: v.string(),
   }),
-  v.object({ kind: v.literal("customPart"), section: v.string(), reason: v.string() }),
+  v.object({
+    kind: v.literal("customPart"),
+    section: v.string(),
+    instances: v.optional(Count),
+    colors: v.optional(v.array(v.object({ color: Integer, instances: Count }))),
+    reason: v.string(),
+  }),
 ]);
 export type NotDrawnSection = v.InferOutput<typeof NotDrawnSection>;
 
@@ -353,8 +359,73 @@ export const BundleManifest = v.object({
   trackCatalog: TrackCatalog,
   milsEdgeRules: MilsEdgeRules,
   compiler: v.nullable(BundleCompiler),
+  crosswalk: v.object({ file: v.string() }),
 });
 export type BundleManifest = v.InferOutput<typeof BundleManifest>;
+
+export const CROSSWALK_FORMAT = 1;
+const MOVED_VIA = /^moved:.+$/u;
+
+export const RebrickableVia = v.union([
+  v.picklist(["rebrickable-api", "ldraw-keyword", "bricklink-keyword"]),
+  v.pipe(v.string(), v.regex(MOVED_VIA)),
+]);
+export type RebrickableVia = v.InferOutput<typeof RebrickableVia>;
+
+export const BrickLinkVia = v.picklist(["rebrickable-api", "ldraw-keyword"]);
+export type BrickLinkVia = v.InferOutput<typeof BrickLinkVia>;
+
+export const CrosswalkComponent = v.object({ part: v.string(), color: Integer });
+export type CrosswalkComponent = v.InferOutput<typeof CrosswalkComponent>;
+
+export const RejectedAssemblyIds = v.object({
+  assemblies: v.array(v.string()),
+  rebrickable: v.array(v.string()),
+  bricklink: v.array(v.string()),
+});
+export type RejectedAssemblyIds = v.InferOutput<typeof RejectedAssemblyIds>;
+
+export const CrosswalkPart = v.object({
+  rebrickable: v.nullable(v.string()),
+  bricklink: v.nullable(v.string()),
+  via: v.object({
+    rebrickable: v.nullable(RebrickableVia),
+    bricklink: v.nullable(BrickLinkVia),
+  }),
+  rebrickableAlternatives: v.optional(v.array(v.string())),
+  bricklinkAlternatives: v.optional(v.array(v.string())),
+  rejectedAssemblyIds: v.optional(RejectedAssemblyIds),
+  components: v.optional(v.array(CrosswalkComponent)),
+});
+export type CrosswalkPart = v.InferOutput<typeof CrosswalkPart>;
+
+export const CrosswalkColor = v.object({
+  name: v.string(),
+  rebrickable: v.nullable(Integer),
+  bricklink: v.nullable(Integer),
+  rebrickableAlternatives: v.optional(v.array(Integer)),
+  bricklinkAlternatives: v.optional(v.array(Integer)),
+});
+export type CrosswalkColor = v.InferOutput<typeof CrosswalkColor>;
+
+export const CrosswalkSourcePin = v.object({
+  repo: v.string(),
+  commit: v.string(),
+  root: v.string(),
+  files: v.record(v.string(), Sha256Hex),
+});
+export type CrosswalkSourcePin = v.InferOutput<typeof CrosswalkSourcePin>;
+
+export const CrosswalkFile = v.object({
+  format: v.literal(CROSSWALK_FORMAT),
+  sources: v.record(v.string(), CrosswalkSourcePin),
+  parts: v.record(v.string(), CrosswalkPart),
+  colors: v.record(IntegerString, CrosswalkColor),
+  bricklinkParts: v.record(v.string(), v.array(v.string())),
+  bricklinkPartVariants: v.record(v.string(), v.array(v.string())),
+  bricklinkColors: v.record(IntegerString, v.array(Integer)),
+});
+export type CrosswalkFile = v.InferOutput<typeof CrosswalkFile>;
 
 export const VehicleGuideKind = v.picklist(["bogiePivot", "fixedAxle"]);
 export type VehicleGuideKind = v.InferOutput<typeof VehicleGuideKind>;
@@ -591,6 +662,32 @@ export type PaletteModel = v.InferOutput<typeof PaletteModel>;
 export const AuditGroup = v.strictObject({ group: v.string(), parts: v.array(v.string()) });
 export type AuditGroup = v.InferOutput<typeof AuditGroup>;
 
+export const GithubMirror = v.strictObject(BundleSource.entries);
+export type GithubMirror = v.InferOutput<typeof GithubMirror>;
+
+export const GithubArchive = v.strictObject({
+  kind: v.literal("github-archive"),
+  repo: v.string(),
+  commit: v.string(),
+  root: v.string(),
+});
+export type GithubArchive = v.InferOutput<typeof GithubArchive>;
+
+export const CatalogLocation = v.variant("kind", [GithubMirror, GithubArchive]);
+export type CatalogLocation = v.InferOutput<typeof CatalogLocation>;
+
+export const CatalogSourceUse = v.picklist(["crosswalk", "inventory-check"]);
+export type CatalogSourceUse = v.InferOutput<typeof CatalogSourceUse>;
+
+export const CatalogSource = v.strictObject({
+  name: v.string(),
+  use: CatalogSourceUse,
+  describes: v.string(),
+  source: CatalogLocation,
+  files: v.array(v.string()),
+});
+export type CatalogSource = v.InferOutput<typeof CatalogSource>;
+
 export const Palette = v.strictObject({
   source: BundleSource,
   config: v.array(v.string()),
@@ -621,6 +718,7 @@ export const Palette = v.strictObject({
   audit: v.array(AuditGroup),
   connectivitySource: BundleSource,
   producedColorSource: v.optional(v.string()),
+  catalogSources: v.array(CatalogSource),
 });
 export type Palette = v.InferOutput<typeof Palette>;
 

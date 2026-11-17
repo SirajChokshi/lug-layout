@@ -8,6 +8,11 @@ export {
   INHERIT_COLOR,
 } from "./part-bundle.ts";
 export type {
+  BricklinkPartCandidates,
+  CatalogColorIds,
+  CatalogPartComponent,
+  CatalogCrosswalk,
+  CatalogPartIds,
   ColorGroup,
   CompiledPartGlb,
   FilterablePart,
