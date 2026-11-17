@@ -2,7 +2,7 @@ import type { EditorSnapshot } from "../edit/editor.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
 
-export type ToolTone = "idle" | "select" | "place" | "track" | "warn";
+export type ToolTone = "idle" | "select" | "place" | "erase" | "track" | "warn";
 
 export type ToolHint =
   | { readonly kind: "key"; readonly command: CommandId; readonly text: string }
@@ -86,11 +86,25 @@ function view(snapshot: EditorSnapshot): ToolHintView {
         hints: [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")],
       };
     }
-    case "road":
+    case "road": {
+      const kit = snapshot.roadKits.find((k) => k.id === snapshot.roadKit)?.label ?? "no kit";
+      if (snapshot.roadErase) {
+        return {
+          tone: "erase",
+          title: "Erasing road",
+          detail: kit,
+          hints: [
+            gesture("Drag", "lift road"),
+            key("undo", "undo"),
+            key("draw-road", "done"),
+            key("select-tool", "stop"),
+          ],
+        };
+      }
       return {
         tone: "place",
         title: "Drawing road",
-        detail: `${snapshot.roadKits.find((kit) => kit.id === snapshot.roadKit)?.label ?? "no kit"}, lone tiles at ${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
+        detail: `${kit}, lone tiles at ${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
         hints: [
           gesture("Drag", "lay road"),
           key("rotate", "turn a lone tile"),
@@ -99,6 +113,7 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           key("select-tool", "stop"),
         ],
       };
+    }
     case "select": {
       const { selection } = snapshot;
       if (selection) {
