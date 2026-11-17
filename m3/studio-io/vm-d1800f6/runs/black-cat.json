@@ -1,0 +1,368 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n79e5359c4474dd23\nParts\n28\nModules\n2\nStud instances (drawn of total)\n80 of 80\nScene triangles\n9,963\nLoad\n37 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.2 MiB, other 0.0 MiB, JS heap 46.5 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n22\nDrawn triangles\n9,964\nScene coverage\n3% (essentially empty frame)\nFrame rate (rAF)\n6.5 fps\nParts list\nWorld\nRegion (LDU, placement origins)\nBuild parts list",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": -80,
+        "z": -20,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "black-cat.io!modelv2.ldr",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "black-cat",
+            "title": "Untitled Model"
+          }
+        ],
+        "instanceCount": 28,
+        "drawnInstanceCount": 28,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "official": "3024.dat",
+            "instances": 6,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "compiled",
+            "reference": "12939.dat",
+            "official": "12939.dat",
+            "instances": 2,
+            "partId": "ldraw:12939",
+            "file": "parts/12939.dat",
+            "header": {
+              "author": "Jude Parrill [theJudeAbides]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "12939.dat",
+              "title": "Arch 1 x 6 x 2 with Very Thin Top"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "bundle",
+            "reference": "2456.dat",
+            "official": "2456.dat",
+            "instances": 2,
+            "partId": "ldraw:2456"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60470a.dat",
+            "official": "60470a.dat",
+            "instances": 1,
+            "partId": "ldraw:60470a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3176.dat",
+            "official": "3176.dat",
+            "instances": 1,
+            "partId": "ldraw:3176"
+          },
+          {
+            "kind": "bundle",
+            "reference": "48336.dat",
+            "official": "48336.dat",
+            "instances": 1,
+            "partId": "ldraw:48336"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "official": "3020.dat",
+            "instances": 2,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "official": "3710.dat",
+            "instances": 1,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3023b.dat",
+            "official": "3023b.dat",
+            "instances": 2,
+            "partId": "ldraw:3023b",
+            "file": "parts/3023b.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2023-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3023b.dat",
+              "title": "Plate 1 x 2"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "bundle",
+            "reference": "6636.dat",
+            "official": "6636.dat",
+            "instances": 2,
+            "partId": "ldraw:6636"
+          },
+          {
+            "kind": "compiled",
+            "reference": "6192.dat",
+            "official": "6192.dat",
+            "instances": 1,
+            "partId": "ldraw:6192",
+            "file": "parts/6192.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2026-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6192.dat",
+              "title": "~Moved to 6192a"
+            },
+            "sourceFiles": 14
+          },
+          {
+            "kind": "compiled",
+            "reference": "5520.dat",
+            "official": "5520.dat",
+            "instances": 1,
+            "partId": "ldraw:5520",
+            "file": "parts/5520.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2024-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "5520.dat",
+              "title": "Tile 2 x 2 with Rounded End"
+            },
+            "sourceFiles": 22
+          },
+          {
+            "kind": "bundle",
+            "reference": "99206.dat",
+            "official": "99206.dat",
+            "instances": 1,
+            "partId": "ldraw:99206"
+          },
+          {
+            "kind": "compiled",
+            "reference": "98138p07.dat",
+            "official": "98138p07.dat",
+            "instances": 2,
+            "partId": "ldraw:98138p07",
+            "file": "parts/98138p07.dat",
+            "header": {
+              "author": "Nils Schmidt [BlackBrick89]",
+              "ldrawOrg": "Part UPDATE 2022-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "98138p07.dat",
+              "title": "Tile 1 x 1 Round with Eye Pattern"
+            },
+            "sourceFiles": 18
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "official": "3069b.dat",
+            "instances": 1,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54200.dat",
+            "official": "54200.dat",
+            "instances": 2,
+            "partId": "ldraw:54200"
+          }
+        ],
+        "inlineParts": [],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 18,
+        "fetched": {
+          "requests": 107,
+          "found": 60,
+          "notFound": 47,
+          "bytes": 61100
+        },
+        "timings": {
+          "bakeMs": 1.699999999254942,
+          "resolveMs": 656.3000000007451,
+          "totalMs": 658
+        },
+        "studio": {
+          "file": "black-cat.io",
+          "entry": "modelv2.ldr",
+          "studioVersion": "2.26.7_1",
+          "convertedLines": 28,
+          "unconvertedLines": [],
+          "parts": [
+            {
+              "studio": "12939.dat",
+              "bricklinkId": "12939",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "2456.dat",
+              "bricklinkId": "2456",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3020.dat",
+              "bricklinkId": "3020",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3023b.dat",
+              "bricklinkId": "3023b",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3024.dat",
+              "bricklinkId": "3024",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 6,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3069b.dat",
+              "bricklinkId": "3069b",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3176.dat",
+              "bricklinkId": "3176",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3710.dat",
+              "bricklinkId": "3710",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "48336.dat",
+              "bricklinkId": "48336",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "54200.dat",
+              "bricklinkId": "54200",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "5520.dat",
+              "bricklinkId": "5520",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "60470a.dat",
+              "bricklinkId": "60470a",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6192.dat",
+              "bricklinkId": "6192",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6636.dat",
+              "bricklinkId": "6636",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "98138p07.dat",
+              "bricklinkId": "98138p07",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "99206.dat",
+              "bricklinkId": "99206",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            }
+          ],
+          "unknownColors": []
+        },
+        "importMs": 1474.0999999996275,
+        "sceneMs": 292.2999999988824
+      }
+    ]
+  }
+}
