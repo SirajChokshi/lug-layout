@@ -527,6 +527,44 @@ footer {
   color: #445;
 }
 
+.plan-panel > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.plan-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.plan-panel > summary::before {
+  content: "▸";
+  color: #1f6feb;
+  transition: transform 120ms ease-out;
+}
+
+.plan-panel[open] > summary {
+  margin-bottom: 6px;
+}
+
+.plan-panel[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.plan-panel > summary h2 {
+  margin: 0;
+}
+
+.plan-glance {
+  margin-left: auto;
+  color: #556;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .plan-panel h3 {
   margin: 8px 0 4px;
   font-size: 12px;
