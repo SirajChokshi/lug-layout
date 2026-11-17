@@ -58,6 +58,13 @@ export type PlannedRoadTile =
     }
   | { readonly kind: "remove"; readonly ix: number; readonly iz: number; readonly arms: number }
   | {
+      readonly kind: "stranded";
+      readonly ix: number;
+      readonly iz: number;
+      readonly arms: number;
+      readonly junction: number;
+    }
+  | {
       readonly kind: "refuse";
       readonly ix: number;
       readonly iz: number;
@@ -322,7 +329,7 @@ export function planRoadErase(
     const existing = existingAt(ix, iz);
     if (existing?.sameKit) removed.set(tileKey(ix, iz), { ix, iz, arms: existing.arms });
   }
-  const remaining = new Map<string, RoadTile & { arms: number }>();
+  const remaining = new Map<string, RoadTile & { readonly original: number; arms: number }>();
   for (const tile of removed.values()) {
     for (const [, dx, dz] of SIDES) {
       const ix = tile.ix + dx;
@@ -333,7 +340,7 @@ export function planRoadErase(
       const facing = armToward(-dx, -dz);
       if (!neighbour?.sameKit || (neighbour.arms & facing) === 0) continue;
       if (armCount(neighbour.arms) < JUNCTION_ARMS) continue;
-      const left = remaining.get(key) ?? { ix, iz, arms: neighbour.arms };
+      const left = remaining.get(key) ?? { ix, iz, original: neighbour.arms, arms: neighbour.arms };
       left.arms &= ~facing;
       remaining.set(key, left);
     }
@@ -344,10 +351,15 @@ export function planRoadErase(
     iz,
     arms,
   }));
-  for (const { ix, iz, arms } of remaining.values()) {
-    if (arms === 0) continue;
-    const choices = roadPieceChoices(kit, arms, 0).filter((choice) => choice.arms === arms);
+  for (const { ix, iz, original, arms } of remaining.values()) {
+    const choices =
+      arms === 0
+        ? []
+        : roadPieceChoices(kit, arms, 0).filter(
+            (choice) => armCount(choice.arms) < armCount(original),
+          );
     if (choices.length > 0) planned.push({ kind: "lay", ix, iz, arms, replaces: true, choices });
+    else planned.push({ kind: "stranded", ix, iz, arms, junction: original });
   }
   return planned;
 }
