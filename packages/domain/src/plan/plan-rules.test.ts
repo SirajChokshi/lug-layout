@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LduRect, PlanRegion, PlanTable } from "./plan-region.ts";
-import {
-  FLOAT_BOX_TOLERANCE_LDU,
-  checkPlan,
-  type PlanIssue,
-  type PlanPlacement,
-} from "./plan-rules.ts";
+import { checkPlan, type PlanIssue, type PlanPlacement } from "./plan-rules.ts";
 
 const CHUNK = 640;
 const BASEPLATE_LDU = 640;
@@ -141,7 +136,6 @@ const MODEL_AABBS: Record<string, { readonly minZ: number; readonly maxZ: number
   "7936-1": { minZ: -489, maxZ: 489 },
   "10190-1": { minZ: -320, maxZ: 345.97850036621094 },
 };
-const TOLERANCE_MM = FLOAT_BOX_TOLERANCE_LDU * 0.4;
 
 function modelBox(name: string, x: number, z: number): LduRect {
   const aabb = MODEL_AABBS[name];
@@ -153,10 +147,6 @@ function placed(box: LduRect): PlanPlacement {
   return { key: { chunkKey: 1, slot: 0 }, ref: "omr:10185-1", label: "10185-1", box };
 }
 
-function atOrigin(depth: number): PlanRegion {
-  return { ...region([table("t", 800, 0, 2400, depth)]), originChunkX: 0, originChunkZ: -7 };
-}
-
 function at(depth: number, maxOverhangMm: number): PlanRegion {
   return region([table("t", 0, 0, 2400, depth)], {
     originChunkX: 0,
@@ -166,20 +156,6 @@ function at(depth: number, maxOverhangMm: number): PlanRegion {
 }
 
 describe("checkPlan with float model boxes", () => {
-  it("measures 10185-1 hanging 267 mm off a table far from world zero, and again after the table changes", () => {
-    const box = modelBox("10185-1", 4000, -840);
-    for (const [depth, edge] of [
-      [1321, -1177.5],
-      [1400, -980],
-    ] as const) {
-      const [fit] = checkPlan(atOrigin(depth), [placed(box)]).issues;
-      const trueMm = (box.maxZ - edge) * 0.4;
-      expect(fit?.rule).toBe("fit");
-      expect(Math.abs((fit?.overhangMm ?? 0) - trueMm)).toBeLessThanOrEqual(TOLERANCE_MM);
-      expect(fit?.message).toContain(`reaches ${Math.ceil(trueMm * 10) / 10} mm`);
-    }
-  });
-
   it("matches the exact back-edge overhang for real model boxes across positions and depths", () => {
     let checked = 0;
     for (const name of Object.keys(MODEL_AABBS)) {
@@ -200,9 +176,8 @@ describe("checkPlan with float model boxes", () => {
               },
             };
             const fit = checkPlan(plan, [placed(box)]).issues.find((i) => i.rule === "fit");
-            const reported = fit?.overhangMm ?? 0;
-            expect(trueMm - reported).toBeLessThanOrEqual(TOLERANCE_MM);
-            expect(reported - trueMm).toBeLessThanOrEqual(1e-9);
+            expect(fit?.overhangMm).toBeCloseTo(trueMm, 9);
+            expect(fit?.message).toContain(`reaches ${Math.ceil(trueMm * 10 - 1e-9) / 10} mm`);
             checked++;
           }
         }
@@ -211,17 +186,20 @@ describe("checkPlan with float model boxes", () => {
     expect(checked).toBeGreaterThan(1000);
   });
 
-  it("treats float noise under the tolerance as on the table and shows a real excess above the limit", () => {
+  it("flags real geometry 0.048 LDU past a table edge and shows it above the limit", () => {
     const box = { minX: 2000, maxX: 2640, minZ: 1660, maxZ: 2000 + 330.0482535107422 };
-    expect(checkPlan(at(832, 100), [placed(box)]).issues).toEqual([]);
-    expect(checkPlan(at(932, 0), [placed(box)]).issues).toEqual([]);
-    const over = { ...box, maxZ: 2080 + 250 + 0.15 };
-    const [fit] = checkPlan(at(832, 100), [placed(over)]).issues;
-    expect(fit?.message).toContain("reaches 100.1 mm");
-    expect(fit?.message).toContain("(limit 100 mm)");
+    const [limited] = checkPlan(at(832, 100), [placed(box)]).issues;
+    expect(limited?.message).toContain(
+      "reaches 100.1 mm past the nearest table edge along x or z (limit 100 mm)",
+    );
+    const [bare] = checkPlan(at(932, 0), [placed(box)]).issues;
+    expect(bare?.message).toContain(
+      "reaches 0.1 mm past the nearest table edge along x or z (limit 0 mm), with 5 mm²",
+    );
+    expect(checkPlan(at(932, 0), [placed({ ...box, maxZ: 2330 })]).issues).toEqual([]);
   });
 
-  it("ignores float noise at the room edge and at obstacles", () => {
+  it("flags 0.048 LDU across the room edge or into an obstacle and accepts flush edges", () => {
     const plan: PlanRegion = {
       ...region([table("t", 0, 0, 2400, 1200)], { originChunkX: 0, originChunkZ: 0 }),
       footprint: {
@@ -231,8 +209,14 @@ describe("checkPlan with float model boxes", () => {
         obstacles: [{ id: "o", name: "pillar", rect: { x: 0, z: 1200, width: 400, depth: 400 } }],
       },
     };
-    const nearEdges = { minX: -0.048, maxX: 640, minZ: 2360, maxZ: 3000.048 };
-    expect(checkPlan(plan, [placed(nearEdges)]).issues).toEqual([]);
+    const flush = { minX: 0, maxX: 640, minZ: 2360, maxZ: 3000 };
+    expect(checkPlan(plan, [placed(flush)]).issues).toEqual([]);
+    const past = { ...flush, minX: -0.048, maxZ: 3000.048 };
+    expect(checkPlan(plan, [placed(past)]).issues.map((i) => i.rule)).toEqual([
+      "crossesRegion",
+      "fit",
+      "fit",
+    ]);
   });
 });
 

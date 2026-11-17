@@ -65,11 +65,25 @@ export interface IPlanService {
   setTableTopY(y: number): void;
 }
 
-function checkedOrFlagged(plan: PlanRegion, placements: ReadonlyArray<PlanPlacement>): PlanCheck {
+type Evaluation = Pick<PlanSnapshot, "checks" | "sandboxPlacements">;
+
+function evaluate(
+  plans: ReadonlyArray<PlanRegion>,
+  placed: ReadonlyArray<PlacedForPlan>,
+): Evaluation {
   try {
-    return checkPlan(plan, placements);
+    const domain = placed.map(toDomain);
+    return {
+      checks: plans.map((plan) => checkPlan(plan, domain)),
+      sandboxPlacements: domain
+        .filter((placement) => regionOf(plans, placement.box) === null)
+        .map((placement) => placement.key),
+    };
   } catch (error) {
-    return uncheckedPlan(plan, placements, String(error));
+    return {
+      checks: plans.map((plan) => uncheckedPlan(plan, [], String(error))),
+      sandboxPlacements: [],
+    };
   }
 }
 
@@ -249,12 +263,7 @@ export class PlanService implements IPlanService {
 
   private commit(patch: Partial<PlanSnapshot>): void {
     const next = { ...this.state, ...patch };
-    const domain = next.placements.map(toDomain);
-    const checks = next.plans.map((plan) => checkedOrFlagged(plan, domain));
-    const sandboxPlacements = domain
-      .filter((placement) => regionOf(next.plans, placement.box) === null)
-      .map((placement) => placement.key);
-    this.state = { ...next, checks, sandboxPlacements };
+    this.state = { ...next, ...evaluate(next.plans, next.placements) };
     this.draw();
     for (const listener of this.listeners) listener();
   }

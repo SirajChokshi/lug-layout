@@ -41,7 +41,7 @@ class IssueBoxBackend implements ISceneBackend {
   }
 }
 
-it("keeps the plan current when a float model box hangs off a table far from world zero", () => {
+it("commits an unchecked plan, tables kept, when a placement box cannot be read", () => {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   const backend = new IssueBoxBackend();
@@ -52,25 +52,35 @@ it("keeps the plan current when a float model box hangs off a table far from wor
     roomWidthMm: 4000,
     roomDepthMm: 3000,
     originChunkX: 0,
-    originChunkZ: -7,
+    originChunkZ: 0,
   });
-  const tableId = plans.addTable(planId, {
+  plans.addTable(planId, {
     name: "Table 1",
-    rect: { x: 800, z: 0, width: 2400, depth: 1321 },
+    rect: { x: 800, z: 800, width: 2400, depth: 1200 },
     heightMm: 750,
   });
-  const box = { minX: 3680, minY: 0, minZ: -1180, maxX: 4320, maxY: 836, maxZ: -509.9517464892578 };
-  plans.setPlacements([
-    { key: { chunkKey: 5, slot: 2 }, ref: "omr:10185-1", label: "10185-1", box },
-  ]);
+  const unreadable: WorldBox = Object.defineProperty(
+    { minX: 0, minY: 0, minZ: 0, maxX: 640, maxY: 8, maxZ: 640 },
+    "minX",
+    {
+      get(): number {
+        throw new Error("box is gone");
+      },
+    },
+  );
+  const placement = {
+    key: { chunkKey: 5, slot: 2 },
+    ref: "ldraw:3811",
+    label: "3811",
+    box: unreadable,
+  };
+  plans.setPlacements([placement]);
 
-  const [check] = plans.snapshot().checks;
-  expect(check?.inside).toEqual([{ chunkKey: 5, slot: 2 }]);
-  expect(check?.issues.map((i) => [i.rule, i.placements])).toEqual([
-    ["fit", [{ chunkKey: 5, slot: 2 }]],
+  const snapshot = plans.snapshot();
+  expect(snapshot.placements).toEqual([placement]);
+  expect(snapshot.checks[0]?.tables.map((t) => t.studs.studsWide)).toEqual([300]);
+  expect(snapshot.checks[0]?.issues.map((i) => [i.rule, i.message])).toEqual([
+    ["unchecked", 'Plan "Room" could not be checked: Error: box is gone'],
   ]);
-  expect(backend.issueBoxes).toEqual([box]);
-
-  plans.updateTable(planId, tableId, { rect: { x: 800, z: 0, width: 2400, depth: 1400 } });
-  expect(plans.snapshot().checks[0]?.issues[0]?.message).toContain("reaches 188.1 mm");
+  expect(backend.issueBoxes).toEqual([]);
 });

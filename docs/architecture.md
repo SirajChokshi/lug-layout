@@ -288,7 +288,7 @@ A plan region is a polygon in the world, aligned to the 32-stud grid, linked to 
 These are drawn in mm and snapped to the stud grid at 8 mm per stud. Room scans or imported floor plans come later.
 
 Extra plan rules:
-1. **Fits the footprint.** Every placement in the region lies on a table top, and nothing overhangs a table edge beyond the profile's limit (0 by default). Placement footprints are axis-aligned boxes in LDU. Imported models' boxes come from float part bounds, so the fit, plan-edge and obstacle tests allow `FLOAT_BOX_TOLERANCE_LDU` (0.1 LDU, 0.04 mm) of float noise, such as 10185-1's 0.048 LDU. That is below the 0.25 LDU step between lattice-box reaches against whole-mm tables, so lattice cases stay exact. The reported overhang is the Chebyshev reach past the bare tables (along x or z), and the message rounds it up to 0.1 mm, so a reach over the limit never displays as equal to it.
+1. **Fits the footprint.** Every placement in the region lies on a table top, and nothing overhangs a table edge beyond the profile's limit (0 by default).
 2. **Reach.** Every point of the layout is within the maximum reach depth from an aisle or table edge you can access. The default depth is an owner decision (§12).
 3. **Seams.** Table seams fall on module boundaries, with a warning for any track that crosses a seam off a module edge.
 4. **Complete BOM.** Every part is mapped to Rebrickable and BrickLink ids. Nothing is a placeholder. Substructure, baseplates, track and road plates are all counted.

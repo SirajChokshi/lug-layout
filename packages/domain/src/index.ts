@@ -54,7 +54,6 @@ export {
   type StudRect,
 } from "./plan/plan-region.ts";
 export {
-  FLOAT_BOX_TOLERANCE_LDU,
   checkPlan,
   nearestTableLdu,
   overhangLdu,

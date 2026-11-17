@@ -1,11 +1,19 @@
-import { lduFromMm, mmFromLdu } from "@brr/math";
+import { lduFromMm } from "@brr/math";
+import {
+  ExactFrame,
+  exactArea,
+  exactCoveredWithin,
+  exactNearest,
+  exactOverlap,
+  exactReach,
+  exactUncovered,
+} from "./exact-rect.ts";
 import {
   mmRectInWorld,
   rectContains,
   rectsOverlap,
   roomRect,
   studsInside,
-  uncoveredBy,
   type LduRect,
   type MmRect,
   type PlanRegion,
@@ -13,8 +21,6 @@ import {
 } from "./plan-region.ts";
 
 export type PlanRuleId = "footprint" | "fit" | "crossesRegion" | "unchecked";
-export const FLOAT_BOX_TOLERANCE_LDU = 0.1;
-const MICRO_MM = 1e6;
 export type IssueSeverity = "error" | "warning";
 
 export interface PlacementKey {
@@ -62,6 +68,12 @@ interface OffTable {
   readonly nearestTableMm: number;
   readonly entirelyOffTables: boolean;
   readonly offTableMm2: number;
+}
+
+interface ShownOffTable {
+  readonly overhangTenthsUp: number;
+  readonly offTableMm2Up: number;
+  readonly nearestTenths: number;
 }
 
 const ON_TABLE: OffTable = {
@@ -146,119 +158,112 @@ function footprintIssues(region: PlanRegion, room: LduRect): PlanIssue[] {
   return issues;
 }
 
-function grown(rect: LduRect, by: number): LduRect {
-  return {
-    minX: rect.minX - by,
-    minZ: rect.minZ - by,
-    maxX: rect.maxX + by,
-    maxZ: rect.maxZ + by,
-  };
-}
-
-function areaMm2(rects: ReadonlyArray<LduRect>): number {
-  return rects.reduce((sum, r) => sum + mmFromLdu(r.maxX - r.minX) * mmFromLdu(r.maxZ - r.minZ), 0);
-}
-
-function coveredWithin(box: LduRect, tables: ReadonlyArray<LduRect>, reach: number): boolean {
-  return (
-    uncoveredBy(
-      box,
-      tables.map((table) => grown(table, reach)),
-    ).length === 0
-  );
-}
-
-function reachCandidates(box: LduRect, tables: ReadonlyArray<LduRect>): number[] {
-  const candidates = new Set<number>([0]);
-  const add = (value: number): void => {
-    if (value > 0) candidates.add(value);
-  };
-  tables.forEach((table, i) => {
-    for (const [boxMin, boxMax, tableMin, tableMax] of [
-      [box.minX, box.maxX, table.minX, table.maxX],
-      [box.minZ, box.maxZ, table.minZ, table.maxZ],
-    ] as const) {
-      add(tableMin - boxMin);
-      add(boxMax - tableMax);
-      add(tableMin - boxMax);
-      add(boxMin - tableMax);
-    }
-    for (const other of tables.slice(i + 1)) {
-      add((other.minX - table.maxX) / 2);
-      add((table.minX - other.maxX) / 2);
-      add((other.minZ - table.maxZ) / 2);
-      add((table.minZ - other.maxZ) / 2);
-    }
-  });
-  return [...candidates];
+function frameFor(box: LduRect, tables: ReadonlyArray<LduRect>, extra: number): ExactFrame {
+  const values = [box, ...tables].flatMap((r) => [r.minX, r.minZ, r.maxX, r.maxZ]);
+  return new ExactFrame([...values, extra]);
 }
 
 export function overhangLdu(box: LduRect, tables: ReadonlyArray<LduRect>): number {
   if (tables.length === 0) return Number.POSITIVE_INFINITY;
-  const candidates = reachCandidates(box, tables);
-  const covering = candidates.filter((r) =>
-    coveredWithin(box, tables, r + FLOAT_BOX_TOLERANCE_LDU),
+  const frame = frameFor(box, tables, 0);
+  return frame.toLdu(
+    exactReach(
+      frame.rect(box),
+      tables.map((t) => frame.rect(t)),
+    ),
   );
-  return Math.min(...(covering.length > 0 ? covering : [Math.max(...candidates)]));
 }
 
 export function nearestTableLdu(box: LduRect, tables: ReadonlyArray<LduRect>): number {
-  return tables.reduce((nearest, table) => {
-    const gapX = Math.max(table.minX - box.maxX, box.minX - table.maxX, 0);
-    const gapZ = Math.max(table.minZ - box.maxZ, box.minZ - table.maxZ, 0);
-    return Math.min(nearest, Math.max(gapX, gapZ));
-  }, Number.POSITIVE_INFINITY);
+  if (tables.length === 0) return Number.POSITIVE_INFINITY;
+  const frame = frameFor(box, tables, 0);
+  return frame.toLdu(
+    exactNearest(
+      frame.rect(box),
+      tables.map((t) => frame.rect(t)),
+    ),
+  );
 }
 
-function overlapsBeyondTolerance(a: LduRect, b: LduRect): boolean {
-  const t = FLOAT_BOX_TOLERANCE_LDU;
-  return a.minX < b.maxX - t && b.minX < a.maxX - t && a.minZ < b.maxZ - t && b.minZ < a.maxZ - t;
-}
-
-function micro(value: number): number {
-  return Math.round(value * MICRO_MM) / MICRO_MM;
-}
-
-function upToTenth(value: number): number {
-  return Math.ceil(micro(value) * 10) / 10;
+function isFiniteRect(rect: LduRect): boolean {
+  return [rect.minX, rect.minZ, rect.maxX, rect.maxZ].every(Number.isFinite);
 }
 
 function nearestTenth(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function offTableMessage(label: string, offTable: OffTable, limitMm: number): string {
-  const area = Math.ceil(micro(offTable.offTableMm2));
-  const reach = `${label} overhangs the tables: it reaches ${upToTenth(offTable.overhangMm)} mm past the nearest table edge along x or z (limit ${limitMm} mm), with ${area} mm² of its footprint off the table tops.`;
-  if (!offTable.entirelyOffTables) return reach;
-  const nearest = nearestTenth(offTable.nearestTableMm);
-  return nearest === 0
+function offTableMessage(
+  label: string,
+  shown: ShownOffTable,
+  entirelyOff: boolean,
+  limitMm: number,
+): string {
+  const reach = `${label} overhangs the tables: it reaches ${shown.overhangTenthsUp} mm past the nearest table edge along x or z (limit ${limitMm} mm), with ${shown.offTableMm2Up} mm² of its footprint off the table tops.`;
+  if (!entirelyOff) return reach;
+  return shown.nearestTenths === 0
     ? `${reach} It is entirely off the tables, touching the edge of the nearest one.`
-    : `${reach} It is entirely off the tables, ${nearest} mm from the nearest one along x or z (the larger of the two axis gaps).`;
+    : `${reach} It is entirely off the tables, ${shown.nearestTenths} mm from the nearest one along x or z (the larger of the two axis gaps).`;
+}
+
+function offTableIssue(
+  placement: PlanPlacement,
+  surfaces: ReadonlyArray<LduRect>,
+  limitMm: number,
+): PlanIssue | null {
+  const limitLdu = lduFromMm(limitMm);
+  const frame = frameFor(placement.box, surfaces, limitLdu);
+  const box = frame.rect(placement.box);
+  const tables = surfaces.map((t) => frame.rect(t));
+  if (exactCoveredWithin(box, tables, frame.of(limitLdu))) return null;
+  const reach = exactReach(box, tables);
+  const nearest = exactNearest(box, tables);
+  const offArea = exactArea(exactUncovered(box, tables));
+  const entirelyOffTables = !tables.some((t) => exactOverlap(t, box));
+  const offTable: OffTable = {
+    overhangMm: (frame.toLdu(reach) * 2) / 5,
+    nearestTableMm: (frame.toLdu(nearest) * 2) / 5,
+    entirelyOffTables,
+    offTableMm2: frame.toMm2(offArea),
+  };
+  const shown: ShownOffTable = {
+    overhangTenthsUp: frame.ceilTenthsOfMm(reach),
+    offTableMm2Up: frame.ceilMm2(offArea),
+    nearestTenths: nearestTenth(offTable.nearestTableMm),
+  };
+  return issue(
+    "fit",
+    [placement.key],
+    offTableMessage(placement.label, shown, entirelyOffTables, limitMm),
+    offTable,
+  );
 }
 
 export function placementInRegion(region: PlanRegion, box: LduRect): boolean {
-  return overlapsBeyondTolerance(roomRect(region), box);
+  return rectsOverlap(roomRect(region), box);
 }
 
-export function checkPlan(region: PlanRegion, placements: ReadonlyArray<PlanPlacement>): PlanCheck {
-  const room = roomRect(region);
-  const tables: TableTop[] = region.footprint.tables.map((table) => ({
+function tableTops(region: PlanRegion): TableTop[] {
+  return region.footprint.tables.map((table) => ({
     id: table.id,
     name: table.name,
     heightMm: table.heightMm,
     surface: mmRectInWorld(region, table.rect),
     studs: studsInside(region, table.rect),
   }));
+}
+
+export function checkPlan(region: PlanRegion, placements: ReadonlyArray<PlanPlacement>): PlanCheck {
+  const room = roomRect(region);
+  const tables = tableTops(region);
   const obstacles = region.footprint.obstacles.map((o) => mmRectInWorld(region, o.rect));
   const surfaces = tables.map((table) => table.surface);
-  const limitLdu = lduFromMm(region.maxOverhangMm);
   const issues = footprintIssues(region, room);
   const inside: PlacementKey[] = [];
   for (const placement of placements) {
     if (!placementInRegion(region, placement.box)) continue;
     inside.push(placement.key);
-    if (!rectContains(grown(room, FLOAT_BOX_TOLERANCE_LDU), placement.box)) {
+    if (!rectContains(room, placement.box)) {
       issues.push(
         issue(
           "crossesRegion",
@@ -267,39 +272,30 @@ export function checkPlan(region: PlanRegion, placements: ReadonlyArray<PlanPlac
         ),
       );
     }
-    const blocked = region.footprint.obstacles.filter((_, i) => {
-      const obstacle = obstacles[i];
-      return obstacle !== undefined && overlapsBeyondTolerance(obstacle, placement.box);
+    region.footprint.obstacles.forEach((obstacle, i) => {
+      const rect = obstacles[i];
+      if (rect && rectsOverlap(rect, placement.box)) {
+        issues.push(
+          issue(
+            "fit",
+            [placement.key],
+            `${placement.label} stands over obstacle "${obstacle.name}".`,
+          ),
+        );
+      }
     });
-    for (const obstacle of blocked) {
-      issues.push(
-        issue(
-          "fit",
-          [placement.key],
-          `${placement.label} stands over obstacle "${obstacle.name}".`,
-        ),
-      );
-    }
     if (surfaces.length === 0) {
       issues.push(issue("fit", [placement.key], `${placement.label} is in a plan with no tables.`));
       continue;
     }
-    if (!coveredWithin(placement.box, surfaces, limitLdu + FLOAT_BOX_TOLERANCE_LDU)) {
-      const offTable: OffTable = {
-        overhangMm: mmFromLdu(overhangLdu(placement.box, surfaces)),
-        nearestTableMm: mmFromLdu(nearestTableLdu(placement.box, surfaces)),
-        entirelyOffTables: !surfaces.some((s) => overlapsBeyondTolerance(s, placement.box)),
-        offTableMm2: areaMm2(uncoveredBy(placement.box, surfaces)),
-      };
+    if (!isFiniteRect(placement.box) || !surfaces.every(isFiniteRect)) {
       issues.push(
-        issue(
-          "fit",
-          [placement.key],
-          offTableMessage(placement.label, offTable, region.maxOverhangMm),
-          offTable,
-        ),
+        issue("fit", [placement.key], `${placement.label} has no finite footprint to measure.`),
       );
+      continue;
     }
+    const offTable = offTableIssue(placement, surfaces, region.maxOverhangMm);
+    if (offTable) issues.push(offTable);
   }
   return { regionId: region.id, room, tables, obstacles, inside, issues };
 }
@@ -315,8 +311,8 @@ export function uncheckedPlan(
   return {
     regionId: region.id,
     room: roomRect(region),
-    tables: [],
-    obstacles: [],
+    tables: tableTops(region),
+    obstacles: region.footprint.obstacles.map((o) => mmRectInWorld(region, o.rect)),
     inside,
     issues: [issue("unchecked", inside, `Plan "${region.name}" could not be checked: ${reason}`)],
   };
