@@ -4,6 +4,7 @@ import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
+import type { StarterLayout } from "./starters/starter-layouts.ts";
 import type { ICityScene } from "./scene/city-scene.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
 import type { IRunningGear } from "./running-gear/running-gear-editor.ts";
@@ -33,6 +34,9 @@ export const RUN_SCENE: ServiceIdentifier<IRunScene> = Symbol.for("brr.client.Ru
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
+export const STARTER_LAYOUTS: ServiceIdentifier<ReadonlyArray<StarterLayout>> = Symbol.for(
+  "brr.client.StarterLayouts",
+);
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",
 );

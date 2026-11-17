@@ -78,10 +78,10 @@ import {
   type PlaceableLayer,
 } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
-import { PLAN_SERVICE } from "../tokens.ts";
+import { PLAN_SERVICE, STARTER_LAYOUTS } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { StarterBook, type StarterPlan, type StarterView } from "../starters/starter-book.ts";
-import { STARTER_LAYOUTS } from "../starters/starter-layouts.ts";
+import type { StarterLayout } from "../starters/starter-layouts.ts";
 import {
   carriesRefusal,
   checkRefusal,
@@ -308,7 +308,6 @@ export interface EditorSnapshot {
 }
 
 interface StagedStarter {
-  commits: number;
   readonly poses: PlacementPose[];
   readonly lay: TrackPieceAt[];
   readonly goals: Pose16[];
@@ -611,6 +610,7 @@ export class Editor implements IEditor {
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
+    @inject(STARTER_LAYOUTS) private readonly starterLayouts: ReadonlyArray<StarterLayout>,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -658,7 +658,7 @@ export class Editor implements IEditor {
         relaid: (pieces) => this.placed.replaceTrackPieces(pieces),
       });
       this.starters = new StarterBook(
-        STARTER_LAYOUTS,
+        this.starterLayouts,
         placeables,
         this.track,
         new Map(bundle.models.flatMap((m) => (m.set ? [[`omr:${m.name}`, m.set.name]] : []))),
@@ -1654,8 +1654,9 @@ export class Editor implements IEditor {
     const plan = this.starters?.plan(id);
     if (!plan) return;
     this.chooseItem(null);
-    const staged = this.stageStarter(plan, eventTimeMs);
-    for (let step = 0; step < staged.commits; step++) this.show(this.undoStaged(), eventTimeMs);
+    const scratch = new EditHistory(this.world);
+    const staged = this.stageStarter(scratch, plan, eventTimeMs);
+    for (let edit = scratch.undo(); edit; edit = scratch.undo()) this.show(edit, eventTimeMs);
     if (staged.refusal) {
       this.refuse("place", id, staged.refusal);
       return;
@@ -1680,14 +1681,12 @@ export class Editor implements IEditor {
     return null;
   }
 
-  private undoStaged(): AppliedEdit {
-    const edit = this.history.undo();
-    if (!edit) throw new Error("a staged starter edit is missing from the history");
-    return edit;
-  }
-
-  private stageStarter(plan: StarterPlan, eventTimeMs: number): StagedStarter {
-    const staged: StagedStarter = { commits: 0, poses: [], lay: [], goals: [], refusal: null };
+  private stageStarter(
+    scratch: EditHistory,
+    plan: StarterPlan,
+    eventTimeMs: number,
+  ): StagedStarter {
+    const staged: StagedStarter = { poses: [], lay: [], goals: [], refusal: null };
     for (const layer of STARTER_LAYERS) {
       const batch: PlacementPose[] = [];
       for (const { placeable, pose } of plan.placements) {
@@ -1703,8 +1702,7 @@ export class Editor implements IEditor {
       }
       if (batch.length === 0) continue;
       const requests = batch.map((to) => ({ placement: null, to }));
-      const { added } = this.show(this.history.commit("place", requests), eventTimeMs);
-      staged.commits++;
+      const { added } = this.show(scratch.commit("place", requests), eventTimeMs);
       staged.poses.push(...batch);
       const clash = this.batchRefusal(added);
       if (clash) return { ...staged, refusal: clash };
@@ -1714,8 +1712,7 @@ export class Editor implements IEditor {
     for (const { start, run } of plan.track) {
       const commit = track.layRun(start, run);
       if (commit.blocked) return { ...staged, refusal: trackRunRefusal(commit.blocked) };
-      this.show(this.history.commit("draw-track", [], commit.run), eventTimeMs);
-      staged.commits++;
+      this.show(scratch.commit("draw-track", [], commit.run), eventTimeMs);
       staged.lay.push(...commit.run.lay);
       staged.goals.push(start);
     }

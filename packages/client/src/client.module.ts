@@ -6,6 +6,7 @@ import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import { PlanService } from "./plan/plan-service.ts";
+import { SHIPPED_STARTER_LAYOUTS } from "./starters/starter-layouts.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ImportScene } from "./scene/import-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
@@ -29,6 +30,7 @@ import {
   RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
   SIM_WORKER_PORT,
+  STARTER_LAYOUTS,
   TRACK_SCENE,
   PLAN_SERVICE,
 } from "./tokens.ts";
@@ -37,6 +39,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PART_DISPLAY_SCENE).to(PartDisplayScene).inSingletonScope();
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(CITY_SCENE).to(CityScene).inSingletonScope();
+  bind(STARTER_LAYOUTS).toConstantValue(SHIPPED_STARTER_LAYOUTS);
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();

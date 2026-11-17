@@ -79,7 +79,7 @@ function row(
   return cols.map((col) => at(item, col, rowIndex, rot));
 }
 
-export const STARTER_LAYOUTS: ReadonlyArray<StarterLayout> = [
+export const SHIPPED_STARTER_LAYOUTS: ReadonlyArray<StarterLayout> = [
   {
     id: "oval-town",
     title: "Small oval town",

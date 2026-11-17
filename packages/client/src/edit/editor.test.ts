@@ -21,8 +21,8 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { STARTER_LAYOUTS } from "../starters/starter-layouts.ts";
-import { EDITOR } from "../tokens.ts";
+import { SHIPPED_STARTER_LAYOUTS, type StarterLayout } from "../starters/starter-layouts.ts";
+import { EDITOR, STARTER_LAYOUTS } from "../tokens.ts";
 import { TRACK_ITEM_ID, type IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -114,7 +114,10 @@ const canvas = {
   dataset: {},
 } as unknown as HTMLCanvasElement;
 
-async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDLESS_SET]) {
+async function startEditor(
+  models: ReadonlyArray<string> = [PLACEABLE_SET, STUDLESS_SET],
+  starters: ReadonlyArray<StarterLayout> = SHIPPED_STARTER_LAYOUTS,
+) {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
@@ -122,6 +125,7 @@ async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDL
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
   container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  container.rebind(STARTER_LAYOUTS).toConstantValue(starters);
   const editor = container.get(EDITOR);
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1 });
   return { editor, manifest: await realLoader.loadManifest("standard") };
@@ -244,7 +248,7 @@ it("makes every gesture one undo step, and undo then redo walk back and forth th
 
 const STARTER_MODELS = [
   ...new Set(
-    STARTER_LAYOUTS.flatMap((layout) =>
+    SHIPPED_STARTER_LAYOUTS.flatMap((layout) =>
       layout.pieces.flatMap((piece) => {
         const [source, name] = piece.item.split(":");
         return source === "omr" || source === "generated" ? [name ?? ""] : [];
@@ -253,7 +257,7 @@ const STARTER_MODELS = [
   ),
 ];
 
-it.each(STARTER_LAYOUTS.map((layout) => [layout.id]))(
+it.each(SHIPPED_STARTER_LAYOUTS.map((layout) => [layout.id]))(
   "loads starter %s as one undoable command, unrefused, with its track joined and no road mismatch",
   async (id) => {
     const { editor } = await startEditor(STARTER_MODELS);
@@ -293,3 +297,54 @@ it("loads a starter only into an empty world", async () => {
   expect(layoutState(editor)).toEqual(ring);
   expect(editor.snapshot().history.undoDepth).toBe(1);
 }, 120_000);
+
+function shippedStarter(id: string): StarterLayout {
+  const layout = SHIPPED_STARTER_LAYOUTS.find((candidate) => candidate.id === id);
+  if (!layout) throw new Error(`no shipped starter ${id}`);
+  return layout;
+}
+
+const crossroads = shippedStarter("crossroads-square");
+const ovalTown = shippedStarter("oval-town");
+const REFUSED_STARTERS: ReadonlyArray<StarterLayout> = [
+  {
+    ...crossroads,
+    id: "set-on-the-crossroads",
+    pieces: [
+      ...crossroads.pieces,
+      ...crossroads.pieces
+        .filter((piece) => piece.item === "omr:10185-1")
+        .map((piece) => ({ ...piece, col: 1, row: 1 })),
+    ],
+  },
+  {
+    ...ovalTown,
+    id: "oval-without-baseplates",
+    pieces: ovalTown.pieces.filter((piece) => piece.item !== "ldraw:3811@2" || piece.row > 2),
+  },
+];
+
+it.each(REFUSED_STARTERS.map((layout) => [layout.id]))(
+  "refuses starter %s and leaves the table and both history stacks exactly as they were",
+  async (id) => {
+    const { editor } = await startEditor(STARTER_MODELS, REFUSED_STARTERS);
+    editor.chooseItem("ldraw:3811@2");
+    editor.pointerMove(...ndcOf(-2560, -2560));
+    editor.click(...ndcOf(-2560, -2560), 0);
+    editor.chooseItem(null);
+    const placed = layoutState(editor);
+    editor.undo(1);
+    const before = editor.snapshot();
+
+    editor.loadStarter(id, 2);
+
+    const after = editor.snapshot();
+    expect(after.refusals).toBe(before.refusals + 1);
+    expect(after.placements).toBe(0);
+    expect(after.track?.pieces).toBe(0);
+    expect(after.history).toEqual(before.history);
+    editor.redo(3);
+    expect(layoutState(editor)).toEqual(placed);
+  },
+  120_000,
+);
