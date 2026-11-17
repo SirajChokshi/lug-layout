@@ -613,6 +613,15 @@ footer a {
   color: #b0141c;
 }
 
+.track-gaps {
+  margin: 6px 0 0;
+  padding: 0 0 0 14px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 11px;
+  color: #b0141c;
+}
+
 .gear-panel {
   position: fixed;
   top: 12px;
