@@ -13,7 +13,6 @@ import {
 import {
   CATEGORY_LABEL,
   PALETTE_CATEGORIES,
-  PaletteIndex,
   TRACK_ITEM_ID,
   TRACK_PIECE_PREFIX,
   colorDisplayName,
@@ -31,6 +30,8 @@ import {
 } from "@brr/client";
 import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
+import { usePaletteIndex } from "./use-palette-index.ts";
+import { usePaletteMemory } from "./use-palette-memory.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -575,10 +576,6 @@ function ResultRow({
   );
 }
 
-function trackTerms(track: PaletteSnapshot["track"]): ReadonlyArray<string> {
-  return (track?.bom ?? []).flatMap((line) => [line.piece.replace(/^[a-z]+:/u, ""), line.title]);
-}
-
 type Tab = PaletteFilter | "favorites";
 
 const TABS: ReadonlyArray<Tab> = ["all", "favorites", ...PALETTE_CATEGORIES];
@@ -591,13 +588,6 @@ function tabLabel(tab: Tab): string {
 
 function tabName(tab: Tab): string {
   return tab === "favorites" ? "Favourites" : tabLabel(tab);
-}
-
-function usePaletteMemory(memory: IPaletteMemory) {
-  return useSyncExternalStore(
-    (listener) => memory.subscribe(listener),
-    () => memory.snapshot(),
-  );
 }
 
 function recentLabel(item: CatalogItemView): string {
@@ -663,14 +653,7 @@ export const PalettePanel = memo(function PalettePanel({
     [remembered.favorites, memory],
   );
   const { catalog } = snapshot;
-  const trackKey = trackTerms(snapshot.track).join("\n");
-  const index = useMemo(
-    () =>
-      new PaletteIndex(catalog, [
-        { entryKey: TRACK_ITEM_ID, terms: trackKey === "" ? [] : trackKey.split("\n") },
-      ]),
-    [catalog, trackKey],
-  );
+  const index = usePaletteIndex(catalog, snapshot.track);
   const paint: Paint = {
     current: color,
     choose: setColor,

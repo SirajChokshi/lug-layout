@@ -13,6 +13,7 @@ import {
 } from "@brr/client";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CommandKeys } from "./keys.tsx";
+import { usePaletteIndex } from "./use-palette-index.ts";
 
 interface CommandPaletteProps {
   readonly editor: IEditor;
@@ -103,14 +104,16 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
+  const paletteIndex = usePaletteIndex(snapshot.catalog, snapshot.track);
   const results = useMemo(
     () =>
       searchPalette(query, {
         catalog: snapshot.catalog,
+        index: paletteIndex,
         recent,
         enabled: (id) => commandEnabled(id, snapshot),
       }),
-    [query, snapshot, recent],
+    [query, snapshot, recent, paletteIndex],
   );
   const active = Math.min(cursor, Math.max(results.length - 1, 0));
 
