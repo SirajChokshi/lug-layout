@@ -283,16 +283,17 @@ function sizeWords(item: CatalogItemView): ReadonlyArray<string> {
 function groupEntries(items: ReadonlyArray<CatalogItemView>): ReadonlyArray<PaletteEntry> {
   const entries = new Map<string, PaletteEntry>();
   for (const item of items) {
-    const existing = entries.get(item.group);
+    const key = item.color ? item.group : item.id;
+    const existing = entries.get(key);
     if (existing) {
-      entries.set(item.group, { ...existing, items: [...existing.items, item] });
+      entries.set(key, { ...existing, items: [...existing.items, item] });
       continue;
     }
-    entries.set(item.group, {
-      key: item.group,
+    entries.set(key, {
+      key,
       category: CATEGORY_OF[item.kind],
-      title: item.groupLabel,
-      partNumber: partNumberOf(item.group),
+      title: item.color ? item.groupLabel : item.label,
+      partNumber: partNumberOf(key),
       size: item.studsWide > 0 ? `${item.studsWide}×${item.studsDeep}` : "",
       items: [item],
     });
