@@ -6,8 +6,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "typecheck": "tsc -p tsconfig.json && tsc -p bench/tsconfig.json",
+    "test": "vitest run",
+    "bench": "node --experimental-transform-types --no-warnings bench/view-camera.bench.ts"
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",

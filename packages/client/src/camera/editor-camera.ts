@@ -1,6 +1,6 @@
 import { roomRect, type LduRect } from "@brr/domain";
 import { chunkOf } from "@brr/math";
-import { SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
+import { CAMERA_FOV_DEGREES, SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
 import type { SavedViewV1 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import type { IPlanService } from "../plan/plan-service.ts";
@@ -48,7 +48,7 @@ export interface IEditorCamera {
   fitAll(): void;
   lookAt(x: number, z: number, animate: boolean): void;
   viewPlan(planId: string): void;
-  viewFootprint(out: Float64Array): void;
+  viewFootprint(out: Float64Array): boolean;
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number };
   savedView(): SavedViewV1;
   restoreView(view: SavedViewV1 | null): void;
@@ -110,7 +110,7 @@ function union(boxes: ReadonlyArray<WorldBox>): WorldBox | null {
 @injectable()
 export class EditorCamera implements IEditorCamera {
   private readonly listeners = new Set<() => void>();
-  private readonly view = new ViewCamera();
+  private readonly view = new ViewCamera(CAMERA_FOV_DEGREES);
   private readonly hit = new Float64Array(2);
   private state: CameraSnapshot = { mode: "orbit", scroll: "zoom", scrollDetected: false };
 
@@ -237,8 +237,8 @@ export class EditorCamera implements IEditorCamera {
     if (this.state.mode !== "plan") this.update({ mode: "plan" });
   }
 
-  viewFootprint(out: Float64Array): void {
-    this.view.footprint(out);
+  viewFootprint(out: Float64Array): boolean {
+    return this.view.footprint(out);
   }
 
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number } {
