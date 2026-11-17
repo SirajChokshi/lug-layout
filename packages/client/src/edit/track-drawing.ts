@@ -45,6 +45,13 @@ import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { PlacedOverlap } from "./placed-chunks.ts";
 import {
+  defaultChoice,
+  extensionChoices,
+  type SingleChoiceKind,
+  type TrackChoice,
+  type TrackChoiceKind,
+} from "./track-choices.ts";
+import {
   localBoundsTriangles,
   localPlanTriangles,
   placedPlan,
@@ -170,6 +177,7 @@ export interface TrackDragView {
 export interface TrackCommit {
   readonly run: TrackRequest;
   readonly goal: Pose16 | null;
+  readonly end: Pose16 | null;
   readonly refusal: TrackRefusal | null;
   readonly blocked: RunBlock | null;
 }
@@ -192,6 +200,34 @@ export interface TrackEndView {
   readonly xLdu: number;
   readonly zLdu: number;
   readonly heading: number;
+}
+
+export interface TrackChoiceView {
+  readonly kind: TrackChoiceKind;
+  readonly pieceId: string;
+  readonly straights: number;
+  readonly curves: number;
+  readonly joinsEnd: boolean;
+}
+
+export interface TrackExtendView {
+  readonly choices: ReadonlyArray<TrackChoiceView>;
+  readonly index: number;
+  readonly continuing: boolean;
+  readonly blocked: RunBlock | null;
+}
+
+interface Extension {
+  readonly from: Pose16;
+  readonly revision: number;
+  readonly choices: ReadonlyArray<TrackChoice>;
+  index: number;
+  blocked: RunBlock | null;
+}
+
+interface Run {
+  readonly start: Pose16;
+  readonly moves: ReadonlyArray<TrackMove>;
 }
 
 interface Drag {
@@ -314,7 +350,12 @@ function cellKeys(cells: BaseCells): ReadonlySet<number> {
 }
 
 function refused(refusal: TrackRefusal, blocked: RunBlock | null): TrackCommit {
-  return { run: NO_TRACK_CHANGE, goal: null, refusal, blocked };
+  return { run: NO_TRACK_CHANGE, goal: null, end: null, refusal, blocked };
+}
+
+function endView(end: Pose16): TrackEndView {
+  const studs = zeta16ToStuds(end.position);
+  return { xLdu: studs.x * STUD_LDU, zLdu: studs.z * STUD_LDU, heading: end.heading };
 }
 
 export function trackChunkKey(chunkX: number, chunkZ: number): number {
@@ -334,6 +375,11 @@ export class TrackDrawing {
   private combined: TrackLayout;
   private readonly planCache = new Map<string, PlacedPlan>();
   private drag: Drag | null = null;
+  private anchor: Pose16 | null = null;
+  private extension: Extension | null = null;
+  private preferred: SingleChoiceKind = "straight";
+  private revision = 0;
+  private readonly choiceCache = new Map<string, ReadonlyArray<TrackChoice>>();
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
   private ghostColors = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -412,10 +458,7 @@ export class TrackDrawing {
   }
 
   openEnds(): ReadonlyArray<TrackEndView> {
-    return this.ends.map((end) => {
-      const studs = zeta16ToStuds(end.position);
-      return { xLdu: studs.x * STUD_LDU, zLdu: studs.z * STUD_LDU, heading: end.heading };
-    });
+    return this.ends.map(endView);
   }
 
   joinedPairs(): number {
@@ -751,20 +794,30 @@ export class TrackDrawing {
     return this.openEnds()[target] ?? null;
   }
 
-  ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
+  private previewRun(): Run | null {
     const drag = this.drag;
-    if (!drag?.start || drag.moves.length === 0) return null;
-    const { placed } = layMoves(drag.start, drag.moves);
+    if (drag)
+      return drag.start && drag.moves.length > 0 ? { start: drag.start, moves: drag.moves } : null;
+    const extension = this.extension;
+    const choice = extension?.choices[extension.index];
+    if (!extension || !choice) return null;
+    return { start: extension.from, moves: choice.moves };
+  }
+
+  ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
+    const run = this.previewRun();
+    if (!run) return null;
+    const { placed } = layMoves(run.start, run.moves);
     const count = placed.length;
     this.growGhostScratch(count);
     const partIndex = this.ghostParts.subarray(0, count);
     const colorIndex = this.ghostColors.subarray(0, count);
     const matrices = this.ghostMatrices.subarray(0, count * INSTANCE_MATRIX_FLOATS);
-    const origin = zeta16ToStuds(drag.start.position);
+    const origin = zeta16ToStuds(run.start.position);
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
     placed.forEach((piece, i) => {
-      const move = drag.moves[i];
+      const move = run.moves[i];
       if (!move) return;
       const part = this.kitPart(move);
       partIndex[i] = part.partIndex;
@@ -791,30 +844,33 @@ export class TrackDrawing {
     this.drag = null;
   }
 
+  private propose(run: Run, goal: Pose16 | null): TrackCommit {
+    const blocked = this.runBlock(run.start, run.moves);
+    if (blocked) return refused(blocked.kind, blocked);
+    const { placed, end } = layMoves(run.start, run.moves);
+    const lay = placed.map((piece, i): TrackPieceAt => {
+      const move = run.moves[i];
+      if (!move) throw new Error(`run piece ${i} has no move`);
+      return {
+        index: this.layout.count + i,
+        piece: this.kitPart(move).catalogIndex,
+        pose: piece.placement,
+        yPlates: LAID_TRACK_PLATES,
+      };
+    });
+    return { run: { lift: [], lay }, goal, end, refusal: null, blocked: null };
+  }
+
   endDrag(): TrackCommit {
     const drag = this.drag;
     this.drag = null;
     if (!drag?.start || drag.moves.length === 0) {
-      return { run: NO_TRACK_CHANGE, goal: null, refusal: null, blocked: null };
+      return { run: NO_TRACK_CHANGE, goal: null, end: null, refusal: null, blocked: null };
     }
     if (drag.closure === "impossible" || drag.closure === "limit") {
       return refused(drag.closure, null);
     }
-    const blocked = this.runBlock(drag.start, drag.moves);
-    if (blocked) return refused(blocked.kind, blocked);
-    const { placed } = layMoves(drag.start, drag.moves);
-    const lay: TrackPieceAt[] = [];
-    placed.forEach((piece, i) => {
-      const move = drag.moves[i];
-      if (!move) return;
-      lay.push({
-        index: this.layout.count + lay.length,
-        piece: this.kitPart(move).catalogIndex,
-        pose: piece.placement,
-        yPlates: LAID_TRACK_PLATES,
-      });
-    });
-    return { run: { lift: [], lay }, goal: drag.goal, refusal: null, blocked: null };
+    return this.propose({ start: drag.start, moves: drag.moves }, drag.goal);
   }
 
   laidPiece(index: number): TrackPieceAt {
@@ -948,6 +1004,141 @@ export class TrackDrawing {
       ends.push(combined.connectorPose(placement, connector));
     }
     this.ends = ends;
+    this.revision++;
+    this.choiceCache.clear();
+    const anchor = this.anchor;
+    if (anchor && !ends.some((end) => pose16Equals(end, anchor))) this.anchor = null;
+  }
+
+  continueFrom(end: Pose16 | null): void {
+    this.anchor = end && this.ends.some((open) => pose16Equals(open, end)) ? end : null;
+    this.extension = null;
+  }
+
+  clearAnchor(): boolean {
+    const had = this.anchor !== null;
+    this.anchor = null;
+    this.extension = null;
+    return had;
+  }
+
+  private choicesFrom(from: Pose16): ReadonlyArray<TrackChoice> {
+    const key = `${from.heading}|${from.position.join(",")}`;
+    const cached = this.choiceCache.get(key);
+    if (cached) return cached;
+    const choices = extensionChoices(this.kit, from, this.ends, () => performance.now());
+    this.choiceCache.set(key, choices);
+    return choices;
+  }
+
+  focusExtension(xLdu: number, zLdu: number, hovering: boolean): void {
+    if (this.drag) return;
+    const hovered = hovering ? this.endNear(xLdu, zLdu, null) : null;
+    const from = (hovered === null ? null : this.ends[hovered]) ?? this.anchor;
+    if (!from) {
+      this.extension = null;
+      return;
+    }
+    const current = this.extension;
+    if (current && current.revision === this.revision && pose16Equals(current.from, from)) return;
+    const choices = this.choicesFrom(from);
+    const index = defaultChoice(choices, this.preferred);
+    this.extension = {
+      from,
+      revision: this.revision,
+      choices,
+      index,
+      blocked: this.runBlock(from, choices[index]?.moves ?? []),
+    };
+  }
+
+  cycleChoice(step: number): boolean {
+    const extension = this.extension;
+    if (!extension || extension.choices.length === 0) return false;
+    const count = extension.choices.length;
+    extension.index = (((extension.index + step) % count) + count) % count;
+    const choice = extension.choices[extension.index];
+    if (!choice) return false;
+    extension.blocked = this.runBlock(extension.from, choice.moves);
+    return true;
+  }
+
+  proposeExtension(): TrackCommit {
+    const extension = this.extension;
+    const choice = extension?.choices[extension.index];
+    if (!extension || !choice) {
+      return { run: NO_TRACK_CHANGE, goal: null, end: null, refusal: null, blocked: null };
+    }
+    const proposal = this.propose({ start: extension.from, moves: choice.moves }, choice.target);
+    if (proposal.refusal === null && choice.kind !== "join") this.preferred = choice.kind;
+    return proposal;
+  }
+
+  extensionKey(): string | null {
+    const extension = this.extension;
+    if (!extension) return null;
+    const { from } = extension;
+    return `${extension.revision}|${from.heading}|${from.position.join(",")}|${extension.index}`;
+  }
+
+  extensionStart(): Pose16 | null {
+    return this.extension?.from ?? null;
+  }
+
+  extensionTarget(): TrackEndView | null {
+    const extension = this.extension;
+    const target = extension?.choices[extension.index]?.target;
+    return target ? endView(target) : null;
+  }
+
+  extensionFrom(): TrackEndView | null {
+    const from = this.extension?.from;
+    return from ? endView(from) : null;
+  }
+
+  onExtension(xLdu: number, zLdu: number, includeOwner: boolean): boolean {
+    const run = this.previewRun();
+    const extension = this.extension;
+    if (this.drag || !run || !extension) return false;
+    const at = endView(extension.from);
+    if (Math.hypot(at.xLdu - xLdu, at.zLdu - zLdu) <= END_PICK_RADIUS_LDU) return true;
+    const cellX = Math.floor(xLdu / STUD_LDU);
+    const cellZ = Math.floor(zLdu / STUD_LDU);
+    const { placed } = layMoves(run.start, run.moves);
+    const onGhost = placed.some((piece, i) => {
+      const move = run.moves[i];
+      if (!move) return false;
+      return cellKeys(this.planOf(this.kitPart(move), piece.placement).cells).has(
+        packedCellKey(cellX, cellZ),
+      );
+    });
+    if (onGhost || !includeOwner) return onGhost;
+    const owner = this.pieceAt(xLdu, zLdu);
+    return (
+      owner !== null &&
+      this.laidConnectorPoses(owner).some((pose) => posesJoin16(pose, extension.from))
+    );
+  }
+
+  extendView(): TrackExtendView | null {
+    const extension = this.extension;
+    if (!extension || this.drag) return null;
+    const anchor = this.anchor;
+    return {
+      choices: extension.choices.map((choice) => {
+        const straights = choice.moves.filter((m) => m.turn === 0).length;
+        return {
+          kind: choice.kind,
+          pieceId: choice.moves[0]?.piece.id ?? "",
+          straights,
+          curves: choice.moves.length - straights,
+          joinsEnd: choice.target !== null,
+        };
+      }),
+      index: extension.index,
+      continuing: anchor !== null && pose16Equals(anchor, extension.from),
+      blocked: extension.blocked,
+    };
   }
 
   pieceAt(xLdu: number, zLdu: number): number | null {

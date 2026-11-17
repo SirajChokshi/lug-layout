@@ -53,7 +53,9 @@ import {
   TRACK_SYSTEM,
   TrackDrawing,
   type HeldTrackRequest,
+  type TrackCommit,
   type TrackDragView,
+  type TrackExtendView,
   type TrackPieceDump,
 } from "./track-drawing.ts";
 import {
@@ -250,6 +252,7 @@ export interface TrackView {
   readonly joins: number;
   readonly coincidentEndIssues: number;
   readonly drag: TrackDragView | null;
+  readonly extend: TrackExtendView | null;
   readonly lastCommit: TrackCommitResult | null;
   readonly solve: TrackSolveStats | null;
   readonly selected: { readonly piece: number; readonly pieceId: string } | null;
@@ -343,6 +346,10 @@ export interface IEditor {
   dragStart(ndcX: number, ndcY: number): boolean;
   dragMove(ndcX: number, ndcY: number): void;
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
+  cycleTrackChoice(step: number): boolean;
+  wheelCyclesTrack(): boolean;
+  layTrackChoice(eventTimeMs: number): void;
+  escape(): void;
   rotate(eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
@@ -579,6 +586,7 @@ export class Editor implements IEditor {
   private track: TrackDrawing | null = null;
   private lastTrackCommit: TrackCommitResult | null = null;
   private selectedTrack: number | null = null;
+  private trackGhostKey: string | null = null;
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -868,6 +876,7 @@ export class Editor implements IEditor {
       joins: track.joinedPairs(),
       coincidentEndIssues: track.coincidentEndIssues(),
       drag: track.dragView(),
+      extend: track.extendView(),
       lastCommit: this.lastTrackCommit,
       solve:
         samples.length === 0
@@ -910,9 +919,7 @@ export class Editor implements IEditor {
     const track = this.track;
     if (this.state.mode !== "track" || !track) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
-    this.showRefusalCells(null);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
-    this.update({ track: this.trackView() });
     return true;
   }
 
@@ -920,6 +927,7 @@ export class Editor implements IEditor {
     const track = this.track;
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
+    this.trackGhostKey = null;
     this.showTrackGhost(track);
     this.showEndMarker(track.dragTarget());
     this.showRefusalCells(track.dragView()?.blocked?.missing ?? null);
@@ -931,17 +939,102 @@ export class Editor implements IEditor {
     if (!track) return;
     if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
     const commit = track.endDrag();
-    this.backend.setGhost(null);
-    this.showEndMarker(null);
-    const laid = commit.run.lay.length > 0;
-    if (laid) this.show(this.history.commit("draw-track", [], commit.run), eventTimeMs);
-    if (!laid && commit.refusal === null) this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
-    if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
-    else if (laid)
-      this.lastTrackCommit = commit.goal && track.joinsAt(commit.goal) ? "joined" : "laid";
+    if (commit.run.lay.length === 0 && commit.refusal === null) {
+      track.clearAnchor();
+      this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
+      this.refreshTrackPreview();
+      return;
+    }
+    this.commitTrack(commit, eventTimeMs);
+  }
+
+  private commitTrack(commit: TrackCommit, eventTimeMs: number): void {
+    const track = this.track;
+    if (!track) return;
     this.showRefusalCells(commit.blocked?.missing ?? null);
-    if (commit.blocked) this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
+    if (commit.refusal) {
+      this.lastTrackCommit = `refused-${commit.refusal}`;
+      if (commit.blocked) this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
+      this.refreshTrackPreview();
+      return;
+    }
+    if (commit.run.lay.length === 0) {
+      this.refreshTrackPreview();
+      return;
+    }
+    this.show(this.history.commit("draw-track", [], commit.run), eventTimeMs);
+    this.lastTrackCommit = commit.goal && track.joinsAt(commit.goal) ? "joined" : "laid";
+    track.continueFrom(commit.end);
+    this.refreshTrackPreview();
+  }
+
+  private refreshTrackPreview(): void {
+    const track = this.track;
+    if (!track || this.state.mode !== "track") return;
+    if (!track.dragView()) {
+      track.focusExtension(this.hitX, this.hitZ, this.hovering && this.selectedTrack === null);
+      const key = track.extensionKey();
+      if (key === null || key !== this.trackGhostKey) this.showTrackGhost(track);
+      this.trackGhostKey = key;
+      this.showEndMarker(track.extensionTarget() ?? track.extensionFrom());
+      if (this.selectedTrack !== null) this.selectTrack(this.selectedTrack);
+      this.showRefusalCells(track.extendView()?.blocked?.missing ?? null);
+    }
     this.update({ track: this.trackView() });
+  }
+
+  cycleTrackChoice(step: number): boolean {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || track.dragView()) return false;
+    if (!track.cycleChoice(step)) return false;
+    this.refreshTrackPreview();
+    return true;
+  }
+
+  wheelCyclesTrack(): boolean {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || !this.hovering) return false;
+    return track.onExtension(this.hitX, this.hitZ, true);
+  }
+
+  layTrackChoice(eventTimeMs: number): void {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || track.dragView()) return;
+    this.layExtension(track, eventTimeMs);
+  }
+
+  private layExtension(track: TrackDrawing, eventTimeMs: number): void {
+    if (!track.extensionStart()) return;
+    this.selectTrack(null);
+    this.commitTrack(track.proposeExtension(), eventTimeMs);
+  }
+
+  private trackClick(eventTimeMs: number): void {
+    const track = this.track;
+    if (!track) return;
+    track.cancelDrag();
+    if (!this.hovering) return;
+    track.focusExtension(this.hitX, this.hitZ, true);
+    if (track.onExtension(this.hitX, this.hitZ, false)) {
+      this.layExtension(track, eventTimeMs);
+      return;
+    }
+    track.clearAnchor();
+    this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
+    this.refreshTrackPreview();
+  }
+
+  escape(): void {
+    const track = this.track;
+    if (this.state.mode === "track" && track) {
+      const hadSelection = this.selectedTrack !== null;
+      if (hadSelection) this.selectTrack(null);
+      if (track.clearAnchor() || hadSelection) {
+        this.refreshTrackPreview();
+        return;
+      }
+    }
+    this.chooseItem(null);
   }
 
   chooseItem(id: string | null): void {
@@ -949,14 +1042,18 @@ export class Editor implements IEditor {
     if (id === TRACK_ITEM_ID && this.track) {
       this.active = null;
       this.backend.setGhost(null);
+      this.trackGhostKey = null;
       this.select(null);
       this.update({ mode: "track", activeItem: TRACK_ITEM_ID });
+      this.refreshTrackPreview();
       return;
     }
     if (this.state.mode === "track") {
       this.track?.cancelDrag();
+      this.track?.clearAnchor();
       this.selectedTrack = null;
       this.backend.setGhost(null);
+      this.trackGhostKey = null;
       this.showEndMarker(null);
       this.update({ mode: "select", activeItem: null, track: this.trackView() });
       if (id === null) return;
@@ -1209,10 +1306,7 @@ export class Editor implements IEditor {
     this.hovering = this.groundHit(ndcX, ndcY);
     const snap = this.snapGhost();
     const track = this.track;
-    if (this.state.mode === "track" && track && !track.dragView() && this.selectedTrack === null) {
-      const end = this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null;
-      this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
-    }
+    if (this.state.mode === "track" && track && !track.dragView()) this.refreshTrackPreview();
     this.placeGhost();
     this.update({ hover: this.hoverView(), snap });
   }
@@ -1223,7 +1317,11 @@ export class Editor implements IEditor {
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
-    if (this.state.mode === "track") return;
+    if (this.state.mode === "track") {
+      this.hovering = this.groundHit(ndcX, ndcY);
+      this.trackClick(eventTimeMs);
+      return;
+    }
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -1302,6 +1400,7 @@ export class Editor implements IEditor {
       studs += chunk.studs.count;
     }
     if (this.selectedTrack !== null) this.selectTrack(null);
+    this.refreshTrackPreview();
     return { chunks: keys.length, instances, studs };
   }
 
@@ -1527,6 +1626,7 @@ export class Editor implements IEditor {
     if (!this.track?.dragView()) return;
     this.track.cancelDrag();
     this.backend.setGhost(null);
+    this.trackGhostKey = null;
     this.showEndMarker(null);
   }
 

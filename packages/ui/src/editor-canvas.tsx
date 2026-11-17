@@ -5,6 +5,8 @@ const CLICK_SLOP_PX = 4;
 const LEFT_BUTTON = 0;
 const MIDDLE_BUTTON = 1;
 const RIGHT_BUTTON = 2;
+const WHEEL_STEP_PX = 50;
+const WHEEL_LINE_PX = 33;
 
 type DragKind = "click" | "orbit" | "pan" | "tool";
 
@@ -92,7 +94,7 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > CLICK_SLOP_PX) {
         drag.moved = true;
       }
-      if (drag.kind === "tool") editor.dragMove(x, y);
+      if (drag.kind === "tool" && drag.moved) editor.dragMove(x, y);
       if (drag.kind === "orbit") editor.orbit(dx, dy);
       if (drag.kind === "pan") editor.pan(dx, dy);
     };
@@ -101,19 +103,29 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       const finished = drag;
       drag = null;
       canvas.releasePointerCapture(event.pointerId);
-      if (finished.kind === "tool") {
+      if (finished.kind === "tool" && finished.moved) {
         const [x, y] = ndc(canvas, event);
         editor.dragEnd(x, y, event.timeStamp);
         return;
       }
-      if (finished.kind === "click" && !finished.moved) {
+      if ((finished.kind === "click" || finished.kind === "tool") && !finished.moved) {
         const [x, y] = ndc(canvas, event);
         editor.click(x, y, event.timeStamp);
       }
     };
+    let wheelSum = 0;
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      editor.zoom(event.deltaY);
+      if (event.ctrlKey || !editor.wheelCyclesTrack()) {
+        wheelSum = 0;
+        editor.zoom(event.deltaY);
+        return;
+      }
+      wheelSum +=
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * WHEEL_LINE_PX : event.deltaY;
+      if (Math.abs(wheelSum) < WHEEL_STEP_PX) return;
+      editor.cycleTrackChoice(Math.sign(wheelSum));
+      wheelSum = 0;
     };
     const onContextMenu = (event: Event): void => event.preventDefault();
     const onLeave = (): void => editor.pointerLeave();
@@ -150,7 +162,20 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
           editor.deleteSelection(event.timeStamp);
           break;
         case "Escape":
-          editor.chooseItem(null);
+          editor.escape();
+          break;
+        case "ArrowLeft":
+        case "ArrowUp":
+          if (!editor.cycleTrackChoice(-1)) return;
+          break;
+        case "ArrowRight":
+        case "ArrowDown":
+          if (!editor.cycleTrackChoice(1)) return;
+          break;
+        case "Enter":
+        case " ":
+          if (editor.snapshot().mode !== "track") return;
+          editor.layTrackChoice(event.timeStamp);
           break;
         case "f":
         case "F":

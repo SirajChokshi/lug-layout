@@ -338,3 +338,78 @@ describe("track held by models", () => {
     expect(lay(short, [24, 0], [8, 0])).toMatchObject({ laid: 0, refusal: "off-baseplate" });
   });
 });
+
+function freshDrawing(): TrackDrawing {
+  return new TrackDrawing(
+    trackBundle.trackCatalog,
+    trackBundle.parts,
+    new ColorTable(trackBundle),
+    openTable,
+  );
+}
+
+function extendAt(target: TrackDrawing, at: readonly [number, number]): void {
+  target.focusExtension(at[0] * STUD_LDU, at[1] * STUD_LDU, true);
+}
+
+function chooseKind(target: TrackDrawing, kind: string): void {
+  const choices = target.extendView()?.choices ?? [];
+  const wanted = choices.findIndex((choice) => choice.kind === kind);
+  if (wanted < 0) throw new Error(`no ${kind} choice`);
+  target.cycleChoice(wanted - (target.extendView()?.index ?? 0));
+}
+
+function layChoice(target: TrackDrawing): boolean {
+  const commit = target.proposeExtension();
+  target.applyTrack(commit.run);
+  target.continueFrom(commit.end);
+  target.focusExtension(0, 0, false);
+  return commit.goal !== null && target.joinsAt(commit.goal);
+}
+
+describe("extending an open end one previewed piece at a time", () => {
+  it("lays each choice joined exactly to the end, continues from its far end, and closes an oval through a join choice", () => {
+    const oval = freshDrawing();
+    lay(oval, [0, 0], [16, 0]);
+    extendAt(oval, [16, 0]);
+    chooseKind(oval, "left");
+    for (let i = 0; i < 8; i++) {
+      expect(oval.extendView()?.choices[oval.extendView()?.index ?? -1]?.kind).toBe("left");
+      layChoice(oval);
+    }
+    chooseKind(oval, "straight");
+    expect(layChoice(oval)).toBe(false);
+    expect(oval.openEnds()).toHaveLength(2);
+    expect(oval.joinedPairs()).toBe(oval.pieceCount - 1);
+    chooseKind(oval, "join");
+    expect(layChoice(oval)).toBe(true);
+    expect(oval.openEnds()).toHaveLength(0);
+    expect(oval.joinedPairs()).toBe(oval.pieceCount);
+    expect(oval.extendView()).toBeNull();
+  });
+
+  it("preselects a short exact join to a facing end, and offers none to an end one stud off", () => {
+    const gap = freshDrawing();
+    lay(gap, [0, 0], [16, 0]);
+    lay(gap, [64, 0], [48, 0]);
+    extendAt(gap, [16, 0]);
+    const view = gap.extendView();
+    const chosen = view?.choices[view.index];
+    expect(chosen).toMatchObject({ kind: "join", straights: 2, curves: 0, joinsEnd: true });
+    expect(layChoice(gap)).toBe(true);
+    expect(gap.openEnds()).toHaveLength(2);
+
+    const offByOne = freshDrawing();
+    lay(offByOne, [0, 0], [16, 0]);
+    lay(offByOne, [65, 0], [49, 0]);
+    extendAt(offByOne, [16, 0]);
+    const off = offByOne.extendView();
+    expect(off?.choices[off.index]?.kind).toBe("straight");
+    expect(off?.choices.filter((choice) => choice.kind !== "join" && choice.joinsEnd)).toEqual([]);
+    expect(
+      off?.choices.some(
+        (choice) => choice.kind === "join" && choice.straights === 2 && choice.curves === 0,
+      ),
+    ).toBe(false);
+  });
+});

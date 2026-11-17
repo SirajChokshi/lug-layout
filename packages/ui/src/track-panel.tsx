@@ -1,4 +1,11 @@
-import type { EditorSnapshot, RunBlock, TrackDragView, TrackView } from "@brr/client";
+import type {
+  EditorSnapshot,
+  RunBlock,
+  TrackChoiceView,
+  TrackDragView,
+  TrackExtendView,
+  TrackView,
+} from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -50,6 +57,65 @@ function dragRows(drag: TrackDragView): ReadonlyArray<readonly [string, string]>
         : "every piece sits on a baseplate, clear of everything",
     ],
   ];
+}
+
+function choiceLabel(choice: TrackChoiceView): string {
+  switch (choice.kind) {
+    case "straight":
+      return "Straight";
+    case "left":
+      return "Curve left";
+    case "right":
+      return "Curve right";
+    case "join":
+      return `Join: ${choice.straights + choice.curves} pieces`;
+    default: {
+      const unhandled: never = choice.kind;
+      throw new Error(`unhandled choice ${String(unhandled)}`);
+    }
+  }
+}
+
+function choiceDetail(choice: TrackChoiceView): string {
+  const parts =
+    choice.kind === "join"
+      ? `${choice.straights} straight, ${choice.curves} curve`
+      : choice.pieceId.replace("ldraw:", "");
+  return choice.joinsEnd ? `${parts}, joins an open end exactly` : parts;
+}
+
+function ExtendStrip({ extend }: { readonly extend: TrackExtendView }) {
+  const current = extend.choices[extend.index];
+  return (
+    <div
+      className="track-extend"
+      data-choice={current?.kind ?? ""}
+      data-choice-index={extend.index}
+      data-choice-joins={current?.joinsEnd ? "true" : "false"}
+      data-choice-blocked={extend.blocked?.kind ?? ""}
+    >
+      <p>
+        {extend.continuing ? "Next piece from the last end" : "Next piece on this open end"}{" "}
+        <kbd>←</kbd>/<kbd>→</kbd> or scroll to change, click or <kbd>Enter</kbd> to lay
+      </p>
+      <ol>
+        {extend.choices.map((choice, index) => (
+          <li
+            key={`${choice.kind}-${index}`}
+            aria-current={index === extend.index ? "true" : undefined}
+            className={choice.joinsEnd ? "joins" : undefined}
+            title={choiceDetail(choice)}
+          >
+            {choiceLabel(choice)}
+          </li>
+        ))}
+      </ol>
+      <p>
+        {current ? choiceDetail(current) : ""}
+        {extend.blocked ? `; ${blockText(extend.blocked)}, so it can't be laid` : ""}
+      </p>
+    </div>
+  );
 }
 
 function commitText(track: TrackView): string {
@@ -118,10 +184,12 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       <h2>Track</h2>
       {snapshot.mode === "track" && (
         <p className="toolbar-hint">
-          Drag from an open end (or from empty ground) to lay track. Release over another open end
-          to join it exactly. Click a laid piece and press Delete to remove it.
+          Point at an open end to preview the next piece, then click to lay it and keep going. Drag
+          from an end or empty ground to draw a whole run; release over another open end to join it
+          exactly. Click a laid piece and press Delete to remove it. T toggles the tool.
         </p>
       )}
+      {snapshot.mode === "track" && track.extend && <ExtendStrip extend={track.extend} />}
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>
