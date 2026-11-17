@@ -18,6 +18,7 @@ export type ImportInput = LdrawTextInput | StudioFileInput;
 export interface ImportWorkerRequest {
   readonly id: number;
   readonly compilerUrl: string;
+  readonly ldrawLibraryUrl?: string;
   readonly input: ImportInput;
 }
 

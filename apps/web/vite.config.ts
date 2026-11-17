@@ -44,8 +44,20 @@ function servesRemoteBundle(env: Record<string, string>): boolean {
   return remote;
 }
 
-export default defineConfig(({ mode }) => ({
-  plugins: [react(), bundleCacheHeaders],
-  publicDir: servesRemoteBundle(loadEnv(mode, appRoot, "VITE_")) ? false : assetBundleRoot,
-  build: { target: "es2022" },
-}));
+function requireRemoteLdrawLibrary(env: Record<string, string>): void {
+  if (process.env["VERCEL"] && !ABSOLUTE_HTTP_URL.test(env["VITE_LDRAW_LIBRARY_BASE_URL"] ?? "")) {
+    throw new Error(
+      "Vercel builds read LDraw library files from R2: set VITE_LDRAW_LIBRARY_BASE_URL (docs/ldraw-library.md)",
+    );
+  }
+}
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, appRoot, "VITE_");
+  requireRemoteLdrawLibrary(env);
+  return {
+    plugins: [react(), bundleCacheHeaders],
+    publicDir: servesRemoteBundle(env) ? false : assetBundleRoot,
+    build: { target: "es2022" },
+  };
+});

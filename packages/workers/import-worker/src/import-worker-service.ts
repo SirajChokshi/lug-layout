@@ -32,12 +32,20 @@ export class ImportWorkerService implements IImportWorkerService {
     const { input } = request;
     switch (input.kind) {
       case "ldraw": {
-        const mirror = new LdrawMirror(input.job.source, (url) => fetch(url));
+        const mirror = new LdrawMirror(
+          input.job.source,
+          (url) => fetch(url),
+          request.ldrawLibraryUrl,
+        );
         const engine = new ModelImportEngine(compiler, mirror, () => performance.now());
         return engine.importText(input.job);
       }
       case "studio": {
-        const mirror = new LdrawMirror(input.job.source, (url) => fetch(url));
+        const mirror = new LdrawMirror(
+          input.job.source,
+          (url) => fetch(url),
+          request.ldrawLibraryUrl,
+        );
         return importStudioFile(compiler, mirror, () => performance.now(), input);
       }
       default: {

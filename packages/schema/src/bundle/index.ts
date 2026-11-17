@@ -703,6 +703,14 @@ export type GithubArchive = v.InferOutput<typeof GithubArchive>;
 export const CatalogLocation = v.variant("kind", [GithubMirror, GithubArchive]);
 export type CatalogLocation = v.InferOutput<typeof CatalogLocation>;
 
+export const LdrawLibraryIndex = v.strictObject({
+  format: v.literal(1),
+  source: GithubMirror,
+  archive: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  files: v.record(v.string(), Sha256Hex),
+});
+export type LdrawLibraryIndex = v.InferOutput<typeof LdrawLibraryIndex>;
+
 export const CatalogSourceUse = v.picklist(["crosswalk", "inventory-check"]);
 export type CatalogSourceUse = v.InferOutput<typeof CatalogSourceUse>;
 

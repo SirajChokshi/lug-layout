@@ -6,6 +6,8 @@ pipeline_cli="$pipeline_dir/src/cli.ts"
 
 : "${VITE_BUNDLE_BASE_URL:=$(node -p "require('../../infra/cloudflare/part-bundles.json').public_base_url")}"
 export VITE_BUNDLE_BASE_URL
+: "${VITE_LDRAW_LIBRARY_BASE_URL:=$(node -p "require('../../infra/cloudflare/ldraw-library.json').public_base_url ?? ''")}"
+export VITE_LDRAW_LIBRARY_BASE_URL
 : "${PART_BUNDLE_WAIT_MINUTES:=42}"
 export PART_BUNDLE_WAIT_MINUTES
 
@@ -53,4 +55,5 @@ fi
 
 VITE_BUNDLE_MANIFEST_FILE="$(node "$pipeline_cli" await-served)"
 export VITE_BUNDLE_MANIFEST_FILE
+LDRAW_LIBRARY_BASE_URL="$VITE_LDRAW_LIBRARY_BASE_URL" node "$pipeline_dir/src/library/cli.ts" served --require
 exec pnpm run build

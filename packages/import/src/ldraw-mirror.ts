@@ -13,8 +13,9 @@ export interface MirrorStats {
   readonly bytes: number;
 }
 
-const RAW_HOST = "https://raw.githubusercontent.com";
+const GITHUB_RAW_BASE_URL = "https://raw.githubusercontent.com";
 const HTTP_NOT_FOUND = 404;
+const TRAILING_SLASHES = /\/+$/u;
 const SEARCH_PREFIXES = ["p/8/", "parts/", "p/"] as const;
 const UNPREFIXED_RANK = SEARCH_PREFIXES.length;
 
@@ -38,14 +39,18 @@ export class LdrawMirror {
   private found = 0;
   private notFound = 0;
   private bytes = 0;
+  readonly baseUrl: string;
 
   constructor(
     readonly source: MirrorSource,
     private readonly fetchUrl: FetchFunction,
-  ) {}
+    baseUrl: string = GITHUB_RAW_BASE_URL,
+  ) {
+    this.baseUrl = baseUrl.replace(TRAILING_SLASHES, "");
+  }
 
   url(path: string): string {
-    return [RAW_HOST, this.source.repo, this.source.commit, this.source.root, path]
+    return [this.baseUrl, this.source.repo, this.source.commit, this.source.root, path]
       .filter((segment) => segment !== "")
       .join("/");
   }

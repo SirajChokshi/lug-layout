@@ -31,6 +31,9 @@ export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credi
 export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Symbol.for(
   "brr.client.ImportWorkerFactory",
 );
+export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.LdrawLibraryBaseUrl",
+);
 export const MODEL_IMPORTER: ServiceIdentifier<IModelImporter> = Symbol.for(
   "brr.client.ModelImporter",
 );
