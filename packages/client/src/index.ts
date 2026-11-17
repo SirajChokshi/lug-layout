@@ -53,6 +53,7 @@ export type {
   RoadSnapState,
   RoadSnapView,
   SelectionView,
+  SkippedCatalogModel,
 } from "./edit/editor.ts";
 export type {
   IRunScene,

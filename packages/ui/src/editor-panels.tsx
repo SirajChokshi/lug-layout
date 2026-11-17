@@ -87,8 +87,25 @@ export function CatalogList({ editor, snapshot }: PanelProps) {
           </section>
         );
       })}
+      {snapshot.catalogSkipped.length > 0 && (
+        <p className="catalog-skipped" data-catalog-skipped={skippedNames(snapshot)}>
+          Not placeable: {skippedText(snapshot)}
+        </p>
+      )}
     </nav>
   );
+}
+
+function skippedNames(snapshot: EditorSnapshot): string {
+  return snapshot.catalogSkipped.map((model) => model.name).join(",");
+}
+
+function skippedText(snapshot: EditorSnapshot): string {
+  const byReason = new Map<string, string[]>();
+  for (const model of snapshot.catalogSkipped) {
+    byReason.set(model.reason, [...(byReason.get(model.reason) ?? []), model.name]);
+  }
+  return [...byReason].map(([reason, names]) => `${names.join(", ")} (${reason})`).join("; ");
 }
 
 function issueText(issue: RoadIssueView): string {

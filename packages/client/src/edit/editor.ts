@@ -136,12 +136,27 @@ export interface EditorStats {
   readonly triangles: number;
 }
 
+export interface SkippedCatalogModel {
+  readonly name: string;
+  readonly reason: string;
+}
+
+interface SkippedModel extends SkippedCatalogModel {
+  readonly credit: ModelCredit;
+}
+
+interface LoadedCatalog {
+  readonly placeables: ReadonlyArray<Placeable>;
+  readonly skipped: ReadonlyArray<SkippedModel>;
+}
+
 export interface EditorSnapshot {
   readonly status: EditorStatus;
   readonly error: string | null;
   readonly loadMs: number | null;
   readonly backend: BackendInfo | null;
   readonly catalog: ReadonlyArray<CatalogItemView>;
+  readonly catalogSkipped: ReadonlyArray<SkippedCatalogModel>;
   readonly mode: EditorMode;
   readonly activeItem: string | null;
   readonly ghostRot: number;
@@ -215,6 +230,7 @@ export interface IEditor {
 
 const EDITOR_LOD: BundleLod = "standard";
 const BASEPLATE_ID = "ldraw:3811";
+const NO_LATTICE_REASON = "no stud lattice from the bake";
 const BASEPLATE_COLOR_NAME = "Green";
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
@@ -310,6 +326,7 @@ export class Editor implements IEditor {
     loadMs: null,
     backend: null,
     catalog: [],
+    catalogSkipped: [],
     mode: "select",
     activeItem: null,
     ghostRot: 0,
@@ -342,7 +359,7 @@ export class Editor implements IEditor {
     renderOriginChunkZ: 0,
     rebaseCount: 0,
   };
-  private placeables: Placeable[] = [];
+  private placeables: ReadonlyArray<Placeable> = [];
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
@@ -397,7 +414,8 @@ export class Editor implements IEditor {
       );
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
-      this.placeables = await this.loadPlaceables(bundle, palette, colors);
+      const { placeables, skipped } = await this.loadPlaceables(bundle, palette, colors);
+      this.placeables = placeables;
       this.plans.setTableTopY(this.baseplateBottomY());
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
@@ -416,10 +434,14 @@ export class Editor implements IEditor {
           studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
           studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
         })),
+        catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
         credits: {
           partFiles: bundle.credits.length,
           partFilesLod: EDITOR_LOD,
-          models: this.placeables.flatMap((p) => (p.credit ? [p.credit] : [])),
+          models: [
+            ...this.placeables.flatMap((p) => (p.credit ? [p.credit] : [])),
+            ...skipped.map(({ credit }) => credit),
+          ],
         },
       });
       this.statsSince = performance.now();
@@ -452,7 +474,7 @@ export class Editor implements IEditor {
     bundle: PartBundle,
     palette: MergedParts,
     colors: ColorTable,
-  ): Promise<Placeable[]> {
+  ): Promise<LoadedCatalog> {
     const baseplateIndex = palette.indexOf(BASEPLATE_ID);
     const baseplate = palette.parts[baseplateIndex];
     if (!baseplate) throw new Error(`the bundle has no ${BASEPLATE_ID} baseplate`);
@@ -466,7 +488,7 @@ export class Editor implements IEditor {
     const loaded = await Promise.all(
       placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
-    return [
+    const placeables: Placeable[] = [
       partPlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
       ...roadParts.map((part) => {
         if (part.producedColor === undefined) {
@@ -480,18 +502,27 @@ export class Editor implements IEditor {
           colors,
         );
       }),
-      ...loaded.map(({ bundle: modelBundle, entry, model }) =>
+    ];
+    const skipped: SkippedModel[] = [];
+    for (const { bundle: modelBundle, entry, model } of loaded) {
+      const credit = { name: entry.name, source: entry.source, sections: model.sections };
+      if (model.lattice === null) {
+        skipped.push({ name: entry.name, reason: NO_LATTICE_REASON, credit });
+        continue;
+      }
+      placeables.push(
         modelPlaceable(
           entry.name,
           entry.role === "road-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
           entry.role,
           palette.remap(model, modelBundle.parts),
-          { name: entry.name, source: entry.source, sections: model.sections },
+          credit,
           palette.parts,
           colors,
         ),
-      ),
-    ];
+      );
+    }
+    return { placeables, skipped };
   }
 
   private readonly step = (): void => {
