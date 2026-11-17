@@ -1,4 +1,4 @@
-import { TRACK_ITEM_ID, type EditorOptions, type IEditor } from "@brr/client";
+import type { EditorOptions, IEditor } from "@brr/client";
 import { useEffect, useRef } from "react";
 
 const CLICK_SLOP_PX = 4;
@@ -30,15 +30,6 @@ function ndc(canvas: HTMLCanvasElement, event: PointerEvent): readonly [number, 
     ((event.clientX - rect.left) / rect.width) * 2 - 1,
     1 - ((event.clientY - rect.top) / rect.height) * 2,
   ];
-}
-
-function historyShortcut(editor: IEditor, event: KeyboardEvent): void {
-  if (event.altKey) return;
-  const key = event.key.toLowerCase();
-  if (key === "z" && !event.shiftKey) editor.undo(event.timeStamp);
-  else if (key === "z" || key === "y") editor.redo(event.timeStamp);
-  else return;
-  event.preventDefault();
 }
 
 interface EditorCanvasProps {
@@ -131,46 +122,6 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
     };
-  }, [editor]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.target instanceof HTMLInputElement) return;
-      if (event.ctrlKey || event.metaKey) {
-        historyShortcut(editor, event);
-        return;
-      }
-      switch (event.key) {
-        case "r":
-        case "R":
-          editor.rotate(event.timeStamp);
-          break;
-        case "Delete":
-        case "Backspace":
-          editor.deleteSelection(event.timeStamp);
-          break;
-        case "Escape":
-          editor.chooseItem(null);
-          break;
-        case "f":
-        case "F":
-          editor.focusSelection();
-          break;
-        case "c":
-        case "C":
-          editor.centreOnCursor();
-          break;
-        case "t":
-        case "T":
-          editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
-          break;
-        default:
-          return;
-      }
-      event.preventDefault();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
   }, [editor]);
 
   return <canvas ref={canvasRef} className="scene" />;
