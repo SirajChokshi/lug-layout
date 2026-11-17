@@ -25,6 +25,54 @@ export function usePlanSnapshot(plans: IPlanService): PlanSnapshot {
   );
 }
 
+function CommitInput({
+  value,
+  name,
+  step,
+  ariaLabel,
+  parse,
+  onCommit,
+}: {
+  readonly value: string;
+  readonly name: string;
+  readonly step: string;
+  readonly ariaLabel?: string;
+  readonly parse: (text: string) => number | null;
+  readonly onCommit: (parsed: number) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [shown, setShown] = useState(value);
+  if (shown !== value) {
+    setShown(value);
+    setDraft(value);
+  }
+  const commit = (): void => {
+    const parsed = draft.trim() === "" ? null : parse(draft);
+    setDraft(value);
+    if (parsed !== null && draft !== value) onCommit(parsed);
+  };
+  return (
+    <input
+      type="number"
+      step={step}
+      name={name}
+      aria-label={ariaLabel}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+        if (event.key === "Escape") setDraft(value);
+      }}
+    />
+  );
+}
+
+function wholeNumber(text: string): number | null {
+  const parsed = Number(text);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
 function MmField({
   label,
   value,
@@ -36,25 +84,15 @@ function MmField({
   readonly onCommit: (mm: number) => void;
   readonly name: string;
 }) {
-  const [draft, setDraft] = useState(String(value));
-  const [shown, setShown] = useState(value);
-  if (shown !== value) {
-    setShown(value);
-    setDraft(String(value));
-  }
   return (
     <label className="mm-field">
       <span>{label}</span>
-      <input
-        type="number"
-        step={1}
+      <CommitInput
+        value={String(value)}
         name={name}
-        value={draft}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          const parsed = Number(event.target.value);
-          if (event.target.value.trim() !== "" && Number.isInteger(parsed)) onCommit(parsed);
-        }}
+        step="1"
+        parse={wholeNumber}
+        onCommit={onCommit}
       />
     </label>
   );
@@ -75,28 +113,18 @@ function ScaledField({
   readonly name: string;
   readonly onCommit: (mm: number) => void;
 }) {
-  const shownValue = String(Math.round((mm / mmPerUnit) * 100) / 100);
-  const [draft, setDraft] = useState(shownValue);
-  const [shown, setShown] = useState(shownValue);
-  if (shown !== shownValue) {
-    setShown(shownValue);
-    setDraft(shownValue);
-  }
   return (
     <label className="scaled-field">
-      <input
-        type="number"
-        step="any"
+      <CommitInput
+        value={String(Math.round((mm / mmPerUnit) * 100) / 100)}
         name={name}
-        aria-label={`${label} in ${unit}`}
-        value={draft}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          const parsed = Number(event.target.value);
-          if (event.target.value.trim() !== "" && Number.isFinite(parsed)) {
-            onCommit(Math.round(parsed * mmPerUnit));
-          }
+        step="any"
+        ariaLabel={`${label} in ${unit}`}
+        parse={(text) => {
+          const parsed = Number(text);
+          return Number.isFinite(parsed) ? Math.round(parsed * mmPerUnit) : null;
         }}
+        onCommit={onCommit}
       />
       <span className="scaled-unit">{unit}</span>
     </label>
