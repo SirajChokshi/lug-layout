@@ -44,6 +44,12 @@ describe("shortcut map", () => {
     expect(commandForKey(press("r"), true)).toBeNull();
     expect(commandForKey(press("Backspace"), true)).toBeNull();
     expect(commandForKey(press("z", { ctrlKey: true }), true)).toBeNull();
+    expect(commandForKey(press("/"), true)).toBeNull();
+  });
+
+  it("still opens and closes the palette with Cmd+K or Ctrl+K from a field", () => {
+    expect(commandForKey(press("k", { metaKey: true }), true)).toBe("open-palette");
+    expect(commandForKey(press("k", { ctrlKey: true }), true)).toBe("open-palette");
   });
 
   it.each([

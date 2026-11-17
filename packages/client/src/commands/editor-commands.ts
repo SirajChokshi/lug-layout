@@ -24,7 +24,7 @@ export type EditorActionId =
   | "toggle-joins"
   | "toggle-road-snap";
 
-export type ShellCommandId = "show-shortcuts";
+export type ShellCommandId = "show-shortcuts" | "open-palette";
 
 export type CommandId = EditorActionId | ShellCommandId;
 
@@ -35,6 +35,7 @@ export interface CommandSpec {
   readonly title: string;
   readonly group: CommandGroup;
   readonly keys: ReadonlyArray<KeyChord>;
+  readonly keywords?: string;
   readonly whileTyping?: boolean;
 }
 
@@ -51,22 +52,43 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     title: "Select tool: stop placing, clear the selection",
     group: "Tools",
     keys: [{ key: "Escape" }],
+    keywords: "cancel stop escape deselect pointer",
   },
-  { id: "draw-track", title: "Draw track", group: "Tools", keys: [{ key: "t" }] },
-  { id: "rotate", title: "Rotate 90°", group: "Edit", keys: [{ key: "r" }] },
+  {
+    id: "draw-track",
+    title: "Draw track",
+    group: "Tools",
+    keys: [{ key: "t" }],
+    keywords: "rail train lay 9v",
+  },
+  {
+    id: "rotate",
+    title: "Rotate 90°",
+    group: "Edit",
+    keys: [{ key: "r" }],
+    keywords: "turn spin quarter",
+  },
   {
     id: "delete",
     title: "Delete the selection",
     group: "Edit",
     keys: [{ key: "Delete" }, { key: "Backspace" }],
+    keywords: "remove erase",
   },
   {
     id: "duplicate",
     title: "Place more like the selection",
     group: "Edit",
     keys: [{ key: "d", mod: true }],
+    keywords: "duplicate copy clone again pick",
   },
-  { id: "undo", title: "Undo", group: "Edit", keys: [{ key: "z", mod: true }] },
+  {
+    id: "undo",
+    title: "Undo",
+    group: "Edit",
+    keys: [{ key: "z", mod: true }],
+    keywords: "back revert",
+  },
   {
     id: "redo",
     title: "Redo",
@@ -75,9 +97,22 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
       { key: "z", mod: true, shift: true },
       { key: "y", mod: true },
     ],
+    keywords: "again forward",
   },
-  { id: "focus", title: "Frame the selection", group: "View", keys: [{ key: "f" }] },
-  { id: "centre", title: "Centre on the cursor", group: "View", keys: [{ key: "c" }] },
+  {
+    id: "focus",
+    title: "Frame the selection",
+    group: "View",
+    keys: [{ key: "f" }],
+    keywords: "focus zoom to fit",
+  },
+  {
+    id: "centre",
+    title: "Centre on the cursor",
+    group: "View",
+    keys: [{ key: "c" }],
+    keywords: "center look at",
+  },
   { id: "pan-left", title: "Pan left", group: "View", keys: [{ key: "ArrowLeft" }] },
   { id: "pan-right", title: "Pan right", group: "View", keys: [{ key: "ArrowRight" }] },
   { id: "pan-forward", title: "Pan forward", group: "View", keys: [{ key: "ArrowUp" }] },
@@ -108,14 +143,35 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
   },
   { id: "zoom-in", title: "Zoom in", group: "View", keys: [{ key: "=" }, { key: "+" }] },
   { id: "zoom-out", title: "Zoom out", group: "View", keys: [{ key: "-" }] },
-  { id: "toggle-joins", title: "Show road join markers", group: "View", keys: [{ key: "j" }] },
+  {
+    id: "toggle-joins",
+    title: "Show road join markers",
+    group: "View",
+    keys: [{ key: "j" }],
+    keywords: "toggle edges open mismatch",
+  },
   {
     id: "toggle-road-snap",
     title: "Snap road pieces to matching edges",
     group: "Edit",
     keys: [{ key: "s" }],
+    keywords: "toggle magnet align",
   },
-  { id: "show-shortcuts", title: "Keyboard shortcuts", group: "Help", keys: [{ key: "?" }] },
+  {
+    id: "open-palette",
+    title: "Find a part or command",
+    group: "Help",
+    keys: [{ key: "k", mod: true }, { key: "/" }],
+    keywords: "search palette command quick open",
+    whileTyping: true,
+  },
+  {
+    id: "show-shortcuts",
+    title: "Keyboard shortcuts",
+    group: "Help",
+    keys: [{ key: "?" }],
+    keywords: "help keys hotkeys cheat sheet",
+  },
 ];
 
 export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
@@ -142,13 +198,14 @@ export function commandSpec(id: CommandId): CommandSpec {
 export function commandForKey(input: KeyInput, typing: boolean): CommandId | null {
   for (const spec of COMMANDS) {
     if (typing && !spec.whileTyping) continue;
-    if (spec.keys.some((chord) => chordMatches(chord, input))) return spec.id;
+    const typed = spec.keys.filter((chord) => !typing || chord.mod);
+    if (typed.some((chord) => chordMatches(chord, input))) return spec.id;
   }
   return null;
 }
 
 export function isShellCommand(id: CommandId): id is ShellCommandId {
-  return id === "show-shortcuts";
+  return id === "show-shortcuts" || id === "open-palette";
 }
 
 export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean {

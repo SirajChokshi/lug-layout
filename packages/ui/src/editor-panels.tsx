@@ -5,6 +5,7 @@ import {
   type IEditor,
   type LatencySample,
   type RoadIssueView,
+  type ShellCommandId,
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
 import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
@@ -116,8 +117,8 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
 export function PlacementToolbar({
   editor,
   snapshot,
-  onShowShortcuts,
-}: PanelProps & { readonly onShowShortcuts: () => void }) {
+  onShellCommand,
+}: PanelProps & { readonly onShellCommand: (id: ShellCommandId) => void }) {
   const canRotate = snapshot.mode === "place" || snapshot.selection !== null;
   const { history } = snapshot;
   return (
@@ -174,7 +175,18 @@ export function PlacementToolbar({
       >
         Redo{history.redo === null ? "" : ` ${history.redo}`} ({shortcutText("redo")})
       </button>
-      <button type="button" data-action="show-shortcuts" onClick={onShowShortcuts}>
+      <button
+        type="button"
+        data-action="open-palette"
+        onClick={() => onShellCommand("open-palette")}
+      >
+        Find ({shortcutText("open-palette")})
+      </button>
+      <button
+        type="button"
+        data-action="show-shortcuts"
+        onClick={() => onShellCommand("show-shortcuts")}
+      >
         Shortcuts ({shortcutText("show-shortcuts")})
       </button>
       <p className="toolbar-hint">
