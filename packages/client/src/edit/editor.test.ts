@@ -662,7 +662,7 @@ class OtherTabLocks implements IWorldLocks {
   }
 }
 
-it("leaves road mode when the world turns read-only, and refuses road strokes there", async () => {
+it("leaves road mode when the world turns read-only, and refuses road draw and erase strokes there", async () => {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
@@ -713,6 +713,8 @@ it("leaves road mode when the world turns read-only, and refuses road strokes th
   editor.chooseItem(kit.id);
   expect(editor.snapshot().mode).toBe("select");
   stroke(1);
+  editor.setRoadErase(true);
+  stroke(0);
   expect(editor.snapshot().placements).toBe(3);
   expect(editor.snapshot().unsavedEdits).toBe(false);
 }, 120_000);
