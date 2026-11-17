@@ -17,11 +17,17 @@ export function cellChunkKey(cellX: number, cellZ: number): number {
   return chunkKey(chunkOfCell(cellX), chunkOfCell(cellZ));
 }
 
+interface ChunkColumns {
+  readonly chunkX: number;
+  readonly chunkZ: number;
+}
+
 export class OccupancyGrid {
-  private readonly byKey = new Map<number, Uint16Array>();
+  private readonly byKey = new Map<number, ChunkColumns>();
+  private readonly byChunkX = new Map<number, Map<number, Uint16Array>>();
 
   topAt(cellX: number, cellZ: number): number {
-    const grid = this.byKey.get(cellChunkKey(cellX, cellZ));
+    const grid = this.byChunkX.get(chunkOfCell(cellX))?.get(chunkOfCell(cellZ));
     return grid ? (grid[cellIndex(cellX, cellZ)] ?? 0) : 0;
   }
 
@@ -29,17 +35,27 @@ export class OccupancyGrid {
     if (!Number.isInteger(topPlates) || topPlates < 0 || topPlates > MAX_TOP_PLATES) {
       throw new RangeError(`column top ${topPlates} plates is outside 0-${MAX_TOP_PLATES}`);
     }
-    const key = cellChunkKey(cellX, cellZ);
-    let grid = this.byKey.get(key);
+    const chunkX = chunkOfCell(cellX);
+    const chunkZ = chunkOfCell(cellZ);
+    let rows = this.byChunkX.get(chunkX);
+    if (!rows) {
+      rows = new Map<number, Uint16Array>();
+      this.byChunkX.set(chunkX, rows);
+    }
+    let grid = rows.get(chunkZ);
     if (!grid) {
       grid = new Uint16Array(CELLS_PER_CHUNK);
-      this.byKey.set(key, grid);
+      rows.set(chunkZ, grid);
+      this.byKey.set(chunkKey(chunkX, chunkZ), { chunkX, chunkZ });
     }
     const i = cellIndex(cellX, cellZ);
     if (topPlates > (grid[i] ?? 0)) grid[i] = topPlates;
   }
 
   clearChunk(key: number): void {
+    const chunk = this.byKey.get(key);
+    if (!chunk) return;
     this.byKey.delete(key);
+    this.byChunkX.get(chunk.chunkX)?.delete(chunk.chunkZ);
   }
 }
