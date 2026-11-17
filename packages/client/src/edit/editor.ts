@@ -132,9 +132,9 @@ import { creditsForWorld, exportFileName } from "./world-credits.ts";
 import { playModel, type PlayModel, type PlaySetup } from "../play/play-models.ts";
 import {
   carriesRefusal,
+  checkRefusal,
   riderRefusal,
   roadFitRefusal,
-  supportRefusal,
   trackCarriedRefusal,
   trackRunRefusal,
   type Refusal,
@@ -374,7 +374,9 @@ export type TrackCommitResult =
   | "refused-limit"
   | "switch-straight"
   | "switch-branching"
-  | "refused-off-baseplate";
+  | "refused-off-baseplate"
+  | "refused-overlap"
+  | "refused-crosses-track";
 
 export interface TrackPieceView {
   readonly item: string;
@@ -1027,9 +1029,14 @@ export class Editor implements IEditor {
       this.play = { models: trains, parts: palette.parts, colors };
       this.plans.setTableTopY(this.baseplateBottomY());
       this.newTrack = () =>
-        new TrackDrawing({ ...index, trackSilhouettes }, palette.parts, colors, (cells) =>
-          this.placed.trackSupport(cells, []),
-        );
+        new TrackDrawing({ ...index, trackSilhouettes }, palette.parts, colors, {
+          support: (cells) => this.placed.trackSupport(cells, []),
+          overlap: (cells, bottom, top) => this.placed.trackOverlap(cells, bottom, top),
+          neighbours: (cells) => this.placed.trackNeighbours(cells),
+          laid: (piece, pieceId, cells, bottom, top) =>
+            this.placed.addTrackPiece(piece, pieceId, cells, bottom, top),
+          relaid: (pieces) => this.placed.replaceTrackPieces(pieces),
+        });
       this.track = this.newTrack();
       this.bomTables = { palette, colors, ldrawColors: index.colors.map((color) => color.code) };
       this.roadDrawing = new RoadDrawing(
@@ -1245,6 +1252,7 @@ export class Editor implements IEditor {
       palette.parts,
       colors,
       null,
+      this.tableY,
     );
     if (this.palette === palette && this.installedColors > 0) {
       this.backend.addParts(palette.parts.slice(before));
@@ -1677,7 +1685,7 @@ export class Editor implements IEditor {
       target?.joins ? target.end : null,
       target && !target.joins ? [target.end] : [],
     );
-    this.showRefusalCells(track.dragView()?.offBaseplate?.missing ?? null);
+    this.showRefusalCells(track.dragView()?.blocked?.missing ?? null);
     this.update({ track: this.trackView() });
   }
 
@@ -1729,10 +1737,8 @@ export class Editor implements IEditor {
       this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
-    this.showRefusalCells(commit.offBaseplate?.missing ?? null);
-    if (commit.offBaseplate) {
-      this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.offBaseplate));
-    }
+    this.showRefusalCells(commit.blocked?.missing ?? null);
+    if (commit.blocked) this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
     this.update({ track: this.trackView() });
   }
 
@@ -1917,10 +1923,10 @@ export class Editor implements IEditor {
     const snap = held?.snap;
     if (!track || !held || !snap) return;
     const commit = track.placePiece(held.catalogIndex, snap.placement);
-    this.showRefusalCells(commit.offBaseplate?.missing ?? null);
-    if (commit.offBaseplate) {
-      this.lastTrackCommit = "refused-off-baseplate";
-      this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.offBaseplate));
+    this.showRefusalCells(commit.blocked?.missing ?? null);
+    if (commit.blocked) {
+      this.lastTrackCommit = `refused-${commit.blocked.kind}`;
+      this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
       this.update({ track: this.trackView() });
       return;
     }
@@ -2031,7 +2037,7 @@ export class Editor implements IEditor {
     this.update({
       ghost: {
         yPlates: check.yPlates,
-        refusal: supportRefusal(this.active.label, check.verdict) ?? this.hoverRefusal,
+        refusal: checkRefusal(this.active.label, check) ?? this.hoverRefusal,
       },
     });
     this.backend.placeGhost(
@@ -2168,7 +2174,7 @@ export class Editor implements IEditor {
         return;
       }
       const check = this.ghostCheck;
-      const refusal = check ? supportRefusal(this.active.label, check.verdict) : null;
+      const refusal = check ? checkRefusal(this.active.label, check) : null;
       if (refusal) {
         this.refuse("place", this.active.id, refusal);
         return;
@@ -2219,13 +2225,6 @@ export class Editor implements IEditor {
           message: `${placeable.label}: its ${EDGE_KIND_NAMES[clash.kind]} edge on the ${clash.side} side would face the ${EDGE_KIND_NAMES[clash.facing]} edge of ${neighbour}. A rail edge only joins another rail edge, where the track ends mate.`,
         };
       }
-    }
-    const slab = this.placed.slabClash(placeable, x, z, rot, yPlates, ignore);
-    if (slab) {
-      return {
-        rule: "overlap",
-        message: `${placeable.label} would overlap ${slab.placeable.label} at the same height. Two baseplates can't share the same space.`,
-      };
     }
     this.refusalPlacement = own;
     const clash = this.placed.tongueClash(placeable, x, z, rot, yPlates, ignore, this.matesRefusal);
@@ -2628,7 +2627,7 @@ export class Editor implements IEditor {
     }
     const check = this.placed.check(model.placeable, pose.x, pose.z, rot, [model]);
     const turned =
-      supportRefusal(label, check.verdict) ??
+      checkRefusal(label, check) ??
       this.placementRefusal(model.placeable, pose.x, pose.z, rot, check.yPlates, model);
     if (turned) {
       refuseTurn(turned);
@@ -2778,7 +2777,7 @@ export class Editor implements IEditor {
   private poseRefusal(to: PlacementPose, removed: ReadonlyArray<PlacedModel>): Refusal | null {
     const placeable = this.placeableAt(to.refId);
     const check = this.placed.check(placeable, to.x, to.z, to.rot, removed);
-    const refusal = supportRefusal(placeable.label, check.verdict);
+    const refusal = checkRefusal(placeable.label, check);
     if (refusal) return refusal;
     if (check.yPlates === to.yPlates) return null;
     return {
@@ -3115,6 +3114,7 @@ export class Editor implements IEditor {
     this.placed.clear();
     for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
     this.track = track;
+    track?.registerWithHost();
     for (const key of track?.chunkKeys() ?? []) {
       const chunk = track?.chunkInstances(key);
       if (chunk) this.backend.setChunk(key, chunk);

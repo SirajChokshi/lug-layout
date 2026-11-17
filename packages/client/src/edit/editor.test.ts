@@ -693,6 +693,18 @@ it("refuses a 10264-1 Corner Garage in a rail module's track end in either order
   });
 }, 120_000);
 
+it("measures a set's volume from where its parts start, so 10190-1's hanging pins fill below the plate above them", async () => {
+  const { editor, backend } = await startEditor(["mils-plain", "10190-1"]);
+  const place = placer(editor, backend);
+  expect(await editor.prefetch("omr:10190-1")).toBe(true);
+  place("omr:10190-1", 320, 320);
+  expect(place("generated:mils-plain", 960, 320)).toEqual({
+    placements: 1,
+    refusals: 1,
+    reason: expect.stringContaining("and 10190-1 Market Street (2007) fills 0.75 to 3."),
+  });
+}, 120_000);
+
 it("refuses a rail edge against a plain or road module in either order, and joins terrain edges beside it", async () => {
   const { editor, backend } = await startEditor([
     "mils-rail-straight",
@@ -1015,7 +1027,7 @@ it("offers none of the editing commands on a selection in a world another tab ho
 
 const SET = `omr:${STUD_BASED_SET}`;
 const PLAIN_MODULE = "generated:mils-plain";
-const OVERLAP = "would overlap";
+const OVERLAP = "would intersect";
 
 function posesOf(editor: IEditor) {
   const { refs, placements } = editor.dump();

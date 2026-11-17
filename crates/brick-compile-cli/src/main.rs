@@ -174,6 +174,7 @@ fn cover_json(cover: &ModelCover) -> Value {
             "footprint": cells.footprint,
             "flat": cells.flat,
             "columnBottom": cells.column_bottom,
+            "columnBottomLdu": cells.column_bottom_ldu,
             "columnTop": cells.column_top,
         })
     });

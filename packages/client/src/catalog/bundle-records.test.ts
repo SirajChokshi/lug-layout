@@ -30,7 +30,7 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { planTriangles, supportCells, trackPlanTransform } from "../edit/track-footprint.ts";
+import { placedPlan, planTriangles } from "../edit/track-footprint.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
@@ -233,10 +233,11 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
           const frame = piece.partFrame;
           const where = `${piece.id} at heading ${heading}`;
           const labelled = (cells: BaseCells) => ({ where, cells: cellKeys(cells) });
-          expect(
-            labelled(placedPlanCells(plan, trackPlanTransform(placement, frame), NO_CLIP_PLANES)),
-          ).toEqual(labelled(meshPlanCells(positions, groups, placement, frame, NO_CLIP_PLANES)));
-          expect(labelled(supportCells(support, placement, frame))).toEqual(
+          const placed = placedPlan(plan, support, placement, frame);
+          expect(labelled(placed.cells)).toEqual(
+            labelled(meshPlanCells(positions, groups, placement, frame, NO_CLIP_PLANES)),
+          );
+          expect(labelled(placed.support)).toEqual(
             labelled(
               meshPlanCells(
                 positions,

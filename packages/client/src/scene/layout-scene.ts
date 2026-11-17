@@ -32,7 +32,7 @@ import { inject, injectable } from "inversify";
 import { MergedParts } from "../edit/merged-parts.ts";
 import { PlacedChunks } from "../edit/placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "../edit/placeable.ts";
-import { TrackDrawing, type TrackSupportProbe } from "../edit/track-drawing.ts";
+import { TrackDrawing, type TrackHost } from "../edit/track-drawing.ts";
 import { layoutClash } from "./layout-clashes.ts";
 import type { CityCamera } from "./city-scene.ts";
 import {
@@ -73,7 +73,13 @@ interface DisplayRow {
   readonly zStuds: number;
 }
 
-const BENCH_TABLE: TrackSupportProbe = (cells) => ({ kind: "on-baseplate", cells: cells.count });
+const BENCH_TABLE: TrackHost = {
+  support: (cells) => ({ kind: "on-baseplate", cells: cells.count }),
+  overlap: () => null,
+  neighbours: () => new Set(),
+  laid: () => undefined,
+  relaid: () => undefined,
+};
 const MODULE_NAME = "mils-plain";
 const BASEPLATE_ID = "ldraw:3811";
 const BASEPLATE_COLOR_NAME = "Green";
@@ -276,7 +282,16 @@ export class LayoutScene implements ILayoutScene {
     const palette = new MergedParts(bundle.parts);
     const farPalette = new MergedParts(farBundle.parts);
     const farModels: PartMesh[] = [];
-    const placeables = await this.loadPlaceables(lod, palette, farPalette, farModels, colors);
+    const table = bundle.parts.find((p) => p.id === BASEPLATE_ID);
+    if (!table) throw new Error(`the bundle has no ${BASEPLATE_ID}`);
+    const placeables = await this.loadPlaceables(
+      lod,
+      palette,
+      farPalette,
+      farModels,
+      colors,
+      table.boundsMin[1],
+    );
     const baseplate = this.baseplate(bundle, palette, colors);
     const track = new TrackDrawing(bundle, palette.parts, colors, BENCH_TABLE);
     this.capture.setPalette({
@@ -346,6 +361,7 @@ export class LayoutScene implements ILayoutScene {
     farPalette: MergedParts,
     farModels: PartMesh[],
     colors: ColorTable,
+    tableY: number,
   ): Promise<ReadonlyMap<string, Placeable>> {
     const loaded = await Promise.all(
       layoutModelNames().map((name) =>
@@ -373,6 +389,7 @@ export class LayoutScene implements ILayoutScene {
           palette.parts,
           colors,
           farModel,
+          tableY,
         ),
       );
     }
