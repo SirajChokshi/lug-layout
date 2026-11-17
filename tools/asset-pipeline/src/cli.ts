@@ -46,6 +46,7 @@ import { readPalette } from "./palette.ts";
 import { attachCrosswalk, MANIFEST_FILE, publishBundle } from "./publish.ts";
 import { attachRecords } from "./records.ts";
 import { R2ObjectStore, sha256Hex } from "./r2.ts";
+import { attachThumbnails, type RenderedThumbnail } from "./thumbnails/catalog-thumbnails.ts";
 import {
   isPartBundlePublished,
   unservedManifests,
@@ -329,6 +330,27 @@ async function addVerifiedFacts(directory: string): Promise<void> {
   );
 }
 
+const BYTES_PER_KB = 1024;
+const MS_PER_SECOND = 1000;
+
+function kb(bytes: number): string {
+  return (bytes / BYTES_PER_KB).toFixed(1);
+}
+
+function reportThumbnails(
+  lod: string,
+  rendered: ReadonlyArray<RenderedThumbnail>,
+  startedMs: number,
+): void {
+  if (rendered.length === 0) return;
+  const bytes = rendered.reduce((sum, thumbnail) => sum + thumbnail.bytes, 0);
+  const sizes = rendered.map((thumbnail) => thumbnail.bytes).toSorted((a, b) => a - b);
+  const slowest = rendered.reduce((a, b) => (b.ms > a.ms ? b : a));
+  process.stdout.write(
+    `thumbnails ${lod}: ${rendered.length} items in ${((performance.now() - startedMs) / MS_PER_SECOND).toFixed(1)} s, ${kb(bytes)} KB total, ${kb(sizes[0] ?? 0)}–${kb(sizes.at(-1) ?? 0)} KB each (mean ${kb(bytes / rendered.length)} KB), slowest ${slowest.item} ${(slowest.ms / MS_PER_SECOND).toFixed(1)} s\n`,
+  );
+}
+
 async function bundleCommand(): Promise<void> {
   await restoreCommand();
   await verifyCommand();
@@ -390,6 +412,8 @@ async function bundleCommand(): Promise<void> {
     await addVerifiedFacts(out);
     await attachCrosswalk(out, crosswalk);
     await attachRecords(out);
+    const started = performance.now();
+    reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
     const { bundleVersion, files } = await publishBundle(out, inputs);
     process.stdout.write(
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
