@@ -35,6 +35,7 @@ export {
 } from "./credits/credits-view.ts";
 export type {
   CatalogColorView,
+  CatalogBaseplateView,
   CatalogItemView,
   CatalogPartView,
   EditAction,
@@ -68,6 +69,7 @@ export type {
 export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
 export type { ImportReport, ImportResult, PartResolution, PartResolutionKind } from "@brr/import";
+export type { WorldGround } from "./edit/ground.ts";
 export type {
   IRunScene,
   RunRequest,
