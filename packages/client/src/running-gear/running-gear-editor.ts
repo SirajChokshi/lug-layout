@@ -1,4 +1,4 @@
-import type { BakedVehicle, Vec3Tuple } from "@brr/catalog";
+import type { PartVehicle } from "@brr/catalog";
 import type { VehicleSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import { vehicleSpec } from "../sim/consist.ts";
@@ -7,21 +7,24 @@ import {
   detectedBogies,
   effectiveVehicle,
   inVehicleFrame,
-  RUNNING_GEAR_OVERRIDE_VERSION,
   toModelFrame,
+  type EffectiveVehicle,
+} from "./override.ts";
+import {
+  RUNNING_GEAR_OVERRIDE_VERSION,
   type BogieOverride,
   type CouplerOverride,
-  type EffectiveVehicle,
   type RunningGearOverride,
+  type Vec3,
   type VehicleOverride,
-} from "./override.ts";
+} from "@brr/schema/bundle";
 import type { IRunningGearOverrideStore } from "./override-store.ts";
 import { BOX_FLOATS } from "../edit/local-box.ts";
 
 export interface GearModelSource {
   readonly name: string;
   readonly sha256: string;
-  readonly vehicles: ReadonlyArray<BakedVehicle>;
+  readonly vehicles: ReadonlyArray<PartVehicle>;
   readonly instanceBoxes: Float64Array;
 }
 
@@ -40,7 +43,7 @@ export interface GearBox {
 
 export interface GearCoupler {
   readonly instance: number;
-  readonly face: Vec3Tuple;
+  readonly face: Vec3;
   readonly bogie: number | null;
   readonly obsoleteSources: ReadonlyArray<string>;
 }
@@ -54,8 +57,8 @@ export interface GearView {
   readonly source: "detected" | "override";
   readonly savedOverrideRefused: ReadonlyArray<string> | null;
   readonly boxes: ReadonlyArray<GearBox>;
-  readonly pivots: ReadonlyArray<Vec3Tuple>;
-  readonly axles: ReadonlyArray<Vec3Tuple>;
+  readonly pivots: ReadonlyArray<Vec3>;
+  readonly axles: ReadonlyArray<Vec3>;
   readonly couplers: ReadonlyArray<GearCoupler>;
   readonly spec: VehicleSpec | null;
   readonly detectedSpec: VehicleSpec;
@@ -83,7 +86,7 @@ export interface IRunningGear {
   subscribe(listener: () => void): () => void;
   snapshot(): GearSnapshot;
   setModels(models: ReadonlyArray<GearModelSource>): Promise<void>;
-  effectiveVehicles(model: string): ReadonlyArray<BakedVehicle>;
+  effectiveVehicles(model: string): ReadonlyArray<PartVehicle>;
   gearSource(model: string, vehicle: number): RunningGearSource;
   select(model: string, vehicle: number): void;
   assignPart(instance: number, bogie: number | null): void;
@@ -105,7 +108,7 @@ const EMPTY: GearSnapshot = {
   storeProblem: null,
 };
 
-function detectedFace(vehicle: BakedVehicle, instance: number): Vec3Tuple | null {
+function detectedFace(vehicle: PartVehicle, instance: number): Vec3 | null {
   for (const coupler of [vehicle.frontCoupler, vehicle.rearCoupler]) {
     if (coupler?.instance === instance) return coupler.face;
   }
@@ -116,11 +119,11 @@ export function exactLduText(value: number): string {
   return String(value);
 }
 
-function toDetected(vehicle: BakedVehicle, model: Vec3Tuple): Vec3Tuple {
-  const cos = Math.cos(vehicle.yawRadians);
-  const sin = Math.sin(vehicle.yawRadians);
-  const dx = model[0] - vehicle.originXLdu;
-  const dz = model[2] - vehicle.originZLdu;
+function toDetected(vehicle: PartVehicle, model: Vec3): Vec3 {
+  const cos = Math.cos(vehicle.yaw);
+  const sin = Math.sin(vehicle.yaw);
+  const dx = model[0] - vehicle.origin[0];
+  const dz = model[2] - vehicle.origin[1];
   return [dx * cos + dz * sin, model[1], -dx * sin + dz * cos];
 }
 
@@ -163,7 +166,7 @@ export class RunningGearEditor implements IRunningGear {
     this.publish();
   }
 
-  effectiveVehicles(model: string): ReadonlyArray<BakedVehicle> {
+  effectiveVehicles(model: string): ReadonlyArray<PartVehicle> {
     const source = this.source(model);
     if (!source) throw new Error(`model ${model} has no running gear source`);
     return source.vehicles.map(
@@ -290,7 +293,7 @@ export class RunningGearEditor implements IRunningGear {
 
   private savedResult(
     sha256: string,
-    baked: BakedVehicle,
+    baked: PartVehicle,
     vehicle: number,
   ): EffectiveVehicle | null {
     const saved = this.storedVehicle(sha256, vehicle);
@@ -329,7 +332,7 @@ export class RunningGearEditor implements IRunningGear {
     return this.stored.get(sha256)?.vehicles.find((v) => v.vehicle === vehicle);
   }
 
-  private edit(change: (draft: VehicleOverride, vehicle: BakedVehicle) => VehicleOverride): void {
+  private edit(change: (draft: VehicleOverride, vehicle: PartVehicle) => VehicleOverride): void {
     const source = this.selectedSource();
     const selected = this.selected;
     const vehicle = selected ? source?.vehicles[selected.vehicle] : undefined;
@@ -370,8 +373,7 @@ export class RunningGearEditor implements IRunningGear {
     const result = effectiveVehicle(detected, this.draft ?? undefined, source.instanceBoxes);
     const saved = this.savedResult(source.sha256, detected, selected.vehicle);
     const shown = result.vehicle;
-    const local = (p: Vec3Tuple): Vec3Tuple =>
-      shown ? toDetected(detected, toModelFrame(shown, p)) : p;
+    const local = (p: Vec3): Vec3 => (shown ? toDetected(detected, toModelFrame(shown, p)) : p);
     const draftBogies = this.draft?.bogies ?? detectedBogies(detected);
     const owner = new Map<number, number>();
     draftBogies.forEach((bogie, b) => {
@@ -427,7 +429,7 @@ export class RunningGearEditor implements IRunningGear {
 
   private box(
     source: GearModelSource,
-    detected: BakedVehicle,
+    detected: PartVehicle,
     instance: number,
     owner: ReadonlyMap<number, number>,
     wheelsets: ReadonlySet<number>,

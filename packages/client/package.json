@@ -16,6 +16,7 @@
     "@brr/math": "workspace:*",
     "@brr/render": "workspace:*",
     "@brr/rpc": "workspace:*",
+    "@brr/schema": "workspace:*",
     "@brr/sim": "workspace:*",
     "inversify": "8.3.0"
   },

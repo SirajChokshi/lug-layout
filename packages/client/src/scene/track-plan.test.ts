@@ -4,8 +4,8 @@ import {
   PART_BUNDLE_LOADER,
   type IAssetFetcher,
   type PartAsset,
-  type TrackCatalog,
 } from "@brr/catalog";
+import type { TrackCatalog } from "@brr/schema/bundle";
 import { NO_EDGE, NO_SWITCH, TrackGraph, TrackLayout } from "@brr/domain";
 import { POSE16_IDENTITY } from "@brr/math";
 import { Container } from "inversify";

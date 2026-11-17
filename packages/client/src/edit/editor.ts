@@ -1,7 +1,6 @@
+import type { BundleColor, BundleLod } from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
-  type BundleColor,
-  type BundleLod,
   type IPartBundleLoader,
   type PartAsset,
   type PartBundle,

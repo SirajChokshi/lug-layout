@@ -1,5 +1,6 @@
 import { injectable } from "inversify";
-import { parseRunningGearOverride, type RunningGearOverride } from "./override.ts";
+import type { RunningGearOverride } from "@brr/schema/bundle";
+import { parseRunningGearOverride } from "./override.ts";
 
 export interface IRunningGearOverrideStore {
   load(modelSha256: string): Promise<RunningGearOverride | null>;

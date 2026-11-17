@@ -1,4 +1,5 @@
-import type { PartAsset, TrackEnd } from "@brr/catalog";
+import type { PartAsset } from "@brr/catalog";
+import type { TrackEnd } from "@brr/schema/bundle";
 
 const INTEGER_COEFFICIENT = /^-?\d+$/u;
 const REAL_AXIS_COEFFICIENT = 0;

@@ -1,9 +1,5 @@
-import {
-  ASSET_FETCHER,
-  PART_BUNDLE_LOADER,
-  type IAssetFetcher,
-  type TrackCatalog,
-} from "@brr/catalog";
+import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import type { TrackCatalog } from "@brr/schema/bundle";
 import { TrackGraph } from "@brr/domain";
 import { SIM_TICK_HZ, SimSession, simTrackFromGraph, type VehicleSpec } from "@brr/sim";
 import { Container } from "inversify";
