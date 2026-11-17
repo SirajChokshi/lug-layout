@@ -103,8 +103,9 @@ export {
   NO_TOP,
   VolumeIndex,
   cellChunkKey,
-  firstOverlap,
+  firstContact,
   type CellVolumes,
+  type MeetsIn,
   type Overlap,
   type OwnerFilter,
   type VolumeHit,
@@ -127,3 +128,13 @@ export {
   type PlaneTransform,
 } from "./cell-raster.ts";
 export { planTrianglesOverlap, type PlanBox } from "./plan-overlap.ts";
+export {
+  PlanShell,
+  solidMeetsShellInCell,
+  solidPatternSpans,
+  solidsMeetInCell,
+  type Contact,
+  type PatternSpans,
+  type PlacedSolid,
+  type SolidSamples,
+} from "./solid-samples.ts";

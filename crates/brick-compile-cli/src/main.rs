@@ -10,9 +10,13 @@ use brick_compile::cover::{
     model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape, PLATE_LDU,
 };
 use brick_compile::inline::compare_inline_part;
-use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
+use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance, STUD_LDU};
 use brick_compile::ldraw::{identity_redirect, normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, ModelInstance};
+use brick_compile::solid::{
+    solid_samples, SolidGrid, SolidInstance, SolidSamples, SAMPLES_PER_CELL, SAMPLES_PER_STUD,
+    STEPS_PER_LDU,
+};
 use brick_compile::vehicle::{
     detect_vehicles, GuideKind, RailHeadBand, Vehicle, VehicleSignatures,
 };
@@ -141,10 +145,25 @@ struct CoverParts<'a> {
     options: CompileOptions,
     index: HashMap<String, usize>,
     solids: Vec<PartSolid>,
+    references: Vec<String>,
+    with_studs: Vec<PartSolid>,
     studs: Vec<Vec<Affine>>,
 }
 
 impl CoverParts<'_> {
+    fn complete_with_studs(&mut self) -> Result<(), String> {
+        let whole = CompileOptions {
+            stud_primitives: Vec::new(),
+            ..self.options.clone()
+        };
+        for reference in &self.references[self.with_studs.len()..] {
+            let compiled =
+                compile_part(self.library, reference, &whole).map_err(|e| e.to_string())?;
+            self.with_studs.push(PartSolid::from_mesh(&compiled.mesh));
+        }
+        Ok(())
+    }
+
     fn slot(&mut self, reference: &str) -> Result<usize, String> {
         if let Some(&slot) = self.index.get(reference) {
             return Ok(slot);
@@ -152,6 +171,7 @@ impl CoverParts<'_> {
         let compiled =
             compile_part(self.library, reference, &self.options).map_err(|e| e.to_string())?;
         self.solids.push(PartSolid::from_mesh(&compiled.mesh));
+        self.references.push(reference.to_string());
         self.studs
             .push(compiled.studs.iter().map(|stud| stud.matrix).collect());
         self.index
@@ -171,6 +191,7 @@ fn cover_json(cover: &ModelCover) -> Value {
             "flat": cells.flat,
             "columnBottom": cells.column_bottom,
             "columnTop": cells.column_top,
+            "solid": solid_json(&cells.solid),
         })
     });
     json!({
@@ -182,6 +203,48 @@ fn cover_json(cover: &ModelCover) -> Value {
     })
 }
 
+fn solid_json(solid: &SolidSamples) -> Value {
+    json!({
+        "samplesPerStud": SAMPLES_PER_STUD,
+        "stepsPerLdu": STEPS_PER_LDU,
+        "lists": solid.lists,
+        "patterns": solid.patterns,
+        "cells": solid.cells,
+    })
+}
+
+fn whole_cells(ldu: f64) -> Result<f64, String> {
+    let cells = ldu / STUD_LDU;
+    if cells.fract() != 0.0 {
+        return Err(format!("{ldu} LDU is not on the {STUD_LDU} LDU cell grid"));
+    }
+    Ok(cells)
+}
+
+fn part_solid_json(solid: &PartSolid, [min, max]: [Vec3; 2]) -> Result<Value, String> {
+    let origin = [whole_cells(min[0])?, whole_cells(min[2])?];
+    let width = (whole_cells(max[0])? - origin[0]) as usize;
+    let depth = (whole_cells(max[2])? - origin[1]) as usize;
+    let instance = SolidInstance {
+        matrix: &Affine::IDENTITY,
+        part: 0,
+    };
+    let samples = solid_samples(
+        &[instance],
+        std::slice::from_ref(solid),
+        SolidGrid {
+            origin: origin.map(|cells| cells * STUD_LDU),
+            width,
+            depth,
+            datum_y: 0.0,
+        },
+    );
+    let mut out = solid_json(&samples);
+    out["origin"] = json!(origin.map(|cells| cells * STUD_LDU));
+    out["size"] = json!([width, depth]);
+    Ok(out)
+}
+
 fn cover_summary(cover: &ModelCover) -> Value {
     let cells = cover.cells.as_ref().map(|cells| {
         json!({
@@ -191,6 +254,8 @@ fn cover_summary(cover: &ModelCover) -> Value {
             "groundY": cells.ground_y,
             "size": [cells.width, cells.depth],
             "heightPlates": cells.height_plates(),
+            "solidPatterns": cells.solid.patterns.len() / SAMPLES_PER_CELL,
+            "overlappingPartPairs": cells.solid.overlaps.len(),
         })
     });
     json!({
@@ -419,6 +484,8 @@ fn run(args: &Args) -> Result<(), String> {
         options: cover_options,
         index: HashMap::new(),
         solids: Vec::new(),
+        references: Vec::new(),
+        with_studs: Vec::new(),
         studs: Vec::new(),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
@@ -470,6 +537,12 @@ fn run(args: &Args) -> Result<(), String> {
         }
         if !entry["producedColors"].is_null() {
             summary["producedColors"] = entry["producedColors"].clone();
+        }
+        if matches!(entry["role"].as_str(), Some("ground" | "road")) {
+            let slot = cover_parts.slot(&reference)?;
+            cover_parts.complete_with_studs()?;
+            summary["solid"] = part_solid_json(&cover_parts.with_studs[slot], shape.bounds)
+                .map_err(|e| format!("{reference}: {e}"))?;
         }
         part_index.insert(reference, parts.len());
         parts.push(summary);
@@ -634,6 +707,20 @@ fn run(args: &Args) -> Result<(), String> {
             }
             cover_slots.push(slot);
         }
+        let cached = args
+            .cover_cache
+            .as_ref()
+            .map(|dir| dir.join(format!("{}.json", stem(name))));
+        let reuse = match (&cached, args.lod) {
+            (Some(path), Lod::Low | Lod::Far) if path.exists() => Some(
+                serde_json::from_slice::<Value>(&fs::read(path).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?,
+            ),
+            _ => None,
+        };
+        if reuse.is_none() {
+            cover_parts.complete_with_studs()?;
+        }
         let cover_instances: Vec<CoverInstance> = drawn
             .iter()
             .zip(&cover_slots)
@@ -646,23 +733,13 @@ fn run(args: &Args) -> Result<(), String> {
                 baseplate: shapes[index].is_baseplate(),
             })
             .collect();
-        let cached = args
-            .cover_cache
-            .as_ref()
-            .map(|dir| dir.join(format!("{}.json", stem(name))));
-        let reuse = match (&cached, args.lod) {
-            (Some(path), Lod::Low | Lod::Far) if path.exists() => Some(
-                serde_json::from_slice::<Value>(&fs::read(path).map_err(|e| e.to_string())?)
-                    .map_err(|e| e.to_string())?,
-            ),
-            _ => None,
-        };
         let (cover_file, cover_manifest) = match reuse {
             Some(cached) => (cached["file"].clone(), cached["summary"].clone()),
             None => {
                 let cover = model_cover(
                     &cover_instances,
                     &cover_parts.solids,
+                    &cover_parts.with_studs,
                     &opacity,
                     lattice.as_ref().map(|lattice| lattice.phase),
                     stud_shape,

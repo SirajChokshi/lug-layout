@@ -3,6 +3,7 @@ import type { TrackPartFrame } from "@brr/schema/bundle";
 import {
   HALF_PLANE_FLOATS,
   PLAN_TRIANGLE_FLOATS,
+  PlanShell,
   placedPlanCells,
   planTriangleCells,
   type BaseCells,
@@ -50,6 +51,22 @@ export function localPlanTriangles(part: PartAsset): Float64Array {
   return out;
 }
 
+export function localShellTriangles(part: PartAsset, yLdu: number): Float64Array {
+  const { positions, groups } = part.mesh;
+  const kept: number[] = [];
+  for (const group of groups) {
+    const { indices } = group;
+    for (let t = 0; t + 3 <= indices.length; t += 3) {
+      if (projectedArea2(positions, indices, t) === 0) continue;
+      for (let k = 0; k < 3; k++) {
+        const v = (indices[t + k] ?? 0) * POSITION_FLOATS;
+        kept.push(positions[v] ?? 0, (positions[v + 1] ?? 0) + yLdu, positions[v + 2] ?? 0);
+      }
+    }
+  }
+  return Float64Array.from(kept);
+}
+
 export function localBoundsTriangles(part: PartAsset): Float64Array {
   const [x0, , z0] = part.boundsMin;
   const [x1, , z1] = part.boundsMax;
@@ -89,10 +106,25 @@ export interface PlacedPlan {
   readonly triangles: Float64Array;
   readonly cells: BaseCells;
   readonly support: BaseCells;
+  readonly shell: PlanShell;
+}
+
+function worldShell(local: Float64Array, transform: PlaneTransform): PlanShell {
+  const { cos, sin, x, z } = transform;
+  const world = new Float64Array(local.length);
+  for (let i = 0; i + POSITION_FLOATS <= local.length; i += POSITION_FLOATS) {
+    const lx = local[i] ?? 0;
+    const lz = local[i + 2] ?? 0;
+    world[i] = cos * lx - sin * lz + x;
+    world[i + 1] = local[i + 1] ?? 0;
+    world[i + 2] = sin * lx + cos * lz + z;
+  }
+  return new PlanShell(world);
 }
 
 export function placedPlan(
   local: Float64Array,
+  shell: Float64Array,
   placement: Pose16,
   frame: TrackPartFrame,
   connectors: ReadonlyArray<Pose16>,
@@ -110,5 +142,6 @@ export function placedPlan(
     triangles: world,
     cells: planTriangleCells(world),
     support: placedPlanCells(local, transform, connectorSpan(placement, connectors)),
+    shell: worldShell(shell, transform),
   };
 }

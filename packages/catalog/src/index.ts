@@ -24,7 +24,9 @@ export type {
   PartFilter,
   PartMesh,
   PartModel,
+  PartSolidCells,
   PartVehicle,
+  SolidCells,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 export {

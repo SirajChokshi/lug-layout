@@ -32,10 +32,16 @@ function ownerLabel(owner: VolumeOwner): string {
   }
 }
 
+const LDU_DECIMALS = 2;
+
+function ldu(value: number): string {
+  return String(Number(value.toFixed(LDU_DECIMALS)));
+}
+
 function overlapText(placed: PlacedOverlap): string {
   const { overlap } = placed;
   const other = ownerLabel(placed.owner);
-  return `${other} at cell (${overlap.cellX}, ${overlap.cellZ}): there it fills ${overlap.candidateBottomLdu} to ${overlap.candidateTopLdu} LDU above the baseplate tops, and ${other} fills ${overlap.bottomLdu} to ${overlap.topLdu} LDU`;
+  return `${other} at x ${overlap.xLdu}, z ${overlap.zLdu} LDU (cell ${overlap.cellX}, ${overlap.cellZ}): there it fills ${ldu(overlap.candidateBottomLdu)} to ${ldu(overlap.candidateTopLdu)} LDU above the baseplate tops, and ${other} fills ${ldu(overlap.bottomLdu)} to ${ldu(overlap.topLdu)} LDU`;
 }
 
 export function overlapRefusal(label: string, placed: PlacedOverlap): Refusal {

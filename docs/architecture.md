@@ -90,7 +90,7 @@ The browser import worker and the OMR ingest share the same code.
 5. Build the **BOM**, normalized through aliases and `part_relationships`.
 6. **Remove covered studs inside the model**: a stud with an anti-stud or solid underside directly above it is dropped.
 7. Derive the **base footprint**: the set of bottom-facing anti-stud cells on the lattice, plus flat-bottom regions. Layout placement uses this for support checks.
-8. Compute the 2.5D occupancy (a voxel column per stud cell) and the AABB.
+8. Compute the 2.5D occupancy (a voxel column per stud cell) and the AABB, and the model's **solid samples** (§7.2 rule 4): the exact vertical extent of its real part volumes along lines every 2 LDU.
 9. Build **merged LOD meshes** per material class: mid LOD from LOD1 parts merged; far LOD as a voxel greedy mesh at 1 stud × 1 stud × 1 plate resolution.
 10. Detect vehicles by part signatures (train motors, wheels, magnetic couplers) and propose a vehicle sidecar.
 11. Store the original file unchanged so it can be re-exported.
@@ -318,14 +318,17 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
 
 *Rule 4 status (PR B, on PR A):*
 - **One volume index holds every placement** (`@brr/domain` `VolumeIndex`). It keeps per-chunk typed arrays of integer-LDU spans per stud cell, each tagged with its owner.
-- **What each placement fills:**
-  - a baseplate fills the table slab [−4, 0);
-  - a road plate fills [−4, 12);
-  - a model fills its baked columns (part AABBs, whole plates), and a first-layer model's baseplate cells reach down to the table;
-  - a laid track piece fills [0, its part height) on the cells its mesh silhouette covers.
-- **Overlap is strict:** spans that only touch don't overlap, so a model resting on studs and a baseplate under a model's overhang are both fine.
+- **What each placement fills** is its real part volumes, not boxes (see *Exact solids* below). The index holds each placement's coarse spans per stud cell (the union of its solid samples there, rounded out to whole LDU, so the gaps under overhangs stay open); a laid track piece's coarse span is [0, its part height) on the cells its mesh silhouette covers. A coarse hit is only a candidate: the edit is refused only when the exact solids meet.
+- **Overlap is strict:** volumes that only touch don't overlap, so a model resting on studs, models side by side and a baseplate under a model's overhang are all fine.
 - **An upper model lands on the stack under the cursor** (the highest non-track span in the cursor's cell, rounded up to a whole plate) and is never lifted to clear anything else. Anything else in its volume refuses the placement, and the refusal names the placement it would hit, the cell and both spans in LDU. Track is never support: its tops count neither for landing nor as a flat top. Rotations, undo and redo are checked at their recorded height.
 - **Track against track** is tested on the pieces' plan silhouettes, only where two pieces share a stud cell. Joined pieces are exempt: their connector tabs interlock. Any other positive-area overlap beyond the 1e-6 LDU representation ε is refused until a real crossing part is used.
+
+*Exact solids (on PR C):*
+- **A part's volume is its own LDraw geometry, studs included** (compiled without splitting studs out, so stud.dat and stud2.dat are the library's 16-gons, not a guessed cylinder). A point counts as inside a part when rays along all six of the part's local axes hit that same part. So an anti-stud cavity, an arch's opening, a Technic pin hole and a hollow stud's bore are open (each is open along some axis), and the interior of a closed shell is solid.
+- **Solid samples:** the bake casts vertical lines through every part at x and z = 1, 3, 5, … LDU from the model's stud-cell corners (every 2 LDU, 10 × 10 per stud cell). On each line it records the spans that are inside some part, unions them, and stores them in 1/16 LDU, rounded inward unless they're within the §5.3 1e-6 LDU representation ε of a step, so touching stays touching. Lists and per-cell patterns are deduplicated. The sample positions map onto themselves under every lattice pose (whole-stud moves, quarter turns, whole plates), so two placed solids are compared sample by sample with integer arithmetic. Baseplates and road plates get the same samples in the manifest.
+- **What it guarantees:** two placements are refused only where one sample line lies inside both, so legal stud stacking and flush adjacency never count. An overlap is caught whenever the shared volume contains a sample line, which every overlap at least 2 LDU across in both plan directions does when its faces sit on even LDU, as LEGO geometry's do. Studs are solid: a stud under a solid bottom, or a brick half a stud off its neighbour's studs, is refused, while a stud inside an anti-stud is not.
+- **Track against models:** a laid track piece's volume on a model's sample line runs from its lowest to its highest face there, read from the piece's mesh at the exact solver pose (a face counts only when the line passes strictly inside it). So a baseplate stud standing in the track's anti-stud cavity is fine, and a model can overhang track as long as its parts stay above the rails. Off-lattice track poses are algebraic, so this one comparison allows the §5.3 1e-6 LDU representation ε.
+- **Checked on real parts:** `crates/brick-compile/tests/solid.rs` builds pairs from the pinned LDraw library (bricks, plates, tiles, slopes, round parts, a corner brick with a 1 × 1 in its notch, an arch, a jumper, a baseplate) and asserts which overlap.
 
 *Track held by models (PR C, on PR B):*
 - **Model track:** a placed model's track parts that are in the track catalog become track pieces of the layout. That's every instance of a certified catalog track part, including a part whose LDraw file is an identity redirect (`~Moved to`, with one identity reference to the target), which the bake records as `aliasOf`. Among the starter sets: 7936-1's four 53401s, and the 9V straights in 10128-1 and 4555-1 (2865, moved to 74746). Each piece sits at the model's height plus its own bottom in whole plates, and anything else is uncertified. Pieces join laid track and each other exactly, at equal height, in one `TrackGraph`, so their open ends at the laid-track height can start or end a drag. The ghost says how many track parts in a model are uncertified; their ends never join.

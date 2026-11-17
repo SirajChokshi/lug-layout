@@ -179,6 +179,61 @@ function cellCount([width, depth]: readonly [number, number]): number {
   return width * depth;
 }
 
+function listsCovered(lists: ReadonlyArray<number>): (offset: number) => boolean {
+  return (offset) =>
+    offset >= 0 && offset < lists.length && offset + 1 + 2 * (lists[offset] ?? 0) <= lists.length;
+}
+
+const SolidSampleArrays = v.object({
+  samplesPerStud: v.pipe(Integer, v.minValue(1)),
+  stepsPerLdu: v.pipe(Integer, v.minValue(1)),
+  lists: v.array(Integer),
+  patterns: v.array(Count),
+  cells: v.array(v.pipe(Integer, v.minValue(-1))),
+});
+
+function samplesPerCell(samplesPerStud: number): number {
+  return samplesPerStud * samplesPerStud;
+}
+
+type SolidSampleArrays = v.InferOutput<typeof SolidSampleArrays>;
+
+function wholeCellPatterns({ samplesPerStud, patterns }: SolidSampleArrays): boolean {
+  return patterns.length % samplesPerCell(samplesPerStud) === 0;
+}
+
+function patternsInLists({ lists, patterns }: SolidSampleArrays): boolean {
+  return patterns.every(listsCovered(lists));
+}
+
+function cellsNamePatterns({ samplesPerStud, patterns, cells }: SolidSampleArrays): boolean {
+  return cells.every((pattern) => pattern < patterns.length / samplesPerCell(samplesPerStud));
+}
+
+const WHOLE_CELL_PATTERNS = "the sample patterns are not whole stud cells";
+const PATTERNS_IN_LISTS = "a sample pattern points outside the span lists";
+const CELLS_NAME_PATTERNS = "a cell names a sample pattern that does not exist";
+
+export const SolidSamples = v.pipe(
+  SolidSampleArrays,
+  v.check((solid) => wholeCellPatterns(solid), WHOLE_CELL_PATTERNS),
+  v.check((solid) => patternsInLists(solid), PATTERNS_IN_LISTS),
+  v.check((solid) => cellsNamePatterns(solid), CELLS_NAME_PATTERNS),
+);
+export type SolidSamples = v.InferOutput<typeof SolidSamples>;
+
+export const PartSolid = v.pipe(
+  v.object({ ...SolidSampleArrays.entries, origin: v.tuple([Finite, Finite]), size: CellGridSize }),
+  v.check((solid) => wholeCellPatterns(solid), WHOLE_CELL_PATTERNS),
+  v.check((solid) => patternsInLists(solid), PATTERNS_IN_LISTS),
+  v.check((solid) => cellsNamePatterns(solid), CELLS_NAME_PATTERNS),
+  v.check(
+    ({ size, cells }) => cells.length === cellCount(size),
+    "the solid's cells do not cover its grid",
+  ),
+);
+export type PartSolid = v.InferOutput<typeof PartSolid>;
+
 export const ModelFileCells = v.pipe(
   v.object({
     origin: v.tuple([Finite, Finite]),
@@ -189,6 +244,7 @@ export const ModelFileCells = v.pipe(
     flat: v.array(Count),
     columnBottom: v.array(ColumnPlates),
     columnTop: v.array(ColumnPlates),
+    solid: SolidSamples,
   }),
   v.check(
     ({ size, footprint, flat }) => [...footprint, ...flat].every((cell) => cell < cellCount(size)),
@@ -198,6 +254,10 @@ export const ModelFileCells = v.pipe(
     ({ size, columnBottom, columnTop }) =>
       columnBottom.length === cellCount(size) && columnTop.length === cellCount(size),
     "the column arrays do not cover the cell grid",
+  ),
+  v.check(
+    ({ size, solid }) => solid.cells.length === cellCount(size),
+    "the solid samples do not cover the cell grid",
   ),
 );
 export type ModelFileCells = v.InferOutput<typeof ModelFileCells>;
@@ -229,6 +289,8 @@ export const BundleModelCover = v.object({
       groundY: v.nullable(Finite),
       size: CellGridSize,
       heightPlates: ColumnPlates,
+      solidPatterns: Count,
+      overlappingPartPairs: Count,
     }),
   ),
 });
@@ -283,6 +345,7 @@ export const ManifestPart = v.object({
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
+  solid: v.optional(PartSolid),
   baseplate: v.boolean(),
   aliasOf: v.nullable(v.string()),
 });

@@ -5,7 +5,12 @@ import {
   type PartModel,
   type PartModelLattice,
 } from "@brr/catalog";
-import type { RoadSurface } from "@brr/domain";
+import {
+  solidPatternSpans,
+  type PatternSpans,
+  type RoadSurface,
+  type SolidSamples,
+} from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { ModelRole, TrackCatalog, Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
@@ -37,6 +42,12 @@ export interface PlaceableCells {
   readonly offLatticeTop: boolean;
 }
 
+export interface PlaceableSolid {
+  readonly samples: SolidSamples;
+  readonly yLdu: number;
+  readonly spans: PatternSpans;
+}
+
 export interface StudLattice {
   readonly onLattice: Uint8Array;
   readonly cellX: Int32Array;
@@ -57,6 +68,7 @@ export interface Placeable {
   readonly studLattice: StudLattice;
   readonly bakedCoveredStuds: number;
   readonly cells: PlaceableCells;
+  readonly solid: PlaceableSolid;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
   readonly frameShift: Vec3;
@@ -187,6 +199,27 @@ function modelCells(
     heightPlates,
     offLatticeTop: false,
   };
+}
+
+function placeableSolid(samples: SolidSamples, yLdu: number, label: string): PlaceableSolid {
+  if (!Number.isInteger(yLdu)) {
+    throw new Error(`${label} solid sits ${yLdu} LDU above its frame, not a whole LDU`);
+  }
+  return { samples, yLdu, spans: solidPatternSpans(samples) };
+}
+
+function partSolid(part: PartAsset, cells: PlaceableCells, shift: Vec3): PlaceableSolid {
+  const solid = part.solid;
+  if (!solid) throw new Error(`${part.id} has no solid samples from the bake`);
+  if (
+    solid.originX + shift[0] !== cells.cellX0 * STUD_LDU ||
+    solid.originZ + shift[2] !== cells.cellZ0 * STUD_LDU ||
+    solid.width !== cells.width ||
+    solid.depth !== cells.depth
+  ) {
+    throw new Error(`${part.id} solid samples do not cover its stud cells`);
+  }
+  return placeableSolid(solid, shift[1], part.id);
 }
 
 function partCells(part: PartAsset, shift: Vec3, tableY: number): PlaceableCells {
@@ -395,6 +428,7 @@ export function modelPlaceable(
   const isModule = role === "mils-module";
   const id = isModule ? `generated:${name}` : `omr:${name}`;
   const studs = withStuds(local, parts, colors, undefined, model.studCover).studs;
+  const restPlatesInFrame = ((cells.groundY ?? cells.restY) - restingOn) / PLATE_LDU;
   return {
     id,
     label,
@@ -407,14 +441,8 @@ export function modelPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
-    cells: modelCells(
-      cells,
-      shift,
-      name,
-      ((cells.groundY ?? cells.restY) - restingOn) / PLATE_LDU,
-      !isModule,
-      tableY,
-    ),
+    cells: modelCells(cells, shift, name, restPlatesInFrame, !isModule, tableY),
+    solid: placeableSolid(cells.solid, restPlatesInFrame * PLATE_LDU, name),
     box,
     partBoxes,
     frameShift: shift,
@@ -467,6 +495,7 @@ export function partPlaceable(
   const partBoxes = instanceBoxes(local, parts);
   const isRoad = part.role === "road";
   const studs = withStuds(local, parts, colors, undefined).studs;
+  const cells = partCells(part, shift, tableY);
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
@@ -479,7 +508,8 @@ export function partPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: 0,
-    cells: partCells(part, shift, tableY),
+    cells,
+    solid: partSolid(part, cells, shift),
     box,
     partBoxes,
     frameShift: shift,

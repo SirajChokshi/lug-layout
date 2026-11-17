@@ -44,6 +44,7 @@ export interface PartAsset {
   readonly baseplate: boolean;
   readonly aliasOf: string | null;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;
+  readonly solid: PartSolidCells | null;
   readonly mesh: PartMesh;
   readonly studPrimitiveIndex: Uint8Array;
   readonly studColors: Uint16Array;
@@ -63,6 +64,21 @@ export interface PartModelLattice {
 
 export { EMPTY_COLUMN } from "@brr/schema/bundle";
 
+export interface SolidCells {
+  readonly samplesPerStud: number;
+  readonly stepsPerLdu: number;
+  readonly lists: Int32Array;
+  readonly patterns: Int32Array;
+  readonly cells: Int32Array;
+}
+
+export interface PartSolidCells extends SolidCells {
+  readonly originX: number;
+  readonly originZ: number;
+  readonly width: number;
+  readonly depth: number;
+}
+
 export interface ModelCells {
   readonly originX: number;
   readonly originZ: number;
@@ -74,6 +90,7 @@ export interface ModelCells {
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly solid: SolidCells;
 }
 
 export interface ModelStudCover {

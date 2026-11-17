@@ -15,6 +15,7 @@ import {
   planTrianglesOverlap,
   type BaseCells,
   type OwnerFilter,
+  type PlanShell,
   type TrackMove,
   type TrackPieceDef,
   type TrackPieceSpec,
@@ -43,6 +44,7 @@ import type { PlacedOverlap } from "./placed-chunks.ts";
 import {
   localBoundsTriangles,
   localPlanTriangles,
+  localShellTriangles,
   placedPlan,
   trackPlanTransform,
   type PlacedPlan,
@@ -71,6 +73,7 @@ export interface KitPart {
   readonly yLdu: number;
   readonly heightLdu: number;
   readonly plan: Float64Array;
+  readonly shell: Float64Array;
   readonly bounds: Float64Array;
 }
 
@@ -82,6 +85,7 @@ export interface LaidTrackPiece {
   readonly cells: BaseCells;
   readonly bottomLdu: number;
   readonly topLdu: number;
+  readonly shell: PlanShell;
 }
 
 export interface HeldTrackRequest {
@@ -109,10 +113,18 @@ export interface TrackHost {
     cells: BaseCells,
     bottomLdu: number,
     topLdu: number,
+    shell: PlanShell,
     exempt: OwnerFilter,
   ): PlacedOverlap | null;
   neighbours(cells: BaseCells): ReadonlySet<number>;
-  laid(piece: number, pieceId: string, cells: BaseCells, bottomLdu: number, topLdu: number): void;
+  laid(
+    piece: number,
+    pieceId: string,
+    cells: BaseCells,
+    bottomLdu: number,
+    topLdu: number,
+    shell: PlanShell,
+  ): void;
   relaid(pieces: ReadonlyArray<LaidTrackPiece>): void;
 }
 
@@ -360,6 +372,7 @@ export class TrackDrawing {
         yLdu: -part.boundsMin[1],
         heightLdu: Math.ceil(part.boundsMax[1] - part.boundsMin[1]),
         plan: localPlanTriangles(part),
+        shell: localShellTriangles(part, -part.boundsMin[1]),
         bounds: localBoundsTriangles(part),
       };
       if (inKit) this.byDef.set(piece.id, kitPart);
@@ -451,7 +464,13 @@ export class TrackDrawing {
     const key = `${part.piece.id}|${placement.heading}|${placement.position.join(",")}`;
     const cached = this.planCache.get(key);
     if (cached) return cached;
-    const plan = placedPlan(part.plan, placement, part.piece.partFrame, part.def.connectors);
+    const plan = placedPlan(
+      part.plan,
+      part.shell,
+      placement,
+      part.piece.partFrame,
+      part.def.connectors,
+    );
     if (this.planCache.size >= CELL_CACHE_LIMIT) this.planCache.clear();
     this.planCache.set(key, plan);
     return plan;
@@ -586,7 +605,7 @@ export class TrackDrawing {
       if (support.kind === "off-baseplate") {
         return { ...at, kind: "off-baseplate", cells: support.cells, missing: support.missing };
       }
-      const overlap = this.host.overlap(plan.cells, 0, part.heightLdu, interlocked);
+      const overlap = this.host.overlap(plan.cells, 0, part.heightLdu, plan.shell, interlocked);
       if (overlap) {
         return {
           ...at,
@@ -799,7 +818,7 @@ export class TrackDrawing {
       const index = this.layout.place(entry.part.catalogIndex, piece.placement, LAID_TRACK_PLATES);
       const plan = this.planOf(entry.part, piece.placement);
       this.piecePlans[index] = plan;
-      this.host.laid(index, entry.part.piece.id, plan.cells, 0, entry.part.heightLdu);
+      this.host.laid(index, entry.part.piece.id, plan.cells, 0, entry.part.heightLdu, plan.shell);
       const centre = partCentre(entry);
       const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
       const members = this.chunkMembers.get(key) ?? [];
@@ -893,6 +912,7 @@ export class TrackDrawing {
         cells: plan.cells,
         bottomLdu: 0,
         topLdu: placed.part.heightLdu,
+        shell: plan.shell,
       });
       const centre = partCentre(placed);
       const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));

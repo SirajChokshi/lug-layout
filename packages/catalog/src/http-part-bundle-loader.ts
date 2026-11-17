@@ -5,6 +5,7 @@ import {
   type BundleCredit,
   type BundleLod,
   type ManifestPart,
+  type SolidSamples,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
@@ -20,6 +21,8 @@ import type {
   PartAsset,
   PartBundle,
   PartFilter,
+  PartSolidCells,
+  SolidCells,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
@@ -32,6 +35,23 @@ function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   if (lattice === null) return null;
   const [phaseX, phaseZ] = lattice.phase;
   return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
+}
+
+function solidCells(solid: SolidSamples): SolidCells {
+  return {
+    samplesPerStud: solid.samplesPerStud,
+    stepsPerLdu: solid.stepsPerLdu,
+    lists: Int32Array.from(solid.lists),
+    patterns: Int32Array.from(solid.patterns),
+    cells: Int32Array.from(solid.cells),
+  };
+}
+
+function partSolidCells(solid: ManifestPart["solid"]): PartSolidCells | null {
+  if (!solid) return null;
+  const [originX, originZ] = solid.origin;
+  const [width, depth] = solid.size;
+  return { ...solidCells(solid), originX, originZ, width, depth };
 }
 
 function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
@@ -49,6 +69,7 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
     flat: Uint32Array.from(cells.flat),
     columnBottom: Int16Array.from(cells.columnBottom),
     columnTop: Int16Array.from(cells.columnTop),
+    solid: solidCells(cells.solid),
   };
 }
 
@@ -287,6 +308,7 @@ function toPartAsset(
     | "displayColor"
     | "producedColors"
     | "trackEnds"
+    | "solid"
     | "baseplate"
     | "aliasOf"
   >,
@@ -318,6 +340,7 @@ function toPartAsset(
     baseplate: part.baseplate,
     aliasOf: part.aliasOf,
     trackEnds: part.trackEnds,
+    solid: partSolidCells(part.solid),
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
     studPrimitiveIndex,

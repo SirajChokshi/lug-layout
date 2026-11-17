@@ -619,11 +619,11 @@ export class Editor implements IEditor {
       this.plans.setTableTopY(this.baseplateBottomY());
       this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors, {
         support: (cells) => this.placed.trackSupport(cells, []),
-        overlap: (cells, bottom, top, exempt) =>
-          this.placed.trackOverlap(cells, bottom, top, exempt),
+        overlap: (cells, bottom, top, shell, exempt) =>
+          this.placed.trackOverlap(cells, bottom, top, shell, exempt),
         neighbours: (cells) => this.placed.trackNeighbours(cells),
-        laid: (piece, pieceId, cells, bottom, top) =>
-          this.placed.addTrackPiece(piece, pieceId, cells, bottom, top),
+        laid: (piece, pieceId, cells, bottom, top, shell) =>
+          this.placed.addTrackPiece(piece, pieceId, cells, bottom, top, shell),
         relaid: (pieces) => this.placed.replaceTrackPieces(pieces),
       });
       this.backend.setPalette({

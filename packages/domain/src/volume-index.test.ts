@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { Contact } from "./solid-samples.ts";
 import {
   NO_TOP,
   VolumeIndex,
   cellChunkKey,
-  firstOverlap,
+  firstContact,
   type CellVolumes,
 } from "./volume-index.ts";
 
@@ -38,16 +39,39 @@ describe("VolumeIndex", () => {
   });
 
   it.each([
-    ["a span resting on the stack's top", [[-1, -1, 96, 104]], null],
-    ["a span in the free gap under an overhang", [[-1, -1, 24, 80]], null],
-    ["a span reaching into the overhang", [[-1, -1, 24, 81]], 3],
-    ["a baseplate slab under a placed model", [[-1, -1, -4, 0]], 1],
-  ] as const)("%s", (_name, list, owner) => {
-    expect(firstOverlap(volumes(list), index, keepAll)?.owner ?? null).toBe(owner);
+    ["a span resting on the stack's top", [-1, -1, 96, 104], []],
+    ["a span in the free gap under an overhang", [-1, -1, 24, 80], []],
+    ["a span reaching into the overhang", [-1, -1, 24, 81], [3]],
+    ["a baseplate slab under a placed model", [-1, -1, -4, 0], [1]],
+    ["a span through the whole stack", [-1, -1, -8, 200], [3, 2, 1]],
+  ] as const)("%s", (_name, [x, z, bottom, top], owners) => {
+    const out: number[] = [];
+    index.ownersOverlapping(x, z, bottom, top, out);
+    expect(out).toEqual(owners);
   });
 
-  it("skips ignored owners and forgets only the cleared chunk", () => {
-    expect(firstOverlap(volumes([[-1, -1, -4, 0]]), index, ignoreBaseplate)).toBeNull();
+  it("reports only coarse hits whose exact shapes meet, testing each owner once per cell", () => {
+    const tested: number[] = [];
+    const meetsOnlyTheOverhang = (owner: number, _x: number, _z: number, out: Contact): boolean => {
+      tested.push(owner);
+      out.xLdu = -9;
+      out.zLdu = -9;
+      return owner === 3;
+    };
+    const twoSpans = volumes([
+      [-1, -1, -8, 10],
+      [-1, -1, 20, 90],
+    ]);
+    expect(firstContact(twoSpans, index, ignoreBaseplate, meetsOnlyTheOverhang)).toMatchObject({
+      owner: 3,
+      cellX: -1,
+      xLdu: -9,
+    });
+    expect(tested).toEqual([2, 3]);
+    expect(firstContact(twoSpans, index, keepAll, () => false)).toBeNull();
+  });
+
+  it("forgets only the cleared chunk", () => {
     const other = new VolumeIndex();
     other.add(1, 31, 0, 0, 8);
     other.add(1, 32, 0, 0, 8);
