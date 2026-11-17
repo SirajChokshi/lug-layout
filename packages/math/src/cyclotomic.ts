@@ -1,10 +1,11 @@
 import { ZETA16_ORDER, zeta16, zeta16ToStuds, type Zeta16 } from "./zeta16.ts";
+import { STUD_LDU } from "./units.ts";
 
 export const ZETA16_STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 export const COEFFICIENT_BOUND = 64;
 export const CERTIFIED_RESIDUAL_LIMIT_LDU = 0.0005;
 export const UNROUNDED_TOLERANCE_LDU = 1e-6;
-const LDU_PER_STUD = 20;
+const LDU_PER_STUD = STUD_LDU;
 
 interface PlanePoint {
   readonly x: number;
