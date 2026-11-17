@@ -19,7 +19,7 @@ export interface PlaneTransform {
 const IDENTITY_PLACEMENT: PlaneTransform = { cos: 1, sin: 0, x: 0, z: 0 };
 const NO_CLIP = new Float64Array(0);
 
-function packCell(cellX: number, cellZ: number): number {
+export function packedCellKey(cellX: number, cellZ: number): number {
   if (Math.abs(cellX) >= CELL_KEY_OFFSET || Math.abs(cellZ) >= CELL_KEY_OFFSET) {
     throw new RangeError(`cell (${cellX}, ${cellZ}) is outside ±${CELL_KEY_OFFSET} studs`);
   }
@@ -137,7 +137,7 @@ function addTriangleCells(tri: Float64Array): void {
   const z1 = Math.floor(maxZ / STUD_LDU);
   for (let cz = Math.floor(minZ / STUD_LDU); cz <= z1; cz++) {
     for (let cx = Math.floor(minX / STUD_LDU); cx <= x1; cx++) {
-      const key = packCell(cx, cz);
+      const key = packedCellKey(cx, cz);
       if (!cellSet.has(key) && overlapsCellInterior(tri, cx, cz)) cellSet.add(key);
     }
   }

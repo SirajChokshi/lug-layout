@@ -16,9 +16,11 @@ import {
   type DrawingKit,
   type EndGap,
   type TrackEnd,
+  packedCellKey,
   placedPlanCells,
   planTrianglesOverlap,
   type BaseCells,
+  type OwnerFilter,
   type TrackMove,
   type TrackPieceDef,
   type TrackPieceSpec,
@@ -60,7 +62,7 @@ const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
 const MIN_START_DRAG_LDU = STUD_LDU;
-const GROUND_PLATES = 0;
+export const LAID_TRACK_PLATES = 0;
 const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
 const FOOTPRINT_FLOATS = 4;
@@ -96,17 +98,28 @@ export interface HeldTrackRequest {
   readonly label: string;
   readonly catalogIndex: number;
   readonly placement: Pose16;
+  readonly plates: number;
+}
+
+export interface HeldJoint {
+  readonly laid: number;
+  readonly heldCells: ReadonlySet<number>;
 }
 
 interface HeldTrackPiece extends HeldTrackRequest {
   readonly plan: PlacedPlan;
-  readonly boundsCells: BaseCells;
+  readonly boundsKeys: ReadonlySet<number>;
   readonly ends: ReadonlyArray<Pose16>;
 }
 
 export interface TrackHost {
   support(cells: BaseCells): TrackSupport;
-  overlap(cells: BaseCells, bottomLdu: number, topLdu: number): PlacedOverlap | null;
+  overlap(
+    cells: BaseCells,
+    bottomLdu: number,
+    topLdu: number,
+    exempt: OwnerFilter,
+  ): PlacedOverlap | null;
   neighbours(cells: BaseCells): ReadonlySet<number>;
   laid(piece: number, pieceId: string, cells: BaseCells, bottomLdu: number, topLdu: number): void;
   relaid(pieces: ReadonlyArray<LaidTrackPiece>): void;
@@ -338,32 +351,11 @@ function partBox(placed: Placed): WorldBox {
   };
 }
 
-function cellKey(cellX: number, cellZ: number): string {
-  return `${cellX},${cellZ}`;
-}
-
-function withoutCells(cells: BaseCells, remove: ReadonlyArray<BaseCells>): BaseCells {
-  if (remove.length === 0) return cells;
-  const drop = new Set<string>();
-  for (const other of remove) {
-    for (let c = 0; c < other.count; c++)
-      drop.add(cellKey(other.cellX[c] ?? 0, other.cellZ[c] ?? 0));
-  }
-  const keptX: number[] = [];
-  const keptZ: number[] = [];
-  for (let c = 0; c < cells.count; c++) {
-    const x = cells.cellX[c] ?? 0;
-    const z = cells.cellZ[c] ?? 0;
-    if (drop.has(cellKey(x, z))) continue;
-    keptX.push(x);
-    keptZ.push(z);
-  }
-  return {
-    count: keptX.length,
-    cellX: Int32Array.from(keptX),
-    cellZ: Int32Array.from(keptZ),
-    flat: new Uint8Array(keptX.length),
-  };
+function cellKeys(cells: BaseCells): ReadonlySet<number> {
+  const keys = new Set<number>();
+  for (let c = 0; c < cells.count; c++)
+    keys.add(packedCellKey(cells.cellX[c] ?? 0, cells.cellZ[c] ?? 0));
+  return keys;
 }
 
 export function trackChunkKey(chunkX: number, chunkZ: number): number {
@@ -579,7 +571,7 @@ export class TrackDrawing {
         {
           ...request,
           plan: this.planOf(part, request.placement),
-          boundsCells: this.boundsCellsOf(part, request.placement),
+          boundsKeys: cellKeys(this.boundsCellsOf(part, request.placement)),
           ends: this.connectorPoses(part, request.placement),
         },
       ];
@@ -587,31 +579,25 @@ export class TrackDrawing {
     this.recomputeEnds();
   }
 
-  joinedLaidPieces(requests: ReadonlyArray<HeldTrackRequest>): ReadonlyArray<number> {
-    const ends: Pose16[] = [];
-    for (const request of requests) {
+  heldJoints(requests: ReadonlyArray<HeldTrackRequest>): ReadonlyArray<HeldJoint> {
+    const atLaidHeight = requests.flatMap((request) => {
       const part = this.byCatalogIndex.get(request.catalogIndex);
-      if (part) ends.push(...this.connectorPoses(part, request.placement));
-    }
-    const joined: number[] = [];
+      if (!part || request.plates !== LAID_TRACK_PLATES) return [];
+      return [
+        { part, placement: request.placement, ends: this.connectorPoses(part, request.placement) },
+      ];
+    });
+    const joints: HeldJoint[] = [];
     for (let p = 0; p < this.layout.count; p++) {
       const laid = this.laidConnectorPoses(p);
-      if (laid.some((a) => ends.some((b) => posesJoin16(a, b)))) joined.push(p);
-    }
-    return joined;
-  }
-
-  heldCells(requests: ReadonlyArray<HeldTrackRequest>): ReadonlySet<string> {
-    const cells = new Set<string>();
-    for (const request of requests) {
-      const part = this.byCatalogIndex.get(request.catalogIndex);
-      if (!part) continue;
-      const bounds = this.boundsCellsOf(part, request.placement);
-      for (let c = 0; c < bounds.count; c++) {
-        cells.add(cellKey(bounds.cellX[c] ?? 0, bounds.cellZ[c] ?? 0));
+      const keys = new Set<number>();
+      for (const held of atLaidHeight) {
+        if (!laid.some((a) => held.ends.some((b) => posesJoin16(a, b)))) continue;
+        for (const key of cellKeys(this.boundsCellsOf(held.part, held.placement))) keys.add(key);
       }
+      if (keys.size > 0) joints.push({ laid: p, heldCells: keys });
     }
-    return cells;
+    return joints;
   }
 
   private boundsCellsOf(part: KitPart, placement: Pose16): BaseCells {
@@ -633,14 +619,13 @@ export class TrackDrawing {
     bEnds: ReadonlyArray<Pose16>,
   ): BaseCells | null {
     if (aEnds.some((pa) => bEnds.some((pb) => posesJoin16(pa, pb)))) return null;
-    const inB = new Set<string>();
-    for (let c = 0; c < b.cells.count; c++) inB.add(`${b.cells.cellX[c]},${b.cells.cellZ[c]}`);
+    const inB = cellKeys(b.cells);
     const sharedX: number[] = [];
     const sharedZ: number[] = [];
     for (let c = 0; c < a.cells.count; c++) {
       const x = a.cells.cellX[c] ?? 0;
       const z = a.cells.cellZ[c] ?? 0;
-      if (!inB.has(`${x},${z}`)) continue;
+      if (!inB.has(packedCellKey(x, z))) continue;
       sharedX.push(x);
       sharedZ.push(z);
     }
@@ -681,14 +666,13 @@ export class TrackDrawing {
       const plan = this.planOf(part, placement);
       const at: RunPiece = { piece: i, pieceId: part.piece.id, pieces: entries.length };
       const pieceEnds = this.connectorPoses(part, placement);
-      const joinedHeld = this.held.filter((h) =>
+      const atLaidHeight = this.held.filter((h) => h.plates === LAID_TRACK_PLATES);
+      const joinedHeld = atLaidHeight.filter((h) =>
         h.ends.some((end) => pieceEnds.some((own) => posesJoin16(own, end))),
       );
-      const checked = withoutCells(
-        plan.cells,
-        joinedHeld.map((h) => h.boundsCells),
-      );
-      for (const h of this.held) {
+      const interlocked: OwnerFilter = (owner, cellX, cellZ) =>
+        joinedHeld.some((h) => h.owner === owner && h.boundsKeys.has(packedCellKey(cellX, cellZ)));
+      for (const h of atLaidHeight) {
         if (joinedHeld.includes(h)) continue;
         const shared = this.crosses(plan, pieceEnds, h.plan, h.ends);
         if (shared) {
@@ -703,16 +687,11 @@ export class TrackDrawing {
           };
         }
       }
-      const support = this.host.support(
-        withoutCells(
-          plan.support,
-          joinedHeld.map((h) => h.boundsCells),
-        ),
-      );
+      const support = this.host.support(plan.support);
       if (support.kind === "off-baseplate") {
         return { ...at, kind: "off-baseplate", cells: support.cells, missing: support.missing };
       }
-      const overlap = this.host.overlap(checked, 0, part.heightLdu);
+      const overlap = this.host.overlap(plan.cells, 0, part.heightLdu, interlocked);
       if (overlap) {
         return {
           ...at,
@@ -935,7 +914,7 @@ export class TrackDrawing {
   private commitPlaced(entries: ReadonlyArray<Placed>): ReadonlyArray<number> {
     const touched = new Set<number>();
     for (const entry of entries) {
-      const index = this.layout.place(entry.part.catalogIndex, entry.placement, GROUND_PLATES);
+      const index = this.layout.place(entry.part.catalogIndex, entry.placement, LAID_TRACK_PLATES);
       const plan = this.planOf(entry.part, entry.placement);
       this.piecePlans[index] = plan;
       this.host.laid(index, entry.part.piece.id, plan.cells, 0, entry.part.heightLdu);
@@ -1096,12 +1075,13 @@ export class TrackDrawing {
     for (let p = 0; p < this.layout.count; p++) {
       combined.place(this.layout.piece(p), this.layout.pose(p), this.layout.yPlates(p));
     }
-    for (const h of this.held) combined.place(h.catalogIndex, h.placement, GROUND_PLATES);
+    for (const h of this.held) combined.place(h.catalogIndex, h.placement, h.plates);
     this.combined = combined;
     this.graph = new TrackGraph(combined);
     const ends: TrackEnd[] = [];
     for (const end of this.graph.openEnds) {
       const placement = this.graph.endPlacement[end] ?? 0;
+      if (combined.yPlates(placement) !== LAID_TRACK_PLATES) continue;
       const connector = this.graph.endConnector[end] ?? 0;
       ends.push({
         pose: combined.connectorPose(placement, connector),
@@ -1144,7 +1124,11 @@ export class TrackDrawing {
     this.piecePlans = [];
     const relaid: LaidTrackPiece[] = [];
     for (const placed of kept) {
-      const index = this.layout.place(placed.part.catalogIndex, placed.placement, GROUND_PLATES);
+      const index = this.layout.place(
+        placed.part.catalogIndex,
+        placed.placement,
+        LAID_TRACK_PLATES,
+      );
       const plan = this.planOf(placed.part, placed.placement);
       this.piecePlans[index] = plan;
       relaid.push({
