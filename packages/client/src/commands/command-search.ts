@@ -23,12 +23,13 @@ export interface PaletteSources {
   readonly enabled: (id: CommandId) => boolean;
 }
 
-const TITLE_START_SCORE = 100;
-const TITLE_WORD_SCORE = 90;
+const TITLE_START_SCORE = 110;
+const TITLE_WORD_SCORE = 100;
 const WORD_SCORE = 80;
 const INSIDE_SCORE = 50;
 const RECENT_BONUS = 20;
 const DISABLED_PENALTY = 30;
+const OTHER_COLOR_PENALTY = 5;
 const RESULT_LIMIT = 60;
 const DIMENSION = /(\d)\s*[x×]\s*(\d)/gu;
 const ALPHANUMERIC = /[\p{L}\p{N}]/u;
@@ -135,14 +136,15 @@ export function searchPalette(
   }
   for (const hit of sources.index.search(query, "all")) {
     const narrowed = hit.items.length < hit.entry.items.length;
-    for (const item of itemsInHitOrder(sources.index, hit.items, narrowed)) {
+    itemsInHitOrder(sources.index, hit.items, narrowed).forEach((item, variant) => {
       const recent = sources.recent.includes(item.id);
+      const score = variant === 0 ? hit.score : hit.score - OTHER_COLOR_PENALTY;
       scored.push({
         result: { kind: "item", item, recent },
-        score: recent ? hit.score + RECENT_BONUS : hit.score,
+        score: recent ? score + RECENT_BONUS : score,
         order: scored.length,
       });
-    }
+    });
   }
   return scored
     .toSorted(byScore)

@@ -38,6 +38,7 @@ interface IndexedEntry {
   readonly words: ReadonlyArray<string>;
   readonly phrases: ReadonlyArray<ReadonlyArray<string>>;
   readonly colorWords: ReadonlyArray<ReadonlyArray<string>>;
+  readonly kindWords: ReadonlyArray<string>;
   readonly leadWord: string | undefined;
 }
 
@@ -249,13 +250,18 @@ function wordScore(token: string, word: string, exact: number): number {
   return 0;
 }
 
-function colorWordScore(token: string, words: ReadonlyArray<string>): number {
+function exactOrPrefixScore(token: string, words: ReadonlyArray<string>): number {
   let best = 0;
   for (const word of words) {
     if (word === token) return EXACT_WORD;
-    if (word.startsWith(token)) best = Math.max(best, PREFIX);
+    if (word.startsWith(token)) best = PREFIX;
   }
   return best;
+}
+
+function kindWordScore(token: string, words: ReadonlyArray<string>): number {
+  if (words.includes(token)) return PREFIX;
+  return words.some((word) => word.startsWith(token)) ? SUBSTRING : 0;
 }
 
 function bestScore(token: string, words: ReadonlyArray<string>, exact: number): number {
@@ -355,6 +361,8 @@ function isLatticeSize(word: string): boolean {
 export class PaletteIndex {
   private readonly indexed: ReadonlyArray<IndexedEntry>;
   private readonly ranks: ReadonlyMap<number, number>;
+  private readonly colorVocabulary: ReadonlyArray<string>;
+  private readonly colorTokenCache = new Map<string, boolean>();
   private readonly entryCache = new Map<PaletteFilter, ReadonlyArray<PaletteEntry>>();
   private readonly choiceCache = new Map<PaletteFilter, ReadonlyArray<PaletteColorChoice>>();
 
@@ -371,12 +379,7 @@ export class PaletteIndex {
       items: entry.items.toSorted((a, b) => rankOf(a) - rankOf(b)),
     }));
     this.indexed = sorted.map((entry, order) => {
-      const phrases = [
-        entry.title,
-        CATEGORY_LABEL[entry.category],
-        KIND_WORDS[entry.category],
-        ...(extra.get(entry.key) ?? []),
-      ]
+      const phrases = [entry.title, CATEGORY_LABEL[entry.category], ...(extra.get(entry.key) ?? [])]
         .map(wordsOf)
         .map(withSpellings);
       const first = entry.items[0];
@@ -397,8 +400,26 @@ export class PaletteIndex {
         colorWords: entry.items.map((item) =>
           item.color ? [...withSpellings(wordsOf(item.color.name)), ...item.elements] : [],
         ),
+        kindWords: wordsOf(KIND_WORDS[entry.category]),
       };
     });
+    this.colorVocabulary = [
+      ...new Set(this.indexed.flatMap((indexed) => indexed.colorWords.flat())),
+    ].filter((word) => !HAS_DIGIT.test(word));
+  }
+
+  private isColorWordOrPrefix(token: string): boolean {
+    const known = this.colorTokenCache.get(token);
+    if (known !== undefined) return known;
+    const found = this.colorVocabulary.some((word) => word.startsWith(token));
+    this.colorTokenCache.set(token, found);
+    return found;
+  }
+
+  private colorScore(token: string, words: ReadonlyArray<string>): number {
+    return this.isColorWordOrPrefix(token)
+      ? exactOrPrefixScore(token, words)
+      : bestScore(token, words, EXACT_WORD);
   }
 
   entries(filter: PaletteFilter): ReadonlyArray<PaletteEntry> {
@@ -522,6 +543,7 @@ export class PaletteIndex {
               indexed,
               Math.max(
                 strictScore(term.word, indexed.words),
+                strictScore(term.word, indexed.kindWords),
                 strictScore(term.word, indexed.numbers),
               ),
               (words) => strictScore(term.word, words),
@@ -532,8 +554,9 @@ export class PaletteIndex {
                 bestScore(term.word, indexed.numbers, EXACT_NUMBER),
                 bestScore(term.word, indexed.words, EXACT_WORD) +
                   (indexed.leadWord === term.word ? LEAD_WORD_BONUS : 0),
+                kindWordScore(term.word, indexed.kindWords),
               ),
-              (words) => colorWordScore(term.word, words),
+              (words) => this.colorScore(term.word, words),
             );
       default: {
         const unhandled: never = term;
