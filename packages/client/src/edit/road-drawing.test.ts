@@ -162,6 +162,11 @@ function drag(editor: IEditor, tiles: ReadonlyArray<readonly [number, number]>):
   editor.dragEnd(...ndc(tiles.at(-1) ?? first), 0);
 }
 
+function placedItems(editor: IEditor): ReadonlyArray<string> {
+  const { refs, placements } = editor.dump();
+  return placements.refId.map((ref) => refs[ref] ?? "");
+}
+
 function kitId(editor: IEditor, matches: (label: string, edge: string) => boolean): string {
   const kit = editor.snapshot().roadKits.find((k) => matches(k.label, k.edge));
   if (!kit) throw new Error("no matching road kit");
@@ -325,6 +330,54 @@ describe("draw road", () => {
     editor.undo(0);
     editor.chooseItem(null);
   });
+
+  it.each(["generated:mils-river-straight", "generated:mils-plain"])(
+    "refuses a stroke over a %s instead of swapping it for road",
+    (module) => {
+      editor.chooseItem(module);
+      editor.click(...ndc([1, 0]), 0);
+      editor.chooseItem(kitId(editor, completeKits[0][1]));
+      drag(editor, [
+        [0, 0],
+        [2, 0],
+      ]);
+      expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
+      expect(placedItems(editor)).toEqual([module]);
+      editor.undo(0);
+      expect(editor.snapshot().placements).toBe(0);
+      editor.chooseItem(null);
+    },
+  );
+
+  const groundUnderRoad = [
+    ["6-stud Green road plates", "ldraw:3811@72", completeKits[1][1]],
+    ["6-stud road plates", "ldraw:3811@2", completeKits[0][1]],
+  ] as const;
+
+  it.each(groundUnderRoad)(
+    "draws %s across a row of %s, swapping each one under the road, and one undo puts them back",
+    (_, ground, matches) => {
+      editor.chooseItem(ground);
+      for (const ix of [0, 1, 2]) editor.click(...ndc([ix, 0]), 0);
+      expect(editor.snapshot().placements).toBe(3);
+      editor.chooseItem(kitId(editor, matches));
+      drag(editor, [
+        [0, 0],
+        [2, 0],
+      ]);
+      expect(editor.snapshot().placements).toBe(3);
+      expect(editor.snapshot().lastRoadStroke?.stroke.overGround).toBe(3);
+      expect(placedItems(editor)).not.toContain(ground);
+      expect(editor.snapshot().roads.mismatchedCells).toBe(0);
+      editor.undo(0);
+      expect(placedItems(editor)).toEqual([ground, ground, ground]);
+      editor.undo(0);
+      editor.undo(0);
+      editor.undo(0);
+      expect(editor.snapshot().placements).toBe(0);
+      editor.chooseItem(null);
+    },
+  );
 
   it("lays nothing and says why when a stroke needs a curve the kit doesn't have", () => {
     editor.chooseItem(kitId(editor, (_, edge) => edge === "7 + 8 road + 2 + 8 road + 7"));
