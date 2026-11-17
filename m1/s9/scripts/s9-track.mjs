@@ -90,7 +90,18 @@ await page.mouse.up();
 await page.keyboard.press("Escape");
 await waitLine("track piece");
 note(`after drawing: ${await worldLine()}`);
+if (process.env.MOVE === "1") {
+  await page.mouse.move(800, 450);
+  for (let i = 0; i < 6; i++) {
+    await page.mouse.wheel(0, -120);
+    await page.waitForTimeout(100);
+  }
+  await page.waitForTimeout(2500);
+  const view = await page.evaluate(() => JSON.parse(document.querySelector("#edit-state")?.textContent ?? "{}").world?.view ?? null);
+  note(`after zooming: ${await worldLine()}; state view ${JSON.stringify(view)}`);
+}
 const exportA = await exportTo("A.brr.zip");
+note(`exported view: ${JSON.stringify(JSON.parse(exportA.toString("latin1").match(/\{"bundleVersion".*?"yaw":[^}]*\}\}/)?.[0] ?? "{}").view ?? null)}`);
 const before = await canvasShot("before-reload.png");
 await page.reload();
 await ready();

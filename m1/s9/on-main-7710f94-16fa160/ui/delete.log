@@ -1,0 +1,5 @@
+## Delete worlds
+worlds: ["Scratch (1)","World 1 (0)"]
+databases: ["brr-world-559789b1-f8db-4388-a542-ae91c4f53535","brr-world-dc39e35d-a74a-4337-a0b1-0066f2276e50","brr-worlds"]
+deleted the other world: ["Scratch (1)"]; databases ["brr-world-559789b1-f8db-4388-a542-ae91c4f53535","brr-worlds"]
+deleted the open world: now "World 1 Saved · 0 placements · 0 shards"; worlds ["World 1 (0)"]; databases ["brr-world-8283838a-7547-4714-be09-b3952ec449b7","brr-worlds"]
