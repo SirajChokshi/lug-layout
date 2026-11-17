@@ -304,3 +304,29 @@ fn an_axle_fits_the_bore_along_its_whole_length_while_friction_pin_halves_need_t
     assert_eq!(inward.profile.radii[..2], [COUNTERBORE, COUNTERBORE]);
     assert!(inward.profile.radii[2..].iter().any(|&r| r > BORE));
 }
+
+#[test]
+fn circular_primitives_have_16_48_and_8_segments_on_the_unit_circle() {
+    let library = fixture_library();
+    for (primitive, segments) in [
+        ("4-4cyli.dat", 16),
+        ("48/4-4cyli.dat", 48),
+        ("8/4-4cyli.dat", 8),
+    ] {
+        let compiled = compile_part(&library, primitive, &CompileOptions::default())
+            .expect("the primitive compiles");
+        let mut angles: Vec<i64> = Vec::new();
+        for vertex in compiled.mesh.positions.as_chunks::<3>().0 {
+            let [x, _, z] = vertex.map(f64::from);
+            assert!(
+                (x.hypot(z) - 1.0).abs() < 1e-4,
+                "{primitive} vertex off the unit circle"
+            );
+            angles
+                .push((z.atan2(x).to_degrees().rem_euclid(360.0) * 100.0).round() as i64 % 36_000);
+        }
+        angles.sort_unstable();
+        angles.dedup();
+        assert_eq!(angles.len(), segments, "{primitive}");
+    }
+}
