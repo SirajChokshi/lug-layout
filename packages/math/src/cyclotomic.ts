@@ -1,7 +1,10 @@
-import { ZETA16_ORDER, zeta16, zeta16ToStuds, type Zeta16 } from "@brr/math";
+import { ZETA16_ORDER, zeta16, zeta16ToStuds, type Zeta16 } from "./zeta16.ts";
 
 export const ZETA16_STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 export const COEFFICIENT_BOUND = 64;
+export const CERTIFIED_RESIDUAL_LIMIT_LDU = 0.0005;
+export const UNROUNDED_TOLERANCE_LDU = 1e-6;
+const LDU_PER_STUD = 20;
 
 interface PlanePoint {
   readonly x: number;
@@ -99,7 +102,10 @@ export function findZeta16Representation(
       if (coefficients !== undefined) solutions.push(coefficients);
     }
   }
-  const best = solutions.toSorted((p, q) => Number(l1Norm(p) - l1Norm(q)))[0];
+  let best: Zeta16 | undefined;
+  for (const candidate of solutions) {
+    if (best === undefined || l1Norm(candidate) < l1Norm(best)) best = candidate;
+  }
   if (best === undefined) return undefined;
   const exact = zeta16ToStuds(best);
   return {
@@ -107,4 +113,13 @@ export function findZeta16Representation(
     residual: Math.hypot(exact.x - point.x, exact.z - point.y),
     solutionCount: solutions.length,
   };
+}
+
+export function certifiedZeta16(point: PlanePoint, toleranceLdu: number): Zeta16 | null {
+  const field = findZeta16Representation(point, toleranceLdu / LDU_PER_STUD);
+  const certified =
+    field !== undefined &&
+    field.solutionCount === 1 &&
+    field.residual * LDU_PER_STUD <= CERTIFIED_RESIDUAL_LIMIT_LDU;
+  return certified ? field.coefficients : null;
 }
