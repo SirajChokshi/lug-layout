@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "ignoreCommand": "git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD || exit 1; exit 0",
+  "ignoreCommand": "git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- :/ || exit 1; exit 0",
   "installCommand": "pnpm install --frozen-lockfile --filter @brr/web... --filter @brr/asset-pipeline...",
   "buildCommand": "sh vercel-build.sh",
   "outputDirectory": "dist"
