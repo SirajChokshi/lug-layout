@@ -283,7 +283,7 @@ export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
   { gesture: "Right-drag", action: "Orbit (pan in the 2D plan)" },
   {
     gesture: "Shift-, Space- or middle-drag",
-    action: "Pan, keeping the grabbed point under the cursor",
+    action: "Pan, keeping the grabbed point under the cursor (Space also stops a moving train)",
   },
   { gesture: "Wheel or pinch", action: "Zoom at the cursor" },
   { gesture: "Two-finger scroll", action: "Pan on a trackpad (Alt orbits)" },

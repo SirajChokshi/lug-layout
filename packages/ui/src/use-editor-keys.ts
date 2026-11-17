@@ -69,6 +69,10 @@ export function useEditorKeys(
       if (controlTakesKey(event.target, event.key)) return;
       const id = commandForKey(event, isTyping(event.target));
       if (id === null) return;
+      if (event.repeat && commandSpec(id).repeats !== true) {
+        event.preventDefault();
+        return;
+      }
       if (isShellCommand(id)) {
         event.preventDefault();
         onShellCommand(id);
@@ -81,7 +85,6 @@ export function useEditorKeys(
       }
       if (!commandEnabled(id, editor.snapshot(), play.snapshot())) return;
       event.preventDefault();
-      if (event.repeat && commandSpec(id).repeats !== true) return;
       if (isPlayCommand(id)) runPlayAction(editor, play, id);
       else runEditorAction(editor, camera, id, event.timeStamp);
     };
