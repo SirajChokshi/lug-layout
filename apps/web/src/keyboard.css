@@ -274,6 +274,10 @@ kbd {
   --tone: #1a7f37;
 }
 
+.tool-hud[data-tone="erase"] {
+  --tone: #bc4c00;
+}
+
 .tool-hud[data-tone="track"] {
   --tone: #8250df;
 }

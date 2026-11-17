@@ -379,7 +379,7 @@ describe("draw road", () => {
     },
   );
 
-  it("erases a branch in one stroke, turning the T it leaves back into a straight, and one undo restores both", () => {
+  it("erases a branch in one stroke under an Erasing HUD, turning the T it leaves back into a straight, and one undo restores both", () => {
     editor.chooseItem(kitId(editor, completeKits[0][1]));
     drag(editor, [
       [0, 0],
@@ -393,6 +393,9 @@ describe("draw road", () => {
       editor.dump().roadPlacements.find((p) => p.x === centre(ix) && p.z === centre(iz))?.item;
     expect(itemAt(2, 0)).toBe("ldraw:44341p02@72");
     editor.setRoadErase(true);
+    const hud = toolHints(editor.snapshot());
+    expect(hud.title).toBe("Erasing road");
+    expect(hud.hints).not.toContainEqual(expect.objectContaining({ command: "rotate" }));
     drag(editor, [
       [2, 2],
       [2, 1],
