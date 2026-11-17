@@ -264,6 +264,7 @@ export interface RoadPlacementDump {
 
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
+  readonly trackEnds: ReturnType<TrackDrawing["openEnds"]>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
   readonly placements: PlacementDump;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
@@ -1435,6 +1436,7 @@ export class Editor implements IEditor {
   dump(): EditorDump {
     return {
       refs: this.placeables.map((p) => p.id),
+      trackEnds: this.track?.openEnds() ?? [],
       frameShifts: this.placeables.map((p) => p.frameShift),
       placements: dumpPlacements(this.world),
       roadPlacements: this.roadModels.map((model, id) => ({
