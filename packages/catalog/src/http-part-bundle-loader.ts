@@ -28,11 +28,12 @@ import type {
   PartFilter,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
+import { FetchPool } from "./fetch-pool.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
-const MAX_CONCURRENT_FETCHES = 32;
+const MAX_CONCURRENT_FETCHES = 16;
 
 function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   if (lattice === null) return null;
@@ -55,23 +56,6 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
     columnBottom: Int16Array.from(cells.columnBottom),
     columnTop: Int16Array.from(cells.columnTop),
   };
-}
-
-async function mapConcurrently<T, R>(
-  items: ReadonlyArray<T>,
-  limit: number,
-  map: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = [];
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    for (let index = next++; index < items.length; index = next++) {
-      const item = items[index];
-      if (item !== undefined) results[index] = await map(item);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
 }
 
 @injectable()
@@ -97,20 +81,32 @@ export class HttpAssetFetcher implements IAssetFetcher {
 @injectable()
 export class HttpPartBundleLoader implements IPartBundleLoader {
   private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
+  private readonly pool = new FetchPool(MAX_CONCURRENT_FETCHES);
+  private readonly partAssets = new Map<string, Promise<PartAsset>>();
+  private readonly studPrimitiveAssets = new Map<
+    BundleLod,
+    Promise<ReadonlyArray<StudPrimitiveAsset>>
+  >();
 
   constructor(
     @inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher,
     @inject(BUNDLE_MANIFEST_FILE) private readonly manifestFile: string,
   ) {}
 
+  private bytes(path: string): Promise<ArrayBuffer> {
+    return this.pool.run(() => this.fetcher.bytes(path));
+  }
+
+  private text(path: string): Promise<string> {
+    return this.pool.run(() => this.fetcher.text(path));
+  }
+
   loadManifest(lod: BundleLod): Promise<BundleManifest> {
     const cached = this.manifests.get(lod);
     if (cached) return cached;
-    const loading = this.fetcher
-      .text(`${lod}/${this.manifestFile}`)
-      .then((text) =>
-        decodedOrThrow(decode(BundleManifest, JSON.parse(text)), `${lod}/${this.manifestFile}`),
-      );
+    const loading = this.text(`${lod}/${this.manifestFile}`).then((text) =>
+      decodedOrThrow(decode(BundleManifest, JSON.parse(text)), `${lod}/${this.manifestFile}`),
+    );
     this.manifests.set(lod, loading);
     return loading;
   }
@@ -119,12 +115,31 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     lod: BundleLod,
     manifest: BundleManifest,
   ): Promise<ReadonlyArray<StudPrimitiveAsset>> {
-    return Promise.all(
+    const cached = this.studPrimitiveAssets.get(lod);
+    if (cached) return cached;
+    const loading = Promise.all(
       manifest.studPrimitives.map(async (primitive): Promise<StudPrimitiveAsset> => {
-        const glb = parseGlb(await this.fetcher.bytes(`${lod}/${primitive.file}`), primitive.file);
+        const glb = parseGlb(await this.bytes(`${lod}/${primitive.file}`), primitive.file);
         return { mesh: readInheritColorMesh(glb, primitive.name) };
       }),
     );
+    this.studPrimitiveAssets.set(lod, loading);
+    loading.catch(() => this.studPrimitiveAssets.delete(lod));
+    return loading;
+  }
+
+  private partAsset(
+    lod: BundleLod,
+    part: ManifestPart,
+    studPrimitiveNames: ReadonlyArray<string>,
+  ): Promise<PartAsset> {
+    const key = `${lod}/${part.file}`;
+    const cached = this.partAssets.get(key);
+    if (cached) return cached;
+    const loading = this.bytes(key).then((bytes) => toPartAsset(part, bytes, studPrimitiveNames));
+    this.partAssets.set(key, loading);
+    loading.catch(() => this.partAssets.delete(key));
+    return loading;
   }
 
   private async bundle(
@@ -135,9 +150,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     const studPrimitiveNames = manifest.studPrimitives.map((primitive) => primitive.name);
     const [studPrimitives, assets] = await Promise.all([
       this.studPrimitives(lod, manifest),
-      mapConcurrently(parts, MAX_CONCURRENT_FETCHES, async (part) =>
-        toPartAsset(part, await this.fetcher.bytes(`${lod}/${part.file}`), studPrimitiveNames),
-      ),
+      Promise.all(parts.map((part) => this.partAsset(lod, part, studPrimitiveNames))),
     ]);
     return {
       bundleVersion: manifest.bundleVersion,
@@ -177,21 +190,19 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     const compiledCredits: BundleCredit[] = [];
     const [studPrimitives, assets] = await Promise.all([
       this.studPrimitives(lod, manifest),
-      mapConcurrently(partIds, MAX_CONCURRENT_FETCHES, async (id): Promise<PartAsset> => {
-        const glb = compiledParts.get(id);
-        if (glb) {
-          const asset = compiledPartAsset(id, glb, studPrimitiveNames);
-          compiledCredits.push(...asset.credits);
-          return asset.part;
-        }
-        const part = manifestParts.get(id);
-        if (!part) throw new Error(`part ${id} is neither in the bundle nor compiled`);
-        return toPartAsset(
-          part,
-          await this.fetcher.bytes(`${lod}/${part.file}`),
-          studPrimitiveNames,
-        );
-      }),
+      Promise.all(
+        partIds.map(async (id): Promise<PartAsset> => {
+          const glb = compiledParts.get(id);
+          if (glb) {
+            const asset = compiledPartAsset(id, glb, studPrimitiveNames);
+            compiledCredits.push(...asset.credits);
+            return asset.part;
+          }
+          const part = manifestParts.get(id);
+          if (!part) throw new Error(`part ${id} is neither in the bundle nor compiled`);
+          return this.partAsset(lod, part, studPrimitiveNames);
+        }),
+      ),
     ]);
     return {
       bundleVersion: manifest.bundleVersion,
@@ -218,7 +229,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       throw new Error(`model "${name}" is not in the bundle (available: ${available})`);
     }
     const file = decodedOrThrow(
-      decode(ModelFile, JSON.parse(await this.fetcher.text(`${lod}/${entry.file}`))),
+      decode(ModelFile, JSON.parse(await this.text(`${lod}/${entry.file}`))),
       entry.file,
     );
     const manifestParts = new Map(manifest.parts.map((part) => [part.id, part]));
@@ -263,7 +274,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   private async farMesh(path: string): Promise<ModelFarMesh> {
-    const glb = parseFarMeshGlb(await this.fetcher.bytes(path), path);
+    const glb = parseFarMeshGlb(await this.bytes(path), path);
     const { extras } = glb.document;
     const cellIndex = readUint32Array(glb, extras.arrays.voxelCells);
     const ldrawColor = readUint32Array(glb, extras.arrays.voxelColors);
