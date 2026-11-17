@@ -1,0 +1,50 @@
+
+> lug-layout@ check /agent/repos/lug-layout
+> pnpm --filter @brr/asset-pipeline restore-ldraw && pnpm lint && pnpm lint:boundaries && pnpm lint:rust && pnpm format:check && pnpm check:infra && pnpm check:rust && turbo run typecheck test build
+
+
+> @brr/asset-pipeline@ restore-ldraw /agent/repos/lug-layout/tools/asset-pipeline
+> node src/cli.ts restore
+
+bundle closure: 1807 present, 87 downloaded, 0 pruned
+audit closure: 394 present, 0 downloaded, 0 pruned
+LDCad patches: 28 present, 0 downloaded, 0 pruned
+OMR models: 10 present, 8 downloaded, 0 pruned
+
+> lug-layout@ lint /agent/repos/lug-layout
+> oxlint --deny-warnings
+
+
+> lug-layout@ lint:boundaries /agent/repos/lug-layout
+> depcruise --config .dependency-cruiser.json packages apps tools/asset-pipeline/src
+
+
+✔ no dependency violations found (153 modules, 486 dependencies cruised)
+
+‼ missing-tsc-transpiler: dependency-cruiser detected a TypeScript environment,
+    but not a compatible TypeScript compiler (typescript: >=2.0.0 <7.0.0). This means
+    it's likely to have missed TypeScript sources and dependencies.
+
+    Install typescript to get better results (e.g. npm i -D typescript@^6).
+
+    => Support for typescript@>=7 will follow when its API is published and stable.
+
+
+> lug-layout@ lint:rust /agent/repos/lug-layout
+> node tools/rust-comment-check/src/cli.ts crates
+
+
+> lug-layout@ format:check /agent/repos/lug-layout
+> oxfmt --check
+
+Checking formatting...
+
+All matched files use the correct format.
+Finished in 45ms on 214 files using 8 threads.
+
+> lug-layout@ check:infra /agent/repos/lug-layout
+> terraform -chdir=infra/cloudflare fmt -check -recursive && terraform -chdir=infra/cloudflare init -backend=false -input=false -lockfile=readonly && terraform -chdir=infra/cloudflare validate
+
+sh: 1: terraform: not found
+ ELIFECYCLE  Command failed.
+ ELIFECYCLE  Command failed with exit code 1.

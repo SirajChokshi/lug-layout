@@ -1,0 +1,366 @@
+
+> @brr/asset-pipeline@ restore-ldraw /agent/repos/lug-layout/tools/asset-pipeline
+> node src/cli.ts restore
+
+bundle closure: 1894 present, 0 downloaded, 0 pruned
+audit closure: 394 present, 0 downloaded, 0 pruned
+LDCad patches: 28 present, 0 downloaded, 0 pruned
+OMR models: 18 present, 0 downloaded, 0 pruned
+
+> lug-layout@ lint /agent/repos/lug-layout
+> oxlint --deny-warnings
+
+
+> lug-layout@ lint:boundaries /agent/repos/lug-layout
+> depcruise --config .dependency-cruiser.json packages apps tools/asset-pipeline/src
+
+
+✔ no dependency violations found (153 modules, 486 dependencies cruised)
+
+‼ missing-tsc-transpiler: dependency-cruiser detected a TypeScript environment,
+    but not a compatible TypeScript compiler (typescript: >=2.0.0 <7.0.0). This means
+    it's likely to have missed TypeScript sources and dependencies.
+
+    Install typescript to get better results (e.g. npm i -D typescript@^6).
+
+    => Support for typescript@>=7 will follow when its API is published and stable.
+
+
+> lug-layout@ lint:rust /agent/repos/lug-layout
+> node tools/rust-comment-check/src/cli.ts crates
+
+
+> lug-layout@ format:check /agent/repos/lug-layout
+> oxfmt --check
+
+Checking formatting...
+
+All matched files use the correct format.
+Finished in 7ms on 214 files using 8 threads.
+
+> lug-layout@ check:rust /agent/repos/lug-layout
+> cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+
+    Checking brick-compile v0.1.0 (/agent/repos/lug-layout/crates/brick-compile)
+    Checking brick-compile-cli v0.1.0 (/agent/repos/lug-layout/crates/brick-compile-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s
+   Compiling brick-compile v0.1.0 (/agent/repos/lug-layout/crates/brick-compile)
+   Compiling brick-compile-cli v0.1.0 (/agent/repos/lug-layout/crates/brick-compile-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.73s
+     Running unittests src/lib.rs (target/debug/build/brick-compile/ae59e039a2c6b200/out/brick_compile-ae59e039a2c6b200)
+
+running 4 tests
+test lattice::tests::the_lowest_integer_stud_layer_decides_the_phase_over_a_larger_upper_layer ... ok
+test lattice::tests::a_tie_in_the_lowest_layer_is_an_error_not_a_guess ... ok
+test vehicle::tests::contact_radius_of_a_cylinder_band_is_its_radius ... ok
+test occlusion::tests::a_floor_under_a_closed_lid_is_hidden_and_the_lid_is_not ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/compile.rs (target/debug/build/brick-compile/9d6e036ab6673560/out/compile-9d6e036ab6673560)
+
+running 4 tests
+test license_gate_rejects_unofficial_files_unless_allowlisted ... ok
+test license_gate_rejects_any_non_ca_or_unlicensed_file_in_the_closure ... ok
+test bfc_keeps_the_front_face_under_mirroring_and_flips_it_on_invertnext ... ok
+test brick_2x4_studs_are_split_out_onto_the_stud_lattice_above_the_body ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running unittests src/main.rs (target/debug/build/brick-compile-cli/55a18ba83995e8f5/out/brick_compile-55a18ba83995e8f5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests brick_compile
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+   • turbo 2.11.11
+   • Packages in scope: @brr/asset-pipeline, @brr/catalog, @brr/catalog-api, @brr/client, @brr/config, @brr/domain, @brr/math, @brr/oxlint-plugin, @brr/render, @brr/rpc, @brr/rust-comment-check, @brr/sim, @brr/sim-worker, @brr/test-fixtures, @brr/ui, @brr/web
+   • Running typecheck, test, build in 16 packages
+   • Remote caching disabled
+
+@brr/oxlint-plugin:test: cache miss, executing be6a2b767eb06899
+@brr/config:typecheck: cache hit, replaying logs a89bb8cec5e50d0f
+@brr/config:typecheck: 
+@brr/config:typecheck: > @brr/config@ typecheck /agent/repos/lug-layout/packages/config
+@brr/config:typecheck: > tsc -p tsconfig.json
+@brr/config:typecheck: 
+@brr/math:test: cache miss, executing beedb84745ceeb51
+@brr/catalog-api:test: cache miss, executing 88045cd3ae8e29ab
+@brr/rust-comment-check:test: cache miss, executing 678f12457ad80b48
+@brr/asset-pipeline:test: cache miss, executing b1b7074fb3061c78
+@brr/domain:test: cache miss, executing 1f46e50a6e9a2e1a
+@brr/asset-pipeline:build: cache miss, executing ac1ef45d3dfdbe03
+@brr/sim:test: cache miss, executing 64788ff7e998b11f
+@brr/catalog-api:build: cache miss, executing b4fc14740cdaab12
+@brr/rpc:typecheck: cache hit, replaying logs 9050b453849b000d
+@brr/rpc:typecheck: 
+@brr/rpc:typecheck: > @brr/rpc@ typecheck /agent/repos/lug-layout/packages/rpc
+@brr/rpc:typecheck: > tsc -p tsconfig.json
+@brr/rpc:typecheck: 
+@brr/math:typecheck: cache hit, replaying logs b0900c4789050d6a
+@brr/math:typecheck: 
+@brr/math:typecheck: > @brr/math@ typecheck /agent/repos/lug-layout/packages/math
+@brr/math:typecheck: > tsc -p tsconfig.json
+@brr/math:typecheck: 
+@brr/catalog-api:typecheck: cache hit, replaying logs 90f545eebeb710d2
+@brr/catalog-api:typecheck: 
+@brr/catalog-api:typecheck: > @brr/catalog-api@ typecheck /agent/repos/lug-layout/apps/catalog-api
+@brr/catalog-api:typecheck: > tsc -p tsconfig.json && tsc -p tsconfig.node.json
+@brr/catalog-api:typecheck: 
+@brr/oxlint-plugin:typecheck: cache hit, replaying logs 6075626c5ed0836e
+@brr/oxlint-plugin:typecheck: 
+@brr/oxlint-plugin:typecheck: > @brr/oxlint-plugin@ typecheck /agent/repos/lug-layout/tools/oxlint-plugin
+@brr/oxlint-plugin:typecheck: > tsc -p tsconfig.json
+@brr/oxlint-plugin:typecheck: 
+@brr/rust-comment-check:typecheck: cache hit, replaying logs 6eb0030fb55e204d
+@brr/rust-comment-check:typecheck: 
+@brr/rust-comment-check:typecheck: > @brr/rust-comment-check@ typecheck /agent/repos/lug-layout/tools/rust-comment-check
+@brr/rust-comment-check:typecheck: > tsc -p tsconfig.json
+@brr/rust-comment-check:typecheck: 
+@brr/sim-worker:test: cache miss, executing 96ba31d36f3c8e6d
+@brr/oxlint-plugin:test: 
+@brr/oxlint-plugin:test: > @brr/oxlint-plugin@ test /agent/repos/lug-layout/tools/oxlint-plugin
+@brr/oxlint-plugin:test: > vitest run
+@brr/oxlint-plugin:test: 
+@brr/rust-comment-check:test: 
+@brr/rust-comment-check:test: > @brr/rust-comment-check@ test /agent/repos/lug-layout/tools/rust-comment-check
+@brr/rust-comment-check:test: > vitest run
+@brr/rust-comment-check:test: 
+@brr/math:test: 
+@brr/math:test: > @brr/math@ test /agent/repos/lug-layout/packages/math
+@brr/math:test: > vitest run
+@brr/math:test: 
+@brr/domain:test: 
+@brr/domain:test: > @brr/domain@ test /agent/repos/lug-layout/packages/domain
+@brr/domain:test: > vitest run
+@brr/domain:test: 
+@brr/asset-pipeline:test: 
+@brr/asset-pipeline:test: > @brr/asset-pipeline@ test /agent/repos/lug-layout/tools/asset-pipeline
+@brr/asset-pipeline:test: > vitest run
+@brr/asset-pipeline:test: 
+@brr/catalog-api:build: 
+@brr/catalog-api:build: > @brr/catalog-api@ build /agent/repos/lug-layout/apps/catalog-api
+@brr/catalog-api:build: > wrangler deploy --dry-run --outdir dist
+@brr/catalog-api:build: 
+@brr/sim:test: 
+@brr/sim:test: > @brr/sim@ test /agent/repos/lug-layout/packages/sim
+@brr/sim:test: > vitest run
+@brr/sim:test: 
+@brr/asset-pipeline:build: 
+@brr/asset-pipeline:build: > @brr/asset-pipeline@ build /agent/repos/lug-layout/tools/asset-pipeline
+@brr/asset-pipeline:build: > node src/cli.ts bundle
+@brr/asset-pipeline:build: 
+@brr/sim-worker:test: 
+@brr/sim-worker:test: > @brr/sim-worker@ test /agent/repos/lug-layout/packages/workers/sim-worker
+@brr/sim-worker:test: > vitest run
+@brr/sim-worker:test: 
+@brr/catalog-api:test: 
+@brr/catalog-api:test: > @brr/catalog-api@ test /agent/repos/lug-layout/apps/catalog-api
+@brr/catalog-api:test: > vitest run
+@brr/catalog-api:test: 
+@brr/rust-comment-check:test: 
+@brr/rust-comment-check:test:  RUN  v5.1.0 /agent/repos/lug-layout/tools/rust-comment-check
+@brr/rust-comment-check:test: 
+@brr/domain:test: 
+@brr/domain:test:  RUN  v5.1.0 /agent/repos/lug-layout/packages/domain
+@brr/domain:test: 
+@brr/math:test: 
+@brr/math:test:  RUN  v5.1.0 /agent/repos/lug-layout/packages/math
+@brr/math:test: 
+@brr/oxlint-plugin:test: 
+@brr/oxlint-plugin:test:  RUN  v5.1.0 /agent/repos/lug-layout/tools/oxlint-plugin
+@brr/oxlint-plugin:test: 
+@brr/sim:test: 
+@brr/sim:test:  RUN  v5.1.0 /agent/repos/lug-layout/packages/sim
+@brr/sim:test: 
+@brr/asset-pipeline:build: bundle closure: 1894 present, 0 downloaded, 0 pruned
+@brr/asset-pipeline:test: 
+@brr/asset-pipeline:test:  RUN  v5.1.0 /agent/repos/lug-layout/tools/asset-pipeline
+@brr/asset-pipeline:test: 
+@brr/asset-pipeline:build: audit closure: 394 present, 0 downloaded, 0 pruned
+@brr/asset-pipeline:build: LDCad patches: 28 present, 0 downloaded, 0 pruned
+@brr/asset-pipeline:build: OMR models: 18 present, 0 downloaded, 0 pruned
+@brr/catalog-api:test: 
+@brr/catalog-api:test:  RUN  v5.1.0 /agent/repos/lug-layout/apps/catalog-api
+@brr/catalog-api:test: 
+@brr/sim-worker:test: 
+@brr/sim-worker:test:  RUN  v5.1.0 /agent/repos/lug-layout/packages/workers/sim-worker
+@brr/sim-worker:test: 
+@brr/math:test:  ✓ src/pose16.test.ts (6 tests) 57ms
+@brr/asset-pipeline:build: LDraw inputs match ldraw.lock.json
+@brr/rust-comment-check:test:  ✓ src/scan.test.ts (10 tests) 9ms
+@brr/math:test: 
+@brr/math:test:  Test Files  1 passed (1)
+@brr/rust-comment-check:test: 
+@brr/math:test:       Tests  6 passed (6)
+@brr/math:test:    Start at  01:43:34
+@brr/rust-comment-check:test:  Test Files  1 passed (1)
+@brr/math:test:    Duration  302ms (tests 40%, transform 40%, import 15%, worker 5%)
+@brr/rust-comment-check:test:       Tests  10 passed (10)
+@brr/rust-comment-check:test:    Start at  01:43:34
+@brr/rust-comment-check:test:    Duration  305ms (transform 62%, import 24%, tests 11%, worker 3%)
+@brr/math:test: 
+@brr/rust-comment-check:test: 
+@brr/catalog-api:test: (node:102748) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+@brr/catalog-api:test: (Use `node --trace-warnings ...` to show where the warning was created)
+@brr/oxlint-plugin:test:  ✓ src/no-comments.test.ts (9 tests) 33ms
+@brr/asset-pipeline:typecheck: cache hit, replaying logs 48a215a5a7c6efd2
+@brr/asset-pipeline:typecheck: 
+@brr/asset-pipeline:typecheck: > @brr/asset-pipeline@ typecheck /agent/repos/lug-layout/tools/asset-pipeline
+@brr/asset-pipeline:typecheck: > tsc -p tsconfig.json
+@brr/asset-pipeline:typecheck: 
+@brr/domain:typecheck: cache hit, replaying logs 7909eb8ecfe38f70
+@brr/domain:typecheck: 
+@brr/domain:typecheck: > @brr/domain@ typecheck /agent/repos/lug-layout/packages/domain
+@brr/domain:typecheck: > tsc -p tsconfig.json
+@brr/domain:typecheck: 
+@brr/catalog:typecheck: cache hit, replaying logs 99af87b84e6c7569
+@brr/catalog:typecheck: 
+@brr/catalog:typecheck: > @brr/catalog@ typecheck /agent/repos/lug-layout/packages/catalog
+@brr/catalog:typecheck: > tsc -p tsconfig.json
+@brr/catalog:typecheck: 
+@brr/render:typecheck: cache hit, replaying logs 6d00100837b598ff
+@brr/render:typecheck: 
+@brr/render:typecheck: > @brr/render@ typecheck /agent/repos/lug-layout/packages/render
+@brr/render:typecheck: > tsc -p tsconfig.json
+@brr/render:typecheck: 
+@brr/sim:typecheck: cache hit, replaying logs d3d96b2c7bce027b
+@brr/sim:typecheck: 
+@brr/sim:typecheck: > @brr/sim@ typecheck /agent/repos/lug-layout/packages/sim
+@brr/sim:typecheck: > tsc -p tsconfig.json && tsc -p bench/tsconfig.json
+@brr/sim:typecheck: 
+@brr/client:typecheck: cache hit, replaying logs dc265f3255e74e89
+@brr/client:typecheck: 
+@brr/client:typecheck: > @brr/client@ typecheck /agent/repos/lug-layout/packages/client
+@brr/client:typecheck: > tsc -p tsconfig.json
+@brr/client:typecheck: 
+@brr/sim-worker:typecheck: cache hit, replaying logs 2cb18f736dd2faa9
+@brr/sim-worker:typecheck: 
+@brr/sim-worker:typecheck: > @brr/sim-worker@ typecheck /agent/repos/lug-layout/packages/workers/sim-worker
+@brr/sim-worker:typecheck: > tsc -p tsconfig.json
+@brr/sim-worker:typecheck: 
+@brr/oxlint-plugin:test: 
+@brr/oxlint-plugin:test:  Test Files  1 passed (1)
+@brr/oxlint-plugin:test:       Tests  9 passed (9)
+@brr/oxlint-plugin:test:    Start at  01:43:35
+@brr/oxlint-plugin:test:    Duration  302ms (import 53%, tests 21%, transform 20%, environment 5%, worker 2%)
+@brr/oxlint-plugin:test: 
+@brr/ui:typecheck: cache hit, replaying logs f6ddac00cfeabd52
+@brr/ui:typecheck: 
+@brr/ui:typecheck: > @brr/ui@ typecheck /agent/repos/lug-layout/packages/ui
+@brr/ui:typecheck: > tsc -p tsconfig.json
+@brr/ui:typecheck: 
+@brr/web:typecheck: cache hit, replaying logs deb6c1caa6ba53ff
+@brr/web:typecheck: 
+@brr/web:typecheck: > @brr/web@ typecheck /agent/repos/lug-layout/apps/web
+@brr/web:typecheck: > tsc -p tsconfig.json
+@brr/web:typecheck: 
+@brr/domain:test:  ✓ src/world.test.ts (3 tests) 4ms
+@brr/asset-pipeline:test:  ✓ src/ldraw/walk.test.ts (1 test) 8ms
+@brr/domain:test:  ✓ src/road-joins.test.ts (5 tests) 40ms
+@brr/asset-pipeline:test:  ✓ src/track/cyclotomic.test.ts (2 tests) 60ms
+@brr/asset-pipeline:test: 
+@brr/asset-pipeline:test:  Test Files  2 passed (2)
+@brr/asset-pipeline:test:       Tests  3 passed (3)
+@brr/asset-pipeline:test:    Start at  01:43:35
+@brr/asset-pipeline:test:    Duration  413ms (transform 64%, tests 20%, import 14%, worker 2%)
+@brr/asset-pipeline:test: 
+@brr/sim:test:  ✓ src/simulation.test.ts (13 tests) 49ms
+@brr/sim:test: 
+@brr/sim:test:  Test Files  1 passed (1)
+@brr/sim:test:       Tests  13 passed (13)
+@brr/sim:test:    Start at  01:43:35
+@brr/sim:test:    Duration  497ms (transform 71%, tests 14%, import 14%, worker 1%)
+@brr/sim:test: 
+@brr/domain:test:  ✓ src/edit-history.test.ts (5 tests) 297ms
+@brr/domain:test: 
+@brr/domain:test:  Test Files  3 passed (3)
+@brr/domain:test:       Tests  13 passed (13)
+@brr/domain:test:    Start at  01:43:34
+@brr/domain:test:    Duration  701ms (transform 52%, tests 35%, import 12%, worker 1%)
+@brr/domain:test: 
+@brr/sim-worker:test:  ✓ src/sim-worker-host.test.ts (1 test) 37ms
+@brr/sim-worker:test: 
+@brr/sim-worker:test:  Test Files  1 passed (1)
+@brr/sim-worker:test:       Tests  1 passed (1)
+@brr/sim-worker:test:    Start at  01:43:35
+@brr/sim-worker:test:    Duration  510ms (transform 65%, import 24%, tests 11%, worker 1%)
+@brr/sim-worker:test: 
+@brr/catalog-api:build: 
+@brr/catalog-api:build:  ⛅️ wrangler 4.163.0
+@brr/catalog-api:build: ────────────────────
+@brr/catalog-api:build: Total Upload: 30.37 KiB / gzip: 8.30 KiB
+@brr/catalog-api:build: Your Worker has access to the following bindings:
+@brr/catalog-api:build: Binding                                          Resource         
+@brr/catalog-api:build: env.CATALOG_DB (brr-catalog)                     D1 Database      
+@brr/catalog-api:build: env.CATALOG_RELEASES (brr-catalog-releases)      R2 Bucket        
+@brr/catalog-api:build: env.QUERY_RATE_LIMIT (100 requests/60s)          Rate Limit       
+@brr/catalog-api:build: env.FILE_RATE_LIMIT (1200 requests/60s)          Rate Limit       
+@brr/catalog-api:build: 
+@brr/catalog-api:build: --dry-run: exiting now.
+@brr/catalog-api:build: 
+@brr/catalog-api:build: Cloudflare collects anonymous telemetry about your usage of Wrangler. Learn more at https://github.com/cloudflare/workers-sdk/tree/main/packages/wrangler/telemetry.md
+@brr/asset-pipeline:build: bundle standard 6462e3f858d42279: 787 content-addressed files in /agent/repos/lug-layout/tools/asset-pipeline/dist/bundle/standard
+@brr/asset-pipeline:build: bundle low 61d4c13feabc5ae2: 787 content-addressed files in /agent/repos/lug-layout/tools/asset-pipeline/dist/bundle/low
+@brr/catalog-api:test:  ✓ src/catalog-api.test.ts (12 tests) 7066ms
+@brr/catalog-api:test:    ✓ catalog API over a loaded release (12)
+@brr/catalog-api:test:      ✓ loads a release through the CLI into local D1 and R2 by file import 4483ms
+@brr/catalog-api:test:      ✓ rejects malformed queries and rate-limits a client's uncached queries 1384ms
+@brr/catalog-api:test: 
+@brr/catalog-api:test:  Test Files  1 passed (1)
+@brr/catalog-api:test:       Tests  12 passed (12)
+@brr/catalog-api:test:    Start at  01:43:35
+@brr/catalog-api:test:    Duration  8.25s (tests 87%, import 10%, transform 3%)
+@brr/catalog-api:test: 
+@brr/asset-pipeline:build: bundle far 525b86866d41d621: 787 content-addressed files in /agent/repos/lug-layout/tools/asset-pipeline/dist/bundle/far
+@brr/client:test: cache miss, executing cff0e11b3f4c0059
+@brr/web:build: cache miss, executing 9640c67475e44fcf
+@brr/client:test: 
+@brr/client:test: > @brr/client@ test /agent/repos/lug-layout/packages/client
+@brr/client:test: > vitest run
+@brr/client:test: 
+@brr/web:build: 
+@brr/web:build: > @brr/web@ build /agent/repos/lug-layout/apps/web
+@brr/web:build: > vite build
+@brr/web:build: 
+@brr/web:build: vite v8.3.8 building client environment for production...
+@brr/web:build: transforming...
+@brr/client:test: 
+@brr/client:test:  RUN  v5.1.0 /agent/repos/lug-layout/packages/client
+@brr/client:test: 
+@brr/web:build: ✓ 362 modules transformed.
+@brr/web:build: rendering chunks...
+@brr/client:test:  ✓ src/scene/track-plan.test.ts (5 tests) 36ms
+@brr/client:test:  ✓ src/scene/part-display-scene.test.ts (1 test) 57ms
+@brr/web:build: computing gzip size...
+@brr/web:build: dist/index.html                     0.43 kB │ gzip:   0.28 kB
+@brr/web:build: dist/assets/entry-BuSS4FNC.js     126.50 kB
+@brr/web:build: dist/assets/index-Bv4CsWtG.css      3.77 kB │ gzip:   1.33 kB
+@brr/web:build: dist/assets/index-CujKkbjU.js   1,310.64 kB │ gzip: 370.02 kB
+@brr/web:build: 
+@brr/web:build: [plugin builtin:vite-reporter] 
+@brr/web:build: (!) Some chunks are larger than 500 kB after minification. Consider:
+@brr/web:build: - Using dynamic import() to code-split the application
+@brr/web:build: - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+@brr/web:build: - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+@brr/web:build: ✓ built in 838ms
+@brr/client:test:  ✓ src/scene/run-blocks.test.ts (2 tests) 1439ms
+@brr/client:test:    ✓ keeps three or four autopilot trains off each other's track pieces while they all keep arriving 1336ms
+@brr/client:test: 
+@brr/client:test:  Test Files  3 passed (3)
+@brr/client:test:       Tests  8 passed (8)
+@brr/client:test:    Start at  01:48:09
+@brr/client:test:    Duration  2.04s (tests 51%, transform 31%, import 17%)
+@brr/client:test: 
+
+ Tasks:    27 successful, 27 total
+Cached:    15 cached, 27 total
+  Time:    4m37.265s 
+

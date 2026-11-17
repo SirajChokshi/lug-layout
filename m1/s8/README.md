@@ -29,3 +29,8 @@ These were recorded by the MacBook worker, and its README is copied as-is. They 
 ## `vm-ebf2b15/` (after rebasing onto main `f1026d3`, #44 merged)
 - **`equivalence/`:** the same five views re-shot at `ebf2b15` (branch) and `f1026d3` (main). Each has 0 differing pixels against `vm-93bb24e/pairs`.
 - **`pnpm-check.log`:** `pnpm check` at `ebf2b15`, exit 0.
+
+## `vm-ed936a6/` (review fixes, rebased onto main `504846e`, #59 and #39 merged)
+- **`equivalence/`:** five views at `ed936a6` (branch) and `504846e` (main), with the bundle rebuilt for #39 (standard `6462e3f858d42279`). Each has 0 differing pixels against `vm-93bb24e/pairs`.
+- **`pnpm-check-terraform-missing.log`:** `pnpm check` stops at `check:infra`, the Terraform validation of `infra/cloudflare` that main added in #59, because this VM has no `terraform`. This PR doesn't touch `infra/`.
+- **`pnpm-check-steps-without-infra.log`:** every other `pnpm check` step run in order (restore-ldraw, lint, lint:boundaries, lint:rust, format:check, check:rust, turbo typecheck, test and build). Exit 0.

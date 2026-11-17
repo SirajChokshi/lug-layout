@@ -1,0 +1,156 @@
+{
+ "url": "http://localhost:4174/?scene=city&parts=20000&api=webgl2&measure=1&warmup=2&frames=8",
+ "error": "",
+ "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLook\nplastic, outlines, bevel\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n6462e3f858d42279\nParts\n20,090\nModules\n25\nStud instances (drawn of total)\n34,145 of 120,037\nScene triangles\n5,493,920\nLoad\n685 ms\nGPU buffers allocated so far, JS heap\nvertex+index 4.3 MiB, other 0.1 MiB, JS heap 30.7 MiB\nRender origin (chunks), rebases\n(4, 0); 1 rebases, last at frame 0\nChunk tiers near/mid/far (median)\n4 / 21 / 0\nDraw calls (median)\n197\nDrawn triangles (median)\n1,698,974\nScene coverage (sampled frames)\n72%, 67%, 72%, 71%, 75%, 76%, 71%, 72%, 67%\nMedian frame (GPU-synced)\n1637.4 ms\np95 frame\n1940.9 ms\nMedian CPU submit\n3.2 ms\nMeasured frames\n8",
+ "logs": [],
+ "result": {
+  "params": {
+   "mode": "city",
+   "showEditState": false,
+   "api": "webgl2",
+   "lod": "standard",
+   "model": null,
+   "track": null,
+   "run": false,
+   "consist": [
+    {
+     "model": "10133-1",
+     "reversed": false
+    }
+   ],
+   "trains": [
+    {
+     "edge": 0,
+     "offsetLdu": 0
+    }
+   ],
+   "speedLduPerS": 400,
+   "accelerationLduPerS2": 150,
+   "brakingLduPerS2": 300,
+   "follow": false,
+   "followDistanceLdu": 1400,
+   "simBenchTicks": 0,
+   "hud": true,
+   "start": true,
+   "autopilotSeed": null,
+   "city": true,
+   "parts": 20000,
+   "seed": 1,
+   "camera": "aerial",
+   "modelView": "orbit",
+   "originChunkX": 0,
+   "originChunkZ": 0,
+   "dumpWorld": false,
+   "measure": true,
+   "warmupFrames": 2,
+   "measuredFrames": 8,
+   "maxMeasureMs": 120000,
+   "look": {
+    "plastic": true,
+    "gtao": false,
+    "outlines": true,
+    "bevel": true,
+    "shadows": false,
+    "oit": false
+   },
+   "pace": "frame"
+  },
+  "backend": {
+   "requestedApi": "webgl2",
+   "backgroundSrgb": 14280434,
+   "activeApi": "webgl2",
+   "adapter": "Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+   "look": {
+    "plastic": true,
+    "gtao": false,
+    "outlines": true,
+    "bevel": true,
+    "shadows": false,
+    "oit": false
+   }
+  },
+  "drawingBuffer": {
+   "width": 1920,
+   "height": 1081,
+   "devicePixelRatio": 1.0000000577419996
+  },
+  "summary": {
+   "bundleVersion": "6462e3f858d42279",
+   "parts": 20090,
+   "modules": 25,
+   "studInstances": 120037,
+   "visibleStudInstances": 34145,
+   "bodyTriangles": 3854960,
+   "studTriangles": 1638960,
+   "creditedFiles": 1851,
+   "model": null,
+   "track": null
+  },
+  "memory": {
+   "vertexIndexBytes": 4470328,
+   "otherBytes": 102992,
+   "jsHeapBytes": 32167260
+  },
+  "loadMs": 684.5,
+  "timings": {
+   "frames": 8,
+   "medianFrameMs": 1637.4000000022352,
+   "p95FrameMs": 1940.9000000022352,
+   "meanFrameMs": 1662.625,
+   "medianCpuSubmitMs": 3.199999999254942,
+   "fpsFromMedian": 0.6107243190415506,
+   "medianDrawCalls": 197,
+   "medianDrawnTriangles": 1698974,
+   "medianChunkTiers": {
+    "near": 4,
+    "mid": 21,
+    "far": 0
+   },
+   "sceneCoverage": [
+    0.7248263888888888,
+    0.6723090277777778,
+    0.7152777777777778,
+    0.7105034722222222,
+    0.7482638888888888,
+    0.7630208333333334,
+    0.7065972222222222,
+    0.7209201388888888,
+    0.6684027777777778
+   ],
+   "firstMeasuredFrame": 2,
+   "frameMs": [
+    1940.9000000022352,
+    1603.9000000022352,
+    1747.5999999977648,
+    1638.0999999977648,
+    1412.5,
+    1637.4000000022352,
+    1724,
+    1596.5999999977648
+   ],
+   "cpuSubmitMs": [
+    3.199999999254942,
+    3.600000001490116,
+    3.899999998509884,
+    3.199999999254942,
+    2,
+    3.699999999254942,
+    4.899999998509884,
+    2.199999999254942
+   ]
+  },
+  "drawCalls": 197,
+  "drawnTriangles": 1698974,
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "worldPlacements": null,
+  "rebases": [
+   {
+    "frame": 0,
+    "chunkX": 4,
+    "chunkZ": 0,
+    "chunks": 25,
+    "ms": 0.19999999925494194
+   }
+  ]
+ }
+}
