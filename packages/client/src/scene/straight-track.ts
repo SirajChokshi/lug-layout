@@ -1,4 +1,4 @@
-import type { PartAsset } from "@brr/catalog";
+import type { PartShapeAsset } from "@brr/catalog";
 import type { TrackEnd } from "@brr/schema/bundle";
 
 const INTEGER_COEFFICIENT = /^-?\d+$/u;
@@ -17,7 +17,7 @@ function headingsOpposite(entry: TrackEnd, exit: TrackEnd, basisLength: number):
   return difference === fullTurnSteps / 2;
 }
 
-export function straightRunPitchStuds(part: PartAsset): number | undefined {
+export function straightRunPitchStuds(part: PartShapeAsset): number | undefined {
   const ends = part.trackEnds;
   if (!ends || ends.length !== 2) return undefined;
   const [entry, exit] = ends;

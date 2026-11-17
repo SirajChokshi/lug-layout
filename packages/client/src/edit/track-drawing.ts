@@ -1,11 +1,12 @@
-import type { PartAsset } from "@brr/catalog";
-import type { TrackCatalog, TrackPartFrame, TrackPiece } from "@brr/schema/bundle";
+import type { PartBundle, PartShapeAsset } from "@brr/catalog";
+import type { TrackPartFrame, TrackPiece, TrackShape } from "@brr/schema/bundle";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
 import {
   NEAR_MISS_RADIUS_LDU,
   drawingKit,
   endGaps,
+  FOOTPRINT_FLOATS,
   layMoves,
   runMoves,
   solveClosure,
@@ -51,7 +52,6 @@ const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
 const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
-const FOOTPRINT_FLOATS = 4;
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -176,7 +176,7 @@ function pieceSpec(piece: TrackPiece): TrackPieceSpec {
   return { connectors: piece.connectors.map((c) => c.pose), routes: piece.routes };
 }
 
-function partForPiece(piece: TrackPiece, parts: ReadonlyArray<PartAsset>): number {
+function partForPiece(piece: TrackPiece, parts: ReadonlyArray<PartShapeAsset>): number {
   const index = parts.findIndex((part) => part.id === piece.part);
   if (index < 0) throw new Error(`${piece.id}: track part ${piece.part} is not in the bundle`);
   return index;
@@ -233,42 +233,10 @@ function partCentre(placed: Placed): { readonly x: number; readonly z: number } 
   return { x, z };
 }
 
-function headingFootprints(part: PartAsset, frame: TrackPartFrame): Float64Array {
-  const boxes = new Float64Array(ZETA16_ORDER * FOOTPRINT_FLOATS);
-  const positions = part.mesh.positions;
-  for (let heading = 0; heading < ZETA16_ORDER; heading++) {
-    const phi = heading * HEADING_RADIANS + frame.headingHalfSteps * HALF_STEP_RADIANS;
-    const c = Math.cos(phi);
-    const s = Math.sin(phi);
-    let minX = Number.POSITIVE_INFINITY;
-    let minZ = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let maxZ = Number.NEGATIVE_INFINITY;
-    for (let i = 0; i < positions.length; i += 3) {
-      const px = positions[i] ?? 0;
-      const pz = positions[i + 2] ?? 0;
-      const wx = c * px - s * pz;
-      const wz = s * px + c * pz;
-      if (wx < minX) minX = wx;
-      if (wx > maxX) maxX = wx;
-      if (wz < minZ) minZ = wz;
-      if (wz > maxZ) maxZ = wz;
-    }
-    boxes.set([minX, minZ, maxX, maxZ], heading * FOOTPRINT_FLOATS);
-  }
-  return boxes;
-}
-
-function meshYRange(part: PartAsset): readonly [number, number] {
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  const positions = part.mesh.positions;
-  for (let i = 1; i < positions.length; i += 3) {
-    const y = positions[i] ?? 0;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-  return [minY, maxY];
+function kitFootprints(piece: TrackPiece, shapes: ReadonlyMap<string, TrackShape>): TrackShape {
+  const shape = shapes.get(piece.id);
+  if (!shape) throw new Error(`${piece.id}: the bundle has no track shape for it`);
+  return shape;
 }
 
 function partBox(placed: Placed): WorldBox {
@@ -309,10 +277,11 @@ export class TrackDrawing {
   readonly solveSamplesMs: number[] = [];
 
   constructor(
-    catalog: TrackCatalog,
-    private readonly parts: ReadonlyArray<PartAsset>,
+    { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
+    private readonly parts: ReadonlyArray<PartShapeAsset>,
     private readonly colors: ColorTable,
   ) {
+    const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
@@ -326,9 +295,10 @@ export class TrackDrawing {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
       }
       const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
+      const shape = kitFootprints(piece, shapes);
       const kitPart: KitPart = {
-        footprints: headingFootprints(part, piece.partFrame),
-        meshY: meshYRange(part),
+        footprints: Float64Array.from(shape.footprints),
+        meshY: [shape.minY, shape.maxY],
         catalogIndex,
         piece,
         def,
