@@ -66,7 +66,7 @@ it.each([1, 2])(
   "builds %i tiles per side of the 4×4 bench layout, buildable and with every part inside them",
   async (tiles) => {
     const container = new Container();
-    container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
+    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
     const backend = new RecordingBackend();
     container.rebind(SCENE_BACKEND).toConstantValue(backend);
     container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
