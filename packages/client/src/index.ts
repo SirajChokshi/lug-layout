@@ -143,14 +143,32 @@ export {
   commandForKey,
   commandSpec,
   isShellCommand,
+  routeKey,
   runEditorAction,
   type CommandGroup,
   type CommandId,
+  type CommandMatch,
   type CommandSpec,
   type EditorActionId,
+  type HotbarCommandId,
+  type KeyRoute,
   type PointerGesture,
   type ShellCommandId,
 } from "./commands/editor-commands.ts";
+export {
+  HUD_GAP_PX,
+  hudRegion,
+  type HudFit,
+  type HudRegion,
+  type PanelRect,
+} from "./layout/hud-region.ts";
+export {
+  EMPTY_HOTBAR,
+  HOTBAR_SLOTS,
+  hotbarRecent,
+  hotbarWith,
+  type Hotbar,
+} from "./commands/hotbar.ts";
 export {
   toolHints,
   type ToolHint,

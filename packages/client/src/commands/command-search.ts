@@ -36,6 +36,7 @@ const INSIDE_SCORE = 1;
 const RECENT_BONUS = 2;
 const DISABLED_PENALTY = 3;
 const RESULT_LIMIT = 60;
+const LISTED = COMMANDS.filter((spec) => !spec.hideInPalette);
 const DIMENSION = /(\d)\s*[x×]\s*(\d)/gu;
 const ALPHANUMERIC = /[\p{L}\p{N}]/u;
 
@@ -103,7 +104,7 @@ function browse(sources: PaletteSources): ReadonlyArray<PaletteResult> {
     const item = sources.catalog.find((entry) => entry.id === id);
     return item ? [{ kind: "item", item, recent: true }] : [];
   });
-  const commands = COMMANDS.map((spec): CommandResult => ({
+  const commands = LISTED.map((spec): CommandResult => ({
     kind: "command",
     spec,
     enabled: sources.enabled(spec.id),
@@ -124,7 +125,7 @@ export function searchPalette(
     .filter((word) => word !== "");
   if (words.length === 0) return browse(sources);
   const scored: Scored[] = [];
-  for (const spec of COMMANDS) {
+  for (const spec of LISTED) {
     const score = matchScore(words, spec.title, commandExtra(spec));
     if (score === 0) continue;
     const enabled = sources.enabled(spec.id);

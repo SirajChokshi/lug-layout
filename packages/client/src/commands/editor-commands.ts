@@ -1,5 +1,6 @@
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import { HOTBAR_SLOTS } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
 export type EditorActionId =
@@ -29,7 +30,9 @@ export type EditorActionId =
 
 export type ShellCommandId = "show-shortcuts" | "open-palette";
 
-export type CommandId = EditorActionId | ShellCommandId;
+export type HotbarCommandId = "pick-slot";
+
+export type CommandId = EditorActionId | ShellCommandId | HotbarCommandId;
 
 export type CommandGroup = "Tools" | "Edit" | "View" | "Help";
 
@@ -41,6 +44,20 @@ export interface CommandSpec {
   readonly keywords?: string;
   readonly whileTyping?: boolean;
   readonly repeats?: boolean;
+  readonly hideInPalette?: boolean;
+  readonly range?: boolean;
+}
+
+export type KeyRoute =
+  | { readonly kind: "overlay"; readonly id: ShellCommandId }
+  | { readonly kind: "close-overlay" }
+  | { readonly kind: "editor"; readonly id: EditorActionId }
+  | { readonly kind: "slot"; readonly slot: number }
+  | { readonly kind: "blocked" };
+
+export interface CommandMatch {
+  readonly id: CommandId;
+  readonly chord: number;
 }
 
 export interface PointerGesture {
@@ -57,6 +74,14 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "Escape" }],
     keywords: "cancel stop escape deselect pointer",
+  },
+  {
+    id: "pick-slot",
+    title: "Pick up the part in a hotbar slot",
+    group: "Tools",
+    keys: Array.from({ length: HOTBAR_SLOTS }, (_, slot) => ({ key: String(slot + 1) })),
+    hideInPalette: true,
+    range: true,
   },
   {
     id: "draw-track",
@@ -241,17 +266,27 @@ export function commandSpec(id: CommandId): CommandSpec {
   return spec;
 }
 
-export function commandForKey(input: KeyInput, typing: boolean): CommandId | null {
+export function commandForKey(input: KeyInput, typing: boolean): CommandMatch | null {
   for (const spec of COMMANDS) {
     if (typing && !spec.whileTyping) continue;
-    const typed = spec.keys.filter((chord) => !typing || chord.mod);
-    if (typed.some((chord) => chordMatches(chord, input))) return spec.id;
+    const chord = spec.keys.findIndex(
+      (keys) => (!typing || keys.mod === true) && chordMatches(keys, input),
+    );
+    if (chord >= 0) return { id: spec.id, chord };
   }
   return null;
 }
 
 export function isShellCommand(id: CommandId): id is ShellCommandId {
   return id === "show-shortcuts" || id === "open-palette";
+}
+
+export function routeKey(match: CommandMatch, overlayOpen: boolean): KeyRoute {
+  const { id, chord } = match;
+  if (isShellCommand(id)) return { kind: "overlay", id };
+  if (overlayOpen) return id === "select-tool" ? { kind: "close-overlay" } : { kind: "blocked" };
+  if (id === "pick-slot") return { kind: "slot", slot: chord };
+  return { kind: "editor", id };
 }
 
 export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean {
@@ -263,7 +298,7 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
 }
 
 export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean {
-  if (isShellCommand(id)) return true;
+  if (isShellCommand(id) || id === "pick-slot") return true;
   if (snapshot.status !== "ready") return false;
   switch (id) {
     case "rotate":
