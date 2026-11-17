@@ -230,6 +230,7 @@ function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: strin
     depth: size,
     footprint: new Uint8Array(size * size),
     baseplate,
+    offLatticeTop: cells.offLatticeTop,
     columnBottom,
     columnTop,
     footprintCells: 0,
