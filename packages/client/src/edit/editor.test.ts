@@ -566,7 +566,7 @@ it("measures a set's volume from where its parts start, so 10190-1's hanging pin
   expect(place("generated:mils-plain", 960, 320)).toEqual({
     placements: 1,
     refusals: 1,
-    reason: expect.stringContaining("and 10190-1 Market Street (2007) fills 0.75 to 3."),
+    reason: expect.stringContaining("and 10190-1 Market Street (2007) fills 6 to 24 LDU."),
   });
 }, 120_000);
 
