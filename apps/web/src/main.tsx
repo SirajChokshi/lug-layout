@@ -8,6 +8,7 @@ import {
   LAYOUT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
+  PALETTE_MEMORY,
   PART_DISPLAY_SCENE,
   RUN_SCENE,
   RUNNING_GEAR,
@@ -159,6 +160,7 @@ function root(): ReactNode {
         plans={container.get(PLAN_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
         play={container.get(TRAIN_PLAY)}
+        palette={container.get(PALETTE_MEMORY)}
         options={{
           api: params.api,
           pixelRatio: window.devicePixelRatio,

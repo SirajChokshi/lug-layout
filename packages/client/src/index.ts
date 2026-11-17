@@ -159,6 +159,7 @@ export {
   TRACK_SCENE,
   TRAIN_PLAY,
   PLAN_SERVICE,
+  PALETTE_MEMORY,
 } from "./tokens.ts";
 export type {
   ITrainPlay,
@@ -271,3 +272,4 @@ export type {
   IBomSource,
 } from "./bom/bom-service.ts";
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
+export type { IPaletteMemory } from "./catalog/palette-memory.ts";

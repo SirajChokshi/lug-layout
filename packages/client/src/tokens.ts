@@ -2,6 +2,7 @@ import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
+import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
@@ -56,3 +57,9 @@ export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
 );
 export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");
 export const TRAIN_PLAY: ServiceIdentifier<ITrainPlay> = Symbol.for("brr.client.TrainPlay");
+export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symbol.for(
+  "brr.client.PaletteMemoryStore",
+);
+export const PALETTE_MEMORY: ServiceIdentifier<IPaletteMemory> = Symbol.for(
+  "brr.client.PaletteMemory",
+);
