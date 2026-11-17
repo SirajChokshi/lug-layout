@@ -28,6 +28,8 @@ export interface PlaceableCells {
   readonly baseplate: Uint8Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly bottomLdu: Int32Array;
+  readonly topLdu: Int32Array;
   readonly footprintCells: number;
   readonly flatCells: number;
   readonly heightPlates: number;
@@ -137,6 +139,7 @@ function modelCells(
   label: string,
   restPlatesInFrame: number,
   withFootprint: boolean,
+  tableY: number,
 ): PlaceableCells {
   const footprint = new Uint8Array(cells.width * cells.depth);
   if (withFootprint) {
@@ -159,6 +162,18 @@ function modelCells(
     columnTop[i] = Math.max(0, Math.ceil(top + restPlatesInFrame));
     heightPlates = Math.max(heightPlates, columnTop[i] ?? 0);
   }
+  const bottomLdu = new Int32Array(columnTop.length);
+  const topLdu = new Int32Array(columnTop.length);
+  for (let i = 0; i < columnTop.length; i++) {
+    const top = columnTop[i] ?? EMPTY_COLUMN;
+    if (top === EMPTY_COLUMN) continue;
+    const bottom = Math.max(
+      0,
+      Math.floor((cells.columnBottomLdu[i] ?? 0) + restPlatesInFrame * PLATE_LDU),
+    );
+    bottomLdu[i] = baseplate[i] === 1 && bottom === 0 ? tableY : bottom;
+    topLdu[i] = top * PLATE_LDU;
+  }
   return {
     cellX0: wholeCells(cells.originX + shift[0], `${label} cell origin x`),
     cellZ0: wholeCells(cells.originZ + shift[2], `${label} cell origin z`),
@@ -168,6 +183,8 @@ function modelCells(
     baseplate,
     columnBottom,
     columnTop,
+    bottomLdu,
+    topLdu,
     footprintCells: withFootprint ? cells.footprint.length : 0,
     flatCells: withFootprint ? cells.flat.length : 0,
     heightPlates,
@@ -208,6 +225,8 @@ function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: strin
   const columnBottom = new Int16Array(size * size).fill(EMPTY_COLUMN);
   const columnTop = new Int16Array(size * size).fill(EMPTY_COLUMN);
   const baseplate = new Uint8Array(size * size);
+  const bottomLdu = new Int32Array(size * size);
+  const topLdu = new Int32Array(size * size);
   let heightPlates = 0;
   for (let j = 0; j < size; j++) {
     const fromJ = cellZ0 - cells.cellZ0 + j;
@@ -220,6 +239,8 @@ function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: strin
       columnBottom[j * size + i] = cells.columnBottom[from] ?? 0;
       columnTop[j * size + i] = top;
       baseplate[j * size + i] = cells.baseplate[from] ?? 0;
+      bottomLdu[j * size + i] = cells.bottomLdu[from] ?? 0;
+      topLdu[j * size + i] = cells.topLdu[from] ?? 0;
       heightPlates = Math.max(heightPlates, top);
     }
   }
@@ -233,6 +254,8 @@ function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: strin
     offLatticeTop: cells.offLatticeTop,
     columnBottom,
     columnTop,
+    bottomLdu,
+    topLdu,
     footprintCells: 0,
     flatCells: 0,
     heightPlates,
@@ -264,7 +287,7 @@ function trackTongueBoxes(
   return Float32Array.from(tongues);
 }
 
-function partCells(part: PartAsset, shift: Vec3): PlaceableCells {
+function partCells(part: PartAsset, shift: Vec3, tableY: number): PlaceableCells {
   const cellX0 = wholeCells(part.boundsMin[0], `${part.id} min x`);
   const cellZ0 = wholeCells(part.boundsMin[2], `${part.id} min z`);
   const width = wholeCells(part.boundsMax[0], `${part.id} max x`) - cellX0;
@@ -280,6 +303,8 @@ function partCells(part: PartAsset, shift: Vec3): PlaceableCells {
     baseplate: new Uint8Array(width * depth).fill(isBaseplatePart(part) ? 1 : 0),
     columnBottom: new Int16Array(width * depth),
     columnTop: new Int16Array(width * depth).fill(heightPlates),
+    bottomLdu: new Int32Array(width * depth).fill(tableY),
+    topLdu: new Int32Array(width * depth).fill(Math.ceil(topY)),
     footprintCells: 0,
     flatCells: 0,
     heightPlates,
@@ -387,6 +412,7 @@ export function modelPlaceable(
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
   farModel: number | null,
+  tableY: number,
 ): Placeable {
   const { lattice, cells } = model;
   if (lattice === null || cells === null) {
@@ -414,7 +440,7 @@ export function modelPlaceable(
   const module = isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null;
   if (module) requireOnlyTrackPastModuleEdges(local, partBoxes, parts, module, name);
   const restPlates = ((cells.groundY ?? cells.restY) - restingOn) / PLATE_LDU;
-  const placedCells = modelCells(cells, shift, name, restPlates, !isModule);
+  const placedCells = modelCells(cells, shift, name, restPlates, !isModule, tableY);
   return {
     id,
     label,
@@ -489,7 +515,7 @@ export function partPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: 0,
-    cells: partCells(part, shift),
+    cells: partCells(part, shift, tableY),
     box,
     partBoxes,
     frameShift: shift,

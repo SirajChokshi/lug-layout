@@ -181,6 +181,7 @@ export type NotDrawnSection = v.InferOutput<typeof NotDrawnSection>;
 
 const CellGridSize = v.tuple([Count, Count]);
 const ColumnPlates = v.pipe(Integer, v.minValue(EMPTY_COLUMN));
+const ColumnLdu = v.pipe(Integer, v.minValue(EMPTY_COLUMN));
 
 function cellCount([width, depth]: readonly [number, number]): number {
   return width * depth;
@@ -195,6 +196,7 @@ export const ModelFileCells = v.pipe(
     footprint: v.array(Count),
     flat: v.array(Count),
     columnBottom: v.array(ColumnPlates),
+    columnBottomLdu: v.array(ColumnLdu),
     columnTop: v.array(ColumnPlates),
   }),
   v.check(
@@ -202,8 +204,10 @@ export const ModelFileCells = v.pipe(
     "a footprint cell lies outside the cell grid",
   ),
   v.check(
-    ({ size, columnBottom, columnTop }) =>
-      columnBottom.length === cellCount(size) && columnTop.length === cellCount(size),
+    ({ size, columnBottom, columnBottomLdu, columnTop }) =>
+      [columnBottom, columnBottomLdu, columnTop].every(
+        (column) => column.length === cellCount(size),
+      ),
     "the column arrays do not cover the cell grid",
   ),
 );
