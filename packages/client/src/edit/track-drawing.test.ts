@@ -329,7 +329,8 @@ describe("track held by models", () => {
     expect(lay(flush, [16, 0], [0, 0])).toMatchObject({ laid: 1, refusal: null });
     expect(flush.joinedPairs()).toBe(1);
     expect(flush.unsupportedPieces(probeOn(plate))).toHaveLength(0);
-    const short = drawingOn(plate);
+    const endsUnderTheModelPiece = baseplates([-9, -16]);
+    const short = drawingOn(endsUnderTheModelPiece);
     short.syncHeld(heldAt(24));
     expect(lay(short, [24, 0], [8, 0])).toMatchObject({ laid: 0, refusal: "off-baseplate" });
   });
