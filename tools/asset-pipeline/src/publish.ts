@@ -1,9 +1,12 @@
 import {
-  BundleManifest,
+  BundleIndex,
+  CreditTableFile,
   CrosswalkFile,
   FarMeshGltfDocument,
   GltfDocument,
   ModelFile,
+  PartShape,
+  PartTableFile,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
@@ -19,7 +22,7 @@ const GLB_MAGIC = 0x46546c67;
 const GLB_JSON_LENGTH_OFFSET = 12;
 const GLB_JSON_OFFSET = 20;
 
-const CompiledManifest = v.omit(BundleManifest, ["bundleVersion", "inputs"]);
+const CompiledIndex = v.omit(BundleIndex, ["bundleVersion", "inputs"]);
 
 export interface PublishedBundle {
   readonly bundleVersion: string;
@@ -81,13 +84,21 @@ export async function attachCrosswalk(directory: string, crosswalk: unknown): Pr
   );
 }
 
+function addressedFiles(raw: unknown, renamed: ReadonlyMap<string, string>): unknown {
+  return JSON.parse(
+    JSON.stringify(raw, (key, value: unknown) =>
+      key === "file" && typeof value === "string" ? (renamed.get(value) ?? value) : value,
+    ),
+  );
+}
+
 export async function publishBundle(
   directory: string,
-  inputs: v.InferInput<typeof BundleManifest>["inputs"],
+  inputs: v.InferInput<typeof BundleIndex>["inputs"],
 ): Promise<PublishedBundle> {
   const manifestPath = join(directory, MANIFEST_FILE);
   const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
-  const manifest = decodeDeclared(CompiledManifest, compiled, manifestPath);
+  const manifest = decodeDeclared(CompiledIndex, compiled, manifestPath);
   const renamed = new Map<string, string>();
   const publish = async (file: string): Promise<Buffer> => {
     const bytes = await readFile(join(directory, file));
@@ -96,12 +107,24 @@ export async function publishBundle(
     renamed.set(file, name);
     return bytes;
   };
-  for (const { file } of [...manifest.studPrimitives, ...manifest.parts]) {
+  const readJson = async <const TSchema extends v.GenericSchema>(
+    schema: TSchema,
+    file: string,
+  ): Promise<{ readonly raw: unknown; readonly value: v.InferOutput<TSchema> }> => {
+    const raw: unknown = JSON.parse(await readFile(join(directory, file), "utf8"));
+    return { raw, value: decodeDeclared(schema, raw, file) };
+  };
+  const publishJson = async (schema: v.GenericSchema, file: string): Promise<void> => {
+    const { raw } = await readJson(schema, file);
+    await writeFile(join(directory, file), JSON.stringify(addressedFiles(raw, renamed)));
+    await publish(file);
+  };
+  const { value: partTable } = await readJson(PartTableFile, manifest.partTable.file);
+  for (const { file } of [...manifest.studPrimitives, ...partTable.parts]) {
     decodeDeclared(GltfDocument, glbJson(await publish(file), file), file);
   }
-  for (const { file } of manifest.models) {
-    decodeDeclared(ModelFile, JSON.parse((await publish(file)).toString("utf8")), file);
-  }
+  await publishJson(PartTableFile, manifest.partTable.file);
+  for (const { file } of manifest.models) await publishJson(ModelFile, file);
   for (const { farMesh } of manifest.models) {
     if (farMesh) {
       decodeDeclared(
@@ -117,6 +140,8 @@ export async function publishBundle(
     JSON.parse((await publish(manifest.crosswalk.file)).toString("utf8")),
     manifest.crosswalk.file,
   );
+  for (const { shape } of manifest.catalogParts) await publishJson(PartShape, shape.file);
+  await publishJson(CreditTableFile, manifest.creditTable.file);
   const published = new Set(renamed.values());
   const unreferenced = (await readdir(directory)).filter(
     (name) => name !== MANIFEST_FILE && !published.has(name),
@@ -124,15 +149,12 @@ export async function publishBundle(
   if (unreferenced.length > 0) {
     throw new Error(`${directory} has files the manifest does not reference: ${unreferenced}`);
   }
-  const addressed: Record<string, unknown> = JSON.parse(
-    JSON.stringify(compiled, (key, value: unknown) =>
-      key === "file" && typeof value === "string" ? (renamed.get(value) ?? value) : value,
-    ),
-  );
+  const addressed = addressedFiles(compiled, renamed);
+  if (!isRecord(addressed)) throw new Error(`${manifestPath} is not a bundle index`);
   const body = { ...addressed, inputs };
   const bundleVersion = sha256(JSON.stringify(body)).slice(0, CONTENT_HASH_HEX_DIGITS);
   const publishedManifest = { bundleVersion, ...body };
-  decodeDeclared(BundleManifest, publishedManifest, manifestPath);
+  decodeDeclared(BundleIndex, publishedManifest, manifestPath);
   await writeFile(manifestPath, `${JSON.stringify(publishedManifest, null, 2)}\n`);
   return { bundleVersion, files: published.size };
 }

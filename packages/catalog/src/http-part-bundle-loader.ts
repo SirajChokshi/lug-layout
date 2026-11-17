@@ -1,13 +1,17 @@
 import {
-  BundleManifest,
+  BundleIndex,
+  CreditTableFile,
   CrosswalkFile,
   ModelFile,
+  PartTableFile,
   type BundleCredit,
   type BundleLod,
+  type BundleManifest,
   type ManifestPart,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
+import type * as v from "valibot";
 import { crosswalkMaps } from "./crosswalk.ts";
 import {
   parseFarMeshGlb,
@@ -106,12 +110,26 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return this.pool.run(() => this.fetcher.text(path));
   }
 
+  private async json<const TSchema extends v.GenericSchema>(
+    schema: TSchema,
+    path: string,
+  ): Promise<v.InferOutput<TSchema>> {
+    return decodedOrThrow(decode(schema, JSON.parse(await this.text(path))), path);
+  }
+
+  private async manifest(lod: BundleLod): Promise<BundleManifest> {
+    const index = await this.json(BundleIndex, `${lod}/${this.manifestFile}`);
+    const [{ parts }, { credits }] = await Promise.all([
+      this.json(PartTableFile, `${lod}/${index.partTable.file}`),
+      this.json(CreditTableFile, `${lod}/${index.creditTable.file}`),
+    ]);
+    return { ...index, parts, credits };
+  }
+
   loadManifest(lod: BundleLod): Promise<BundleManifest> {
     const cached = this.manifests.get(lod);
     if (cached) return cached;
-    const loading = this.text(`${lod}/${this.manifestFile}`).then((text) =>
-      decodedOrThrow(decode(BundleManifest, JSON.parse(text)), `${lod}/${this.manifestFile}`),
-    );
+    const loading = this.manifest(lod);
     this.manifests.set(lod, loading);
     loading.catch(() => {
       if (this.manifests.get(lod) === loading) this.manifests.delete(lod);
