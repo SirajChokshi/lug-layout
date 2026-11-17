@@ -1,8 +1,6 @@
 import {
   ASSET_FETCHER,
   PART_BUNDLE_LOADER,
-  type BundleLod,
-  type BundleManifest,
   type CompiledPartGlb,
   type IAssetFetcher,
   type ImportContext,
@@ -11,11 +9,13 @@ import {
   type PartBundle,
   type PartFilter,
 } from "@brr/catalog";
+import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,
   type BufferMemory,
   type ISceneBackend,
+  type LookSettings,
   type RebaseEvent,
 } from "@brr/render";
 import { Container } from "inversify";
@@ -29,6 +29,14 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const WORLD_PER_NDC = 10_000;
 const EYE_HEIGHT = 1_000;
 const TILE = 640;
+const NO_LOOK: LookSettings = {
+  plastic: false,
+  gtao: false,
+  outlines: false,
+  bevel: false,
+  shadows: false,
+  oit: false,
+};
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -72,7 +80,13 @@ class MilsModulesOnly implements IPartBundleLoader {
 
 class TopDownBackend implements ISceneBackend {
   async init(): Promise<BackendInfo> {
-    return { requestedApi: "webgl2", activeApi: "webgl2", adapter: "none", backgroundSrgb: 0 };
+    return {
+      requestedApi: "webgl2",
+      activeApi: "webgl2",
+      adapter: "none",
+      backgroundSrgb: 0,
+      look: NO_LOOK,
+    };
   }
   setPalette(): void {}
   setChunk(): void {}
@@ -114,7 +128,7 @@ async function startEditor(): Promise<IEditor> {
     clientHeight: 480,
     dataset: {},
   } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1 });
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK });
   return editor;
 }
 
@@ -202,6 +216,64 @@ describe("draw road", () => {
     expect(
       editor.dump().roadPlacements.find((p) => p.x === centre(2) && p.z === centre(0))?.item,
     ).toBe("ldraw:44336p01@2");
+    editor.undo(0);
+    editor.chooseItem(null);
+  });
+
+  it("re-plans a stroke against the world as it is at release when undo or redo ran during the drag", () => {
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [0, 0],
+      [2, 0],
+    ]);
+    editor.undo(0);
+    expect(editor.dragStart(...ndc([0, 0]))).toBe(true);
+    editor.dragMove(...ndc([2, 0]));
+    editor.redo(0);
+    editor.dragEnd(...ndc([2, 0]), 0);
+    expect(editor.snapshot().placements).toBe(3);
+    expect(editor.snapshot().roads.overlaps).toBe(0);
+    editor.undo(0);
+    drag(editor, [
+      [0, 0],
+      [4, 0],
+    ]);
+    expect(editor.dragStart(...ndc([2, 0]))).toBe(true);
+    editor.dragMove(...ndc([2, 2]));
+    editor.undo(0);
+    expect(() => editor.dragEnd(...ndc([2, 2]), 0)).not.toThrow();
+    const { placements, roads } = editor.snapshot();
+    expect(placements).toBe(3);
+    expect(roads.overlaps).toBe(0);
+    expect(roads.mismatchedCells).toBe(0);
+    while (editor.snapshot().history.undoDepth > 0) editor.undo(0);
+    editor.chooseItem(null);
+  });
+
+  it("names every kit distinctly, so two plate families of one colour can't be confused", () => {
+    const labels = editor.snapshot().roadKits.map((kit) => kit.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("refuses a tile over a baseplate it can't replace and names the baseplate", () => {
+    editor.chooseItem("ldraw:4186@2");
+    editor.click(...ndc([0, 0]), 0);
+    editor.chooseItem(
+      kitId(
+        editor,
+        (label, edge) => label.startsWith("Dark Bluish Grey") && edge === "6 + 20 road + 6",
+      ),
+    );
+    drag(editor, [
+      [-1, 0],
+      [2, 0],
+    ]);
+    const snapshot = editor.snapshot();
+    expect(snapshot.placements).toBe(1);
+    expect(snapshot.lastRoadStroke?.result).toBe("refused");
+    expect(snapshot.lastRoadStroke?.stroke.issues).toContainEqual(
+      expect.objectContaining({ problem: "overlap", blocker: expect.stringContaining("4186") }),
+    );
     editor.undo(0);
     editor.chooseItem(null);
   });

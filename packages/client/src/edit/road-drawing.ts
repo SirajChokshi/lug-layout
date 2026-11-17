@@ -14,11 +14,12 @@ import {
   type RoadShape,
   type RoadTile,
 } from "@brr/domain";
-import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { CHUNK_STUDS, PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import {
   INSTANCE_MATRIX_FLOATS,
   type ChunkInstances,
   type EdgeMarker,
+  type MarkerKind,
   type WorldBox,
 } from "@brr/render";
 import type { Placeable } from "./placeable.ts";
@@ -85,6 +86,20 @@ function edgeText(kit: RoadKit): string {
   return kit.edgeRuns.map((run) => (run.road ? `${run.cells} road` : `${run.cells}`)).join(" + ");
 }
 
+function sidewalks(kit: RoadKit): string {
+  const first = kit.edgeRuns[0];
+  const last = kit.edgeRuns.at(-1);
+  if (kit.edgeRuns.filter((run) => run.road).length > 1) return "dual carriageway";
+  const outer = first && !first.road ? first.cells : 0;
+  const inner = last && !last.road ? last.cells : 0;
+  return outer === inner ? `${outer}-stud sidewalks` : `${outer}- and ${inner}-stud sidewalks`;
+}
+
+function kitTraits(kit: RoadKit): string {
+  const studs = kit.tileLdu / STUD_LDU;
+  return studs === CHUNK_STUDS ? sidewalks(kit) : `${studs}×${studs} tiles, ${sidewalks(kit)}`;
+}
+
 function shapeOf(arms: number): RoadShape | null {
   return arms === 0 ? null : roadShape(arms);
 }
@@ -106,7 +121,7 @@ function touches(a: WorldBox, b: WorldBox): boolean {
   );
 }
 
-function outline(box: WorldBox, kind: EdgeMarker["kind"]): ReadonlyArray<EdgeMarker> {
+function outline(box: WorldBox, kind: MarkerKind): ReadonlyArray<EdgeMarker> {
   const minY = box.maxY + OUTLINE_LIFT_LDU;
   const maxY = minY + OUTLINE_LIFT_LDU;
   const { minX, maxX, minZ, maxZ } = box;
@@ -147,7 +162,7 @@ export class RoadDrawing {
           kit,
           view: {
             id: `${ROAD_KIT_PREFIX}${index}`,
-            label: familyLabel(kit.family, first),
+            label: `${familyLabel(kit.family, first)}, ${kitTraits(kit)}`,
             edge: edgeText(kit),
             tileStuds: kit.tileLdu / STUD_LDU,
             shapes: kit.shapes,
@@ -213,7 +228,7 @@ export class RoadDrawing {
   }
 
   worldChanged(): void {
-    if (!this.dragging) this.evaluated = null;
+    this.evaluated = null;
   }
 
   begin(
@@ -235,11 +250,16 @@ export class RoadDrawing {
     others: ReadonlyArray<PlacedModel>,
   ): RoadPreview | null {
     if (!this.dragging) return null;
-    const tile = this.tileAt(x, z);
-    const extended = extendRoadPath(this.path, tile.ix, tile.iz);
-    if (extended === this.path && this.evaluated) return null;
-    this.path = extended;
+    const before = this.path;
+    this.extend(x, z);
+    if (this.path === before && this.evaluated) return null;
     return this.evaluate(roads, others);
+  }
+
+  extend(x: number, z: number): void {
+    if (!this.dragging) return;
+    const tile = this.tileAt(x, z);
+    this.path = extendRoadPath(this.path, tile.ix, tile.iz);
   }
 
   rerun(roads: ReadonlyArray<PlacedModel>, others: ReadonlyArray<PlacedModel>): RoadPreview | null {
@@ -247,10 +267,18 @@ export class RoadDrawing {
     return this.evaluate(roads, others);
   }
 
-  end(): {
+  end(
+    roads: ReadonlyArray<PlacedModel>,
+    others: ReadonlyArray<PlacedModel>,
+  ): {
     readonly requests: ReadonlyArray<PlacementRequest>;
     readonly view: RoadStrokeView;
   } | null {
+    if (!this.dragging || this.path.length === 0) {
+      this.cancel();
+      return null;
+    }
+    this.evaluate(roads, others);
     const evaluated = this.evaluated;
     this.cancel();
     if (!evaluated) return null;
@@ -291,8 +319,9 @@ export class RoadDrawing {
         z >= model.box.minZ &&
         z < model.box.maxZ,
     );
-    this.phaseX = under ? under.handle.x : tileLdu / 2;
-    this.phaseZ = under ? under.handle.z : tileLdu / 2;
+    const latticeCentre = Math.round(tileLdu / 2 / STUD_LDU) * STUD_LDU;
+    this.phaseX = under ? under.handle.x : latticeCentre;
+    this.phaseZ = under ? under.handle.z : latticeCentre;
   }
 
   private tileAt(x: number, z: number): RoadTile {
