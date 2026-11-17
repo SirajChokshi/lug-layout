@@ -12,6 +12,7 @@ import {
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
+import { ToolHud } from "./tool-hud.tsx";
 import { TrackPanel } from "./track-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
@@ -82,6 +83,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       data-road-mismatch={snapshot.roads.mismatchedCells}
     >
       <EditorCanvas editor={editor} options={options} />
+      <ToolHud snapshot={snapshot} />
       <EditorHud snapshot={snapshot} />
       <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">

@@ -146,6 +146,12 @@ export {
   type ShellCommandId,
 } from "./commands/editor-commands.ts";
 export {
+  toolHints,
+  type ToolHint,
+  type ToolHintView,
+  type ToolTone,
+} from "./commands/tool-hints.ts";
+export {
   searchPalette,
   type CommandResult,
   type ItemResult,
