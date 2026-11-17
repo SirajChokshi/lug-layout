@@ -37,6 +37,7 @@ import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene
 import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
 import {
   PlacedChunks,
+  type PendingPose,
   type PlacementCheck,
   type PlacedModel,
   type RebuildReport,
@@ -211,6 +212,7 @@ export interface TrackView {
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
   readonly solve: TrackSolveStats | null;
+  readonly selected: { readonly piece: number; readonly pieceId: string } | null;
 }
 
 export interface HoverView {
@@ -521,6 +523,7 @@ export class Editor implements IEditor {
   private hitZ = 0;
   private track: TrackDrawing | null = null;
   private lastTrackCommit: TrackCommitResult | null = null;
+  private selectedTrack: number | null = null;
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -800,6 +803,10 @@ export class Editor implements IEditor {
               p95Ms: at(P95),
               maxMs: samples.at(-1) ?? 0,
             },
+      selected:
+        this.selectedTrack === null
+          ? null
+          : { piece: this.selectedTrack, pieceId: track.pieceId(this.selectedTrack) },
     };
   }
 
@@ -874,6 +881,8 @@ export class Editor implements IEditor {
       };
     }
     if (commit.laid > 0) this.syncPlan();
+    if (commit.laid === 0 && commit.refusal === null)
+      this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.showRefusalCells(commit.offBaseplate?.missing ?? null);
@@ -894,6 +903,7 @@ export class Editor implements IEditor {
     }
     if (this.state.mode === "track") {
       this.track?.cancelDrag();
+      this.selectedTrack = null;
       this.backend.setGhost(null);
       this.showEndMarker(null);
       this.update({ mode: "select", activeItem: null, track: this.trackView() });
@@ -983,7 +993,7 @@ export class Editor implements IEditor {
     this.hovering = this.groundHit(ndcX, ndcY);
     const snap = this.snapGhostToRoad();
     const track = this.track;
-    if (this.state.mode === "track" && track && !track.dragView()) {
+    if (this.state.mode === "track" && track && !track.dragView() && this.selectedTrack === null) {
       const end = this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null;
       this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
     }
@@ -1196,11 +1206,6 @@ export class Editor implements IEditor {
     if (!model) return;
     const pose = model.handle;
     const rot = (pose.rot + 1) % QUARTER_TURNS;
-    const refusal = this.removalRefusal([model], model.placeable.label);
-    if (refusal) {
-      this.refuse("rotate", model.placeable.id, refusal);
-      return;
-    }
     const check = this.placed.check(model.placeable, pose.x, pose.z, rot, [model]);
     const turned = supportRefusal(model.placeable.label, check.verdict);
     if (turned) {
@@ -1208,6 +1213,12 @@ export class Editor implements IEditor {
       return;
     }
     const yPlates = check.yPlates;
+    const moved = { placeable: model.placeable, x: pose.x, z: pose.z, yPlates, rot };
+    const refusal = this.removalRefusal([model], model.placeable.label, [moved]);
+    if (refusal) {
+      this.refuse("rotate", model.placeable.id, refusal);
+      return;
+    }
     const edit = this.history.commit("rotate", [
       {
         placement: model.placement,
@@ -1217,7 +1228,30 @@ export class Editor implements IEditor {
     this.select(this.show(edit, eventTimeMs).added[0] ?? null);
   }
 
+  private selectTrack(piece: number | null): void {
+    this.selectedTrack = piece;
+    this.backend.setSelectionBox(piece === null || !this.track ? null : this.track.pieceBox(piece));
+    this.update({ track: this.trackView() });
+  }
+
+  private removeSelectedTrack(): void {
+    const track = this.track;
+    const piece = this.selectedTrack;
+    if (!track || piece === null) return;
+    for (const key of track.removePiece(piece)) {
+      const chunk = track.chunkInstances(key);
+      if (chunk) this.backend.setChunk(key, chunk);
+      else this.backend.deleteChunk(key);
+    }
+    this.syncPlan();
+    this.selectTrack(null);
+  }
+
   deleteSelection(eventTimeMs: number): void {
+    if (this.state.mode === "track") {
+      this.removeSelectedTrack();
+      return;
+    }
     const model = this.selected;
     if (!model) return;
     const refusal = this.removalRefusal([model], model.placeable.label);
@@ -1252,10 +1286,16 @@ export class Editor implements IEditor {
     return this.placed.models().find((model) => model.handle === handle) ?? null;
   }
 
-  private removalRefusal(removed: ReadonlyArray<PlacedModel>, label: string): Refusal | null {
-    const carried = carriesRefusal(label, this.placed.lostSupport(removed));
+  private removalRefusal(
+    removed: ReadonlyArray<PlacedModel>,
+    label: string,
+    moved: ReadonlyArray<PendingPose> = [],
+  ): Refusal | null {
+    const carried = carriesRefusal(label, this.placed.lostSupport(removed, moved));
     if (carried) return carried;
-    const off = this.track?.unsupportedPieces((cells) => this.placed.trackSupport(cells, removed));
+    const off = this.track?.unsupportedPieces((cells) =>
+      this.placed.trackSupport(cells, removed, moved),
+    );
     const first = off?.[0];
     return first ? trackCarriedRefusal(label, first) : null;
   }
@@ -1269,9 +1309,14 @@ export class Editor implements IEditor {
       const model = change.from ? this.modelOf(change) : null;
       if (model) removed.push(model);
     }
+    const moved: PendingPose[] = [];
+    for (const change of changes) {
+      const to = change.to;
+      if (to) moved.push({ placeable: this.placeableAt(to.refId), ...to });
+    }
     const first = removed[0];
     if (first) {
-      const refusal = this.removalRefusal(removed, first.placeable.label);
+      const refusal = this.removalRefusal(removed, first.placeable.label, moved);
       if (refusal) return { ...refusal, item: first.placeable.id };
     }
     for (const change of changes) {
