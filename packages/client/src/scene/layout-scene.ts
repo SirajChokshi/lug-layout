@@ -22,6 +22,7 @@ import { MergedParts } from "../edit/merged-parts.ts";
 import { PlacedChunks } from "../edit/placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "../edit/placeable.ts";
 import { TrackDrawing } from "../edit/track-drawing.ts";
+import { layoutClash } from "./layout-clashes.ts";
 import type { CityCamera } from "./city-scene.ts";
 import {
   ColorTable,
@@ -68,10 +69,10 @@ const MODULES_PER_SIDE = 4;
 const INNER_FIRST = 1;
 const INNER_LAST = 2;
 const BUILDINGS: ReadonlyArray<LayoutModel> = [
-  { name: "10185-1", column: 1, row: 1, rot: 0 },
-  { name: "10190-1", column: 2, row: 1, rot: 0 },
-  { name: "10218-1", column: 1, row: 2, rot: 2 },
-  { name: "10264-1", column: 2, row: 2, rot: 2 },
+  { name: "10190-1", column: 1, row: 1, rot: 2 },
+  { name: "10218-1", column: 2, row: 1, rot: 2 },
+  { name: "10185-1", column: 1, row: 2, rot: 0 },
+  { name: "10190-1", column: 2, row: 2, rot: 0 },
 ];
 const DISPLAY_ROWS: ReadonlyArray<DisplayRow> = [
   { models: ["10133-1", "10022-1_Dining-Car", "10025-1_Baggage-Car"], zStuds: 10 },
@@ -175,9 +176,11 @@ function placeableNamed(placeables: ReadonlyMap<string, Placeable>, name: string
 
 function layoutModelNames(): ReadonlyArray<string> {
   return [
-    MODULE_NAME,
-    ...BUILDINGS.map((model) => model.name),
-    ...DISPLAY_ROWS.flatMap((row) => row.models),
+    ...new Set([
+      MODULE_NAME,
+      ...BUILDINGS.map((model) => model.name),
+      ...DISPLAY_ROWS.flatMap((row) => row.models),
+    ]),
   ];
 }
 
@@ -244,10 +247,14 @@ export class LayoutScene implements ILayoutScene {
         this.layTrack(track, tile, touched);
       }
     }
+    const trackChunks = new Map<number, ChunkInstances>();
     for (const key of touched) {
       const chunk = track.chunkInstances(key);
-      if (chunk) this.capture.setChunk(key, chunk);
+      if (chunk) trackChunks.set(key, chunk);
     }
+    const clash = layoutClash(placed.models(), [...trackChunks.values()], palette.parts);
+    if (clash) throw new Error(`the bench layout is not buildable: ${clash}`);
+    for (const [key, chunk] of trackChunks) this.capture.setChunk(key, chunk);
     const chunks: KeyedChunk[] = [];
     for (const [key, instances] of this.capture.chunks) chunks.push({ key, instances });
     return summarizeChunks(
@@ -333,7 +340,10 @@ export class LayoutScene implements ILayoutScene {
     };
     const module = placeableNamed(placeables, MODULE_NAME);
     const moduleLdu = lengthAlongX(module);
-    const surfacePlates = Math.round(module.box.max[1] / PLATE_LDU);
+    const surfacePlates = module.box.max[1] / PLATE_LDU;
+    if (!Number.isInteger(surfacePlates)) {
+      throw new Error(`${MODULE_NAME}'s surface is not a whole plate above its baseplate`);
+    }
     for (let row = 0; row < MODULES_PER_SIDE; row++) {
       for (let column = 0; column < MODULES_PER_SIDE; column++) {
         const inner =
