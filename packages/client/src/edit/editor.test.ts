@@ -27,6 +27,12 @@ import { EDITOR } from "../tokens.ts";
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
 const STUDLESS_SET = "10016-1";
+const NDC_SPAN_LDU = 10_000;
+const CAMERA_HEIGHT_LDU = 2_000;
+
+function ndc(x: number, z: number): readonly [number, number] {
+  return [x / NDC_SPAN_LDU, -z / NDC_SPAN_LDU];
+}
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -80,13 +86,18 @@ class HeadlessBackend implements ISceneBackend {
   deleteChunk(): void {}
   setGhost(): void {}
   placeGhost(): void {}
+  setGhostTone(): void {}
+  cueGhost(): void {}
+  setSnapTargets(): void {}
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   setIssueBoxes(): void {}
-  rayThrough(): void {}
+  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
+    out.set([ndcX * NDC_SPAN_LDU, CAMERA_HEIGHT_LDU, -ndcY * NDC_SPAN_LDU, 0, -1, 0]);
+  }
   setView(): void {}
   resize(): void {}
   renderFrame(): void {}
@@ -154,4 +165,37 @@ it("offers every baseplate and road plate in exactly the produced colours the bu
     part.producedColors?.colors.map((color) => color.ldraw),
   ]);
   expect(offered).toEqual(produced);
+}, 120_000);
+
+it("shows the ghost as blocked, with a reason, exactly where a click would be refused", async () => {
+  const { editor } = await startEditor();
+  const { catalog } = editor.snapshot();
+  const road = catalog.find((item) => item.kind === "road-plate");
+  const baseplate = catalog.find((item) => item.kind === "baseplate");
+  const set = catalog.find((item) => item.id === `omr:${PLACEABLE_SET}`);
+  if (!road || !baseplate || !set)
+    throw new Error("the bundle lacks a road plate, baseplate or set");
+  editor.chooseItem(road.id);
+  editor.click(...ndc(0, 0), 0);
+  expect(editor.snapshot().placements).toBe(1);
+
+  const seen = new Set<string>();
+  for (const item of [road, baseplate, set]) {
+    editor.chooseItem(item.id);
+    for (let x = -1_000; x <= 1_000; x += 140) {
+      for (let z = -1_000; z <= 1_000; z += 140) {
+        editor.pointerMove(...ndc(x, z));
+        const feedback = editor.snapshot().ghostFeedback;
+        const refusalsBefore = editor.snapshot().refusals;
+        editor.click(...ndc(x, z), 0);
+        const refused = editor.snapshot().refusals > refusalsBefore;
+        if (!refused) editor.undo(0);
+        seen.add(feedback?.tone ?? "none");
+        expect(feedback?.tone === "blocked").toBe(refused);
+        expect(feedback?.message !== null).toBe(feedback?.tone !== "valid");
+      }
+    }
+  }
+  expect([...seen].toSorted()).toEqual(["blocked", "snapped", "valid"]);
+  expect(editor.snapshot().placements).toBe(1);
 }, 120_000);

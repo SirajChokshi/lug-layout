@@ -39,8 +39,11 @@ import {
   type BackendInfo,
   type EdgeMarker,
   type FrameStats,
+  type GhostFootprint,
   type GraphicsApi,
   type ISceneBackend,
+  type SnapTarget,
+  type SnapTargetKind,
   type WorldBox,
 } from "@brr/render";
 import { inject, injectable } from "inversify";
@@ -73,6 +76,13 @@ import {
   partPlaceable,
   type Placeable,
 } from "./placeable.ts";
+import {
+  checkGhostFeedback,
+  roadGhostFeedback,
+  trackGhostFeedback,
+  trackJoinFeedback,
+  type GhostFeedbackView,
+} from "./ghost-feedback.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
@@ -298,6 +308,7 @@ export interface EditorSnapshot {
   readonly lastRefusal: RefusedEdit | null;
   readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
+  readonly ghostFeedback: GhostFeedbackView | null;
 }
 
 export interface EditorCredits {
@@ -364,6 +375,10 @@ const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
 const END_MARKER_HALF_LDU = 30;
 const TRACK_SNAP_RADIUS_LDU = 3 * STUD_LDU;
 const END_MARKER_HEIGHT_LDU = 40;
+const END_CANDIDATE_HALF_LDU = 30;
+const END_CANDIDATE_HEIGHT_LDU = 12;
+const SEAM_HEIGHT_LDU = 20;
+const SEAM_HALF_WIDTH_LDU = 6;
 const P95 = 0.95;
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
@@ -451,6 +466,25 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
 }
 const GHOST_LIFT_LDU = BRICK_LDU;
 
+function seamBox(segment: RoadEdgeSegment): WorldBox {
+  const minY = segment.topLdu + MARKER_LIFT_LDU;
+  const maxY = minY + SEAM_HEIGHT_LDU;
+  const lo = segment.line - SEAM_HALF_WIDTH_LDU;
+  const hi = segment.line + SEAM_HALF_WIDTH_LDU;
+  switch (segment.side) {
+    case "minX":
+    case "maxX":
+      return { minX: lo, maxX: hi, minY, maxY, minZ: segment.from, maxZ: segment.to };
+    case "minZ":
+    case "maxZ":
+      return { minX: segment.from, maxX: segment.to, minY, maxY, minZ: lo, maxZ: hi };
+    default: {
+      const unhandled: never = segment.side;
+      throw new Error(`unhandled side ${String(unhandled)}`);
+    }
+  }
+}
+
 interface PendingAction {
   readonly step: HistoryStep;
   readonly action: EditAction;
@@ -467,6 +501,26 @@ interface FrameTimes {
   readonly startMs: number;
   readonly submittedMs: number;
   readonly presentedMs: number;
+}
+
+function endBox(
+  end: { readonly xLdu: number; readonly zLdu: number },
+  half: number,
+  height: number,
+): WorldBox {
+  return {
+    minX: end.xLdu - half,
+    minY: 0,
+    minZ: end.zLdu - half,
+    maxX: end.xLdu + half,
+    maxY: height,
+    maxZ: end.zLdu + half,
+  };
+}
+
+function footprintOf(placeable: Placeable): GhostFootprint {
+  const { min, max } = placeable.box;
+  return { minX: min[0], maxX: max[0], minZ: min[2], maxZ: max[2], bottomY: min[1] };
 }
 
 function footprintArea(part: PartAsset): number {
@@ -542,6 +596,7 @@ export class Editor implements IEditor {
     lastRefusal: null,
     ghost: null,
     track: null,
+    ghostFeedback: null,
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -881,19 +936,28 @@ export class Editor implements IEditor {
     };
   }
 
-  private showEndMarker(end: { readonly xLdu: number; readonly zLdu: number } | null): void {
-    this.backend.setSelectionBox(
-      end
-        ? {
-            minX: end.xLdu - END_MARKER_HALF_LDU,
-            minY: 0,
-            minZ: end.zLdu - END_MARKER_HALF_LDU,
-            maxX: end.xLdu + END_MARKER_HALF_LDU,
-            maxY: END_MARKER_HEIGHT_LDU,
-            maxZ: end.zLdu + END_MARKER_HALF_LDU,
-          }
-        : null,
-    );
+  private showEndMarker(
+    end: { readonly xLdu: number; readonly zLdu: number } | null,
+    kind: SnapTargetKind = "locked",
+  ): void {
+    const track = this.track;
+    const targets: SnapTarget[] = [];
+    if (this.state.mode === "track" && track) {
+      for (const open of track.openEnds()) {
+        if (end && open.xLdu === end.xLdu && open.zLdu === end.zLdu) continue;
+        targets.push({
+          box: endBox(open, END_CANDIDATE_HALF_LDU, END_CANDIDATE_HEIGHT_LDU),
+          kind: "candidate",
+        });
+      }
+    }
+    if (end) targets.push({ box: endBox(end, END_MARKER_HALF_LDU, END_MARKER_HEIGHT_LDU), kind });
+    this.backend.setSnapTargets(targets);
+  }
+
+  private showGhostFeedback(feedback: GhostFeedbackView | null): void {
+    this.backend.setGhostTone(feedback?.tone ?? "neutral");
+    this.update({ ghostFeedback: feedback });
   }
 
   private showTrackGhost(track: TrackDrawing): void {
@@ -917,8 +981,10 @@ export class Editor implements IEditor {
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
     this.showTrackGhost(track);
-    this.showEndMarker(track.dragTarget());
+    const feedback = trackGhostFeedback(track.dragView());
+    this.showEndMarker(track.dragTarget(), feedback?.tone === "blocked" ? "blocked" : "locked");
     this.showRefusalCells(track.dragView()?.blocked?.missing ?? null);
+    this.showGhostFeedback(feedback);
     this.update({ track: this.trackView() });
   }
 
@@ -928,7 +994,7 @@ export class Editor implements IEditor {
     if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
     const commit = track.endDrag();
     this.backend.setGhost(null);
-    this.showEndMarker(null);
+    this.showGhostFeedback(null);
     let instances = 0;
     let studs = 0;
     for (const key of commit.chunks) {
@@ -959,6 +1025,7 @@ export class Editor implements IEditor {
     this.showRefusalCells(commit.blocked?.missing ?? null);
     if (commit.blocked) this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
     this.update({ track: this.trackView() });
+    this.showEndMarker(null);
   }
 
   chooseItem(id: string | null): void {
@@ -966,16 +1033,18 @@ export class Editor implements IEditor {
     if (id === TRACK_ITEM_ID && this.track) {
       this.active = null;
       this.backend.setGhost(null);
+      this.showGhostFeedback(null);
       this.select(null);
       this.update({ mode: "track", activeItem: TRACK_ITEM_ID });
+      this.showEndMarker(null);
       return;
     }
     if (this.state.mode === "track") {
       this.track?.cancelDrag();
       this.selectedTrack = null;
       this.backend.setGhost(null);
-      this.showEndMarker(null);
       this.update({ mode: "select", activeItem: null, track: this.trackView() });
+      this.showEndMarker(null);
       if (id === null) return;
     }
     if (id === null && !this.active) {
@@ -984,9 +1053,14 @@ export class Editor implements IEditor {
     }
     const placeable = id === null ? null : (this.placeables.find((p) => p.id === id) ?? null);
     this.active = placeable;
-    this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
+    this.backend.setGhost(
+      placeable ? { ...placeable.parts, studs: placeable.studs } : null,
+      placeable ? footprintOf(placeable) : undefined,
+    );
+    this.backend.setSnapTargets([]);
     if (placeable) this.select(null);
     this.placeGhost();
+    this.showGhostFeedback(placeable ? roadGhostFeedback(null) : null);
     this.update({ mode: placeable ? "place" : "select", activeItem: placeable?.id ?? null });
   }
 
@@ -1145,6 +1219,33 @@ export class Editor implements IEditor {
     }).length;
   }
 
+  private trackJoinTargets(): ReadonlyArray<SnapTarget> {
+    const held = this.active?.track;
+    const track = this.track;
+    const check = this.ghostCheck;
+    if (!held || !track || !check || !this.hovering) return [];
+    const frame = latticePose16(this.hoverX, this.hoverZ, this.ghostRot);
+    const targets: SnapTarget[] = [];
+    for (const target of track.openEndPoses()) {
+      const joined = held.openEnds.some(
+        (end) =>
+          check.yPlates + end.plates === LAID_TRACK_PLATES &&
+          posesJoin16(composePose16(frame, end.local), target),
+      );
+      if (!joined) continue;
+      const at = zeta16ToStuds(target.position);
+      targets.push({
+        box: endBox(
+          { xLdu: at.x * STUD_LDU, zLdu: at.z * STUD_LDU },
+          END_MARKER_HALF_LDU,
+          END_MARKER_HEIGHT_LDU,
+        ),
+        kind: "locked",
+      });
+    }
+    return targets;
+  }
+
   private snapGhostToTrack(): boolean {
     const held = this.active?.track;
     const track = this.track;
@@ -1231,7 +1332,39 @@ export class Editor implements IEditor {
       this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
     }
     this.placeGhost();
-    this.update({ hover: this.hoverView(), snap });
+    this.update({ hover: this.hoverView(), snap, ghostFeedback: this.placementFeedback(snap) });
+  }
+
+  private placementFeedback(snap: RoadSnapView | null): GhostFeedbackView | null {
+    if (!this.active) return this.state.ghostFeedback;
+    const road = roadGhostFeedback(snap);
+    const check = this.hovering ? this.ghostCheck : null;
+    const feedback =
+      (road.tone === "blocked" ? road : null) ??
+      (check ? checkGhostFeedback(check) : null) ??
+      trackJoinFeedback(this.state.ghost?.trackJoins ?? 0) ??
+      road;
+    this.backend.setGhostTone(feedback.tone);
+    this.backend.setSnapTargets([...this.roadSeamTargets(snap), ...this.trackJoinTargets()]);
+    return feedback;
+  }
+
+  private roadSeamTargets(snap: RoadSnapView | null): ReadonlyArray<SnapTarget> {
+    const surface = this.active?.road;
+    if (!surface || !snap || snap.state === "free" || snap.overlappingCells > 0) return [];
+    const shown = snap.state === "snapped" ? "joined" : "mismatch";
+    const placements = this.roadPlacements();
+    const ghostId = this.roadModels.length;
+    const report = new RoadNetwork([
+      ...placements,
+      { id: ghostId, x: this.hoverX, z: this.hoverZ, yLdu: 0, rot: this.ghostRot, surface },
+    ]).report();
+    const targets: SnapTarget[] = [];
+    for (const segment of report.segments) {
+      if (segment.placement !== ghostId || segment.status !== shown) continue;
+      targets.push({ box: seamBox(segment), kind: shown === "joined" ? "locked" : "blocked" });
+    }
+    return targets;
   }
 
   pointerLeave(): void {
@@ -1246,7 +1379,7 @@ export class Editor implements IEditor {
       this.hovering = true;
       const snap = this.snapGhost();
       this.placeGhost();
-      this.update({ snap });
+      this.update({ snap, ghostFeedback: this.placementFeedback(snap) });
       if (snap?.state === "refused") {
         this.refuse("place", this.active.id, {
           rule: "road",
@@ -1261,6 +1394,7 @@ export class Editor implements IEditor {
         return;
       }
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
+      this.backend.cueGhost("drop");
       return;
     }
     this.backend.rayThrough(ndcX, ndcY, this.ray);
@@ -1441,8 +1575,16 @@ export class Editor implements IEditor {
   rotate(eventTimeMs: number): void {
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
+      this.hoverX = snapToGrid(this.hitX, STUD_LDU);
+      this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
+      const snap = this.snapGhost();
       this.placeGhost();
-      this.update({ ghostRot: this.ghostRot, hover: this.hoverView() });
+      this.update({
+        ghostRot: this.ghostRot,
+        hover: this.hoverView(),
+        snap,
+        ghostFeedback: this.placementFeedback(snap),
+      });
       return;
     }
     const model = this.selected;
@@ -1580,6 +1722,7 @@ export class Editor implements IEditor {
   }
 
   private refuse(action: RefusedAction, item: string, refusal: Refusal): void {
+    if (action === "place") this.backend.cueGhost("refuse");
     this.update({
       refusals: this.state.refusals + 1,
       lastRefusal: { action, item, rule: refusal.rule, message: refusal.message },
