@@ -36,6 +36,7 @@ import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
 import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
+import type { TrackEndView } from "./track-drawing.ts";
 import {
   PlacedChunks,
   type PlacedModel,
@@ -46,7 +47,6 @@ import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
-import type { TrackEndView } from "./track-drawing.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
@@ -240,10 +240,10 @@ export interface RoadPlacementDump {
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
+  readonly trackEnds: ReadonlyArray<TrackEndView>;
   readonly placements: PlacementDump;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
-  readonly trackEnds: ReadonlyArray<TrackEndView>;
 }
 
 export interface EditorOptions {
@@ -1178,6 +1178,7 @@ export class Editor implements IEditor {
     return {
       refs: this.placeables.map((p) => p.id),
       frameShifts: this.placeables.map((p) => p.frameShift),
+      trackEnds: this.track?.openEnds() ?? [],
       placements: dumpPlacements(this.world),
       roadPlacements: this.roadModels.map((model, id) => ({
         id,
@@ -1188,7 +1189,6 @@ export class Editor implements IEditor {
         rot: model.handle.rot,
       })),
       roads: this.roadReport,
-      trackEnds: this.track?.openEnds() ?? [],
     };
   }
 }
