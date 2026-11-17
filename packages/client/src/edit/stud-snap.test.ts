@@ -161,7 +161,7 @@ function hoverAt(editor: IEditor, x: number, z: number): GhostCheckView {
 function padCells(markers: ReadonlyArray<EdgeMarker>): number {
   let cells = 0;
   for (const { kind, box } of markers) {
-    if (kind === "joined") cells += Math.round((box.maxX - box.minX) / STUD_LDU);
+    if (kind === "stud") cells += Math.round((box.maxX - box.minX) / STUD_LDU);
   }
   return cells;
 }

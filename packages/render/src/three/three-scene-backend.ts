@@ -96,6 +96,7 @@ const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
   joined: 0x1fbf4a,
   open: 0xffb000,
   mismatch: 0xe0202a,
+  stud: 0x22d3ff,
 };
 const TRACK_END_COLORS: Readonly<Record<TrackEndKind, number>> = {
   open: 0xffb000,
@@ -383,6 +384,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     joined: new MeshBasicNodeMaterial({ color: MARKER_COLORS.joined }),
     open: new MeshBasicNodeMaterial({ color: MARKER_COLORS.open }),
     mismatch: new MeshBasicNodeMaterial({ color: MARKER_COLORS.mismatch }),
+    stud: new MeshBasicNodeMaterial({ color: MARKER_COLORS.stud }),
   };
   private readonly markerGroup = new Group();
   private markers: ReadonlyArray<EdgeMarker> = [];

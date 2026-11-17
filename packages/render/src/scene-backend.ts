@@ -94,7 +94,7 @@ export interface WorldBox {
   readonly maxZ: number;
 }
 
-export type MarkerKind = "joined" | "open" | "mismatch";
+export type MarkerKind = "joined" | "open" | "mismatch" | "stud";
 
 export interface EdgeMarker {
   readonly box: WorldBox;

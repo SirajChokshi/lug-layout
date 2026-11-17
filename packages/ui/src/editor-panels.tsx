@@ -485,7 +485,7 @@ function connectionText(ghost: GhostCheckView): string {
   const engaged = ghost.studsEngaged > 0 ? `${studs} engaged` : "no stud engaged";
   const snapped = ghost.snappedStuds;
   if (snapped === null) return engaged;
-  return `${engaged}, snapped ${snapped[0]}, ${snapped[1]} studs from the cursor to the nearest spot that connects`;
+  return `${engaged}; moved (${snapped[0]}, ${snapped[1]}) studs from the cursor to the nearest pose that connects`;
 }
 
 export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot }) {

@@ -100,13 +100,13 @@ export function connectionMarkers(
       runTo = x;
       continue;
     }
-    if (open) padRow(markers, "joined", runZ, runFrom, runTo, yLdu);
+    if (open) padRow(markers, "stud", runZ, runFrom, runTo, yLdu);
     open = true;
     runZ = z;
     runFrom = x;
     runTo = x;
   }
-  if (open) padRow(markers, "joined", runZ, runFrom, runTo, yLdu);
+  if (open) padRow(markers, "stud", runZ, runFrom, runTo, yLdu);
   if (overlap) {
     const { cellX, cellZ, bottomLdu, topLdu, candidateBottomLdu, candidateTopLdu } =
       overlap.overlap;
