@@ -220,6 +220,43 @@ describe("road autotiling", () => {
     expect(curve?.kind === "lay" && PARTS[curve.choices[0]?.ref ?? -1]).toBe("44342");
   });
 
+  it("falls back to the smallest smaller piece for a junction with no exact-arms piece, and reports it when there is none or no arm is left", () => {
+    const tee = new Map<string, ExistingRoadTile>([
+      ["1,0", { arms: 0b0011, sameKit: true }],
+      ["2,0", { arms: 0b1011, sameKit: true }],
+      ["3,0", { arms: 0b0011, sameKit: true }],
+      ["2,1", { arms: 0b1100, sameKit: true }],
+    ]);
+    const teeAt = (ix: number, iz: number) => tee.get(`${ix},${iz}`) ?? null;
+    const oneArm = planRoadErase(six, path([1, 0], [1, 1], [2, 1]), teeAt);
+    const downgrade = oneArm.find((t) => t.ix === 2 && t.iz === 0);
+    expect(downgrade).toMatchObject({ kind: "lay", arms: 0b0010 });
+    expect(downgrade?.kind === "lay" && downgrade.choices[0]?.arms).toBe(0b0011);
+    expect(downgrade?.kind === "lay" && PARTS[downgrade.choices[0]?.ref ?? -1]).toBe("44336");
+
+    const noCurves = roadKits(
+      (["44336", "44341", "44343"] as const).map((part) => ({
+        ref: PARTS.indexOf(part),
+        family: "72",
+        surface: roadBaseplate(part),
+      })),
+    )[0];
+    if (!noCurves) throw new Error("no kit without curves");
+    expect(noCurves.shapes).not.toContain("curve");
+    const stranded = planRoadErase(noCurves, path([3, 0]), teeAt);
+    expect(stranded.find((t) => t.ix === 2 && t.iz === 0)).toEqual({
+      kind: "stranded",
+      ix: 2,
+      iz: 0,
+      arms: 0b1001,
+      junction: 0b1011,
+    });
+    const allArms = planRoadErase(six, path([1, 0], [1, 1], [2, 1], [3, 1], [3, 0]), teeAt);
+    const lone = allArms.find((t) => t.ix === 2 && t.iz === 0);
+    expect(lone).toEqual({ kind: "stranded", ix: 2, iz: 0, arms: 0, junction: 0b1011 });
+    expect(allArms.filter((t) => t.kind === "lay")).toEqual([]);
+  });
+
   it("walks a diagonal drag as unit steps and steps back when the pointer returns", () => {
     const walked = path([0, 0], [2, 1]);
     expect(walked).toEqual([

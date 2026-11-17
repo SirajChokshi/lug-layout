@@ -80,6 +80,7 @@ export type {
 export type { RoadShape } from "@brr/domain";
 export type {
   RoadKitView,
+  RoadStrandedTile,
   RoadStrokeView,
   RoadTileIssue,
   RoadTileProblem,
