@@ -167,6 +167,16 @@ function placedItems(editor: IEditor): ReadonlyArray<string> {
   return placements.refId.map((ref) => refs[ref] ?? "");
 }
 
+function worldPoses(editor: IEditor): ReadonlyArray<string> {
+  const { refs, placements } = editor.dump();
+  return placements.refId
+    .map(
+      (ref, i) =>
+        `${refs[ref]} ${placements.colorId[i]} ${placements.x[i]} ${placements.z[i]} ${placements.yPlates[i]} ${placements.rot[i]}`,
+    )
+    .toSorted();
+}
+
 function kitId(editor: IEditor, matches: (label: string, edge: string) => boolean): string {
   const kit = editor.snapshot().roadKits.find((k) => matches(k.label, k.edge));
   if (!kit) throw new Error("no matching road kit");
@@ -410,6 +420,47 @@ describe("draw road", () => {
     editor.setRoadErase(false);
     editor.undo(0);
     editor.undo(0);
+    editor.chooseItem(null);
+  });
+
+  it("erasing gives back exactly the ground a stroke replaced, in its own colour, and adds no ground anywhere else", () => {
+    editor.chooseItem("ldraw:3811@2");
+    editor.click(...ndc([0, 0]), 0);
+    editor.chooseItem("ldraw:3811@19");
+    for (const ix of [1, 2]) editor.click(...ndc([ix, 0]), 0);
+    const ground = worldPoses(editor);
+    const stroke: ReadonlyArray<readonly [number, number]> = [
+      [1, 0],
+      [2, 0],
+      [2, 1],
+      [0, 1],
+    ];
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, stroke);
+    expect(editor.snapshot().lastRoadStroke?.stroke.overGround).toBe(2);
+    editor.setRoadErase(true);
+    drag(editor, stroke);
+    expect(editor.snapshot().lastRoadStroke?.stroke.refilled).toBe(2);
+    expect(worldPoses(editor)).toEqual(ground);
+    editor.undo(0);
+    expect(placedItems(editor).filter((item) => item.startsWith("ldraw:3811"))).toHaveLength(1);
+    while (editor.snapshot().history.undoDepth > 0) editor.undo(0);
+    editor.setRoadErase(false);
+    editor.chooseItem(null);
+  });
+
+  it("starts every kit in Draw, even after Erase was on", () => {
+    const [first, second] = editor.snapshot().roadKits;
+    if (!first || !second) throw new Error("fewer than two road kits");
+    editor.chooseItem(first.id);
+    editor.setRoadErase(true);
+    editor.chooseItem(second.id);
+    expect(editor.snapshot().roadErase).toBe(false);
+    editor.setRoadErase(true);
+    editor.chooseItem(null);
+    expect(editor.snapshot().roadErase).toBe(false);
+    editor.chooseItem(second.id);
+    expect(editor.snapshot().roadErase).toBe(false);
     editor.chooseItem(null);
   });
 
