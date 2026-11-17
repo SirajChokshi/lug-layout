@@ -1,4 +1,10 @@
-import { PART_BUNDLE_LOADER, type IPartBundleLoader, type PartBundle } from "@brr/catalog";
+import {
+  PART_BUNDLE_LOADER,
+  type IPartBundleLoader,
+  type PartBundle,
+  type PartFilter,
+  type PartMesh,
+} from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
 import { EditHistory, World } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
@@ -7,7 +13,9 @@ import {
   type BackendInfo,
   type BufferMemory,
   type ChunkInstances,
+  type ChunkTier,
   type EdgeMarker,
+  type FarModelPlacement,
   type FrameStats,
   type ISceneBackend,
   type PartPalette,
@@ -90,6 +98,8 @@ const AERIAL_HEIGHT_FACTOR = 0.6;
 const STREET_RADIUS_FACTOR = 0.45;
 const STREET_EYE_LDU = 260;
 const STREET_TARGET_LDU = 200;
+const EDITOR_PARTS: PartFilter = (part) =>
+  part.role === "ground" || part.role === "road" || part.role === "track";
 
 class ChunkCapture implements ISceneBackend {
   readonly chunks = new Map<number, ChunkInstances>();
@@ -109,6 +119,12 @@ class ChunkCapture implements ISceneBackend {
   deleteChunk(key: number): void {
     this.chunks.delete(key);
     this.inner.deleteChunk(key);
+  }
+  forceTier(tier: ChunkTier | null): void {
+    this.inner.forceTier(tier);
+  }
+  setFarModel(id: number, placement: FarModelPlacement | null): void {
+    this.inner.setFarModel(id, placement);
   }
   setGhost(model: ChunkInstances | null): void {
     this.inner.setGhost(model);
@@ -230,17 +246,21 @@ export class LayoutScene implements ILayoutScene {
   }
 
   async load(lod: BundleLod): Promise<SceneSummary> {
-    const bundle = await this.loader.load(
-      lod,
-      (part) => part.role === "ground" || part.role === "road" || part.role === "track",
-    );
+    const [bundle, farBundle] = await Promise.all([
+      this.loader.load(lod, EDITOR_PARTS),
+      this.loader.load("far", EDITOR_PARTS),
+    ]);
     const colors = new ColorTable(bundle);
     const palette = new MergedParts(bundle.parts);
-    const placeables = await this.loadPlaceables(lod, palette, colors);
+    const farPalette = new MergedParts(farBundle.parts);
+    const farModels: PartMesh[] = [];
+    const placeables = await this.loadPlaceables(lod, palette, farPalette, farModels, colors);
     const baseplate = this.baseplate(bundle, palette, colors);
     const track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
     this.capture.setPalette({
       detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
+      far: { parts: farPalette.parts, studPrimitives: farBundle.studPrimitives },
+      farModels,
       colorsSrgb: colors.toSrgb(),
       colorsAlpha: colors.toAlpha(),
       ldrawColors: ldrawColors(bundle),
@@ -300,14 +320,24 @@ export class LayoutScene implements ILayoutScene {
   private async loadPlaceables(
     lod: BundleLod,
     palette: MergedParts,
+    farPalette: MergedParts,
+    farModels: PartMesh[],
     colors: ColorTable,
   ): Promise<ReadonlyMap<string, Placeable>> {
     const loaded = await Promise.all(
-      layoutModelNames().map((name) => this.loader.loadModel(lod, name)),
+      layoutModelNames().map((name) =>
+        Promise.all([this.loader.loadModel(lod, name), this.loader.loadModel("far", name)]),
+      ),
     );
     const placeables = new Map<string, Placeable>();
-    for (const { bundle: modelBundle, entry, model } of loaded) {
+    for (const [{ bundle: modelBundle, entry, model }, far] of loaded) {
       if (model.lattice === null) continue;
+      farPalette.remap(far.model, far.bundle.parts);
+      let farModel: number | null = null;
+      if (far.farMesh) {
+        farModels.push(far.farMesh.mesh);
+        farModel = farModels.length - 1;
+      }
       const credit = { name: entry.name, source: entry.source, sections: model.sections };
       placeables.set(
         entry.name,
@@ -319,6 +349,7 @@ export class LayoutScene implements ILayoutScene {
           credit,
           palette.parts,
           colors,
+          farModel,
         ),
       );
     }

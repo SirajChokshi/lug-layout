@@ -40,6 +40,8 @@ class RecordingBackend implements ISceneBackend {
   deleteChunk(key: number): void {
     this.chunks.delete(key);
   }
+  forceTier(): void {}
+  setFarModel(): void {}
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
