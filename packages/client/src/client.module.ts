@@ -5,6 +5,7 @@ import { ContainerModule } from "inversify";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { Coach } from "./first-run/coach.ts";
+import { LocalStorageTourMemory } from "./first-run/tour-memory.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { SHIPPED_STARTER_LAYOUTS } from "./starters/starter-layouts.ts";
@@ -33,6 +34,7 @@ import {
   SIM_CLIENT,
   SIM_WORKER_PORT,
   STARTER_LAYOUTS,
+  TOUR_MEMORY,
   TRACK_SCENE,
   PLAN_SERVICE,
 } from "./tokens.ts";
@@ -44,6 +46,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(STARTER_LAYOUTS).toConstantValue(SHIPPED_STARTER_LAYOUTS);
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(COACH).to(Coach).inSingletonScope();
+  bind(TOUR_MEMORY).to(LocalStorageTourMemory).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();

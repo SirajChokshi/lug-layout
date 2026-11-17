@@ -4,14 +4,7 @@ import { useEffect, useSyncExternalStore } from "react";
 const TOAST_MS = 5_500;
 const CELEBRATE_MS = 7_000;
 const CONFETTI_PIECES = 36;
-const CONFETTI_COLOURS: ReadonlyArray<string> = [
-  "#c91a09",
-  "#f2cd37",
-  "#0055bf",
-  "#237841",
-  "#fe8a18",
-  "#ffffff",
-];
+const CONFETTI_COLOURS = 8;
 const CONFETTI_SPREAD_PERCENT = 100;
 const CONFETTI_STEP_PERCENT = 37;
 const CONFETTI_DELAY_STEP_MS = 23;
@@ -52,7 +45,18 @@ function Toast({ coach, toast }: { readonly coach: ICoach; readonly toast: Toast
   );
 }
 
-function Confetti({ burst }: { readonly burst: number }) {
+function catalogColours(snapshot: EditorSnapshot): ReadonlyArray<string> {
+  const colours = snapshot.catalog.flatMap((item) => (item.color ? [item.color.rgb] : []));
+  return [...new Set(colours)].slice(0, CONFETTI_COLOURS);
+}
+
+function Confetti({
+  burst,
+  colours,
+}: {
+  readonly burst: number;
+  readonly colours: ReadonlyArray<string>;
+}) {
   return (
     <div className="confetti" aria-hidden="true" key={burst}>
       {Array.from({ length: CONFETTI_PIECES }, (_unused, i) => (
@@ -60,7 +64,7 @@ function Confetti({ burst }: { readonly burst: number }) {
           key={i}
           style={{
             left: `${(i * CONFETTI_STEP_PERCENT) % CONFETTI_SPREAD_PERCENT}%`,
-            background: CONFETTI_COLOURS[i % CONFETTI_COLOURS.length],
+            background: colours[i % colours.length],
             animationName: CONFETTI_FALLS[i % CONFETTI_FALLS.length],
             animationDelay: `${(i * CONFETTI_DELAY_STEP_MS) % CONFETTI_DELAY_CYCLE_MS}ms`,
           }}
@@ -125,7 +129,7 @@ export function CoachOverlay({ coach, snapshot }: CoachOverlayProps) {
           <Toast key={toast.id} coach={coach} toast={toast} />
         ))}
       </ol>
-      {celebration && <Confetti burst={celebration.id} />}
+      {celebration && <Confetti burst={celebration.id} colours={catalogColours(snapshot)} />}
     </>
   );
 }

@@ -11,7 +11,8 @@ import { readFile } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { TRACK_ITEM_ID } from "../edit/editor.ts";
-import { COACH, EDITOR } from "../tokens.ts";
+import { COACH, EDITOR, TOUR_MEMORY } from "../tokens.ts";
+import type { ITourMemory } from "./tour-memory.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const GROUND_LDU_PER_NDC = 2_000;
@@ -58,16 +59,38 @@ class TopDownBackend implements ISceneBackend {
   }
 }
 
+class MemoryTourMemory implements ITourMemory {
+  private seen = false;
+  private done = false;
+
+  visited(): boolean {
+    return this.seen;
+  }
+
+  markVisited(): void {
+    this.seen = true;
+  }
+
+  tourDone(): boolean {
+    return this.done;
+  }
+
+  rememberTourDone(): void {
+    this.done = true;
+  }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startCoach() {
+async function startCoach(memory: ITourMemory = new MemoryTourMemory()) {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   container.rebind(SCENE_BACKEND).toConstantValue(new TopDownBackend());
+  container.rebind(TOUR_MEMORY).toConstantValue(memory);
   const editor = container.get(EDITOR);
   const coach = container.get(COACH);
   const canvas = {
@@ -99,14 +122,28 @@ it("walks the tour one step at a time, only when the user does each step, and ce
   expect(step()).toBe("track");
 
   editor.chooseItem(TRACK_ITEM_ID);
-  editor.dragStart(0.5, 0.5);
-  editor.dragMove(0.9, 0.5);
+  editor.dragStart(-0.12, 0);
+  editor.dragMove(0.12, 0);
   expect(step()).toBe("track");
-  editor.dragEnd(0.9, 0.5, 0);
+  editor.dragEnd(0.12, 0, 0);
   expect(step()).toBe("undo");
 
   editor.undo(0);
 
   expect(coach.snapshot().tour.state).toBe("finished");
   expect(coach.snapshot().toasts.map((toast) => toast.kind)).toContain("celebrate");
+}, 120_000);
+
+it("offers the tour on a first visit only, and remembers a finished or skipped tour", async () => {
+  const memory = new MemoryTourMemory();
+  const first = await startCoach(memory);
+  expect(first.coach.snapshot().tour.offered).toBe(true);
+
+  const second = await startCoach(memory);
+  expect(second.coach.snapshot().tour.offered).toBe(false);
+  expect(memory.tourDone()).toBe(false);
+
+  second.coach.startTour();
+  second.coach.endTour();
+  expect(memory.tourDone()).toBe(true);
 }, 120_000);

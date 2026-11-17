@@ -3,6 +3,7 @@ import type { ServiceIdentifier } from "inversify";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { ICoach } from "./first-run/coach.ts";
+import type { ITourMemory } from "./first-run/tour-memory.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { StarterLayout } from "./starters/starter-layouts.ts";
@@ -24,6 +25,7 @@ export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.clien
 export const CITY_SCENE: ServiceIdentifier<ICityScene> = Symbol.for("brr.client.CityScene");
 export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor");
 export const COACH: ServiceIdentifier<ICoach> = Symbol.for("brr.client.Coach");
+export const TOUR_MEMORY: ServiceIdentifier<ITourMemory> = Symbol.for("brr.client.TourMemory");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
 export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Symbol.for(
   "brr.client.ImportWorkerFactory",

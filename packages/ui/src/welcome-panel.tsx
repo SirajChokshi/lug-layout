@@ -178,9 +178,11 @@ export function WelcomePanel({ coach, snapshot }: WelcomeProps) {
         ))}
       </ul>
       <div className="welcome-actions">
-        <button type="button" className="welcome-tour" onClick={() => coach.startTour()}>
-          Take the 1-minute tour
-        </button>
+        {tour.offered && (
+          <button type="button" className="welcome-tour" onClick={() => coach.startTour()}>
+            New here? Take the 1-minute tour
+          </button>
+        )}
         <button type="button" className="welcome-blank" onClick={() => setDismissed(true)}>
           Start from scratch
         </button>

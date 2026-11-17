@@ -1,6 +1,7 @@
 import { inject, injectable } from "inversify";
-import type { EditorSnapshot, IEditor } from "../edit/editor.ts";
-import { EDITOR } from "../tokens.ts";
+import type { EditorSnapshot, IEditor, RefusedEdit } from "../edit/editor.ts";
+import { EDITOR, TOUR_MEMORY } from "../tokens.ts";
+import type { ITourMemory } from "./tour-memory.ts";
 
 export type TourStepId = "look" | "place" | "rotate" | "track" | "undo";
 
@@ -15,6 +16,7 @@ export type TourState = "off" | "running" | "finished";
 
 export interface TourView {
   readonly state: TourState;
+  readonly offered: boolean;
   readonly step: number;
   readonly steps: ReadonlyArray<TourStepView>;
 }
@@ -94,6 +96,23 @@ function stepView({ id, title, hint, keys }: TourStep): TourStepView {
   return { id, title, hint, keys };
 }
 
+function refusalTitle(refusal: RefusedEdit): string {
+  switch (refusal.action) {
+    case "place":
+      return "That doesn't fit there";
+    case "track":
+      return "The track can't go there";
+    case "rotate":
+      return "It can't turn there";
+    case "remove":
+      return "That can't come away yet";
+    default: {
+      const unhandled: never = refusal.action;
+      throw new Error(`unhandled refused action ${String(unhandled)}`);
+    }
+  }
+}
+
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
@@ -102,7 +121,7 @@ function plural(count: number, one: string, many: string): string {
 export class Coach implements ICoach {
   private readonly listeners = new Set<() => void>();
   private state: CoachSnapshot = {
-    tour: { state: "off", step: 0, steps: TOUR_STEPS.map(stepView) },
+    tour: { state: "off", offered: false, step: 0, steps: TOUR_STEPS.map(stepView) },
     toasts: [],
   };
   private previous: EditorSnapshot;
@@ -110,7 +129,13 @@ export class Coach implements ICoach {
   private nextToastId = 1;
   private loadingStarter = false;
 
-  constructor(@inject(EDITOR) private readonly editor: IEditor) {
+  constructor(
+    @inject(EDITOR) private readonly editor: IEditor,
+    @inject(TOUR_MEMORY) private readonly memory: ITourMemory,
+  ) {
+    const offered = !memory.visited() && !memory.tourDone();
+    memory.markVisited();
+    this.state = { ...this.state, tour: { ...this.state.tour, offered } };
     this.previous = editor.snapshot();
     this.stepFrom = this.previous;
     editor.subscribe(() => this.observe(editor.snapshot()));
@@ -131,6 +156,7 @@ export class Coach implements ICoach {
   }
 
   endTour(): void {
+    this.memory.rememberTourDone();
     this.setTour("off", 0);
   }
 
@@ -143,8 +169,13 @@ export class Coach implements ICoach {
       this.loadingStarter = false;
     }
     const now = this.editor.snapshot();
+    const refused = now.refusals > this.previous.refusals ? now.lastRefusal : null;
     this.previous = now;
     this.stepFrom = now;
+    if (refused) {
+      this.toastRefusal(refused);
+      return;
+    }
     if (!starter || now.placements + trackPieces(now) === 0) return;
     const track =
       now.track && now.track.pieces > 0
@@ -162,7 +193,7 @@ export class Coach implements ICoach {
   }
 
   private setTour(state: TourState, step: number): void {
-    this.commit({ tour: { ...this.state.tour, state, step } });
+    this.commit({ tour: { ...this.state.tour, state, step, offered: false } });
   }
 
   private commit(patch: Partial<CoachSnapshot>): void {
@@ -212,6 +243,9 @@ export class Coach implements ICoach {
         );
         return;
       case "laid":
+      case "refused-off-baseplate":
+      case "refused-overlap":
+      case "refused-crosses-track":
       case null:
         return;
       default: {
@@ -222,21 +256,12 @@ export class Coach implements ICoach {
   }
 
   private noticeRefusal(before: EditorSnapshot, now: EditorSnapshot): void {
-    if (now.refusedClicks <= before.refusedClicks || !now.lastRefusal) return;
-    const { mismatchedCells, overlappingCells } = now.lastRefusal;
-    const reasons = [
-      mismatchedCells > 0
-        ? `${plural(mismatchedCells, "road edge cell", "road edge cells")} wouldn't line up`
-        : "",
-      overlappingCells > 0
-        ? `${plural(overlappingCells, "cell", "cells")} would overlap another road`
-        : "",
-    ].filter((reason) => reason !== "");
-    this.toast(
-      "warn",
-      "That piece doesn't fit there",
-      `${reasons.join(" and ")}. Press R to turn it, or move it along until the edge snaps.`,
-    );
+    if (now.refusals <= before.refusals || !now.lastRefusal) return;
+    this.toastRefusal(now.lastRefusal);
+  }
+
+  private toastRefusal(refusal: RefusedEdit): void {
+    this.toast("warn", refusalTitle(refusal), refusal.message);
   }
 
   private advanceTour(now: EditorSnapshot): void {
@@ -250,6 +275,7 @@ export class Coach implements ICoach {
       this.setTour("running", next);
       return;
     }
+    this.memory.rememberTourDone();
     this.setTour("finished", next);
     this.toast(
       "celebrate",

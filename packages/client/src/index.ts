@@ -120,6 +120,7 @@ export {
   RUNNING_GEAR,
   CITY_SCENE,
   COACH,
+  TOUR_MEMORY,
   CREDITS,
   EDITOR,
   IMPORT_SCENE,
@@ -142,6 +143,7 @@ export type {
   TourStepView,
   TourView,
 } from "./first-run/coach.ts";
+export type { ITourMemory } from "./first-run/tour-memory.ts";
 export type {
   FlatRect,
   StarterTileKind,
