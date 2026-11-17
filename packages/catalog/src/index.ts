@@ -1,12 +1,13 @@
 export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
-export { directColorSrgb, isDirectColor } from "./colors.ts";
+export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
 export {
   BUNDLE_LODS,
   DEFAULT_BUNDLE_MANIFEST_FILE,
   EMPTY_COLUMN,
   INHERIT_COLOR,
 } from "./part-bundle.ts";
+export { placeholderMesh, withPlaceholderMesh } from "./placeholder.ts";
 export type {
   BricklinkPartCandidates,
   CatalogColorIds,
@@ -15,18 +16,22 @@ export type {
   CatalogPartIds,
   ColorGroup,
   CompiledPartGlb,
+  FetchPriority,
   FilterablePart,
   IAssetFetcher,
   ImportContext,
   IPartBundleLoader,
   MeshArrays,
   ModelBundle,
+  ModelRecord,
   ModelCells,
   ModelStudCover,
   ModelFarMesh,
   ModelVoxels,
   PartModelLattice,
   PartAsset,
+  PartShapeAsset,
+  PartShapeRecord,
   PartBundle,
   PartFilter,
   PartMesh,

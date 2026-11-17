@@ -37,6 +37,11 @@ class PlanOnlyBackend implements ISceneBackend {
     throw new Error("not used");
   }
   setPalette(): void {}
+  addParts(): void {}
+  setPartMeshes(): void {}
+  setFarStuds(): void {}
+  setFarModelMesh(): void {}
+  setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
   setGhost(): void {}
@@ -107,7 +112,7 @@ beforeAll(async () => {
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  drawing = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle));
+  drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   drag([180, 190], [260, 190]);
   drag([260, 190], [260, 270]);
   drag([260, 270], [180, 270]);
@@ -185,7 +190,7 @@ it("marks a drag target as joining only when the closure solver finds an exact j
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  const layout = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle));
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const lay = (from: readonly [number, number], to: readonly [number, number]): void => {
     layout.beginDrag(
       from[0] * STUD_LDU,
@@ -230,7 +235,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  const siding = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle));
+  const siding = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const index = (id: string): number => {
     const part = siding.pieceParts().find((p) => p.piece.id === id);
     if (!part) throw new Error(`${id} is not placeable`);
@@ -280,7 +285,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   expect(siding.joinedPairs()).toBe(8);
   expect(siding.openEnds()).toHaveLength(2);
 
-  const reopened = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle));
+  const reopened = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   expect(reopened.restore(siding.records()).ok).toBe(true);
   expect(reopened.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
   expect(reopened.joinedPairs()).toBe(8);

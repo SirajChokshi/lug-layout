@@ -55,6 +55,11 @@ class RecordingBackend implements ISceneBackend {
   setPalette(palette: PartPalette): void {
     this.palette = palette;
   }
+  addParts(): void {}
+  setPartMeshes(): void {}
+  setFarStuds(): void {}
+  setFarModelMesh(): void {}
+  setColors(): void {}
   setChunk(_key: number, instances: ChunkInstances): void {
     this.chunks.push(instances);
   }

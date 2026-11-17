@@ -1,4 +1,4 @@
-import type { PartBundle, PartModel } from "@brr/catalog";
+import type { PartModel, PartShapeAsset } from "@brr/catalog";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import { BOX_FLOATS } from "../edit/local-box.ts";
 
@@ -9,7 +9,10 @@ export interface PlanBox {
   readonly maxZ: number;
 }
 
-export function instanceBoxes(model: PartModel, bundle: PartBundle): Float64Array {
+export function instanceBoxes(
+  model: PartModel,
+  bundle: { readonly parts: ReadonlyArray<PartShapeAsset> },
+): Float64Array {
   const out = new Float64Array(model.instanceCount * BOX_FLOATS);
   const m = model.matrices;
   for (let i = 0; i < model.instanceCount; i++) {
