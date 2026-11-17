@@ -1,0 +1,314 @@
+{
+ "files": {
+  "editor/editor-world.rebrickable.csv": {
+   "rebrickableLots": 614,
+   "rebrickableParts": 2715,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 614,
+   "bricklinkParts": 2715,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "editor/selection-omr_10264-1.rebrickable.csv": {
+   "rebrickableLots": 559,
+   "rebrickableParts": 2572,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 559,
+   "bricklinkParts": 2572,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.rebrickable.csv": {
+   "rebrickableLots": 1499,
+   "rebrickableParts": 10716,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 1495,
+   "bricklinkParts": 10717,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "10020stk01",
+    "973pb0631",
+    "973pb1396"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_190_-10_210_10.rebrickable.csv": {
+   "rebrickableLots": 69,
+   "rebrickableParts": 143,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 69,
+   "bricklinkParts": 143,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_1930_-10_1950_10.rebrickable.csv": {
+   "rebrickableLots": 321,
+   "rebrickableParts": 2394,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 321,
+   "bricklinkParts": 2394,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_2630_-90_2650_-70.rebrickable.csv": {
+   "rebrickableLots": 192,
+   "rebrickableParts": 1246,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 191,
+   "bricklinkParts": 1245,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_3250_-10_3270_10.rebrickable.csv": {
+   "rebrickableLots": 375,
+   "rebrickableParts": 2058,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 377,
+   "bricklinkParts": 2060,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "973pb0631",
+    "973pb1396"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_4130_70_4150_90.rebrickable.csv": {
+   "rebrickableLots": 182,
+   "rebrickableParts": 600,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 182,
+   "bricklinkParts": 600,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_5470_70_5490_90.rebrickable.csv": {
+   "rebrickableLots": 164,
+   "rebrickableParts": 590,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 164,
+   "bricklinkParts": 590,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_6790_-410_6810_-390.rebrickable.csv": {
+   "rebrickableLots": 155,
+   "rebrickableParts": 380,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 155,
+   "bricklinkParts": 380,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_7470_-150_7490_-130.rebrickable.csv": {
+   "rebrickableLots": 129,
+   "rebrickableParts": 320,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 129,
+   "bricklinkParts": 320,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_8650_-90_8670_-70.rebrickable.csv": {
+   "rebrickableLots": 110,
+   "rebrickableParts": 413,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 110,
+   "bricklinkParts": 413,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "10020stk01"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "import/imported-world.region_990_-10_1010_10.rebrickable.csv": {
+   "rebrickableLots": 559,
+   "rebrickableParts": 2572,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 559,
+   "bricklinkParts": 2572,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10128-1.rebrickable.csv": {
+   "rebrickableLots": 129,
+   "rebrickableParts": 320,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 129,
+   "bricklinkParts": 320,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10133-1.rebrickable.csv": {
+   "rebrickableLots": 110,
+   "rebrickableParts": 413,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 110,
+   "bricklinkParts": 413,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "10020stk01"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10185-1.rebrickable.csv": {
+   "rebrickableLots": 321,
+   "rebrickableParts": 2394,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 321,
+   "bricklinkParts": 2394,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10190-1.rebrickable.csv": {
+   "rebrickableLots": 192,
+   "rebrickableParts": 1246,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 191,
+   "bricklinkParts": 1245,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10218-1.rebrickable.csv": {
+   "rebrickableLots": 375,
+   "rebrickableParts": 2058,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 377,
+   "bricklinkParts": 2060,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [
+    "973pb0631",
+    "973pb1396"
+   ],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/10264-1.rebrickable.csv": {
+   "rebrickableLots": 559,
+   "rebrickableParts": 2572,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 559,
+   "bricklinkParts": 2572,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/2150-1.rebrickable.csv": {
+   "rebrickableLots": 182,
+   "rebrickableParts": 600,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 182,
+   "bricklinkParts": 600,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/4554-1.rebrickable.csv": {
+   "rebrickableLots": 164,
+   "rebrickableParts": 590,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 164,
+   "bricklinkParts": 590,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/4555-1.rebrickable.csv": {
+   "rebrickableLots": 155,
+   "rebrickableParts": 380,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 155,
+   "bricklinkParts": 380,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  },
+  "model/7936-1.rebrickable.csv": {
+   "rebrickableLots": 69,
+   "rebrickableParts": 143,
+   "rebrickablePartsNotInRebrickable": [],
+   "rebrickableColorsNotInRebrickable": [],
+   "bricklinkLots": 69,
+   "bricklinkParts": 143,
+   "bricklinkItemsNotInRebrickableBrickLinkColumn": [],
+   "bricklinkColorsNotInRebrickableBrickLinkColumn": []
+  }
+ },
+ "importWorld": {
+  "equalsSumOfModelExports": true,
+  "parts": 10716
+ },
+ "regions": {
+  "7936-1": {
+   "region": "imported-world.region_190_-10_210_10",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10264-1": {
+   "region": "imported-world.region_990_-10_1010_10",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10185-1": {
+   "region": "imported-world.region_1930_-10_1950_10",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10190-1": {
+   "region": "imported-world.region_2630_-90_2650_-70",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10218-1": {
+   "region": "imported-world.region_3250_-10_3270_10",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "2150-1": {
+   "region": "imported-world.region_4130_70_4150_90",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "4554-1": {
+   "region": "imported-world.region_5470_70_5490_90",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "4555-1": {
+   "region": "imported-world.region_6790_-410_6810_-390",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10128-1": {
+   "region": "imported-world.region_7470_-150_7490_-130",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  },
+  "10133-1": {
+   "region": "imported-world.region_8650_-90_8670_-70",
+   "equalsModelExport": true,
+   "byteIdentical": true
+  }
+ },
+ "editor": {
+  "placed": [
+   "10264-1",
+   "7936-1"
+  ],
+  "worldEqualsSumOfPlacedModelExports": true,
+  "selected": "10264-1",
+  "selectionEqualsModelExport": true,
+  "selectionByteIdenticalToModelExport": true
+ }
+}

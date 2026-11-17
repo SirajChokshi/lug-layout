@@ -1,0 +1,636 @@
+{
+ "sets": [
+  "10185-1",
+  "10218-1",
+  "10264-1"
+ ],
+ "summary": {
+  "a6e32e6": {
+   "lines": 14,
+   "parts": 19
+  },
+  "1eb97e4": {
+   "lines": 42,
+   "parts": 67
+  },
+  "1cc157f": {
+   "lines": 43,
+   "parts": 68
+  }
+ },
+ "reasons": {
+  "no exact source": 42,
+  "N6 assembly id rejected": 1
+ },
+ "reasonParts": {
+  "N6 assembly id rejected": 1,
+  "no exact source": 67
+ },
+ "rows": [
+  {
+   "part": "ldraw:2446",
+   "color": 0,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "2446",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:2447",
+   "color": 40,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "2447",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:30104k01",
+   "color": 72,
+   "quantity": 2,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:30104k02",
+   "color": 72,
+   "quantity": 5,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3308",
+   "color": 72,
+   "quantity": 2,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3308",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3660",
+   "color": 71,
+   "quantity": 2,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3660a",
+    "via": "moved:3660a",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3660a",
+   "color": 71,
+   "quantity": 10,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3660a",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3815",
+   "color": 1,
+   "quantity": 3,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3815",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3815",
+   "color": 19,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3815",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3815",
+   "color": 71,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3815",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3815",
+   "color": 288,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3815",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3815",
+   "color": 320,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3815",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3815",
+   "color": 379,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3815",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816",
+   "color": 1,
+   "quantity": 3,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3816",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816",
+   "color": 19,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3816",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816",
+   "color": 71,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3816",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816",
+   "color": 288,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3816",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816",
+   "color": 320,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3816",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816",
+   "color": 379,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3816",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816b",
+   "color": 1,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816b",
+   "color": 378,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3816b",
+   "color": 379,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817",
+   "color": 1,
+   "quantity": 3,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3817",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817",
+   "color": 19,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3817",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817",
+   "color": 71,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3817",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817",
+   "color": 288,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3817",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817",
+   "color": 320,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3817",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817",
+   "color": 379,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "3817",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817b",
+   "color": 1,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817b",
+   "color": 378,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:3817b",
+   "color": 379,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:4141242a",
+   "color": 19,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:41879b",
+   "color": 30,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:4485",
+   "color": 1,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "4485",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:4485",
+   "color": 4,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "4485",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:61409",
+   "color": 0,
+   "quantity": 4,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "61409",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:63965",
+   "color": 70,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "63965",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:63965",
+   "color": 71,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": {
+    "rebrickable": "63965",
+    "via": "same-id",
+    "alternatives": null
+   },
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:973p1b",
+   "color": 15,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:973p7j",
+   "color": 15,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": {
+    "rebrickable": null,
+    "bricklink": "973pb0631",
+    "via": {
+     "rebrickable": null,
+     "bricklink": "ldraw-keyword"
+    }
+   },
+   "keywords": [
+    "Bricklink 973pb0631"
+   ],
+   "a6e32e6": {
+    "rebrickable": null,
+    "via": null,
+    "alternatives": null
+   },
+   "1eb97e4": {
+    "rebrickable": null,
+    "via": null,
+    "alternatives": null
+   }
+  },
+  {
+   "part": "ldraw:973p8z",
+   "color": 73,
+   "quantity": 1,
+   "reason": "N6 assembly id rejected",
+   "currentEntry": {
+    "rebrickable": null,
+    "bricklink": null,
+    "via": {
+     "rebrickable": null,
+     "bricklink": null
+    },
+    "rejectedAssemblyIds": {
+     "assemblies": [
+      "ldraw:76382p8z"
+     ],
+     "rebrickable": [
+      "973c32h01pr1244"
+     ],
+     "bricklink": [
+      "973pb0410c01"
+     ]
+    }
+   },
+   "keywords": [
+    "Bricklink 973pb0410c01",
+    "Rebrickable 973c32h01pr1244"
+   ],
+   "a6e32e6": {
+    "rebrickable": "973c32h01pr1244",
+    "via": "ldraw-keyword",
+    "alternatives": null
+   },
+   "1eb97e4": {
+    "rebrickable": "973c32h01pr1244",
+    "via": "ldraw-keyword",
+    "alternatives": null
+   }
+  },
+  {
+   "part": "ldraw:973p94",
+   "color": 2,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": null,
+   "keywords": [],
+   "a6e32e6": null,
+   "1eb97e4": null
+  },
+  {
+   "part": "ldraw:973pbj",
+   "color": 4,
+   "quantity": 1,
+   "reason": "no exact source",
+   "currentEntry": {
+    "rebrickable": null,
+    "bricklink": "973pb1396",
+    "via": {
+     "rebrickable": null,
+     "bricklink": "ldraw-keyword"
+    }
+   },
+   "keywords": [
+    "Bricklink 973pb1396"
+   ],
+   "a6e32e6": {
+    "rebrickable": null,
+    "via": null,
+    "alternatives": null
+   },
+   "1eb97e4": {
+    "rebrickable": null,
+    "via": null,
+    "alternatives": null
+   }
+  }
+ ]
+}

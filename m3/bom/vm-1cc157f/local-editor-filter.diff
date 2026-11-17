@@ -1,0 +1,13 @@
+diff --git a/packages/client/src/edit/editor.ts b/packages/client/src/edit/editor.ts
+index 3f7f3f0..2fb1259 100644
+--- a/packages/client/src/edit/editor.ts
++++ b/packages/client/src/edit/editor.ts
+@@ -483,7 +483,7 @@ export class Editor implements IEditor {
+     const roadParts = bundle.parts.filter((part) => part.role === "road");
+     const placeableModels = [
+       ...bundle.models.filter((entry) => entry.role === "road-module"),
+-      ...bundle.models.filter((entry) => entry.origin === "omr"),
++      ...bundle.models.filter((entry) => entry.origin === "omr" && entry.lattice !== null),
+     ];
+     const loaded = await Promise.all(
+       placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
