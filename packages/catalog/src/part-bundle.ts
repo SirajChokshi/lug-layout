@@ -12,6 +12,7 @@ import {
 } from "@brr/schema/bundle";
 
 export const BUNDLE_LODS: ReadonlyArray<BundleLod> = BundleLod.options;
+export const DEFAULT_BUNDLE_MANIFEST_FILE = "manifest.json";
 
 export interface MeshArrays {
   readonly positions: Float32Array;

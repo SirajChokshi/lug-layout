@@ -15,6 +15,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "src/**",
+        "!src/**/*.test.ts",
         "palette.json",
         "ldraw.lock.json",
         "$TURBO_ROOT$/crates/**",
@@ -22,7 +23,8 @@
         "$TURBO_ROOT$/Cargo.lock",
         "$TURBO_ROOT$/rust-toolchain.toml",
         "$TURBO_ROOT$/docs/verified-facts/scenes/**",
-        "$TURBO_ROOT$/docs/verified-facts/geometry.json"
+        "$TURBO_ROOT$/docs/verified-facts/geometry.json",
+        "$TURBO_ROOT$/docs/verified-facts/track-catalog.json"
       ],
       "outputs": ["dist/**"],
       "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]
