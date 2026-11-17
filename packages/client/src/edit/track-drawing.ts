@@ -95,6 +95,12 @@ export interface TrackEndView {
   readonly xLdu: number;
   readonly zLdu: number;
   readonly heading: number;
+  readonly headingRadians: number;
+}
+
+export interface TrackRouteView {
+  readonly from: TrackEndView;
+  readonly to: TrackEndView;
 }
 
 export interface PieceSnap {
@@ -158,7 +164,12 @@ function normalizeConnector(connector: number, count: number): number {
 
 function endView(end: Pose16): TrackEndView {
   const studs = zeta16ToStuds(end.position);
-  return { xLdu: studs.x * STUD_LDU, zLdu: studs.z * STUD_LDU, heading: end.heading };
+  return {
+    xLdu: studs.x * STUD_LDU,
+    zLdu: studs.z * STUD_LDU,
+    heading: end.heading,
+    headingRadians: end.heading * HEADING_RADIANS,
+  };
 }
 
 function pieceSpec(piece: TrackPiece): TrackPieceSpec {
@@ -395,6 +406,19 @@ export class TrackDrawing {
         headingErrorDegrees: (gap.headingErrorSteps * 360) / ZETA16_ORDER,
       };
     });
+  }
+
+  routes(): ReadonlyArray<TrackRouteView> {
+    const routes: TrackRouteView[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      for (const route of this.placedAt(p).part.piece.routes) {
+        routes.push({
+          from: endView(this.layout.connectorPose(p, route.from)),
+          to: endView(this.layout.connectorPose(p, route.to)),
+        });
+      }
+    }
+    return routes;
   }
 
   gappedEnds(): ReadonlySet<number> {

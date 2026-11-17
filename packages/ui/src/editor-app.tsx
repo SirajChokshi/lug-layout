@@ -125,10 +125,10 @@ export function EditorApp({
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} />
       <PlanPanel camera={camera} plans={plans} />
-      <Minimap camera={camera} plans={plans} snapshot={snapshot} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
+        <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
         <Inspector snapshot={snapshot} />

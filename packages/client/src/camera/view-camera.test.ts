@@ -188,3 +188,23 @@ it("the view footprint stays a finite quad around the target even with the horiz
     expect((bx - ax) * (targetZ - az) - (bz - az) * (targetX - ax)).toBeLessThan(0);
   }
 });
+
+it("the view footprint outlines the ground the panels leave uncovered, not the whole canvas", () => {
+  const camera = settledCamera("plan");
+  const [left, top, right, bottom] = [420, 60, 380, 80];
+  camera.setSafeArea(left, top, right, bottom);
+  const footprint = new Float64Array(FOOTPRINT_FLOATS);
+
+  camera.footprint(footprint);
+
+  const corners = [
+    ground(camera, -1 + (2 * left) / WIDTH_PX, -1 + (2 * bottom) / HEIGHT_PX),
+    ground(camera, 1 - (2 * right) / WIDTH_PX, -1 + (2 * bottom) / HEIGHT_PX),
+    ground(camera, 1 - (2 * right) / WIDTH_PX, 1 - (2 * top) / HEIGHT_PX),
+    ground(camera, -1 + (2 * left) / WIDTH_PX, 1 - (2 * top) / HEIGHT_PX),
+  ];
+  corners.forEach(([x, z], i) => {
+    expect(footprint[2 * i]).toBeCloseTo(x, 6);
+    expect(footprint[2 * i + 1]).toBeCloseTo(z, 6);
+  });
+});

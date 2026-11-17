@@ -3,19 +3,22 @@ import {
   overviewOf,
   type CatalogItemView,
   type EditorSnapshot,
+  type IEditor,
   type IEditorCamera,
   type IPlanService,
   type LduRect,
   type OverviewView,
+  type TrackRouteView,
 } from "@brr/client";
 import { useEffect, useMemo, useRef } from "react";
 import { usePlanSnapshot } from "./plan-panel.tsx";
 
-const MAP_WIDTH_PX = 240;
-const MAP_HEIGHT_PX = 168;
+const MAP_WIDTH_PX = 336;
+const MAP_HEIGHT_PX = 176;
 const MAP_PADDING_PX = 10;
 const MIN_SPAN_LDU = 2_560;
-const TRACK_FILL = "#4a4f57";
+const TRACK_STROKE = "#3b3f45";
+const TRACK_WIDTH_PX = 3;
 const MODEL_FILL = "rgb(226 170 72 / 0.9)";
 const MODEL_STROKE = "#8a5a14";
 const ROOM_STROKE = "#5d6b7a";
@@ -26,16 +29,18 @@ const VIEW_STROKE = "#1f6feb";
 const BACKGROUND = "#eef2f6";
 const TARGET_RADIUS_PX = 2.5;
 const WHEEL_STEP_PX = 100;
+const PINCH_ZOOM_PER_PX = 0.01;
+const PARALLEL_TANGENTS = 1e-6;
 
 interface MapTransform {
-  readonly scale: number;
-  readonly originX: number;
-  readonly originZ: number;
+  scale: number;
+  originX: number;
+  originZ: number;
 }
 
 type ItemKind = "ground" | "road" | "track" | "model";
 
-const DRAW_ORDER: ReadonlyArray<ItemKind> = ["ground", "road", "track", "model"];
+const BOX_DRAW_ORDER: ReadonlyArray<ItemKind> = ["ground", "road", "model"];
 
 function itemKind(item: CatalogItemView | undefined): ItemKind {
   if (!item) return "track";
@@ -56,7 +61,12 @@ function itemKind(item: CatalogItemView | undefined): ItemKind {
   }
 }
 
-function transformFor(bounds: LduRect | null, centreX: number, centreZ: number): MapTransform {
+function fitTransform(
+  out: MapTransform,
+  bounds: LduRect | null,
+  centreX: number,
+  centreZ: number,
+): boolean {
   const midX = bounds ? (bounds.minX + bounds.maxX) / 2 : centreX;
   const midZ = bounds ? (bounds.minZ + bounds.maxZ) / 2 : centreZ;
   const spanX = Math.max(bounds ? bounds.maxX - bounds.minX : 0, MIN_SPAN_LDU);
@@ -65,11 +75,13 @@ function transformFor(bounds: LduRect | null, centreX: number, centreZ: number):
     (MAP_WIDTH_PX - 2 * MAP_PADDING_PX) / spanX,
     (MAP_HEIGHT_PX - 2 * MAP_PADDING_PX) / spanZ,
   );
-  return {
-    scale,
-    originX: midX - MAP_WIDTH_PX / 2 / scale,
-    originZ: midZ - MAP_HEIGHT_PX / 2 / scale,
-  };
+  const originX = midX - MAP_WIDTH_PX / 2 / scale;
+  const originZ = midZ - MAP_HEIGHT_PX / 2 / scale;
+  if (out.scale === scale && out.originX === originX && out.originZ === originZ) return false;
+  out.scale = scale;
+  out.originX = originX;
+  out.originZ = originZ;
+  return true;
 }
 
 function fillRect(
@@ -88,10 +100,31 @@ function fillRect(
   context.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 }
 
+function traceRoute(context: CanvasRenderingContext2D, map: MapTransform, route: TrackRouteView) {
+  const { from, to } = route;
+  const fromX = (from.xLdu - map.originX) * map.scale;
+  const fromY = (from.zLdu - map.originZ) * map.scale;
+  const toX = (to.xLdu - map.originX) * map.scale;
+  const toY = (to.zLdu - map.originZ) * map.scale;
+  const fromDirX = Math.cos(from.headingRadians);
+  const fromDirY = Math.sin(from.headingRadians);
+  const toDirX = Math.cos(to.headingRadians);
+  const toDirY = Math.sin(to.headingRadians);
+  const cross = fromDirX * toDirY - fromDirY * toDirX;
+  context.moveTo(fromX, fromY);
+  if (Math.abs(cross) < PARALLEL_TANGENTS) {
+    context.lineTo(toX, toY);
+    return;
+  }
+  const along = ((toX - fromX) * toDirY - (toY - fromY) * toDirX) / cross;
+  context.quadraticCurveTo(fromX + fromDirX * along, fromY + fromDirY * along, toX, toY);
+}
+
 function drawContent(
   context: CanvasRenderingContext2D,
   map: MapTransform,
   overview: OverviewView,
+  routes: ReadonlyArray<TrackRouteView>,
   catalog: ReadonlyMap<string, CatalogItemView>,
 ): void {
   context.fillStyle = BACKGROUND;
@@ -105,7 +138,7 @@ function drawContent(
   for (const table of overview.tables) fillRect(context, map, table, null);
   context.fillStyle = OBSTACLE_FILL;
   for (const obstacle of overview.obstacles) fillRect(context, map, obstacle, null);
-  for (const kind of DRAW_ORDER) {
+  for (const kind of BOX_DRAW_ORDER) {
     for (const item of overview.items) {
       const entry = catalog.get(item.ref);
       if (itemKind(entry) !== kind) continue;
@@ -113,11 +146,17 @@ function drawContent(
         context.fillStyle = MODEL_FILL;
         fillRect(context, map, item.rect, MODEL_STROKE);
       } else {
-        context.fillStyle = kind === "track" ? TRACK_FILL : (entry?.color?.rgb ?? TRACK_FILL);
+        context.fillStyle = entry?.color?.rgb ?? TRACK_STROKE;
         fillRect(context, map, item.rect, null);
       }
     }
   }
+  context.beginPath();
+  for (const route of routes) traceRoute(context, map, route);
+  context.strokeStyle = TRACK_STROKE;
+  context.lineWidth = TRACK_WIDTH_PX;
+  context.lineCap = "round";
+  context.stroke();
 }
 
 function drawView(
@@ -155,16 +194,24 @@ function sameFootprint(a: Float64Array, b: Float64Array): boolean {
   return true;
 }
 
+function gestureScale(event: Event): number | null {
+  return "scale" in event && typeof event.scale === "number" ? event.scale : null;
+}
+
 interface MinimapProps {
+  readonly editor: IEditor;
   readonly camera: IEditorCamera;
   readonly plans: IPlanService;
   readonly snapshot: EditorSnapshot;
 }
 
-export function Minimap({ camera, plans, snapshot }: MinimapProps) {
+export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const planSnapshot = usePlanSnapshot(plans);
-  const overview = useMemo(() => overviewOf(planSnapshot), [planSnapshot]);
+  const { overview, routes } = useMemo(
+    () => ({ overview: overviewOf(planSnapshot), routes: editor.trackRoutes() }),
+    [editor, planSnapshot],
+  );
   const catalog = useMemo(
     () => new Map(snapshot.catalog.map((item) => [item.id, item])),
     [snapshot.catalog],
@@ -186,32 +233,26 @@ export function Minimap({ camera, plans, snapshot }: MinimapProps) {
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     const footprint = new Float64Array(FOOTPRINT_FLOATS);
     const drawn = new Float64Array(FOOTPRINT_FLOATS).fill(Number.NaN);
-    let map: MapTransform | null = null;
+    const map: MapTransform = { scale: Number.NaN, originX: Number.NaN, originZ: Number.NaN };
     let frame = 0;
     const draw = (): void => {
       frame = requestAnimationFrame(draw);
       camera.viewFootprint(footprint);
-      const centreX = footprint[FOOTPRINT_FLOATS - 2] ?? 0;
-      const centreZ = footprint[FOOTPRINT_FLOATS - 1] ?? 0;
-      const next = transformFor(overview.bounds, centreX, centreZ);
-      const relayout =
-        map === null ||
-        next.scale !== map.scale ||
-        next.originX !== map.originX ||
-        next.originZ !== map.originZ;
+      const relayout = fitTransform(
+        map,
+        overview.bounds,
+        footprint[FOOTPRINT_FLOATS - 2] ?? 0,
+        footprint[FOOTPRINT_FLOATS - 1] ?? 0,
+      );
       if (!relayout && sameFootprint(footprint, drawn)) return;
-      if (relayout) {
-        map = next;
-        drawContent(layerContext, next, overview, catalog);
-      }
+      if (relayout) drawContent(layerContext, map, overview, routes, catalog);
       drawn.set(footprint);
       context.clearRect(0, 0, MAP_WIDTH_PX, MAP_HEIGHT_PX);
       context.drawImage(layer, 0, 0, MAP_WIDTH_PX, MAP_HEIGHT_PX);
-      drawView(context, next, footprint);
+      drawView(context, map, footprint);
     };
     draw();
-    const toWorld = (event: PointerEvent): readonly [number, number] | null => {
-      if (!map) return null;
+    const toWorld = (event: PointerEvent): readonly [number, number] => {
       const rect = canvas.getBoundingClientRect();
       return [
         map.originX + (event.clientX - rect.left) / map.scale,
@@ -219,17 +260,18 @@ export function Minimap({ camera, plans, snapshot }: MinimapProps) {
       ];
     };
     let dragging: number | null = null;
+    let gestureLastScale = 1;
     const onPointerDown = (event: PointerEvent): void => {
-      const world = toWorld(event);
-      if (!world || event.button !== 0) return;
+      if (event.button !== 0) return;
       dragging = event.pointerId;
       canvas.setPointerCapture(event.pointerId);
-      camera.lookAt(world[0], world[1], true);
+      const [x, z] = toWorld(event);
+      camera.lookAt(x, z, true);
     };
     const onPointerMove = (event: PointerEvent): void => {
       if (dragging !== event.pointerId) return;
-      const world = toWorld(event);
-      if (world) camera.lookAt(world[0], world[1], false);
+      const [x, z] = toWorld(event);
+      camera.lookAt(x, z, false);
     };
     const onPointerUp = (event: PointerEvent): void => {
       if (dragging !== event.pointerId) return;
@@ -238,13 +280,27 @@ export function Minimap({ camera, plans, snapshot }: MinimapProps) {
     };
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      camera.zoomStep(-event.deltaY / WHEEL_STEP_PX);
+      if (event.ctrlKey) camera.zoomBy(Math.exp(-event.deltaY * PINCH_ZOOM_PER_PX));
+      else camera.zoomStep(-event.deltaY / WHEEL_STEP_PX);
+    };
+    const onGestureStart = (event: Event): void => {
+      event.preventDefault();
+      gestureLastScale = gestureScale(event) ?? 1;
+    };
+    const onGestureChange = (event: Event): void => {
+      event.preventDefault();
+      const scale = gestureScale(event);
+      if (scale === null) return;
+      camera.zoomBy(scale / gestureLastScale);
+      gestureLastScale = scale;
     };
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", onPointerUp);
     canvas.addEventListener("pointercancel", onPointerUp);
     canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("gesturestart", onGestureStart);
+    canvas.addEventListener("gesturechange", onGestureChange);
     return () => {
       cancelAnimationFrame(frame);
       canvas.removeEventListener("pointerdown", onPointerDown);
@@ -252,15 +308,17 @@ export function Minimap({ camera, plans, snapshot }: MinimapProps) {
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
       canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("gesturestart", onGestureStart);
+      canvas.removeEventListener("gesturechange", onGestureChange);
     };
-  }, [camera, overview, catalog]);
+  }, [camera, overview, routes, catalog]);
 
   return (
     <section className="minimap" aria-label="Minimap">
       <canvas
         ref={canvasRef}
         style={{ width: MAP_WIDTH_PX, height: MAP_HEIGHT_PX }}
-        title="Click or drag to move the view. The blue outline is what the camera sees."
+        title="Click or drag to move the view. The blue outline is the part of the ground the panels leave uncovered."
       />
       <span className="minimap-legend">{overview.items.length} placed · north up, +x right</span>
     </section>

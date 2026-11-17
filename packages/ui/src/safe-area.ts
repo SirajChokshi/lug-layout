@@ -2,7 +2,7 @@ import type { IEditorCamera } from "@brr/client";
 import { useEffect } from "react";
 
 const LEFT_PANELS = [".editor-hud", ".plan-panel"];
-const RIGHT_PANELS = [".side-panel"];
+const RIGHT_PANELS = [".side-panel", ".minimap"];
 const TOP_PANELS = [".view-controls"];
 const BOTTOM_PANELS = ["footer"];
 const GAP_PX = 8;

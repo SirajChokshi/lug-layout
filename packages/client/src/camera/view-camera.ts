@@ -25,8 +25,8 @@ const MAX_GRAB_DISTANCE_FACTOR = 12;
 const FULL_TURN = Math.PI * 2;
 export const GROUND_Y_LDU = 0;
 const MIN_SAFE_SHARE = 0.25;
-const SCREEN_CORNERS_NDC = [-1, -1, 1, -1, 1, 1, -1, 1] as const;
-const CORNER_FLOATS = SCREEN_CORNERS_NDC.length;
+const CORNER_SIDES = [-1, -1, 1, -1, 1, 1, -1, 1] as const;
+const CORNER_FLOATS = CORNER_SIDES.length;
 export const FOOTPRINT_FLOATS = CORNER_FLOATS + 2;
 
 function clamp(value: number, min: number, max: number): number {
@@ -169,12 +169,36 @@ export class ViewCamera {
     }
   }
 
+  private get safeLeftNdc(): number {
+    return -1 + (2 * this.safeLeftPx) / this.widthPx;
+  }
+
+  private get safeRightNdc(): number {
+    return 1 - (2 * this.safeRightPx) / this.widthPx;
+  }
+
+  private get safeBottomNdc(): number {
+    return -1 + (2 * this.safeBottomPx) / this.heightPx;
+  }
+
+  private get safeTopNdc(): number {
+    return 1 - (2 * this.safeTopPx) / this.heightPx;
+  }
+
+  private get safeCentreNdcX(): number {
+    return (this.safeLeftPx - this.safeRightPx) / this.widthPx;
+  }
+
+  private get safeCentreNdcY(): number {
+    return (this.safeBottomPx - this.safeTopPx) / this.heightPx;
+  }
+
   glideZoomAtSafeCentre(logScale: number): void {
-    this.glideZoomAt(
-      (this.safeLeftPx - this.safeRightPx) / this.widthPx,
-      (this.safeBottomPx - this.safeTopPx) / this.heightPx,
-      logScale,
-    );
+    this.glideZoomAt(this.safeCentreNdcX, this.safeCentreNdcY, logScale);
+  }
+
+  zoomAtSafeCentre(logScale: number): void {
+    this.zoomAt(this.safeCentreNdcX, this.safeCentreNdcY, logScale);
   }
 
   glideZoomAt(ndcX: number, ndcY: number, logScale: number): void {
@@ -228,6 +252,7 @@ export class ViewCamera {
     this.pose.targetX = x;
     this.pose.targetY = GROUND_Y_LDU;
     this.pose.targetZ = z;
+    this.offsetToSafeCentre(this.pose);
   }
 
   frame(box: WorldBox): void {
@@ -414,14 +439,19 @@ export class ViewCamera {
 
   footprint(out: Float64Array): void {
     for (let corner = 0; corner < CORNER_FLOATS; corner += 2) {
-      const ndcX = SCREEN_CORNERS_NDC[corner] ?? 0;
-      const ndcY = SCREEN_CORNERS_NDC[corner + 1] ?? 0;
-      if (!this.groundHit(ndcX, ndcY, this.hit)) this.horizonPoint(ndcX, ndcY, this.hit);
+      const ndcX = (CORNER_SIDES[corner] ?? 0) < 0 ? this.safeLeftNdc : this.safeRightNdc;
+      const ndcY = (CORNER_SIDES[corner + 1] ?? 0) < 0 ? this.safeBottomNdc : this.safeTopNdc;
+      this.groundOrHorizon(ndcX, ndcY);
       out[corner] = this.hit[0] ?? 0;
       out[corner + 1] = this.hit[1] ?? 0;
     }
-    out[CORNER_FLOATS] = this.pose.targetX;
-    out[CORNER_FLOATS + 1] = this.pose.targetZ;
+    this.groundOrHorizon(this.safeCentreNdcX, this.safeCentreNdcY);
+    out[CORNER_FLOATS] = this.hit[0] ?? 0;
+    out[CORNER_FLOATS + 1] = this.hit[1] ?? 0;
+  }
+
+  private groundOrHorizon(ndcX: number, ndcY: number): void {
+    if (!this.groundHit(ndcX, ndcY, this.hit)) this.horizonPoint(ndcX, ndcY, this.hit);
   }
 
   private horizonPoint(ndcX: number, ndcY: number, out: Float64Array): void {

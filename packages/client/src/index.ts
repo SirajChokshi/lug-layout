@@ -194,6 +194,7 @@ export type {
   SwitchLeverView,
   TrackEndView,
   TrackGapView,
+  TrackRouteView,
 } from "./edit/track-drawing.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export {

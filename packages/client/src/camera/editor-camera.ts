@@ -41,6 +41,7 @@ export interface IEditorCamera {
   wheel(input: WheelInput): void;
   pinch(scaleRatio: number, ndcX: number, ndcY: number): void;
   zoomStep(steps: number): void;
+  zoomBy(scaleRatio: number): void;
   setMode(mode: ViewMode): void;
   setScroll(scroll: ScrollGesture): void;
   focus(box: WorldBox): void;
@@ -189,6 +190,12 @@ export class EditorCamera implements IEditorCamera {
   pinch(scaleRatio: number, ndcX: number, ndcY: number): void {
     if (!(scaleRatio > 0)) return;
     this.view.zoomAt(ndcX, ndcY, -Math.log(scaleRatio));
+    this.view.apply(this.backend);
+  }
+
+  zoomBy(scaleRatio: number): void {
+    if (!(scaleRatio > 0)) return;
+    this.view.zoomAtSafeCentre(-Math.log(scaleRatio));
     this.view.apply(this.backend);
   }
 
