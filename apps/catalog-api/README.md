@@ -1,6 +1,6 @@
 # @brr/catalog-api
 
-Cloudflare Worker for read-only catalog search over D1, with each release's SQLite file served from R2. Infrastructure and deployment: [`infra/cloudflare`](../../infra/cloudflare/README.md).
+Cloudflare Worker for read-only catalog search over D1, with each release's SQLite file served from R2, and for part search over the published part bundle's index. Infrastructure and deployment: [`infra/cloudflare`](../../infra/cloudflare/README.md).
 
 ## Endpoints
 
@@ -17,6 +17,14 @@ Every catalog URL names a release, `/v1/catalogs/<release>/…`, where `<release
 | `/v1/catalogs/<release>/themes/<id>?limit=&offset=` | A theme, its children with counts, and its subtree's sets newest first. |
 | `/v1/catalogs/<release>/catalog.sqlite` | The release file from R2. Supports a single `Range` (416 when it starts past the end), `If-None-Match` (304) and `If-Match`/`If-Unmodified-Since` (412). |
 
+Part search names a published part bundle instead, by the input key in its manifest file name:
+
+| Path | Returns |
+|---|---|
+| `/v1/bundles/<key>/search?q=&limit=` | The editor's catalog items that match `q`, from `standard/manifest.<key>.json` in the `brr-part-bundles` bucket. Each hit has the editor's item id (`ldraw:<part>@<LDraw colour>` for each produced colour of a ground or road part, `omr:<set>`, `generated:<module>`, `track:<system>`), its label, palette section, kind, and its record or shape file (`null` for track). `q` follows the `/search` rules and matches the label, LDraw number, Rebrickable number, LEGO element ids, set number and name, colour name and section. `limit` 1–50, default 20. 404 when the bucket has no manifest for the key, 502 when it doesn't decode. |
+
+The Worker reads the manifest once per key and keeps the ranked index for the last 4 keys in isolate memory. Answers are immutable per key: `ETag: "<key>"`, the edge cache and 304s as above, and the D1 query rate limit on misses. The bucket binding (`PART_BUNDLES`) is typed to `get` only, because R2 Worker bindings have no read-only mode.
+
 Search ranks inside the FTS index and joins only the top `limit` hits, and `kind` is a column of the sets index, so a request reads at most about `2 × limit` D1 rows per kind, however many documents match.
 
 Rate limits are per client address and come from `wrangler.json`. They count only requests that miss the edge cache:
@@ -31,6 +39,14 @@ Either limit answers 429 with `Retry-After`. A full download of the release file
 pnpm --filter @brr/catalog-api load-release --sqlite <file> --source <label> --local --persist-to .wrangler/state
 pnpm --filter @brr/catalog-api dev --persist-to .wrangler/state
 pnpm --filter @brr/catalog-api measure --sqlite <file>
+```
+
+To search a locally built part bundle, put its standard manifest into the local bucket under the input key, then measure an uncached miss, an edge hit and a 304 for each query:
+
+```sh
+key=$(node tools/asset-pipeline/src/cli.ts manifest-file | sed -E 's/manifest\.(.*)\.json/\1/')
+pnpm --filter @brr/catalog-api exec wrangler r2 object put brr-part-bundles/standard/manifest.$key.json --local --persist-to .wrangler/state --file ../../tools/asset-pipeline/dist/bundle/standard/manifest.json
+pnpm --filter @brr/catalog-api measure-bundle-search --manifest $key
 ```
 
 `measure` draws queries from the release file and requests each one three times: an uncached miss, an edge-cache hit and an `If-None-Match` revalidation. Then it bursts one client past the rate limit.
