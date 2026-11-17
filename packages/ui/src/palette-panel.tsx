@@ -201,17 +201,15 @@ function MilsSection({
         )}
       </ul>
       <p className="palette-note" data-mils-flag="heights">
-        The plain module's surface is 4 plates above the baseplate (the MILS reference height). The
-        road modules carry MultiRoad streets at 6 plates and walkways at 8, so they don't sit flush
-        against plain modules without a transition.
+        Every module follows MILS (HispaBrick Magazine 013–016): a 32×32 module with its surface 4
+        plates above the baseplate, and a 2×2 corner then a 1×4 Technic brick at each end of every
+        side. Paths (4 studs) and earth tracks (8 studs) sit at the surface, paved roads (16 studs)
+        one plate above it, and rivers (8 studs) at 2 plates with banks rising a plate per stud.
+        Each feature is centred on the edges it crosses, and curves are single 90° elements.
       </p>
       <p className="palette-note" data-mils-flag="track">
-        No track module: MILS has no train rules (HispaBrick Magazine 026, "MILS (VII)"). To run
-        track, lay it with Draw track.
-      </p>
-      <p className="palette-note" data-mils-flag="corner">
-        No corner module beyond the road curve: MILS only says that a road or river curve is a 90°
-        element (HispaBrick Magazine 016, "MILS (IV)").
+        The rail module is a project rule, not MILS: MILS has no train rules (HispaBrick Magazine
+        026, "MILS (VII)"). It centres one pair of 9V straights on the 4-plate surface.
       </p>
     </Section>
   );
