@@ -1,35 +1,10 @@
-import {
-  ASSET_FETCHER,
-  PART_BUNDLE_LOADER,
-  type CompiledPartGlb,
-  type IAssetFetcher,
-  type ImportContext,
-  type IPartBundleLoader,
-  type ModelBundle,
-  type PartAsset,
-  type PartBundle,
-  type PartFilter,
-} from "@brr/catalog";
+import type { PartAsset } from "@brr/catalog";
 import { STUD_LDU } from "@brr/math";
-import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
-import {
-  INSTANCE_MATRIX_FLOATS,
-  SCENE_BACKEND,
-  type BackendInfo,
-  type BufferMemory,
-  type ChunkInstances,
-  type ISceneBackend,
-  type PartPalette,
-  type RebaseEvent,
-} from "@brr/render";
-import { Container } from "inversify";
-import { readFile } from "node:fs/promises";
+import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type PartPalette } from "@brr/render";
 import { afterEach, expect, it, vi } from "vitest";
-import { mainThreadModules } from "../client.module.ts";
-import { EDITOR } from "../tokens.ts";
 import { TRACK_ITEM_ID, type IEditor } from "./editor.ts";
+import { StraightDownBackend, startEditor as startRig } from "./editor-test-rig.ts";
 
-const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const SET_ON_BASEPLATES = "10128-1";
 const BASEPLATE = "ldraw:3811";
 const NDC_TO_LDU = 10_000;
@@ -42,49 +17,6 @@ const SWEEP_LDU = 700;
 const SWEEP_STEP_LDU = 40;
 const OFF_LATTICE = [7, 3] as const;
 const PLATE_SPACING_LDU = 4000;
-
-class BundleDirectoryFetcher implements IAssetFetcher {
-  async bytes(path: string): Promise<ArrayBuffer> {
-    const buffer = await readFile(new URL(path, bundleRoot));
-    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-  }
-
-  async text(path: string): Promise<string> {
-    return readFile(new URL(path, bundleRoot), "utf8");
-  }
-}
-
-class ModelSubsetLoader implements IPartBundleLoader {
-  constructor(
-    private readonly loader: IPartBundleLoader,
-    private readonly models: ReadonlyArray<string>,
-  ) {}
-
-  loadManifest(lod: BundleLod): Promise<BundleManifest> {
-    return this.loader.loadManifest(lod);
-  }
-
-  async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
-    const bundle = await this.loader.load(lod, include);
-    return { ...bundle, models: bundle.models.filter((m) => this.models.includes(m.name)) };
-  }
-
-  loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
-    return this.loader.loadModel(lod, name);
-  }
-
-  importContext(lod: BundleLod): Promise<ImportContext> {
-    return this.loader.importContext(lod);
-  }
-
-  loadPartSet(
-    lod: BundleLod,
-    partIds: ReadonlyArray<string>,
-    compiled: ReadonlyArray<CompiledPartGlb>,
-  ): Promise<PartBundle> {
-    return this.loader.loadPartSet(lod, partIds, compiled);
-  }
-}
 
 interface PlacedPlate {
   readonly id: string;
@@ -113,42 +45,24 @@ function extent(
   return [lo, hi];
 }
 
-class TopDownBackend implements ISceneBackend {
+class TopDownBackend extends StraightDownBackend {
   private parts: ReadonlyArray<PartAsset> = [];
   private readonly chunks = new Map<number, ChunkInstances>();
 
-  async init(): Promise<BackendInfo> {
-    return { requestedApi: "webgl2", activeApi: "webgl2", adapter: "none", backgroundSrgb: 0 };
+  constructor() {
+    super(NDC_TO_LDU, RAY_START_Y);
   }
-  setPalette(palette: PartPalette): void {
+
+  override setPalette(palette: PartPalette): void {
     this.parts = palette.detailed.parts;
   }
-  setChunk(key: number, chunk: ChunkInstances): void {
+
+  override setChunk(key: number, chunk: ChunkInstances): void {
     this.chunks.set(key, chunk);
   }
-  deleteChunk(key: number): void {
+
+  override deleteChunk(key: number): void {
     this.chunks.delete(key);
-  }
-  setGhost(): void {}
-  placeGhost(): void {}
-  setSelectionBox(): void {}
-  setPlanOverlays(): void {}
-  setMarkers(): void {}
-  setVehicle(): void {}
-  setVehiclePose(): void {}
-  setIssueBoxes(): void {}
-  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
-    out.set([ndcX * NDC_TO_LDU, RAY_START_Y, ndcY * NDC_TO_LDU, 0, -1, 0]);
-  }
-  setView(): void {}
-  resize(): void {}
-  renderFrame(): void {}
-  async waitForGpu(): Promise<void> {}
-  rebaseLog(): ReadonlyArray<RebaseEvent> {
-    return [];
-  }
-  bufferMemory(): BufferMemory {
-    return { vertexIndexBytes: 0, otherBytes: 0 };
   }
 
   plates(): PlacedPlate[] {
@@ -171,24 +85,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startEditor(backend: ISceneBackend): Promise<IEditor> {
-  vi.stubGlobal("requestAnimationFrame", () => 0);
-  const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-  const realLoader = container.get(PART_BUNDLE_LOADER);
-  container
-    .rebind(PART_BUNDLE_LOADER)
-    .toConstantValue(new ModelSubsetLoader(realLoader, [SET_ON_BASEPLATES]));
-  container.rebind(SCENE_BACKEND).toConstantValue(backend);
-  const editor = container.get(EDITOR);
-  const canvas = {
-    clientWidth: 640,
-    clientHeight: 480,
-    dataset: {},
-  } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1 });
-  return editor;
+async function startEditor(backend: TopDownBackend): Promise<IEditor> {
+  return (await startRig([SET_ON_BASEPLATES], backend)).editor;
 }
 
 function clickAt(editor: IEditor, x: number, z: number): void {

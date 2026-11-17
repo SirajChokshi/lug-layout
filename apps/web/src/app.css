@@ -18,6 +18,19 @@ body,
   display: block;
 }
 
+.marquee {
+  position: fixed;
+  pointer-events: none;
+  border: 1px solid #ff8c00;
+  background: rgb(255 140 0 / 12%);
+}
+
+.marquee.crossing {
+  border-style: dashed;
+  background: rgb(31 191 74 / 12%);
+  border-color: #1fbf4a;
+}
+
 .hud {
   position: fixed;
   top: 12px;

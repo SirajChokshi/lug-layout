@@ -305,10 +305,13 @@ export class ThreeSceneBackend implements ISceneBackend {
   private ghost: Group | undefined;
   private ghostX = 0;
   private ghostZ = 0;
-  private readonly selection = new LineSegments(
-    new EdgesGeometry(new BoxGeometry(1, 1, 1)),
-    new LineBasicNodeMaterial({ color: SELECTION_COLOR, depthTest: false }),
-  );
+  private readonly selectionEdges = new EdgesGeometry(new BoxGeometry(1, 1, 1));
+  private readonly selectionMaterial = new LineBasicNodeMaterial({
+    color: SELECTION_COLOR,
+    depthTest: false,
+  });
+  private readonly selection = new LineSegments(this.selectionEdges, this.selectionMaterial);
+  private selectionObjects: Anchored[] = [];
   private selectionCentreX = 0;
   private selectionCentreZ = 0;
   private readonly markerBox = new BoxGeometry(1, 1, 1);
@@ -700,18 +703,38 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     for (const anchored of this.issueObjects) this.scene.remove(anchored.object);
-    this.issueObjects = boxes.map((box) => {
-      const lines = new LineSegments(this.issueEdges, this.issueMaterial);
+    this.issueObjects = this.outlineBoxes(boxes, this.issueEdges, this.issueMaterial, 2);
+  }
+
+  setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void {
+    for (const anchored of this.selectionObjects) this.scene.remove(anchored.object);
+    this.selectionObjects = this.outlineBoxes(
+      boxes,
+      this.selectionEdges,
+      this.selectionMaterial,
+      1,
+    );
+  }
+
+  private outlineBoxes(
+    boxes: ReadonlyArray<WorldBox>,
+    edges: EdgesGeometry,
+    material: LineBasicNodeMaterial,
+    renderOrder: number,
+  ): Anchored[] {
+    const outlines = boxes.map((box) => {
+      const lines = new LineSegments(edges, material);
       lines.matrixAutoUpdate = false;
-      lines.renderOrder = 2;
+      lines.renderOrder = renderOrder;
       lines.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
       lines.position.y = (box.minY + box.maxY) / 2;
       return { object: lines, x: (box.minX + box.maxX) / 2, z: (box.minZ + box.maxZ) / 2 };
     });
-    for (const anchored of this.issueObjects) {
+    for (const anchored of outlines) {
       this.positionAnchored(anchored);
       this.scene.add(anchored.object);
     }
+    return outlines;
   }
 
   private positionAnchored(anchored: Anchored): void {
@@ -978,6 +1001,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.positionMarkers();
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
+    for (const anchored of this.selectionObjects) this.positionAnchored(anchored);
     this.rebases.push({
       frame: this.frame,
       chunkX,

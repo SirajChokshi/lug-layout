@@ -104,6 +104,7 @@ export interface ISceneBackend {
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
   setSelectionBox(box: WorldBox | null): void;
+  setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void;
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void;

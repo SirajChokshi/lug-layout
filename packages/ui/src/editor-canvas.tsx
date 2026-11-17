@@ -1,12 +1,12 @@
 import { TRACK_ITEM_ID, type EditorOptions, type IEditor } from "@brr/client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const CLICK_SLOP_PX = 4;
 const LEFT_BUTTON = 0;
 const MIDDLE_BUTTON = 1;
 const RIGHT_BUTTON = 2;
 
-type DragKind = "click" | "orbit" | "pan" | "tool";
+type DragKind = "click" | "marquee" | "orbit" | "pan" | "tool";
 
 interface Drag {
   readonly kind: DragKind;
@@ -18,10 +18,38 @@ interface Drag {
   moved: boolean;
 }
 
-function dragKind(event: PointerEvent): DragKind {
+interface Marquee {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+  readonly crossing: boolean;
+}
+
+function togglesSelection(event: PointerEvent): boolean {
+  return event.shiftKey || event.ctrlKey || event.metaKey;
+}
+
+function dragKind(event: PointerEvent, selecting: boolean): DragKind {
   if (event.button === RIGHT_BUTTON) return event.shiftKey ? "pan" : "orbit";
-  if (event.button === MIDDLE_BUTTON || event.shiftKey) return "pan";
-  return "click";
+  if (event.button === MIDDLE_BUTTON) return "pan";
+  if (selecting) return "marquee";
+  return event.shiftKey ? "pan" : "click";
+}
+
+function startsTool(kind: DragKind, event: PointerEvent): boolean {
+  return kind === "click" || (kind === "marquee" && !togglesSelection(event));
+}
+
+function marqueeOf(canvas: HTMLCanvasElement, drag: Drag): Marquee {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    left: Math.min(drag.startX, drag.lastX) - rect.left,
+    top: Math.min(drag.startY, drag.lastY) - rect.top,
+    width: Math.abs(drag.lastX - drag.startX),
+    height: Math.abs(drag.lastY - drag.startY),
+    crossing: drag.lastX < drag.startX,
+  };
 }
 
 function ndc(canvas: HTMLCanvasElement, event: PointerEvent): readonly [number, number] {
@@ -37,6 +65,7 @@ function historyShortcut(editor: IEditor, event: KeyboardEvent): void {
   const key = event.key.toLowerCase();
   if (key === "z" && !event.shiftKey) editor.undo(event.timeStamp);
   else if (key === "z" || key === "y") editor.redo(event.timeStamp);
+  else if (key === "a" && !event.shiftKey) editor.selectAll();
   else return;
   event.preventDefault();
 }
@@ -49,6 +78,7 @@ interface EditorCanvasProps {
 export function EditorCanvas({ editor, options }: EditorCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
+  const [marquee, setMarquee] = useState<Marquee | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -69,10 +99,10 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       )
         return;
       canvas.setPointerCapture(event.pointerId);
-      const kind = dragKind(event);
       const [x, y] = ndc(canvas, event);
+      const kind = dragKind(event, editor.snapshot().mode === "select");
       drag = {
-        kind: kind === "click" && editor.dragStart(x, y) ? "tool" : kind,
+        kind: startsTool(kind, event) && editor.dragStart(x, y) ? "tool" : kind,
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
@@ -93,6 +123,7 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
         drag.moved = true;
       }
       if (drag.kind === "tool") editor.dragMove(x, y);
+      if (drag.kind === "marquee" && drag.moved) setMarquee(marqueeOf(canvas, drag));
       if (drag.kind === "orbit") editor.orbit(dx, dy);
       if (drag.kind === "pan") editor.pan(dx, dy);
     };
@@ -106,9 +137,23 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
         editor.dragEnd(x, y, event.timeStamp);
         return;
       }
-      if (finished.kind === "click" && !finished.moved) {
-        const [x, y] = ndc(canvas, event);
-        editor.click(x, y, event.timeStamp);
+      const [x, y] = ndc(canvas, event);
+      if (finished.kind === "marquee" && finished.moved) {
+        setMarquee(null);
+        const rect = canvas.getBoundingClientRect();
+        editor.selectInRect(
+          {
+            fromNdcX: ((finished.startX - rect.left) / rect.width) * 2 - 1,
+            fromNdcY: 1 - ((finished.startY - rect.top) / rect.height) * 2,
+            toNdcX: x,
+            toNdcY: y,
+          },
+          togglesSelection(event),
+        );
+        return;
+      }
+      if ((finished.kind === "click" || finished.kind === "marquee") && !finished.moved) {
+        editor.click(x, y, event.timeStamp, togglesSelection(event));
       }
     };
     const onWheel = (event: WheelEvent): void => {
@@ -173,5 +218,20 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [editor]);
 
-  return <canvas ref={canvasRef} className="scene" />;
+  return (
+    <>
+      <canvas ref={canvasRef} className="scene" />
+      {marquee && (
+        <div
+          className={marquee.crossing ? "marquee crossing" : "marquee"}
+          style={{
+            left: marquee.left,
+            top: marquee.top,
+            width: marquee.width,
+            height: marquee.height,
+          }}
+        />
+      )}
+    </>
+  );
 }

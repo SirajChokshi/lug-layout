@@ -18,6 +18,9 @@ import {
   type HistoryStep,
   type OwnerFilter,
   type TrackPieceAt,
+  type PlacementHandle,
+  type PlacementPose,
+  type PlacementRef,
   type TrackRequest,
   type RoadEdgeSegment,
   type RoadJoinReport,
@@ -75,6 +78,14 @@ import {
   type Placeable,
 } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
+import {
+  ScreenRect,
+  quarterTurnAbout,
+  rectMode,
+  rotationPivot,
+  unionBox,
+  type LatticePoint,
+} from "./selection.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import {
@@ -147,6 +158,15 @@ export interface SelectionView {
   readonly slot: number;
   readonly box: WorldBox;
   readonly baseplate: WorldGround | null;
+  readonly count: number;
+  readonly bounds: WorldBox;
+}
+
+export interface SelectRect {
+  readonly fromNdcX: number;
+  readonly fromNdcY: number;
+  readonly toNdcX: number;
+  readonly toNdcY: number;
 }
 
 export interface HistoryView {
@@ -186,6 +206,7 @@ export interface RoadSnapView {
 }
 
 export type RefusedAction = "place" | "rotate" | "remove" | "track";
+type ModelEditKind = Extract<EditKind, "rotate" | "remove">;
 
 export interface RefusedEdit {
   readonly action: RefusedAction;
@@ -339,7 +360,9 @@ export interface IEditor {
   chooseItem(id: string | null): void;
   pointerMove(ndcX: number, ndcY: number): void;
   pointerLeave(): void;
-  click(ndcX: number, ndcY: number, eventTimeMs: number): void;
+  click(ndcX: number, ndcY: number, eventTimeMs: number, additive?: boolean): void;
+  selectInRect(rect: SelectRect, additive: boolean): void;
+  selectAll(): void;
   dragStart(ndcX: number, ndcY: number): boolean;
   dragMove(ndcX: number, ndcY: number): void;
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
@@ -369,6 +392,7 @@ const TRACK_SNAP_RADIUS_LDU = 3 * STUD_LDU;
 const END_MARKER_HEIGHT_LDU = 40;
 const P95 = 0.95;
 const QUARTER_TURNS = 4;
+const SELECT_IT_TOO = "Select it too, or remove it first.";
 const STATS_INTERVAL_MS = 500;
 const NO_REBUILD: RebuildReport = { chunks: 0, instances: 0, studs: 0 };
 const MARKER_WIDTH_LDU = 6;
@@ -465,6 +489,24 @@ interface PendingAction {
   readonly startMs: number;
   readonly rebuiltMs: number;
   readonly report: RebuildReport;
+}
+
+type ItemRefusal = Refusal & { readonly item: string };
+
+interface ModelChange {
+  readonly model: PlacedModel;
+  readonly to: PlacementPose | null;
+}
+
+function poseOf(handle: PlacementHandle): PlacementPose {
+  return {
+    refId: handle.refId,
+    colorId: handle.colorId,
+    x: handle.x,
+    z: handle.z,
+    yPlates: handle.yPlates,
+    rot: handle.rot,
+  };
 }
 
 interface FrameTimes {
@@ -564,7 +606,10 @@ export class Editor implements IEditor {
   private placeables: ReadonlyArray<Placeable> = [];
   private placed: PlacedChunks;
   private active: Placeable | null = null;
-  private selected: PlacedModel | null = null;
+  private selection: ReadonlyArray<PlacementRef> = [];
+  private rotationPivot: LatticePoint | null = null;
+  private picked: PlacementRef | null = null;
+  private pressed: PlacedModel | null = null;
   private ghostRot = 0;
   private hoverX = 0;
   private hoverZ = 0;
@@ -907,6 +952,10 @@ export class Editor implements IEditor {
   }
 
   dragStart(ndcX: number, ndcY: number): boolean {
+    if (this.state.mode === "select" && !this.active) {
+      this.pressed = this.modelUnder(ndcX, ndcY);
+      return this.pressed !== null;
+    }
     const track = this.track;
     if (this.state.mode !== "track" || !track) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
@@ -917,6 +966,7 @@ export class Editor implements IEditor {
   }
 
   dragMove(ndcX: number, ndcY: number): void {
+    if (this.pressed) return;
     const track = this.track;
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
@@ -927,6 +977,12 @@ export class Editor implements IEditor {
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    const pressed = this.pressed;
+    if (pressed) {
+      this.pressed = null;
+      this.select([pressed], pressed);
+      return;
+    }
     const track = this.track;
     if (!track) return;
     if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
@@ -949,7 +1005,7 @@ export class Editor implements IEditor {
     if (id === TRACK_ITEM_ID && this.track) {
       this.active = null;
       this.backend.setGhost(null);
-      this.select(null);
+      this.select([]);
       this.update({ mode: "track", activeItem: TRACK_ITEM_ID });
       return;
     }
@@ -962,13 +1018,13 @@ export class Editor implements IEditor {
       if (id === null) return;
     }
     if (id === null && !this.active) {
-      this.select(null);
+      this.select([]);
       return;
     }
     const placeable = id === null ? null : (this.placeables.find((p) => p.id === id) ?? null);
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
-    if (placeable) this.select(null);
+    if (placeable) this.select([]);
     this.placeGhost();
     this.update({ mode: placeable ? "place" : "select", activeItem: placeable?.id ?? null });
   }
@@ -1222,7 +1278,7 @@ export class Editor implements IEditor {
     this.update({ hover: null });
   }
 
-  click(ndcX: number, ndcY: number, eventTimeMs: number): void {
+  click(ndcX: number, ndcY: number, eventTimeMs: number, additive = false): void {
     if (this.state.mode === "track") return;
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
@@ -1246,6 +1302,18 @@ export class Editor implements IEditor {
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
       return;
     }
+    const hit = this.modelUnder(ndcX, ndcY);
+    if (!additive) {
+      this.select(hit ? [hit] : [], hit);
+      return;
+    }
+    if (!hit) return;
+    const current = this.selectedModels();
+    if (current.includes(hit)) this.select(current.filter((model) => model !== hit));
+    else this.select([...current, hit], hit);
+  }
+
+  private modelUnder(ndcX: number, ndcY: number): PlacedModel | null {
     this.backend.rayThrough(ndcX, ndcY, this.ray);
     let best: PlacedModel | null = null;
     let bestT = Number.POSITIVE_INFINITY;
@@ -1256,7 +1324,42 @@ export class Editor implements IEditor {
         best = model;
       }
     }
-    this.select(best);
+    return best;
+  }
+
+  selectInRect(rect: SelectRect, additive: boolean): void {
+    if (this.state.mode !== "select" || this.active) return;
+    const corner = (ndcX: number, ndcY: number): Float64Array => {
+      const ray = new Float64Array(RAY_FLOATS);
+      this.backend.rayThrough(ndcX, ndcY, ray);
+      return ray;
+    };
+    const screen = new ScreenRect(
+      [
+        corner(rect.fromNdcX, rect.fromNdcY),
+        corner(rect.toNdcX, rect.fromNdcY),
+        corner(rect.toNdcX, rect.toNdcY),
+        corner(rect.fromNdcX, rect.toNdcY),
+      ],
+      corner((rect.fromNdcX + rect.toNdcX) / 2, (rect.fromNdcY + rect.toNdcY) / 2),
+    );
+    const mode = rectMode(rect.fromNdcX, rect.toNdcX);
+    const inside = this.placed.models().filter((model) => screen.picks(model.box, mode));
+    if (!additive) {
+      this.select(inside);
+      return;
+    }
+    const current = this.selectedModels();
+    this.select([...current, ...inside.filter((model) => !current.includes(model))]);
+  }
+
+  selectAll(): void {
+    if (this.state.mode !== "select" || this.active) return;
+    this.select(this.placed.models());
+  }
+
+  private selectedModels(): ReadonlyArray<PlacedModel> {
+    return this.selection.flatMap((ref) => this.placed.modelOf(ref) ?? []);
   }
 
   private placeAt(
@@ -1417,31 +1520,40 @@ export class Editor implements IEditor {
     this.update({ snapRoads: snap, snap: null });
   }
 
-  private select(model: PlacedModel | null): void {
-    this.selected = model;
-    this.backend.setSelectionBox(model ? model.box : null);
+  private select(models: ReadonlyArray<PlacedModel>, picked: PlacedModel | null = null): void {
+    this.selection = models.map((model) => model.placement);
+    this.rotationPivot = null;
+    const boxes = models.map((model) => model.box);
+    this.backend.setSelectionBoxes(boxes);
+    const wanted = picked?.placement ?? this.picked;
+    const model = models.find((candidate) => candidate.placement === wanted) ?? models.at(-1);
+    this.picked = model?.placement ?? null;
+    const bounds = unionBox(boxes);
     this.update({
-      selection: model
-        ? {
-            item: model.placeable.id,
-            x: model.handle.x,
-            z: model.handle.z,
-            yPlates: model.handle.yPlates,
-            rot: model.handle.rot,
-            chunkKey: model.handle.chunkKey,
-            slot: model.handle.slot,
-            box: model.box,
-            baseplate:
-              model.placeable.ground &&
-              worldGround(
-                model.placeable.ground,
-                model.handle.x,
-                model.handle.yPlates * PLATE_LDU,
-                model.handle.z,
-                model.handle.rot,
-              ),
-          }
-        : null,
+      selection:
+        model && bounds
+          ? {
+              count: models.length,
+              bounds,
+              item: model.placeable.id,
+              x: model.handle.x,
+              z: model.handle.z,
+              yPlates: model.handle.yPlates,
+              rot: model.handle.rot,
+              chunkKey: model.handle.chunkKey,
+              slot: model.handle.slot,
+              box: model.box,
+              baseplate:
+                model.placeable.ground &&
+                worldGround(
+                  model.placeable.ground,
+                  model.handle.x,
+                  model.handle.yPlates * PLATE_LDU,
+                  model.handle.z,
+                  model.handle.rot,
+                ),
+            }
+          : null,
     });
   }
 
@@ -1452,33 +1564,35 @@ export class Editor implements IEditor {
       this.update({ ghostRot: this.ghostRot, hover: this.hoverView() });
       return;
     }
-    const model = this.selected;
-    if (!model) return;
-    const pose = model.handle;
-    const rot = (pose.rot + 1) % QUARTER_TURNS;
-    const check = this.checkAt(model.placeable, pose.x, pose.z, rot, [model], {
-      kind: "height",
-      yPlates: pose.yPlates,
-    });
-    const turned = checkRefusal(model.placeable.label, check);
-    if (turned) {
-      this.refuse("rotate", model.placeable.id, turned);
-      return;
-    }
-    const yPlates = check.yPlates;
-    const moved = { placeable: model.placeable, x: pose.x, z: pose.z, yPlates, rot };
-    const refusal = this.removalRefusal([model], model.placeable.label, [moved]);
+    const models = this.selectedModels();
+    const bounds = unionBox(models.map((model) => model.box));
+    if (!bounds) return;
+    const grid = models.some((model) => model.placeable.ground) ? this.baseplateGrid : STUD_LDU;
+    const pivot = this.rotationPivot ?? rotationPivot(bounds, grid);
+    const turned = this.commitModels(
+      "rotate",
+      models.map((model) => ({ model, to: quarterTurnAbout(poseOf(model.handle), pivot) })),
+      eventTimeMs,
+    );
+    if (turned) this.rotationPivot = pivot;
+  }
+
+  private commitModels(
+    kind: ModelEditKind,
+    changes: ReadonlyArray<ModelChange>,
+    eventTimeMs: number,
+  ): boolean {
+    const refusal = this.groupRefusal(changes);
     if (refusal) {
-      this.refuse("rotate", model.placeable.id, refusal);
-      return;
+      this.refuse(kind, refusal.item, refusal);
+      return false;
     }
-    const edit = this.history.commit("rotate", [
-      {
-        placement: model.placement,
-        to: { refId: pose.refId, colorId: pose.colorId, x: pose.x, z: pose.z, yPlates, rot },
-      },
-    ]);
-    this.select(this.show(edit, eventTimeMs).added[0] ?? null);
+    const edit = this.history.commit(
+      kind,
+      changes.map(({ model, to }) => ({ placement: model.placement, to })),
+    );
+    this.select(this.show(edit, eventTimeMs).added);
+    return true;
   }
 
   private selectTrack(piece: number | null): void {
@@ -1502,15 +1616,13 @@ export class Editor implements IEditor {
       this.removeSelectedTrack(eventTimeMs);
       return;
     }
-    const model = this.selected;
-    if (!model) return;
-    const refusal = this.removalRefusal([model], model.placeable.label);
-    if (refusal) {
-      this.refuse("remove", model.placeable.id, refusal);
-      return;
-    }
-    this.show(this.history.remove(model.placement), eventTimeMs);
-    this.select(null);
+    const models = this.selectedModels();
+    if (models.length === 0) return;
+    this.commitModels(
+      "remove",
+      models.map((model) => ({ model, to: null })),
+      eventTimeMs,
+    );
   }
 
   undo(eventTimeMs: number): void {
@@ -1530,18 +1642,52 @@ export class Editor implements IEditor {
     this.showEndMarker(null);
   }
 
-  private removalRefusal(
+  private groupRefusal(changes: ReadonlyArray<ModelChange>): ItemRefusal | null {
+    const removed = changes.map(({ model }) => model);
+    const moved: PendingPose[] = [];
+    for (const { to } of changes) {
+      if (to) moved.push({ placeable: this.placeableAt(to.refId), ...to });
+    }
+    return (
+      this.carriedRefusal(removed, moved) ??
+      this.placed.checkGroup(
+        removed,
+        moved,
+        (index) => {
+          const pose = moved[index];
+          return pose
+            ? this.trackExempt(pose.placeable, pose.x, pose.z, pose.yPlates, pose.rot)
+            : () => false;
+        },
+        (index, check) => {
+          const pose = moved[index];
+          const refusal = pose ? checkRefusal(pose.placeable.label, check) : null;
+          return pose && refusal ? { ...refusal, item: pose.placeable.id } : null;
+        },
+      )
+    );
+  }
+
+  private carriedRefusal(
     removed: ReadonlyArray<PlacedModel>,
-    label: string,
-    moved: ReadonlyArray<PendingPose> = [],
-  ): Refusal | null {
-    const carried = carriesRefusal(label, this.placed.lostSupport(removed, moved));
-    if (carried) return carried;
+    moved: ReadonlyArray<PendingPose>,
+  ): ItemRefusal | null {
+    const fallback = removed[0];
+    if (!fallback) return null;
+    const lost = this.placed.lostSupport(removed, moved);
+    const firstLost = lost[0];
+    if (firstLost) {
+      const carrier = this.placed.carrierOf(firstLost.model, removed) ?? fallback;
+      const refusal = carriesRefusal(carrier.placeable.label, lost, SELECT_IT_TOO);
+      return refusal && { ...refusal, item: carrier.placeable.id };
+    }
     const off = this.track?.unsupportedPieces((cells) =>
       this.placed.trackSupport(cells, removed, moved),
     );
-    const first = off?.[0];
-    return first ? trackCarriedRefusal(label, first) : null;
+    const piece = off?.[0];
+    if (!piece) return null;
+    const carrier = this.placed.baseplateUnder(piece.missing, removed) ?? fallback;
+    return { ...trackCarriedRefusal(carrier.placeable.label, piece), item: carrier.placeable.id };
   }
 
   private refuse(action: RefusedAction, item: string, refusal: Refusal): void {
@@ -1558,11 +1704,9 @@ export class Editor implements IEditor {
 
   private replay(edit: AppliedEdit | null, eventTimeMs: number): void {
     if (!edit) return;
-    const selected = this.selected;
-    const restored = this.show(edit, eventTimeMs).added.at(-1);
+    const restored = this.show(edit, eventTimeMs).added;
     if (this.active) return;
-    if (restored) this.select(restored);
-    else if (selected && !selected.handle.live) this.select(null);
+    this.select(restored.length > 0 ? restored : this.selectedModels());
   }
 
   orbit(dxPx: number, dyPx: number): void {
@@ -1581,8 +1725,9 @@ export class Editor implements IEditor {
   }
 
   focusSelection(): void {
-    if (!this.selected) return;
-    this.camera.focus(this.selected.box);
+    const bounds = unionBox(this.selectedModels().map((model) => model.box));
+    if (!bounds) return;
+    this.camera.focus(bounds);
     this.camera.apply(this.backend);
   }
 
@@ -1616,7 +1761,7 @@ export class Editor implements IEditor {
     const models = this.placed.models();
     if (models.length === 0 && lift.length === 0) return;
     this.abandonTrackDrag();
-    this.select(null);
+    this.select([]);
     const requests = models.map((model) => ({ placement: model.placement, to: null }));
     this.show(this.history.commit("clear", requests, { lift, lay: [] }), eventTimeMs);
   }

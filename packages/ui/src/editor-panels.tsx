@@ -162,7 +162,10 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
         Redo{history.redo === null ? "" : ` ${history.redo}`} (Ctrl+Shift+Z)
       </button>
       <p className="toolbar-hint">
-        Right-drag orbits, Shift-drag pans, the wheel zooms, C centres on the cursor.
+        Click picks a model; Shift-, Ctrl- or Cmd-click adds or removes one; Ctrl+A picks all. Drag
+        on empty ground to box-select: left to right takes models wholly inside, right to left takes
+        anything the box touches, Shift adds. Right-drag orbits, middle-drag or Shift+right-drag
+        pans, the wheel zooms, C centres on the cursor.
       </p>
     </div>
   );
@@ -175,8 +178,17 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     <section className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
       <dl>
+        {selection.count > 1 && (
+          <div>
+            <dt>Selected</dt>
+            <dd data-selection-count={selection.count}>
+              {selection.count} models, {ldu(selection.bounds.maxX - selection.bounds.minX)} ×{" "}
+              {ldu(selection.bounds.maxZ - selection.bounds.minZ)} LDU
+            </dd>
+          </div>
+        )}
         <div>
-          <dt>Model</dt>
+          <dt>{selection.count > 1 ? "Last picked" : "Model"}</dt>
           <dd>{itemLabel(snapshot, selection.item)}</dd>
         </div>
         <div>

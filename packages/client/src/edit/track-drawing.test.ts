@@ -56,6 +56,7 @@ class PlanOnlyBackend implements ISceneBackend {
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setVehicle(): void {}

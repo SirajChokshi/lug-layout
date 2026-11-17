@@ -88,13 +88,17 @@ export function checkRefusal(label: string, check: PlacementCheck): Refusal | nu
   return check.support ? supportRefusal(label, check.support, check.restsOn) : null;
 }
 
-export function carriesRefusal(label: string, lost: ReadonlyArray<LostSupport>): Refusal | null {
+export function carriesRefusal(
+  label: string,
+  lost: ReadonlyArray<LostSupport>,
+  remedy = "Remove that first.",
+): Refusal | null {
   const first = lost[0];
   if (!first) return null;
   const others = lost.length > 1 ? ` and ${lost.length - 1} more` : "";
   return {
     rule: "carries",
-    message: `${label} carries ${first.model.placeable.label}${others}, which would lose its support. Remove that first.`,
+    message: `${label} carries ${first.model.placeable.label}${others}, which would lose its support. ${remedy}`,
   };
 }
 

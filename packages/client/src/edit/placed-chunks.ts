@@ -412,6 +412,18 @@ class PlacedEntry implements PlacedModel {
     }
   }
 
+  topAt(worldCellX: number, worldCellZ: number): number | null {
+    const cell = this.cellAt(worldCellX, worldCellZ);
+    const { cells } = this.placeable;
+    if (cell < 0 || (cells.topLdu[cell] ?? 0) <= (cells.bottomLdu[cell] ?? 0)) return null;
+    return this.yLdu + (cells.topLdu[cell] ?? 0);
+  }
+
+  baseplateAt(worldCellX: number, worldCellZ: number): boolean {
+    const cell = this.cellAt(worldCellX, worldCellZ);
+    return cell >= 0 && this.placeable.cells.baseplate[cell] === 1;
+  }
+
   private cellAt(worldCellX: number, worldCellZ: number): number {
     const { cells } = this.placeable;
     const i = this.pose.localCellX(worldCellX, worldCellZ) - cells.cellX0;
@@ -628,6 +640,7 @@ function addTo(index: Map<number, Set<PlacedEntry>>, key: number, entry: PlacedE
 
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
+  private readonly byPlacement = new Map<PlacementRef, PlacedEntry>();
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
@@ -646,6 +659,32 @@ export class PlacedChunks {
 
   models(): ReadonlyArray<PlacedModel> {
     return this.entries;
+  }
+
+  modelOf(placement: PlacementRef): PlacedModel | null {
+    return this.byPlacement.get(placement) ?? null;
+  }
+
+  carrierOf(model: PlacedModel, among: ReadonlyArray<PlacedModel>): PlacedModel | null {
+    const carried = this.entryOf(model);
+    const base = carried.candidate.base;
+    for (const candidate of this.entriesOf(among)) {
+      for (let c = 0; c < base.count; c++) {
+        if (candidate.topAt(base.cellX[c] ?? 0, base.cellZ[c] ?? 0) === carried.yLdu) {
+          return candidate;
+        }
+      }
+    }
+    return null;
+  }
+
+  baseplateUnder(cells: BaseCells, among: ReadonlyArray<PlacedModel>): PlacedModel | null {
+    for (const candidate of this.entriesOf(among)) {
+      for (let c = 0; c < cells.count; c++) {
+        if (candidate.baseplateAt(cells.cellX[c] ?? 0, cells.cellZ[c] ?? 0)) return candidate;
+      }
+    }
+    return null;
   }
 
   apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
@@ -677,24 +716,68 @@ export class PlacedChunks {
     at: LandingAt,
     exempt: OwnerFilter = keepEveryOwner,
   ): PlacementCheck {
-    const cells = candidateCells(placeable, new LatticePose(x, z, rot));
-    return this.withExcluded(this.entriesOf(ignore), () => {
-      const first = placeable.layer === "first";
-      const lands = first
-        ? { yPlates: 0, owner: null }
-        : landing(this.volumes, cells.base, at, this.isTrack);
-      const { yPlates } = lands;
-      const support = first
-        ? null
-        : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
-      const hit = firstOverlap(raised(cells.volumes, yPlates * PLATE_LDU), this.volumes, exempt);
-      return {
-        yPlates,
-        support,
-        restsOn: lands.owner === null ? null : (this.owners.get(lands.owner) ?? null),
-        overlap: hit ? this.placedOverlap(hit) : null,
-      };
-    });
+    return this.withExcluded(this.entriesOf(ignore), () =>
+      this.checkHere(placeable, new LatticePose(x, z, rot), at, exempt, this.isTrack),
+    );
+  }
+
+  checkGroup<T>(
+    removed: ReadonlyArray<PlacedModel>,
+    arriving: ReadonlyArray<PendingPose>,
+    exemptFor: (index: number) => OwnerFilter,
+    refusalOf: (index: number, check: PlacementCheck) => T | null,
+  ): T | null {
+    const pending = arriving.map((pose) => this.pendingEntry(pose, this.nextOwner++));
+    for (const entry of pending) this.owners.set(entry.owner, { kind: "model", model: entry });
+    try {
+      return this.withExcluded(
+        this.entriesOf(removed),
+        () => {
+          for (const [index, entry] of pending.entries()) {
+            const own = entry.owner;
+            const exempt = exemptFor(index);
+            const check = this.checkHere(
+              entry.placeable,
+              entry.pose,
+              { kind: "height", yPlates: entry.handle.yPlates },
+              (owner, cellX, cellZ) => owner === own || exempt(owner, cellX, cellZ),
+              (owner, cellX, cellZ) => owner === own || this.isTrack(owner, cellX, cellZ),
+            );
+            const refusal = refusalOf(index, check);
+            if (refusal !== null) return refusal;
+          }
+          return null;
+        },
+        pending,
+      );
+    } finally {
+      for (const entry of pending) this.owners.delete(entry.owner);
+    }
+  }
+
+  private checkHere(
+    placeable: Placeable,
+    pose: LatticePose,
+    at: LandingAt,
+    exempt: OwnerFilter,
+    beneath: OwnerFilter,
+  ): PlacementCheck {
+    const cells = candidateCells(placeable, pose);
+    const first = placeable.layer === "first";
+    const lands = first
+      ? { yPlates: 0, owner: null }
+      : landing(this.volumes, cells.base, at, beneath);
+    const { yPlates } = lands;
+    const support = first
+      ? null
+      : upperSupport(cells.base, yPlates, this.volumes, this.support, beneath);
+    const hit = firstOverlap(raised(cells.volumes, yPlates * PLATE_LDU), this.volumes, exempt);
+    return {
+      yPlates,
+      support,
+      restsOn: lands.owner === null ? null : (this.owners.get(lands.owner) ?? null),
+      overlap: hit ? this.placedOverlap(hit) : null,
+    };
   }
 
   trackOverlap(
@@ -824,7 +907,7 @@ export class PlacedChunks {
     );
   }
 
-  private pendingEntry(pose: PendingPose): PlacedEntry {
+  private pendingEntry(pose: PendingPose, owner = PENDING_OWNER): PlacedEntry {
     const handle: PlacementHandle = {
       chunkKey: -1,
       slot: -1,
@@ -837,12 +920,12 @@ export class PlacedChunks {
       yPlates: pose.yPlates,
       rot: pose.rot,
     };
-    return new PlacedEntry(PENDING_OWNER, { handle: null }, handle, pose.placeable, new Map());
+    return new PlacedEntry(owner, { handle: null }, handle, pose.placeable, new Map());
   }
 
   private entryOf(model: PlacedModel): PlacedEntry {
-    const entry = this.entries.find((candidate) => candidate === model);
-    if (!entry) throw new Error("placement is not in this world view");
+    const entry = this.byPlacement.get(model.placement);
+    if (!entry || entry !== model) throw new Error("placement is not in this world view");
     return entry;
   }
 
@@ -898,6 +981,15 @@ export class PlacedChunks {
     except: ReadonlySet<PlacedEntry>,
     arriving: ReadonlyArray<PlacedEntry> = [],
   ): void {
+    const arrivingByKey = new Map<number, PlacedEntry[]>();
+    for (const entry of arriving) {
+      for (const key of entry.columnKeys) {
+        if (!keys.has(key)) continue;
+        const list = arrivingByKey.get(key);
+        if (list) list.push(entry);
+        else arrivingByKey.set(key, [entry]);
+      }
+    }
     for (const key of keys) {
       this.volumes.clearChunk(key);
       this.support.clearChunk(key);
@@ -913,7 +1005,9 @@ export class PlacedChunks {
           }
         }
       }
-      for (const entry of arriving) entry.stampColumns(this.volumes, this.support, key);
+      for (const entry of arrivingByKey.get(key) ?? []) {
+        entry.stampColumns(this.volumes, this.support, key);
+      }
     }
   }
 
@@ -931,6 +1025,7 @@ export class PlacedChunks {
     );
     this.owners.set(entry.owner, { kind: "model", model: entry });
     this.entries.push(entry);
+    this.byPlacement.set(placement, entry);
     for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
@@ -943,6 +1038,7 @@ export class PlacedChunks {
     const entry = this.entries[index];
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
+    this.byPlacement.delete(entry.placement);
     this.owners.delete(entry.owner);
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
     for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
