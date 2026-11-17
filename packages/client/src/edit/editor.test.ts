@@ -1180,3 +1180,48 @@ it("refuses to delete a 3811 a set stands on at the ground plane, since the set 
     refusal: expect.stringContaining(`carries ${STUD_BASED_SET} Train Station (1996)`),
   });
 }, 120_000);
+
+it.each([
+  {
+    name: "a road curve snapped to a road straight's open end",
+    models: [],
+    placed: "ldraw:44336p04@72",
+    held: "ldraw:44342p02@72",
+    heldAt: [320, 960],
+  },
+  {
+    name: "a rail module turned to face a rail module's rail edge",
+    models: ["mils-rail-straight"],
+    placed: RAIL_MODULE,
+    held: RAIL_MODULE,
+    heldAt: [960, 320],
+  },
+] as const)(
+  "checks and places $name at the snapped turn, not the turn R chose",
+  async ({ models, placed, held, heldAt }) => {
+    const { editor, backend } = await startEditor(models);
+    editor.chooseItem(placed);
+    backend.aim(320, 320);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    editor.chooseItem(held);
+    backend.aim(heldAt[0], heldAt[1]);
+    editor.pointerMove(0, 0);
+    let chosen = editor.snapshot().ghostRot;
+    for (let press = 0; press < 4 && editor.snapshot().ghostRot === chosen; press++) {
+      chosen = (editor.snapshot().ghostRot + 1) % 4;
+      editor.rotate(0);
+    }
+    const { ghostRot: snapped, ghost } = editor.snapshot();
+    expect(snapped).not.toBe(chosen);
+    expect(ghost?.refusal ?? null).toBeNull();
+    editor.click(0, 0, 0);
+    const { placements, refusals } = editor.snapshot();
+    expect({ placements, refusals, rot: editor.dump().placements.rot.at(-1) }).toEqual({
+      placements: 2,
+      refusals: 0,
+      rot: snapped,
+    });
+  },
+  120_000,
+);
