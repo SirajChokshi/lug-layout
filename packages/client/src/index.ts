@@ -72,6 +72,7 @@ export type {
   IRunningGear,
   RunningGearSource,
 } from "./running-gear/running-gear-editor.ts";
+export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type {
   BogieOverride,
   CouplerOverride,

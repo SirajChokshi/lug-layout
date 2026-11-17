@@ -1,5 +1,12 @@
-import type { GearBox, GearSnapshot, GearView, IRunningGear, RunningGearSource } from "@brr/client";
-import { useSyncExternalStore, type ReactNode } from "react";
+import {
+  exactLduText,
+  type GearBox,
+  type GearSnapshot,
+  type GearView,
+  type IRunningGear,
+  type RunningGearSource,
+} from "@brr/client";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 const GROUP_FILLS = ["#f2a541", "#4a90d9", "#5cb85c", "#b06ab3"];
 const BODY_FILL = "#c9ced6";
@@ -171,16 +178,21 @@ function NumberField({
   readonly value: number;
   readonly onChange: (value: number) => void;
 }) {
+  const [typing, setTyping] = useState<string | null>(null);
   return (
     <label className="gear-field">
       {label}
       <input
         type="number"
-        step={0.25}
-        value={Number(value.toFixed(SPEC_DIGITS))}
+        step="any"
+        value={typing ?? exactLduText(value)}
+        onFocus={() => setTyping(exactLduText(value))}
+        onBlur={() => setTyping(null)}
         onChange={(event) => {
-          const parsed = Number(event.target.value);
-          if (Number.isFinite(parsed)) onChange(parsed);
+          const text = event.target.value;
+          setTyping(text);
+          const parsed = Number(text);
+          if (text.trim() !== "" && Number.isFinite(parsed)) onChange(parsed);
         }}
       />
     </label>

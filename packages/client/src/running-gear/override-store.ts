@@ -51,7 +51,13 @@ export class IndexedDbRunningGearOverrideStore implements IRunningGearOverrideSt
 
   async load(modelSha256: string): Promise<RunningGearOverride | null> {
     const stored: unknown = await settle((await this.objects("readonly")).get(modelSha256));
-    return stored === undefined ? null : parseRunningGearOverride(stored);
+    if (stored === undefined) return null;
+    const parsed = parseRunningGearOverride(stored);
+    if (!parsed)
+      throw new Error(
+        `the saved running gear for ${modelSha256} is not a record this app can read`,
+      );
+    return parsed;
   }
 
   async save(override: RunningGearOverride): Promise<void> {

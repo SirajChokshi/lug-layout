@@ -541,8 +541,9 @@ footer a {
 }
 
 .gear-field input {
-  width: 76px;
+  width: 25ch;
   margin-left: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
 .gear-hint,
