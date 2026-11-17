@@ -446,6 +446,7 @@ export interface RoadPlacementDump {
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
   readonly chunkCounts: ReadonlyArray<readonly [number, number, number]>;
+  readonly trackEnds: ReturnType<TrackDrawing["openEnds"]>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
   readonly covers: ReadonlyArray<PlaceableCoverView>;
   readonly placements: PlacementDump;
@@ -2720,6 +2721,7 @@ export class Editor implements IEditor {
             [chunk.originX / CHUNK_LDU, chunk.originZ / CHUNK_LDU, chunk.liveCount] as const,
         )
         .toSorted((a, b) => a[0] - b[0] || a[1] - b[1]),
+      trackEnds: this.track?.openEnds() ?? [],
       frameShifts: this.placeables.map((p) => p.frameShift),
       covers: this.placeables.map((p) => ({
         id: p.id,
