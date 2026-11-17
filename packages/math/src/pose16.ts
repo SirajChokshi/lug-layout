@@ -10,6 +10,7 @@ import {
 } from "./zeta16.ts";
 
 export const HALF_TURN_16 = ZETA16_ORDER / 2;
+export const QUARTER_TURN_16 = ZETA16_ORDER / 4;
 
 export interface Pose16 {
   readonly position: Zeta16;
@@ -38,6 +39,18 @@ export function posesJoin16(a: Pose16, b: Pose16): boolean {
   return (
     zeta16Equals(a.position, b.position) &&
     normalizeHeading16(a.heading - b.heading) === HALF_TURN_16
+  );
+}
+
+export function nearestQuarterTurn16(heading: number): number {
+  const turns = Math.round(normalizeHeading16(heading) / QUARTER_TURN_16);
+  return normalizeHeading16(turns * QUARTER_TURN_16);
+}
+
+export function isLatticePose16(pose: Pose16): boolean {
+  return (
+    normalizeHeading16(pose.heading) % QUARTER_TURN_16 === 0 &&
+    pose.position.every((coefficient, power) => power % QUARTER_TURN_16 === 0 || coefficient === 0n)
   );
 }
 

@@ -116,7 +116,7 @@
           "headingResidualDegrees": -0.000040928130404793706,
           "toleranceLdu": 0.001,
           "fieldSearch": {
-            "bestResidualLdu": 0.0006368255631849181,
+            "bestResidualLdu": 0.000636825563193285,
             "solutionCount": 3781
           },
           "fieldCertified": false,
@@ -462,7 +462,7 @@
           "headingResidualDegrees": 0.000059887295247862404,
           "toleranceLdu": 0.000001,
           "fieldSearch": {
-            "bestResidualLdu": 8.921173213213257e-7,
+            "bestResidualLdu": 8.921174634225937e-7,
             "solutionCount": 1
           },
           "fieldCertified": true,
@@ -545,7 +545,7 @@
           "headingResidualDegrees": 0,
           "toleranceLdu": 0.000001,
           "fieldSearch": {
-            "bestResidualLdu": 1.7763568394002505e-14,
+            "bestResidualLdu": 0,
             "solutionCount": 1
           },
           "fieldCertified": true,

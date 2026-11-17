@@ -129,7 +129,9 @@ export {
 export {
   advance,
   connectorPose,
+  freePlacement,
   layMoves,
+  seatsOnStuds,
   trackMove,
   type PlacedPiece,
   type TrackMove,

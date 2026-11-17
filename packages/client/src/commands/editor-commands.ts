@@ -94,14 +94,14 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     title: "Rotate",
     group: "Edit",
     keys: [{ key: "r" }],
-    keywords: "turn spin quarter 90 22.5",
+    keywords: "turn spin quarter 90",
   },
   {
     id: "rotate-back",
     title: "Rotate the other way",
     group: "Edit",
     keys: [{ key: "r", shift: true }],
-    keywords: "turn spin quarter 90 22.5 back reverse counter anticlockwise",
+    keywords: "turn spin quarter 90 back reverse counter anticlockwise",
   },
   {
     id: "flip-switch",
