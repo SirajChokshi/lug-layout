@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createSecureServer, type Http2ServerRequest, type Http2ServerResponse } from "node:http2";
 import { homedir, tmpdir } from "node:os";
@@ -120,12 +120,12 @@ function shouldCompress(mode: Compression, type: string): boolean {
 interface Certificate {
   readonly key: Buffer;
   readonly cert: Buffer;
+  readonly chromeHome: string;
 }
 
-function selfSignedCert(): Certificate {
-  const dir = mkdtempSync(join(tmpdir(), "measure-startup-"));
-  const key = join(dir, "key.pem");
-  const cert = join(dir, "cert.pem");
+function selfSignedCert(scratch: string): Certificate {
+  const key = join(scratch, "key.pem");
+  const cert = join(scratch, "cert.pem");
   execFileSync("openssl", [
     "req",
     "-x509",
@@ -145,8 +145,18 @@ function selfSignedCert(): Certificate {
     "-out",
     cert,
   ]);
-  trustForCaching(cert);
-  return { key: readFileSync(key), cert: readFileSync(cert) };
+  const chromeHome = join(scratch, "home");
+  trustForCaching(cert, chromeHome);
+  return { key: readFileSync(key), cert: readFileSync(cert), chromeHome };
+}
+
+function certificateIn(scratch: string): Certificate {
+  try {
+    return selfSignedCert(scratch);
+  } catch (error) {
+    rmSync(scratch, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function certutil(args: ReadonlyArray<string>): boolean {
@@ -158,15 +168,29 @@ function certutil(args: ReadonlyArray<string>): boolean {
   }
 }
 
-function trustForCaching(cert: string): void {
-  const nssDb = join(homedir(), ".pki", "nssdb");
+function chromeEnv(chromeHome: string): Record<string, string> {
+  const xauthority = process.env["XAUTHORITY"] ?? join(homedir(), ".Xauthority");
+  return {
+    ...Object.fromEntries(
+      Object.entries(process.env).flatMap(([name, value]) =>
+        value === undefined ? [] : [[name, value]],
+      ),
+    ),
+    HOME: chromeHome,
+    ...(isFile(xauthority) ? { XAUTHORITY: xauthority } : {}),
+  };
+}
+
+function trustForCaching(cert: string, chromeHome: string): void {
+  const nssDb = join(chromeHome, ".pki", "nssdb");
   const db = `sql:${nssDb}`;
   mkdirSync(nssDb, { recursive: true });
-  if (!isFile(join(nssDb, "cert9.db"))) certutil(["-d", db, "-N", "--empty-password"]);
-  certutil(["-d", db, "-D", "-n", NSS_NICKNAME]);
-  if (!certutil(["-d", db, "-A", "-t", "P,,", "-n", NSS_NICKNAME, "-i", cert])) {
-    process.stderr.write(
-      "certutil could not trust the bundle certificate, so Chrome will not cache bundle responses\n",
+  const trusted =
+    certutil(["-d", db, "-N", "--empty-password"]) &&
+    certutil(["-d", db, "-A", "-t", "P,,", "-n", NSS_NICKNAME, "-i", cert]);
+  if (!trusted) {
+    throw new Error(
+      "certutil (libnss3-tools) could not trust the throwaway bundle certificate. Chrome does not cache responses from an untrusted origin, so every warm run would download the whole bundle again and its numbers would be wrong. Install libnss3-tools and run again.",
     );
   }
 }
@@ -357,7 +381,8 @@ async function main(): Promise<void> {
   const appPort = Number(values["app-port"]);
   const bundlePort = Number(values["bundle-port"]);
   const bundleOrigin = `https://127.0.0.1:${bundlePort}/`;
-  const certificate = selfSignedCert();
+  const scratch = mkdtempSync(join(tmpdir(), "measure-startup-"));
+  const certificate = certificateIn(scratch);
   const stopBundle = await serveBundle(
     bundleRoot,
     bundlePort,
@@ -367,7 +392,7 @@ async function main(): Promise<void> {
   const stopApp = await serveApp(appRoot, appPort);
   if (values.serve) {
     process.stdout.write(
-      `serving http://127.0.0.1:${appPort}/ with the bundle at ${bundleOrigin}\n`,
+      `serving http://127.0.0.1:${appPort}/ with the bundle at ${bundleOrigin}; run Chrome with HOME=${certificate.chromeHome} to trust it\n`,
     );
     return;
   }
@@ -376,9 +401,10 @@ async function main(): Promise<void> {
     for (const profile of (values.profiles ?? "none").split(",")) {
       if (!(profile in PROFILES)) throw new Error(`unknown profile ${profile}`);
       const context = await chromium.launchPersistentContext(
-        mkdtempSync(join(tmpdir(), "measure-startup-profile-")),
+        mkdtempSync(join(scratch, "profile-")),
         {
           executablePath: values.chrome ?? process.env["CHROME"] ?? DEFAULT_CHROME,
+          env: chromeEnv(certificate.chromeHome),
           args: [
             "--ignore-gpu-blocklist",
             "--use-angle=swiftshader",
@@ -396,6 +422,7 @@ async function main(): Promise<void> {
   } finally {
     stopApp();
     stopBundle();
+    rmSync(scratch, { recursive: true, force: true });
   }
   const table = report(results);
   process.stdout.write(`${table}\n`);
