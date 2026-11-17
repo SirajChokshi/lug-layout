@@ -18,6 +18,7 @@ import {
   type BufferMemory,
   type ChunkInstances,
   type FarModelPlacement,
+  type PartPalette,
   type ISceneBackend,
   type LookSettings,
   type RebaseEvent,
@@ -164,7 +165,12 @@ class HeadlessBackend implements ISceneBackend {
       look: NO_LOOK,
     };
   }
-  setPalette(): void {}
+  setPalette(palette: PartPalette): void {
+    const far = palette.far?.parts.map((part) => part.id).join("\n");
+    if (far !== undefined && far !== palette.detailed.parts.map((part) => part.id).join("\n")) {
+      throw new Error("the palette's geometry sets do not list the same parts");
+    }
+  }
   setChunk(): void {}
   deleteChunk(): void {}
   ghost: ChunkInstances | null = null;
@@ -1209,7 +1215,7 @@ describe("rolling stock on track", () => {
       followDistanceLdu: 1400,
     });
     await run.load("standard");
-    run.onFrame();
+    run.onFrame?.();
     const started = vehiclePoses(runBackend);
     expect(started).toHaveLength(poses.length);
     started.forEach((pose, i) =>
