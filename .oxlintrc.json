@@ -17,7 +17,11 @@
   },
   "overrides": [
     {
-      "files": ["**/*.config.ts", "tools/oxlint-plugin/src/index.ts"],
+      "files": [
+        "**/*.config.ts",
+        "tools/oxlint-plugin/src/index.ts",
+        "apps/catalog-api/src/index.ts"
+      ],
       "rules": {
         "import/no-default-export": "off"
       }

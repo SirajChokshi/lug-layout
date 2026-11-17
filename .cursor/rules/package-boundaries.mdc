@@ -8,7 +8,7 @@ alwaysApply: true
 Dependencies only point **down**. A package never imports from its own layer (except the listed same-layer edges) or from a layer above it.
 
 ```
-L6 apps/web
+L6 apps/web · apps/catalog-api (server)
 L5 ui · workers/*
 L4 client
 L3 sim · import
@@ -32,6 +32,7 @@ L0 math
 | ui | client (interfaces, tokens, view models), `import type` from schema |
 | apps/web | ui, client, inversify, workers (only as `new Worker(new URL(..., import.meta.url), { type: "module" })`) |
 | tools/asset-pipeline | math, schema, domain, catalog, brick-compile CLI. Nothing imports it. |
+| apps/catalog-api | no `@brr/*` package (only `@brr/config` presets as dev tooling); wrangler and `@cloudflare/workers-types` as dev deps. Nothing imports it. |
 | tools/oxlint-plugin | `@oxlint/plugins` only. Loaded by `.oxlintrc.json`, never imported by code. |
 
 - **Pure packages** (`math`, `schema`, `domain`, `sim`) use no DOM, `window`, three.js, IndexedDB, `Worker`, `fetch` or Inversify. They must run unchanged in Node.
