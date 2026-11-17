@@ -16,6 +16,7 @@ import {
   RoadNetwork,
   World,
   addShards,
+  railEdgesMate,
   worldPlacements,
   type AppliedEdit,
   type EditKind,
@@ -221,6 +222,7 @@ export interface RefusedClick {
   readonly rot: number;
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
+  readonly reason: string;
 }
 
 export interface EditorStats {
@@ -343,6 +345,7 @@ export interface HoverView {
   readonly x: number;
   readonly z: number;
   readonly yPlates: number;
+  readonly refusal: string | null;
 }
 
 export interface PlaceableCoverView {
@@ -476,6 +479,16 @@ const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
 const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const P95 = 0.95;
 const QUARTER_TURNS = 4;
+const ROAD_REFUSAL = "its road edges would mismatch or overlap placed road pieces";
+const EDGE_KIND_NAMES: Readonly<Record<ModuleEdgeKind, string>> = {
+  terrain: "terrain",
+  road: "paved road",
+  track: "earth track",
+  path: "path",
+  river: "river",
+  rail: "rail",
+  other: "non-MILS",
+};
 const STATS_INTERVAL_MS = 500;
 const MEASURE_WARMUP_FRAMES = 5;
 const MEASURED_FRAMES = 60;
@@ -729,6 +742,7 @@ export class Editor implements IEditor {
   private hoverX = 0;
   private hoverZ = 0;
   private hoverYPlates = 0;
+  private hoverRefusal: string | null = null;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -1466,6 +1480,14 @@ export class Editor implements IEditor {
       this.ghostRot,
       null,
     );
+    this.hoverRefusal = this.placementRefusal(
+      this.active,
+      this.hoverX,
+      this.hoverZ,
+      this.ghostRot,
+      this.hoverYPlates,
+      null,
+    );
     this.backend.placeGhost(
       this.hoverX,
       this.hoverYPlates * PLATE_LDU + GHOST_LIFT_LDU,
@@ -1476,7 +1498,12 @@ export class Editor implements IEditor {
 
   private hoverView(): HoverView | null {
     if (!this.hovering) return null;
-    return { x: this.hoverX, z: this.hoverZ, yPlates: this.hoverYPlates };
+    return {
+      x: this.hoverX,
+      z: this.hoverZ,
+      yPlates: this.hoverYPlates,
+      refusal: this.hoverRefusal,
+    };
   }
 
   private snapGhostToRoad(): RoadSnapView | null {
@@ -1568,8 +1595,13 @@ export class Editor implements IEditor {
             rot: this.ghostRot,
             mismatchedCells: snap.mismatchedCells,
             overlappingCells: snap.overlappingCells,
+            reason: ROAD_REFUSAL,
           },
         });
+        return;
+      }
+      if (this.hoverRefusal !== null) {
+        this.refuse(this.active.id, this.hoverX, this.hoverZ, this.ghostRot, this.hoverRefusal);
         return;
       }
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
@@ -1593,6 +1625,50 @@ export class Editor implements IEditor {
       return;
     }
     this.select(best);
+  }
+
+  private refuse(item: string, x: number, z: number, rot: number, reason: string): void {
+    this.update({
+      refusedClicks: this.state.refusedClicks + 1,
+      lastRefusal: { item, x, z, rot, mismatchedCells: 0, overlappingCells: 0, reason },
+    });
+  }
+
+  private placementRefusal(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+    ignore: PlacedModel | null,
+  ): string | null {
+    const layout = this.modules;
+    const surface = placeable.module;
+    const own = surface && layout ? layout.placement(surface, x, z, rot) : null;
+    if (own && layout) {
+      const clash = layout.railEdgeClash(own);
+      if (clash) {
+        const neighbour = this.labelOf(layout.module(clash.neighbour)?.item ?? "");
+        return `${placeable.label}: its ${EDGE_KIND_NAMES[clash.kind]} edge on the ${clash.side} side would face the ${EDGE_KIND_NAMES[clash.facing]} edge of ${neighbour}. A rail edge only joins another rail edge, where the track ends mate.`;
+      }
+    }
+    const mates = (other: PlacedModel): boolean => {
+      const theirs = other.placeable.module;
+      if (!own || !layout || !theirs) return false;
+      const { x: ox, z: oz, rot: orot } = other.handle;
+      const placement = layout.placement(theirs, ox, oz, orot);
+      return placement !== null && railEdgesMate(own, placement);
+    };
+    const clash = this.placed.tongueClash(placeable, x, z, rot, yPlates, ignore, mates);
+    if (!clash) return null;
+    const other = clash.other.placeable.label;
+    return clash.ownTongue
+      ? `${placeable.label}: its track end would run into ${other}. Only a rail module whose rail edge faces it can take the track end.`
+      : `${placeable.label} would fill the space where the track end of ${other} reaches past its edge. Only a rail module whose rail edge faces it can take the track end.`;
+  }
+
+  private labelOf(id: string): string {
+    return this.placeables.find((placeable) => placeable.id === id)?.label ?? id;
   }
 
   private placeAt(
@@ -1851,6 +1927,11 @@ export class Editor implements IEditor {
     const pose = model.handle;
     const rot = (pose.rot + 1) % QUARTER_TURNS;
     const yPlates = this.placed.restingHeight(model.placeable, pose.x, pose.z, rot, model);
+    const refusal = this.placementRefusal(model.placeable, pose.x, pose.z, rot, yPlates, model);
+    if (refusal !== null) {
+      this.refuse(model.placeable.id, pose.x, pose.z, rot, refusal);
+      return;
+    }
     const edit = this.history.commit("rotate", [
       {
         placement: model.placement,

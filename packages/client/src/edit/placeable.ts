@@ -38,6 +38,14 @@ export interface StudLattice {
   readonly baseLdu: Int32Array;
 }
 
+export interface TrackTongues {
+  readonly count: number;
+  readonly cellX: Int32Array;
+  readonly cellZ: Int32Array;
+  readonly bottom: Int16Array;
+  readonly top: Int16Array;
+}
+
 export interface Placeable {
   readonly id: string;
   readonly label: string;
@@ -57,6 +65,7 @@ export interface Placeable {
   readonly credit: ModelCredit | null;
   readonly road: RoadSurface | null;
   readonly module: ModuleSurface | null;
+  readonly tongues: TrackTongues | null;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -164,6 +173,93 @@ function modelCells(
     flatCells: withFootprint ? cells.flat.length : 0,
     heightPlates,
   };
+}
+
+function requireOnlyTrackPastModuleEdges(
+  instances: ChunkPartInstances,
+  partBoxes: Float32Array,
+  parts: ReadonlyArray<PartAsset>,
+  surface: ModuleSurface,
+  label: string,
+): void {
+  const maxX = surface.minX + surface.studs * STUD_LDU;
+  const maxZ = surface.minZ + surface.studs * STUD_LDU;
+  for (let i = 0; i < instances.count; i++) {
+    const part = parts[instances.partIndex[i] ?? 0];
+    if (!part || part.role === "track") continue;
+    const b = i * BOX_FLOATS;
+    const inside =
+      (partBoxes[b] ?? 0) >= surface.minX &&
+      (partBoxes[b + 2] ?? 0) >= surface.minZ &&
+      (partBoxes[b + 3] ?? 0) <= maxX &&
+      (partBoxes[b + 5] ?? 0) <= maxZ;
+    if (!inside) {
+      throw new Error(
+        `${label}: ${part.id} reaches past the module's baseplate, where only a track end may`,
+      );
+    }
+  }
+}
+
+function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: string): PlaceableCells {
+  const cellX0 = wholeCells(surface.minX, `${label} baseplate min x`);
+  const cellZ0 = wholeCells(surface.minZ, `${label} baseplate min z`);
+  const size = surface.studs;
+  const columnBottom = new Int16Array(size * size).fill(EMPTY_COLUMN);
+  const columnTop = new Int16Array(size * size).fill(EMPTY_COLUMN);
+  let heightPlates = 0;
+  for (let j = 0; j < size; j++) {
+    const fromJ = cellZ0 - cells.cellZ0 + j;
+    for (let i = 0; i < size; i++) {
+      const fromI = cellX0 - cells.cellX0 + i;
+      if (fromI < 0 || fromJ < 0 || fromI >= cells.width || fromJ >= cells.depth) continue;
+      const from = fromJ * cells.width + fromI;
+      const top = cells.columnTop[from] ?? EMPTY_COLUMN;
+      if (top === EMPTY_COLUMN) continue;
+      columnBottom[j * size + i] = cells.columnBottom[from] ?? 0;
+      columnTop[j * size + i] = top;
+      heightPlates = Math.max(heightPlates, top);
+    }
+  }
+  return {
+    cellX0,
+    cellZ0,
+    width: size,
+    depth: size,
+    footprint: new Uint8Array(size * size),
+    columnBottom,
+    columnTop,
+    footprintCells: 0,
+    flatCells: 0,
+    heightPlates,
+  };
+}
+
+function trackTongues(cells: PlaceableCells, square: PlaceableCells): TrackTongues {
+  const outside: number[] = [];
+  for (let j = 0; j < cells.depth; j++) {
+    for (let i = 0; i < cells.width; i++) {
+      if ((cells.columnTop[j * cells.width + i] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
+      const x = cells.cellX0 + i - square.cellX0;
+      const z = cells.cellZ0 + j - square.cellZ0;
+      if (x >= 0 && z >= 0 && x < square.width && z < square.depth) continue;
+      outside.push(j * cells.width + i);
+    }
+  }
+  const tongues: TrackTongues = {
+    count: outside.length,
+    cellX: new Int32Array(outside.length),
+    cellZ: new Int32Array(outside.length),
+    bottom: new Int16Array(outside.length),
+    top: new Int16Array(outside.length),
+  };
+  outside.forEach((cell, k) => {
+    tongues.cellX[k] = cells.cellX0 + (cell % cells.width);
+    tongues.cellZ[k] = cells.cellZ0 + Math.floor(cell / cells.width);
+    tongues.bottom[k] = cells.columnBottom[cell] ?? 0;
+    tongues.top[k] = cells.columnTop[cell] ?? 0;
+  });
+  return tongues;
 }
 
 function partCells(part: PartAsset, shift: Vec3): PlaceableCells {
@@ -336,6 +432,11 @@ export function modelPlaceable(
   const isModule = role === "mils-module";
   const id = isModule ? `generated:${name}` : `omr:${name}`;
   const studs = withStuds(local, parts, colors, undefined, model.studCover).studs;
+  const module = isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null;
+  if (module) requireOnlyTrackPastModuleEdges(local, partBoxes, parts, module, name);
+  const restPlates = (cells.restY - restingOn) / PLATE_LDU;
+  const placedCells = modelCells(cells, shift, name, restPlates, !isModule);
+  const square = module ? moduleCells(placedCells, module, name) : null;
   return {
     id,
     label,
@@ -347,14 +448,15 @@ export function modelPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
-    cells: modelCells(cells, shift, name, (cells.restY - restingOn) / PLATE_LDU, !isModule),
+    cells: square ?? placedCells,
     box,
     partBoxes,
     frameShift: shift,
     farModel,
     credit: isModule ? null : credit,
     road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
-    module: isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null,
+    module,
+    tongues: square ? trackTongues(placedCells, square) : null,
   };
 }
 
@@ -404,5 +506,6 @@ export function partPlaceable(
     credit: null,
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
     module: null,
+    tongues: null,
   };
 }

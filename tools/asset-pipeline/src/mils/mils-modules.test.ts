@@ -1,9 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
+import { HALF_TURN_16, pose16, posesJoin16, zeta16, ZETA16_ORDER, type Pose16 } from "@brr/math";
 import { MilsProfile, type MilsModuleEdge } from "@brr/schema/bundle";
 import { decode } from "@brr/schema/decode";
 import { describe, expect, it } from "vitest";
 import { LdrawLibrary } from "../ldraw/library.ts";
+import { findTrackEnds, LDU_PER_STUD, loadTrackEndMarkers } from "../track/track-ends.ts";
 import { buildMilsModules, loadMilsProfile, loadTrackCatalog } from "./mils-modules.ts";
 
 const library = new LdrawLibrary([
@@ -26,6 +28,49 @@ function corrupted(edit: (copy: MilsProfile) => void): MilsProfile {
   const copy = structuredClone(profile);
   edit(copy);
   return copy;
+}
+
+function onStuds(xStuds: number, zStuds: number, heading: number): Pose16 {
+  return pose16(zeta16([BigInt(xStuds), 0n, 0n, 0n, BigInt(zStuds), 0n, 0n, 0n]), heading);
+}
+
+function exactStuds(ldu: number, what: string): number {
+  const studs = ldu / LDU_PER_STUD;
+  if (!Number.isInteger(studs)) throw new Error(`${what} is at ${ldu} LDU, off the stud lattice`);
+  return studs;
+}
+
+function chainedRailEnds(modules: number): ReadonlyArray<Pose16> {
+  const rail = profile.templates.find((template) => template.feature === "rail");
+  const built = buildMilsModules(library, profile, catalog).find((m) => m.name === rail?.name);
+  if (!built) throw new Error("the profile has no rail module");
+  const part = profile.build.rail.part;
+  const ends = findTrackEnds(library, part, loadTrackEndMarkers());
+  const placements = built.ldraw
+    .split("\n")
+    .filter((line) => line.endsWith(` ${part}.dat`))
+    .map((line) => {
+      const [x = 0, , z = 0, a = 1, , c = 0, , , , g = 0, , i = 1] = line
+        .split(" ")
+        .slice(2, 14)
+        .map(Number);
+      return { x, z, a, c, g, i };
+    });
+  const moduleLdu = profile.spec.moduleStuds.value * LDU_PER_STUD;
+  return Array.from({ length: modules }, (_, index) => index * moduleLdu).flatMap((offset) =>
+    placements.flatMap(({ x, z, a, c, g, i }) =>
+      ends.map((end) => {
+        const dx = a * Math.cos(end.outward) + c * Math.sin(end.outward);
+        const dz = g * Math.cos(end.outward) + i * Math.sin(end.outward);
+        const at = `the ${part} end of the module at ${offset} LDU`;
+        return onStuds(
+          exactStuds(offset + x + a * end.x + c * end.z, `${at} (x)`),
+          exactStuds(-(z + g * end.x + i * end.z), `${at} (z)`),
+          Math.round((Math.atan2(-dz, dx) * ZETA16_ORDER) / (2 * Math.PI)),
+        );
+      }),
+    ),
+  );
 }
 
 function withoutElement(key: string): MilsProfile {
@@ -81,6 +126,23 @@ describe("MILS module templates", () => {
   ])("refuses a profile with %s", (_case, edit, message) => {
     expect(() => buildMilsModules(library, corrupted(edit), catalog)).toThrow(message);
   });
+
+  it.each([2, 3])(
+    "joins the track of %i rail modules end to end exactly, leaving only the two outer edges open",
+    (modules) => {
+      const ends = chainedRailEnds(modules);
+      const open = ends.filter((end) => !ends.some((other) => posesJoin16(end, other)));
+      const joined = ends.length - open.length;
+      const halfStuds = profile.spec.moduleStuds.value / 2;
+      expect({ joins: joined / 2, open }).toEqual({
+        joins: ends.length / 2 - 1,
+        open: [
+          onStuds(-halfStuds, 0, HALF_TURN_16),
+          onStuds(-halfStuds + modules * profile.spec.moduleStuds.value, 0, 0),
+        ],
+      });
+    },
+  );
 
   it("packs around a plate never produced in a colour, and refuses to place a part that was not", () => {
     const plain = buildMilsModules(library, withoutElement("91405@2"), catalog)[0];

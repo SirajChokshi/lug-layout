@@ -13,8 +13,11 @@ import {
   type TrackPiece,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { attachPose16, composePose16, pose16, pose16Equals, zeta16, type Pose16 } from "@brr/math";
 import type { Affine } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
+import { ldrawPlacement } from "../track/catalog-scenes.ts";
+import { CERTIFIED_RESIDUAL_LIMIT_LDU } from "../track/track-ends.ts";
 import { measureBaseplate, type BaseplateMeasurement } from "../verify/geometry.ts";
 
 const LDU_PER_STUD = 20;
@@ -28,7 +31,11 @@ const AUTHOR = "Brick Railroad tools/asset-pipeline (cli.ts facts)";
 const QUARTER_TURNS = [
   [1, 0, 0, 0, 1, 0, 0, 0, 1],
   [0, 0, 1, 0, 1, 0, -1, 0, 0],
+  [-1, 0, 0, 0, 1, 0, 0, 0, -1],
+  [0, 0, -1, 0, 1, 0, 1, 0, 0],
 ] as const;
+const ENTRY_CONNECTOR = 0;
+const EXIT_CONNECTOR = 1;
 const MODULE_EDGES: ReadonlyArray<MilsModuleEdge> = ["minX", "maxX", "minZ", "maxZ"];
 
 export function loadMilsProfile(): MilsProfile {
@@ -65,6 +72,36 @@ function railPiece(catalog: TrackCatalog, part: string): TrackPiece {
   const piece = catalog.pieces.find((entry) => entry.part === `ldraw:${part}`);
   if (!piece) throw new Error(`track catalog has no piece for ${part}`);
   return piece;
+}
+
+function connectorPose(piece: TrackPiece, index: number): Pose16 {
+  const connector = piece.connectors[index];
+  if (!connector) throw new Error(`${piece.id} has no connector ${index}`);
+  return connector.pose;
+}
+
+function onAxisStuds(studs: number): Pose16 {
+  return pose16(zeta16([BigInt(studs), 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0);
+}
+
+function wholeLdu(value: number, what: string): number {
+  const whole = Math.round(value);
+  if (Math.abs(value - whole) > CERTIFIED_RESIDUAL_LIMIT_LDU) {
+    throw new Error(
+      `${what} is ${value}, not within ${CERTIFIED_RESIDUAL_LIMIT_LDU} of a lattice value`,
+    );
+  }
+  return whole;
+}
+
+function latticeTransform(transform: Affine, what: string): Affine {
+  const whole = (value: number) => wholeLdu(value, what);
+  const rotation = transform.slice(0, 9).map(whole);
+  const turn = QUARTER_TURNS.find((candidate) =>
+    candidate.every((value, k) => value === rotation[k]),
+  );
+  if (!turn) throw new Error(`${what} is not a quarter turn about the vertical axis`);
+  return [...turn, whole(transform[9]), whole(transform[10]), whole(transform[11])];
 }
 
 interface Footprint {
@@ -149,16 +186,13 @@ class ModuleBuilder {
     return footprint;
   }
 
-  placeTrack(part: string, color: number, centreX: number, centreZ: number, restOn: number): void {
+  placeTrack(part: string, color: number, onLattice: Affine, restOn: number): void {
     if (!this.isProduced(part, color)) {
       throw new Error(`${part} in colour ${color} has no Rebrickable element in the profile`);
     }
+    const [a, b, c, d, e, f, g, h, i, x, , z] = onLattice;
     const y = -restOn - this.measure(part).bodyBottomY;
-    this.placements.push({
-      part,
-      color,
-      transform: [1, 0, 0, 0, 1, 0, 0, 0, 1, centreX, y, centreZ],
-    });
+    this.placements.push({ part, color, transform: [a, b, c, d, e, f, g, h, i, x, y, z] });
   }
 }
 
@@ -753,20 +787,21 @@ function placeRail(
   restOn: number,
 ): void {
   const { part, ldrawColor } = profile.build.rail;
-  const frame = railPiece(catalog, part);
-  const length = frame.routes[0]?.lengthLdu;
-  const moduleLdu = profile.spec.moduleStuds.value * LDU_PER_STUD;
-  if (length === undefined || moduleLdu % length !== 0) {
-    throw new Error(`${part} does not divide the ${moduleLdu} LDU module edge`);
-  }
-  for (let start = -moduleLdu / 2; start < moduleLdu / 2; start += length) {
-    builder.placeTrack(
-      part,
-      ldrawColor,
-      start + frame.partFrame.xLdu,
-      frame.partFrame.zLdu,
-      restOn,
+  const piece = railPiece(catalog, part);
+  const halfStuds = profile.spec.moduleStuds.value / 2;
+  const maxXEdge = onAxisStuds(halfStuds);
+  let open = onAxisStuds(-halfStuds);
+  for (let laid = 0; !pose16Equals(open, maxXEdge); laid++) {
+    if (laid === profile.spec.moduleStuds.value) {
+      throw new Error(`${part} pieces laid from the minX edge never end on the maxX edge`);
+    }
+    const pose = attachPose16(connectorPose(piece, ENTRY_CONNECTOR), open);
+    const transform = latticeTransform(
+      ldrawPlacement({ piece, pose }),
+      `${part} piece ${laid + 1} of the rail`,
     );
+    builder.placeTrack(part, ldrawColor, transform, restOn);
+    open = composePose16(pose, connectorPose(piece, EXIT_CONNECTOR));
   }
 }
 

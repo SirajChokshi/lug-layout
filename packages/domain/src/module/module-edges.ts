@@ -44,6 +44,17 @@ export interface ModuleJoinReport extends ModuleJoinCounts {
   readonly edges: ReadonlyArray<ModuleEdgeReport>;
 }
 
+export interface RailEdgeClash {
+  readonly side: ModuleSide;
+  readonly kind: ModuleEdgeKind;
+  readonly facing: ModuleEdgeKind;
+  readonly neighbour: number;
+}
+
+export type GridPlacement = Pick<GridModule, "column" | "row" | "edges">;
+
+const RAIL_EDGE: ModuleEdgeKind = "rail";
+
 interface SideCheck {
   readonly status: ModuleEdgeStatus;
   readonly facing: ModuleEdgeKind | null;
@@ -143,6 +154,16 @@ function facing(side: ModuleSide): {
   }
 }
 
+export function railEdgesMate(a: GridPlacement, b: GridPlacement): boolean {
+  return MODULE_SIDES.some((side, index) => {
+    const across = facing(side);
+    if (b.column !== a.column + across.dc || b.row !== a.row + across.dr) return false;
+    return (
+      a.edges[index]?.kind === RAIL_EDGE && b.edges[sideIndex(across.side)]?.kind === RAIL_EDGE
+    );
+  });
+}
+
 function cellKey(column: number, row: number): string {
   return `${column},${row}`;
 }
@@ -168,6 +189,20 @@ export class ModuleGrid {
     const other = neighbour?.edges[sideIndex(across.side)];
     if (!other) return { status: "open", facing: null };
     return { status: edgesJoin(edge, other) ? "joined" : "mismatch", facing: other.kind };
+  }
+
+  railEdgeClash(placement: GridPlacement): RailEdgeClash | null {
+    for (const [index, side] of MODULE_SIDES.entries()) {
+      const edge = placement.edges[index];
+      const across = facing(side);
+      const neighbour = this.occupant(placement.column + across.dc, placement.row + across.dr);
+      const other = neighbour?.edges[sideIndex(across.side)];
+      if (!edge || !neighbour || !other) continue;
+      if ((edge.kind === RAIL_EDGE) !== (other.kind === RAIL_EDGE)) {
+        return { side, kind: edge.kind, facing: other.kind, neighbour: neighbour.id };
+      }
+    }
+    return null;
   }
 
   fit(column: number, row: number, edges: ReadonlyArray<ModuleEdge>): ModuleFit {

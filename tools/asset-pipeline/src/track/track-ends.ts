@@ -13,7 +13,7 @@ import {
 export const LDU_PER_STUD = 20;
 const UNROUNDED_TOLERANCE_LDU = 1e-6;
 export const PART_FRAME_HEADING_GRID = ZETA16_STEP_RADIANS / 2;
-const CERTIFIED_RESIDUAL_LIMIT_LDU = 0.0005;
+export const CERTIFIED_RESIDUAL_LIMIT_LDU = 0.0005;
 const MARKERS_PATH = fileURLToPath(new URL("./track-end-markers.json", import.meta.url));
 
 export interface TrackEndMarker {
