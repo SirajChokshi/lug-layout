@@ -738,7 +738,7 @@ fn closed_below_all(
     closed
 }
 
-fn ground_top(instances: &[CoverInstance], boxes: &[[Vec3; 2]]) -> Option<f64> {
+fn ground_top(instances: &[CoverInstance], boxes: &[[Vec3; 2]], rest_y: f64) -> Option<f64> {
     let upright = |instance: &CoverInstance| dot(up_of(instance.matrix), UP) >= UPRIGHT_COSINE;
     let lowest = instances
         .iter()
@@ -746,6 +746,9 @@ fn ground_top(instances: &[CoverInstance], boxes: &[[Vec3; 2]]) -> Option<f64> {
         .filter(|(instance, _)| upright(instance))
         .map(|(_, [min, _])| min[1])
         .fold(f64::INFINITY, f64::min);
+    if rest_y < lowest - WELD_EPSILON_LDU {
+        return None;
+    }
     let mut top: Option<f64> = None;
     for (instance, [min, max]) in instances.iter().zip(boxes) {
         if !upright(instance) || (min[1] - lowest).abs() > WELD_EPSILON_LDU {
@@ -810,7 +813,7 @@ pub fn model_cover(
         .iter()
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
-    let ground_y = ground_top(instances, &boxes);
+    let ground_y = ground_top(instances, &boxes, rest_y);
     let cells =
         phase.map(|phase| model_cells(&boxes, &mut coverers, aabb, rest_y, ground_y, phase));
     ModelCover {
@@ -1080,11 +1083,17 @@ mod tests {
             solid([60.0, -4.0, -20.0], [100.0, 20.0, 20.0], true, true, 16.0),
         ];
         let identity = Affine::IDENTITY;
-        let cover = |parts: &[(usize, bool)]| {
+        let (sin, cos) = 30.0_f64.to_radians().sin_cos();
+        let tilted = Affine {
+            m: [
+                1.0, 0.0, 0.0, 0.0, 0.0, cos, -sin, -10.0, 0.0, sin, cos, 0.0,
+            ],
+        };
+        let cover = |parts: &[(usize, bool, &Affine)]| {
             let instances: Vec<CoverInstance> = parts
                 .iter()
-                .map(|&(part, baseplate)| CoverInstance {
-                    matrix: &identity,
+                .map(|&(part, baseplate, matrix)| CoverInstance {
+                    matrix,
                     color: OPAQUE,
                     part,
                     studs: &[],
@@ -1101,14 +1110,23 @@ mod tests {
             .cells
             .expect("a phase gives cells")
         };
-        let on_baseplate = cover(&[(0, true), (1, false)]);
+        let on_baseplate = cover(&[(0, true, &identity), (1, false, &identity)]);
         assert_eq!(on_baseplate.ground_y, Some(0.0));
         assert_eq!(on_baseplate.bottom_y, -4.0);
         assert_eq!(on_baseplate.column_top, [3, 3, 0, 0, 3, 3, 0, 0]);
-        let beside_a_brick = cover(&[(0, true), (1, false), (2, false)]);
+        let beside_a_brick = cover(&[
+            (0, true, &identity),
+            (1, false, &identity),
+            (2, false, &identity),
+        ]);
         assert_eq!(
             beside_a_brick.ground_y, None,
             "a brick also stands on the rest plane"
+        );
+        let over_a_tilted_part = cover(&[(0, true, &identity), (1, false, &tilted)]);
+        assert_eq!(
+            over_a_tilted_part.ground_y, None,
+            "a tilted part reaches below the baseplate"
         );
     }
 }
