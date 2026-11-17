@@ -59,6 +59,8 @@ class PlanOnlyBackend implements ISceneBackend {
   bufferMemory(): BufferMemory {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
+  forceTier(): void {}
+  setFarModel(): void {}
 }
 
 interface Extent {

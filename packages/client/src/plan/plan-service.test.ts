@@ -40,6 +40,8 @@ class IssueBoxBackend implements ISceneBackend {
   bufferMemory(): BufferMemory {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
+  forceTier(): void {}
+  setFarModel(): void {}
 }
 
 it("commits an unchecked plan, tables kept, when a placement box cannot be read", () => {

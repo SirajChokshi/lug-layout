@@ -53,6 +53,7 @@ export interface Placeable {
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
   readonly frameShift: Vec3;
+  readonly farModel: number | null;
   readonly credit: ModelCredit | null;
   readonly road: RoadSurface | null;
   readonly module: ModuleSurface | null;
@@ -310,6 +311,7 @@ export function modelPlaceable(
   credit: ModelCredit,
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
+  farModel: number | null,
 ): Placeable {
   const { lattice, cells } = model;
   if (lattice === null || cells === null) {
@@ -349,6 +351,7 @@ export function modelPlaceable(
     box,
     partBoxes,
     frameShift: shift,
+    farModel,
     credit: isModule ? null : credit,
     road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
     module: isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null,
@@ -397,6 +400,7 @@ export function partPlaceable(
     box,
     partBoxes,
     frameShift: shift,
+    farModel: null,
     credit: null,
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
     module: null,

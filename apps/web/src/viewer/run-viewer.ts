@@ -65,6 +65,7 @@ export async function runViewer(
     antialias: true,
     look: params.look,
   });
+  scene.backend.forceTier(params.tier);
   const drawingBuffer = (): DrawingBuffer => ({
     width: canvas.width,
     height: canvas.height,
@@ -79,6 +80,7 @@ export async function runViewer(
     nearChunks: 0,
     midChunks: 0,
     farChunks: 0,
+    nearestStudPitchPx: 0,
     renderOriginChunkX: 0,
     renderOriginChunkZ: 0,
     rebaseCount: 0,

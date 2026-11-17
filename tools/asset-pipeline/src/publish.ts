@@ -1,4 +1,4 @@
-import { BundleManifest, GltfDocument, ModelFile } from "@brr/schema/bundle";
+import { BundleManifest, FarMeshGltfDocument, GltfDocument, ModelFile } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
@@ -81,6 +81,15 @@ export async function publishBundle(
   }
   for (const { file } of manifest.models) {
     decodeDeclared(ModelFile, JSON.parse((await publish(file)).toString("utf8")), file);
+  }
+  for (const { farMesh } of manifest.models) {
+    if (farMesh) {
+      decodeDeclared(
+        FarMeshGltfDocument,
+        glbJson(await publish(farMesh.file), farMesh.file),
+        farMesh.file,
+      );
+    }
   }
   if (manifest.compiler !== null) await publish(manifest.compiler.file);
   const published = new Set(renamed.values());

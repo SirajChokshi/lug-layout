@@ -25,7 +25,9 @@ export type EditorActionId =
   | "zoom-in"
   | "zoom-out"
   | "toggle-joins"
-  | "toggle-road-snap";
+  | "toggle-road-snap"
+  | "cycle-tier"
+  | "measure-frames";
 
 export type ShellCommandId = "show-shortcuts" | "open-palette";
 
@@ -200,6 +202,20 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "toggle magnet align",
   },
   {
+    id: "cycle-tier",
+    title: "Cycle the detail tier: auto, near, mid, far",
+    group: "View",
+    keys: [{ key: "l" }],
+    keywords: "lod level of detail near mid far voxel",
+  },
+  {
+    id: "measure-frames",
+    title: "Measure 60 GPU-synced frames of this view",
+    group: "View",
+    keys: [{ key: "m" }],
+    keywords: "frame time performance benchmark gpu",
+  },
+  {
     id: "open-palette",
     title: "Find a part or command",
     group: "Help",
@@ -295,6 +311,8 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
     case "zoom-out":
     case "toggle-joins":
     case "toggle-road-snap":
+    case "cycle-tier":
+    case "measure-frames":
       return true;
     default: {
       const unhandled: never = id;
@@ -390,6 +408,12 @@ export function runEditorAction(
       return;
     case "toggle-road-snap":
       editor.setSnapRoads(!editor.snapshot().snapRoads);
+      return;
+    case "cycle-tier":
+      editor.cycleTier();
+      return;
+    case "measure-frames":
+      editor.measureFrames();
       return;
     default: {
       const unhandled: never = id;

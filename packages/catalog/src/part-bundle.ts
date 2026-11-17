@@ -52,6 +52,19 @@ export interface StudPrimitiveAsset {
   readonly mesh: MeshArrays;
 }
 
+export interface ModelVoxels {
+  readonly origin: Vec3;
+  readonly cellLdu: Vec3;
+  readonly dims: Vec3;
+  readonly cellIndex: Uint32Array;
+  readonly ldrawColor: Uint32Array;
+}
+
+export interface ModelFarMesh {
+  readonly mesh: PartMesh;
+  readonly voxels: ModelVoxels;
+}
+
 export interface PartModelLattice {
   readonly phaseX: number;
   readonly phaseZ: number;
@@ -114,6 +127,7 @@ export interface ModelBundle {
   readonly bundle: PartBundle;
   readonly entry: BundleModelEntry;
   readonly model: PartModel;
+  readonly farMesh: ModelFarMesh | undefined;
 }
 
 export interface ImportContext {

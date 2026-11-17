@@ -75,6 +75,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
     case "model": {
       const modelScene = container.get(MODEL_SCENE);
       modelScene.selectModel(viewer.model ?? "", viewer.modelView);
+      modelScene.configureCamera({ distanceLdu: viewer.distanceLdu, zoom: viewer.zoom });
       return { scene: modelScene, placements: null, run: null };
     }
     case "track": {
@@ -133,7 +134,12 @@ function root(): ReactNode {
         editor={container.get(EDITOR)}
         camera={container.get(EDITOR_CAMERA)}
         plans={container.get(PLAN_SERVICE)}
-        options={{ api: params.api, pixelRatio: window.devicePixelRatio, look: params.look }}
+        options={{
+          api: params.api,
+          pixelRatio: window.devicePixelRatio,
+          look: params.look,
+          tier: params.tier,
+        }}
         disclaimer={TRADEMARK_DISCLAIMER}
         showState={params.showEditState}
       />
