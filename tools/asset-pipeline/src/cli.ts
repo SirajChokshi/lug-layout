@@ -294,6 +294,8 @@ async function bundleCommand(): Promise<void> {
     "-p",
     "brick-compile-wasm",
   ]);
+  const coverCache = join(toolRoot, "dist", "cover-cache");
+  await rm(coverCache, { recursive: true, force: true });
   for (const lod of BundleLod.options) {
     const out = join(toolRoot, "dist", "bundle", lod);
     await rm(out, { recursive: true, force: true });
@@ -320,6 +322,8 @@ async function bundleCommand(): Promise<void> {
       lod,
       "--compiler",
       compilerWasm,
+      "--cover-cache",
+      coverCache,
     ]);
     await addTrackCatalog(out);
     const { bundleVersion, files } = await publishBundle(out, inputs);
