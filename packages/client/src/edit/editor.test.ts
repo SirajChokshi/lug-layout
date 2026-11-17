@@ -28,6 +28,7 @@ import {
   SCENE_BACKEND,
   type BackendInfo,
   type BufferMemory,
+  type FarModelPlacement,
   type ISceneBackend,
   type LookSettings,
   type RebaseEvent,
@@ -58,7 +59,7 @@ import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import { EDITOR } from "../tokens.ts";
-import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -246,7 +247,11 @@ class HeadlessBackend implements ISceneBackend {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
   forceTier(): void {}
-  setFarModel(): void {}
+  readonly farModels = new Set<number>();
+  setFarModel(id: number, placement: FarModelPlacement | null): void {
+    if (placement) this.farModels.add(id);
+    else this.farModels.delete(id);
+  }
 }
 
 afterEach(() => {
@@ -544,13 +549,13 @@ class FlakyRepository implements IWorldRepository {
   }
 }
 
-async function editorWithFailingSaves() {
+async function editorWithRepository(models: ReadonlyArray<string>) {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
   const backend = new HeadlessBackend();
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const repository = new FlakyRepository();
@@ -563,7 +568,11 @@ async function editorWithFailingSaves() {
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
   expect(editor.snapshot().status).toBe("ready");
+  return { editor, backend, repository };
+}
 
+async function editorWithFailingSaves() {
+  const { editor, backend, repository } = await editorWithRepository([]);
   editor.chooseItem(BASEPLATE);
   editor.click(0, 0, 0);
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
@@ -1237,3 +1246,89 @@ it.each([
   },
   120_000,
 );
+const SET_WITH_TRACK = "10128-1";
+
+function drawTrack(
+  editor: IEditor,
+  backend: HeadlessBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+) {
+  editor.chooseItem(TRACK_ITEM_ID);
+  backend.aim(...from);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(...to);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+  const track = editor.snapshot().track;
+  editor.chooseItem(null);
+  return { pieces: track?.pieces ?? 0, lastCommit: track?.lastCommit ?? null };
+}
+
+function placeItem(editor: IEditor, backend: HeadlessBackend, item: string, x: number, z: number) {
+  editor.chooseItem(item);
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem(null);
+}
+
+describe("placement rules across a world switch", () => {
+  it("starts another world without the last one's baseplates, volumes or track, and reloads all three with the saved world", async () => {
+    const { editor, backend, repository } = await editorWithRepository([SET_WITH_TRACK]);
+    expect(await editor.prefetch(`omr:${SET_WITH_TRACK}`)).toBe(true);
+    placeItem(editor, backend, BASEPLATE, 0, 0);
+    expect(drawTrack(editor, backend, [-300, 0], [20, 0])).toMatchObject({
+      pieces: 1,
+      lastCommit: "laid",
+    });
+    placeItem(editor, backend, `omr:${SET_WITH_TRACK}`, 3200, 0);
+    const saved = editor.snapshot();
+    expect(saved.placements).toBe(2);
+    const farModels = 1;
+    await vi.waitFor(() => expect(backend.farModels.size).toBe(farModels));
+    const openEnds = saved.track?.openEnds ?? 0;
+    expect(openEnds).toBeGreaterThan(2);
+    const first = saved.world?.id;
+    if (!first) throw new Error("the first world has no id");
+    placeItem(editor, backend, BASEPLATE, 0, 0);
+    expect(editor.snapshot().refusals).toBe(1);
+    await vi.waitFor(() => expect(repository.storedPlacements()).toBe(2));
+
+    expect(await editor.newWorld("Empty")).toBe(true);
+    expect(editor.snapshot()).toMatchObject({ refusals: 0, lastRefusal: null });
+    expect(editor.snapshot().track?.openEnds).toBe(0);
+    expect(backend.farModels.size).toBe(0);
+    expect(drawTrack(editor, backend, [-300, 0], [20, 0])).toMatchObject({
+      pieces: 0,
+      lastCommit: "refused-off-baseplate",
+    });
+    placeItem(editor, backend, BASEPLATE, 0, 0);
+    expect(editor.snapshot().placements).toBe(1);
+
+    expect(await editor.openWorld(first)).toBe(true);
+    const reloaded = editor.snapshot();
+    expect(reloaded.placements).toBe(2);
+    expect(reloaded.track?.pieces).toBe(1);
+    expect(reloaded.track?.openEnds).toBe(openEnds);
+    await vi.waitFor(() => expect(backend.farModels.size).toBe(farModels));
+
+    const refusals = reloaded.refusals;
+    placeItem(editor, backend, BASEPLATE, 0, 0);
+    expect(editor.snapshot().placements).toBe(2);
+    expect(editor.snapshot().refusals).toBe(refusals + 1);
+
+    expect(drawTrack(editor, backend, [-140, -200], [-140, 120])).toMatchObject({
+      pieces: 1,
+      lastCommit: "refused-crosses-track",
+    });
+
+    backend.aim(200, 200);
+    editor.click(0, 0, 0);
+    expect(editor.snapshot().selection?.item).toBe(BASEPLATE);
+    editor.deleteSelection(0);
+    expect(editor.snapshot().placements).toBe(2);
+    expect(editor.snapshot().lastRefusal?.rule).toBe("carries");
+  }, 120_000);
+});
