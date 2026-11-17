@@ -1,0 +1,12 @@
+base {"rate":1,"load":"1,646 ms","allShapesMsFromNavigate":null,"last":{"status":"ready","load":"1,646 ms","shapes":null}}
+new {"rate":1,"load":"1,478 ms","allShapesMsFromNavigate":3091,"last":{"status":"ready","load":"1,478 ms","shapes":"128 of 128"}}
+base {"rate":1,"load":"1,376 ms","allShapesMsFromNavigate":null,"last":{"status":"ready","load":"1,376 ms","shapes":null}}
+new {"rate":1,"load":"1,476 ms","allShapesMsFromNavigate":3060,"last":{"status":"ready","load":"1,476 ms","shapes":"128 of 128"}}
+base {"rate":1,"load":"1,407 ms","allShapesMsFromNavigate":null,"last":{"status":"ready","load":"1,407 ms","shapes":null}}
+new {"rate":1,"load":"1,395 ms","allShapesMsFromNavigate":2951,"last":{"status":"ready","load":"1,395 ms","shapes":"128 of 128"}}
+base {"rate":4,"load":"4,349 ms","allShapesMsFromNavigate":null,"last":{"status":"ready","load":"4,349 ms","shapes":null}}
+new {"rate":4,"load":"4,711 ms","allShapesMsFromNavigate":8503,"last":{"status":"ready","load":"4,711 ms","shapes":"128 of 128"}}
+base {"rate":4,"load":"4,769 ms","allShapesMsFromNavigate":null,"last":{"status":"ready","load":"4,769 ms","shapes":null}}
+new {"rate":4,"load":"4,681 ms","allShapesMsFromNavigate":8421,"last":{"status":"ready","load":"4,681 ms","shapes":"128 of 128"}}
+base {"rate":4,"load":"4,608 ms","allShapesMsFromNavigate":null,"last":{"status":"ready","load":"4,608 ms","shapes":null}}
+new {"rate":4,"load":"4,725 ms","allShapesMsFromNavigate":8693,"last":{"status":"ready","load":"4,725 ms","shapes":"128 of 128"}}

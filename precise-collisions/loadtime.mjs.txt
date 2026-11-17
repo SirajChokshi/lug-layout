@@ -1,0 +1,34 @@
+const port = process.env.PORT ?? "9401";
+const url = process.argv[2];
+const rate = Number(process.argv[3] ?? "1");
+const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+const ws = new WebSocket(list.find((t) => t.type === "page").webSocketDebuggerUrl);
+await new Promise((r) => ws.addEventListener("open", r));
+let id = 1; const pend = new Map();
+ws.addEventListener("message", (e) => { const m = JSON.parse(e.data); if (m.id && pend.has(m.id)) { pend.get(m.id)(m.result); pend.delete(m.id); } });
+const send = (method, params = {}) => new Promise((res) => { const i = id++; pend.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+await send("Network.enable");
+await send("Network.setCacheDisabled", { cacheDisabled: true });
+await send("Emulation.setDeviceMetricsOverride", { width: 1800, height: 1000, deviceScaleFactor: 1, mobile: false });
+await send("Emulation.setCPUThrottlingRate", { rate });
+await send("Page.navigate", { url: "about:blank" });
+await sleep(300);
+const t0 = Date.now();
+await send("Page.navigate", { url });
+const hud = `(() => { const out = {}; for (const d of document.querySelectorAll('dl > div')) out[d.querySelector('dt')?.textContent] = d.querySelector('dd')?.textContent; return { status: document.querySelector('.editor')?.dataset.status ?? null, load: out['Load'] ?? null, shapes: out['Exact shapes loaded'] ?? null }; })()`;
+let ready = null, shapesAt = null, last = null;
+for (let i = 0; i < 1200; i++) {
+  await sleep(100);
+  const r = await send("Runtime.evaluate", { expression: hud, returnByValue: true });
+  last = r.result.value;
+  if (last.status === "ready" && last.load && ready === null) ready = last.load;
+  if (ready !== null) {
+    if (last.shapes === null) break;
+    const m = /(\d+) of (\d+)/.exec(last.shapes);
+    if (m && m[1] === m[2]) { shapesAt = Date.now() - t0; break; }
+  }
+}
+await send("Emulation.setCPUThrottlingRate", { rate: 1 });
+console.log(JSON.stringify({ rate, load: ready, allShapesMsFromNavigate: shapesAt, last }));
+process.exit(0);
