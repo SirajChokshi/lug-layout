@@ -20,6 +20,7 @@ const apis = (args.apis ?? "webgpu,webgl2").split(",");
 const cameras = (args.cameras ?? "aerial,street").split(",");
 const repeats = Number(args.repeats ?? 3);
 const extra = args.extra ?? "";
+const throttle = Number(args.throttle ?? 1);
 const chrome =
   process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 mkdirSync(out, { recursive: true });
@@ -46,6 +47,10 @@ for (const api of apis) {
       });
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
+      if (throttle > 1) {
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: throttle });
+      }
       const url = `${base}?scene=layout&api=${api}&camera=${camera}&measure=1&warmup=${warmup}&frames=${frames}${extra}`;
       await page.goto(url);
       await page.waitForSelector("#result[data-done='1'], .hud .error", {
@@ -79,6 +84,7 @@ for (const api of apis) {
           parts: result.summary.parts,
           memory: result.memory,
           loadMs: result.loadMs,
+          throttle,
         };
         rows.push(row);
         console.log(JSON.stringify(row));
@@ -89,4 +95,4 @@ for (const api of apis) {
   }
 }
 await browser.close();
-writeFileSync(join(out, "summary.json"), JSON.stringify({ label, base, width, height, dpr, frames, warmup, rows }, null, 1));
+writeFileSync(join(out, "summary.json"), JSON.stringify({ label, base, width, height, dpr, frames, warmup, throttle, extra, rows }, null, 1));
