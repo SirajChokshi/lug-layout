@@ -33,7 +33,7 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
-import { localPlanTriangles, placedPlanCells, trackPlanTransform } from "./track-footprint.ts";
+import { localPlanTriangles, supportCells } from "./track-footprint.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -244,11 +244,11 @@ export class TrackDrawing {
   readonly kit: DrawingKit;
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
-  private readonly layout: TrackLayout;
+  private layout: TrackLayout;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
-  private readonly pieceCells: BaseCells[] = [];
+  private pieceCells: BaseCells[] = [];
   private readonly cellCache = new Map<string, BaseCells>();
   private drag: Drag | null = null;
   private lastSolveMs = 0;
@@ -378,7 +378,7 @@ export class TrackDrawing {
     const key = `${part.piece.id}|${placement.heading}|${placement.position.join(",")}`;
     const cached = this.cellCache.get(key);
     if (cached) return cached;
-    const cells = placedPlanCells(part.plan, trackPlanTransform(placement, part.piece.partFrame));
+    const cells = supportCells(part.plan, placement, part.piece.partFrame, part.def.connectors);
     if (this.cellCache.size >= CELL_CACHE_LIMIT) this.cellCache.clear();
     this.cellCache.set(key, cells);
     return cells;
@@ -611,6 +611,54 @@ export class TrackDrawing {
       ends.push(this.layout.connectorPose(placement, connector));
     }
     this.ends = ends;
+  }
+
+  pieceAt(xLdu: number, zLdu: number): number | null {
+    const cellX = Math.floor(xLdu / STUD_LDU);
+    const cellZ = Math.floor(zLdu / STUD_LDU);
+    for (let p = this.layout.count - 1; p >= 0; p--) {
+      const cells = this.pieceCells[p];
+      if (!cells) continue;
+      for (let c = 0; c < cells.count; c++) {
+        if (cells.cellX[c] === cellX && cells.cellZ[c] === cellZ) return p;
+      }
+    }
+    return null;
+  }
+
+  pieceBox(piece: number): WorldBox {
+    return partBox(this.placedAt(piece));
+  }
+
+  pieceId(piece: number): string {
+    return this.placedAt(piece).part.piece.id;
+  }
+
+  removePiece(piece: number): ReadonlyArray<number> {
+    const kept: Placed[] = [];
+    const keptCells: BaseCells[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      if (p === piece) continue;
+      kept.push(this.placedAt(p));
+      keptCells.push(
+        this.pieceCells[p] ?? this.cellsOf(this.placedAt(p).part, this.layout.pose(p)),
+      );
+    }
+    const touched = new Set(this.chunkMembers.keys());
+    this.layout = new TrackLayout(this.layout.pieces);
+    this.chunkMembers.clear();
+    this.pieceCells = keptCells;
+    for (const placed of kept) {
+      const index = this.layout.place(placed.part.catalogIndex, placed.placement, GROUND_PLATES);
+      const centre = partCentre(placed);
+      const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
+      const members = this.chunkMembers.get(key) ?? [];
+      members.push(index);
+      this.chunkMembers.set(key, members);
+      touched.add(key);
+    }
+    this.recomputeEnds();
+    return [...touched];
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {
