@@ -1,0 +1,20 @@
+## Delete worlds
+worlds: ["Scratch (1)","World 1 (0)"]
+databases: ["brr-world-9d18115a-6674-4481-9819-9b50b87141a7","brr-world-de8162c9-c489-4156-bfc6-7447f52b4833","brr-worlds"]
+deleted the other world: ["Scratch (1)"]; databases ["brr-world-de8162c9-c489-4156-bfc6-7447f52b4833","brr-worlds"]
+deleted the open world: now "World 1 Saved · 0 placements · 0 shards"; worlds ["World 1 (0)"]; databases ["brr-world-4ccb3c49-7242-4cc4-8a31-2923cc980ff7","brr-worlds"]
+## Two tabs on one world
+tab 1: "World 1 Saved · 1 placement · 1 shard" read-only null
+tab 2: "World 1 Saved · 1 placement · 1 shard"; warning: This world is open in another tab, so it is read-only here. Editing resumes when the other tab closes it.
+tab 2 catalog buttons enabled: 0 of 135
+tab 2 pressed Ctrl+Z: HUD placements 1
+tab 1 placed a second baseplate: "World 1 Saved · 2 placements · 1 shard"
+tab 1 closed; tab 2 reopened the world: "World 1 Saved · 2 placements · 1 shard"; catalog enabled 135
+tab 2 edits and saves: "World 1 Saved · 3 placements · 2 shards"
+## Storage blocked
+panel: WORLD |  | World 1 Not saved: storage unavailable |  | Storage is unavailable, so nothing is saved (The operation is insecure). Export still works. |  | New | Export .brr.zip | Import .brr.zip
+placed a baseplate: HUD placements 1; "World 1 Not saved: storage unavailable"
+exported from memory: 174257 bytes
+## A name the schema rejects, forced past the field's maxlength
+field holds 215 characters; New enabled false; message: The name must be 1 to 200 characters, not all spaces.
+after Enter: "World 1 Saved · 0 placements · 0 shards"; worlds ["World 1 (0)"]
