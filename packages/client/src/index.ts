@@ -61,6 +61,7 @@ export type {
   ModuleJoinView,
   RoadIssueView,
   RoadJoinView,
+  RoadStrokeResult,
   RoadPlacementDump,
   RefusedClick,
   RoadSnapState,
@@ -76,6 +77,13 @@ export type {
   TrackView,
   WorldFileView,
 } from "./edit/editor.ts";
+export type { RoadShape } from "@brr/domain";
+export type {
+  RoadKitView,
+  RoadStrokeView,
+  RoadTileIssue,
+  RoadTileProblem,
+} from "./edit/road-drawing.ts";
 export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
 export type { ImportReport, ImportResult, PartResolution, PartResolutionKind } from "@brr/import";

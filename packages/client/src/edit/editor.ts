@@ -100,6 +100,13 @@ import {
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
+import {
+  ROAD_KIT_PREFIX,
+  RoadDrawing,
+  type RoadKitView,
+  type RoadPreview,
+  type RoadStrokeView,
+} from "./road-drawing.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
@@ -108,7 +115,11 @@ import { creditsForWorld, exportFileName } from "./world-credits.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
-export type EditorMode = "place" | "select" | "track";
+export type EditorMode = "place" | "select" | "track" | "road";
+export interface RoadStrokeResult {
+  readonly result: "laid" | "refused";
+  readonly stroke: RoadStrokeView;
+}
 
 export interface CatalogColorView {
   readonly code: number;
@@ -411,6 +422,10 @@ export interface EditorSnapshot {
   readonly readOnly: boolean;
   readonly unsavedEdits: boolean;
   readonly coldStartMs: number | null;
+  readonly roadKits: ReadonlyArray<RoadKitView>;
+  readonly roadKit: string | null;
+  readonly roadStroke: RoadStrokeView | null;
+  readonly lastRoadStroke: RoadStrokeResult | null;
 }
 
 export interface EditorCredits {
@@ -725,6 +740,10 @@ export class Editor implements IEditor {
     readOnly: false,
     unsavedEdits: false,
     coldStartMs: null,
+    roadKits: [],
+    roadKit: null,
+    roadStroke: null,
+    lastRoadStroke: null,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -770,6 +789,8 @@ export class Editor implements IEditor {
   private hitZ = 0;
   private track: TrackDrawing | null = null;
   private newTrack: (() => TrackDrawing) | null = null;
+  private roadDrawing: RoadDrawing | null = null;
+  private roadPreviewMarkers: RoadPreview["markers"] = [];
   private lastTrackCommit: TrackCommitResult | null = null;
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
@@ -843,6 +864,11 @@ export class Editor implements IEditor {
       this.newTrack = () => new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
       this.track = this.newTrack();
       this.bomTables = { palette, colors, ldrawColors: bundle.colors.map((color) => color.code) };
+      this.roadDrawing = new RoadDrawing(this.placeables, (family, placeable) =>
+        family === "mils"
+          ? "MILS road modules"
+          : `${colorOf(bundle.colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
+      );
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         ...(far
@@ -870,6 +896,8 @@ export class Editor implements IEditor {
         ],
         catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
         trackNotDrawable: undrawableTrack(bundle.parts, this.track, palette.parts),
+        roadKits: this.roadDrawing.kitViews(),
+        roadKit: this.roadDrawing.activeKit()?.id ?? null,
         track: this.trackView(),
         credits: {
           partFiles: bundle.credits.length,
@@ -1250,7 +1278,55 @@ export class Editor implements IEditor {
     if (ghost) this.backend.placeGhost(ghost.x, 0, ghost.z, 0);
   }
 
+  private roadNeighbours(): readonly [ReadonlyArray<PlacedModel>, ReadonlyArray<PlacedModel>] {
+    return [this.roadModels, this.placed.models().filter((model) => model.placeable.road === null)];
+  }
+
+  private showRoadPreview(preview: RoadPreview | null): void {
+    if (!preview) return;
+    this.backend.setGhost(preview.ghost);
+    if (preview.ghost) this.backend.placeGhost(preview.ghost.originX, 0, preview.ghost.originZ, 0);
+    this.roadPreviewMarkers = preview.markers;
+    this.showMarkers();
+    this.update({ roadStroke: preview.view });
+  }
+
+  private clearRoadPreview(): void {
+    this.backend.setGhost(null);
+    this.roadPreviewMarkers = [];
+    this.showMarkers();
+  }
+
+  private roadDragStart(ndcX: number, ndcY: number): boolean {
+    const roads = this.roadDrawing;
+    if (!roads || !this.groundHit(ndcX, ndcY)) return false;
+    this.showRoadPreview(roads.begin(this.hitX, this.hitZ, ...this.roadNeighbours()));
+    return true;
+  }
+
+  private roadDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    const roads = this.roadDrawing;
+    if (!roads) return;
+    if (this.groundHit(ndcX, ndcY)) {
+      this.showRoadPreview(roads.move(this.hitX, this.hitZ, ...this.roadNeighbours()));
+    }
+    const stroke = roads.end();
+    this.clearRoadPreview();
+    if (!stroke) return;
+    if (stroke.requests.length === 0) {
+      this.update({
+        roadStroke: stroke.view,
+        lastRoadStroke:
+          stroke.view.issues.length > 0 ? { result: "refused", stroke: stroke.view } : null,
+      });
+      return;
+    }
+    this.show(this.history.commit("road", stroke.requests), eventTimeMs);
+    this.update({ roadStroke: null, lastRoadStroke: { result: "laid", stroke: stroke.view } });
+  }
+
   dragStart(ndcX: number, ndcY: number): boolean {
+    if (this.state.mode === "road") return this.roadDragStart(ndcX, ndcY);
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
@@ -1260,6 +1336,12 @@ export class Editor implements IEditor {
   }
 
   dragMove(ndcX: number, ndcY: number): void {
+    if (this.state.mode === "road") {
+      if (this.roadDrawing && this.groundHit(ndcX, ndcY)) {
+        this.showRoadPreview(this.roadDrawing.move(this.hitX, this.hitZ, ...this.roadNeighbours()));
+      }
+      return;
+    }
     const track = this.track;
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
@@ -1273,6 +1355,10 @@ export class Editor implements IEditor {
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.state.mode === "road") {
+      this.roadDragEnd(ndcX, ndcY, eventTimeMs);
+      return;
+    }
     const track = this.track;
     if (!track) return;
     const hit = this.groundHit(ndcX, ndcY);
@@ -1317,8 +1403,38 @@ export class Editor implements IEditor {
     this.update({ track: this.trackView() });
   }
 
+  private enterRoadMode(id: string): void {
+    if (this.state.mode === "track") {
+      this.held = null;
+      this.track?.cancelDrag();
+      this.targetTrackEnd(null);
+    }
+    this.active = null;
+    this.backend.setGhost(null);
+    this.select(null);
+    this.update({
+      mode: "road",
+      activeItem: id,
+      roadKit: id,
+      roadStroke: null,
+      lastRoadStroke: null,
+      track: this.trackView(),
+    });
+  }
+
+  private leaveRoadMode(): void {
+    this.roadDrawing?.cancel();
+    this.clearRoadPreview();
+    this.update({ mode: "select", activeItem: null, roadStroke: null });
+  }
+
   chooseItem(id: string | null): void {
     if (id !== null && this.readOnly) return;
+    if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();
+    if (id?.startsWith(ROAD_KIT_PREFIX) && this.roadDrawing?.choose(id)) {
+      this.enterRoadMode(id);
+      return;
+    }
     const track = this.track;
     const pieceIndex = id === null || !track ? null : this.trackPieceIndex(track, id);
     if ((id === TRACK_ITEM_ID || pieceIndex !== null) && track) {
@@ -1582,6 +1698,9 @@ export class Editor implements IEditor {
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
     const { moduleFit, snap } = this.snapGhost();
+    if (this.state.mode === "road" && this.roadDrawing && this.hovering) {
+      this.showRoadPreview(this.roadDrawing.hover(this.hitX, this.hitZ, ...this.roadNeighbours()));
+    }
     const track = this.track;
     if (this.held) this.showHeldPiece();
     else if (this.state.mode === "track" && track && !track.dragView()) {
@@ -1604,6 +1723,7 @@ export class Editor implements IEditor {
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.state.mode === "road") return;
     if (this.state.mode === "track") {
       if (!this.held || this.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -1816,6 +1936,7 @@ export class Editor implements IEditor {
     this.roadNetwork = new RoadNetwork(placements);
     this.roadExtents = placements.map(cellExtent);
     this.roadReport = this.roadNetwork.report();
+    this.roadDrawing?.worldChanged();
     const checkMs = performance.now() - started;
     this.showMarkers();
     const report = this.roadReport;
@@ -1846,20 +1967,19 @@ export class Editor implements IEditor {
   }
 
   private showMarkers(): void {
-    if (!this.state.showJoins) {
-      this.backend.setMarkers([]);
-      return;
-    }
     const ghost = this.moduleGhost;
     const surface = this.active?.module;
-    this.backend.setMarkers([
-      ...this.roadReport.segments.map((segment) => ({
-        box: markerBox(segment),
-        kind: segment.status,
-      })),
-      ...(this.modules?.markers() ?? []),
-      ...(ghost && surface && this.modules ? this.modules.ghostMarkers(ghost, surface) : []),
-    ]);
+    const joins: EdgeMarker[] = this.state.showJoins
+      ? [
+          ...this.roadReport.segments.map((segment) => ({
+            box: markerBox(segment),
+            kind: segment.status,
+          })),
+          ...(this.modules?.markers() ?? []),
+          ...(ghost && surface && this.modules ? this.modules.ghostMarkers(ghost, surface) : []),
+        ]
+      : [];
+    this.backend.setMarkers([...joins, ...this.roadPreviewMarkers]);
   }
 
   private refreshModules(): void {
@@ -2008,6 +2128,13 @@ export class Editor implements IEditor {
   }
 
   rotate(eventTimeMs: number): void {
+    const roads = this.roadDrawing;
+    if (this.state.mode === "road" && roads) {
+      roads.preferredRot = (roads.preferredRot + 1) % QUARTER_TURNS;
+      this.showRoadPreview(roads.rerun(...this.roadNeighbours()));
+      this.update({ ghostRot: roads.preferredRot });
+      return;
+    }
     const held = this.held;
     if (held) {
       this.held =
