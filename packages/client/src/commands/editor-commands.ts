@@ -338,6 +338,10 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
 const CAMERA_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
   "select-tool",
   "focus",
+  "fit-all",
+  "toggle-plan-view",
+  "cycle-tier",
+  "measure-frames",
   "centre",
   "pan-left",
   "pan-right",
