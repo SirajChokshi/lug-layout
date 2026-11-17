@@ -3365,6 +3365,7 @@ export class Editor implements IEditor {
         return placeable ? [{ placement: this.history.adopt(handle), handle, placeable }] : [];
       }),
     );
+    this.syncHeldTrack();
     this.update({ studs: this.placed.studTotals() });
     for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
       this.requestMeshes(placeable, "high");
