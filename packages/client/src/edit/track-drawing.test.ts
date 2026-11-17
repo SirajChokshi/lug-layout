@@ -276,4 +276,10 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   expect(siding.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
   expect(siding.joinedPairs()).toBe(8);
   expect(siding.openEnds()).toHaveLength(2);
+
+  const reopened = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle));
+  expect(reopened.restore(siding.records()).ok).toBe(true);
+  expect(reopened.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
+  expect(reopened.joinedPairs()).toBe(8);
+  expect(reopened.openEnds()).toHaveLength(2);
 });
