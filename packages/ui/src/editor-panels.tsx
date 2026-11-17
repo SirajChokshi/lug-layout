@@ -417,8 +417,27 @@ function rebuildText(sample: LatencySample | null): string {
   return `${sample.rebuiltChunks} chunks, ${integer.format(sample.rebuiltInstances)} parts, ${integer.format(sample.rebuiltStuds)} studs`;
 }
 
+const STATS_OPEN_KEY = "brr.stats-open";
+
+function statsOpenAtStart(): boolean {
+  if (isCompactLayout()) return false;
+  try {
+    return window.localStorage.getItem(STATS_OPEN_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function rememberStatsOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(STATS_OPEN_KEY, String(open));
+  } catch {
+    return;
+  }
+}
+
 export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
-  const [open, setOpen] = useState(() => !isCompactLayout());
+  const [open, setOpen] = useState(statsOpenAtStart);
   const { backend, stats } = snapshot;
   const glance = [
     ...(stats ? [`${stats.fps.toFixed(0)} fps`] : []),
@@ -508,7 +527,10 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     <details
       className="hud editor-hud"
       open={open || snapshot.error !== null}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        setOpen(event.currentTarget.open);
+        rememberStatsOpen(event.currentTarget.open);
+      }}
     >
       <summary title={open ? "Fold the stats away" : "Show the editor's stats"}>
         <h1>Brick Railroad</h1>
