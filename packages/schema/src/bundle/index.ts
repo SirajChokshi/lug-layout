@@ -304,6 +304,37 @@ export const ManifestPart = v.object({
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 
+export const StudRecord = v.object({ primitive: v.string(), color: Integer, matrix: Matrix });
+export type StudRecord = v.InferOutput<typeof StudRecord>;
+
+export const PartShape = v.object({
+  id: v.string(),
+  title: v.string(),
+  role: PartRole,
+  file: v.string(),
+  bounds: Bounds,
+  studs: v.array(StudRecord),
+  displayColor: v.optional(DisplayColor),
+  producedColors: v.optional(ProducedColors),
+  trackEnds: v.optional(v.array(TrackEnd)),
+});
+export type PartShape = v.InferOutput<typeof PartShape>;
+
+const FileRef = v.object({ file: v.string() });
+
+export const CatalogPart = v.object({ ...ManifestPart.entries, shape: FileRef });
+export type CatalogPart = v.InferOutput<typeof CatalogPart>;
+
+export const PART_FOOTPRINT_FLOATS = 4;
+
+export const TrackShape = v.object({
+  piece: v.string(),
+  footprints: v.pipe(v.array(Finite), v.length(ZETA16_ORDER * PART_FOOTPRINT_FLOATS)),
+  minY: Finite,
+  maxY: Finite,
+});
+export type TrackShape = v.InferOutput<typeof TrackShape>;
+
 export const StudPrimitive = v.object({
   ...CompiledMesh.entries,
   name: v.string(),
@@ -337,17 +368,16 @@ export type BundleCredit = v.InferOutput<typeof BundleCredit>;
 export const BundleLod = v.picklist(["standard", "low", "far"]);
 export type BundleLod = v.InferOutput<typeof BundleLod>;
 
-export const BundleManifest = v.object({
+export const BundleIndex = v.object({
   bundleVersion: v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/u)),
   unit: v.literal("LDU"),
   upAxis: v.literal("+Y"),
   lod: BundleLod,
   source: BundleSource,
-  parts: v.array(ManifestPart),
   studPrimitives: v.array(StudPrimitive),
   colors: v.array(BundleColor),
-  credits: v.array(BundleCredit),
   models: v.array(BundleModelEntry),
+  catalogParts: v.array(CatalogPart),
   modified: v.string(),
   disclaimer: v.string(),
   inputs: v.object({
@@ -357,9 +387,25 @@ export const BundleManifest = v.object({
     paletteSha256: Sha256Hex,
   }),
   trackCatalog: TrackCatalog,
+  trackShapes: v.array(TrackShape),
   milsEdgeRules: MilsEdgeRules,
   compiler: v.nullable(BundleCompiler),
-  crosswalk: v.object({ file: v.string() }),
+  crosswalk: FileRef,
+  partTable: FileRef,
+  creditTable: FileRef,
+});
+export type BundleIndex = v.InferOutput<typeof BundleIndex>;
+
+export const PartTableFile = v.object({ parts: v.array(ManifestPart) });
+export type PartTableFile = v.InferOutput<typeof PartTableFile>;
+
+export const CreditTableFile = v.object({ credits: v.array(BundleCredit) });
+export type CreditTableFile = v.InferOutput<typeof CreditTableFile>;
+
+export const BundleManifest = v.object({
+  ...BundleIndex.entries,
+  ...PartTableFile.entries,
+  ...CreditTableFile.entries,
 });
 export type BundleManifest = v.InferOutput<typeof BundleManifest>;
 
@@ -500,6 +546,7 @@ export const ModelFile = v.pipe(
     sections: v.array(ModelSection),
     inlinePartsResolvedToOfficial: v.array(InlinePartResolution),
     parts: v.array(v.string()),
+    shapes: v.array(PartShape),
     lattice: v.nullable(ModelLattice),
     vehicles: v.array(ModelVehicle),
     cover: ModelFileCover,
@@ -516,6 +563,11 @@ export const ModelFile = v.pipe(
       instances.matrix.length === instances.part.length * MATRIX_FLOATS &&
       instances.part.every((index) => index < parts.length),
     "model instance arrays are inconsistent",
+  ),
+  v.check(
+    ({ parts, shapes }) =>
+      shapes.length === parts.length && shapes.every((shape, i) => shape.id === parts[i]),
+    "model shapes do not follow its part list",
   ),
   v.check(
     ({ vehicles, instances }) =>
@@ -546,7 +598,7 @@ export const PartExtras = v.object({
     note: v.string(),
   }),
   sources: v.array(LdrawSource),
-  studs: v.array(v.object({ primitive: v.string(), color: Integer, matrix: Matrix })),
+  studs: v.array(StudRecord),
   bounds: Bounds,
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;

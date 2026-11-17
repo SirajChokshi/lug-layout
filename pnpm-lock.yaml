@@ -419,6 +419,12 @@ importers:
 
   tools/asset-pipeline:
     dependencies:
+      '@brr/catalog':
+        specifier: workspace:*
+        version: link:../../packages/catalog
+      '@brr/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@brr/math':
         specifier: workspace:*
         version: link:../../packages/math

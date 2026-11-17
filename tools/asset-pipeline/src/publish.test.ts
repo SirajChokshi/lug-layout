@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -20,7 +20,6 @@ function compiledManifest() {
     upAxis: "+Y",
     lod: "standard",
     source,
-    parts: [],
     studPrimitives: [
       {
         name: "stud.dat",
@@ -34,7 +33,6 @@ function compiledManifest() {
       },
     ],
     colors: [],
-    credits: [],
     models: [
       {
         name: "scene",
@@ -55,7 +53,9 @@ function compiledManifest() {
     ],
     modified: "modified from LDraw",
     disclaimer: "not affiliated",
+    catalogParts: [],
     trackCatalog: { n: 16, pieces: [] },
+    trackShapes: [],
     milsEdgeRules: {
       source: "test",
       moduleStuds: 32,
@@ -65,6 +65,8 @@ function compiledManifest() {
     },
     compiler: null,
     crosswalk: { file: "crosswalk.json" },
+    partTable: { file: "parts.json" },
+    creditTable: { file: "credits.json" },
   };
 }
 
@@ -124,7 +126,8 @@ function modelFile() {
     sha256: SHA256_ZERO,
     sections: [],
     inlinePartsResolvedToOfficial: [],
-    parts: [],
+    parts: [] as string[],
+    shapes: [] as unknown[],
     lattice: null,
     vehicles: [],
     cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, visibleBits: [], cells: null },
@@ -149,6 +152,8 @@ interface CompiledBundle {
   readonly gltf: ReturnType<typeof studGltf>;
   readonly model: ReturnType<typeof modelFile>;
   readonly crosswalk: ReturnType<typeof crosswalkFile>;
+  readonly parts: Array<Record<string, unknown>>;
+  readonly files: Map<string, Buffer>;
 }
 
 const inputs = { ldraw: source, omr: source, lockSha256: SHA256_ZERO, paletteSha256: SHA256_ZERO };
@@ -162,13 +167,18 @@ async function publish(edit: (bundle: CompiledBundle) => void) {
     gltf: studGltf(),
     model: modelFile(),
     crosswalk: crosswalkFile(),
+    parts: [],
+    files: new Map<string, Buffer>(),
   };
   edit(bundle);
   await writeFile(join(directory, MANIFEST_FILE), JSON.stringify(bundle.manifest));
   await writeFile(join(directory, "stud.glb"), glb(bundle.gltf));
   await writeFile(join(directory, "model-scene.json"), JSON.stringify(bundle.model));
   await writeFile(join(directory, "crosswalk.json"), JSON.stringify(bundle.crosswalk));
-  return publishBundle(directory, inputs);
+  await writeFile(join(directory, "parts.json"), JSON.stringify({ parts: bundle.parts }));
+  await writeFile(join(directory, "credits.json"), JSON.stringify({ credits: [] }));
+  for (const [name, bytes] of bundle.files) await writeFile(join(directory, name), bytes);
+  return { directory, published: await publishBundle(directory, inputs) };
 }
 
 afterEach(async () => {
@@ -177,7 +187,39 @@ afterEach(async () => {
 
 describe("publishBundle", () => {
   it("publishes a bundle whose every key is declared", async () => {
-    await expect(publish(() => undefined)).resolves.toMatchObject({ files: 3 });
+    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 5 } });
+  });
+
+  it("points every record at the content-addressed GLB of its parts", async () => {
+    const { directory } = await publish((bundle) => {
+      const part = {
+        id: "ldraw:3001",
+        path: "parts/3001.dat",
+        role: "detail",
+        file: "3001.glb",
+        title: "Brick 2 x 4",
+        author: "James Jessiman",
+        license: null,
+        bounds: origin,
+        colors: [16],
+        studs: 0,
+        triangles: 0,
+        vertices: 0,
+      };
+      const shape = { id: part.id, title: part.title, role: part.role, file: part.file };
+      bundle.parts.push(part);
+      bundle.files.set(part.file, glb(studGltf()));
+      bundle.model.parts.push(part.id);
+      bundle.model.shapes.push({ ...shape, bounds: origin, studs: [] });
+    });
+    const names = await readdir(directory);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    const model = JSON.parse(await readFile(join(directory, manifest.models[0].file), "utf8"));
+    const table = JSON.parse(await readFile(join(directory, manifest.partTable.file), "utf8"));
+    const addressed = names.find((name) => /^3001\.[0-9a-f]{16}\.glb$/u.test(name));
+    expect(addressed).toBeDefined();
+    expect(model.shapes[0].file).toBe(addressed);
+    expect(table.parts[0].file).toBe(addressed);
   });
 
   it.each([
