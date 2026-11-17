@@ -29,6 +29,7 @@ import {
   summarizeChunks,
   type IViewerScene,
   type KeyedChunk,
+  type ModelCredit,
   type SceneSummary,
 } from "./viewer-scene.ts";
 
@@ -188,6 +189,16 @@ function snapToStud(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU;
 }
 
+function mergedCredit(placeables: Iterable<Placeable>): ModelCredit {
+  const credits: ModelCredit[] = [];
+  for (const placeable of placeables) if (placeable.credit) credits.push(placeable.credit);
+  return {
+    name: credits.map((credit) => credit.name).join(" + "),
+    source: [...new Set(credits.map((credit) => credit.source))].join(" "),
+    sections: credits.flatMap((credit) => credit.sections),
+  };
+}
+
 @injectable()
 export class LayoutScene implements ILayoutScene {
   private request: LayoutRequest = { camera: "aerial", tiles: 1 };
@@ -247,7 +258,7 @@ export class LayoutScene implements ILayoutScene {
         creditedFiles: bundle.credits.length,
       },
       chunks,
-      null,
+      mergedCredit(placeables.values()),
     );
   }
 
