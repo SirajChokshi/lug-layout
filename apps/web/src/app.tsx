@@ -1,14 +1,18 @@
 import type {
   IRunningGear,
+  IImportScene,
+  ImportedModule,
   IRunScene,
   IViewerScene,
   PlacementDump,
   RunStatus,
+  SceneSummary,
   SimBenchResult,
   TrackSummary,
 } from "@brr/client";
 import { CreditLinks, partsCreditText, RunningGearPanel } from "@brr/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ImportPanel } from "./import-panel.tsx";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
 import type { ChunkTiers } from "./viewer/measure-frames.ts";
 import type { MemoryReport } from "./viewer/memory-report.ts";
@@ -25,6 +29,7 @@ interface AppProps {
   readonly placements: (() => PlacementDump) | null;
   readonly run: IRunScene | null;
   readonly runningGear: IRunningGear | null;
+  readonly importScene: IImportScene | null;
 }
 
 const BENCH_AFTER_MS = 5_000;
@@ -244,10 +249,13 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params, placements, run, runningGear }: AppProps) {
+export function App({ scene, params, placements, run, runningGear, importScene }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
-  const [report, setReport] = useState<ViewerReport | null>(null);
+  const [viewerReport, setReport] = useState<ViewerReport | null>(null);
+  const [importedSummary, setImportedSummary] = useState<SceneSummary | null>(null);
+  const report =
+    viewerReport && importedSummary ? { ...viewerReport, summary: importedSummary } : viewerReport;
   const [result, setResult] = useState<ViewerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const showRunError = useCallback((e: unknown): void => setError(String(e)), []);
@@ -292,6 +300,12 @@ export function App({ scene, params, placements, run, runningGear }: AppProps) {
         )}
       </aside>
       {runningGear && params.gear && <RunningGearPanel gear={runningGear} />}
+      {importScene && (
+        <ImportPanel
+          scene={importScene}
+          onImported={(module: ImportedModule) => setImportedSummary(module.summary)}
+        />
+      )}
       <footer>
         {report && modelCredit(report)}
         {report && partsCreditText(report.summary.creditedFiles, params.lod)}
