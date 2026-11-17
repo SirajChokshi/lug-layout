@@ -496,6 +496,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     trackEnds: shape.trackEnds,
     meshFile: shape.file,
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
+    technic: shape.technic ?? null,
   };
 }
 
@@ -545,5 +546,6 @@ function toPartAsset(
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
+    technic: glb.document.extras.technic ?? null,
   };
 }

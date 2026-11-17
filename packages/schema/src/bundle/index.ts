@@ -304,6 +304,34 @@ export const ManifestPart = v.object({
 });
 export type ManifestPart = v.InferOutput<typeof ManifestPart>;
 
+export const TECHNIC_STEPS_PER_LDU = 16;
+
+const TechnicAxis = v.picklist([0, 1, 2]);
+const TechnicLine = { axis: TechnicAxis, at: v.tuple([Integer, Integer]) };
+const TechnicProfile = { from: Integer, radii: v.pipe(v.array(Count), v.minLength(1)) };
+
+export const TechnicHole = v.object({ ...TechnicLine, ...TechnicProfile });
+export type TechnicHole = v.InferOutput<typeof TechnicHole>;
+
+export const TechnicShaftComponent = v.object({
+  ...TechnicProfile,
+  pin: v.nullable(v.object({ origin: Integer, direction: v.picklist([-1, 1]) })),
+});
+export type TechnicShaftComponent = v.InferOutput<typeof TechnicShaftComponent>;
+
+export const TechnicShaft = v.object({
+  ...TechnicLine,
+  components: v.pipe(v.array(TechnicShaftComponent), v.minLength(1)),
+});
+export type TechnicShaft = v.InferOutput<typeof TechnicShaft>;
+
+export const PartTechnic = v.object({
+  stepsPerLdu: v.literal(TECHNIC_STEPS_PER_LDU),
+  holes: v.array(TechnicHole),
+  shaft: v.nullable(TechnicShaft),
+});
+export type PartTechnic = v.InferOutput<typeof PartTechnic>;
+
 export const StudRecord = v.object({ primitive: v.string(), color: Integer, matrix: Matrix });
 export type StudRecord = v.InferOutput<typeof StudRecord>;
 
@@ -317,6 +345,7 @@ export const PartShape = v.object({
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
+  technic: v.optional(PartTechnic),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
 
@@ -627,6 +656,7 @@ export const PartExtras = v.object({
   sources: v.array(LdrawSource),
   studs: v.array(StudRecord),
   bounds: Bounds,
+  technic: v.optional(PartTechnic),
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;
 

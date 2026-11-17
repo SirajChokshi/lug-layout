@@ -6,6 +6,7 @@ import {
   ManifestPart,
   TrackCatalog,
   type CatalogPart,
+  type PartExtras,
   type PartRole,
   type PartShape,
   type TrackShape,
@@ -40,7 +41,10 @@ function arrayBuffer(bytes: Buffer): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
-function partShape(part: ManifestPart, studs: PartShape["studs"]): PartShape {
+function partShape(
+  part: ManifestPart,
+  { studs, technic }: Pick<PartExtras, "studs" | "technic">,
+): PartShape {
   return {
     id: part.id,
     title: part.title,
@@ -51,6 +55,7 @@ function partShape(part: ManifestPart, studs: PartShape["studs"]): PartShape {
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
+    ...(technic ? { technic } : {}),
   };
 }
 
@@ -79,7 +84,7 @@ export async function attachRecords(directory: string): Promise<void> {
   const positions = new Map<string, Float32Array>();
   for (const part of parts) {
     const glb = parseGlb(arrayBuffer(await readFile(join(directory, part.file))), part.file);
-    shapes.set(part.id, partShape(part, glb.document.extras.studs));
+    shapes.set(part.id, partShape(part, glb.document.extras));
     if (part.role === "track") positions.set(part.id, readPartMesh(glb, part.file).positions);
   }
   const shapeOf = (id: string, where: string): PartShape => {
