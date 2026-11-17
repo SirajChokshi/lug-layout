@@ -30,6 +30,7 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 
 class RecordingBackend implements ISceneBackend {
   readonly chunks = new Map<number, ChunkInstances>();
+  constructor(private readonly studPitchPx: number) {}
   async init(): Promise<never> {
     throw new Error("not used");
   }
@@ -43,7 +44,9 @@ class RecordingBackend implements ISceneBackend {
   setSuperChunk(): void {}
   setSuperChunkVisible(): void {}
   deleteSuperChunk(): void {}
-  studPitchesPx(): void {}
+  studPitchesPx(_distancesLdu: Float64Array, count: number, out: Float64Array): void {
+    out.fill(this.studPitchPx, 0, count);
+  }
   forceTier(): void {}
   setFarModel(): void {}
   setGhost(): void {}
@@ -68,29 +71,42 @@ class RecordingBackend implements ISceneBackend {
   }
 }
 
-it.each([1, 2])(
-  "builds %i tiles per side of the 4×4 bench layout, buildable and with every part inside them",
-  async (tiles) => {
-    const container = new Container();
-    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
-    const backend = new RecordingBackend();
-    container.rebind(SCENE_BACKEND).toConstantValue(backend);
-    container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-    const scene = container.get(LAYOUT_SCENE);
-    scene.configure({ camera: "aerial", tiles });
+async function loadLayout(tiles: number, studPitchPx: number) {
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  const backend = new RecordingBackend(studPitchPx);
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const scene = container.get(LAYOUT_SCENE);
+  scene.configure({ camera: "aerial", tiles });
+  return { summary: await scene.load("standard"), backend };
+}
 
-    const summary = await scene.load("standard");
+it.each([1, 2])(
+  "builds %i tiles per side of the 4×4 bench layout, buildable, summarized in full and with every part inside them",
+  async (tiles) => {
+    const { summary, backend } = await loadLayout(tiles, Number.POSITIVE_INFINITY);
     const side = tiles * TILE_SIDE_LDU;
 
     expect(summary.modules).toBe(backend.chunks.size);
+    let recordedParts = 0;
     let outside = 0;
     for (const chunk of backend.chunks.values()) {
+      recordedParts += chunk.count;
       for (let i = 0; i < chunk.count; i++) {
         const x = chunk.originX + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0);
         const z = chunk.originZ + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0);
         if (x < 0 || z < 0 || x > side || z > side) outside++;
       }
     }
+    expect(summary.parts).toBe(recordedParts);
     expect(outside).toBe(0);
   },
 );
+
+it("summarizes every placed part of the bench layout whether its super-chunks are resident or meshed", async () => {
+  const resident = await loadLayout(1, Number.POSITIVE_INFINITY);
+  const meshed = await loadLayout(1, 0);
+
+  expect(meshed.summary).toEqual(resident.summary);
+});
