@@ -127,6 +127,7 @@ export type {
 } from "@brr/domain";
 export {
   RUNNING_GEAR,
+  BOM_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -217,3 +218,12 @@ export type {
   PaletteTerms,
 } from "./catalog/palette-index.ts";
 export type { Lever } from "./edit/track-pieces.ts";
+export type {
+  BillOfMaterials,
+  BomFiles,
+  BomInput,
+  BomScope,
+  IBomService,
+  IBomSource,
+} from "./bom/bom-service.ts";
+export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";

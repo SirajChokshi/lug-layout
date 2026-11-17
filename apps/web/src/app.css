@@ -23,6 +23,9 @@ body,
   top: 12px;
   left: 12px;
   max-width: 460px;
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
+  box-sizing: border-box;
   padding: 10px 14px;
   border-radius: 8px;
   background: rgb(255 255 255 / 0.9);
@@ -1173,4 +1176,68 @@ footer a {
 .minimap-legend {
   color: #556;
   font-size: 11px;
+}
+
+.bom {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgb(0 0 0 / 0.12);
+}
+
+.side-panel:has(> .bom) {
+  overflow-y: auto;
+}
+
+.side-panel > .catalog {
+  min-height: 160px;
+}
+
+.side-panel > .bom {
+  flex-shrink: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+
+.bom h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.bom-controls,
+.bom-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.bom details {
+  max-height: 160px;
+  overflow: auto;
+}
+
+.bom ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.bom-region {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.bom-region label {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: #556;
+}
+
+.bom-region input {
+  width: 100%;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
 }
