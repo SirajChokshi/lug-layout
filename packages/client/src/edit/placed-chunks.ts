@@ -637,8 +637,23 @@ export class PlacedChunks {
   private nextId = 0;
   private readonly tongued: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
+  private farModelOf: (placeable: Placeable) => number | null = (placeable) => placeable.farModel;
 
   constructor(private readonly backend: ISceneBackend) {}
+
+  useFarModels(farModels: ReadonlyMap<Placeable, number>): RebuildReport {
+    this.farModelOf = (placeable) => farModels.get(placeable) ?? placeable.farModel;
+    for (const entry of this.entries) this.showFarModel(entry);
+    return this.rebuild([...this.byChunk.keys()].toSorted((a, b) => a - b));
+  }
+
+  private showFarModel(entry: PlacedEntry): void {
+    const farModel = this.farModelOf(entry.placeable);
+    this.backend.setFarModel(
+      entry.id,
+      farModel === null ? null : entry.farModelPlacement(farModel),
+    );
+  }
 
   models(): ReadonlyArray<PlacedModel> {
     return this.entries;
@@ -772,9 +787,7 @@ export class PlacedChunks {
   ): PlacedEntry {
     const entry = new PlacedEntry(this.nextId++, placement, handle, placeable, this.chunkOrigins);
     this.entries.push(entry);
-    if (placeable.farModel !== null) {
-      this.backend.setFarModel(entry.id, entry.farModelPlacement(placeable.farModel));
-    }
+    if (this.farModelOf(placeable) !== null) this.showFarModel(entry);
     for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
@@ -868,7 +881,7 @@ export class PlacedChunks {
         partSlot,
         selectedParts,
       );
-      const voxelized = entry.placeable.farModel === null ? 0 : 1;
+      const voxelized = this.farModelOf(entry.placeable) === null ? 0 : 1;
       for (let slot = firstPart; slot < partSlot; slot++) {
         const i = selectedParts[slot] ?? 0;
         chunk.partIndex[slot] = parts.partIndex[i] ?? 0;
