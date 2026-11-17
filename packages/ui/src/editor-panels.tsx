@@ -250,7 +250,7 @@ export function PlacementToolbar({
         type="button"
         data-action="draw-road-tool"
         aria-pressed={snapshot.mode === "road"}
-        disabled={snapshot.roadKit === null}
+        disabled={!commandEnabled("draw-road", snapshot)}
         onClick={() => editor.chooseItem(snapshot.mode === "road" ? null : snapshot.roadKit)}
       >
         Draw road ({shortcutText("draw-road")})

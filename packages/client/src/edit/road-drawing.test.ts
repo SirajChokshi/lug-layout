@@ -292,20 +292,36 @@ describe("draw road", () => {
     editor.chooseItem(null);
   });
 
-  it("gives the road tool its own hints and keeps its last turn in the HUD after laying", () => {
+  it("starts the road tool at the turn a snapped hold showed, and keeps the HUD and laid tiles in step", () => {
     editor.chooseItem(null);
     expect(toolHints(editor.snapshot()).hints).toContainEqual(
       expect.objectContaining({ command: "draw-road" }),
     );
+    editor.chooseItem("ldraw:44336p04@72");
+    editor.pointerMove(...ndc([6, 6]));
+    while (editor.snapshot().ghostRot !== 0) editor.rotate(0);
+    editor.click(...ndc([0, 0]), 0);
+    editor.chooseItem("ldraw:44342p02@72");
+    editor.pointerMove(...ndc([0, 1]));
+    const held = editor.snapshot();
+    expect(held.snap?.state).toBe("snapped");
+    expect(held.ghostRot).not.toBe(0);
+    const shown = held.ghostRot;
+
     editor.chooseItem(kitId(editor, completeKits[0][1]));
-    expect(toolHints(editor.snapshot()).title).toBe("Drawing road");
-    const turnsBefore = editor.snapshot().ghostRot;
+    const hud = toolHints(editor.snapshot());
+    expect(hud.title).toBe("Drawing road");
+    expect(hud.detail).toContain(`lone tiles at ${shown * 90}°`);
+    drag(editor, [[3, 3]]);
+    expect(editor.dump().roadPlacements.at(-1)?.rot).toBe(shown);
     editor.rotate(0);
-    drag(editor, [[0, 0]]);
-    editor.pointerMove(...ndc([3, 3]));
-    const turned = (turnsBefore + 1) % 4;
+    const turned = (shown + 1) % 4;
+    drag(editor, [[3, 5]]);
+    editor.pointerMove(...ndc([6, 6]));
     expect(editor.snapshot().ghostRot).toBe(turned);
     expect(editor.dump().roadPlacements.at(-1)?.rot).toBe(turned);
+    editor.undo(0);
+    editor.undo(0);
     editor.undo(0);
     editor.chooseItem(null);
   });

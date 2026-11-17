@@ -1299,7 +1299,7 @@ export class Editor implements IEditor {
 
   private roadDragStart(ndcX: number, ndcY: number): boolean {
     const roads = this.roadDrawing;
-    if (!roads || !this.groundHit(ndcX, ndcY)) return false;
+    if (!roads || this.readOnly || !this.groundHit(ndcX, ndcY)) return false;
     this.showRoadPreview(roads.begin(this.hitX, this.hitZ, ...this.roadNeighbours()));
     return true;
   }
@@ -1307,6 +1307,11 @@ export class Editor implements IEditor {
   private roadDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
     const roads = this.roadDrawing;
     if (!roads) return;
+    if (this.readOnly) {
+      roads.cancel();
+      this.clearRoadPreview();
+      return;
+    }
     if (this.groundHit(ndcX, ndcY)) roads.extend(this.hitX, this.hitZ);
     const stroke = roads.end(...this.roadNeighbours());
     this.clearRoadPreview();
@@ -1402,7 +1407,8 @@ export class Editor implements IEditor {
   }
 
   private enterRoadMode(id: string): void {
-    if (this.roadDrawing) this.roadDrawing.preferredRot = this.ghostRot;
+    this.ghostRot = this.placeRot;
+    if (this.roadDrawing) this.roadDrawing.preferredRot = this.placeRot;
     if (this.state.mode === "track") {
       this.held = null;
       this.track?.cancelDrag();
@@ -1414,6 +1420,7 @@ export class Editor implements IEditor {
     this.update({
       mode: "road",
       activeItem: id,
+      ghostRot: this.ghostRot,
       roadKit: id,
       roadStroke: null,
       lastRoadStroke: null,
@@ -2424,7 +2431,9 @@ export class Editor implements IEditor {
 
   private setReadOnly(readOnly: boolean): void {
     this.readOnly = readOnly;
-    if (readOnly && (this.active || this.held)) this.chooseItem(null);
+    if (readOnly && (this.active || this.held || this.state.mode === "road")) {
+      this.chooseItem(null);
+    }
     this.update({ readOnly });
   }
 

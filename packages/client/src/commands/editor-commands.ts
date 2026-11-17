@@ -331,7 +331,7 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
     case "draw-track":
       return snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
     case "draw-road":
-      return snapshot.roadKit !== null;
+      return snapshot.roadKit !== null && !snapshot.readOnly;
     case "select-tool":
     case "fit-all":
     case "toggle-plan-view":

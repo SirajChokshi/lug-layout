@@ -72,7 +72,7 @@ export function RoadKitList({ editor, snapshot, kits }: KitsProps) {
         className="palette-primary"
         data-action="draw-road"
         aria-pressed={drawing}
-        disabled={snapshot.roadKit === null}
+        disabled={snapshot.roadKit === null || snapshot.readOnly}
         onClick={() => editor.chooseItem(drawing ? null : snapshot.roadKit)}
       >
         {drawing ? "Drawing road: press Esc or G to stop" : "Draw road (G)"}
@@ -90,6 +90,7 @@ export function RoadKitList({ editor, snapshot, kits }: KitsProps) {
               className="road-kit"
               data-kit={kit.id}
               aria-pressed={snapshot.roadKit === kit.id && drawing}
+              disabled={snapshot.readOnly}
               onClick={() => editor.chooseItem(kit.id)}
             >
               <span className="road-kit-name">{kit.label}</span>
