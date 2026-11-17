@@ -7,9 +7,19 @@ Only `main` publishes. Pull requests never write or read R2. Their `check` job b
 ## Keys
 
 - `<lod>/<file>.<sha256 prefix>.glb|json|wasm`: content-addressed objects. Identical bytes get the same key, so a new bundle uploads only what changed. The uploader refuses any file whose name doesn't match its own SHA-256.
-- `<lod>/manifest.<input key>.json`: one manifest per LOD. The input key is the first 16 hex digits of a SHA-256 over every git-tracked file that `turbo.json` lists as an input of `@brr/asset-pipeline#build`: the crates, the palette, the lock, the verified facts, and the pipeline source except its tests. `node tools/asset-pipeline/src/cli.ts manifest-file` prints it in about 0.2 s, without compiling anything.
+- `<lod>/manifest.<input key>.json`: one manifest per LOD. The input key is the first 16 hex digits of a SHA-256 over every git-tracked file that `turbo.json` lists as an input of `@brr/asset-pipeline#build`: the crates, the palette, the lock, the verified facts, the pipeline source except its tests, the bundle schema (`packages/schema/src/bundle`), and the two shared modules the pipeline runs (`packages/catalog/src/glb.ts`, `packages/domain/src/track/heading-footprints.ts`). `node tools/asset-pipeline/src/cli.ts manifest-file` prints it in about 0.2 s, without compiling anything.
 
 Every object is stored with `Cache-Control: public, max-age=31536000, immutable`.
+
+## What a LOD holds
+
+The manifest is the small index the editor reads first. It holds the colours, stud primitives, model entries, track catalog and MILS edge rules. It also lists the `catalogParts`: the ground, road and track parts the editor offers, each with the file of its shape. And it holds each track piece's `trackShapes`: its plan footprint at all 16 headings and its height range, measured from its mesh. Everything else is in files the manifest names:
+- `partTable`: every bundled part (id, path, GLB file, bounds, licence);
+- `creditTable`: the attribution of every LDraw file the bundle uses;
+- each model file is that model's record: its instances, stud cells and cover, plus the shape of every part it places;
+- a part's shape (`shape-<id>.<sha>.json`) is what placement needs from it without its mesh: bounds, role, stud records, track ends and produced colours.
+
+GLBs are only ever needed to draw.
 
 ## CI
 
