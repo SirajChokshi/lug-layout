@@ -75,6 +75,7 @@ import {
   type SwitchLeverView,
   type TrackDragView,
   type TrackGapView,
+  type TrackRouteView,
 } from "./track-drawing.ts";
 import {
   PlacedChunks,
@@ -447,6 +448,7 @@ export interface IEditor {
   importWorld(bytes: Uint8Array): Promise<boolean>;
   measureFrames(): void;
   cycleTier(): void;
+  trackRoutes(): ReadonlyArray<TrackRouteView>;
   dump(): EditorDump;
 }
 
@@ -2340,6 +2342,10 @@ export class Editor implements IEditor {
       await this.openStored(summary.id);
       await this.refreshWorlds();
     });
+  }
+
+  trackRoutes(): ReadonlyArray<TrackRouteView> {
+    return this.track?.routes() ?? [];
   }
 
   dump(): EditorDump {

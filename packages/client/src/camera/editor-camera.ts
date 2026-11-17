@@ -7,6 +7,8 @@ import type { IPlanService } from "../plan/plan-service.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import { ViewCamera, type ViewMode } from "./view-camera.ts";
 
+export { FOOTPRINT_FLOATS } from "./view-camera.ts";
+
 export type { ViewMode } from "./view-camera.ts";
 export type ScrollGesture = "zoom" | "pan";
 
@@ -39,12 +41,14 @@ export interface IEditorCamera {
   wheel(input: WheelInput): void;
   pinch(scaleRatio: number, ndcX: number, ndcY: number): void;
   zoomStep(steps: number): void;
+  zoomBy(scaleRatio: number): void;
   setMode(mode: ViewMode): void;
   setScroll(scroll: ScrollGesture): void;
   focus(box: WorldBox): void;
   fitAll(): void;
   lookAt(x: number, z: number, animate: boolean): void;
   viewPlan(planId: string): void;
+  viewFootprint(out: Float64Array): void;
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number };
   savedView(): SavedViewV1;
   restoreView(view: SavedViewV1 | null): void;
@@ -189,6 +193,12 @@ export class EditorCamera implements IEditorCamera {
     this.view.apply(this.backend);
   }
 
+  zoomBy(scaleRatio: number): void {
+    if (!(scaleRatio > 0)) return;
+    this.view.zoomAtSafeCentre(-Math.log(scaleRatio));
+    this.view.apply(this.backend);
+  }
+
   zoomStep(steps: number): void {
     this.view.glideZoomAtSafeCentre(-steps * ZOOM_STEP_LOG);
   }
@@ -225,6 +235,10 @@ export class EditorCamera implements IEditorCamera {
     if (!plan) return;
     this.view.setMode("plan", flatBox(roomRect(plan)));
     if (this.state.mode !== "plan") this.update({ mode: "plan" });
+  }
+
+  viewFootprint(out: Float64Array): void {
+    this.view.footprint(out);
   }
 
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number } {
