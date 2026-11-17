@@ -305,7 +305,7 @@ export class TrainPlay implements ITrainPlay {
   }
 
   drive(signedSpeedLduPerS: number): void {
-    if (this.state.status !== "running") return;
+    if (this.state.status !== "running" || this.state.derailSpeedLduPerS > 0) return;
     const max = this.state.maxSpeedLduPerS;
     const target = Math.min(Math.max(signedSpeedLduPerS, -max), max);
     this.update({ targetLduPerS: target, notice: null });
@@ -438,8 +438,7 @@ export class TrainPlay implements ITrainPlay {
       const side = v % 2 === 0 ? 1 : -1;
       const kink = off === 0 ? 0 : OFF_TRACK_YAW_RADIANS * side;
       const roll = off === 0 ? 0 : OFF_TRACK_ROLL_RADIANS * side;
-      const forward = layout.trainDirectionStart;
-      const leadingIsFront = (data[forward] ?? 1) > 0;
+      const leadingIsFront = (data[layout.trainFacingStart] ?? 1) > 0;
       const frontY = leadingIsFront ? leadingY : trailingY;
       const rearY = leadingIsFront ? trailingY : leadingY;
       const spacing = Math.hypot(
