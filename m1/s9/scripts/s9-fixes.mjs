@@ -38,7 +38,7 @@ async function placeBaseplate(page, x, z) {
   await page.fill('input[aria-label="Go to x (LDU)"]', String(x));
   await page.fill('input[aria-label="Go to z (LDU)"]', String(z));
   await page.click("text=Go to x, z");
-  await page.click('[data-item="ldraw:3811"]');
+  await page.click('[data-item="ldraw:3811@2"]');
   await page.mouse.move(800, 450);
   await page.waitForFunction((t) => document.querySelector(".editor")?.getAttribute("data-hover") === t, `${x},${z}`, { timeout: 60000 });
   await page.mouse.click(800, 450);

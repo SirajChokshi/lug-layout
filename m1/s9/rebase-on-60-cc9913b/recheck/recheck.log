@@ -1,0 +1,4 @@
+imported: Two sets Saved · 2 placements · 2 shards
+reload: 0 of 1440000 pixels differ; chunk counts equal true; placements 2 -> 2
+archive in 175091 B sha256 92bb0d9cdb4a665c251fc520f1957aea3758e0cfa4bf016984fb5ced7d7d6657; export 175091 B sha256 92bb0d9cdb4a665c251fc520f1957aea3758e0cfa4bf016984fb5ced7d7d6657; identical true
+hud: Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 862 ms | World open | 7.0 ms | First world frame | 1,661 ms after navigation | Mode | select | Ghost rotation | 0° | Road-edge snap | none | Cursor on lattice (LDU) | off the ground | Placements | 2 | History (undo, redo) | 0, 0 | Last edit latency | none yet | Rebuilt for it | none yet | Frame rate (rAF) | 4.7 fps | Draw calls | 233 | Drawn triangles | 349,044 | Render origin (chunks), rebases | (3, 2); 1

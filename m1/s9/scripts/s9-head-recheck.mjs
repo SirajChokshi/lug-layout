@@ -68,8 +68,8 @@ await page.goto(`${baseUrl}/?state=1&api=webgl2`);
 await ready();
 await page.setInputFiles("input.world-import", archive);
 await page.waitForFunction(
-  () => (document.querySelector(".world-name")?.textContent ?? "").includes("Two clusters"),
-  null,
+  (name) => (document.querySelector(".world-name")?.textContent ?? "").includes(name),
+  process.env.WORLD_NAME ?? "Two clusters",
   { timeout: 600000 },
 );
 note(`imported: ${await page.locator(".world-name").innerText()}`);

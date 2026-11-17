@@ -1,0 +1,8 @@
+## Two tabs on one world
+tab 1: "World 1 Saved · 1 placement · 1 shard" read-only null
+tab 2: "World 1 Saved · 1 placement · 1 shard"; warning: This world is open in another tab, so it is read-only here. Editing resumes when the other tab closes it.
+tab 2 catalog buttons enabled: 0 of 129
+tab 2 pressed Ctrl+Z: HUD placements 1
+tab 1 placed a second baseplate: "World 1 Saved · 2 placements · 1 shard"
+tab 1 closed; tab 2 reopened the world: "World 1 Saved · 2 placements · 1 shard"; catalog enabled 129
+tab 2 edits and saves: "World 1 Saved · 3 placements · 2 shards"
