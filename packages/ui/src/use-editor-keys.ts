@@ -3,6 +3,7 @@ import {
   isShellCommand,
   runEditorAction,
   type IEditor,
+  type IEditorCamera,
   type ShellCommandId,
 } from "@brr/client";
 import { useEffect } from "react";
@@ -29,7 +30,11 @@ export interface EditorKeyHandlers {
   readonly closeOverlay: () => void;
 }
 
-export function useEditorKeys(editor: IEditor, handlers: EditorKeyHandlers): void {
+export function useEditorKeys(
+  editor: IEditor,
+  camera: IEditorCamera,
+  handlers: EditorKeyHandlers,
+): void {
   const { onShellCommand, overlayOpen, closeOverlay } = handlers;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -40,9 +45,9 @@ export function useEditorKeys(editor: IEditor, handlers: EditorKeyHandlers): voi
       if (isShellCommand(id)) onShellCommand(id);
       else if (overlayOpen) {
         if (id === "select-tool") closeOverlay();
-      } else runEditorAction(editor, id, event.timeStamp);
+      } else runEditorAction(editor, camera, id, event.timeStamp);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor, onShellCommand, overlayOpen, closeOverlay]);
+  }, [editor, camera, onShellCommand, overlayOpen, closeOverlay]);
 }

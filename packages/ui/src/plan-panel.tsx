@@ -1,6 +1,6 @@
 import {
   MM_PER_STUD,
-  type IEditor,
+  type IEditorCamera,
   type IPlanService,
   type MmRect,
   type PlanCheck,
@@ -96,10 +96,10 @@ function RectFields({
 }
 
 function NewPlanForm({
-  editor,
+  camera,
   plans,
 }: {
-  readonly editor: IEditor;
+  readonly camera: IEditorCamera;
   readonly plans: IPlanService;
 }) {
   const [width, setWidth] = useState<number>(DEFAULT_ROOM_MM.width);
@@ -112,7 +112,7 @@ function NewPlanForm({
         type="button"
         data-action="new-plan"
         onClick={() => {
-          const origin = editor.planOriginHere();
+          const origin = camera.targetChunk();
           const id = plans.createPlan({
             name: `Plan ${plans.snapshot().plans.length + 1}`,
             roomWidthMm: width,
@@ -120,7 +120,7 @@ function NewPlanForm({
             originChunkX: origin.chunkX,
             originChunkZ: origin.chunkZ,
           });
-          editor.viewPlanFromAbove(id);
+          camera.viewPlan(id);
         }}
       >
         New plan here
@@ -264,12 +264,12 @@ function IssueList({ check }: { readonly check: PlanCheck | undefined }) {
 }
 
 function ActivePlan({
-  editor,
+  camera,
   plans,
   snapshot,
   plan,
 }: {
-  readonly editor: IEditor;
+  readonly camera: IEditorCamera;
   readonly plans: IPlanService;
   readonly snapshot: PlanSnapshot;
   readonly plan: PlanRegion;
@@ -302,11 +302,7 @@ function ActivePlan({
         placements in this plan · {snapshot.sandboxPlacements.length} in the sandbox
       </p>
       <div className="plan-actions">
-        <button
-          type="button"
-          data-action="view-plan"
-          onClick={() => editor.viewPlanFromAbove(plan.id)}
-        >
+        <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>
           View from above
         </button>
         <button type="button" onClick={() => plans.removePlan(plan.id)}>
@@ -321,10 +317,10 @@ function ActivePlan({
 }
 
 export function PlanPanel({
-  editor,
+  camera,
   plans,
 }: {
-  readonly editor: IEditor;
+  readonly camera: IEditorCamera;
   readonly plans: IPlanService;
 }) {
   const snapshot = usePlanSnapshot(plans);
@@ -345,13 +341,13 @@ export function PlanPanel({
         </select>
       )}
       {active ? (
-        <ActivePlan editor={editor} plans={plans} snapshot={snapshot} plan={active} />
+        <ActivePlan camera={camera} plans={plans} snapshot={snapshot} plan={active} />
       ) : (
         <p className="plan-meta">
           No plan yet. Outside plans the world is a sandbox and plan rules don't apply.
         </p>
       )}
-      <NewPlanForm editor={editor} plans={plans} />
+      <NewPlanForm camera={camera} plans={plans} />
     </section>
   );
 }

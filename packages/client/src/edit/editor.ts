@@ -10,7 +10,6 @@ import {
   EditHistory,
   RoadNetwork,
   World,
-  roomRect,
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
@@ -18,9 +17,8 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
 } from "@brr/domain";
-import { BRICK_LDU, PLATE_LDU, STUD_LDU, chunkOf } from "@brr/math";
+import { BRICK_LDU, PLATE_LDU, STUD_LDU } from "@brr/math";
 import {
-  CAMERA_FOV_DEGREES,
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
@@ -34,7 +32,6 @@ import {
 import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
-import { OrbitCamera } from "./orbit-camera.ts";
 import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
 import {
   PlacedChunks,
@@ -45,8 +42,9 @@ import {
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
-import { PLAN_SERVICE } from "../tokens.ts";
+import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
+import type { IEditorCamera } from "../camera/editor-camera.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
@@ -284,15 +282,8 @@ export interface IEditor {
   deleteSelection(eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
   redo(eventTimeMs: number): void;
-  orbit(dxPx: number, dyPx: number): void;
-  pan(dxPx: number, dyPx: number): void;
-  zoom(wheelDelta: number): void;
-  focusSelection(): void;
-  centreOnCursor(): void;
   setShowJoins(show: boolean): void;
   setSnapRoads(snap: boolean): void;
-  planOriginHere(): { readonly chunkX: number; readonly chunkZ: number };
-  viewPlanFromAbove(planId: string): void;
   dump(): EditorDump;
 }
 
@@ -458,7 +449,6 @@ export class Editor implements IEditor {
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
-  private readonly camera = new OrbitCamera();
   private readonly ray = new Float64Array(RAY_FLOATS);
   private readonly frameStats: FrameStats = {
     drawCalls: 0,
@@ -496,6 +486,7 @@ export class Editor implements IEditor {
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
+    @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -563,7 +554,7 @@ export class Editor implements IEditor {
       });
       this.statsSince = performance.now();
       this.resizeToCanvas();
-      this.camera.apply(this.backend);
+      this.camera.frame(performance.now());
       requestAnimationFrame(this.step);
     } catch (error) {
       this.update({ status: "error", error: String(error) });
@@ -649,7 +640,7 @@ export class Editor implements IEditor {
     try {
       this.resizeToCanvas();
       const startMs = performance.now();
-      this.camera.apply(this.backend);
+      this.camera.frame(startMs);
       this.backend.renderFrame(this.frameStats);
       const pending = this.pending;
       if (pending) {
@@ -673,6 +664,7 @@ export class Editor implements IEditor {
     if (canvas.dataset["cssSize"] === `${width}x${height}`) return;
     canvas.dataset["cssSize"] = `${width}x${height}`;
     this.backend.resize(width, height);
+    this.camera.resize(width, height);
   }
 
   private tallyStats(): void {
@@ -1178,52 +1170,6 @@ export class Editor implements IEditor {
     if (this.active) return;
     if (restored) this.select(restored);
     else if (selected && !selected.handle.live) this.select(null);
-  }
-
-  orbit(dxPx: number, dyPx: number): void {
-    this.camera.orbit(dxPx, dyPx);
-    this.camera.apply(this.backend);
-  }
-
-  pan(dxPx: number, dyPx: number): void {
-    this.camera.pan(dxPx, dyPx);
-    this.camera.apply(this.backend);
-  }
-
-  zoom(wheelDelta: number): void {
-    this.camera.zoom(wheelDelta);
-    this.camera.apply(this.backend);
-  }
-
-  focusSelection(): void {
-    if (!this.selected) return;
-    this.camera.focus(this.selected.box);
-    this.camera.apply(this.backend);
-  }
-
-  centreOnCursor(): void {
-    if (!this.hovering) return;
-    this.camera.centreOn(this.hoverX, this.hoverZ);
-    this.camera.apply(this.backend);
-  }
-
-  planOriginHere(): { readonly chunkX: number; readonly chunkZ: number } {
-    const [x, z] = this.camera.targetXZ();
-    return { chunkX: chunkOf(x), chunkZ: chunkOf(z) };
-  }
-
-  viewPlanFromAbove(planId: string): void {
-    const plan = this.plans.snapshot().plans.find((p) => p.id === planId);
-    if (!plan) return;
-    const room = roomRect(plan);
-    const canvas = this.canvas;
-    const aspect = canvas ? canvas.clientWidth / Math.max(canvas.clientHeight, 1) : 1;
-    this.camera.topDown(
-      { ...room, minY: 0, maxY: 0 },
-      (CAMERA_FOV_DEGREES * Math.PI) / 180,
-      aspect,
-    );
-    this.camera.apply(this.backend);
   }
 
   dump(): EditorDump {

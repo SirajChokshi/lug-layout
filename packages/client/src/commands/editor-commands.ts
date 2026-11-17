@@ -1,3 +1,4 @@
+import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
@@ -10,6 +11,8 @@ export type EditorActionId =
   | "undo"
   | "redo"
   | "focus"
+  | "fit-all"
+  | "toggle-plan-view"
   | "centre"
   | "pan-left"
   | "pan-right"
@@ -107,6 +110,20 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "focus zoom to fit",
   },
   {
+    id: "fit-all",
+    title: "Fit everything in view",
+    group: "View",
+    keys: [{ key: "Home" }, { key: "f", shift: true }],
+    keywords: "zoom extents home whole layout overview",
+  },
+  {
+    id: "toggle-plan-view",
+    title: "Switch between the 3D view and the true-scale 2D plan",
+    group: "View",
+    keys: [{ key: "v" }],
+    keywords: "plan top down 2d orthographic overhead",
+  },
+  {
     id: "centre",
     title: "Centre on the cursor",
     group: "View",
@@ -177,14 +194,18 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
 export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
   { gesture: "Click", action: "Place the part in hand, or select a model" },
   { gesture: "Drag", action: "Lay a run of track while drawing track" },
-  { gesture: "Right-drag", action: "Orbit" },
-  { gesture: "Shift-drag or middle-drag", action: "Pan" },
-  { gesture: "Wheel", action: "Zoom" },
+  { gesture: "Right-drag", action: "Orbit (pan in the 2D plan)" },
+  {
+    gesture: "Shift-, Space- or middle-drag",
+    action: "Pan, keeping the grabbed point under the cursor",
+  },
+  { gesture: "Wheel or pinch", action: "Zoom at the cursor" },
+  { gesture: "Two-finger scroll", action: "Pan on a trackpad (Alt orbits)" },
+  { gesture: "Double-click", action: "Frame the selection" },
 ];
 
 const PAN_STEP_PX = 120;
 const ORBIT_STEP_PX = 52;
-const ZOOM_STEP_WHEEL = 200;
 const QUARTER_TURNS = 4;
 
 const SPECS = new Map(COMMANDS.map((spec) => [spec.id, spec]));
@@ -235,6 +256,8 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
     case "draw-track":
       return snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
     case "select-tool":
+    case "fit-all":
+    case "toggle-plan-view":
     case "pan-left":
     case "pan-right":
     case "pan-forward":
@@ -263,7 +286,12 @@ function placeMoreLikeSelection(editor: IEditor, eventTimeMs: number): void {
   for (let turn = 0; turn < turns; turn++) editor.rotate(eventTimeMs);
 }
 
-export function runEditorAction(editor: IEditor, id: EditorActionId, eventTimeMs: number): void {
+export function runEditorAction(
+  editor: IEditor,
+  camera: IEditorCamera,
+  id: EditorActionId,
+  eventTimeMs: number,
+): void {
   switch (id) {
     case "select-tool":
       editor.chooseItem(null);
@@ -286,41 +314,51 @@ export function runEditorAction(editor: IEditor, id: EditorActionId, eventTimeMs
     case "redo":
       editor.redo(eventTimeMs);
       return;
-    case "focus":
-      editor.focusSelection();
+    case "focus": {
+      const selection = editor.snapshot().selection;
+      if (selection) camera.focus(selection.box);
       return;
-    case "centre":
-      editor.centreOnCursor();
+    }
+    case "fit-all":
+      camera.fitAll();
       return;
+    case "toggle-plan-view":
+      camera.setMode(camera.snapshot().mode === "plan" ? "orbit" : "plan");
+      return;
+    case "centre": {
+      const hover = editor.snapshot().hover;
+      if (hover) camera.lookAt(hover.x, hover.z, true);
+      return;
+    }
     case "pan-left":
-      editor.pan(PAN_STEP_PX, 0);
+      camera.panBy(-PAN_STEP_PX, 0);
       return;
     case "pan-right":
-      editor.pan(-PAN_STEP_PX, 0);
+      camera.panBy(PAN_STEP_PX, 0);
       return;
     case "pan-forward":
-      editor.pan(0, PAN_STEP_PX);
+      camera.panBy(0, -PAN_STEP_PX);
       return;
     case "pan-back":
-      editor.pan(0, -PAN_STEP_PX);
+      camera.panBy(0, PAN_STEP_PX);
       return;
     case "orbit-left":
-      editor.orbit(-ORBIT_STEP_PX, 0);
+      camera.orbit(-ORBIT_STEP_PX, 0);
       return;
     case "orbit-right":
-      editor.orbit(ORBIT_STEP_PX, 0);
+      camera.orbit(ORBIT_STEP_PX, 0);
       return;
     case "tilt-down":
-      editor.orbit(0, ORBIT_STEP_PX);
+      camera.orbit(0, ORBIT_STEP_PX);
       return;
     case "tilt-up":
-      editor.orbit(0, -ORBIT_STEP_PX);
+      camera.orbit(0, -ORBIT_STEP_PX);
       return;
     case "zoom-in":
-      editor.zoom(-ZOOM_STEP_WHEEL);
+      camera.zoomStep(1);
       return;
     case "zoom-out":
-      editor.zoom(ZOOM_STEP_WHEEL);
+      camera.zoomStep(-1);
       return;
     case "toggle-joins":
       editor.setShowJoins(!editor.snapshot().showJoins);
