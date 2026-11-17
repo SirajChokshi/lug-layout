@@ -1,0 +1,13 @@
+## Delete worlds
+worlds: ["Scratch (1)","World 1 (0)"]
+databases: ["brr-world-34b5d7a6-0d98-46a0-ad09-9caf4fd42db6","brr-world-469a03c8-0cda-416e-a5cb-225837bd5fd9","brr-worlds"]
+deleted the other world: ["Scratch (1)"]; databases ["brr-world-34b5d7a6-0d98-46a0-ad09-9caf4fd42db6","brr-worlds"]
+deleted the open world: now "World 1 Saved · 0 placements · 0 shards"; worlds ["World 1 (0)"]; databases ["brr-world-2e89a0c8-b5ca-4ccd-82bd-4b0959d78f23","brr-worlds"]
+## Two tabs on one world
+tab 1: "World 1 Saved · 1 placement · 1 shard" read-only null
+tab 2: "World 1 Saved · 1 placement · 1 shard"; warning: This world is open in another tab, so it is read-only here. Editing resumes when the other tab closes it.
+tab 2 catalog buttons enabled: 0 of 135
+tab 2 pressed Ctrl+Z: HUD placements 1
+tab 1 placed a second baseplate: "World 1 Saved · 2 placements · 1 shard"
+tab 1 closed; tab 2 reopened the world: "World 1 Saved · 2 placements · 1 shard"; catalog enabled 135
+tab 2 edits and saves: "World 1 Saved · 3 placements · 2 shards"

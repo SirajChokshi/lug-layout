@@ -1,0 +1,23 @@
+{
+ "brr-world-0de8dec2-87f5-4b21-952d-aca12a191548": {
+  "manifest": {
+   "manifest": "{\"bundleVersion\":\"9cbd41ac367959c6\",\"credits\":\"CREDITS.txt\",\"disclaimer\":\"LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.\",\"format\":\"brr.world\",\"name\":\"World 1\",\"placements\":3,\"schemaVersion\":1,\"shards\":[{\"placements\":2,\"superChunk\":[0,0],\"track\":0},{\"placements\":1,\"superChunk\":[4883,0],\"track\":0}],\"track\":0,\"view\":{\"distance\":2600,\"pitch\":0.75,\"targetX\":2560,\"targetY\":0,\"targetZ\":2560,\"yaw\":0.7853981633974483}}\n"
+  },
+  "shards": {
+   "0_0": "{\"format\":\"brr.shard\",\"placements\":[{\"color\":2,\"ref\":\"ldraw:3811\",\"rot\":0,\"x\":2560,\"yPlates\":0,\"z\":2560},{\"color\":2,\"ref\":\"ldraw:3811\",\"rot\":0,\"x\":2860,\"yPlates\":0,\"z\":2520}],\"schemaVersion\":1,\"superChunk\":[0,0],\"track\":[]}\n",
+   "4883_0": "{\"format\":\"brr.shard\",\"placements\":[{\"color\":2,\"ref\":\"ldraw:3811\",\"rot\":0,\"x\":25002560,\"yPlates\":0,\"z\":2560}],\"schemaVersion\":1,\"superChunk\":[4883,0],\"track\":[]}\n"
+  }
+ },
+ "brr-worlds": {
+  "worlds": {
+   "0de8dec2-87f5-4b21-952d-aca12a191548": {
+    "id": "0de8dec2-87f5-4b21-952d-aca12a191548",
+    "name": "World 1",
+    "placements": 3,
+    "track": 0,
+    "shards": 2,
+    "savedAt": 1794911496799
+   }
+  }
+ }
+}
