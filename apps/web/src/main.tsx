@@ -48,6 +48,9 @@ container.load(
     ...(import.meta.env.VITE_BUNDLE_MANIFEST_FILE === undefined
       ? {}
       : { bundleManifestFile: import.meta.env.VITE_BUNDLE_MANIFEST_FILE }),
+    ...(import.meta.env.VITE_CATALOG_API_BASE_URL
+      ? { catalogApiBaseUrl: import.meta.env.VITE_CATALOG_API_BASE_URL }
+      : {}),
     disclaimer: TRADEMARK_DISCLAIMER,
   }),
 );

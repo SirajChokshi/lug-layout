@@ -15,6 +15,10 @@
     {
       "binding": "CATALOG_RELEASES",
       "bucket_name": "brr-catalog-releases"
+    },
+    {
+      "binding": "PART_BUNDLES",
+      "bucket_name": "brr-part-bundles"
     }
   ],
   "ratelimits": [

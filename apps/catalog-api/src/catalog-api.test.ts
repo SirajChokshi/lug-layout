@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   RELEASE_ID_HEX_DIGITS,
+  BundleSearchResponse,
   ErrorResponse,
   InventoryResponse,
   ReleaseResponse,
@@ -32,6 +33,7 @@ interface TestEnv {
     batch(statements: PreparedStatement[]): Promise<unknown>;
   };
   readonly CATALOG_RELEASES: { put(key: string, value: Uint8Array): Promise<unknown> };
+  readonly PART_BUNDLES: { put(key: string, value: string): Promise<unknown> };
 }
 
 interface LoadedRelease {
@@ -399,4 +401,253 @@ describe("catalog API over a loaded release", () => {
     );
     expect(bursts.map(({ allowed }) => allowed)).toContain(QUERIES_PER_MINUTE);
   }, 60_000);
+});
+
+const MANIFEST_KEY = "7ad9e66acd1f7b18";
+const UNDECODABLE_KEY = "00000000000000ff";
+const PLATE_BOUNDS = { min: [0, -8, 0], max: [640, 0, 640] };
+
+function catalogPart(
+  number: string,
+  role: "ground" | "road" | "track",
+  title: string,
+  produced: { readonly rebrickable: string; readonly colors: Record<number, string[]> } | null,
+) {
+  return {
+    id: `ldraw:${number}`,
+    path: `parts/${number}.dat`,
+    role,
+    file: `${number}.0123456789abcdef.glb`,
+    title,
+    author: "LDraw.org",
+    license: "Licensed under CC BY 4.0 : see CAreadme.txt",
+    bounds: PLATE_BOUNDS,
+    colors: [],
+    studs: 0,
+    triangles: 0,
+    vertices: 0,
+    shape: { file: `shape-ldraw_${number}.0123456789abcdef.json` },
+    ...(produced === null
+      ? {}
+      : {
+          producedColors: {
+            rebrickable: produced.rebrickable,
+            colors: Object.entries(produced.colors).map(([ldraw, elements]) => ({
+              ldraw: Number(ldraw),
+              elements,
+            })),
+          },
+        }),
+  };
+}
+
+function bundleModel(
+  name: string,
+  origin: "omr" | "generated",
+  title: string,
+  set: { readonly name: string; readonly year: number } | null,
+) {
+  return {
+    name,
+    file: `model-${name}.0123456789abcdef.json`,
+    origin,
+    set: set === null ? null : { ...set, source: "Rebrickable database export sets.csv.gz" },
+    ...(name.startsWith("mils-") ? { role: "mils-module" } : {}),
+    source: "fixture",
+    authors: [],
+    licenses: [],
+    sections: [{ name: "main.ldr", title, author: "", license: null, ldrawOrg: null }],
+    inlinePartsResolvedToOfficial: [],
+    instances: 0,
+    lattice: null,
+    vehicles: 0,
+    sha256: "0".repeat(64),
+    cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, cells: null },
+  };
+}
+
+function trackPiece(number: string, title: string, system: "lego-9v" | "lego-plastic") {
+  return {
+    id: `ldraw:${number}`,
+    part: `ldraw:${number}`,
+    title,
+    kind: title.includes("Curved") ? "curve" : "straight",
+    system,
+    joinClass: "lego-train",
+    status: "certified",
+    connectors: [],
+    routes: [],
+    partFrame: { xLdu: 0, zLdu: 0, headingHalfSteps: 0 },
+  };
+}
+
+const bundleIndex = {
+  colors: [
+    { code: 2, name: "Green", rgb: "#00852B", alpha: 255 },
+    { code: 19, name: "Tan", rgb: "#D7BA8C", alpha: 255 },
+    { code: 72, name: "Dark_Bluish_Grey", rgb: "#646464", alpha: 255 },
+  ],
+  catalogParts: [
+    catalogPart("3811", "ground", "Baseplate 32 x 32", {
+      rebrickable: "3811",
+      colors: {
+        2: ["381128", "4219692"],
+        19: ["4106730", "4218688", "4219688", "4558611"],
+        72: ["4560729", "6139364"],
+      },
+    }),
+    catalogPart(
+      "44343p03",
+      "road",
+      "Baseplate 32 x 32 Road 6-Stud Crossroads with White Road Edge and Pedestrian Crossing Pattern",
+      { rebrickable: "44343pr0003", colors: { 72: ["4277477"] } },
+    ),
+    catalogPart(
+      "44343p01",
+      "road",
+      "Baseplate 32 x 32 Road 6-Stud Crossroads with Yellow Road Edge and White Pedestrian Crossing Pattern",
+      { rebrickable: "44343pr0001", colors: { 2: ["4179972", "4219996"] } },
+    ),
+    catalogPart("74746", "track", "Train Track 9V Straight", null),
+  ],
+  models: [
+    bundleModel("10264-1", "omr", "main", { name: "Corner Garage", year: 2019 }),
+    bundleModel("10016-1", "omr", "main", null),
+    bundleModel("passing-loop", "generated", "Passing Loop", null),
+    bundleModel("mils-plain", "generated", "MILS Basic Terrain Module", null),
+    bundleModel("mils-road-straight", "generated", "MILS Paved Road Straight", null),
+  ],
+  trackCatalog: {
+    n: 16,
+    pieces: [
+      trackPiece("53401", "Train Track 6 Studs Wide Straight", "lego-plastic"),
+      trackPiece("74746", "Train Track 9V Straight", "lego-9v"),
+      trackPiece("74747", "Train Track 9V Curved", "lego-9v"),
+    ],
+  },
+};
+
+function bundleSearch(q: string, key = MANIFEST_KEY): string {
+  return `/v1/bundles/${key}/search?${new URLSearchParams({ q }).toString()}`;
+}
+
+async function hitIds(q: string): Promise<ReadonlyArray<string>> {
+  return (await getJson(BundleSearchResponse, bundleSearch(q))).results.map((hit) => hit.id);
+}
+
+describe("part search over a published bundle manifest", () => {
+  beforeAll(async () => {
+    await bindings.PART_BUNDLES.put(
+      `standard/manifest.${MANIFEST_KEY}.json`,
+      JSON.stringify(bundleIndex),
+    );
+    await bindings.PART_BUNDLES.put(
+      `standard/manifest.${UNDECODABLE_KEY}.json`,
+      JSON.stringify({ ...bundleIndex, colors: "none" }),
+    );
+  });
+
+  it("answers with the editor's item ids for numbers, element ids, sets, modules, track and colours", async () => {
+    expect(
+      Object.fromEntries(
+        await Promise.all(
+          [
+            "3811",
+            "4558611",
+            "10264",
+            "corner gar",
+            "tan",
+            "mils road",
+            "9v cur",
+            "passing loop",
+            "crossroads gree",
+            "crossroads gr",
+            "crossroad whi",
+            "cro",
+          ].map(async (q) => [q, await hitIds(q)] as const),
+        ),
+      ),
+    ).toEqual({
+      "3811": ["ldraw:3811@2", "ldraw:3811@19", "ldraw:3811@72"],
+      "4558611": ["ldraw:3811@19"],
+      "10264": ["omr:10264-1"],
+      "corner gar": ["omr:10264-1"],
+      tan: ["ldraw:3811@19"],
+      "mils road": ["generated:mils-road-straight"],
+      "9v cur": ["track:lego-9v"],
+      "passing loop": [],
+      "crossroads gree": ["ldraw:44343p01@2"],
+      "crossroads gr": [],
+      "crossroad whi": [],
+      cro: ["ldraw:44343p03@72", "ldraw:44343p01@2"],
+    });
+  });
+
+  it("returns each hit's label, palette section, kind and record or shape file", async () => {
+    const body = await getJson(BundleSearchResponse, bundleSearch("4277477"));
+    expect(body).toEqual({
+      manifest: MANIFEST_KEY,
+      query: "4277477",
+      results: [
+        {
+          id: "ldraw:44343p03@72",
+          label:
+            "44343p03 Baseplate 32 x 32 Road 6-Stud Crossroads with White Road Edge and Pedestrian Crossing Pattern, Dark_Bluish_Grey",
+          section: "road",
+          kind: "road-plate",
+          file: "shape-ldraw_44343p03.0123456789abcdef.json",
+        },
+      ],
+    });
+    const sets = await getJson(BundleSearchResponse, bundleSearch("garage"));
+    expect(sets.results).toEqual([
+      {
+        id: "omr:10264-1",
+        label: "10264-1 Corner Garage (2019)",
+        section: "sets",
+        kind: "model",
+        file: "model-10264-1.0123456789abcdef.json",
+      },
+    ]);
+  });
+
+  it("caches answers as immutable per manifest key and revalidates by that key", async () => {
+    const path = bundleSearch("baseplate");
+    const first = await get(path);
+    await first.arrayBuffer();
+    expect([first.status, first.headers.get("x-cache"), first.headers.get("etag")]).toEqual([
+      200,
+      "MISS",
+      `"${MANIFEST_KEY}"`,
+    ]);
+    expect(first.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    const second = await get(path);
+    await second.arrayBuffer();
+    expect(second.headers.get("x-cache")).toBe("HIT");
+    const revalidated = await get(path, { "if-none-match": `"${MANIFEST_KEY}"` });
+    expect(revalidated.status).toBe(304);
+  });
+
+  it("refuses bad queries, unknown or malformed keys and manifests it cannot decode", async () => {
+    const statuses = await Promise.all(
+      [
+        bundleSearch("ab"),
+        `${bundleSearch("3811")}&limit=51`,
+        bundleSearch("3811", "1111111111111111"),
+        bundleSearch("3811", "7AD9E66ACD1F7B18"),
+        bundleSearch("3811", UNDECODABLE_KEY),
+      ].map(async (path) => {
+        const response = await get(path);
+        const body = decode(ErrorResponse, await response.json());
+        return [response.status, body.ok] as const;
+      }),
+    );
+    expect(statuses).toEqual([
+      [400, true],
+      [400, true],
+      [404, true],
+      [404, true],
+      [502, true],
+    ]);
+  });
 });

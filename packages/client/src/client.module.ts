@@ -1,6 +1,8 @@
 import {
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
+  CATALOG_API,
+  CATALOG_API_BASE_URL,
   catalogModule,
   DEFAULT_BUNDLE_MANIFEST_FILE,
 } from "@brr/catalog";
@@ -11,6 +13,7 @@ import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+import { CatalogSearch } from "./catalog/catalog-search.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
@@ -28,6 +31,7 @@ import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import {
   BOM_SERVICE,
+  CATALOG_SEARCH,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -71,12 +75,24 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PALETTE_MEMORY_STORE).to(LocalStoragePaletteMemoryStore).inSingletonScope();
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
+  bind(CATALOG_SEARCH)
+    .toDynamicValue(
+      (context) =>
+        new CatalogSearch(
+          context.get(CATALOG_API_BASE_URL, { optional: true }) === undefined
+            ? null
+            : context.get(CATALOG_API),
+          context.get(BUNDLE_MANIFEST_FILE),
+        ),
+    )
+    .inSingletonScope();
 });
 
 export interface MainThreadConfig {
   readonly bundleBaseUrl: string;
   readonly createImportWorker?: ImportWorkerFactory;
   readonly bundleManifestFile?: string;
+  readonly catalogApiBaseUrl?: string;
   readonly startSimWorker?: () => RpcPort;
   readonly disclaimer: string;
 }
@@ -93,6 +109,9 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
     bind(BUNDLE_MANIFEST_FILE).toConstantValue(
       config.bundleManifestFile ?? DEFAULT_BUNDLE_MANIFEST_FILE,
     );
+    if (config.catalogApiBaseUrl !== undefined) {
+      bind(CATALOG_API_BASE_URL).toConstantValue(config.catalogApiBaseUrl);
+    }
     bind(SIM_WORKER_PORT)
       .toDynamicValue(() => {
         if (!config.startSimWorker) throw new Error("this composition root starts no sim worker");

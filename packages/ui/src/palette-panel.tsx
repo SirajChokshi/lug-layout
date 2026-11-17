@@ -17,6 +17,7 @@ import {
   TRACK_PIECE_PREFIX,
   colorDisplayName,
   itemInColor,
+  paletteResults,
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
@@ -46,6 +47,7 @@ const PALETTE_FIELDS = [
   "readOnly",
   "roadKits",
   "roadKit",
+  "catalogSearch",
 ] as const satisfies ReadonlyArray<keyof EditorSnapshot>;
 
 type PaletteSnapshot = Pick<EditorSnapshot, (typeof PALETTE_FIELDS)[number]>;
@@ -661,22 +663,34 @@ export const PalettePanel = memo(function PalettePanel({
   };
   const searching = query.trim() !== "";
   const listing = searching || tab === "favorites";
+  useEffect(() => editor.searchCatalog(query), [editor, query]);
+  const results = useMemo(
+    () => paletteResults(index, query, "all", snapshot.catalogSearch),
+    [index, query, snapshot.catalogSearch],
+  );
   const hits = useMemo(() => {
     if (!listing) return [];
-    const found = index.search(query, tab === "favorites" ? "all" : tab);
-    return tab === "favorites" ? found.filter((hit) => favorites.keys.has(hit.entry.key)) : found;
-  }, [index, query, tab, listing, favorites]);
-  const counts = useMemo(() => {
-    const all = index.search(query, "all");
-    return new Map<Tab, number>([
-      ["all", all.length],
-      ["favorites", all.filter((hit) => favorites.keys.has(hit.entry.key)).length],
-      ...PALETTE_CATEGORIES.map(
-        (category) =>
-          [category, all.filter((hit) => hit.entry.category === category).length] as const,
-      ),
-    ]);
-  }, [index, query, favorites]);
+    return results.hits.filter((hit) =>
+      tab === "favorites"
+        ? favorites.keys.has(hit.entry.key)
+        : tab === "all" || hit.entry.category === tab,
+    );
+  }, [results, tab, listing, favorites]);
+  const counts = useMemo(
+    () =>
+      new Map<Tab, number>([
+        ["all", results.hits.length],
+        ["favorites", results.hits.filter((hit) => favorites.keys.has(hit.entry.key)).length],
+        ...PALETTE_CATEGORIES.map(
+          (category) =>
+            [
+              category,
+              results.hits.filter((hit) => hit.entry.category === category).length,
+            ] as const,
+        ),
+      ]),
+    [results, favorites],
+  );
   const shownHighlight = Math.min(highlight, Math.max(hits.length - 1, 0));
 
   const pick = (item: CatalogItemView): void => {
@@ -792,6 +806,11 @@ export const PalettePanel = memo(function PalettePanel({
                 paint={paint}
               />
             ))
+          )}
+          {searching && results.status === "offline" && (
+            <p className="palette-hint" data-search-offline>
+              Search offline: showing palette matches only.
+            </p>
           )}
           {searching && hits.length === 0 && (
             <p className="palette-hint" data-no-results>

@@ -198,6 +198,63 @@ export const ThemePageResponse = v.object({
 });
 export type ThemePageResponse = v.InferOutput<typeof ThemePageResponse>;
 
+export const BUNDLE_MANIFEST_KEY_HEX_DIGITS = 16;
+export const BUNDLE_MANIFEST_KEY_PATTERN = `[0-9a-f]{${BUNDLE_MANIFEST_KEY_HEX_DIGITS}}`;
+export const BUNDLE_SEARCH_LOD = "standard";
+export const BUNDLE_SEARCH_SECTIONS = ["track", "baseplates", "road", "mils", "sets"] as const;
+export const BUNDLE_ITEM_KINDS = [
+  "track",
+  "baseplate",
+  "road-plate",
+  "mils-module",
+  "model",
+] as const;
+const BUNDLE_SEARCH_LIMIT = { fallback: "20", max: 50 } as const;
+const keyedManifestFile = new RegExp(`^manifest\\.(${BUNDLE_MANIFEST_KEY_PATTERN})\\.json$`, "u");
+
+export const BundleManifestKey = v.pipe(
+  v.string(),
+  v.regex(new RegExp(`^${BUNDLE_MANIFEST_KEY_PATTERN}$`, "u"), "is not a bundle manifest key"),
+);
+export type BundleManifestKey = v.InferOutput<typeof BundleManifestKey>;
+
+export function bundleManifestFile(key: BundleManifestKey): string {
+  return `manifest.${key}.json`;
+}
+
+export function bundleManifestKeyOf(manifestFile: string): BundleManifestKey | null {
+  return keyedManifestFile.exec(manifestFile)?.[1] ?? null;
+}
+
+export const BundleSearchParams = v.object({
+  q: SearchParams.entries.q,
+  limit: boundedInteger(BUNDLE_SEARCH_LIMIT.fallback, 1, BUNDLE_SEARCH_LIMIT.max),
+});
+export type BundleSearchParams = v.InferOutput<typeof BundleSearchParams>;
+
+export const BundleSearchSection = v.picklist(BUNDLE_SEARCH_SECTIONS);
+export type BundleSearchSection = v.InferOutput<typeof BundleSearchSection>;
+
+export const BundleItemKind = v.picklist(BUNDLE_ITEM_KINDS);
+export type BundleItemKind = v.InferOutput<typeof BundleItemKind>;
+
+export const BundleSearchHit = v.object({
+  id: v.string(),
+  label: v.string(),
+  section: BundleSearchSection,
+  kind: BundleItemKind,
+  file: v.nullable(v.string()),
+  thumbnail: v.optional(v.string()),
+});
+export type BundleSearchHit = v.InferOutput<typeof BundleSearchHit>;
+
+export const BundleSearchResponse = v.object({
+  manifest: BundleManifestKey,
+  query: v.string(),
+  results: v.array(BundleSearchHit),
+});
+export type BundleSearchResponse = v.InferOutput<typeof BundleSearchResponse>;
+
 export const ErrorResponse = v.object({ error: v.string() });
 export type ErrorResponse = v.InferOutput<typeof ErrorResponse>;
 

@@ -6,6 +6,8 @@ pipeline_cli="$pipeline_dir/src/cli.ts"
 
 : "${VITE_BUNDLE_BASE_URL:=$(node -p "require('../../infra/cloudflare/part-bundles.json').public_base_url")}"
 export VITE_BUNDLE_BASE_URL
+: "${VITE_CATALOG_API_BASE_URL:=$(node -p "require('../../infra/cloudflare/catalog-api.json').base_url ?? ''")}"
+export VITE_CATALOG_API_BASE_URL
 : "${PART_BUNDLE_WAIT_MINUTES:=42}"
 export PART_BUNDLE_WAIT_MINUTES
 

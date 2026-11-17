@@ -17,7 +17,7 @@ const corsHeaders: Readonly<Record<string, string>> = {
   "access-control-allow-methods": "GET, HEAD, OPTIONS",
   "access-control-allow-headers": "If-None-Match, Range",
   "access-control-expose-headers":
-    "ETag, Content-Range, Accept-Ranges, Server-Timing, X-Catalog-Release, X-Cache, X-D1-Rows-Read",
+    "ETag, Content-Range, Accept-Ranges, Server-Timing, X-Catalog-Release, X-Bundle-Manifest, X-Cache, X-D1-Rows-Read",
   "access-control-max-age": "86400",
 };
 
@@ -30,8 +30,8 @@ export function preflight(): Response {
   return new Response(null, { status: 204, headers: withCors(new Headers()) });
 }
 
-export function releaseEtag(releaseId: string): string {
-  return `"${releaseId}"`;
+export function versionEtag(version: string): string {
+  return `"${version}"`;
 }
 
 export function json(
@@ -64,16 +64,23 @@ export function tooManyRequests(): Response {
 
 export function immutableJson(body: unknown, releaseId: string, cost: D1Cost): Response {
   return json(body, 200, IMMUTABLE_CACHE, {
-    etag: releaseEtag(releaseId),
+    etag: versionEtag(releaseId),
     "x-catalog-release": releaseId,
     "server-timing": `d1;dur=${cost.durationMs.toFixed(3)}`,
     "x-d1-rows-read": String(cost.rowsRead),
   });
 }
 
-export function notModified(releaseId: string): Response {
+export function immutableBundleJson(body: unknown, manifest: string): Response {
+  return json(body, 200, IMMUTABLE_CACHE, {
+    etag: versionEtag(manifest),
+    "x-bundle-manifest": manifest,
+  });
+}
+
+export function notModified(version: string): Response {
   const headers = withCors(
-    new Headers({ etag: releaseEtag(releaseId), "cache-control": IMMUTABLE_CACHE }),
+    new Headers({ etag: versionEtag(version), "cache-control": IMMUTABLE_CACHE }),
   );
   return new Response(null, { status: 304, headers });
 }
