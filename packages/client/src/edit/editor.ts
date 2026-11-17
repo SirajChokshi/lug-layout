@@ -2,15 +2,19 @@ import {
   PART_BUNDLE_LOADER,
   type BundleLod,
   type IPartBundleLoader,
+  type NotDrawnSection,
   type PartBundle,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
 import {
+  BomCounter,
+  countPlacements,
   EditHistory,
   RoadNetwork,
   World,
   roomRect,
   type AppliedEdit,
+  type PlacementContents,
   type EditKind,
   type HistoryStep,
   type RoadEdgeSegment,
@@ -30,6 +34,12 @@ import {
   type WorldBox,
 } from "@brr/render";
 import { inject, injectable } from "inversify";
+import {
+  notDrawnItems,
+  type BomInput,
+  type BomScope,
+  type IBomSource,
+} from "../bom/bom-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
@@ -189,7 +199,7 @@ export interface EditorOptions {
   readonly pixelRatio: number;
 }
 
-export interface IEditor {
+export interface IEditor extends IBomSource {
   start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void>;
   subscribe(listener: () => void): () => void;
   snapshot(): EditorSnapshot;
@@ -279,6 +289,15 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
   }
 }
 
+const EDITOR_WORLD_NAME = "editor-world";
+const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
+
+interface EditorBomTables {
+  readonly palette: MergedParts;
+  readonly colors: ColorTable;
+  readonly ldrawColors: ReadonlyArray<number>;
+}
+
 interface PendingAction {
   readonly step: HistoryStep;
   readonly action: EditAction;
@@ -358,6 +377,8 @@ export class Editor implements IEditor {
   private canvas: HTMLCanvasElement | null = null;
   private framesSinceStats = 0;
   private statsSince = 0;
+  private bomTables: EditorBomTables | null = null;
+  private placeableNotDrawn: ReadonlyArray<ReadonlyArray<NotDrawnSection>> = [];
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -399,6 +420,7 @@ export class Editor implements IEditor {
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
       this.plans.setTableTopY(this.baseplateBottomY());
+      this.bomTables = { palette, colors, ldrawColors: bundle.colors.map((color) => color.code) };
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -466,6 +488,7 @@ export class Editor implements IEditor {
     const loaded = await Promise.all(
       placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
+    this.placeableNotDrawn = [[], ...loaded.map(({ entry }) => entry.notDrawn ?? [])];
     return [
       partPlaceable(baseplate, baseplateIndex, baseplateColor.code, palette.parts, colors),
       ...roadParts.map((part) => {
@@ -805,6 +828,60 @@ export class Editor implements IEditor {
 
   setSnapRoads(snap: boolean): void {
     this.update({ snapRoads: snap, snap: null });
+  }
+
+  bomInput(scope: BomScope): BomInput {
+    const tables = this.bomTables;
+    if (!tables) throw new Error("the editor has not loaded");
+    const counter = new BomCounter(
+      tables.palette.parts.map((part) => part.id),
+      tables.ldrawColors,
+    );
+    const placedCounts = new Map<number, number>();
+    const contents: PlacementContents = {
+      addTo: (target, refId) => {
+        const placeable = this.placeables[refId];
+        if (!placeable) throw new Error(`world holds unknown placeable ${refId}`);
+        placedCounts.set(refId, (placedCounts.get(refId) ?? 0) + 1);
+        const { parts } = placeable;
+        for (let i = 0; i < parts.count; i++) {
+          target.add(parts.partIndex[i] ?? 0, tables.colors.codeAt(parts.colorIndex[i] ?? 0), 1);
+        }
+      },
+    };
+    const uncounted = (): BomInput["uncounted"] =>
+      [...placedCounts].flatMap(([refId, count]) =>
+        notDrawnItems(
+          this.placeables[refId]?.id ?? String(refId),
+          this.placeableNotDrawn[refId] ?? [],
+          count,
+        ),
+      );
+    if (scope.kind !== "selection") {
+      const placements = countPlacements(
+        this.world,
+        contents,
+        counter,
+        scope.kind === "region" ? scope.region : null,
+      );
+      return {
+        name: EDITOR_WORLD_NAME,
+        lod: "standard",
+        placements,
+        counter,
+        uncounted: uncounted(),
+      };
+    }
+    const selected = this.selected;
+    if (!selected?.handle.live) throw new Error("nothing is selected");
+    contents.addTo(counter, selected.handle.refId, selected.handle.colorId);
+    return {
+      name: `selection-${selected.placeable.id.replace(FILE_NAME_UNSAFE, "_")}`,
+      lod: "standard",
+      placements: 1,
+      counter,
+      uncounted: uncounted(),
+    };
   }
 
   private select(model: PlacedModel | null): void {

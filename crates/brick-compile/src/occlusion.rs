@@ -231,6 +231,11 @@ pub fn visible_from_above(triangles: &[Triangle]) -> Vec<bool> {
         .collect();
     let tree = Node::build((0..triangles.len()).collect(), &bounds, &centroids);
     let workers = thread::available_parallelism().map_or(1, |n| n.get());
+    if workers == 1 {
+        return (0..triangles.len())
+            .map(|i| triangle_visible(i, triangles, &tree, &directions))
+            .collect();
+    }
     let chunk = triangles.len().div_ceil(workers);
     let mut visible = vec![false; triangles.len()];
     thread::scope(|scope| {

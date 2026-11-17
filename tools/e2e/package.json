@@ -1,0 +1,20 @@
+{
+  "name": "@brr/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "import-models": "node src/import-models.ts",
+    "export-parts-lists": "node src/export-parts-lists.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "compiler-parity": "node --experimental-transform-types --no-warnings src/compiler-parity.ts"
+  },
+  "dependencies": {
+    "@brr/import": "workspace:*"
+  },
+  "devDependencies": {
+    "@brr/config": "workspace:*",
+    "@types/node": "22.20.5",
+    "playwright-core": "1.58.2",
+    "typescript": "7.0.2"
+  }
+}

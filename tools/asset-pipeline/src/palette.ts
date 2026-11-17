@@ -12,6 +12,7 @@ export interface PaletteModel {
   readonly sha256: string;
   readonly source: string;
   readonly retrieved: string;
+  readonly notDrawn?: ReadonlyArray<{ readonly section: string; readonly reason: string }>;
   readonly set?: { readonly name: string; readonly year: number; readonly source: string };
 }
 
@@ -34,6 +35,26 @@ export interface Palette {
   readonly models: ReadonlyArray<PaletteModel>;
   readonly audit: ReadonlyArray<AuditGroup>;
   readonly connectivitySource: Palette["source"];
+  readonly catalogSources: ReadonlyArray<CatalogSource>;
+}
+
+export type CatalogSourceUse = "crosswalk" | "inventory-check";
+
+export interface GithubArchive {
+  readonly kind: "github-archive";
+  readonly repo: string;
+  readonly commit: string;
+  readonly root: string;
+}
+
+export type CatalogLocation = Palette["source"] | GithubArchive;
+
+export interface CatalogSource {
+  readonly name: string;
+  readonly use: CatalogSourceUse;
+  readonly describes: string;
+  readonly source: CatalogLocation;
+  readonly files: ReadonlyArray<string>;
 }
 
 export interface AuditGroup {
@@ -58,6 +79,7 @@ function isPalette(value: unknown): value is Palette {
     typeof candidate["omrSource"] === "object" &&
     Array.isArray(candidate["models"]) &&
     Array.isArray(candidate["audit"]) &&
-    typeof candidate["connectivitySource"] === "object"
+    typeof candidate["connectivitySource"] === "object" &&
+    Array.isArray(candidate["catalogSources"])
   );
 }

@@ -1,17 +1,41 @@
-import { PART_BUNDLE_LOADER, type BundleLod, type IPartBundleLoader } from "@brr/catalog";
+import {
+  PART_BUNDLE_LOADER,
+  type BundleLod,
+  type IPartBundleLoader,
+  type NotDrawnSection,
+} from "@brr/catalog";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
+import { BomCounter } from "@brr/domain";
 import { inject, injectable } from "inversify";
 import { chunkKey } from "@brr/math";
+import {
+  notDrawnItems,
+  sceneRegion,
+  type BomInput,
+  type BomScope,
+  type IBomSource,
+} from "../bom/bom-service.ts";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 import { withStuds } from "./stud-stream.ts";
 
-export interface IModelScene extends IViewerScene {
+export interface IModelScene extends IViewerScene, IBomSource {
   selectModel(name: string): void;
 }
 
 const ORBIT_DISTANCE_FACTOR = 2.8;
 const ORBIT_ELEVATION_FACTOR = 0.9;
 const MIN_ORBIT_RADIUS_LDU = 200;
+const MODEL_ORIGIN = 0;
+
+interface LoadedModel {
+  readonly lod: BundleLod;
+  readonly partIds: ReadonlyArray<string>;
+  readonly ldrawColors: ReadonlyArray<number>;
+  readonly instanceCount: number;
+  readonly partIndex: Uint16Array;
+  readonly ldrawColor: Uint16Array;
+  readonly notDrawn: ReadonlyArray<NotDrawnSection>;
+}
 
 @injectable()
 export class ModelScene implements IModelScene {
@@ -20,6 +44,7 @@ export class ModelScene implements IModelScene {
   private centreY = 0;
   private centreZ = 0;
   private radius = MIN_ORBIT_RADIUS_LDU;
+  private loaded: LoadedModel | null = null;
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -33,6 +58,15 @@ export class ModelScene implements IModelScene {
   async load(lod: BundleLod): Promise<SceneSummary> {
     const { bundle, entry, model } = await this.loader.loadModel(lod, this.modelName);
     const colors = new ColorTable(bundle);
+    this.loaded = {
+      lod,
+      partIds: bundle.parts.map((part) => part.id),
+      ldrawColors: bundle.colors.map((color) => color.code),
+      instanceCount: model.instanceCount,
+      partIndex: model.partIndex,
+      ldrawColor: model.ldrawColor,
+      notDrawn: entry.notDrawn ?? [],
+    };
     const colorIndex = new Uint16Array(model.instanceCount);
     for (let i = 0; i < model.instanceCount; i++) {
       colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
@@ -63,6 +97,30 @@ export class ModelScene implements IModelScene {
         sections: model.sections,
       },
     );
+  }
+
+  bomInput(scope: BomScope): BomInput {
+    const loaded = this.loaded;
+    if (!loaded) throw new Error("the model scene has not loaded a model");
+    const counter = new BomCounter(loaded.partIds, loaded.ldrawColors);
+    const region = sceneRegion(scope);
+    const included =
+      region === null ||
+      (MODEL_ORIGIN >= region.minX &&
+        MODEL_ORIGIN < region.maxX &&
+        MODEL_ORIGIN >= region.minZ &&
+        MODEL_ORIGIN < region.maxZ);
+    if (included) {
+      counter.addInstances(loaded.partIndex, loaded.ldrawColor, loaded.instanceCount, 1);
+    }
+    const placements = included ? 1 : 0;
+    return {
+      name: this.modelName,
+      lod: loaded.lod,
+      placements,
+      counter,
+      uncounted: notDrawnItems(this.modelName, loaded.notDrawn, placements),
+    };
   }
 
   private frame(matrices: Float32Array, count: number): void {

@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 import type { Palette } from "./palette.ts";
 
 export const MANIFEST_FILE = "manifest.json";
+export const CROSSWALK_FILE = "crosswalk.json";
 export const CONTENT_HASH_HEX_DIGITS = 16;
 
 export interface BundleInputs {
@@ -21,6 +22,8 @@ interface CompiledManifest {
   parts: FileReference[];
   studPrimitives: FileReference[];
   models: FileReference[];
+  compiler: FileReference | null;
+  crosswalk: FileReference;
   [key: string]: unknown;
 }
 
@@ -51,13 +54,28 @@ function isCompiledManifest(value: unknown): value is CompiledManifest {
   return (
     isFileReferenceList(candidate["parts"]) &&
     isFileReferenceList(candidate["studPrimitives"]) &&
-    isFileReferenceList(candidate["models"])
+    isFileReferenceList(candidate["models"]) &&
+    (candidate["compiler"] === null || isFileReferenceList([candidate["compiler"]])) &&
+    isFileReferenceList([candidate["crosswalk"]])
   );
 }
 
 export function contentAddressedName(file: string, digest: string): string {
   const extension = extname(file);
   return `${file.slice(0, -extension.length)}.${digest.slice(0, CONTENT_HASH_HEX_DIGITS)}${extension}`;
+}
+
+export async function attachCrosswalk(directory: string, crosswalk: unknown): Promise<void> {
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (typeof compiled !== "object" || compiled === null) {
+    throw new Error(`${manifestPath} is not a compiled bundle`);
+  }
+  await writeFile(join(directory, CROSSWALK_FILE), JSON.stringify(crosswalk));
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...compiled, crosswalk: { file: CROSSWALK_FILE } }, null, 2)}\n`,
+  );
 }
 
 export async function publishBundle(
@@ -67,7 +85,13 @@ export async function publishBundle(
   const manifestPath = join(directory, MANIFEST_FILE);
   const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
   if (!isCompiledManifest(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
-  const references = [...compiled.studPrimitives, ...compiled.parts, ...compiled.models];
+  const references = [
+    ...compiled.studPrimitives,
+    ...compiled.parts,
+    ...compiled.models,
+    ...(compiled.compiler ? [compiled.compiler] : []),
+    compiled.crosswalk,
+  ];
   const published = new Set<string>();
   for (const reference of references) {
     const digest = sha256(await readFile(join(directory, reference.file)));
