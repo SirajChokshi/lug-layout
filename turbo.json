@@ -24,7 +24,11 @@
         "$TURBO_ROOT$/rust-toolchain.toml",
         "$TURBO_ROOT$/docs/verified-facts/scenes/**",
         "$TURBO_ROOT$/docs/verified-facts/geometry.json",
-        "$TURBO_ROOT$/docs/verified-facts/track-catalog.json"
+        "$TURBO_ROOT$/docs/verified-facts/track-catalog.json",
+        "$TURBO_ROOT$/packages/schema/src/bundle/**",
+        "!$TURBO_ROOT$/packages/schema/src/bundle/**/*.test.ts",
+        "$TURBO_ROOT$/packages/catalog/src/glb.ts",
+        "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts"
       ],
       "outputs": ["dist/**"],
       "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]
