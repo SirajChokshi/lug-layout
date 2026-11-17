@@ -38,11 +38,14 @@ export {
   type SimTrackInput,
 } from "./sim-track.ts";
 export {
+  DIRECTION_BACKWARD,
+  DIRECTION_FORWARD,
   NO_EDGE,
   POSE_FLOATS_PER_VEHICLE,
   SIM_TICK_HZ,
   SIM_TICK_SECONDS,
   Simulation,
+  type OpenEndRule,
   type SimCapacity,
   type SimRailway,
   type TrainPlacement,

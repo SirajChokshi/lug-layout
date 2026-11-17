@@ -458,7 +458,7 @@ describe("Switches and dead ends", () => {
     expect(visited.has(forwardEdge(5))).toBe(false);
   });
 
-  it("brakes to a stop at a buffer without running past the track end", () => {
+  it("brakes to a stop at a buffer without running past the track end, under the default open-end rule", () => {
     const sim = new SimSession(stemWithLoop()).simulation;
     sim.setThrottle(0, 500);
     run(sim, 40);
@@ -467,5 +467,171 @@ describe("Switches and dead ends", () => {
     expect(sim.trainOffset[0] ?? 0).toBeGreaterThan(
       (sim.track.edgeLength[backwardEdge(0)] ?? 0) - 5,
     );
+  });
+});
+
+const LINE_STRAIGHTS = 6;
+const LINE_ARCS = 4;
+
+function lineEndingInCurve(openEnds: "brake" | "derail"): SimScenario {
+  const routes = chain({ x: 0, z: 0, heading: 0 }, [
+    ...Array.from({ length: LINE_STRAIGHTS }, () => STRAIGHT),
+    ...Array.from({ length: LINE_ARCS }, () => ARC),
+  ]);
+  const successors: number[][] = [];
+  for (let r = 0; r < routes.length; r++) {
+    successors.push(
+      r + 1 < routes.length ? [forwardEdge(r + 1)] : [],
+      r > 0 ? [backwardEdge(r - 1)] : [],
+    );
+  }
+  const { track } = buildSimTrack({
+    routes,
+    successors,
+    switchOfEdge: successors.map(() => NO_SWITCH),
+    switchCount: 0,
+  });
+  return {
+    track,
+    capacity: { trains: 1, vehicles: 2 },
+    trains: [{ spec: TRAIN, placement: { edge: forwardEdge(4), offsetLdu: 100 } }],
+    openEnds,
+  };
+}
+
+const LAST_EDGE = forwardEdge(LINE_STRAIGHTS + LINE_ARCS - 1);
+
+function frameOf(session: SimSession): Float64Array {
+  const frame = new Float64Array(session.layout.floats);
+  session.writeFrame(frame);
+  return frame;
+}
+
+describe("Open ends under the derail rule", () => {
+  it("derails once its leading bogie runs off the open end, then skids to rest along the end's tangent", () => {
+    const scenario = lineEndingInCurve("derail");
+    const session = new SimSession(scenario);
+    const sim = session.simulation;
+    const routes = chain({ x: 0, z: 0, heading: 0 }, [
+      ...Array.from({ length: LINE_STRAIGHTS }, () => STRAIGHT),
+      ...Array.from({ length: LINE_ARCS }, () => ARC),
+    ]);
+    const end = routes.at(-1)?.to ?? { x: 0, z: 0, heading: 0 };
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: 600 });
+    let hitSpeed = 0;
+    for (let tick = 0; tick < 20 * SIM_TICK_HZ && !sim.derailed(0); tick++) {
+      hitSpeed = sim.trainSpeed[0] ?? 0;
+      sim.step();
+    }
+    expect(sim.derailed(0)).toBe(true);
+    expect(sim.trainEdge[0]).toBe(LAST_EDGE);
+    expect(sim.trainDerailSpeed[0]).toBe(hitSpeed);
+    expect(hitSpeed).toBe(600);
+    run(sim, 5);
+    expect(sim.trainSpeed[0]).toBe(0);
+    const overrun = sim.overrunLdu(0);
+    const leadingBogie = TRAIN.vehicles[0]?.frontBogieLdu ?? 0;
+    const skid = (600 * 600) / (2 * TRAIN.brakingLduPerS2);
+    expect(overrun - leadingBogie).toBeGreaterThan(skid * 0.95);
+    expect(overrun - leadingBogie).toBeLessThan(skid * 1.05);
+    const poses = new Float64Array(2 * POSE_FLOATS_PER_VEHICLE);
+    sim.writeVehiclePoses(poses);
+    const leadX = poses[0] ?? 0;
+    const leadZ = poses[1] ?? 0;
+    const along = (leadX - end.x) * Math.cos(end.heading) + (leadZ - end.z) * Math.sin(end.heading);
+    const across =
+      -(leadX - end.x) * Math.sin(end.heading) + (leadZ - end.z) * Math.cos(end.heading);
+    expect(along).toBeCloseTo(overrun - 175, 6);
+    expect(Math.abs(across)).toBeLessThan(1e-9);
+    const frame = frameOf(session);
+    expect(frame[session.layout.trainDerailSpeedStart]).toBe(600);
+    expect(frame[session.layout.bogiesOffTrackStart]).toBe(overrun > 515 ? 2 : 1);
+    expect(frame[session.layout.bogiesOffTrackStart + 1]).toBe(0);
+  });
+
+  it("stays on the rails when it stops with only its front overhanging the end, and backs away", () => {
+    const session = new SimSession(lineEndingInCurve("derail"));
+    const sim = session.simulation;
+    const speed = 300;
+    const stopping = (speed * speed) / (2 * TRAIN.brakingLduPerS2);
+    const endLength = sim.track.edgeLength[LAST_EDGE] ?? 0;
+    const overhang = 60;
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: speed });
+    while (sim.trainEdge[0] !== LAST_EDGE || (sim.trainOffset[0] ?? 0) < endLength - stopping) {
+      sim.step();
+    }
+    while ((sim.trainOffset[0] ?? 0) < endLength - stopping + overhang) sim.step();
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: 0 });
+    run(sim, 3);
+    expect(sim.trainSpeed[0]).toBe(0);
+    expect(sim.derailed(0)).toBe(false);
+    expect(sim.overrunLdu(0)).toBeGreaterThan(overhang / 2);
+    expect(sim.overrunLdu(0)).toBeLessThan(175);
+    expect(frameOf(session)[session.layout.bogiesOffTrackStart]).toBe(0);
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -speed });
+    run(sim, 2);
+    expect(sim.derailed(0)).toBe(false);
+    expect(sim.trainSpeed[0]).toBe(speed);
+    expect((sim.trainEdge[0] ?? 0) % 2).toBe(1);
+  });
+
+  it("ignores throttle and refuses to reverse until rerailed, then drives back the other way", () => {
+    const session = new SimSession(lineEndingInCurve("derail"));
+    const sim = session.simulation;
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: 500 });
+    for (let tick = 0; tick < 20 * SIM_TICK_HZ && !sim.derailed(0); tick++) sim.step();
+    run(sim, 5);
+    const resting = sim.trainOffset[0] ?? 0;
+    expect(session.apply({ kind: "reverse", train: 0 })).toBe(false);
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -500 });
+    run(sim, 2);
+    expect(sim.trainOffset[0]).toBe(resting);
+    expect(session.apply({ kind: "rerail", train: 0 })).toBe(true);
+    expect(sim.derailed(0)).toBe(false);
+    expect(sim.trainOffset[0]).toBe(sim.track.edgeLength[LAST_EDGE]);
+    expect(session.apply({ kind: "rerail", train: 0 })).toBe(false);
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -500 });
+    run(sim, 3);
+    expect((sim.trainEdge[0] ?? 0) % 2).toBe(1);
+    expect(sim.trainSpeed[0]).toBe(500);
+    expect(sim.derailed(0)).toBe(false);
+    const replayed = replay(lineEndingInCurve("derail"), session.log, sim.tick);
+    expect(replayed.stateHash()).toBe(sim.stateHash());
+  });
+});
+
+describe("Driving with a signed speed", () => {
+  it("brakes to a stop, reverses where it stood and runs the other way when asked to go backward while moving forward", () => {
+    const session = new SimSession(circle());
+    const sim = session.simulation;
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: 500 });
+    run(sim, 4);
+    expect(sim.direction(0)).toBe(1);
+    session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -300 });
+    expect(sim.direction(0)).toBe(-1);
+    const before = new Float64Array(2 * POSE_FLOATS_PER_VEHICLE);
+    let previousSpeed = sim.trainSpeed[0] ?? 0;
+    let stoppedAtTick = -1;
+    for (let tick = 0; tick < 4 * SIM_TICK_HZ && stoppedAtTick < 0; tick++) {
+      sim.step();
+      const speed = sim.trainSpeed[0] ?? 0;
+      expect(speed).toBeLessThanOrEqual(previousSpeed);
+      previousSpeed = speed;
+      if (speed === 0) {
+        stoppedAtTick = sim.tick;
+        sim.writeVehiclePoses(before);
+      }
+    }
+    expect(stoppedAtTick).toBeGreaterThan(0);
+    expect((sim.trainEdge[0] ?? 0) % 2).toBe(0);
+    sim.step();
+    expect((sim.trainEdge[0] ?? 0) % 2).toBe(1);
+    run(sim, 4);
+    expect(sim.trainSpeed[0]).toBe(300);
+    expect(sim.direction(0)).toBe(-1);
+    const frame = frameOf(session);
+    expect(frame[session.layout.trainDirectionStart]).toBe(-1);
+    const replayed = replay(circle(), session.log, sim.tick);
+    expect(replayed.stateHash()).toBe(sim.stateHash());
   });
 });
