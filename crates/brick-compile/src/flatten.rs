@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Range;
 use std::rc::Rc;
 
 use crate::affine::{Affine, Vec3};
@@ -41,12 +42,39 @@ pub struct VisitedFile {
     pub license: LicenseVerdict,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReferenceSpan {
+    pub reference: String,
+    pub path: String,
+    pub matrix: Affine,
+    pub triangles: Range<usize>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Flattened {
     pub triangles: Vec<Triangle>,
     pub hard_edges: Vec<[Vec3; 2]>,
     pub studs: Vec<StudReference>,
     pub files: Vec<VisitedFile>,
+    pub spans: Vec<ReferenceSpan>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SpanRecording<'a> {
+    pub named: &'a [String],
+    pub circular: bool,
+}
+
+pub fn is_circular_primitive(reference: &str) -> bool {
+    let name = reference.rsplit('/').next().unwrap_or(reference);
+    let Some((numerator, rest)) = name.split_once('-') else {
+        return false;
+    };
+    let denominator: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    !numerator.is_empty()
+        && numerator.chars().all(|c| c.is_ascii_digit())
+        && !denominator.is_empty()
+        && rest[denominator.len()..].starts_with(|c: char| c.is_ascii_alphabetic())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +87,7 @@ pub struct Flattener<'a, L: Library> {
     library: &'a L,
     lod: Lod,
     stud_primitives: &'a [String],
+    recording: SpanRecording<'a>,
     parsed: HashMap<String, Rc<LdrawFile>>,
 }
 
@@ -76,8 +105,19 @@ impl<'a, L: Library> Flattener<'a, L> {
             library,
             lod,
             stud_primitives,
+            recording: SpanRecording::default(),
             parsed: HashMap::new(),
         }
+    }
+
+    pub fn recording(mut self, recording: SpanRecording<'a>) -> Self {
+        self.recording = recording;
+        self
+    }
+
+    fn records(&self, reference: &str) -> bool {
+        self.recording.named.iter().any(|name| name == reference)
+            || (self.recording.circular && is_circular_primitive(reference))
     }
 
     pub fn resolve(&self, reference: &str) -> Option<String> {
@@ -192,7 +232,16 @@ impl<'a, L: Library> Flattener<'a, L> {
                         culling: frame.culling && certified,
                         depth: frame.depth + 1,
                     };
+                    let first = out.triangles.len();
                     self.walk(&child_path, &child, &child_frame, out)?;
+                    if self.records(reference) {
+                        out.spans.push(ReferenceSpan {
+                            reference: reference.clone(),
+                            path: child_path,
+                            matrix: child_matrix,
+                            triangles: first..out.triangles.len(),
+                        });
+                    }
                 }
                 Line::Edge { points } => out
                     .hard_edges

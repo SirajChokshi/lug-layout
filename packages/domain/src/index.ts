@@ -149,11 +149,13 @@ export {
   type SearchBudget,
 } from "./track/closure.ts";
 export {
+  NO_ITEM,
   NO_VOLUME_TOP,
   VolumeIndex,
   cellChunkKey,
   firstOverlap,
   type CellVolumes,
+  type ItemOverlap,
   type Overlap,
   type OwnerFilter,
   type VolumeHit,
@@ -211,3 +213,19 @@ export {
   type PlaneTransform,
 } from "./cell-raster.ts";
 export { planTrianglesOverlap, type PlanBox } from "./plan-overlap.ts";
+export {
+  EMPTY_TECHNIC,
+  NO_PIN,
+  SignedPermutation,
+  TECHNIC_BOX_FLOATS,
+  TECHNIC_HOLE,
+  TECHNIC_SHAFT,
+  TechnicSetBuilder,
+  placeTechnic,
+  placeTechnicInto,
+  technicItemsOverlap,
+  technicScratch,
+  type TechnicFeature,
+  type TechnicKind,
+  type TechnicSet,
+} from "./technic-fit.ts";

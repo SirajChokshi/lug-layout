@@ -7,6 +7,22 @@
   },
   "config": ["LDConfig.ldr"],
   "studPrimitives": ["stud.dat", "stud2.dat"],
+  "technicPrimitives": {
+    "holes": ["peghole.dat"],
+    "pins": [
+      "connect.dat",
+      "connect2.dat",
+      "connect3.dat",
+      "connect4.dat",
+      "connect8.dat",
+      "confric.dat",
+      "confric4.dat",
+      "confric5.dat",
+      "confric6.dat",
+      "confric9.dat"
+    ],
+    "axleEnds": ["axleend2.dat", "axleend20.dat"]
+  },
   "unofficialAllowlist": [],
   "parts": [
     {

@@ -14,6 +14,7 @@ use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{identity_redirect, normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, ModelInstance};
+use brick_compile::technic::TechnicPrimitives;
 use brick_compile::vehicle::{
     detect_vehicles, GuideKind, RailHeadBand, Vehicle, VehicleSignatures,
 };
@@ -454,6 +455,26 @@ fn translucent_codes(colors: &[Colour]) -> HashSet<u32> {
         .collect()
 }
 
+fn technic_primitives(palette: &Value) -> Result<TechnicPrimitives, String> {
+    let list = |key: &str| -> Result<Vec<String>, String> {
+        palette["technicPrimitives"][key]
+            .as_array()
+            .ok_or(format!("palette.technicPrimitives.{key} must be an array"))?
+            .iter()
+            .map(|v| {
+                v.as_str().map(str::to_string).ok_or(format!(
+                    "palette.technicPrimitives.{key} holds a non-string"
+                ))
+            })
+            .collect()
+    };
+    Ok(TechnicPrimitives {
+        holes: list("holes")?,
+        pins: list("pins")?,
+        axle_ends: list("axleEnds")?,
+    })
+}
+
 fn run(args: &Args) -> Result<(), String> {
     let mut files = HashMap::new();
     collect(&args.ldraw, &args.ldraw, &mut files).map_err(|e| e.to_string())?;
@@ -476,10 +497,12 @@ fn run(args: &Args) -> Result<(), String> {
                 .collect()
         })
         .unwrap_or_default();
+    let technic = technic_primitives(&palette)?;
     let primitive_options = CompileOptions {
         lod: args.lod,
         stud_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+        technic: TechnicPrimitives::default(),
     };
     let compiler = match &args.compiler {
         Some(path) => {
@@ -494,11 +517,13 @@ fn run(args: &Args) -> Result<(), String> {
         lod: Lod::Standard,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+        technic: TechnicPrimitives::default(),
     };
     let part_options = CompileOptions {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist,
+        technic,
     };
     let mut stud_shape = StudShape {
         height: 0.0,

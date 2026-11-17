@@ -17,6 +17,7 @@ import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
 import { modelTrack, type ModelTrack } from "./model-track.ts";
 import { roadSurface } from "./road-surface.ts";
+import { technicVolumes, type PlaceableVolumes } from "./technic-volumes.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
 export type PlaceableLayer = "first" | "upper";
@@ -58,6 +59,7 @@ export interface Placeable {
   readonly studLattice: StudLattice;
   readonly bakedCoveredStuds: number;
   readonly cells: PlaceableCells;
+  readonly volumes: PlaceableVolumes;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
   readonly frameShift: Vec3;
@@ -502,6 +504,7 @@ export function modelPlaceable(
   if (module) requireOnlyTrackPastModuleEdges(local, partBoxes, parts, module, name);
   const restPlates = ((cells.groundY ?? cells.restY) - restingOn) / PLATE_LDU;
   const placedCells = modelCells(cells, shift, name, restPlates, !isModule, tableY);
+  const finalCells = module ? moduleCells(placedCells, module, name) : placedCells;
   return {
     id,
     label,
@@ -514,7 +517,8 @@ export function modelPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
-    cells: module ? moduleCells(placedCells, module, name) : placedCells,
+    cells: finalCells,
+    volumes: technicVolumes(local, parts, partBoxes, finalCells),
     box,
     partBoxes,
     frameShift: shift,
@@ -570,6 +574,7 @@ export function partPlaceable(
   const partBoxes = instanceBoxes(local, parts);
   const isRoad = part.role === "road";
   const studs = withStuds(local, parts, colors, undefined).studs;
+  const cells = partCells(part, shift, tableY);
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
@@ -582,7 +587,8 @@ export function partPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: 0,
-    cells: partCells(part, shift, tableY),
+    cells,
+    volumes: technicVolumes(local, parts, partBoxes, cells),
     box,
     partBoxes,
     frameShift: shift,

@@ -8,7 +8,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && tsc -p bench/tsconfig.json",
     "test": "vitest run",
-    "bench": "node bench/cell-raster.bench.ts"
+    "bench": "node bench/cell-raster.bench.ts && node bench/technic-fit.bench.ts"
   },
   "dependencies": {
     "@brr/math": "workspace:*",

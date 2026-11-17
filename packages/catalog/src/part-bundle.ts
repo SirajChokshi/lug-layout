@@ -7,6 +7,7 @@ import {
   type ModelSection,
   type ModelVehicle,
   type PartRole,
+  type PartTechnic,
   type TrackEnd,
   type Vec3,
 } from "@brr/schema/bundle";
@@ -48,6 +49,7 @@ export interface PartAsset {
   readonly studPrimitiveIndex: Uint8Array;
   readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
+  readonly technic: PartTechnic | null;
 }
 
 export interface StudPrimitiveAsset {

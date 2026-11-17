@@ -1,18 +1,27 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
+  EMPTY_TECHNIC,
+  NO_ITEM,
   NO_VOLUME_TOP,
+  SignedPermutation,
   SupportGrid,
   VolumeIndex,
   cellChunkKey,
   firstOverlap,
   isSupported,
+  placeTechnic,
+  placeTechnicInto,
+  technicItemsOverlap,
+  technicScratch,
   trackSupport,
   upperSupport,
   type AppliedEdit,
   type BaseCells,
   type CellVolumes,
+  type ItemOverlap,
   type Overlap,
   type OwnerFilter,
+  type TechnicSet,
   type PlacementHandle,
   type VolumeHit,
   type PlacementRef,
@@ -329,18 +338,19 @@ interface CandidateCells {
 
 function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells {
   const { cells } = placeable;
-  let volumeCount = 0;
+  const { records } = placeable.volumes;
+  const volumeCount = records.item.length;
   let baseCount = 0;
   for (let cell = 0; cell < cells.width * cells.depth; cell++) {
-    if ((cells.topLdu[cell] ?? 0) > (cells.bottomLdu[cell] ?? 0)) volumeCount++;
     if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) baseCount++;
   }
   const volumes = {
     count: volumeCount,
     cellX: new Int32Array(volumeCount),
     cellZ: new Int32Array(volumeCount),
-    bottomLdu: new Int32Array(volumeCount),
-    topLdu: new Int32Array(volumeCount),
+    bottomLdu: records.bottomLdu,
+    topLdu: records.topLdu,
+    item: records.item,
   };
   const base = {
     count: baseCount,
@@ -348,21 +358,16 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
     cellZ: new Int32Array(baseCount),
     flat: new Uint8Array(baseCount),
   };
-  let v = 0;
   let b = 0;
   for (let j = 0; j < cells.depth; j++) {
     for (let i = 0; i < cells.width; i++) {
       const cell = j * cells.width + i;
       const wx = pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
       const wz = pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
-      const bottom = cells.bottomLdu[cell] ?? 0;
-      const top = cells.topLdu[cell] ?? 0;
-      if (top > bottom) {
-        volumes.cellX[v] = wx;
-        volumes.cellZ[v] = wz;
-        volumes.bottomLdu[v] = bottom;
-        volumes.topLdu[v] = top;
-        v++;
+      const end = records.start[cell + 1] ?? 0;
+      for (let r = records.start[cell] ?? 0; r < end; r++) {
+        volumes.cellX[r] = wx;
+        volumes.cellZ[r] = wz;
       }
       if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) {
         base.cellX[b] = wx;
@@ -382,7 +387,19 @@ function raised(volumes: CellVolumes, byLdu: number): CellVolumes {
     bottomLdu[c] = (volumes.bottomLdu[c] ?? 0) + byLdu;
     topLdu[c] = (volumes.topLdu[c] ?? 0) + byLdu;
   }
-  return { count: volumes.count, cellX: volumes.cellX, cellZ: volumes.cellZ, bottomLdu, topLdu };
+  const { count, cellX, cellZ, item } = volumes;
+  return item
+    ? { count, cellX, cellZ, bottomLdu, topLdu, item }
+    : { count, cellX, cellZ, bottomLdu, topLdu };
+}
+
+function worldTechnic(placeable: Placeable, pose: LatticePose, yLdu: number): TechnicSet {
+  const local = placeable.volumes.technic;
+  if (local.count === 0) return EMPTY_TECHNIC;
+  return placeTechnic(
+    local,
+    SignedPermutation.quarterTurn(pose.cos, pose.sin, pose.x, yLdu, pose.z),
+  );
 }
 
 class PlacedEntry implements PlacedModel {
@@ -397,6 +414,7 @@ class PlacedEntry implements PlacedModel {
   readonly footprintKeys = new Set<number>();
   readonly columnKeys = new Set<number>();
   readonly tongueBoxes: Float64Array;
+  readonly technic: TechnicSet;
   readonly box: WorldBox;
   readonly pose: LatticePose;
   readonly x: number;
@@ -444,6 +462,7 @@ class PlacedEntry implements PlacedModel {
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
     }
     this.candidate = candidateCells(placeable, this.pose);
+    this.technic = worldTechnic(placeable, this.pose, this.yLdu);
     this.registerCells(chunkOrigins);
     const tongues = placeable.tongueBoxes ?? EMPTY_BOXES;
     this.tongueBoxes = new Float64Array(tongues.length);
@@ -489,17 +508,28 @@ class PlacedEntry implements PlacedModel {
 
   stampColumns(volumes: VolumeIndex, support: SupportGrid, onlyChunk: number | null): void {
     const { cells } = this.placeable;
+    const { records } = this.placeable.volumes;
     const yPlates = this.handle.yPlates;
     for (let j = 0; j < cells.depth; j++) {
       for (let i = 0; i < cells.width; i++) {
         const cell = j * cells.width + i;
-        const bottom = cells.bottomLdu[cell] ?? 0;
-        const top = cells.topLdu[cell] ?? 0;
-        if (top <= bottom) continue;
+        const first = records.start[cell] ?? 0;
+        const end = records.start[cell + 1] ?? 0;
+        if (first === end) continue;
         const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
         const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
         if (onlyChunk !== null && cellChunkKey(wx, wz) !== onlyChunk) continue;
-        volumes.add(this.owner, wx, wz, this.yLdu + bottom, this.yLdu + top);
+        for (let r = first; r < end; r++) {
+          volumes.add(
+            this.owner,
+            wx,
+            wz,
+            this.yLdu + (records.bottomLdu[r] ?? 0),
+            this.yLdu + (records.topLdu[r] ?? 0),
+            records.item[r] ?? NO_ITEM,
+          );
+        }
+        if ((cells.topLdu[cell] ?? 0) <= (cells.bottomLdu[cell] ?? 0)) continue;
         if (cells.offLatticeTop) support.markOffLatticeTop(wx, wz);
         else if (cells.baseplate[cell] === 1 && yPlates === 0) support.markBaseplate(wx, wz);
       }
@@ -791,6 +821,9 @@ export class PlacedChunks {
   private readonly probe = new LatticePose(0, 0, 0);
   private readonly support = new SupportGrid();
   private readonly owners = new Map<number, VolumeOwner>();
+  private readonly entryByOwner = new Map<number, PlacedEntry>();
+  private readonly candidateTechnic = new WeakMap<TechnicSet, TechnicSet>();
+  private readonly candidatePose = new SignedPermutation();
   private readonly trackStamps = new Map<number, TrackStamp>();
   private readonly byTrackChunk = new Map<number, Set<TrackStamp>>();
   private nextOwner = 1;
@@ -828,7 +861,8 @@ export class PlacedChunks {
     at: LandingAt,
     exempt: OwnerFilter = keepEveryOwner,
   ): PlacementCheck {
-    const cells = candidateCells(placeable, new LatticePose(x, z, rot));
+    const pose = new LatticePose(x, z, rot);
+    const cells = candidateCells(placeable, pose);
     return this.withExcluded(this.entriesOf(ignore), () => {
       const first = placeable.layer === "first";
       const lands = first
@@ -838,7 +872,12 @@ export class PlacedChunks {
       const support = first
         ? null
         : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
-      const hit = firstOverlap(raised(cells.volumes, yPlates * PLATE_LDU), this.volumes, exempt);
+      const hit = firstOverlap(
+        raised(cells.volumes, yPlates * PLATE_LDU),
+        this.volumes,
+        exempt,
+        this.technicOverlap(placeable, pose, yPlates * PLATE_LDU),
+      );
       return {
         yPlates,
         support,
@@ -846,6 +885,23 @@ export class PlacedChunks {
         overlap: hit ? this.placedOverlap(hit) : null,
       };
     });
+  }
+
+  private technicOverlap(placeable: Placeable, pose: LatticePose, yLdu: number): ItemOverlap {
+    const local = placeable.volumes.technic;
+    let candidate: TechnicSet | null = null;
+    return (owner, placedItem, candidateItem) => {
+      const placed = this.entryByOwner.get(owner);
+      if (!placed) return true;
+      if (!candidate) {
+        const scratch = this.candidateTechnic.get(local) ?? technicScratch(local);
+        this.candidateTechnic.set(local, scratch);
+        this.candidatePose.set(pose.cos, pose.sin, pose.x, yLdu, pose.z);
+        placeTechnicInto(local, this.candidatePose, scratch);
+        candidate = scratch;
+      }
+      return technicItemsOverlap(placed.technic, placedItem, candidate, candidateItem);
+    };
   }
 
   trackOverlap(
@@ -1129,6 +1185,7 @@ export class PlacedChunks {
       if (entry.placeable.farModel !== null) this.backend.setFarModel(entry.owner, null);
     }
     this.owners.clear();
+    this.entryByOwner.clear();
     this.trackStamps.clear();
     this.byTrackChunk.clear();
     this.byChunk.clear();
@@ -1152,6 +1209,7 @@ export class PlacedChunks {
       this.chunkOrigins,
     );
     this.owners.set(entry.owner, { kind: "model", model: entry });
+    this.entryByOwner.set(entry.owner, entry);
     this.entries.push(entry);
     if (placeable.farModel !== null) {
       this.backend.setFarModel(entry.owner, entry.farModelPlacement(placeable.farModel));
@@ -1171,6 +1229,7 @@ export class PlacedChunks {
     this.entries.splice(index, 1);
     this.backend.setFarModel(entry.owner, null);
     this.owners.delete(entry.owner);
+    this.entryByOwner.delete(entry.owner);
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
     for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);

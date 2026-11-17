@@ -568,6 +568,34 @@ const LdrawSource = v.object({
   license: v.nullable(v.string()),
 });
 
+export const TECHNIC_STEPS_PER_LDU = 16;
+
+const TechnicAxis = v.picklist([0, 1, 2]);
+const TechnicLine = { axis: TechnicAxis, at: v.tuple([Integer, Integer]) };
+const TechnicProfile = { from: Integer, radii: v.pipe(v.array(Count), v.minLength(1)) };
+
+export const TechnicHole = v.object({ ...TechnicLine, ...TechnicProfile });
+export type TechnicHole = v.InferOutput<typeof TechnicHole>;
+
+export const TechnicShaftComponent = v.object({
+  ...TechnicProfile,
+  pin: v.nullable(v.object({ origin: Integer, direction: v.picklist([-1, 1]) })),
+});
+export type TechnicShaftComponent = v.InferOutput<typeof TechnicShaftComponent>;
+
+export const TechnicShaft = v.object({
+  ...TechnicLine,
+  components: v.pipe(v.array(TechnicShaftComponent), v.minLength(1)),
+});
+export type TechnicShaft = v.InferOutput<typeof TechnicShaft>;
+
+export const PartTechnic = v.object({
+  stepsPerLdu: v.literal(TECHNIC_STEPS_PER_LDU),
+  holes: v.array(TechnicHole),
+  shaft: v.nullable(TechnicShaft),
+});
+export type PartTechnic = v.InferOutput<typeof PartTechnic>;
+
 export const PartExtras = v.object({
   unit: v.literal("LDU"),
   upAxis: v.literal("+Y"),
@@ -583,6 +611,7 @@ export const PartExtras = v.object({
   sources: v.array(LdrawSource),
   studs: v.array(v.object({ primitive: v.string(), color: Integer, matrix: Matrix })),
   bounds: Bounds,
+  technic: v.optional(PartTechnic),
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;
 
@@ -727,6 +756,11 @@ export const Palette = v.strictObject({
   source: BundleSource,
   config: v.array(v.string()),
   studPrimitives: v.array(v.string()),
+  technicPrimitives: v.strictObject({
+    holes: v.array(v.string()),
+    pins: v.array(v.string()),
+    axleEnds: v.array(v.string()),
+  }),
   unofficialAllowlist: v.array(v.string()),
   parts: v.array(
     v.strictObject({

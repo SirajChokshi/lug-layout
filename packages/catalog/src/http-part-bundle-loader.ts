@@ -399,5 +399,6 @@ function toPartAsset(
     studPrimitiveIndex,
     studColors,
     studMatrices,
+    technic: extras.technic ?? null,
   };
 }

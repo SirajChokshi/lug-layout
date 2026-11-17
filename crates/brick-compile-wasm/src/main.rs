@@ -10,7 +10,7 @@ use brick_compile::ldraw::Header;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::bake_model;
 use brick_compile::studio::{read_io, StudioError};
-use brick_compile::{compile_part, CompileError, CompileOptions, Lod};
+use brick_compile::{compile_part, CompileError, CompileOptions, Lod, TechnicPrimitives};
 use serde_json::{json, Map, Value};
 
 use tracking::TrackingLibrary;
@@ -136,6 +136,7 @@ fn compile(request: &Value) -> Result<Vec<u8>, String> {
         lod: parse_lod(&request["lod"])?,
         stud_primitives: strings(request, "studPrimitives"),
         unofficial_allowlist: strings(request, "unofficialAllowlist"),
+        technic: TechnicPrimitives::default(),
     };
     let mut blob: Vec<u8> = Vec::new();
     let mut parts = Vec::new();
