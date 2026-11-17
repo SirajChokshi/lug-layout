@@ -7,13 +7,14 @@ import {
 } from "@brr/catalog";
 import type { RoadSurface } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import type { ModelRole, Vec3 } from "@brr/schema/bundle";
+import type { ModelRole, TrackCatalog, Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
+import { modelTrack, type ModelTrack } from "./model-track.ts";
 import { roadSurface } from "./road-surface.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
@@ -62,6 +63,7 @@ export interface Placeable {
   readonly credit: ModelCredit | null;
   readonly road: RoadSurface | null;
   readonly module: ModuleSurface | null;
+  readonly track: ModelTrack | null;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -312,6 +314,7 @@ export function modelPlaceable(
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
   tableY: number,
+  trackCatalog: TrackCatalog,
 ): Placeable {
   const { lattice, cells } = model;
   if (lattice === null || cells === null) {
@@ -362,6 +365,7 @@ export function modelPlaceable(
     credit: isModule ? null : credit,
     road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
     module: isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null,
+    track: modelTrack(local, parts, trackCatalog),
   };
 }
 
@@ -422,5 +426,6 @@ export function partPlaceable(
     credit: null,
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
     module: null,
+    track: null,
   };
 }
