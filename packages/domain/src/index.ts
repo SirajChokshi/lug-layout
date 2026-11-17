@@ -70,6 +70,15 @@ export {
   type TableTop,
 } from "./plan/plan-rules.ts";
 export {
+  crossing,
+  PLATES_PER_BRICK,
+  rampRises,
+  riserCourses,
+  type CrossingVerdict,
+  type RiserCourses,
+  type TrackSpan,
+} from "./track/elevation.ts";
+export {
   drawingKit,
   MAX_TURN_CURVES,
   type DrawingKit,
