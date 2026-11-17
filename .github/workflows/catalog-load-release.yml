@@ -1,0 +1,93 @@
+name: Catalog load release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_url:
+        description: HTTPS URL of the release SQLite file (BR-54 schema)
+        required: true
+        type: string
+      release_sha256:
+        description: SHA-256 of that file, 64 lowercase hex digits
+        required: true
+        type: string
+      source:
+        description: Source label stored with the release, for example rebrickable-db@ad9943cc
+        required: true
+        type: string
+      remote:
+        description: Also load into production D1 and R2 (--remote). Unchecked, only the throwaway --local load runs.
+        type: boolean
+        default: false
+      promote:
+        description: Point catalog_current at this release. Unchecked passes --no-promote.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_URL: ${{ inputs.release_url }}
+  RELEASE_SHA256: ${{ inputs.release_sha256 }}
+  RELEASE_SOURCE: ${{ inputs.source }}
+  PROMOTE: ${{ inputs.promote }}
+
+jobs:
+  local:
+    name: Load into local state (--local)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/catalog-api..."
+      - name: Fetch release file
+        run: infra/cloudflare/ci/fetch-release.sh "$RELEASE_URL" "$RELEASE_SHA256" "$RUNNER_TEMP/catalog.sqlite"
+      - name: Load release (--local)
+        run: |
+          args=(--sqlite "$RUNNER_TEMP/catalog.sqlite" --source "$RELEASE_SOURCE" --local --persist-to "$RUNNER_TEMP/wrangler-state")
+          if [[ "$PROMOTE" != "true" ]]; then args+=(--no-promote); fi
+          pnpm --filter @brr/catalog-api load-release "${args[@]}"
+
+  remote:
+    name: Load into production (--remote)
+    needs: local
+    if: inputs.remote
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: catalog-release-load
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/catalog-api..."
+      - name: Fetch release file
+        run: infra/cloudflare/ci/fetch-release.sh "$RELEASE_URL" "$RELEASE_SHA256" "$RUNNER_TEMP/catalog.sqlite"
+      - name: Load release (--remote)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          missing=()
+          [[ -n "$CLOUDFLARE_ACCOUNT_ID" ]] || missing+=(CLOUDFLARE_ACCOUNT_ID)
+          [[ -n "$CLOUDFLARE_API_TOKEN" ]] || missing+=(CLOUDFLARE_API_TOKEN)
+          if ((${#missing[@]} > 0)); then
+            echo "::error::Environment secrets missing: ${missing[*]}. See infra/cloudflare/README.md."
+            exit 1
+          fi
+          args=(--sqlite "$RUNNER_TEMP/catalog.sqlite" --source "$RELEASE_SOURCE" --remote)
+          if [[ "$PROMOTE" != "true" ]]; then args+=(--no-promote); fi
+          pnpm --filter @brr/catalog-api load-release "${args[@]}"
