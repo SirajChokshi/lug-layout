@@ -14,8 +14,10 @@ import {
   NO_END,
   TrackGraph,
   TrackLayout,
+  rectsOverlap,
   type CrossingTrackPiece,
   type DrawingKit,
+  type LduRect,
   type EndGap,
   type TrackEnd,
   type TrackLine,
@@ -58,6 +60,7 @@ const GROUND_PLATES = 0;
 const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
 const LATTICE_COEFFICIENTS = new Set([0, 4]);
+const CROSSING_REACH_LDU = CHUNK_LDU;
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -818,15 +821,22 @@ export class TrackDrawing {
     this.gapList = endGaps(ends);
   }
 
-  private laidCandidates(): CrossingCandidate[] {
+  private laidCandidates(region: LduRect | null): CrossingCandidate[] {
     const laid: CrossingCandidate[] = [];
     for (let p = 0; p < this.layout.count; p++) {
-      laid.push({ ...this.placedAt(p), yPlates: this.layout.yPlates(p) });
+      const placed = this.placedAt(p);
+      if (region && !rectsOverlap(partBox(placed), region)) continue;
+      laid.push({ ...placed, yPlates: this.layout.yPlates(p) });
     }
     return laid;
   }
 
-  private crossingInput(candidates: ReadonlyArray<CrossingCandidate>): TrackCrossingInput {
+  private crossingInput(
+    laid: ReadonlyArray<CrossingCandidate>,
+    proposed: ReadonlyArray<CrossingCandidate>,
+    region: LduRect | null,
+  ): TrackCrossingInput {
+    const candidates = [...laid, ...proposed];
     const triangles = new Map<number, Float64Array>();
     const pieces: CrossingTrackPiece[] = candidates.map((candidate, index) => ({
       index,
@@ -837,6 +847,8 @@ export class TrackDrawing {
     }));
     return {
       pieces,
+      proposedFrom: laid.length,
+      region,
       meets: (index, rect) => {
         const candidate = candidates[index];
         const part = candidate ? this.parts[candidate.part.partIndex] : undefined;
@@ -851,8 +863,19 @@ export class TrackDrawing {
     };
   }
 
-  laidCrossingInput(): TrackCrossingInput {
-    return this.crossingInput(this.laidCandidates());
+  private proposalInput(proposed: ReadonlyArray<CrossingCandidate>): TrackCrossingInput {
+    const boxes = proposed.map(partBox);
+    const region = {
+      minX: Math.min(...boxes.map((box) => box.minX)) - CROSSING_REACH_LDU,
+      maxX: Math.max(...boxes.map((box) => box.maxX)) + CROSSING_REACH_LDU,
+      minZ: Math.min(...boxes.map((box) => box.minZ)) - CROSSING_REACH_LDU,
+      maxZ: Math.max(...boxes.map((box) => box.maxZ)) + CROSSING_REACH_LDU,
+    };
+    return this.crossingInput(this.laidCandidates(region), proposed, region);
+  }
+
+  laidCrossingInput(region: LduRect | null = null): TrackCrossingInput {
+    return this.crossingInput(this.laidCandidates(region), [], region);
   }
 
   dragCrossingInput(): TrackCrossingInput | null {
@@ -866,15 +889,12 @@ export class TrackDrawing {
         ? [{ part: this.kitPart(move), placement: piece.placement, yPlates: GROUND_PLATES }]
         : [];
     });
-    return this.crossingInput([...this.laidCandidates(), ...proposed]);
+    return proposed.length === 0 ? null : this.proposalInput(proposed);
   }
 
   pieceCrossingInput(catalogIndex: number, placement: Pose16): TrackCrossingInput {
     const part = this.pieceByIndex(catalogIndex);
-    return this.crossingInput([
-      ...this.laidCandidates(),
-      { part, placement, yPlates: GROUND_PLATES },
-    ]);
+    return this.proposalInput([{ part, placement, yPlates: GROUND_PLATES }]);
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {

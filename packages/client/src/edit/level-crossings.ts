@@ -4,6 +4,7 @@ import {
   type CrossingConflict,
   type CrossingPlan,
   type CrossingTrackPiece,
+  type LduRect,
   type LevelCrossing,
   type RoadPlacement,
   type TrackMeetsRect,
@@ -22,6 +23,8 @@ const TRIANGLE_FLOATS = 6;
 export interface TrackCrossingInput {
   readonly pieces: ReadonlyArray<CrossingTrackPiece>;
   readonly meets: TrackMeetsRect;
+  readonly proposedFrom: number;
+  readonly region: LduRect | null;
 }
 
 export interface CrossingConflictView {

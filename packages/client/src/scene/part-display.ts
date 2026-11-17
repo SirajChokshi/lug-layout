@@ -59,7 +59,7 @@ export function buildPartDisplay(bundle: PartBundle, colors: ColorTable): World 
   const trackRow = new ModuleWriter(world, 0, TRACK_ROW_CHUNK_Z);
   let trackEdgeX = 0;
   bundle.parts.forEach((part, index) => {
-    if (part.role !== "track") return;
+    if (part.role !== "track" && part.role !== "crossing") return;
     const [minX, , minZ] = part.boundsMin;
     const [maxX] = part.boundsMax;
     const x = Math.ceil(trackEdgeX - minX);

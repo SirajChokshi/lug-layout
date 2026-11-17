@@ -28,8 +28,10 @@ import {
   addShards,
   railEdgesMate,
   worldPlacements,
+  rectsOverlap,
   type AppliedEdit,
   type CrossingPlan,
+  type LduRect,
   type EditKind,
   type GridPlacement,
   type HistoryStep,
@@ -42,7 +44,18 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
 } from "@brr/domain";
-import { BRICK_LDU, CHUNK_LDU, PLATE_LDU, STUD_LDU, ZETA16_ORDER, pose16, zeta16 } from "@brr/math";
+import {
+  BRICK_LDU,
+  CHUNK_LDU,
+  PLATE_LDU,
+  STUD_LDU,
+  ZETA16_ORDER,
+  isRot90,
+  pose16,
+  rot90Cos,
+  rot90Sin,
+  zeta16,
+} from "@brr/math";
 import {
   CAMERA_FOV_DEGREES,
   RAY_FLOATS,
@@ -675,6 +688,25 @@ interface FrameTimes {
 
 function quantileOfSorted(sorted: Float64Array, fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)] ?? Number.NaN;
+}
+
+function reachAround(roads: ReadonlyArray<RoadPlacement>): LduRect {
+  const corners = roads.flatMap(({ x, z, rot, surface }) => {
+    if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+    const cos = rot90Cos(rot);
+    const sin = rot90Sin(rot);
+    const xs = [surface.minX, surface.minX + surface.columns * STUD_LDU];
+    const zs = [surface.minZ, surface.minZ + surface.rows * STUD_LDU];
+    return xs.flatMap((lx) =>
+      zs.map((lz) => [x + cos * lx + sin * lz, z - sin * lx + cos * lz] as const),
+    );
+  });
+  return {
+    minX: Math.min(...corners.map(([x]) => x)) - CHUNK_LDU,
+    maxX: Math.max(...corners.map(([x]) => x)) + CHUNK_LDU,
+    minZ: Math.min(...corners.map(([, z]) => z)) - CHUNK_LDU,
+    maxZ: Math.max(...corners.map(([, z]) => z)) + CHUNK_LDU,
+  };
 }
 
 interface RoadCrossingRefusal {
@@ -1763,9 +1795,8 @@ export class Editor implements IEditor {
     const parts = this.crossingParts;
     const track = this.track;
     if (!parts || !track) return null;
-    const laid = track.pieceCount;
-    const plan = parts.plan(this.roadPlacements(), proposal);
-    const conflict = plan.conflicts.find((entry) => entry.track >= laid);
+    const plan = parts.plan(this.roadPlacements(proposal.region), proposal);
+    const conflict = plan.conflicts.find((entry) => entry.track >= proposal.proposedFrom);
     if (!conflict) return null;
     const road = this.roadModels[conflict.road]?.placeable.label ?? "a road plate";
     return `track across ${road}: ${parts.view({ crossings: [], conflicts: [conflict] }).conflicts[0]?.text ?? conflict.reason}`;
@@ -2384,12 +2415,13 @@ export class Editor implements IEditor {
     return view;
   }
 
-  private roadPlacements(): ReadonlyArray<RoadPlacement> {
+  private roadPlacements(region: LduRect | null = null): ReadonlyArray<RoadPlacement> {
     const placements: RoadPlacement[] = [];
     for (let id = 0; id < this.roadModels.length; id++) {
       const model = this.roadModels[id];
       const surface = model?.placeable.road;
       if (!model || !surface) continue;
+      if (region && !rectsOverlap(model.box, region)) continue;
       placements.push({
         id,
         x: model.handle.x,
@@ -2869,18 +2901,13 @@ export class Editor implements IEditor {
     const track = this.track;
     if (!parts || !track || track.pieceCount === 0) return null;
     const kept = this.roadModels.filter(keep);
-    const proposed: RoadPlacement[] = kept.flatMap((model, id) => {
-      const surface = model.placeable.road;
-      if (!surface) return [];
-      const { x, z, yPlates, rot } = model.handle;
-      return [{ id, x, z, yLdu: yPlates * PLATE_LDU, rot, surface }];
-    });
     const fresh: Array<{ readonly placeable: Placeable; readonly pose: PlacementPose }> = [];
+    const freshRoads: RoadPlacement[] = [];
     for (const pose of added) {
       const placeable = this.placeables[pose.refId];
       const surface = placeable?.road;
       if (!placeable || !surface) continue;
-      proposed.push({
+      freshRoads.push({
         id: kept.length + fresh.length,
         x: pose.x,
         z: pose.z,
@@ -2891,7 +2918,14 @@ export class Editor implements IEditor {
       fresh.push({ placeable, pose });
     }
     if (fresh.length === 0) return null;
-    const plan = parts.plan(proposed, track.laidCrossingInput());
+    const region = reachAround(freshRoads);
+    const proposed: RoadPlacement[] = kept.flatMap((model, id) => {
+      const surface = model.placeable.road;
+      if (!surface || !rectsOverlap(model.box, region)) return [];
+      const { x, z, yPlates, rot } = model.handle;
+      return [{ id, x, z, yLdu: yPlates * PLATE_LDU, rot, surface }];
+    });
+    const plan = parts.plan([...proposed, ...freshRoads], track.laidCrossingInput(region));
     const conflict = plan.conflicts.find((entry) => entry.road >= kept.length);
     if (!conflict) return null;
     const entry = fresh[conflict.road - kept.length];
