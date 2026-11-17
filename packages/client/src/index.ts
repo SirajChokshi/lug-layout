@@ -119,6 +119,7 @@ export type {
 export {
   RUNNING_GEAR,
   CITY_SCENE,
+  COACH,
   CREDITS,
   EDITOR,
   IMPORT_SCENE,
@@ -131,6 +132,16 @@ export {
   PLAN_SERVICE,
 } from "./tokens.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export type {
+  CoachSnapshot,
+  ICoach,
+  ToastKind,
+  ToastView,
+  TourState,
+  TourStepId,
+  TourStepView,
+  TourView,
+} from "./first-run/coach.ts";
 export type {
   FlatRect,
   StarterTileKind,

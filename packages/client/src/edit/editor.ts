@@ -305,6 +305,7 @@ export interface EditorSnapshot {
   readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
   readonly starters: ReadonlyArray<StarterView>;
+  readonly viewMoves: number;
 }
 
 interface StagedStarter {
@@ -563,6 +564,7 @@ export class Editor implements IEditor {
     ghost: null,
     track: null,
     starters: [],
+    viewMoves: 0,
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -1594,17 +1596,22 @@ export class Editor implements IEditor {
 
   orbit(dxPx: number, dyPx: number): void {
     this.camera.orbit(dxPx, dyPx);
-    this.camera.apply(this.backend);
+    this.moveView();
   }
 
   pan(dxPx: number, dyPx: number): void {
     this.camera.pan(dxPx, dyPx);
-    this.camera.apply(this.backend);
+    this.moveView();
   }
 
   zoom(wheelDelta: number): void {
     this.camera.zoom(wheelDelta);
+    this.moveView();
+  }
+
+  private moveView(): void {
     this.camera.apply(this.backend);
+    this.update({ viewMoves: this.state.viewMoves + 1 });
   }
 
   focusSelection(): void {

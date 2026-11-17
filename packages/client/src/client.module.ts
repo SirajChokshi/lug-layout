@@ -4,6 +4,7 @@ import type { RpcPort } from "@brr/rpc";
 import { ContainerModule } from "inversify";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
+import { Coach } from "./first-run/coach.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { SHIPPED_STARTER_LAYOUTS } from "./starters/starter-layouts.ts";
@@ -18,6 +19,7 @@ import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import {
   CITY_SCENE,
+  COACH,
   CREDITS,
   EDITOR,
   IMPORT_SCENE,
@@ -41,6 +43,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(CITY_SCENE).to(CityScene).inSingletonScope();
   bind(STARTER_LAYOUTS).toConstantValue(SHIPPED_STARTER_LAYOUTS);
   bind(EDITOR).to(Editor).inSingletonScope();
+  bind(COACH).to(Coach).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();

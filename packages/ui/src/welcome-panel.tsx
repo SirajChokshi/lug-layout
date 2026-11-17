@@ -1,5 +1,6 @@
-import type { EditorSnapshot, IEditor, StarterTileView, StarterView } from "@brr/client";
+import type { EditorSnapshot, ICoach, StarterTileView, StarterView } from "@brr/client";
 import { useEffect, useState } from "react";
+import { useCoachSnapshot } from "./coach-overlay.tsx";
 
 const PREVIEW_MARGIN_LDU = 80;
 const TRACK_BED_LDU = 160;
@@ -16,7 +17,7 @@ const LOADING_TIPS: ReadonlyArray<string> = [
 const TIP_INTERVAL_MS = 1_800;
 
 interface WelcomeProps {
-  readonly editor: IEditor;
+  readonly coach: ICoach;
   readonly snapshot: EditorSnapshot;
 }
 
@@ -101,10 +102,10 @@ function starterFacts(starter: StarterView): string {
 }
 
 function StarterCard({
-  editor,
+  coach,
   starter,
 }: {
-  readonly editor: IEditor;
+  readonly coach: ICoach;
   readonly starter: StarterView;
 }) {
   const unavailable = starter.problems.length > 0;
@@ -114,7 +115,7 @@ function StarterCard({
         type="button"
         className="starter-pick"
         disabled={unavailable}
-        onClick={(event) => editor.loadStarter(starter.id, event.timeStamp)}
+        onClick={(event) => coach.loadStarter(starter.id, event.timeStamp)}
       >
         <StarterMap starter={starter} />
         <span className="starter-title">{starter.title}</span>
@@ -158,10 +159,11 @@ function LoadingCard() {
   );
 }
 
-export function WelcomePanel({ editor, snapshot }: WelcomeProps) {
+export function WelcomePanel({ coach, snapshot }: WelcomeProps) {
   const [dismissed, setDismissed] = useState(false);
+  const { tour } = useCoachSnapshot(coach);
   if (snapshot.status === "loading") return <LoadingCard />;
-  if (snapshot.status !== "ready" || dismissed) return null;
+  if (snapshot.status !== "ready" || dismissed || tour.state === "running") return null;
   if (!isEmptyWorld(snapshot) || snapshot.mode !== "select") return null;
   return (
     <section className="welcome" aria-label="Start a layout">
@@ -172,10 +174,13 @@ export function WelcomePanel({ editor, snapshot }: WelcomeProps) {
       </p>
       <ul className="starter-list">
         {snapshot.starters.map((starter) => (
-          <StarterCard key={starter.id} editor={editor} starter={starter} />
+          <StarterCard key={starter.id} coach={coach} starter={starter} />
         ))}
       </ul>
       <div className="welcome-actions">
+        <button type="button" className="welcome-tour" onClick={() => coach.startTour()}>
+          Take the 1-minute tour
+        </button>
         <button type="button" className="welcome-blank" onClick={() => setDismissed(true)}>
           Start from scratch
         </button>

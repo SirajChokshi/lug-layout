@@ -1,4 +1,5 @@
-import type { EditorOptions, IEditor, IPlanService } from "@brr/client";
+import type { EditorOptions, ICoach, IEditor, IPlanService } from "@brr/client";
+import { CoachOverlay } from "./coach-overlay.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CreditsFooter,
@@ -16,6 +17,7 @@ import { WelcomePanel } from "./welcome-panel.tsx";
 
 interface EditorAppProps {
   readonly editor: IEditor;
+  readonly coach: ICoach;
   readonly plans: IPlanService;
   readonly options: EditorOptions;
   readonly disclaimer: string;
@@ -50,7 +52,14 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
   );
 }
 
-export function EditorApp({ editor, plans, options, disclaimer, showState }: EditorAppProps) {
+export function EditorApp({
+  editor,
+  coach,
+  plans,
+  options,
+  disclaimer,
+  showState,
+}: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   return (
     <div
@@ -68,7 +77,8 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
     >
       <EditorCanvas editor={editor} options={options} />
       <EditorHud snapshot={snapshot} />
-      <WelcomePanel editor={editor} snapshot={snapshot} />
+      <WelcomePanel coach={coach} snapshot={snapshot} />
+      <CoachOverlay coach={coach} snapshot={snapshot} />
       <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} />

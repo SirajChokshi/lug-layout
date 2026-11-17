@@ -1,5 +1,6 @@
 import {
   CITY_SCENE,
+  COACH,
   CREDITS,
   EDITOR,
   IMPORT_SCENE,
@@ -120,6 +121,7 @@ function root(): ReactNode {
     return (
       <EditorApp
         editor={container.get(EDITOR)}
+        coach={container.get(COACH)}
         plans={container.get(PLAN_SERVICE)}
         options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
         disclaimer={TRADEMARK_DISCLAIMER}
