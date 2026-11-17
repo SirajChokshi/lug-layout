@@ -294,6 +294,7 @@ export class TrackDrawing {
   readonly kit: DrawingKit;
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
+  private readonly byPieceId = new Map<string, KitPart>();
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private graph: TrackGraph;
@@ -337,6 +338,7 @@ export class TrackDrawing {
       };
       if (inKit) this.byDef.set(piece.id, kitPart);
       this.byCatalogIndex.set(catalogIndex, kitPart);
+      this.byPieceId.set(piece.id, kitPart);
       placeable.push([catalogIndex, piece]);
     });
     this.pieceSet = new TrackPieceSet(placeable);
@@ -815,17 +817,17 @@ export class TrackDrawing {
       if (record.index !== position) {
         issues.push({ path: `track ${record.index}`, message: `is out of order at ${position}` });
       }
-      if (!this.byDef.has(record.ref)) {
+      if (!this.byPieceId.has(record.ref)) {
         issues.push({
           path: `track ${record.index}`,
-          message: `"${record.ref}" isn't a drawable piece`,
+          message: `"${record.ref}" isn't a placeable track piece`,
         });
       }
     });
     if (issues.length > 0) return { ok: false, issues };
     const touched = new Set<number>();
     for (const record of records) {
-      const part = this.byDef.get(record.ref);
+      const part = this.byPieceId.get(record.ref);
       if (!part) continue;
       const placement = pose16(decodeTrackPosition(record.position), record.heading);
       const index = this.layout.place(part.catalogIndex, placement, record.yPlates);
