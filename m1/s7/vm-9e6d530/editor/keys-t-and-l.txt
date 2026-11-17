@@ -1,0 +1,7 @@
+start auto
+after T: tier auto, track tool on
+after T again: tier auto, track tool off
+after L: near
+after L: mid
+after L: far
+after L: auto

@@ -57,8 +57,8 @@ async function settle(page, frames = 3) {
 
 async function setTier(page, tier) {
   for (let i = 0; i < 4; i++) {
-    if ((await hudValue(page, "Tier (T)")) === tier) return;
-    await page.keyboard.press("t");
+    if ((await hudValue(page, "Tier (L)")) === tier) return;
+    await page.keyboard.press("l");
     await settle(page, 1);
   }
   throw new Error(`tier did not reach ${tier}`);
@@ -137,7 +137,7 @@ async function capture(page, out, name, measureTiers, records) {
   for (let col = 0; col < columns; col++) {
     const column = spots.filter((_, i) => i % columns === col);
     if (scene === "50") await walkTo(column[0].x, 0);
-    for (const spot of column) await lib.place(page, "ldraw:3811", spot.x, spot.z, 0);
+    for (const spot of column) await lib.place(page, "ldraw:3811@2", spot.x, spot.z, 0);
     for (const spot of column) {
       await lib.place(page, spot.id, spot.x, spot.z, spot.rot);
       note(`placed ${spot.id} at (${spot.x}, ${spot.z}) rot ${spot.rot}`);
