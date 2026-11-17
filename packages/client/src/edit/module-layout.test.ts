@@ -57,7 +57,7 @@ describe("ModuleLayout", () => {
     const layout = new ModuleLayout(rules);
     const surface = roadAlongLocalX(-320, -320);
     const size = studs * STUD_LDU;
-    const alone = layout.bestCandidate(surface, 1, size / 2, size / 2);
+    const alone = layout.bestCandidate(surface, 1, 1, size / 2, size / 2);
     expect(alone.rot).toBe(1);
     expect(alone.fit.mismatched).toBe(0);
   });
