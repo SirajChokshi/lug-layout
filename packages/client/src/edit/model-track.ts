@@ -1,6 +1,7 @@
 import type { PartAsset } from "@brr/catalog";
 import type { TrackCatalog } from "@brr/schema/bundle";
 import {
+  PLATE_LDU,
   STUD_LDU,
   UNROUNDED_TOLERANCE_LDU,
   ZETA16_COEFFICIENT_COUNT,
@@ -15,6 +16,7 @@ import {
   subtractZeta16,
   zeta16,
   type Pose16,
+  type Zeta16,
 } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
@@ -27,11 +29,17 @@ export interface HeldPiece {
   readonly catalogIndex: number;
   readonly pieceId: string;
   readonly local: Pose16;
+  readonly plates: number;
+}
+
+export interface HeldEnd {
+  readonly local: Pose16;
+  readonly plates: number;
 }
 
 export interface ModelTrack {
   readonly pieces: ReadonlyArray<HeldPiece>;
-  readonly openEnds: ReadonlyArray<Pose16>;
+  readonly openEnds: ReadonlyArray<HeldEnd>;
   readonly uncertified: ReadonlyArray<string>;
 }
 
@@ -47,6 +55,7 @@ interface PieceOfPart {
 function piecesByPart(catalog: TrackCatalog): Map<string, PieceOfPart | null> {
   const byPart = new Map<string, PieceOfPart | null>();
   catalog.pieces.forEach((piece, catalogIndex) => {
+    if (piece.status !== "certified") return;
     const entry: PieceOfPart = {
       connectors: piece.connectors.map((connector) => connector.pose),
       catalogIndex,
@@ -78,6 +87,23 @@ function exactQuarterTurnOnWholeLdu(m: Float32Array, o: number): boolean {
   );
 }
 
+function exactPosition(xLdu: number, zLdu: number): Zeta16 | null {
+  const xStuds = xLdu / STUD_LDU;
+  const zStuds = zLdu / STUD_LDU;
+  if (Number.isInteger(xStuds) && Number.isInteger(zStuds)) {
+    const coefficients = Array.from({ length: ZETA16_COEFFICIENT_COUNT }, () => 0n);
+    coefficients[0] = BigInt(xStuds);
+    coefficients[ZETA16_COEFFICIENT_COUNT / 2] = BigInt(zStuds);
+    return zeta16(coefficients);
+  }
+  return certifiedZeta16({ x: xStuds, y: zStuds }, UNROUNDED_TOLERANCE_LDU);
+}
+
+function piecePlates(m: Float32Array, o: number, part: PartAsset): number | null {
+  const plates = ((m[o + 7] ?? 0) + part.boundsMin[1]) / PLATE_LDU;
+  return Number.isInteger(plates) ? plates : null;
+}
+
 function piecePose(m: Float32Array, o: number, piece: PieceOfPart): Pose16 | null {
   if (!exactQuarterTurnOnWholeLdu(m, o)) return null;
   const phi = Math.atan2(m[o + 8] ?? 0, m[o] ?? 0);
@@ -87,7 +113,7 @@ function piecePose(m: Float32Array, o: number, piece: PieceOfPart): Pose16 | nul
   const theta = heading * HEADING_RADIANS;
   const x = (m[o + 3] ?? 0) - (Math.cos(theta) * piece.xLdu - Math.sin(theta) * piece.zLdu);
   const z = (m[o + 11] ?? 0) - (Math.sin(theta) * piece.xLdu + Math.cos(theta) * piece.zLdu);
-  const position = certifiedZeta16({ x: x / STUD_LDU, y: z / STUD_LDU }, UNROUNDED_TOLERANCE_LDU);
+  const position = exactPosition(x, z);
   return position ? pose16(position, normalizeHeading16(heading)) : null;
 }
 
@@ -98,28 +124,40 @@ export function modelTrack(
 ): ModelTrack | null {
   const byPart = piecesByPart(catalog);
   const pieces: HeldPiece[] = [];
-  const ends: Pose16[] = [];
+  const ends: HeldEnd[] = [];
   const uncertified: string[] = [];
   for (let i = 0; i < local.count; i++) {
-    const partId = parts[local.partIndex[i] ?? 0]?.id ?? "";
+    const part = parts[local.partIndex[i] ?? 0];
+    if (!part) continue;
+    const partId = part.aliasOf ?? part.id;
     if (!byPart.has(partId)) continue;
     const piece = byPart.get(partId);
-    const pose = piece ? piecePose(local.matrices, i * INSTANCE_MATRIX_FLOATS, piece) : null;
-    if (!piece || !pose) {
-      uncertified.push(partId);
+    const o = i * INSTANCE_MATRIX_FLOATS;
+    const pose = piece ? piecePose(local.matrices, o, piece) : null;
+    const plates = piecePlates(local.matrices, o, part);
+    if (!piece || !pose || plates === null) {
+      uncertified.push(part.id);
       continue;
     }
-    pieces.push({ catalogIndex: piece.catalogIndex, pieceId: piece.pieceId, local: pose });
-    for (const connector of piece.connectors) ends.push(composePose16(pose, connector));
+    pieces.push({ catalogIndex: piece.catalogIndex, pieceId: piece.pieceId, local: pose, plates });
+    for (const connector of piece.connectors) {
+      ends.push({ local: composePose16(pose, connector), plates });
+    }
   }
   if (pieces.length === 0 && uncertified.length === 0) return null;
   const openEnds = ends.filter(
-    (end, i) => !ends.some((other, j) => j !== i && posesJoin16(end, other)),
+    (end, i) =>
+      !ends.some(
+        (other, j) => j !== i && other.plates === end.plates && posesJoin16(end.local, other.local),
+      ),
   );
   return { pieces, openEnds, uncertified };
 }
 
 export function latticePose16(xLdu: number, zLdu: number, rot: number): Pose16 {
+  if (!Number.isInteger(xLdu / STUD_LDU) || !Number.isInteger(zLdu / STUD_LDU)) {
+    throw new RangeError(`(${xLdu}, ${zLdu}) LDU is not on the stud lattice`);
+  }
   const position = Array.from({ length: ZETA16_COEFFICIENT_COUNT }, () => 0n);
   position[0] = BigInt(xLdu / STUD_LDU);
   position[ZETA16_COEFFICIENT_COUNT / 2] = BigInt(zLdu / STUD_LDU);
@@ -130,12 +168,18 @@ export function heldPlacements(
   track: ModelTrack,
   xLdu: number,
   zLdu: number,
+  yPlates: number,
   rot: number,
-): ReadonlyArray<{ readonly catalogIndex: number; readonly placement: Pose16 }> {
+): ReadonlyArray<{
+  readonly catalogIndex: number;
+  readonly placement: Pose16;
+  readonly plates: number;
+}> {
   const frame = latticePose16(xLdu, zLdu, rot);
   return track.pieces.map((piece) => ({
     catalogIndex: piece.catalogIndex,
     placement: composePose16(frame, piece.local),
+    plates: yPlates + piece.plates,
   }));
 }
 
