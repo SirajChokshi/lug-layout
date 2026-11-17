@@ -38,8 +38,8 @@ The not-drawn list has 24 entries (133 instances).
 Across the 14 plain files, Studio's part references resolved like this:
 
 - 15,201 instances were kept under Studio's name.
-- 74 were renamed through the BrickLink crosswalk: 9 distinct parts, each with exactly one LDraw candidate that exists at the pin.
-- 5 were ambiguous and 2 were Studio CustomParts.
+- 77 were renamed through the BrickLink crosswalk: 10 distinct parts, each with exactly one LDraw candidate that exists at the pin.
+- 2 were ambiguous (`92338`) and 2 were Studio CustomParts.
 - 4 (`7302` in `platypus.io`) had a sole crosswalk candidate that is missing at the pin.
 
-The importer's not-drawn list, with the Studio reason added, covers 25 distinct entries and 136 instances: the 24 parts plus Studio's generated rope section, which #24's engine now lists as an inline part. Separately, 1,083 instances use Studio colour codes that have no RGB in the file and aren't in LDConfig.
+The importer's not-drawn list, with the Studio reason added, covers 24 distinct parts and 133 instances. Studio's generated rope section is listed separately, as an inline part that #24's engine doesn't draw. In addition, 1,083 instances use Studio colour codes that have no RGB in the file and aren't in LDConfig.
