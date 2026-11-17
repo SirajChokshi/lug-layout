@@ -66,6 +66,38 @@ class BundleDirectoryFetcher implements IAssetFetcher {
   }
 }
 
+class InFlightFetcher implements IAssetFetcher {
+  inFlight = 0;
+  maxInFlight = 0;
+  requests = 0;
+
+  constructor(
+    private readonly files: IAssetFetcher,
+    private readonly failing: (path: string) => boolean = () => false,
+  ) {}
+
+  private async track<T>(path: string, read: () => Promise<T>): Promise<T> {
+    this.requests++;
+    this.inFlight++;
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      if (this.failing(path)) throw new TypeError("Failed to fetch");
+      return await read();
+    } finally {
+      this.inFlight--;
+    }
+  }
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.track(path, () => this.files.bytes(path));
+  }
+
+  text(path: string): Promise<string> {
+    return this.track(path, () => this.files.text(path));
+  }
+}
+
 class ModelSubsetLoader implements IPartBundleLoader {
   constructor(
     private readonly loader: IPartBundleLoader,
@@ -147,14 +179,19 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDLESS_SET]) {
+async function startEditor(
+  models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
+  fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
+) {
   const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
   const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
+  if (models !== null) {
+    container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
+  }
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const editor = container.get(EDITOR);
   const canvas = {
@@ -166,6 +203,31 @@ async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDL
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
   return { editor, backend, manifest: await realLoader.loadManifest("standard") };
 }
+
+it("starts with every model in the bundle while keeping at most 16 bundle fetches in flight", async () => {
+  const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
+  const { editor, manifest } = await startEditor(null, fetcher);
+
+  expect(fetcher.maxInFlight).toBeLessThanOrEqual(16);
+  expect(fetcher.maxInFlight).toBeGreaterThan(1);
+  expect(fetcher.requests).toBeGreaterThan(manifest.models.length);
+  expect(editor.snapshot().error).toBeNull();
+  expect(editor.snapshot().status).toBe("ready");
+  expect(editor.snapshot().farTierError).toBeNull();
+}, 300_000);
+
+it("starts without the far tier when its files cannot be fetched", async () => {
+  const fetcher = new InFlightFetcher(new BundleDirectoryFetcher(), (path) =>
+    path.startsWith("far/"),
+  );
+  const { editor } = await startEditor([PLACEABLE_SET], fetcher);
+
+  const snapshot = editor.snapshot();
+  expect(snapshot.status).toBe("ready");
+  expect(snapshot.error).toBeNull();
+  expect(snapshot.farTierError).toContain("Failed to fetch");
+  expect(snapshot.catalog.map((item) => item.id)).toContain(`omr:${PLACEABLE_SET}`);
+}, 120_000);
 
 it("starts with a stud-less set in the bundle, leaving it out of the catalog and reporting it as skipped", async () => {
   const { editor } = await startEditor();

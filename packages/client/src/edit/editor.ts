@@ -2,6 +2,7 @@ import type { BundleColor, BundleLod } from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
+  type ModelBundle,
   type PartAsset,
   type PartBundle,
   type PartMesh,
@@ -280,6 +281,18 @@ interface LoadedCatalog {
   readonly skipped: ReadonlyArray<SkippedModel>;
 }
 
+interface NearModels {
+  readonly kept: ReadonlyArray<ModelBundle>;
+  readonly skipped: ReadonlyArray<SkippedModel>;
+}
+
+interface FarTier {
+  readonly bundle: PartBundle;
+  readonly palette: MergedParts;
+  readonly meshes: ReadonlyArray<PartMesh>;
+  readonly meshIndex: ReadonlyMap<string, number>;
+}
+
 export interface TrackBomLine {
   readonly piece: string;
   readonly title: string;
@@ -361,6 +374,7 @@ export interface EditorSnapshot {
   readonly stats: EditorStats | null;
   readonly studs: StudTotals | null;
   readonly tier: ChunkTier | null;
+  readonly farTierError: string | null;
   readonly measuring: boolean;
   readonly measurement: FrameMeasurement | null;
   readonly credits: EditorCredits | null;
@@ -655,6 +669,7 @@ export class Editor implements IEditor {
     stats: null,
     studs: null,
     tier: null,
+    farTierError: null,
     measuring: false,
     measurement: null,
     credits: null,
@@ -776,22 +791,13 @@ export class Editor implements IEditor {
       });
       this.backend.forceTier(options.tier);
       this.update({ tier: options.tier });
-      const [bundle, farBundle] = await Promise.all([
-        this.loader.load(EDITOR_LOD, isEditorPart),
-        this.loader.load("far", isEditorPart),
-      ]);
+      const bundle = await this.loader.load(EDITOR_LOD, isEditorPart);
       this.bundleVersion = bundle.bundleVersion;
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
-      const farPalette = new MergedParts(farBundle.parts);
-      const farModels: PartMesh[] = [];
-      const { placeables, skipped } = await this.loadPlaceables(
-        bundle,
-        palette,
-        farPalette,
-        farModels,
-        colors,
-      );
+      const near = await this.loadNearModels(bundle);
+      const far = await this.loadFarTier(near.kept.map(({ entry }) => entry.name));
+      const { placeables, skipped } = this.buildPlaceables(bundle, palette, colors, near, far);
       this.placeables = placeables;
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.plans.setTableTopY(this.baseplateBottomY());
@@ -799,8 +805,12 @@ export class Editor implements IEditor {
       this.track = this.newTrack();
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
-        far: { parts: farPalette.parts, studPrimitives: farBundle.studPrimitives },
-        farModels,
+        ...(far
+          ? {
+              far: { parts: far.palette.parts, studPrimitives: far.bundle.studPrimitives },
+              farModels: far.meshes,
+            }
+          : {}),
         colorsSrgb: colors.toSrgb(),
         colorsAlpha: colors.toAlpha(),
         ldrawColors: ldrawColors(bundle),
@@ -857,29 +867,58 @@ export class Editor implements IEditor {
     ]);
   }
 
-  private async loadPlaceables(
-    bundle: PartBundle,
-    palette: MergedParts,
-    farPalette: MergedParts,
-    farModels: PartMesh[],
-    colors: ColorTable,
-  ): Promise<LoadedCatalog> {
-    const groundParts = bundle.parts
-      .filter((part) => part.role === "ground")
-      .toSorted((a, b) => footprintArea(b) - footprintArea(a));
-    const roadParts = bundle.parts.filter((part) => part.role === "road");
+  private async loadNearModels(bundle: PartBundle): Promise<NearModels> {
     const placeableModels = [
       ...bundle.models.filter((entry) => entry.role === "mils-module"),
       ...bundle.models.filter((entry) => entry.origin === "omr"),
     ];
     const loaded = await Promise.all(
-      placeableModels.map((entry) =>
-        Promise.all([
-          this.loader.loadModel(EDITOR_LOD, entry.name),
-          this.loader.loadModel("far", entry.name),
-        ]),
-      ),
+      placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
     );
+    const skipped = loaded
+      .filter((near) => near.model.lattice === null)
+      .map(({ entry, model }) => ({
+        name: entry.name,
+        reason: NO_LATTICE_REASON,
+        credit: { name: entry.name, source: entry.source, sections: model.sections },
+      }));
+    return { kept: loaded.filter((near) => near.model.lattice !== null), skipped };
+  }
+
+  private async loadFarTier(modelNames: ReadonlyArray<string>): Promise<FarTier | null> {
+    try {
+      const bundle = await this.loader.load("far", isEditorPart);
+      const models = await Promise.all(
+        modelNames.map((name) => this.loader.loadModel("far", name)),
+      );
+      const palette = new MergedParts(bundle.parts);
+      const meshes: PartMesh[] = [];
+      const meshIndex = new Map<string, number>();
+      for (const far of models) {
+        palette.remap(far.model, far.bundle.parts);
+        if (far.farMesh) {
+          meshIndex.set(far.entry.name, meshes.length);
+          meshes.push(far.farMesh.mesh);
+        }
+      }
+      return { bundle, palette, meshes, meshIndex };
+    } catch (error) {
+      this.update({ farTierError: errorText(error) });
+      return null;
+    }
+  }
+
+  private buildPlaceables(
+    bundle: PartBundle,
+    palette: MergedParts,
+    colors: ColorTable,
+    near: NearModels,
+    far: FarTier | null,
+  ): LoadedCatalog {
+    const groundParts = bundle.parts
+      .filter((part) => part.role === "ground")
+      .toSorted((a, b) => footprintArea(b) - footprintArea(a));
+    const roadParts = bundle.parts.filter((part) => part.role === "road");
     const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
       if (part.producedColors.length === 0) {
         throw new Error(`${part.id} has no produced colour in the bundle`);
@@ -895,19 +934,8 @@ export class Editor implements IEditor {
         ),
       );
     });
-    const skipped: SkippedModel[] = [];
-    for (const [{ bundle: modelBundle, entry, model }, far] of loaded) {
+    for (const { bundle: modelBundle, entry, model } of near.kept) {
       const credit = { name: entry.name, source: entry.source, sections: model.sections };
-      if (model.lattice === null) {
-        skipped.push({ name: entry.name, reason: NO_LATTICE_REASON, credit });
-        continue;
-      }
-      farPalette.remap(far.model, far.bundle.parts);
-      let farModel: number | null = null;
-      if (far.farMesh) {
-        farModels.push(far.farMesh.mesh);
-        farModel = farModels.length - 1;
-      }
       placeables.push(
         modelPlaceable(
           entry.name,
@@ -917,11 +945,11 @@ export class Editor implements IEditor {
           credit,
           palette.parts,
           colors,
-          farModel,
+          far?.meshIndex.get(entry.name) ?? null,
         ),
       );
     }
-    return { placeables, skipped };
+    return { placeables, skipped: near.skipped };
   }
 
   private readonly step = (): void => {
