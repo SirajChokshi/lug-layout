@@ -488,7 +488,7 @@ export class Editor implements IEditor {
   private framesSinceStats = 0;
   private statsSince = 0;
   private bomTables: EditorBomTables | null = null;
-  private placeableNotDrawn: ReadonlyArray<ReadonlyArray<NotDrawnSection>> = [];
+  private readonly notDrawnByPlaceable = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -623,17 +623,17 @@ export class Editor implements IEditor {
         skipped.push({ name: entry.name, reason: NO_LATTICE_REASON, credit });
         continue;
       }
-      placeables.push(
-        modelPlaceable(
-          entry.name,
-          entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
-          entry.role,
-          palette.remap(model, modelBundle.parts),
-          credit,
-          palette.parts,
-          colors,
-        ),
+      const placeable = modelPlaceable(
+        entry.name,
+        entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
+        entry.role,
+        palette.remap(model, modelBundle.parts),
+        credit,
+        palette.parts,
+        colors,
       );
+      this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
+      placeables.push(placeable);
     }
     return { placeables, skipped };
   }
@@ -1113,13 +1113,11 @@ export class Editor implements IEditor {
       },
     };
     const uncounted = (): BomInput["uncounted"] =>
-      [...placedCounts].flatMap(([refId, count]) =>
-        notDrawnItems(
-          this.placeables[refId]?.id ?? String(refId),
-          this.placeableNotDrawn[refId] ?? [],
-          count,
-        ),
-      );
+      [...placedCounts].flatMap(([refId, count]) => {
+        const placeable = this.placeables[refId];
+        if (!placeable) return [];
+        return notDrawnItems(placeable.id, this.notDrawnByPlaceable.get(placeable) ?? [], count);
+      });
     if (scope.kind !== "selection") {
       const placements = countPlacements(
         this.world,
