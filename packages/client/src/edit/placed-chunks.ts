@@ -1,16 +1,25 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
   NO_VOLUME_TOP,
+  ReceptacleIndex,
+  StudIndex,
   SupportGrid,
   VolumeIndex,
+  brickSupport,
   cellChunkKey,
+  firstCellTouched,
   firstOverlap,
   isSupported,
+  lastCellTouched,
+  studClash,
   trackSupport,
   upperSupport,
   type AppliedEdit,
   type BaseCells,
   type CellVolumes,
+  type Receptacles,
+  type StudClash,
+  type StudSet,
   type Overlap,
   type OwnerFilter,
   type PlacementHandle,
@@ -62,12 +71,27 @@ export interface PlacedOverlap {
   readonly owner: VolumeOwner;
 }
 
+export interface PlacedStudClash {
+  readonly clash: StudClash;
+  readonly owner: VolumeOwner;
+}
+
 export interface PlacementCheck {
   readonly yPlates: number;
   readonly support: UpperSupport | null;
   readonly restsOn: VolumeOwner | null;
   readonly overlap: PlacedOverlap | null;
+  readonly studClash: PlacedStudClash | null;
 }
+
+export interface SurfaceHit {
+  cellX: number;
+  cellZ: number;
+  x: number;
+  z: number;
+}
+
+const MAX_SURFACE_CELLS = 4096;
 
 export interface LostSupport {
   readonly model: PlacedModel;
@@ -92,9 +116,73 @@ interface TrackStamp {
 }
 
 const keepEveryOwner: OwnerFilter = () => false;
+const surfaceTop: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
 const PENDING_OWNER = 0;
 
 const HALF_STUD_LDU = STUD_LDU / 2;
+const MATRIX_X_OF_X = 0;
+const MATRIX_Z_OF_X = 8;
+const MATRIX_SCALE_Y = 5;
+
+export interface StudShapes {
+  readonly radius: Float64Array;
+  readonly height: Float64Array;
+}
+
+interface Stamps {
+  readonly volumes: VolumeIndex;
+  readonly support: SupportGrid;
+  readonly studs: StudIndex;
+  readonly receptacles: ReceptacleIndex;
+}
+
+function worldStuds(
+  placeable: Placeable,
+  pose: LatticePose,
+  yLdu: number,
+  shapes: StudShapes,
+): StudSet {
+  const lattice = placeable.studLattice;
+  const { studs } = placeable;
+  let count = 0;
+  for (let i = 0; i < studs.count; i++) {
+    if (lattice.upright[i] === 1) count++;
+  }
+  const out = {
+    count,
+    x: new Float64Array(count),
+    z: new Float64Array(count),
+    baseLdu: new Float64Array(count),
+    topLdu: new Float64Array(count),
+    radius: new Float64Array(count),
+  };
+  let n = 0;
+  for (let i = 0; i < studs.count; i++) {
+    if (lattice.upright[i] !== 1) continue;
+    const primitive = studs.primitiveIndex[i] ?? 0;
+    const o = i * INSTANCE_MATRIX_FLOATS;
+    const cx = lattice.centreX[i] ?? 0;
+    const cz = lattice.centreZ[i] ?? 0;
+    const base = yLdu + (lattice.baseLdu[i] ?? 0);
+    out.x[n] = pose.x + pose.cos * cx + pose.sin * cz;
+    out.z[n] = pose.z - pose.sin * cx + pose.cos * cz;
+    out.baseLdu[n] = base;
+    out.topLdu[n] =
+      base + (shapes.height[primitive] ?? 0) * (studs.matrices[o + MATRIX_SCALE_Y] ?? 0);
+    out.radius[n] =
+      (shapes.radius[primitive] ?? 0) *
+      Math.hypot(studs.matrices[o + MATRIX_X_OF_X] ?? 0, studs.matrices[o + MATRIX_Z_OF_X] ?? 0);
+    n++;
+  }
+  return out;
+}
+
+function receptaclesOf(cells: CandidateCells, yLdu: number): Receptacles {
+  const { points } = cells;
+  const bottomLdu = new Int32Array(points.count);
+  for (let p = 0; p < points.count; p++) bottomLdu[p] = yLdu + (points.bottomLdu[p] ?? 0);
+  return { count: points.count, x: points.x, z: points.z, bottomLdu };
+}
 
 function slab(
   origin: number,
@@ -230,9 +318,17 @@ function landing(
   return { yPlates: at.yPlates, owner };
 }
 
+interface CandidatePoints {
+  readonly count: number;
+  readonly x: Int32Array;
+  readonly z: Int32Array;
+  readonly bottomLdu: Int32Array;
+}
+
 interface CandidateCells {
   readonly base: BaseCells;
   readonly volumes: CellVolumes;
+  readonly points: CandidatePoints;
 }
 
 function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells {
@@ -256,6 +352,12 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
     cellZ: new Int32Array(baseCount),
     flat: new Uint8Array(baseCount),
   };
+  const points = {
+    count: baseCount,
+    x: new Int32Array(baseCount),
+    z: new Int32Array(baseCount),
+    bottomLdu: new Int32Array(baseCount),
+  };
   let v = 0;
   let b = 0;
   for (let j = 0; j < cells.depth; j++) {
@@ -276,11 +378,14 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
         base.cellX[b] = wx;
         base.cellZ[b] = wz;
         base.flat[b] = cells.footprint[cell] === FOOTPRINT_FLAT ? 1 : 0;
+        points.x[b] = wx * STUD_LDU + HALF_STUD_LDU;
+        points.z[b] = wz * STUD_LDU + HALF_STUD_LDU;
+        points.bottomLdu[b] = bottom;
         b++;
       }
     }
   }
-  return { base, volumes };
+  return { base, volumes, points };
 }
 
 function raised(volumes: CellVolumes, byLdu: number): CellVolumes {
@@ -300,6 +405,8 @@ class PlacedEntry implements PlacedModel {
   readonly studCellZ: Int32Array;
   readonly studBaseLdu: Int32Array;
   readonly studCulled: Uint8Array;
+  readonly worldStuds: StudSet;
+  readonly receptacles: Receptacles | null;
   readonly contributions = new Map<number, Contribution>();
   readonly candidate: CandidateCells;
   readonly footprintKeys = new Set<number>();
@@ -318,6 +425,7 @@ class PlacedEntry implements PlacedModel {
     readonly handle: PlacementHandle,
     readonly placeable: Placeable,
     chunkOrigins: Map<number, readonly [number, number]>,
+    shapes: StudShapes,
   ) {
     this.pose = new LatticePose(handle.x, handle.z, handle.rot);
     this.x = handle.x;
@@ -350,7 +458,9 @@ class PlacedEntry implements PlacedModel {
       this.studCellZ[i] = this.pose.worldCellZ(lx, lz);
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
     }
+    this.worldStuds = worldStuds(placeable, this.pose, this.yLdu, shapes);
     this.candidate = candidateCells(placeable, this.pose);
+    this.receptacles = placeable.kind === "brick" ? receptaclesOf(this.candidate, this.yLdu) : null;
     this.registerCells(chunkOrigins);
     this.box = this.worldBox();
   }
@@ -378,14 +488,21 @@ class PlacedEntry implements PlacedModel {
         }
       }
     }
-    const onLattice = this.placeable.studLattice.onLattice;
-    for (let s = 0; s < onLattice.length; s++) {
-      if (onLattice[s] !== 1) continue;
-      this.columnKeys.add(cellChunkKey(this.studCellX[s] ?? 0, this.studCellZ[s] ?? 0));
+    const studs = this.worldStuds;
+    for (let s = 0; s < studs.count; s++) {
+      const x = studs.x[s] ?? 0;
+      const z = studs.z[s] ?? 0;
+      const radius = studs.radius[s] ?? 0;
+      for (let cz = firstCellTouched(z, radius); cz <= lastCellTouched(z, radius); cz++) {
+        for (let cx = firstCellTouched(x, radius); cx <= lastCellTouched(x, radius); cx++) {
+          this.columnKeys.add(cellChunkKey(cx, cz));
+        }
+      }
     }
   }
 
-  stampColumns(volumes: VolumeIndex, support: SupportGrid, onlyChunk: number | null): void {
+  stampColumns(stamps: Stamps, onlyChunk: number | null): void {
+    const { volumes, support } = stamps;
     const { cells } = this.placeable;
     const yPlates = this.handle.yPlates;
     for (let j = 0; j < cells.depth; j++) {
@@ -402,14 +519,27 @@ class PlacedEntry implements PlacedModel {
         else if (cells.baseplate[cell] === 1 && yPlates === 0) support.markBaseplate(wx, wz);
       }
     }
-    const onLattice = this.placeable.studLattice.onLattice;
-    for (let s = 0; s < onLattice.length; s++) {
-      const base = this.studBaseLdu[s] ?? 0;
-      if (onLattice[s] !== 1 || base % PLATE_LDU !== 0) continue;
-      const cx = this.studCellX[s] ?? 0;
-      const cz = this.studCellZ[s] ?? 0;
-      if (onlyChunk !== null && cellChunkKey(cx, cz) !== onlyChunk) continue;
-      support.raiseStud(cx, cz, base / PLATE_LDU);
+    const studs = this.worldStuds;
+    for (let s = 0; s < studs.count; s++) {
+      stamps.studs.add(
+        this.owner,
+        studs.x[s] ?? 0,
+        studs.z[s] ?? 0,
+        studs.baseLdu[s] ?? 0,
+        studs.topLdu[s] ?? 0,
+        studs.radius[s] ?? 0,
+        onlyChunk,
+      );
+    }
+    const receptacles = this.receptacles;
+    if (!receptacles) return;
+    for (let p = 0; p < receptacles.count; p++) {
+      stamps.receptacles.add(
+        receptacles.x[p] ?? 0,
+        receptacles.z[p] ?? 0,
+        receptacles.bottomLdu[p] ?? 0,
+        onlyChunk,
+      );
     }
   }
 
@@ -685,6 +815,19 @@ export class PlacedChunks {
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private readonly volumes = new VolumeIndex();
   private readonly support = new SupportGrid();
+  private readonly studs = new StudIndex();
+  private readonly receptacles = new ReceptacleIndex();
+  private readonly stamps: Stamps = {
+    volumes: this.volumes,
+    support: this.support,
+    studs: this.studs,
+    receptacles: this.receptacles,
+  };
+  private shapes: StudShapes = { radius: new Float64Array(0), height: new Float64Array(0) };
+  private readonly exactBody = (owner: number): boolean => {
+    const known = this.owners.get(owner);
+    return known?.kind === "model" && known.model.placeable.kind === "brick";
+  };
   private readonly owners = new Map<number, VolumeOwner>();
   private readonly trackStamps = new Map<number, TrackStamp>();
   private readonly byTrackChunk = new Map<number, Set<TrackStamp>>();
@@ -723,24 +866,123 @@ export class PlacedChunks {
     at: LandingAt,
     exempt: OwnerFilter = keepEveryOwner,
   ): PlacementCheck {
-    const cells = candidateCells(placeable, new LatticePose(x, z, rot));
+    const pose = new LatticePose(x, z, rot);
+    const cells = candidateCells(placeable, pose);
     return this.withExcluded(this.entriesOf(ignore), () => {
       const first = placeable.layer === "first";
       const lands = first
         ? { yPlates: 0, owner: null }
         : landing(this.volumes, cells.base, at, this.isTrack);
       const { yPlates } = lands;
-      const support = first
-        ? null
-        : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
+      const support = first ? null : this.supportOf(placeable, cells, yPlates);
       const hit = firstOverlap(raised(cells.volumes, yPlates * PLATE_LDU), this.volumes, exempt);
+      const clash = studClash(
+        worldStuds(placeable, pose, yPlates * PLATE_LDU, this.shapes),
+        this.volumes,
+        this.receptacles,
+        this.exactBody,
+      );
       return {
         yPlates,
         support,
         restsOn: lands.owner === null ? null : (this.owners.get(lands.owner) ?? null),
         overlap: hit ? this.placedOverlap(hit) : null,
+        studClash: clash ? this.placedClash(clash) : null,
       };
     });
+  }
+
+  private supportOf(placeable: Placeable, cells: CandidateCells, yPlates: number): UpperSupport {
+    if (placeable.kind !== "brick") {
+      return upperSupport(
+        cells.base,
+        yPlates,
+        this.volumes,
+        this.support,
+        this.studs,
+        this.isTrack,
+      );
+    }
+    const yLdu = yPlates * PLATE_LDU;
+    return brickSupport(
+      receptaclesOf(cells, yLdu),
+      raised(cells.volumes, yLdu),
+      yPlates,
+      this.volumes,
+      this.studs,
+      this.isTrack,
+    );
+  }
+
+  private placedClash(clash: StudClash): PlacedStudClash {
+    const owner = this.owners.get(clash.owner);
+    if (!owner) throw new Error(`volume owner ${clash.owner} is not registered`);
+    return { clash, owner };
+  }
+
+  setStudShapes(shapes: StudShapes): void {
+    this.shapes = shapes;
+  }
+
+  surfaceHit(ray: Float64Array, out: SurfaceHit): boolean {
+    const ox = ray[0] ?? 0;
+    const oy = ray[1] ?? 0;
+    const oz = ray[2] ?? 0;
+    const dx = ray[3] ?? 0;
+    const dy = ray[4] ?? 0;
+    const dz = ray[5] ?? 0;
+    if (dy >= 0) return false;
+    const tGround = -oy / dy;
+    let cellX = Math.floor(ox / STUD_LDU);
+    let cellZ = Math.floor(oz / STUD_LDU);
+    const stepX = dx > 0 ? 1 : -1;
+    const stepZ = dz > 0 ? 1 : -1;
+    const deltaX = dx === 0 ? Number.POSITIVE_INFINITY : STUD_LDU / Math.abs(dx);
+    const deltaZ = dz === 0 ? Number.POSITIVE_INFINITY : STUD_LDU / Math.abs(dz);
+    let nextX =
+      dx === 0 ? Number.POSITIVE_INFINITY : ((cellX + (dx > 0 ? 1 : 0)) * STUD_LDU - ox) / dx;
+    let nextZ =
+      dz === 0 ? Number.POSITIVE_INFINITY : ((cellZ + (dz > 0 ? 1 : 0)) * STUD_LDU - oz) / dz;
+    let enter = 0;
+    let fromX = cellX;
+    let fromZ = cellZ;
+    for (let step = 0; step < MAX_SURFACE_CELLS && enter <= tGround; step++) {
+      const exit = Math.min(nextX, nextZ, tGround);
+      if (this.volumes.topOwnerAt(cellX, cellZ, this.isTrack, surfaceTop)) {
+        const top = surfaceTop.topLdu;
+        if (oy + dy * enter <= top) {
+          out.cellX = fromX;
+          out.cellZ = fromZ;
+          out.x = ox + dx * enter;
+          out.z = oz + dz * enter;
+          return true;
+        }
+        const tTop = (top - oy) / dy;
+        if (tTop <= exit) {
+          out.cellX = cellX;
+          out.cellZ = cellZ;
+          out.x = ox + dx * tTop;
+          out.z = oz + dz * tTop;
+          return true;
+        }
+      }
+      fromX = cellX;
+      fromZ = cellZ;
+      if (nextX < nextZ) {
+        cellX += stepX;
+        enter = nextX;
+        nextX += deltaX;
+      } else {
+        cellZ += stepZ;
+        enter = nextZ;
+        nextZ += deltaZ;
+      }
+    }
+    out.x = ox + dx * tGround;
+    out.z = oz + dz * tGround;
+    out.cellX = Math.floor(out.x / STUD_LDU);
+    out.cellZ = Math.floor(out.z / STUD_LDU);
+    return true;
   }
 
   trackOverlap(
@@ -843,14 +1085,7 @@ export class PlacedChunks {
       if (![...entry.columnKeys].some((key) => keys.has(key))) continue;
       const support = this.withExcluded(
         new Set([...gone, entry]),
-        () =>
-          upperSupport(
-            entry.candidate.base,
-            entry.handle.yPlates,
-            this.volumes,
-            this.support,
-            this.isTrack,
-          ),
+        () => this.supportOf(entry.placeable, entry.candidate, entry.handle.yPlates),
         arriving,
       );
       if (!isSupported(support)) lost.push({ model: entry, support });
@@ -883,7 +1118,14 @@ export class PlacedChunks {
       yPlates: pose.yPlates,
       rot: pose.rot,
     };
-    return new PlacedEntry(PENDING_OWNER, { handle: null }, handle, pose.placeable, new Map());
+    return new PlacedEntry(
+      PENDING_OWNER,
+      { handle: null },
+      handle,
+      pose.placeable,
+      new Map(),
+      this.shapes,
+    );
   }
 
   private entryOf(model: PlacedModel): PlacedEntry {
@@ -947,8 +1189,10 @@ export class PlacedChunks {
     for (const key of keys) {
       this.volumes.clearChunk(key);
       this.support.clearChunk(key);
+      this.studs.clearChunk(key);
+      this.receptacles.clearChunk(key);
       for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (!except.has(entry)) entry.stampColumns(this.volumes, this.support, key);
+        if (!except.has(entry)) entry.stampColumns(this.stamps, key);
       }
       for (const stamp of this.byTrackChunk.get(key) ?? []) {
         for (let c = 0; c < stamp.cells.count; c++) {
@@ -959,7 +1203,7 @@ export class PlacedChunks {
           }
         }
       }
-      for (const entry of arriving) entry.stampColumns(this.volumes, this.support, key);
+      for (const entry of arriving) entry.stampColumns(this.stamps, key);
     }
   }
 
@@ -1003,6 +1247,7 @@ export class PlacedChunks {
       handle,
       placeable,
       this.chunkOrigins,
+      this.shapes,
     );
     this.owners.set(entry.owner, { kind: "model", model: entry });
     this.entries.push(entry);
@@ -1012,7 +1257,7 @@ export class PlacedChunks {
     for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
-    entry.stampColumns(this.volumes, this.support, null);
+    entry.stampColumns(this.stamps, null);
     return entry;
   }
 

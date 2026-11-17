@@ -296,6 +296,36 @@ footer {
   cursor: pointer;
 }
 
+.palette-swatch-small {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.palette-bricks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.palette-brick {
+  min-width: 40px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid #c3ccd6;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.palette-brick[aria-pressed="true"] {
+  border-color: #1f6feb;
+  background: #dbe9ff;
+}
+
 .palette-swatch[aria-pressed="true"] {
   outline: 3px solid #1f6feb;
   outline-offset: 1px;

@@ -26,6 +26,7 @@ function plate(
     studsWide: studs,
     studsDeep: studs,
     baseplate: null,
+    brick: null,
   }));
 }
 
@@ -46,6 +47,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     studsWide: 8,
     studsDeep: 90,
     baseplate: null,
+    brick: null,
   },
   {
     id: "track:lego-9v",
@@ -58,6 +60,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     studsWide: 16,
     studsDeep: 8,
     baseplate: null,
+    brick: null,
   },
 ];
 

@@ -30,6 +30,7 @@ const KIND_LABELS: Readonly<Record<CatalogItemView["kind"], string>> = {
   "road-plate": "Road",
   "mils-module": "MILS module",
   model: "Set",
+  brick: "Part",
   track: "Track",
 };
 

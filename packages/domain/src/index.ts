@@ -143,11 +143,23 @@ export {
   type ShardChange,
 } from "./world-shards.ts";
 export {
+  ReceptacleIndex,
+  StudCursor,
+  StudIndex,
+  firstCellTouched,
+  lastCellTouched,
+} from "./stud-index.ts";
+export {
   SupportGrid,
+  brickSupport,
   isSupported,
+  studClash,
   trackSupport,
   upperSupport,
   type BaseCells,
+  type Receptacles,
+  type StudClash,
+  type StudSet,
   type TrackSupport,
   type UpperSupport,
 } from "./support.ts";

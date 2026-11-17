@@ -178,6 +178,10 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   expect(ids).not.toContain(`omr:${STUDLESS_SET}`);
   expect(snapshot.catalogSkipped).toEqual([
     { name: STUDLESS_SET, reason: "no stud lattice from the bake" },
+    {
+      name: "3062b Brick 1 x 1 Round with Hollow Stud",
+      reason: "no stud seat or produced colour from the bake",
+    },
   ]);
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
@@ -485,3 +489,93 @@ describe("placement rules across a world switch", () => {
     expect(editor.snapshot().lastRefusal?.rule).toBe("carries");
   }, 120_000);
 });
+
+type Bench = Pick<Awaited<ReturnType<typeof startEditor>>, "editor" | "backend">;
+
+function pointAt({ editor, backend }: Bench, x: number, z: number): void {
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+}
+
+function hold({ editor }: Bench, item: string, rot: number): void {
+  editor.chooseItem(item);
+  while (editor.snapshot().ghostRot !== rot) editor.rotate(0);
+}
+
+function placeAtCursor(bench: Bench, item: string, x: number, z: number, rot = 0): boolean {
+  hold(bench, item, rot);
+  pointAt(bench, x, z);
+  const before = bench.editor.snapshot().placements;
+  bench.editor.click(0, 0, 0);
+  return bench.editor.snapshot().placements > before;
+}
+
+function ghostAtPivot(
+  bench: Bench,
+  item: string,
+  pivot: readonly [number, number],
+  rot: number,
+  yPlates: number,
+): string | null | undefined {
+  hold(bench, item, rot);
+  for (let x = pivot[0] - 40; x <= pivot[0] + 60; x += 5) {
+    for (let z = pivot[1] - 40; z <= pivot[1] + 60; z += 5) {
+      pointAt(bench, x + 0.5, z + 0.5);
+      const { hover, ghost } = bench.editor.snapshot();
+      if (hover?.x === pivot[0] && hover.z === pivot[1] && ghost?.yPlates === yPlates) {
+        return ghost.refusal?.rule ?? null;
+      }
+    }
+  }
+  return undefined;
+}
+
+async function benchOnBaseplate(): Promise<Bench> {
+  const bench = await startEditor([]);
+  const baseplate = bench.editor
+    .snapshot()
+    .catalog.find((item) => item.id.startsWith("ldraw:3811@"));
+  expect(baseplate).toBeDefined();
+  placeAtCursor(bench, baseplate?.id ?? "", 0, 0);
+  expect(bench.editor.snapshot().placements).toBe(1);
+  return bench;
+}
+
+it("refuses a jumper whose centre stud would push into a part already overhanging it, in either order", async () => {
+  const overhangFirst = await benchOnBaseplate();
+  expect(placeAtCursor(overhangFirst, "ldraw:3001", 50, 50)).toBe(true);
+  expect(placeAtCursor(overhangFirst, "ldraw:3024", 50, 50)).toBe(true);
+  expect(placeAtCursor(overhangFirst, "ldraw:3794b", 50, 50, 1)).toBe(true);
+  expect(ghostAtPivot(overhangFirst, "ldraw:3794b", [40, 80], 0, 3)).toBe("overlap");
+
+  const jumperFirst = await benchOnBaseplate();
+  expect(placeAtCursor(jumperFirst, "ldraw:3001", 50, 50)).toBe(true);
+  expect(ghostAtPivot(jumperFirst, "ldraw:3794b", [40, 80], 0, 3)).toBeNull();
+  jumperFirst.editor.click(0, 0, 0);
+  expect(placeAtCursor(jumperFirst, "ldraw:3024", 50, 50)).toBe(true);
+  expect(placeAtCursor(jumperFirst, "ldraw:3794b", 50, 50, 1)).toBe(false);
+}, 120_000);
+
+async function benchOnModel(model: string): Promise<Bench> {
+  const bench = await startEditor([model]);
+  expect(placeAtCursor(bench, `omr:${model}`, 0.5, 0.5)).toBe(true);
+  return bench;
+}
+
+it("seats a brick on a model stud that drifted less than half an LDU off its lattice point", async () => {
+  const bench = await benchOnModel("10218-1");
+  hold(bench, "ldraw:3005", 0);
+  pointAt(bench, -139.5, 20.5);
+  expect(bench.editor.snapshot().hover).toEqual({ x: -120, z: 40, yPlates: 62 });
+  expect(bench.editor.snapshot().ghost?.refusal).toBeNull();
+
+  expect(ghostAtPivot(bench, "ldraw:3005", [180, 240], 0, 74)).toBe("support");
+}, 120_000);
+
+it("refuses a brick over a model stud more than half an LDU off any lattice point", async () => {
+  const bench = await benchOnModel("10264-1");
+  hold(bench, "ldraw:3005", 0);
+  pointAt(bench, -59.5, 40.5);
+  expect(bench.editor.snapshot().hover).toEqual({ x: -40, z: 60, yPlates: 88 });
+  expect(bench.editor.snapshot().ghost?.refusal?.rule).toBe("support");
+}, 120_000);
