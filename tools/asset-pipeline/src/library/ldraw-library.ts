@@ -54,7 +54,7 @@ function joined(segments: ReadonlyArray<string>): string {
   return segments.filter((segment) => segment !== "").join("/");
 }
 
-export function libraryObjectKey(source: GithubMirror, path: string): string {
+function libraryObjectKey(source: GithubMirror, path: string): string {
   return joined([source.repo, source.commit, source.root, path]);
 }
 
@@ -62,7 +62,7 @@ export function libraryIndexKey(source: GithubMirror): string {
   return `${joined([INDEX_PREFIX, source.repo, source.commit, source.root])}.v${INDEX_FORMAT}.json`;
 }
 
-export function isPublishedPath(path: string): boolean {
+function isPublishedPath(path: string): boolean {
   const extension = extname(path).toLowerCase();
   if (!path.includes("/")) return extension === ROOT_TEXT_EXTENSION;
   return (
