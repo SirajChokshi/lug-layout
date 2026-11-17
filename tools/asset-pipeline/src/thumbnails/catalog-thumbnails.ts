@@ -1,6 +1,7 @@
 import {
   BundleManifest,
   ModelFile,
+  type BundleLod,
   type BundleModelEntry,
   type ManifestPart,
 } from "@brr/schema/bundle";
@@ -19,6 +20,8 @@ import {
 } from "./rasterizer.ts";
 
 export const THUMBNAIL_DIRECTORY = "thumb";
+export const THUMBNAIL_LOD: BundleLod = "standard";
+const MANIFEST_FILE = "manifest.json";
 const CATALOG_ROLES: ReadonlySet<string> = new Set(["ground", "road"]);
 const BITS_PER_WORD = 32;
 const UNSAFE_FILE_CHARACTERS = /[^A-Za-z0-9._-]+/gu;
@@ -231,5 +234,22 @@ export async function renderCatalogThumbnails(
     if (!isPlaceableModel(entry) || entry.lattice === null) continue;
     await write(modelItemId(entry), () => bundle.modelScene(entry));
   }
+  return rendered;
+}
+
+export async function attachThumbnails(
+  directory: string,
+  lod: BundleLod,
+  clock: () => number,
+): Promise<ReadonlyArray<RenderedThumbnail>> {
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (typeof compiled !== "object" || compiled === null) {
+    throw new Error(`${manifestPath} is not a compiled bundle`);
+  }
+  const rendered =
+    lod === THUMBNAIL_LOD ? await renderCatalogThumbnails(directory, compiled, clock) : [];
+  const thumbnails = rendered.map(({ item, file }) => ({ item, file }));
+  await writeFile(manifestPath, `${JSON.stringify({ ...compiled, thumbnails }, null, 2)}\n`);
   return rendered;
 }
