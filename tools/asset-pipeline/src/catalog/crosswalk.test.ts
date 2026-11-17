@@ -28,7 +28,7 @@ const inputs: CrosswalkInputs = {
     { r: "37364c04pr0001", b: ["970cm00pb018"], l: ["37364p01"] },
   ],
   apiColors: [],
-  rebrickableParts: new Set(["3001", "4032a", "4032b", "74746", "2889"]),
+  rebrickableParts: new Set(["3001", "4032a", "4032b", "74746", "2889", "37364c04pr0001"]),
   ldrawParts: new Map([
     ["3001", facts("Brick  2 x  4")],
     ["72841", facts("=Brick  2 x  4 with Bottom Tubes", "BrickLink 3001")],
@@ -54,12 +54,19 @@ const inputs: CrosswalkInputs = {
     ["2889", facts("Animal Dog Alsatian Puppy")],
     ["2557c01", facts("Train Coupling Assembly", "Rebrickable 2557c02")],
     ["3815bpc44", facts("Minifig Hips with Pattern")],
-    ["37365p01", facts("Minifig Leg Medium Right with Pattern", "Bricklink 970cm00pb018")],
+    [
+      "37365p01",
+      facts(
+        "Minifig Leg Medium Right with Pattern",
+        "Bricklink 970cm00pb018",
+        "Rebrickable 37364c04pr0001",
+      ),
+    ],
     [
       "37364p01",
       {
         title: "Minifig Hips and Legs Medium with Pattern",
-        keywords: ["Bricklink 970cm00pb018"],
+        keywords: ["Bricklink 970cm00pb018", "Rebrickable 37364c04pr0001"],
         ldrawOrg: "Part",
         components: [
           { id: "3815b", color: 16 },
@@ -120,13 +127,19 @@ describe("crosswalk derivation", () => {
     expect(crosswalk.bricklinkParts["7065"]).toBeUndefined();
   });
 
-  it("does not map a piece through a keyword that names an assembly made of it", () => {
+  it("does not map a piece to an id that LDraw gives an assembly made of it", () => {
     expect(crosswalk.parts["ldraw:37365p01"]).toMatchObject({
+      rebrickable: null,
       bricklink: null,
-      bricklinkKeywordNamesAssembly: ["970cm00pb018"],
+      rejectedAssemblyIds: {
+        assemblies: ["ldraw:37364p01"],
+        rebrickable: ["37364c04pr0001"],
+        bricklink: ["970cm00pb018"],
+      },
     });
     expect(crosswalk.bricklinkParts["970cm00pb018"]).toEqual(["ldraw:37364p01"]);
-    expect(crosswalk.parts["ldraw:59900"]?.bricklinkKeywordNamesAssembly).toBeUndefined();
+    expect(crosswalk.parts["ldraw:37364p01"]?.rebrickable).toBe("37364c04pr0001");
+    expect(crosswalk.parts["ldraw:59900"]?.rejectedAssemblyIds).toBeUndefined();
   });
 
   it("never takes another file's keyword for a canonical part", () => {

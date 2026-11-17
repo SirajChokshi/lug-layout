@@ -55,7 +55,7 @@ export interface CrosswalkPart {
   };
   readonly rebrickableAlternatives?: ReadonlyArray<string>;
   readonly bricklinkAlternatives?: ReadonlyArray<string>;
-  readonly bricklinkKeywordNamesAssembly?: ReadonlyArray<string>;
+  readonly rejectedAssemblyIds?: RejectedAssemblyIds;
   readonly components?: ReadonlyArray<{ readonly part: string; readonly color: number }>;
 }
 
@@ -129,29 +129,86 @@ function isLdrawFileName(id: string): boolean {
   return id !== "" && !NOT_A_FILE_NAME.test(id);
 }
 
-function assemblyKeywords(inputs: CrosswalkInputs): Map<string, Set<string>> {
-  const holders = new Map<string, string[]>();
-  for (const [ldraw, facts] of inputs.ldrawParts) {
-    for (const bricklink of keywordIds(facts, BRICKLINK_KEYWORD)) pushTo(holders, bricklink, ldraw);
-  }
-  const rejected = new Map<string, Set<string>>();
-  for (const [bricklink, files] of holders) {
-    for (const piece of files) {
-      const inAssembly = files.some((other) => {
-        const components = inputs.ldrawParts.get(other)?.components ?? [];
-        return (
-          other !== piece &&
-          components.length > 1 &&
-          components.some((component) => component.id === piece)
-        );
-      });
-      if (!inAssembly) continue;
-      const set = rejected.get(piece) ?? new Set<string>();
-      set.add(bricklink);
-      rejected.set(piece, set);
+export interface RejectedAssemblyIds {
+  readonly assemblies: ReadonlyArray<string>;
+  readonly rebrickable: ReadonlyArray<string>;
+  readonly bricklink: ReadonlyArray<string>;
+}
+
+interface AssemblyIds {
+  readonly rebrickable: Map<string, Set<string>>;
+  readonly bricklink: Map<string, Set<string>>;
+}
+
+type AssemblyIdsByPiece = ReadonlyMap<string, AssemblyIds>;
+
+function addAssemblyId(ids: Map<string, Set<string>>, id: string, assembly: string): void {
+  const holders = ids.get(id) ?? new Set<string>();
+  holders.add(assembly);
+  ids.set(id, holders);
+}
+
+function assemblyIdsByPiece(inputs: CrosswalkInputs): AssemblyIdsByPiece {
+  const byPiece = new Map<string, AssemblyIds>();
+  for (const [assembly, facts] of inputs.ldrawParts) {
+    if (facts.components.length < 2) continue;
+    const rebrickable = keywordIds(facts, REBRICKABLE_KEYWORD);
+    const bricklink = keywordIds(facts, BRICKLINK_KEYWORD);
+    if (rebrickable.length === 0 && bricklink.length === 0) continue;
+    for (const { id: piece } of facts.components) {
+      if (piece === assembly) continue;
+      const ids = byPiece.get(piece) ?? { rebrickable: new Map(), bricklink: new Map() };
+      for (const id of rebrickable) addAssemblyId(ids.rebrickable, id, assembly);
+      for (const id of bricklink) addAssemblyId(ids.bricklink, id, assembly);
+      byPiece.set(piece, ids);
     }
   }
-  return rejected;
+  return byPiece;
+}
+
+function namesAssemblyOf(
+  byPiece: AssemblyIdsByPiece,
+  piece: string,
+  system: "rebrickable" | "bricklink",
+  id: string,
+): boolean {
+  return byPiece.get(piece)?.[system].has(id) ?? false;
+}
+
+class AssemblyRejections {
+  private readonly rebrickable = new Set<string>();
+  private readonly bricklink = new Set<string>();
+  private readonly assemblies = new Set<string>();
+  private readonly piece: string;
+  private readonly byPiece: AssemblyIdsByPiece;
+
+  constructor(piece: string, byPiece: AssemblyIdsByPiece) {
+    this.piece = piece;
+    this.byPiece = byPiece;
+  }
+
+  keeps(system: "rebrickable" | "bricklink", id: string): boolean {
+    const holders = this.byPiece.get(this.piece)?.[system].get(id);
+    if (!holders) return true;
+    this[system].add(id);
+    for (const holder of holders) this.assemblies.add(holder);
+    return false;
+  }
+
+  dropsWith(system: "rebrickable" | "bricklink", id: string): void {
+    this[system].add(id);
+  }
+
+  summary(): { rejectedAssemblyIds?: RejectedAssemblyIds } {
+    if (this.assemblies.size === 0) return {};
+    return {
+      rejectedAssemblyIds: {
+        assemblies: [...this.assemblies].toSorted().map((id) => LDRAW_NAMESPACE + id),
+        rebrickable: [...this.rebrickable].toSorted(),
+        bricklink: [...this.bricklink].toSorted(),
+      },
+    };
+  }
 }
 
 class PartResolver {
@@ -159,11 +216,11 @@ class PartResolver {
   private readonly bricklinkByRebrickable = new Map<string, ReadonlyArray<string>>();
   private readonly rebrickableByBrickLink = new Map<string, string[]>();
   private readonly inputs: CrosswalkInputs;
-  private readonly rejectedKeywords: ReadonlyMap<string, ReadonlySet<string>>;
+  private readonly assemblyIds: AssemblyIdsByPiece;
 
-  constructor(inputs: CrosswalkInputs, rejectedKeywords: ReadonlyMap<string, ReadonlySet<string>>) {
+  constructor(inputs: CrosswalkInputs, assemblyIds: AssemblyIdsByPiece) {
     this.inputs = inputs;
-    this.rejectedKeywords = rejectedKeywords;
+    this.assemblyIds = assemblyIds;
     for (const part of inputs.apiParts) {
       this.bricklinkByRebrickable.set(part.r, part.b);
       for (const ldraw of part.l.filter(isLdrawFileName)) {
@@ -176,23 +233,24 @@ class PartResolver {
   private candidates(
     id: string,
     seen: ReadonlySet<string>,
+    rejections: AssemblyRejections,
   ): { readonly ids: string[]; readonly via: RebrickableVia } | null {
     const facts = this.inputs.ldrawParts.get(id);
     const fromApi = this.rebrickableByLdraw.get(id) ?? [];
     if (fromApi.length > 0) return { ids: sortedUnique(fromApi), via: "rebrickable-api" };
-    const fromKeyword = keywordIds(facts, REBRICKABLE_KEYWORD).filter((rb) =>
-      this.inputs.rebrickableParts.has(rb),
+    const fromKeyword = keywordIds(facts, REBRICKABLE_KEYWORD).filter(
+      (rb) => this.inputs.rebrickableParts.has(rb) && rejections.keeps("rebrickable", rb),
     );
     if (fromKeyword.length > 0) return { ids: sortedUnique(fromKeyword), via: "ldraw-keyword" };
-    const throughBrickLink = this.brickLinkKeywords(id).flatMap(
-      (bricklink) => this.rebrickableByBrickLink.get(bricklink) ?? [],
-    );
+    const throughBrickLink = keywordIds(facts, BRICKLINK_KEYWORD)
+      .filter((bricklink) => rejections.keeps("bricklink", bricklink))
+      .flatMap((bricklink) => this.rebrickableByBrickLink.get(bricklink) ?? []);
     if (throughBrickLink.length > 0) {
       return { ids: sortedUnique(throughBrickLink), via: "bricklink-keyword" };
     }
     const target = movedTarget(facts);
     if (target !== undefined && !seen.has(target)) {
-      const moved = this.candidates(target, new Set([...seen, target]));
+      const moved = this.candidates(target, new Set([...seen, target]), rejections);
       if (moved) return { ids: moved.ids, via: `moved:${target}` };
     }
     return null;
@@ -207,18 +265,23 @@ class PartResolver {
     return ids.includes(id) ? id : null;
   }
 
-  private brickLinkKeywords(id: string): string[] {
-    const rejected = this.rejectedKeywords.get(id);
-    return keywordIds(this.inputs.ldrawParts.get(id), BRICKLINK_KEYWORD).filter(
-      (bricklink) => !rejected?.has(bricklink),
+  private keptRebrickable(chosen: string | null, rejections: AssemblyRejections): string | null {
+    if (chosen === null || !rejections.keeps("rebrickable", chosen)) return null;
+    const rejectedBrickLink = (this.bricklinkByRebrickable.get(chosen) ?? []).filter(
+      (bricklink) => !rejections.keeps("bricklink", bricklink),
     );
+    if (rejectedBrickLink.length === 0) return chosen;
+    rejections.dropsWith("rebrickable", chosen);
+    return null;
   }
 
   resolve(id: string): CrosswalkPart {
-    const found = this.candidates(id, new Set([id]));
-    const rebrickable = found ? this.choose(id, found.ids) : null;
-    const keywordBrickLink = this.brickLinkKeywords(id);
-    const assemblyKeywordsOfPart = [...(this.rejectedKeywords.get(id) ?? [])].toSorted();
+    const rejections = new AssemblyRejections(id, this.assemblyIds);
+    const found = this.candidates(id, new Set([id]), rejections);
+    const rebrickable = this.keptRebrickable(found ? this.choose(id, found.ids) : null, rejections);
+    const keywordBrickLink = keywordIds(this.inputs.ldrawParts.get(id), BRICKLINK_KEYWORD).filter(
+      (bricklink) => rejections.keeps("bricklink", bricklink),
+    );
     const apiBrickLink =
       rebrickable === null ? [] : [...(this.bricklinkByRebrickable.get(rebrickable) ?? [])];
     const bricklinkCandidates = apiBrickLink.length > 0 ? apiBrickLink : keywordBrickLink;
@@ -240,9 +303,7 @@ class PartResolver {
       },
       ...(rebrickableAlternatives.length > 0 ? { rebrickableAlternatives } : {}),
       ...(bricklinkAlternatives.length > 0 ? { bricklinkAlternatives } : {}),
-      ...(assemblyKeywordsOfPart.length > 0
-        ? { bricklinkKeywordNamesAssembly: assemblyKeywordsOfPart }
-        : {}),
+      ...rejections.summary(),
       ...this.components(id, rebrickable, bricklink),
     };
   }
@@ -327,7 +388,7 @@ interface ReverseParts {
 
 function reverseBrickLinkParts(
   inputs: CrosswalkInputs,
-  rejectedKeywords: ReadonlyMap<string, ReadonlySet<string>>,
+  assemblyIds: AssemblyIdsByPiece,
 ): ReverseParts {
   const reverse = new Map<string, Set<string>>();
   const add = (bricklink: string, ldraw: string): void => {
@@ -337,13 +398,16 @@ function reverseBrickLinkParts(
     reverse.set(bricklink, set);
   };
   for (const part of inputs.apiParts) {
-    for (const bricklink of part.b) {
-      for (const ldraw of part.l.filter(isLdrawFileName)) add(bricklink, ldraw);
+    for (const ldraw of part.l.filter(isLdrawFileName)) {
+      if (namesAssemblyOf(assemblyIds, ldraw, "rebrickable", part.r)) continue;
+      for (const bricklink of part.b) {
+        if (!namesAssemblyOf(assemblyIds, ldraw, "bricklink", bricklink)) add(bricklink, ldraw);
+      }
     }
   }
   for (const [ldraw, facts] of inputs.ldrawParts) {
     for (const bricklink of keywordIds(facts, BRICKLINK_KEYWORD)) {
-      if (!rejectedKeywords.get(ldraw)?.has(bricklink)) add(bricklink, ldraw);
+      if (!namesAssemblyOf(assemblyIds, ldraw, "bricklink", bricklink)) add(bricklink, ldraw);
     }
   }
   const candidates: Record<string, string[]> = {};
@@ -378,8 +442,8 @@ export function deriveCrosswalk(
   inputs: CrosswalkInputs,
   sources: Readonly<Record<string, CrosswalkSourcePin>>,
 ): CrosswalkFile {
-  const rejectedKeywords = assemblyKeywords(inputs);
-  const resolver = new PartResolver(inputs, rejectedKeywords);
+  const assemblyIds = assemblyIdsByPiece(inputs);
+  const resolver = new PartResolver(inputs, assemblyIds);
   const ldrawIds = [
     ...inputs.ldrawParts.keys(),
     ...inputs.apiParts.flatMap((part) => part.l.filter(isLdrawFileName)),
@@ -392,12 +456,12 @@ export function deriveCrosswalk(
         part.bricklink !== null ||
         part.components !== undefined ||
         part.rebrickableAlternatives !== undefined ||
-        part.bricklinkKeywordNamesAssembly !== undefined;
+        part.rejectedAssemblyIds !== undefined;
       return listed ? [[LDRAW_NAMESPACE + id, part] as const] : [];
     }),
   );
   const colors = deriveColors(inputs);
-  const reverse = reverseBrickLinkParts(inputs, rejectedKeywords);
+  const reverse = reverseBrickLinkParts(inputs, assemblyIds);
   return {
     format: CROSSWALK_FORMAT,
     sources,
