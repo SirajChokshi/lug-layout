@@ -1,0 +1,2083 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\ne7f95dbb6832c648\nParts\n842\nModules\n2\nStud instances (drawn of total)\n706 of 706\nScene triangles\n455,284\nLoad\n37 ms\nGPU buffers allocated so far, JS heap\nvertex+index 1.5 MiB, other 0.0 MiB, JS heap 50.4 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n169\nDrawn triangles\n455,285\nScene coverage\n9%\nFrame rate (rAF)\n3.2 fps\nParts list\nWorld\nRegion (LDU, placement origins)\nBuild parts list",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 260,
+        "z": -300,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "container-loader.io!modelv2.ldr",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "container-loader",
+            "title": "Untitled Model"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 14",
+            "title": "SubModel Group 14"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 4",
+            "title": "SubModel Group 4"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 15",
+            "title": "SubModel Group 15"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 12",
+            "title": "SubModel Group 12"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 13",
+            "title": "SubModel Group 13"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 5",
+            "title": "SubModel Group 5"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 16_Mirrored Copy",
+            "title": "SubModel Group 16_Mirrored Copy"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 15_Mirrored",
+            "title": "SubModel Group 15_Mirrored"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 16_Mirrored Copy_Mirrored",
+            "title": "SubModel Group 16_Mirrored Copy_Mirrored"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 16",
+            "title": "SubModel Group 16"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 10",
+            "title": "SubModel Group 10"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 6",
+            "title": "SubModel Group 6"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group",
+            "title": "SubModel Group"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group_Mirrored",
+            "title": "SubModel Group_Mirrored"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 17",
+            "title": "SubModel Group 17"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 8",
+            "title": "SubModel Group 8"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 7",
+            "title": "SubModel Group 7"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 11",
+            "title": "SubModel Group 11"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 1",
+            "title": "SubModel Group 1"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 18",
+            "title": "SubModel Group 18"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 11_Mirrored Copy 2",
+            "title": "SubModel Group 11_Mirrored Copy 2"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 9",
+            "title": "SubModel Group 9"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 19",
+            "title": "SubModel Group 19"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 20",
+            "title": "SubModel Group 20"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 21",
+            "title": "SubModel Group 21"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 22",
+            "title": "SubModel Group 22"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 7_Mirrored Copy 2",
+            "title": "SubModel Group 7_Mirrored Copy 2"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 8_Mirrored Copy 2",
+            "title": "SubModel Group 8_Mirrored Copy 2"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 11_Mirrored Copy 3",
+            "title": "SubModel Group 11_Mirrored Copy 3"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 1_Mirrored Copy 3",
+            "title": "SubModel Group 1_Mirrored Copy 3"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 1_Mirrored Copy 4",
+            "title": "SubModel Group 1_Mirrored Copy 4"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 11_Mirrored Copy 4",
+            "title": "SubModel Group 11_Mirrored Copy 4"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 11_Mirrored Copy 5",
+            "title": "SubModel Group 11_Mirrored Copy 5"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 7_Mirrored Copy 2_Mirrored",
+            "title": "SubModel Group 7_Mirrored Copy 2_Mirrored"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 8_Mirrored Copy 2_Mirrored",
+            "title": "SubModel Group 8_Mirrored Copy 2_Mirrored"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 7_Mirrored Copy 3",
+            "title": "SubModel Group 7_Mirrored Copy 3"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 8_Mirrored Copy 3",
+            "title": "SubModel Group 8_Mirrored Copy 3"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 7_Mirrored Copy 3_Mirrored",
+            "title": "SubModel Group 7_Mirrored Copy 3_Mirrored"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 8_Mirrored Copy 3_Mirrored",
+            "title": "SubModel Group 8_Mirrored Copy 3_Mirrored"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 2_Mirrored Copy 20",
+            "title": "SubModel Group 2_Mirrored Copy 20"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 2_Mirrored Copy 21",
+            "title": "SubModel Group 2_Mirrored Copy 21"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 6_Mirrored Copy",
+            "title": "SubModel Group 6_Mirrored Copy"
+          },
+          {
+            "author": "",
+            "ldrawOrg": null,
+            "license": null,
+            "name": "SubModel Group 6_Mirrored Copy_Mirrored",
+            "title": "SubModel Group 6_Mirrored Copy_Mirrored"
+          }
+        ],
+        "instanceCount": 864,
+        "drawnInstanceCount": 842,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "85984.dat",
+            "official": "85984.dat",
+            "instances": 16,
+            "partId": "ldraw:85984"
+          },
+          {
+            "kind": "compiled",
+            "reference": "24375.dat",
+            "official": "24375.dat",
+            "instances": 136,
+            "partId": "ldraw:24375",
+            "file": "parts/24375.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2022-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "24375.dat",
+              "title": "Technic Rubber Pin for Chain Tread 5 Wide"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "compiled",
+            "reference": "32555.dat",
+            "official": "32555.dat",
+            "instances": 4,
+            "partId": "ldraw:32555",
+            "file": "parts/32555.dat",
+            "header": {
+              "author": "Donald Sutter [technog]",
+              "ldrawOrg": "Part UPDATE 2026-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "32555.dat",
+              "title": "Technic Brick 5 x 5 Corner with Holes"
+            },
+            "sourceFiles": 28
+          },
+          {
+            "kind": "compiled",
+            "reference": "26601.dat",
+            "official": "26601.dat",
+            "instances": 20,
+            "partId": "ldraw:26601",
+            "file": "parts/26601.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2024-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "26601.dat",
+              "title": "Plate 2 x 2 without Corner"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "54672.dat",
+            "official": "54672.dat",
+            "instances": 4,
+            "partId": "ldraw:54672",
+            "file": "parts/54672.dat",
+            "header": {
+              "author": "Vincent Messenet [Cheenzo]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "54672.dat",
+              "title": "Hinge Brick 1 x 2 Locking with Dual Finger on End Horizontal, 7 Teeth"
+            },
+            "sourceFiles": 15
+          },
+          {
+            "kind": "notInLibrary",
+            "reference": "bl_3069bpb1035.dat",
+            "official": "bl_3069bpb1035.dat",
+            "instances": 12,
+            "definedInline": false
+          },
+          {
+            "kind": "bundle",
+            "reference": "2420.dat",
+            "official": "2420.dat",
+            "instances": 4,
+            "partId": "ldraw:2420"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3023b.dat",
+            "official": "3023b.dat",
+            "instances": 4,
+            "partId": "ldraw:3023b",
+            "file": "parts/3023b.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2023-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3023b.dat",
+              "title": "Plate 1 x 2"
+            },
+            "sourceFiles": 9
+          },
+          {
+            "kind": "compiled",
+            "reference": "3673.dat",
+            "official": "3673.dat",
+            "instances": 20,
+            "partId": "ldraw:3673",
+            "file": "parts/3673.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2012-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3673.dat",
+              "title": "Technic Pin"
+            },
+            "sourceFiles": 12
+          },
+          {
+            "kind": "bundle",
+            "reference": "87620.dat",
+            "official": "87620.dat",
+            "instances": 16,
+            "partId": "ldraw:87620"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3021.dat",
+            "official": "3021.dat",
+            "instances": 8,
+            "partId": "ldraw:3021"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60479.dat",
+            "official": "60479.dat",
+            "instances": 8,
+            "partId": "ldraw:60479"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3666.dat",
+            "official": "3666.dat",
+            "instances": 4,
+            "partId": "ldraw:3666"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3894.dat",
+            "official": "3894.dat",
+            "instances": 8,
+            "partId": "ldraw:3894",
+            "file": "parts/3894.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2010-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3894.dat",
+              "title": "Technic Brick 1 x 6 with Holes"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "bundle",
+            "reference": "3702.dat",
+            "official": "3702.dat",
+            "instances": 4,
+            "partId": "ldraw:3702"
+          },
+          {
+            "kind": "bundle",
+            "reference": "14719.dat",
+            "official": "14719.dat",
+            "instances": 4,
+            "partId": "ldraw:14719"
+          },
+          {
+            "kind": "bundle",
+            "reference": "27263.dat",
+            "official": "27263.dat",
+            "instances": 4,
+            "partId": "ldraw:27263"
+          },
+          {
+            "kind": "compiled",
+            "reference": "5092.dat",
+            "official": "5092.dat",
+            "instances": 8,
+            "partId": "ldraw:5092",
+            "file": "parts/5092.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2025-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "5092.dat",
+              "title": "Tile 1 x 2 Cut Right 45 Degree"
+            },
+            "sourceFiles": 7
+          },
+          {
+            "kind": "compiled",
+            "reference": "5091.dat",
+            "official": "5091.dat",
+            "instances": 8,
+            "partId": "ldraw:5091",
+            "file": "parts/5091.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2025-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "5091.dat",
+              "title": "Tile 1 x 2 Cut Left 45 Degree"
+            },
+            "sourceFiles": 7
+          },
+          {
+            "kind": "bundle",
+            "reference": "6636.dat",
+            "official": "6636.dat",
+            "instances": 4,
+            "partId": "ldraw:6636"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431.dat",
+            "official": "2431.dat",
+            "instances": 2,
+            "partId": "ldraw:2431"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070b.dat",
+            "official": "3070b.dat",
+            "instances": 4,
+            "partId": "ldraw:3070b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "official": "3069b.dat",
+            "instances": 4,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4162.dat",
+            "official": "4162.dat",
+            "instances": 8,
+            "partId": "ldraw:4162"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30383.dat",
+            "official": "30383.dat",
+            "instances": 16,
+            "partId": "ldraw:30383"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "official": "3710.dat",
+            "instances": 4,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "bundle",
+            "reference": "33909.dat",
+            "official": "33909.dat",
+            "instances": 8,
+            "partId": "ldraw:33909"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3069a.dat",
+            "official": "3069a.dat",
+            "instances": 10,
+            "partId": "ldraw:3069a",
+            "file": "parts/3069a.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3069a.dat",
+              "title": "Tile 1 x 2 without Groove"
+            },
+            "sourceFiles": 2
+          },
+          {
+            "kind": "bundle",
+            "reference": "4070.dat",
+            "official": "4070.dat",
+            "instances": 4,
+            "partId": "ldraw:4070"
+          },
+          {
+            "kind": "bundle",
+            "reference": "98138.dat",
+            "official": "98138.dat",
+            "instances": 4,
+            "partId": "ldraw:98138"
+          },
+          {
+            "kind": "compiled",
+            "reference": "89678.dat",
+            "official": "89678.dat",
+            "instances": 36,
+            "partId": "ldraw:89678",
+            "file": "parts/89678.dat",
+            "header": {
+              "author": "Vincent Messenet [Cheenzo]",
+              "ldrawOrg": "Part UPDATE 2025-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "89678.dat",
+              "title": "Technic Pin 1/2 with Friction"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "bundle",
+            "reference": "48729b.dat",
+            "official": "48729b.dat",
+            "instances": 32,
+            "partId": "ldraw:48729b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6541.dat",
+            "official": "6541.dat",
+            "instances": 8,
+            "partId": "ldraw:6541"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32002.dat",
+            "official": "32002.dat",
+            "instances": 8,
+            "partId": "ldraw:32002"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2921.dat",
+            "official": "2921.dat",
+            "instances": 8,
+            "partId": "ldraw:2921"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "official": "3005.dat",
+            "instances": 8,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "compiled",
+            "reference": "93794.dat",
+            "official": "93794.dat",
+            "instances": 14,
+            "partId": "ldraw:93794",
+            "file": "parts/93794.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2013-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "93794.dat",
+              "title": "Tile 1 x 1 with Clip with Centre Notch"
+            },
+            "sourceFiles": 21
+          },
+          {
+            "kind": "bundle",
+            "reference": "95344.dat",
+            "official": "95344.dat",
+            "instances": 2,
+            "partId": "ldraw:95344"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "official": "3024.dat",
+            "instances": 2,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070a.dat",
+            "official": "3070a.dat",
+            "instances": 4,
+            "partId": "ldraw:3070a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "34103.dat",
+            "official": "34103.dat",
+            "instances": 2,
+            "partId": "ldraw:34103"
+          },
+          {
+            "kind": "compiled",
+            "reference": "1126.dat",
+            "official": "1126.dat",
+            "instances": 2,
+            "partId": "ldraw:1126",
+            "file": "parts/1126.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2022-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "1126.dat",
+              "title": "Tile 1 x 2 with Rounded Ends"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "compiled",
+            "reference": "3661.dat",
+            "official": "3661.dat",
+            "instances": 2,
+            "partId": "ldraw:3661",
+            "file": "parts/3661.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2023-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3661.dat",
+              "title": "Plate 1 x 1 with Vertical Bar"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "compiled",
+            "reference": "79194.dat",
+            "official": "79194.dat",
+            "instances": 2,
+            "partId": "ldraw:79194",
+            "file": "parts/79194.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2022-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "79194.dat",
+              "title": "Plate 1 x 1 Round with Bar Handle on Long Stem"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "compiled",
+            "reference": "3386.dat",
+            "official": "3386.dat",
+            "instances": 2,
+            "partId": "ldraw:3386",
+            "file": "parts/3386.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2024-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3386.dat",
+              "title": "Plate 1 x 1 x 0.667 Half Round with Open Side Stud"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "notInLibrary",
+            "reference": "3070bpb111.dat",
+            "official": "3070bpb111.dat",
+            "instances": 2,
+            "definedInline": false
+          },
+          {
+            "kind": "compiled",
+            "reference": "77850.dat",
+            "official": "77850.dat",
+            "instances": 2,
+            "partId": "ldraw:77850",
+            "file": "parts/77850.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2024-06",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "77850.dat",
+              "title": "Plate 1 x 3 with Round Ends and 3 Open Studs"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "bundle",
+            "reference": "20482.dat",
+            "official": "20482.dat",
+            "instances": 4,
+            "partId": "ldraw:20482"
+          },
+          {
+            "kind": "compiled",
+            "reference": "62519.dat",
+            "official": "62519.dat",
+            "instances": 4,
+            "partId": "ldraw:62519",
+            "file": "parts/62519.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "62519.dat",
+              "title": "Technic Universal Joint 3L Centre"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "32124.dat",
+            "official": "32124.dat",
+            "instances": 4,
+            "partId": "ldraw:32124"
+          },
+          {
+            "kind": "bundle",
+            "reference": "24246.dat",
+            "official": "24246.dat",
+            "instances": 8,
+            "partId": "ldraw:24246"
+          },
+          {
+            "kind": "bundle",
+            "reference": "63864.dat",
+            "official": "63864.dat",
+            "instances": 6,
+            "partId": "ldraw:63864"
+          },
+          {
+            "kind": "compiled",
+            "reference": "77845.dat",
+            "official": "77845.dat",
+            "instances": 2,
+            "partId": "ldraw:77845",
+            "file": "parts/77845.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2023-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "77845.dat",
+              "title": "Plate 1 x 4 Round Ends with 2 Open Studs on Ends"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "bundle",
+            "reference": "43093.dat",
+            "official": "43093.dat",
+            "instances": 16,
+            "partId": "ldraw:43093"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4032a.dat",
+            "official": "4032a.dat",
+            "instances": 16,
+            "partId": "ldraw:4032a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32123a.dat",
+            "official": "32123a.dat",
+            "instances": 24,
+            "partId": "ldraw:32123a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "87082.dat",
+            "official": "87082.dat",
+            "instances": 16,
+            "partId": "ldraw:87082",
+            "file": "parts/87082.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2022-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "87082.dat",
+              "title": "Technic Pin Long with Pin Hole Type 1"
+            },
+            "sourceFiles": 27
+          },
+          {
+            "kind": "bundle",
+            "reference": "4697b.dat",
+            "official": "4697b.dat",
+            "instances": 24,
+            "partId": "ldraw:4697b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "71708.dat",
+            "official": "71708.dat",
+            "instances": 32,
+            "partId": "ldraw:71708",
+            "file": "parts/71708.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2024-08",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "71708.dat",
+              "title": "Technic Beam 2 x 3 Liftarm Bent 90 Quarter Ellipse"
+            },
+            "sourceFiles": 37
+          },
+          {
+            "kind": "compiled",
+            "reference": "30541.dat",
+            "official": "30541.dat",
+            "instances": 4,
+            "partId": "ldraw:30541",
+            "file": "parts/30541.dat",
+            "header": {
+              "author": "Thomas Burger [grapeape]",
+              "ldrawOrg": "Part UPDATE 2010-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "30541.dat",
+              "title": "Hinge Brick 1 x 2 Locking with Single Finger On End Horizontal"
+            },
+            "sourceFiles": 31
+          },
+          {
+            "kind": "bundle",
+            "reference": "2429.dat",
+            "official": "2429.dat",
+            "instances": 4,
+            "partId": "ldraw:2429"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "official": "3623.dat",
+            "instances": 4,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6141.dat",
+            "official": "6141.dat",
+            "instances": 24,
+            "partId": "ldraw:6141"
+          },
+          {
+            "kind": "compiled",
+            "reference": "78329.dat",
+            "official": "78329.dat",
+            "instances": 4,
+            "partId": "ldraw:78329",
+            "file": "parts/78329.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2022-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "78329.dat",
+              "title": "Plate 1 x 5"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "bundle",
+            "reference": "2430.dat",
+            "official": "2430.dat",
+            "instances": 4,
+            "partId": "ldraw:2430"
+          },
+          {
+            "kind": "compiled",
+            "reference": "4273a.dat",
+            "official": "4273a.dat",
+            "instances": 16,
+            "partId": "ldraw:4273a",
+            "file": "parts/4273a.dat",
+            "header": {
+              "author": "Guy Vivan [guyvivan]",
+              "ldrawOrg": "Part UPDATE 2018-02",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "4273a.dat",
+              "title": "Technic Connector Toggle Joint Toothed With No Slots"
+            },
+            "sourceFiles": 32
+          },
+          {
+            "kind": "compiled",
+            "reference": "71505.dat",
+            "official": "71505.dat",
+            "instances": 4,
+            "partId": "ldraw:71505",
+            "file": "parts/71505.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "71505.dat",
+              "title": "Technic Flex-System Hose 11L (220LDU)"
+            },
+            "sourceFiles": 6
+          },
+          {
+            "kind": "compiled",
+            "reference": "71752.dat",
+            "official": "71752.dat",
+            "instances": 8,
+            "partId": "ldraw:71752",
+            "file": "parts/71752.dat",
+            "header": {
+              "author": "Gerald Lasser [GeraldLasser]",
+              "ldrawOrg": "Part UPDATE 2023-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "71752.dat",
+              "title": "Brick 2 x 2 x 0.667 Ribbed Horizontally"
+            },
+            "sourceFiles": 25
+          },
+          {
+            "kind": "compiled",
+            "reference": "3708.dat",
+            "official": "3708.dat",
+            "instances": 8,
+            "partId": "ldraw:3708",
+            "file": "parts/3708.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3708.dat",
+              "title": "Technic Axle 12"
+            },
+            "sourceFiles": 4
+          },
+          {
+            "kind": "bundle",
+            "reference": "15535.dat",
+            "official": "15535.dat",
+            "instances": 8,
+            "partId": "ldraw:15535"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3651.dat",
+            "official": "3651.dat",
+            "instances": 8,
+            "partId": "ldraw:3651",
+            "file": "parts/3651.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2022-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3651.dat",
+              "title": "Technic Connector (Pin/Bush) with 2 Studs"
+            },
+            "sourceFiles": 35
+          },
+          {
+            "kind": "compiled",
+            "reference": "48729a.dat",
+            "official": "48729a.dat",
+            "instances": 8,
+            "partId": "ldraw:48729a",
+            "file": "parts/48729a.dat",
+            "header": {
+              "author": "Andreas Weissenburg [grubaluk]",
+              "ldrawOrg": "Part UPDATE 2016-01",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "48729a.dat",
+              "title": "Bar 1.5L with Clip without Hole in Shaft"
+            },
+            "sourceFiles": 4
+          },
+          {
+            "kind": "compiled",
+            "reference": "4265a.dat",
+            "official": "4265a.dat",
+            "instances": 8,
+            "partId": "ldraw:4265a",
+            "file": "parts/4265a.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2019-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4265a.dat",
+              "title": "Technic Bush 1/2 Type 1"
+            },
+            "sourceFiles": 20
+          },
+          {
+            "kind": "bundle",
+            "reference": "48336.dat",
+            "official": "48336.dat",
+            "instances": 8,
+            "partId": "ldraw:48336"
+          },
+          {
+            "kind": "bundle",
+            "reference": "99781.dat",
+            "official": "99781.dat",
+            "instances": 8,
+            "partId": "ldraw:99781"
+          },
+          {
+            "kind": "compiled",
+            "reference": "99563.dat",
+            "official": "99563.dat",
+            "instances": 8,
+            "partId": "ldraw:99563",
+            "file": "parts/99563.dat",
+            "header": {
+              "author": "[PTadmin]",
+              "ldrawOrg": "Part Alias UPDATE 2019-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "99563.dat",
+              "title": "=Tile 1 x 2 Chamfered with 2 Top Indentations"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "35480.dat",
+            "official": "35480.dat",
+            "instances": 8,
+            "partId": "ldraw:35480"
+          },
+          {
+            "kind": "compiled",
+            "reference": "6558.dat",
+            "official": "6558.dat",
+            "instances": 8,
+            "partId": "ldraw:6558",
+            "file": "parts/6558.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2009-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6558.dat",
+              "title": "Technic Pin Long with Friction and Slot"
+            },
+            "sourceFiles": 16
+          },
+          {
+            "kind": "bundle",
+            "reference": "44302.dat",
+            "official": "44302.dat",
+            "instances": 16,
+            "partId": "ldraw:44302"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3062b.dat",
+            "official": "3062b.dat",
+            "instances": 2,
+            "partId": "ldraw:3062b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4175.dat",
+            "official": "4175.dat",
+            "instances": 2,
+            "partId": "ldraw:4175"
+          },
+          {
+            "kind": "bundle",
+            "reference": "60897.dat",
+            "official": "60897.dat",
+            "instances": 2,
+            "partId": "ldraw:60897"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30374.dat",
+            "official": "30374.dat",
+            "instances": 6,
+            "partId": "ldraw:30374"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30162.dat",
+            "official": "30162.dat",
+            "instances": 2,
+            "partId": "ldraw:30162"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431p52.dat",
+            "official": "2431p52.dat",
+            "instances": 2,
+            "partId": "ldraw:2431p52"
+          },
+          {
+            "kind": "bundle",
+            "reference": "11090.dat",
+            "official": "11090.dat",
+            "instances": 16,
+            "partId": "ldraw:11090"
+          },
+          {
+            "kind": "bundle",
+            "reference": "26047.dat",
+            "official": "26047.dat",
+            "instances": 4,
+            "partId": "ldraw:26047"
+          },
+          {
+            "kind": "compiled",
+            "reference": "76260.dat",
+            "official": "76260.dat",
+            "instances": 8,
+            "partId": "ldraw:76260",
+            "file": "parts/76260.dat",
+            "header": {
+              "author": "Tim Gould [timgould]",
+              "ldrawOrg": "Part UPDATE 2011-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "76260.dat",
+              "title": "Technic Flex-System Hose 8L (160LDU)"
+            },
+            "sourceFiles": 6
+          }
+        ],
+        "inlineParts": [],
+        "looseGeometry": [],
+        "unknownColors": [
+          {
+            "code": 100003,
+            "instances": 8
+          }
+        ],
+        "directColors": [],
+        "compileRounds": 21,
+        "fetched": {
+          "requests": 446,
+          "found": 252,
+          "notFound": 194,
+          "bytes": 452660
+        },
+        "timings": {
+          "bakeMs": 5.5,
+          "resolveMs": 1691.5,
+          "totalMs": 1697
+        },
+        "studio": {
+          "file": "container-loader.io",
+          "entry": "modelv2.ldr",
+          "studioVersion": "2.24.12_1",
+          "convertedLines": 376,
+          "unconvertedLines": [],
+          "parts": [
+            {
+              "studio": "11090.dat",
+              "bricklinkId": "11090",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "1126.dat",
+              "bricklinkId": "1126",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "14719.dat",
+              "bricklinkId": "14719",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "15535.dat",
+              "bricklinkId": "15535",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "20482.dat",
+              "bricklinkId": "20482",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "2420.dat",
+              "bricklinkId": "2420",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "24246.dat",
+              "bricklinkId": "24246",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "2429.dat",
+              "bricklinkId": "2429",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "2430.dat",
+              "bricklinkId": "2430",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "2431.dat",
+              "bricklinkId": "2431",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "2431p52.dat",
+              "bricklinkId": "2431p52",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "24375.dat",
+              "bricklinkId": "24375",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 12,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "26047.dat",
+              "bricklinkId": "26047",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "26601.dat",
+              "bricklinkId": "26601",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 10,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "27263.dat",
+              "bricklinkId": "27263",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "2921.dat",
+              "bricklinkId": "2921",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3005.dat",
+              "bricklinkId": "3005",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "30162.dat",
+              "bricklinkId": "30162",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3021.dat",
+              "bricklinkId": "3021",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3023b.dat",
+              "bricklinkId": "3023b",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3024.dat",
+              "bricklinkId": "3024",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "30374.dat",
+              "bricklinkId": "30374",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "30383.dat",
+              "bricklinkId": "30383",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 8,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "30541.dat",
+              "bricklinkId": "30541",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3062b.dat",
+              "bricklinkId": "3062b",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3069a.dat",
+              "bricklinkId": "3069a",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 5,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3069b.dat",
+              "bricklinkId": "3069b",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3070a.dat",
+              "bricklinkId": "3070a",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3070b.dat",
+              "bricklinkId": "3070b",
+              "bricklinkIdSource": "fileName",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3070bpb111.dat",
+              "bricklinkId": "3070bpb111",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "32002.dat",
+              "bricklinkId": "32002",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "32123a.dat",
+              "bricklinkId": "32123a",
+              "bricklinkIdSource": "fileName",
+              "instances": 5,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "32124.dat",
+              "bricklinkId": "32124",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "32555.dat",
+              "bricklinkId": "32555",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3386.dat",
+              "bricklinkId": "3386",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "33909.dat",
+              "bricklinkId": "33909",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "34103.dat",
+              "bricklinkId": "34103",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "35480.dat",
+              "bricklinkId": "35480",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3623.dat",
+              "bricklinkId": "3623",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3651.dat",
+              "bricklinkId": "3651",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3661.dat",
+              "bricklinkId": "3661",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3666.dat",
+              "bricklinkId": "3666",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3673.dat",
+              "bricklinkId": "3673",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 9,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3702.dat",
+              "bricklinkId": "3702",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3708.dat",
+              "bricklinkId": "3708",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3710.dat",
+              "bricklinkId": "3710",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "3894.dat",
+              "bricklinkId": "3894",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "4032a.dat",
+              "bricklinkId": "4032a",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "4070.dat",
+              "bricklinkId": "4070",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "4162.dat",
+              "bricklinkId": "4162",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "4175.dat",
+              "bricklinkId": "4175",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "4265a.dat",
+              "bricklinkId": "4265a",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "4273a.dat",
+              "bricklinkId": "4273a",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 6,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "43093.dat",
+              "bricklinkId": "43093",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "44302.dat",
+              "bricklinkId": "44302",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 8,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "4697b.dat",
+              "bricklinkId": "4697b",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 5,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "48336.dat",
+              "bricklinkId": "48336",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "48729a.dat",
+              "bricklinkId": "48729a",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "48729b.dat",
+              "bricklinkId": "48729b",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 9,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "5091.dat",
+              "bricklinkId": "5091",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "5092.dat",
+              "bricklinkId": "5092",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "54672.dat",
+              "bricklinkId": "54672",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "60479.dat",
+              "bricklinkId": "60479",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "60897.dat",
+              "bricklinkId": "60897",
+              "bricklinkIdSource": "fileName",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6141.dat",
+              "bricklinkId": "6141",
+              "bricklinkIdSource": "fileName",
+              "instances": 10,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "62519.dat",
+              "bricklinkId": "62519",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "63864.dat",
+              "bricklinkId": "63864",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6541.dat",
+              "bricklinkId": "6541",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6558.dat",
+              "bricklinkId": "6558",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "6636.dat",
+              "bricklinkId": "6636",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "71505.dat",
+              "bricklinkId": "75c11",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "71708.dat",
+              "bricklinkId": "71708",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "71752.dat",
+              "bricklinkId": "71752",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 4,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "76260.dat",
+              "bricklinkId": "75c08",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "77845.dat",
+              "bricklinkId": "77845",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "77850.dat",
+              "bricklinkId": "77850",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "78329.dat",
+              "bricklinkId": "78329",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "79194.dat",
+              "bricklinkId": "79194",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "85984.dat",
+              "bricklinkId": "85984",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 8,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "87082.dat",
+              "bricklinkId": "87082",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "87620.dat",
+              "bricklinkId": "87620",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 8,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "89678.dat",
+              "bricklinkId": "89678",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 11,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "93794.dat",
+              "bricklinkId": "93794",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 7,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "95344.dat",
+              "bricklinkId": "95344",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 1,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "98138.dat",
+              "bricklinkId": "98138",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 2,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "99563.dat",
+              "bricklinkId": "99563",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "99781.dat",
+              "bricklinkId": "99781",
+              "bricklinkIdSource": "studioMetadata",
+              "instances": 3,
+              "outcome": {
+                "kind": "kept"
+              }
+            },
+            {
+              "studio": "bl_3069bpb1035.dat",
+              "bricklinkId": "3069bpb1035",
+              "bricklinkIdSource": "fileName",
+              "instances": 6,
+              "outcome": {
+                "kind": "kept"
+              }
+            }
+          ],
+          "unknownColors": [
+            {
+              "code": 100003,
+              "instances": 2
+            }
+          ]
+        },
+        "importMs": 2470.7999999970198,
+        "sceneMs": 568.8000000007451
+      }
+    ]
+  }
+}
