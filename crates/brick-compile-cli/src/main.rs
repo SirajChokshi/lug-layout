@@ -250,7 +250,9 @@ fn compile_entry(
     summary["title"] = json!(header.title);
     summary["author"] = json!(header.author);
     summary["license"] = json!(header.license);
-    Ok((summary, part_shape(&compiled)))
+    let shape = part_shape(&compiled);
+    summary["baseplate"] = json!(shape.is_baseplate());
+    Ok((summary, shape))
 }
 
 fn acknowledged_not_drawn(entry: &Value, file: &str) -> Result<BTreeMap<String, String>, String> {
