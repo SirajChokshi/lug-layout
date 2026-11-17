@@ -1,0 +1,21 @@
+150 placements, 287 s {"moves":459,"aims":150,"centres":19,"zooms":0}
+200 placements, 752 s {"moves":672,"aims":200,"centres":42,"zooms":0}
+250 placements, 1055 s {"moves":881,"aims":250,"centres":65,"zooms":0}
+batch to 125 modules: HUD placements 250, expected 250
+m125 street median 1570.3 p95 1877.5 draws 3029 tris 3924242 live 164 superDrawn 17 heap 188MiB gc-heap 68MiB backing 111MiB gpu 43MiB settle 43411
+m125 aerial median 143.2 p95 146.7 draws 22 tris 99025 live 0 superDrawn 25 heap 199MiB gc-heap 19MiB backing 80MiB gpu 38MiB settle 1164
+400 placements, 1602 s {"moves":1369,"aims":400,"centres":89,"zooms":0}
+450 placements, 2136 s {"moves":1575,"aims":450,"centres":113,"zooms":0}
+500 placements, 2419 s {"moves":1773,"aims":500,"centres":135,"zooms":0}
+batch to 250 modules: HUD placements 500, expected 500
+m250 street median 2791.1 p95 2838.7 draws 4429 tris 7403862 live 264 superDrawn 25 heap 279MiB gc-heap 98MiB backing 149MiB gpu 50MiB settle 61657
+m250 aerial median 176.7 p95 184.1 draws 35 tris 209391 live 0 superDrawn 38 heap 113MiB gc-heap 20MiB backing 93MiB gpu 41MiB settle 3762
+800 placements, 3656 s {"moves":2737,"aims":800,"centres":180,"zooms":0}
+850 placements, 4092 s {"moves":2950,"aims":850,"centres":203,"zooms":0}
+900 placements, 4589 s {"moves":3154,"aims":900,"centres":224,"zooms":0}
+950 placements, 4919 s {"moves":3363,"aims":950,"centres":247,"zooms":0}
+1000 placements, 5199 s {"moves":3564,"aims":1000,"centres":268,"zooms":0}
+batch to 500 modules: HUD placements 1000, expected 1000
+m500 street median 2641.7 p95 2868.8 draws 4430 tris 7418278 live 299 superDrawn 42 heap 319MiB gc-heap 115MiB backing 192MiB gpu 55MiB settle 60246
+m500 aerial median 243.6 p95 256.8 draws 48 tris 418641 live 0 superDrawn 51 heap 142MiB gc-heap 23MiB backing 118MiB gpu 49MiB settle 8457
+built 500 modules in 5457 s; placements 1000
