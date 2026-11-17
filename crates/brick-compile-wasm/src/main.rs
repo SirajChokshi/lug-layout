@@ -179,11 +179,12 @@ fn compile(request: &Value) -> Result<Vec<u8>, String> {
             _ if !requested.is_empty() => need(requested),
             Ok(comparison) => json!({
                 "status": "measured",
-                "maxSurfaceDistanceLdu": comparison.max_surface_distance,
+                "maxMeasuredDistanceLdu": comparison.max_measured_distance,
+                "surfaceWithinWeld": comparison.surface_within_weld,
                 "inlineColors": comparison.inline_colors,
                 "officialColors": comparison.official_colors,
                 "colorsMatch": comparison.colors_match(),
-                "withinWeld": comparison.equivalent_within(WELD_EPSILON_LDU),
+                "withinWeld": comparison.equivalent(),
             }),
             Err(error) => flatten_failure(&error),
         };

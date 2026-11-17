@@ -7,6 +7,7 @@ import { ModelImportEngine, type ImportResult } from "./model-import.ts";
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = new URL("../../../.cache/ldraw/", import.meta.url);
 const probeFile = new URL("../test-data/critic-gap.mpd", import.meta.url);
+const holeProbeFile = new URL("../test-data/critic-gap-3.mpd", import.meta.url);
 const HTTP_NOT_FOUND = 404;
 const COLOR_NOT_IN_LDCONFIG = 99_999;
 const MAIN_COLOUR = 16;
@@ -119,4 +120,24 @@ it("reports a headerless custom part, loose model geometry and a recoloured inli
   expect(result.instanceCount).toBe(2);
   expect(result.partIds).toEqual(["ldraw:3001"]);
   expect(result.compiled).toEqual([]);
+});
+
+it("reports an inline copy with a hole in a large face, and draws only the file's own official part", async () => {
+  const result = await importWith(
+    pinnedMirror,
+    "critic-gap-3.mpd",
+    await readFile(holeProbeFile, "utf8"),
+  );
+  const parts = result.report.parts;
+
+  expect(parts.map((part) => [part.reference, part.kind, part.instances])).toEqual([
+    ["9996-1 - 3001.dat", "inlineDiffers", 1],
+    ["3001.dat", "bundle", 1],
+  ]);
+  const hole = parts[0];
+  expect(hole?.kind === "inlineDiffers" && hole.colorsMatch && !hole.surfaceWithinWeld).toBe(true);
+  expect(hole?.kind === "inlineDiffers" && hole.maxMeasuredDistanceLdu > hole.weldEpsilonLdu).toBe(
+    true,
+  );
+  expect(result.instanceCount).toBe(1);
 });

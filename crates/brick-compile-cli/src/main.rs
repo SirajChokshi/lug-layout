@@ -9,7 +9,6 @@ use brick_compile::compile::modified_note;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
-use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, ModelInstance};
 use brick_compile::vehicle::{
     detect_vehicles, GuideKind, RailHeadBand, Vehicle, VehicleSignatures,
@@ -409,17 +408,18 @@ fn run(args: &Args) -> Result<(), String> {
             }
             let comparison = compare_inline_part(&library, &text, &part.inline, &part.official)
                 .map_err(|e| format!("{file}: {}: {e:?}", part.inline))?;
-            if !comparison.equivalent_within(WELD_EPSILON_LDU) {
+            if !comparison.equivalent() {
                 return Err(format!(
-                    "{file}: inline part {} differs from official {} (colours {:?} against {:?}, max distance {:.4} LDU)",
+                    "{file}: inline part {} differs from official {} (colours {:?} against {:?}, surface within weld {}, farthest measured point {:.4} LDU)",
                     part.inline,
                     part.official,
                     comparison.inline_colors,
                     comparison.official_colors,
-                    comparison.max_surface_distance
+                    comparison.surface_within_weld,
+                    comparison.max_measured_distance
                 ));
             }
-            inline_parts.push(json!({ "inline": part.inline, "official": part.official, "maxSurfaceDistanceLdu": comparison.max_surface_distance }));
+            inline_parts.push(json!({ "inline": part.inline, "official": part.official, "maxMeasuredDistanceLdu": comparison.max_measured_distance }));
         }
         if let Some(stale) = acknowledged.keys().find(|section| !used.contains(*section)) {
             return Err(format!(

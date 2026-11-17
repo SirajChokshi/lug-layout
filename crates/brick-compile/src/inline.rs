@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod};
 use crate::mesh::WELD_EPSILON_LDU;
 use crate::model::mpd_sections;
-use crate::surface::{surface_distance, Face};
+use crate::surface::{surface_match, Face, SurfaceMatch};
 
 const LIBRARY_DIRECTORIES: [&str; 2] = ["parts/", "p/"];
 
@@ -27,7 +27,8 @@ impl<L: Library> Library for SectionsFirst<'_, L> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct InlineComparison {
-    pub max_surface_distance: f64,
+    pub surface_within_weld: bool,
+    pub max_measured_distance: f64,
     pub inline_colors: Vec<u32>,
     pub official_colors: Vec<u32>,
 }
@@ -37,8 +38,8 @@ impl InlineComparison {
         self.inline_colors == self.official_colors
     }
 
-    pub fn equivalent_within(&self, epsilon: f64) -> bool {
-        self.colors_match() && self.max_surface_distance <= epsilon
+    pub fn equivalent(&self) -> bool {
+        self.colors_match() && self.surface_within_weld
     }
 }
 
@@ -68,18 +69,28 @@ pub fn compare_inline_part<L: Library>(
     let official_faces = faces_by_color(
         &Flattener::new(library, Lod::Standard, &[]).flatten(&format!("parts/{official}"))?,
     );
-    let max_surface_distance = inline_faces
+    let surface = inline_faces
         .iter()
         .filter_map(|(color, faces)| {
-            Some(surface_distance(
+            Some(surface_match(
                 faces,
                 official_faces.get(color)?,
                 WELD_EPSILON_LDU,
             ))
         })
-        .fold(0.0, f64::max);
+        .fold(
+            SurfaceMatch {
+                within: true,
+                max_measured: 0.0,
+            },
+            |all, one| SurfaceMatch {
+                within: all.within && one.within,
+                max_measured: all.max_measured.max(one.max_measured),
+            },
+        );
     Ok(InlineComparison {
-        max_surface_distance,
+        surface_within_weld: surface.within,
+        max_measured_distance: surface.max_measured,
         inline_colors: inline_faces.keys().copied().collect(),
         official_colors: official_faces.keys().copied().collect(),
     })

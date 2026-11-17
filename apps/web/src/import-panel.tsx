@@ -29,7 +29,10 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
       if (!part.colorsMatch) {
         return `The file's inline copy uses colours ${part.inlineColors.join(", ")} where official ${part.official} uses ${part.officialColors.join(", ")}.`;
       }
-      return `The file's inline copy differs from official ${part.official} by up to ${part.maxSurfaceDistanceLdu.toFixed(3)} LDU of surface (weld tolerance ${part.weldEpsilonLdu} LDU).`;
+      if (part.maxMeasuredDistanceLdu > part.weldEpsilonLdu) {
+        return `The file's inline copy differs from official ${part.official}: a point on one surface is ${part.maxMeasuredDistanceLdu.toFixed(3)} LDU from the other (weld tolerance ${part.weldEpsilonLdu} LDU).`;
+      }
+      return `The file's inline copy could not be proven to lie within the ${part.weldEpsilonLdu} LDU weld of official ${part.official}.`;
     case "failed":
       return part.message;
     default: {

@@ -51,7 +51,8 @@ export type PartResolution =
       readonly colorsMatch: boolean;
       readonly inlineColors: ReadonlyArray<number>;
       readonly officialColors: ReadonlyArray<number>;
-      readonly maxSurfaceDistanceLdu: number;
+      readonly maxMeasuredDistanceLdu: number;
+      readonly surfaceWithinWeld: boolean;
       readonly weldEpsilonLdu: number;
     })
   | (Counted & { readonly kind: "failed"; readonly message: string });
@@ -292,7 +293,8 @@ function inlineResolution(
         colorsMatch: check.colorsMatch,
         inlineColors: check.inlineColors,
         officialColors: check.officialColors,
-        maxSurfaceDistanceLdu: check.maxSurfaceDistanceLdu,
+        maxMeasuredDistanceLdu: check.maxMeasuredDistanceLdu,
+        surfaceWithinWeld: check.surfaceWithinWeld,
         weldEpsilonLdu: outcomes.weldEpsilonLdu,
       };
     case "failed":

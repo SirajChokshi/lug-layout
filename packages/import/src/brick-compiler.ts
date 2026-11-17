@@ -74,7 +74,8 @@ export type PartOutcome = (CompiledPartOutput | Need | Failure) & { readonly ref
 
 export interface InlineMeasured {
   readonly status: "measured";
-  readonly maxSurfaceDistanceLdu: number;
+  readonly maxMeasuredDistanceLdu: number;
+  readonly surfaceWithinWeld: boolean;
   readonly inlineColors: ReadonlyArray<number>;
   readonly officialColors: ReadonlyArray<number>;
   readonly colorsMatch: boolean;

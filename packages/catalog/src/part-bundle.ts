@@ -1,5 +1,4 @@
-import type { BundleSource } from "./manifest.ts";
-import type { BundleManifest } from "./manifest.ts";
+import type { BundleManifest, BundleSource } from "./manifest.ts";
 import type { BakedVehicle } from "./model-vehicle.ts";
 import type { TrackCatalog } from "./track-catalog.ts";
 

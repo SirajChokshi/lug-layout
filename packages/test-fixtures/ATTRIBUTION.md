@@ -1949,6 +1949,8 @@ Committed LDraw test inputs, one row per section. Sections modified from LDraw l
 
 | File | Section | Author | License | History |
 |---|---|---|---|---|
+| `packages/import/test-data/critic-gap-3.mpd` | `critic-gap-3.ldr` | critic | Licensed under CC BY 4.0 : see CAreadme.txt |  |
+| `packages/import/test-data/critic-gap-3.mpd` | `9996-1 - 3001.dat` | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt | 2026-11-17 [critic] Modified from LDraw parts/3001.dat: an 8 x 5 LDU hole cut in the front face, which is retessellated as four quads around it |
 | `packages/import/test-data/critic-gap.mpd` | `critic-gap.ldr` | critic | Licensed under CC BY 4.0 : see CAreadme.txt |  |
 | `packages/import/test-data/critic-gap.mpd` | `mycustom.dat` | critic | Licensed under CC BY 4.0 : see CAreadme.txt |  |
 | `packages/import/test-data/critic-gap.mpd` | `mycustom2.dat` | critic | Licensed under CC BY 4.0 : see CAreadme.txt |  |

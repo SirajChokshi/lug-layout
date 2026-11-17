@@ -5,18 +5,8 @@ use crate::affine::Vec3;
 pub type Face = [Vec3; 3];
 
 const GRID_CELL_LDU: f64 = 4.0;
-const SAMPLE_BARYCENTRIC: [[f64; 3]; 10] = [
-    [1.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0],
-    [0.0, 0.0, 1.0],
-    [0.5, 0.5, 0.0],
-    [0.0, 0.5, 0.5],
-    [0.5, 0.0, 0.5],
-    [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0],
-    [2.0 / 3.0, 1.0 / 6.0, 1.0 / 6.0],
-    [1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0],
-    [1.0 / 6.0, 1.0 / 6.0, 2.0 / 3.0],
-];
+const MIN_REFINED_DIAMETER_LDU: f64 = 1e-4;
+const MAX_REFINEMENTS: usize = 4_000_000;
 
 fn sub(a: Vec3, b: Vec3) -> Vec3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -153,32 +143,91 @@ impl<'a> FaceGrid<'a> {
     }
 }
 
-fn sample(face: &Face, weights: [f64; 3]) -> Vec3 {
-    [0, 1, 2].map(|axis| {
-        weights[0] * face[0][axis] + weights[1] * face[1][axis] + weights[2] * face[2][axis]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SurfaceMatch {
+    pub within: bool,
+    pub max_measured: f64,
+}
+
+impl SurfaceMatch {
+    fn and(self, other: SurfaceMatch) -> SurfaceMatch {
+        SurfaceMatch {
+            within: self.within && other.within,
+            max_measured: self.max_measured.max(other.max_measured),
+        }
+    }
+}
+
+fn midpoint(a: Vec3, b: Vec3) -> Vec3 {
+    [0, 1, 2].map(|axis| (a[axis] + b[axis]) / 2.0)
+}
+
+fn diameter([a, b, c]: &Face) -> f64 {
+    squared_length(sub(*a, *b))
+        .max(squared_length(sub(*b, *c)))
+        .max(squared_length(sub(*c, *a)))
+        .sqrt()
+}
+
+fn covered_by_one(grid: &FaceGrid, piece: &Face, reach: f64) -> bool {
+    grid.cells.get(&cell_of(piece[0])).is_some_and(|cell| {
+        cell.iter().any(|&index| {
+            let face = &grid.faces[index];
+            piece
+                .iter()
+                .all(|p| squared_length(sub(*p, closest_point(*p, face))) <= reach * reach)
+        })
     })
 }
 
-fn directed_surface_distance(from: &[Face], to: &[Face], reach: f64) -> f64 {
+fn directed_surface_match(from: &[Face], to: &[Face], reach: f64) -> SurfaceMatch {
     if from.is_empty() {
-        return 0.0;
+        return SurfaceMatch {
+            within: true,
+            max_measured: 0.0,
+        };
     }
     if to.is_empty() {
-        return f64::INFINITY;
+        return SurfaceMatch {
+            within: false,
+            max_measured: f64::INFINITY,
+        };
     }
     let grid = FaceGrid::new(to, reach);
-    from.iter()
-        .flat_map(|face| {
-            SAMPLE_BARYCENTRIC
-                .iter()
-                .map(|weights| sample(face, *weights))
-        })
-        .map(|p| grid.distance(p, reach))
-        .fold(0.0, f64::max)
+    let mut result = SurfaceMatch {
+        within: true,
+        max_measured: 0.0,
+    };
+    let mut refinements = 0;
+    let mut pending: Vec<Face> = from.to_vec();
+    while let Some(piece) = pending.pop() {
+        let farthest = piece
+            .iter()
+            .map(|p| grid.distance(*p, reach))
+            .fold(0.0, f64::max);
+        result.max_measured = result.max_measured.max(farthest);
+        if farthest > reach {
+            result.within = false;
+            continue;
+        }
+        let size = diameter(&piece);
+        if farthest + size <= reach || covered_by_one(&grid, &piece, reach) {
+            continue;
+        }
+        if size < MIN_REFINED_DIAMETER_LDU || refinements >= MAX_REFINEMENTS {
+            result.within = false;
+            continue;
+        }
+        refinements += 1;
+        let [a, b, c] = piece;
+        let (ab, bc, ca) = (midpoint(a, b), midpoint(b, c), midpoint(c, a));
+        pending.extend([[a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]]);
+    }
+    result
 }
 
-pub fn surface_distance(a: &[Face], b: &[Face], reach: f64) -> f64 {
-    directed_surface_distance(a, b, reach).max(directed_surface_distance(b, a, reach))
+pub fn surface_match(a: &[Face], b: &[Face], reach: f64) -> SurfaceMatch {
+    directed_surface_match(a, b, reach).and(directed_surface_match(b, a, reach))
 }
 
 #[cfg(test)]
@@ -192,6 +241,13 @@ mod tests {
         [[at(0), at(1), at(2)], [at(0), at(2), at(3)]]
     }
 
+    fn rectangle(x0: f64, z0: f64, x1: f64, z1: f64) -> [Face; 2] {
+        quad(
+            [[x0, 0.0, z0], [x1, 0.0, z0], [x1, 0.0, z1], [x0, 0.0, z1]],
+            0,
+        )
+    }
+
     const SQUARE: [Vec3; 4] = [
         [0.0, 0.0, 0.0],
         [40.0, 0.0, 0.0],
@@ -201,7 +257,9 @@ mod tests {
 
     #[test]
     fn a_quad_listed_from_another_vertex_is_the_same_surface() {
-        assert!(surface_distance(&quad(SQUARE, 0), &quad(SQUARE, 1), WELD) < 1e-9);
+        let found = surface_match(&quad(SQUARE, 0), &quad(SQUARE, 1), WELD);
+        assert!(found.within);
+        assert!(found.max_measured < 1e-9);
     }
 
     #[test]
@@ -212,15 +270,30 @@ mod tests {
             [middle, SQUARE[2], SQUARE[3]],
             [middle, SQUARE[1], SQUARE[2]],
         ];
-        assert!(surface_distance(&quad(SQUARE, 0), &fan, WELD) < 1e-9);
+        assert!(surface_match(&quad(SQUARE, 0), &fan, WELD).within);
     }
 
     #[test]
-    fn a_shifted_or_missing_face_is_measured() {
-        let lifted = SQUARE.map(|[x, y, z]| [x, y + 1.5, z]);
-        let shifted = surface_distance(&quad(SQUARE, 0), &quad(lifted, 0), WELD);
-        assert!((shifted - 1.5).abs() < 1e-9);
-        let half = &quad(SQUARE, 0)[..1];
-        assert!(surface_distance(&quad(SQUARE, 0), half, WELD) > WELD);
+    fn a_shift_within_the_weld_matches_and_beyond_it_does_not() {
+        let near = SQUARE.map(|[x, y, z]| [x, y + 0.04, z]);
+        assert!(surface_match(&quad(SQUARE, 0), &quad(near, 0), WELD).within);
+        let far = SQUARE.map(|[x, y, z]| [x, y + 1.5, z]);
+        let shifted = surface_match(&quad(SQUARE, 0), &quad(far, 0), WELD);
+        assert!(!shifted.within);
+        assert!((shifted.max_measured - 1.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_hole_away_from_every_vertex_and_midpoint_is_found() {
+        let holed: Vec<Face> = [
+            rectangle(0.0, 0.0, 16.0, 20.0),
+            rectangle(24.0, 0.0, 40.0, 20.0),
+            rectangle(16.0, 0.0, 24.0, 10.0),
+            rectangle(16.0, 15.0, 24.0, 20.0),
+        ]
+        .concat();
+        let found = surface_match(&quad(SQUARE, 0), &holed, WELD);
+        assert!(!found.within);
+        assert!(found.max_measured > WELD);
     }
 }
