@@ -29,12 +29,17 @@ interface OverlayBox {
 }
 
 async function openEditor(page: Page): Promise<void> {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/?api=webgl2");
   const editor = page.locator(".editor");
   await expect(editor).toHaveAttribute("data-status", /^(?:ready|error)$/u, {
     timeout: READY_TIMEOUT_MS,
   });
-  await expect(editor).toHaveAttribute("data-status", "ready");
+  if ((await editor.getAttribute("data-status")) === "error") {
+    const shown = await editor.locator(".error").allTextContents();
+    throw new Error(`the editor couldn't start: ${[...shown, ...pageErrors].join(" | ")}`);
+  }
 }
 
 async function enterMode(page: Page, mode: Mode): Promise<void> {
