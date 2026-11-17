@@ -22,6 +22,7 @@ const WIDTH = Number(args.width ?? 1280);
 const HEIGHT = Number(args.height ?? 800);
 const HEADLESS = args.headless === "1";
 const VIDEO = args.video ?? null;
+const BUILD_DISTANCE = Number(args.buildDistance ?? 9000);
 mkdirSync(OUT, { recursive: true });
 
 const CHUNK = 640;
@@ -132,6 +133,10 @@ async function hover() {
 
 async function moveTo(x, y) {
   tally.moves++;
+  if (args.integerMouse) {
+    x = Math.round(x);
+    y = Math.round(y);
+  }
   await page.mouse.move(x, y);
   for (let i = 0; i < 20; i++) {
     const h = await hover();
@@ -191,7 +196,9 @@ async function hopTowards(tx, tz) {
   const dz = tz - cam.tz;
   const full = Math.hypot(dx, dz);
   let step = Math.min(full, cam.distance * HOP_GROUND_FRACTION);
-  while (step >= MIN_HOP_LDU) {
+  let first = true;
+  while (step > 0 && (first || step >= MIN_HOP_LDU)) {
+    first = false;
     const hx = snap(cam.tx + (dx / full) * step);
     const hz = snap(cam.tz + (dz / full) * step);
     const [px, py] = project(hx, hz);
@@ -205,6 +212,8 @@ async function hopTowards(tx, tz) {
   throw new Error(`cannot hop from ${cam.tx},${cam.tz} towards ${tx},${tz}; cam ${JSON.stringify(cam)}`);
 }
 
+const MIN_AIM_DISTANCE_LDU = 2500;
+
 async function centreOn(tx, tz) {
   tally.centres++;
   for (let hop = 0; hop < 400; hop++) {
@@ -215,6 +224,14 @@ async function centreOn(tx, tz) {
       cam.tz = tz;
       cam.ty = 0;
       return;
+    }
+    if (Math.hypot(tx - cam.tx, tz - cam.tz) < MIN_HOP_LDU) {
+      if (cam.distance <= MIN_AIM_DISTANCE_LDU) {
+        throw new Error(`cannot aim at ${tx},${tz} even at ${cam.distance} LDU`);
+      }
+      tally.zooms++;
+      await zoomTo(Math.max(cam.distance / 2, MIN_AIM_DISTANCE_LDU));
+      continue;
     }
     const h = await hopTowards(tx, tz);
     await page.keyboard.press("c");
@@ -266,7 +283,7 @@ async function choose(item) {
   if (active !== "true") throw new Error(`catalog item ${item} did not activate`);
 }
 
-const tally = { moves: 0, aims: 0, centres: 0 };
+const tally = { moves: 0, aims: 0, centres: 0, zooms: 0 };
 async function placeAt(tx, tz) {
   tally.aims++;
   let aim = await aimAt(tx, tz);
@@ -276,6 +293,7 @@ async function placeAt(tx, tz) {
   }
   if (!aim) throw new Error(`cannot aim at ${tx},${tz}`);
   await page.mouse.click(aim[0], aim[1]);
+  if (cam.distance < BUILD_DISTANCE) await zoomTo(BUILD_DISTANCE);
 }
 
 async function setRotation(rot) {
@@ -348,7 +366,26 @@ async function measure(label) {
 }
 
 await orbitTo(cam.yaw, 1.2);
-await zoomTo(Number(args.buildDistance ?? 9000));
+await zoomTo(BUILD_DISTANCE);
+if (args.hopTest) {
+  const hops = [
+    [snap(cam.tx + 102), snap(cam.tz)],
+    [snap(cam.tx + 102), snap(cam.tz + 160)],
+    [5440, 320],
+    [28160, 28160],
+    [snap(28160 - 100), snap(28160 + 160)],
+    [320, 320],
+    [snap(320 + 160), snap(320 - 100)],
+  ];
+  for (const [hx, hz] of hops) {
+    const before = { ...tally };
+    await centreOn(hx, hz);
+    const aim = await aimAt(hx, hz);
+    if (!aim) throw new Error(`hop test: not aimable at ${hx},${hz} after centring`);
+    if (cam.distance < BUILD_DISTANCE) await zoomTo(BUILD_DISTANCE);
+    console.log(`hop test ${hx},${hz}: ok, distance ${Math.round(cam.distance)}, zooms ${tally.zooms - before.zooms}, moves ${tally.moves - before.moves}`);
+  }
+}
 const started = Date.now();
 const all = cells().map(moduleAt);
 const bounds = [0, ...CHECKPOINTS.filter((c) => c < all.length), all.length];

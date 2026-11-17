@@ -16,4 +16,6 @@ CHROME=... node build-world.mjs --url=http://127.0.0.1:4180/ --api=webgpu --side
   --modules=500 --checkpoints=16,64,125,250,500 --frames=60 --superchunks=0 \
   --width=1600 --height=1000 --buildDistance=40000 --out=/tmp/pw/m4-before
 ```
+`--hopTest=1` first centres on targets 102 and 160 LDU away and across the world at the build distance and checks each is aimable. `--integerMouse=1` rounds cursor positions to whole CSS pixels, which forces the case where a 20 LDU cell can't be hit at 40,000 LDU; the script then zooms in by halves (not below 2,500 LDU), aims, and zooms back out. Tested on the VM at 1280×800 and 1600×1000.
+
 `--superchunks=0` makes every super-chunk resident, which is the behaviour before the PR. Stop the before run when a frame passes ~2 s.
