@@ -318,6 +318,33 @@ export const BundleCompiler = v.object({
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
+const LineNumber = v.pipe(Integer, v.minValue(1));
+
+export const StudioArchive = v.object({
+  status: v.literal("read"),
+  entry: v.string(),
+  ldraw: v.string(),
+  studioVersion: v.nullable(v.string()),
+  convertedLines: Count,
+  unconvertedLines: v.array(LineNumber),
+  bricklinkIds: v.record(v.string(), v.string()),
+  customParts: v.array(v.string()),
+});
+export type StudioArchive = v.InferOutput<typeof StudioArchive>;
+
+export const StudioRejectionKind = v.picklist(["notZip", "encrypted", "noModel"]);
+export type StudioRejectionKind = v.InferOutput<typeof StudioRejectionKind>;
+
+export const StudioRejection = v.object({
+  status: v.literal("rejected"),
+  kind: StudioRejectionKind,
+  message: v.string(),
+});
+export type StudioRejection = v.InferOutput<typeof StudioRejection>;
+
+export const StudioRead = v.variant("status", [StudioArchive, StudioRejection]);
+export type StudioRead = v.InferOutput<typeof StudioRead>;
+
 export const BundleColor = v.object({
   code: Integer,
   name: v.string(),

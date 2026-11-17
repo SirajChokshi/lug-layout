@@ -1,5 +1,6 @@
 import {
   BrickCompiler,
+  importStudioFile,
   LdrawMirror,
   ModelImportEngine,
   type ImportWorkerRequest,
@@ -35,9 +36,13 @@ export class ImportWorkerService implements IImportWorkerService {
         const engine = new ModelImportEngine(compiler, mirror, () => performance.now());
         return engine.importText(input.job);
       }
+      case "studio": {
+        const mirror = new LdrawMirror(input.job.source, (url) => fetch(url));
+        return importStudioFile(compiler, mirror, () => performance.now(), input);
+      }
       default: {
-        const unhandled: never = input.kind;
-        throw new Error(`unhandled import input ${String(unhandled)}`);
+        const unhandled: never = input;
+        throw new Error(`unhandled import input ${JSON.stringify(unhandled)}`);
       }
     }
   }
