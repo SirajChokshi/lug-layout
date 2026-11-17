@@ -54,6 +54,7 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
     ...(part.displayColor ? { displayColor: part.displayColor } : {}),
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
+    ...(glb.document.extras.technic ? { technic: glb.document.extras.technic } : {}),
   };
 }
 
