@@ -253,15 +253,7 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({
-  scene,
-  params,
-  placements,
-  run,
-  runningGear,
-  importScene,
-  bom,
-}: AppProps) {
+export function App({ scene, params, placements, run, runningGear, importScene, bom }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const [viewerReport, setReport] = useState<ViewerReport | null>(null);

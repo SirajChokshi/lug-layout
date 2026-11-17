@@ -1,8 +1,10 @@
 import {
   ASSET_FETCHER,
   PART_BUNDLE_LOADER,
+  type BricklinkPartCandidates,
   type BundleLod,
   type BundleManifest,
+  type CatalogCrosswalk,
   type CompiledPartGlb,
   type IAssetFetcher,
   type ImportContext,
@@ -68,6 +70,14 @@ class ModelSubsetLoader implements IPartBundleLoader {
     compiled: ReadonlyArray<CompiledPartGlb>,
   ): Promise<PartBundle> {
     return this.loader.loadPartSet(lod, partIds, compiled);
+  }
+
+  loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {
+    return this.loader.loadCrosswalk(lod);
+  }
+
+  loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
+    return this.loader.loadBricklinkParts(lod);
   }
 }
 
