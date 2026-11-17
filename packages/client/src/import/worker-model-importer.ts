@@ -1,11 +1,18 @@
 import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
-import type { ImportResult, ImportWorkerRequest, ImportWorkerResponse } from "@brr/import";
+import type {
+  ImportInput,
+  ImportJob,
+  ImportResult,
+  ImportWorkerRequest,
+  ImportWorkerResponse,
+} from "@brr/import";
 import { inject, injectable } from "inversify";
 import { IMPORT_WORKER_FACTORY } from "../tokens.ts";
 
 export interface IModelImporter {
   importText(fileName: string, text: string, lod?: BundleLod): Promise<ImportResult>;
+  importStudio(fileName: string, bytes: Uint8Array, lod?: BundleLod): Promise<ImportResult>;
 }
 
 export type ImportWorkerFactory = () => Worker;
@@ -64,28 +71,49 @@ export class WorkerModelImporter implements IModelImporter {
     text: string,
     lod: BundleLod = "standard",
   ): Promise<ImportResult> {
+    return this.request(lod, { kind: "ldraw", job: { ...(await this.job(fileName, lod)), text } });
+  }
+
+  async importStudio(
+    fileName: string,
+    bytes: Uint8Array,
+    lod: BundleLod = "standard",
+  ): Promise<ImportResult> {
+    const [job, bricklinkParts] = await Promise.all([
+      this.job(fileName, lod),
+      this.loader.loadBricklinkParts(lod),
+    ]);
+    return this.request(lod, { kind: "studio", job, bytes, bricklinkParts }, [bytes.buffer]);
+  }
+
+  private async job(fileName: string, lod: BundleLod): Promise<Omit<ImportJob, "text">> {
+    const context = await this.loader.importContext(lod);
+    return {
+      fileName,
+      lod,
+      source: context.source,
+      studPrimitives: context.studPrimitiveNames,
+      unofficialAllowlist: context.unofficialAllowlist,
+      bundlePartIds: context.partIds,
+      ldconfigCodes: context.ldconfigCodes,
+    };
+  }
+
+  private async request(
+    lod: BundleLod,
+    input: ImportInput,
+    transfer: Transferable[] = [],
+  ): Promise<ImportResult> {
     const context = await this.loader.importContext(lod);
     const request: ImportWorkerRequest = {
       id: this.nextId++,
       compilerUrl: new URL(context.compilerPath, new URL(this.bundleBaseUrl.replace(/\/?$/u, "/")))
         .href,
-      input: {
-        kind: "ldraw",
-        job: {
-          fileName,
-          text,
-          lod,
-          source: context.source,
-          studPrimitives: context.studPrimitiveNames,
-          unofficialAllowlist: context.unofficialAllowlist,
-          bundlePartIds: context.partIds,
-          ldconfigCodes: context.ldconfigCodes,
-        },
-      },
+      input,
     };
     return new Promise((resolve, reject) => {
       this.pending.set(request.id, { resolve, reject });
-      this.connection().postMessage(request, { transfer: [] });
+      this.connection().postMessage(request, { transfer });
     });
   }
 }

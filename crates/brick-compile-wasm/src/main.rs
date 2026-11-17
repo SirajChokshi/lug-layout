@@ -9,12 +9,14 @@ use brick_compile::inline::compare_inline_part;
 use brick_compile::ldraw::Header;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::bake_model;
+use brick_compile::studio::{read_io, StudioError};
 use brick_compile::{compile_part, CompileError, CompileOptions, Lod};
 use serde_json::{json, Map, Value};
 
 use tracking::TrackingLibrary;
 
 const HEADER_LENGTH_BYTES: usize = 4;
+const JSON_REQUEST_START: u8 = b'{';
 
 fn strings(value: &Value, key: &str) -> Vec<String> {
     value[key]
@@ -205,15 +207,58 @@ fn compile(request: &Value) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+fn read_studio(payload: &[u8]) -> Result<Vec<u8>, String> {
+    let response = match read_io(payload) {
+        Ok(archive) => json!({
+            "status": "read",
+            "entry": archive.entry,
+            "ldraw": archive.ldraw,
+            "studioVersion": archive.studio_version,
+            "convertedLines": archive.converted_lines,
+            "unconvertedLines": archive.unconverted_lines,
+            "bricklinkIds": archive.bricklink_ids,
+            "customParts": archive.custom_parts,
+        }),
+        Err(error) => {
+            let kind = match error {
+                StudioError::NotZip(_) => "notZip",
+                StudioError::Encrypted => "encrypted",
+                StudioError::NoModel { .. } => "noModel",
+            };
+            json!({ "status": "rejected", "kind": kind, "message": error.to_string() })
+        }
+    };
+    serde_json::to_vec(&response).map_err(|e| e.to_string())
+}
+
+fn split_request(input: &[u8]) -> Result<(Value, &[u8]), String> {
+    if input.first() == Some(&JSON_REQUEST_START) {
+        let request = serde_json::from_slice(input).map_err(|e| e.to_string())?;
+        return Ok((request, &[]));
+    }
+    let length_bytes: [u8; HEADER_LENGTH_BYTES] = input
+        .get(..HEADER_LENGTH_BYTES)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or("framed request is shorter than its length prefix")?;
+    let header_end = HEADER_LENGTH_BYTES
+        + usize::try_from(u32::from_le_bytes(length_bytes)).map_err(|e| e.to_string())?;
+    let header = input
+        .get(HEADER_LENGTH_BYTES..header_end)
+        .ok_or("framed request is shorter than its header")?;
+    let request = serde_json::from_slice(header).map_err(|e| e.to_string())?;
+    Ok((request, &input[header_end..]))
+}
+
 fn run() -> Result<Vec<u8>, String> {
     let mut input = Vec::new();
     std::io::stdin()
         .read_to_end(&mut input)
         .map_err(|e| e.to_string())?;
-    let request: Value = serde_json::from_slice(&input).map_err(|e| e.to_string())?;
+    let (request, payload) = split_request(&input)?;
     match request["op"].as_str() {
         Some("bake") => bake(&request),
         Some("compile") => compile(&request),
+        Some("readStudio") => read_studio(payload),
         other => Err(format!("unknown op {other:?}")),
     }
 }
