@@ -40,6 +40,7 @@ export {
 } from "./credits/credits-view.ts";
 export type {
   CatalogColorView,
+  CatalogItemModel,
   CatalogItemView,
   CatalogPartView,
   EditAction,
@@ -152,6 +153,7 @@ export {
   TRACK_SCENE,
   PLAN_SERVICE,
   PALETTE_MEMORY,
+  PALETTE_THUMBNAILS,
 } from "./tokens.ts";
 export { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./edit/editor.ts";
 export {
@@ -221,6 +223,8 @@ export {
   PALETTE_CATEGORIES,
   PaletteIndex,
   colorDisplayName,
+  commonestColor,
+  displayItem,
   itemInColor,
 } from "./catalog/palette-index.ts";
 export type {
@@ -242,3 +246,4 @@ export type {
 } from "./bom/bom-service.ts";
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
+export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";

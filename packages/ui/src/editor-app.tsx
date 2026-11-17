@@ -4,6 +4,7 @@ import type {
   IEditor,
   IEditorCamera,
   IPaletteMemory,
+  IPaletteThumbnails,
   IPlanService,
   ShellCommandId,
 } from "@brr/client";
@@ -40,6 +41,7 @@ interface EditorAppProps {
   readonly plans: IPlanService;
   readonly bomService: IBomService;
   readonly palette: IPaletteMemory;
+  readonly thumbnails: IPaletteThumbnails;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -85,6 +87,7 @@ export function EditorApp({
   plans,
   bomService,
   palette,
+  thumbnails,
   options,
   disclaimer,
   showState,
@@ -142,7 +145,12 @@ export function EditorApp({
         <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
-        <PalettePanel editor={editor} snapshot={snapshot} memory={palette} />
+        <PalettePanel
+          editor={editor}
+          snapshot={snapshot}
+          memory={palette}
+          thumbnails={thumbnails}
+        />
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
