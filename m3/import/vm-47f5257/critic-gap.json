@@ -1,0 +1,126 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n91bdaf77c0742d9c\nParts\n2\nModules\n2\nStud instances (drawn of total)\n16 of 16\nScene triangles\n1,400\nLoad\n51 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.0 MiB, other 0.0 MiB, JS heap 41.1 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n5\nDrawn triangles\n1,401\nScene coverage\n2% (essentially empty frame)\nFrame rate (rAF)\n6.2 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 0,
+        "z": 60,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "critic-gap.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "critic",
+            "ldrawOrg": "Model",
+            "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+            "name": "critic-gap.ldr",
+            "title": "Critic gap probe"
+          }
+        ],
+        "instanceCount": 5,
+        "drawnInstanceCount": 2,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "official": "3001.dat",
+            "instances": 1,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "notInLibrary",
+            "reference": "mycustom.dat",
+            "official": "mycustom.dat",
+            "instances": 1,
+            "definedInline": true
+          },
+          {
+            "kind": "notInLibrary",
+            "reference": "mycustom2.dat",
+            "official": "mycustom2.dat",
+            "instances": 1,
+            "definedInline": true
+          },
+          {
+            "kind": "inlineDiffers",
+            "reference": "9999-1 - 3001.dat",
+            "official": "3001.dat",
+            "instances": 1,
+            "colorsMatch": false,
+            "inlineColors": [
+              4,
+              14
+            ],
+            "officialColors": [
+              16
+            ],
+            "maxMeasuredDistanceLdu": 0,
+            "surfaceWithinWeld": true,
+            "weldEpsilonLdu": 0.05
+          },
+          {
+            "kind": "bundle",
+            "reference": "9998-1 - 3001.dat",
+            "official": "3001.dat",
+            "instances": 1,
+            "partId": "ldraw:3001"
+          }
+        ],
+        "inlineParts": [
+          {
+            "inline": "9998-1 - 3001.dat",
+            "official": "3001.dat"
+          },
+          {
+            "inline": "9999-1 - 3001.dat",
+            "official": "3001.dat"
+          },
+          {
+            "inline": "mycustom.dat",
+            "official": "mycustom.dat"
+          },
+          {
+            "inline": "mycustom2.dat",
+            "official": "mycustom2.dat"
+          }
+        ],
+        "looseGeometry": [
+          {
+            "occurrences": 1,
+            "quads": 1,
+            "section": "critic-gap.ldr",
+            "triangles": 0
+          }
+        ],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 10,
+        "fetched": {
+          "requests": 24,
+          "found": 10,
+          "notFound": 14,
+          "bytes": 12069
+        },
+        "timings": {
+          "bakeMs": 4.099999999627471,
+          "resolveMs": 227.7000000011176,
+          "totalMs": 231.80000000074506
+        },
+        "importMs": 638.4000000003725,
+        "sceneMs": 302.30000000074506
+      }
+    ]
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n91bdaf77c0742d9c\nParts\n1\nModules\n1\nStud instances (drawn of total)\n8 of 8\nScene triangles\n700\nLoad\n92 ms\nGPU buffers allocated so far, JS heap\nvertex+index 0.0 MiB, other 0.0 MiB, JS heap 39.3 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n1 / 0 / 0\nDraw calls\n3\nDrawn triangles\n701\nScene coverage\n1% (essentially empty frame)\nFrame rate (rAF)\n6.7 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": -100,
+        "z": 0,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "critic-gap-3.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "critic",
+            "ldrawOrg": "Model",
+            "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+            "name": "critic-gap-3.ldr",
+            "title": "Critic gap probe 3"
+          }
+        ],
+        "instanceCount": 2,
+        "drawnInstanceCount": 1,
+        "parts": [
+          {
+            "kind": "inlineDiffers",
+            "reference": "9996-1 - 3001.dat",
+            "official": "3001.dat",
+            "instances": 1,
+            "colorsMatch": true,
+            "inlineColors": [
+              16
+            ],
+            "officialColors": [
+              16
+            ],
+            "maxMeasuredDistanceLdu": 2,
+            "surfaceWithinWeld": false,
+            "weldEpsilonLdu": 0.05
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "official": "3001.dat",
+            "instances": 1,
+            "partId": "ldraw:3001"
+          }
+        ],
+        "inlineParts": [
+          {
+            "inline": "9996-1 - 3001.dat",
+            "official": "3001.dat"
+          }
+        ],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 11,
+        "fetched": {
+          "requests": 18,
+          "found": 10,
+          "notFound": 8,
+          "bytes": 12069
+        },
+        "timings": {
+          "bakeMs": 4,
+          "resolveMs": 834.5999999996275,
+          "totalMs": 838.5999999996275
+        },
+        "importMs": 1179.5999999996275,
+        "sceneMs": 322.5
+      }
+    ]
+  }
+}

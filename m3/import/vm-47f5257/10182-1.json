@@ -1,0 +1,1623 @@
+{
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nDrawing buffer\n1920×1081 px (devicePixelRatio 1)\nBundle\n91bdaf77c0742d9c\nParts\n2,073\nModules\n2\nStud instances (drawn of total)\n6,875 of 6,875\nScene triangles\n862,610\nLoad\n37 ms\nGPU buffers allocated so far, JS heap\nvertex+index 3.8 MiB, other 0.0 MiB, JS heap 51.7 MiB\nRender origin (chunks), rebases\n(1, 1); 1 rebases, last at frame 0\nChunk tiers near/mid/far\n2 / 0 / 0\nDraw calls\n209\nDrawn triangles\n862,611\nScene coverage\n16%\nFrame rate (rAF)\n1.9 fps",
+  "result": {
+    "placements": [
+      {
+        "module": 0,
+        "x": 320,
+        "z": 0,
+        "yPlates": 0,
+        "rot": 0
+      }
+    ],
+    "reports": [
+      {
+        "fileName": "10182-1.mpd",
+        "mirror": {
+          "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+          "kind": "github-mirror",
+          "repo": "kulits/ldraw-parts",
+          "root": "ldraw"
+        },
+        "lod": "standard",
+        "sections": [
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Main Model.ldr",
+            "title": "Main Model"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Minifig 1.ldr",
+            "title": "Minifig 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Minifig 2.ldr",
+            "title": "Minifig 2"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Minifig 3.ldr",
+            "title": "Minifig 3"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor.ldr",
+            "title": "Ground floor"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - 2x Plate 1x1 Dark_Blue.ldr",
+            "title": "Ground floor - 2x Plate 1x1 Dark_Blue"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - 2x Plate 1x1 Light_Bluish_Gray.ldr",
+            "title": "Ground floor - 2x Plate 1x1 Light_Bluish_Gray"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - 2x Plate 1x2 Light_Bluish_Gray.ldr",
+            "title": "Ground floor - 2x Plate 1x2 Light_Bluish_Gray"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - 2x Plate 2x2 Corner Light_Bluish_Gray.ldr",
+            "title": "Ground floor - 2x Plate 2x2 Corner Light_Bluish_Gray"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Technic joint.ldr",
+            "title": "Ground floor - Technic joint"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Wall element 1.ldr",
+            "title": "Ground floor - Wall element 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Wall element 2.ldr",
+            "title": "Ground floor - Wall element 2"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Staircase base structure.ldr",
+            "title": "Ground floor - Staircase base structure"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Tube with 2 Bricks 1x1 Round.ldr",
+            "title": "Ground floor - Tube with 2 Bricks 1x1 Round"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Side entrance tube.ldr",
+            "title": "Ground floor - Side entrance tube"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Side entrance lamp.ldr",
+            "title": "Ground floor - Side entrance lamp"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Side entrance arch.ldr",
+            "title": "Ground floor - Side entrance arch"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Shopping window.ldr",
+            "title": "Ground floor - Shopping window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - 2x Plate 1x2 + 1x3 Light_Bluish_Gray.ldr",
+            "title": "Ground floor - 2x Plate 1x2 + 1x3 Light_Bluish_Gray"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Door shopping window.ldr",
+            "title": "Ground floor - Door shopping window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Corner entrance staircase.ldr",
+            "title": "Ground floor - Corner entrance staircase"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Corner entrance base structure above.ldr",
+            "title": "Ground floor - Corner entrance base structure above"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Corner entrance middle structure above.ldr",
+            "title": "Ground floor - Corner entrance middle structure above"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Corner entrance top structure above.ldr",
+            "title": "Ground floor - Corner entrance top structure above"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Corner entrance lamp holder.ldr",
+            "title": "Ground floor - Corner entrance lamp holder"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Corner entrance lamp.ldr",
+            "title": "Ground floor - Corner entrance lamp"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Corner entrance cup holder.ldr",
+            "title": "Ground floor - Corner entrance cup holder"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Corner entrance arch.ldr",
+            "title": "Ground floor - Corner entrance arch"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Awning long.ldr",
+            "title": "Ground floor - Awning long"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Awning short.ldr",
+            "title": "Ground floor - Awning short"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Hotel sign.ldr",
+            "title": "Ground floor - Hotel sign"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Hotel sign bottom joint.ldr",
+            "title": "Ground floor - Hotel sign bottom joint"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Hotel sign 3x Plate 1x1 Trans_Red.ldr",
+            "title": "Ground floor - Hotel sign 3x Plate 1x1 Trans_Red"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Hotel sign letter E detail.ldr",
+            "title": "Ground floor - Hotel sign letter E detail"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Hotel sign SNOT detail.ldr",
+            "title": "Ground floor - Hotel sign SNOT detail"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Hotel sign top joint.ldr",
+            "title": "Ground floor - Hotel sign top joint"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Hotel sign top detail.ldr",
+            "title": "Ground floor - Hotel sign top detail"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Cafe table chair.ldr",
+            "title": "Ground floor - Cafe table chair"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Cafe table with umbrella.ldr",
+            "title": "Ground floor - Cafe table with umbrella"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Lamppost.ldr",
+            "title": "Ground floor - Lamppost"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Park bench.ldr",
+            "title": "Ground floor - Park bench"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Ground floor - Rubbish bin.ldr",
+            "title": "Ground floor - Rubbish bin"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor.ldr",
+            "title": "First floor"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Handrail.ldr",
+            "title": "First floor - Handrail"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Handrail outer piece.ldr",
+            "title": "First floor - Handrail outer piece"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Wall element 1.ldr",
+            "title": "First floor - Wall element 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Wall element 2.ldr",
+            "title": "First floor - Wall element 2"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Wall element 3.ldr",
+            "title": "First floor - Wall element 3"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Wall element 4.ldr",
+            "title": "First floor - Wall element 4"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Staircase.ldr",
+            "title": "First floor - Staircase"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Staircase top.ldr",
+            "title": "First floor - Staircase top"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Top window.ldr",
+            "title": "First floor - Top window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - 2x Brick 1x1 Round Tan.ldr",
+            "title": "First floor - 2x Brick 1x1 Round Tan"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Corner window.ldr",
+            "title": "First floor - Corner window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Corner window pillar.ldr",
+            "title": "First floor - Corner window pillar"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Corner window ornament.ldr",
+            "title": "First floor - Corner window ornament"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Corner window base structure above.ldr",
+            "title": "First floor - Corner window base structure above"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - Corner window top structure above.ldr",
+            "title": "First floor - Corner window top structure above"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - First floor - 1x Plate 2x2 + 2x4 Brown.ldr",
+            "title": "First floor - 1x Plate 2x2 + 2x4 Brown"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor.ldr",
+            "title": "Second floor"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Handrail.ldr",
+            "title": "Second floor - Handrail"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Handrail outer piece.ldr",
+            "title": "Second floor - Handrail outer piece"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Handrail column.ldr",
+            "title": "Second floor - Handrail column"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Wall element 1.ldr",
+            "title": "Second floor - Wall element 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof element 1.ldr",
+            "title": "Second floor - Roof element 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof window 1.ldr",
+            "title": "Second floor - Roof window 1"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof window 2.ldr",
+            "title": "Second floor - Roof window 2"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - 1x Plate 1x2 + 1x1 White.ldr",
+            "title": "Second floor - 1x Plate 1x2 + 1x1 White"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Corner window.ldr",
+            "title": "Second floor - Corner window"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Corner window pillar.ldr",
+            "title": "Second floor - Corner window pillar"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Corner Window SNOTdetail right.ldr",
+            "title": "Second floor - Corner Window SNOTdetail right"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Corner Window SNOTdetail left.ldr",
+            "title": "Second floor - Corner Window SNOTdetail left"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - 1x Plate 1x4 + 2x Plate 2x2 Corner.ldr",
+            "title": "Second floor - 1x Plate 1x4 + 2x Plate 2x2 Corner"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof tower.ldr",
+            "title": "Second floor - Roof tower"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof tower base section.ldr",
+            "title": "Second floor - Roof tower base section"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof tower pillar.ldr",
+            "title": "Second floor - Roof tower pillar"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof tower roof element.ldr",
+            "title": "Second floor - Roof tower roof element"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof.ldr",
+            "title": "Second floor - Roof"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof decoration.ldr",
+            "title": "Second floor - Roof decoration"
+          },
+          {
+            "author": "Max Martin Richter [MMR1988]",
+            "ldrawOrg": "Model",
+            "license": "Redistributable under CCAL version 2.0 : see CAreadme.txt",
+            "name": "10182 - Second floor - Roof chimney.ldr",
+            "title": "Second floor - Roof chimney"
+          }
+        ],
+        "instanceCount": 2417,
+        "drawnInstanceCount": 2073,
+        "parts": [
+          {
+            "kind": "bundle",
+            "reference": "3857.dat",
+            "official": "3857.dat",
+            "instances": 2,
+            "partId": "ldraw:3857"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6636.dat",
+            "official": "6636.dat",
+            "instances": 42,
+            "partId": "ldraw:6636"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3070b.dat",
+            "official": "3070b.dat",
+            "instances": 144,
+            "partId": "ldraw:3070b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3069b.dat",
+            "official": "3069b.dat",
+            "instances": 161,
+            "partId": "ldraw:3069b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30136.dat",
+            "official": "30136.dat",
+            "instances": 45,
+            "partId": "ldraw:30136"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3005.dat",
+            "official": "3005.dat",
+            "instances": 50,
+            "partId": "ldraw:3005"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3004.dat",
+            "official": "3004.dat",
+            "instances": 145,
+            "partId": "ldraw:3004"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3010.dat",
+            "official": "3010.dat",
+            "instances": 34,
+            "partId": "ldraw:3010"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2357.dat",
+            "official": "2357.dat",
+            "instances": 22,
+            "partId": "ldraw:2357"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3024.dat",
+            "official": "3024.dat",
+            "instances": 145,
+            "partId": "ldraw:3024"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3623.dat",
+            "official": "3623.dat",
+            "instances": 15,
+            "partId": "ldraw:3623"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3700.dat",
+            "official": "3700.dat",
+            "instances": 4,
+            "partId": "ldraw:3700"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3680.dat",
+            "official": "3680.dat",
+            "instances": 8,
+            "partId": "ldraw:3680"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2780.dat",
+            "official": "2780.dat",
+            "instances": 2,
+            "partId": "ldraw:2780"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2412b.dat",
+            "official": "2412b.dat",
+            "instances": 4,
+            "partId": "ldraw:2412b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2431.dat",
+            "official": "2431.dat",
+            "instances": 30,
+            "partId": "ldraw:2431"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3062b.dat",
+            "official": "3062b.dat",
+            "instances": 59,
+            "partId": "ldraw:3062b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3001.dat",
+            "official": "3001.dat",
+            "instances": 16,
+            "partId": "ldraw:3001"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3003.dat",
+            "official": "3003.dat",
+            "instances": 9,
+            "partId": "ldraw:3003"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3710.dat",
+            "official": "3710.dat",
+            "instances": 49,
+            "partId": "ldraw:3710"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3068b.dat",
+            "official": "3068b.dat",
+            "instances": 47,
+            "partId": "ldraw:3068b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2420.dat",
+            "official": "2420.dat",
+            "instances": 35,
+            "partId": "ldraw:2420"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3023.dat",
+            "official": "3023.dat",
+            "instances": 108,
+            "partId": "ldraw:3023"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2921.dat",
+            "official": "2921.dat",
+            "instances": 4,
+            "partId": "ldraw:2921"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3009.dat",
+            "official": "3009.dat",
+            "instances": 42,
+            "partId": "ldraw:3009"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3008.dat",
+            "official": "3008.dat",
+            "instances": 70,
+            "partId": "ldraw:3008"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6091.dat",
+            "official": "6091.dat",
+            "instances": 62,
+            "partId": "ldraw:6091"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6141.dat",
+            "official": "6141.dat",
+            "instances": 49,
+            "partId": "ldraw:6141"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3020.dat",
+            "official": "3020.dat",
+            "instances": 29,
+            "partId": "ldraw:3020"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6180.dat",
+            "official": "6180.dat",
+            "instances": 1,
+            "partId": "ldraw:6180"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3021.dat",
+            "official": "3021.dat",
+            "instances": 22,
+            "partId": "ldraw:3021"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3679.dat",
+            "official": "3679.dat",
+            "instances": 8,
+            "partId": "ldraw:3679"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3622.dat",
+            "official": "3622.dat",
+            "instances": 25,
+            "partId": "ldraw:3622"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4070.dat",
+            "official": "4070.dat",
+            "instances": 84,
+            "partId": "ldraw:4070"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3002.dat",
+            "official": "3002.dat",
+            "instances": 4,
+            "partId": "ldraw:3002"
+          },
+          {
+            "kind": "bundle",
+            "reference": "73435.dat",
+            "official": "73435.dat",
+            "instances": 1,
+            "partId": "ldraw:73435"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3460.dat",
+            "official": "3460.dat",
+            "instances": 22,
+            "partId": "ldraw:3460"
+          },
+          {
+            "kind": "notInLibrary",
+            "reference": "10182 - ls50.dat",
+            "official": "ls50.dat",
+            "instances": 4,
+            "definedInline": true
+          },
+          {
+            "kind": "notInLibrary",
+            "reference": "10182 - ls51.dat",
+            "official": "ls51.dat",
+            "instances": 340,
+            "definedInline": true
+          },
+          {
+            "kind": "compiled",
+            "reference": "2339.dat",
+            "official": "2339.dat",
+            "instances": 2,
+            "partId": "ldraw:2339",
+            "file": "parts/2339.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2009-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "2339.dat",
+              "title": "Arch 1 x 5 x 4"
+            },
+            "sourceFiles": 7
+          },
+          {
+            "kind": "bundle",
+            "reference": "4599a.dat",
+            "official": "4599a.dat",
+            "instances": 3,
+            "partId": "ldraw:4599a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "43888.dat",
+            "official": "43888.dat",
+            "instances": 4,
+            "partId": "ldraw:43888"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30383.dat",
+            "official": "30383.dat",
+            "instances": 2,
+            "partId": "ldraw:30383"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30179.dat",
+            "official": "30179.dat",
+            "instances": 5,
+            "partId": "ldraw:30179"
+          },
+          {
+            "kind": "bundle",
+            "reference": "57895.dat",
+            "official": "57895.dat",
+            "instances": 5,
+            "partId": "ldraw:57895"
+          },
+          {
+            "kind": "compiled",
+            "reference": "73312.dat",
+            "official": "73312.dat",
+            "instances": 1,
+            "partId": "ldraw:73312",
+            "file": "parts/73312.dat",
+            "header": {
+              "author": "Steffen [Steffen]",
+              "ldrawOrg": "Part Alias UPDATE 2019-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "73312.dat",
+              "title": "=Door 1 x 4 x 5 Right with 6 Panes with TransClear Glass"
+            },
+            "sourceFiles": 28
+          },
+          {
+            "kind": "bundle",
+            "reference": "3666.dat",
+            "official": "3666.dat",
+            "instances": 24,
+            "partId": "ldraw:3666"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4085c.dat",
+            "official": "4085c.dat",
+            "instances": 2,
+            "partId": "ldraw:4085c"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2540.dat",
+            "official": "2540.dat",
+            "instances": 1,
+            "partId": "ldraw:2540"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6231.dat",
+            "official": "6231.dat",
+            "instances": 14,
+            "partId": "ldraw:6231"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3022.dat",
+            "official": "3022.dat",
+            "instances": 11,
+            "partId": "ldraw:3022"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3795.dat",
+            "official": "3795.dat",
+            "instances": 7,
+            "partId": "ldraw:3795"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2456.dat",
+            "official": "2456.dat",
+            "instances": 2,
+            "partId": "ldraw:2456"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3007.dat",
+            "official": "3007.dat",
+            "instances": 1,
+            "partId": "ldraw:3007"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44302.dat",
+            "official": "44302.dat",
+            "instances": 9,
+            "partId": "ldraw:44302"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54200.dat",
+            "official": "54200.dat",
+            "instances": 32,
+            "partId": "ldraw:54200"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3794a.dat",
+            "official": "3794a.dat",
+            "instances": 15,
+            "partId": "ldraw:3794a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4162.dat",
+            "official": "4162.dat",
+            "instances": 9,
+            "partId": "ldraw:4162"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3308.dat",
+            "official": "3308.dat",
+            "instances": 1,
+            "partId": "ldraw:3308"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3899.dat",
+            "official": "3899.dat",
+            "instances": 3,
+            "partId": "ldraw:3899"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3832.dat",
+            "official": "3832.dat",
+            "instances": 8,
+            "partId": "ldraw:3832"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4740.dat",
+            "official": "4740.dat",
+            "instances": 6,
+            "partId": "ldraw:4740"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30374.dat",
+            "official": "30374.dat",
+            "instances": 2,
+            "partId": "ldraw:30374"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4735.dat",
+            "official": "4735.dat",
+            "instances": 2,
+            "partId": "ldraw:4735"
+          },
+          {
+            "kind": "compiled",
+            "reference": "6120.dat",
+            "official": "6120.dat",
+            "instances": 11,
+            "partId": "ldraw:6120",
+            "file": "parts/6120.dat",
+            "header": {
+              "author": "Luis E. Fernandez [lfernand]",
+              "ldrawOrg": "Part UPDATE 2012-03",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "6120.dat",
+              "title": "Minifig Ski 4L with Hinge"
+            },
+            "sourceFiles": 22
+          },
+          {
+            "kind": "bundle",
+            "reference": "3034.dat",
+            "official": "3034.dat",
+            "instances": 11,
+            "partId": "ldraw:3034"
+          },
+          {
+            "kind": "bundle",
+            "reference": "44301.dat",
+            "official": "44301.dat",
+            "instances": 7,
+            "partId": "ldraw:44301"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4477.dat",
+            "official": "4477.dat",
+            "instances": 5,
+            "partId": "ldraw:4477"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6541.dat",
+            "official": "6541.dat",
+            "instances": 2,
+            "partId": "ldraw:6541"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4274.dat",
+            "official": "4274.dat",
+            "instances": 2,
+            "partId": "ldraw:4274"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4032a.dat",
+            "official": "4032a.dat",
+            "instances": 2,
+            "partId": "ldraw:4032a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2039.dat",
+            "official": "2039.dat",
+            "instances": 1,
+            "partId": "ldraw:2039"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626b.dat",
+            "official": "3626b.dat",
+            "instances": 1,
+            "partId": "ldraw:3626b"
+          },
+          {
+            "kind": "compiled",
+            "reference": "3940.dat",
+            "official": "3940.dat",
+            "instances": 2,
+            "partId": "ldraw:3940",
+            "file": "parts/3940.dat",
+            "header": {
+              "author": "Magnus Forsberg [MagFors]",
+              "ldrawOrg": "Part UPDATE 2024-05",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "3940.dat",
+              "title": "~Moved to 3940b"
+            },
+            "sourceFiles": 35
+          },
+          {
+            "kind": "bundle",
+            "reference": "3957a.dat",
+            "official": "3957a.dat",
+            "instances": 2,
+            "partId": "ldraw:3957a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "43898.dat",
+            "official": "43898.dat",
+            "instances": 2,
+            "partId": "ldraw:43898",
+            "file": "parts/43898.dat",
+            "header": {
+              "author": "John Riley [jriley]",
+              "ldrawOrg": "Part UPDATE 2019-02",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "43898.dat",
+              "title": "Dish 3 x 3 Inverted"
+            },
+            "sourceFiles": 19
+          },
+          {
+            "kind": "bundle",
+            "reference": "4719c01.dat",
+            "official": "4719c01.dat",
+            "instances": 1,
+            "partId": "ldraw:4719c01"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2439.dat",
+            "official": "2439.dat",
+            "instances": 1,
+            "partId": "ldraw:2439"
+          },
+          {
+            "kind": "bundle",
+            "reference": "22667.dat",
+            "official": "22667.dat",
+            "instances": 2,
+            "partId": "ldraw:22667"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3029.dat",
+            "official": "3029.dat",
+            "instances": 7,
+            "partId": "ldraw:3029"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3035.dat",
+            "official": "3035.dat",
+            "instances": 2,
+            "partId": "ldraw:3035"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3036.dat",
+            "official": "3036.dat",
+            "instances": 6,
+            "partId": "ldraw:3036"
+          },
+          {
+            "kind": "bundle",
+            "reference": "41539.dat",
+            "official": "41539.dat",
+            "instances": 4,
+            "partId": "ldraw:41539"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3032.dat",
+            "official": "3032.dat",
+            "instances": 3,
+            "partId": "ldraw:3032"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6106.dat",
+            "official": "6106.dat",
+            "instances": 2,
+            "partId": "ldraw:6106"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3006.dat",
+            "official": "3006.dat",
+            "instances": 2,
+            "partId": "ldraw:3006"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30055.dat",
+            "official": "30055.dat",
+            "instances": 2,
+            "partId": "ldraw:30055"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2362b.dat",
+            "official": "2362b.dat",
+            "instances": 20,
+            "partId": "ldraw:2362b"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30134.dat",
+            "official": "30134.dat",
+            "instances": 1,
+            "partId": "ldraw:30134"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30044.dat",
+            "official": "30044.dat",
+            "instances": 10,
+            "partId": "ldraw:30044"
+          },
+          {
+            "kind": "bundle",
+            "reference": "30046.dat",
+            "official": "30046.dat",
+            "instances": 10,
+            "partId": "ldraw:30046"
+          },
+          {
+            "kind": "compiled",
+            "reference": "6182.dat",
+            "official": "6182.dat",
+            "instances": 20,
+            "partId": "ldraw:6182",
+            "file": "parts/6182.dat",
+            "header": {
+              "author": "James Jessiman",
+              "ldrawOrg": "Part UPDATE 2010-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "6182.dat",
+              "title": "Arch 1 x 4 x 2"
+            },
+            "sourceFiles": 8
+          },
+          {
+            "kind": "bundle",
+            "reference": "3665a.dat",
+            "official": "3665a.dat",
+            "instances": 16,
+            "partId": "ldraw:3665a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "32028.dat",
+            "official": "32028.dat",
+            "instances": 6,
+            "partId": "ldraw:32028"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3455.dat",
+            "official": "3455.dat",
+            "instances": 1,
+            "partId": "ldraw:3455"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4460a.dat",
+            "official": "4460a.dat",
+            "instances": 36,
+            "partId": "ldraw:4460a"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3660.dat",
+            "official": "3660.dat",
+            "instances": 6,
+            "partId": "ldraw:3660"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3747a.dat",
+            "official": "3747a.dat",
+            "instances": 4,
+            "partId": "ldraw:3747a"
+          },
+          {
+            "kind": "compiled",
+            "reference": "4132.dat",
+            "official": "4132.dat",
+            "instances": 5,
+            "partId": "ldraw:4132",
+            "file": "parts/4132.dat",
+            "header": {
+              "author": "Paul Easter [pneaster]",
+              "ldrawOrg": "Part UPDATE 2025-09",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4132.dat",
+              "title": "Window 2 x 4 x 3"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "compiled",
+            "reference": "4133.dat",
+            "official": "4133.dat",
+            "instances": 5,
+            "partId": "ldraw:4133",
+            "file": "parts/4133.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2009-02",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "4133.dat",
+              "title": "Window 2 x 4 x 3 Pane"
+            },
+            "sourceFiles": 11
+          },
+          {
+            "kind": "bundle",
+            "reference": "33320.dat",
+            "official": "33320.dat",
+            "instances": 5,
+            "partId": "ldraw:33320"
+          },
+          {
+            "kind": "compiled",
+            "reference": "50745.dat",
+            "official": "50745.dat",
+            "instances": 5,
+            "partId": "ldraw:50745",
+            "file": "parts/50745.dat",
+            "header": {
+              "author": "Bernd Broich [bbroich]",
+              "ldrawOrg": "Part UPDATE 2018-01",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "50745.dat",
+              "title": "Car Mudguard 4 x 2.5 x 2"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "bundle",
+            "reference": "3307.dat",
+            "official": "3307.dat",
+            "instances": 1,
+            "partId": "ldraw:3307"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3958.dat",
+            "official": "3958.dat",
+            "instances": 2,
+            "partId": "ldraw:3958"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4733.dat",
+            "official": "4733.dat",
+            "instances": 2,
+            "partId": "ldraw:4733"
+          },
+          {
+            "kind": "compiled",
+            "reference": "2546.dat",
+            "official": "2546.dat",
+            "instances": 4,
+            "partId": "ldraw:2546",
+            "file": "parts/2546.dat",
+            "header": {
+              "author": "Dennis Osborn [DennisOsborn]",
+              "ldrawOrg": "Part UPDATE 2025-10",
+              "license": "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt",
+              "name": "2546.dat",
+              "title": "Animal Bird Parrot"
+            },
+            "sourceFiles": 10
+          },
+          {
+            "kind": "bundle",
+            "reference": "3937.dat",
+            "official": "3937.dat",
+            "instances": 4,
+            "partId": "ldraw:3937"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54383.dat",
+            "official": "54383.dat",
+            "instances": 4,
+            "partId": "ldraw:54383"
+          },
+          {
+            "kind": "bundle",
+            "reference": "54384.dat",
+            "official": "54384.dat",
+            "instances": 4,
+            "partId": "ldraw:54384"
+          },
+          {
+            "kind": "bundle",
+            "reference": "6134.dat",
+            "official": "6134.dat",
+            "instances": 4,
+            "partId": "ldraw:6134"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3028.dat",
+            "official": "3028.dat",
+            "instances": 1,
+            "partId": "ldraw:3028"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3030.dat",
+            "official": "3030.dat",
+            "instances": 6,
+            "partId": "ldraw:3030"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3633.dat",
+            "official": "3633.dat",
+            "instances": 6,
+            "partId": "ldraw:3633"
+          },
+          {
+            "kind": "bundle",
+            "reference": "2877.dat",
+            "official": "2877.dat",
+            "instances": 4,
+            "partId": "ldraw:2877"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3901.dat",
+            "official": "3901.dat",
+            "instances": 1,
+            "partId": "ldraw:3901"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3626bp01.dat",
+            "official": "3626bp01.dat",
+            "instances": 3,
+            "partId": "ldraw:3626bp01"
+          },
+          {
+            "kind": "compiled",
+            "reference": "973p8j.dat",
+            "official": "973p8j.dat",
+            "instances": 1,
+            "partId": "ldraw:973p8j",
+            "file": "parts/973p8j.dat",
+            "header": {
+              "author": "Willy Tschager [Holly-Wood]",
+              "ldrawOrg": "Part UPDATE 2022-04",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "973p8j.dat",
+              "title": "Minifig Torso with Town Vest with Pockets and Striped Tie Pattern"
+            },
+            "sourceFiles": 13
+          },
+          {
+            "kind": "bundle",
+            "reference": "3815.dat",
+            "official": "3815.dat",
+            "instances": 3,
+            "partId": "ldraw:3815"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3818.dat",
+            "official": "3818.dat",
+            "instances": 3,
+            "partId": "ldraw:3818"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3819.dat",
+            "official": "3819.dat",
+            "instances": 3,
+            "partId": "ldraw:3819"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3820.dat",
+            "official": "3820.dat",
+            "instances": 6,
+            "partId": "ldraw:3820"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3836.dat",
+            "official": "3836.dat",
+            "instances": 1,
+            "partId": "ldraw:3836"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3816.dat",
+            "official": "3816.dat",
+            "instances": 3,
+            "partId": "ldraw:3816"
+          },
+          {
+            "kind": "bundle",
+            "reference": "3817.dat",
+            "official": "3817.dat",
+            "instances": 3,
+            "partId": "ldraw:3817"
+          },
+          {
+            "kind": "bundle",
+            "reference": "4530.dat",
+            "official": "4530.dat",
+            "instances": 1,
+            "partId": "ldraw:4530"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973p7h.dat",
+            "official": "973p7h.dat",
+            "instances": 1,
+            "partId": "ldraw:973p7h"
+          },
+          {
+            "kind": "bundle",
+            "reference": "973.dat",
+            "official": "973.dat",
+            "instances": 1,
+            "partId": "ldraw:973"
+          },
+          {
+            "kind": "compiled",
+            "reference": "40251.dat",
+            "official": "40251.dat",
+            "instances": 1,
+            "partId": "ldraw:40251",
+            "file": "parts/40251.dat",
+            "header": {
+              "author": "Philippe Hurbain [Philo]",
+              "ldrawOrg": "Part UPDATE 2012-03",
+              "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+              "name": "40251.dat",
+              "title": "Minifig Hair Long Wavy"
+            },
+            "sourceFiles": 11
+          }
+        ],
+        "inlineParts": [
+          {
+            "inline": "10182 - ls50.dat",
+            "official": "ls50.dat"
+          },
+          {
+            "inline": "10182 - ls51.dat",
+            "official": "ls51.dat"
+          }
+        ],
+        "looseGeometry": [],
+        "unknownColors": [],
+        "directColors": [],
+        "compileRounds": 26,
+        "fetched": {
+          "requests": 200,
+          "found": 109,
+          "notFound": 91,
+          "bytes": 455058
+        },
+        "timings": {
+          "bakeMs": 15.599999999627471,
+          "resolveMs": 1588.7000000011176,
+          "totalMs": 1604.300000000745
+        },
+        "importMs": 1991.7000000011176,
+        "sceneMs": 1201.2999999988824
+      }
+    ]
+  }
+}
