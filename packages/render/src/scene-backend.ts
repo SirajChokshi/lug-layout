@@ -85,6 +85,16 @@ export interface EdgeMarker {
   readonly kind: MarkerKind;
 }
 
+export type TrackEndKind = "open" | "gap" | "target";
+
+export interface TrackEndMarker {
+  readonly xLdu: number;
+  readonly yLdu: number;
+  readonly zLdu: number;
+  readonly headingRadians: number;
+  readonly kind: TrackEndKind;
+}
+
 export const RAY_FLOATS = 6;
 export const CAMERA_FOV_DEGREES = 40;
 
@@ -105,6 +115,7 @@ export interface ISceneBackend {
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
   setSelectionBox(box: WorldBox | null): void;
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
+  setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void;
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;

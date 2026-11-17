@@ -3,6 +3,7 @@ import {
   BoxGeometry,
   BufferGeometry as LineGeometry,
   Color,
+  ConeGeometry,
   Float32BufferAttribute,
   DirectionalLight,
   EdgesGeometry,
@@ -39,6 +40,8 @@ import {
   type RebaseEvent,
   type SceneBackendConfig,
   type StudInstances,
+  type TrackEndKind,
+  type TrackEndMarker,
   type WorldBox,
 } from "../scene-backend.ts";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
@@ -69,6 +72,17 @@ const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
   open: 0xffb000,
   mismatch: 0xe0202a,
 };
+const TRACK_END_COLORS: Readonly<Record<TrackEndKind, number>> = {
+  open: 0xffb000,
+  gap: 0xe0202a,
+  target: 0x1fbf4a,
+};
+const TRACK_END_ARROW_RADIUS_LDU = 26;
+const TRACK_END_ARROW_LENGTH_LDU = 70;
+const TRACK_END_ARROW_LIFT_LDU = 44;
+const TRACK_END_ARROW_SEGMENTS = 12;
+const TRACK_END_POST_WIDTH_LDU = 8;
+const TRACK_END_POST_HEIGHT_LDU = 96;
 const FLOOR_COLOR = 0xd8d2c8;
 const INACTIVE_FLOOR_COLOR = 0xe6e2dc;
 const ROOM_OUTLINE_COLOR = 0x3a3a3a;
@@ -105,6 +119,27 @@ function gridLines(
     out.push(table.minX - anchorX, y, z - anchorZ, table.maxX - anchorX, y, z - anchorZ);
   }
   return out;
+}
+
+function trackEndArrowGeometry(): ConeGeometry {
+  const cone = new ConeGeometry(
+    TRACK_END_ARROW_RADIUS_LDU,
+    TRACK_END_ARROW_LENGTH_LDU,
+    TRACK_END_ARROW_SEGMENTS,
+  );
+  cone.rotateZ(-Math.PI / 2);
+  cone.translate(TRACK_END_ARROW_LENGTH_LDU / 2, TRACK_END_ARROW_LIFT_LDU, 0);
+  return cone;
+}
+
+function trackEndPostGeometry(): BoxGeometry {
+  const post = new BoxGeometry(
+    TRACK_END_POST_WIDTH_LDU,
+    TRACK_END_POST_HEIGHT_LDU,
+    TRACK_END_POST_WIDTH_LDU,
+  );
+  post.translate(0, TRACK_END_POST_HEIGHT_LDU / 2, 0);
+  return post;
 }
 
 function lineSegments(positions: number[], color: number): LineSegments {
@@ -319,6 +354,15 @@ export class ThreeSceneBackend implements ISceneBackend {
   };
   private readonly markerGroup = new Group();
   private markers: ReadonlyArray<EdgeMarker> = [];
+  private readonly trackEndArrow = trackEndArrowGeometry();
+  private readonly trackEndPost = trackEndPostGeometry();
+  private readonly trackEndMaterials: Readonly<Record<TrackEndKind, MeshBasicNodeMaterial>> = {
+    open: new MeshBasicNodeMaterial({ color: TRACK_END_COLORS.open, depthTest: false }),
+    gap: new MeshBasicNodeMaterial({ color: TRACK_END_COLORS.gap, depthTest: false }),
+    target: new MeshBasicNodeMaterial({ color: TRACK_END_COLORS.target, depthTest: false }),
+  };
+  private readonly trackEndGroup = new Group();
+  private trackEnds: ReadonlyArray<TrackEndMarker> = [];
   private planObjects: Anchored[] = [];
   private issueObjects: Anchored[] = [];
   private readonly issueEdges = new EdgesGeometry(new BoxGeometry(1, 1, 1));
@@ -371,6 +415,8 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.scene.add(this.selection);
     this.markerGroup.matrixAutoUpdate = false;
     this.scene.add(this.markerGroup);
+    this.trackEndGroup.matrixAutoUpdate = false;
+    this.scene.add(this.trackEndGroup);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -616,6 +662,41 @@ export class ThreeSceneBackend implements ISceneBackend {
       mesh.updateMatrix();
     }
     this.markerGroup.updateMatrixWorld(true);
+  }
+
+  setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
+    this.trackEndGroup.clear();
+    this.trackEnds = markers;
+    for (const marker of markers) {
+      const material = this.trackEndMaterials[marker.kind];
+      const arrow = new Group();
+      arrow.matrixAutoUpdate = false;
+      arrow.renderOrder = 3;
+      const head = new Mesh(this.trackEndArrow, material);
+      const post = new Mesh(this.trackEndPost, material);
+      head.renderOrder = 3;
+      post.renderOrder = 3;
+      arrow.add(head, post);
+      this.trackEndGroup.add(arrow);
+    }
+    this.positionTrackEnds();
+  }
+
+  private positionTrackEnds(): void {
+    const arrows = this.trackEndGroup.children;
+    for (let i = 0; i < arrows.length; i++) {
+      const arrow = arrows[i];
+      const marker = this.trackEnds[i];
+      if (!arrow || !marker) continue;
+      arrow.position.set(
+        marker.xLdu - this.renderOriginX,
+        marker.yLdu,
+        marker.zLdu - this.renderOriginZ,
+      );
+      arrow.rotation.set(0, -marker.headingRadians, 0);
+      arrow.updateMatrix();
+    }
+    this.trackEndGroup.updateMatrixWorld(true);
   }
 
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
@@ -976,6 +1057,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.selection.updateMatrixWorld(true);
     for (const record of this.vehicles.values()) this.placeVehicle(record);
     this.positionMarkers();
+    this.positionTrackEnds();
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
     this.rebases.push({
