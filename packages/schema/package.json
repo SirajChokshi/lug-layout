@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./bundle": "./src/bundle/index.ts",
+    "./bundle-pointer": "./src/bundle-pointer/index.ts",
     "./catalog-api": "./src/catalog-api/index.ts",
     "./decode": "./src/decode/index.ts",
     "./world": "./src/world/index.ts"

@@ -40,7 +40,7 @@ function servesRemoteBundle(env: Record<string, string>): boolean {
   }
   if (remote && !env["VITE_BUNDLE_MANIFEST_FILE"]) {
     throw new Error(
-      "VITE_BUNDLE_MANIFEST_FILE must name the published manifest: node tools/asset-pipeline/src/cli.ts await-served",
+      "VITE_BUNDLE_MANIFEST_FILE must name a published manifest for when current/latest.json can't be read: manifest_file in infra/cloudflare/bundle-fallback.json",
     );
   }
   return remote;

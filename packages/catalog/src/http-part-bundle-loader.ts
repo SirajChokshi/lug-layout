@@ -9,6 +9,7 @@ import {
   type BundleManifest,
   type ManifestPart,
 } from "@brr/schema/bundle";
+import { BUNDLE_POINTER_FILE, BundlePointer } from "@brr/schema/bundle-pointer";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
 import type * as v from "valibot";
@@ -42,6 +43,12 @@ import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.t
 const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
 const MAX_CONCURRENT_FETCHES = 16;
+const POINTER_ATTEMPTS = 2;
+
+interface ResolvedManifest {
+  readonly file: string;
+  readonly fromPointer: boolean;
+}
 
 function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   if (lattice === null) return null;
@@ -96,11 +103,58 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     Promise<ReadonlyArray<StudPrimitiveAsset>>
   >();
   private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
+  private resolvedManifest: Promise<ResolvedManifest> | undefined;
 
   constructor(
     @inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher,
-    @inject(BUNDLE_MANIFEST_FILE) private readonly manifestFile: string,
+    @inject(BUNDLE_MANIFEST_FILE) private readonly fallbackManifestFile: string,
   ) {}
+
+  private manifestFile(): Promise<ResolvedManifest> {
+    this.resolvedManifest ??= this.resolveManifestFile();
+    return this.resolvedManifest;
+  }
+
+  private async resolveManifestFile(): Promise<ResolvedManifest> {
+    for (let attempt = 0; attempt < POINTER_ATTEMPTS; attempt++) {
+      const pointed = await this.pointer();
+      if (pointed !== undefined) return { file: pointed, fromPointer: true };
+    }
+    return { file: this.fallbackManifestFile, fromPointer: false };
+  }
+
+  private async manifestIndex(lod: BundleLod): Promise<v.InferOutput<typeof BundleIndex>> {
+    const { file, fromPointer } = await this.manifestFile();
+    const path = `${lod}/${file}`;
+    try {
+      return await this.json(BundleIndex, path);
+    } catch (error) {
+      const source = fromPointer
+        ? `the manifest ${BUNDLE_POINTER_FILE} names`
+        : `${BUNDLE_POINTER_FILE} could not be read and the fallback manifest`;
+      const cause = error instanceof Error ? error.message : String(error);
+      throw new Error(`The part bundle is unreachable: ${source}, ${path}, failed: ${cause}`, {
+        cause: error,
+      });
+    }
+  }
+
+  private async pointer(): Promise<string | undefined> {
+    let text: string;
+    try {
+      text = await this.text(BUNDLE_POINTER_FILE);
+    } catch {
+      return undefined;
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return undefined;
+    }
+    const pointer = decode(BundlePointer, json, BUNDLE_POINTER_FILE);
+    return pointer.ok ? pointer.value.manifestFile : undefined;
+  }
 
   private bytes(path: string): Promise<ArrayBuffer> {
     return this.pool.run(() => this.fetcher.bytes(path));
@@ -118,7 +172,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   private async manifest(lod: BundleLod): Promise<BundleManifest> {
-    const index = await this.json(BundleIndex, `${lod}/${this.manifestFile}`);
+    const index = await this.manifestIndex(lod);
     const [{ parts }, { credits }] = await Promise.all([
       this.json(PartTableFile, `${lod}/${index.partTable.file}`),
       this.json(CreditTableFile, `${lod}/${index.creditTable.file}`),

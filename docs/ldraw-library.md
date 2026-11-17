@@ -26,7 +26,7 @@ Every object is stored with `Cache-Control: public, max-age=31536000, immutable`
 
 ## Switching deployed builds from GitHub to R2
 
-`public_base_url` in `infra/cloudflare/ldraw-library.json` is the switch. Merging changes to the bucket, the publisher or the workflow never breaks Vercel Production or previews, whether or not the owner has applied, published or approved anything yet.
+`public_base_url` in `infra/cloudflare/ldraw-library.json` is the switch. Merging changes to the bucket, the publisher or the workflow never breaks Vercel Production or previews while it is `null`, whether or not the owner has applied, published or approved anything yet.
 
 **While `public_base_url` is `null`:** deployed builds read the library from GitHub raw, exactly as before this bucket existed.
 - `vercel-build.sh` leaves `VITE_LDRAW_LIBRARY_BASE_URL` unset and logs `LDraw library: … has no public_base_url yet, so this build reads library files from GitHub raw`.
@@ -37,10 +37,7 @@ Every object is stored with `Cache-Control: public, max-age=31536000, immutable`
 **Once `public_base_url` is committed:** deployed builds read only R2, and GitHub is the local-dev fallback from then on.
 - `vercel-build.sh` exports the URL, unless Vercel sets `VITE_LDRAW_LIBRARY_BASE_URL` itself, in which case that value wins.
 - `vite.config.ts` refuses a Vercel build without an absolute `VITE_LDRAW_LIBRARY_BASE_URL`, so a deployment can't fall back to GitHub by accident.
-- Once the part bundle is served, `vercel-build.sh` runs `library/cli.ts served`, which HEADs the pinned library's index:
-  - **Served:** the build proceeds.
-  - **Absent** (the index answers 404, for example after a merge that re-pins the library and before its publish is approved): Production fails, and the previous deployment keeps serving. A preview deploys only `preview-skipped.html` and logs `Preview skipped: the pinned LDraw library is not published …`, the same way a preview whose part bundle isn't published is skipped.
-  - **Any other answer, or an unreachable bucket:** the build fails.
+- The Vercel build doesn't check that the pinned library is published. After a merge that re-pins the library, imports that need a library file fail until its publish is approved. `library/cli.ts served` HEADs the pinned library's index to check it by hand.
 
 Commit the URL only after the library is published and `verify-served` passes against it (*Setup*). Going back to GitHub means setting `public_base_url` to `null` again.
 
