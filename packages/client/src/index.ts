@@ -160,4 +160,9 @@ export {
   type KeyInput,
   type KeyPlatform,
 } from "./commands/key-chord.ts";
-export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
+export type {
+  ClosureState,
+  TrackDragView,
+  TrackEndView,
+  TrackGapView,
+} from "./edit/track-drawing.ts";

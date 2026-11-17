@@ -18,7 +18,7 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
 } from "@brr/domain";
-import { PLATE_LDU, STUD_LDU, chunkOf } from "@brr/math";
+import { PLATE_LDU, STUD_LDU, ZETA16_ORDER, chunkOf } from "@brr/math";
 import {
   CAMERA_FOV_DEGREES,
   RAY_FLOATS,
@@ -35,7 +35,12 @@ import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
-import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
+import {
+  TRACK_SYSTEM,
+  TrackDrawing,
+  type TrackDragView,
+  type TrackGapView,
+} from "./track-drawing.ts";
 import {
   PlacedChunks,
   type PlacedModel,
@@ -188,6 +193,7 @@ export interface TrackView {
   readonly openEnds: number;
   readonly joins: number;
   readonly coincidentEndIssues: number;
+  readonly gaps: ReadonlyArray<TrackGapView>;
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
   readonly solve: TrackSolveStats | null;
@@ -281,8 +287,7 @@ const EDITOR_LOD: BundleLod = "standard";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
-const END_MARKER_HALF_LDU = 30;
-const END_MARKER_HEIGHT_LDU = 40;
+const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const P95 = 0.95;
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
@@ -461,6 +466,7 @@ export class Editor implements IEditor {
   private hitZ = 0;
   private track: TrackDrawing | null = null;
   private lastTrackCommit: TrackCommitResult | null = null;
+  private trackEndTarget: number | null = null;
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -721,6 +727,7 @@ export class Editor implements IEditor {
       openEnds: track.openEnds().length,
       joins: track.joinedPairs(),
       coincidentEndIssues: track.coincidentEndIssues(),
+      gaps: track.gaps(),
       drag: track.dragView(),
       lastCommit: this.lastTrackCommit,
       solve:
@@ -735,19 +742,24 @@ export class Editor implements IEditor {
     };
   }
 
-  private showEndMarker(end: { readonly xLdu: number; readonly zLdu: number } | null): void {
-    this.backend.setSelectionBox(
-      end
-        ? {
-            minX: end.xLdu - END_MARKER_HALF_LDU,
-            minY: 0,
-            minZ: end.zLdu - END_MARKER_HALF_LDU,
-            maxX: end.xLdu + END_MARKER_HALF_LDU,
-            maxY: END_MARKER_HEIGHT_LDU,
-            maxZ: end.zLdu + END_MARKER_HALF_LDU,
-          }
-        : null,
+  private showTrackEnds(target: number | null): void {
+    const track = this.track;
+    if (!track) return;
+    this.trackEndTarget = target;
+    const gapped = track.gappedEnds();
+    this.backend.setTrackEnds(
+      track.openEnds().map((end, index) => ({
+        xLdu: end.xLdu,
+        yLdu: 0,
+        zLdu: end.zLdu,
+        headingRadians: end.heading * TRACK_HEADING_RADIANS,
+        kind: index === target ? "target" : gapped.has(index) ? "gap" : "open",
+      })),
     );
+  }
+
+  private targetTrackEnd(target: number | null): void {
+    if (target !== this.trackEndTarget) this.showTrackEnds(target);
   }
 
   private showTrackGhost(track: TrackDrawing): void {
@@ -770,7 +782,7 @@ export class Editor implements IEditor {
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
     this.showTrackGhost(track);
-    this.showEndMarker(track.dragTarget());
+    this.targetTrackEnd(track.dragTargetEnd());
     this.update({ track: this.trackView() });
   }
 
@@ -780,7 +792,7 @@ export class Editor implements IEditor {
     if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
     const commit = track.endDrag();
     this.backend.setGhost(null);
-    this.showEndMarker(null);
+    this.showTrackEnds(null);
     let instances = 0;
     let studs = 0;
     for (const key of commit.chunks) {
@@ -820,7 +832,7 @@ export class Editor implements IEditor {
     if (this.state.mode === "track") {
       this.track?.cancelDrag();
       this.backend.setGhost(null);
-      this.showEndMarker(null);
+      this.targetTrackEnd(null);
       this.update({ mode: "select", activeItem: null, track: this.trackView() });
       if (id === null) return;
     }
@@ -893,8 +905,7 @@ export class Editor implements IEditor {
     const snap = this.snapGhostToRoad();
     const track = this.track;
     if (this.state.mode === "track" && track && !track.dragView()) {
-      const end = this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null;
-      this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
+      this.targetTrackEnd(this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null);
     }
     this.placeGhost();
     this.update({ hover: this.hovering ? { x: this.hoverX, z: this.hoverZ } : null, snap });

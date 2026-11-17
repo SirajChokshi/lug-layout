@@ -2,6 +2,7 @@ import type { PartAsset } from "@brr/catalog";
 import type { TrackCatalog, TrackPartFrame, TrackPiece } from "@brr/schema/bundle";
 import {
   drawingKit,
+  endGaps,
   layMoves,
   runMoves,
   solveClosure,
@@ -10,6 +11,8 @@ import {
   TrackGraph,
   TrackLayout,
   type DrawingKit,
+  type EndGap,
+  type TrackEnd,
   type TrackMove,
   type TrackPieceDef,
   type TrackPieceSpec,
@@ -21,6 +24,7 @@ import {
   chunkKey,
   chunkOf,
   normalizeHeading16,
+  POSE16_IDENTITY,
   pose16,
   pose16Equals,
   zeta16,
@@ -86,6 +90,13 @@ export interface TrackEndView {
   readonly heading: number;
 }
 
+export interface TrackGapView {
+  readonly a: TrackEndView;
+  readonly b: TrackEndView;
+  readonly gapStuds: number;
+  readonly headingErrorDegrees: number;
+}
+
 interface Drag {
   readonly anchorX: number;
   readonly anchorZ: number;
@@ -102,6 +113,11 @@ interface Drag {
 interface Placed {
   readonly part: KitPart;
   readonly placement: Pose16;
+}
+
+function endView(end: Pose16): TrackEndView {
+  const studs = zeta16ToStuds(end.position);
+  return { xLdu: studs.x * STUD_LDU, zLdu: studs.z * STUD_LDU, heading: end.heading };
 }
 
 function pieceSpec(piece: TrackPiece): TrackPieceSpec {
@@ -230,6 +246,7 @@ export class TrackDrawing {
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
+  private gapList: ReadonlyArray<EndGap> = [];
   private drag: Drag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -303,10 +320,20 @@ export class TrackDrawing {
   }
 
   openEnds(): ReadonlyArray<TrackEndView> {
-    return this.ends.map((end) => {
-      const studs = zeta16ToStuds(end.position);
-      return { xLdu: studs.x * STUD_LDU, zLdu: studs.z * STUD_LDU, heading: end.heading };
-    });
+    return this.ends.map(endView);
+  }
+
+  gaps(): ReadonlyArray<TrackGapView> {
+    return this.gapList.map((gap) => ({
+      a: endView(this.ends[gap.a] ?? POSE16_IDENTITY),
+      b: endView(this.ends[gap.b] ?? POSE16_IDENTITY),
+      gapStuds: gap.gapLdu / STUD_LDU,
+      headingErrorDegrees: (gap.headingErrorSteps * 360) / ZETA16_ORDER,
+    }));
+  }
+
+  gappedEnds(): ReadonlySet<number> {
+    return new Set(this.gapList.flatMap((gap) => [gap.a, gap.b]));
   }
 
   joinedPairs(): number {
@@ -429,10 +456,8 @@ export class TrackDrawing {
     };
   }
 
-  dragTarget(): TrackEndView | null {
-    const target = this.drag?.target;
-    if (target === null || target === undefined) return null;
-    return this.openEnds()[target] ?? null;
+  dragTargetEnd(): number | null {
+    return this.drag?.target ?? null;
   }
 
   ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
@@ -522,13 +547,17 @@ export class TrackDrawing {
 
   private recomputeEnds(): void {
     this.graph = new TrackGraph(this.layout);
-    const ends: Pose16[] = [];
+    const ends: TrackEnd[] = [];
     for (const end of this.graph.openEnds) {
       const placement = this.graph.endPlacement[end] ?? 0;
       const connector = this.graph.endConnector[end] ?? 0;
-      ends.push(this.layout.connectorPose(placement, connector));
+      ends.push({
+        pose: this.layout.connectorPose(placement, connector),
+        yPlates: this.layout.yPlates(placement),
+      });
     }
-    this.ends = ends;
+    this.ends = ends.map((end) => end.pose);
+    this.gapList = endGaps(ends);
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {

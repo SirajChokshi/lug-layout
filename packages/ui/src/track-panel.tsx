@@ -1,6 +1,18 @@
-import type { EditorSnapshot, TrackDragView, TrackView } from "@brr/client";
+import type { EditorSnapshot, TrackDragView, TrackGapView, TrackView } from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const LISTED_GAPS = 8;
+
+function gapText(gap: TrackGapView): string {
+  const where = `at ${integer.format(gap.a.xLdu)}, ${integer.format(gap.a.zLdu)} LDU`;
+  const distance =
+    gap.gapStuds === 0 ? "on the same spot" : `${gap.gapStuds.toFixed(2)} studs apart`;
+  const angle =
+    gap.headingErrorDegrees === 0
+      ? "facing each other"
+      : `${Math.abs(gap.headingErrorDegrees)}° out of line`;
+  return `Two open ends ${distance}, ${angle}, ${where}. They don't join exactly.`;
+}
 
 function closureText(drag: TrackDragView): string {
   switch (drag.closure) {
@@ -61,6 +73,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
     ["Exact joins", integer.format(track.joins)],
     ["Open ends", integer.format(track.openEnds)],
     ["Coincident ends not joined", integer.format(track.coincidentEndIssues)],
+    ["Near-miss gaps", integer.format(track.gaps.length)],
     ["Last release", commitText(track)],
   ];
   if (track.drag) rows.push(...dragRows(track.drag));
@@ -79,12 +92,14 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-joins={track.joins}
       data-last-commit={track.lastCommit ?? ""}
       data-closure={track.drag?.closure ?? ""}
+      data-gaps={track.gaps.length}
     >
       <h2>Track</h2>
       {snapshot.mode === "track" && (
         <p className="toolbar-hint">
           Drag from an open end (or from empty ground) to lay track. Release over another open end
-          to join it exactly.
+          to join it exactly. Amber arrows mark open ends; red arrows mark two ends that nearly meet
+          but don't join.
         </p>
       )}
       <dl>
@@ -95,6 +110,18 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
           </div>
         ))}
       </dl>
+      {track.gaps.length > 0 && (
+        <ul className="track-gaps" aria-label="Near-miss gaps">
+          {track.gaps.slice(0, LISTED_GAPS).map((gap) => (
+            <li
+              key={`${gap.a.xLdu},${gap.a.zLdu},${gap.b.xLdu},${gap.b.zLdu}`}
+              className="mismatch"
+            >
+              {gapText(gap)}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
