@@ -43,7 +43,6 @@ import {
   type GraphicsApi,
   type ISceneBackend,
   type SnapTarget,
-  type SnapTargetKind,
   type WorldBox,
 } from "@brr/render";
 import { inject, injectable } from "inversify";
@@ -375,8 +374,6 @@ const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
 const END_MARKER_HALF_LDU = 30;
 const TRACK_SNAP_RADIUS_LDU = 3 * STUD_LDU;
 const END_MARKER_HEIGHT_LDU = 40;
-const END_CANDIDATE_HALF_LDU = 30;
-const END_CANDIDATE_HEIGHT_LDU = 12;
 const SEAM_HEIGHT_LDU = 20;
 const SEAM_HALF_WIDTH_LDU = 6;
 const P95 = 0.95;
@@ -503,18 +500,14 @@ interface FrameTimes {
   readonly presentedMs: number;
 }
 
-function endBox(
-  end: { readonly xLdu: number; readonly zLdu: number },
-  half: number,
-  height: number,
-): WorldBox {
+function endBox(end: { readonly xLdu: number; readonly zLdu: number }): WorldBox {
   return {
-    minX: end.xLdu - half,
+    minX: end.xLdu - END_MARKER_HALF_LDU,
     minY: 0,
-    minZ: end.zLdu - half,
-    maxX: end.xLdu + half,
-    maxY: height,
-    maxZ: end.zLdu + half,
+    minZ: end.zLdu - END_MARKER_HALF_LDU,
+    maxX: end.xLdu + END_MARKER_HALF_LDU,
+    maxY: END_MARKER_HEIGHT_LDU,
+    maxZ: end.zLdu + END_MARKER_HALF_LDU,
   };
 }
 
@@ -936,23 +929,19 @@ export class Editor implements IEditor {
     };
   }
 
-  private showEndMarker(
-    end: { readonly xLdu: number; readonly zLdu: number } | null,
-    kind: SnapTargetKind = "locked",
-  ): void {
-    const track = this.track;
-    const targets: SnapTarget[] = [];
-    if (this.state.mode === "track" && track) {
-      for (const open of track.openEnds()) {
-        if (end && open.xLdu === end.xLdu && open.zLdu === end.zLdu) continue;
-        targets.push({
-          box: endBox(open, END_CANDIDATE_HALF_LDU, END_CANDIDATE_HEIGHT_LDU),
-          kind: "candidate",
-        });
-      }
-    }
-    if (end) targets.push({ box: endBox(end, END_MARKER_HALF_LDU, END_MARKER_HEIGHT_LDU), kind });
-    this.backend.setSnapTargets(targets);
+  private showEndMarker(end: { readonly xLdu: number; readonly zLdu: number } | null): void {
+    this.backend.setSelectionBox(
+      end
+        ? {
+            minX: end.xLdu - END_MARKER_HALF_LDU,
+            minY: 0,
+            minZ: end.zLdu - END_MARKER_HALF_LDU,
+            maxX: end.xLdu + END_MARKER_HALF_LDU,
+            maxY: END_MARKER_HEIGHT_LDU,
+            maxZ: end.zLdu + END_MARKER_HALF_LDU,
+          }
+        : null,
+    );
   }
 
   private showGhostFeedback(feedback: GhostFeedbackView | null): void {
@@ -982,7 +971,7 @@ export class Editor implements IEditor {
     track.moveDrag(this.hitX, this.hitZ);
     this.showTrackGhost(track);
     const feedback = trackGhostFeedback(track.dragView());
-    this.showEndMarker(track.dragTarget(), feedback?.tone === "blocked" ? "blocked" : "locked");
+    this.showEndMarker(track.dragTarget());
     this.showRefusalCells(track.dragView()?.blocked?.missing ?? null);
     this.showGhostFeedback(feedback);
     this.update({ track: this.trackView() });
@@ -994,6 +983,7 @@ export class Editor implements IEditor {
     if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
     const commit = track.endDrag();
     this.backend.setGhost(null);
+    this.showEndMarker(null);
     this.showGhostFeedback(null);
     let instances = 0;
     let studs = 0;
@@ -1025,7 +1015,6 @@ export class Editor implements IEditor {
     this.showRefusalCells(commit.blocked?.missing ?? null);
     if (commit.blocked) this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
     this.update({ track: this.trackView() });
-    this.showEndMarker(null);
   }
 
   chooseItem(id: string | null): void {
@@ -1036,15 +1025,14 @@ export class Editor implements IEditor {
       this.showGhostFeedback(null);
       this.select(null);
       this.update({ mode: "track", activeItem: TRACK_ITEM_ID });
-      this.showEndMarker(null);
       return;
     }
     if (this.state.mode === "track") {
       this.track?.cancelDrag();
       this.selectedTrack = null;
       this.backend.setGhost(null);
-      this.update({ mode: "select", activeItem: null, track: this.trackView() });
       this.showEndMarker(null);
+      this.update({ mode: "select", activeItem: null, track: this.trackView() });
       if (id === null) return;
     }
     if (id === null && !this.active) {
@@ -1235,11 +1223,7 @@ export class Editor implements IEditor {
       if (!joined) continue;
       const at = zeta16ToStuds(target.position);
       targets.push({
-        box: endBox(
-          { xLdu: at.x * STUD_LDU, zLdu: at.z * STUD_LDU },
-          END_MARKER_HALF_LDU,
-          END_MARKER_HEIGHT_LDU,
-        ),
+        box: endBox({ xLdu: at.x * STUD_LDU, zLdu: at.z * STUD_LDU }),
         kind: "locked",
       });
     }
