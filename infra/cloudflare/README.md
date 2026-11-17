@@ -22,7 +22,7 @@ Nothing secret is committed. `*.tfvars`, `backend.hcl`, `.terraform/` and state 
    - Account · **Workers R2 Storage · Edit** (the release bucket)
    - Zone · **Workers Routes · Edit**, scoped to the zone, only if you set `route_pattern`
 
-   *Workers R2 Storage · Edit* is account-wide, so this token can also reach the state bucket. Keep it out of CI and out of the loader.
+   *Workers R2 Storage · Edit* is account-wide, so this token can also reach the state bucket. Keep it out of the loader. In GitHub Actions only the apply job sees it, through the protected `production` environment; the `check` job and PR plans never do.
 2. **Loader credentials**, for `load-release --remote`:
    - `CLOUDFLARE_API_TOKEN`: a custom API token with only Account · **D1 · Edit**.
    - `CLOUDFLARE_R2_API_TOKEN`: an R2 API token (*R2 → Manage API tokens*) with **Object Read & Write** on `brr-catalog-releases` only. The loader passes it to `wrangler r2 object put` and uses the D1 token for everything else.
@@ -55,6 +55,66 @@ terraform -chdir=infra/cloudflare apply catalog.tfplan
 ```
 
 Rebuild the Worker before every `plan`: the plan compares `content_sha256` of `apps/catalog-api/dist/index.js`.
+
+## Deploy from GitHub Actions
+
+Two workflows replace the manual steps above. Neither commits or prints a secret, and neither uses `backend.hcl`: `ci/configure.sh` writes it to the runner's temp directory from `backend.hcl.example` and the account id secret on every run.
+
+**`.github/workflows/catalog-deploy.yml`** runs when a change touches `apps/catalog-api`, `infra/cloudflare`, `pnpm-lock.yaml` or the workflow itself (README-only changes don't count).
+
+| Job | When | Environment | What it does |
+|---|---|---|---|
+| Build Worker | every run | none, no secrets | Installs only `@brr/catalog-api`, typechecks, tests and builds it, and uploads `dist/index.js` as an artifact. |
+| Terraform plan | pull requests from this repository | `production-plan` | Downloads the bundle, `init` against the R2 backend, `plan -lock=false`, then posts a summary (resource addresses and actions only, never attribute values) as one PR comment that later runs update. |
+| Terraform apply | push to `main` | `production` | Downloads the bundle, `init`, `plan`, then `apply` of exactly that plan. |
+
+Pull requests from forks build but never plan, so they never get a secret. The workflow uses `pull_request`, never `pull_request_target`. Plan and apply both refuse a plan that destroys or replaces the D1 database or the release bucket. Do that locally, on purpose. If `production-plan` lacks a secret, the PR plan is skipped with a warning and a comment naming the secret. If `production` lacks one, apply fails.
+
+Applies and remote release loads share the concurrency group `catalog-production` with `cancel-in-progress: false`, so they never overlap. GitHub keeps one run in the group and one waiting; a newer waiting run replaces the older waiting one, which shows as cancelled (re-run it if it was a release load). That serializes CI only: a local `apply` can still collide with CI unless the R2 lock check in *Remote state on R2* passes. Apply waits up to 10 minutes for the lock.
+
+**`.github/workflows/catalog-load-release.yml`** is started by hand (*Actions → Catalog load release → Run workflow*):
+
+| Input | Meaning |
+|---|---|
+| `release_url` | HTTPS URL of an already built release SQLite file. Run inputs are visible to everyone who can read the repository, so a presigned URL there should expire soon. |
+| `release_sha256` | Its SHA-256. The file is refused unless it matches. |
+| `source` | The `--source` label, for example `rebrickable-db@ad9943cc`. |
+| `remote` | Off: only the `--local` load runs, into throwaway state on the runner. This checks the schema, the module refusal and the D1 import. On: after the local load passes, the same bytes load into production with `--remote`, in the `production` environment. |
+| `promote` | Off passes `--no-promote`. |
+
+No script builds a release file from the Rebrickable dumps yet, so a release has to be built elsewhere and hosted at an HTTPS URL.
+
+### Secrets
+
+Every secret is an environment secret. Nothing goes in repository secrets.
+
+| Environment | Secret | Value |
+|---|---|---|
+| `production` | `CLOUDFLARE_ACCOUNT_ID` | The 32-hex account id. |
+| `production` | `TERRAFORM_CLOUDFLARE_API_TOKEN` | The Terraform token (credential 1 above). |
+| `production` | `TERRAFORM_STATE_R2_ACCESS_KEY_ID` | Access key id of the state token (credential 3). |
+| `production` | `TERRAFORM_STATE_R2_SECRET_ACCESS_KEY` | Its secret access key. |
+| `production` | `CATALOG_LOADER_D1_API_TOKEN` | The loader's D1-only token (credential 2, `CLOUDFLARE_API_TOKEN`). |
+| `production` | `CATALOG_LOADER_R2_API_TOKEN` | The loader's R2 token, Object Read & Write on `brr-catalog-releases` only (credential 2, `CLOUDFLARE_R2_API_TOKEN`). |
+| `production-plan` | `CLOUDFLARE_ACCOUNT_ID` | The same account id. |
+| `production-plan` | `TERRAFORM_CLOUDFLARE_API_TOKEN` | A **read-only** token: Account · Workers Scripts · Read, Account · D1 · Read, Account · Workers R2 Storage · Read, and Zone · Workers Routes · Read if `route_pattern` is set. |
+| `production-plan` | `TERRAFORM_STATE_R2_ACCESS_KEY_ID` | Access key id of an R2 API token with **Object Read only** on the state bucket. |
+| `production-plan` | `TERRAFORM_STATE_R2_SECRET_ACCESS_KEY` | Its secret access key. |
+
+PR plans get read-only credentials because anyone who can push a branch can change a workflow on it and read that job's secrets. That's also why `production` must be limited to `main`. Read-only should be enough for a plan, since `-lock=false` writes nothing to state and the refresh only reads, **but this hasn't been checked against a live account yet**. If a plan fails with an authorization error, report it rather than giving PR plans an Edit token.
+
+The non-secret Terraform variables (`d1_primary_location_hint`, `r2_location`, `workers_dev_enabled`, `zone_id`, `route_pattern`) come from the repository variable `CATALOG_TFVARS_JSON`, a JSON object like `{"d1_primary_location_hint":"wnam","r2_location":"wnam"}`. It may not contain `account_id` or `cloudflare_api_token`. Leave it unset for the defaults in `variables.tf`. It must match what earlier applies used: a different `d1_primary_location_hint` can plan a new database, which the workflow refuses.
+
+### One-time setup
+
+1. Create the state bucket: `pnpm --filter @brr/catalog-api exec wrangler r2 bucket create brr-terraform-state`. CI and local runs share `cloudflare/catalog.tfstate` in it, so state from an earlier local apply carries over.
+2. Register the account's workers.dev subdomain in *Workers & Pages → Overview*. Without it, `workers_dev_enabled` has no effect.
+3. Create the tokens in the table above.
+4. Create both environments under *Settings → Environments* before adding secrets, and before merging any change that triggers the workflow, because the merge push runs apply:
+   - `production`: add yourself as a required reviewer, and under *Deployment branches and tags* allow `main` only.
+   - `production-plan`: no reviewers and no branch restriction, because pull-request runs need it.
+5. Add the secrets to each environment, and `CATALOG_TFVARS_JSON` under *Settings → Secrets and variables → Actions → Variables*.
+6. Run the lock check in *Remote state on R2* once.
 
 ## Load a catalog release
 

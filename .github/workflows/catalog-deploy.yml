@@ -1,0 +1,176 @@
+name: Catalog deploy
+
+on:
+  pull_request:
+    paths:
+      - apps/catalog-api/**
+      - infra/cloudflare/**
+      - pnpm-lock.yaml
+      - .github/workflows/catalog-deploy.yml
+      - "!apps/catalog-api/README.md"
+      - "!infra/cloudflare/README.md"
+  push:
+    branches: [main]
+    paths:
+      - apps/catalog-api/**
+      - infra/cloudflare/**
+      - pnpm-lock.yaml
+      - .github/workflows/catalog-deploy.yml
+      - "!apps/catalog-api/README.md"
+      - "!infra/cloudflare/README.md"
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: 1.17.2
+  WORKER_BUNDLE_ARTIFACT: catalog-worker-bundle
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  build:
+    name: Build Worker
+    runs-on: ubuntu-latest
+    concurrency:
+      group: catalog-build-${{ github.event.pull_request.number || github.sha }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/catalog-api..."
+      - run: pnpm --filter @brr/catalog-api typecheck
+      - run: pnpm --filter @brr/catalog-api test
+      - run: pnpm --filter @brr/catalog-api build
+      - name: Record bundle digest
+        run: echo "Worker bundle SHA-256 \`$(sha256sum apps/catalog-api/dist/index.js | cut -d ' ' -f 1)\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ${{ env.WORKER_BUNDLE_ARTIFACT }}
+          path: apps/catalog-api/dist/index.js
+          if-no-files-found: error
+          retention-days: 7
+
+  plan:
+    name: Terraform plan
+    needs: build
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: production-plan
+    permissions:
+      contents: read
+      pull-requests: write
+    concurrency:
+      group: catalog-plan-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
+      CATALOG_TFVARS_JSON: ${{ vars.CATALOG_TFVARS_JSON }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: ${{ env.WORKER_BUNDLE_ARTIFACT }}
+          path: apps/catalog-api/dist
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: Configure backend and variables
+        id: configure
+        run: infra/cloudflare/ci/configure.sh plan
+      - name: Terraform init
+        if: steps.configure.outputs.configured == 'true'
+        env:
+          BACKEND_CONFIG: ${{ steps.configure.outputs.backend_config }}
+        run: terraform -chdir=infra/cloudflare init -lockfile=readonly -backend-config="$BACKEND_CONFIG"
+      - name: Terraform plan
+        if: steps.configure.outputs.configured == 'true'
+        env:
+          VAR_FILE: ${{ steps.configure.outputs.var_file }}
+        run: |
+          terraform -chdir=infra/cloudflare plan -lock=false -var-file="$VAR_FILE" -out="$RUNNER_TEMP/catalog.tfplan"
+          terraform -chdir=infra/cloudflare show -json "$RUNNER_TEMP/catalog.tfplan" > "$RUNNER_TEMP/catalog.tfplan.json"
+      - name: Summarize plan
+        id: report
+        if: steps.configure.outputs.configured == 'true'
+        run: infra/cloudflare/ci/plan-report.sh "$RUNNER_TEMP/catalog.tfplan.json" "$RUNNER_TEMP/catalog-plan.md"
+      - name: Post plan summary
+        if: ${{ !cancelled() && steps.configure.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+          PLAN_COMMIT: ${{ github.event.pull_request.head.sha }}
+        run: |
+          touch "$RUNNER_TEMP/catalog-plan.md"
+          cat "$RUNNER_TEMP/catalog-plan.md" >> "$GITHUB_STEP_SUMMARY"
+          infra/cloudflare/ci/post-plan-comment.sh "$PULL_REQUEST" "$RUNNER_TEMP/catalog-plan.md"
+      - name: Refuse plans that destroy catalog data
+        if: steps.report.outputs.refused == 'true'
+        run: |
+          echo "::error::The plan destroys the D1 database or the R2 release bucket."
+          exit 1
+
+  apply:
+    name: Terraform apply
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: catalog-production
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.TERRAFORM_CLOUDFLARE_API_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.TERRAFORM_STATE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.TERRAFORM_STATE_R2_SECRET_ACCESS_KEY }}
+      CATALOG_TFVARS_JSON: ${{ vars.CATALOG_TFVARS_JSON }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: ${{ env.WORKER_BUNDLE_ARTIFACT }}
+          path: apps/catalog-api/dist
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: Configure backend and variables
+        id: configure
+        run: infra/cloudflare/ci/configure.sh apply
+      - name: Terraform init
+        env:
+          BACKEND_CONFIG: ${{ steps.configure.outputs.backend_config }}
+        run: terraform -chdir=infra/cloudflare init -lockfile=readonly -backend-config="$BACKEND_CONFIG"
+      - name: Terraform plan
+        env:
+          VAR_FILE: ${{ steps.configure.outputs.var_file }}
+        run: |
+          terraform -chdir=infra/cloudflare plan -lock-timeout=10m -var-file="$VAR_FILE" -out="$RUNNER_TEMP/catalog.tfplan"
+          terraform -chdir=infra/cloudflare show -json "$RUNNER_TEMP/catalog.tfplan" > "$RUNNER_TEMP/catalog.tfplan.json"
+      - name: Summarize plan
+        id: report
+        run: |
+          infra/cloudflare/ci/plan-report.sh "$RUNNER_TEMP/catalog.tfplan.json" "$RUNNER_TEMP/catalog-plan.md"
+          cat "$RUNNER_TEMP/catalog-plan.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Refuse plans that destroy catalog data
+        if: steps.report.outputs.refused == 'true'
+        run: |
+          echo "::error::The plan destroys the D1 database or the R2 release bucket."
+          exit 1
+      - name: Terraform apply
+        run: terraform -chdir=infra/cloudflare apply -lock-timeout=10m "$RUNNER_TEMP/catalog.tfplan"
