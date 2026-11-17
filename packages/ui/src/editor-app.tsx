@@ -12,6 +12,7 @@ import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { TrackPanel } from "./track-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
+import { WelcomePanel } from "./welcome-panel.tsx";
 
 interface EditorAppProps {
   readonly editor: IEditor;
@@ -67,6 +68,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
     >
       <EditorCanvas editor={editor} options={options} />
       <EditorHud snapshot={snapshot} />
+      <WelcomePanel editor={editor} snapshot={snapshot} />
       <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} />

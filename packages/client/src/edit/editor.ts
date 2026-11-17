@@ -17,6 +17,7 @@ import {
   type BaseCells,
   type HistoryStep,
   type OwnerFilter,
+  type PlacementPose,
   type TrackPieceAt,
   type TrackRequest,
   type RoadEdgeSegment,
@@ -31,6 +32,7 @@ import {
   composePose16,
   posesJoin16,
   zeta16ToStuds,
+  type Pose16,
 } from "@brr/math";
 import {
   CAMERA_FOV_DEGREES,
@@ -73,10 +75,13 @@ import {
   partGround,
   partPlaceable,
   type Placeable,
+  type PlaceableLayer,
 } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
+import { StarterBook, type StarterPlan, type StarterView } from "../starters/starter-book.ts";
+import { STARTER_LAYOUTS } from "../starters/starter-layouts.ts";
 import {
   carriesRefusal,
   checkRefusal,
@@ -299,7 +304,18 @@ export interface EditorSnapshot {
   readonly lastRefusal: RefusedEdit | null;
   readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
+  readonly starters: ReadonlyArray<StarterView>;
 }
+
+interface StagedStarter {
+  commits: number;
+  readonly poses: PlacementPose[];
+  readonly lay: TrackPieceAt[];
+  readonly goals: Pose16[];
+  readonly refusal: Refusal | null;
+}
+
+const STARTER_LAYERS: ReadonlyArray<PlaceableLayer> = ["first", "upper"];
 
 export interface EditorCredits {
   readonly partFiles: number;
@@ -358,6 +374,7 @@ export interface IEditor {
   viewPlanFromAbove(planId: string): void;
   dump(): EditorDump;
   clearWorld(eventTimeMs: number): void;
+  loadStarter(id: string, eventTimeMs: number): void;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
@@ -546,6 +563,7 @@ export class Editor implements IEditor {
     lastRefusal: null,
     ghost: null,
     track: null,
+    starters: [],
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -577,6 +595,7 @@ export class Editor implements IEditor {
   private hitX = 0;
   private hitZ = 0;
   private track: TrackDrawing | null = null;
+  private starters: StarterBook | null = null;
   private lastTrackCommit: TrackCommitResult | null = null;
   private selectedTrack: number | null = null;
   private pending: PendingAction | null = null;
@@ -638,6 +657,13 @@ export class Editor implements IEditor {
           this.placed.addTrackPiece(piece, pieceId, cells, bottom, top),
         relaid: (pieces) => this.placed.replaceTrackPieces(pieces),
       });
+      this.starters = new StarterBook(
+        STARTER_LAYOUTS,
+        placeables,
+        this.track,
+        new Map(bundle.models.flatMap((m) => (m.set ? [[`omr:${m.name}`, m.set.name]] : []))),
+        (code) => colorOf(bundle.colors, code).rgb,
+      );
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -654,6 +680,7 @@ export class Editor implements IEditor {
         catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
         trackNotDrawable: undrawableTrack(bundle.parts, this.track, palette.parts),
         track: this.trackView(),
+        starters: this.starters.views(),
         credits: {
           partFiles: bundle.credits.length,
           partFilesLod: EDITOR_LOD,
@@ -1619,6 +1646,80 @@ export class Editor implements IEditor {
     this.select(null);
     const requests = models.map((model) => ({ placement: model.placement, to: null }));
     this.show(this.history.commit("clear", requests, { lift, lay: [] }), eventTimeMs);
+  }
+
+  loadStarter(id: string, eventTimeMs: number): void {
+    const track = this.track;
+    if (!track || this.world.size > 0 || track.pieceCount > 0) return;
+    const plan = this.starters?.plan(id);
+    if (!plan) return;
+    this.chooseItem(null);
+    const staged = this.stageStarter(plan, eventTimeMs);
+    for (let step = 0; step < staged.commits; step++) this.show(this.undoStaged(), eventTimeMs);
+    if (staged.refusal) {
+      this.refuse("place", id, staged.refusal);
+      return;
+    }
+    const requests = staged.poses.map((to) => ({ placement: null, to }));
+    this.show(this.history.commit("place", requests, { lift: [], lay: staged.lay }), eventTimeMs);
+    if (staged.goals.length > 0) {
+      this.lastTrackCommit = staged.goals.every((goal) => track.joinsAt(goal)) ? "joined" : "laid";
+      this.update({ track: this.trackView() });
+    }
+    this.camera.focus({ ...plan.bounds, minY: 0, maxY: 0 });
+    this.camera.apply(this.backend);
+  }
+
+  private batchRefusal(added: ReadonlyArray<PlacedModel>): Refusal | null {
+    for (const model of added) {
+      const { x, z, yPlates, rot } = model.handle;
+      const check = this.checkAt(model.placeable, x, z, rot, [model], { kind: "height", yPlates });
+      const refusal = checkRefusal(model.placeable.label, check);
+      if (refusal) return refusal;
+    }
+    return null;
+  }
+
+  private undoStaged(): AppliedEdit {
+    const edit = this.history.undo();
+    if (!edit) throw new Error("a staged starter edit is missing from the history");
+    return edit;
+  }
+
+  private stageStarter(plan: StarterPlan, eventTimeMs: number): StagedStarter {
+    const staged: StagedStarter = { commits: 0, poses: [], lay: [], goals: [], refusal: null };
+    for (const layer of STARTER_LAYERS) {
+      const batch: PlacementPose[] = [];
+      for (const { placeable, pose } of plan.placements) {
+        if (placeable.layer !== layer) continue;
+        const check = this.checkAt(placeable, pose.x, pose.z, pose.rot, [], {
+          kind: "cursor",
+          cellX: Math.floor(pose.x / STUD_LDU),
+          cellZ: Math.floor(pose.z / STUD_LDU),
+        });
+        const refusal = checkRefusal(placeable.label, check);
+        if (refusal) return { ...staged, refusal };
+        batch.push({ ...pose, yPlates: check.yPlates });
+      }
+      if (batch.length === 0) continue;
+      const requests = batch.map((to) => ({ placement: null, to }));
+      const { added } = this.show(this.history.commit("place", requests), eventTimeMs);
+      staged.commits++;
+      staged.poses.push(...batch);
+      const clash = this.batchRefusal(added);
+      if (clash) return { ...staged, refusal: clash };
+    }
+    const track = this.track;
+    if (!track) return staged;
+    for (const { start, run } of plan.track) {
+      const commit = track.layRun(start, run);
+      if (commit.blocked) return { ...staged, refusal: trackRunRefusal(commit.blocked) };
+      this.show(this.history.commit("draw-track", [], commit.run), eventTimeMs);
+      staged.commits++;
+      staged.lay.push(...commit.run.lay);
+      staged.goals.push(start);
+    }
+    return staged;
   }
 
   private laidTrack(): ReadonlyArray<TrackPieceAt> {

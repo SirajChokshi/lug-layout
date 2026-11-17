@@ -21,6 +21,7 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { STARTER_LAYOUTS } from "../starters/starter-layouts.ts";
 import { EDITOR } from "../tokens.ts";
 import { TRACK_ITEM_ID, type IEditor } from "./editor.ts";
 
@@ -239,4 +240,56 @@ it("makes every gesture one undo step, and undo then redo walk back and forth th
     expect(layoutState(editor)).toEqual(states[depth]);
   }
   expect(editor.snapshot().history.redo).toBeNull();
+}, 120_000);
+
+const STARTER_MODELS = [
+  ...new Set(
+    STARTER_LAYOUTS.flatMap((layout) =>
+      layout.pieces.flatMap((piece) => {
+        const [source, name] = piece.item.split(":");
+        return source === "omr" || source === "generated" ? [name ?? ""] : [];
+      }),
+    ),
+  ),
+];
+
+it.each(STARTER_LAYOUTS.map((layout) => [layout.id]))(
+  "loads starter %s as one undoable command, unrefused, with its track joined and no road mismatch",
+  async (id) => {
+    const { editor } = await startEditor(STARTER_MODELS);
+    const view = editor.snapshot().starters.find((starter) => starter.id === id);
+    expect(view?.problems).toEqual([]);
+
+    editor.loadStarter(id, 0);
+
+    const loaded = editor.snapshot();
+    const state = layoutState(editor);
+    expect(loaded.refusals).toBe(0);
+    expect(loaded.placements).toBe(view?.tiles.length);
+    expect(loaded.track?.pieces).toBe(view?.trackPieces);
+    expect(loaded.track?.lastCommit).toBe((view?.trackPieces ?? 0) > 0 ? "joined" : null);
+    expect(loaded.track?.coincidentEndIssues).toBe(0);
+    expect(loaded.roads.mismatchedCells).toBe(0);
+    expect(loaded.roads.overlaps).toBe(0);
+    expect(loaded.history).toMatchObject({ undoDepth: 1, redoDepth: 0 });
+
+    editor.undo(1);
+    expect(editor.snapshot().placements).toBe(0);
+    expect(editor.snapshot().track?.pieces).toBe(0);
+
+    editor.redo(2);
+    expect(layoutState(editor)).toEqual(state);
+  },
+  120_000,
+);
+
+it("loads a starter only into an empty world", async () => {
+  const { editor } = await startEditor(STARTER_MODELS);
+  editor.loadStarter("mils-ring", 0);
+  const ring = layoutState(editor);
+
+  editor.loadStarter("oval-town", 1);
+
+  expect(layoutState(editor)).toEqual(ring);
+  expect(editor.snapshot().history.undoDepth).toBe(1);
 }, 120_000);

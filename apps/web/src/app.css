@@ -793,3 +793,265 @@ footer a {
 .import-panel pre {
   display: none;
 }
+
+.welcome {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 5;
+  width: min(860px, calc(100vw - 48px));
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 22px 24px 18px;
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.96);
+  color: #1b2a34;
+  box-shadow:
+    0 18px 50px rgb(16 42 67 / 0.25),
+    0 2px 8px rgb(16 42 67 / 0.12);
+  animation: welcome-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.welcome h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.welcome-lede {
+  margin: 0 0 16px;
+  color: #445;
+  font-size: 14px;
+}
+
+.starter-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.starter-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  border: 1px solid #d5dde6;
+  border-radius: 10px;
+  background: #f7f9fb;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease;
+}
+
+.starter-pick:hover:not(:disabled),
+.starter-pick:focus-visible {
+  transform: translateY(-3px);
+  border-color: #1f6feb;
+  box-shadow: 0 8px 18px rgb(31 111 235 / 0.18);
+  outline: none;
+}
+
+.starter-pick:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.starter-pick:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.starter-map {
+  width: 100%;
+  height: 120px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: #e6edf3;
+}
+
+.starter-tile {
+  stroke: rgb(0 0 0 / 0.18);
+  stroke-width: 6;
+}
+
+.starter-tile-set {
+  stroke: #b8892a;
+  stroke-width: 10;
+}
+
+.starter-track polyline {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.starter-track-bed {
+  stroke: #5b6168;
+}
+
+.starter-track-ties {
+  stroke: #a9b0b8;
+  stroke-dasharray: 18 26;
+  stroke-linecap: butt;
+}
+
+.starter-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.starter-blurb {
+  color: #445;
+  font-size: 12px;
+}
+
+.starter-facts,
+.starter-sets {
+  color: #5b6773;
+  font-size: 11px;
+}
+
+.starter-missing {
+  color: #8a5a00;
+  font-size: 11px;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.welcome-blank {
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  border: 1px solid #c3ccd6;
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.welcome-blank:hover {
+  border-color: #1f6feb;
+}
+
+.welcome-keys {
+  color: #5b6773;
+  font-size: 12px;
+}
+
+.welcome kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 4px;
+  border: 1px solid #c3ccd6;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fff;
+  font:
+    600 11px/1.5 ui-monospace,
+    monospace;
+  text-align: center;
+}
+
+.welcome-loading {
+  width: 300px;
+  text-align: center;
+}
+
+.welcome-tip {
+  margin: 4px 0 0;
+  color: #5b6773;
+  font-size: 13px;
+}
+
+.brick-stack {
+  position: relative;
+  width: 72px;
+  height: 66px;
+  margin: 4px auto 12px;
+}
+
+.brick-stack span {
+  position: absolute;
+  left: 0;
+  width: 72px;
+  height: 18px;
+  border-radius: 3px;
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.18);
+  animation: brick-drop 1.8s ease-in-out infinite;
+}
+
+.brick-stack span:nth-child(1) {
+  bottom: 0;
+  background: #237841;
+}
+
+.brick-stack span:nth-child(2) {
+  bottom: 22px;
+  background: #f2cd37;
+  animation-delay: 0.3s;
+}
+
+.brick-stack span:nth-child(3) {
+  bottom: 44px;
+  background: #0055bf;
+  animation-delay: 0.6s;
+}
+
+@keyframes brick-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-28px);
+  }
+  25%,
+  75% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+@keyframes welcome-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome,
+  .brick-stack span,
+  .starter-pick {
+    animation: none;
+    transition: none;
+  }
+}
+
+.starter-road {
+  fill: #4b5259;
+  shape-rendering: crispEdges;
+}

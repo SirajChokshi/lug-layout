@@ -1,6 +1,7 @@
 import type { PartAsset } from "@brr/catalog";
 import type { TrackCatalog, TrackPartFrame, TrackPiece } from "@brr/schema/bundle";
 import {
+  advance,
   drawingKit,
   layMoves,
   runMoves,
@@ -21,6 +22,7 @@ import {
   type TrackPieceAt,
   type TrackPieceSpec,
   type TrackRequest,
+  type TrackRun,
   type TrackSupport,
 } from "@brr/domain";
 import {
@@ -785,6 +787,34 @@ export class TrackDrawing {
     this.ghostParts = new Uint16Array(capacity);
     this.ghostColors = new Uint16Array(capacity);
     this.ghostMatrices = new Float32Array(capacity * INSTANCE_MATRIX_FLOATS);
+  }
+
+  layRun(start: Pose16, run: TrackRun): TrackCommit {
+    this.drag = {
+      anchorX: 0,
+      anchorZ: 0,
+      fromEnd: null,
+      start,
+      previousKey: null,
+      moves: runMoves(this.kit, run),
+      closure: null,
+      goal: start,
+      missStuds: 0,
+      target: null,
+      blocked: null,
+    };
+    return this.endDrag();
+  }
+
+  runPath(start: Pose16, run: TrackRun): ReadonlyArray<TrackEndView> {
+    let end = start;
+    const path: TrackEndView[] = [];
+    for (const move of [null, ...runMoves(this.kit, run)]) {
+      if (move) end = advance(end, move);
+      const studs = zeta16ToStuds(end.position);
+      path.push({ xLdu: studs.x * STUD_LDU, zLdu: studs.z * STUD_LDU, heading: end.heading });
+    }
+    return path;
   }
 
   cancelDrag(): void {
