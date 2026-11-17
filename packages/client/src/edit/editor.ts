@@ -35,7 +35,12 @@ import { inject, injectable } from "inversify";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColorsSrgb, type ModelCredit } from "../scene/viewer-scene.ts";
 import { OrbitCamera } from "./orbit-camera.ts";
-import { TRACK_SYSTEM, TrackDrawing, type TrackDragView } from "./track-drawing.ts";
+import {
+  TRACK_SYSTEM,
+  TrackDrawing,
+  type TrackDragView,
+  type TrackEndView,
+} from "./track-drawing.ts";
 import {
   PlacedChunks,
   type PlacedModel,
@@ -242,6 +247,7 @@ export interface EditorDump {
   readonly placements: PlacementDump;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
+  readonly trackEnds: ReadonlyArray<TrackEndView>;
 }
 
 export interface EditorOptions {
@@ -1186,6 +1192,7 @@ export class Editor implements IEditor {
         rot: model.handle.rot,
       })),
       roads: this.roadReport,
+      trackEnds: this.track?.openEnds() ?? [],
     };
   }
 }

@@ -17,3 +17,5 @@ target/
 *.tfplan
 crash.log
 backend.hcl
+test-results/
+playwright-report/
