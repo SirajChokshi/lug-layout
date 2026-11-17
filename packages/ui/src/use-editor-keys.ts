@@ -1,7 +1,7 @@
 import {
   commandForKey,
   commandSpec,
-  isShellCommand,
+  routeKey,
   runEditorAction,
   type IEditor,
   type IEditorCamera,
@@ -27,6 +27,7 @@ export function isTyping(target: EventTarget | null): boolean {
 
 export interface EditorKeyHandlers {
   readonly onShellCommand: (id: ShellCommandId) => void;
+  readonly onPickSlot: (slot: number) => void;
   readonly overlayOpen: boolean;
   readonly closeOverlay: () => void;
 }
@@ -36,23 +37,37 @@ export function useEditorKeys(
   camera: IEditorCamera,
   handlers: EditorKeyHandlers,
 ): void {
-  const { onShellCommand, overlayOpen, closeOverlay } = handlers;
+  const { onShellCommand, onPickSlot, overlayOpen, closeOverlay } = handlers;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing) return;
-      const id = commandForKey(event, isTyping(event.target));
-      if (id === null) return;
-      if (event.repeat && commandSpec(id).repeats !== true) {
-        event.preventDefault();
-        return;
-      }
+      const match = commandForKey(event, isTyping(event.target));
+      if (match === null) return;
       event.preventDefault();
-      if (isShellCommand(id)) onShellCommand(id);
-      else if (overlayOpen) {
-        if (id === "select-tool") closeOverlay();
-      } else runEditorAction(editor, camera, id, event.timeStamp);
+      if (event.repeat && commandSpec(match.id).repeats !== true) return;
+      const route = routeKey(match, overlayOpen);
+      switch (route.kind) {
+        case "overlay":
+          onShellCommand(route.id);
+          return;
+        case "close-overlay":
+          closeOverlay();
+          return;
+        case "slot":
+          onPickSlot(route.slot);
+          return;
+        case "editor":
+          runEditorAction(editor, camera, route.id, event.timeStamp);
+          return;
+        case "blocked":
+          return;
+        default: {
+          const unhandled: never = route;
+          throw new Error(`unhandled key route ${String(unhandled)}`);
+        }
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor, camera, onShellCommand, overlayOpen, closeOverlay]);
+  }, [editor, camera, onShellCommand, onPickSlot, overlayOpen, closeOverlay]);
 }

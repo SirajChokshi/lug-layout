@@ -1,9 +1,9 @@
-import type {
-  EditorOptions,
-  IEditor,
-  IEditorCamera,
-  IPlanService,
-  ShellCommandId,
+import {
+  type EditorOptions,
+  type IEditor,
+  type IEditorCamera,
+  type IPlanService,
+  type ShellCommandId,
 } from "@brr/client";
 import { useCallback, useState } from "react";
 import { CommandPalette } from "./command-palette.tsx";
@@ -25,6 +25,7 @@ import { TrackPanel } from "./track-panel.tsx";
 import { useSafeArea } from "./safe-area.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
+import { useHotbar } from "./use-hotbar.ts";
 import { useRecentItems } from "./use-recent-items.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WorldMenu } from "./world-menu.tsx";
@@ -81,6 +82,7 @@ export function EditorApp({
   showState,
 }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
+  const hotbar = useHotbar(snapshot.activeItem);
   const recent = useRecentItems(snapshot.activeItem);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
@@ -88,8 +90,16 @@ export function EditorApp({
     (id: ShellCommandId) => setOverlay((open) => (open === id ? null : id)),
     [],
   );
+  const pickSlot = useCallback(
+    (slot: number) => {
+      const item = hotbar.slots[slot];
+      if (item !== undefined) editor.chooseItem(item);
+    },
+    [editor, hotbar],
+  );
   useEditorKeys(editor, camera, {
     onShellCommand: toggleOverlay,
+    onPickSlot: pickSlot,
     overlayOpen: overlay !== null,
     closeOverlay,
   });
@@ -121,7 +131,7 @@ export function EditorApp({
       data-save={snapshot.world?.save ?? ""}
     >
       <EditorCanvas editor={editor} camera={camera} options={options} />
-      <ToolHud snapshot={snapshot} />
+      <ToolHud snapshot={snapshot} hotbar={hotbar} onPickSlot={pickSlot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} />
       <PlanPanel camera={camera} plans={plans} />

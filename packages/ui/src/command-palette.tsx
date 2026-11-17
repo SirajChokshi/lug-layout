@@ -133,6 +133,7 @@ export function CommandPalette({
       onShellCommand(id);
       return;
     }
+    if (id === "pick-slot") return;
     onClose();
     runEditorAction(editor, camera, id, eventTimeMs);
   };
