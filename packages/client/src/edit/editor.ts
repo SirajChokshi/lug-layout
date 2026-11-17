@@ -507,14 +507,15 @@ export class Editor implements IEditor {
   }
 
   private syncPlan(): void {
-    this.plans.setPlacements(
-      this.placed.models().map((model) => ({
+    this.plans.setPlacements([
+      ...this.placed.models().map((model) => ({
         key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
         ref: model.placeable.id,
         label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
         box: model.box,
       })),
-    );
+      ...(this.track?.planFootprints() ?? []),
+    ]);
   }
 
   private async loadPlaceables(
@@ -753,6 +754,7 @@ export class Editor implements IEditor {
         report: { chunks: commit.chunks.length, instances, studs },
       };
     }
+    if (commit.laid > 0) this.syncPlan();
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.update({ track: this.trackView() });

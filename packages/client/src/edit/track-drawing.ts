@@ -26,7 +26,7 @@ import {
   zeta16ToStuds,
   type Pose16,
 } from "@brr/math";
-import { INSTANCE_MATRIX_FLOATS, type ChunkInstances } from "@brr/render";
+import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
@@ -69,6 +69,13 @@ export interface TrackCommit {
   readonly chunks: ReadonlyArray<number>;
 }
 
+export interface TrackFootprint {
+  readonly key: { readonly chunkKey: number; readonly slot: number };
+  readonly ref: string;
+  readonly label: string;
+  readonly box: WorldBox;
+}
+
 export interface TrackEndView {
   readonly xLdu: number;
   readonly zLdu: number;
@@ -103,6 +110,27 @@ function partForPiece(piece: TrackPiece, parts: ReadonlyArray<PartAsset>): numbe
   return index;
 }
 
+interface PartTransform {
+  readonly x: number;
+  readonly z: number;
+  readonly c: number;
+  readonly s: number;
+}
+
+function partTransform(placement: Pose16, frame: TrackPartFrame): PartTransform {
+  const studs = zeta16ToStuds(placement.position);
+  const theta = placement.heading * HEADING_RADIANS;
+  const cosTheta = Math.cos(theta);
+  const sinTheta = Math.sin(theta);
+  const phi = theta + frame.headingHalfSteps * HALF_STEP_RADIANS;
+  return {
+    x: studs.x * STUD_LDU + cosTheta * frame.xLdu - sinTheta * frame.zLdu,
+    z: studs.z * STUD_LDU + sinTheta * frame.xLdu + cosTheta * frame.zLdu,
+    c: Math.cos(phi),
+    s: Math.sin(phi),
+  };
+}
+
 function writeMatrix(
   out: Float32Array,
   slot: number,
@@ -112,15 +140,7 @@ function writeMatrix(
   originX: number,
   originZ: number,
 ): void {
-  const studs = zeta16ToStuds(placement.position);
-  const theta = placement.heading * HEADING_RADIANS;
-  const cosTheta = Math.cos(theta);
-  const sinTheta = Math.sin(theta);
-  const x = studs.x * STUD_LDU + cosTheta * frame.xLdu - sinTheta * frame.zLdu;
-  const z = studs.z * STUD_LDU + sinTheta * frame.xLdu + cosTheta * frame.zLdu;
-  const phi = theta + frame.headingHalfSteps * HALF_STEP_RADIANS;
-  const c = Math.cos(phi);
-  const s = Math.sin(phi);
+  const { x, z, c, s } = partTransform(placement, frame);
   const o = slot * INSTANCE_MATRIX_FLOATS;
   out[o] = c;
   out[o + 1] = 0;
@@ -137,12 +157,33 @@ function writeMatrix(
 }
 
 function partCentre(placed: Placed): { readonly x: number; readonly z: number } {
-  const studs = zeta16ToStuds(placed.placement.position);
-  const theta = placed.placement.heading * HEADING_RADIANS;
-  const { xLdu, zLdu } = placed.part.piece.partFrame;
+  const { x, z } = partTransform(placed.placement, placed.part.piece.partFrame);
+  return { x, z };
+}
+
+function partBox(placed: Placed, part: PartAsset): WorldBox {
+  const { x, z, c, s } = partTransform(placed.placement, placed.part.piece.partFrame);
+  let minX = Number.POSITIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+  for (const px of [part.boundsMin[0], part.boundsMax[0]]) {
+    for (const pz of [part.boundsMin[2], part.boundsMax[2]]) {
+      const wx = x + c * px - s * pz;
+      const wz = z + s * px + c * pz;
+      minX = Math.min(minX, wx);
+      maxX = Math.max(maxX, wx);
+      minZ = Math.min(minZ, wz);
+      maxZ = Math.max(maxZ, wz);
+    }
+  }
   return {
-    x: studs.x * STUD_LDU + Math.cos(theta) * xLdu - Math.sin(theta) * zLdu,
-    z: studs.z * STUD_LDU + Math.sin(theta) * xLdu + Math.cos(theta) * zLdu,
+    minX,
+    minY: placed.part.yLdu + part.boundsMin[1],
+    minZ,
+    maxX,
+    maxY: placed.part.yLdu + part.boundsMax[1],
+    maxZ,
   };
 }
 
@@ -455,6 +496,23 @@ export class TrackDrawing {
       ends.push(this.layout.connectorPose(placement, connector));
     }
     this.ends = ends;
+  }
+
+  planFootprints(): ReadonlyArray<TrackFootprint> {
+    const footprints: TrackFootprint[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      const placed = this.placedAt(p);
+      const part = this.parts[placed.part.partIndex];
+      if (!part) throw new Error(`${placed.part.piece.id}: part index is out of range`);
+      const centre = partCentre(placed);
+      footprints.push({
+        key: { chunkKey: trackChunkKey(chunkOf(centre.x), chunkOf(centre.z)), slot: p },
+        ref: placed.part.piece.id,
+        label: `${placed.part.piece.title} #${p + 1}`,
+        box: partBox(placed, part),
+      });
+    }
+    return footprints;
   }
 
   chunkInstances(key: number): ChunkInstances | null {
