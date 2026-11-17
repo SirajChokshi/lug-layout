@@ -10,6 +10,10 @@
       "value": 4,
       "source": "docs/verified-facts.md, Module standards, \"MILS surface height\": one baseplate plus 4 plates, the reference height on the sides (S1, S2)"
     },
+    "surfaceTolerancePlates": {
+      "value": 1,
+      "source": "docs/verified-facts.md, Module standards, \"MILS edge height tolerance\": unevenness on a side is allowed within the range of one plate height (S1)"
+    },
     "features": {
       "path": {
         "widthStuds": {
@@ -20,6 +24,11 @@
           "min": 0,
           "max": 0,
           "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paths are integrated at the same height as the rest of the module surface (S2)"
+        },
+        "sideVariationPlates": {
+          "belowPlates": 1,
+          "abovePlates": 1,
+          "source": "S2: for paths the height variation on the sides is restricted to 1 plate difference from the standard height of the module"
         },
         "ldrawColors": {
           "values": [6, 70, 72, 71, 19],
@@ -36,6 +45,11 @@
           "max": 0,
           "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": earth tracks are integrated at the same height as the rest of the module surface (S2)"
         },
+        "sideVariationPlates": {
+          "belowPlates": 1,
+          "abovePlates": 1,
+          "source": "S2: for earth tracks the height variation on the sides is restricted to 1 plate difference from the standard height of the module"
+        },
         "ldrawColors": {
           "values": [6, 70, 19],
           "source": "S2: earth tracks are built mainly with brown/reddish brown or tan parts"
@@ -50,6 +64,11 @@
           "min": 1,
           "max": 2,
           "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paved roads are built on top of the module surface, at 5 plates, and may vary by 1 plate but only above (S2)"
+        },
+        "sideVariationPlates": {
+          "belowPlates": 0,
+          "abovePlates": 0,
+          "source": "S2: paved road height variation is restricted to 1 plate, only above standard height, which aboveSurfacePlates already spans"
         },
         "ldrawColors": {
           "values": [72],
@@ -76,6 +95,10 @@
         "bankRisePlatesPerStud": {
           "value": 1,
           "source": "same row: banks rise 1 plate per stud to the module surface (S2)"
+        },
+        "bankVariationPlates": {
+          "value": 1,
+          "source": "docs/verified-facts.md, \"MILS rivers\": the banks rise 1 plate per stud from the stud adjacent to the river at 2 plates, and \"there may be variations of 1 plate in this height\" (S2)"
         }
       }
     },

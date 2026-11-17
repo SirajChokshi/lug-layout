@@ -1,0 +1,89 @@
+{
+  "source": "tools/asset-pipeline/src/mils/mils-profile.json spec (MILS rows of docs/verified-facts.md, S1 and S2); the rail rule is the project rail module, its width and height measured from the rail part at the pin",
+  "moduleStuds": 32,
+  "surfacePlates": 4,
+  "surfaceTolerancePlates": 1,
+  "features": [
+    {
+      "kind": "road",
+      "standard": "mils",
+      "widthStuds": 16,
+      "plates": 5,
+      "belowPlates": 0,
+      "abovePlates": 1,
+      "bankStuds": 0,
+      "bankStartPlates": 0,
+      "bankRisePlatesPerStud": 0,
+      "bankVariationPlates": 0,
+      "ldrawColors": [
+        72
+      ]
+    },
+    {
+      "kind": "track",
+      "standard": "mils",
+      "widthStuds": 8,
+      "plates": 4,
+      "belowPlates": 1,
+      "abovePlates": 1,
+      "bankStuds": 0,
+      "bankStartPlates": 0,
+      "bankRisePlatesPerStud": 0,
+      "bankVariationPlates": 0,
+      "ldrawColors": [
+        6,
+        70,
+        19
+      ]
+    },
+    {
+      "kind": "river",
+      "standard": "mils",
+      "widthStuds": 8,
+      "plates": 2,
+      "belowPlates": 0,
+      "abovePlates": 0,
+      "bankStuds": 2,
+      "bankStartPlates": 2,
+      "bankRisePlatesPerStud": 1,
+      "bankVariationPlates": 1,
+      "ldrawColors": [
+        33
+      ]
+    },
+    {
+      "kind": "rail",
+      "standard": "project",
+      "widthStuds": 8,
+      "plates": 7,
+      "belowPlates": 0,
+      "abovePlates": 0,
+      "bankStuds": 0,
+      "bankStartPlates": 0,
+      "bankRisePlatesPerStud": 0,
+      "bankVariationPlates": 0,
+      "ldrawColors": [
+        72
+      ]
+    },
+    {
+      "kind": "path",
+      "standard": "mils",
+      "widthStuds": 4,
+      "plates": 4,
+      "belowPlates": 1,
+      "abovePlates": 1,
+      "bankStuds": 0,
+      "bankStartPlates": 0,
+      "bankRisePlatesPerStud": 0,
+      "bankVariationPlates": 0,
+      "ldrawColors": [
+        6,
+        70,
+        72,
+        71,
+        19
+      ]
+    }
+  ]
+}
