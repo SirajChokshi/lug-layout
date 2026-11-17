@@ -434,7 +434,7 @@
         "commit": "ad9943ccaf97ab9043686d6d94a9cfdb944217d4",
         "root": "rebrickable_db/data"
       },
-      "files": ["parts.csv.gz", "elements.csv.gz"]
+      "files": ["parts.csv.gz"]
     },
     {
       "name": "rebrickable-inventories",
