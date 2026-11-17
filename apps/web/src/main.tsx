@@ -4,6 +4,7 @@ import {
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
+  LAYOUT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
@@ -71,6 +72,11 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
         placements: viewer.dumpWorld ? () => city.placementDump() : null,
         run: null,
       };
+    }
+    case "layout": {
+      const layout = container.get(LAYOUT_SCENE);
+      layout.configure({ camera: viewer.camera });
+      return { scene: layout, placements: null, run: null };
     }
     case "model": {
       const modelScene = container.get(MODEL_SCENE);

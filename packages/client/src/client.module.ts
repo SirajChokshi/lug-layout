@@ -15,6 +15,7 @@ import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-m
 import { PlanService } from "./plan/plan-service.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ImportScene } from "./scene/import-scene.ts";
+import { LayoutScene } from "./scene/layout-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
 import { PartDisplayScene } from "./scene/part-display-scene.ts";
 import { IndexedDbRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -29,6 +30,7 @@ import {
   EDITOR_CAMERA,
   IMPORT_SCENE,
   IMPORT_WORKER_FACTORY,
+  LAYOUT_SCENE,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
@@ -46,6 +48,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PART_DISPLAY_SCENE).to(PartDisplayScene).inSingletonScope();
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(CITY_SCENE).to(CityScene).inSingletonScope();
+  bind(LAYOUT_SCENE).to(LayoutScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
