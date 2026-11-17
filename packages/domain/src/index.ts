@@ -13,14 +13,16 @@ export {
 export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
   EditHistory,
+  NO_TRACK_CHANGE,
   type AppliedChange,
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
   type PlacementPose,
   type PlacementRef,
-  type PendingChange,
   type PlacementRequest,
+  type TrackPieceAt,
+  type TrackRequest,
 } from "./edit-history.ts";
 export { runningGearSpanProblem, type RunningGearSpan } from "./running-gear-span.ts";
 export {

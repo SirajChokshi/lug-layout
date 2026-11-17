@@ -1,4 +1,4 @@
-import { STUD_LDU } from "@brr/math";
+import { STUD_LDU, pose16, zeta16 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { EditHistory, type PlacementRef } from "./edit-history.ts";
 import { SLOT_LIVE, World } from "./world.ts";
@@ -132,6 +132,22 @@ describe("EditHistory", () => {
         { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4 } },
       ]),
     ).toThrow(/quarter turn/u);
+    const straight = { piece: 0, pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0) };
+    expect(() =>
+      history.commit("remove", [{ placement, to: null }], {
+        lift: [
+          { ...straight, index: 3, yPlates: 0 },
+          { ...straight, index: 1, yPlates: 0 },
+        ],
+        lay: [],
+      }),
+    ).toThrow(/ascending/u);
+    expect(() =>
+      history.commit("draw-track", [], {
+        lift: [],
+        lay: [{ ...straight, index: 0, yPlates: 2 ** 15 }],
+      }),
+    ).toThrow(/int16/u);
     expect(livePlacements(world)).toEqual(before);
     expect(history.undoDepth).toBe(1);
   });
