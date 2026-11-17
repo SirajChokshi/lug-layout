@@ -1506,3 +1506,13 @@ footer a {
 .palette-swatch[data-current-color="true"] {
   box-shadow: inset 0 0 0 2px #fff;
 }
+
+.palette-alias {
+  font-variant-numeric: tabular-nums;
+  color: #334;
+}
+
+.palette-alias::before {
+  content: "aka ";
+  color: #778;
+}
