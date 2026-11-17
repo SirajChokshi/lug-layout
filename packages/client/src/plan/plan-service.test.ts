@@ -16,6 +16,10 @@ class IssueBoxBackend implements ISceneBackend {
     throw new Error("not used");
   }
   setPalette(): void {}
+  addParts(): void {}
+  setPartMeshes(): void {}
+  setFarStuds(): void {}
+  setFarModelMesh(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
   setGhost(): void {}

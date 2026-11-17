@@ -39,7 +39,9 @@ import {
   type GeometrySet,
   type FrameStats,
   type ISceneBackend,
+  type LdrawColor,
   type LookSettings,
+  type PartMeshUpdate,
   type PartPalette,
   type PlanOverlay,
   type RebaseEvent,
@@ -51,6 +53,7 @@ import {
   type ThumbnailRequest,
   type WorldBox,
 } from "../scene-backend.ts";
+import type { PartAsset, PartMesh, StudPrimitiveAsset } from "@brr/catalog";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { LookPipeline } from "./look-pipeline.ts";
@@ -263,17 +266,28 @@ interface PartGeometries {
 }
 
 interface LevelGeometries {
-  readonly parts: ReadonlyArray<PartGeometries>;
-  readonly studs: ReadonlyArray<BufferGeometry>;
+  readonly parts: Array<PartGeometries | undefined>;
+  studs: ReadonlyArray<BufferGeometry>;
 }
 
-const EMPTY_LEVEL: LevelGeometries = { parts: [], studs: [] };
+function emptyLevel(): LevelGeometries {
+  return { parts: [], studs: [] };
+}
+
+function disposePart(part: PartGeometries | undefined): void {
+  part?.body?.dispose();
+  for (const fixed of part?.fixed ?? []) fixed.geometry.dispose();
+}
+
+function usesAnyPart(chunk: ChunkInstances, parts: ReadonlySet<number>): boolean {
+  for (let i = 0; i < chunk.count; i++) {
+    if (parts.has(chunk.partIndex[i] ?? 0)) return true;
+  }
+  return false;
+}
 
 function disposeLevel(level: LevelGeometries): void {
-  for (const part of level.parts) {
-    part.body?.dispose();
-    for (const fixed of part.fixed) fixed.geometry.dispose();
-  }
+  for (const part of level.parts) disposePart(part);
   for (const stud of level.studs) stud.dispose();
 }
 
@@ -473,9 +487,15 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     depthTest: false,
   });
   private readonly rayPoint = new Vector3();
-  private detailedLevel: LevelGeometries = EMPTY_LEVEL;
-  private farLevel: LevelGeometries = EMPTY_LEVEL;
-  private farModelGeometries: ReadonlyArray<ReadonlyArray<FixedColorGeometry>> = [];
+  private detailedLevel: LevelGeometries = emptyLevel();
+  private farLevel: LevelGeometries = emptyLevel();
+  private farModelGeometries: Array<ReadonlyArray<FixedColorGeometry> | undefined> = [];
+  private readonly farModelPlacements = new Map<number, FarModelPlacement>();
+  private ldrawColorTable: ReadonlyMap<number, LdrawColor> = new Map();
+  private readonly chunkSources = new Map<number, ChunkInstances>();
+  private readonly vehicleSources = new Map<number, ChunkInstances>();
+  private ghostSource: ChunkInstances | null = null;
+  private ghostPose: readonly [number, number, number, number] | null = null;
   private forcedTier: number | null = null;
   private readonly farModelNodes = new Map<number, FarModelNode>();
   private farModelList: FarModelNode[] = [];
@@ -641,47 +661,69 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     return `${String(vendor)} / ${String(name)}`;
   }
 
+  private ldrawColor(code: number): LdrawColor {
+    const color = this.ldrawColorTable.get(code);
+    if (color === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
+    return color;
+  }
+
+  private readonly linearColor = (code: number, out: Float32Array): void => {
+    this.scratchColor.setHex(this.ldrawColor(code).srgb, SRGBColorSpace);
+    out[0] = this.scratchColor.r;
+    out[1] = this.scratchColor.g;
+    out[2] = this.scratchColor.b;
+  };
+
+  private readonly alphaOf = (code: number): number => this.ldrawColor(code).alpha;
+
+  private partGeometries(part: PartAsset): PartGeometries {
+    return {
+      body: inheritBodyGeometry(part),
+      fixed: fixedColorGeometries(part.mesh, this.linearColor, this.alphaOf),
+    };
+  }
+
+  private level(set: GeometrySet): LevelGeometries {
+    return {
+      parts: set.parts.map((part) => this.partGeometries(part)),
+      studs: set.studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh)),
+    };
+  }
+
+  private setPartBounds(index: number, part: PartAsset): void {
+    if ((index + 1) * BOUNDS_FLOATS > this.partBounds.length) {
+      const grown = new Float32Array(
+        Math.max((index + 1) * BOUNDS_FLOATS, this.partBounds.length * 2),
+      );
+      grown.set(this.partBounds);
+      this.partBounds = grown;
+    }
+    this.partBounds.set(part.boundsMin, index * BOUNDS_FLOATS);
+    this.partBounds.set(part.boundsMax, index * BOUNDS_FLOATS + 3);
+  }
+
   setPalette(palette: PartPalette): void {
     this.clearChunks();
     for (const node of this.farModelList) this.scene.remove(node.group);
     this.farModelNodes.clear();
+    this.farModelPlacements.clear();
     this.farModelList = [];
     this.setGhost(null);
     disposeLevel(this.detailedLevel);
     disposeLevel(this.farLevel);
     for (const geometries of this.farModelGeometries) {
-      for (const fixed of geometries) fixed.geometry.dispose();
+      for (const fixed of geometries ?? []) fixed.geometry.dispose();
     }
     if (palette.far) assertSameParts(palette.detailed, palette.far);
-    const ldrawColor = (code: number) => {
-      const color = palette.ldrawColors.get(code);
-      if (color === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
-      return color;
-    };
-    const linearColor = (code: number, out: Float32Array): void => {
-      this.scratchColor.setHex(ldrawColor(code).srgb, SRGBColorSpace);
-      out[0] = this.scratchColor.r;
-      out[1] = this.scratchColor.g;
-      out[2] = this.scratchColor.b;
-    };
-    const alphaOf = (code: number): number => ldrawColor(code).alpha;
-    const level = (set: GeometrySet): LevelGeometries => ({
-      parts: set.parts.map((part) => ({
-        body: inheritBodyGeometry(part),
-        fixed: fixedColorGeometries(part.mesh, linearColor, alphaOf),
-      })),
-      studs: set.studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh)),
-    });
-    this.detailedLevel = level(palette.detailed);
-    this.farLevel = palette.far ? level(palette.far) : EMPTY_LEVEL;
+    this.ldrawColorTable = palette.ldrawColors;
+    this.detailedLevel = this.level(palette.detailed);
+    this.farLevel = palette.far ? this.level(palette.far) : emptyLevel();
     this.farModelGeometries = (palette.farModels ?? []).map((mesh) =>
-      fixedColorGeometries(mesh, linearColor, alphaOf),
+      fixedColorGeometries(mesh, this.linearColor, this.alphaOf),
     );
     this.tiered = palette.far !== undefined;
     this.partBounds = new Float32Array(palette.detailed.parts.length * BOUNDS_FLOATS);
-    palette.detailed.parts.forEach((part, p) => {
-      this.partBounds.set([...part.boundsMin, ...part.boundsMax], p * BOUNDS_FLOATS);
-    });
+    palette.detailed.parts.forEach((part, p) => this.setPartBounds(p, part));
     const colorCount = palette.colorsSrgb.length / COLOR_CHANNELS;
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
     this.alphaSlots = [OPAQUE_ALPHA];
@@ -704,8 +746,63 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
   }
 
+  addParts(parts: ReadonlyArray<PartAsset>): void {
+    for (const part of parts) {
+      const index = this.detailedLevel.parts.length;
+      this.detailedLevel.parts.push(this.partGeometries(part));
+      this.setPartBounds(index, part);
+    }
+  }
+
+  setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
+    const changed = new Set<number>();
+    for (const { index, level, part } of updates) {
+      if (index >= this.detailedLevel.parts.length) {
+        throw new RangeError(`part ${index} is not in the palette`);
+      }
+      const geometries = level === "far" ? this.farLevel : this.detailedLevel;
+      disposePart(geometries.parts[index]);
+      geometries.parts[index] = this.partGeometries(part);
+      if (level === "detailed") this.setPartBounds(index, part);
+      if (level === "detailed" || this.tiered) changed.add(index);
+    }
+    if (changed.size === 0) return;
+    for (const [key, chunk] of Array.from(this.chunkSources)) {
+      if (usesAnyPart(chunk, changed)) this.setChunk(key, chunk);
+    }
+    for (const [vehicle, model] of Array.from(this.vehicleSources)) {
+      if (usesAnyPart(model, changed)) this.rebuildVehicle(vehicle, model);
+    }
+    if (this.ghostSource && usesAnyPart(this.ghostSource, changed)) this.rebuildGhost();
+  }
+
+  setFarStuds(studPrimitives: ReadonlyArray<StudPrimitiveAsset>): void {
+    if (studPrimitives.length !== this.detailedLevel.studs.length) {
+      throw new Error("the far stud primitives do not match the palette's stud primitives");
+    }
+    for (const stud of this.farLevel.studs) stud.dispose();
+    this.farLevel.studs = studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh));
+    this.tiered = true;
+    for (const [key, chunk] of Array.from(this.chunkSources)) this.setChunk(key, chunk);
+    for (const [vehicle, model] of Array.from(this.vehicleSources))
+      this.rebuildVehicle(vehicle, model);
+  }
+
+  setFarModelMesh(modelIndex: number, mesh: PartMesh): void {
+    for (const fixed of this.farModelGeometries[modelIndex] ?? []) fixed.geometry.dispose();
+    this.farModelGeometries[modelIndex] = fixedColorGeometries(
+      mesh,
+      this.linearColor,
+      this.alphaOf,
+    );
+    for (const [id, placement] of Array.from(this.farModelPlacements)) {
+      if (placement.modelIndex === modelIndex) this.setFarModel(id, placement);
+    }
+  }
+
   setChunk(key: number, chunk: ChunkInstances): void {
     this.removeChunk(key);
+    this.chunkSources.set(key, chunk);
     const record = this.buildChunk(chunk);
     this.chunks.set(key, record);
     this.chunkList.push(record);
@@ -718,6 +815,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setVehicle(vehicle: number, model: ChunkInstances): void {
     this.removeVehicle(vehicle);
+    this.vehicleSources.set(vehicle, model);
     const body = this.buildChunk({
       ...model,
       originX: this.renderOriginX,
@@ -750,7 +848,20 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     record.group.rotation.y = -record.yaw;
   }
 
+  private rebuildVehicle(vehicle: number, model: ChunkInstances): void {
+    const before = this.vehicles.get(vehicle);
+    this.setVehicle(vehicle, model);
+    const after = this.vehicles.get(vehicle);
+    if (!before || !after) return;
+    after.x = before.x;
+    after.y = before.y;
+    after.z = before.z;
+    after.yaw = before.yaw;
+    this.placeVehicle(after);
+  }
+
   private removeVehicle(vehicle: number): void {
+    this.vehicleSources.delete(vehicle);
     const existing = this.vehicles.get(vehicle);
     if (!existing) return;
     this.scene.remove(existing.group);
@@ -765,6 +876,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private removeChunk(key: number): void {
+    this.chunkSources.delete(key);
     const existing = this.chunks.get(key);
     if (!existing) return;
     this.scene.remove(existing.group);
@@ -779,6 +891,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       disposeInstancedChildren(this.ghost);
       this.ghost = undefined;
     }
+    this.ghostSource = model;
+    this.ghostPose = null;
     if (!model) return;
     const ghost = new Group();
     ghost.matrixAutoUpdate = false;
@@ -788,9 +902,16 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.scene.add(ghost);
   }
 
+  private rebuildGhost(): void {
+    const pose = this.ghostPose;
+    this.setGhost(this.ghostSource);
+    if (pose) this.placeGhost(...pose);
+  }
+
   placeGhost(x: number, yLdu: number, z: number, rot: number): void {
     const ghost = this.ghost;
     if (!ghost) return;
+    this.ghostPose = [x, yLdu, z, rot];
     this.ghostX = x;
     this.ghostZ = z;
     ghost.position.set(x - this.renderOriginX, yLdu, z - this.renderOriginZ);
@@ -1139,7 +1260,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
               );
         const level = (c & CLASS_NOT_UPRIGHT) !== 0 ? this.detailedLevel : this.farLevel;
         const layer = (c & CLASS_VOXELIZED) !== 0 ? tiers.midShells : tiers.shellBodies;
-        this.addPartMeshes(layer, level.parts[p], alpha, tierCount, tierAttributes, materials);
+        const geometries = level.parts[p] ?? this.detailedLevel.parts[p];
+        this.addPartMeshes(layer, geometries, alpha, tierCount, tierAttributes, materials);
       }
     }
     if (shadowCasters && this.tiered) this.addBoundsProxies(shadowCasters, chunk);
@@ -1551,9 +1673,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.farModelNodes.delete(id);
       this.farModelList = this.farModelList.filter((node) => node !== existing);
     }
+    this.farModelPlacements.delete(id);
     if (!placement) return;
-    const geometries = this.farModelGeometries[placement.modelIndex];
-    if (!geometries) throw new Error(`far model ${placement.modelIndex} is not in the palette`);
+    this.farModelPlacements.set(id, placement);
+    const geometries = this.farModelGeometries[placement.modelIndex] ?? [];
     const group = new Group();
     group.matrixAutoUpdate = false;
     group.position.set(

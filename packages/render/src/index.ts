@@ -14,6 +14,8 @@ export type {
   LdrawColor,
   LookFeature,
   LookSettings,
+  PartMeshUpdate,
+  PaletteLevel,
   PartPalette,
   PlanOverlay,
   RebaseEvent,

@@ -40,6 +40,14 @@ export interface PartPalette {
   readonly ldrawColors: ReadonlyMap<number, LdrawColor>;
 }
 
+export type PaletteLevel = "detailed" | "far";
+
+export interface PartMeshUpdate {
+  readonly index: number;
+  readonly level: PaletteLevel;
+  readonly part: PartAsset;
+}
+
 export interface LdrawColor {
   readonly srgb: number;
   readonly alpha: number;
@@ -148,6 +156,10 @@ export interface IThumbnailRenderer {
 export interface ISceneBackend {
   init(config: SceneBackendConfig): Promise<BackendInfo>;
   setPalette(palette: PartPalette): void;
+  addParts(parts: ReadonlyArray<PartAsset>): void;
+  setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void;
+  setFarStuds(studPrimitives: ReadonlyArray<StudPrimitiveAsset>): void;
+  setFarModelMesh(modelIndex: number, mesh: PartMesh): void;
   setChunk(key: number, chunk: ChunkInstances): void;
   deleteChunk(key: number): void;
   setGhost(model: ChunkInstances | null): void;

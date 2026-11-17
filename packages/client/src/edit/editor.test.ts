@@ -45,7 +45,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
 import { EDITOR } from "../tokens.ts";
-import type { IEditor } from "./editor.ts";
+import type { EditorSnapshot, IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -155,6 +155,10 @@ class HeadlessBackend implements ISceneBackend {
     };
   }
   setPalette(): void {}
+  addParts(): void {}
+  setPartMeshes(): void {}
+  setFarStuds(): void {}
+  setFarModelMesh(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
   setGhost(): void {}
@@ -218,6 +222,19 @@ async function startEditor(
   return { editor, backend, manifest: await realLoader.loadManifest("standard") };
 }
 
+function farTierSettled(editor: IEditor): Promise<EditorSnapshot> {
+  return new Promise((resolve) => {
+    const check = (): void => {
+      const snapshot = editor.snapshot();
+      if (snapshot.farTier === "loading") return;
+      unsubscribe();
+      resolve(snapshot);
+    };
+    const unsubscribe = editor.subscribe(check);
+    check();
+  });
+}
+
 it("starts with every model in the bundle while keeping at most 16 bundle fetches in flight", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
   const { editor, manifest } = await startEditor(null, fetcher);
@@ -227,7 +244,10 @@ it("starts with every model in the bundle while keeping at most 16 bundle fetche
   expect(fetcher.requests).toBeGreaterThan(manifest.models.length);
   expect(editor.snapshot().error).toBeNull();
   expect(editor.snapshot().status).toBe("ready");
-  expect(editor.snapshot().farTierError).toBeNull();
+  const settled = await farTierSettled(editor);
+  expect(settled.farTier).toBe("ready");
+  expect(settled.farTierError).toBeNull();
+  expect(fetcher.maxInFlight).toBeLessThanOrEqual(16);
 }, 300_000);
 
 it("starts without the far tier when its files cannot be fetched", async () => {
@@ -236,9 +256,10 @@ it("starts without the far tier when its files cannot be fetched", async () => {
   );
   const { editor } = await startEditor([PLACEABLE_SET], fetcher);
 
-  const snapshot = editor.snapshot();
-  expect(snapshot.status).toBe("ready");
+  expect(editor.snapshot().status).toBe("ready");
+  const snapshot = await farTierSettled(editor);
   expect(snapshot.error).toBeNull();
+  expect(snapshot.farTier).toBe("unavailable");
   expect(snapshot.farTierError).toContain("Failed to fetch");
   expect(snapshot.catalog.map((item) => item.id)).toContain(`omr:${PLACEABLE_SET}`);
 }, 120_000);
