@@ -1,11 +1,12 @@
 # M1 S7 evidence: per-model voxel far LODs
 
 Code: branch `siraj/m1-model-lods-134d`, PR #52.
-- `vm-9742bc6/`: the PR head after rebasing onto `main` at `e3c57ab`, which only resolves merge conflicts.
-  - `voxcheck.json`: 21 models.
-  - `viewer-vs-main/`: city, track and run viewers.
-  - `editor-near-vs-main/`
+- `vm-0a5f6d8/`: the PR head, stacked on #66 (`17b32a2`, `main` at `334cfe6` plus the editor fix).
+  - `voxcheck.json`: 26 models, with the 1e-6 LDU² colour-tie rule.
+  - `viewer-vs-base/`: city, track and run viewers.
+  - `editor-near-vs-base/`
   - `smoke-*.png`: far-tier smoke screenshots.
+  - `models-10190-1/`: per-set run for 10190-1, whose far mesh changed with the tie rule.
 - `vm-07720a9/`: the full scene capture at `07720a9`, the same S7 code on `main` at `cd2b742`.
   - `voxcheck.json`
   - `models/`

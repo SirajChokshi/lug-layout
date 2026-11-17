@@ -10,6 +10,7 @@ FIX = f"{REPO}/packages/test-fixtures"
 FAR = f"{REPO}/tools/asset-pipeline/dist/bundle/far"
 CELL = np.array([20.0, 8.0, 20.0])
 MARGIN = 0.1
+AREA_TIE_LDU2 = 1e-6
 STUDS = {"stud.dat", "stud2.dat"}
 
 library = {}
@@ -267,8 +268,11 @@ def check(args):
     for key, by_color in areas.items():
         opaque = {c: a for c, a in by_color.items() if c not in translucent}
         pool = opaque or by_color
-        best = max(pool.values())
-        mine[key] = min(c for c, a in pool.items() if a == best)
+        chosen, top = None, None
+        for c in sorted(pool):
+            if top is None or pool[c] > top + AREA_TIE_LDU2:
+                chosen, top = c, pool[c]
+        mine[key] = chosen
     only_mine = set(mine) - set(baked)
     only_baked = set(baked) - set(mine)
     colour_diff = sum(1 for k in set(mine) & set(baked) if mine[k] != baked[k])
