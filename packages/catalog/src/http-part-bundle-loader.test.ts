@@ -30,7 +30,7 @@ class PointerFetcher implements IAssetFetcher {
 
   async text(path: string): Promise<string> {
     this.requested.push(path);
-    if (path === "current.json" && this.pointer !== undefined) return this.pointer;
+    if (path === "current/latest.json" && this.pointer !== undefined) return this.pointer;
     throw new Error(`GET ${path} failed with 404`);
   }
 }
@@ -43,7 +43,7 @@ it.each([
   { pointer: undefined, manifest: "standard/manifest.json" },
   { pointer: "<!doctype html>", manifest: "standard/manifest.json" },
 ])(
-  "loads the manifest current.json names, or manifest.json without one ($manifest)",
+  "loads the manifest current/latest.json names, or manifest.json without one ($manifest)",
   async ({ pointer, manifest }) => {
     const container = new Container();
     await container.load(catalogModule);
@@ -54,7 +54,7 @@ it.each([
     await expect(container.get(PART_BUNDLE_LOADER).loadManifest("standard")).rejects.toThrow(
       manifest,
     );
-    expect(fetcher.requested).toEqual(["current.json", manifest]);
+    expect(fetcher.requested).toEqual(["current/latest.json", manifest]);
   },
 );
 

@@ -3,6 +3,7 @@ import {
   BUNDLE_POINTER_CACHE_CONTROL,
   BUNDLE_POINTER_FILE,
   BundlePointer,
+  isContentAddressedPath,
 } from "@brr/schema/bundle-pointer";
 import { decode } from "@brr/schema/decode";
 import { appendFile, readFile } from "node:fs/promises";
@@ -60,6 +61,11 @@ async function currentCommand(): Promise<void> {
 }
 
 async function writeCommand(): Promise<void> {
+  if (isContentAddressedPath(BUNDLE_POINTER_FILE)) {
+    throw new Error(
+      `${BUNDLE_POINTER_FILE} looks content-addressed, so caches would keep it forever`,
+    );
+  }
   const manifestFile = remoteManifestFile(bundleInputKey(repoRoot));
   const baseUrl = await publicBaseUrl();
   await waitUntilServed(baseUrl, BundleLod.options, manifestFile, {

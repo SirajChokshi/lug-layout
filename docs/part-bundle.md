@@ -9,7 +9,9 @@ Only `main` publishes. Pull requests never write or read R2. Their `check` job b
 - `<lod>/<file>.<sha256 prefix>.glb|json|wasm`: content-addressed objects. Identical bytes get the same key, so a new bundle uploads only what changed. The uploader refuses any file whose name doesn't match its own SHA-256.
 - `<lod>/manifest.<input key>.json`: one manifest per LOD. The input key is the first 16 hex digits of a SHA-256 over every git-tracked file that `turbo.json` lists as an input of `@brr/asset-pipeline#build`: the crates, the palette, the lock, the verified facts, the pipeline source except its tests, the bundle schema (`packages/schema/src/bundle`), and the two shared modules the pipeline runs (`packages/catalog/src/glb.ts`, `packages/domain/src/track/heading-footprints.ts`). `node tools/asset-pipeline/src/cli.ts manifest-file` prints it in about 0.2 s, without compiling anything.
 
-Every object is stored with `Cache-Control: public, max-age=31536000, immutable`.
+- `current/latest.json`: `{"manifestFile":"manifest.<input key>.json"}`, the newest bundle `main` published. It's the only object ever overwritten, and its path has no `.<16 hex>.` segment, so nothing that caches content-addressed files forever (`isContentAddressedPath` in `@brr/schema/bundle-pointer`) keeps it.
+
+Every object except the pointer is stored with `Cache-Control: public, max-age=31536000, immutable`. The pointer is stored with `public, max-age=60`.
 
 ## What a LOD holds
 
@@ -23,9 +25,9 @@ GLBs are only ever needed to draw.
 
 ## CI
 
-`.github/workflows/part-bundle.yml` runs two jobs on every push to `main`.
+`.github/workflows/part-bundle.yml` runs three jobs on every push to `main`, and on *Actions → Part bundle → Run workflow*.
 
-**`status`** has no environment and no secrets. It HEADs the three manifests for the commit's input key at the bucket's public URL: the repository variable `PART_BUNDLE_BASE_URL` if it's set, otherwise `public_base_url` in `infra/cloudflare/part-bundles.json`. If all three are served, the workflow ends there. That covers every commit that doesn't touch the bundle inputs, and nobody is asked to approve anything. If the variable is unset, a manifest is missing, or the URL can't be reached, it falls through to `publish`.
+**`status`** has no environment and no secrets. It HEADs the three manifests for the commit's input key at the bucket's public URL: the repository variable `PART_BUNDLE_BASE_URL` if it's set, otherwise `public_base_url` in `infra/cloudflare/part-bundles.json`. It also reads `current/latest.json` there. If all three manifests are served and the pointer already names them, the workflow ends there. That covers every commit that doesn't touch the bundle inputs, and nobody is asked to approve anything. If the variable is unset, a manifest is missing, or the URL can't be reached, it falls through to `publish`.
 
 **`publish`** runs in the `production` environment that #62's catalog deploy also uses, so it waits for the owner's approval:
 1. Checks the bucket itself for the three manifests, over R2's S3 API, and stops if they're all there.
@@ -35,18 +37,20 @@ GLBs are only ever needed to draw.
 
 `publish` uses #62's single Cloudflare account token. R2's S3 API takes the token's id as the access key and the SHA-256 hex digest of the token value as the secret, and the CLI derives both from `CLOUDFLARE_API_TOKEN_ID` and `CLOUDFLARE_API_TOKEN`. `CLOUDFLARE_ACCOUNT_ID`, the token and its id are passed only to the check step and the upload step. Installs, the Rust toolchain, `cargo` build scripts and the LDraw restore never see them. Without the token, the check step warns and nothing is published. It never reads `infra/cloudflare/part-bundles.json` in that case. The bucket name is that file's `bucket_name`.
 
-**Approval is requested only when the bundle is missing**, which is after a merge that changes bundle inputs. Production then deploys only after the job is approved and has built and uploaded the bundle, about 20 minutes on `ubuntu-latest` (19.4 minutes for 4d08a77, 18.5 for 9cc703c). Runs share one concurrency group, so a merge that lands while another bundle is building waits for it, and only the newest queued run is kept. If publishing takes longer than `PART_BUNDLE_WAIT_MINUTES`, the Vercel build fails and the previous deployment keeps serving. Approve the job, then redeploy in Vercel.
+**`pointer`** runs once `publish` succeeded or was skipped, unless `status` found the pointer already current. It waits up to 5 minutes for all three manifests to be served at the public URL, then writes `current/latest.json` naming them, in the `production` environment with the same token as `publish`.
+
+**Approval is requested only when the bundle is missing**, which is after a merge that changes bundle inputs. The bundle is then built and uploaded in about 20 minutes on `ubuntu-latest` (19.4 minutes for 4d08a77, 18.5 for 9cc703c), and the pointer moves right after. Runs share one concurrency group, so a merge that lands while another bundle is building waits for it, and only the newest queued run is kept.
 
 ## Vercel
 
 `apps/web/vercel.json` applies when the project's Root Directory is `apps/web`. `main` deploys to Production, and other branches get previews.
 - **Install:** only `@brr/web` and the asset pipeline.
 - **Base URL:** `vercel-build.sh` takes the bucket's public URL from `public_base_url` in `infra/cloudflare/part-bundles.json` and exports it as `VITE_BUNDLE_BASE_URL`, so the Vercel project needs no environment variable. An explicit `VITE_BUNDLE_BASE_URL` in Vercel still wins.
-- **Build:** in Production, waits until the three manifests for its input key are served from that URL, then runs `vite build` with `publicDir` off. If they don't appear within `PART_BUNDLE_WAIT_MINUTES`, the build fails and the previous deployment keeps serving. `vercel-build.sh` sets it to 42 unless Vercel sets one: two back-to-back publishes (about 40 minutes) fit, with room for the install and `vite build` under Vercel's 45-minute build limit. The CLI's own default stays 20, because the pipeline source is a bundle input and changing it would change the input key. A Vercel build without `VITE_BUNDLE_BASE_URL` refuses to run.
-- **Input changes:** a merge that changes bundle inputs waits for `main`'s build, about 20 minutes, or about 40 if another bundle was already building. Other merges find the key already published and don't wait.
-- **Previews:** a preview (any `VERCEL_ENV` other than `production`) checks once, with `cli.ts served`, whether its input key is served, and never waits. If it is, the build proceeds as in Production. If not, the build HEADs each LOD's manifest itself, and skips only when the bucket answers 404 for at least one and 200 or 404 for all. Then the branch changes bundle inputs, and only `main` publishes bundles, so there is no preview: the build logs `Preview skipped: part bundle manifest.<key>.json is absent from …` and deploys only `preview-skipped.html`, a page that says so. Any other answer, an unreachable bucket, or a `served` result other than exactly `served=true` or `served=false` fails the build. The check uses the input key itself, so it can't drift from the bundle inputs. A branch based on a `main` commit whose bundle is still publishing is skipped too; redeploy it once `main` deploys.
-- **LDraw library:** while `public_base_url` in `infra/cloudflare/ldraw-library.json` is `null`, builds read the LDraw library from GitHub raw. Once it's committed, `vercel-build.sh` exports it as `VITE_LDRAW_LIBRARY_BASE_URL`, and unless the pinned library's index is served there, Production fails and previews are skipped (`docs/ldraw-library.md`).
-- **Needs git:** the input key comes from `git ls-files`. A deploy without `.git`, such as `vercel deploy` from a plain directory, fails with a git error or "git lists no part bundle inputs" rather than guessing a key.
+- **Build:** `vercel-build.sh` exports the base URLs and runs `vite build` with `publicDir` off. It never contacts the bucket, never waits and knows nothing about the bundle. A Vercel build without `VITE_BUNDLE_BASE_URL` refuses to run.
+- **Runtime:** the app reads `current/latest.json` once per page load and loads whatever manifest it names, whatever version that is. If the pointer is missing or unreadable, it loads `manifest.json`, which is what local dev serves. An explicit `VITE_BUNDLE_MANIFEST_FILE` skips the pointer, for tools such as `measure-startup`.
+- **Skew:** the app and the bundle deploy independently, so right after a merge that changes the bundle format the new app can read the previous bundle until `publish` and `pointer` finish (about 20 minutes plus approval), and an app older than the bundle can read the new one. Either pairing can be partly broken during that window; nothing pins them together.
+- **Previews:** previews build exactly like Production and read the same pointer.
+- **LDraw library:** while `public_base_url` in `infra/cloudflare/ldraw-library.json` is `null`, builds read the LDraw library from GitHub raw. Once it's committed, `vercel-build.sh` exports it as `VITE_LDRAW_LIBRARY_BASE_URL`; the build doesn't check that the library is published (`docs/ldraw-library.md`).
 - **Ignored builds:** `ignoreCommand` skips deploys whose changes are only Markdown, tests, benchmarks, `.cursor`, `.github`, `infra`, `apps/catalog-api` or `docs/research`. Any git error, such as no previous deployment, builds.
 
 ## Setup

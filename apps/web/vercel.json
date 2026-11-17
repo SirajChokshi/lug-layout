@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "ignoreCommand": "git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- :/ ':/!*.md' ':/!*.test.ts*' ':/!*.bench.ts' ':/!.cursor' ':/!.github' ':/!infra' ':/!apps/catalog-api' ':/!docs/research' || exit 1",
-  "installCommand": "pnpm install --frozen-lockfile --filter @brr/web...",
+  "installCommand": "pnpm install --frozen-lockfile --filter @brr/web... --filter @brr/asset-pipeline...",
   "buildCommand": "sh vercel-build.sh",
   "outputDirectory": "dist"
 }

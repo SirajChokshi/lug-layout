@@ -38,7 +38,7 @@ jobs:
           : "${PART_BUNDLE_BASE_URL:=$(node -p "require('./infra/cloudflare/part-bundles.json').public_base_url")}"
           export PART_BUNDLE_BASE_URL
           node tools/asset-pipeline/src/cli.ts served
-      - name: Check whether current.json already names this input key
+      - name: Check whether current/latest.json already names this input key
         id: pointer
         env:
           PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
@@ -105,7 +105,7 @@ jobs:
           echo "Part bundle \`$MANIFEST_FILE\`, already published before this run: $ALREADY_PUBLISHED" >> "$GITHUB_STEP_SUMMARY"
 
   pointer:
-    name: Point current.json at this bundle
+    name: Point current/latest.json at this bundle
     needs: [status, publish]
     if: ${{ !cancelled() && needs.status.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped') && needs.status.outputs.pointer_current != 'true' }}
     runs-on: ubuntu-latest
@@ -120,7 +120,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
-      - name: Write current.json once every LOD's manifest is served
+      - name: Write current/latest.json once every LOD manifest is served
         env:
           PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
