@@ -1,5 +1,10 @@
-import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
-import type { BaseCells, TrackSupport } from "@brr/domain";
+import {
+  ASSET_FETCHER,
+  PART_BUNDLE_LOADER,
+  type IAssetFetcher,
+  type PartBundle,
+} from "@brr/catalog";
+import { SupportGrid, trackSupport, type BaseCells, type TrackSupport } from "@brr/domain";
 import { lduFromMm, pose16, STUD_LDU, zeta16 } from "@brr/math";
 import {
   INSTANCE_MATRIX_FLOATS,
@@ -11,11 +16,16 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
-import { beforeAll, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
-import { TrackDrawing, type TrackFootprint } from "./track-drawing.ts";
+import {
+  TrackDrawing,
+  type TrackCommit,
+  type TrackFootprint,
+  type TrackSupportProbe,
+} from "./track-drawing.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const MM_PER_LDU = 1 / lduFromMm(1);
@@ -94,6 +104,7 @@ const onBaseplates = (cells: BaseCells): TrackSupport => ({
 
 const container = new Container();
 let drawing: TrackDrawing;
+let trackBundle: PartBundle;
 let footprints: ReadonlyArray<TrackFootprint>;
 let rendered: Extent;
 
@@ -112,6 +123,7 @@ beforeAll(async () => {
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
+  trackBundle = bundle;
   drawing = new TrackDrawing(
     bundle.trackCatalog,
     bundle.parts,
@@ -201,16 +213,6 @@ it("marks a drag target as joining only when the closure solver finds an exact j
     new ColorTable(bundle),
     onBaseplates,
   );
-  const lay = (from: readonly [number, number], to: readonly [number, number]): void => {
-    layout.beginDrag(
-      from[0] * STUD_LDU,
-      from[1] * STUD_LDU,
-      from[0] * STUD_LDU,
-      from[1] * STUD_LDU,
-    );
-    layout.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
-    layout.endDrag();
-  };
   const aim = (from: readonly [number, number], to: readonly [number, number]) => {
     layout.beginDrag(
       from[0] * STUD_LDU,
@@ -224,9 +226,9 @@ it("marks a drag target as joining only when the closure solver finds an exact j
     layout.cancelDrag();
     return { target, closure };
   };
-  lay([0, 0], [48, 0]);
-  lay([51, 2], [99, 2]);
-  lay([160, 0], [208, 0]);
+  lay(layout, [0, 0], [48, 0]);
+  lay(layout, [51, 2], [99, 2]);
+  lay(layout, [160, 0], [208, 0]);
 
   const refused = aim([51, 2], [48, 0]);
   expect(refused.closure).toBe("impossible");
@@ -310,4 +312,68 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   expect(reopened.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
   expect(reopened.joinedPairs()).toBe(8);
   expect(reopened.openEnds()).toHaveLength(2);
+});
+
+const BASEPLATE_STUDS = 32;
+
+function baseplates(...minCorners: ReadonlyArray<readonly [number, number]>): SupportGrid {
+  const grid = new SupportGrid();
+  for (const [x0, z0] of minCorners) {
+    for (let z = z0; z < z0 + BASEPLATE_STUDS; z++) {
+      for (let x = x0; x < x0 + BASEPLATE_STUDS; x++) grid.markBaseplate(x, z);
+    }
+  }
+  return grid;
+}
+
+function probeOn(grid: SupportGrid): TrackSupportProbe {
+  return (cells) => trackSupport(cells, grid);
+}
+
+function drawingOn(grid: SupportGrid): TrackDrawing {
+  return new TrackDrawing(
+    trackBundle.trackCatalog,
+    trackBundle.parts,
+    new ColorTable(trackBundle),
+    probeOn(grid),
+  );
+}
+
+function lay(
+  target: TrackDrawing,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): TrackCommit {
+  target.beginDrag(from[0] * STUD_LDU, from[1] * STUD_LDU, from[0] * STUD_LDU, from[1] * STUD_LDU);
+  target.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
+  return target.endDrag();
+}
+
+describe("track on baseplates: only the span between a piece's own connectors needs one (P6)", () => {
+  it("lays a straight whose open end is flush with the baseplate edge, and refuses one that starts past it", () => {
+    const plate = baseplates([-16, -16]);
+    expect(lay(drawingOn(plate), [-16, -8], [0, -8])).toMatchObject({ laid: 1, refusal: null });
+    expect(lay(drawingOn(plate), [-20, 8], [-4, 8])).toMatchObject({
+      laid: 0,
+      refusal: "off-baseplate",
+    });
+  });
+
+  it("fills one 3811 edge to edge with two straights", () => {
+    expect(lay(drawingOn(baseplates([-16, -16])), [-16, 0], [16, 0])).toMatchObject({
+      laid: 2,
+      refusal: null,
+    });
+  });
+
+  it("needs both baseplates under a straight across a seam, but only its own under one that ends at it", () => {
+    const both = baseplates([-16, -16], [16, -16]);
+    const westOnly = probeOn(baseplates([-16, -16]));
+    const across = drawingOn(both);
+    expect(lay(across, [8, 0], [24, 0])).toMatchObject({ laid: 1, refusal: null });
+    expect(across.unsupportedPieces(westOnly)).toHaveLength(1);
+    const toSeam = drawingOn(both);
+    expect(lay(toSeam, [0, 8], [16, 8])).toMatchObject({ laid: 1, refusal: null });
+    expect(toSeam.unsupportedPieces(westOnly)).toHaveLength(0);
+  });
 });

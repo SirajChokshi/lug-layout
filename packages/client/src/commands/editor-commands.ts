@@ -307,6 +307,7 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
     case "next-connector":
       return snapshot.track?.held != null;
     case "delete":
+      return snapshot.selection !== null || (snapshot.track?.selected ?? null) !== null;
     case "duplicate":
     case "focus":
       return snapshot.selection !== null;

@@ -1,3 +1,4 @@
+import { PLATE_LDU } from "@brr/math";
 import {
   BundleManifest,
   ModelFile,
@@ -291,7 +292,13 @@ function compiledPartAsset(
 ): { part: PartAsset; credits: ReadonlyArray<BundleCredit> } {
   const bytes = glb.slice().buffer;
   const { extras } = parseGlb(bytes, id).document;
-  const part = { id, title: id, role: COMPILED_PART_ROLE, bounds: extras.bounds } as const;
+  const part = {
+    id,
+    title: id,
+    role: COMPILED_PART_ROLE,
+    bounds: extras.bounds,
+    baseplate: extras.bounds.max[1] - extras.bounds.min[1] < PLATE_LDU && extras.studs.length > 0,
+  } as const;
   return {
     part: toPartAsset(part, bytes, studPrimitiveNames),
     credits: extras.sources.map((source) => ({
@@ -306,7 +313,14 @@ function compiledPartAsset(
 function toPartAsset(
   part: Pick<
     ManifestPart,
-    "id" | "title" | "role" | "bounds" | "displayColor" | "producedColors" | "trackEnds"
+    | "id"
+    | "title"
+    | "role"
+    | "bounds"
+    | "displayColor"
+    | "producedColors"
+    | "trackEnds"
+    | "baseplate"
   >,
   bytes: ArrayBuffer,
   studPrimitiveNames: ReadonlyArray<string>,
@@ -333,6 +347,7 @@ function toPartAsset(
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,
     producedColors: part.producedColors?.colors.map((color) => color.ldraw) ?? [],
+    baseplate: part.baseplate,
     trackEnds: part.trackEnds,
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
