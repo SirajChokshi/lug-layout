@@ -309,16 +309,18 @@ export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean
   switch (id) {
     case "rotate":
       return (
-        snapshot.mode === "place" ||
-        snapshot.mode === "road" ||
-        snapshot.selection !== null ||
-        snapshot.track?.held != null
+        !snapshot.readOnly &&
+        (snapshot.mode === "place" ||
+          snapshot.mode === "road" ||
+          snapshot.selection !== null ||
+          snapshot.track?.held != null)
       );
     case "flip-switch":
       return snapshot.track?.held?.mirror != null;
     case "next-connector":
       return snapshot.track?.held != null;
     case "delete":
+      return snapshot.selection !== null && !snapshot.readOnly;
     case "duplicate":
     case "focus":
       return snapshot.selection !== null;
