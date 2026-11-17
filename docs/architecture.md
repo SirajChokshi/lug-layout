@@ -322,7 +322,14 @@ Extra plan rules:
   - Bogies must be separate submodels. When they aren't, the user re-exports from their CAD tool.
   - A metadata-only "designate parts as bogie" tool is P1. It groups parts and doesn't edit any.
 - **Roads (P1).** Lanes are directed edges with turn connectors at intersections. Cars use IDM-lite car-following. Intersections start with first-come or stop-sign rules, with traffic lights later, plus ambient traffic.
-- **Out of scope.** Physics, derailment, grades and power draw, pedestrians, economy, and timetables before P1.
+- **Derailment at open ends (in scope now, manual Play mode only).**
+  - **Rule.** A manually driven train under the opt-in `derail` open-end rule doesn't brake for an open end. It keeps running until the leading axle of its leading guide leaves the rail, taken from the imported running-gear geometry. Then it derails and skids to rest along the end's tangent. A train that stops with only its front overhanging stays on the rails. Rerail puts a derailed train back at the track end.
+  - **What doesn't change.**
+    - Routed and autopilot trains still stop where their route ends.
+    - The default `brake` rule still stops every train short of an open end.
+  - **The skid** at the train's braking rate is a game choice, not a physical model.
+  - **Decision.** Made by the project coordinator under the owner's delegation of design decisions, to serve the owner's request for a product that is fun, playful and correct (2026-11-17).
+- **Out of scope.** Physics beyond that rule, derailment anywhere else (curves, switches, collisions), grades and power draw, pedestrians, economy, and timetables before P1.
 
 ## 9. Storage and formats
 
