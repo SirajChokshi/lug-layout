@@ -184,6 +184,7 @@ export const ModelFileCells = v.pipe(
     origin: v.tuple([Finite, Finite]),
     size: CellGridSize,
     bottomY: Finite,
+    groundY: v.nullable(Finite),
     footprint: v.array(Count),
     flat: v.array(Count),
     columnBottom: v.array(ColumnPlates),

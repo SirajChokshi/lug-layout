@@ -1,4 +1,5 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import type { BaseCells, TrackSupport } from "@brr/domain";
 import { lduFromMm, STUD_LDU } from "@brr/math";
 import {
   INSTANCE_MATRIX_FLOATS,
@@ -83,6 +84,11 @@ function grow(extent: Extent, x: number, z: number): void {
   extent.maxZ = Math.max(extent.maxZ, z);
 }
 
+const onBaseplates = (cells: BaseCells): TrackSupport => ({
+  kind: "on-baseplate",
+  cells: cells.count,
+});
+
 const container = new Container();
 let drawing: TrackDrawing;
 let footprints: ReadonlyArray<TrackFootprint>;
@@ -103,7 +109,12 @@ beforeAll(async () => {
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  drawing = new TrackDrawing(bundle.trackCatalog, bundle.parts, new ColorTable(bundle));
+  drawing = new TrackDrawing(
+    bundle.trackCatalog,
+    bundle.parts,
+    new ColorTable(bundle),
+    onBaseplates,
+  );
   drag([180, 190], [260, 190]);
   drag([260, 190], [260, 270]);
   drag([260, 270], [180, 270]);
