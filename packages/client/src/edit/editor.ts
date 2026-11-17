@@ -1337,8 +1337,30 @@ export class Editor implements IEditor {
       trackJoinFeedback(this.state.ghost?.trackJoins ?? 0) ??
       road;
     this.backend.setGhostTone(feedback.tone);
-    this.backend.setSnapTargets([...this.roadSeamTargets(snap), ...this.trackJoinTargets()]);
+    this.backend.setSnapTargets([
+      ...this.roadSeamTargets(snap),
+      ...this.trackJoinTargets(),
+      ...this.overlapTargets(check),
+    ]);
     return feedback;
+  }
+
+  private overlapTargets(check: PlacementCheck | null): ReadonlyArray<SnapTarget> {
+    const overlap = check?.overlap?.overlap;
+    if (!overlap) return [];
+    return [
+      {
+        box: {
+          minX: overlap.cellX * STUD_LDU,
+          maxX: (overlap.cellX + 1) * STUD_LDU,
+          minY: Math.max(overlap.bottomLdu, overlap.candidateBottomLdu),
+          maxY: Math.min(overlap.topLdu, overlap.candidateTopLdu),
+          minZ: overlap.cellZ * STUD_LDU,
+          maxZ: (overlap.cellZ + 1) * STUD_LDU,
+        },
+        kind: "blocked",
+      },
+    ];
   }
 
   private roadSeamTargets(snap: RoadSnapView | null): ReadonlyArray<SnapTarget> {
