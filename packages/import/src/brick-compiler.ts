@@ -1,3 +1,5 @@
+import { StudioRead } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { runWasiCommand } from "./wasi-command.ts";
 
 export type CompileLod = "standard" | "low" | "far";
@@ -125,6 +127,15 @@ function isBakeOutput(value: unknown): value is BakeOutput {
   );
 }
 
+function framed(header: Record<string, unknown>, payload: Uint8Array): Uint8Array {
+  const json = new TextEncoder().encode(JSON.stringify(header));
+  const out = new Uint8Array(HEADER_LENGTH_BYTES + json.length + payload.length);
+  new DataView(out.buffer).setUint32(0, json.length, true);
+  out.set(json, HEADER_LENGTH_BYTES);
+  out.set(payload, HEADER_LENGTH_BYTES + json.length);
+  return out;
+}
+
 function isCompileHeader(value: unknown): value is RawCompileHeader {
   return (
     isRecord(value) &&
@@ -138,7 +149,10 @@ export class BrickCompiler {
   constructor(private readonly module: WebAssembly.Module) {}
 
   private async run(request: Record<string, unknown>): Promise<Uint8Array> {
-    const stdin = new TextEncoder().encode(JSON.stringify(request));
+    return this.runBytes(new TextEncoder().encode(JSON.stringify(request)));
+  }
+
+  private async runBytes(stdin: Uint8Array): Promise<Uint8Array> {
     const result = await runWasiCommand(this.module, stdin);
     if (result.exitCode !== 0) {
       throw new Error(result.stderr.trim() || `brick-compile exited with ${result.exitCode}`);
@@ -152,6 +166,11 @@ export class BrickCompiler {
     );
     if (!isBakeOutput(parsed)) throw new Error("brick-compile bake output is malformed");
     return parsed;
+  }
+
+  async readStudio(io: Uint8Array): Promise<StudioRead> {
+    const output = new TextDecoder().decode(await this.runBytes(framed({ op: "readStudio" }, io)));
+    return decodedOrThrow(decode(StudioRead, JSON.parse(output)), "brick-compile readStudio");
   }
 
   async compile(request: CompileRequest): Promise<CompileOutput> {
