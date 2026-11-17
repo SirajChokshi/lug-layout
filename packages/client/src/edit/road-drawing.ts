@@ -8,6 +8,7 @@ import {
   rotateArms,
   type ExistingRoadTile,
   type PlacementPose,
+  type PlacementRef,
   type PlacementRequest,
   type PlannedRoadTile,
   type RoadKit,
@@ -53,8 +54,17 @@ export interface RoadStrokeView {
   readonly replaced: number;
   readonly overGround: number;
   readonly removed: number;
+  readonly refilled: number;
   readonly kept: number;
+  readonly stranded: ReadonlyArray<RoadStrandedTile>;
   readonly issues: ReadonlyArray<RoadTileIssue>;
+}
+
+export interface RoadStrandedTile {
+  readonly x: number;
+  readonly z: number;
+  readonly junction: RoadShape;
+  readonly remaining: RoadShape | null;
 }
 
 export interface RoadPreview {
@@ -147,6 +157,7 @@ export class RoadDrawing {
   private path: ReadonlyArray<RoadTile> = [];
   private dragging = false;
   private evaluated: Evaluated | null = null;
+  private readonly groundUnder = new Map<PlacementRef, PlacementPose>();
   preferredRot = 0;
   erasing = false;
 
@@ -289,6 +300,11 @@ export class RoadDrawing {
     this.cancel();
     if (!evaluated) return null;
     if (evaluated.issues.length > 0) return { requests: [], view: evaluated.view };
+    for (const { tile, replaces } of evaluated.placements) {
+      if (!replaces || tile.kind !== "lay" || tile.replaces) continue;
+      const { refId, colorId, x, z, yPlates, rot } = replaces.handle;
+      this.groundUnder.set(replaces.placement, { refId, colorId, x, z, yPlates, rot });
+    }
     const requests: PlacementRequest[] = [
       ...evaluated.removals.map((model) => ({ placement: model.placement, to: null })),
       ...evaluated.placements.map(({ pose, replaces }) => ({
@@ -414,16 +430,22 @@ export class RoadDrawing {
     const planned = this.erasing
       ? planRoadErase(kit, this.path, existingAt)
       : planRoadTiles(kit, this.path, existingAt, this.preferredRot);
-    const removals = planned.flatMap((tile) => {
+    const lifted = planned.flatMap((tile) => {
       const model = tile.kind === "remove" ? existing.get(`${tile.ix},${tile.iz}`)?.model : null;
-      return model ? [model] : [];
+      return model ? [{ tile, model }] : [];
     });
+    const refills = lifted.flatMap(({ tile, model }) => {
+      const refill = this.refill(tile, model);
+      return refill ? [refill] : [];
+    });
+    const refilled = new Set(refills.map((refill) => refill.replaces));
+    const removals = lifted.flatMap(({ model }) => (refilled.has(model) ? [] : [model]));
     const choiceOf = new Map<PlannedRoadTile, number>();
     for (const tile of planned) if (tile.kind === "lay") choiceOf.set(tile, 0);
     let issues: RoadTileIssue[] = [];
     let placements: TilePlacement[] = [];
     for (let round = 0; round < MAX_CHOICE_ROUNDS; round++) {
-      placements = this.placementsFor(planned, choiceOf, existing, ground);
+      placements = [...this.placementsFor(planned, choiceOf, existing, ground), ...refills];
       issues = this.check(planned, placements, removals, roads, others);
       const retry = placements.filter(
         (p) =>
@@ -434,17 +456,24 @@ export class RoadDrawing {
       if (retry.length === 0) break;
       for (const p of retry) choiceOf.set(p.tile, p.choice + 1);
     }
-    const replaced = placements.filter((p) => p.tile.kind === "lay" && p.tile.replaces).length;
-    const overGround = placements.filter((p) => p.replaces !== null).length - replaced;
+    const laying = placements.filter((p) => p.tile.kind === "lay");
+    const replaced = laying.filter((p) => p.tile.kind === "lay" && p.tile.replaces).length;
+    const overGround = laying.filter((p) => p.replaces !== null).length - replaced;
     const stroke: RoadStrokeView = {
       kit: view.id,
       erasing: this.erasing,
       tiles: planned.length,
-      laid: placements.length - replaced - overGround,
+      laid: laying.length - replaced - overGround,
       replaced,
       overGround,
-      removed: removals.length,
+      removed: lifted.length,
+      refilled: refills.length,
       kept: planned.filter((tile) => tile.kind === "keep").length,
+      stranded: planned.flatMap((tile) => {
+        if (tile.kind !== "stranded") return [];
+        const [x, z] = this.centre(tile);
+        return [{ x, z, junction: roadShape(tile.junction), remaining: shapeOf(tile.arms) }];
+      }),
       issues,
     };
     this.evaluated = { placements, removals, issues, view: stroke };
@@ -453,6 +482,11 @@ export class RoadDrawing {
       markers: this.markers(planned, placements, removals, issues),
       view: stroke,
     };
+  }
+
+  private refill(tile: PlannedRoadTile, lifted: PlacedModel): TilePlacement | null {
+    const pose = this.groundUnder.get(lifted.placement);
+    return pose ? { tile, choice: 0, pose, replaces: lifted } : null;
   }
 
   private sameTile(issue: RoadTileIssue, tile: PlannedRoadTile): boolean {
@@ -676,7 +710,10 @@ export class RoadDrawing {
       const box = this.tileBox(tile, top);
       if (tile.kind === "remove" || issues.some((issue) => this.sameTile(issue, tile))) {
         markers.push(...outline(box, "mismatch"));
-      } else if (placements.some((p) => p.tile === tile && p.replaces !== null)) {
+      } else if (
+        tile.kind === "stranded" ||
+        placements.some((p) => p.tile === tile && p.replaces !== null)
+      ) {
         markers.push(...outline(box, "open"));
       }
     }
