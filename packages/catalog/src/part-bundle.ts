@@ -1,3 +1,4 @@
+import type { BundleSource } from "./manifest.ts";
 import type { BundleManifest } from "./manifest.ts";
 import type { BakedVehicle } from "./model-vehicle.ts";
 import type { TrackCatalog } from "./track-catalog.ts";
@@ -141,10 +142,31 @@ export interface ModelBundle {
   readonly model: PartModel;
 }
 
+export interface ImportContext {
+  readonly bundleVersion: string;
+  readonly source: BundleSource;
+  readonly compilerPath: string;
+  readonly unofficialAllowlist: ReadonlyArray<string>;
+  readonly studPrimitiveNames: ReadonlyArray<string>;
+  readonly partIds: ReadonlyArray<string>;
+  readonly ldconfigCodes: ReadonlyArray<number>;
+}
+
+export interface CompiledPartGlb {
+  readonly partId: string;
+  readonly glb: Uint8Array;
+}
+
 export interface IPartBundleLoader {
   loadManifest(lod: BundleLod): Promise<BundleManifest>;
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
+  importContext(lod: BundleLod): Promise<ImportContext>;
+  loadPartSet(
+    lod: BundleLod,
+    partIds: ReadonlyArray<string>,
+    compiled: ReadonlyArray<CompiledPartGlb>,
+  ): Promise<PartBundle>;
 }
 
 export interface IAssetFetcher {

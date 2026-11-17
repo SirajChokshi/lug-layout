@@ -10,6 +10,7 @@ import {
   omrFiles,
   renderAttribution,
   renderModelAttribution,
+  renderTestDataAttribution,
   restoreFiles,
   verifyAuditInputs,
   verifyClosure,
@@ -39,6 +40,7 @@ const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
 const omrRoot = join(repoRoot, ".cache", "omr");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
+const TEST_DATA_DIRECTORIES = [join("packages", "import", "test-data")];
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
 
 async function readLock(): Promise<InputLock> {
@@ -68,12 +70,21 @@ async function fetchCommand(): Promise<void> {
   const audit = await fetchAuditInputs(palette, auditRoot, connectivityRoot);
   const lock: InputLock = { ...closure, audit };
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+  await writeAttribution(lock, palette);
+  process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
+}
+
+async function writeAttribution(lock: InputLock, palette: Palette): Promise<void> {
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
     await renderModelAttribution(palette, modelRoots),
+    await renderTestDataAttribution(repoRoot, TEST_DATA_DIRECTORIES),
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
-  process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
+}
+
+async function attributionCommand(): Promise<void> {
+  await writeAttribution(await readLock(), await readPalette(palettePath));
 }
 
 async function restoreCommand(): Promise<void> {
@@ -156,6 +167,14 @@ async function factsCommand(check: boolean): Promise<void> {
 }
 
 const BUNDLE_LODS = ["standard", "low", "far"] as const;
+const COMPILER_TARGET = "wasm32-wasip1";
+const compilerWasm = join(
+  repoRoot,
+  "target",
+  COMPILER_TARGET,
+  "release",
+  "brick-compile-wasm.wasm",
+);
 
 function runCargo(args: ReadonlyArray<string>): void {
   const result = spawnSync("cargo", args, { cwd: repoRoot, stdio: "inherit" });
@@ -197,6 +216,15 @@ async function bundleCommand(): Promise<void> {
     paletteSha256: await fileSha256(palettePath),
   };
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
+  runCargo([
+    "build",
+    "--release",
+    "--quiet",
+    "--target",
+    COMPILER_TARGET,
+    "-p",
+    "brick-compile-wasm",
+  ]);
   for (const lod of BUNDLE_LODS) {
     const out = join(toolRoot, "dist", "bundle", lod);
     await rm(out, { recursive: true, force: true });
@@ -221,6 +249,8 @@ async function bundleCommand(): Promise<void> {
       out,
       "--lod",
       lod,
+      "--compiler",
+      compilerWasm,
     ]);
     await addTrackCatalog(out);
     const { bundleVersion, files } = await publishBundle(out, inputs);
@@ -238,6 +268,9 @@ switch (command) {
   case "restore":
     await restoreCommand();
     break;
+  case "attribution":
+    await attributionCommand();
+    break;
   case "verify":
     await verifyCommand();
     break;
@@ -248,6 +281,6 @@ switch (command) {
     await factsCommand(process.argv.includes("--check"));
     break;
   default:
-    process.stderr.write("usage: cli.ts fetch|restore|verify|bundle|facts [--check]\n");
+    process.stderr.write("usage: cli.ts fetch|restore|attribution|verify|bundle|facts [--check]\n");
     process.exitCode = 2;
 }

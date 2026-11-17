@@ -1,6 +1,6 @@
 import type { BundleLod, CityCamera, ConsistEntry, GraphicsApi, TrainRequest } from "@brr/client";
 
-export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run";
+export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run" | "import";
 
 export interface ViewerParams {
   readonly mode: AppMode;
@@ -108,6 +108,7 @@ function appMode(params: URLSearchParams): AppMode {
   if (params.get("track") !== null) return params.get("run") === "1" ? "run" : "track";
   if (params.get("model") !== null) return "model";
   if (scene === "parts") return "parts";
+  if (scene === "import") return "import";
   return "edit";
 }
 

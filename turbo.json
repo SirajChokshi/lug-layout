@@ -33,6 +33,9 @@
     "@brr/web#build": {
       "dependsOn": ["^build", "@brr/asset-pipeline#build"],
       "outputs": ["dist/**"]
+    },
+    "@brr/import#test": {
+      "dependsOn": ["^build", "@brr/asset-pipeline#build"]
     }
   }
 }

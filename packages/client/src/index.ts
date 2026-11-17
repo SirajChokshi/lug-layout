@@ -55,6 +55,9 @@ export type {
   SelectionView,
   SkippedCatalogModel,
 } from "./edit/editor.ts";
+export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
+export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
+export type { ImportReport, ImportResult, PartResolution, PartResolutionKind } from "@brr/import";
 export type {
   IRunScene,
   RunRequest,
@@ -112,6 +115,8 @@ export {
   CITY_SCENE,
   CREDITS,
   EDITOR,
+  IMPORT_SCENE,
+  MODEL_IMPORTER,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
   RUN_SCENE,

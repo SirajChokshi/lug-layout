@@ -3,7 +3,9 @@ import {
   PART_BUNDLE_LOADER,
   type BundleLod,
   type BundleManifest,
+  type CompiledPartGlb,
   type IAssetFetcher,
+  type ImportContext,
   type IPartBundleLoader,
   type ModelBundle,
   type PartBundle,
@@ -54,6 +56,18 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
     return this.loader.loadModel(lod, name);
+  }
+
+  importContext(lod: BundleLod): Promise<ImportContext> {
+    return this.loader.importContext(lod);
+  }
+
+  loadPartSet(
+    lod: BundleLod,
+    partIds: ReadonlyArray<string>,
+    compiled: ReadonlyArray<CompiledPartGlb>,
+  ): Promise<PartBundle> {
+    return this.loader.loadPartSet(lod, partIds, compiled);
   }
 }
 

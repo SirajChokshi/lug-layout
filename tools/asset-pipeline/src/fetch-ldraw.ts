@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { modelStructure, parseLdraw, subfileReferences } from "./ldraw/parse.ts";
+import { modelStructure, parseLdraw, splitMultiPart, subfileReferences } from "./ldraw/parse.ts";
 import type { Palette, PaletteModel } from "./palette.ts";
 
 export interface AuditLock {
@@ -341,6 +341,46 @@ export async function renderAttribution(lock: InputLock, directory: string): Pro
     "",
     "| File | Title | Author | License |",
     "|---|---|---|---|",
+    ...rows,
+    "",
+  ].join("\n");
+}
+
+const HISTORY_META = "!HISTORY";
+const TEST_DATA_EXTENSIONS = [".mpd", ".ldr"];
+
+export async function renderTestDataAttribution(
+  repoRoot: string,
+  directories: ReadonlyArray<string>,
+): Promise<string> {
+  const rows: string[] = [];
+  for (const directory of directories) {
+    const names = (await readdir(join(repoRoot, directory))).filter((name) =>
+      TEST_DATA_EXTENSIONS.some((extension) => name.endsWith(extension)),
+    );
+    for (const name of names.toSorted()) {
+      const path = join(directory, name);
+      for (const section of splitMultiPart(await readFile(join(repoRoot, path), "utf8"))) {
+        const { header, lines } = parseLdraw(section.source);
+        const history = lines.flatMap((line) =>
+          line.kind === "meta" && line.tokens[0] === HISTORY_META
+            ? [line.tokens.slice(1).join(" ")]
+            : [],
+        );
+        const license = header.license === "" ? "(no !LICENSE line)" : header.license;
+        rows.push(
+          `| \`${path}\` | \`${section.name}\` | ${header.author} | ${license} | ${history.join("; ")} |`,
+        );
+      }
+    }
+  }
+  return [
+    "## Test data",
+    "",
+    "Committed LDraw test inputs, one row per section. Sections modified from LDraw library parts keep the part's author and license and say what changed in `!HISTORY`.",
+    "",
+    "| File | Section | Author | License | History |",
+    "|---|---|---|---|---|",
     ...rows,
     "",
   ].join("\n");
