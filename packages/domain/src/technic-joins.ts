@@ -243,9 +243,13 @@ export function alignmentSpan(ends: HoleEnds): number {
   let span = 0;
   for (let i = 0; i < ends.count; i++) {
     for (let j = i + 1; j < ends.count; j++) {
-      if (ends.axis[i] !== ends.axis[j] || ends.y[i] !== ends.y[j]) continue;
+      const axis = ends.axis[i] ?? 0;
+      if (axis !== ends.axis[j] || ends.y[i] !== ends.y[j]) continue;
       const dx = (ends.x[i] ?? 0) - (ends.x[j] ?? 0);
       const dz = (ends.z[i] ?? 0) - (ends.z[j] ?? 0);
+      const facesX = axis === AXIS_POS_X || axis === AXIS_NEG_X;
+      const facesZ = axis === AXIS_POS_Z || axis === AXIS_NEG_Z;
+      if ((facesX && dx !== 0) || (facesZ && dz !== 0)) continue;
       span = Math.max(span, Math.sqrt(dx * dx + dz * dz));
     }
   }

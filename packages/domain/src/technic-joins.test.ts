@@ -123,8 +123,14 @@ describe("strongerShift", () => {
   joins.add(1, placedHoleEnds(edgeBrick, { x: 0, z: 0, yLdu: 0, rot: 0 }));
   const span = alignmentSpan(edgeBrick);
 
-  it("measures the alignment span as the widest run of same-facing ends", () => {
+  it("measures the alignment span as the widest run of ends on one face, not across a through-hole", () => {
     expect(span).toBe(40);
+    const twoFaces = ends([
+      [0, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_NEG_Z],
+      [0, HOLE_Y_LDU, -BRICK_FACE_LDU - 600, AXIS_NEG_Z],
+      [20, HOLE_Y_LDU, BRICK_FACE_LDU, AXIS_NEG_Z],
+    ]);
+    expect(alignmentSpan(twoFaces)).toBe(20);
   });
 
   it.each([
