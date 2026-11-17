@@ -1,0 +1,201 @@
+name: Catalog deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/catalog-api/**
+      - infra/cloudflare/**
+      - pnpm-lock.yaml
+      - .github/workflows/catalog-deploy.yml
+      - "!apps/catalog-api/README.md"
+      - "!infra/cloudflare/README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: catalog-deploy-main
+  cancel-in-progress: false
+
+env:
+  TERRAFORM_VERSION: 1.17.2
+  WORKER_BUNDLE_ARTIFACT: catalog-worker-bundle
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  build:
+    name: Build Worker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/catalog-api..."
+      - run: pnpm --filter @brr/catalog-api typecheck
+      - run: pnpm --filter @brr/catalog-api test
+      - run: pnpm --filter @brr/catalog-api build
+      - name: Record bundle digest
+        run: echo "Worker bundle SHA-256 \`$(sha256sum apps/catalog-api/dist/index.js | cut -d ' ' -f 1)\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ${{ env.WORKER_BUNDLE_ARTIFACT }}
+          path: apps/catalog-api/dist/index.js
+          if-no-files-found: error
+          retention-days: 7
+
+  plan:
+    name: Terraform plan
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      apply: ${{ steps.guard.outputs.apply }}
+      digest: ${{ steps.report.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Skip if main has moved on to different deploy inputs
+        id: guard
+        run: |
+          tip="$(git rev-parse --verify refs/remotes/origin/main)"
+          infra/cloudflare/ci/apply-guard.sh .github/workflows/catalog-deploy.yml "$GITHUB_SHA" "$tip"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.guard.outputs.apply == 'true'
+        with:
+          name: ${{ env.WORKER_BUNDLE_ARTIFACT }}
+          path: apps/catalog-api/dist
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        if: steps.guard.outputs.apply == 'true'
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: Configure backend and variables
+        id: configure
+        if: steps.guard.outputs.apply == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+          CATALOG_TFVARS_JSON: ${{ vars.CATALOG_TFVARS_JSON }}
+        run: infra/cloudflare/ci/configure.sh
+      - name: Terraform init
+        if: steps.guard.outputs.apply == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+          BACKEND_CONFIG: ${{ steps.configure.outputs.backend_config }}
+        run: infra/cloudflare/ci/terraform.sh init -lockfile=readonly -backend-config="$BACKEND_CONFIG"
+      - name: Terraform plan
+        if: steps.guard.outputs.apply == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+          VAR_FILE: ${{ steps.configure.outputs.var_file }}
+        run: |
+          infra/cloudflare/ci/terraform.sh plan -lock-timeout=10m -var-file="$VAR_FILE" -out="$RUNNER_TEMP/catalog.tfplan"
+          infra/cloudflare/ci/terraform.sh show -json "$RUNNER_TEMP/catalog.tfplan" > "$RUNNER_TEMP/catalog.tfplan.json"
+      - name: Summarize plan for review
+        id: report
+        if: steps.guard.outputs.apply == 'true'
+        run: |
+          infra/cloudflare/ci/plan-report.sh "$RUNNER_TEMP/catalog.tfplan.json" "$RUNNER_TEMP/catalog-plan.md"
+          {
+            echo "### Terraform plan for review"
+            echo
+            cat "$RUNNER_TEMP/catalog-plan.md"
+            echo
+            echo "Approve **Terraform apply** only if this is what should change. Apply re-plans and refuses unless its plan matches this one."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Refuse plans that destroy catalog data
+        if: steps.report.outputs.refused == 'true'
+        run: |
+          echo "::error::The plan destroys the D1 database or an R2 bucket."
+          exit 1
+
+  apply:
+    name: Terraform apply
+    needs: plan
+    if: needs.plan.outputs.apply == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Skip if main has moved on to different deploy inputs
+        id: guard
+        run: |
+          tip="$(git rev-parse --verify refs/remotes/origin/main)"
+          infra/cloudflare/ci/apply-guard.sh .github/workflows/catalog-deploy.yml "$GITHUB_SHA" "$tip"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.guard.outputs.apply == 'true'
+        with:
+          name: ${{ env.WORKER_BUNDLE_ARTIFACT }}
+          path: apps/catalog-api/dist
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        if: steps.guard.outputs.apply == 'true'
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: Configure backend and variables
+        id: configure
+        if: steps.guard.outputs.apply == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+          CATALOG_TFVARS_JSON: ${{ vars.CATALOG_TFVARS_JSON }}
+        run: infra/cloudflare/ci/configure.sh
+      - name: Terraform init
+        if: steps.guard.outputs.apply == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+          BACKEND_CONFIG: ${{ steps.configure.outputs.backend_config }}
+        run: infra/cloudflare/ci/terraform.sh init -lockfile=readonly -backend-config="$BACKEND_CONFIG"
+      - name: Terraform plan
+        if: steps.guard.outputs.apply == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+          VAR_FILE: ${{ steps.configure.outputs.var_file }}
+        run: |
+          infra/cloudflare/ci/terraform.sh plan -lock-timeout=10m -var-file="$VAR_FILE" -out="$RUNNER_TEMP/catalog.tfplan"
+          infra/cloudflare/ci/terraform.sh show -json "$RUNNER_TEMP/catalog.tfplan" > "$RUNNER_TEMP/catalog.tfplan.json"
+      - name: Summarize plan
+        id: report
+        if: steps.guard.outputs.apply == 'true'
+        run: |
+          infra/cloudflare/ci/plan-report.sh "$RUNNER_TEMP/catalog.tfplan.json" "$RUNNER_TEMP/catalog-plan.md"
+          cat "$RUNNER_TEMP/catalog-plan.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Refuse plans that destroy catalog data
+        if: steps.report.outputs.refused == 'true'
+        run: |
+          echo "::error::The plan destroys the D1 database or an R2 bucket."
+          exit 1
+      - name: Refuse plans that differ from the reviewed plan
+        if: steps.guard.outputs.apply == 'true'
+        env:
+          REVIEWED_DIGEST: ${{ needs.plan.outputs.digest }}
+          CURRENT_DIGEST: ${{ steps.report.outputs.digest }}
+        run: |
+          if [[ -z "$REVIEWED_DIGEST" || "$REVIEWED_DIGEST" != "$CURRENT_DIGEST" ]]; then
+            echo "::error::This plan differs from the one shown in Terraform plan. Re-run the workflow and review the new plan."
+            exit 1
+          fi
+      - name: Terraform apply
+        if: steps.guard.outputs.apply == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: infra/cloudflare/ci/terraform.sh apply -lock-timeout=10m "$RUNNER_TEMP/catalog.tfplan"
