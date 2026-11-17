@@ -637,14 +637,23 @@ export class PlacedChunks {
   private nextId = 0;
   private readonly tongued: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
-  private farModelOf: (placeable: Placeable) => number | null = (placeable) => placeable.farModel;
+  private readonly farModels = new Map<Placeable, number>();
 
   constructor(private readonly backend: ISceneBackend) {}
 
-  useFarModels(farModels: ReadonlyMap<Placeable, number>): RebuildReport {
-    this.farModelOf = (placeable) => farModels.get(placeable) ?? placeable.farModel;
-    for (const entry of this.entries) this.showFarModel(entry);
-    return this.rebuild([...this.byChunk.keys()].toSorted((a, b) => a - b));
+  private farModelOf(placeable: Placeable): number | null {
+    return this.farModels.get(placeable) ?? placeable.farModel;
+  }
+
+  useFarModel(placeable: Placeable, farModel: number): RebuildReport {
+    this.farModels.set(placeable, farModel);
+    const keys = new Set<number>();
+    for (const entry of this.entries) {
+      if (entry.placeable !== placeable) continue;
+      this.showFarModel(entry);
+      for (const key of entry.contributions.keys()) keys.add(key);
+    }
+    return this.rebuild([...keys].toSorted((a, b) => a - b));
   }
 
   private showFarModel(entry: PlacedEntry): void {

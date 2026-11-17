@@ -1,14 +1,21 @@
-import type { BundleColor, BundleLod, NotDrawnSection } from "@brr/schema/bundle";
+import type {
+  BundleColor,
+  BundleIndex,
+  BundleLod,
+  BundleModelEntry,
+  NotDrawnSection,
+} from "@brr/schema/bundle";
 import {
   PART_BUNDLE_LOADER,
+  withPlaceholderMesh,
+  type FetchPriority,
   type IPartBundleLoader,
-  type ModelBundle,
+  type ModelRecord,
   type PartShapeAsset,
-  type PartBundle,
-  type PartMesh,
-  type FilterablePart,
+  type PartShapeRecord,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
+import { PartMeshStream, type MeshProgress } from "./part-mesh-stream.ts";
 import {
   DirtyShards,
   BomCounter,
@@ -45,7 +52,6 @@ import {
   type GraphicsApi,
   type LookSettings,
   type ISceneBackend,
-  type PartMeshUpdate,
   type WorldBox,
 } from "@brr/render";
 import { decode, issueText } from "@brr/schema/decode";
@@ -306,24 +312,22 @@ interface SkippedModel extends SkippedCatalogModel {
   readonly credit: ModelCredit;
 }
 
-interface LoadedCatalog {
-  readonly placeables: ReadonlyArray<Placeable>;
-  readonly skipped: ReadonlyArray<SkippedModel>;
+interface CatalogSlot {
+  readonly id: string;
+  readonly group: string;
+  readonly worldColor: number;
+  readonly view: CatalogItemView;
+  readonly model: string | null;
+  readonly credit: ModelCredit | null;
 }
 
-interface NearModels {
-  readonly kept: ReadonlyArray<ModelBundle>;
+interface StartedCatalog {
+  readonly slots: ReadonlyArray<CatalogSlot>;
+  readonly placeables: Array<Placeable | null>;
   readonly skipped: ReadonlyArray<SkippedModel>;
 }
 
 export type FarTierStatus = "loading" | "ready" | "unavailable";
-
-interface FarTier {
-  readonly bundle: PartBundle;
-  readonly palette: MergedParts;
-  readonly meshes: ReadonlyArray<PartMesh>;
-  readonly meshIndex: ReadonlyMap<string, number>;
-}
 
 export interface TrackBomLine {
   readonly piece: string;
@@ -409,6 +413,8 @@ export interface EditorSnapshot {
   readonly tier: ChunkTier | null;
   readonly farTier: FarTierStatus;
   readonly farTierError: string | null;
+  readonly pendingItem: string | null;
+  readonly meshes: MeshProgress;
   readonly measuring: boolean;
   readonly measurement: FrameMeasurement | null;
   readonly credits: EditorCredits | null;
@@ -480,6 +486,7 @@ export interface IEditor extends IBomSource {
   start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void>;
   subscribe(listener: () => void): () => void;
   snapshot(): EditorSnapshot;
+  prefetch(id: string): Promise<boolean>;
   chooseItem(id: string | null): void;
   pointerMove(ndcX: number, ndcY: number): void;
   pointerLeave(): void;
@@ -514,6 +521,7 @@ export interface IEditor extends IBomSource {
 }
 
 const EDITOR_LOD: BundleLod = "standard";
+const FAR_LOD: BundleLod = "far";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 export const TRACK_PIECE_PREFIX = "track-piece:";
@@ -645,10 +653,6 @@ interface FrameTimes {
   readonly presentedMs: number;
 }
 
-function isEditorPart(part: FilterablePart): boolean {
-  return part.role === "ground" || part.role === "road" || part.role === "track";
-}
-
 function quantileOfSorted(sorted: Float64Array, fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)] ?? Number.NaN;
 }
@@ -681,7 +685,7 @@ function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor 
 function catalogItem(
   placeable: Placeable,
   colors: ReadonlyArray<BundleColor>,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
 ): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
@@ -702,6 +706,53 @@ function catalogItem(
     elements:
       produced?.colors.find((color) => color.ldraw === placeable.worldColor)?.elements ?? [],
     displayColor: part !== undefined && part.producedColor === placeable.worldColor,
+  };
+}
+
+function placeableSlot(
+  placeable: Placeable,
+  model: string | null,
+  colors: ReadonlyArray<BundleColor>,
+  parts: ReadonlyArray<PartShapeAsset>,
+): CatalogSlot {
+  return {
+    id: placeable.id,
+    group: placeable.group,
+    worldColor: placeable.worldColor,
+    view: catalogItem(placeable, colors, parts),
+    model,
+    credit: placeable.credit,
+  };
+}
+
+function studsAcross(min: number, max: number): number {
+  return Math.round((max - min) / STUD_LDU);
+}
+
+function lazySlot(entry: BundleModelEntry): CatalogSlot {
+  const id = `omr:${entry.name}`;
+  const label = setLabel(entry);
+  const aabb = entry.lattice?.aabb;
+  return {
+    id,
+    group: id,
+    worldColor: 0,
+    view: {
+      id,
+      label,
+      group: id,
+      groupLabel: label,
+      color: null,
+      kind: "model",
+      parts: entry.instances,
+      studsWide: aabb ? studsAcross(aabb.min[0], aabb.max[0]) : 0,
+      studsDeep: aabb ? studsAcross(aabb.min[2], aabb.max[2]) : 0,
+      aliases: [],
+      elements: [],
+      displayColor: false,
+    },
+    model: entry.name,
+    credit: { name: entry.name, source: entry.source, sections: entry.sections },
   };
 }
 
@@ -748,6 +799,8 @@ export class Editor implements IEditor {
     tier: null,
     farTier: "loading",
     farTierError: null,
+    pendingItem: null,
+    meshes: { wanted: 0, loaded: 0, failed: 0 },
     measuring: false,
     measurement: null,
     credits: null,
@@ -804,7 +857,15 @@ export class Editor implements IEditor {
     renderOriginChunkZ: 0,
     rebaseCount: 0,
   };
-  private placeables: ReadonlyArray<Placeable> = [];
+  private placeables: Array<Placeable | null> = [];
+  private slots: ReadonlyArray<CatalogSlot> = [];
+  private readonly placeableLoads = new Map<number, Promise<Placeable>>();
+  private palette: MergedParts | null = null;
+  private colors: ColorTable | null = null;
+  private meshes: PartMeshStream | null = null;
+  private installedColors = 0;
+  private readonly farModelIndex = new Map<string, number>();
+  private farReady = false;
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
@@ -841,6 +902,7 @@ export class Editor implements IEditor {
   private bomTables: EditorBomTables | null = null;
   private readonly notDrawnByPlaceable = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
   private readonly modelPlaceables = new Map<string, Placeable>();
+  private readonly modelNames = new Map<Placeable, string>();
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -882,54 +944,69 @@ export class Editor implements IEditor {
       });
       this.backend.forceTier(options.tier);
       this.update({ tier: options.tier });
-      const bundle = await this.loader.load(EDITOR_LOD, isEditorPart);
-      this.bundleVersion = bundle.bundleVersion;
-      const colors = new ColorTable(bundle);
-      const palette = new MergedParts(bundle.parts);
-      const near = await this.loadNearModels(bundle);
-      const { placeables, skipped } = this.buildPlaceables(bundle, palette, colors, near);
+      const index = await this.loader.loadIndex(EDITOR_LOD);
+      this.bundleVersion = index.bundleVersion;
+      const colorSource = { colors: index.colors, parts: [] };
+      const colors = new ColorTable(colorSource);
+      for (const color of index.colors) colors.indexOfCode(color.code);
+      this.colors = colors;
+      const milsModules = index.models.filter((entry) => entry.role === "mils-module");
+      const [studPrimitives, shapes, milsRecords] = await Promise.all([
+        this.loader.loadStudPrimitives(EDITOR_LOD),
+        Promise.all(index.catalogParts.map((part) => this.loader.loadPartShape(EDITOR_LOD, part))),
+        Promise.all(
+          milsModules.map((entry) => this.loader.loadModelRecord(EDITOR_LOD, entry.name)),
+        ),
+      ]);
+      const palette = new MergedParts(shapes.map(withPlaceholderMesh));
+      this.palette = palette;
+      this.meshes = new PartMeshStream(this.loader, this.backend, palette, EDITOR_LOD, (meshes) =>
+        this.update({ meshes }),
+      );
+      for (const shape of shapes) this.meshes.register(palette.indexOf(shape.id), shape.meshFile);
+      const { slots, placeables, skipped } = this.buildCatalog(index, shapes, milsRecords);
+      this.slots = slots;
       this.placeables = placeables;
-      this.modules = new ModuleLayout(bundle.milsEdgeRules);
+      this.modules = new ModuleLayout(index.milsEdgeRules);
       this.plans.setTableTopY(this.baseplateBottomY());
-      this.newTrack = () => new TrackDrawing(bundle, palette.parts, colors);
+      this.newTrack = () => new TrackDrawing(index, palette.parts, colors);
       this.track = this.newTrack();
-      this.bomTables = { palette, colors, ldrawColors: bundle.colors.map((color) => color.code) };
-      this.roadDrawing = new RoadDrawing(this.placeables, (family, placeable) =>
+      this.bomTables = { palette, colors, ldrawColors: index.colors.map((color) => color.code) };
+      this.roadDrawing = new RoadDrawing(this.loadedPlaceables(), (family, placeable) =>
         family === "mils"
           ? "MILS road modules"
-          : `${colorOf(bundle.colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
+          : `${colorOf(index.colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
       );
       this.backend.setPalette({
-        detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
+        detailed: { parts: palette.parts, studPrimitives },
         colorsSrgb: colors.toSrgb(),
         colorsAlpha: colors.toAlpha(),
-        ldrawColors: ldrawColors(bundle),
+        ldrawColors: ldrawColors(colorSource),
       });
+      this.installedColors = colors.size;
       const loadMs = performance.now() - started;
       await this.openFirstWorld();
       this.firstWorldFrame = true;
       this.update({
         status: "ready",
         loadMs,
-        bundleVersion: bundle.bundleVersion,
+        bundleVersion: index.bundleVersion,
         backend,
         catalog: [
-          ...this.placeables.map((placeable) =>
-            catalogItem(placeable, bundle.colors, bundle.parts),
-          ),
+          ...slots.map((slot) => slot.view),
           this.trackItem(this.track, palette.parts),
           ...this.trackPieceItems(this.track, palette.parts),
         ],
         catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
-        trackNotDrawable: undrawableTrack(bundle.parts, this.track, palette.parts),
+        trackNotDrawable: undrawableTrack(shapes, this.track, palette.parts),
         roadKits: this.roadDrawing.kitViews(),
         roadKit: this.roadDrawing.activeKit()?.id ?? null,
         track: this.trackView(),
         credits: {
-          partFiles: bundle.credits.length,
+          partFiles: 0,
           partFilesLod: EDITOR_LOD,
           models: [
-            ...this.placeables.flatMap((p) => (p.credit ? [p.credit] : [])),
+            ...slots.flatMap((slot) => (slot.credit ? [slot.credit] : [])),
             ...skipped.map(({ credit }) => credit),
           ],
         },
@@ -938,46 +1015,226 @@ export class Editor implements IEditor {
       this.resizeToCanvas();
       this.camera.frame(performance.now());
       requestAnimationFrame(this.step);
-      void this.streamFarTier(palette, near);
+      void this.startFarTier();
+      void this.countCreditedFiles();
     } catch (error) {
       this.update({ status: "error", error: String(error) });
     }
   }
 
-  private async streamFarTier(palette: MergedParts, near: NearModels): Promise<void> {
-    const far = await this.loadFarTier(near.kept.map(({ entry }) => entry.name));
-    if (!far) {
-      this.update({ farTier: "unavailable" });
-      return;
-    }
+  private async startFarTier(): Promise<void> {
     try {
-      this.applyFarTier(far, palette);
+      const [studPrimitives, farFiles] = await Promise.all([
+        this.loader.loadStudPrimitives(FAR_LOD),
+        this.loader.loadPartFiles(FAR_LOD),
+      ]);
+      this.backend.setFarStuds(studPrimitives);
+      this.meshes?.useFarFiles(farFiles);
+      this.farReady = true;
+      for (const model of this.placed.models()) this.requestFarModel(model.placeable);
       this.update({ farTier: "ready" });
     } catch (error) {
       this.update({ farTier: "unavailable", farTierError: errorText(error) });
     }
   }
 
-  private applyFarTier(far: FarTier, palette: MergedParts): void {
-    const farParts = new Map(far.palette.parts.map((part) => [part.id, part]));
-    const updates: PartMeshUpdate[] = [];
-    palette.parts.forEach((part, index) => {
-      const farPart = farParts.get(part.id);
-      if (farPart) updates.push({ index, level: "far", part: farPart });
-    });
-    this.backend.setPartMeshes(updates);
-    far.meshes.forEach((mesh, index) => this.backend.setFarModelMesh(index, mesh));
-    this.backend.setFarStuds(far.bundle.studPrimitives);
-    const farModels = new Map<Placeable, number>();
-    for (const [name, placeable] of this.modelPlaceables) {
-      const model = far.meshIndex.get(name);
-      if (model !== undefined) farModels.set(placeable, model);
+  private requestFarModel(placeable: Placeable): void {
+    if (!this.farReady) return;
+    const name = this.modelNames.get(placeable);
+    if (name === undefined || this.farModelIndex.has(name)) return;
+    const farModel = this.farModelIndex.size;
+    this.farModelIndex.set(name, farModel);
+    void this.loader.loadFarModelMesh(name, "low").then(
+      (mesh) => {
+        if (!mesh) return;
+        this.backend.setFarModelMesh(farModel, mesh);
+        this.placed.useFarModel(placeable, farModel);
+      },
+      (error: unknown) => this.update({ farTierError: errorText(error) }),
+    );
+  }
+
+  private async countCreditedFiles(): Promise<void> {
+    try {
+      const manifest = await this.loader.loadManifest(EDITOR_LOD);
+      const credits = this.state.credits;
+      if (credits) this.update({ credits: { ...credits, partFiles: manifest.credits.length } });
+    } catch (error) {
+      this.update({ fileError: `the part credits can't be loaded: ${errorText(error)}` });
     }
-    this.placed.useFarModels(farModels);
+  }
+
+  private loadedPlaceables(): ReadonlyArray<Placeable> {
+    return this.placeables.filter((placeable) => placeable !== null);
+  }
+
+  private buildCatalog(
+    index: BundleIndex,
+    shapes: ReadonlyArray<PartShapeRecord>,
+    milsRecords: ReadonlyArray<ModelRecord>,
+  ): StartedCatalog {
+    const palette = this.requirePalette();
+    const colors = this.requireColors();
+    const shapeById = new Map(shapes.map((shape) => [shape.id, shape]));
+    const shapeOf = (id: string): PartShapeRecord => {
+      const shape = shapeById.get(id);
+      if (!shape) throw new Error(`${id} has no shape in the bundle`);
+      return shape;
+    };
+    const groundParts = index.catalogParts
+      .filter((part) => part.role === "ground")
+      .map((part) => shapeOf(part.id))
+      .toSorted((a, b) => footprintArea(b) - footprintArea(a));
+    const roadParts = index.catalogParts
+      .filter((part) => part.role === "road")
+      .map((part) => shapeOf(part.id));
+    const placeables: Array<Placeable | null> = [...groundParts, ...roadParts].flatMap((part) => {
+      const produced = part.producedColors?.colors ?? [];
+      if (produced.length === 0) {
+        throw new Error(`${part.id} has no produced colour in the bundle`);
+      }
+      return produced.map(({ ldraw: code }) =>
+        partPlaceable(
+          part,
+          palette.indexOf(part.id),
+          code,
+          colorOf(index.colors, code).name,
+          palette.parts,
+          colors,
+        ),
+      );
+    });
+    const slots: CatalogSlot[] = placeables.flatMap((placeable) =>
+      placeable ? [placeableSlot(placeable, null, index.colors, palette.parts)] : [],
+    );
+    const records = new Map(milsRecords.map((record) => [record.entry.name, record]));
+    const skipped: SkippedModel[] = [];
+    const models = [
+      ...index.models.filter((entry) => entry.role === "mils-module"),
+      ...index.models.filter((entry) => entry.origin === "omr"),
+    ];
+    for (const entry of models) {
+      if (entry.lattice === null) {
+        skipped.push({
+          name: entry.name,
+          reason: NO_LATTICE_REASON,
+          credit: { name: entry.name, source: entry.source, sections: entry.sections },
+        });
+        continue;
+      }
+      const record = records.get(entry.name);
+      const placeable = record ? this.modelPlaceableFrom(record) : null;
+      placeables.push(placeable);
+      slots.push(
+        placeable
+          ? placeableSlot(placeable, entry.name, index.colors, palette.parts)
+          : lazySlot(entry),
+      );
+    }
+    return { slots, placeables, skipped };
+  }
+
+  private requirePalette(): MergedParts {
+    if (!this.palette) throw new Error("the editor has no palette before it starts");
+    return this.palette;
+  }
+
+  private requireColors(): ColorTable {
+    if (!this.colors) throw new Error("the editor has no colour table before it starts");
+    return this.colors;
+  }
+
+  private modelPlaceableFrom(record: ModelRecord): Placeable {
+    const palette = this.requirePalette();
+    const colors = this.requireColors();
+    const { entry, model } = record;
+    const before = palette.parts.length;
+    const merged = palette.remap(model, record.parts.map(withPlaceholderMesh));
+    for (const part of record.parts) this.meshes?.register(palette.indexOf(part.id), part.meshFile);
+    const placeable = modelPlaceable(
+      entry.name,
+      entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : setLabel(entry),
+      entry.role,
+      merged,
+      { name: entry.name, source: entry.source, sections: model.sections },
+      palette.parts,
+      colors,
+      null,
+    );
+    if (this.palette === palette && this.installedColors > 0) {
+      this.backend.addParts(palette.parts.slice(before));
+      this.syncColors();
+    }
+    this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
+    this.modelPlaceables.set(entry.name, placeable);
+    this.modelNames.set(placeable, entry.name);
+    return placeable;
+  }
+
+  private syncColors(): void {
+    const colors = this.requireColors();
+    if (colors.size === this.installedColors) return;
+    this.installedColors = colors.size;
+    this.backend.setColors(colors.toSrgb(), colors.toAlpha());
+  }
+
+  private ensurePlaceable(refId: number): Promise<Placeable> {
+    const loaded = this.placeables[refId];
+    if (loaded) return Promise.resolve(loaded);
+    const pending = this.placeableLoads.get(refId);
+    if (pending) return pending;
+    const model = this.slots[refId]?.model;
+    if (model === undefined || model === null) {
+      return Promise.reject(new Error(`no catalog item has ref id ${refId}`));
+    }
+    const loading = this.loader.loadModelRecord(EDITOR_LOD, model).then((record) => {
+      const placeable = this.placeables[refId] ?? this.modelPlaceableFrom(record);
+      this.placeables[refId] = placeable;
+      return placeable;
+    });
+    this.placeableLoads.set(refId, loading);
+    loading.then(
+      () => this.placeableLoads.delete(refId),
+      () => this.placeableLoads.delete(refId),
+    );
+    return loading;
+  }
+
+  private requestMeshes(placeable: Placeable, priority: FetchPriority): void {
+    this.meshes?.request(new Set(placeable.parts.partIndex), priority);
+  }
+
+  private requestTrackMeshes(track: TrackDrawing): void {
+    this.meshes?.request(
+      track.pieceParts().map((kit) => kit.partIndex),
+      "high",
+    );
+  }
+
+  async prefetch(id: string): Promise<boolean> {
+    const refId = this.slots.findIndex((slot) => slot.id === id);
+    if (refId < 0) return false;
+    try {
+      await this.ensurePlaceable(refId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async ensureShardPlaceables(shards: ReadonlyArray<WorldShardV1>): Promise<void> {
+    const refIds = new Set<number>();
+    for (const shard of shards) {
+      for (const placement of shard.placements) {
+        const target = this.resolveRef(placement.ref, placement.color);
+        if (target) refIds.add(target.refId);
+      }
+    }
+    await Promise.all([...refIds].map((refId) => this.ensurePlaceable(refId)));
   }
 
   private baseplateBottomY(): number {
-    const baseplate = this.placeables.find((p) => p.kind === "baseplate");
+    const baseplate = this.loadedPlaceables().find((p) => p.kind === "baseplate");
     if (!baseplate) throw new Error("the bundle has no baseplate");
     return baseplate.box.min[1];
   }
@@ -992,92 +1249,6 @@ export class Editor implements IEditor {
       })),
       ...(this.track?.planFootprints() ?? []),
     ]);
-  }
-
-  private async loadNearModels(bundle: PartBundle): Promise<NearModels> {
-    const placeableModels = [
-      ...bundle.models.filter((entry) => entry.role === "mils-module"),
-      ...bundle.models.filter((entry) => entry.origin === "omr"),
-    ];
-    const loaded = await Promise.all(
-      placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
-    );
-    const skipped = loaded
-      .filter((near) => near.model.lattice === null)
-      .map(({ entry, model }) => ({
-        name: entry.name,
-        reason: NO_LATTICE_REASON,
-        credit: { name: entry.name, source: entry.source, sections: model.sections },
-      }));
-    return { kept: loaded.filter((near) => near.model.lattice !== null), skipped };
-  }
-
-  private async loadFarTier(modelNames: ReadonlyArray<string>): Promise<FarTier | null> {
-    try {
-      const bundle = await this.loader.load("far", isEditorPart);
-      const models = await Promise.all(
-        modelNames.map((name) => this.loader.loadModel("far", name)),
-      );
-      const palette = new MergedParts(bundle.parts);
-      const meshes: PartMesh[] = [];
-      const meshIndex = new Map<string, number>();
-      for (const far of models) {
-        palette.remap(far.model, far.bundle.parts);
-        if (far.farMesh) {
-          meshIndex.set(far.entry.name, meshes.length);
-          meshes.push(far.farMesh.mesh);
-        }
-      }
-      return { bundle, palette, meshes, meshIndex };
-    } catch (error) {
-      this.update({ farTierError: errorText(error) });
-      return null;
-    }
-  }
-
-  private buildPlaceables(
-    bundle: PartBundle,
-    palette: MergedParts,
-    colors: ColorTable,
-    near: NearModels,
-  ): LoadedCatalog {
-    const groundParts = bundle.parts
-      .filter((part) => part.role === "ground")
-      .toSorted((a, b) => footprintArea(b) - footprintArea(a));
-    const roadParts = bundle.parts.filter((part) => part.role === "road");
-    const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
-      const produced = part.producedColors?.colors ?? [];
-      if (produced.length === 0) {
-        throw new Error(`${part.id} has no produced colour in the bundle`);
-      }
-      return produced.map(({ ldraw: code }) =>
-        partPlaceable(
-          part,
-          palette.indexOf(part.id),
-          code,
-          colorOf(bundle.colors, code).name,
-          palette.parts,
-          colors,
-        ),
-      );
-    });
-    for (const { bundle: modelBundle, entry, model } of near.kept) {
-      const credit = { name: entry.name, source: entry.source, sections: model.sections };
-      const placeable = modelPlaceable(
-        entry.name,
-        entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : setLabel(entry),
-        entry.role,
-        palette.remap(model, modelBundle.parts),
-        credit,
-        palette.parts,
-        colors,
-        null,
-      );
-      this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
-      this.modelPlaceables.set(entry.name, placeable);
-      placeables.push(placeable);
-    }
-    return { placeables, skipped: near.skipped };
   }
 
   private readonly step = (): void => {
@@ -1472,7 +1643,16 @@ export class Editor implements IEditor {
     this.update({ track: this.trackView() });
   }
 
+  private requestKitMeshes(kitId: string): void {
+    const kit = this.roadDrawing?.kitViews().find((view) => view.id === kitId);
+    for (const piece of kit?.pieces ?? []) {
+      const placeable = this.placeables[this.slots.findIndex((slot) => slot.id === piece.item)];
+      if (placeable) this.requestMeshes(placeable, "high");
+    }
+  }
+
   private enterRoadMode(id: string): void {
+    this.requestKitMeshes(id);
     this.ghostRot = this.placeRot;
     if (this.roadDrawing) this.roadDrawing.preferredRot = this.placeRot;
     if (this.state.mode === "track") {
@@ -1523,7 +1703,8 @@ export class Editor implements IEditor {
           : { catalogIndex: pieceIndex, connector: 0, heading: 0, snap: null };
       this.backend.setGhost(null);
       this.select(null);
-      this.update({ mode: "track", activeItem: id, track: this.trackView() });
+      this.requestTrackMeshes(track);
+      this.update({ mode: "track", activeItem: id, pendingItem: null, track: this.trackView() });
       this.showHeldPiece();
       return;
     }
@@ -1535,11 +1716,23 @@ export class Editor implements IEditor {
       this.update({ mode: "select", activeItem: null, track: this.trackView() });
       if (id === null) return;
     }
+    const refId = id === null ? -1 : this.slots.findIndex((slot) => slot.id === id);
+    if (id !== null && refId >= 0 && !this.placeables[refId]) {
+      this.choosePending(id, refId);
+      return;
+    }
+    if (id === null && this.state.pendingItem !== null) {
+      this.update({ mode: "select", activeItem: null, pendingItem: null });
+    }
     if (id === null && !this.active) {
       this.select(null);
       return;
     }
-    const placeable = id === null ? null : (this.placeables.find((p) => p.id === id) ?? null);
+    const placeable = refId < 0 ? null : (this.placeables[refId] ?? null);
+    if (placeable) {
+      this.requestMeshes(placeable, "high");
+      this.requestFarModel(placeable);
+    }
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
@@ -1549,10 +1742,41 @@ export class Editor implements IEditor {
     this.update({
       mode: placeable ? "place" : "select",
       activeItem: placeable?.id ?? null,
+      pendingItem: null,
       moduleFit,
       snap,
       ghostRot: this.placeRot,
     });
+  }
+
+  private choosePending(id: string, refId: number): void {
+    this.active = null;
+    this.moduleGhost = null;
+    this.backend.setGhost(null);
+    this.select(null);
+    this.showMarkers();
+    this.update({
+      mode: "place",
+      activeItem: id,
+      pendingItem: id,
+      moduleFit: null,
+      snap: null,
+      ghostRot: this.placeRot,
+    });
+    void this.ensurePlaceable(refId).then(
+      () => {
+        if (this.state.pendingItem === id) this.chooseItem(id);
+      },
+      (error: unknown) => {
+        if (this.state.pendingItem !== id) return;
+        this.update({
+          mode: "select",
+          activeItem: null,
+          pendingItem: null,
+          fileError: `${this.labelOf(id)} can't be loaded: ${errorText(error)}`,
+        });
+      },
+    );
   }
 
   private trackPieceIndex(track: TrackDrawing, id: string): number | null {
@@ -1806,6 +2030,18 @@ export class Editor implements IEditor {
       this.placeHeldPiece(eventTimeMs);
       return;
     }
+    const pendingItem = this.state.pendingItem;
+    if (pendingItem !== null) {
+      if (this.readOnly || !this.groundHit(ndcX, ndcY)) return;
+      this.refuse(
+        pendingItem,
+        snapToLattice(this.hitX),
+        snapToLattice(this.hitZ),
+        this.placeRot,
+        `${this.labelOf(pendingItem)} is still loading`,
+      );
+      return;
+    }
     if (this.active && !this.readOnly) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -1917,7 +2153,7 @@ export class Editor implements IEditor {
   };
 
   private labelOf(id: string): string {
-    return this.placeables.find((placeable) => placeable.id === id)?.label ?? id;
+    return this.slots.find((slot) => slot.id === id)?.view.label ?? id;
   }
 
   private placeAt(
@@ -1957,6 +2193,10 @@ export class Editor implements IEditor {
 
   private show(edit: AppliedEdit, eventTimeMs: number): ViewUpdate {
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
+    for (const placeable of new Set(view.added.map((model) => model.placeable))) {
+      this.requestMeshes(placeable, "high");
+      this.requestFarModel(placeable);
+    }
     this.edited(edit);
     const primary = edit.changes[0];
     const pose = primary?.to ?? primary?.from ?? null;
@@ -2300,15 +2540,13 @@ export class Editor implements IEditor {
   }
 
   private readonly resolveRef = (ref: string, color: number): PlacementTarget | null => {
-    const refId = this.placeables.findIndex(
-      (placeable) => placeable.group === ref && placeable.worldColor === color,
-    );
-    const placeable = this.placeables[refId];
-    return placeable ? { refId, colorId: placeable.worldColor } : null;
+    const refId = this.slots.findIndex((slot) => slot.group === ref && slot.worldColor === color);
+    const slot = this.slots[refId];
+    return slot ? { refId, colorId: slot.worldColor } : null;
   };
 
   private refs(): string[] {
-    return this.placeables.map((placeable) => placeable.group);
+    return this.slots.map((slot) => slot.group);
   }
 
   private trackRecords(): TrackRecordV1[] {
@@ -2639,6 +2877,11 @@ export class Editor implements IEditor {
       }),
     );
     this.update({ studs: this.placed.studTotals() });
+    for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
+      this.requestMeshes(placeable, "high");
+      this.requestFarModel(placeable);
+    }
+    if (track && track.pieceCount > 0) this.requestTrackMeshes(track);
     this.refreshRoads();
     this.syncPlan();
     const opened = { ...current, openMs: performance.now() - started };
@@ -2655,6 +2898,7 @@ export class Editor implements IEditor {
     const started = performance.now();
     const stored = await this.repository.read(id);
     if (!stored.ok) throw new Error(`world ${id} can't be read: ${issueText(stored.issues)}`);
+    await this.ensureShardPlaceables(stored.value.shards);
     this.installShards(id, stored.value.manifest, stored.value.shards, started);
   }
 
@@ -2773,6 +3017,7 @@ export class Editor implements IEditor {
       const trackCheck = this.newTrack?.().restore(worldTrack(shards));
       if (trackCheck && !trackCheck.ok) throw new Error(issueText(trackCheck.issues));
       if (this.storageError !== null) {
+        await this.ensureShardPlaceables(shards);
         this.installShards(null, manifest, shards, started);
         return;
       }
@@ -2787,7 +3032,7 @@ export class Editor implements IEditor {
   }
 
   catalogItemModel(itemId: string): CatalogItemModel | null {
-    const placeable = this.placeables.find((p) => p.id === itemId);
+    const placeable = this.loadedPlaceables().find((p) => p.id === itemId);
     if (!placeable) return null;
     const { min, max } = placeable.box;
     return {
@@ -2798,7 +3043,7 @@ export class Editor implements IEditor {
 
   dump(): EditorDump {
     return {
-      refs: this.placeables.map((p) => p.id),
+      refs: this.slots.map((slot) => slot.id),
       chunkCounts: this.world
         .chunks()
         .filter((chunk) => chunk.liveCount > 0)
@@ -2808,8 +3053,8 @@ export class Editor implements IEditor {
         )
         .toSorted((a, b) => a[0] - b[0] || a[1] - b[1]),
       trackEnds: this.track?.openEnds() ?? [],
-      frameShifts: this.placeables.map((p) => p.frameShift),
-      covers: this.placeables.map((p) => ({
+      frameShifts: this.loadedPlaceables().map((p) => p.frameShift),
+      covers: this.loadedPlaceables().map((p) => ({
         id: p.id,
         studsDrawnPerPlacement: p.studs.count,
         studsCulledAtBake: p.bakedCoveredStuds,

@@ -28,7 +28,7 @@ function part(id: string, size: number): PartAsset {
     boundsMin: [0, 0, 0],
     boundsMax: [size, size, 0],
     producedColor: undefined,
-    producedColors: [],
+    producedColors: undefined,
     trackEnds: undefined,
     mesh: triangle(size),
     studPrimitiveIndex: new Uint8Array(0),

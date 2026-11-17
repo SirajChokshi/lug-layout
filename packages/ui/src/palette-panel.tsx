@@ -28,6 +28,7 @@ import {
   type PaletteFilter,
   type PaletteHit,
 } from "@brr/client";
+import { hoverPrefetch } from "./hover-prefetch.ts";
 import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
 import { usePaletteIndex } from "./use-palette-index.ts";
@@ -39,6 +40,7 @@ const PALETTE_FIELDS = [
   "catalog",
   "catalogSkipped",
   "activeItem",
+  "pendingItem",
   "mode",
   "status",
   "track",
@@ -305,12 +307,16 @@ function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: 
         className="catalog-item"
         data-item={item.id}
         aria-pressed={snapshot.activeItem === item.id}
+        aria-busy={snapshot.pendingItem === item.id}
         disabled={snapshot.readOnly}
         onClick={() => editor.chooseItem(item.id)}
         {...paletteDragProps(editor, item)}
+        {...hoverPrefetch(editor, item.id)}
       >
         <span className="catalog-name">{item.label}</span>
-        <span className="catalog-meta">{itemMeta(item)}</span>
+        <span className="catalog-meta">
+          {snapshot.pendingItem === item.id ? "loading…" : itemMeta(item)}
+        </span>
       </button>
       <FavoriteStar entryKey={item.group} title={item.label} />
     </li>
@@ -543,6 +549,7 @@ function ResultRow({
       <button
         type="button"
         className="palette-result-main"
+        {...(first ? hoverPrefetch(editor, first.id) : {})}
         aria-pressed={hit.items.some((item) => item.id === snapshot.activeItem)}
         onClick={() => first && onPick(first)}
         {...(first ? paletteDragProps(editor, first) : {})}

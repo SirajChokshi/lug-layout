@@ -160,6 +160,7 @@ export interface ISceneBackend {
   setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void;
   setFarStuds(studPrimitives: ReadonlyArray<StudPrimitiveAsset>): void;
   setFarModelMesh(modelIndex: number, mesh: PartMesh): void;
+  setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void;
   setChunk(key: number, chunk: ChunkInstances): void;
   deleteChunk(key: number): void;
   setGhost(model: ChunkInstances | null): void;

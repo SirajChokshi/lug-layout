@@ -3,11 +3,14 @@ import {
   CreditTableFile,
   CrosswalkFile,
   ModelFile,
+  PartShape,
   PartTableFile,
   type BundleCredit,
   type BundleLod,
   type BundleManifest,
+  type CatalogPart,
   type ManifestPart,
+  type StudRecord,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
@@ -24,14 +27,19 @@ import type {
   BricklinkPartCandidates,
   CompiledPartGlb,
   CatalogCrosswalk,
+  FetchPriority,
   IAssetFetcher,
   ImportContext,
   IPartBundleLoader,
   ModelBundle,
   ModelCells,
+  PartModel,
   PartModelLattice,
   ModelFarMesh,
+  ModelRecord,
   PartAsset,
+  PartMesh,
+  PartShapeRecord,
   PartBundle,
   PartFilter,
   StudPrimitiveAsset,
@@ -42,6 +50,7 @@ import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.t
 const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
 const MAX_CONCURRENT_FETCHES = 16;
+const FAR_LOD: BundleLod = "far";
 
 function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   if (lattice === null) return null;
@@ -88,7 +97,9 @@ export class HttpAssetFetcher implements IAssetFetcher {
 
 @injectable()
 export class HttpPartBundleLoader implements IPartBundleLoader {
+  private readonly indices = new Map<BundleLod, Promise<BundleIndex>>();
   private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
+  private readonly meshes = new Map<string, Promise<PartMesh>>();
   private readonly pool = new FetchPool(MAX_CONCURRENT_FETCHES);
   private readonly partAssets = new Map<string, Promise<PartAsset>>();
   private readonly studPrimitiveAssets = new Map<
@@ -102,8 +113,8 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     @inject(BUNDLE_MANIFEST_FILE) private readonly manifestFile: string,
   ) {}
 
-  private bytes(path: string): Promise<ArrayBuffer> {
-    return this.pool.run(() => this.fetcher.bytes(path));
+  private bytes(path: string, priority: FetchPriority = "high"): Promise<ArrayBuffer> {
+    return this.pool.run(() => this.fetcher.bytes(path), priority);
   }
 
   private text(path: string): Promise<string> {
@@ -117,8 +128,70 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return decodedOrThrow(decode(schema, JSON.parse(await this.text(path))), path);
   }
 
+  private cached<K, T>(cache: Map<K, Promise<T>>, key: K, load: () => Promise<T>): Promise<T> {
+    const existing = cache.get(key);
+    if (existing) return existing;
+    const loading = load();
+    cache.set(key, loading);
+    loading.catch(() => {
+      if (cache.get(key) === loading) cache.delete(key);
+    });
+    return loading;
+  }
+
+  loadIndex(lod: BundleLod): Promise<BundleIndex> {
+    return this.cached(this.indices, lod, () =>
+      this.json(BundleIndex, `${lod}/${this.manifestFile}`),
+    );
+  }
+
+  async loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
+    return this.studPrimitives(lod, await this.loadIndex(lod));
+  }
+
+  async loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord> {
+    const [index, shape] = await Promise.all([
+      this.loadIndex(lod),
+      this.json(PartShape, `${lod}/${part.shape.file}`),
+    ]);
+    return shapeRecord(shape, studPrimitiveNamesOf(index));
+  }
+
+  async loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
+    const index = await this.loadIndex(lod);
+    const entry = index.models.find((model) => model.name === name);
+    if (!entry) throw new Error(`model "${name}" is not in the bundle`);
+    const file = await this.json(ModelFile, `${lod}/${entry.file}`);
+    const names = studPrimitiveNamesOf(index);
+    return {
+      entry,
+      model: partModel(file),
+      parts: file.shapes.map((shape) => shapeRecord(shape, names)),
+    };
+  }
+
+  loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
+    const path = `${lod}/${file}`;
+    return this.cached(this.meshes, path, async () =>
+      readPartMesh(parseGlb(await this.bytes(path, priority), file), file),
+    );
+  }
+
+  async loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
+    const index = await this.loadIndex(FAR_LOD);
+    const farMesh = index.models.find((model) => model.name === name)?.farMesh;
+    if (!farMesh) return null;
+    return (await this.farMesh(`${FAR_LOD}/${farMesh.file}`, priority)).mesh;
+  }
+
+  async loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>> {
+    const index = await this.loadIndex(lod);
+    const { parts } = await this.json(PartTableFile, `${lod}/${index.partTable.file}`);
+    return new Map(parts.map((part) => [part.id, part.file]));
+  }
+
   private async manifest(lod: BundleLod): Promise<BundleManifest> {
-    const index = await this.json(BundleIndex, `${lod}/${this.manifestFile}`);
+    const index = await this.loadIndex(lod);
     const [{ parts }, { credits }] = await Promise.all([
       this.json(PartTableFile, `${lod}/${index.partTable.file}`),
       this.json(CreditTableFile, `${lod}/${index.creditTable.file}`),
@@ -127,19 +200,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   loadManifest(lod: BundleLod): Promise<BundleManifest> {
-    const cached = this.manifests.get(lod);
-    if (cached) return cached;
-    const loading = this.manifest(lod);
-    this.manifests.set(lod, loading);
-    loading.catch(() => {
-      if (this.manifests.get(lod) === loading) this.manifests.delete(lod);
-    });
-    return loading;
+    return this.cached(this.manifests, lod, () => this.manifest(lod));
   }
 
   private studPrimitives(
     lod: BundleLod,
-    manifest: BundleManifest,
+    manifest: Pick<BundleIndex, "studPrimitives">,
   ): Promise<ReadonlyArray<StudPrimitiveAsset>> {
     const cached = this.studPrimitiveAssets.get(lod);
     if (cached) return cached;
@@ -288,43 +354,15 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       if (!part) throw new Error(`${entry.file}: part ${id} is not in the manifest`);
       return part;
     });
-    const count = file.instances.part.length;
-    const { cover } = file;
     const [bundle, farMesh] = await Promise.all([
       this.bundle(lod, manifest, parts),
       entry.farMesh ? this.farMesh(`${lod}/${entry.farMesh.file}`) : undefined,
     ]);
-    return {
-      bundle,
-      farMesh,
-      entry,
-      model: {
-        sections: file.sections,
-        lattice: modelLattice(file.lattice),
-        studCover: {
-          studs: cover.studs,
-          covered: cover.coveredStuds,
-          visibleBits: Uint32Array.from(cover.visibleBits),
-        },
-        cells: modelCells(cover.cells),
-        instanceCount: count,
-        partIndex: Uint16Array.from(file.instances.part),
-        ldrawColor: Uint16Array.from(file.instances.color),
-        matrices: Float32Array.from(file.instances.matrix),
-        vehicles: file.vehicles.map((vehicle) => ({
-          ...vehicle,
-          body: Uint32Array.from(vehicle.body),
-          bogies: vehicle.bogies.map((bogie) => ({
-            ...bogie,
-            instances: Uint32Array.from(bogie.instances),
-          })),
-        })),
-      },
-    };
+    return { bundle, farMesh, entry, model: partModel(file) };
   }
 
-  private async farMesh(path: string): Promise<ModelFarMesh> {
-    const glb = parseFarMeshGlb(await this.bytes(path), path);
+  private async farMesh(path: string, priority: FetchPriority = "high"): Promise<ModelFarMesh> {
+    const glb = parseFarMeshGlb(await this.bytes(path, priority), path);
     const { extras } = glb.document;
     const cellIndex = readUint32Array(glb, extras.arrays.voxelCells);
     const ldrawColor = readUint32Array(glb, extras.arrays.voxelColors);
@@ -363,6 +401,78 @@ function compiledPartAsset(
   };
 }
 
+interface StudArrays {
+  readonly studPrimitiveIndex: Uint8Array;
+  readonly studColors: Uint16Array;
+  readonly studMatrices: Float32Array;
+}
+
+function studArrays(
+  partId: string,
+  studs: ReadonlyArray<StudRecord>,
+  studPrimitiveNames: ReadonlyArray<string>,
+): StudArrays {
+  const studCount = studs.length;
+  const studPrimitiveIndex = new Uint8Array(studCount);
+  const studColors = new Uint16Array(studCount);
+  const studMatrices = new Float32Array(studCount * MATRIX_FLOATS);
+  for (let i = 0; i < studCount; i++) {
+    const stud = studs[i];
+    if (!stud) continue;
+    const primitive = studPrimitiveNames.indexOf(stud.primitive);
+    if (primitive < 0) throw new Error(`${partId}: unknown stud primitive ${stud.primitive}`);
+    studPrimitiveIndex[i] = primitive;
+    studColors[i] = stud.color;
+    studMatrices.set(stud.matrix, i * MATRIX_FLOATS);
+  }
+  return { studPrimitiveIndex, studColors, studMatrices };
+}
+
+function studPrimitiveNamesOf(index: Pick<BundleIndex, "studPrimitives">): ReadonlyArray<string> {
+  return index.studPrimitives.map((primitive) => primitive.name);
+}
+
+function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>): PartShapeRecord {
+  return {
+    id: shape.id,
+    title: shape.title,
+    role: shape.role,
+    boundsMin: shape.bounds.min,
+    boundsMax: shape.bounds.max,
+    producedColor: shape.displayColor?.ldraw,
+    producedColors: shape.producedColors,
+    trackEnds: shape.trackEnds,
+    meshFile: shape.file,
+    ...studArrays(shape.id, shape.studs, studPrimitiveNames),
+  };
+}
+
+function partModel(file: ModelFile): PartModel {
+  const { cover } = file;
+  return {
+    sections: file.sections,
+    lattice: modelLattice(file.lattice),
+    studCover: {
+      studs: cover.studs,
+      covered: cover.coveredStuds,
+      visibleBits: Uint32Array.from(cover.visibleBits),
+    },
+    cells: modelCells(cover.cells),
+    instanceCount: file.instances.part.length,
+    partIndex: Uint16Array.from(file.instances.part),
+    ldrawColor: Uint16Array.from(file.instances.color),
+    matrices: Float32Array.from(file.instances.matrix),
+    vehicles: file.vehicles.map((vehicle) => ({
+      ...vehicle,
+      body: Uint32Array.from(vehicle.body),
+      bogies: vehicle.bogies.map((bogie) => ({
+        ...bogie,
+        instances: Uint32Array.from(bogie.instances),
+      })),
+    })),
+  };
+}
+
 function toPartAsset(
   part: Pick<
     ManifestPart,
@@ -372,20 +482,6 @@ function toPartAsset(
   studPrimitiveNames: ReadonlyArray<string>,
 ): PartAsset {
   const glb = parseGlb(bytes, part.id);
-  const { extras } = glb.document;
-  const studCount = extras.studs.length;
-  const studPrimitiveIndex = new Uint8Array(studCount);
-  const studColors = new Uint16Array(studCount);
-  const studMatrices = new Float32Array(studCount * MATRIX_FLOATS);
-  for (let i = 0; i < studCount; i++) {
-    const stud = extras.studs[i];
-    if (!stud) continue;
-    const primitive = studPrimitiveNames.indexOf(stud.primitive);
-    if (primitive < 0) throw new Error(`${part.id}: unknown stud primitive ${stud.primitive}`);
-    studPrimitiveIndex[i] = primitive;
-    studColors[i] = stud.color;
-    studMatrices.set(stud.matrix, i * MATRIX_FLOATS);
-  }
   return {
     id: part.id,
     title: part.title,
@@ -396,8 +492,6 @@ function toPartAsset(
     trackEnds: part.trackEnds,
     boundsMax: part.bounds.max,
     mesh: readPartMesh(glb, part.id),
-    studPrimitiveIndex,
-    studColors,
-    studMatrices,
+    ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
   };
 }

@@ -1,7 +1,9 @@
 import {
   BundleLod,
+  type BundleIndex,
   type BundleManifest,
   type BundleModelEntry,
+  type CatalogPart,
   type BundleSource,
   type ManifestPart,
   type ModelSection,
@@ -51,6 +53,18 @@ export interface PartShapeAsset {
 export interface PartAsset extends PartShapeAsset {
   readonly mesh: PartMesh;
 }
+
+export interface PartShapeRecord extends PartShapeAsset {
+  readonly meshFile: string;
+}
+
+export interface ModelRecord {
+  readonly entry: BundleModelEntry;
+  readonly model: PartModel;
+  readonly parts: ReadonlyArray<PartShapeRecord>;
+}
+
+export type FetchPriority = "high" | "low";
 
 export interface StudPrimitiveAsset {
   readonly mesh: MeshArrays;
@@ -180,6 +194,13 @@ export interface CatalogCrosswalk {
 export type BricklinkPartCandidates = Readonly<Record<string, ReadonlyArray<string>>>;
 
 export interface IPartBundleLoader {
+  loadIndex(lod: BundleLod): Promise<BundleIndex>;
+  loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>>;
+  loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord>;
+  loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord>;
+  loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh>;
+  loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null>;
+  loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>>;
   loadManifest(lod: BundleLod): Promise<BundleManifest>;
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;

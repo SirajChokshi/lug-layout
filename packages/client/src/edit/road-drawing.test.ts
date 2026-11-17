@@ -4,14 +4,19 @@ import {
   type BricklinkPartCandidates,
   type CatalogCrosswalk,
   type CompiledPartGlb,
+  type FetchPriority,
   type IAssetFetcher,
   type ImportContext,
   type IPartBundleLoader,
   type ModelBundle,
+  type ModelRecord,
   type PartBundle,
   type PartFilter,
+  type PartMesh,
+  type PartShapeRecord,
+  type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
+import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -54,6 +59,35 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 
 class MilsModulesOnly implements IPartBundleLoader {
   constructor(private readonly loader: IPartBundleLoader) {}
+
+  async loadIndex(lod: BundleLod): Promise<BundleIndex> {
+    const index = await this.loader.loadIndex(lod);
+    return { ...index, models: index.models.filter((m) => m.role === "mils-module") };
+  }
+
+  loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
+    return this.loader.loadStudPrimitives(lod);
+  }
+
+  loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord> {
+    return this.loader.loadPartShape(lod, part);
+  }
+
+  loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
+    return this.loader.loadModelRecord(lod, name);
+  }
+
+  loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
+    return this.loader.loadPartMesh(lod, file, priority);
+  }
+
+  loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
+    return this.loader.loadFarModelMesh(name, priority);
+  }
+
+  loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>> {
+    return this.loader.loadPartFiles(lod);
+  }
 
   loadManifest(lod: BundleLod): Promise<BundleManifest> {
     return this.loader.loadManifest(lod);
@@ -104,6 +138,7 @@ class TopDownBackend implements ISceneBackend {
   setPartMeshes(): void {}
   setFarStuds(): void {}
   setFarModelMesh(): void {}
+  setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
   setGhost(): void {}

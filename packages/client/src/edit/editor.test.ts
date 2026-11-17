@@ -1,17 +1,23 @@
 import {
   ASSET_FETCHER,
+  BUNDLE_LODS,
   PART_BUNDLE_LOADER,
   type BricklinkPartCandidates,
   type CatalogCrosswalk,
   type CompiledPartGlb,
+  type FetchPriority,
   type IAssetFetcher,
   type ImportContext,
   type IPartBundleLoader,
   type ModelBundle,
+  type ModelRecord,
   type PartBundle,
   type PartFilter,
+  type PartMesh,
+  type PartShapeRecord,
+  type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
+import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -76,6 +82,7 @@ class InFlightFetcher implements IAssetFetcher {
   inFlight = 0;
   maxInFlight = 0;
   requests = 0;
+  readonly paths: string[] = [];
 
   constructor(
     private readonly files: IAssetFetcher,
@@ -84,6 +91,7 @@ class InFlightFetcher implements IAssetFetcher {
 
   private async track<T>(path: string, read: () => Promise<T>): Promise<T> {
     this.requests++;
+    this.paths.push(path);
     this.inFlight++;
     this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
     try {
@@ -109,6 +117,35 @@ class ModelSubsetLoader implements IPartBundleLoader {
     private readonly loader: IPartBundleLoader,
     private readonly models: ReadonlyArray<string>,
   ) {}
+
+  async loadIndex(lod: BundleLod): Promise<BundleIndex> {
+    const index = await this.loader.loadIndex(lod);
+    return { ...index, models: index.models.filter((m) => this.models.includes(m.name)) };
+  }
+
+  loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
+    return this.loader.loadStudPrimitives(lod);
+  }
+
+  loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord> {
+    return this.loader.loadPartShape(lod, part);
+  }
+
+  loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
+    return this.loader.loadModelRecord(lod, name);
+  }
+
+  loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
+    return this.loader.loadPartMesh(lod, file, priority);
+  }
+
+  loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
+    return this.loader.loadFarModelMesh(name, priority);
+  }
+
+  loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>> {
+    return this.loader.loadPartFiles(lod);
+  }
 
   loadManifest(lod: BundleLod): Promise<BundleManifest> {
     return this.loader.loadManifest(lod);
@@ -159,6 +196,7 @@ class HeadlessBackend implements ISceneBackend {
   setPartMeshes(): void {}
   setFarStuds(): void {}
   setFarModelMesh(): void {}
+  setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
   setGhost(): void {}
@@ -235,20 +273,72 @@ function farTierSettled(editor: IEditor): Promise<EditorSnapshot> {
   });
 }
 
-it("starts with every model in the bundle while keeping at most 16 bundle fetches in flight", async () => {
+async function studPrimitivePaths(): Promise<ReadonlySet<string>> {
+  const files = new BundleDirectoryFetcher();
+  const paths = await Promise.all(
+    BUNDLE_LODS.map(async (lod) => {
+      const index: { studPrimitives: ReadonlyArray<{ file: string }> } = JSON.parse(
+        await files.text(`${lod}/manifest.json`),
+      );
+      return index.studPrimitives.map((primitive) => `${lod}/${primitive.file}`);
+    }),
+  );
+  return new Set(paths.flat());
+}
+
+async function partMeshes(paths: ReadonlyArray<string>, lod: BundleLod): Promise<string[]> {
+  const studs = await studPrimitivePaths();
+  return paths.filter(
+    (path) => path.startsWith(`${lod}/`) && path.endsWith(".glb") && !studs.has(path),
+  );
+}
+
+it("starts from the index, part shapes and MILS module records, fetching no part mesh and at most 16 files at once", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
   const { editor, manifest } = await startEditor(null, fetcher);
 
-  expect(fetcher.maxInFlight).toBeLessThanOrEqual(16);
-  expect(fetcher.maxInFlight).toBeGreaterThan(1);
-  expect(fetcher.requests).toBeGreaterThan(manifest.models.length);
   expect(editor.snapshot().error).toBeNull();
   expect(editor.snapshot().status).toBe("ready");
   const settled = await farTierSettled(editor);
   expect(settled.farTier).toBe("ready");
   expect(settled.farTierError).toBeNull();
+  expect(await partMeshes(fetcher.paths, "standard")).toEqual([]);
+  expect(await partMeshes(fetcher.paths, "far")).toEqual([]);
+  expect(fetcher.paths.filter((path) => path.startsWith("standard/shape-"))).toHaveLength(
+    manifest.catalogParts.length,
+  );
+  const sets = manifest.models.filter((model) => model.origin === "omr");
+  expect(
+    fetcher.paths.filter((path) => sets.some((set) => path === `standard/${set.file}`)),
+  ).toEqual([]);
   expect(fetcher.maxInFlight).toBeLessThanOrEqual(16);
 }, 300_000);
+
+it("loads a set's record only once it is picked, refuses clicks until then, and fetches its meshes once placed", async () => {
+  const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
+  const { editor, backend, manifest } = await startEditor([PLACEABLE_SET], fetcher);
+  const set = `omr:${PLACEABLE_SET}`;
+  const record = `standard/${manifest.models.find((model) => model.name === PLACEABLE_SET)?.file}`;
+  const place = placer(editor, backend);
+
+  expect(fetcher.paths).not.toContain(record);
+  const whileLoading = place(set, 640, 640);
+  expect(whileLoading).toEqual({
+    placements: 0,
+    refusedClicks: 1,
+    reason: expect.stringContaining("is still loading"),
+  });
+  expect(await editor.prefetch(set)).toBe(true);
+  expect(fetcher.paths).toContain(record);
+
+  expect(place(set, 640, 640)).toMatchObject({ placements: 1, refusedClicks: 1 });
+  await vi.waitFor(() => {
+    const { meshes } = editor.snapshot();
+    expect(meshes.wanted).toBeGreaterThan(0);
+    expect(meshes.loaded).toBe(meshes.wanted);
+  });
+  expect(await partMeshes(fetcher.paths, "standard")).toHaveLength(editor.snapshot().meshes.wanted);
+}, 120_000);
 
 it("starts without the far tier when its files cannot be fetched", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher(), (path) =>
@@ -551,6 +641,7 @@ it("refuses a 10264-1 Corner Garage in a rail module's track end in either order
   const { editor, backend } = await startEditor(["mils-rail-straight", "10264-1"]);
   const place = placer(editor, backend);
   const garage = "omr:10264-1";
+  expect(await editor.prefetch(garage)).toBe(true);
 
   place(RAIL_MODULE, 320, 320);
   const intoTrackEnd = place(garage, 960, 320);
@@ -658,6 +749,7 @@ it("takes a 10185-1 Green Grocer flush against a rail edge when none of its part
   const { editor, backend } = await startEditor(["mils-rail-straight", "10185-1"]);
   const place = placer(editor, backend);
   place(RAIL_MODULE, 320, 320);
+  expect(await editor.prefetch("omr:10185-1")).toBe(true);
   editor.chooseItem("omr:10185-1");
   editor.rotate(0);
   editor.rotate(0);

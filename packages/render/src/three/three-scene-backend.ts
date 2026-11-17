@@ -53,7 +53,14 @@ import {
   type ThumbnailRequest,
   type WorldBox,
 } from "../scene-backend.ts";
-import type { PartAsset, PartMesh, StudPrimitiveAsset } from "@brr/catalog";
+import {
+  DIRECT_COLOR_ALPHA,
+  directColorSrgb,
+  isDirectColor,
+  type PartAsset,
+  type PartMesh,
+  type StudPrimitiveAsset,
+} from "@brr/catalog";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { LookPipeline } from "./look-pipeline.ts";
@@ -662,6 +669,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private ldrawColor(code: number): LdrawColor {
+    if (isDirectColor(code)) return { srgb: directColorSrgb(code), alpha: DIRECT_COLOR_ALPHA };
     const color = this.ldrawColorTable.get(code);
     if (color === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
     return color;
@@ -724,26 +732,39 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.tiered = palette.far !== undefined;
     this.partBounds = new Float32Array(palette.detailed.parts.length * BOUNDS_FLOATS);
     palette.detailed.parts.forEach((part, p) => this.setPartBounds(p, part));
-    const colorCount = palette.colorsSrgb.length / COLOR_CHANNELS;
+    this.installColors(palette.colorsSrgb, palette.colorsAlpha);
+  }
+
+  private installColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
+    const colorCount = colorsSrgb.length / COLOR_CHANNELS;
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
     this.alphaSlots = [OPAQUE_ALPHA];
     this.colorAlphaSlot = new Uint8Array(colorCount);
     for (let c = 0; c < colorCount; c++) {
       const o = c * COLOR_CHANNELS;
       this.scratchColor.setRGB(
-        (palette.colorsSrgb[o] ?? 0) / 255,
-        (palette.colorsSrgb[o + 1] ?? 0) / 255,
-        (palette.colorsSrgb[o + 2] ?? 0) / 255,
+        (colorsSrgb[o] ?? 0) / 255,
+        (colorsSrgb[o + 1] ?? 0) / 255,
+        (colorsSrgb[o + 2] ?? 0) / 255,
         SRGBColorSpace,
       );
       this.linearColors[o] = this.scratchColor.r;
       this.linearColors[o + 1] = this.scratchColor.g;
       this.linearColors[o + 2] = this.scratchColor.b;
-      const alpha = palette.colorsAlpha[c] ?? OPAQUE_ALPHA;
+      const alpha = colorsAlpha[c] ?? OPAQUE_ALPHA;
       let slot = this.alphaSlots.indexOf(alpha);
       if (slot < 0) slot = this.alphaSlots.push(alpha) - 1;
       this.colorAlphaSlot[c] = slot;
     }
+  }
+
+  setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
+    this.installColors(colorsSrgb, colorsAlpha);
+    for (const [key, chunk] of Array.from(this.chunkSources)) this.setChunk(key, chunk);
+    for (const [vehicle, model] of Array.from(this.vehicleSources)) {
+      this.rebuildVehicle(vehicle, model);
+    }
+    if (this.ghostSource) this.rebuildGhost();
   }
 
   addParts(parts: ReadonlyArray<PartAsset>): void {

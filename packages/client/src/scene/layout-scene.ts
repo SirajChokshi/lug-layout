@@ -127,6 +127,9 @@ class ChunkCapture implements ISceneBackend {
   setFarModelMesh(modelIndex: number, mesh: PartMesh): void {
     this.inner.setFarModelMesh(modelIndex, mesh);
   }
+  setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
+    this.inner.setColors(colorsSrgb, colorsAlpha);
+  }
   setChunk(key: number, chunk: ChunkInstances): void {
     this.chunks.set(key, chunk);
     this.inner.setChunk(key, chunk);
