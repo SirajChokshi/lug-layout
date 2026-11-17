@@ -1,4 +1,10 @@
-import type { BundleLod, BundleManifest, BundleModelEntry, BundleSource } from "@brr/schema/bundle";
+import type {
+  BundleLod,
+  BundleManifest,
+  BundleModelEntry,
+  BundleSource,
+  ModelErratum,
+} from "@brr/schema/bundle";
 
 export interface CreditedFile {
   readonly path: string;
@@ -33,6 +39,7 @@ export interface SetCredit {
   readonly sections: number;
   readonly instances: number;
   readonly inlinePartsResolved: number;
+  readonly errata: ReadonlyArray<ModelErratum>;
   readonly source: string;
 }
 
@@ -147,6 +154,7 @@ export function buildCredits(manifests: ReadonlyArray<LodManifest>): CreditsView
           sections: model.sections.length,
           instances: model.instances,
           inlinePartsResolved: model.inlinePartsResolvedToOfficial.length,
+          errata: model.errata ?? [],
           source: model.source,
         });
         break;
@@ -235,6 +243,11 @@ export function creditsText(view: CreditsView): string {
       `  ${set.sections} submodel sections, ${set.instances} part instances, ${set.inlinePartsResolved} inline part copies replaced by the official part`,
       `  File: ${set.source}`,
     );
+    for (const erratum of set.errata) {
+      lines.push(
+        `  Modified from OMR, line ${erratum.line}: ${erratum.from} → ${erratum.to}. ${erratum.summary}`,
+      );
+    }
     if (set.setSource !== null) lines.push(`  Set name and year: ${set.setSource}`);
   }
   if (view.generated.length > 0) {

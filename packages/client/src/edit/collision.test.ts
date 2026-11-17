@@ -37,6 +37,7 @@ const NO_LOOK: LookSettings = {
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const GREEN_GROCER = "10185-1";
 const MARKET_STREET = "10190-1";
+const STATIONS = ["2150-1", "4554-1"] as const;
 const BASEPLATE = "ldraw:3811";
 const MODULE_LDU = 640;
 const TRACK_HALF_WIDTH_LDU = 80;
@@ -275,4 +276,20 @@ it("lays four 9V straights and a curve straight onto the studs of a 3 × 2 field
   expect(editor.snapshot().track?.drag).toMatchObject({ straights: 4, curves: 1, blocked: null });
   editor.dragEnd(to[0] / NDC_TO_LDU, to[1] / NDC_TO_LDU, 0);
   expect(editor.snapshot().track).toMatchObject({ lastCommit: "laid", pieces: 5 });
+}, 120_000);
+
+it("stands the bundled train stations on baseplates, their OMR plate errata applied", async () => {
+  for (const station of STATIONS) {
+    const editor = await startEditor([station]);
+    expect(editor.snapshot().error).toBeNull();
+    chooseGroup(editor, BASEPLATE);
+    for (const x of [-MODULE_LDU, 0, MODULE_LDU]) {
+      editor.click(x / NDC_TO_LDU, 0, 0);
+    }
+    expect(editor.snapshot().placements).toBe(3);
+    editor.chooseItem(`omr:${station}`);
+    expect(hoverAt(editor, 0, 0)).toBeNull();
+    editor.click(0, 0, 0);
+    expect(editor.snapshot().placements).toBe(4);
+  }
 }, 120_000);

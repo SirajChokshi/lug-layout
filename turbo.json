@@ -17,6 +17,7 @@
         "src/**",
         "!src/**/*.test.ts",
         "palette.json",
+        "omr-errata.json",
         "ldraw.lock.json",
         "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml",

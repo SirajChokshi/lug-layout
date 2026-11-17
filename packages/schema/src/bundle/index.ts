@@ -321,6 +321,46 @@ export type ModelSet = v.InferOutput<typeof ModelSet>;
 export const ModelRole = v.picklist(["mils-module"]);
 export type ModelRole = v.InferOutput<typeof ModelRole>;
 
+const OmrLine = v.strictObject({ line: v.pipe(Integer, v.minValue(1)), text: v.string() });
+
+export const ErratumEvidence = v.variant("kind", [
+  v.strictObject({
+    kind: v.literal("mirror-twin"),
+    twin: OmrLine,
+    summary: v.string(),
+    instructions: v.null(),
+  }),
+  v.strictObject({
+    kind: v.literal("wall-course"),
+    course: v.pipe(v.array(OmrLine), v.minLength(2)),
+    summary: v.string(),
+    instructions: v.null(),
+  }),
+]);
+export type ErratumEvidence = v.InferOutput<typeof ErratumEvidence>;
+
+export const OmrErratum = v.strictObject({
+  model: v.string(),
+  file: v.string(),
+  sha256: Sha256Hex,
+  line: v.pipe(Integer, v.minValue(1)),
+  from: v.string(),
+  to: v.string(),
+  evidence: ErratumEvidence,
+});
+export type OmrErratum = v.InferOutput<typeof OmrErratum>;
+
+export const OmrErrata = v.strictObject({ errata: v.array(OmrErratum) });
+export type OmrErrata = v.InferOutput<typeof OmrErrata>;
+
+export const ModelErratum = v.object({
+  line: v.pipe(Integer, v.minValue(1)),
+  from: v.string(),
+  to: v.string(),
+  summary: v.string(),
+});
+export type ModelErratum = v.InferOutput<typeof ModelErratum>;
+
 export const BundleModelEntry = v.object({
   name: v.string(),
   file: v.string(),
@@ -339,6 +379,7 @@ export const BundleModelEntry = v.object({
   cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
   solidSamples: v.optional(SolidSidecar),
+  errata: v.optional(v.array(ModelErratum)),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
 

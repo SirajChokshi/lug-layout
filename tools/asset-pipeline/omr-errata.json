@@ -1,0 +1,81 @@
+{
+  "errata": [
+    {
+      "model": "2150-1",
+      "file": "2150-1.mpd",
+      "sha256": "1633ac12ac0a76d5c56225fb7302720b198a81fd805b7ee6620a323305327d11",
+      "line": 57,
+      "from": "1 7 460 0 140 -1 0 0 0 1 0 0 0 -1 3020.DAT",
+      "to": "1 7 470 0 140 -1 0 0 0 1 0 0 0 -1 3020.DAT",
+      "evidence": {
+        "kind": "mirror-twin",
+        "twin": {
+          "line": 58,
+          "text": "1 7 470 0 -140 -1 0 0 0 1 0 0 0 -1 3020.DAT"
+        },
+        "summary": "The six 2 x 4 plates under the platforms are mirrored pairs at z = +140 and z = -140: x = 150, x = -170 and this one. Its twin on the next line is at x = 470. At x = 460 the plate is half a stud off the platforms' stud grid and its walls stand on baseplate studs.",
+        "instructions": null
+      }
+    },
+    {
+      "model": "4554-1",
+      "file": "4554-1.mpd",
+      "sha256": "583767c8d0e52be3d024c32b70491e2a3d8ea2de4b3df39cfc3cf2d38ada92c8",
+      "line": 50,
+      "from": "1 7 460 0 140 -1 0 0 0 1 0 0 0 -1 3020.dat",
+      "to": "1 7 470 0 140 -1 0 0 0 1 0 0 0 -1 3020.dat",
+      "evidence": {
+        "kind": "mirror-twin",
+        "twin": {
+          "line": 51,
+          "text": "1 7 470 0 -140 -1 0 0 0 1 0 0 0 -1 3020.dat"
+        },
+        "summary": "The six 2 x 4 plates under the platforms are mirrored pairs at z = +140 and z = -140: x = 150, x = -170 and this one. Its twin on the next line is at x = 470. At x = 460 the plate is half a stud off the platforms' stud grid and its walls stand on baseplate studs.",
+        "instructions": null
+      }
+    },
+    {
+      "model": "10185-1",
+      "file": "10185-1.mpd",
+      "sha256": "59c1cacc8b01ff909c811b99e169184bb2847ffddedda8a2ddb467a3da33a59e",
+      "line": 3592,
+      "from": "1 19 60 -128 232 1 0 0 0 1 0 0 0 1 3008.dat",
+      "to": "1 19 60 -128 230 1 0 0 0 1 0 0 0 1 3008.dat",
+      "evidence": {
+        "kind": "wall-course",
+        "course": [
+          {
+            "line": 3586,
+            "text": "1 378 80 -104 230 -1 0 0 0 1 0 0 0 -1 3008.dat"
+          },
+          {
+            "line": 3587,
+            "text": "1 378 -80 -104 230 -1 0 0 0 1 0 0 0 -1 3008.dat"
+          },
+          {
+            "line": 3593,
+            "text": "1 19 -80 -128 230 1 0 0 0 1 0 0 0 1 3009.dat"
+          },
+          {
+            "line": 3645,
+            "text": "1 71 170 -128 230 1 0 0 0 1 0 0 0 1 3005.dat"
+          },
+          {
+            "line": 3661,
+            "text": "1 378 120 -152 230 -1 0 0 0 1 0 0 0 -1 3010.dat"
+          },
+          {
+            "line": 3662,
+            "text": "1 378 -120 -152 230 -1 0 0 0 1 0 0 0 -1 3010.dat"
+          },
+          {
+            "line": 3671,
+            "text": "1 378 0 -152 230 -1 0 0 0 1 0 0 0 -1 3008.dat"
+          }
+        ],
+        "summary": "In \"10185 - Second Floor\" every other brick of this wall is at z = 230: the course below (lines 3586 and 3587, whose studs it stands on), its own course (lines 3593 and 3645) and the course above (lines 3661, 3662 and 3671, which stand on its studs). At z = 232 the 1 x 8 brick is 2 LDU off those studs and hangs 2 LDU past the baseplate edge.",
+        "instructions": null
+      }
+    }
+  ]
+}

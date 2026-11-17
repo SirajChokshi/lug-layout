@@ -9,6 +9,7 @@ use brick_compile::compile::modified_note;
 use brick_compile::cover::{
     model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape, PLATE_LDU,
 };
+use brick_compile::errata::{apply_line_errata, LineErratum};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance, STUD_LDU};
 use brick_compile::ldraw::{identity_redirect, normalize_reference, parse as parse_ldraw, Header};
@@ -64,6 +65,7 @@ struct Args {
     geometry: PathBuf,
     fixtures: PathBuf,
     omr: PathBuf,
+    omr_errata: PathBuf,
     palette: PathBuf,
     out: PathBuf,
     lod: Lod,
@@ -89,6 +91,7 @@ fn parse_args() -> Result<Args, String> {
         ldraw: take("--ldraw")?.into(),
         fixtures: take("--fixtures")?.into(),
         omr: take("--omr")?.into(),
+        omr_errata: take("--omr-errata")?.into(),
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
@@ -96,6 +99,58 @@ fn parse_args() -> Result<Args, String> {
         lod,
         compiler: values.get("--compiler").map(PathBuf::from),
     })
+}
+
+fn read_errata(path: &Path) -> Result<Vec<Value>, String> {
+    let file: Value =
+        serde_json::from_slice(&fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+    file["errata"]
+        .as_array()
+        .cloned()
+        .ok_or(format!("{}: errata must be an array", path.display()))
+}
+
+fn apply_model_errata(
+    errata: &[Value],
+    entry: &Value,
+    text: String,
+    used: &mut HashSet<usize>,
+) -> Result<(String, Vec<Value>), String> {
+    let name = entry["name"].as_str().unwrap_or_default();
+    let mut lines = Vec::new();
+    let mut applied = Vec::new();
+    for (index, erratum) in errata.iter().enumerate() {
+        if erratum["model"].as_str() != Some(name) {
+            continue;
+        }
+        if erratum["file"] != entry["file"] || erratum["sha256"] != entry["sha256"] {
+            let text = |value: &Value| value.as_str().unwrap_or_default().to_string();
+            return Err(format!(
+                "{name}: the erratum for line {} pins {} {}, but the palette pins {} {}; re-check it against the new file",
+                erratum["line"],
+                text(&erratum["file"]),
+                text(&erratum["sha256"]),
+                text(&entry["file"]),
+                text(&entry["sha256"])
+            ));
+        }
+        let line = erratum["line"]
+            .as_u64()
+            .and_then(|line| usize::try_from(line).ok())
+            .ok_or(format!("{name}: erratum line must be a positive integer"))?;
+        let from = erratum["from"]
+            .as_str()
+            .ok_or(format!("{name}: erratum from must be a string"))?;
+        let to = erratum["to"]
+            .as_str()
+            .ok_or(format!("{name}: erratum to must be a string"))?;
+        lines.push(LineErratum { line, from, to });
+        applied.push(json!({ "line": line, "from": from, "to": to, "summary": erratum["evidence"]["summary"] }));
+        used.insert(index);
+    }
+    let fixed = apply_line_errata(&text, &lines).map_err(|e| format!("{name}: {e}"))?;
+    Ok((fixed, applied))
 }
 
 fn stem(reference: &str) -> String {
@@ -575,6 +630,8 @@ fn run(args: &Args) -> Result<(), String> {
 
     let signatures = vehicle_signatures(&palette)?;
     let rails = rail_head_bands(&geometry)?;
+    let errata = read_errata(&args.omr_errata)?;
+    let mut used_errata: HashSet<usize> = HashSet::new();
     let mut models = Vec::new();
     for entry in palette["models"].as_array().cloned().unwrap_or_default() {
         let name = entry["name"]
@@ -590,7 +647,12 @@ fn run(args: &Args) -> Result<(), String> {
         };
         let path = root.join(file);
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let text = String::from_utf8_lossy(&source);
+        let (text, applied_errata) = apply_model_errata(
+            &errata,
+            &entry,
+            String::from_utf8_lossy(&source).into_owned(),
+            &mut used_errata,
+        )?;
         let baked = bake_model(&text).map_err(|e| format!("{file}: {e}"))?;
         let acknowledged = acknowledged_not_drawn(&entry, file)?;
         let mut not_drawn: Vec<Value> = Vec::new();
@@ -862,6 +924,9 @@ fn run(args: &Args) -> Result<(), String> {
             fs::write(args.out.join(&sidecar_file), bytes).map_err(|e| e.to_string())?;
             manifest_entry["solidSamples"] = header.clone();
         }
+        if !applied_errata.is_empty() {
+            manifest_entry["errata"] = json!(applied_errata);
+        }
         if !not_drawn.is_empty() {
             manifest_entry["notDrawn"] = json!(not_drawn);
         }
@@ -869,6 +934,14 @@ fn run(args: &Args) -> Result<(), String> {
             manifest_entry["role"] = entry["role"].clone();
         }
         models.push(manifest_entry);
+    }
+    if let Some(stale) = (0..errata.len()).find(|index| !used_errata.contains(index)) {
+        return Err(format!(
+            "{}: the erratum for {} line {} names no model in the palette",
+            args.omr_errata.display(),
+            errata[stale]["model"],
+            errata[stale]["line"]
+        ));
     }
 
     let ldconfig_header = parse_ldraw(ldconfig).header;

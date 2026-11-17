@@ -2,6 +2,7 @@ pub mod affine;
 pub mod colors;
 pub mod compile;
 pub mod cover;
+pub mod errata;
 pub mod flatten;
 pub mod glb;
 pub mod inline;
