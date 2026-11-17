@@ -10,11 +10,10 @@ import {
   type OverviewView,
   type TrackRouteView,
 } from "@brr/client";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePlanSnapshot } from "./plan-panel.tsx";
 
-const MAP_WIDTH_PX = 336;
-const MAP_HEIGHT_PX = 176;
+const OPEN_BY_DEFAULT_MIN_VIEWPORT_PX = 860;
 const MAP_PADDING_PX = 10;
 const MIN_SPAN_LDU = 2_560;
 const TRACK_STROKE = "#3b3f45";
@@ -33,6 +32,8 @@ const PINCH_ZOOM_PER_PX = 0.01;
 const PARALLEL_TANGENTS = 1e-6;
 
 interface MapTransform {
+  widthPx: number;
+  heightPx: number;
   scale: number;
   originX: number;
   originZ: number;
@@ -72,11 +73,11 @@ function fitTransform(
   const spanX = Math.max(bounds ? bounds.maxX - bounds.minX : 0, MIN_SPAN_LDU);
   const spanZ = Math.max(bounds ? bounds.maxZ - bounds.minZ : 0, MIN_SPAN_LDU);
   const scale = Math.min(
-    (MAP_WIDTH_PX - 2 * MAP_PADDING_PX) / spanX,
-    (MAP_HEIGHT_PX - 2 * MAP_PADDING_PX) / spanZ,
+    (out.widthPx - 2 * MAP_PADDING_PX) / spanX,
+    (out.heightPx - 2 * MAP_PADDING_PX) / spanZ,
   );
-  const originX = midX - MAP_WIDTH_PX / 2 / scale;
-  const originZ = midZ - MAP_HEIGHT_PX / 2 / scale;
+  const originX = midX - out.widthPx / 2 / scale;
+  const originZ = midZ - out.heightPx / 2 / scale;
   if (out.scale === scale && out.originX === originX && out.originZ === originZ) return false;
   out.scale = scale;
   out.originX = originX;
@@ -128,7 +129,7 @@ function drawContent(
   catalog: ReadonlyMap<string, CatalogItemView>,
 ): void {
   context.fillStyle = BACKGROUND;
-  context.fillRect(0, 0, MAP_WIDTH_PX, MAP_HEIGHT_PX);
+  context.fillRect(0, 0, map.widthPx, map.heightPx);
   context.lineWidth = 1;
   for (const room of overview.rooms) {
     context.fillStyle = "#ffffff";
@@ -207,6 +208,7 @@ interface MinimapProps {
 
 export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [open, setOpen] = useState(() => window.innerHeight >= OPEN_BY_DEFAULT_MIN_VIEWPORT_PX);
   const planSnapshot = usePlanSnapshot(plans);
   const { overview, routes } = useMemo(
     () => ({ overview: overviewOf(planSnapshot), routes: editor.trackRoutes() }),
@@ -221,22 +223,37 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
-    const pixelRatio = window.devicePixelRatio;
-    canvas.width = Math.round(MAP_WIDTH_PX * pixelRatio);
-    canvas.height = Math.round(MAP_HEIGHT_PX * pixelRatio);
     const layer = document.createElement("canvas");
-    layer.width = canvas.width;
-    layer.height = canvas.height;
     const layerContext = layer.getContext("2d");
     if (!layerContext) return;
-    layerContext.scale(pixelRatio, pixelRatio);
-    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     const footprint = new Float64Array(FOOTPRINT_FLOATS);
     const drawn = new Float64Array(FOOTPRINT_FLOATS).fill(Number.NaN);
-    const map: MapTransform = { scale: Number.NaN, originX: Number.NaN, originZ: Number.NaN };
+    const map: MapTransform = {
+      widthPx: 0,
+      heightPx: 0,
+      scale: Number.NaN,
+      originX: Number.NaN,
+      originZ: Number.NaN,
+    };
+    const fitCanvas = (): void => {
+      const pixelRatio = window.devicePixelRatio;
+      map.widthPx = canvas.clientWidth;
+      map.heightPx = canvas.clientHeight;
+      map.scale = Number.NaN;
+      canvas.width = Math.round(map.widthPx * pixelRatio);
+      canvas.height = Math.round(map.heightPx * pixelRatio);
+      layer.width = canvas.width;
+      layer.height = canvas.height;
+      layerContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    };
+    const resizes = new ResizeObserver(fitCanvas);
+    resizes.observe(canvas);
+    fitCanvas();
     let frame = 0;
     const draw = (): void => {
       frame = requestAnimationFrame(draw);
+      if (map.widthPx === 0 || map.heightPx === 0) return;
       camera.viewFootprint(footprint);
       const relayout = fitTransform(
         map,
@@ -247,8 +264,8 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
       if (!relayout && sameFootprint(footprint, drawn)) return;
       if (relayout) drawContent(layerContext, map, overview, routes, catalog);
       drawn.set(footprint);
-      context.clearRect(0, 0, MAP_WIDTH_PX, MAP_HEIGHT_PX);
-      context.drawImage(layer, 0, 0, MAP_WIDTH_PX, MAP_HEIGHT_PX);
+      context.clearRect(0, 0, map.widthPx, map.heightPx);
+      context.drawImage(layer, 0, 0, map.widthPx, map.heightPx);
       drawView(context, map, footprint);
     };
     draw();
@@ -303,6 +320,7 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
     canvas.addEventListener("gesturechange", onGestureChange);
     return () => {
       cancelAnimationFrame(frame);
+      resizes.disconnect();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
@@ -314,13 +332,20 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
   }, [camera, overview, routes, catalog]);
 
   return (
-    <section className="minimap" aria-label="Minimap">
+    <details
+      className="minimap"
+      aria-label="Minimap"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <h2>Minimap</h2>
+        <span className="minimap-legend">{overview.items.length} placed · north up</span>
+      </summary>
       <canvas
         ref={canvasRef}
-        style={{ width: MAP_WIDTH_PX, height: MAP_HEIGHT_PX }}
         title="Click or drag to move the view. The blue outline is the part of the ground the panels leave uncovered."
       />
-      <span className="minimap-legend">{overview.items.length} placed · north up, +x right</span>
-    </section>
+    </details>
   );
 }
