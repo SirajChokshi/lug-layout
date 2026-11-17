@@ -1,0 +1,223 @@
+import { chromium } from "playwright-core";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+
+const [out, base, mode] = process.argv.slice(2);
+const before = mode === "before";
+mkdirSync(out, { recursive: true });
+const STUD = 20;
+const log = (line) => {
+  console.log(line);
+  appendFileSync(`${out}/log.txt`, `${line}\n`);
+};
+writeFileSync(`${out}/log.txt`, "");
+
+const browser = await chromium.launch({
+  executablePath: "/usr/local/bin/google-chrome",
+  headless: false,
+  args: [
+    "--ignore-gpu-blocklist",
+    "--window-size=1920,1200",
+    "--window-position=0,0",
+    "--hide-crash-restore-bubble",
+    "--no-first-run",
+  ],
+});
+const page = await browser.newPage({ viewport: null });
+page.on("console", (m) => {
+  if (m.type() === "error") log(`console: ${m.text()}`);
+});
+page.on("pageerror", (e) => log(`pageerror: ${e.message}`));
+await page.goto(base, { waitUntil: "domcontentloaded" });
+await page.waitForSelector('.editor[data-status="ready"]', { state: "attached", timeout: 300_000 });
+const canvas = await page.locator("canvas.scene").boundingBox();
+const cx = canvas.x + canvas.width / 2;
+const cy = canvas.y + canvas.height / 2;
+
+async function hoverAt(sx, sy) {
+  await page.mouse.move(sx, sy);
+  let previous = null;
+  for (let attempt = 0; attempt < 60; attempt++) {
+    await page.waitForTimeout(50);
+    const value = await page.getAttribute(".editor", "data-hover");
+    if (value && value === previous) {
+      const [x, z] = value.split(",").map(Number);
+      return { x, z };
+    }
+    previous = value;
+  }
+  throw new Error(`no ground hover at ${sx}, ${sy}`);
+}
+
+async function screenOf(xStuds, zStuds) {
+  const xLdu = xStuds * STUD;
+  const zLdu = zStuds * STUD;
+  let sx = cx;
+  let sy = cy;
+  const d = 30;
+  for (let iteration = 0; iteration < 14; iteration++) {
+    const h0 = await hoverAt(sx, sy);
+    if (h0.x === xLdu && h0.z === zLdu) return { sx, sy };
+    const h1 = await hoverAt(sx + d, sy);
+    const h2 = await hoverAt(sx, sy + d);
+    const a = (h1.x - h0.x) / d;
+    const b = (h2.x - h0.x) / d;
+    const c = (h1.z - h0.z) / d;
+    const e = (h2.z - h0.z) / d;
+    const det = a * e - b * c;
+    sx += (e * (xLdu - h0.x) - b * (zLdu - h0.z)) / det;
+    sy += (-c * (xLdu - h0.x) + a * (zLdu - h0.z)) / det;
+  }
+  const h = await hoverAt(sx, sy);
+  if (h.x !== xLdu || h.z !== zLdu) throw new Error(`could not reach (${xStuds}, ${zStuds})`);
+  return { sx, sy };
+}
+
+async function choose(id) {
+  await page.click(`button.catalog-item[data-item="${id}"]`);
+  await page.waitForTimeout(300);
+}
+
+async function escape() {
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+}
+
+async function rulesText() {
+  const panel = page.locator("section.placement-rules");
+  return (await panel.count()) ? (await panel.innerText()).replaceAll("\n", " | ") : "(no rules panel)";
+}
+
+async function placementsCount() {
+  const hud = await page.locator(".editor-hud").innerText();
+  const match = /Placements\s+(\d+)/u.exec(hud);
+  return match ? Number(match[1]) : -1;
+}
+
+async function placeAt(label, id, xStuds, zStuds) {
+  await escape();
+  const { sx, sy } = await screenOf(xStuds, zStuds);
+  await choose(id);
+  await page.mouse.move(sx, sy);
+  await page.waitForTimeout(400);
+  const ghost = await rulesText();
+  const beforeCount = await placementsCount();
+  await page.mouse.click(sx, sy);
+  await page.waitForTimeout(700);
+  const afterCount = await placementsCount();
+  log(`${label}: ${id} at (${xStuds}, ${zStuds}) studs: placements ${beforeCount} -> ${afterCount}`);
+  log(`  rules panel on hover: ${ghost}`);
+  log(`  rules panel after click: ${await rulesText()}`);
+  return { sx, sy };
+}
+
+async function shot(name) {
+  await page.screenshot({ path: `${out}/${name}.png` });
+  log(`screenshot ${name}.png`);
+}
+
+async function drag(label, from, to) {
+  await choose("track:lego-9v");
+  const a = await screenOf(from[0], from[1]);
+  const b = await screenOf(to[0], to[1]);
+  await page.mouse.move(a.sx, a.sy);
+  await page.mouse.down();
+  const steps = 12;
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(a.sx + ((b.sx - a.sx) * i) / steps, a.sy + ((b.sy - a.sy) * i) / steps);
+    await page.waitForTimeout(60);
+  }
+  await page.waitForTimeout(400);
+  const track = page.locator("section.track-panel");
+  log(`${label}: drag (${from}) -> (${to}) studs`);
+  log(`  track panel while dragging: ${(await track.innerText()).replaceAll("\n", " | ")}`);
+  await shot(`${label}-ghost`);
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+  log(`  track panel after release: ${(await track.innerText()).replaceAll("\n", " | ")}`);
+  log(`  rules panel after release: ${await rulesText()}`);
+}
+
+async function selectAt(label, xStuds, zStuds) {
+  await escape();
+  const { sx, sy } = await screenOf(xStuds, zStuds);
+  await page.mouse.click(sx, sy);
+  await page.waitForTimeout(400);
+  log(`${label}: selected ${await page.getAttribute(".editor", "data-selection")}`);
+}
+
+await page.mouse.move(cx, cy);
+await page.mouse.wheel(0, Number(process.env.ZOOM ?? 500));
+await page.waitForTimeout(600);
+
+async function trackPanel() {
+  return (await page.locator("section.track-panel").innerText()).replaceAll("\n", " | ");
+}
+async function removeTrackAt(label, xStuds, zStuds) {
+  await escape();
+  const { sx, sy } = await screenOf(xStuds, zStuds);
+  await choose("track:lego-9v");
+  await page.mouse.click(sx, sy);
+  await page.waitForTimeout(500);
+  log(`${label}: clicked track at (${xStuds}, ${zStuds}): ${(await trackPanel()).match(/Selected piece \| [^|]*/)?.[0]}`);
+  await page.keyboard.press("Delete");
+  await page.waitForTimeout(600);
+  log(`  after Delete: ${(await trackPanel()).match(/Pieces laid \| \d+/)?.[0]}`);
+}
+
+await placeAt("01-station-on-bare-table", "omr:2150-1", 16, 64);
+await shot("01-station-on-bare-table");
+await placeAt("02-locomotive-on-bare-table", "omr:10133-1", 16, 64);
+await escape();
+while ((await placementsCount()) > 0) {
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(400);
+}
+await placeAt("03-baseplate-a", "ldraw:3811", 0, 0);
+await placeAt("04-baseplate-b", "ldraw:3811", 32, 0);
+await placeAt("05-station-on-baseplates", "omr:2150-1", 16, 0);
+await placeAt("06-modular-on-table", "omr:10185-1", -40, 0);
+await placeAt("07-modular-over-station", "omr:10264-1", 16, 0);
+await shot("07-modular-over-station");
+for (const [i, x] of [-8, 8, 24, 40].entries()) {
+  for (const [j, z] of [-72, -56].entries()) {
+    await placeAt(`08-road-plate-${i}-${j}`, "ldraw:69958", x, z);
+  }
+}
+await placeAt("08-station-on-road-plates", "omr:2150-1", 16, -64);
+await shot("08-station-on-road-plates");
+await placeAt("09-baseplate-c", "ldraw:3811", 80, 0);
+await escape();
+await drag("10-track-on-baseplate", [66, -8], [82, -8]);
+await drag("10b-two-straights-fill-baseplate-c", [64, 8], [96, 8]);
+await drag("11-track-past-baseplate-edge", [88, 8], [88, -26]);
+await drag("12-track-on-bare-table", [40, -40], [64, -40]);
+await escape();
+await shot("12-after-runs");
+await selectAt("13-select-baseplate-c", 90, 14);
+await page.keyboard.press("Delete");
+await page.waitForTimeout(500);
+log(`  delete: placements ${await placementsCount()}, rules: ${await rulesText()}`);
+await shot("13-delete-baseplate-under-track");
+await page.keyboard.press("r");
+await page.waitForTimeout(800);
+log(`13b-rotate-baseplate-c-with-track: placements ${await placementsCount()}, rules: ${await rulesText()}`);
+await removeTrackAt("13c-remove-track", 74, -8);
+await removeTrackAt("13d-remove-track", 72, 8);
+await removeTrackAt("13e-remove-track", 88, 8);
+await shot("13e-track-removed");
+await selectAt("13f-select-baseplate-c", 90, 14);
+await page.keyboard.press("Delete");
+await page.waitForTimeout(500);
+log(`  delete after removing its track: placements ${await placementsCount()}, rules: ${await rulesText()}`);
+await selectAt("14-select-baseplate-a", -14, 15);
+await page.keyboard.press("Delete");
+await page.waitForTimeout(500);
+log(`  delete a (the station still engages b): placements ${await placementsCount()}, rules: ${await rulesText()}`);
+await selectAt("15-select-baseplate-b", 46, 15);
+await page.keyboard.press("Delete");
+await page.waitForTimeout(500);
+log(`  delete b: placements ${await placementsCount()}, rules: ${await rulesText()}`);
+await shot("15-delete-last-baseplate-under-station");
+await escape();
+log(`final hud: ${(await page.locator(".editor-hud").innerText()).replaceAll("\n", " | ")}`);
+await browser.close();
