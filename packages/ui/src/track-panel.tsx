@@ -1,4 +1,4 @@
-import type { EditorSnapshot, TrackDragView, TrackView } from "@brr/client";
+import type { EditorSnapshot, RunBlock, TrackDragView, TrackView } from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -21,6 +21,22 @@ function closureText(drag: TrackDragView): string {
   }
 }
 
+function blockText(block: RunBlock): string {
+  const at = `piece ${block.piece + 1} of ${block.pieces}`;
+  switch (block.kind) {
+    case "off-baseplate":
+      return `${at} has ${block.missing.count} cells off the baseplates (red)`;
+    case "overlap":
+      return `${at} would intersect a placement at the red cell`;
+    case "crosses-track":
+      return `${at} crosses track it doesn't join (red cells)`;
+    default: {
+      const unhandled: never = block;
+      throw new Error(`unhandled block ${String(unhandled)}`);
+    }
+  }
+}
+
 function dragRows(drag: TrackDragView): ReadonlyArray<readonly [string, string]> {
   return [
     ["Drawing from", drag.fromOpenEnd ? "an open end" : "a new start on the stud grid"],
@@ -28,10 +44,10 @@ function dragRows(drag: TrackDragView): ReadonlyArray<readonly [string, string]>
     ["Join", closureText(drag)],
     ["Solve", `${drag.solveMs.toFixed(2)} ms`],
     [
-      "Baseplate under the run",
-      drag.offBaseplate
-        ? `piece ${drag.offBaseplate.piece + 1} of ${drag.offBaseplate.pieces} has ${drag.offBaseplate.missing.count} cells off the baseplates (red); release lays nothing`
-        : "every piece sits on a baseplate",
+      "Placement rules",
+      drag.blocked
+        ? `${blockText(drag.blocked)}; release lays nothing`
+        : "every piece sits on a baseplate, clear of everything",
     ],
   ];
 }
@@ -48,6 +64,10 @@ function commitText(track: TrackView): string {
       return "refused: search hit its time limit";
     case "refused-off-baseplate":
       return "refused: part of the run has no baseplate under it";
+    case "refused-overlap":
+      return "refused: the run would intersect a placement";
+    case "refused-crosses-track":
+      return "refused: the run crosses track it doesn't join";
     case null:
       return "none yet";
     default: {
@@ -93,7 +113,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-joins={track.joins}
       data-last-commit={track.lastCommit ?? ""}
       data-closure={track.drag?.closure ?? ""}
-      data-off-baseplate={track.drag?.offBaseplate?.missing.count ?? ""}
+      data-blocked={track.drag?.blocked?.kind ?? ""}
     >
       <h2>Track</h2>
       {snapshot.mode === "track" && (

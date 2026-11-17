@@ -1,16 +1,20 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
-  OccupancyGrid,
+  NO_TOP,
   SupportGrid,
+  VolumeIndex,
   cellChunkKey,
-  firstLayerSupport,
+  firstOverlap,
   isSupported,
   trackSupport,
   upperSupport,
   type AppliedEdit,
   type BaseCells,
-  type FirstLayerSupport,
+  type CellVolumes,
+  type Overlap,
+  type OwnerFilter,
   type PlacementHandle,
+  type VolumeHit,
   type PlacementRef,
   type TrackSupport,
   type UpperSupport,
@@ -38,6 +42,7 @@ import {
   FOOTPRINT_NONE,
   type Placeable,
 } from "./placeable.ts";
+import type { LaidTrackPiece } from "./track-drawing.ts";
 
 export interface PlacedModel {
   readonly placement: PlacementRef;
@@ -47,17 +52,20 @@ export interface PlacedModel {
   rayHit(ray: Float64Array): number;
 }
 
-export type PlacementSupport =
-  | {
-      readonly layer: "first";
-      readonly support: FirstLayerSupport;
-      readonly blocker: PlacedModel | null;
-    }
-  | { readonly layer: "upper"; readonly support: UpperSupport };
+export type VolumeOwner =
+  | { readonly kind: "model"; readonly model: PlacedModel }
+  | { readonly kind: "track"; readonly piece: number; readonly pieceId: string };
+
+export interface PlacedOverlap {
+  readonly overlap: Overlap;
+  readonly owner: VolumeOwner;
+}
 
 export interface PlacementCheck {
   readonly yPlates: number;
-  readonly verdict: PlacementSupport;
+  readonly support: UpperSupport | null;
+  readonly restsOn: VolumeOwner | null;
+  readonly overlap: PlacedOverlap | null;
 }
 
 export interface LostSupport {
@@ -72,6 +80,18 @@ export interface PendingPose {
   readonly yPlates: number;
   readonly rot: number;
 }
+
+interface TrackStamp {
+  readonly owner: number;
+  readonly piece: number;
+  readonly pieceId: string;
+  readonly cells: BaseCells;
+  readonly bottomLdu: number;
+  readonly topLdu: number;
+}
+
+const keepEveryOwner: OwnerFilter = () => false;
+const PENDING_OWNER = 0;
 
 const HALF_STUD_LDU = STUD_LDU / 2;
 
@@ -177,40 +197,45 @@ function closedAround(
   return true;
 }
 
-function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: LatticePose): number {
-  const { cells } = placeable;
+interface Landing {
+  readonly yPlates: number;
+  readonly owner: number | null;
+}
+
+function landing(volumes: VolumeIndex, base: BaseCells): Landing {
+  const hit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
   let yPlates = 0;
-  for (let j = 0; j < cells.depth; j++) {
-    for (let i = 0; i < cells.width; i++) {
-      const cell = j * cells.width + i;
-      if ((cells.columnTop[cell] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
-      const lx = cells.cellX0 + i;
-      const lz = cells.cellZ0 + j;
-      const below = occupancy.topAt(pose.worldCellX(lx, lz), pose.worldCellZ(lx, lz));
-      yPlates = Math.max(yPlates, below - (cells.columnBottom[cell] ?? 0));
-    }
+  let owner: number | null = null;
+  let highest = NO_TOP;
+  for (let c = 0; c < base.count; c++) {
+    if (!volumes.topOwnerAt(base.cellX[c] ?? 0, base.cellZ[c] ?? 0, hit)) continue;
+    if (hit.topLdu <= highest) continue;
+    highest = hit.topLdu;
+    owner = hit.owner;
+    yPlates = Math.max(0, Math.ceil(hit.topLdu / PLATE_LDU));
   }
-  return yPlates;
+  return { yPlates, owner };
 }
 
 interface CandidateCells {
-  readonly raised: BaseCells;
   readonly base: BaseCells;
+  readonly volumes: CellVolumes;
 }
 
 function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells {
   const { cells } = placeable;
-  let raisedCount = 0;
+  let volumeCount = 0;
   let baseCount = 0;
   for (let cell = 0; cell < cells.width * cells.depth; cell++) {
-    if ((cells.columnTop[cell] ?? EMPTY_COLUMN) > 0) raisedCount++;
+    if ((cells.topLdu[cell] ?? 0) > (cells.bottomLdu[cell] ?? 0)) volumeCount++;
     if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) baseCount++;
   }
-  const raised = {
-    count: raisedCount,
-    cellX: new Int32Array(raisedCount),
-    cellZ: new Int32Array(raisedCount),
-    flat: new Uint8Array(raisedCount),
+  const volumes = {
+    count: volumeCount,
+    cellX: new Int32Array(volumeCount),
+    cellZ: new Int32Array(volumeCount),
+    bottomLdu: new Int32Array(volumeCount),
+    topLdu: new Int32Array(volumeCount),
   };
   const base = {
     count: baseCount,
@@ -218,17 +243,21 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
     cellZ: new Int32Array(baseCount),
     flat: new Uint8Array(baseCount),
   };
-  let o = 0;
+  let v = 0;
   let b = 0;
   for (let j = 0; j < cells.depth; j++) {
     for (let i = 0; i < cells.width; i++) {
       const cell = j * cells.width + i;
       const wx = pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
       const wz = pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
-      if ((cells.columnTop[cell] ?? EMPTY_COLUMN) > 0) {
-        raised.cellX[o] = wx;
-        raised.cellZ[o] = wz;
-        o++;
+      const bottom = cells.bottomLdu[cell] ?? 0;
+      const top = cells.topLdu[cell] ?? 0;
+      if (top > bottom) {
+        volumes.cellX[v] = wx;
+        volumes.cellZ[v] = wz;
+        volumes.bottomLdu[v] = bottom;
+        volumes.topLdu[v] = top;
+        v++;
       }
       if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) {
         base.cellX[b] = wx;
@@ -238,7 +267,17 @@ function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells
       }
     }
   }
-  return { raised, base };
+  return { base, volumes };
+}
+
+function raised(volumes: CellVolumes, byLdu: number): CellVolumes {
+  const bottomLdu = new Int32Array(volumes.count);
+  const topLdu = new Int32Array(volumes.count);
+  for (let c = 0; c < volumes.count; c++) {
+    bottomLdu[c] = (volumes.bottomLdu[c] ?? 0) + byLdu;
+    topLdu[c] = (volumes.topLdu[c] ?? 0) + byLdu;
+  }
+  return { count: volumes.count, cellX: volumes.cellX, cellZ: volumes.cellZ, bottomLdu, topLdu };
 }
 
 class PlacedEntry implements PlacedModel {
@@ -261,6 +300,7 @@ class PlacedEntry implements PlacedModel {
   readonly sin: number;
 
   constructor(
+    readonly owner: number,
     readonly placement: PlacementRef,
     readonly handle: PlacementHandle,
     readonly placeable: Placeable,
@@ -307,7 +347,7 @@ class PlacedEntry implements PlacedModel {
     for (let j = 0; j < cells.depth; j++) {
       for (let i = 0; i < cells.width; i++) {
         const cell = j * cells.width + i;
-        const occupied = (cells.columnTop[cell] ?? EMPTY_COLUMN) !== EMPTY_COLUMN;
+        const occupied = (cells.topLdu[cell] ?? 0) > (cells.bottomLdu[cell] ?? 0);
         const footprint = (cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE;
         if (!occupied && !footprint) continue;
         const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
@@ -332,21 +372,21 @@ class PlacedEntry implements PlacedModel {
     }
   }
 
-  stampColumns(occupancy: OccupancyGrid, support: SupportGrid, onlyChunk: number | null): void {
+  stampColumns(volumes: VolumeIndex, support: SupportGrid, onlyChunk: number | null): void {
     const { cells } = this.placeable;
     const yPlates = this.handle.yPlates;
     for (let j = 0; j < cells.depth; j++) {
       for (let i = 0; i < cells.width; i++) {
         const cell = j * cells.width + i;
-        const top = cells.columnTop[cell] ?? EMPTY_COLUMN;
-        if (top === EMPTY_COLUMN) continue;
+        const bottom = cells.bottomLdu[cell] ?? 0;
+        const top = cells.topLdu[cell] ?? 0;
+        if (top <= bottom) continue;
         const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
         const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
         if (onlyChunk !== null && cellChunkKey(wx, wz) !== onlyChunk) continue;
-        occupancy.raise(wx, wz, yPlates + top);
+        volumes.add(this.owner, wx, wz, this.yLdu + bottom, this.yLdu + top);
         if (cells.offLatticeTop) support.markOffLatticeTop(wx, wz);
         else if (cells.baseplate[cell] === 1 && yPlates === 0) support.markBaseplate(wx, wz);
-        else support.cover(wx, wz);
       }
     }
     const onLattice = this.placeable.studLattice.onLattice;
@@ -358,15 +398,6 @@ class PlacedEntry implements PlacedModel {
       if (onlyChunk !== null && cellChunkKey(cx, cz) !== onlyChunk) continue;
       support.raiseStud(cx, cz, base / PLATE_LDU);
     }
-  }
-
-  columnTopAt(worldCellX: number, worldCellZ: number): number {
-    const { cells } = this.placeable;
-    const i = this.pose.localCellX(worldCellX, worldCellZ) - cells.cellX0;
-    const j = this.pose.localCellZ(worldCellX, worldCellZ) - cells.cellZ0;
-    if (i < 0 || j < 0 || i >= cells.width || j >= cells.depth) return EMPTY_COLUMN;
-    const top = cells.columnTop[j * cells.width + i] ?? EMPTY_COLUMN;
-    return top === EMPTY_COLUMN ? EMPTY_COLUMN : this.handle.yPlates + top;
   }
 
   private cellAt(worldCellX: number, worldCellZ: number): number {
@@ -590,8 +621,12 @@ export class PlacedChunks {
   private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
-  private readonly occupancy = new OccupancyGrid();
+  private readonly volumes = new VolumeIndex();
   private readonly support = new SupportGrid();
+  private readonly owners = new Map<number, VolumeOwner>();
+  private readonly trackStamps = new Map<number, TrackStamp>();
+  private readonly byTrackChunk = new Map<number, Set<TrackStamp>>();
+  private nextOwner = 1;
 
   constructor(private readonly backend: ISceneBackend) {}
 
@@ -622,21 +657,95 @@ export class PlacedChunks {
     rot: number,
     ignore: ReadonlyArray<PlacedModel>,
   ): PlacementCheck {
-    const pose = new LatticePose(x, z, rot);
-    const cells = candidateCells(placeable, pose);
+    const cells = candidateCells(placeable, new LatticePose(x, z, rot));
     return this.withExcluded(this.entriesOf(ignore), () => {
-      if (placeable.layer === "first") {
-        const support = firstLayerSupport(cells.raised, this.occupancy);
-        const blocker =
-          support.kind === "blocked"
-            ? this.topmostAt(support.cellX, support.cellZ, support.topPlates)
-            : null;
-        return { yPlates: 0, verdict: { layer: "first", support, blocker } };
-      }
-      const yPlates = restingHeight(this.occupancy, placeable, pose);
-      const support = upperSupport(cells.base, yPlates, this.occupancy, this.support);
-      return { yPlates, verdict: { layer: "upper", support } };
+      const first = placeable.layer === "first";
+      const lands = first ? { yPlates: 0, owner: null } : landing(this.volumes, cells.base);
+      const { yPlates } = lands;
+      const support = first ? null : upperSupport(cells.base, yPlates, this.volumes, this.support);
+      const hit = firstOverlap(
+        raised(cells.volumes, yPlates * PLATE_LDU),
+        this.volumes,
+        keepEveryOwner,
+      );
+      return {
+        yPlates,
+        support,
+        restsOn: lands.owner === null ? null : (this.owners.get(lands.owner) ?? null),
+        overlap: hit ? this.placedOverlap(hit) : null,
+      };
     });
+  }
+
+  trackOverlap(cells: BaseCells, bottomLdu: number, topLdu: number): PlacedOverlap | null {
+    const volumes: CellVolumes = {
+      count: cells.count,
+      cellX: cells.cellX,
+      cellZ: cells.cellZ,
+      bottomLdu: new Int32Array(cells.count).fill(bottomLdu),
+      topLdu: new Int32Array(cells.count).fill(topLdu),
+    };
+    const hit = firstOverlap(
+      volumes,
+      this.volumes,
+      (owner) => this.owners.get(owner)?.kind === "track",
+    );
+    return hit ? this.placedOverlap(hit) : null;
+  }
+
+  trackNeighbours(cells: BaseCells): ReadonlySet<number> {
+    const owners = new Set<number>();
+    for (let c = 0; c < cells.count; c++) {
+      this.volumes.ownersAt(cells.cellX[c] ?? 0, cells.cellZ[c] ?? 0, owners);
+    }
+    const pieces = new Set<number>();
+    for (const owner of owners) {
+      const known = this.owners.get(owner);
+      if (known?.kind === "track") pieces.add(known.piece);
+    }
+    return pieces;
+  }
+
+  addTrackPiece(
+    piece: number,
+    pieceId: string,
+    cells: BaseCells,
+    bottomLdu: number,
+    topLdu: number,
+  ): void {
+    const owner = this.nextOwner++;
+    const stamp: TrackStamp = { owner, piece, pieceId, cells, bottomLdu, topLdu };
+    this.owners.set(owner, { kind: "track", piece, pieceId });
+    this.trackStamps.set(owner, stamp);
+    for (let c = 0; c < cells.count; c++) {
+      const x = cells.cellX[c] ?? 0;
+      const z = cells.cellZ[c] ?? 0;
+      let set = this.byTrackChunk.get(cellChunkKey(x, z));
+      if (!set) {
+        set = new Set();
+        this.byTrackChunk.set(cellChunkKey(x, z), set);
+      }
+      set.add(stamp);
+      this.volumes.add(owner, x, z, bottomLdu, topLdu);
+    }
+  }
+
+  replaceTrackPieces(pieces: ReadonlyArray<LaidTrackPiece>): void {
+    const keys = new Set(this.byTrackChunk.keys());
+    for (const owner of this.trackStamps.keys()) this.owners.delete(owner);
+    this.trackStamps.clear();
+    this.byTrackChunk.clear();
+    for (const piece of pieces) {
+      this.addTrackPiece(piece.piece, piece.pieceId, piece.cells, piece.bottomLdu, piece.topLdu);
+    }
+    for (const key of this.byTrackChunk.keys()) keys.add(key);
+    this.restamp(keys, new Set());
+  }
+
+  private placedOverlap(overlap: Overlap): PlacedOverlap {
+    const owner = this.owners.get(overlap.owner);
+    if (!owner) throw new Error(`volume owner ${overlap.owner} is not registered`);
+    return { overlap, owner };
   }
 
   lostSupport(
@@ -653,8 +762,7 @@ export class PlacedChunks {
       if (![...entry.columnKeys].some((key) => keys.has(key))) continue;
       const support = this.withExcluded(
         new Set([...gone, entry]),
-        () =>
-          upperSupport(entry.candidate.base, entry.handle.yPlates, this.occupancy, this.support),
+        () => upperSupport(entry.candidate.base, entry.handle.yPlates, this.volumes, this.support),
         arriving,
       );
       if (!isSupported(support)) lost.push({ model: entry, support });
@@ -687,14 +795,7 @@ export class PlacedChunks {
       yPlates: pose.yPlates,
       rot: pose.rot,
     };
-    return new PlacedEntry({ handle: null }, handle, pose.placeable, new Map());
-  }
-
-  private topmostAt(cellX: number, cellZ: number, topPlates: number): PlacedModel | null {
-    for (const entry of this.byColumnChunk.get(cellChunkKey(cellX, cellZ)) ?? []) {
-      if (entry.columnTopAt(cellX, cellZ) === topPlates) return entry;
-    }
-    return null;
+    return new PlacedEntry(PENDING_OWNER, { handle: null }, handle, pose.placeable, new Map());
   }
 
   private entryOf(model: PlacedModel): PlacedEntry {
@@ -756,12 +857,21 @@ export class PlacedChunks {
     arriving: ReadonlyArray<PlacedEntry> = [],
   ): void {
     for (const key of keys) {
-      this.occupancy.clearChunk(key);
+      this.volumes.clearChunk(key);
       this.support.clearChunk(key);
       for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (!except.has(entry)) entry.stampColumns(this.occupancy, this.support, key);
+        if (!except.has(entry)) entry.stampColumns(this.volumes, this.support, key);
       }
-      for (const entry of arriving) entry.stampColumns(this.occupancy, this.support, key);
+      for (const stamp of this.byTrackChunk.get(key) ?? []) {
+        for (let c = 0; c < stamp.cells.count; c++) {
+          const x = stamp.cells.cellX[c] ?? 0;
+          const z = stamp.cells.cellZ[c] ?? 0;
+          if (cellChunkKey(x, z) === key) {
+            this.volumes.add(stamp.owner, x, z, stamp.bottomLdu, stamp.topLdu);
+          }
+        }
+      }
+      for (const entry of arriving) entry.stampColumns(this.volumes, this.support, key);
     }
   }
 
@@ -770,12 +880,19 @@ export class PlacedChunks {
     handle: PlacementHandle,
     placeable: Placeable,
   ): PlacedEntry {
-    const entry = new PlacedEntry(placement, handle, placeable, this.chunkOrigins);
+    const entry = new PlacedEntry(
+      this.nextOwner++,
+      placement,
+      handle,
+      placeable,
+      this.chunkOrigins,
+    );
+    this.owners.set(entry.owner, { kind: "model", model: entry });
     this.entries.push(entry);
     for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
-    entry.stampColumns(this.occupancy, this.support, null);
+    entry.stampColumns(this.volumes, this.support, null);
     return entry;
   }
 
@@ -784,6 +901,7 @@ export class PlacedChunks {
     const entry = this.entries[index];
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
+    this.owners.delete(entry.owner);
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
     for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
