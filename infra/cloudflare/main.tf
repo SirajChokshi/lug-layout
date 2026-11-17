@@ -4,6 +4,7 @@ locals {
   r2          = one(local.wrangler.r2_buckets)
   bundle_path = abspath("${path.module}/${var.worker_bundle}")
   part_bundle = jsondecode(file("${path.module}/part-bundles.json"))
+  ldraw       = jsondecode(file("${path.module}/ldraw-library.json"))
 }
 
 resource "cloudflare_r2_bucket" "part_bundles" {
@@ -44,6 +45,48 @@ resource "cloudflare_r2_managed_domain" "part_bundles" {
     precondition {
       condition     = var.part_bundle_r2_dev || var.part_bundle_domain != null
       error_message = "Turning r2.dev off would leave the part bundle bucket with no public domain. Set part_bundle_domain first."
+    }
+  }
+}
+
+resource "cloudflare_r2_bucket" "ldraw_library" {
+  account_id = var.account_id
+  name       = local.ldraw.bucket_name
+  location   = var.r2_location
+}
+
+resource "cloudflare_r2_bucket_cors" "ldraw_library" {
+  account_id  = var.account_id
+  bucket_name = cloudflare_r2_bucket.ldraw_library.name
+  rules = [
+    {
+      allowed = {
+        methods = ["GET", "HEAD"]
+        origins = ["*"]
+      }
+      max_age_seconds = 86400
+    },
+  ]
+}
+
+resource "cloudflare_r2_custom_domain" "ldraw_library" {
+  count       = var.ldraw_library_domain == null ? 0 : 1
+  account_id  = var.account_id
+  bucket_name = cloudflare_r2_bucket.ldraw_library.name
+  domain      = var.ldraw_library_domain
+  zone_id     = var.zone_id
+  enabled     = true
+}
+
+resource "cloudflare_r2_managed_domain" "ldraw_library" {
+  account_id  = var.account_id
+  bucket_name = cloudflare_r2_bucket.ldraw_library.name
+  enabled     = var.ldraw_library_r2_dev
+
+  lifecycle {
+    precondition {
+      condition     = var.ldraw_library_r2_dev || var.ldraw_library_domain != null
+      error_message = "Turning r2.dev off would leave the LDraw library bucket with no public domain. Set ldraw_library_domain first."
     }
   }
 }

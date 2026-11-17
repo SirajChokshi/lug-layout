@@ -34,6 +34,7 @@ import {
   IMPORT_SCENE,
   IMPORT_WORKER_FACTORY,
   LAYOUT_SCENE,
+  LDRAW_LIBRARY_BASE_URL,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
@@ -72,6 +73,7 @@ export interface MainThreadConfig {
   readonly bundleBaseUrl: string;
   readonly createImportWorker?: ImportWorkerFactory;
   readonly bundleManifestFile?: string;
+  readonly ldrawLibraryBaseUrl?: string;
   readonly startSimWorker?: () => RpcPort;
   readonly disclaimer: string;
 }
@@ -88,6 +90,7 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
     bind(BUNDLE_MANIFEST_FILE).toConstantValue(
       config.bundleManifestFile ?? DEFAULT_BUNDLE_MANIFEST_FILE,
     );
+    bind(LDRAW_LIBRARY_BASE_URL).toConstantValue(config.ldrawLibraryBaseUrl ?? null);
     bind(SIM_WORKER_PORT)
       .toDynamicValue(() => {
         if (!config.startSimWorker) throw new Error("this composition root starts no sim worker");
