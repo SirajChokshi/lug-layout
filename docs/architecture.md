@@ -286,7 +286,7 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
 - In the **sandbox** (outside plan regions), rules 1, 2, the rest of rule 5, and rules 6 to 9 show as warnings. Building never stops for them.
 - Inside a **plan region**, the same rules are errors, and a region can only reach "Buildable as planned" (§7.3) with zero errors.
 - **Rules 3, 4 and rule 5's "track sits on a baseplate" apply everywhere** and are hard: the editor refuses a placement, rotation, removal or track run that would break them, and says why (P4).
-- **Undo and redo are never refused.** Every edit is one command in a single history: model placements, rotations and removals, track runs and track removals, and multi-placement gestures alike (`EditHistory.commit`, with laid track as index-addressed `lift`/`lay` records). Stepping through that history only returns to layouts the editor has already accepted, so it can't break a rule.
+- **Undo and redo are never refused.** Every edit is one command in a single history: model placements, rotations and removals, track runs and track removals, clearing the layout, and multi-placement gestures alike (`EditHistory.commit`, with laid track as index-addressed `lift`/`lay` records). Stepping through that history only returns to layouts the editor has already accepted, so it can't break a rule.
 
 **Placement decisions (owner, 2026-11-16).** These settle rules 3 to 5. They replace the §12 item 14 default for those rules.
 

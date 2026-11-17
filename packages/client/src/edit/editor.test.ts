@@ -223,8 +223,11 @@ it("makes every gesture one undo step, and undo then redo walk back and forth th
   expect(editor.snapshot().selection?.item).toBe(baseplate);
   gesture(() => editor.rotate(time++));
   gesture(() => editor.deleteSelection(time++));
+  gesture(() => editor.clearWorld(time++));
 
-  expect(new Set(states.map((state) => JSON.stringify(state))).size).toBe(states.length);
+  for (let step = 1; step < states.length; step++) {
+    expect(states[step]).not.toEqual(states[step - 1]);
+  }
   for (let depth = states.length - 2; depth >= 0; depth--) {
     editor.undo(time++);
     expect(layoutState(editor)).toEqual(states[depth]);
