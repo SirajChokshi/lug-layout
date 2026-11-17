@@ -6,6 +6,7 @@ import {
   type LatencySample,
   type RoadIssueView,
 } from "@brr/client";
+import { shortcutText } from "./keys.tsx";
 import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -112,7 +113,11 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
   );
 }
 
-export function PlacementToolbar({ editor, snapshot }: PanelProps) {
+export function PlacementToolbar({
+  editor,
+  snapshot,
+  onShowShortcuts,
+}: PanelProps & { readonly onShowShortcuts: () => void }) {
   const canRotate = snapshot.mode === "place" || snapshot.selection !== null;
   const { history } = snapshot;
   return (
@@ -122,7 +127,7 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
         aria-pressed={snapshot.mode === "select"}
         onClick={() => editor.chooseItem(null)}
       >
-        Select (Esc)
+        Select ({shortcutText("select-tool")})
       </button>
       <button
         type="button"
@@ -130,28 +135,28 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
         aria-pressed={snapshot.mode === "track"}
         onClick={() => editor.chooseItem(snapshot.mode === "track" ? null : TRACK_ITEM_ID)}
       >
-        Draw track (T)
+        Draw track ({shortcutText("draw-track")})
       </button>
       <button
         type="button"
         disabled={!canRotate}
         onClick={(event) => editor.rotate(event.timeStamp)}
       >
-        Rotate 90° (R)
+        Rotate 90° ({shortcutText("rotate")})
       </button>
       <button
         type="button"
         disabled={snapshot.selection === null}
         onClick={(event) => editor.deleteSelection(event.timeStamp)}
       >
-        Delete (Del)
+        Delete ({shortcutText("delete")})
       </button>
       <button
         type="button"
         disabled={snapshot.selection === null}
         onClick={() => editor.focusSelection()}
       >
-        Focus (F)
+        Focus ({shortcutText("focus")})
       </button>
       <button
         type="button"
@@ -159,7 +164,7 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
         disabled={history.undo === null}
         onClick={(event) => editor.undo(event.timeStamp)}
       >
-        Undo{history.undo === null ? "" : ` ${history.undo}`} (Ctrl+Z)
+        Undo{history.undo === null ? "" : ` ${history.undo}`} ({shortcutText("undo")})
       </button>
       <button
         type="button"
@@ -167,10 +172,13 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
         disabled={history.redo === null}
         onClick={(event) => editor.redo(event.timeStamp)}
       >
-        Redo{history.redo === null ? "" : ` ${history.redo}`} (Ctrl+Shift+Z)
+        Redo{history.redo === null ? "" : ` ${history.redo}`} ({shortcutText("redo")})
+      </button>
+      <button type="button" data-action="show-shortcuts" onClick={onShowShortcuts}>
+        Shortcuts ({shortcutText("show-shortcuts")})
       </button>
       <p className="toolbar-hint">
-        Right-drag orbits, Shift-drag pans, the wheel zooms, C centres on the cursor.
+        Right-drag orbits, Shift-drag pans, the wheel zooms. Arrows pan, Shift-arrows orbit.
       </p>
     </div>
   );

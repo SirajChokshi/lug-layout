@@ -128,4 +128,29 @@ export {
   PLAN_SERVICE,
 } from "./tokens.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export {
+  COMMAND_GROUPS,
+  COMMANDS,
+  POINTER_GESTURES,
+  commandActive,
+  commandEnabled,
+  commandForKey,
+  commandSpec,
+  isShellCommand,
+  runEditorAction,
+  type CommandGroup,
+  type CommandId,
+  type CommandSpec,
+  type EditorActionId,
+  type PointerGesture,
+  type ShellCommandId,
+} from "./commands/editor-commands.ts";
+export {
+  chordKeys,
+  chordText,
+  keyPlatform,
+  type KeyChord,
+  type KeyInput,
+  type KeyPlatform,
+} from "./commands/key-chord.ts";
 export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
