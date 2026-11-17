@@ -320,7 +320,7 @@ describe("Coupled running gear on a circle", () => {
         worst = Math.max(worst, moved);
       }
     }
-    expect(worst).toBeLessThan(0.1);
+    expect(worst).toBeLessThan(1e-6);
   });
 
   it("gives the body length as head to solved tail, the distance a stopped reverse moves the head", () => {

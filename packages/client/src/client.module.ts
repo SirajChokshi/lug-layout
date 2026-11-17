@@ -8,6 +8,8 @@ import { PlanService } from "./plan/plan-service.ts";
 import { CityScene } from "./scene/city-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
 import { PartDisplayScene } from "./scene/part-display-scene.ts";
+import { IndexedDbRunningGearOverrideStore } from "./running-gear/override-store.ts";
+import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
 import { RunScene } from "./scene/run-scene.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
@@ -18,6 +20,8 @@ import {
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
   RUN_SCENE,
+  RUNNING_GEAR,
+  RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
   SIM_WORKER_PORT,
   TRACK_SCENE,
@@ -34,6 +38,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(RUN_SCENE).to(RunScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
+  bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
+  bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
 });
 
 export interface MainThreadConfig {

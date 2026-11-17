@@ -34,6 +34,12 @@ pub struct Bogie {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Wheelset {
+    pub instance: usize,
+    pub centre: Vec3,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Coupler {
     pub instance: usize,
     pub face: Vec3,
@@ -61,6 +67,7 @@ pub struct Vehicle {
     pub body: Vec<usize>,
     pub bogies: Vec<Bogie>,
     pub fixed_axles: Vec<Vec3>,
+    pub wheelsets: Vec<Wheelset>,
     pub guide_kind: GuideKind,
     pub guides: [f64; 2],
     pub front_coupler: Option<Coupler>,
@@ -691,6 +698,13 @@ fn analyse<L: Library>(
         body,
         bogies,
         fixed_axles: fixed.iter().map(|a| frame.local(a.centre)).collect(),
+        wheelsets: axles
+            .iter()
+            .map(|a| Wheelset {
+                instance: a.instance,
+                centre: frame.local(a.centre),
+            })
+            .collect(),
         guide_kind: guides.kind,
         guides: [half, -half],
         front_coupler,

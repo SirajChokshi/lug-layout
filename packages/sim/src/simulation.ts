@@ -1,3 +1,4 @@
+import { runningGearSpanProblem } from "@brr/domain";
 import { Autopilot } from "./blocks/autopilot.ts";
 import { BlockKeeper } from "./blocks/block-keeper.ts";
 import { BlockMap, NO_BLOCK, type BlockTopology } from "./blocks/block-map.ts";
@@ -188,14 +189,8 @@ export class Simulation {
     let length = 0;
     const firstVehicle = this.vehicleCount;
     for (const vehicle of spec.vehicles) {
-      if (
-        !(vehicle.lengthLdu > 0) ||
-        vehicle.frontBogieLdu < 0 ||
-        vehicle.rearBogieLdu > vehicle.lengthLdu ||
-        vehicle.frontBogieLdu > vehicle.rearBogieLdu
-      ) {
-        throw new Error("a vehicle's bogies must lie front to rear within its length");
-      }
+      const problem = runningGearSpanProblem(vehicle);
+      if (problem) throw new Error(`a vehicle's running gear cannot run: ${problem}`);
       this.vehicleFrontBogie[this.vehicleCount] = length + vehicle.frontBogieLdu;
       this.vehicleRearBogie[this.vehicleCount] = length + vehicle.rearBogieLdu;
       const at = this.vehicleCount * GEOMETRY_FIELDS;

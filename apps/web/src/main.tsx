@@ -6,6 +6,7 @@ import {
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
   RUN_SCENE,
+  RUNNING_GEAR,
   TRACK_SCENE,
   type IRunScene,
   PLAN_SERVICE,
@@ -118,7 +119,15 @@ function root(): ReactNode {
     );
   }
   const { scene, placements, run } = viewerScene(params);
-  return <App scene={scene} params={params} placements={placements} run={run} />;
+  return (
+    <App
+      scene={scene}
+      params={params}
+      placements={placements}
+      run={run}
+      runningGear={run ? container.get(RUNNING_GEAR) : null}
+    />
+  );
 }
 
 createRoot(rootElement).render(<StrictMode>{root()}</StrictMode>);
