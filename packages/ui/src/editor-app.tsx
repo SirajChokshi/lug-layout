@@ -1,4 +1,10 @@
-import type { EditorOptions, IEditor, IPlanService, ShellCommandId } from "@brr/client";
+import type {
+  EditorOptions,
+  IEditor,
+  IEditorCamera,
+  IPlanService,
+  ShellCommandId,
+} from "@brr/client";
 import { useCallback, useState } from "react";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
@@ -14,12 +20,15 @@ import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
 import { TrackPanel } from "./track-panel.tsx";
+import { useSafeArea } from "./safe-area.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
 import { useRecentItems } from "./use-recent-items.ts";
+import { ViewControls } from "./view-controls.tsx";
 
 interface EditorAppProps {
   readonly editor: IEditor;
+  readonly camera: IEditorCamera;
   readonly plans: IPlanService;
   readonly options: EditorOptions;
   readonly disclaimer: string;
@@ -54,7 +63,14 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
   );
 }
 
-export function EditorApp({ editor, plans, options, disclaimer, showState }: EditorAppProps) {
+export function EditorApp({
+  editor,
+  camera,
+  plans,
+  options,
+  disclaimer,
+  showState,
+}: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   const recent = useRecentItems(snapshot.activeItem);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
@@ -63,13 +79,16 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
     (id: ShellCommandId) => setOverlay((open) => (open === id ? null : id)),
     [],
   );
-  useEditorKeys(editor, {
+  useEditorKeys(editor, camera, {
     onShellCommand: toggleOverlay,
     overlayOpen: overlay !== null,
     closeOverlay,
   });
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
+  useSafeArea(camera, root);
   return (
     <div
+      ref={setRoot}
       className="editor"
       data-status={snapshot.status}
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
@@ -82,10 +101,11 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       data-road-open={snapshot.roads.openCells}
       data-road-mismatch={snapshot.roads.mismatchedCells}
     >
-      <EditorCanvas editor={editor} options={options} />
+      <EditorCanvas editor={editor} camera={camera} options={options} />
       <ToolHud snapshot={snapshot} />
       <EditorHud snapshot={snapshot} />
-      <PlanPanel editor={editor} plans={plans} />
+      <ViewControls camera={camera} snapshot={snapshot} />
+      <PlanPanel camera={camera} plans={plans} />
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
         <PalettePanel editor={editor} snapshot={snapshot} />
@@ -100,6 +120,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       {overlay === "open-palette" && (
         <CommandPalette
           editor={editor}
+          camera={camera}
           snapshot={snapshot}
           recent={recent}
           onClose={closeOverlay}

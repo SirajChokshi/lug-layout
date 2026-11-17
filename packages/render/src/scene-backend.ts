@@ -126,7 +126,15 @@ export interface ISceneBackend {
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
   setVehicle(vehicle: number, model: ChunkInstances): void;
   setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void;
-  setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void;
+  setView(
+    eyeX: number,
+    eyeY: number,
+    eyeZ: number,
+    atX: number,
+    atY: number,
+    atZ: number,
+    orthoHalfHeightLdu?: number,
+  ): void;
   resize(width: number, height: number): void;
   renderFrame(out: FrameStats): void;
   waitForGpu(): Promise<void>;

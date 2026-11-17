@@ -154,13 +154,6 @@ export function PlacementToolbar({
       </button>
       <button
         type="button"
-        disabled={snapshot.selection === null}
-        onClick={() => editor.focusSelection()}
-      >
-        Focus ({shortcutText("focus")})
-      </button>
-      <button
-        type="button"
         data-action="undo"
         disabled={history.undo === null}
         onClick={(event) => editor.undo(event.timeStamp)}
@@ -190,7 +183,9 @@ export function PlacementToolbar({
         Shortcuts ({shortcutText("show-shortcuts")})
       </button>
       <p className="toolbar-hint">
-        Right-drag orbits, Shift-drag pans, the wheel zooms. Arrows pan, Shift-arrows orbit.
+        Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the
+        wheel zooms at the cursor. Arrows pan, Shift-arrows orbit, double-click frames the
+        selection.
       </p>
     </div>
   );
