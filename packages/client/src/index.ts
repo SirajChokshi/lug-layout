@@ -146,6 +146,7 @@ export {
   RUNNING_GEAR,
   BOM_SERVICE,
   CITY_SCENE,
+  CATALOG_SEARCH,
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
@@ -251,6 +252,14 @@ export type {
   PaletteHit,
   PaletteTerms,
 } from "./catalog/palette-index.ts";
+export { paletteResults } from "./catalog/palette-results.ts";
+export type { PaletteResults } from "./catalog/palette-results.ts";
+export { CATALOG_SEARCH_DEBOUNCE_MS } from "./catalog/catalog-search.ts";
+export type {
+  CatalogSearchStatus,
+  CatalogSearchView,
+  ICatalogSearch,
+} from "./catalog/catalog-search.ts";
 export type { Lever } from "./edit/track-pieces.ts";
 export type {
   BillOfMaterials,

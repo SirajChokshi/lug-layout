@@ -60,6 +60,10 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 class MilsModulesOnly implements IPartBundleLoader {
   constructor(private readonly loader: IPartBundleLoader) {}
 
+  loadManifestFile(): Promise<string> {
+    return this.loader.loadManifestFile();
+  }
+
   async loadIndex(lod: BundleLod): Promise<BundleIndex> {
     const index = await this.loader.loadIndex(lod);
     return { ...index, models: index.models.filter((m) => m.role === "mils-module") };

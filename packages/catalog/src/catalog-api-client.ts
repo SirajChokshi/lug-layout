@@ -1,4 +1,7 @@
 import {
+  BundleManifestKey,
+  BundleSearchParams,
+  BundleSearchResponse,
   ErrorResponse,
   InventoryResponse,
   ReleaseId,
@@ -26,6 +29,10 @@ export interface ICatalogApi {
     themeId: number,
     params: v.InferInput<typeof ThemePageParams>,
   ): Promise<ThemePageResponse>;
+  searchBundle(
+    manifestKey: string,
+    params: v.InferInput<typeof BundleSearchParams>,
+  ): Promise<BundleSearchResponse>;
 }
 
 @injectable()
@@ -64,6 +71,15 @@ export class HttpCatalogApi implements ICatalogApi {
     const theme = decodedOrThrow(decode(ThemeId, themeId, "theme id"), "theme");
     const path = `${releasePath(release)}/themes/${theme}?${query(params)}`;
     return this.get(path, ThemePageResponse);
+  }
+
+  async searchBundle(
+    manifestKey: string,
+    params: v.InferInput<typeof BundleSearchParams>,
+  ): Promise<BundleSearchResponse> {
+    const key = decodedOrThrow(decode(BundleManifestKey, manifestKey, "manifest"), "bundle search");
+    decodedOrThrow(decode(BundleSearchParams, params, "query"), "bundle search parameters");
+    return this.get(`/v1/bundles/${key}/search?${query(params)}`, BundleSearchResponse);
   }
 
   private async get<Schema extends v.GenericSchema>(
