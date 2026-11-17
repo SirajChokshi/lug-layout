@@ -212,6 +212,34 @@ it("defaults a part to the current colour, else its display colour, else its sec
   expect(searched && index.defaultItem(searched.items, null)?.id).toBe("ldraw:4186@2");
 });
 
+function trackPiece(number: string, title: string): CatalogItemView {
+  return {
+    id: `track-piece:ldraw:${number}`,
+    label: `${number} ${title}`,
+    group: "track-pieces",
+    groupLabel: "Track pieces",
+    color: null,
+    kind: "track",
+    parts: 1,
+    studsWide: 16,
+    studsDeep: 8,
+    aliases: [],
+    elements: [],
+    displayColor: false,
+  };
+}
+
+it("keeps colourless parts that share a group as separate parts", () => {
+  const pieces = new PaletteIndex([
+    trackPiece("74746", "Train Track 9V Straight"),
+    trackPiece("75541-f1", "Train Track 9V Switch Right Straight"),
+  ]);
+  const found = (query: string) =>
+    pieces.search(query, "all").map((hit) => hit.items.map((item) => item.id));
+  expect(found("75541")).toEqual([["track-piece:ldraw:75541-f1"]]);
+  expect(found("straight")).toEqual([["track-piece:ldraw:74746"], ["track-piece:ldraw:75541-f1"]]);
+});
+
 it("ranks a part named by the word above parts that only mention it", () => {
   const withModule = new PaletteIndex([milsTrack, ...catalog]);
   expect(withModule.search("track", "all").map((hit) => hit.entry.key)).toEqual([
