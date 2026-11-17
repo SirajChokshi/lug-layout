@@ -1,4 +1,4 @@
-import type { ModelVoxels } from "@brr/catalog";
+import { INHERIT_COLOR, type ModelVoxels } from "@brr/catalog";
 import type { Vec3 } from "@brr/schema/bundle";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 
@@ -11,7 +11,6 @@ export interface PlacedVoxels {
   readonly yPhaseLdu: number;
 }
 
-const INHERIT_COLOR = 16;
 const CELL_LDU: Vec3 = [STUD_LDU, PLATE_LDU, STUD_LDU];
 
 function latticeCell(originLdu: number, cellLdu: number, axis: string): number {

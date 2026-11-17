@@ -24,7 +24,8 @@ const AXES = 3;
 const X = 0;
 const Y = 1;
 const Z = 2;
-const MAX_BLOCK_COLORS = 8 ** 3;
+const COARSEST_FACTOR = 1 << (SUPER_CHUNK_MESH_LEVELS - 1);
+const MAX_BLOCK_COLORS = COARSEST_FACTOR ** 3;
 
 type Phase = "stamp" | "downsample" | "mesh" | "done";
 
@@ -33,6 +34,48 @@ interface PhaseClass {
   readonly stamps: VoxelStamp[];
   minPlate: number;
   maxPlate: number;
+}
+
+interface PlanBounds {
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
+}
+
+function stampBounds(stamps: ReadonlyArray<VoxelStamp>): PlanBounds {
+  const bounds: PlanBounds = {
+    minX: Number.POSITIVE_INFINITY,
+    minZ: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    maxZ: Number.NEGATIVE_INFINITY,
+  };
+  for (const stamp of stamps) {
+    const { voxels } = stamp;
+    const cos = rot90Cos(stamp.rot);
+    const sin = rot90Sin(stamp.rot);
+    const originX = stamp.x / STUD_LDU;
+    const originZ = stamp.z / STUD_LDU;
+    for (let i = 0; i < voxels.count; i++) {
+      const twiceX = 2 * (voxels.cellX[i] ?? 0) + 1;
+      const twiceZ = 2 * (voxels.cellZ[i] ?? 0) + 1;
+      const x = originX + (cos * twiceX + sin * twiceZ - 1) / 2;
+      const z = originZ + (-sin * twiceX + cos * twiceZ - 1) / 2;
+      if (x < bounds.minX) bounds.minX = x;
+      if (x + 1 > bounds.maxX) bounds.maxX = x + 1;
+      if (z < bounds.minZ) bounds.minZ = z;
+      if (z + 1 > bounds.maxZ) bounds.maxZ = z + 1;
+    }
+  }
+  return bounds;
+}
+
+function alignDown(studs: number): number {
+  return Math.floor(studs / COARSEST_FACTOR) * COARSEST_FACTOR;
+}
+
+function alignUp(studs: number): number {
+  return Math.ceil(studs / COARSEST_FACTOR) * COARSEST_FACTOR;
 }
 
 function phaseClasses(stamps: ReadonlyArray<VoxelStamp>, factor: number): PhaseClass[] {
@@ -125,6 +168,10 @@ export class SuperChunkMesher {
   private factor = 1;
   private originStudX = 0;
   private originStudZ = 0;
+  private gridStudX = 0;
+  private gridStudZ = 0;
+  private gridWidth = 0;
+  private gridDepth = 0;
   private minPlate = 0;
   private phase: Phase = "done";
   private nextStamp = 0;
@@ -135,6 +182,17 @@ export class SuperChunkMesher {
     this.factor = 1 << level;
     this.originStudX = superX * SUPER_CHUNK_STUDS;
     this.originStudZ = superZ * SUPER_CHUNK_STUDS;
+    const bounds = stampBounds(stamps);
+    if (bounds.minX > bounds.maxX) {
+      bounds.minX = this.originStudX;
+      bounds.maxX = this.originStudX;
+      bounds.minZ = this.originStudZ;
+      bounds.maxZ = this.originStudZ;
+    }
+    this.gridStudX = alignDown(bounds.minX);
+    this.gridStudZ = alignDown(bounds.minZ);
+    this.gridWidth = Math.max(alignUp(bounds.maxX) - this.gridStudX, COARSEST_FACTOR);
+    this.gridDepth = Math.max(alignUp(bounds.maxZ) - this.gridStudZ, COARSEST_FACTOR);
     this.classes = phaseClasses(stamps, this.factor);
     this.cellLdu[X] = STUD_LDU * this.factor;
     this.cellLdu[Y] = PLATE_LDU * this.factor;
@@ -152,11 +210,11 @@ export class SuperChunkMesher {
     }
     this.minPlate = current.minPlate;
     const height = Math.max(current.maxPlate - current.minPlate, this.factor);
-    this.fine.reset(SUPER_CHUNK_STUDS, height, SUPER_CHUNK_STUDS);
+    this.fine.reset(this.gridWidth, height, this.gridDepth);
     this.active = this.fine;
-    this.offsetLdu[X] = 0;
+    this.offsetLdu[X] = (this.gridStudX - this.originStudX) * STUD_LDU;
     this.offsetLdu[Y] = current.minPlate * PLATE_LDU + current.yPhaseLdu;
-    this.offsetLdu[Z] = 0;
+    this.offsetLdu[Z] = (this.gridStudZ - this.originStudZ) * STUD_LDU;
     this.nextStamp = 0;
     this.phase = "stamp";
   }
@@ -225,8 +283,8 @@ export class SuperChunkMesher {
     const dimX = grid.dims[X] ?? 0;
     const dimY = grid.dims[Y] ?? 0;
     const dimZ = grid.dims[Z] ?? 0;
-    const offsetX = stamp.x / STUD_LDU - this.originStudX;
-    const offsetZ = stamp.z / STUD_LDU - this.originStudZ;
+    const offsetX = stamp.x / STUD_LDU - this.gridStudX;
+    const offsetZ = stamp.z / STUD_LDU - this.gridStudZ;
     const offsetY = stamp.yPlates - this.minPlate;
     for (let i = 0; i < voxels.count; i++) {
       const twiceX = 2 * (voxels.cellX[i] ?? 0) + 1;
@@ -380,6 +438,7 @@ export class SuperChunkMesher {
       this.corner,
       this.edgeU,
       this.edgeV,
+      d,
       value > 0 ? 1 : -1,
       Math.abs(value) - 1,
     );
