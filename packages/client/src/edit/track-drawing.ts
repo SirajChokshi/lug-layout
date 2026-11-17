@@ -39,8 +39,11 @@ const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
 const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
+const FOOTPRINT_FLOATS = 4;
 
 export interface KitPart {
+  readonly footprints: Float64Array;
+  readonly meshY: readonly [number, number];
   readonly catalogIndex: number;
   readonly piece: TrackPiece;
   readonly def: TrackPieceDef;
@@ -161,29 +164,56 @@ function partCentre(placed: Placed): { readonly x: number; readonly z: number } 
   return { x, z };
 }
 
-function partBox(placed: Placed, part: PartAsset): WorldBox {
-  const { x, z, c, s } = partTransform(placed.placement, placed.part.piece.partFrame);
-  let minX = Number.POSITIVE_INFINITY;
-  let minZ = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxZ = Number.NEGATIVE_INFINITY;
-  for (const px of [part.boundsMin[0], part.boundsMax[0]]) {
-    for (const pz of [part.boundsMin[2], part.boundsMax[2]]) {
-      const wx = x + c * px - s * pz;
-      const wz = z + s * px + c * pz;
-      minX = Math.min(minX, wx);
-      maxX = Math.max(maxX, wx);
-      minZ = Math.min(minZ, wz);
-      maxZ = Math.max(maxZ, wz);
+function headingFootprints(part: PartAsset, frame: TrackPartFrame): Float64Array {
+  const boxes = new Float64Array(ZETA16_ORDER * FOOTPRINT_FLOATS);
+  const positions = part.mesh.positions;
+  for (let heading = 0; heading < ZETA16_ORDER; heading++) {
+    const phi = heading * HEADING_RADIANS + frame.headingHalfSteps * HALF_STEP_RADIANS;
+    const c = Math.cos(phi);
+    const s = Math.sin(phi);
+    let minX = Number.POSITIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < positions.length; i += 3) {
+      const px = positions[i] ?? 0;
+      const pz = positions[i + 2] ?? 0;
+      const wx = c * px - s * pz;
+      const wz = s * px + c * pz;
+      if (wx < minX) minX = wx;
+      if (wx > maxX) maxX = wx;
+      if (wz < minZ) minZ = wz;
+      if (wz > maxZ) maxZ = wz;
     }
+    boxes.set([minX, minZ, maxX, maxZ], heading * FOOTPRINT_FLOATS);
   }
+  return boxes;
+}
+
+function meshYRange(part: PartAsset): readonly [number, number] {
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  const positions = part.mesh.positions;
+  for (let i = 1; i < positions.length; i += 3) {
+    const y = positions[i] ?? 0;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return [minY, maxY];
+}
+
+function partBox(placed: Placed): WorldBox {
+  const { x, z } = partTransform(placed.placement, placed.part.piece.partFrame);
+  const o = normalizeHeading16(placed.placement.heading) * FOOTPRINT_FLOATS;
+  const boxes = placed.part.footprints;
+  const [minY, maxY] = placed.part.meshY;
   return {
-    minX,
-    minY: placed.part.yLdu + part.boundsMin[1],
-    minZ,
-    maxX,
-    maxY: placed.part.yLdu + part.boundsMax[1],
-    maxZ,
+    minX: x + (boxes[o] ?? 0),
+    minY: placed.part.yLdu + minY,
+    minZ: z + (boxes[o + 1] ?? 0),
+    maxX: x + (boxes[o + 2] ?? 0),
+    maxY: placed.part.yLdu + maxY,
+    maxZ: z + (boxes[o + 3] ?? 0),
   };
 }
 
@@ -227,6 +257,8 @@ export class TrackDrawing {
       }
       const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
       const kitPart: KitPart = {
+        footprints: headingFootprints(part, piece.partFrame),
+        meshY: meshYRange(part),
         catalogIndex,
         piece,
         def,
@@ -502,14 +534,12 @@ export class TrackDrawing {
     const footprints: TrackFootprint[] = [];
     for (let p = 0; p < this.layout.count; p++) {
       const placed = this.placedAt(p);
-      const part = this.parts[placed.part.partIndex];
-      if (!part) throw new Error(`${placed.part.piece.id}: part index is out of range`);
       const centre = partCentre(placed);
       footprints.push({
         key: { chunkKey: trackChunkKey(chunkOf(centre.x), chunkOf(centre.z)), slot: p },
         ref: placed.part.piece.id,
         label: `${placed.part.piece.title} #${p + 1}`,
-        box: partBox(placed, part),
+        box: partBox(placed),
       });
     }
     return footprints;
