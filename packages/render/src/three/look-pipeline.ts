@@ -1,5 +1,6 @@
 import {
   HalfFloatType,
+  InstancedMesh,
   Matrix4,
   RenderPipeline,
   RGFormat,
@@ -15,6 +16,7 @@ import {
 } from "three/webgpu";
 import {
   abs,
+  convertToTexture,
   unpackRGBToNormal,
   packNormalToRGB,
   dot,
@@ -44,6 +46,7 @@ import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { oitPass } from "three/addons/tsl/display/OITPassNode.js";
 import type { LookSettings } from "../scene-backend.ts";
 
+const NOT_A_PART = 0;
 const ID_MODULUS = 2048;
 const STUD_PITCH_LDU = 20;
 const AO_RADIUS_LDU = 28;
@@ -93,6 +96,11 @@ const NEIGHBOURS: ReadonlyArray<Neighbour> = [
   { x: 0, y: -1, oneSided: false },
 ];
 
+function isOverlay(gbuffer: GBuffer, uv: Node<"vec2">): Node<"bool"> {
+  const covered = gbuffer.depth.sample(uv).r.lessThan(1);
+  return covered.and(gbuffer.id.sample(uv).x.lessThan(NOT_A_PART + 0.5));
+}
+
 function flag(condition: Node<"bool">): Node<"float"> {
   return select(condition, float(1), float(0));
 }
@@ -120,14 +128,17 @@ export class LookPipeline {
       ? oitPass(scene, camera, SINGLE_SAMPLE)
       : pass(scene, camera, SINGLE_SAMPLE);
     let color: Node<"vec4"> = scenePass;
+    let overlay: Node<"bool"> | undefined;
     const needsGBuffer = look.gtao || look.outlines || look.bevel;
     if (needsGBuffer) {
-      const objectId = uniform(0).onObjectUpdate(({ object }) => (object?.id ?? 0) % ID_MODULUS);
+      const partId = uniform(0).onObjectUpdate(({ object }) =>
+        object instanceof InstancedMesh ? (object.id % ID_MODULUS) + 1 : NOT_A_PART,
+      );
       scenePass.setMRT(
         mrt({
           output,
           normal: vec4(packNormalToRGB(normalView), 1),
-          id: vec4(objectId.add(1), instanceIndex.toFloat().mod(ID_MODULUS), 0, 1),
+          id: vec4(partId, instanceIndex.toFloat().mod(ID_MODULUS), 0, 1),
         }),
       );
       const normalTexture = scenePass.getTexture("normal");
@@ -143,8 +154,14 @@ export class LookPipeline {
       };
       if (look.gtao) color = this.withAmbientOcclusion(color, gbuffer);
       if (look.outlines || look.bevel) color = this.withEdges(color, gbuffer, look);
+      overlay = isOverlay(gbuffer, screenUV);
     }
-    this.pipeline = new RenderPipeline(renderer, fxaa(renderOutput(color)));
+    const resolved = convertToTexture(renderOutput(color));
+    const antialiased = fxaa(resolved);
+    this.pipeline = new RenderPipeline(
+      renderer,
+      overlay === undefined ? antialiased : select(overlay, resolved, antialiased),
+    );
     this.pipeline.outputColorTransform = false;
   }
 
@@ -232,7 +249,7 @@ export class LookPipeline {
       rgb = rgb.add(float(1).sub(rgb).mul(glint.mul(creaseFade)));
     }
     const isBackground = rawDepthC.greaterThanEqual(1);
-    return vec4(select(isBackground, color.rgb, rgb), color.a);
+    return vec4(select(isBackground.or(isOverlay(gbuffer, uvC)), color.rgb, rgb), color.a);
   }
 
   resize(bufferWidth: number, bufferHeight: number, focalLengthPx: number): void {
