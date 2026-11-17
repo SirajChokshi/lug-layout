@@ -40,3 +40,18 @@ Same driver, 45-wide grid, 500 modules (1,000 placements), checkpoints at 125/25
 | fixed-846d78d | 500 | aerial | 244 / 257 | 0 | 51 | 142 | 23 | 118 | 8457 |
 
 Street settle hits the 60 s cap on SwiftShader (each frame takes ~3 s, and resident chunks load within a per-frame budget).
+
+## Seam and translucency review captures (seam-review-6462c9b/)
+
+`scripts/seam-replay.mjs` replays one fixed sequence of mouse and wheel input against a build, so different builds see the same camera poses. It places items by reading the editor's `data-hover` cursor readout and correcting with a locally measured screen-to-lattice Jacobian, so it needs no camera model. It logs the HUD each step and saves frames at `--shots` steps (20 s after the last input) or at the first mixed-residency step (`--stopOnMixed=1`).
+
+Builds were served with `vite preview` from `apps/web`: before (`bc866de`) on 4183, fixed (`6462c9b`) on 4182.
+
+    node scripts/seam-replay.mjs --url=http://127.0.0.1:4182/ --out=seam-fixed --orbitDx=-300 --orbitDy=-60 --startWheel=1800 --stepWheel=-60 --steps=14 --shots=14
+    node scripts/seam-replay.mjs --url=http://127.0.0.1:4183/ --out=seam-prefix --orbitDx=-300 --orbitDy=-60 --startWheel=1800 --stepWheel=-60 --steps=14 --shots=14
+    node scripts/seam-replay.mjs --url=http://127.0.0.1:4182/ --superchunks=0 --out=seam-off --orbitDx=-300 --orbitDy=-60 --startWheel=1800 --stepWheel=-60 --steps=14 --shots=14
+    node scripts/seam-replay.mjs --url=http://127.0.0.1:4182/ --out=pop-fixed --item=omr:10264-1 --plates=320:320 --orbitDx=0 --orbitDy=-30 --startWheel=1500 --stepWheel=-40 --steps=8 --shots=8
+
+Pixel counts: `node scripts/crop.mjs <frame> <out> 600 400 340 180 2` (seam) or `745 440 140 120 4` (10264-1), and `node scripts/diff.mjs <crop> <reference crop>`.
+
+`build-world.mjs` now centres the camera with the editor's "Go to x, z" form when it exists. Main's `C` shortcut animates the camera, which broke the hover-then-hop centring.

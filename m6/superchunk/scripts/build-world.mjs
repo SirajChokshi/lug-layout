@@ -216,6 +216,17 @@ const MIN_AIM_DISTANCE_LDU = 2500;
 
 async function centreOn(tx, tz) {
   tally.centres++;
+  const goX = page.getByLabel("Go to x (LDU)");
+  if ((await goX.count()) > 0) {
+    await goX.fill(String(tx));
+    await page.getByLabel("Go to z (LDU)").fill(String(tz));
+    await page.getByRole("button", { name: "Go to x, z" }).click();
+    cam.tx = tx;
+    cam.tz = tz;
+    cam.ty = 0;
+    await page.waitForTimeout(50);
+    return;
+  }
   for (let hop = 0; hop < 400; hop++) {
     const aim = await aimAt(tx, tz);
     if (aim) {
