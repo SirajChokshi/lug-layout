@@ -31,16 +31,24 @@ function gitPathspec(turboGlob: string): string {
   return `:(top,glob${excluded ? ",exclude" : ""})${fromRoot}`;
 }
 
-function bundleInputFiles(repoRoot: string): ReadonlyArray<string> {
+function listBundleInputs(repoRoot: string, options: ReadonlyArray<string>): ReadonlyArray<string> {
   const listing = execFileSync(
     "git",
-    ["ls-files", "-z", "--", ...bundleInputGlobs(repoRoot).map(gitPathspec)],
+    ["ls-files", "-z", ...options, "--", ...bundleInputGlobs(repoRoot).map(gitPathspec)],
     { cwd: repoRoot, encoding: "utf8" },
   );
   return listing
     .split("\0")
     .filter((path) => path !== "")
     .toSorted();
+}
+
+function bundleInputFiles(repoRoot: string): ReadonlyArray<string> {
+  return listBundleInputs(repoRoot, []);
+}
+
+export function untrackedBundleInputs(repoRoot: string): ReadonlyArray<string> {
+  return listBundleInputs(repoRoot, ["--others", "--exclude-standard"]);
 }
 
 export function bundleInputKey(repoRoot: string): string {
