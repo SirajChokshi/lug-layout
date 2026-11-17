@@ -21,6 +21,7 @@ function baseplate(
     parts: 1,
     studsWide: studs,
     studsDeep: studs,
+    thumbnail: null,
   };
 }
 
@@ -39,6 +40,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     parts: 1,
     studsWide: 32,
     studsDeep: 32,
+    thumbnail: null,
   },
 ];
 
