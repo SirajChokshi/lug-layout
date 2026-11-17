@@ -1,6 +1,6 @@
 import type { EditorOptions, IEditor, IEditorCamera, ITrainPlay } from "@brr/client";
 import { useEffect, useRef } from "react";
-import { isTyping } from "./use-editor-keys.ts";
+import { controlTakesKey, isTyping } from "./use-editor-keys.ts";
 
 const CLICK_SLOP_PX = 4;
 const LEFT_BUTTON = 0;
@@ -195,10 +195,10 @@ export function EditorCanvas({ editor, camera, play, options }: EditorCanvasProp
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const isSpace = (event: KeyboardEvent): boolean => event.key === " " && !isTyping(event.target);
+    const isSpace = (event: KeyboardEvent): boolean =>
+      event.key === " " && !isTyping(event.target) && !controlTakesKey(event.target, " ");
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!isSpace(event)) return;
-      event.preventDefault();
       pointer.current.spaceHeld = true;
       if (canvas) canvas.dataset["space"] = "";
     };

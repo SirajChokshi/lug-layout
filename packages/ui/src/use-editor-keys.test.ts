@@ -1,14 +1,28 @@
-import { EDITOR, mainThreadModules, TRAIN_PLAY } from "@brr/client";
+import {
+  EDITOR,
+  EDITOR_CAMERA,
+  mainThreadModules,
+  TRAIN_PLAY,
+  type EditorOptions,
+} from "@brr/client";
 import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { Container } from "inversify";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
+import { EditorCanvas } from "./editor-canvas.tsx";
 import { RoadJoins } from "./editor-panels.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { controlTakesKey, useEditorKeys } from "./use-editor-keys.ts";
 
 afterEach(cleanup);
+
+const CANVAS_OPTIONS: EditorOptions = {
+  api: "webgl2",
+  pixelRatio: 1,
+  look: { plastic: false, gtao: false, outlines: false, bevel: false, shadows: false, oit: false },
+  tier: null,
+};
 
 function services() {
   const container = new Container();
@@ -19,7 +33,11 @@ function services() {
       startSimWorker: () => new MessageChannel().port1,
     }),
   );
-  return { editor: container.get(EDITOR), play: container.get(TRAIN_PLAY) };
+  return {
+    editor: container.get(EDITOR),
+    camera: container.get(EDITOR_CAMERA),
+    play: container.get(TRAIN_PLAY),
+  };
 }
 
 function element(html: string): Element {
@@ -30,22 +48,27 @@ function element(html: string): Element {
 }
 
 function RoadJoinsWithKeys() {
-  const { editor, play } = services();
+  const { editor, camera, play } = services();
   function Panel() {
     const snapshot = useEditorSnapshot(editor);
-    useEditorKeys(editor, {
+    useEditorKeys(editor, camera, {
       play,
       onShellCommand: () => {},
       overlayOpen: false,
       closeOverlay: () => {},
     });
-    return createElement(RoadJoins, { editor, snapshot });
+    return createElement(
+      "div",
+      null,
+      createElement(EditorCanvas, { editor, camera, play, options: CANVAS_OPTIONS }),
+      createElement(RoadJoins, { editor, snapshot }),
+    );
   }
   return createElement(Panel);
 }
 
 describe("editor keys and focused controls", () => {
-  it("lets Space toggle the Road joins checkboxes while the editor's keys are bound", async () => {
+  it("lets Space toggle the Road joins checkboxes while the editor canvas and keys are mounted", async () => {
     const user = userEvent.setup();
     render(createElement(RoadJoinsWithKeys));
     for (const name of [/show join markers/iu, /snap road pieces/iu]) {
