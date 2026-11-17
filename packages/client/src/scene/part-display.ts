@@ -1,4 +1,5 @@
-import type { PartBundle, PartRole } from "@brr/catalog";
+import type { PartBundle } from "@brr/catalog";
+import type { PartRole } from "@brr/schema/bundle";
 import { footprintOf, plateDepthBelowOrigin, type PartFootprint } from "./part-footprint.ts";
 import { World } from "@brr/domain";
 import { CHUNK_LDU, STUD_LDU } from "@brr/math";

@@ -22,7 +22,7 @@ apps/catalog-api        Cloudflare Worker: catalog search over D1, release files
 packages/
   config                shared tsconfig presets and the Vitest preset
   math                  L0: units, Rot90, lattice check, chunk key
-  schema                L1 (planned)
+  schema                L1: valibot schemas for every wire and file format; types inferred, subpath exports
   domain                L2: World, a sparse map of struct-of-arrays chunks
   catalog render        L2 adapters
   storage rpc           L2 (planned)

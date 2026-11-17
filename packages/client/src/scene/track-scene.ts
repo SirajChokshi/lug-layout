@@ -1,10 +1,5 @@
-import {
-  PART_BUNDLE_LOADER,
-  type BundleLod,
-  type IPartBundleLoader,
-  type PartBundle,
-  type TrackPiece,
-} from "@brr/catalog";
+import { PART_BUNDLE_LOADER, type IPartBundleLoader, type PartBundle } from "@brr/catalog";
+import type { BundleLod, TrackPiece } from "@brr/schema/bundle";
 import { TrackGraph, type TrackLayout } from "@brr/domain";
 import { CHUNK_LDU, chunkKey, chunkOf, PLATE_LDU, STUD_LDU, zeta16ToStuds } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";

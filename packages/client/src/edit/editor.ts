@@ -1,9 +1,5 @@
-import {
-  PART_BUNDLE_LOADER,
-  type BundleLod,
-  type IPartBundleLoader,
-  type PartBundle,
-} from "@brr/catalog";
+import type { BundleLod } from "@brr/schema/bundle";
+import { PART_BUNDLE_LOADER, type IPartBundleLoader, type PartBundle } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
 import {
   EditHistory,

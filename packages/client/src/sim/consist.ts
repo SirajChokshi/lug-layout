@@ -1,4 +1,5 @@
-import type { BakedVehicle, PartModel, VehicleCoupler } from "@brr/catalog";
+import type { PartModel, PartVehicle } from "@brr/catalog";
+import type { VehicleCoupler } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import type {
   CouplerGeometry,
@@ -31,7 +32,7 @@ export interface ConsistVehicle {
 }
 
 interface Orientation {
-  readonly vehicle: BakedVehicle;
+  readonly vehicle: PartVehicle;
   readonly sign: number;
 }
 
@@ -111,7 +112,7 @@ function couplerGeometry(orientation: Orientation, end: "front" | "rear"): Coupl
   };
 }
 
-export function vehicleSpec(vehicle: BakedVehicle, reversed: boolean): VehicleSpec {
+export function vehicleSpec(vehicle: PartVehicle, reversed: boolean): VehicleSpec {
   const orientation: Orientation = { vehicle, sign: reversed ? -1 : 1 };
   const geometry: VehicleGeometry = {
     front: guideGeometry(orientation, "front"),
@@ -131,22 +132,22 @@ export function vehicleSpec(vehicle: BakedVehicle, reversed: boolean): VehicleSp
 function localMatrices(
   model: PartModel,
   instances: Uint32Array,
-  vehicle: BakedVehicle,
+  vehicle: PartVehicle,
   sign: number,
   pivotX: number,
   pivotZ: number,
 ): Float32Array {
-  const cos = Math.cos(vehicle.yawRadians);
-  const sin = Math.sin(vehicle.yawRadians);
+  const cos = Math.cos(vehicle.yaw);
+  const sin = Math.sin(vehicle.yaw);
   const out = new Float32Array(instances.length * INSTANCE_MATRIX_FLOATS);
   for (let k = 0; k < instances.length; k++) {
     const i = (instances[k] ?? 0) * INSTANCE_MATRIX_FLOATS;
     const o = k * INSTANCE_MATRIX_FLOATS;
     const m = model.matrices;
     for (let col = 0; col < 4; col++) {
-      const x = (m[i + col] ?? 0) - (col === 3 ? vehicle.originXLdu : 0);
+      const x = (m[i + col] ?? 0) - (col === 3 ? vehicle.origin[0] : 0);
       const y = m[i + 4 + col] ?? 0;
-      const z = (m[i + 8 + col] ?? 0) - (col === 3 ? vehicle.originZLdu : 0);
+      const z = (m[i + 8 + col] ?? 0) - (col === 3 ? vehicle.origin[1] : 0);
       const u = sign * (x * cos + z * sin) - (col === 3 ? pivotX : 0);
       const v = sign * (-x * sin + z * cos) - (col === 3 ? pivotZ : 0);
       out[o + col] = u;
@@ -157,7 +158,7 @@ function localMatrices(
   return out;
 }
 
-function railTopFor(vehicle: BakedVehicle, railPart: string): number {
+function railTopFor(vehicle: PartVehicle, railPart: string): number {
   const contact = vehicle.railContacts.find((c) => c.railPart === railPart);
   if (!contact) throw new Error(`the vehicle has no wheel contact measured on rail ${railPart}`);
   return contact.railTopY;
@@ -171,12 +172,12 @@ export function consistVehicles(
 ): ConsistVehicle[] {
   if (model.vehicles.length === 0) throw new Error(`model ${name} has no vehicle`);
   const first = model.vehicles[0];
-  const forwardX = Math.cos(first?.yawRadians ?? 0);
-  const forwardZ = Math.sin(first?.yawRadians ?? 0);
+  const forwardX = Math.cos(first?.yaw ?? 0);
+  const forwardZ = Math.sin(first?.yaw ?? 0);
   const order = model.vehicles
     .map((vehicle, index) => ({
       index,
-      ahead: vehicle.originXLdu * forwardX + vehicle.originZLdu * forwardZ,
+      ahead: vehicle.origin[0] * forwardX + vehicle.origin[1] * forwardZ,
     }))
     .toSorted((a, b) => (reversed ? a.ahead - b.ahead : b.ahead - a.ahead));
   return order.map(({ index }) => {

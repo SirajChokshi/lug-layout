@@ -1,50 +1,26 @@
+export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { BUNDLE_LODS, INHERIT_COLOR } from "./part-bundle.ts";
-export type { BundleInputs, BundleManifest, BundleSource } from "./manifest.ts";
 export type {
-  BundleColor,
-  BundleCredit,
-  BundleLod,
-  BundleModelEntry,
   ColorGroup,
+  FilterablePart,
   IAssetFetcher,
   IPartBundleLoader,
   MeshArrays,
   ModelBundle,
-  ModelLattice,
-  ModelOrigin,
-  ModelRole,
-  ModelSection,
-  ModelSet,
+  PartModelLattice,
   PartAsset,
   PartBundle,
   PartFilter,
   PartMesh,
   PartModel,
-  PartRole,
-  PartSummary,
+  PartVehicle,
   StudPrimitiveAsset,
-  TrackEnd,
-  Vec3Tuple,
 } from "./part-bundle.ts";
-export type {
-  BakedVehicle,
-  VehicleBogie,
-  VehicleCoupler,
-  VehicleGuideKind,
-  VehicleRailContact,
-} from "./model-vehicle.ts";
-export { ASSET_FETCHER, BUNDLE_BASE_URL, PART_BUNDLE_LOADER } from "./tokens.ts";
-export { parseTrackCatalog } from "./track-catalog.ts";
-export type {
-  TrackCatalog,
-  TrackConnector,
-  TrackJoinClass,
-  TrackPartFrame,
-  TrackPathSegment,
-  TrackPiece,
-  TrackPieceKind,
-  TrackPoseStatus,
-  TrackRoute,
-  TrackSystem,
-} from "./track-catalog.ts";
+export {
+  ASSET_FETCHER,
+  BUNDLE_BASE_URL,
+  CATALOG_API,
+  CATALOG_API_BASE_URL,
+  PART_BUNDLE_LOADER,
+} from "./tokens.ts";

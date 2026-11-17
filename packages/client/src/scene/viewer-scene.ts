@@ -1,4 +1,5 @@
-import type { BundleLod, ModelSection, PartBundle, PartFilter } from "@brr/catalog";
+import type { PartBundle, PartFilter } from "@brr/catalog";
+import type { BundleLod, ModelSection } from "@brr/schema/bundle";
 import {
   COLOR_CHANNELS,
   type ChunkInstances,

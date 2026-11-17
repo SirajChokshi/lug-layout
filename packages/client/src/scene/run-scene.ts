@@ -1,11 +1,10 @@
 import {
   PART_BUNDLE_LOADER,
-  type BundleLod,
   type IPartBundleLoader,
   type PartBundle,
   type PartModel,
-  type TrackPiece,
 } from "@brr/catalog";
+import type { BundleLod, TrackPiece } from "@brr/schema/bundle";
 import { TrackGraph, type TrackLayout } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";

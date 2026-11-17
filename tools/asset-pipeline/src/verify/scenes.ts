@@ -5,7 +5,7 @@ import type { BaseplateMeasurement } from "./geometry.ts";
 import {
   findTrackEnds,
   PART_FRAME_HEADING_GRID,
-  type TrackEnd,
+  type MarkerEnd,
   type TrackEndMarker,
 } from "../track/track-ends.ts";
 
@@ -28,7 +28,7 @@ export function translated(m: Affine, x: number, z: number): Affine {
   return [m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], x, 0, z];
 }
 
-function placedEnds(ends: ReadonlyArray<TrackEnd>, transform: Affine): ReadonlyArray<TrackEnd> {
+function placedEnds(ends: ReadonlyArray<MarkerEnd>, transform: Affine): ReadonlyArray<MarkerEnd> {
   const rotation = translated(transform, 0, 0);
   return ends.map((end) => {
     const [x, , z] = applyToPoint(transform, [end.x, 0, end.z]);
@@ -37,7 +37,7 @@ function placedEnds(ends: ReadonlyArray<TrackEnd>, transform: Affine): ReadonlyA
   });
 }
 
-function attachByEnd(ends: ReadonlyArray<TrackEnd>, joinEnd: number, target: TrackEnd): Affine {
+function attachByEnd(ends: ReadonlyArray<MarkerEnd>, joinEnd: number, target: MarkerEnd): Affine {
   const end = ends[joinEnd];
   if (end === undefined) throw new Error(`no end ${joinEnd}`);
   const angle = target.outward + Math.PI - end.outward;
@@ -72,7 +72,7 @@ export function toLdraw(
   ].join("\n");
 }
 
-function farthestEnd(ends: ReadonlyArray<TrackEnd>, from: TrackEnd): TrackEnd {
+function farthestEnd(ends: ReadonlyArray<MarkerEnd>, from: MarkerEnd): MarkerEnd {
   const sorted = ends.toSorted(
     (p, q) => Math.hypot(q.x - from.x, q.z - from.z) - Math.hypot(p.x - from.x, p.z - from.z),
   );

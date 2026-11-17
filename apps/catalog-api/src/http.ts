@@ -1,3 +1,6 @@
+import type { ErrorResponse } from "@brr/schema/catalog-api";
+import type * as v from "valibot";
+
 export const IMMUTABLE_CACHE = "public, max-age=31536000, immutable";
 export const POINTER_CACHE = "public, max-age=60";
 export const CLIENT_ERROR_CACHE = "public, max-age=300";
@@ -48,11 +51,13 @@ export function json(
 }
 
 export function problem(status: number, message: string, cacheControl: string): Response {
-  return json({ error: message }, status, cacheControl);
+  const body: v.InferInput<typeof ErrorResponse> = { error: message };
+  return json(body, status, cacheControl);
 }
 
 export function tooManyRequests(): Response {
-  return json({ error: "rate limit exceeded" }, 429, NO_STORE, {
+  const body: v.InferInput<typeof ErrorResponse> = { error: "rate limit exceeded" };
+  return json(body, 429, NO_STORE, {
     "retry-after": String(RATE_LIMIT_RETRY_SECONDS),
   });
 }

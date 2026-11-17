@@ -1,4 +1,3 @@
-export type { BundleLod, ModelSection } from "@brr/catalog";
 export type {
   BackendInfo,
   BufferMemory,

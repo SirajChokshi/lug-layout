@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { walkPart } from "../ldraw/walk.ts";
-import { ZETA16_ORDER, type Zeta16 } from "@brr/math";
+import { ZETA16_ORDER } from "@brr/math";
+import { encodeZeta16, type TrackEnd } from "@brr/schema/bundle";
 import {
   findZeta16Representation,
   ZETA16_STEP_RADIANS,
@@ -20,7 +21,7 @@ export interface TrackEndMarker {
   readonly outwardSign: 1 | -1;
 }
 
-export interface TrackEnd {
+export interface MarkerEnd {
   readonly marker: string;
   readonly x: number;
   readonly z: number;
@@ -28,24 +29,7 @@ export interface TrackEnd {
   readonly toleranceLdu: number;
 }
 
-export interface RelativeTrackEnd {
-  readonly marker: string;
-  readonly xStuds: number;
-  readonly zStuds: number;
-  readonly headingSteps: number;
-  readonly headingResidualDegrees: number;
-  readonly toleranceLdu: number;
-  readonly fieldSearch: FieldSearchSummary | null;
-  readonly fieldCertified: boolean;
-  readonly coefficients: Zeta16 | null;
-}
-
-interface FieldSearchSummary {
-  readonly bestResidualLdu: number;
-  readonly solutionCount: number;
-}
-
-function summarize(field: FieldRepresentation): FieldSearchSummary {
+function summarize(field: FieldRepresentation): NonNullable<TrackEnd["fieldSearch"]> {
   return {
     bestResidualLdu: field.residual * LDU_PER_STUD,
     solutionCount: field.solutionCount,
@@ -80,9 +64,9 @@ export function findTrackEnds(
   library: LdrawLibrary,
   part: string,
   markers: ReadonlyArray<TrackEndMarker>,
-): ReadonlyArray<TrackEnd> {
+): ReadonlyArray<MarkerEnd> {
   const bySign = new Map(markers.map((marker) => [marker.file, marker.outwardSign]));
-  const ends: TrackEnd[] = [];
+  const ends: MarkerEnd[] = [];
   walkPart(library, `${part}.dat`, {
     reference: (placed) => {
       const sign = bySign.get(placed.file);
@@ -111,11 +95,11 @@ function normalizeAngle(angle: number): number {
   return ((angle % turn) + turn) % turn;
 }
 
-export function entryInwardAngle(entry: TrackEnd): number {
+export function entryInwardAngle(entry: MarkerEnd): number {
   return Math.round((entry.outward + Math.PI) / PART_FRAME_HEADING_GRID) * PART_FRAME_HEADING_GRID;
 }
 
-export function relativeToEntry(ends: ReadonlyArray<TrackEnd>): ReadonlyArray<RelativeTrackEnd> {
+export function relativeToEntry(ends: ReadonlyArray<MarkerEnd>): ReadonlyArray<TrackEnd> {
   const entry = ends[0];
   if (entry === undefined) return [];
   const inward = entryInwardAngle(entry);
@@ -143,7 +127,7 @@ export function relativeToEntry(ends: ReadonlyArray<TrackEnd>): ReadonlyArray<Re
       toleranceLdu,
       fieldSearch: field === undefined ? null : summarize(field),
       fieldCertified: certified,
-      coefficients: certified ? field.coefficients : null,
+      coefficients: certified ? encodeZeta16(field.coefficients) : null,
     };
   });
 }

@@ -31,6 +31,13 @@ importers:
         version: 7.0.2
 
   apps/catalog-api:
+    dependencies:
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+      valibot:
+        specifier: 1.5.0
+        version: 1.5.0(typescript@7.0.2)
     devDependencies:
       '@brr/config':
         specifier: workspace:*
@@ -56,6 +63,9 @@ importers:
       '@brr/client':
         specifier: workspace:*
         version: link:../../packages/client
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
       '@brr/sim-worker':
         specifier: workspace:*
         version: link:../../packages/workers/sim-worker
@@ -99,12 +109,15 @@ importers:
 
   packages/catalog:
     dependencies:
-      '@brr/math':
+      '@brr/schema':
         specifier: workspace:*
-        version: link:../math
+        version: link:../schema
       inversify:
         specifier: 8.3.0
         version: 8.3.0(reflect-metadata@0.2.2)
+      valibot:
+        specifier: 1.5.0
+        version: 1.5.0(typescript@7.0.2)
     devDependencies:
       '@brr/config':
         specifier: workspace:*
@@ -112,6 +125,9 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2))
 
   packages/client:
     dependencies:
@@ -130,6 +146,9 @@ importers:
       '@brr/rpc':
         specifier: workspace:*
         version: link:../rpc
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../schema
       '@brr/sim':
         specifier: workspace:*
         version: link:../sim
@@ -230,6 +249,25 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  packages/schema:
+    dependencies:
+      '@brr/math':
+        specifier: workspace:*
+        version: link:../math
+      valibot:
+        specifier: 1.5.0
+        version: 1.5.0(typescript@7.0.2)
+    devDependencies:
+      '@brr/config':
+        specifier: workspace:*
+        version: link:../config
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2))
+
   packages/sim:
     dependencies:
       '@brr/domain':
@@ -259,6 +297,9 @@ importers:
       '@brr/client':
         specifier: workspace:*
         version: link:../client
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../schema
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -312,6 +353,12 @@ importers:
       '@brr/math':
         specifier: workspace:*
         version: link:../../packages/math
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+      valibot:
+        specifier: 1.5.0
+        version: 1.5.0(typescript@7.0.2)
     devDependencies:
       '@brr/config':
         specifier: workspace:*
@@ -1923,6 +1970,14 @@ packages:
   unenv@2.0.0-rc.24:
     resolution: {integrity: sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw==}
 
+  valibot@1.5.0:
+    resolution: {integrity: sha512-nil6AkP2TChWL43Z5uJ6GTxX01CUA+g8LWUM+N/rB9NBbkUMaUsi9PUNzlUPgoKASgmx9f7eGOYpJ04/fSa6FQ==}
+    peerDependencies:
+      typescript: '>=5'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
   vite@8.3.8:
     resolution: {integrity: sha512-LzOn3h9rG/0vhLdXrV4yJ4QFA9eEoqCl+Yx+kGJd7aB9w6nfNgVHKSYwLPZUHrz4ZGa+t+kXjV9itvcHDLQouA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -3200,6 +3255,10 @@ snapshots:
   unenv@2.0.0-rc.24:
     dependencies:
       pathe: 2.0.3
+
+  valibot@1.5.0(typescript@7.0.2):
+    optionalDependencies:
+      typescript: 7.0.2
 
   vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2):
     dependencies:

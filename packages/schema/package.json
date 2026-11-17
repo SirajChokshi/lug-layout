@@ -1,0 +1,24 @@
+{
+  "name": "@brr/schema",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./bundle": "./src/bundle/index.ts",
+    "./catalog-api": "./src/catalog-api/index.ts",
+    "./decode": "./src/decode/index.ts",
+    "./world": "./src/world/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@brr/math": "workspace:*",
+    "valibot": "1.5.0"
+  },
+  "devDependencies": {
+    "@brr/config": "workspace:*",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}
