@@ -1854,6 +1854,7 @@ export class Editor implements IEditor {
       placements: this.world.size,
       hover: this.hoverView(),
       studs: this.placed.studTotals(),
+      lastFill: null,
     });
     if (edit.step === "do") this.recordEdit("world");
     else this.update({ history: this.historyView() });
@@ -2722,6 +2723,7 @@ export class Editor implements IEditor {
     this.update({
       placements: world.size,
       history: this.historyView(),
+      lastFill: null,
       track: this.trackView(),
       fileError: null,
     });

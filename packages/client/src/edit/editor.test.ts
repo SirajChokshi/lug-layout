@@ -463,6 +463,7 @@ it("fills a drawn table with whole 16 × 16 baseplates, several to a chunk, as o
   expect(editor.snapshot().placements).toBe(24);
   editor.undo(0);
   expect(editor.snapshot().placements).toBe(0);
+  expect(editor.snapshot().lastFill).toBeNull();
   editor.redo(0);
   expect(editor.snapshot().placements).toBe(24);
   expect(editor.snapshot().error).toBeNull();
