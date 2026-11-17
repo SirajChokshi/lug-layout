@@ -1,0 +1,13 @@
+import fs from "node:fs";
+import { chromium } from "playwright-core";
+const [baseUrl, archive] = process.argv.slice(2);
+const context = await chromium.launchPersistentContext(fs.mkdtempSync("/tmp/s9-err-"), { executablePath: "/usr/local/bin/google-chrome", headless: false, viewport: { width: 1600, height: 900 } });
+const page = context.pages()[0];
+await page.goto(`${baseUrl}/?api=webgl2`);
+await page.waitForSelector('.editor[data-status="ready"]', { state: "attached", timeout: 600000 });
+await page.setInputFiles("input.world-import", archive);
+await page.waitForSelector(".world-menu .error", { timeout: 120000 });
+console.log("error:", await page.locator(".world-menu .error").innerText());
+console.log("world:", await page.locator(".world-name").innerText());
+await page.locator(".world-menu").screenshot({ path: archive.replace(/\.brr\.zip$/, "-ui.png") });
+await context.close();
