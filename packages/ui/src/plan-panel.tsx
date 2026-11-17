@@ -95,6 +95,13 @@ function RectFields({
   );
 }
 
+function planGlance(active: PlanRegion | null, snapshot: PlanSnapshot): string {
+  if (!active) return "No plan yet";
+  const issues = snapshot.checks.find((c) => c.regionId === active.id)?.issues.length ?? 0;
+  const verdict = issues === 0 ? "no errors" : `${issues} ${issues === 1 ? "error" : "errors"}`;
+  return `${active.name} · ${verdict}`;
+}
+
 function NewPlanForm({
   camera,
   plans,
@@ -325,9 +332,25 @@ export function PlanPanel({
 }) {
   const snapshot = usePlanSnapshot(plans);
   const active = snapshot.plans.find((p) => p.id === snapshot.activePlanId) ?? null;
+  const [open, setOpen] = useState(false);
+  const [openedFor, setOpenedFor] = useState<string | null>(null);
+  const activeId = active?.id ?? null;
+  if (activeId !== openedFor) {
+    setOpenedFor(activeId);
+    if (activeId !== null) setOpen(true);
+  }
   return (
-    <section className="plan-panel" aria-label="Plan" data-active-plan={active?.id ?? ""}>
-      <h2>Plan (mm, true scale)</h2>
+    <details
+      className="plan-panel"
+      aria-label="Plan"
+      data-active-plan={active?.id ?? ""}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary title={open ? "Fold the plan away" : "Plan a real table layout in millimetres"}>
+        <h2>Plan (mm, true scale)</h2>
+        <span className="plan-glance">{planGlance(active, snapshot)}</span>
+      </summary>
       {snapshot.plans.length > 1 && (
         <select
           value={snapshot.activePlanId ?? ""}
@@ -348,6 +371,6 @@ export function PlanPanel({
         </p>
       )}
       <NewPlanForm camera={camera} plans={plans} />
-    </section>
+    </details>
   );
 }
