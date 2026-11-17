@@ -21,6 +21,7 @@ export {
   type PlacementRef,
   type PlacementRequest,
 } from "./edit-history.ts";
+export { runningGearSpanProblem, type RunningGearSpan } from "./running-gear-span.ts";
 export {
   TrackLayout,
   type TrackEndRef,

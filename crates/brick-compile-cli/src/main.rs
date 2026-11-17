@@ -241,6 +241,7 @@ fn vehicle_json(vehicle: &Vehicle) -> Value {
         "body": vehicle.body,
         "bogies": vehicle.bogies.iter().map(|b| json!({ "instances": b.instances, "pivot": b.pivot, "axles": b.axles })).collect::<Vec<_>>(),
         "fixedAxles": vehicle.fixed_axles,
+        "wheelsets": vehicle.wheelsets.iter().map(|w| json!({ "instance": w.instance, "centre": w.centre })).collect::<Vec<_>>(),
         "frontCoupler": coupler(&vehicle.front_coupler),
         "rearCoupler": coupler(&vehicle.rear_coupler),
         "railContacts": vehicle.rail_contacts.iter().map(|r| json!({ "railPart": r.rail_part, "railTopY": r.rail_top_y, "spreadLdu": r.spread })).collect::<Vec<_>>(),
@@ -470,6 +471,7 @@ fn run(args: &Args) -> Result<(), String> {
             "instances": baked.instances.len(),
             "lattice": lattice_json,
             "vehicles": vehicles.len(),
+            "sha256": entry["sha256"],
         });
         if !entry["role"].is_null() {
             manifest_entry["role"] = entry["role"].clone();

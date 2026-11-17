@@ -15,6 +15,11 @@ export interface VehicleBogie {
   readonly axles: ReadonlyArray<Vec3Tuple>;
 }
 
+export interface VehicleWheelset {
+  readonly instance: number;
+  readonly centre: Vec3Tuple;
+}
+
 export interface VehicleRailContact {
   readonly railPart: string;
   readonly railTopY: number;
@@ -31,6 +36,7 @@ export interface BakedVehicle {
   readonly body: Uint32Array;
   readonly bogies: ReadonlyArray<VehicleBogie>;
   readonly fixedAxles: ReadonlyArray<Vec3Tuple>;
+  readonly wheelsets: ReadonlyArray<VehicleWheelset>;
   readonly frontCoupler: VehicleCoupler | null;
   readonly rearCoupler: VehicleCoupler | null;
   readonly railContacts: ReadonlyArray<VehicleRailContact>;
@@ -141,6 +147,17 @@ export function parseBakedVehicle(
     fixedAxles: list(raw["fixedAxles"], `${label}.fixedAxles`).map((axle, a) =>
       vec3(axle, `${label}.fixedAxles[${a}]`),
     ),
+    wheelsets: list(raw["wheelsets"], `${label}.wheelsets`).map((wheelset, w) => {
+      const entry = record(wheelset, `${label}.wheelsets[${w}]`);
+      return {
+        instance: instanceIndex(
+          entry["instance"],
+          `${label}.wheelsets[${w}].instance`,
+          instanceCount,
+        ),
+        centre: vec3(entry["centre"], `${label}.wheelsets[${w}].centre`),
+      };
+    }),
     frontCoupler: parseCoupler(
       raw["frontCoupler"],
       `${label}.frontCoupler`,
