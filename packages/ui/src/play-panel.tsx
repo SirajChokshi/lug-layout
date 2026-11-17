@@ -1,26 +1,20 @@
 import {
+  PLAY_THROTTLE_STEP_LDU_PER_S,
   STUD_LDU,
+  startPlay,
   type IEditor,
   type IEditorCamera,
   type ITrainPlay,
   type PlaySnapshot,
 } from "@brr/client";
 import { useEffect, useSyncExternalStore } from "react";
-
-const SPEED_STEP_LDU_PER_S = 40;
+import { shortcutText } from "./keys.tsx";
 
 export function usePlaySnapshot(play: ITrainPlay): PlaySnapshot {
   return useSyncExternalStore(
     (listener) => play.subscribe(listener),
     () => play.snapshot(),
   );
-}
-
-export function startPlay(editor: IEditor, play: ITrainPlay): void {
-  const setup = editor.playSetup();
-  if (!setup) return;
-  editor.chooseItem(null);
-  void play.start(setup);
 }
 
 function followWith(camera: IEditorCamera, play: ITrainPlay, on: boolean): void {
@@ -38,43 +32,6 @@ function motionText(snapshot: PlaySnapshot): string {
   return `${studsPerSecond(snapshot.speedLduPerS)} studs/s ${way}`;
 }
 
-function usePlayKeys(editor: IEditor, play: ITrainPlay): void {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.target instanceof HTMLInputElement && event.target.type !== "range") return;
-      if (event.target instanceof HTMLSelectElement) return;
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
-      const snapshot = play.snapshot();
-      if (event.key === "p" || event.key === "P") {
-        if (snapshot.status === "running") play.stop();
-        else startPlay(editor, play);
-        event.preventDefault();
-        return;
-      }
-      if (snapshot.status !== "running") return;
-      switch (event.key) {
-        case "ArrowUp":
-          play.drive(snapshot.targetLduPerS + SPEED_STEP_LDU_PER_S);
-          break;
-        case "ArrowDown":
-          play.drive(snapshot.targetLduPerS - SPEED_STEP_LDU_PER_S);
-          break;
-        case " ":
-          play.drive(0);
-          break;
-        case "Enter":
-          play.rerail();
-          break;
-        default:
-          return;
-      }
-      event.preventDefault();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor, play]);
-}
-
 interface PlayPanelProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
@@ -84,7 +41,6 @@ interface PlayPanelProps {
 
 export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
   const snapshot = usePlaySnapshot(play);
-  usePlayKeys(editor, play);
   useEffect(() => {
     if (ready) play.offer(editor.playSetup());
   }, [editor, play, ready]);
@@ -131,7 +87,7 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
             disabled={!ready || busy}
             onClick={() => startPlay(editor, play)}
           >
-            {busy ? "Putting the train on the track…" : "Run a train (P)"}
+            {busy ? "Putting the train on the track…" : `Run a train (${shortcutText("play")})`}
           </button>
           {snapshot.error && <p className="play-error">{snapshot.error}</p>}
           <p className="toolbar-hint">
@@ -152,7 +108,7 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
                 studs/s.
               </span>
               <button type="button" data-action="rerail" onClick={() => play.rerail()}>
-                Rerail (Enter)
+                Rerail ({shortcutText("rerail")})
               </button>
             </div>
           )}
@@ -162,7 +118,7 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
               type="range"
               min={-max}
               max={max}
-              step={SPEED_STEP_LDU_PER_S / 2}
+              step={PLAY_THROTTLE_STEP_LDU_PER_S / 2}
               value={snapshot.targetLduPerS}
               onChange={(event) => play.drive(Number(event.target.value))}
             />
@@ -183,10 +139,10 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
               Forward
             </button>
             <button type="button" onClick={() => play.drive(0)}>
-              Stop (Space)
+              Stop ({shortcutText("stop-train")})
             </button>
             <button type="button" data-action="stop-play" onClick={() => play.stop()}>
-              Leave play (P)
+              Leave play ({shortcutText("play")})
             </button>
           </div>
           {snapshot.switches.length > 0 && (
@@ -207,8 +163,9 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
           )}
           {snapshot.notice && <p className="play-error">{snapshot.notice}</p>}
           <p className="toolbar-hint">
-            ↑/↓ throttle, Space stops, Enter rerails. Going the other way brakes, stops and
-            reverses. Click a switch on the layout to throw it.
+            {shortcutText("throttle-up")}/{shortcutText("throttle-down")} throttle,{" "}
+            {shortcutText("stop-train")} stops, {shortcutText("rerail")} rerails. Going the other
+            way brakes, stops and reverses. Click a switch on the layout to throw it.
           </p>
         </div>
       )}

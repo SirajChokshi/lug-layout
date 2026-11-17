@@ -1,13 +1,16 @@
 import {
   commandActive,
   commandEnabled,
+  isPlayCommand,
   isShellCommand,
   runEditorAction,
+  runPlayAction,
   searchPalette,
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
   type IEditorCamera,
+  type ITrainPlay,
   type PaletteResult,
   type ShellCommandId,
 } from "@brr/client";
@@ -17,6 +20,7 @@ import { CommandKeys } from "./keys.tsx";
 interface CommandPaletteProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
+  readonly play: ITrainPlay;
   readonly snapshot: EditorSnapshot;
   readonly recent: ReadonlyArray<string>;
   readonly onClose: () => void;
@@ -95,6 +99,7 @@ function CommandRow({
 export function CommandPalette({
   editor,
   camera,
+  play,
   snapshot,
   recent,
   onClose,
@@ -134,7 +139,8 @@ export function CommandPalette({
       return;
     }
     onClose();
-    runEditorAction(editor, camera, id, eventTimeMs);
+    if (isPlayCommand(id)) runPlayAction(editor, play, id);
+    else runEditorAction(editor, camera, id, eventTimeMs);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {

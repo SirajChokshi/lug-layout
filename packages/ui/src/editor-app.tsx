@@ -99,6 +99,7 @@ export function EditorApp({
     [],
   );
   useEditorKeys(editor, camera, {
+    play,
     onShellCommand: toggleOverlay,
     overlayOpen: overlay !== null,
     closeOverlay,
@@ -172,6 +173,7 @@ export function EditorApp({
         <CommandPalette
           editor={editor}
           camera={camera}
+          play={play}
           snapshot={snapshot}
           recent={recent}
           onClose={closeOverlay}

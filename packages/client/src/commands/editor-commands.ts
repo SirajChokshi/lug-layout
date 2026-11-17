@@ -1,5 +1,6 @@
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import type { ITrainPlay } from "../play/train-play.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
 export type EditorActionId =
@@ -34,9 +35,11 @@ export type EditorActionId =
 
 export type ShellCommandId = "show-shortcuts" | "open-palette";
 
-export type CommandId = EditorActionId | ShellCommandId;
+export type PlayCommandId = "play" | "throttle-up" | "throttle-down" | "stop-train" | "rerail";
 
-export type CommandGroup = "Tools" | "Edit" | "View" | "Help";
+export type CommandId = EditorActionId | ShellCommandId | PlayCommandId;
+
+export type CommandGroup = "Tools" | "Edit" | "View" | "Play" | "Help";
 
 export interface CommandSpec {
   readonly id: CommandId;
@@ -53,7 +56,15 @@ export interface PointerGesture {
   readonly action: string;
 }
 
-export const COMMAND_GROUPS: ReadonlyArray<CommandGroup> = ["Tools", "Edit", "View", "Help"];
+export const COMMAND_GROUPS: ReadonlyArray<CommandGroup> = [
+  "Tools",
+  "Edit",
+  "View",
+  "Play",
+  "Help",
+];
+
+export const PLAY_THROTTLE_STEP_LDU_PER_S = 40;
 
 export const COMMANDS: ReadonlyArray<CommandSpec> = [
   {
@@ -254,6 +265,16 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keys: [{ key: "?" }],
     keywords: "help keys hotkeys cheat sheet",
   },
+  {
+    id: "play",
+    title: "Run a train, or leave play",
+    group: "Play",
+    keys: [{ key: "p", shift: true }],
+  },
+  { id: "throttle-up", title: "Throttle forward", group: "Play", keys: [{ key: "]" }] },
+  { id: "throttle-down", title: "Throttle back", group: "Play", keys: [{ key: "[" }] },
+  { id: "stop-train", title: "Stop the train", group: "Play", keys: [{ key: " " }] },
+  { id: "rerail", title: "Rerail a derailed train", group: "Play", keys: [{ key: "e" }] },
 ];
 
 export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
@@ -267,6 +288,7 @@ export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
   { gesture: "Wheel or pinch", action: "Zoom at the cursor" },
   { gesture: "Two-finger scroll", action: "Pan on a trackpad (Alt orbits)" },
   { gesture: "Double-click", action: "Frame the selection" },
+  { gesture: "Click a switch", action: "Throw it while a train runs" },
 ];
 
 const PAN_STEP_PX = 120;
@@ -294,6 +316,16 @@ export function isShellCommand(id: CommandId): id is ShellCommandId {
   return id === "show-shortcuts" || id === "open-palette";
 }
 
+export function isPlayCommand(id: CommandId): id is PlayCommandId {
+  return (
+    id === "play" ||
+    id === "throttle-up" ||
+    id === "throttle-down" ||
+    id === "stop-train" ||
+    id === "rerail"
+  );
+}
+
 export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean {
   if (id === "select-tool") return snapshot.mode === "select";
   if (id === "draw-track") return snapshot.mode === "track";
@@ -306,6 +338,7 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
 export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean {
   if (isShellCommand(id)) return true;
   if (snapshot.status !== "ready") return false;
+  if (isPlayCommand(id)) return true;
   switch (id) {
     case "rotate":
       return (
@@ -467,6 +500,39 @@ export function runEditorAction(
     default: {
       const unhandled: never = id;
       throw new Error(`unhandled editor action ${String(unhandled)}`);
+    }
+  }
+}
+
+export function startPlay(editor: IEditor, play: ITrainPlay): void {
+  const setup = editor.playSetup();
+  if (!setup) return;
+  editor.chooseItem(null);
+  void play.start(setup);
+}
+
+export function runPlayAction(editor: IEditor, play: ITrainPlay, id: PlayCommandId): void {
+  const { status, targetLduPerS } = play.snapshot();
+  switch (id) {
+    case "play":
+      if (status === "running") play.stop();
+      else startPlay(editor, play);
+      return;
+    case "throttle-up":
+      play.drive(targetLduPerS + PLAY_THROTTLE_STEP_LDU_PER_S);
+      return;
+    case "throttle-down":
+      play.drive(targetLduPerS - PLAY_THROTTLE_STEP_LDU_PER_S);
+      return;
+    case "stop-train":
+      play.drive(0);
+      return;
+    case "rerail":
+      play.rerail();
+      return;
+    default: {
+      const unhandled: never = id;
+      throw new Error(`unhandled play action ${String(unhandled)}`);
     }
   }
 }
