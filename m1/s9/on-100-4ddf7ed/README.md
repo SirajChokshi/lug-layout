@@ -13,3 +13,7 @@ The production build is served by `vite preview`, with headless Chrome 157, WebG
 | Re-export after import | sha256 `fbb83c9d…83fa`, identical to A |
 | Shards in A | Each holds its exact ℤ[ζ₁₆] track records (`ldraw:74746`, heading 13, indices 0–2), and the placement carries `"color":2` |
 | `ui/` | Retry and refusal, two tabs (0 of 129 palette buttons enabled in the read-only tab), no storage, Import confirmation, long names, and delete, all as before |
+
+## Rebased on #100 6da1fa4 (exact track floor): head 52d8d05
+
+The full checks pass (36 tasks), as does the frozen install. `rebased-6da1fa4/track.log` shows the same results: reload differs in 0 pixels, the exports are byte-identical (sha256 `fbb83c9d…83fa`, unchanged), and import into a wiped profile differs in 0 pixels with an identical re-export.

@@ -1,0 +1,9 @@
+after drawing: World 1 Saved · 1 placement · 3 track pieces · 3 shards
+after reload: World 1 Saved · 1 placement · 3 track pieces · 3 shards
+reload: 0 of 1440000 pixels differ
+export before reload 174608 B sha256 fbb83c9dc1fed84c69e3883650dd3771400a2652e9a5828db035e514f8de83fa; after reload fbb83c9dc1fed84c69e3883650dd3771400a2652e9a5828db035e514f8de83fa; identical true
+wiped ["brr-world-47ad6f52-b702-4a34-932a-89db3293fc5f","brr-worlds"] -> []
+after wipe: World 1 Saved · 0 placements · 0 shards
+after import: World 1 Saved · 1 placement · 3 track pieces · 3 shards
+import vs before reload: 0 of 1440000 pixels differ
+re-export sha256 fbb83c9dc1fed84c69e3883650dd3771400a2652e9a5828db035e514f8de83fa; identical to A true
