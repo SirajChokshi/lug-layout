@@ -90,6 +90,8 @@ export interface PaletteColorChoice {
 
 const HEX_RGB = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/iu;
 const GREY_SATURATION = 0.12;
+const NEAR_BLACK = 0.18;
+const NEAR_WHITE = 0.95;
 const DEGREES = 360;
 const HEXTET = 255;
 
@@ -119,11 +121,15 @@ function hslOf(rgb: string): Hsl {
   return { hue: (sector * DEGREES) / 6, saturation, lightness };
 }
 
+function isNeutral({ saturation, lightness }: Hsl): boolean {
+  return saturation < GREY_SATURATION || lightness < NEAR_BLACK || lightness > NEAR_WHITE;
+}
+
 function colorOrder(a: CatalogColorView, b: CatalogColorView): number {
   const ha = hslOf(a.rgb);
   const hb = hslOf(b.rgb);
-  const greyA = ha.saturation < GREY_SATURATION;
-  const greyB = hb.saturation < GREY_SATURATION;
+  const greyA = isNeutral(ha);
+  const greyB = isNeutral(hb);
   if (greyA !== greyB) return greyA ? 1 : -1;
   if (greyA) return hb.lightness - ha.lightness || a.code - b.code;
   return ha.hue - hb.hue || hb.lightness - ha.lightness || a.code - b.code;
