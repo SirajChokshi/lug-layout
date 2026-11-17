@@ -1,0 +1,30 @@
+import { writeFileSync } from "node:fs";
+import { openEditor, place, reports, findScreen } from "./lib.mjs";
+import { newPlan, addTable, viewPlan, setProfile } from "./ui.mjs";
+const OUT = process.env.OUT ?? "/opt/cursor/artifacts/m5-buildable";
+const { browser, page, logs } = await openEditor({ width: 1920, height: 1440 });
+const at = (c) => c * 640 + 320;
+await newPlan(page, 5600, 3000);
+await addTable(page, { x: 1536, z: 256, width: 2400, depth: 1200 });
+await viewPlan(page);
+await setProfile(page, "lego-modular");
+const record = {};
+async function step(name) {
+  const [r] = await reports(page);
+  record[name] = r;
+  console.log(`== ${name}: ${r.verdict} errors=${r.errors}`);
+  for (const i of r.issues) console.log(`   [${i.rule}] ${i.message.slice(0, 300)}`);
+  await page.screenshot({ path: `${OUT}/${name}.png` });
+}
+await place(page, "omr:10185-1", at(9), at(2));
+await place(page, "omr:10218-1", at(9), at(3));
+await step("05a-modulars-joins-line-up");
+await page.locator(".toolbar button").first().click();
+const { px, py } = await findScreen(page, at(9), at(3));
+await page.mouse.click(px, py);
+await page.waitForTimeout(300);
+await page.keyboard.press("r");
+await page.waitForTimeout(800);
+await step("05b-10218-turned-quarter");
+writeFileSync(`${OUT}/joins-reports.json`, JSON.stringify(record, null, 1));
+await browser.close();

@@ -1,0 +1,8 @@
+== 05a-modulars-joins-line-up: draft errors=2
+   [bomMapping] 37 parts in 26 lines can't be bought on Rebrickable: 973p1b in colour 15 ×1 (no part); 973p7j in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 973pbj in colour 4 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour
+   [bomMapping] 35 parts in 24 lines can't be bought on BrickLink: 973p1b in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour 71 ×10 (no part); 3815 in colour 1 ×1 (no part); 3815 in colour 71 ×
+== 05b-10218-turned-quarter: draft errors=3
+   [moduleJoin] 10185-1 at 6080, 1600 and 10218-1 at 6080, 2240 meet at the edge at z = 1920 LDU, but their Technic joins don't line up. Cells counted from the low end: 10185-1 has 9–10, 21–22; 10218-1 has none.
+   [bomMapping] 37 parts in 26 lines can't be bought on Rebrickable: 973p1b in colour 15 ×1 (no part); 973p7j in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 973pbj in colour 4 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour
+   [bomMapping] 35 parts in 24 lines can't be bought on BrickLink: 973p1b in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour 71 ×10 (no part); 3815 in colour 1 ×1 (no part); 3815 in colour 71 ×
+EV_DONE

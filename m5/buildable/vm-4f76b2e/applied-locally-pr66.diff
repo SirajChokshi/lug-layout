@@ -1,0 +1,34 @@
+diff --git a/packages/client/src/edit/editor.ts b/packages/client/src/edit/editor.ts
+index 703a56b..877e789 100644
+--- a/packages/client/src/edit/editor.ts
++++ b/packages/client/src/edit/editor.ts
+@@ -480,17 +480,19 @@ export class Editor implements IEditor {
+           colors,
+         );
+       }),
+-      ...loaded.map(({ bundle: modelBundle, entry, model }) =>
+-        modelPlaceable(
+-          entry.name,
+-          entry.role === "road-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
+-          entry.role,
+-          palette.remap(model, modelBundle.parts),
+-          { name: entry.name, source: entry.source, sections: model.sections },
+-          palette.parts,
+-          colors,
++      ...loaded
++        .filter(({ model }) => model.lattice !== null)
++        .map(({ bundle: modelBundle, entry, model }) =>
++          modelPlaceable(
++            entry.name,
++            entry.role === "road-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
++            entry.role,
++            palette.remap(model, modelBundle.parts),
++            { name: entry.name, source: entry.source, sections: model.sections },
++            palette.parts,
++            colors,
++          ),
+         ),
+-      ),
+     ];
+   }
+ 

@@ -1,0 +1,27 @@
+== 01-buildable-baseplates-and-roads: buildable errors=0 parts=4 lines=2
+== 02-road-turned-across: draft errors=1 parts=5 lines=2
+   [roadJoin] The road doesn't continue across the edge at z = 1920 LDU: roadway cells on 44336p04 Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern are 6–25; on 44336p04 Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern they are none.
+== 03-baseplate-off-module-grid: draft errors=1 parts=5 lines=2
+   [moduleGrid] 3811 Baseplate 32 x 32 at 6920, 960 is off the 32-stud lego-modular module grid by 10 studs in x and 0 in z.
+== 04-modular-buildings-joined: draft errors=2 parts=7096 lines=1031
+   [bomMapping] 68 parts in 43 lines can't be bought on Rebrickable: 973p1b in colour 15 ×1 (no part); 973p7j in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 973pbj in colour 4 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 7
+   [bomMapping] 66 parts in 41 lines can't be bought on BrickLink: 973p1b in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour 71 ×1
+== 05-modular-building-turned: draft errors=3 parts=7096 lines=1031
+   [moduleGrid] 10264-1 at 7520, 2880 is off the 32-stud lego-modular module grid by 8 studs in x and 8 in z.
+   [bomMapping] 68 parts in 43 lines can't be bought on Rebrickable: 973p1b in colour 15 ×1 (no part); 973p7j in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 973pbj in colour 4 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 7
+   [bomMapping] 66 parts in 41 lines can't be bought on BrickLink: 973p1b in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour 71 ×1
+== 06-mils-profile: draft errors=3 parts=7144 lines=1035
+   [moduleJoin] 3811 Baseplate 32 x 32 at 4800, 960 and 44336p04 Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern at 5440, 960 meet at the edge at x = 5120 LDU, but their Technic joins don't line up. Cells counted from the low end: 3811 Baseplate 32 x 32 has 2–5, 26–29; 44336p04 Baseplate 32 x 32
+   [bomMapping] 68 parts in 43 lines can't be bought on Rebrickable: 973p1b in colour 15 ×1 (no part); 973p7j in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 973pbj in colour 4 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 7
+   [bomMapping] 66 parts in 41 lines can't be bought on BrickLink: 973p1b in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour 71 ×1
+== 07-table-against-wall-reach: draft errors=4 parts=7096 lines=1031
+   [fit] 10264-1 at 7520, 2880 overhangs the tables: it reaches 80 mm past the nearest table edge along x or z (limit 0 mm), with 30864 mm² of its footprint off the table tops.
+   [reach] 44336p04 Baseplate 32 x 32 Road 6-Stud Straight with White Road Edge Pattern at 5440, 960 is out of reach: part of it is 764 mm from the nearest free table edge (limit 700 mm, sampled per stud).
+   [bomMapping] 68 parts in 43 lines can't be bought on Rebrickable: 973p1b in colour 15 ×1 (no part); 973p7j in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 973pbj in colour 4 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 7
+   [bomMapping] 66 parts in 41 lines can't be bought on BrickLink: 973p1b in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour 71 ×1
+== 08-seam: draft errors=3 parts=7097 lines=1031
+   [seam] 3811 Baseplate 32 x 32 at 9840, 2240 straddles the seam between tables "Table 1" and "Table 2". Seams must fall on module boundaries.
+   [bomMapping] 68 parts in 43 lines can't be bought on Rebrickable: 973p1b in colour 15 ×1 (no part); 973p7j in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 973pbj in colour 4 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 7
+   [bomMapping] 66 parts in 41 lines can't be bought on BrickLink: 973p1b in colour 15 ×1 (no part); 973p8z in colour 73 ×1 (no part); 973p94 in colour 2 ×1 (no part); 2446 in colour 0 ×1 (no part); 2447 in colour 40 ×1 (no part); 3308 in colour 72 ×2 (no part); 3660 in colour 71 ×2 (no part); 3660a in colour 71 ×1
+
+EV_DONE
