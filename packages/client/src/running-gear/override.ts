@@ -1,4 +1,6 @@
 import type { BakedVehicle, Vec3Tuple, VehicleBogie, VehicleCoupler } from "@brr/catalog";
+import { runningGearSpanProblem } from "@brr/domain";
+import { vehicleSpec } from "../sim/consist.ts";
 
 export const RUNNING_GEAR_OVERRIDE_VERSION = 1;
 
@@ -146,45 +148,55 @@ export function effectiveVehicle(
   };
   const half = Math.hypot(guides.front[0] - guides.rear[0], guides.front[2] - guides.rear[2]) / 2;
   const faces = new Map((override.couplers ?? []).map((c) => [c.instance, c.face]));
-  const couplers: VehicleCoupler[] = [];
-  for (const coupler of [baked.frontCoupler, baked.rearCoupler]) {
-    if (!coupler) continue;
-    const face = faces.get(coupler.instance) ?? toModelFrame(baked, coupler.face);
-    couplers.push({
+  const placed = (coupler: VehicleCoupler | null): VehicleCoupler | null =>
+    coupler && {
       instance: coupler.instance,
-      face: toFrame(frame, face),
+      face: toFrame(frame, faces.get(coupler.instance) ?? toModelFrame(baked, coupler.face)),
       bogie: owner.get(coupler.instance) ?? null,
       obsoleteSources: coupler.obsoleteSources,
-    });
-  }
-  const frontCoupler = couplers.find((c) => c.face[0] > 0) ?? null;
-  const rearCoupler = couplers.find((c) => c.face[0] < 0) ?? null;
-  if (couplers.length === 2 && (!frontCoupler || !rearCoupler)) {
-    return { vehicle: null, issues: ["both coupling faces sit at the same end of the vehicle"] };
-  }
+    };
+  const frontCoupler = placed(baked.frontCoupler);
+  const rearCoupler = placed(baked.rearCoupler);
   const effectiveBogies: VehicleBogie[] = bogies.map((bogie, b) => ({
     instances: Uint32Array.from(bogie.instances.toSorted((x, y) => x - y)),
     pivot: toFrame(frame, bogie.pivot),
     axles: (bogieAxles[b] ?? []).map((axle) => toFrame(frame, axle)),
   }));
-  return {
-    vehicle: {
-      ...baked,
-      originXLdu: frame.x,
-      originZLdu: frame.z,
-      yawRadians: yaw,
-      guideKind: bogies.length === 2 ? "bogiePivot" : "fixedAxle",
-      frontGuideLdu: half,
-      rearGuideLdu: -half,
-      body: Uint32Array.from([...members].filter((i) => !owner.has(i))),
-      bogies: effectiveBogies,
-      fixedAxles: fixed.map((axle) => toFrame(frame, axle)),
-      wheelsets: wheelsets.map((w) => ({ instance: w.instance, centre: toFrame(frame, w.centre) })),
-      frontCoupler,
-      rearCoupler,
-    },
-    issues: [],
+  const vehicle: BakedVehicle = {
+    ...baked,
+    originXLdu: frame.x,
+    originZLdu: frame.z,
+    yawRadians: yaw,
+    guideKind: bogies.length === 2 ? "bogiePivot" : "fixedAxle",
+    frontGuideLdu: half,
+    rearGuideLdu: -half,
+    body: Uint32Array.from([...members].filter((i) => !owner.has(i))),
+    bogies: effectiveBogies,
+    fixedAxles: fixed.map((axle) => toFrame(frame, axle)),
+    wheelsets: wheelsets.map((w) => ({ instance: w.instance, centre: toFrame(frame, w.centre) })),
+    frontCoupler,
+    rearCoupler,
   };
+  const problem = runningGearProblem(vehicle);
+  return problem ? { vehicle: null, issues: [problem] } : { vehicle, issues: [] };
+}
+
+function runningGearProblem(vehicle: BakedVehicle): string | null {
+  const { frontCoupler, rearCoupler } = vehicle;
+  if (frontCoupler && rearCoupler) {
+    try {
+      return runningGearSpanProblem(vehicleSpec(vehicle, false));
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }
+  if (frontCoupler && !(frontCoupler.face[0] > 0)) {
+    return `the front coupling face (part ${frontCoupler.instance}) must stay ahead of the midpoint between the guides`;
+  }
+  if (rearCoupler && !(rearCoupler.face[0] < 0)) {
+    return `the rear coupling face (part ${rearCoupler.instance}) must stay behind the midpoint between the guides`;
+  }
+  return null;
 }
 
 function record(value: unknown): Record<string, unknown> | null {

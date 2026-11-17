@@ -23,7 +23,11 @@ import {
   type RigidBodyInstances,
 } from "../sim/consist.ts";
 import type { ISimClient, SimTickCost } from "../sim/sim-client.ts";
-import { BOX_FLOATS, type IRunningGear } from "../running-gear/running-gear-editor.ts";
+import {
+  BOX_FLOATS,
+  type IRunningGear,
+  type RunningGearSource,
+} from "../running-gear/running-gear-editor.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { RUNNING_GEAR, SIM_CLIENT } from "../tokens.ts";
 import { plateDepthBelowOrigin } from "./part-footprint.ts";
@@ -86,6 +90,7 @@ export interface RunVehicleStatus {
   readonly spec: VehicleSpec;
   readonly wheelsets: number;
   readonly bogieBodies: number;
+  readonly gear: RunningGearSource;
 }
 
 export interface IRunScene extends IViewerScene {
@@ -404,6 +409,7 @@ export class RunScene implements IRunScene {
         spec: vehicle.spec,
         wheelsets: vehicle.wheelsets,
         bogieBodies: (vehicle.frontBogie ? 1 : 0) + (vehicle.rearBogie ? 1 : 0),
+        gear: this.runningGear.gearSource(vehicle.model, vehicle.vehicle),
       })),
       maxEndResidualLdu: loaded.maxEndResidualLdu,
       maxEndHeadingResidualRadians: loaded.maxEndHeadingResidualRadians,

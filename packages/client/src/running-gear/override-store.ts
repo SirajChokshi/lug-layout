@@ -25,13 +25,21 @@ export class IndexedDbRunningGearOverrideStore implements IRunningGearOverrideSt
   private database: Promise<IDBDatabase> | undefined;
 
   private open(): Promise<IDBDatabase> {
-    this.database ??= new Promise((resolve, reject) => {
-      const request = globalThis.indexedDB.open(DATABASE, DATABASE_VERSION);
+    this.database ??= new Promise<IDBDatabase>((resolve, reject) => {
+      const factory: IDBFactory | undefined = globalThis.indexedDB;
+      if (!factory) throw new Error("this browser has no IndexedDB");
+      const request = factory.open(DATABASE, DATABASE_VERSION);
       request.addEventListener("upgradeneeded", () => {
         request.result.createObjectStore(OVERRIDES, { keyPath: KEY_PATH });
       });
       request.addEventListener("success", () => resolve(request.result));
       request.addEventListener("error", () => reject(request.error));
+      request.addEventListener("blocked", () =>
+        reject(new Error("another tab holds an older running gear database open")),
+      );
+    }).catch((error: unknown) => {
+      this.database = undefined;
+      throw error;
     });
     return this.database;
   }

@@ -10,6 +10,7 @@ import {
   toModelFrame,
   type BogieOverride,
   type CouplerOverride,
+  type EffectiveVehicle,
   type RunningGearOverride,
   type VehicleOverride,
 } from "./override.ts";
@@ -44,11 +45,14 @@ export interface GearCoupler {
   readonly obsoleteSources: ReadonlyArray<string>;
 }
 
+export type RunningGearSource = "detected" | "override" | "override refused";
+
 export interface GearView {
   readonly model: string;
   readonly sha256: string;
   readonly vehicle: number;
   readonly source: "detected" | "override";
+  readonly savedOverrideRefused: ReadonlyArray<string> | null;
   readonly boxes: ReadonlyArray<GearBox>;
   readonly pivots: ReadonlyArray<Vec3Tuple>;
   readonly axles: ReadonlyArray<Vec3Tuple>;
@@ -62,7 +66,7 @@ export interface GearModelView {
   readonly name: string;
   readonly sha256: string;
   readonly vehicles: number;
-  readonly overridden: boolean;
+  readonly sources: ReadonlyArray<RunningGearSource>;
 }
 
 export interface GearSnapshot {
@@ -72,6 +76,7 @@ export interface GearSnapshot {
   readonly dirty: boolean;
   readonly busy: boolean;
   readonly error: string | null;
+  readonly storeProblem: string | null;
 }
 
 export interface IRunningGear {
@@ -79,6 +84,7 @@ export interface IRunningGear {
   snapshot(): GearSnapshot;
   setModels(models: ReadonlyArray<GearModelSource>): Promise<void>;
   effectiveVehicles(model: string): ReadonlyArray<BakedVehicle>;
+  gearSource(model: string, vehicle: number): RunningGearSource;
   select(model: string, vehicle: number): void;
   assignPart(instance: number, bogie: number | null): void;
   setPivot(bogie: number, xLdu: number, zLdu: number): void;
@@ -96,6 +102,7 @@ const EMPTY: GearSnapshot = {
   dirty: false,
   busy: false,
   error: null,
+  storeProblem: null,
 };
 
 function detectedFace(vehicle: BakedVehicle, instance: number): Vec3Tuple | null {
@@ -123,6 +130,7 @@ export class RunningGearEditor implements IRunningGear {
   private dirty = false;
   private busy = false;
   private error: string | null = null;
+  private storeProblem: string | null = null;
   private current: GearSnapshot = EMPTY;
 
   constructor(@inject(RUNNING_GEAR_OVERRIDES) private readonly store: IRunningGearOverrideStore) {}
@@ -139,9 +147,14 @@ export class RunningGearEditor implements IRunningGear {
   async setModels(models: ReadonlyArray<GearModelSource>): Promise<void> {
     this.models = models;
     this.stored.clear();
+    this.storeProblem = null;
     for (const model of models) {
-      const override = await this.store.load(model.sha256);
-      if (override) this.stored.set(model.sha256, override);
+      try {
+        const override = await this.store.load(model.sha256);
+        if (override) this.stored.set(model.sha256, override);
+      } catch (e) {
+        this.storeProblem = `saved running gear could not be read, so every vehicle runs its detected gear: ${String(e)}`;
+      }
     }
     this.publish();
   }
@@ -149,14 +162,18 @@ export class RunningGearEditor implements IRunningGear {
   effectiveVehicles(model: string): ReadonlyArray<BakedVehicle> {
     const source = this.source(model);
     if (!source) throw new Error(`model ${model} has no running gear source`);
-    const override = this.stored.get(source.sha256);
-    return source.vehicles.map((vehicle, v) => {
-      const result = effectiveVehicle(
-        vehicle,
-        override?.vehicles.find((o) => o.vehicle === v),
-      );
-      return result.vehicle ?? vehicle;
-    });
+    return source.vehicles.map(
+      (vehicle, v) => this.savedResult(source.sha256, vehicle, v)?.vehicle ?? vehicle,
+    );
+  }
+
+  gearSource(model: string, vehicle: number): RunningGearSource {
+    const source = this.source(model);
+    const baked = source?.vehicles[vehicle];
+    if (!source || !baked) throw new Error(`model ${model} has no vehicle ${vehicle}`);
+    const result = this.savedResult(source.sha256, baked, vehicle);
+    if (!result) return "detected";
+    return result.vehicle ? "override" : "override refused";
   }
 
   select(model: string, vehicle: number): void {
@@ -222,31 +239,61 @@ export class RunningGearEditor implements IRunningGear {
   async save(): Promise<void> {
     const source = this.selectedSource();
     const selected = this.selected;
-    if (!source || !selected || !this.draft) return;
-    const previous = this.stored.get(source.sha256);
-    const others = (previous?.vehicles ?? []).filter((v) => v.vehicle !== selected.vehicle);
-    const override: RunningGearOverride = {
-      version: RUNNING_GEAR_OVERRIDE_VERSION,
-      modelSha256: source.sha256,
-      model: source.name,
-      vehicles: [...others, this.draft].toSorted((a, b) => a.vehicle - b.vehicle),
-    };
-    await this.persist(async () => {
-      await this.store.save(override);
-      this.stored.set(source.sha256, override);
-      this.dirty = false;
-    });
+    const baked = selected ? source?.vehicles[selected.vehicle] : undefined;
+    const draft = this.draft;
+    if (!source || !selected || !baked || !draft) return;
+    const { issues } = effectiveVehicle(baked, draft);
+    if (issues.length > 0) {
+      this.error = `not saved, this running gear cannot run: ${issues.join("; ")}`;
+      this.publish();
+      return;
+    }
+    const others = this.otherVehicles(source.sha256, selected.vehicle);
+    await this.persist(() => this.write(source, [...others, draft]));
   }
 
   async reset(): Promise<void> {
     const source = this.selectedSource();
-    if (!source) return;
+    const selected = this.selected;
+    if (!source || !selected) return;
+    const others = this.otherVehicles(source.sha256, selected.vehicle);
     await this.persist(async () => {
+      await this.write(source, others);
+      this.draft = null;
+    });
+  }
+
+  private otherVehicles(sha256: string, vehicle: number): ReadonlyArray<VehicleOverride> {
+    return (this.stored.get(sha256)?.vehicles ?? []).filter((v) => v.vehicle !== vehicle);
+  }
+
+  private async write(
+    source: GearModelSource,
+    vehicles: ReadonlyArray<VehicleOverride>,
+  ): Promise<void> {
+    if (vehicles.length === 0) {
       await this.store.remove(source.sha256);
       this.stored.delete(source.sha256);
-      this.draft = null;
-      this.dirty = false;
-    });
+    } else {
+      const override: RunningGearOverride = {
+        version: RUNNING_GEAR_OVERRIDE_VERSION,
+        modelSha256: source.sha256,
+        model: source.name,
+        vehicles: vehicles.toSorted((a, b) => a.vehicle - b.vehicle),
+      };
+      await this.store.save(override);
+      this.stored.set(source.sha256, override);
+    }
+    this.dirty = false;
+  }
+
+  private savedResult(
+    sha256: string,
+    baked: BakedVehicle,
+    vehicle: number,
+  ): EffectiveVehicle | null {
+    const saved = this.storedVehicle(sha256, vehicle);
+    return saved ? effectiveVehicle(baked, saved) : null;
   }
 
   private async persist(work: () => Promise<void>): Promise<void> {
@@ -296,13 +343,14 @@ export class RunningGearEditor implements IRunningGear {
         name: m.name,
         sha256: m.sha256,
         vehicles: m.vehicles.length,
-        overridden: this.stored.has(m.sha256),
+        sources: m.vehicles.map((_, v) => this.gearSource(m.name, v)),
       })),
       selected: this.selected,
       view: this.view(),
       dirty: this.dirty,
       busy: this.busy,
       error: this.error,
+      storeProblem: this.storeProblem,
     };
     for (const listener of this.listeners) listener();
   }
@@ -313,6 +361,7 @@ export class RunningGearEditor implements IRunningGear {
     const detected = selected ? source?.vehicles[selected.vehicle] : undefined;
     if (!source || !selected || !detected) return null;
     const result = effectiveVehicle(detected, this.draft ?? undefined);
+    const saved = this.savedResult(source.sha256, detected, selected.vehicle);
     const shown = result.vehicle;
     const local = (p: Vec3Tuple): Vec3Tuple =>
       shown ? toDetected(detected, toModelFrame(shown, p)) : p;
@@ -359,6 +408,7 @@ export class RunningGearEditor implements IRunningGear {
       sha256: source.sha256,
       vehicle: selected.vehicle,
       source: this.draft ? "override" : "detected",
+      savedOverrideRefused: saved && !saved.vehicle ? saved.issues : null,
       boxes,
       pivots: draftBogies.map((bogie) => toDetected(detected, bogie.pivot)),
       axles,

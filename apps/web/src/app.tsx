@@ -79,7 +79,7 @@ function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, stri
     const { lengthLdu, frontBogieLdu, rearBogieLdu } = vehicle.spec;
     rows.push([
       `Vehicle ${v + 1} (LDU)`,
-      `${vehicle.model}${vehicle.reversed ? " reversed" : ""}: length ${lengthLdu.toFixed(2)}, guides at ${frontBogieLdu.toFixed(2)} and ${rearBogieLdu.toFixed(2)}, ${vehicle.wheelsets} wheelsets, ${vehicle.bogieBodies} pivoting bogies`,
+      `${vehicle.model}${vehicle.reversed ? " reversed" : ""}: length ${lengthLdu.toFixed(2)}, guides at ${frontBogieLdu.toFixed(2)} and ${rearBogieLdu.toFixed(2)}, ${vehicle.wheelsets} wheelsets, ${vehicle.bogieBodies} pivoting bogies, running gear ${vehicle.gear}`,
     ]);
   });
   const spans: string[] = [];

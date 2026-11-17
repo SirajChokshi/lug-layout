@@ -69,6 +69,7 @@ export type {
   GearSnapshot,
   GearView,
   IRunningGear,
+  RunningGearSource,
 } from "./running-gear/running-gear-editor.ts";
 export type {
   BogieOverride,

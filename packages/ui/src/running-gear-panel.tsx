@@ -1,4 +1,4 @@
-import type { GearBox, GearSnapshot, GearView, IRunningGear } from "@brr/client";
+import type { GearBox, GearSnapshot, GearView, IRunningGear, RunningGearSource } from "@brr/client";
 import { useSyncExternalStore, type ReactNode } from "react";
 
 const GROUP_FILLS = ["#f2a541", "#4a90d9", "#5cb85c", "#b06ab3"];
@@ -226,7 +226,9 @@ function Editor({
             view.source === "override"
               ? snapshot.dirty
                 ? "override (unsaved)"
-                : "override (saved)"
+                : view.savedOverrideRefused
+                  ? "override (saved, refused)"
+                  : "override (saved)"
               : "detected from geometry",
           ],
           ["Detected", specText(view.detectedSpec)],
@@ -276,6 +278,11 @@ function Editor({
           The coupling magnets come from parts LDraw marks obsolete: {obsolete.join(", ")}.
         </p>
       )}
+      {view.savedOverrideRefused && (
+        <p className="error">
+          The saved override for this vehicle cannot run, so the run uses the detected gear instead.
+        </p>
+      )}
       {view.issues.map((issue) => (
         <p key={issue} className="error">
           {issue}
@@ -292,11 +299,13 @@ function Editor({
         <button
           type="button"
           disabled={
-            snapshot.busy || !snapshot.models.some((m) => m.sha256 === view.sha256 && m.overridden)
+            snapshot.busy ||
+            snapshot.models.find((m) => m.sha256 === view.sha256)?.sources[view.vehicle] ===
+              "detected"
           }
           onClick={() => void gear.reset()}
         >
-          Reset to detected
+          Reset this vehicle to detected
         </button>
         <button
           type="button"
@@ -310,6 +319,12 @@ function Editor({
   );
 }
 
+const SOURCE_LABELS: Readonly<Record<RunningGearSource, string>> = {
+  detected: "",
+  override: " (override)",
+  "override refused": " (override refused, running detected gear)",
+};
+
 export function RunningGearPanel({ gear }: { readonly gear: IRunningGear }) {
   const snapshot = useSyncExternalStore(
     (listener) => gear.subscribe(listener),
@@ -320,7 +335,7 @@ export function RunningGearPanel({ gear }: { readonly gear: IRunningGear }) {
       key: `${model.name}#${v}`,
       model: model.name,
       vehicle: v,
-      label: `${model.name}${model.vehicles > 1 ? ` vehicle ${v + 1}` : ""}${model.overridden ? " (override)" : ""}`,
+      label: `${model.name}${model.vehicles > 1 ? ` vehicle ${v + 1}` : ""}${SOURCE_LABELS[model.sources[v] ?? "detected"]}`,
     })),
   );
   const selectedKey = snapshot.selected
@@ -345,6 +360,7 @@ export function RunningGearPanel({ gear }: { readonly gear: IRunningGear }) {
           </option>
         ))}
       </select>
+      {snapshot.storeProblem && <p className="error">{snapshot.storeProblem}</p>}
       {snapshot.error && <p className="error">{snapshot.error}</p>}
       {snapshot.view && <Editor gear={gear} snapshot={snapshot} view={snapshot.view} />}
     </aside>
