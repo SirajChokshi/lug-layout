@@ -3025,6 +3025,7 @@ export class Editor implements IEditor {
         return placeable ? [{ placement: this.history.adopt(handle), handle, placeable }] : [];
       }),
     );
+    this.syncHeldTrack();
     this.update({ studs: this.placed.studTotals() });
     this.refreshRoads();
     this.syncPlan();
