@@ -1420,7 +1420,9 @@ export class Editor implements IEditor {
     this.active = null;
     this.backend.setGhost(null);
     this.select(null);
+    if (this.roadDrawing) this.roadDrawing.erasing = false;
     this.update({
+      roadErase: false,
       mode: "road",
       activeItem: id,
       ghostRot: this.ghostRot,
@@ -1433,8 +1435,9 @@ export class Editor implements IEditor {
 
   private leaveRoadMode(): void {
     this.roadDrawing?.cancel();
+    if (this.roadDrawing) this.roadDrawing.erasing = false;
     this.clearRoadPreview();
-    this.update({ mode: "select", activeItem: null, roadStroke: null });
+    this.update({ mode: "select", activeItem: null, roadStroke: null, roadErase: false });
   }
 
   chooseItem(id: string | null): void {

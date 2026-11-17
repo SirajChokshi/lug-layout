@@ -3,6 +3,7 @@ import type {
   IEditor,
   RoadKitView,
   RoadShape,
+  RoadStrandedTile,
   RoadStrokeView,
   RoadTileIssue,
 } from "@brr/client";
@@ -46,9 +47,24 @@ function issueText(issue: RoadTileIssue): string {
   }
 }
 
+function strandedText(tile: RoadStrandedTile): string {
+  const where = `at ${tile.x}, ${tile.z}: the ${shapeName(tile.junction)} stays`;
+  return tile.remaining
+    ? `${where}, because this kit has no smaller piece with its remaining arms`
+    : `${where}, though every road it joined was erased`;
+}
+
 function strokeText(stroke: RoadStrokeView): string {
   const parts: string[] = [];
   if (stroke.removed > 0) parts.push(`${stroke.removed} erased`);
+  if (stroke.refilled > 0) {
+    parts.push(`${stroke.refilled} back to the ground the road replaced`);
+  }
+  if (stroke.stranded.length > 0) {
+    parts.push(
+      `${stroke.stranded.length} ${stroke.stranded.length === 1 ? "junction" : "junctions"} kept`,
+    );
+  }
   if (stroke.laid > 0) parts.push(`${stroke.laid} new`);
   if (stroke.replaced > 0) {
     parts.push(`${stroke.replaced} ${stroke.erasing ? "downgraded" : "upgraded"}`);
@@ -147,6 +163,7 @@ export function RoadDrawPanel({
     : last?.result === "refused"
       ? last.stroke.issues
       : [];
+  const stranded = stroke?.stranded.length ? stroke.stranded : (last?.stroke.stranded ?? []);
   return (
     <section
       className="inspector road-draw-panel"
@@ -178,7 +195,7 @@ export function RoadDrawPanel({
       </div>
       <p className="toolbar-hint">
         {snapshot.roadErase
-          ? "Drag over this kit's road to lift it. A junction left behind becomes the piece with its remaining arms."
+          ? "Drag over this kit's road to lift it. Road drawn over ground gives back exactly the ground it replaced, and a junction left behind becomes the smallest piece that still has its remaining arms."
           : "Drag to lay road. Release lays every tile as one undoable step."}
       </p>
       <dl>
@@ -198,6 +215,15 @@ export function RoadDrawPanel({
           <dd>{releaseText(snapshot)}</dd>
         </div>
       </dl>
+      {stranded.length > 0 && (
+        <ul className="road-issues" data-road-stranded={stranded.length}>
+          {stranded.map((tile) => (
+            <li key={`${tile.x},${tile.z}`} className="open">
+              {strandedText(tile)}
+            </li>
+          ))}
+        </ul>
+      )}
       {issues.length > 0 && (
         <ul className="road-issues">
           {issues.map((issue) => (
