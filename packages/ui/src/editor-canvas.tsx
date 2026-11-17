@@ -129,7 +129,10 @@ export function EditorCanvas({ editor, camera, play, options }: EditorCanvasProp
       }
       if (finished.kind === "click" && !finished.moved) {
         const [x, y] = ndc(canvas, event);
-        if (play.click(x, y)) return;
+        if (play.snapshot().status === "running") {
+          play.click(x, y);
+          return;
+        }
         editor.click(x, y, event.timeStamp);
       }
     };

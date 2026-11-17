@@ -24,6 +24,7 @@ import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
+import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
 import { TrackPanel } from "./track-panel.tsx";
@@ -91,6 +92,7 @@ export function EditorApp({
   showState,
 }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
+  const playSnapshot = usePlaySnapshot(play);
   const recent = useRecentItems(snapshot.activeItem);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
@@ -136,7 +138,7 @@ export function EditorApp({
       data-mode={snapshot.mode}
     >
       <EditorCanvas editor={editor} camera={camera} play={play} options={options} />
-      <ToolHud snapshot={snapshot} />
+      <ToolHud snapshot={snapshot} play={playSnapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
       <PlanPanel camera={camera} plans={plans} />

@@ -1,4 +1,5 @@
 import {
+  commandEnabled,
   commandForKey,
   commandSpec,
   isPlayCommand,
@@ -22,6 +23,27 @@ const NON_TEXT_INPUTS = new Set([
   "color",
 ]);
 
+const ACTIVATED_BY_SPACE = new Set(["checkbox", "radio", "button", "submit", "reset", "color"]);
+const STEPPED_BY_ARROWS = new Set(["range", "radio"]);
+
+export function controlTakesKey(target: EventTarget | null, key: string): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (key === " ") {
+    if (target instanceof HTMLInputElement) return ACTIVATED_BY_SPACE.has(target.type);
+    return (
+      target instanceof HTMLButtonElement ||
+      target instanceof HTMLAnchorElement ||
+      target.tagName === "SUMMARY" ||
+      target.getAttribute("role") === "button" ||
+      target.getAttribute("role") === "checkbox"
+    );
+  }
+  if (key.startsWith("Arrow") && target instanceof HTMLInputElement) {
+    return STEPPED_BY_ARROWS.has(target.type);
+  }
+  return false;
+}
+
 export function isTyping(target: EventTarget | null): boolean {
   if (target instanceof HTMLInputElement) return !NON_TEXT_INPUTS.has(target.type);
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
@@ -44,17 +66,23 @@ export function useEditorKeys(
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing) return;
+      if (controlTakesKey(event.target, event.key)) return;
       const id = commandForKey(event, isTyping(event.target));
       if (id === null) return;
-      if (event.repeat && commandSpec(id).repeats !== true) {
+      if (isShellCommand(id)) {
         event.preventDefault();
+        onShellCommand(id);
         return;
       }
-      event.preventDefault();
-      if (isShellCommand(id)) onShellCommand(id);
-      else if (overlayOpen) {
+      if (overlayOpen) {
+        event.preventDefault();
         if (id === "select-tool") closeOverlay();
-      } else if (isPlayCommand(id)) runPlayAction(editor, play, id);
+        return;
+      }
+      if (!commandEnabled(id, editor.snapshot(), play.snapshot())) return;
+      event.preventDefault();
+      if (event.repeat && commandSpec(id).repeats !== true) return;
+      if (isPlayCommand(id)) runPlayAction(editor, play, id);
       else runEditorAction(editor, camera, id, event.timeStamp);
     };
     window.addEventListener("keydown", onKeyDown);

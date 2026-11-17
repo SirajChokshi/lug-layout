@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { COMMANDS, commandForKey, type CommandId } from "./editor-commands.ts";
+import type { PlaySnapshot } from "../play/train-play.ts";
+import {
+  COMMANDS,
+  commandForKey,
+  playCommandEnabled,
+  runsDuringPlay,
+  type CommandId,
+  type PlayCommandId,
+} from "./editor-commands.ts";
 import { chordText, type KeyInput } from "./key-chord.ts";
 
 function press(key: string, held: Partial<Omit<KeyInput, "key">> = {}): KeyInput {
@@ -61,5 +69,78 @@ describe("shortcut map", () => {
   ])("labels %o per platform", (chord, mac, other) => {
     expect(chordText(chord, "mac")).toBe(mac);
     expect(chordText(chord, "other")).toBe(other);
+  });
+});
+
+const MAX_LDU_PER_S = 400;
+
+function play(patch: Partial<PlaySnapshot>): PlaySnapshot {
+  return {
+    status: "running",
+    error: null,
+    notice: null,
+    sets: [],
+    setId: "",
+    vehicles: 1,
+    trainLengthLdu: 0,
+    maxSpeedLduPerS: MAX_LDU_PER_S,
+    targetLduPerS: 0,
+    speedLduPerS: 0,
+    direction: 1,
+    derailSpeedLduPerS: 0,
+    bogiesOffTrack: 0,
+    switches: [],
+    following: true,
+    tick: 0,
+    ...patch,
+  };
+}
+
+const PLAY_COMMANDS: ReadonlyArray<PlayCommandId> = [
+  "play",
+  "throttle-up",
+  "throttle-down",
+  "stop-train",
+  "rerail",
+];
+
+describe("play commands", () => {
+  it.each<[string, PlaySnapshot, ReadonlyArray<PlayCommandId>]>([
+    ["idle", play({ status: "idle" }), ["play"]],
+    ["loading the train", play({ status: "loading" }), []],
+    ["running, stopped", play({}), ["play", "throttle-up", "throttle-down"]],
+    [
+      "running forward",
+      play({ targetLduPerS: 200, speedLduPerS: 150 }),
+      ["play", "throttle-up", "throttle-down", "stop-train"],
+    ],
+    [
+      "at full throttle forward",
+      play({ targetLduPerS: MAX_LDU_PER_S, speedLduPerS: MAX_LDU_PER_S }),
+      ["play", "throttle-down", "stop-train"],
+    ],
+    [
+      "at full throttle backward",
+      play({ targetLduPerS: -MAX_LDU_PER_S, speedLduPerS: MAX_LDU_PER_S }),
+      ["play", "throttle-up", "stop-train"],
+    ],
+    ["derailed", play({ derailSpeedLduPerS: 400 }), ["play", "rerail"]],
+  ])("enables only the ones that would act while %s", (_, snapshot, enabled) => {
+    expect(PLAY_COMMANDS.filter((id) => playCommandEnabled(id, snapshot))).toEqual(enabled);
+  });
+
+  it("leaves only camera, play and shell commands live while a train runs", () => {
+    expect(COMMANDS.map((spec) => spec.id).filter((id) => !runsDuringPlay(id))).toEqual([
+      "draw-track",
+      "draw-road",
+      "rotate",
+      "flip-switch",
+      "next-connector",
+      "delete",
+      "duplicate",
+      "undo",
+      "redo",
+      "toggle-road-snap",
+    ]);
   });
 });

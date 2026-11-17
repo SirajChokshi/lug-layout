@@ -7,15 +7,9 @@ import {
   type ITrainPlay,
   type PlaySnapshot,
 } from "@brr/client";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect } from "react";
 import { shortcutText } from "./keys.tsx";
-
-export function usePlaySnapshot(play: ITrainPlay): PlaySnapshot {
-  return useSyncExternalStore(
-    (listener) => play.subscribe(listener),
-    () => play.snapshot(),
-  );
-}
+import { usePlaySnapshot } from "./use-play.ts";
 
 function followWith(camera: IEditorCamera, play: ITrainPlay, on: boolean): void {
   play.follow(on ? (x, z) => camera.lookAt(x, z, false) : null);
@@ -50,6 +44,8 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
   }, [camera, play]);
   const running = snapshot.status === "running";
   const busy = snapshot.status === "loading";
+  const derailed = snapshot.derailSpeedLduPerS > 0;
+  const moving = snapshot.targetLduPerS !== 0 || snapshot.speedLduPerS !== 0;
   const max = snapshot.maxSpeedLduPerS;
   return (
     <section
@@ -120,6 +116,7 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
               max={max}
               step={PLAY_THROTTLE_STEP_LDU_PER_S / 2}
               value={snapshot.targetLduPerS}
+              disabled={derailed}
               onChange={(event) => play.drive(Number(event.target.value))}
             />
           </label>
@@ -132,13 +129,13 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
             Follow the train
           </label>
           <div className="toolbar">
-            <button type="button" onClick={() => play.drive(-max / 2)}>
+            <button type="button" disabled={derailed} onClick={() => play.drive(-max / 2)}>
               Back
             </button>
-            <button type="button" onClick={() => play.drive(max / 2)}>
+            <button type="button" disabled={derailed} onClick={() => play.drive(max / 2)}>
               Forward
             </button>
-            <button type="button" onClick={() => play.drive(0)}>
+            <button type="button" disabled={derailed || !moving} onClick={() => play.drive(0)}>
               Stop ({shortcutText("stop-train")})
             </button>
             <button type="button" data-action="stop-play" onClick={() => play.stop()}>

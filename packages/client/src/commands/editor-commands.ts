@@ -1,6 +1,6 @@
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
-import type { ITrainPlay } from "../play/train-play.ts";
+import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
 export type EditorActionId =
@@ -335,10 +335,59 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   return false;
 }
 
-export function commandEnabled(id: CommandId, snapshot: EditorSnapshot): boolean {
+const CAMERA_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
+  "select-tool",
+  "focus",
+  "centre",
+  "pan-left",
+  "pan-right",
+  "pan-forward",
+  "pan-back",
+  "orbit-left",
+  "orbit-right",
+  "tilt-down",
+  "tilt-up",
+  "zoom-in",
+  "zoom-out",
+  "toggle-joins",
+]);
+
+export function runsDuringPlay(id: CommandId): boolean {
+  return isShellCommand(id) || isPlayCommand(id) || CAMERA_COMMANDS.has(id);
+}
+
+export function playCommandEnabled(id: PlayCommandId, play: PlaySnapshot | undefined): boolean {
+  if (!play) return id === "play";
+  const running = play.status === "running";
+  const derailed = play.derailSpeedLduPerS > 0;
+  const max = play.maxSpeedLduPerS;
+  switch (id) {
+    case "play":
+      return play.status !== "loading";
+    case "throttle-up":
+      return running && !derailed && play.targetLduPerS < max;
+    case "throttle-down":
+      return running && !derailed && play.targetLduPerS > -max;
+    case "stop-train":
+      return running && !derailed && (play.targetLduPerS !== 0 || play.speedLduPerS !== 0);
+    case "rerail":
+      return running && derailed;
+    default: {
+      const unhandled: never = id;
+      throw new Error(`unhandled play command ${String(unhandled)}`);
+    }
+  }
+}
+
+export function commandEnabled(
+  id: CommandId,
+  snapshot: EditorSnapshot,
+  play?: PlaySnapshot,
+): boolean {
   if (isShellCommand(id)) return true;
   if (snapshot.status !== "ready") return false;
-  if (isPlayCommand(id)) return true;
+  if (isPlayCommand(id)) return playCommandEnabled(id, play);
+  if (play?.status === "running" && !runsDuringPlay(id)) return false;
   switch (id) {
     case "rotate":
       return (

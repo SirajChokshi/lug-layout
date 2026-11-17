@@ -172,6 +172,8 @@ export {
   commandSpec,
   isPlayCommand,
   isShellCommand,
+  playCommandEnabled,
+  runsDuringPlay,
   PLAY_THROTTLE_STEP_LDU_PER_S,
   runEditorAction,
   runPlayAction,
