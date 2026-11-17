@@ -457,6 +457,13 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
   };
 }
 
+function setLabel(entry: {
+  readonly name: string;
+  readonly set: { readonly name: string; readonly year: number } | null;
+}): string {
+  return entry.set ? `${entry.name} ${entry.set.name} (${entry.set.year})` : entry.name;
+}
+
 function undrawableTrack(
   bundleParts: ReadonlyArray<PartAsset>,
   track: TrackDrawing,
@@ -680,7 +687,7 @@ export class Editor implements IEditor {
       placeables.push(
         modelPlaceable(
           entry.name,
-          entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : entry.name,
+          entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : setLabel(entry),
           entry.role,
           palette.remap(model, modelBundle.parts),
           credit,

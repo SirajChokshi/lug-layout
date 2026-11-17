@@ -1,9 +1,17 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
+  CATEGORY_LABEL,
+  PALETTE_CATEGORIES,
+  PaletteIndex,
   TRACK_ITEM_ID,
+  colorDisplayName,
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
+  type PaletteCategory,
+  type PaletteEntry,
+  type PaletteFilter,
+  type PaletteHit,
 } from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -11,40 +19,6 @@ const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 interface PaletteProps {
   readonly editor: IEditor;
   readonly snapshot: EditorSnapshot;
-}
-
-interface ItemGroup {
-  readonly key: string;
-  readonly label: string;
-  readonly items: ReadonlyArray<CatalogItemView>;
-}
-
-function groupsOf(
-  items: ReadonlyArray<CatalogItemView>,
-  kind: CatalogItemView["kind"],
-): ReadonlyArray<ItemGroup> {
-  const groups = new Map<string, ItemGroup>();
-  for (const item of items) {
-    if (item.kind !== kind) continue;
-    const group = groups.get(item.group) ?? { key: item.group, label: item.groupLabel, items: [] };
-    groups.set(item.group, { ...group, items: [...group.items, item] });
-  }
-  return [...groups.values()];
-}
-
-function size(item: CatalogItemView): string {
-  return `${item.studsWide}×${item.studsDeep}`;
-}
-
-function matches(query: string, group: ItemGroup): boolean {
-  if (query === "") return true;
-  const haystack = [group.label, ...group.items.map((item) => `${item.label} ${size(item)}`)]
-    .join(" ")
-    .toLowerCase();
-  return query
-    .toLowerCase()
-    .split(/\s+/u)
-    .every((word) => haystack.includes(word));
 }
 
 function Section({
@@ -69,32 +43,63 @@ function Section({
   );
 }
 
-function Swatches({ group, editor, snapshot }: PaletteProps & { readonly group: ItemGroup }) {
-  const first = group.items[0];
-  if (!first) return null;
+function swatchTitle(item: CatalogItemView): string {
+  return item.color
+    ? `${colorDisplayName(item.color.name)} (LDraw ${item.color.code})`
+    : item.label;
+}
+
+function Swatches({
+  entry,
+  items,
+  editor,
+  snapshot,
+}: PaletteProps & {
+  readonly entry: PaletteEntry;
+  readonly items: ReadonlyArray<CatalogItemView>;
+}) {
   return (
-    <li className="palette-row" data-group={group.key}>
+    <div className="palette-swatches" role="group" aria-label={entry.title}>
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className="palette-swatch"
+          data-item={item.id}
+          aria-pressed={snapshot.activeItem === item.id}
+          aria-label={item.label}
+          title={swatchTitle(item)}
+          style={{ background: item.color?.rgb ?? "transparent" }}
+          onClick={() => editor.chooseItem(item.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SwatchRow({
+  entry,
+  items,
+  editor,
+  snapshot,
+}: PaletteProps & {
+  readonly entry: PaletteEntry;
+  readonly items: ReadonlyArray<CatalogItemView>;
+}) {
+  return (
+    <li className="palette-row" data-group={entry.key}>
       <div className="palette-row-label">
-        <span className="palette-size">{size(first)}</span>
-        <span className="palette-title">{group.label}</span>
+        <span className="palette-size">{entry.size}</span>
+        <span className="palette-title">{entry.title}</span>
       </div>
-      <div className="palette-swatches" role="group" aria-label={group.label}>
-        {group.items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className="palette-swatch"
-            data-item={item.id}
-            aria-pressed={snapshot.activeItem === item.id}
-            aria-label={item.label}
-            title={item.color?.name ?? item.label}
-            style={{ background: item.color?.rgb ?? "transparent" }}
-            onClick={() => editor.chooseItem(item.id)}
-          />
-        ))}
-      </div>
+      <Swatches entry={entry} items={items} editor={editor} snapshot={snapshot} />
     </li>
   );
+}
+
+function itemMeta(item: CatalogItemView): string {
+  const parts = `${integer.format(item.parts)} ${item.parts === 1 ? "part" : "parts"}`;
+  return item.studsWide > 0 ? `${parts} · ${item.studsWide}×${item.studsDeep} studs` : parts;
 }
 
 function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: CatalogItemView }) {
@@ -108,17 +113,15 @@ function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: 
         onClick={() => editor.chooseItem(item.id)}
       >
         <span className="catalog-name">{item.label}</span>
-        <span className="catalog-meta">
-          {integer.format(item.parts)} {item.parts === 1 ? "part" : "parts"} · {size(item)} studs
-        </span>
+        <span className="catalog-meta">{itemMeta(item)}</span>
       </button>
     </li>
   );
 }
 
-function colorCount(groups: ReadonlyArray<ItemGroup>): string {
-  const items = groups.reduce((sum, group) => sum + group.items.length, 0);
-  return `${groups.length} ${groups.length === 1 ? "part" : "parts"}, ${items} colours`;
+function colorCount(entries: ReadonlyArray<PaletteEntry>): string {
+  const items = entries.reduce((sum, entry) => sum + entry.items.length, 0);
+  return `${entries.length} ${entries.length === 1 ? "part" : "parts"}, ${items} colours`;
 }
 
 function TrackSection({ editor, snapshot }: PaletteProps) {
@@ -161,45 +164,9 @@ function TrackSection({ editor, snapshot }: PaletteProps) {
   );
 }
 
-function SwatchSection({
-  id,
-  title,
-  groups,
-  editor,
-  snapshot,
-  children,
-}: PaletteProps & {
-  readonly id: string;
-  readonly title: string;
-  readonly groups: ReadonlyArray<ItemGroup>;
-  readonly children?: ReactNode;
-}) {
+function MilsNotes() {
   return (
-    <Section id={id} title={title} count={colorCount(groups)}>
-      {children}
-      <ul className="palette-rows">
-        {groups.map((group) => (
-          <Swatches key={group.key} group={group} editor={editor} snapshot={snapshot} />
-        ))}
-      </ul>
-    </Section>
-  );
-}
-
-function MilsSection({
-  groups,
-  editor,
-  snapshot,
-}: PaletteProps & { readonly groups: ReadonlyArray<ItemGroup> }) {
-  return (
-    <Section id="mils" title="MILS modules" count={`${groups.length} modules`}>
-      <ul>
-        {groups.flatMap((group) =>
-          group.items.map((item) => (
-            <ItemButton key={item.id} item={item} editor={editor} snapshot={snapshot} />
-          )),
-        )}
-      </ul>
+    <>
       <p className="palette-note" data-mils-flag="heights">
         Every module follows MILS (HispaBrick Magazine 013–016): a 32×32 module with its surface 4
         plates above the baseplate, and a 2×2 corner then a 1×4 Technic brick at each end of every
@@ -211,59 +178,267 @@ function MilsSection({
         The rail module is a project rule, not MILS: MILS has no train rules (HispaBrick Magazine
         026, "MILS (VII)"). It centres one pair of 9V straights on the 4-plate surface.
       </p>
-    </Section>
+    </>
   );
+}
+
+function CategorySection({
+  category,
+  entries,
+  editor,
+  snapshot,
+}: PaletteProps & {
+  readonly category: PaletteCategory;
+  readonly entries: ReadonlyArray<PaletteEntry>;
+}) {
+  switch (category) {
+    case "track":
+      return <TrackSection editor={editor} snapshot={snapshot} />;
+    case "baseplates":
+    case "road":
+      return (
+        <Section
+          id={category === "road" ? "road" : "baseplates"}
+          title={CATEGORY_LABEL[category]}
+          count={colorCount(entries)}
+        >
+          <ul className="palette-rows">
+            {entries.map((entry) => (
+              <SwatchRow
+                key={entry.key}
+                entry={entry}
+                items={entry.items}
+                editor={editor}
+                snapshot={snapshot}
+              />
+            ))}
+          </ul>
+        </Section>
+      );
+    case "mils":
+    case "sets": {
+      const items = entries.flatMap((entry) => entry.items);
+      const noun = category === "mils" ? "modules" : "sets";
+      return (
+        <Section id={category} title={CATEGORY_LABEL[category]} count={`${items.length} ${noun}`}>
+          <ul>
+            {items.map((item) => (
+              <ItemButton key={item.id} item={item} editor={editor} snapshot={snapshot} />
+            ))}
+          </ul>
+          {category === "mils" && <MilsNotes />}
+        </Section>
+      );
+    }
+    default: {
+      const unhandled: never = category;
+      throw new Error(`unhandled palette category ${String(unhandled)}`);
+    }
+  }
+}
+
+function hitItemsText(hit: PaletteHit): string {
+  const colored = hit.items.filter((item) => item.color !== null);
+  if (colored.length === 0) return hit.items[0] ? itemMeta(hit.items[0]) : "";
+  if (colored.length === hit.entry.items.length) {
+    return `${colored.length} ${colored.length === 1 ? "colour" : "colours"}`;
+  }
+  return `${colored.length} of ${hit.entry.items.length} colours`;
+}
+
+function ResultRow({
+  hit,
+  highlighted,
+  editor,
+  snapshot,
+  onPick,
+}: PaletteProps & {
+  readonly hit: PaletteHit;
+  readonly highlighted: boolean;
+  readonly onPick: (item: CatalogItemView) => void;
+}) {
+  const rowRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [highlighted]);
+  const { entry } = hit;
+  const first = hit.items[0];
+  const colored = first?.color !== null && first !== undefined;
+  return (
+    <li
+      ref={rowRef}
+      className="palette-result"
+      data-group={entry.key}
+      data-highlighted={highlighted}
+      aria-selected={highlighted}
+      role="option"
+    >
+      <button
+        type="button"
+        className="palette-result-main"
+        aria-pressed={hit.items.some((item) => item.id === snapshot.activeItem)}
+        onClick={() => first && onPick(first)}
+      >
+        <span className="palette-result-title">
+          {entry.partNumber && <span className="palette-number">{entry.partNumber}</span>}
+          {entry.partNumber ? entry.title.replace(`${entry.partNumber} `, "") : entry.title}
+        </span>
+        <span className="palette-result-meta">
+          <span className="palette-tag">{CATEGORY_LABEL[entry.category]}</span>
+          {entry.size !== "" && entry.category !== "track" && <span>{entry.size}</span>}
+          <span>{hitItemsText(hit)}</span>
+        </span>
+      </button>
+      {colored && <Swatches entry={entry} items={hit.items} editor={editor} snapshot={snapshot} />}
+    </li>
+  );
+}
+
+function trackTerms(track: EditorSnapshot["track"]): ReadonlyArray<string> {
+  return (track?.bom ?? []).flatMap((line) => [line.piece.replace(/^[a-z]+:/u, ""), line.title]);
+}
+
+const FILTERS: ReadonlyArray<PaletteFilter> = ["all", ...PALETTE_CATEGORIES];
+
+function filterLabel(filter: PaletteFilter): string {
+  return filter === "all" ? "All" : CATEGORY_LABEL[filter].replace(" modules", "");
 }
 
 export function PalettePanel({ editor, snapshot }: PaletteProps) {
   const [query, setQuery] = useState("");
-  const pick = (kind: CatalogItemView["kind"]) =>
-    groupsOf(snapshot.catalog, kind).filter((group) => matches(query, group));
-  const baseplates = pick("baseplate");
-  const roads = pick("road-plate");
-  const modules = pick("mils-module");
-  const models = pick("model");
-  const shown = (groups: ReadonlyArray<ItemGroup>) => query === "" || groups.length > 0;
+  const [filter, setFilter] = useState<PaletteFilter>("all");
+  const [highlight, setHighlight] = useState(0);
+  const { catalog } = snapshot;
+  const trackKey = trackTerms(snapshot.track).join("\n");
+  const index = useMemo(
+    () =>
+      new PaletteIndex(catalog, [
+        { entryKey: TRACK_ITEM_ID, terms: trackKey === "" ? [] : trackKey.split("\n") },
+      ]),
+    [catalog, trackKey],
+  );
+  const searching = query.trim() !== "";
+  const hits = useMemo(
+    () => (searching ? index.search(query, filter) : []),
+    [index, query, filter, searching],
+  );
+  const counts = useMemo(() => {
+    const all = index.search(query, "all");
+    return new Map<PaletteFilter, number>([
+      ["all", all.length],
+      ...PALETTE_CATEGORIES.map(
+        (category) =>
+          [category, all.filter((hit) => hit.entry.category === category).length] as const,
+      ),
+    ]);
+  }, [index, query]);
+  const shownHighlight = Math.min(highlight, Math.max(hits.length - 1, 0));
+
+  const pick = (item: CatalogItemView): void => {
+    editor.chooseItem(snapshot.activeItem === item.id && item.kind === "track" ? null : item.id);
+  };
+
+  const onSearchKey = (event: KeyboardEvent<HTMLInputElement>): void => {
+    switch (event.key) {
+      case "ArrowDown":
+        setHighlight(Math.min(shownHighlight + 1, hits.length - 1));
+        break;
+      case "ArrowUp":
+        setHighlight(Math.max(shownHighlight - 1, 0));
+        break;
+      case "Enter": {
+        const item = hits[shownHighlight]?.items[0];
+        if (!item) return;
+        pick(item);
+        event.currentTarget.blur();
+        break;
+      }
+      case "Escape":
+        if (query === "") event.currentTarget.blur();
+        setQuery("");
+        setHighlight(0);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  };
+
+  const sections = PALETTE_CATEGORIES.filter((category) => filter === "all" || filter === category);
   return (
     <nav className="catalog palette" aria-label="Palette">
-      <h2>Palette</h2>
-      <input
-        type="search"
-        className="palette-search"
-        placeholder="Filter: green, 16×16, crossroads, curve…"
-        aria-label="Filter the palette"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      <TrackSection editor={editor} snapshot={snapshot} />
-      {shown(baseplates) && (
-        <SwatchSection
-          id="baseplates"
-          title="Baseplates"
-          groups={baseplates}
-          editor={editor}
-          snapshot={snapshot}
+      <div className="palette-head">
+        <h2>Palette</h2>
+        <input
+          type="search"
+          className="palette-search"
+          placeholder="Search: 3811, tan 16x16, crossroads, -sand"
+          title='Words must all match. "Quote a phrase", -word excludes, #3811 matches numbers only.'
+          aria-label="Search the palette"
+          aria-controls="palette-results"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setHighlight(0);
+          }}
+          onKeyDown={onSearchKey}
         />
+        <div className="palette-tabs" role="tablist" aria-label="Palette categories">
+          {FILTERS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="tab"
+              className="palette-tab"
+              data-filter={option}
+              aria-selected={filter === option}
+              onClick={() => {
+                setFilter(option);
+                setHighlight(0);
+              }}
+            >
+              {filterLabel(option)}
+              <span className="palette-tab-count">{counts.get(option) ?? 0}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {searching ? (
+        <ul
+          id="palette-results"
+          className="palette-results"
+          role="listbox"
+          aria-label="Search results"
+          data-results={hits.length}
+        >
+          {hits.map((hit, i) => (
+            <ResultRow
+              key={hit.entry.key}
+              hit={hit}
+              highlighted={i === shownHighlight}
+              editor={editor}
+              snapshot={snapshot}
+              onPick={pick}
+            />
+          ))}
+        </ul>
+      ) : (
+        sections.map((category) => (
+          <CategorySection
+            key={category}
+            category={category}
+            entries={index.entries(category)}
+            editor={editor}
+            snapshot={snapshot}
+          />
+        ))
       )}
-      {shown(modules) && <MilsSection groups={modules} editor={editor} snapshot={snapshot} />}
-      {shown(roads) && (
-        <SwatchSection id="road" title="Road" groups={roads} editor={editor} snapshot={snapshot} />
+      {searching && hits.length === 0 && (
+        <p className="palette-hint" data-no-results>
+          Nothing matches “{query}”{filter === "all" ? "" : ` in ${CATEGORY_LABEL[filter]}`}. Try a
+          part number like 3811, a size like 16x16, or a colour like tan.
+        </p>
       )}
-      {shown(models) && (
-        <Section id="sets" title="Sets" count={`${models.length} sets`}>
-          <ul>
-            {models.flatMap((group) =>
-              group.items.map((item) => (
-                <ItemButton key={item.id} item={item} editor={editor} snapshot={snapshot} />
-              )),
-            )}
-          </ul>
-        </Section>
-      )}
-      {query !== "" &&
-        [baseplates, modules, roads, models].every((groups) => groups.length === 0) && (
-          <p className="palette-hint">Nothing matches “{query}”.</p>
-        )}
       {snapshot.catalogSkipped.length > 0 && (
         <p
           className="catalog-skipped"
