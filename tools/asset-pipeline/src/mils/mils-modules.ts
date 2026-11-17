@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import {
   MilsProfile,
   TrackCatalog,
+  type MilsEdgeFeatureRule,
+  type MilsEdgeRules,
   type MilsBuildFeature,
   type MilsBuildRiver,
   type MilsFinish,
@@ -819,4 +821,84 @@ export function buildMilsModules(
 
 export function milsModules(library: LdrawLibrary): ReadonlyArray<MilsModule> {
   return buildMilsModules(library, loadMilsProfile(), loadTrackCatalog());
+}
+
+function levelFeatureRule(
+  profile: MilsProfile,
+  kind: "path" | "track" | "road",
+): MilsEdgeFeatureRule {
+  const { surfacePlates } = profile.spec;
+  const level = profile.spec.features[kind];
+  return {
+    kind,
+    standard: "mils",
+    widthStuds: level.widthStuds.value,
+    plates: surfacePlates.value + level.aboveSurfacePlates.min,
+    belowPlates: level.sideVariationPlates.belowPlates,
+    abovePlates:
+      level.aboveSurfacePlates.max -
+      level.aboveSurfacePlates.min +
+      level.sideVariationPlates.abovePlates,
+    bankStuds: 0,
+    bankStartPlates: 0,
+    bankRisePlatesPerStud: 0,
+    bankVariationPlates: 0,
+    ldrawColors: level.ldrawColors.values,
+  };
+}
+
+function riverRule(profile: MilsProfile): MilsEdgeFeatureRule {
+  const river = profile.spec.features.river;
+  return {
+    kind: "river",
+    standard: "mils",
+    widthStuds: river.widthStuds.value,
+    plates: river.waterPlates.value,
+    belowPlates: 0,
+    abovePlates: 0,
+    bankStuds: Math.ceil(
+      (profile.spec.surfacePlates.value - river.bankStartPlates.value) /
+        river.bankRisePlatesPerStud.value,
+    ),
+    bankStartPlates: river.bankStartPlates.value,
+    bankRisePlatesPerStud: river.bankRisePlatesPerStud.value,
+    bankVariationPlates: river.bankVariationPlates.value,
+    ldrawColors: river.ldrawColors.values,
+  };
+}
+
+function railRule(profile: MilsProfile, rail: BaseplateMeasurement): MilsEdgeFeatureRule {
+  return {
+    kind: "rail",
+    standard: "project",
+    widthStuds: wholeStuds(rail.depthLdu, `${rail.part} width across the track`),
+    plates: profile.spec.surfacePlates.value + rail.thicknessLdu / LDU_PER_PLATE,
+    belowPlates: 0,
+    abovePlates: 0,
+    bankStuds: 0,
+    bankStartPlates: 0,
+    bankRisePlatesPerStud: 0,
+    bankVariationPlates: 0,
+    ldrawColors: [profile.build.rail.ldrawColor],
+  };
+}
+
+export function milsEdgeRules(library: LdrawLibrary): MilsEdgeRules {
+  const profile = loadMilsProfile();
+  const rail = measureBaseplate(library, profile.build.rail.part);
+  const features = [
+    levelFeatureRule(profile, "road"),
+    levelFeatureRule(profile, "track"),
+    riverRule(profile),
+    railRule(profile, rail),
+    levelFeatureRule(profile, "path"),
+  ];
+  return {
+    source:
+      "tools/asset-pipeline/src/mils/mils-profile.json spec (MILS rows of docs/verified-facts.md, S1 and S2); the rail rule is the project rail module, its width and height measured from the rail part at the pin",
+    moduleStuds: profile.spec.moduleStuds.value,
+    surfacePlates: profile.spec.surfacePlates.value,
+    surfaceTolerancePlates: profile.spec.surfaceTolerancePlates.value,
+    features: features.toSorted((a, b) => b.widthStuds - a.widthStuds),
+  };
 }

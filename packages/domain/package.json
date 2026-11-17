@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@brr/math": "workspace:*"
+    "@brr/math": "workspace:*",
+    "@brr/schema": "workspace:*"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",

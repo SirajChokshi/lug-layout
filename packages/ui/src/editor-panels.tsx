@@ -4,6 +4,8 @@ import {
   type EditorSnapshot,
   type IEditor,
   type LatencySample,
+  type ModuleFitView,
+  type ModuleIssueView,
   type RoadIssueView,
   type ShellCommandId,
 } from "@brr/client";
@@ -106,6 +108,106 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
             >
               {issue.status === "open" ? "Open: " : "Mismatch: "}
               {issueText(issue)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
+  );
+}
+
+type EdgeKind = ModuleIssueView["kind"];
+
+const EDGE_KIND_LABELS: Readonly<Record<EdgeKind, string>> = {
+  terrain: "terrain",
+  road: "paved road",
+  track: "earth track",
+  path: "path",
+  river: "river",
+  rail: "rail (project rule)",
+  other: "not a MILS edge",
+};
+
+const SIDE_LABELS: Readonly<Record<ModuleIssueView["side"], string>> = {
+  minX: "−x",
+  maxX: "+x",
+  minZ: "−z",
+  maxZ: "+z",
+};
+
+function moduleIssueText(issue: ModuleIssueView): string {
+  const facing = issue.facing === null ? "nothing" : EDGE_KIND_LABELS[issue.facing];
+  return `${issue.item.replace(/^[a-z]+:/u, "")} at ${issue.x}, ${issue.z}: ${SIDE_LABELS[issue.side]} side is ${EDGE_KIND_LABELS[issue.kind]} but meets ${facing}`;
+}
+
+export function moduleFitText(fit: ModuleFitView | null): string {
+  if (!fit) return "none";
+  const sides = fit.sides
+    .map(({ side, kind }) => `${SIDE_LABELS[side]} ${EDGE_KIND_LABELS[kind]}`)
+    .join(", ");
+  if (fit.occupied) return `module cell ${fit.column}, ${fit.row} already holds a module`;
+  const verdict =
+    fit.mismatched > 0
+      ? `${fit.mismatched} edge${fit.mismatched === 1 ? "" : "s"} would mismatch`
+      : `${fit.joined} edge${fit.joined === 1 ? "" : "s"} join`;
+  return `module cell ${fit.column}, ${fit.row} at ${degrees(fit.rot)}: ${verdict} (${sides})`;
+}
+
+export function ModuleJoins({ editor, snapshot }: PanelProps) {
+  const { modules } = snapshot;
+  return (
+    <details className="road-joins module-joins" aria-label="Module joins">
+      <summary>
+        <h2>Module joins</h2>
+        <span className="road-joins-summary">
+          {modules.joined} joined · {modules.open} open · {modules.mismatched} mismatched
+        </span>
+      </summary>
+      <label className="road-joins-toggle">
+        <input
+          type="checkbox"
+          checked={snapshot.snapModules}
+          onChange={(event) => editor.setSnapModules(event.target.checked)}
+        />
+        Turn MILS modules to the quarter turn that fits their neighbours
+      </label>
+      <p className="palette-hint">
+        MILS modules sit on the 32-stud module grid. Each side is read from the module itself: a
+        path, earth track, paved road, river or rail centred on the side, or plain terrain. Sides
+        join when they are the same kind. The markers are green where sides join, amber where a side
+        is open and red where it meets a different kind; the tall block marks where the feature
+        crosses the side. Every count is of module sides, so two modules that meet add two joined or
+        two mismatched sides.
+      </p>
+      <dl>
+        <div>
+          <dt>Modules on the grid</dt>
+          <dd data-module="count">{modules.modules}</dd>
+        </div>
+        <div>
+          <dt>Joined sides</dt>
+          <dd data-module="joined">{modules.joined}</dd>
+        </div>
+        <div>
+          <dt>Open sides</dt>
+          <dd data-module="open">{modules.open}</dd>
+        </div>
+        <div>
+          <dt>Mismatched sides</dt>
+          <dd data-module="mismatch">{modules.mismatched}</dd>
+        </div>
+        {modules.offGrid > 0 && (
+          <div>
+            <dt>Off the module grid</dt>
+            <dd data-module="off-grid">{modules.offGrid}</dd>
+          </div>
+        )}
+      </dl>
+      {modules.issues.length > 0 && (
+        <ul className="road-issues">
+          {modules.issues.map((issue) => (
+            <li key={`${issue.item}-${issue.x}-${issue.z}-${issue.side}`} className="mismatch">
+              Mismatch: {moduleIssueText(issue)}
             </li>
           ))}
         </ul>
@@ -288,6 +390,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     ],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
     ["Road-edge snap", snapText(snapshot)],
+    ["Module fit", moduleFitText(snapshot.moduleFit)],
     [
       "Cursor on lattice (LDU)",
       snapshot.hover ? `${snapshot.hover.x}, ${snapshot.hover.z}` : "off the ground",

@@ -195,6 +195,9 @@ importers:
       '@brr/math':
         specifier: workspace:*
         version: link:../math
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../schema
     devDependencies:
       '@brr/config':
         specifier: workspace:*

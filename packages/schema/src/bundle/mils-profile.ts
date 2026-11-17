@@ -14,6 +14,7 @@ const CitedRange = v.pipe(
   v.check((range) => range.min <= range.max, "min must not exceed max"),
 );
 const CitedColors = v.strictObject({ values: ColorList, source: Source });
+const CitedVariation = v.strictObject({ belowPlates: Count, abovePlates: Count, source: Source });
 
 export const MilsFinish = v.picklist(["plate", "tile"]);
 export type MilsFinish = v.InferOutput<typeof MilsFinish>;
@@ -30,6 +31,7 @@ export type MilsModuleEdge = v.InferOutput<typeof MilsModuleEdge>;
 export const MilsSpecLevelFeature = v.strictObject({
   widthStuds: CitedPositive,
   aboveSurfacePlates: CitedRange,
+  sideVariationPlates: CitedVariation,
   ldrawColors: CitedColors,
 });
 export type MilsSpecLevelFeature = v.InferOutput<typeof MilsSpecLevelFeature>;
@@ -40,12 +42,14 @@ export const MilsSpecRiver = v.strictObject({
   ldrawColors: CitedColors,
   bankStartPlates: CitedCount,
   bankRisePlatesPerStud: CitedPositive,
+  bankVariationPlates: CitedCount,
 });
 export type MilsSpecRiver = v.InferOutput<typeof MilsSpecRiver>;
 
 export const MilsSpec = v.strictObject({
   moduleStuds: CitedPositive,
   surfacePlates: CitedPositive,
+  surfaceTolerancePlates: CitedCount,
   features: v.strictObject({
     path: MilsSpecLevelFeature,
     track: MilsSpecLevelFeature,
@@ -112,3 +116,30 @@ export const MilsProfile = v.strictObject({
   templates: v.pipe(v.array(MilsTemplate), v.minLength(1)),
 });
 export type MilsProfile = v.InferOutput<typeof MilsProfile>;
+
+export const MilsEdgeStandard = v.picklist(["mils", "project"]);
+export type MilsEdgeStandard = v.InferOutput<typeof MilsEdgeStandard>;
+
+export const MilsEdgeFeatureRule = v.strictObject({
+  kind: MilsFeature,
+  standard: MilsEdgeStandard,
+  widthStuds: Positive,
+  plates: Count,
+  belowPlates: Count,
+  abovePlates: Count,
+  bankStuds: Count,
+  bankStartPlates: Count,
+  bankRisePlatesPerStud: Count,
+  bankVariationPlates: Count,
+  ldrawColors: ColorList,
+});
+export type MilsEdgeFeatureRule = v.InferOutput<typeof MilsEdgeFeatureRule>;
+
+export const MilsEdgeRules = v.strictObject({
+  source: Source,
+  moduleStuds: Positive,
+  surfacePlates: Positive,
+  surfaceTolerancePlates: Count,
+  features: v.array(MilsEdgeFeatureRule),
+});
+export type MilsEdgeRules = v.InferOutput<typeof MilsEdgeRules>;

@@ -26,6 +26,7 @@ import { EDITOR } from "../tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
+const RAY_HEIGHT_LDU = 10_000;
 const STUDLESS_SET = "10016-1";
 const NO_LOOK: LookSettings = {
   plastic: false,
@@ -100,7 +101,15 @@ class HeadlessBackend implements ISceneBackend {
   setVehicle(): void {}
   setVehiclePose(): void {}
   setIssueBoxes(): void {}
-  rayThrough(): void {}
+  private aimX = 0;
+  private aimZ = 0;
+  aim(x: number, z: number): void {
+    this.aimX = x;
+    this.aimZ = z;
+  }
+  rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
+    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ, 0, -1, 0]);
+  }
   setView(): void {}
   resize(): void {}
   renderFrame(): void {}
@@ -118,13 +127,14 @@ afterEach(() => {
 });
 
 async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDLESS_SET]) {
+  const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: 640,
@@ -133,7 +143,7 @@ async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDL
   } as unknown as HTMLCanvasElement;
 
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK });
-  return { editor, manifest: await realLoader.loadManifest("standard") };
+  return { editor, backend, manifest: await realLoader.loadManifest("standard") };
 }
 
 it("starts with a stud-less set in the bundle, leaving it out of the catalog and reporting it as skipped", async () => {
@@ -182,4 +192,39 @@ it("loads every MILS module template, including the rail module whose joiners re
   expect(
     snapshot.catalog.filter((item) => item.kind === "mils-module").map((item) => item.id),
   ).toEqual(modules.map((name) => `generated:${name}`));
+}, 120_000);
+
+it("undoes, redoes, rotates and deletes placed MILS modules, keeping the module joins current", async () => {
+  const { editor, backend } = await startEditor(["mils-road-straight", "mils-road-curve"]);
+  const moduleLdu = 640;
+  const placeAt = (item: string, column: number, row: number) => {
+    editor.chooseItem(item);
+    backend.aim(column * moduleLdu + moduleLdu / 2, row * moduleLdu + moduleLdu / 2);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+  };
+  const counts = () => {
+    const { placements, modules, error } = editor.snapshot();
+    return { placements, joined: modules.joined, open: modules.open, error };
+  };
+  placeAt("generated:mils-road-straight", 0, 0);
+  placeAt("generated:mils-road-curve", 1, 0);
+  expect(counts()).toEqual({ placements: 2, joined: 2, open: 6, error: null });
+
+  editor.undo(0);
+  expect(counts()).toEqual({ placements: 1, joined: 0, open: 4, error: null });
+  editor.redo(0);
+  expect(counts()).toEqual({ placements: 2, joined: 2, open: 6, error: null });
+
+  editor.chooseItem(null);
+  backend.aim(moduleLdu * 1.5, moduleLdu / 2);
+  editor.click(0, 0, 0);
+  expect(editor.snapshot().selection?.item).toBe("generated:mils-road-curve");
+  editor.rotate(0);
+  expect(counts().placements).toBe(2);
+  expect(editor.snapshot().modules.joined + editor.snapshot().modules.mismatched).toBe(2);
+  editor.undo(0);
+  expect(counts()).toEqual({ placements: 2, joined: 2, open: 6, error: null });
+  editor.deleteSelection(0);
+  expect(counts()).toEqual({ placements: 1, joined: 0, open: 4, error: null });
 }, 120_000);

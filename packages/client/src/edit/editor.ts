@@ -8,11 +8,14 @@ import {
 import { MergedParts } from "./merged-parts.ts";
 import {
   EditHistory,
+  MODULE_SIDES,
   RoadNetwork,
   World,
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
+  type ModuleEdgeKind,
+  type ModuleSide,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
@@ -42,6 +45,7 @@ import {
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
+import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
@@ -135,6 +139,35 @@ export interface RoadSnapView {
   readonly joinedCells: number;
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
+}
+
+export interface ModuleIssueView {
+  readonly item: string;
+  readonly x: number;
+  readonly z: number;
+  readonly side: ModuleSide;
+  readonly kind: ModuleEdgeKind;
+  readonly facing: ModuleEdgeKind | null;
+}
+
+export interface ModuleJoinView {
+  readonly modules: number;
+  readonly joined: number;
+  readonly mismatched: number;
+  readonly open: number;
+  readonly offGrid: number;
+  readonly issues: ReadonlyArray<ModuleIssueView>;
+}
+
+export interface ModuleFitView {
+  readonly column: number;
+  readonly row: number;
+  readonly rot: number;
+  readonly occupied: boolean;
+  readonly joined: number;
+  readonly mismatched: number;
+  readonly open: number;
+  readonly sides: ReadonlyArray<{ readonly side: ModuleSide; readonly kind: ModuleEdgeKind }>;
 }
 
 export interface RefusedClick {
@@ -231,6 +264,9 @@ export interface EditorSnapshot {
   readonly showJoins: boolean;
   readonly snapRoads: boolean;
   readonly snap: RoadSnapView | null;
+  readonly modules: ModuleJoinView;
+  readonly moduleFit: ModuleFitView | null;
+  readonly snapModules: boolean;
   readonly refusedClicks: number;
   readonly lastRefusal: RefusedClick | null;
   readonly track: TrackView | null;
@@ -284,6 +320,7 @@ export interface IEditor {
   redo(eventTimeMs: number): void;
   setShowJoins(show: boolean): void;
   setSnapRoads(snap: boolean): void;
+  setSnapModules(snap: boolean): void;
   dump(): EditorDump;
 }
 
@@ -300,6 +337,15 @@ const MARKER_WIDTH_LDU = 6;
 const MARKER_LIFT_LDU = 1;
 const MARKER_HEIGHT_LDU = 2;
 const LISTED_ROAD_ISSUES = 12;
+const LISTED_MODULE_ISSUES = 12;
+const EMPTY_MODULES: ModuleJoinView = {
+  modules: 0,
+  joined: 0,
+  mismatched: 0,
+  open: 0,
+  offGrid: 0,
+  issues: [],
+};
 const EMPTY_ROADS: RoadJoinView = {
   checkMs: 0,
   placements: 0,
@@ -392,6 +438,7 @@ function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor 
 
 function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
+  const moduleStuds = placeable.module?.studs;
   return {
     id: placeable.id,
     label: placeable.label,
@@ -400,8 +447,8 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
     color: colored ? colorOf(colors, placeable.worldColor) : null,
     kind: placeable.kind,
     parts: placeable.parts.count,
-    studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
-    studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+    studsWide: moduleStuds ?? Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
+    studsDeep: moduleStuds ?? Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
   };
 }
 
@@ -443,6 +490,9 @@ export class Editor implements IEditor {
     showJoins: true,
     snapRoads: true,
     snap: null,
+    modules: EMPTY_MODULES,
+    moduleFit: null,
+    snapModules: true,
     refusedClicks: 0,
     lastRefusal: null,
     track: null,
@@ -478,6 +528,8 @@ export class Editor implements IEditor {
   private roadExtents: ReadonlyArray<CellExtent> = [];
   private roadNetwork = new RoadNetwork([]);
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
+  private modules: ModuleLayout | null = null;
+  private moduleGhost: ModuleCandidate | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private framesSinceStats = 0;
   private statsSince = 0;
@@ -524,6 +576,7 @@ export class Editor implements IEditor {
       const palette = new MergedParts(bundle.parts);
       const { placeables, skipped } = await this.loadPlaceables(bundle, palette, colors);
       this.placeables = placeables;
+      this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.plans.setTableTopY(this.baseplateBottomY());
       this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
       this.backend.setPalette({
@@ -826,6 +879,8 @@ export class Editor implements IEditor {
   chooseItem(id: string | null): void {
     if (id === TRACK_ITEM_ID && this.track) {
       this.active = null;
+      this.moduleGhost = null;
+      this.showMarkers();
       this.backend.setGhost(null);
       this.select(null);
       this.update({ mode: "track", activeItem: TRACK_ITEM_ID });
@@ -846,8 +901,15 @@ export class Editor implements IEditor {
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
+    const moduleFit = this.snapGhostToModuleGrid();
     this.placeGhost();
-    this.update({ mode: placeable ? "place" : "select", activeItem: placeable?.id ?? null });
+    if (!moduleFit) this.showMarkers();
+    this.update({
+      mode: placeable ? "place" : "select",
+      activeItem: placeable?.id ?? null,
+      moduleFit,
+      ghostRot: this.ghostRot,
+    });
   }
 
   private groundHit(ndcX: number, ndcY: number): boolean {
@@ -921,6 +983,7 @@ export class Editor implements IEditor {
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
+    const moduleFit = this.snapGhostToModuleGrid();
     const snap = this.snapGhostToRoad();
     const track = this.track;
     if (this.state.mode === "track" && track && !track.dragView()) {
@@ -928,12 +991,19 @@ export class Editor implements IEditor {
       this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
     }
     this.placeGhost();
-    this.update({ hover: this.hoverView(), snap });
+    this.update({
+      hover: this.hoverView(),
+      snap,
+      moduleFit,
+      ghostRot: this.ghostRot,
+    });
   }
 
   pointerLeave(): void {
     this.hovering = false;
-    this.update({ hover: null });
+    this.moduleGhost = null;
+    this.showMarkers();
+    this.update({ hover: null, moduleFit: null });
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
@@ -941,6 +1011,12 @@ export class Editor implements IEditor {
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
+      const moduleFit = this.snapGhostToModuleGrid();
+      if (moduleFit?.occupied) {
+        this.placeGhost();
+        this.update({ moduleFit, refusedClicks: this.state.refusedClicks + 1 });
+        return;
+      }
       const snap = this.snapGhostToRoad();
       this.placeGhost();
       if (snap?.state === "refused") {
@@ -1017,6 +1093,7 @@ export class Editor implements IEditor {
         report: view.report,
       };
     }
+    this.refreshModules();
     this.refreshRoads();
     this.placeGhost();
     this.update({
@@ -1060,7 +1137,7 @@ export class Editor implements IEditor {
     this.roadExtents = placements.map(cellExtent);
     this.roadReport = this.roadNetwork.report();
     const checkMs = performance.now() - started;
-    this.showRoadMarkers();
+    this.showMarkers();
     const report = this.roadReport;
     const issues: RoadIssueView[] = [];
     for (const segment of report.segments) {
@@ -1088,20 +1165,91 @@ export class Editor implements IEditor {
     });
   }
 
-  private showRoadMarkers(): void {
-    this.backend.setMarkers(
-      this.state.showJoins
-        ? this.roadReport.segments.map((segment) => ({
-            box: markerBox(segment),
-            kind: segment.status,
-          }))
-        : [],
-    );
+  private showMarkers(): void {
+    if (!this.state.showJoins) {
+      this.backend.setMarkers([]);
+      return;
+    }
+    const ghost = this.moduleGhost;
+    const surface = this.active?.module;
+    this.backend.setMarkers([
+      ...this.roadReport.segments.map((segment) => ({
+        box: markerBox(segment),
+        kind: segment.status,
+      })),
+      ...(this.modules?.markers() ?? []),
+      ...(ghost && surface && this.modules ? this.modules.ghostMarkers(ghost, surface) : []),
+    ]);
+  }
+
+  private refreshModules(): void {
+    const layout = this.modules;
+    if (!layout) return;
+    const report = layout.refresh(this.placed.models());
+    const issues: ModuleIssueView[] = [];
+    for (const edge of report.edges) {
+      if (edge.status !== "mismatch" || issues.length >= LISTED_MODULE_ISSUES) continue;
+      const module = layout.module(edge.module);
+      if (!module) continue;
+      issues.push({
+        item: module.item,
+        x: module.x,
+        z: module.z,
+        side: edge.side,
+        kind: edge.kind,
+        facing: edge.facing,
+      });
+    }
+    this.update({
+      modules: {
+        modules: report.modules,
+        joined: report.joined,
+        mismatched: report.mismatched,
+        open: report.open,
+        offGrid: layout.offGrid,
+        issues,
+      },
+    });
+    this.showMarkers();
+  }
+
+  private snapGhostToModuleGrid(): ModuleFitView | null {
+    const surface = this.active?.module;
+    const layout = this.modules;
+    if (!surface || !layout || !this.hovering || !layout.fitsGrid(surface)) {
+      this.moduleGhost = null;
+      return null;
+    }
+    const candidate = this.state.snapModules
+      ? layout.bestCandidate(surface, this.ghostRot, this.hitX, this.hitZ)
+      : layout.candidate(surface, this.ghostRot, this.hitX, this.hitZ);
+    this.moduleGhost = candidate;
+    this.ghostRot = candidate.rot;
+    this.hoverX = candidate.x;
+    this.hoverZ = candidate.z;
+    this.showMarkers();
+    return {
+      column: candidate.column,
+      row: candidate.row,
+      rot: candidate.rot,
+      occupied: layout.isOccupied(candidate.column, candidate.row),
+      joined: candidate.fit.joined,
+      mismatched: candidate.fit.mismatched,
+      open: candidate.fit.open,
+      sides: MODULE_SIDES.map((side, index) => ({
+        side,
+        kind: candidate.edges[index]?.kind ?? "other",
+      })),
+    };
   }
 
   setShowJoins(show: boolean): void {
     this.update({ showJoins: show });
-    this.showRoadMarkers();
+    this.showMarkers();
+  }
+
+  setSnapModules(snap: boolean): void {
+    this.update({ snapModules: snap });
   }
 
   setSnapRoads(snap: boolean): void {
@@ -1130,8 +1278,13 @@ export class Editor implements IEditor {
   rotate(eventTimeMs: number): void {
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
+      const moduleFit = this.snapGhostToModuleGrid();
       this.placeGhost();
-      this.update({ ghostRot: this.ghostRot, hover: this.hoverView() });
+      this.update({
+        ghostRot: this.ghostRot,
+        hover: this.hoverView(),
+        ...(moduleFit ? { moduleFit } : {}),
+      });
       return;
     }
     const model = this.selected;
