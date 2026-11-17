@@ -8,7 +8,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p bench/tsconfig.json",
     "test": "vitest run",
-    "bench": "node bench/tick-cost.bench.ts"
+    "bench": "node --experimental-transform-types --no-warnings bench/tick-cost.bench.ts"
   },
   "dependencies": {
     "@brr/domain": "workspace:*",

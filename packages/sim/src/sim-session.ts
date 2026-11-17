@@ -2,6 +2,7 @@ import type { SimTrack } from "./sim-track.ts";
 import {
   POSE_FLOATS_PER_VEHICLE,
   Simulation,
+  type OpenEndRule,
   type SimCapacity,
   type SimRailway,
   type TrainPlacement,
@@ -11,6 +12,8 @@ import { VEHICLE_POSE_FLOATS } from "./running-gear.ts";
 
 export type SimCommand =
   | { readonly kind: "throttle"; readonly train: number; readonly speedLduPerS: number }
+  | { readonly kind: "drive"; readonly train: number; readonly signedSpeedLduPerS: number }
+  | { readonly kind: "rerail"; readonly train: number }
   | { readonly kind: "switch"; readonly switchIndex: number; readonly state: number }
   | { readonly kind: "reverse"; readonly train: number }
   | { readonly kind: "goTo"; readonly train: number; readonly placement: number };
@@ -30,6 +33,7 @@ export interface SimScenario {
   readonly capacity: SimCapacity;
   readonly trains: ReadonlyArray<SimTrainLoad>;
   readonly railway?: SimRailway;
+  readonly openEnds?: OpenEndRule;
 }
 
 const ROUTE_STATE_CODES = { manual: 0, waiting: 1, routed: 2, arrived: 3, reversing: 4 } as const;
@@ -51,6 +55,9 @@ export interface SimFrameLayout {
   readonly checkedTicksIndex: number;
   readonly vehiclePoseStart: number;
   readonly vehiclePoseFloats: number;
+  readonly trainDirectionStart: number;
+  readonly trainDerailSpeedStart: number;
+  readonly bogiesOffTrackStart: number;
   readonly floats: number;
 }
 
@@ -66,6 +73,9 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
   const minBogieSeparationIndex = sharedPieceTicksIndex + 1;
   const checkedTicksIndex = minBogieSeparationIndex + 1;
   const vehiclePoseStart = checkedTicksIndex + 1;
+  const trainDirectionStart = vehiclePoseStart + vehicles * VEHICLE_POSE_FLOATS;
+  const trainDerailSpeedStart = trainDirectionStart + trains;
+  const bogiesOffTrackStart = trainDerailSpeedStart + trains;
   return {
     poseFloatsPerVehicle: POSE_FLOATS_PER_VEHICLE,
     vehicles,
@@ -83,7 +93,10 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
     checkedTicksIndex,
     vehiclePoseStart,
     vehiclePoseFloats: VEHICLE_POSE_FLOATS,
-    floats: vehiclePoseStart + vehicles * VEHICLE_POSE_FLOATS,
+    trainDirectionStart,
+    trainDerailSpeedStart,
+    bogiesOffTrackStart,
+    floats: bogiesOffTrackStart + vehicles,
   };
 }
 
@@ -96,7 +109,12 @@ export class SimSession {
 
   constructor(scenario: SimScenario) {
     this.scenario = scenario;
-    this.simulation = new Simulation(scenario.track, scenario.capacity, scenario.railway ?? null);
+    this.simulation = new Simulation(
+      scenario.track,
+      scenario.capacity,
+      scenario.railway ?? null,
+      scenario.openEnds ?? "brake",
+    );
     for (const train of scenario.trains) this.simulation.addTrain(train.spec, train.placement);
     this.layout = simFrameLayout(
       this.simulation.vehicles,
@@ -123,7 +141,10 @@ export class SimSession {
       out[layout.trainEdgeStart + t] = sim.trainEdge[t] ?? 0;
       out[layout.trainOffsetStart + t] = sim.trainOffset[t] ?? 0;
       out[layout.trainSpeedStart + t] = sim.trainSpeed[t] ?? 0;
+      out[layout.trainDirectionStart + t] = sim.direction(t);
+      out[layout.trainDerailSpeedStart + t] = sim.trainDerailSpeed[t] ?? 0;
     }
+    sim.writeBogiesOffTrack(out, layout.bogiesOffTrackStart);
     for (let s = 0; s < layout.switches; s++) {
       out[layout.switchStart + s] = sim.switchStates[s] ?? 0;
     }
@@ -144,6 +165,11 @@ function applyCommand(simulation: Simulation, command: SimCommand): boolean {
     case "throttle":
       simulation.setThrottle(command.train, command.speedLduPerS);
       return true;
+    case "drive":
+      simulation.drive(command.train, command.signedSpeedLduPerS);
+      return true;
+    case "rerail":
+      return simulation.rerail(command.train);
     case "switch":
       return simulation.setSwitch(command.switchIndex, command.state);
     case "goTo":
