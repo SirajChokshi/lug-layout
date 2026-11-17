@@ -433,6 +433,11 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       "Lands at (plates)",
       snapshot.hover && snapshot.mode === "place" ? String(snapshot.hover.yPlates) : "–",
     ],
+    [
+      "Placement refused",
+      snapshot.hover?.refusal && snapshot.mode === "place" ? snapshot.hover.refusal : "–",
+    ],
+    ["Last refusal", snapshot.lastRefusal?.reason ?? "none"],
     ["Placements", integer.format(snapshot.placements)],
     [
       "History (undo, redo)",

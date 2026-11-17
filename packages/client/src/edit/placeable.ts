@@ -38,6 +38,14 @@ export interface StudLattice {
   readonly baseLdu: Int32Array;
 }
 
+export interface TrackTongues {
+  readonly count: number;
+  readonly cellX: Int32Array;
+  readonly cellZ: Int32Array;
+  readonly bottom: Int16Array;
+  readonly top: Int16Array;
+}
+
 export interface Placeable {
   readonly id: string;
   readonly label: string;
@@ -57,6 +65,7 @@ export interface Placeable {
   readonly credit: ModelCredit | null;
   readonly road: RoadSurface | null;
   readonly module: ModuleSurface | null;
+  readonly tongues: TrackTongues | null;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -224,6 +233,33 @@ function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: strin
     flatCells: 0,
     heightPlates,
   };
+}
+
+function trackTongues(cells: PlaceableCells, square: PlaceableCells): TrackTongues {
+  const outside: number[] = [];
+  for (let j = 0; j < cells.depth; j++) {
+    for (let i = 0; i < cells.width; i++) {
+      if ((cells.columnTop[j * cells.width + i] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
+      const x = cells.cellX0 + i - square.cellX0;
+      const z = cells.cellZ0 + j - square.cellZ0;
+      if (x >= 0 && z >= 0 && x < square.width && z < square.depth) continue;
+      outside.push(j * cells.width + i);
+    }
+  }
+  const tongues: TrackTongues = {
+    count: outside.length,
+    cellX: new Int32Array(outside.length),
+    cellZ: new Int32Array(outside.length),
+    bottom: new Int16Array(outside.length),
+    top: new Int16Array(outside.length),
+  };
+  outside.forEach((cell, k) => {
+    tongues.cellX[k] = cells.cellX0 + (cell % cells.width);
+    tongues.cellZ[k] = cells.cellZ0 + Math.floor(cell / cells.width);
+    tongues.bottom[k] = cells.columnBottom[cell] ?? 0;
+    tongues.top[k] = cells.columnTop[cell] ?? 0;
+  });
+  return tongues;
 }
 
 function partCells(part: PartAsset, shift: Vec3): PlaceableCells {
@@ -400,6 +436,7 @@ export function modelPlaceable(
   if (module) requireOnlyTrackPastModuleEdges(local, partBoxes, parts, module, name);
   const restPlates = (cells.restY - restingOn) / PLATE_LDU;
   const placedCells = modelCells(cells, shift, name, restPlates, !isModule);
+  const square = module ? moduleCells(placedCells, module, name) : null;
   return {
     id,
     label,
@@ -411,7 +448,7 @@ export function modelPlaceable(
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
-    cells: module ? moduleCells(placedCells, module, name) : placedCells,
+    cells: square ?? placedCells,
     box,
     partBoxes,
     frameShift: shift,
@@ -419,6 +456,7 @@ export function modelPlaceable(
     credit: isModule ? null : credit,
     road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
     module,
+    tongues: square ? trackTongues(placedCells, square) : null,
   };
 }
 
@@ -468,5 +506,6 @@ export function partPlaceable(
     credit: null,
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
     module: null,
+    tongues: null,
   };
 }

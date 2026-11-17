@@ -435,3 +435,78 @@ it.each([2, 3])(
   },
   120_000,
 );
+
+const RAIL_MODULE = "generated:mils-rail-straight";
+const RAIL_LABEL = "Rail Module Straight (project rule, not MILS)";
+
+function placer(editor: IEditor, backend: HeadlessBackend) {
+  return (item: string, x: number, z: number) => {
+    editor.chooseItem(item);
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    const { placements, refusedClicks, lastRefusal } = editor.snapshot();
+    return { placements, refusedClicks, reason: lastRefusal?.reason ?? null };
+  };
+}
+
+it("refuses a 10264-1 Corner Garage in a rail module's track end in either order, and takes it beside a terrain edge", async () => {
+  const { editor, backend } = await startEditor(["mils-rail-straight", "10264-1"]);
+  const place = placer(editor, backend);
+  const garage = "omr:10264-1";
+
+  place(RAIL_MODULE, 320, 320);
+  const intoTrackEnd = place(garage, 960, 320);
+  const besideTerrain = place(garage, 320, 960);
+  editor.undo(0);
+  editor.undo(0);
+  place(garage, 960, 320);
+  const trackEndIntoGarage = place(RAIL_MODULE, 320, 320);
+
+  expect({ intoTrackEnd, besideTerrain, trackEndIntoGarage }).toEqual({
+    intoTrackEnd: {
+      placements: 1,
+      refusedClicks: 1,
+      reason: expect.stringContaining(`the track end of ${RAIL_LABEL}`),
+    },
+    besideTerrain: { placements: 2, refusedClicks: 1, reason: expect.any(String) },
+    trackEndIntoGarage: {
+      placements: 1,
+      refusedClicks: 2,
+      reason: expect.stringContaining(`${RAIL_LABEL}: its track end would run into 10264-1`),
+    },
+  });
+}, 120_000);
+
+it("refuses a rail edge against a plain or road module in either order, and joins terrain edges beside it", async () => {
+  const { editor, backend } = await startEditor([
+    "mils-rail-straight",
+    "mils-plain",
+    "mils-road-straight",
+  ]);
+  const place = placer(editor, backend);
+  const facingRail = expect.stringContaining(`would face the rail edge of ${RAIL_LABEL}`);
+
+  place(RAIL_MODULE, 320, 320);
+  const plainOnRail = place("generated:mils-plain", 960, 320);
+  const roadOnRail = place("generated:mils-road-straight", 960, 320);
+  const plainOnTerrain = place("generated:mils-plain", 320, 960);
+  editor.undo(0);
+  editor.undo(0);
+  editor.setSnapModules(false);
+  place("generated:mils-plain", 960, 320);
+  const railOnPlain = place(RAIL_MODULE, 320, 320);
+
+  expect({ plainOnRail, roadOnRail, plainOnTerrain, railOnPlain }).toEqual({
+    plainOnRail: { placements: 1, refusedClicks: 1, reason: facingRail },
+    roadOnRail: { placements: 1, refusedClicks: 2, reason: facingRail },
+    plainOnTerrain: { placements: 2, refusedClicks: 2, reason: facingRail },
+    railOnPlain: {
+      placements: 1,
+      refusedClicks: 3,
+      reason: expect.stringContaining(
+        `${RAIL_LABEL}: its rail edge on the maxX side would face the terrain edge of MILS Basic Terrain Module`,
+      ),
+    },
+  });
+}, 120_000);
