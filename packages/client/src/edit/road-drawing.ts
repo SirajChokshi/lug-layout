@@ -27,7 +27,7 @@ import {
 import type { Placeable } from "./placeable.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
 
-export type RoadTileProblem = "no-piece" | "other-family" | "mismatch" | "overlap";
+export type RoadTileProblem = "no-piece" | "other-family" | "mismatch" | "overlap" | "rules";
 
 export interface RoadKitView {
   readonly id: string;
@@ -38,12 +38,30 @@ export interface RoadKitView {
   readonly pieces: ReadonlyArray<{ readonly item: string; readonly shape: RoadShape }>;
 }
 
-export interface RoadTileIssue {
+interface RoadTileSite {
   readonly x: number;
   readonly z: number;
-  readonly problem: RoadTileProblem;
   readonly shape: RoadShape | null;
   readonly blocker: string | null;
+}
+
+export type RoadTileIssue =
+  | (RoadTileSite & { readonly problem: Exclude<RoadTileProblem, "rules"> })
+  | (RoadTileSite & { readonly problem: "rules"; readonly refusal: string });
+
+export interface CarriedThing {
+  readonly thing: PlacedModel | number;
+  readonly box: WorldBox;
+}
+
+export interface RoadPlacementRules {
+  carried(plate: PlacedModel): ReadonlyArray<CarriedThing>;
+  layRefusal(pose: PlacementPose, lifted: ReadonlyArray<PlacedModel>): string | null;
+  carriedRefusal(
+    thing: PlacedModel | number,
+    lifted: ReadonlyArray<PlacedModel>,
+    poses: ReadonlyArray<PlacementPose>,
+  ): string | null;
 }
 
 export interface RoadStrokeView {
@@ -158,12 +176,18 @@ export class RoadDrawing {
   private dragging = false;
   private evaluated: Evaluated | null = null;
   private readonly groundUnder = new Map<PlacementRef, PlacementPose>();
+  private readonly layVerdicts = new Map<string, string | null>();
+  private readonly carrying = new Map<PlacedModel, ReadonlyArray<CarriedThing>>();
+  private readonly liftVerdicts = new Map<string, string | null>();
+  private readonly modelKeys = new WeakMap<PlacedModel, number>();
+  private nextModelKey = 0;
   preferredRot = 0;
   erasing = false;
 
   constructor(
     private readonly placeables: ReadonlyArray<Placeable>,
     familyLabel: (family: string, placeable: Placeable) => string,
+    private readonly rules: RoadPlacementRules,
   ) {
     const kits = roadKits(
       placeables.flatMap((placeable, ref) =>
@@ -246,6 +270,9 @@ export class RoadDrawing {
 
   worldChanged(): void {
     this.evaluated = null;
+    this.layVerdicts.clear();
+    this.carrying.clear();
+    this.liftVerdicts.clear();
   }
 
   begin(
@@ -539,6 +566,7 @@ export class RoadDrawing {
       const [x, z] = this.centre(tile);
       issues.push({ x, z, problem: tile.reason, shape: shapeOf(tile.arms), blocker: null });
     }
+    issues.push(...this.liftIssues(placements, removals));
     if (placements.length === 0) return issues;
     const top = Math.max(...placements.map((p) => this.placeable(p.pose.refId).box.max[1]));
     const area = placements.map((p) => this.tileBox(p.tile, top));
@@ -556,6 +584,7 @@ export class RoadDrawing {
       ...removals,
       ...placements.flatMap((p) => (p.replaces ? [p.replaces] : [])),
     ]);
+    const lifted = [...replaced];
     const kept = roads.filter((model) => !replaced.has(model) && near(model.box));
     const network: RoadPlacement[] = kept.flatMap((model, id) =>
       model.placeable.road
@@ -612,8 +641,22 @@ export class RoadDrawing {
           shape: shapeOf(p.tile.arms),
           blocker: model.placeable.label,
         });
-        return;
       }
+      const refusal = this.layRefusal(
+        p.pose,
+        lifted.filter((plate) => boxesMeet(plate.box, box)),
+      );
+      if (refusal) {
+        issues.push({
+          x,
+          z,
+          problem: "rules",
+          shape: shapeOf(p.tile.arms),
+          blocker: null,
+          refusal,
+        });
+      }
+      if (model || refusal) return;
       if (report.segments.some((s) => s.placement === id && s.status === "mismatch")) {
         const beside = kept.find((other) => touches(other.box, box));
         issues.push({
@@ -626,6 +669,101 @@ export class RoadDrawing {
       }
     });
     return issues;
+  }
+
+  private layRefusal(pose: PlacementPose, under: ReadonlyArray<PlacedModel>): string | null {
+    let key = `${pose.refId} ${pose.colorId} ${pose.x} ${pose.z} ${pose.yPlates} ${pose.rot}`;
+    for (const plate of under) key += ` ${this.modelKey(plate)}`;
+    const known = this.layVerdicts.get(key);
+    if (known !== undefined) return known;
+    const refusal = this.rules.layRefusal(pose, under);
+    this.layVerdicts.set(key, refusal);
+    return refusal;
+  }
+
+  private modelKey(model: PlacedModel): number {
+    let key = this.modelKeys.get(model);
+    if (key === undefined) {
+      key = this.nextModelKey++;
+      this.modelKeys.set(model, key);
+    }
+    return key;
+  }
+
+  private carried(plate: PlacedModel): ReadonlyArray<CarriedThing> {
+    let carried = this.carrying.get(plate);
+    if (carried === undefined) {
+      carried = this.rules.carried(plate);
+      this.carrying.set(plate, carried);
+    }
+    return carried;
+  }
+
+  private thingKey(thing: PlacedModel | number): string {
+    return typeof thing === "number" ? `t${thing}` : `m${this.modelKey(thing)}`;
+  }
+
+  private carriedRefusal(
+    carried: CarriedThing,
+    thing: string,
+    under: ReadonlyArray<PlacedModel>,
+    over: ReadonlyArray<PlacementPose>,
+  ): string | null {
+    let key = thing;
+    for (const plate of under) key += ` ${this.modelKey(plate)}`;
+    for (const pose of over) {
+      key += ` ${pose.refId},${pose.colorId},${pose.x},${pose.z},${pose.yPlates},${pose.rot}`;
+    }
+    const known = this.liftVerdicts.get(key);
+    if (known !== undefined) return known;
+    const refusal = this.rules.carriedRefusal(carried.thing, under, over);
+    this.liftVerdicts.set(key, refusal);
+    return refusal;
+  }
+
+  private liftIssues(
+    placements: ReadonlyArray<TilePlacement>,
+    removals: ReadonlyArray<PlacedModel>,
+  ): RoadTileIssue[] {
+    const lifted = [...removals, ...placements.flatMap((p) => (p.replaces ? [p.replaces] : []))];
+    const things = new Map<string, CarriedThing>();
+    for (const plate of lifted) {
+      for (const carried of this.carried(plate)) things.set(this.thingKey(carried.thing), carried);
+    }
+    const issues: RoadTileIssue[] = [];
+    const marked = new Set<PlacedModel>();
+    for (const [key, carried] of things) {
+      const under = lifted.filter((plate) => boxesMeet(plate.box, carried.box));
+      const first = under[0];
+      if (!first) continue;
+      const over = placements
+        .filter((p) => boxesMeet(this.tileBox(p.tile, 0), carried.box))
+        .map((p) => p.pose);
+      const refusal = this.carriedRefusal(carried, key, under, over);
+      if (!refusal) continue;
+      const carriers = under.flatMap((plate) => {
+        const own = this.carriedRefusal(carried, `${key}/${this.modelKey(plate)}`, [plate], over);
+        return own ? [{ plate, own }] : [];
+      });
+      for (const { plate, own } of carriers.length > 0
+        ? carriers
+        : [{ plate: first, own: refusal }]) {
+        if (marked.has(plate)) continue;
+        marked.add(plate);
+        issues.push(this.liftedIssue(placements, plate, own));
+      }
+    }
+    return issues;
+  }
+
+  private liftedIssue(
+    placements: ReadonlyArray<TilePlacement>,
+    model: PlacedModel,
+    refusal: string,
+  ): RoadTileIssue {
+    const replacing = placements.find((p) => p.replaces === model);
+    const [x, z] = replacing ? this.centre(replacing.tile) : [model.handle.x, model.handle.z];
+    return { x, z, problem: "rules", shape: null, blocker: model.placeable.label, refusal };
   }
 
   private ghost(placements: ReadonlyArray<TilePlacement>): ChunkInstances | null {
