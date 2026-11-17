@@ -21,7 +21,7 @@ test("undo walks every edit back to the exact earlier poses and redo replays the
   await record();
   await editor.placeAt(PLAIN_MODULE, { x: 960, z: 320 });
   await record();
-  await editor.placeAt(GROCER, { x: 0, z: 640 });
+  await editor.placeAt(GROCER, { x: -640, z: 0 });
   await record();
   expect(await editor.select({ x: 960, z: 320 })).toBe(PLAIN_MODULE);
   await editor.press("r");
