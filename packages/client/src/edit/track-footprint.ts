@@ -50,6 +50,12 @@ export function localPlanTriangles(part: PartAsset): Float64Array {
   return out;
 }
 
+export function localBoundsTriangles(part: PartAsset): Float64Array {
+  const [x0, , z0] = part.boundsMin;
+  const [x1, , z1] = part.boundsMax;
+  return Float64Array.of(x0, z0, x1, z0, x1, z1, x0, z0, x1, z1, x0, z1);
+}
+
 export function trackPlanTransform(placement: Pose16, frame: TrackPartFrame): PlaneTransform {
   const studs = zeta16ToStuds(placement.position);
   const theta = placement.heading * HEADING_RADIANS;
