@@ -41,6 +41,13 @@ function startsTool(kind: DragKind, event: PointerEvent): boolean {
   return kind === "click" || (kind === "marquee" && !togglesSelection(event));
 }
 
+const NUDGES: Readonly<Record<string, readonly [number, number]>> = {
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+};
+
 function marqueeOf(canvas: HTMLCanvasElement, drag: Drag): Marquee {
   const rect = canvas.getBoundingClientRect();
   return {
@@ -183,6 +190,12 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       if (event.target instanceof HTMLInputElement) return;
       if (event.ctrlKey || event.metaKey) {
         historyShortcut(editor, event);
+        return;
+      }
+      const nudge = NUDGES[event.key];
+      if (nudge) {
+        editor.nudge(nudge[0], nudge[1], event.timeStamp);
+        event.preventDefault();
         return;
       }
       switch (event.key) {

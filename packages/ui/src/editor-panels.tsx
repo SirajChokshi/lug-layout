@@ -163,9 +163,10 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
       </button>
       <p className="toolbar-hint">
         Click picks a model; Shift-, Ctrl- or Cmd-click adds or removes one; Ctrl+A picks all. Drag
-        on empty ground to box-select: left to right takes models wholly inside, right to left takes
-        anything the box touches, Shift adds. Right-drag orbits, middle-drag or Shift+right-drag
-        pans, the wheel zooms, C centres on the cursor.
+        a model to move the selection on the grid; the arrow keys nudge it one step. Drag on empty
+        ground to box-select: left to right takes models wholly inside, right to left takes anything
+        the box touches, Shift adds. Right-drag orbits, middle-drag or Shift+right-drag pans, the
+        wheel zooms, C centres on the cursor.
       </p>
     </div>
   );
@@ -296,6 +297,12 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
         : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
     ],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
+    [
+      "Moving",
+      snapshot.move
+        ? `${snapshot.move.models} by ${snapshot.move.dx}, ${snapshot.move.dz} LDU${snapshot.move.refusal ? `: refused, ${snapshot.move.refusal}` : ""}`
+        : "no",
+    ],
     ["Baseplate seat", seatText(snapshot)],
     ["Road-edge snap", snapText(snapshot)],
     [

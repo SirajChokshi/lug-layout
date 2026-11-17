@@ -20,6 +20,20 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+export interface GroundAxis {
+  readonly x: number;
+  readonly z: number;
+}
+
+export interface GroundAxes {
+  readonly up: GroundAxis;
+  readonly right: GroundAxis;
+}
+
+function nearestAxis(x: number, z: number): GroundAxis {
+  return Math.abs(x) >= Math.abs(z) ? { x: Math.sign(x), z: 0 } : { x: 0, z: Math.sign(z) };
+}
+
 export class OrbitCamera {
   private targetX = 0;
   private targetY = 0;
@@ -74,6 +88,15 @@ export class OrbitCamera {
       Math.max(fitDepth, fitWidth) * TOP_DOWN_MARGIN,
       MAX_TOP_DOWN_DISTANCE_LDU,
     );
+  }
+
+  screenAxes(): GroundAxes {
+    const forwardX = -Math.cos(this.yaw);
+    const forwardZ = -Math.sin(this.yaw);
+    return {
+      up: nearestAxis(forwardX, forwardZ),
+      right: nearestAxis(-forwardZ, forwardX),
+    };
   }
 
   targetXZ(): readonly [number, number] {

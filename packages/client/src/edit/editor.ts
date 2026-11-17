@@ -77,6 +77,7 @@ import {
   partPlaceable,
   type Placeable,
 } from "./placeable.ts";
+import { groupGhost } from "./group-ghost.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import {
   ScreenRect,
@@ -205,8 +206,8 @@ export interface RoadSnapView {
   readonly overlappingCells: number;
 }
 
-export type RefusedAction = "place" | "rotate" | "remove" | "track";
-type ModelEditKind = Extract<EditKind, "rotate" | "remove">;
+export type RefusedAction = "place" | "rotate" | "move" | "remove" | "track";
+type ModelEditKind = Extract<EditKind, "rotate" | "remove" | "move">;
 
 export interface RefusedEdit {
   readonly action: RefusedAction;
@@ -320,6 +321,14 @@ export interface EditorSnapshot {
   readonly lastRefusal: RefusedEdit | null;
   readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
+  readonly move: MoveView | null;
+}
+
+export interface MoveView {
+  readonly dx: number;
+  readonly dz: number;
+  readonly models: number;
+  readonly refusal: string | null;
 }
 
 export interface EditorCredits {
@@ -368,6 +377,7 @@ export interface IEditor {
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
   rotate(eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
+  nudge(right: number, up: number, eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
   redo(eventTimeMs: number): void;
   orbit(dxPx: number, dyPx: number): void;
@@ -493,6 +503,20 @@ interface PendingAction {
 
 type ItemRefusal = Refusal & { readonly item: string };
 
+interface MoveDrag {
+  readonly models: ReadonlyArray<PlacedModel>;
+  readonly picked: PlacedModel;
+  readonly anchorX: number;
+  readonly anchorZ: number;
+  readonly origin: LatticePoint;
+  readonly grid: number;
+  dx: number;
+  dz: number;
+  ghostShown: boolean;
+  changes: ReadonlyArray<ModelChange>;
+  refusal: ItemRefusal | null;
+}
+
 interface ModelChange {
   readonly model: PlacedModel;
   readonly to: PlacementPose | null;
@@ -588,6 +612,7 @@ export class Editor implements IEditor {
     lastRefusal: null,
     ghost: null,
     track: null,
+    move: null,
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -609,7 +634,7 @@ export class Editor implements IEditor {
   private selection: ReadonlyArray<PlacementRef> = [];
   private rotationPivot: LatticePoint | null = null;
   private picked: PlacementRef | null = null;
-  private pressed: PlacedModel | null = null;
+  private moving: MoveDrag | null = null;
   private ghostRot = 0;
   private hoverX = 0;
   private hoverZ = 0;
@@ -952,10 +977,7 @@ export class Editor implements IEditor {
   }
 
   dragStart(ndcX: number, ndcY: number): boolean {
-    if (this.state.mode === "select" && !this.active) {
-      this.pressed = this.modelUnder(ndcX, ndcY);
-      return this.pressed !== null;
-    }
+    if (this.state.mode === "select" && !this.active) return this.beginMove(ndcX, ndcY);
     const track = this.track;
     if (this.state.mode !== "track" || !track) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
@@ -966,7 +988,10 @@ export class Editor implements IEditor {
   }
 
   dragMove(ndcX: number, ndcY: number): void {
-    if (this.pressed) return;
+    if (this.moving) {
+      this.updateMove(this.moving, ndcX, ndcY);
+      return;
+    }
     const track = this.track;
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
@@ -977,10 +1002,8 @@ export class Editor implements IEditor {
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
-    const pressed = this.pressed;
-    if (pressed) {
-      this.pressed = null;
-      this.select([pressed], pressed);
+    if (this.moving) {
+      this.endMove(this.moving, ndcX, ndcY, eventTimeMs);
       return;
     }
     const track = this.track;
@@ -1001,6 +1024,7 @@ export class Editor implements IEditor {
   }
 
   chooseItem(id: string | null): void {
+    this.cancelMove();
     this.showRefusalCells(null);
     if (id === TRACK_ITEM_ID && this.track) {
       this.active = null;
@@ -1567,7 +1591,7 @@ export class Editor implements IEditor {
     const models = this.selectedModels();
     const bounds = unionBox(models.map((model) => model.box));
     if (!bounds) return;
-    const grid = models.some((model) => model.placeable.ground) ? this.baseplateGrid : STUD_LDU;
+    const grid = this.selectionGrid(models);
     const pivot = this.rotationPivot ?? rotationPivot(bounds, grid);
     const turned = this.commitModels(
       "rotate",
@@ -1593,6 +1617,120 @@ export class Editor implements IEditor {
     );
     this.select(this.show(edit, eventTimeMs).added);
     return true;
+  }
+
+  private selectionGrid(models: ReadonlyArray<PlacedModel>): number {
+    return models.some((model) => model.placeable.ground) ? this.baseplateGrid : STUD_LDU;
+  }
+
+  private translated(
+    models: ReadonlyArray<PlacedModel>,
+    dx: number,
+    dz: number,
+    landUnderCursor: boolean,
+  ): ReadonlyArray<ModelChange> {
+    const landsAlone = landUnderCursor && models.length === 1;
+    return models.map((model) => {
+      const pose = poseOf(model.handle);
+      const x = pose.x + dx;
+      const z = pose.z + dz;
+      const yPlates = landsAlone
+        ? this.checkAt(model.placeable, x, z, pose.rot, [model], this.cursorLanding()).yPlates
+        : pose.yPlates;
+      return { model, to: { ...pose, x, z, yPlates } };
+    });
+  }
+
+  private beginMove(ndcX: number, ndcY: number): boolean {
+    const picked = this.modelUnder(ndcX, ndcY);
+    if (!picked || !this.groundHit(ndcX, ndcY)) return false;
+    if (!this.selectedModels().includes(picked)) this.select([picked], picked);
+    const models = this.selectedModels();
+    const bounds = unionBox(models.map((model) => model.box));
+    if (!bounds) return false;
+    const grid = this.selectionGrid(models);
+    this.moving = {
+      models,
+      picked,
+      anchorX: this.hitX,
+      anchorZ: this.hitZ,
+      origin: rotationPivot(bounds, grid),
+      grid,
+      dx: 0,
+      dz: 0,
+      ghostShown: false,
+      changes: [],
+      refusal: null,
+    };
+    return true;
+  }
+
+  private updateMove(drag: MoveDrag, ndcX: number, ndcY: number): void {
+    if (!this.groundHit(ndcX, ndcY)) return;
+    const dx = snapToGrid(this.hitX - drag.anchorX, drag.grid);
+    const dz = snapToGrid(this.hitZ - drag.anchorZ, drag.grid);
+    if (dx === drag.dx && dz === drag.dz) return;
+    drag.dx = dx;
+    drag.dz = dz;
+    if (!drag.ghostShown) {
+      this.backend.setGhost(groupGhost(drag.models, drag.origin.x, drag.origin.z));
+      drag.ghostShown = true;
+    }
+    drag.changes = this.translated(drag.models, dx, dz, true);
+    drag.refusal = dx === 0 && dz === 0 ? null : this.groupRefusal(drag.changes);
+    const lead = drag.changes[0];
+    const dyLdu = lead?.to ? (lead.to.yPlates - lead.model.handle.yPlates) * PLATE_LDU : 0;
+    this.backend.placeGhost(drag.origin.x + dx, dyLdu, drag.origin.z + dz, 0);
+    this.backend.setSelectionBoxes(
+      drag.models.map(({ box }) => ({
+        minX: box.minX + dx,
+        minY: box.minY + dyLdu,
+        minZ: box.minZ + dz,
+        maxX: box.maxX + dx,
+        maxY: box.maxY + dyLdu,
+        maxZ: box.maxZ + dz,
+      })),
+    );
+    this.update({
+      move: { dx, dz, models: drag.models.length, refusal: drag.refusal?.message ?? null },
+    });
+  }
+
+  private endMove(drag: MoveDrag, ndcX: number, ndcY: number, eventTimeMs: number): void {
+    this.updateMove(drag, ndcX, ndcY);
+    this.moving = null;
+    this.backend.setGhost(null);
+    this.update({ move: null });
+    if (drag.dx === 0 && drag.dz === 0) {
+      this.select([drag.picked], drag.picked);
+      return;
+    }
+    if (drag.refusal) {
+      this.refuse("move", drag.refusal.item, drag.refusal);
+      this.select(drag.models);
+      return;
+    }
+    this.commitModels("move", drag.changes, eventTimeMs);
+  }
+
+  private cancelMove(): void {
+    const drag = this.moving;
+    if (!drag) return;
+    this.moving = null;
+    this.backend.setGhost(null);
+    this.update({ move: null });
+    this.select(drag.models);
+  }
+
+  nudge(right: number, up: number, eventTimeMs: number): void {
+    if (this.moving || this.active || this.state.mode !== "select") return;
+    const models = this.selectedModels();
+    if (models.length === 0) return;
+    const grid = this.selectionGrid(models);
+    const axes = this.camera.screenAxes();
+    const dx = (right * axes.right.x + up * axes.up.x) * grid + 0;
+    const dz = (right * axes.right.z + up * axes.up.z) * grid + 0;
+    this.commitModels("move", this.translated(models, dx, dz, false), eventTimeMs);
   }
 
   private selectTrack(piece: number | null): void {

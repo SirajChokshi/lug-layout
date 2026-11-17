@@ -150,3 +150,42 @@ it("selects a model pressed and released in place, and starts no box on it", asy
 
   expect(editor.dragStart(FAR_LDU / NDC_TO_LDU, FAR_LDU / NDC_TO_LDU)).toBe(false);
 }, 120_000);
+
+function dragFrom(editor: IEditor, from: Pose, toX: number, toZ: number): void {
+  expect(editor.dragStart(from.x / NDC_TO_LDU, from.z / NDC_TO_LDU)).toBe(true);
+  editor.dragMove(toX / NDC_TO_LDU, toZ / NDC_TO_LDU);
+  editor.dragEnd(toX / NDC_TO_LDU, toZ / NDC_TO_LDU, 0);
+}
+
+it("drags a model as one move command: refused off the studs, landed exactly on another baseplate, and nudged one stud by the arrow keys", async () => {
+  const editor = await setOnBaseplate();
+  const plateItem = itemOf(editor, BASEPLATE);
+  editor.chooseItem(plateItem);
+  clickAt(editor, FAR_LDU / 2, 0);
+  editor.chooseItem(null);
+  const home = poses(editor);
+  const set = poseOf(editor, `omr:${UPPER_SET}`);
+  const [under, other] = home.filter((pose) => pose.item === plateItem);
+  if (!under || !other) throw new Error("the second baseplate was not placed");
+
+  const refusals = editor.snapshot().refusals;
+  dragFrom(editor, set, set.x, set.z + FAR_LDU);
+  expect(editor.snapshot().refusals).toBe(refusals + 1);
+  expect(editor.snapshot().lastRefusal?.action).toBe("move");
+  expect(poses(editor)).toEqual(home);
+
+  const depth = editor.snapshot().history.undoDepth;
+  dragFrom(editor, set, set.x + other.x - under.x, set.z);
+  expect(editor.snapshot().history.undoDepth).toBe(depth + 1);
+  expect(editor.snapshot().history.undo).toBe("move");
+  const moved = poseOf(editor, `omr:${UPPER_SET}`);
+  expect(moved).toEqual({ ...set, x: set.x + other.x - under.x });
+
+  editor.nudge(1, 0, 0);
+  const nudged = poseOf(editor, `omr:${UPPER_SET}`);
+  expect(Math.abs(nudged.x - moved.x) + Math.abs(nudged.z - moved.z)).toBe(20);
+
+  editor.undo(0);
+  editor.undo(0);
+  expect(poses(editor)).toEqual(home);
+}, 120_000);
