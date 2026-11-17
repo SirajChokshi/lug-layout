@@ -5,6 +5,9 @@
   "compatibility_date": "2026-11-01",
   "workers_dev": true,
   "send_metrics": false,
+  "vars": {
+    "PART_BUNDLE_BASE_URL": "https://pub-3223db7496e940cc821de2e207245b2f.r2.dev/"
+  },
   "d1_databases": [
     {
       "binding": "CATALOG_DB",
@@ -15,10 +18,6 @@
     {
       "binding": "CATALOG_RELEASES",
       "bucket_name": "brr-catalog-releases"
-    },
-    {
-      "binding": "PART_BUNDLES",
-      "bucket_name": "brr-part-bundles"
     }
   ],
   "ratelimits": [

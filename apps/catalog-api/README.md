@@ -21,9 +21,9 @@ Part search names a published part bundle instead, by the input key in its manif
 
 | Path | Returns |
 |---|---|
-| `/v1/bundles/<key>/search?q=&limit=` | The editor's catalog items that match `q`, from `standard/manifest.<key>.json` in the `brr-part-bundles` bucket. Each hit has the editor's item id (`ldraw:<part>@<LDraw colour>` for each produced colour of a ground or road part, `omr:<set>`, `generated:<module>`, `track:<system>`), its label, palette section, kind, and its record or shape file (`null` for track). `q` follows the `/search` rules and matches the label, LDraw number, Rebrickable number, LEGO element ids, set number and name, colour name and section. `limit` 1–50, default 20. 404 when the bucket has no manifest for the key, 502 when it doesn't decode. |
+| `/v1/bundles/<key>/search?q=&limit=` | The editor's catalog items that match `q`, from `standard/manifest.<key>.json` under `PART_BUNDLE_BASE_URL`. Each hit has the editor's item id (`ldraw:<part>@<LDraw colour>` for each produced colour of a ground or road part, `omr:<set>`, `generated:<module>`, `track:<system>`), its label, palette section, kind, and its record or shape file (`null` for track). `q` follows the `/search` rules and matches the label, LDraw number, Rebrickable number, LEGO element ids, set number and name, colour name and section. `limit` 1–50, default 20. 404 when no manifest is published for the key, 502 when the bundle host fails or the manifest doesn't decode. |
 
-The Worker reads the manifest once per key and keeps the ranked index for the last 4 keys in isolate memory. Answers are immutable per key: `ETag: "<key>"`, the edge cache and 304s as above, and the D1 query rate limit on misses. The bucket binding (`PART_BUNDLES`) is typed to `get` only, because R2 Worker bindings have no read-only mode.
+The Worker reads the manifest once per key and keeps the ranked index for the last 4 keys in isolate memory. Answers are immutable per key: `ETag: "<key>"`, the edge cache and 304s as above, and the D1 query rate limit on misses. The Worker has no binding to `brr-part-bundles`. R2 Worker bindings have no read-only mode (neither wrangler 4.163's `r2_buckets` nor the Terraform provider 5.x `r2_bucket` binding has one), so a binding would let this public Worker write the bucket. It fetches the manifest over HTTPS from the bucket's public URL instead (`PART_BUNDLE_BASE_URL`, `public_base_url` from `infra/cloudflare/part-bundles.json`), through the edge cache. That costs one fetch per new key per isolate and edge location, far fewer than the web app's own requests to the same domain.
 
 Search ranks inside the FTS index and joins only the top `limit` hits, and `kind` is a column of the sets index, so a request reads at most about `2 × limit` D1 rows per kind, however many documents match.
 
@@ -41,11 +41,13 @@ pnpm --filter @brr/catalog-api dev --persist-to .wrangler/state
 pnpm --filter @brr/catalog-api measure --sqlite <file>
 ```
 
-To search a locally built part bundle, put its standard manifest into the local bucket under the input key, then measure an uncached miss, an edge hit and a 304 for each query:
+To search a locally built part bundle, serve its standard manifest under the input key, point the Worker at it, then measure an uncached miss, an edge hit and a 304 for each query:
 
 ```sh
 key=$(node tools/asset-pipeline/src/cli.ts manifest-file | sed -E 's/manifest\.(.*)\.json/\1/')
-pnpm --filter @brr/catalog-api exec wrangler r2 object put brr-part-bundles/standard/manifest.$key.json --local --persist-to .wrangler/state --file ../../tools/asset-pipeline/dist/bundle/standard/manifest.json
+mkdir -p /tmp/bundle/standard && cp tools/asset-pipeline/dist/bundle/standard/manifest.json /tmp/bundle/standard/manifest.$key.json
+python3 -m http.server 8790 --bind 127.0.0.1 --directory /tmp/bundle &
+pnpm --filter @brr/catalog-api dev --var PART_BUNDLE_BASE_URL:http://127.0.0.1:8790/
 pnpm --filter @brr/catalog-api measure-bundle-search --manifest $key
 ```
 

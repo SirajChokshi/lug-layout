@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -33,7 +35,6 @@ interface TestEnv {
     batch(statements: PreparedStatement[]): Promise<unknown>;
   };
   readonly CATALOG_RELEASES: { put(key: string, value: Uint8Array): Promise<unknown> };
-  readonly PART_BUNDLES: { put(key: string, value: string): Promise<unknown> };
 }
 
 interface LoadedRelease {
@@ -77,6 +78,8 @@ let current: LoadedRelease;
 let staged: LoadedRelease;
 let currentPath: string;
 let bindings: TestEnv;
+let bundleHost: Server;
+const bundleRequests: string[] = [];
 
 const QUERIES_PER_MINUTE = 100;
 
@@ -151,9 +154,16 @@ async function getJson<Schema extends v.GenericSchema>(
 
 beforeAll(async () => {
   scratch = await mkdtemp(join(tmpdir(), "catalog-api-"));
+  bundleHost = await servePartBundle();
+  const { port } = bundleHost.address() as AddressInfo;
   server = createTestHarness({
     root: packageRoot,
-    workers: [{ configPath: "./wrangler.json" }],
+    workers: [
+      {
+        configPath: "./wrangler.json",
+        vars: { PART_BUNDLE_BASE_URL: `http://127.0.0.1:${port}/bundle/` },
+      },
+    ],
   });
   await server.listen();
   bindings = await server.getWorker<TestEnv>().getEnv();
@@ -164,6 +174,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server.close();
+  await new Promise((resolve) => bundleHost.close(resolve));
   await rm(scratch, { recursive: true, force: true });
 });
 
@@ -405,6 +416,7 @@ describe("catalog API over a loaded release", () => {
 
 const MANIFEST_KEY = "7ad9e66acd1f7b18";
 const UNDECODABLE_KEY = "00000000000000ff";
+const FAILING_KEY = "00000000000000fe";
 const PLATE_BOUNDS = { min: [0, -8, 0], max: [640, 0, 640] };
 
 function catalogPart(
@@ -527,6 +539,31 @@ const bundleIndex = {
   },
 };
 
+function servePartBundle(): Promise<Server> {
+  const published: Readonly<Record<string, string>> = {
+    [`/bundle/standard/manifest.${MANIFEST_KEY}.json`]: JSON.stringify(bundleIndex),
+    [`/bundle/standard/manifest.${UNDECODABLE_KEY}.json`]: JSON.stringify({
+      ...bundleIndex,
+      colors: "none",
+    }),
+  };
+  const host = createServer((request, response) => {
+    const path = request.url ?? "";
+    bundleRequests.push(path);
+    if (path === `/bundle/standard/manifest.${FAILING_KEY}.json`) {
+      response.writeHead(503).end();
+      return;
+    }
+    const body = published[path];
+    if (body === undefined) {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" }).end(body);
+  });
+  return new Promise((resolve) => host.listen(0, "127.0.0.1", () => resolve(host)));
+}
+
 function bundleSearch(q: string, key = MANIFEST_KEY): string {
   return `/v1/bundles/${key}/search?${new URLSearchParams({ q }).toString()}`;
 }
@@ -536,17 +573,6 @@ async function hitIds(q: string): Promise<ReadonlyArray<string>> {
 }
 
 describe("part search over a published bundle manifest", () => {
-  beforeAll(async () => {
-    await bindings.PART_BUNDLES.put(
-      `standard/manifest.${MANIFEST_KEY}.json`,
-      JSON.stringify(bundleIndex),
-    );
-    await bindings.PART_BUNDLES.put(
-      `standard/manifest.${UNDECODABLE_KEY}.json`,
-      JSON.stringify({ ...bundleIndex, colors: "none" }),
-    );
-  });
-
   it("answers with the editor's item ids for numbers, element ids, sets, modules, track and colours", async () => {
     expect(
       Object.fromEntries(
@@ -581,6 +607,9 @@ describe("part search over a published bundle manifest", () => {
       "crossroad whi": [],
       cro: ["ldraw:44343p03@72", "ldraw:44343p01@2"],
     });
+    expect(bundleRequests.filter((path) => path.includes(`manifest.${MANIFEST_KEY}.json`))).toEqual(
+      [`/bundle/standard/manifest.${MANIFEST_KEY}.json`],
+    );
   });
 
   it("returns each hit's label, palette section, kind and record or shape file", async () => {
@@ -628,7 +657,7 @@ describe("part search over a published bundle manifest", () => {
     expect(revalidated.status).toBe(304);
   });
 
-  it("refuses bad queries, unknown or malformed keys and manifests it cannot decode", async () => {
+  it("refuses bad queries, unknown or malformed keys, and manifests it cannot fetch or decode", async () => {
     const statuses = await Promise.all(
       [
         bundleSearch("ab"),
@@ -636,6 +665,7 @@ describe("part search over a published bundle manifest", () => {
         bundleSearch("3811", "1111111111111111"),
         bundleSearch("3811", "7AD9E66ACD1F7B18"),
         bundleSearch("3811", UNDECODABLE_KEY),
+        bundleSearch("3811", FAILING_KEY),
       ].map(async (path) => {
         const response = await get(path);
         const body = decode(ErrorResponse, await response.json());
@@ -647,6 +677,7 @@ describe("part search over a published bundle manifest", () => {
       [400, true],
       [404, true],
       [404, true],
+      [502, true],
       [502, true],
     ]);
   });
