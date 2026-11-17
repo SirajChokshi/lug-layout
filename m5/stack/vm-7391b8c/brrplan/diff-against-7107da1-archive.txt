@@ -1,0 +1,5 @@
+diff -r a/manifest.json c/manifest.json
+4c4
+<   "bundleVersion": "4434fd607a7302ee",
+---
+>   "bundleVersion": "df72b8f6657bb367",
