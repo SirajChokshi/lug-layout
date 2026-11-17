@@ -62,6 +62,11 @@ function lcg(seed: number): () => number {
   };
 }
 
+function shardFor(position: string[]) {
+  const piece = { index: 0, ref: "ldraw:74746", heading: 0, position, yPlates: 0 };
+  return worldShard(superChunkOfTrack(position), [], [piece]);
+}
+
 function reread(files: ReadonlyMap<string, string>) {
   const read = readWorldArchive(files);
   if (!read.ok) throw new Error(read.issues.map((i) => `${i.path} ${i.message}`).join("; "));
@@ -272,6 +277,46 @@ describe("world schema v1", () => {
     files.set(shardPath, "{");
     const read = readWorldArchive(files);
     expect(read.ok ? [] : read.issues.map((issue) => issue.path)).toEqual([shardPath]);
+  });
+
+  it("refuses an oversized coefficient in an irrational slot with one issue, and never throws", () => {
+    const position = ["0", "9".repeat(3000), ...ZEROS.slice(2)];
+    expect(decode(WorldShardV1, withTrack({ position }))).toEqual({
+      ok: false,
+      issues: [{ path: "$.track.0.position.1", message: "is outside the int64 range" }],
+    });
+    const files = archiveFiles(placements, track);
+    const shardPath = [...files.keys()].find((name) => name.startsWith("shards/"));
+    const stored = shardPath ? files.get(shardPath) : undefined;
+    if (!shardPath || !stored) throw new Error("the archive has no shard");
+    const parsed: { track: Array<{ position: string[] }> } = JSON.parse(stored);
+    const first = parsed.track[0];
+    if (first) first.position = position;
+    files.set(shardPath, JSON.stringify(parsed));
+    expect(readWorldArchive(files).ok).toBe(false);
+  });
+
+  it("bounds the int32 range by the exact position, not its floored stud", () => {
+    const inside = ["107374182", ...ZEROS.slice(1)];
+    const past = ["107374182", "1", ...ZEROS.slice(2)];
+    expect(decode(WorldShardV1, shardFor(inside)).ok).toBe(true);
+    expect(decode(WorldShardV1, shardFor(past))).toMatchObject({
+      ok: false,
+      issues: [{ path: "$.track.0.position", message: "is outside the int32 LDU range" }],
+    });
+  });
+
+  it("files a piece a hair either side of a super-chunk line on the side it lies", () => {
+    let p = 1n;
+    let q = 1n;
+    for (let i = 0; i < 40; i++) {
+      const position = encodeTrackPosition(
+        zeta16([BigInt(SUPER_CHUNK_STUDS) - p, 0n, q, 0n, 100n, 0n, -q, 0n]),
+      );
+      const pastTheLine = 2n * q * q > p * p;
+      expect(superChunkOfTrack(position)).toEqual([pastTheLine ? 1 : 0, 0]);
+      [p, q] = [p + 2n * q, p + q];
+    }
   });
 
   it("files symmetric track poses on super-chunk lines into the exact super-chunk", () => {

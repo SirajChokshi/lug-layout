@@ -5,6 +5,7 @@ import {
   chunkOf,
   isLatticePose,
   isRot90,
+  zeta16,
   zeta16FloorStuds,
   type Zeta16,
 } from "@brr/math";
@@ -72,16 +73,23 @@ export function decodeTrackPosition(position: ReadonlyArray<string>): Zeta16 {
 
 const COEFFICIENT_TEXT = /^(?:0|-?[1-9]\d*)$/u;
 
+function fitsInt64(text: string): boolean {
+  const value = BigInt(text);
+  return value >= INT64_MIN && value <= INT64_MAX;
+}
+
 function readablePosition(position: ReadonlyArray<string>): boolean {
   return (
     position.length === ZETA16_COEFFICIENT_COUNT &&
-    position.every((coefficient) => COEFFICIENT_TEXT.test(coefficient))
+    position.every((coefficient) => COEFFICIENT_TEXT.test(coefficient) && fitsInt64(coefficient))
   );
 }
 
 function onLattice(position: ReadonlyArray<string>): boolean {
-  const studs = zeta16FloorStuds(decodeTrackPosition(position));
-  return isLatticePose(Number(studs.x) * STUD_LDU, Number(studs.z) * STUD_LDU, 0);
+  const ldu = BigInt(STUD_LDU);
+  const scaled = decodeTrackPosition(position).map((coefficient) => coefficient * ldu);
+  const floor = zeta16FloorStuds(zeta16(scaled));
+  return isLatticePose(Number(floor.x), Number(floor.z), 0);
 }
 
 export function superChunkOfTrack(position: ReadonlyArray<string>): SuperChunk {
@@ -225,10 +233,7 @@ const Coefficient = v.config(
   v.pipe(
     v.string(),
     v.regex(COEFFICIENT_TEXT, "must be a canonical decimal integer"),
-    v.check(
-      (text) => BigInt(text) >= INT64_MIN && BigInt(text) <= INT64_MAX,
-      "is outside the int64 range",
-    ),
+    v.check(fitsInt64, "is outside the int64 range"),
   ),
   { abortPipeEarly: true },
 );
