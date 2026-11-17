@@ -23,6 +23,7 @@ class IssueBoxBackend implements ISceneBackend {
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
+  setTrackEnds(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
