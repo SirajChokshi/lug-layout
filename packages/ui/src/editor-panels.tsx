@@ -176,48 +176,121 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
   );
 }
 
-export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
-  const { selection } = snapshot;
-  if (!selection) return null;
+function StudField({
+  label,
+  value,
+  step,
+  onCommit,
+}: {
+  readonly label: string;
+  readonly value: number;
+  readonly step: number;
+  readonly onCommit: (value: number, eventTimeMs: number) => void;
+}) {
+  const commit = (input: HTMLInputElement, eventTimeMs: number): void => {
+    const next = Number(input.value);
+    if (Number.isFinite(next) && next !== value) onCommit(next, eventTimeMs);
+    input.value = String(value);
+  };
   return (
-    <section className="inspector" aria-label="Inspector">
-      <h2>Inspector</h2>
+    <label className="stud-field">
+      {label}
+      <input
+        key={value}
+        type="number"
+        step={step}
+        defaultValue={value}
+        onBlur={(event) => commit(event.currentTarget, event.timeStamp)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit(event.currentTarget, event.timeStamp);
+          if (event.key === "Escape") event.currentTarget.value = String(value);
+        }}
+      />
+    </label>
+  );
+}
+
+const QUARTER_TURNS = [0, 1, 2, 3] as const;
+
+export function Inspector({ editor, snapshot }: PanelProps) {
+  const { selection } = snapshot;
+  if (!selection) {
+    return (
+      <section className="inspector" aria-label="Properties">
+        <h2>Properties</h2>
+        <p>Nothing selected. Click a placed model, or drag a box around several.</p>
+      </section>
+    );
+  }
+  const single = selection.count === 1;
+  return (
+    <section className="inspector" aria-label="Properties">
+      <h2>Properties</h2>
+      <p className="selection-items" data-selection-count={selection.count}>
+        {selection.items
+          .map(({ item, count }) => `${count > 1 ? `${count} × ` : ""}${itemLabel(snapshot, item)}`)
+          .join(", ")}
+      </p>
+      <div className="stud-fields">
+        <StudField
+          label="Grid position x (studs)"
+          value={selection.centreXStuds}
+          step={selection.gridStuds}
+          onCommit={(x, time) => editor.moveSelectionTo(x, selection.centreZStuds, time)}
+        />
+        <StudField
+          label="Grid position z (studs)"
+          value={selection.centreZStuds}
+          step={selection.gridStuds}
+          onCommit={(z, time) => editor.moveSelectionTo(selection.centreXStuds, z, time)}
+        />
+      </div>
+      <div className="turn-buttons" role="group" aria-label="Rotation">
+        {single ? (
+          QUARTER_TURNS.map((rot) => (
+            <button
+              key={rot}
+              type="button"
+              aria-pressed={selection.rot === rot}
+              onClick={(event) => editor.turnSelectionTo(rot, event.timeStamp)}
+            >
+              {degrees(rot)}
+            </button>
+          ))
+        ) : (
+          <button type="button" onClick={(event) => editor.rotate(event.timeStamp)}>
+            Turn the group 90° (R)
+          </button>
+        )}
+      </div>
+      <div className="selection-actions" role="group" aria-label="Selection actions">
+        <button type="button" onClick={() => editor.copySelection()}>
+          Copy (Ctrl+C)
+        </button>
+        <button type="button" onClick={(event) => editor.cutSelection(event.timeStamp)}>
+          Cut (Ctrl+X)
+        </button>
+        <button type="button" onClick={(event) => editor.deleteSelection(event.timeStamp)}>
+          Delete (Del)
+        </button>
+        <button type="button" onClick={() => editor.focusSelection()}>
+          Frame (F)
+        </button>
+      </div>
       <dl>
-        {selection.count > 1 && (
+        <div>
+          <dt>Size x, z (studs)</dt>
+          <dd>
+            {ldu(selection.widthStuds)} × {ldu(selection.depthStuds)}
+          </dd>
+        </div>
+        {single && (
           <div>
-            <dt>Selected</dt>
-            <dd data-selection-count={selection.count}>
-              {selection.count} models, {ldu(selection.bounds.maxX - selection.bounds.minX)} ×{" "}
-              {ldu(selection.bounds.maxZ - selection.bounds.minZ)} LDU
-            </dd>
+            <dt>Height (plates above the baseplate tops)</dt>
+            <dd>{selection.yPlates}</dd>
           </div>
         )}
-        <div>
-          <dt>{selection.count > 1 ? "Last picked" : "Model"}</dt>
-          <dd>{itemLabel(snapshot, selection.item)}</dd>
-        </div>
-        <div>
-          <dt>x, z (LDU)</dt>
-          <dd>
-            {selection.x}, {selection.z}
-          </dd>
-        </div>
-        <div>
-          <dt>Height (plates)</dt>
-          <dd>{selection.yPlates}</dd>
-        </div>
-        <div>
-          <dt>Rotation</dt>
-          <dd>{degrees(selection.rot)}</dd>
-        </div>
-        <div>
-          <dt>Footprint x, z (LDU)</dt>
-          <dd>
-            {ldu(selection.box.minX)}…{ldu(selection.box.maxX)}, {ldu(selection.box.minZ)}…
-            {ldu(selection.box.maxZ)}
-          </dd>
-        </div>
-        {selection.baseplate && (
+        {single && selection.baseplate && (
           <div>
             <dt>Baseplate x, z (LDU), top</dt>
             <dd data-selection-baseplate>
@@ -227,12 +300,14 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
             </dd>
           </div>
         )}
-        <div>
-          <dt>Chunk key, slot</dt>
-          <dd>
-            {selection.chunkKey}, {selection.slot}
-          </dd>
-        </div>
+        {snapshot.clipboard > 0 && (
+          <div>
+            <dt>Clipboard</dt>
+            <dd>
+              {snapshot.clipboard} model{snapshot.clipboard === 1 ? "" : "s"}, Ctrl+V to paste
+            </dd>
+          </div>
+        )}
       </dl>
     </section>
   );

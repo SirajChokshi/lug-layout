@@ -73,7 +73,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
         <PlacementRules snapshot={snapshot} />
-        <Inspector snapshot={snapshot} />
+        <Inspector editor={editor} snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />
       </div>
       {showState && <EditorState editor={editor} />}

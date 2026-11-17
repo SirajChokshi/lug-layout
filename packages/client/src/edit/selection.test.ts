@@ -297,3 +297,29 @@ it("pastes a copied group as one place command: same layout where it drops, turn
   ]);
   expect([turnedPlate.rot, turnedModel.rot]).toEqual([(plate.rot + 1) % 4, (model.rot + 1) % 4]);
 }, 120_000);
+
+it("sets a selection's centre and rotation from the properties panel, each as one exact command", async () => {
+  const editor = await startEditor();
+  editor.chooseItem(itemOf(editor, BASEPLATE));
+  clickAt(editor, 0, 0);
+  editor.chooseItem(null);
+  const [plate] = poses(editor);
+  if (!plate) throw new Error("the baseplate was not placed");
+  clickAt(editor, plate.x, plate.z);
+  const selection = editor.snapshot().selection;
+  if (!selection) throw new Error("the baseplate was not selected");
+
+  const depth = editor.snapshot().history.undoDepth;
+  const toX = selection.centreXStuds + 3 * selection.gridStuds;
+  editor.moveSelectionTo(toX, selection.centreZStuds, 0);
+  expect(editor.snapshot().selection?.centreXStuds).toBe(toX);
+  expect(poses(editor)).toEqual([{ ...plate, x: plate.x + 3 * selection.gridStuds * 20 }]);
+
+  editor.turnSelectionTo(2, 0);
+  expect(editor.snapshot().selection?.rot).toBe(2);
+  expect(editor.snapshot().selection?.centreXStuds).toBe(toX);
+  expect(editor.snapshot().history.undoDepth).toBe(depth + 2);
+  editor.undo(0);
+  editor.undo(0);
+  expect(poses(editor)).toEqual([plate]);
+}, 120_000);

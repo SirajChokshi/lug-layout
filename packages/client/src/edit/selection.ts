@@ -106,11 +106,23 @@ export function unionBox(boxes: ReadonlyArray<WorldBox>): WorldBox | null {
   return { minX, minY, minZ, maxX, maxY, maxZ };
 }
 
-export function rotationPivot(box: WorldBox, grid: number): LatticePoint {
+export function latticeAnchor(box: WorldBox, grid: number): LatticePoint {
   return {
     x: Math.round((box.minX + box.maxX) / 2 / grid) * grid + 0,
     z: Math.round((box.minZ + box.maxZ) / 2 / grid) * grid + 0,
   };
+}
+
+export function rotationPivot(box: WorldBox, grid: number): LatticePoint {
+  const centreX = (box.minX + box.maxX) / 2;
+  const centreZ = (box.minZ + box.maxZ) / 2;
+  const onGrid = latticeAnchor(box, grid);
+  const halfGrid = {
+    x: (Math.round(centreX / grid - 0.5) + 0.5) * grid,
+    z: (Math.round(centreZ / grid - 0.5) + 0.5) * grid,
+  };
+  const distance = (p: LatticePoint): number => Math.hypot(p.x - centreX, p.z - centreZ);
+  return distance(halfGrid) < distance(onGrid) ? halfGrid : onGrid;
 }
 
 export function quarterTurnAbout<T extends QuarterTurnPose>(pose: T, pivot: LatticePoint): T {

@@ -81,6 +81,7 @@ import { groupGhost } from "./group-ghost.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import {
   ScreenRect,
+  latticeAnchor,
   quarterTurnAbout,
   rectMode,
   rotationPivot,
@@ -162,6 +163,17 @@ export interface SelectionView {
   readonly baseplate: WorldGround | null;
   readonly count: number;
   readonly bounds: WorldBox;
+  readonly centreXStuds: number;
+  readonly centreZStuds: number;
+  readonly gridStuds: number;
+  readonly widthStuds: number;
+  readonly depthStuds: number;
+  readonly items: ReadonlyArray<SelectedItemCount>;
+}
+
+export interface SelectedItemCount {
+  readonly item: string;
+  readonly count: number;
 }
 
 export interface SelectRect {
@@ -388,6 +400,8 @@ export interface IEditor {
   rotate(eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
   nudge(right: number, up: number, eventTimeMs: number): void;
+  moveSelectionTo(xStuds: number, zStuds: number, eventTimeMs: number): void;
+  turnSelectionTo(rot: number, eventTimeMs: number): void;
   copySelection(): void;
   cutSelection(eventTimeMs: number): void;
   paste(): void;
@@ -556,6 +570,14 @@ interface Pasting {
   rot: number;
   poses: ReadonlyArray<PlacementPose>;
   refusal: ItemRefusal | null;
+}
+
+function itemCounts(models: ReadonlyArray<PlacedModel>): ReadonlyArray<SelectedItemCount> {
+  const counts = new Map<string, number>();
+  for (const model of models) {
+    counts.set(model.placeable.id, (counts.get(model.placeable.id) ?? 0) + 1);
+  }
+  return [...counts].map(([item, count]) => ({ item, count }));
 }
 
 function pendingOf(model: PlacedModel): PendingPose {
@@ -1620,6 +1642,8 @@ export class Editor implements IEditor {
           ? {
               count: models.length,
               bounds,
+              ...this.selectionCentre(models, bounds),
+              items: itemCounts(models),
               item: model.placeable.id,
               x: model.handle.x,
               z: model.handle.z,
@@ -1724,7 +1748,7 @@ export class Editor implements IEditor {
       picked,
       anchorX: this.hitX,
       anchorZ: this.hitZ,
-      origin: rotationPivot(bounds, grid),
+      origin: latticeAnchor(bounds, grid),
       grid,
       dx: 0,
       dz: 0,
@@ -1862,12 +1886,53 @@ export class Editor implements IEditor {
     this.commitModels("move", this.translated(models, dx, dz, false), eventTimeMs);
   }
 
+  private selectionCentre(
+    models: ReadonlyArray<PlacedModel>,
+    bounds: WorldBox,
+  ): Pick<
+    SelectionView,
+    "centreXStuds" | "centreZStuds" | "gridStuds" | "widthStuds" | "depthStuds"
+  > {
+    const grid = this.selectionGrid(models);
+    const centre = latticeAnchor(bounds, grid);
+    return {
+      centreXStuds: centre.x / STUD_LDU,
+      centreZStuds: centre.z / STUD_LDU,
+      gridStuds: grid / STUD_LDU,
+      widthStuds: (bounds.maxX - bounds.minX) / STUD_LDU,
+      depthStuds: (bounds.maxZ - bounds.minZ) / STUD_LDU,
+    };
+  }
+
+  moveSelectionTo(xStuds: number, zStuds: number, eventTimeMs: number): void {
+    const selection = this.state.selection;
+    if (!selection || !Number.isFinite(xStuds) || !Number.isFinite(zStuds)) return;
+    const grid = selection.gridStuds * STUD_LDU;
+    const dx = snapToGrid(xStuds * STUD_LDU, grid) - selection.centreXStuds * STUD_LDU;
+    const dz = snapToGrid(zStuds * STUD_LDU, grid) - selection.centreZStuds * STUD_LDU;
+    if (dx === 0 && dz === 0) return;
+    this.commitModels("move", this.translated(this.selectedModels(), dx, dz, false), eventTimeMs);
+  }
+
+  turnSelectionTo(rot: number, eventTimeMs: number): void {
+    const models = this.selectedModels();
+    const [model] = models;
+    const bounds = unionBox(models.map(({ box }) => box));
+    if (models.length !== 1 || !model || !bounds) return;
+    const turns = (((rot - model.handle.rot) % QUARTER_TURNS) + QUARTER_TURNS) % QUARTER_TURNS;
+    if (turns === 0) return;
+    const pivot = rotationPivot(bounds, this.selectionGrid(models));
+    let to = poseOf(model.handle);
+    for (let turn = 0; turn < turns; turn++) to = quarterTurnAbout(to, pivot);
+    this.commitModels("rotate", [{ model, to }], eventTimeMs);
+  }
+
   copySelection(): void {
     const models = this.selectedModels();
     const bounds = unionBox(models.map((model) => model.box));
     if (!bounds) return;
     const grid = this.selectionGrid(models);
-    const origin = rotationPivot(bounds, grid);
+    const origin = latticeAnchor(bounds, grid);
     this.clipboard = {
       grid,
       entries: models.map((model) => {

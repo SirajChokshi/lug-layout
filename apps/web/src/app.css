@@ -459,6 +459,42 @@ footer {
   color: #556;
 }
 
+.inspector .selection-items {
+  margin-bottom: 8px;
+  color: #223;
+  font-weight: 600;
+}
+
+.stud-fields,
+.turn-buttons,
+.selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.stud-field {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 2px;
+  color: #556;
+  font-size: 12px;
+}
+
+.stud-field input {
+  width: 100%;
+  padding: 4px 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-buttons button[aria-pressed="true"] {
+  background: #ff8c00;
+  color: white;
+}
+
 #edit-state,
 #plan-state {
   display: none;
