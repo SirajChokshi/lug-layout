@@ -20,3 +20,8 @@ PR: https://github.com/SirajChokshi/lug-layout/pull/41. Code head: `93bb24e`. Ma
 
 ## `macbook-2ac9f89/` and `macbook-50c281b/` (M4 Max)
 These were recorded by the MacBook worker, and its README is copied as-is. They hold `result.json`, `hud.txt`, `console.txt` and `summary.ndjson` for every run, and the 50c281b run adds four viewports. Both runs had background CPU load, as each README records.
+
+## `vm-a25c0f4/` (after rebasing onto main `ecd8f23`)
+- **`equivalence/`:** five views re-shot at `a25c0f4` (branch) and `ecd8f23` (main): 10185-1, 10264-1 and city 20k aerial for the branch, 10185-1 and city 20k aerial for main. Compared with `scripts/diff.mjs` against the `vm-93bb24e/pairs` shots, each has 0 differing pixels (max channel delta 0), so the `vm-93bb24e` evidence holds at this head.
+- **`run-scene/`:** main's own run scene (#38 merged), `?api=webgl2&run=1&trains=60@100&track=<dogbone>`, live after 20 s at 960×600. Shown for main, the branch at its default look, and the branch at `look=all`. Median track brightness (rows 0–160 against 320–480): main 130 / 202, default 114 / 119, `look=all` 116 / 135.
+- **`pnpm-check.log`:** `pnpm check` at `a25c0f4`, exit 0.
