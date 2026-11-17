@@ -5,6 +5,7 @@ import {
   BUNDLE_BASE_URL,
   type BakedVehicle,
   type IAssetFetcher,
+  type Vec3Tuple,
 } from "@brr/catalog";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -23,7 +24,7 @@ import {
   type IRunningGearOverrideStore,
 } from "./override-store.ts";
 import { instanceBoxes } from "./instance-boxes.ts";
-import { RunningGearEditor, type GearModelSource } from "./running-gear-editor.ts";
+import { exactLduText, RunningGearEditor, type GearModelSource } from "./running-gear-editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 
@@ -91,6 +92,10 @@ function outsideBox(instance: number): RegExp {
   );
 }
 
+function typed(value: number): number {
+  return Number(exactLduText(value));
+}
+
 describe("Running gear overrides on 10133-1", () => {
   it("moves a bogie-mounted coupling to the body, and a coupling face, as the override says", async () => {
     const { vehicle, sha256, boxes } = await gp38();
@@ -102,7 +107,7 @@ describe("Running gear overrides on 10133-1", () => {
         ? { ...bogie, instances: bogie.instances.filter((i) => i !== front.instance) }
         : bogie,
     );
-    const movedFace = toModelFrame(vehicle, [front.face[0] - 0.75, front.face[1], front.face[2]]);
+    const movedFace: Vec3Tuple = [front.face[0] - 0.75, front.face[1], front.face[2]];
     const override: RunningGearOverride = {
       version: RUNNING_GEAR_OVERRIDE_VERSION,
       modelSha256: sha256,
@@ -131,10 +136,10 @@ describe("Running gear overrides on 10133-1", () => {
     const front = frontFace(vehicle);
     const rear = vehicle.rearCoupler;
     if (!rear) throw new Error("10133-1 has a rear coupler");
-    const pivotAt = (x: number) => toModelFrame(vehicle, [x, first.pivot[1], 0]);
+    const pivotAt = (x: number): Vec3Tuple => [x, first.pivot[1], 0];
     const faceAt = (instance: number, x: number) => ({
       instance,
-      face: toModelFrame(vehicle, [x, 0, front.z]),
+      face: [x, 0, front.z] satisfies Vec3Tuple,
     });
     const refusals: ReadonlyArray<
       readonly [string, Parameters<typeof effectiveVehicle>[1], ReadonlyArray<RegExp>]
@@ -180,7 +185,7 @@ describe("Running gear overrides on 10133-1", () => {
       reasons.forEach((reason, i) => expect(result.issues[i]).toMatch(reason));
     }
     expect(
-      parseRunningGearOverride({ version: 2, modelSha256: sha256, model: "x", vehicles: [] }),
+      parseRunningGearOverride({ version: 3, modelSha256: sha256, model: "x", vehicles: [] }),
     ).toBeNull();
   });
 
@@ -193,7 +198,7 @@ describe("Running gear overrides on 10133-1", () => {
       source.vehicles.forEach((vehicle, v) => {
         checked++;
         const couplers = [vehicle.frontCoupler, vehicle.rearCoupler].flatMap((c) =>
-          c ? [{ instance: c.instance, face: toModelFrame(vehicle, c.face) }] : [],
+          c ? [{ instance: c.instance, face: c.face }] : [],
         );
         const result = effectiveVehicle(
           vehicle,
@@ -222,7 +227,7 @@ describe("Running gear editor", () => {
     expect(store.records.size).toBe(0);
     expect(editor.snapshot().error).toMatch(/^not saved, this running gear cannot run: /);
 
-    const inboard = toModelFrame(vehicle, [10, 0, front.z]);
+    const inboard: Vec3Tuple = [10, 0, front.z];
     await store.save({
       version: RUNNING_GEAR_OVERRIDE_VERSION,
       modelSha256: source.sha256,
@@ -238,6 +243,61 @@ describe("Running gear editor", () => {
     expect(reloaded.snapshot().view?.savedOverrideRefused?.[0]).toMatch(
       /^the coupling face of part \d+ lies [\d.]+ LDU outside that part's box$/,
     );
+  });
+
+  it("accepts every pivot and coupling face typed back exactly as the panel shows it", async () => {
+    const manifest = await bundleLoader().loadManifest("standard");
+    let retyped = 0;
+    for (const { name } of manifest.models) {
+      const source = await gearSource(name);
+      if (source.vehicles.length === 0) continue;
+      const store = new MemoryOverrideStore();
+      const editor = new RunningGearEditor(store);
+      await editor.setModels([source]);
+      for (let v = 0; v < source.vehicles.length; v++) {
+        editor.select(name, v);
+        const shown = editor.snapshot().view;
+        if (!shown) throw new Error(`${name} vehicle ${v} has no view`);
+        shown.pivots.forEach((pivot, b) => editor.setPivot(b, typed(pivot[0]), typed(pivot[2])));
+        for (const coupler of shown.couplers) {
+          editor.setCouplerFace(coupler.instance, typed(coupler.face[0]), typed(coupler.face[2]));
+          retyped++;
+        }
+        const after = editor.snapshot().view;
+        expect({ name, v, issues: after?.issues }).toEqual({ name, v, issues: [] });
+        expect(after?.couplers.map((c) => c.face)).toEqual(shown.couplers.map((c) => c.face));
+        expect(after?.pivots).toEqual(shown.pivots);
+        await editor.save();
+        expect(editor.snapshot().error).toBeNull();
+      }
+    }
+    expect(retyped).toBeGreaterThanOrEqual(10);
+  });
+
+  it("reads a version 1 record saved in the model frame as the same gear in the vehicle frame", async () => {
+    const source = await gearSource("10133-1");
+    const vehicle = source.vehicles[0];
+    if (!vehicle) throw new Error("10133-1 has no vehicle");
+    const front = frontFace(vehicle);
+    const moved: Vec3Tuple = [front.x - 0.5, vehicle.frontCoupler?.face[1] ?? 0, front.z];
+    const store = new MemoryOverrideStore();
+    await store.save({
+      version: 1,
+      modelSha256: source.sha256,
+      model: "10133-1",
+      vehicles: [
+        {
+          vehicle: 0,
+          couplers: [{ instance: front.instance, face: toModelFrame(vehicle, moved) }],
+        },
+      ],
+    });
+    const editor = new RunningGearEditor(store);
+    await editor.setModels([source]);
+    expect(editor.gearSource("10133-1", 0)).toBe("override");
+    editor.select("10133-1", 0);
+    const face = editor.snapshot().view?.couplers.find((c) => c.instance === front.instance)?.face;
+    moved.forEach((value, axis) => expect(face?.[axis]).toBeCloseTo(value, 9));
   });
 
   it("resets only the selected vehicle of a model that bakes two", async () => {
