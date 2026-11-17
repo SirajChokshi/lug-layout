@@ -151,6 +151,23 @@ function colorRanks(items: ReadonlyArray<CatalogItemView>): ReadonlyMap<number, 
   return new Map([...keys.values()].toSorted(byColorKey).map((key, rank) => [key.code, rank]));
 }
 
+export function displayItem(
+  entry: PaletteEntry,
+  commonCode: number | null = null,
+): CatalogItemView | undefined {
+  return (
+    entry.items.find((item) => item.displayColor) ??
+    entry.items.find((item) => item.color !== null && item.color.code === commonCode) ??
+    entry.items[0]
+  );
+}
+
+export function commonestColor(choices: ReadonlyArray<PaletteColorChoice>): number | null {
+  let best: PaletteColorChoice | null = null;
+  for (const choice of choices) if (!best || choice.parts > best.parts) best = choice;
+  return best ? best.color.code : null;
+}
+
 export function itemInColor(entry: PaletteEntry, code: number): CatalogItemView | undefined {
   return entry.items.find((item) => item.color?.code === code);
 }

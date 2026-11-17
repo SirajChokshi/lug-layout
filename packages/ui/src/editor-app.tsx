@@ -4,6 +4,7 @@ import type {
   IEditor,
   IEditorCamera,
   IPaletteMemory,
+  IPaletteThumbnails,
   IPlanService,
   ITrainPlay,
   ShellCommandId,
@@ -44,6 +45,7 @@ interface EditorAppProps {
   readonly bomService: IBomService;
   readonly play: ITrainPlay;
   readonly palette: IPaletteMemory;
+  readonly thumbnails: IPaletteThumbnails;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -90,6 +92,7 @@ export function EditorApp({
   bomService,
   play,
   palette,
+  thumbnails,
   options,
   disclaimer,
   showState,
@@ -161,7 +164,12 @@ export function EditorApp({
           play={play}
           ready={snapshot.status === "ready"}
         />
-        <PalettePanel editor={editor} snapshot={snapshot} memory={palette} />
+        <PalettePanel
+          editor={editor}
+          snapshot={snapshot}
+          memory={palette}
+          thumbnails={thumbnails}
+        />
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
