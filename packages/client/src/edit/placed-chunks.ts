@@ -43,6 +43,7 @@ import {
   type Placeable,
 } from "./placeable.ts";
 import type { LaidTrackPiece } from "./track-drawing.ts";
+import type { Pier } from "./track-piers.ts";
 
 export interface PlacedModel {
   readonly placement: PlacementRef;
@@ -54,7 +55,8 @@ export interface PlacedModel {
 
 export type VolumeOwner =
   | { readonly kind: "model"; readonly model: PlacedModel }
-  | { readonly kind: "track"; readonly piece: number; readonly pieceId: string };
+  | { readonly kind: "track"; readonly piece: number; readonly pieceId: string }
+  | { readonly kind: "pier"; readonly key: string; readonly plates: number };
 
 export interface PlacedOverlap {
   readonly overlap: Overlap;
@@ -617,6 +619,19 @@ interface ChunkStuds {
   readonly culled: number;
 }
 
+const NO_TRACK_PIECE = -1;
+const noOwner: OwnerFilter = () => false;
+
+function uniformVolumes(cells: BaseCells, bottomLdu: number, topLdu: number): CellVolumes {
+  return {
+    count: cells.count,
+    cellX: cells.cellX,
+    cellZ: cells.cellZ,
+    bottomLdu: new Int32Array(cells.count).fill(bottomLdu),
+    topLdu: new Int32Array(cells.count).fill(topLdu),
+  };
+}
+
 function addTo(index: Map<number, Set<PlacedEntry>>, key: number, entry: PlacedEntry): void {
   let set = index.get(key);
   if (!set) {
@@ -641,6 +656,11 @@ export class PlacedChunks {
   private nextOwner = 1;
   private readonly trackOwnerByPiece = new Map<number, number>();
   private readonly isTrack: OwnerFilter = (owner) => this.owners.get(owner)?.kind === "track";
+  private readonly isTrackwork: OwnerFilter = (owner) => {
+    const kind = this.owners.get(owner)?.kind;
+    return kind === "track" || kind === "pier";
+  };
+  private readonly pierOwners = new Map<string, number>();
 
   constructor(private readonly backend: ISceneBackend) {}
 
@@ -678,11 +698,11 @@ export class PlacedChunks {
       const first = placeable.layer === "first";
       const lands = first
         ? { yPlates: 0, owner: null }
-        : landing(this.volumes, cells.base, at, this.isTrack);
+        : landing(this.volumes, cells.base, at, this.isTrackwork);
       const { yPlates } = lands;
       const support = first
         ? null
-        : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrack);
+        : upperSupport(cells.base, yPlates, this.volumes, this.support, this.isTrackwork);
       const hit = firstOverlap(raised(cells.volumes, yPlates * PLATE_LDU), this.volumes, exempt);
       return {
         yPlates,
@@ -698,20 +718,68 @@ export class PlacedChunks {
     bottomLdu: number,
     topLdu: number,
     exempt: OwnerFilter,
+    ownPiers: ReadonlySet<string>,
   ): PlacedOverlap | null {
-    const volumes: CellVolumes = {
-      count: cells.count,
-      cellX: cells.cellX,
-      cellZ: cells.cellZ,
-      bottomLdu: new Int32Array(cells.count).fill(bottomLdu),
-      topLdu: new Int32Array(cells.count).fill(topLdu),
-    };
     const hit = firstOverlap(
-      volumes,
+      uniformVolumes(cells, bottomLdu, topLdu),
       this.volumes,
-      (owner, cellX, cellZ) => this.isTrack(owner, cellX, cellZ) || exempt(owner, cellX, cellZ),
+      (owner, cellX, cellZ) =>
+        this.isTrack(owner, cellX, cellZ) ||
+        exempt(owner, cellX, cellZ) ||
+        this.isOwnPier(owner, ownPiers),
     );
     return hit ? this.placedOverlap(hit) : null;
+  }
+
+  pierOverlap(cells: BaseCells, bottomLdu: number, topLdu: number): PlacedOverlap | null {
+    const hit = firstOverlap(uniformVolumes(cells, bottomLdu, topLdu), this.volumes, noOwner);
+    return hit ? this.placedOverlap(hit) : null;
+  }
+
+  private isOwnPier(owner: number, ownPiers: ReadonlySet<string>): boolean {
+    const known = this.owners.get(owner);
+    return known?.kind === "pier" && ownPiers.has(known.key);
+  }
+
+  setTrackPiers(piers: ReadonlyArray<Pier>): void {
+    const keys = new Set<number>();
+    for (const owner of this.pierOwners.values()) {
+      const stamp = this.trackStamps.get(owner);
+      this.owners.delete(owner);
+      this.trackStamps.delete(owner);
+      if (!stamp) continue;
+      for (let c = 0; c < stamp.cells.count; c++) {
+        const key = cellChunkKey(stamp.cells.cellX[c] ?? 0, stamp.cells.cellZ[c] ?? 0);
+        this.byTrackChunk.get(key)?.delete(stamp);
+        keys.add(key);
+      }
+    }
+    this.pierOwners.clear();
+    for (const pier of piers) {
+      const owner = this.nextOwner++;
+      const stamp: TrackStamp = {
+        owner,
+        piece: NO_TRACK_PIECE,
+        pieceId: pier.key,
+        cells: pier.cells,
+        bottomLdu: 0,
+        topLdu: pier.heightPlates * PLATE_LDU,
+      };
+      this.owners.set(owner, { kind: "pier", key: pier.key, plates: pier.heightPlates });
+      this.trackStamps.set(owner, stamp);
+      this.pierOwners.set(pier.key, owner);
+      for (let c = 0; c < pier.cells.count; c++) {
+        const key = cellChunkKey(pier.cells.cellX[c] ?? 0, pier.cells.cellZ[c] ?? 0);
+        let set = this.byTrackChunk.get(key);
+        if (!set) {
+          set = new Set();
+          this.byTrackChunk.set(key, set);
+        }
+        set.add(stamp);
+        keys.add(key);
+      }
+    }
+    this.restamp(keys, new Set());
   }
 
   trackNeighbours(cells: BaseCells): ReadonlySet<number> {
@@ -764,6 +832,7 @@ export class PlacedChunks {
     const keys = new Set(this.byTrackChunk.keys());
     for (const owner of this.trackStamps.keys()) this.owners.delete(owner);
     this.trackStamps.clear();
+    this.pierOwners.clear();
     this.trackOwnerByPiece.clear();
     this.byTrackChunk.clear();
     for (const piece of pieces) {
@@ -799,7 +868,7 @@ export class PlacedChunks {
             entry.handle.yPlates,
             this.volumes,
             this.support,
-            this.isTrack,
+            this.isTrackwork,
           ),
         arriving,
       );

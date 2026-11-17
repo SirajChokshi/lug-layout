@@ -10,6 +10,7 @@ import {
 } from "./editor-panels.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { HeightLabels } from "./height-labels.tsx";
 import { TrackPanel } from "./track-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 
@@ -66,12 +67,13 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
       data-road-mismatch={snapshot.roads.mismatchedCells}
     >
       <EditorCanvas editor={editor} options={options} />
+      <HeightLabels labels={snapshot.heightLabels} />
       <EditorHud snapshot={snapshot} />
       <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} />
         <PalettePanel editor={editor} snapshot={snapshot} />
-        <TrackPanel snapshot={snapshot} />
+        <TrackPanel editor={editor} snapshot={snapshot} />
         <PlacementRules snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />

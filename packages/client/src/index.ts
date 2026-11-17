@@ -52,6 +52,8 @@ export type {
   RoadJoinView,
   RoadPlacementDump,
   GhostCheckView,
+  HeightLabel,
+  HeightLabelTone,
   RefusedAction,
   RefusedEdit,
   RoadSnapState,
@@ -61,6 +63,7 @@ export type {
   SkippedCatalogModel,
   TrackBomLine,
   TrackCommitResult,
+  TrackHeightView,
   TrackSolveStats,
   TrackView,
 } from "./edit/editor.ts";
@@ -88,7 +91,7 @@ export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient, SimTickCost } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export type { SimBenchResult } from "@brr/sim";
-export { MM_PER_STUD } from "@brr/math";
+export { BRICK_LDU, MM_PER_STUD, PLATE_LDU, mmFromLdu } from "@brr/math";
 export {
   DEFAULT_MAX_OVERHANG_MM,
   PLAN_GRID_MM,
@@ -129,5 +132,12 @@ export {
   PLAN_SERVICE,
 } from "./tokens.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
-export type { ClosureState, RunBlock, TrackDragView } from "./edit/track-drawing.ts";
+export type {
+  ClosureState,
+  CrossingView,
+  PierPartCount,
+  RunBlock,
+  TrackDragView,
+} from "./edit/track-drawing.ts";
+export type { Gauge } from "./edit/clearance-gauge.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";

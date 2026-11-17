@@ -28,6 +28,7 @@ import {
   STUD_LDU,
   chunkOf,
   composePose16,
+  mmFromLdu,
   posesJoin16,
   zeta16ToStuds,
 } from "@brr/math";
@@ -49,11 +50,18 @@ import { OrbitCamera } from "./orbit-camera.ts";
 import { heldPlacements, latticePose16, latticeSnap } from "./model-track.ts";
 import {
   LAID_TRACK_PLATES,
+  MAX_RISE_PER_PIECE,
   TRACK_SYSTEM,
   TrackDrawing,
+  type CrossingView,
   type HeldTrackRequest,
+  type PierPartCount,
   type TrackDragView,
+  type TrackEndView,
+  type TrackRefusal,
 } from "./track-drawing.ts";
+import { minifigGauge, trainGauge, type Gauge, type GaugeModel } from "./clearance-gauge.ts";
+import type { PierKit, PierPart } from "./track-piers.ts";
 import {
   PlacedChunks,
   type LandingAt,
@@ -202,6 +210,7 @@ interface SkippedModel extends SkippedCatalogModel {
 interface LoadedCatalog {
   readonly placeables: ReadonlyArray<Placeable>;
   readonly skipped: ReadonlyArray<SkippedModel>;
+  readonly gaugeModels: ReadonlyArray<GaugeModel>;
 }
 
 export interface TrackBomLine {
@@ -217,14 +226,29 @@ export interface TrackSolveStats {
   readonly maxMs: number;
 }
 
-export type TrackCommitResult =
-  | "laid"
-  | "joined"
-  | "refused-impossible"
-  | "refused-limit"
-  | "refused-off-baseplate"
-  | "refused-overlap"
-  | "refused-crosses-track";
+export type TrackCommitResult = "laid" | "joined" | `refused-${TrackRefusal}`;
+
+export interface TrackHeightView {
+  readonly drawPlates: number;
+  readonly rampRate: number;
+  readonly maxRampRate: number;
+  readonly straightLdu: number;
+  readonly curveLdu: number;
+  readonly train: Gauge;
+  readonly minifig: Gauge | null;
+  readonly railTopLdu: number;
+}
+
+export type HeightLabelTone = "pier" | "ghost" | "clear";
+
+export interface HeightLabel {
+  readonly id: string;
+  readonly ndcX: number;
+  readonly ndcY: number;
+  readonly text: string;
+  readonly detail: string;
+  readonly tone: HeightLabelTone;
+}
 
 export interface TrackView {
   readonly pieces: number;
@@ -235,7 +259,16 @@ export interface TrackView {
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
   readonly solve: TrackSolveStats | null;
-  readonly selected: { readonly piece: number; readonly pieceId: string } | null;
+  readonly selected: {
+    readonly piece: number;
+    readonly pieceId: string;
+    readonly fromPlates: number;
+    readonly toPlates: number;
+  } | null;
+  readonly height: TrackHeightView;
+  readonly piers: number;
+  readonly pierBom: ReadonlyArray<PierPartCount>;
+  readonly crossings: ReadonlyArray<CrossingView>;
 }
 
 export interface HoverView {
@@ -281,6 +314,7 @@ export interface EditorSnapshot {
   readonly lastRefusal: RefusedEdit | null;
   readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
+  readonly heightLabels: ReadonlyArray<HeightLabel>;
 }
 
 export interface EditorCredits {
@@ -335,6 +369,8 @@ export interface IEditor {
   centreOnCursor(): void;
   setShowJoins(show: boolean): void;
   setSnapRoads(snap: boolean): void;
+  setTrackHeight(plates: number): void;
+  setRampRate(platesPerPiece: number): void;
   planOriginHere(): { readonly chunkX: number; readonly chunkZ: number };
   viewPlanFromAbove(planId: string): void;
   dump(): EditorDump;
@@ -348,6 +384,12 @@ const END_MARKER_HALF_LDU = 30;
 const TRACK_SNAP_RADIUS_LDU = 3 * STUD_LDU;
 const END_MARKER_HEIGHT_LDU = 40;
 const P95 = 0.95;
+const PIER_BRICK_ID = "ldraw:3001";
+const PIER_PLATE_ID = "ldraw:3020";
+const PIER_COLOR_NAME = "Light_Bluish_Grey";
+const MAX_HEIGHT_LABELS = 160;
+const LABEL_MARGIN_NDC = 1.05;
+const MM_DECIMALS = 1;
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
 const MARKER_WIDTH_LDU = 6;
@@ -492,6 +534,37 @@ function undrawableTrack(
     .map((part) => ({ id: part.id.replace("ldraw:", ""), title: part.title }));
 }
 
+function nineVoltStraightPart(bundle: PartBundle): string {
+  const straight = bundle.trackCatalog.pieces.find(
+    (piece) =>
+      piece.system === TRACK_SYSTEM && piece.kind === "straight" && piece.status === "certified",
+  );
+  if (!straight) throw new Error(`the track catalog has no certified ${TRACK_SYSTEM} straight`);
+  return straight.part;
+}
+
+function pierPart(palette: MergedParts, id: string, color: number): PierPart {
+  const partIndex = palette.indexOf(id);
+  const part = palette.parts[partIndex];
+  if (!part) throw new Error(`the bundle has no pier part ${id}`);
+  return { partIndex, color, part };
+}
+
+function pierKit(bundle: PartBundle, palette: MergedParts, colors: ColorTable): PierKit {
+  const color = bundle.colors.find((c) => c.name === PIER_COLOR_NAME);
+  if (!color) throw new Error(`LDConfig colour ${PIER_COLOR_NAME} is missing`);
+  const index = colors.indexOfCode(color.code);
+  return {
+    brick: pierPart(palette, PIER_BRICK_ID, index),
+    plate: pierPart(palette, PIER_PLATE_ID, index),
+  };
+}
+
+function heightText(plates: number): string {
+  const mm = mmFromLdu(plates * PLATE_LDU).toFixed(MM_DECIMALS);
+  return `${plates} ${plates === 1 ? "plate" : "plates"} (${mm} mm)`;
+}
+
 @injectable()
 export class Editor implements IEditor {
   private readonly listeners = new Set<() => void>();
@@ -523,6 +596,7 @@ export class Editor implements IEditor {
     lastRefusal: null,
     ghost: null,
     track: null,
+    heightLabels: [],
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -555,6 +629,7 @@ export class Editor implements IEditor {
   private track: TrackDrawing | null = null;
   private lastTrackCommit: TrackCommitResult | null = null;
   private selectedTrack: number | null = null;
+  private minifig: Gauge | null = null;
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -598,22 +673,43 @@ export class Editor implements IEditor {
       });
       const bundle = await this.loader.load(
         EDITOR_LOD,
-        (part) => part.role === "ground" || part.role === "road" || part.role === "track",
+        (part) =>
+          part.role === "ground" ||
+          part.role === "road" ||
+          part.role === "track" ||
+          part.id === PIER_BRICK_ID ||
+          part.id === PIER_PLATE_ID,
       );
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
-      const { placeables, skipped } = await this.loadPlaceables(bundle, palette, colors);
+      const { placeables, skipped, gaugeModels } = await this.loadPlaceables(
+        bundle,
+        palette,
+        colors,
+      );
       this.placeables = placeables;
       this.plans.setTableTopY(this.baseplateBottomY());
-      this.track = new TrackDrawing(bundle.trackCatalog, palette.parts, colors, {
-        support: (cells) => this.placed.trackSupport(cells, []),
-        overlap: (cells, bottom, top, exempt) =>
-          this.placed.trackOverlap(cells, bottom, top, exempt),
-        neighbours: (cells) => this.placed.trackNeighbours(cells),
-        laid: (piece, pieceId, cells, bottom, top) =>
-          this.placed.addTrackPiece(piece, pieceId, cells, bottom, top),
-        relaid: (pieces) => this.placed.replaceTrackPieces(pieces),
-      });
+      const railPart = nineVoltStraightPart(bundle);
+      const train = trainGauge(gaugeModels, railPart);
+      if (!train) throw new Error(`no train in the bundle has a wheel contact on ${railPart}`);
+      this.minifig = minifigGauge(gaugeModels);
+      this.track = new TrackDrawing(
+        bundle.trackCatalog,
+        palette.parts,
+        colors,
+        {
+          support: (cells) => this.placed.trackSupport(cells, []),
+          overlap: (cells, bottom, top, exempt, ownPiers) =>
+            this.placed.trackOverlap(cells, bottom, top, exempt, ownPiers),
+          pierOverlap: (cells, bottom, top) => this.placed.pierOverlap(cells, bottom, top),
+          neighbours: (cells) => this.placed.trackNeighbours(cells),
+          laid: (piece, pieceId, cells, bottom, top) =>
+            this.placed.addTrackPiece(piece, pieceId, cells, bottom, top),
+          relaid: (pieces) => this.placed.replaceTrackPieces(pieces),
+          piers: (piers) => this.placed.setTrackPiers(piers),
+        },
+        { pier: pierKit(bundle, palette, colors), train },
+      );
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
         colorsSrgb: colors.toSrgb(),
@@ -722,7 +818,13 @@ export class Editor implements IEditor {
         ),
       );
     }
-    return { placeables, skipped };
+    const gaugeModels = loaded.map(({ bundle: modelBundle, entry, model }) => ({
+      name: entry.name,
+      model,
+      parts: modelBundle.parts,
+      studPrimitives: modelBundle.studPrimitives,
+    }));
+    return { placeables, skipped, gaugeModels };
   }
 
   private readonly step = (): void => {
@@ -757,6 +859,7 @@ export class Editor implements IEditor {
     if (canvas.dataset["cssSize"] === `${width}x${height}`) return;
     canvas.dataset["cssSize"] = `${width}x${height}`;
     this.backend.resize(width, height);
+    this.refreshLabels();
   }
 
   private tallyStats(): void {
@@ -841,23 +944,118 @@ export class Editor implements IEditor {
       selected:
         this.selectedTrack === null
           ? null
-          : { piece: this.selectedTrack, pieceId: track.pieceId(this.selectedTrack) },
+          : {
+              piece: this.selectedTrack,
+              pieceId: track.pieceId(this.selectedTrack),
+              ...track.pieceHeights(this.selectedTrack),
+            },
+      height: {
+        drawPlates: track.drawPlates,
+        rampRate: track.rampRate,
+        maxRampRate: MAX_RISE_PER_PIECE,
+        straightLdu: track.straightLdu,
+        curveLdu: track.curveLdu,
+        train: track.trainGauge,
+        minifig: this.minifig,
+        railTopLdu: track.railTopLdu,
+      },
+      piers: track.pierViews().length,
+      pierBom: track.pierParts(),
+      crossings: track.crossings(),
     };
   }
 
-  private showEndMarker(end: { readonly xLdu: number; readonly zLdu: number } | null): void {
+  private showEndMarker(end: TrackEndView | null): void {
+    const base = end ? end.plates * PLATE_LDU : 0;
     this.backend.setSelectionBox(
       end
         ? {
             minX: end.xLdu - END_MARKER_HALF_LDU,
-            minY: 0,
+            minY: base,
             minZ: end.zLdu - END_MARKER_HALF_LDU,
             maxX: end.xLdu + END_MARKER_HALF_LDU,
-            maxY: END_MARKER_HEIGHT_LDU,
+            maxY: base + END_MARKER_HEIGHT_LDU,
             maxZ: end.zLdu + END_MARKER_HALF_LDU,
           }
         : null,
     );
+  }
+
+  private refreshLabels(): void {
+    const track = this.track;
+    const canvas = this.canvas;
+    if (!track || !canvas) return;
+    const aspect = canvas.clientWidth / Math.max(canvas.clientHeight, 1);
+    const fov = (CAMERA_FOV_DEGREES * Math.PI) / 180;
+    const labels: HeightLabel[] = [];
+    const add = (
+      id: string,
+      x: number,
+      y: number,
+      z: number,
+      text: string,
+      detail: string,
+      tone: HeightLabelTone,
+    ): void => {
+      if (labels.length >= MAX_HEIGHT_LABELS) return;
+      const at = this.camera.project(x, y, z, fov, aspect);
+      if (!at || Math.abs(at[0]) > LABEL_MARGIN_NDC || Math.abs(at[1]) > LABEL_MARGIN_NDC) return;
+      labels.push({ id, ndcX: at[0], ndcY: at[1], text, detail, tone });
+    };
+    const railTop = track.railTopLdu;
+    const minifig = this.minifig;
+    const headroom = (plates: number): string =>
+      minifig && plates * PLATE_LDU >= minifig.heightLdu
+        ? "a minifig walks under"
+        : "too low for a minifig to walk under";
+    const end = track.ghostEnd();
+    if (end) {
+      const drag = track.dragView();
+      const reached = drag && drag.targetPlates !== end.plates ? ` of ${drag.targetPlates}` : "";
+      add(
+        "ghost-end",
+        end.xLdu,
+        end.plates * PLATE_LDU + railTop,
+        end.zLdu,
+        `${end.plates}${reached} pl`,
+        `${heightText(end.plates)}; ${headroom(end.plates)}`,
+        "ghost",
+      );
+    }
+    for (const pier of track.ghostPiers()) {
+      add(
+        `ghost-pier:${pier.xLdu},${pier.zLdu}`,
+        pier.xLdu,
+        pier.plates * PLATE_LDU + railTop,
+        pier.zLdu,
+        `${pier.plates} pl`,
+        heightText(pier.plates),
+        "ghost",
+      );
+    }
+    for (const crossing of track.crossings()) {
+      add(
+        `crossing:${crossing.xLdu},${crossing.zLdu}`,
+        crossing.xLdu,
+        crossing.upperPlates * PLATE_LDU,
+        crossing.zLdu,
+        `${crossing.gapLdu} LDU clear`,
+        `${(crossing.gapLdu / PLATE_LDU).toFixed(1)} plates from the lower rails (${crossing.lowerPlates} pl) to the upper track (${crossing.upperPlates} pl); ${track.trainGauge.model} needs ${track.trainGauge.heightLdu.toFixed(1)} LDU`,
+        "clear",
+      );
+    }
+    for (const pier of track.pierViews()) {
+      add(
+        `pier:${pier.xLdu},${pier.zLdu}`,
+        pier.xLdu,
+        pier.plates * PLATE_LDU + railTop,
+        pier.zLdu,
+        `${pier.plates} pl`,
+        `${heightText(pier.plates)}; ${headroom(pier.plates)}`,
+        "pier",
+      );
+    }
+    this.update({ heightLabels: labels });
   }
 
   private showTrackGhost(track: TrackDrawing): void {
@@ -871,25 +1069,34 @@ export class Editor implements IEditor {
     if (this.state.mode !== "track" || !track) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
     this.showRefusalCells(null);
-    track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
+    if (!track.beginDrag(this.ray)) return false;
     this.update({ track: this.trackView() });
     return true;
   }
 
   dragMove(ndcX: number, ndcY: number): void {
     const track = this.track;
-    if (!track || !this.groundHit(ndcX, ndcY)) return;
-    track.moveDrag(this.hitX, this.hitZ);
+    if (!track) return;
+    this.groundHit(ndcX, ndcY);
+    this.hoverOnTrackPlane();
+    this.redrawDrag(track);
+    this.update({ hover: this.hoverView() });
+  }
+
+  private redrawDrag(track: TrackDrawing): void {
+    track.moveDrag(this.ray);
     this.showTrackGhost(track);
     this.showEndMarker(track.dragTarget());
     this.showRefusalCells(track.dragView()?.blocked?.missing ?? null);
     this.update({ track: this.trackView() });
+    this.refreshLabels();
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
     const track = this.track;
     if (!track) return;
-    if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
+    this.groundHit(ndcX, ndcY);
+    track.moveDrag(this.ray);
     const commit = track.endDrag();
     this.backend.setGhost(null);
     this.showEndMarker(null);
@@ -897,7 +1104,10 @@ export class Editor implements IEditor {
     let studs = 0;
     for (const key of commit.chunks) {
       const chunk = track.chunkInstances(key);
-      if (!chunk) continue;
+      if (!chunk) {
+        this.backend.deleteChunk(key);
+        continue;
+      }
       this.backend.setChunk(key, chunk);
       instances += chunk.count;
       studs += chunk.studs.count;
@@ -916,13 +1126,13 @@ export class Editor implements IEditor {
       };
     }
     if (commit.laid > 0) this.syncPlan();
-    if (commit.laid === 0 && commit.refusal === null)
-      this.selectTrack(track.pieceAt(this.hitX, this.hitZ));
+    if (commit.laid === 0 && commit.refusal === null) this.selectTrack(track.pieceAt(this.ray));
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.showRefusalCells(commit.blocked?.missing ?? null);
     if (commit.blocked) this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.blocked));
     this.update({ track: this.trackView() });
+    this.refreshLabels();
   }
 
   chooseItem(id: string | null): void {
@@ -1029,7 +1239,9 @@ export class Editor implements IEditor {
   }
 
   private syncHeldTrack(): void {
-    this.track?.syncHeld(
+    const track = this.track;
+    if (!track) return;
+    const keys = track.syncHeld(
       this.placed
         .models()
         .flatMap((model) =>
@@ -1043,7 +1255,17 @@ export class Editor implements IEditor {
           ),
         ),
     );
+    this.redrawTrackChunks(track, keys);
     this.update({ track: this.trackView() });
+    this.refreshLabels();
+  }
+
+  private redrawTrackChunks(track: TrackDrawing, keys: ReadonlyArray<number>): void {
+    for (const key of keys) {
+      const chunk = track.chunkInstances(key);
+      if (chunk) this.backend.setChunk(key, chunk);
+      else this.backend.deleteChunk(key);
+    }
   }
 
   private trackExempt(
@@ -1101,11 +1323,13 @@ export class Editor implements IEditor {
     const track = this.track;
     if (!held || !track) return 0;
     const targets = track.openEndPoses();
+    const heights = track.openEndHeights();
     const frame = latticePose16(this.hoverX, this.hoverZ, this.ghostRot);
     return held.openEnds.filter((end) => {
-      if (yPlates + end.plates !== LAID_TRACK_PLATES) return false;
       const pose = composePose16(frame, end.local);
-      return targets.some((target) => posesJoin16(pose, target));
+      return targets.some(
+        (target, i) => heights[i] === yPlates + end.plates && posesJoin16(pose, target),
+      );
     }).length;
   }
 
@@ -1115,7 +1339,8 @@ export class Editor implements IEditor {
     if (!held || !track || !this.hovering) return;
     const groundEnds = held.openEnds.filter((end) => end.plates === LAID_TRACK_PLATES);
     if (groundEnds.length === 0) return;
-    const targets = track.openEndPoses();
+    const heights = track.openEndHeights();
+    const targets = track.openEndPoses().filter((_, i) => heights[i] === LAID_TRACK_PLATES);
     const frame = latticePose16(this.hoverX, this.hoverZ, this.ghostRot);
     let best: { readonly xLdu: number; readonly zLdu: number } | null = null;
     let bestDistance = TRACK_SNAP_RADIUS_LDU;
@@ -1170,12 +1395,26 @@ export class Editor implements IEditor {
     return { state: refused ? "refused" : "free", ...fit };
   }
 
+  private hoverOnTrackPlane(): void {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track) return;
+    const plane = track.drawPlates * PLATE_LDU;
+    const directionY = this.ray[4] ?? 0;
+    if (directionY >= 0) return;
+    const t = (plane - (this.ray[1] ?? 0)) / directionY;
+    if (t < 0) return;
+    this.hoverX = snapToLattice((this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t);
+    this.hoverZ = snapToLattice((this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t);
+    this.hoverYPlates = track.drawPlates;
+  }
+
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
+    this.hoverOnTrackPlane();
     const snap = this.snapGhostToRoad();
     const track = this.track;
     if (this.state.mode === "track" && track && !track.dragView() && this.selectedTrack === null) {
-      const end = this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null;
+      const end = this.hovering ? track.endNear(this.ray, null) : null;
       this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
     }
     this.snapGhostToTrack();
@@ -1356,6 +1595,29 @@ export class Editor implements IEditor {
     this.showRoadMarkers();
   }
 
+  setTrackHeight(plates: number): void {
+    const track = this.track;
+    if (!track || plates < LAID_TRACK_PLATES || !Number.isInteger(plates)) return;
+    track.setDrawPlates(plates);
+    this.afterHeightChange(track);
+  }
+
+  setRampRate(platesPerPiece: number): void {
+    const track = this.track;
+    if (!track) return;
+    track.setRampRate(platesPerPiece);
+    this.afterHeightChange(track);
+  }
+
+  private afterHeightChange(track: TrackDrawing): void {
+    if (track.dragView()) {
+      this.redrawDrag(track);
+      return;
+    }
+    this.update({ track: this.trackView() });
+    this.refreshLabels();
+  }
+
   setSnapRoads(snap: boolean): void {
     this.update({ snapRoads: snap, snap: null });
   }
@@ -1425,13 +1687,10 @@ export class Editor implements IEditor {
     const track = this.track;
     const piece = this.selectedTrack;
     if (!track || piece === null) return;
-    for (const key of track.removePiece(piece)) {
-      const chunk = track.chunkInstances(key);
-      if (chunk) this.backend.setChunk(key, chunk);
-      else this.backend.deleteChunk(key);
-    }
+    this.redrawTrackChunks(track, track.removePiece(piece));
     this.syncPlan();
     this.selectTrack(null);
+    this.refreshLabels();
   }
 
   deleteSelection(eventTimeMs: number): void {
@@ -1544,28 +1803,33 @@ export class Editor implements IEditor {
   orbit(dxPx: number, dyPx: number): void {
     this.camera.orbit(dxPx, dyPx);
     this.camera.apply(this.backend);
+    this.refreshLabels();
   }
 
   pan(dxPx: number, dyPx: number): void {
     this.camera.pan(dxPx, dyPx);
     this.camera.apply(this.backend);
+    this.refreshLabels();
   }
 
   zoom(wheelDelta: number): void {
     this.camera.zoom(wheelDelta);
     this.camera.apply(this.backend);
+    this.refreshLabels();
   }
 
   focusSelection(): void {
     if (!this.selected) return;
     this.camera.focus(this.selected.box);
     this.camera.apply(this.backend);
+    this.refreshLabels();
   }
 
   centreOnCursor(): void {
     if (!this.hovering) return;
     this.camera.centreOn(this.hoverX, this.hoverZ);
     this.camera.apply(this.backend);
+    this.refreshLabels();
   }
 
   planOriginHere(): { readonly chunkX: number; readonly chunkZ: number } {
@@ -1585,6 +1849,7 @@ export class Editor implements IEditor {
       aspect,
     );
     this.camera.apply(this.backend);
+    this.refreshLabels();
   }
 
   dump(): EditorDump {

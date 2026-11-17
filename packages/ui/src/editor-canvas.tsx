@@ -1,4 +1,4 @@
-import { TRACK_ITEM_ID, type EditorOptions, type IEditor } from "@brr/client";
+import { BRICK_LDU, PLATE_LDU, TRACK_ITEM_ID, type EditorOptions, type IEditor } from "@brr/client";
 import { useEffect, useRef } from "react";
 
 const CLICK_SLOP_PX = 4;
@@ -39,6 +39,15 @@ function historyShortcut(editor: IEditor, event: KeyboardEvent): void {
   else if (key === "z" || key === "y") editor.redo(event.timeStamp);
   else return;
   event.preventDefault();
+}
+
+const PLATES_PER_BRICK = BRICK_LDU / PLATE_LDU;
+
+function shiftTrackHeight(editor: IEditor, event: KeyboardEvent): void {
+  const height = editor.snapshot().track?.height;
+  if (!height) return;
+  const step = (event.shiftKey ? PLATES_PER_BRICK : 1) * (event.key === "PageUp" ? 1 : -1);
+  editor.setTrackHeight(Math.max(0, height.drawPlates + step));
 }
 
 interface EditorCanvasProps {
@@ -163,6 +172,10 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
         case "t":
         case "T":
           editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
+          break;
+        case "PageUp":
+        case "PageDown":
+          shiftTrackHeight(editor, event);
           break;
         default:
           return;
