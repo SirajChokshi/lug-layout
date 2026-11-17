@@ -246,8 +246,6 @@ export {
   PALETTE_CATEGORIES,
   PaletteIndex,
   colorDisplayName,
-  commonestColor,
-  displayItem,
   itemInColor,
 } from "./catalog/palette-index.ts";
 export type {
