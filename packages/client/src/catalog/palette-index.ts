@@ -37,6 +37,7 @@ interface IndexedEntry {
   readonly words: ReadonlyArray<string>;
   readonly phrases: ReadonlyArray<ReadonlyArray<string>>;
   readonly colorWords: ReadonlyArray<ReadonlyArray<string>>;
+  readonly leadWord: string | undefined;
 }
 
 interface TokenMatch {
@@ -46,6 +47,7 @@ interface TokenMatch {
 
 const EXACT_NUMBER = 120;
 const EXACT_WORD = 100;
+const LEAD_WORD_BONUS = 10;
 const PREFIX = 80;
 const SUBSTRING = 50;
 const SUBSEQUENCE = 30;
@@ -74,6 +76,13 @@ export const CATEGORY_LABEL: Readonly<Record<PaletteCategory, string>> = {
   baseplates: "Baseplates",
   road: "Road",
   sets: "Sets",
+};
+
+const KIND_WORDS: Readonly<Record<PaletteCategory, string>> = {
+  track: "track rail train",
+  baseplates: "baseplate plate ground",
+  road: "road plate street",
+  sets: "set model",
 };
 
 export function colorDisplayName(name: string): string {
@@ -236,6 +245,15 @@ function wordScore(token: string, word: string, exact: number): number {
   return 0;
 }
 
+function colorWordScore(token: string, words: ReadonlyArray<string>): number {
+  let best = 0;
+  for (const word of words) {
+    if (word === token) return EXACT_WORD;
+    if (word.startsWith(token)) best = Math.max(best, PREFIX);
+  }
+  return best;
+}
+
 function bestScore(token: string, words: ReadonlyArray<string>, exact: number): number {
   let best = 0;
   for (const word of words) best = Math.max(best, wordScore(token, word, exact));
@@ -295,6 +313,21 @@ function parseQuery(query: string): ReadonlyArray<QueryTerm> {
   return terms;
 }
 
+function termWords(term: QueryTerm): ReadonlyArray<string> {
+  switch (term.kind) {
+    case "word":
+      return [term.word];
+    case "phrase":
+      return term.words;
+    case "number":
+      return [term.number];
+    default: {
+      const unhandled: never = term;
+      throw new Error(`unhandled query term ${String(unhandled)}`);
+    }
+  }
+}
+
 function phraseScore(phrase: ReadonlyArray<string>, words: ReadonlyArray<string>): number {
   const last = phrase.length - 1;
   for (let start = 0; start + phrase.length <= words.length; start++) {
@@ -334,7 +367,12 @@ export class PaletteIndex {
       items: entry.items.toSorted((a, b) => rankOf(a) - rankOf(b)),
     }));
     this.indexed = sorted.map((entry, order) => {
-      const phrases = [entry.title, CATEGORY_LABEL[entry.category], ...(extra.get(entry.key) ?? [])]
+      const phrases = [
+        entry.title,
+        CATEGORY_LABEL[entry.category],
+        KIND_WORDS[entry.category],
+        ...(extra.get(entry.key) ?? []),
+      ]
         .map(wordsOf)
         .map(withSpellings);
       const first = entry.items[0];
@@ -349,6 +387,9 @@ export class PaletteIndex {
         ],
         words,
         phrases,
+        leadWord: wordsOf(entry.title).find(
+          (word) => entry.partNumber === null || word !== normalized(entry.partNumber),
+        ),
         colorWords: entry.items.map((item) =>
           item.color ? [...withSpellings(wordsOf(item.color.name)), ...item.elements] : [],
         ),
@@ -429,6 +470,7 @@ export class PaletteIndex {
     const { entry } = indexed;
     let score = 0;
     let kept = entry.items.map((_, i) => i);
+    const colorTokens: string[] = [];
     for (const term of terms) {
       const matched = this.matchTerm(indexed, term);
       if (term.negated) {
@@ -439,9 +481,19 @@ export class PaletteIndex {
         if (!matched) return null;
         score += matched.score;
         const colors = matched.colors;
-        if (colors) kept = kept.filter((i) => colors.has(i));
+        if (colors) {
+          kept = kept.filter((i) => colors.has(i));
+          colorTokens.push(...termWords(term));
+        }
       }
       if (kept.length === 0) return null;
+    }
+    if (colorTokens.length > 0) {
+      const unnamed = (i: number): number =>
+        (indexed.colorWords[i] ?? []).filter(
+          (word) => !HAS_DIGIT.test(word) && !colorTokens.some((token) => word.startsWith(token)),
+        ).length;
+      kept = kept.toSorted((a, b) => unnamed(a) - unnamed(b));
     }
     return { entry, items: kept.flatMap((i) => entry.items[i] ?? []), score };
   }
@@ -474,9 +526,10 @@ export class PaletteIndex {
               indexed,
               Math.max(
                 bestScore(term.word, indexed.numbers, EXACT_NUMBER),
-                bestScore(term.word, indexed.words, EXACT_WORD),
+                bestScore(term.word, indexed.words, EXACT_WORD) +
+                  (indexed.leadWord === term.word ? LEAD_WORD_BONUS : 0),
               ),
-              (words) => bestScore(term.word, words, EXACT_WORD),
+              (words) => colorWordScore(term.word, words),
             );
       default: {
         const unhandled: never = term;

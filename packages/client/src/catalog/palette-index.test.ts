@@ -94,6 +94,26 @@ const catalog: ReadonlyArray<CatalogItemView> = [
   },
 ];
 
+const trackSiding: CatalogItemView = {
+  id: "generated:station-track-siding",
+  label: "Station Track Siding",
+  group: "generated:station-track-siding",
+  shortLabel: "Station Track Siding",
+  groupLabel: "Station Track Siding",
+  color: null,
+  kind: "model",
+  parts: 30,
+  studsWide: 32,
+  studsDeep: 32,
+  thumbnail: null,
+  aliases: [],
+  elements: [],
+  displayColor: false,
+  draggable: true,
+  toggleable: false,
+  listedUnder: null,
+};
+
 const index = new PaletteIndex(catalog, [
   { entryKey: "track:lego-9v", terms: ["2865", "Train Track 9V Straight", "2867"] },
 ]);
@@ -196,4 +216,12 @@ it("defaults a part to the current colour, else its display colour, else its sec
   expect(pick("ldraw:3867", TAN.code)).toBe("ldraw:3867@2");
   const [searched] = index.search("4186", "all");
   expect(searched && index.defaultItem(searched.items, null)?.id).toBe("ldraw:4186@2");
+});
+
+it("ranks a part named by the word above parts that only mention it", () => {
+  const withSiding = new PaletteIndex([trackSiding, ...catalog]);
+  expect(withSiding.search("track", "all").map((hit) => hit.entry.key)).toEqual([
+    "track:lego-9v",
+    "generated:station-track-siding",
+  ]);
 });
