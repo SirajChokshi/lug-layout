@@ -24,7 +24,7 @@ import { TrackDrawing } from "../edit/track-drawing.ts";
 import type { CityCamera } from "./city-scene.ts";
 import {
   ColorTable,
-  ldrawColorsSrgb,
+  ldrawColors,
   summarizeChunks,
   type IViewerScene,
   type KeyedChunk,
@@ -206,7 +206,8 @@ export class LayoutScene implements ILayoutScene {
     this.capture.setPalette({
       detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
       colorsSrgb: colors.toSrgb(),
-      ldrawColorsSrgb: ldrawColorsSrgb(bundle),
+      colorsAlpha: colors.toAlpha(),
+      ldrawColors: ldrawColors(bundle),
     });
     this.extent = lengthAlongX(placeableNamed(placeables, MODULE_NAME)) * MODULES_PER_SIDE;
     const world = new World();
