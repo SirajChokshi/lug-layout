@@ -50,6 +50,7 @@ function compiledManifest() {
         lattice: null,
         vehicles: 0,
         sha256: SHA256_ZERO,
+        cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, cells: null },
       },
     ],
     modified: "modified from LDraw",
@@ -100,6 +101,7 @@ function modelFile() {
     parts: [],
     lattice: null,
     vehicles: [],
+    cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, visibleBits: [], cells: null },
     instances: { part: [], color: [], matrix: [] },
   };
 }

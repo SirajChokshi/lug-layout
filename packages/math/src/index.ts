@@ -1,4 +1,5 @@
 export {
+  BRICK_LDU,
   CHUNK_LDU,
   CHUNK_STUDS,
   MM_PER_STUD,

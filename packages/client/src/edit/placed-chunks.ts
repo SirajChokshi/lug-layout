@@ -1,5 +1,21 @@
-import type { AppliedEdit, PlacementHandle, PlacementRef } from "@brr/domain";
-import { CHUNK_LDU, PLATE_LDU, chunkKey, chunkOf, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { EMPTY_COLUMN } from "@brr/catalog";
+import {
+  OccupancyGrid,
+  cellChunkKey,
+  type AppliedEdit,
+  type PlacementHandle,
+  type PlacementRef,
+} from "@brr/domain";
+import {
+  CHUNK_LDU,
+  PLATE_LDU,
+  STUD_LDU,
+  chunkKey,
+  chunkOf,
+  isRot90,
+  rot90Cos,
+  rot90Sin,
+} from "@brr/math";
 import {
   INSTANCE_MATRIX_FLOATS,
   type ChunkInstances,
@@ -7,7 +23,12 @@ import {
   type WorldBox,
 } from "@brr/render";
 import { BOX_FLOATS } from "./local-box.ts";
-import type { Placeable } from "./placeable.ts";
+import {
+  FOOTPRINT_ANTI_STUD,
+  FOOTPRINT_FLAT,
+  FOOTPRINT_NONE,
+  type Placeable,
+} from "./placeable.ts";
 
 export interface PlacedModel {
   readonly placement: PlacementRef;
@@ -16,6 +37,8 @@ export interface PlacedModel {
   readonly box: WorldBox;
   rayHit(ray: Float64Array): number;
 }
+
+const HALF_STUD_LDU = STUD_LDU / 2;
 
 function slab(
   origin: number,
@@ -57,11 +80,96 @@ interface Contribution {
   studs: number;
 }
 
+class LatticePose {
+  readonly cos: number;
+  readonly sin: number;
+
+  constructor(
+    readonly x: number,
+    readonly z: number,
+    rot: number,
+  ) {
+    if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+    this.cos = rot90Cos(rot);
+    this.sin = rot90Sin(rot);
+  }
+
+  worldCellX(localCellX: number, localCellZ: number): number {
+    const lx = localCellX * STUD_LDU + HALF_STUD_LDU;
+    const lz = localCellZ * STUD_LDU + HALF_STUD_LDU;
+    return Math.floor((this.x + this.cos * lx + this.sin * lz) / STUD_LDU);
+  }
+
+  worldCellZ(localCellX: number, localCellZ: number): number {
+    const lx = localCellX * STUD_LDU + HALF_STUD_LDU;
+    const lz = localCellZ * STUD_LDU + HALF_STUD_LDU;
+    return Math.floor((this.z - this.sin * lx + this.cos * lz) / STUD_LDU);
+  }
+
+  localCellX(worldCellX: number, worldCellZ: number): number {
+    const dx = worldCellX * STUD_LDU + HALF_STUD_LDU - this.x;
+    const dz = worldCellZ * STUD_LDU + HALF_STUD_LDU - this.z;
+    return Math.floor((this.cos * dx - this.sin * dz) / STUD_LDU);
+  }
+
+  localCellZ(worldCellX: number, worldCellZ: number): number {
+    const dx = worldCellX * STUD_LDU + HALF_STUD_LDU - this.x;
+    const dz = worldCellZ * STUD_LDU + HALF_STUD_LDU - this.z;
+    return Math.floor((this.sin * dx + this.cos * dz) / STUD_LDU);
+  }
+}
+
+const NEIGHBOUR_DX = Int8Array.of(-1, 0, 1, -1, 1, -1, 0, 1);
+const NEIGHBOUR_DZ = Int8Array.of(-1, -1, -1, 0, 0, 1, 1, 1);
+
+function closedAround(
+  cellX: number,
+  cellZ: number,
+  baseLdu: number,
+  cover: PlacedEntry,
+  closers: ReadonlyArray<PlacedEntry>,
+): boolean {
+  for (let n = 0; n < NEIGHBOUR_DX.length; n++) {
+    const x = cellX + (NEIGHBOUR_DX[n] ?? 0);
+    const z = cellZ + (NEIGHBOUR_DZ[n] ?? 0);
+    let closed = false;
+    for (let c = 0; c < closers.length && !closed; c++) {
+      const closer = closers[c];
+      closed = closer !== undefined && closer !== cover && closer.columnSpans(x, z, baseLdu);
+    }
+    if (!closed) return false;
+  }
+  return true;
+}
+
+function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: LatticePose): number {
+  const { cells } = placeable;
+  let yPlates = 0;
+  for (let j = 0; j < cells.depth; j++) {
+    for (let i = 0; i < cells.width; i++) {
+      const cell = j * cells.width + i;
+      if ((cells.columnTop[cell] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
+      const lx = cells.cellX0 + i;
+      const lz = cells.cellZ0 + j;
+      const below = occupancy.topAt(pose.worldCellX(lx, lz), pose.worldCellZ(lx, lz));
+      yPlates = Math.max(yPlates, below - (cells.columnBottom[cell] ?? 0));
+    }
+  }
+  return yPlates;
+}
+
 class PlacedEntry implements PlacedModel {
   readonly partKeys: Float64Array;
   readonly studKeys: Float64Array;
+  readonly studCellX: Int32Array;
+  readonly studCellZ: Int32Array;
+  readonly studBaseLdu: Int32Array;
+  readonly studCulled: Uint8Array;
   readonly contributions = new Map<number, Contribution>();
+  readonly footprintKeys = new Set<number>();
+  readonly columnKeys = new Set<number>();
   readonly box: WorldBox;
+  readonly pose: LatticePose;
   readonly x: number;
   readonly yLdu: number;
   readonly z: number;
@@ -74,13 +182,12 @@ class PlacedEntry implements PlacedModel {
     readonly placeable: Placeable,
     chunkOrigins: Map<number, readonly [number, number]>,
   ) {
-    const rot = handle.rot;
-    if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+    this.pose = new LatticePose(handle.x, handle.z, handle.rot);
     this.x = handle.x;
     this.z = handle.z;
     this.yLdu = handle.yPlates * PLATE_LDU;
-    this.cos = rot90Cos(rot);
-    this.sin = rot90Sin(rot);
+    this.cos = this.pose.cos;
+    this.sin = this.pose.sin;
     this.partKeys = this.keysOf(
       placeable.parts.matrices,
       placeable.parts.count,
@@ -93,7 +200,118 @@ class PlacedEntry implements PlacedModel {
       chunkOrigins,
       "studs",
     );
+    const studs = placeable.studLattice;
+    const count = placeable.studs.count;
+    this.studCellX = new Int32Array(count);
+    this.studCellZ = new Int32Array(count);
+    this.studBaseLdu = new Int32Array(count);
+    this.studCulled = new Uint8Array(count);
+    for (let i = 0; i < count; i++) {
+      const lx = studs.cellX[i] ?? 0;
+      const lz = studs.cellZ[i] ?? 0;
+      this.studCellX[i] = this.pose.worldCellX(lx, lz);
+      this.studCellZ[i] = this.pose.worldCellZ(lx, lz);
+      this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
+    }
+    this.registerCells(chunkOrigins);
     this.box = this.worldBox();
+  }
+
+  private registerCells(chunkOrigins: Map<number, readonly [number, number]>): void {
+    const { cells } = this.placeable;
+    for (let j = 0; j < cells.depth; j++) {
+      for (let i = 0; i < cells.width; i++) {
+        const cell = j * cells.width + i;
+        const occupied = (cells.columnTop[cell] ?? EMPTY_COLUMN) !== EMPTY_COLUMN;
+        const footprint = (cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE;
+        if (!occupied && !footprint) continue;
+        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
+        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
+        const key = cellChunkKey(wx, wz);
+        if (occupied) this.columnKeys.add(key);
+        if (footprint) {
+          this.footprintKeys.add(key);
+          if (!chunkOrigins.has(key)) {
+            chunkOrigins.set(key, [
+              chunkOf(wx * STUD_LDU + HALF_STUD_LDU),
+              chunkOf(wz * STUD_LDU + HALF_STUD_LDU),
+            ]);
+          }
+        }
+      }
+    }
+  }
+
+  stampColumns(occupancy: OccupancyGrid, onlyChunk: number | null): void {
+    const { cells } = this.placeable;
+    const yPlates = this.handle.yPlates;
+    for (let j = 0; j < cells.depth; j++) {
+      for (let i = 0; i < cells.width; i++) {
+        const top = cells.columnTop[j * cells.width + i] ?? EMPTY_COLUMN;
+        if (top === EMPTY_COLUMN) continue;
+        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
+        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
+        if (onlyChunk !== null && cellChunkKey(wx, wz) !== onlyChunk) continue;
+        occupancy.raise(wx, wz, yPlates + top);
+      }
+    }
+  }
+
+  private cellAt(worldCellX: number, worldCellZ: number): number {
+    const { cells } = this.placeable;
+    const i = this.pose.localCellX(worldCellX, worldCellZ) - cells.cellX0;
+    const j = this.pose.localCellZ(worldCellX, worldCellZ) - cells.cellZ0;
+    if (i < 0 || j < 0 || i >= cells.width || j >= cells.depth) return -1;
+    return j * cells.width + i;
+  }
+
+  footprintKind(worldCellX: number, worldCellZ: number, baseLdu: number): number {
+    if (baseLdu !== this.yLdu) return FOOTPRINT_NONE;
+    const cell = this.cellAt(worldCellX, worldCellZ);
+    return cell < 0 ? FOOTPRINT_NONE : (this.placeable.cells.footprint[cell] ?? FOOTPRINT_NONE);
+  }
+
+  columnSpans(worldCellX: number, worldCellZ: number, ldu: number): boolean {
+    const cell = this.cellAt(worldCellX, worldCellZ);
+    if (cell < 0) return false;
+    const { columnBottom, columnTop } = this.placeable.cells;
+    const top = columnTop[cell] ?? EMPTY_COLUMN;
+    if (top === EMPTY_COLUMN) return false;
+    const bottom = columnBottom[cell] ?? 0;
+    return this.yLdu + bottom * PLATE_LDU <= ldu && ldu <= this.yLdu + top * PLATE_LDU;
+  }
+
+  markCulled(
+    key: number,
+    covers: ReadonlyArray<PlacedEntry>,
+    closers: ReadonlyArray<PlacedEntry>,
+  ): number {
+    const onLattice = this.placeable.studLattice.onLattice;
+    let visible = 0;
+    for (let i = 0; i < this.studKeys.length; i++) {
+      if (this.studKeys[i] !== key) continue;
+      let culled = 0;
+      if (onLattice[i] === 1) {
+        const cx = this.studCellX[i] ?? 0;
+        const cz = this.studCellZ[i] ?? 0;
+        const base = this.studBaseLdu[i] ?? 0;
+        for (let c = 0; c < covers.length; c++) {
+          const cover = covers[c];
+          if (!cover || cover === this) continue;
+          const kind = cover.footprintKind(cx, cz, base);
+          if (
+            kind === FOOTPRINT_FLAT ||
+            (kind === FOOTPRINT_ANTI_STUD && closedAround(cx, cz, base, cover, closers))
+          ) {
+            culled = 1;
+            break;
+          }
+        }
+      }
+      this.studCulled[i] = culled;
+      if (culled === 0) visible++;
+    }
+    return visible;
   }
 
   private keysOf(
@@ -120,6 +338,10 @@ class PlacedEntry implements PlacedModel {
       contribution[field]++;
     }
     return keys;
+  }
+
+  rebuildKeys(): Set<number> {
+    return new Set([...this.contributions.keys(), ...this.footprintKeys]);
   }
 
   rayHit(ray: Float64Array): number {
@@ -185,6 +407,7 @@ class PlacedEntry implements PlacedModel {
   writeInto(
     source: Float32Array,
     keys: Float64Array,
+    skip: Uint8Array | null,
     key: number,
     originX: number,
     originZ: number,
@@ -197,7 +420,7 @@ class PlacedEntry implements PlacedModel {
     const tx = this.x - originX;
     const tz = this.z - originZ;
     for (let i = 0; i < keys.length; i++) {
-      if (keys[i] !== key) continue;
+      if (keys[i] !== key || skip?.[i] === 1) continue;
       const s = i * INSTANCE_MATRIX_FLOATS;
       const t = slot * INSTANCE_MATRIX_FLOATS;
       for (let col = 0; col < 4; col++) {
@@ -228,10 +451,34 @@ export interface ViewUpdate {
   readonly report: RebuildReport;
 }
 
+export interface StudTotals {
+  readonly drawn: number;
+  readonly culledInsideModels: number;
+  readonly culledUnderFootprints: number;
+}
+
+interface ChunkStuds {
+  readonly drawn: number;
+  readonly culled: number;
+}
+
+function addTo(index: Map<number, Set<PlacedEntry>>, key: number, entry: PlacedEntry): void {
+  let set = index.get(key);
+  if (!set) {
+    set = new Set();
+    index.set(key, set);
+  }
+  set.add(entry);
+}
+
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
+  private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
+  private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
+  private readonly chunkStuds = new Map<number, ChunkStuds>();
+  private readonly occupancy = new OccupancyGrid();
 
   constructor(private readonly backend: ISceneBackend) {}
 
@@ -243,16 +490,64 @@ export class PlacedChunks {
     const touched = new Set<number>();
     for (const change of edit.changes) {
       if (!change.removed) continue;
-      for (const key of this.detach(change.removed).contributions.keys()) touched.add(key);
+      for (const key of this.detach(change.removed).rebuildKeys()) touched.add(key);
     }
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
       const entry = this.insert(change.placement, change.added, placeableOf(change.to.refId));
-      for (const key of entry.contributions.keys()) touched.add(key);
+      for (const key of entry.rebuildKeys()) touched.add(key);
       added.push(entry);
     }
     return { added, report: this.rebuild(touched) };
+  }
+
+  restingHeight(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    ignore: PlacedModel | null,
+  ): number {
+    const ignored = this.entries.find((entry) => entry === ignore) ?? null;
+    if (ignored) this.restamp(ignored.columnKeys, ignored);
+    const yPlates = restingHeight(this.occupancy, placeable, new LatticePose(x, z, rot));
+    if (ignored) this.restamp(ignored.columnKeys, null);
+    return yPlates;
+  }
+
+  studTotals(): StudTotals {
+    let drawn = 0;
+    let culledUnderFootprints = 0;
+    for (const studs of this.chunkStuds.values()) {
+      drawn += studs.drawn;
+      culledUnderFootprints += studs.culled;
+    }
+    let culledInsideModels = 0;
+    for (const entry of this.entries) culledInsideModels += entry.placeable.bakedCoveredStuds;
+    return { drawn, culledInsideModels, culledUnderFootprints };
+  }
+
+  private columnsAround(key: number): PlacedEntry[] {
+    const origin = this.chunkOrigins.get(key);
+    if (!origin) return [];
+    const found = new Set<PlacedEntry>();
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const around = chunkKey(origin[0] + dx, origin[1] + dz);
+        for (const entry of this.byColumnChunk.get(around) ?? []) found.add(entry);
+      }
+    }
+    return [...found];
+  }
+
+  private restamp(keys: ReadonlySet<number>, except: PlacedEntry | null): void {
+    for (const key of keys) {
+      this.occupancy.clearChunk(key);
+      for (const entry of this.byColumnChunk.get(key) ?? []) {
+        if (entry !== except) entry.stampColumns(this.occupancy, key);
+      }
+    }
   }
 
   private insert(
@@ -262,14 +557,10 @@ export class PlacedChunks {
   ): PlacedEntry {
     const entry = new PlacedEntry(placement, handle, placeable, this.chunkOrigins);
     this.entries.push(entry);
-    for (const key of entry.contributions.keys()) {
-      let set = this.byChunk.get(key);
-      if (!set) {
-        set = new Set();
-        this.byChunk.set(key, set);
-      }
-      set.add(entry);
-    }
+    for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
+    for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
+    for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
+    entry.stampColumns(this.occupancy, null);
     return entry;
   }
 
@@ -279,6 +570,9 @@ export class PlacedChunks {
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
+    for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
+    for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
+    this.restamp(entry.columnKeys, null);
     return entry;
   }
 
@@ -301,13 +595,18 @@ export class PlacedChunks {
     const originX = origin[0] * CHUNK_LDU;
     const originZ = origin[1] * CHUNK_LDU;
     const entries = this.byChunk.get(key) ?? new Set<PlacedEntry>();
+    const covers = [...(this.byFootprintChunk.get(key) ?? [])];
+    const closers = covers.length > 0 ? this.columnsAround(key) : [];
     let partCount = 0;
     let studCount = 0;
+    let studsBefore = 0;
     for (const entry of entries) {
       const contribution = entry.contributions.get(key);
       partCount += contribution?.parts ?? 0;
-      studCount += contribution?.studs ?? 0;
+      studsBefore += contribution?.studs ?? 0;
+      studCount += entry.markCulled(key, covers, closers);
     }
+    this.chunkStuds.set(key, { drawn: studCount, culled: studsBefore - studCount });
     const chunk: ChunkInstances = {
       originX,
       originZ,
@@ -324,6 +623,7 @@ export class PlacedChunks {
     };
     if (partCount === 0 && studCount === 0) {
       this.backend.deleteChunk(key);
+      this.chunkStuds.delete(key);
       return chunk;
     }
     const selectedParts = new Uint32Array(partCount);
@@ -336,6 +636,7 @@ export class PlacedChunks {
       partSlot = entry.writeInto(
         parts.matrices,
         entry.partKeys,
+        null,
         key,
         originX,
         originZ,
@@ -352,6 +653,7 @@ export class PlacedChunks {
       studSlot = entry.writeInto(
         studs.matrices,
         entry.studKeys,
+        entry.studCulled,
         key,
         originX,
         originZ,
