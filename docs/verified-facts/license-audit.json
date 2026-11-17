@@ -12,20 +12,20 @@
     "root": ""
   },
   "bundleClosure": {
-    "files": 1962,
+    "files": 1968,
     "licenses": {
       "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 135,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 1827
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 1833
     },
     "withoutLicense": [],
     "nonCaLicense": [],
     "unofficial": []
   },
   "auditClosure": {
-    "files": 394,
+    "files": 478,
     "licenses": {
       "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 3,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 391
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 475
     },
     "withoutLicense": [],
     "nonCaLicense": [],
@@ -46,7 +46,7 @@
   "ldcadShadow": {
     "licenseFileFirstLine": "Attribution-ShareAlike 4.0 International",
     "patchFileLicenses": {
-      "CC BY-SA 4.0, see LICENSE.md": 27
+      "CC BY-SA 4.0, see LICENSE.md": 73
     }
   },
   "parts": [
@@ -1526,32 +1526,31 @@
       "ldcad": null
     },
     {
-      "id": "3001",
-      "group": "mils-road-module",
+      "id": "3811",
+      "group": "mils-module",
       "status": "officialCA",
       "header": {
-        "title": "Brick 2 x 4",
+        "title": "Baseplate 32 x 32",
         "author": "James Jessiman",
-        "ldrawOrg": "Part UPDATE 2004-03",
+        "ldrawOrg": "Part UPDATE 2025-09",
         "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
         "keywords": [],
         "movedTo": null
       },
-      "dependencyFiles": 10,
+      "dependencyFiles": 14,
       "missingDependencies": [],
       "unofficialDependencies": [],
       "ldcad": {
         "patchedFiles": [
-          "s/3001s01.dat",
           "stud.dat"
         ],
         "trainTrackSnapLines": 0,
-        "studPrimitiveOnly": false
+        "studPrimitiveOnly": true
       }
     },
     {
       "id": "3003",
-      "group": "mils-road-module",
+      "group": "mils-module",
       "status": "officialCA",
       "header": {
         "title": "Brick 2 x 2",
@@ -1576,8 +1575,953 @@
       }
     },
     {
+      "id": "3701",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Technic Brick 1 x 4 with Holes",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 18,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3701.dat",
+          "stud2.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "2465",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 16",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2009-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/2465s01.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "6112",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 12",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2009-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 7,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "6112.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "6111",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 10",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2009-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 7,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "6111.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3008",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 8",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2004-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 11,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3008s01.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3009",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 6",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2003-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3009s01.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3010",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 4",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2025-09",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 11,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3010s01.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3622",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 3",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2004-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 11,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3622s01.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3004",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 2",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2022-05",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 9,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3004.dat",
+          "s/3004s01.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3005",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 1 x 1",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2022-05",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3005s01.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3001",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Brick 2 x 4",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2004-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 10,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3001s01.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "91405",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 16 x 16 with Underside Ribs",
+        "author": "Donald Sutter [technog]",
+        "ldrawOrg": "Part UPDATE 2010-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 22,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "91405.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "92438",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 8 x 16",
+        "author": "Rolf Osterthun [Rolf]",
+        "ldrawOrg": "Part UPDATE 2011-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 16,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "92438.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3027",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 6 x 16",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3027.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3028",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 6 x 12",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3028.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3033",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 6 x 10",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2003-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3033.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3036",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 6 x 8",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2025-09",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3036.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3958",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 6 x 6",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2017-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 15,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3958.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3029",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 4 x 12",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3029.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3030",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 4 x 10",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3030.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3035",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 4 x 8",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2025-09",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3035.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3032",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 4 x 6",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3032.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3031",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 4 x 4",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3031.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "2445",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 2 x 12",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2003-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "2445.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3832",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 2 x 10",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2003-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3832.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3034",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 2 x 8",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2003-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3034.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3795",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 2 x 6",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2025-09",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3795.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3020",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 2 x 4",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3020.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3021",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 2 x 3",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3021.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3022",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 2 x 2",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2002-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3022.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3460",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 1 x 8",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2024-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 11,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3460.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3666",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 1 x 6",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2023-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 11,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3666.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3710",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 1 x 4",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2023-06",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 11,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3710.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3623",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 1 x 3",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2017-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 10,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3623.dat",
+          "s/3623s01.dat",
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3024",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Plate 1 x 1",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2022-05",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3024.dat",
+          "s/3024s01.dat",
+          "stud.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "90498",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 8 x 16 Type 2",
+        "author": "Philippe Hurbain [Philo]",
+        "ldrawOrg": "Part UPDATE 2011-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 13,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/90498s01.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "10202",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 6 x 6 with Groove and Underside Studs",
+        "author": "Owen Burgoyne [C3POwen]",
+        "ldrawOrg": "Part UPDATE 2020-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 14,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/10202s01.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "1751",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 4 x 4",
+        "author": "Vincent Messenet [Cheenzo]",
+        "ldrawOrg": "Part UPDATE 2023-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 9,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
+      }
+    },
+    {
+      "id": "69729",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 2 x 6",
+        "author": "Vincent Messenet [Cheenzo]",
+        "ldrawOrg": "Part UPDATE 2020-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 9,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/69729s01.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
       "id": "87079",
-      "group": "mils-road-module",
+      "group": "mils-module",
       "status": "officialCA",
       "header": {
         "title": "Tile 2 x 4",
@@ -1601,27 +2545,200 @@
       }
     },
     {
-      "id": "91405",
-      "group": "mils-road-module",
+      "id": "26603",
+      "group": "mils-module",
       "status": "officialCA",
       "header": {
-        "title": "Plate 16 x 16 with Underside Ribs",
-        "author": "Donald Sutter [technog]",
-        "ldrawOrg": "Part UPDATE 2010-03",
+        "title": "Tile 2 x 3",
+        "author": "Philippe Hurbain [Philo]",
+        "ldrawOrg": "Part UPDATE 2016-01",
         "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
         "keywords": [],
         "movedTo": null
       },
-      "dependencyFiles": 22,
+      "dependencyFiles": 9,
       "missingDependencies": [],
       "unofficialDependencies": [],
       "ldcad": {
         "patchedFiles": [
-          "91405.dat",
-          "stud.dat"
+          "s/26603s01.dat"
         ],
         "trainTrackSnapLines": 0,
         "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3068b",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 2 x 2 with Groove",
+        "author": "Takeshi Takahashi [RainbowDolphin]",
+        "ldrawOrg": "Part UPDATE 2024-06",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 3068"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 9,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3068bs01.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "6636",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 1 x 6",
+        "author": "James Jessiman",
+        "ldrawOrg": "Part UPDATE 2009-03",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 9,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/6636s01.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "2431",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 1 x 4 with Groove",
+        "author": "Santeri Piippo [arezey]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/2431s01.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "63864",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 1 x 3",
+        "author": "Tim Gould [timgould]",
+        "ldrawOrg": "Part UPDATE 2019-01",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [],
+        "movedTo": null
+      },
+      "dependencyFiles": 8,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/63864s01.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3069b",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 1 x 2 with Groove",
+        "author": "Santeri Piippo [arezey]",
+        "ldrawOrg": "Part UPDATE 2010-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 3069"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 4,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "s/3069bs01.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "3070b",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Tile 1 x 1 with Groove",
+        "author": "Chris Dee [cwdee]",
+        "ldrawOrg": "Part UPDATE 2025-09",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 3070"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 4,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "3070b.dat",
+          "s/3070bs01.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": false
+      }
+    },
+    {
+      "id": "74746",
+      "group": "mils-module",
+      "status": "officialCA",
+      "header": {
+        "title": "Train Track 9V Straight",
+        "author": "Max Martin Richter [MMR1988]",
+        "ldrawOrg": "Part UPDATE 2025-02",
+        "license": "Licensed under CC BY 4.0 : see CAreadme.txt",
+        "keywords": [
+          "BrickLink 2865c01"
+        ],
+        "movedTo": null
+      },
+      "dependencyFiles": 69,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": {
+        "patchedFiles": [
+          "stud.dat",
+          "stud3.dat"
+        ],
+        "trainTrackSnapLines": 0,
+        "studPrimitiveOnly": true
       }
     }
   ]

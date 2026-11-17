@@ -1,0 +1,370 @@
+{
+  "profile": "mils",
+  "frame": "LDraw part frame: -Y up, x and z in LDU. Module cells are studs counted from the min-x, min-z corner; edges are named by the LDraw axis they face",
+  "spec": {
+    "moduleStuds": {
+      "value": 32,
+      "source": "docs/verified-facts.md, Module standards, \"MILS module size\": 32x32 studs (S1)"
+    },
+    "surfacePlates": {
+      "value": 4,
+      "source": "docs/verified-facts.md, Module standards, \"MILS surface height\": one baseplate plus 4 plates, the reference height on the sides (S1, S2)"
+    },
+    "features": {
+      "path": {
+        "widthStuds": {
+          "value": 4,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paths 4 studs wide, centred on the edge (S2)"
+        },
+        "aboveSurfacePlates": {
+          "min": 0,
+          "max": 0,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paths are integrated at the same height as the rest of the module surface (S2)"
+        },
+        "ldrawColors": {
+          "values": [6, 70, 72, 71, 19],
+          "source": "S2: paths are built with brown/reddish brown, dark bluish gray, light bluish gray or tan parts"
+        }
+      },
+      "track": {
+        "widthStuds": {
+          "value": 8,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": earth tracks 8 studs wide, centred on the edge (S2)"
+        },
+        "aboveSurfacePlates": {
+          "min": 0,
+          "max": 0,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": earth tracks are integrated at the same height as the rest of the module surface (S2)"
+        },
+        "ldrawColors": {
+          "values": [6, 70, 19],
+          "source": "S2: earth tracks are built mainly with brown/reddish brown or tan parts"
+        }
+      },
+      "road": {
+        "widthStuds": {
+          "value": 16,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paved roads 16 studs wide, centred on the edge (S2)"
+        },
+        "aboveSurfacePlates": {
+          "min": 1,
+          "max": 2,
+          "source": "docs/verified-facts.md, \"MILS paths, earth tracks and paved roads\": paved roads are built on top of the module surface, at 5 plates, and may vary by 1 plate but only above (S2)"
+        },
+        "ldrawColors": {
+          "values": [72],
+          "source": "S2: paved roads are Dark Bluish Gray tiles"
+        }
+      },
+      "river": {
+        "widthStuds": {
+          "value": 8,
+          "source": "docs/verified-facts.md, \"MILS rivers\": 8 studs wide, centred on the edge (S2)"
+        },
+        "waterPlates": {
+          "value": 2,
+          "source": "docs/verified-facts.md, \"MILS rivers\": water at 2 plates over the baseplate (S2)"
+        },
+        "ldrawColors": {
+          "values": [33],
+          "source": "S2: rivers are covered with Trans Dark Blue tiles"
+        },
+        "bankStartPlates": {
+          "value": 2,
+          "source": "docs/verified-facts.md, \"MILS rivers\": the stud adjacent to the river at 2 plates (S2)"
+        },
+        "bankRisePlatesPerStud": {
+          "value": 1,
+          "source": "same row: banks rise 1 plate per stud to the module surface (S2)"
+        }
+      }
+    },
+    "rail": {
+      "source": "Project decision, not MILS: MILS has no train rules (docs/verified-facts.md, \"MILS has City or Train rules\": REFUTED, S5). One 9V straight pair centred on two opposite edges, resting on the 4-plate surface; the piece frame comes from docs/verified-facts/track-catalog.json"
+    }
+  },
+  "build": {
+    "terrainLdrawColor": 2,
+    "structureLdrawColor": 71,
+    "parts": {
+      "baseplate": "3811",
+      "corner": "3003",
+      "edgeJoin": "3701",
+      "edgeCourse": ["2465", "6112", "6111", "3008", "3009", "3010", "3622", "3004", "3005"],
+      "support": ["3001", "3003", "3004", "3005"],
+      "plates": [
+        "91405",
+        "92438",
+        "3027",
+        "3028",
+        "3033",
+        "3036",
+        "3958",
+        "3029",
+        "3030",
+        "3035",
+        "3032",
+        "3031",
+        "2445",
+        "3832",
+        "3034",
+        "3795",
+        "3020",
+        "3021",
+        "3022",
+        "3460",
+        "3666",
+        "3710",
+        "3623",
+        "3024"
+      ],
+      "tiles": [
+        "90498",
+        "10202",
+        "1751",
+        "69729",
+        "87079",
+        "26603",
+        "3068b",
+        "6636",
+        "2431",
+        "63864",
+        "3069b",
+        "3070b"
+      ]
+    },
+    "features": {
+      "path": {
+        "widthStuds": 4,
+        "plates": 4,
+        "finish": "plate",
+        "ldrawColor": 70
+      },
+      "track": {
+        "widthStuds": 8,
+        "plates": 4,
+        "finish": "plate",
+        "ldrawColor": 19
+      },
+      "road": {
+        "widthStuds": 16,
+        "plates": 5,
+        "finish": "tile",
+        "ldrawColor": 72
+      },
+      "river": {
+        "widthStuds": 8,
+        "plates": 2,
+        "finish": "tile",
+        "ldrawColor": 33,
+        "bedLdrawColor": 1,
+        "bankStartPlates": 2,
+        "bankRisePlatesPerStud": 1
+      }
+    },
+    "rail": {
+      "part": "74746",
+      "ldrawColor": 72
+    }
+  },
+  "elementSource": "Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16); keys are part@colour with LDraw colour codes, which equal the Rebrickable colour ids for every colour used here (docs/verified-facts.md, Catalog data)",
+  "elements": {
+    "10202@72": ["6147337"],
+    "1751@72": ["6429074"],
+    "2431@33": ["4590989", "6252050", "6510179"],
+    "2431@72": ["4211053"],
+    "2445@1": ["244523"],
+    "2445@19": ["244505", "4113985", "4526771", "6093864"],
+    "2445@2": ["244528", "4101732", "4143255", "4264336", "6218146"],
+    "2445@70": ["4225700"],
+    "2465@71": ["4211366"],
+    "26603@72": ["6187008"],
+    "3001@71": ["4211385"],
+    "3003@71": ["4211387"],
+    "3004@71": ["4211388"],
+    "3005@71": ["4211389"],
+    "3008@71": ["4211392"],
+    "3009@71": ["4211393"],
+    "3010@71": ["4211394"],
+    "3020@1": ["302023", "4240375"],
+    "3020@19": ["302005", "4114309"],
+    "3020@2": ["302028"],
+    "3020@70": ["4211186"],
+    "3021@1": ["302123"],
+    "3021@19": ["302105", "30215", "4118790"],
+    "3021@2": ["302128"],
+    "3021@70": ["4211189"],
+    "3022@1": ["302223", "4613973"],
+    "3022@19": ["302205", "4114084"],
+    "3022@2": ["302228"],
+    "3022@70": ["4216695", "4613975"],
+    "3024@1": ["302423"],
+    "3024@19": ["302405", "4159553"],
+    "3024@2": ["302428"],
+    "3024@70": ["4221744"],
+    "3027@1": ["302723", "4107589", "4611373"],
+    "3027@19": ["302705", "4125252", "4543856", "6096262"],
+    "3027@2": ["4118814", "6032912", "6584863"],
+    "3027@70": ["4539113", "6132734"],
+    "3028@1": ["302823", "6186644"],
+    "3028@19": ["4107588", "4188158", "6097342", "6185313"],
+    "3028@2": ["302828", "4614769", "6177783"],
+    "3028@70": ["4264669"],
+    "3029@1": ["302923", "4166870", "4528850"],
+    "3029@19": ["4113918", "4209160", "6093484"],
+    "3029@2": ["302928", "4279059"],
+    "3029@70": ["4225520", "4566310", "6065139"],
+    "3030@1": ["303023", "303073"],
+    "3030@19": ["4209902", "4609328", "6037834"],
+    "3030@2": ["4141691", "4223986", "6247196", "6398657"],
+    "3030@70": ["4225715"],
+    "3031@1": ["303123", "4243815"],
+    "3031@19": ["4113919", "4243824"],
+    "3031@2": ["4113158", "4243821"],
+    "3031@70": ["4225868", "4243838"],
+    "3032@1": ["303223"],
+    "3032@19": ["4114001"],
+    "3032@2": ["4116671"],
+    "3032@70": ["4211213", "4271874"],
+    "3033@1": ["303323", "4227134", "4541680", "6339304"],
+    "3033@19": ["4114310", "4218966", "4624185"],
+    "3033@2": ["4172864", "6290260"],
+    "3033@70": ["4225550", "6058247", "6338230"],
+    "3034@1": ["303423"],
+    "3034@19": ["303405", "4113988"],
+    "3034@2": ["303428"],
+    "3034@70": ["4211211"],
+    "3035@1": ["303523"],
+    "3035@19": ["4191103", "4509897"],
+    "3035@2": ["4277361"],
+    "3035@70": ["4211207"],
+    "3036@1": ["303623", "303673"],
+    "3036@19": ["4114056", "6070501"],
+    "3036@2": ["303628", "303678", "4507311"],
+    "3036@70": ["4223729"],
+    "3068b@72": ["4211055"],
+    "3069b@33": ["4113854", "6251289", "6514219"],
+    "3069b@72": ["4211052"],
+    "3070b@33": ["3003943", "4188281", "4218438", "4541723"],
+    "3070b@72": ["4210848"],
+    "3460@1": ["346023"],
+    "3460@19": ["346005", "4114324"],
+    "3460@2": ["346028"],
+    "3460@70": ["4216945"],
+    "3622@71": ["4211428"],
+    "3623@1": ["362323"],
+    "3623@19": ["362305", "4121921"],
+    "3623@2": ["362328", "4107758"],
+    "3623@70": ["4211152"],
+    "3666@1": ["366623"],
+    "3666@19": ["366605", "4124067"],
+    "3666@2": ["366628"],
+    "3666@70": ["4221590"],
+    "3701@71": ["4211441"],
+    "3710@1": ["371023"],
+    "3710@19": ["371005", "4113233"],
+    "3710@2": ["371028"],
+    "3710@70": ["4211190"],
+    "3795@1": ["379523"],
+    "3795@19": ["379505", "4113993"],
+    "3795@2": ["379528"],
+    "3795@70": ["4211247"],
+    "3811@2": ["381128", "4219692"],
+    "3832@1": ["383223"],
+    "3832@19": ["383205", "4114063", "4248731", "4249019"],
+    "3832@2": ["383228"],
+    "3832@70": ["4211214"],
+    "3958@1": ["395823", "4199519"],
+    "3958@19": ["4125217"],
+    "3958@2": ["4112519", "4140525", "4226356", "4626001", "6097194"],
+    "3958@70": ["4217848"],
+    "6111@71": ["4211521"],
+    "6112@71": ["4211522"],
+    "63864@72": ["4568734"],
+    "6636@72": ["4210651"],
+    "69729@72": ["6321746"],
+    "74746@72": ["4235339"],
+    "87079@72": ["4560184"],
+    "90498@72": ["4596898"],
+    "91405@1": ["4610305"],
+    "91405@19": ["4611414"],
+    "91405@2": ["4593364", "4626702", "6397826"],
+    "92438@1": ["4610354"],
+    "92438@19": ["4609726"],
+    "92438@2": ["4610602"]
+  },
+  "templates": [
+    {
+      "name": "mils-plain",
+      "title": "MILS Basic Terrain Module",
+      "feature": null,
+      "edges": []
+    },
+    {
+      "name": "mils-road-straight",
+      "title": "MILS Paved Road Straight",
+      "feature": "road",
+      "edges": ["minX", "maxX"]
+    },
+    {
+      "name": "mils-road-curve",
+      "title": "MILS Paved Road Curve",
+      "feature": "road",
+      "edges": ["minX", "maxZ"]
+    },
+    {
+      "name": "mils-road-t-junction",
+      "title": "MILS Paved Road T-Junction",
+      "feature": "road",
+      "edges": ["minX", "maxX", "maxZ"]
+    },
+    {
+      "name": "mils-road-crossroads",
+      "title": "MILS Paved Road Crossroads",
+      "feature": "road",
+      "edges": ["minX", "maxX", "minZ", "maxZ"]
+    },
+    {
+      "name": "mils-track-straight",
+      "title": "MILS Earth Track Straight",
+      "feature": "track",
+      "edges": ["minX", "maxX"]
+    },
+    {
+      "name": "mils-track-curve",
+      "title": "MILS Earth Track Curve",
+      "feature": "track",
+      "edges": ["minX", "maxZ"]
+    },
+    {
+      "name": "mils-path-straight",
+      "title": "MILS Path Straight",
+      "feature": "path",
+      "edges": ["minX", "maxX"]
+    },
+    {
+      "name": "mils-path-curve",
+      "title": "MILS Path Curve",
+      "feature": "path",
+      "edges": ["minX", "maxZ"]
+    },
+    {
+      "name": "mils-river-straight",
+      "title": "MILS River Straight",
+      "feature": "river",
+      "edges": ["minX", "maxX"]
+    },
+    {
+      "name": "mils-river-curve",
+      "title": "MILS River Curve",
+      "feature": "river",
+      "edges": ["minX", "maxZ"]
+    },
+    {
+      "name": "mils-rail-straight",
+      "title": "Rail Module Straight (project rule, not MILS)",
+      "feature": "rail",
+      "edges": ["minX", "maxX"]
+    }
+  ]
+}

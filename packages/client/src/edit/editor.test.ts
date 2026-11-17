@@ -117,15 +117,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startEditor() {
+async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDLESS_SET]) {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
-  container
-    .rebind(PART_BUNDLE_LOADER)
-    .toConstantValue(new ModelSubsetLoader(realLoader, [PLACEABLE_SET, STUDLESS_SET]));
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
   container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
   const editor = container.get(EDITOR);
   const canvas = {
@@ -168,4 +166,20 @@ it("offers every baseplate and road plate in exactly the produced colours the bu
     part.producedColors?.colors.map((color) => color.ldraw),
   ]);
   expect(offered).toEqual(produced);
+}, 120_000);
+
+it("loads every MILS module template, including the rail module whose joiners reach past its baseplate", async () => {
+  const bundled = await new BundleDirectoryFetcher().text("standard/manifest.json");
+  const modules = (JSON.parse(bundled) as BundleManifest).models
+    .filter((model) => model.role === "mils-module")
+    .map((model) => model.name);
+  expect(modules).toContain("mils-rail-straight");
+  const { editor } = await startEditor(modules);
+
+  const snapshot = editor.snapshot();
+  expect(snapshot.error).toBeNull();
+  expect(snapshot.status).toBe("ready");
+  expect(
+    snapshot.catalog.filter((item) => item.kind === "mils-module").map((item) => item.id),
+  ).toEqual(modules.map((name) => `generated:${name}`));
 }, 120_000);
