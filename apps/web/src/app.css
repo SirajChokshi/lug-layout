@@ -314,6 +314,24 @@ footer {
   opacity: 0.45;
 }
 
+.train-panel .palette-primary {
+  display: block;
+  box-sizing: border-box;
+  margin: 8px 0;
+  text-align: center;
+  text-decoration: none;
+}
+
+.train-list {
+  margin: 4px 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.train-list [aria-current="true"] {
+  font-weight: 700;
+}
+
 .palette-hint,
 .palette-note {
   margin: 6px 0;
