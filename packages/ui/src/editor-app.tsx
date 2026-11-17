@@ -22,6 +22,7 @@ import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
 import { TrackPanel } from "./track-panel.tsx";
 import { useSafeArea } from "./safe-area.ts";
+import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
 import { useRecentItems } from "./use-recent-items.ts";
@@ -94,10 +95,12 @@ export function EditorApp({
   });
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   useSafeArea(camera, root);
+  const compact = useCompactLayout();
   return (
     <div
       ref={setRoot}
       className="editor"
+      data-layout={compact ? "compact" : "wide"}
       data-status={snapshot.status}
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
       data-selection={snapshot.selection?.item ?? ""}
@@ -122,7 +125,7 @@ export function EditorApp({
       <EditorCanvas editor={editor} camera={camera} options={options} />
       <ToolHud snapshot={snapshot} />
       <EditorHud snapshot={snapshot} />
-      <ViewControls camera={camera} snapshot={snapshot} />
+      <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
       <PlanPanel camera={camera} plans={plans} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />
