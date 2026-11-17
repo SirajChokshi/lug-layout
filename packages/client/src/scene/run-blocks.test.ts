@@ -1,7 +1,13 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import type { TrackCatalog } from "@brr/schema/bundle";
 import { TrackGraph } from "@brr/domain";
-import { SIM_TICK_HZ, SimSession, simTrackFromGraph, type VehicleSpec } from "@brr/sim";
+import {
+  SIM_TICK_HZ,
+  SimSession,
+  simTrackFromGraph,
+  type OpenEndRule,
+  type VehicleSpec,
+} from "@brr/sim";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, it } from "vitest";
@@ -42,6 +48,8 @@ const TWO_SIDINGS = [
   SIDING,
 ].join(", ");
 const SWITCHLESS_OVAL = "ldraw:74746*4, ldraw:74747*8, ldraw:74746*4, ldraw:74747*8";
+const OPEN_LINE = "ldraw:74746*6, ldraw:74747*4";
+const OPEN_LINE_SPEED_LDU_PER_S = 400;
 const LOCOMOTIVE_MODEL = "10133-1";
 const AUTOPILOT_MINUTES = 20;
 const MIN_ARRIVALS_PER_TRAIN = 20;
@@ -67,6 +75,7 @@ function session(
   plan: string,
   fronts: ReadonlyArray<readonly [number, number]>,
   autopilotSeed: number | null,
+  openEnds: OpenEndRule = "brake",
 ): SimSession {
   const { layout, catalogPieces } = buildTrackPlan(plan, catalog);
   const graph = new TrackGraph(layout);
@@ -83,6 +92,7 @@ function session(
     capacity: { trains: fronts.length, vehicles: fronts.length },
     trains: fronts.map(([edge, offsetLdu]) => ({ spec, placement: { edge, offsetLdu } })),
     railway: { topology, autopilotSeed },
+    openEnds,
   });
 }
 
@@ -123,14 +133,47 @@ it("runs two manual trains on a switchless oval and stops the follower behind a 
     OVAL_SPEED_LDU_PER_S,
   ]);
 
-  const following = session(SWITCHLESS_OVAL, fronts, null);
-  following.apply({ kind: "throttle", train: 0, speedLduPerS: OVAL_SPEED_LDU_PER_S });
-  run(following, OVAL_MINUTES);
-  const sim = following.simulation;
-  expect(sim.separationCounters[0]).toBe(0);
+  for (const openEnds of ["brake", "derail"] as const) {
+    const following = session(SWITCHLESS_OVAL, fronts, null, openEnds);
+    following.apply({ kind: "throttle", train: 0, speedLduPerS: OVAL_SPEED_LDU_PER_S });
+    run(following, OVAL_MINUTES);
+    const sim = following.simulation;
+    expect(sim.separationCounters[0]).toBe(0);
+    expect(sim.trainSpeed[0]).toBe(0);
+    expect(sim.derailed(0)).toBe(false);
+    expect(sim.trainEdge[0]).not.toBe(fronts[0][0]);
+    const couplersTouchingBogieDistance =
+      locomotive.frontBogieLdu + locomotive.lengthLdu - locomotive.rearBogieLdu;
+    expect(sim.separationCounters[1]).toBeGreaterThan(couplersTouchingBogieDistance);
+  }
+});
+
+it("stops a reserved train short of an open end under the brake rule and runs it off under the derail rule", () => {
+  const stopped = session(OPEN_LINE, [[4, 100]], null, "brake");
+  stopped.apply({ kind: "drive", train: 0, signedSpeedLduPerS: OPEN_LINE_SPEED_LDU_PER_S });
+  run(stopped, 1);
+  const stoppedSim = stopped.simulation;
+  const stoppedEdge = stoppedSim.trainEdge[0] ?? 0;
+  expect(stoppedSim.derailed(0)).toBe(false);
+  expect(stoppedSim.trainSpeed[0]).toBe(0);
+  expect(stoppedSim.successor(stoppedEdge)).toBe(-1);
+  expect(stoppedSim.trainOffset[0] ?? 0).toBeLessThan(
+    stoppedSim.track.edgeLength[stoppedEdge] ?? 0,
+  );
+
+  const derailing = session(OPEN_LINE, [[4, 100]], null, "derail");
+  derailing.apply({ kind: "drive", train: 0, signedSpeedLduPerS: OPEN_LINE_SPEED_LDU_PER_S });
+  run(derailing, 1);
+  const sim = derailing.simulation;
+  expect(sim.derailed(0)).toBe(true);
+  expect(sim.trainDerailSpeed[0]).toBe(OPEN_LINE_SPEED_LDU_PER_S);
+  expect(sim.trainEdge[0]).toBe(stoppedEdge);
   expect(sim.trainSpeed[0]).toBe(0);
-  expect(sim.trainEdge[0]).not.toBe(fronts[0][0]);
-  const couplersTouchingBogieDistance =
-    locomotive.frontBogieLdu + locomotive.lengthLdu - locomotive.rearBogieLdu;
-  expect(sim.separationCounters[1]).toBeGreaterThan(couplersTouchingBogieDistance);
+  expect(sim.overrunLdu(0)).toBeGreaterThan(0);
+  expect(derailing.apply({ kind: "rerail", train: 0 })).toBe(true);
+  derailing.apply({ kind: "drive", train: 0, signedSpeedLduPerS: -OPEN_LINE_SPEED_LDU_PER_S });
+  run(derailing, 0.1);
+  expect(sim.derailed(0)).toBe(false);
+  expect(sim.trainSpeed[0]).toBeGreaterThan(0);
+  expect((sim.trainEdge[0] ?? 0) % 2).toBe(1 - (stoppedEdge % 2));
 });

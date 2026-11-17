@@ -263,6 +263,7 @@ export class RunScene implements IRunScene {
         placement: { edge: train.edge, offsetLdu: train.offsetLdu },
       })),
       autopilotSeed: request.autopilotSeed,
+      openEnds: "brake",
     };
     this.loaded = await this.sim.load(load);
     this.frameLayout = this.loaded.layout;

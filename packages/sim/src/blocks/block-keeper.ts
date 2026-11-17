@@ -166,6 +166,11 @@ export class BlockKeeper {
     return this.placementOwner[placement] === NO_TRAIN;
   }
 
+  heldEndIsOpen(train: number, switchStates: Uint8Array): boolean {
+    const last = this.ringEdge[this.slot(train, (this.ringNext[train] ?? 1) - 1)] ?? 0;
+    return nextEdge(this.blocks.graph, last, switchStates) === NO_EDGE;
+  }
+
   blockIsFree(block: number): boolean {
     return this.blockHeldPieces[block] === 0;
   }
