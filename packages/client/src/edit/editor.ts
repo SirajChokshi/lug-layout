@@ -298,6 +298,8 @@ export interface GhostCheckView {
   readonly refusal: Refusal | null;
   readonly trackJoins: number;
   readonly uncertifiedTrack: number;
+  readonly pinHoles: number;
+  readonly pinsSeated: number;
 }
 
 export interface EditorStats {
@@ -1832,12 +1834,22 @@ export class Editor implements IEditor {
       null,
     );
     const track = this.active.track;
+    const pins = this.placed.pinHoles(
+      this.active,
+      this.hoverX,
+      this.hoverZ,
+      this.placeRot,
+      check.yPlates,
+      [],
+    );
     this.update({
       ghost: {
         yPlates: check.yPlates,
         refusal: checkRefusal(this.active.label, check) ?? this.hoverRefusal,
         trackJoins: this.trackJoinsAt(this.active, check.yPlates),
         uncertifiedTrack: track?.uncertified.length ?? 0,
+        pinHoles: pins.aligned,
+        pinsSeated: pins.pinned,
       },
     });
     this.backend.placeGhost(
@@ -1866,7 +1878,8 @@ export class Editor implements IEditor {
     const joined = this.snapGhostToRoad();
     if (joined) return { moduleFit, snap: joined };
     const onTrack = this.snapGhostToTrack();
-    if (!onTrack && !moduleFit && this.active?.ground && this.hovering) {
+    const pinned = !onTrack && !moduleFit && this.snapGhostToPins();
+    if (!onTrack && !pinned && !moduleFit && this.active?.ground && this.hovering) {
       this.hoverX = snapToGrid(this.hitX, this.baseplateGrid);
       this.hoverZ = snapToGrid(this.hitZ, this.baseplateGrid);
     }
@@ -1998,6 +2011,22 @@ export class Editor implements IEditor {
     if (!best) return false;
     this.hoverX = best.xLdu;
     this.hoverZ = best.zLdu;
+    return true;
+  }
+
+  private snapGhostToPins(): boolean {
+    const active = this.active;
+    if (!active || !this.hovering) return false;
+    const snap = this.placed.pinSnap(
+      active,
+      this.placeRot,
+      this.hoverX,
+      this.hoverZ,
+      this.baseplateGrid,
+    );
+    if (!snap) return false;
+    this.hoverX = snap.x;
+    this.hoverZ = snap.z;
     return true;
   }
 

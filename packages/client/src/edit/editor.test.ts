@@ -698,6 +698,92 @@ it("takes a 10185-1 Green Grocer flush against a rail edge when none of its part
   });
 }, 120_000);
 
+const MARKET_STREET = "omr:10190-1";
+const MODULAR_SIDE_LDU = 640;
+
+it.each([
+  {
+    name: "a second 10190-1 Market Street at the first's pinned side",
+    models: ["10190-1"],
+    placed: { item: MARKET_STREET, x: 320, z: 320 },
+    held: { item: MARKET_STREET, x: 960, z: 320 },
+  },
+  {
+    name: "a 10190-1 Market Street whose pins go into a placed one's holes",
+    models: ["10190-1"],
+    placed: { item: MARKET_STREET, x: 960, z: 320 },
+    held: { item: MARKET_STREET, x: 320, z: 320 },
+  },
+  {
+    name: "a 10264-1 Corner Garage whose pins go into a 10218-1 Pet Shop's holes",
+    models: ["10218-1", "10264-1"],
+    placed: { item: "omr:10218-1", x: 320, z: 320 },
+    held: { item: "omr:10264-1", x: 320, z: 960 },
+  },
+])(
+  "snaps $name flush from a cursor off the seam, with both pin holes meeting and its pins seated",
+  async ({ models, placed, held }) => {
+    const { editor, backend } = await startEditor(models);
+    const place = placer(editor, backend);
+    place(placed.item, placed.x, placed.z);
+    editor.chooseItem(held.item);
+    backend.aim(held.x + 3 * 20, held.z - 5 * 20);
+    editor.pointerMove(0, 0);
+    const { ghost, hover } = editor.snapshot();
+    editor.click(0, 0, 0);
+    const { placements, refusals } = editor.snapshot();
+    editor.undo(0);
+    editor.redo(0);
+    const replayed = editor.snapshot();
+    const dumped = editor.dump().placements;
+    const [ax = 0, bx = 0] = dumped.x;
+    const [az = 0, bz = 0] = dumped.z;
+    const gap = Math.abs(bx - ax) + Math.abs(bz - az) - MODULAR_SIDE_LDU;
+
+    expect({
+      hover,
+      pinHoles: ghost?.pinHoles,
+      pinsSeated: ghost?.pinsSeated,
+      refusal: ghost?.refusal ?? null,
+      placements,
+      refusals,
+      replayed: { placements: replayed.placements, refusals: replayed.refusals },
+      gap,
+    }).toEqual({
+      hover: { x: held.x, z: held.z, yPlates: 0 },
+      pinHoles: 2,
+      pinsSeated: 2,
+      refusal: null,
+      placements: 2,
+      refusals: 0,
+      replayed: { placements: 2, refusals: 0 },
+      gap: 0,
+    });
+  },
+  120_000,
+);
+
+it("refuses two 10190-1 Market Streets whose pinned sides face each other, since two pins can't share one hole", async () => {
+  const { editor, backend } = await startEditor(["10190-1"]);
+  const place = placer(editor, backend);
+  place(MARKET_STREET, 320, 320);
+  editor.chooseItem(MARKET_STREET);
+  editor.rotate(0);
+  editor.rotate(0);
+  backend.aim(960, 320);
+  editor.pointerMove(0, 0);
+  const { ghost } = editor.snapshot();
+  editor.click(0, 0, 0);
+  const { placements, refusals } = editor.snapshot();
+
+  expect({
+    pinHoles: ghost?.pinHoles,
+    pinsSeated: ghost?.pinsSeated,
+    placements,
+    refusals,
+  }).toEqual({ pinHoles: 2, pinsSeated: 0, placements: 1, refusals: 1 });
+}, 120_000);
+
 class OtherTabLocks implements IWorldLocks {
   readonly heldElsewhere = new Set<string>();
 

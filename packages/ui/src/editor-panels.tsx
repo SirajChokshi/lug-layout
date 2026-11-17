@@ -564,6 +564,12 @@ export function CreditsFooter({
   );
 }
 
+function pinHolesText(holes: number, seated: number): string {
+  if (holes === 0) return "";
+  const lined = `${holes} Technic pin ${holes === 1 ? "hole lines" : "holes line"} up flush with a neighbour's`;
+  return `; ${lined}, ${seated} ${seated === 1 ? "pin goes" : "pins go"} in`;
+}
+
 export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const { ghost, lastRefusal } = snapshot;
   const ghostText =
@@ -571,7 +577,7 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       ? "no item in hand"
       : ghost.refusal
         ? `refused: ${ghost.refusal.message}`
-        : `lands at ${ghost.yPlates} plates, supported${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}`;
+        : `lands at ${ghost.yPlates} plates, supported${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}${pinHolesText(ghost.pinHoles, ghost.pinsSeated)}`;
   return (
     <section
       className="inspector placement-rules"
@@ -579,6 +585,8 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       data-ghost-refused={ghost?.refusal ? ghost.refusal.rule : ""}
       data-ghost-track-joins={ghost?.trackJoins ?? 0}
       data-ghost-uncertified-track={ghost?.uncertifiedTrack ?? 0}
+      data-ghost-pin-holes={ghost?.pinHoles ?? 0}
+      data-ghost-pins-seated={ghost?.pinsSeated ?? 0}
       data-refusals={snapshot.refusals}
       data-last-refusal-rule={lastRefusal?.rule ?? ""}
     >
