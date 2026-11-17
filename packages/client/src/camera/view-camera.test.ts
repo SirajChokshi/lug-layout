@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ViewCamera, type ViewMode } from "./view-camera.ts";
+import { FOOTPRINT_FLOATS, ViewCamera, type ViewMode } from "./view-camera.ts";
 
 const WIDTH_PX = 1280;
 const HEIGHT_PX = 720;
@@ -167,4 +167,24 @@ describe("after framing a tall model in 3D, so the orbit pivot is off the ground
     expect(safeCentre[0]).toBeCloseTo(point[0], 3);
     expect(safeCentre[1]).toBeCloseTo(point[1], 3);
   });
+});
+
+it("the view footprint stays a finite quad around the target even with the horizon in view", () => {
+  const camera = settledCamera("orbit");
+  camera.orbit(0, -1_000);
+  const footprint = new Float64Array(FOOTPRINT_FLOATS);
+
+  camera.footprint(footprint);
+
+  expect(footprint.every(Number.isFinite)).toBe(true);
+  const targetX = footprint[FOOTPRINT_FLOATS - 2] ?? Number.NaN;
+  const targetZ = footprint[FOOTPRINT_FLOATS - 1] ?? Number.NaN;
+  const corners = FOOTPRINT_FLOATS / 2 - 1;
+  for (let i = 0; i < corners; i++) {
+    const ax = footprint[2 * i] ?? 0;
+    const az = footprint[2 * i + 1] ?? 0;
+    const bx = footprint[(2 * i + 2) % (2 * corners)] ?? 0;
+    const bz = footprint[(2 * i + 3) % (2 * corners)] ?? 0;
+    expect((bx - ax) * (targetZ - az) - (bz - az) * (targetX - ax)).toBeLessThan(0);
+  }
 });
