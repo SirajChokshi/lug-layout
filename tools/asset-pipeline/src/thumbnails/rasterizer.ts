@@ -155,7 +155,7 @@ class Lighting {
   private readonly ground = channels(GROUND_RGB);
   private readonly half: Vec3;
 
-  constructor(private readonly toEye: Vec3) {
+  constructor(toEye: Vec3) {
     this.half = normalized([
       this.key[0] + toEye[0],
       this.key[1] + toEye[1],
@@ -209,12 +209,14 @@ class Target {
   private screen = new Float32Array(0);
   private worldNormal = new Float32Array(0);
   private readonly shaded = new Float32Array(3);
+  readonly size: number;
+  private readonly camera: Camera;
+  private readonly lighting: Lighting;
 
-  constructor(
-    readonly size: number,
-    private readonly camera: Camera,
-    private readonly lighting: Lighting,
-  ) {
+  constructor(size: number, camera: Camera, lighting: Lighting) {
+    this.size = size;
+    this.camera = camera;
+    this.lighting = lighting;
     const pixels = size * size;
     this.depth = new Float32Array(pixels).fill(Number.POSITIVE_INFINITY);
     this.color = new Float32Array(pixels * 3);
@@ -272,6 +274,16 @@ class Target {
       this.worldNormal[v * 3 + 1] = ty / length;
       this.worldNormal[v * 3 + 2] = tz / length;
     }
+  }
+
+  facesCamera(i0: number, i1: number, i2: number, toEye: Vec3): boolean {
+    const n = this.worldNormal;
+    let facing = 0;
+    for (let k = 0; k < 3; k++) {
+      facing +=
+        ((n[i0 * 3 + k] ?? 0) + (n[i1 * 3 + k] ?? 0) + (n[i2 * 3 + k] ?? 0)) * (toEye[k] ?? 0);
+    }
+    return facing > 0;
   }
 
   triangleDepth(i0: number, i1: number, i2: number): number {
@@ -388,6 +400,37 @@ class Target {
     }
   }
 
+  outlineTranslucent(): void {
+    const size = this.size;
+    const darken = 1 - EDGE_STRENGTH + EDGE_STRENGTH * EDGE_DARKEN;
+    const edge = new Uint8Array(size * size);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const pixel = y * size + x;
+        if ((this.coverage[pixel] ?? 0) === 0 || Number.isFinite(this.depth[pixel] ?? 0)) continue;
+        const open =
+          x === 0 ||
+          y === 0 ||
+          x === size - 1 ||
+          y === size - 1 ||
+          (this.coverage[pixel - 1] ?? 0) === 0 ||
+          (this.coverage[pixel + 1] ?? 0) === 0 ||
+          (this.coverage[pixel - size] ?? 0) === 0 ||
+          (this.coverage[pixel + size] ?? 0) === 0;
+        if (open) edge[pixel] = 1;
+      }
+    }
+    for (let pixel = 0; pixel < edge.length; pixel++) {
+      if (edge[pixel] === 0) continue;
+      const coverage = this.coverage[pixel] ?? 0;
+      const raised = Math.max(coverage, EDGE_STRENGTH);
+      const gain = (raised / coverage) * darken;
+      for (let k = 0; k < 3; k++)
+        this.color[pixel * 3 + k] = (this.color[pixel * 3 + k] ?? 0) * gain;
+      this.coverage[pixel] = raised;
+    }
+  }
+
   private bends(pixel: number, other: number): boolean {
     if (other < 0 || (this.coverage[other] ?? 0) === 0) return true;
     const n = this.normal;
@@ -472,6 +515,7 @@ export function renderThumbnail(
         const i1 = indices[t + 1] ?? 0;
         const i2 = indices[t + 2] ?? 0;
         if (albedo.alpha < 1) {
+          if (!target.facesCamera(i0, i1, i2, toEye)) continue;
           translucent.push({
             instance,
             group,
@@ -511,5 +555,6 @@ export function renderThumbnail(
       true,
     );
   }
+  target.outlineTranslucent();
   return target.resolve(output, factor);
 }

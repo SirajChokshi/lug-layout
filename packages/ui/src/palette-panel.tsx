@@ -34,6 +34,7 @@ import { usePaletteIndex } from "./use-palette-index.ts";
 import { usePaletteMemory } from "./use-palette-memory.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const THUMBNAIL_SLOT_PX = 52;
 
 const PALETTE_FIELDS = [
   "catalog",
@@ -112,7 +113,26 @@ function useScrolledIntoView(node: HTMLElement | null): boolean {
   return seen;
 }
 
+function PrerenderedThumbnail({ item }: { readonly item: CatalogItemView }) {
+  return (
+    <img
+      className="palette-thumb"
+      src={item.thumbnail ?? undefined}
+      alt=""
+      width={THUMBNAIL_SLOT_PX}
+      height={THUMBNAIL_SLOT_PX}
+      loading="lazy"
+      decoding="async"
+      data-thumb={item.id}
+    />
+  );
+}
+
 function Thumbnail({ item }: { readonly item: CatalogItemView | undefined }) {
+  return item?.thumbnail ? <PrerenderedThumbnail item={item} /> : <RenderedThumbnail item={item} />;
+}
+
+function RenderedThumbnail({ item }: { readonly item: CatalogItemView | undefined }) {
   const thumbnails = useContext(ThumbnailsContext);
   const [node, setNode] = useState<HTMLElement | null>(null);
   const seen = useScrolledIntoView(node);
@@ -120,7 +140,7 @@ function Thumbnail({ item }: { readonly item: CatalogItemView | undefined }) {
     (listener) => thumbnails?.subscribe(listener) ?? (() => {}),
     () => thumbnails?.snapshot() ?? NO_THUMBNAILS,
   );
-  const id = item?.kind === "track" ? undefined : item?.id;
+  const id = item?.kind === "model" ? item.id : undefined;
   useEffect(() => {
     if (seen && id !== undefined) thumbnails?.request(id);
   }, [thumbnails, id, seen]);

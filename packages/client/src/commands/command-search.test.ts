@@ -26,6 +26,7 @@ function baseplate(
     aliases: [],
     elements,
     displayColor: false,
+    thumbnail: null,
   };
 }
 
@@ -43,6 +44,7 @@ function roadPlate(part: string, title: string, studs: number, alias: string): C
     aliases: [alias],
     elements: [],
     displayColor: false,
+    thumbnail: null,
   };
 }
 
@@ -64,6 +66,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     aliases: ["44336pr0001"],
     elements: [],
     displayColor: false,
+    thumbnail: null,
   },
   roadPlate(
     "44336p03",

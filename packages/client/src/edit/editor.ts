@@ -1,5 +1,6 @@
 import type { BundleColor, BundleLod, NotDrawnSection } from "@brr/schema/bundle";
 import {
+  BUNDLE_BASE_URL,
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
   type ModelBundle,
@@ -99,6 +100,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
+import { thumbnailUrls } from "../catalog/thumbnail-urls.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import {
@@ -146,6 +148,7 @@ export interface CatalogItemView {
   readonly aliases: ReadonlyArray<string>;
   readonly elements: ReadonlyArray<string>;
   readonly displayColor: boolean;
+  readonly thumbnail: string | null;
 }
 
 export interface LatencySample {
@@ -678,6 +681,7 @@ function catalogItem(
   placeable: Placeable,
   colors: ReadonlyArray<BundleColor>,
   parts: ReadonlyArray<PartAsset>,
+  thumbnails: ReadonlyMap<string, string>,
 ): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
@@ -698,6 +702,7 @@ function catalogItem(
     elements:
       produced?.colors.find((color) => color.ldraw === placeable.worldColor)?.elements ?? [],
     displayColor: part !== undefined && part.producedColor === placeable.worldColor,
+    thumbnail: thumbnails.get(placeable.id) ?? null,
   };
 }
 
@@ -800,6 +805,7 @@ export class Editor implements IEditor {
     rebaseCount: 0,
   };
   private placeables: ReadonlyArray<Placeable> = [];
+  private bundlePlaceables: ReadonlySet<string> = new Set();
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
@@ -845,6 +851,7 @@ export class Editor implements IEditor {
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
     @inject(CREDITS) private readonly credits: ICredits,
     @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
+    @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -884,6 +891,7 @@ export class Editor implements IEditor {
       const far = await this.loadFarTier(near.kept.map(({ entry }) => entry.name));
       const { placeables, skipped } = this.buildPlaceables(bundle, palette, colors, near, far);
       this.placeables = placeables;
+      this.bundlePlaceables = new Set(placeables.map((placeable) => placeable.id));
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.plans.setTableTopY(this.baseplateBottomY());
       this.newTrack = () => new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
@@ -906,6 +914,11 @@ export class Editor implements IEditor {
         colorsAlpha: colors.toAlpha(),
         ldrawColors: ldrawColors(bundle),
       });
+      const thumbnails = thumbnailUrls(
+        this.bundleBaseUrl,
+        EDITOR_LOD,
+        (await this.loader.loadManifest(EDITOR_LOD)).thumbnails,
+      );
       const loadMs = performance.now() - started;
       await this.openFirstWorld();
       this.firstWorldFrame = true;
@@ -916,7 +929,7 @@ export class Editor implements IEditor {
         backend,
         catalog: [
           ...this.placeables.map((placeable) =>
-            catalogItem(placeable, bundle.colors, bundle.parts),
+            catalogItem(placeable, bundle.colors, bundle.parts, thumbnails),
           ),
           this.trackItem(this.track, palette.parts),
           ...this.trackPieceItems(this.track, palette.parts),
@@ -1192,6 +1205,7 @@ export class Editor implements IEditor {
       aliases: [],
       elements: [],
       displayColor: false,
+      thumbnail: null,
     };
   }
 
@@ -1216,6 +1230,7 @@ export class Editor implements IEditor {
         aliases: [],
         elements: [],
         displayColor: false,
+        thumbnail: null,
       };
     });
   }
@@ -2755,6 +2770,7 @@ export class Editor implements IEditor {
   }
 
   catalogItemModel(itemId: string): CatalogItemModel | null {
+    if (this.bundlePlaceables.has(itemId)) return null;
     const placeable = this.placeables.find((p) => p.id === itemId);
     if (!placeable) return null;
     const { min, max } = placeable.box;
