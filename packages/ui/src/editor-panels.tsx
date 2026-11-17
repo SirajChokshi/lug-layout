@@ -97,14 +97,6 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
           <dt>Overlapping pieces</dt>
           <dd data-road="overlap">{roads.overlaps}</dd>
         </div>
-        <div>
-          <dt>Refused clicks</dt>
-          <dd data-road="refused">
-            {snapshot.refusedClicks}
-            {snapshot.lastRefusal &&
-              ` (last: ${snapshot.lastRefusal.item.replace(/^[a-z]+:/u, "")} at ${snapshot.lastRefusal.x}, ${snapshot.lastRefusal.z}, ${snapshot.lastRefusal.mismatchedCells} mismatched, ${snapshot.lastRefusal.overlappingCells} overlapping)`}
-          </dd>
-        </div>
       </dl>
       {roads.issues.length > 0 && (
         <ul className="road-issues">
@@ -461,9 +453,9 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     ],
     [
       "Placement refused",
-      snapshot.hover?.refusal && snapshot.mode === "place" ? snapshot.hover.refusal : "–",
+      snapshot.ghost?.refusal && snapshot.mode === "place" ? snapshot.ghost.refusal.message : "–",
     ],
-    ["Last refusal", snapshot.lastRefusal?.reason ?? "none"],
+    ["Last refusal", snapshot.lastRefusal?.message ?? "none"],
     ["Placements", integer.format(snapshot.placements)],
     [
       "History (undo, redo)",
@@ -533,5 +525,46 @@ export function EditorFooter({ disclaimer }: { readonly disclaimer: string }) {
     <footer className="editor-footer">
       {disclaimer} <CreditLinks />
     </footer>
+  );
+}
+
+export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot }) {
+  const { ghost, lastRefusal } = snapshot;
+  const ghostText =
+    snapshot.mode !== "place" || ghost === null
+      ? "no item in hand"
+      : ghost.refusal
+        ? `refused: ${ghost.refusal.message}`
+        : `lands at ${ghost.yPlates} plates, supported`;
+  return (
+    <section
+      className="inspector placement-rules"
+      aria-label="Placement rules"
+      data-ghost-refused={ghost?.refusal ? ghost.refusal.rule : ""}
+      data-refusals={snapshot.refusals}
+      data-last-refusal-rule={lastRefusal?.rule ?? ""}
+    >
+      <h2>Placement rules</h2>
+      <p className="toolbar-hint">
+        Only baseplates, road plates and models with their own baseplate rest on the table.
+        Everything else rests on studs or a flat top, and track sits on a baseplate.
+      </p>
+      <dl>
+        <div>
+          <dt>Ghost</dt>
+          <dd data-rule="ghost">{ghostText}</dd>
+        </div>
+        <div>
+          <dt>Refused edits</dt>
+          <dd data-rule="refusals">{snapshot.refusals}</dd>
+        </div>
+        {lastRefusal && (
+          <div>
+            <dt>Last refusal ({lastRefusal.action})</dt>
+            <dd data-rule="last-refusal">{lastRefusal.message}</dd>
+          </div>
+        )}
+      </dl>
+    </section>
   );
 }

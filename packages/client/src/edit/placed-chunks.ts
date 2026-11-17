@@ -1,10 +1,19 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
   OccupancyGrid,
+  SupportGrid,
   cellChunkKey,
+  firstLayerSupport,
+  isSupported,
+  trackSupport,
+  upperSupport,
   type AppliedEdit,
+  type BaseCells,
+  type FirstLayerSupport,
   type PlacementHandle,
   type PlacementRef,
+  type TrackSupport,
+  type UpperSupport,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -37,6 +46,30 @@ export interface PlacedModel {
   readonly placeable: Placeable;
   readonly box: WorldBox;
   rayHit(ray: Float64Array): number;
+}
+
+export type PlacementSupport =
+  | {
+      readonly layer: "first";
+      readonly support: FirstLayerSupport;
+      readonly blocker: PlacedModel | null;
+    }
+  | { readonly layer: "upper"; readonly support: UpperSupport };
+
+export interface PlacementCheck {
+  readonly yPlates: number;
+  readonly verdict: PlacementSupport;
+}
+
+export interface LostSupport {
+  readonly model: PlacedModel;
+  readonly support: UpperSupport;
+}
+
+export function placementSupported(verdict: PlacementSupport): boolean {
+  return verdict.layer === "first"
+    ? verdict.support.kind === "on-table"
+    : isSupported(verdict.support);
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -252,6 +285,54 @@ function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: Lat
   return yPlates;
 }
 
+interface CandidateCells {
+  readonly raised: BaseCells;
+  readonly base: BaseCells;
+}
+
+function candidateCells(placeable: Placeable, pose: LatticePose): CandidateCells {
+  const { cells } = placeable;
+  let raisedCount = 0;
+  let baseCount = 0;
+  for (let cell = 0; cell < cells.width * cells.depth; cell++) {
+    if ((cells.columnTop[cell] ?? EMPTY_COLUMN) > 0) raisedCount++;
+    if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) baseCount++;
+  }
+  const raised = {
+    count: raisedCount,
+    cellX: new Int32Array(raisedCount),
+    cellZ: new Int32Array(raisedCount),
+    flat: new Uint8Array(raisedCount),
+  };
+  const base = {
+    count: baseCount,
+    cellX: new Int32Array(baseCount),
+    cellZ: new Int32Array(baseCount),
+    flat: new Uint8Array(baseCount),
+  };
+  let o = 0;
+  let b = 0;
+  for (let j = 0; j < cells.depth; j++) {
+    for (let i = 0; i < cells.width; i++) {
+      const cell = j * cells.width + i;
+      const wx = pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
+      const wz = pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
+      if ((cells.columnTop[cell] ?? EMPTY_COLUMN) > 0) {
+        raised.cellX[o] = wx;
+        raised.cellZ[o] = wz;
+        o++;
+      }
+      if ((cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE) {
+        base.cellX[b] = wx;
+        base.cellZ[b] = wz;
+        base.flat[b] = cells.footprint[cell] === FOOTPRINT_FLAT ? 1 : 0;
+        b++;
+      }
+    }
+  }
+  return { raised, base };
+}
+
 class PlacedEntry implements PlacedModel {
   readonly partKeys: Float64Array;
   readonly studKeys: Float64Array;
@@ -260,6 +341,7 @@ class PlacedEntry implements PlacedModel {
   readonly studBaseLdu: Int32Array;
   readonly studCulled: Uint8Array;
   readonly contributions = new Map<number, Contribution>();
+  readonly candidate: CandidateCells;
   readonly footprintKeys = new Set<number>();
   readonly columnKeys = new Set<number>();
   readonly tongueBoxes: Float64Array;
@@ -309,6 +391,7 @@ class PlacedEntry implements PlacedModel {
       this.studCellZ[i] = this.pose.worldCellZ(lx, lz);
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
     }
+    this.candidate = candidateCells(placeable, this.pose);
     this.registerCells(chunkOrigins);
     const tongues = placeable.tongueBoxes ?? EMPTY_BOXES;
     this.tongueBoxes = new Float64Array(tongues.length);
@@ -345,21 +428,47 @@ class PlacedEntry implements PlacedModel {
         }
       }
     }
+    const onLattice = this.placeable.studLattice.onLattice;
+    for (let s = 0; s < onLattice.length; s++) {
+      if (onLattice[s] !== 1) continue;
+      this.columnKeys.add(cellChunkKey(this.studCellX[s] ?? 0, this.studCellZ[s] ?? 0));
+    }
   }
 
-  stampColumns(occupancy: OccupancyGrid, onlyChunk: number | null): void {
+  stampColumns(occupancy: OccupancyGrid, support: SupportGrid, onlyChunk: number | null): void {
     const { cells } = this.placeable;
     const yPlates = this.handle.yPlates;
     for (let j = 0; j < cells.depth; j++) {
       for (let i = 0; i < cells.width; i++) {
-        const top = cells.columnTop[j * cells.width + i] ?? EMPTY_COLUMN;
+        const cell = j * cells.width + i;
+        const top = cells.columnTop[cell] ?? EMPTY_COLUMN;
         if (top === EMPTY_COLUMN) continue;
         const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
         const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
         if (onlyChunk !== null && cellChunkKey(wx, wz) !== onlyChunk) continue;
         occupancy.raise(wx, wz, yPlates + top);
+        if (cells.baseplate[cell] === 1 && yPlates === 0) support.markBaseplate(wx, wz);
+        else support.cover(wx, wz);
       }
     }
+    const onLattice = this.placeable.studLattice.onLattice;
+    for (let s = 0; s < onLattice.length; s++) {
+      const base = this.studBaseLdu[s] ?? 0;
+      if (onLattice[s] !== 1 || base % PLATE_LDU !== 0) continue;
+      const cx = this.studCellX[s] ?? 0;
+      const cz = this.studCellZ[s] ?? 0;
+      if (onlyChunk !== null && cellChunkKey(cx, cz) !== onlyChunk) continue;
+      support.raiseStud(cx, cz, base / PLATE_LDU);
+    }
+  }
+
+  columnTopAt(worldCellX: number, worldCellZ: number): number {
+    const { cells } = this.placeable;
+    const i = this.pose.localCellX(worldCellX, worldCellZ) - cells.cellX0;
+    const j = this.pose.localCellZ(worldCellX, worldCellZ) - cells.cellZ0;
+    if (i < 0 || j < 0 || i >= cells.width || j >= cells.depth) return EMPTY_COLUMN;
+    const top = cells.columnTop[j * cells.width + i] ?? EMPTY_COLUMN;
+    return top === EMPTY_COLUMN ? EMPTY_COLUMN : this.handle.yPlates + top;
   }
 
   private cellAt(worldCellX: number, worldCellZ: number): number {
@@ -637,6 +746,7 @@ export class PlacedChunks {
   private nextId = 0;
   private readonly tongued: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
+  private readonly support = new SupportGrid();
 
   constructor(private readonly backend: ISceneBackend) {}
 
@@ -667,14 +777,102 @@ export class PlacedChunks {
     rot: number,
     ignore: PlacedModel | null,
   ): number {
-    let ignored: PlacedEntry | null = null;
-    for (let e = 0; e < this.entries.length; e++) {
-      if (this.entries[e] === ignore) ignored = this.entries[e] ?? null;
+    return this.check(placeable, x, z, rot, ignore ? [ignore] : []).yPlates;
+  }
+
+  check(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    ignore: ReadonlyArray<PlacedModel>,
+  ): PlacementCheck {
+    const pose = new LatticePose(x, z, rot);
+    const cells = candidateCells(placeable, pose);
+    return this.withExcluded(this.entriesOf(ignore), () => {
+      if (placeable.layer === "first") {
+        const support = firstLayerSupport(cells.raised, this.occupancy);
+        const blocker =
+          support.kind === "blocked"
+            ? this.topmostAt(support.cellX, support.cellZ, support.topPlates)
+            : null;
+        return { yPlates: 0, verdict: { layer: "first", support, blocker } };
+      }
+      const yPlates = restingHeight(this.occupancy, placeable, pose);
+      const support = upperSupport(cells.base, yPlates, this.occupancy, this.support);
+      return { yPlates, verdict: { layer: "upper", support } };
+    });
+  }
+
+  supportAt(
+    model: PlacedModel,
+    yPlates: number,
+    ignore: ReadonlyArray<PlacedModel>,
+  ): PlacementSupport {
+    const entry = this.entryOf(model);
+    return this.withExcluded(this.entriesOf([...ignore, model]), () => {
+      if (entry.placeable.layer === "first") {
+        const support = firstLayerSupport(entry.candidate.raised, this.occupancy);
+        const blocker =
+          support.kind === "blocked"
+            ? this.topmostAt(support.cellX, support.cellZ, support.topPlates)
+            : null;
+        return { layer: "first", support, blocker };
+      }
+      return {
+        layer: "upper",
+        support: upperSupport(entry.candidate.base, yPlates, this.occupancy, this.support),
+      };
+    });
+  }
+
+  lostSupport(removed: ReadonlyArray<PlacedModel>): ReadonlyArray<LostSupport> {
+    const gone = this.entriesOf(removed);
+    const keys = new Set<number>();
+    for (const entry of gone) for (const key of entry.columnKeys) keys.add(key);
+    const lost: LostSupport[] = [];
+    for (const entry of this.entries) {
+      if (gone.has(entry) || entry.placeable.layer === "first") continue;
+      if (![...entry.columnKeys].some((key) => keys.has(key))) continue;
+      const support = this.withExcluded(new Set([...gone, entry]), () =>
+        upperSupport(entry.candidate.base, entry.handle.yPlates, this.occupancy, this.support),
+      );
+      if (!isSupported(support)) lost.push({ model: entry, support });
     }
-    if (ignored) this.restamp(ignored.columnKeys, ignored);
-    const yPlates = restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
-    if (ignored) this.restamp(ignored.columnKeys, null);
-    return yPlates;
+    return lost;
+  }
+
+  trackSupport(cells: BaseCells, ignore: ReadonlyArray<PlacedModel>): TrackSupport {
+    return this.withExcluded(this.entriesOf(ignore), () => trackSupport(cells, this.support));
+  }
+
+  private topmostAt(cellX: number, cellZ: number, topPlates: number): PlacedModel | null {
+    for (const entry of this.byColumnChunk.get(cellChunkKey(cellX, cellZ)) ?? []) {
+      if (entry.columnTopAt(cellX, cellZ) === topPlates) return entry;
+    }
+    return null;
+  }
+
+  private entryOf(model: PlacedModel): PlacedEntry {
+    const entry = this.entries.find((candidate) => candidate === model);
+    if (!entry) throw new Error("placement is not in this world view");
+    return entry;
+  }
+
+  private entriesOf(models: ReadonlyArray<PlacedModel>): ReadonlySet<PlacedEntry> {
+    return new Set(models.map((model) => this.entryOf(model)));
+  }
+
+  private withExcluded<T>(excluded: ReadonlySet<PlacedEntry>, read: () => T): T {
+    if (excluded.size === 0) return read();
+    const keys = new Set<number>();
+    for (const entry of excluded) for (const key of entry.columnKeys) keys.add(key);
+    this.restamp(keys, excluded);
+    try {
+      return read();
+    } finally {
+      this.restamp(keys, new Set());
+    }
   }
 
   tongueClash(
@@ -735,11 +933,12 @@ export class PlacedChunks {
     return [...found];
   }
 
-  private restamp(keys: ReadonlySet<number>, except: PlacedEntry | null): void {
+  private restamp(keys: ReadonlySet<number>, except: ReadonlySet<PlacedEntry>): void {
     for (const key of keys) {
       this.occupancy.clearChunk(key);
+      this.support.clearChunk(key);
       for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (entry !== except) entry.stampColumns(this.occupancy, key);
+        if (!except.has(entry)) entry.stampColumns(this.occupancy, this.support, key);
       }
     }
   }
@@ -779,7 +978,7 @@ export class PlacedChunks {
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
     if (entry.tongueBoxes.length > 0) this.tongued.push(entry);
-    entry.stampColumns(this.occupancy, null);
+    entry.stampColumns(this.occupancy, this.support, null);
     return entry;
   }
 
@@ -794,7 +993,7 @@ export class PlacedChunks {
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
     const tongued = this.tongued.indexOf(entry);
     if (tongued >= 0) this.tongued.splice(tongued, 1);
-    this.restamp(entry.columnKeys, null);
+    this.restamp(entry.columnKeys, new Set());
     return entry;
   }
 

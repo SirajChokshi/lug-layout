@@ -17,6 +17,7 @@ import {
   Inspector,
   PlacementToolbar,
   ModuleJoins,
+  PlacementRules,
   RoadJoins,
 } from "./editor-panels.tsx";
 import { Minimap } from "./minimap.tsx";
@@ -120,7 +121,7 @@ export function EditorApp({
       data-ghost-rot={snapshot.ghostRot}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
-      data-refused={snapshot.refusedClicks}
+      data-refused={snapshot.refusals}
       data-road-joined={snapshot.roads.joinedCells}
       data-road-open={snapshot.roads.openCells}
       data-road-mismatch={snapshot.roads.mismatchedCells}
@@ -160,6 +161,7 @@ export function EditorApp({
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
+        <PlacementRules snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <ModuleJoins editor={editor} snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />

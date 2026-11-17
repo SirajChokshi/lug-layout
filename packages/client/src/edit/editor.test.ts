@@ -522,8 +522,8 @@ function placer(editor: IEditor, backend: HeadlessBackend) {
     backend.aim(x, z);
     editor.pointerMove(0, 0);
     editor.click(0, 0, 0);
-    const { placements, refusedClicks, lastRefusal } = editor.snapshot();
-    return { placements, refusedClicks, reason: lastRefusal?.reason ?? null };
+    const { placements, refusals, lastRefusal } = editor.snapshot();
+    return { placements, refusals, reason: lastRefusal?.message ?? null };
   };
 }
 
@@ -534,22 +534,26 @@ it("refuses a 10264-1 Corner Garage in a rail module's track end in either order
 
   place(RAIL_MODULE, 320, 320);
   const intoTrackEnd = place(garage, 960, 320);
+  editor.rotate(0);
+  editor.rotate(0);
   const besideTerrain = place(garage, 320, 960);
   editor.undo(0);
   editor.undo(0);
+  editor.rotate(0);
+  editor.rotate(0);
   place(garage, 960, 320);
   const trackEndIntoGarage = place(RAIL_MODULE, 320, 320);
 
   expect({ intoTrackEnd, besideTerrain, trackEndIntoGarage }).toEqual({
     intoTrackEnd: {
       placements: 1,
-      refusedClicks: 1,
+      refusals: 1,
       reason: expect.stringContaining(`the track end of ${RAIL_LABEL}`),
     },
-    besideTerrain: { placements: 2, refusedClicks: 1, reason: expect.any(String) },
+    besideTerrain: { placements: 2, refusals: 1, reason: expect.any(String) },
     trackEndIntoGarage: {
       placements: 1,
-      refusedClicks: 2,
+      refusals: 2,
       reason: expect.stringContaining(`${RAIL_LABEL}: its track end would run into 10264-1`),
     },
   });
@@ -575,12 +579,12 @@ it("refuses a rail edge against a plain or road module in either order, and join
   const railOnPlain = place(RAIL_MODULE, 320, 320);
 
   expect({ plainOnRail, roadOnRail, plainOnTerrain, railOnPlain }).toEqual({
-    plainOnRail: { placements: 1, refusedClicks: 1, reason: facingRail },
-    roadOnRail: { placements: 1, refusedClicks: 2, reason: facingRail },
-    plainOnTerrain: { placements: 2, refusedClicks: 2, reason: facingRail },
+    plainOnRail: { placements: 1, refusals: 1, reason: facingRail },
+    roadOnRail: { placements: 1, refusals: 2, reason: facingRail },
+    plainOnTerrain: { placements: 2, refusals: 2, reason: facingRail },
     railOnPlain: {
       placements: 1,
-      refusedClicks: 3,
+      refusals: 3,
       reason: expect.stringContaining(
         `${RAIL_LABEL}: its rail edge on the maxX side would face the terrain edge of MILS Basic Terrain Module`,
       ),
