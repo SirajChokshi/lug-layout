@@ -14,14 +14,15 @@ import {
   LineSegments,
   Mesh,
   MeshBasicNodeMaterial,
-  MeshStandardNodeMaterial,
   PerspectiveCamera,
   Scene,
   SRGBColorSpace,
   Vector3,
   WebGPURenderer,
   type BufferGeometry,
+  type MeshStandardNodeMaterial,
 } from "three/webgpu";
+import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
   CAMERA_FOV_DEGREES,
   COLOR_CHANNELS,
@@ -34,6 +35,7 @@ import {
   type GeometrySet,
   type FrameStats,
   type ISceneBackend,
+  type LookSettings,
   type PartPalette,
   type PlanOverlay,
   type RebaseEvent,
@@ -43,16 +45,38 @@ import {
 } from "../scene-backend.ts";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
-import { fixedColorGeometry, inheritBodyGeometry, primitiveGeometry } from "./part-geometry.ts";
+import { LookPipeline } from "./look-pipeline.ts";
+import {
+  fixedColorGeometries,
+  inheritBodyGeometry,
+  primitiveGeometry,
+  type FixedColorGeometry,
+} from "./part-geometry.ts";
+import { OPAQUE_ALPHA, PlasticMaterials } from "./plastic-materials.ts";
+import { skyEnvironment } from "./sky-environment.ts";
 
 const MATRIX4_FLOATS = 16;
 const CAMERA_NEAR_LDU = 20;
 const CAMERA_FAR_LDU = 400_000;
-const PLASTIC_ROUGHNESS = 0.3;
 const SKY_COLOR = 0xd9e6f2;
 const GROUND_BOUNCE_COLOR = 0x4a4a40;
 const HEMISPHERE_INTENSITY = 1.4;
 const SUN_INTENSITY = 2.4;
+const PLASTIC_SUN_INTENSITY = 1.6;
+const ENVIRONMENT_INTENSITY = 0.33;
+const FILL_SKY_COLOR = 0xffffff;
+const FILL_GROUND_COLOR = 0x8a8478;
+const FILL_INTENSITY = 0.7;
+const SUN_DIRECTION = new Vector3(0.45, 1, 0.3);
+const SHADOW_LAYER = 1;
+const BOUNDS_FLOATS = 6;
+const SHADOW_MAP_SIZE = 2048;
+const SHADOW_CASCADES = 3;
+const SHADOW_LIGHT_MARGIN_LDU = 4000;
+const SHADOW_BIAS = -0.0005;
+const SHADOW_NORMAL_BIAS = 1.5;
+const SHADOW_MIN_FAR_LDU = 2000;
+const SHADOW_FAR_HYSTERESIS = 1.25;
 const STUD_PITCH_LDU = 20;
 const NEAR_MIN_STUD_PITCH_PX = 12;
 const MID_MIN_STUD_PITCH_PX = 3;
@@ -184,7 +208,7 @@ function webGl2Context(backend: unknown): WebGL2RenderingContext | undefined {
 
 interface PartGeometries {
   readonly body: BufferGeometry | undefined;
-  readonly fixed: BufferGeometry | undefined;
+  readonly fixed: ReadonlyArray<FixedColorGeometry>;
 }
 
 interface LevelGeometries {
@@ -197,7 +221,7 @@ const EMPTY_LEVEL: LevelGeometries = { parts: [], studs: [] };
 function disposeLevel(level: LevelGeometries): void {
   for (const part of level.parts) {
     part.body?.dispose();
-    part.fixed?.dispose();
+    for (const fixed of part.fixed) fixed.geometry.dispose();
   }
   for (const stud of level.studs) stud.dispose();
 }
@@ -211,28 +235,6 @@ function assertSameParts(detailed: GeometrySet, other: GeometrySet): void {
   }
 }
 
-interface InstanceMaterials {
-  readonly body: MeshStandardNodeMaterial;
-  readonly fixed: MeshStandardNodeMaterial;
-}
-
-function plasticMaterials(ghost: boolean): InstanceMaterials {
-  const translucent = ghost ? { transparent: true, opacity: GHOST_OPACITY, depthWrite: false } : {};
-  return {
-    body: new MeshStandardNodeMaterial({
-      roughness: PLASTIC_ROUGHNESS,
-      metalness: 0,
-      ...translucent,
-    }),
-    fixed: new MeshStandardNodeMaterial({
-      roughness: PLASTIC_ROUGHNESS,
-      metalness: 0,
-      vertexColors: true,
-      ...translucent,
-    }),
-  };
-}
-
 function disposeInstancedChildren(layer: Group): void {
   for (const child of layer.children) {
     if (child instanceof InstancedMesh) child.dispose();
@@ -242,6 +244,11 @@ function disposeInstancedChildren(layer: Group): void {
 interface InstanceAttributes {
   readonly matrices: InstancedBufferAttribute;
   readonly colors: InstancedBufferAttribute;
+}
+
+interface InstanceKeys {
+  readonly keys: Uint32Array;
+  readonly counts: Uint32Array;
 }
 
 function countBy(select: ArrayLike<number>, total: number, keys: number): Uint32Array {
@@ -261,6 +268,7 @@ class ChunkRecord {
     readonly detailed: Group,
     readonly shellBodies: Group,
     readonly coarseStuds: Group,
+    readonly shadowCasters: Group,
     readonly originX: number,
     readonly originZ: number,
     readonly minX: number,
@@ -300,8 +308,20 @@ export class ThreeSceneBackend implements ISceneBackend {
     CAMERA_NEAR_LDU,
     CAMERA_FAR_LDU,
   );
-  private readonly solid = plasticMaterials(false);
-  private readonly ghostMaterials = plasticMaterials(true);
+  private materials = new PlasticMaterials(false, 1);
+  private ghostMaterials = new PlasticMaterials(false, GHOST_OPACITY);
+  private look: LookSettings = {
+    plastic: false,
+    gtao: false,
+    outlines: false,
+    bevel: false,
+    shadows: false,
+    oit: false,
+  };
+  private pipeline: LookPipeline | undefined;
+  private readonly sun = new DirectionalLight(0xffffff, SUN_INTENSITY);
+  private shadowNode: CSMShadowNode | undefined;
+  private shadowFar = 0;
   private ghost: Group | undefined;
   private ghostX = 0;
   private ghostZ = 0;
@@ -330,10 +350,14 @@ export class ThreeSceneBackend implements ISceneBackend {
   private detailedLevel: LevelGeometries = EMPTY_LEVEL;
   private farLevel: LevelGeometries = EMPTY_LEVEL;
   private linearColors = new Float32Array(0);
+  private alphaSlots: number[] = [OPAQUE_ALPHA];
+  private colorAlphaSlot = new Uint8Array(0);
   private readonly chunks = new Map<number, ChunkRecord>();
   private readonly vehicles = new Map<number, VehicleRecord>();
   private chunkList: ChunkRecord[] = [];
   private tiered = false;
+  private partBounds = new Float32Array(0);
+  private readonly unitBox = new BoxGeometry(1, 1, 1);
   private readonly bufferTally = new GpuBufferTally();
   private focalLengthPx = 1;
   private renderOriginX = 0;
@@ -341,6 +365,10 @@ export class ThreeSceneBackend implements ISceneBackend {
   private eyeX = 0;
   private eyeY = 0;
   private eyeZ = 0;
+  private sceneMinX = Number.POSITIVE_INFINITY;
+  private sceneMaxX = Number.NEGATIVE_INFINITY;
+  private sceneMinZ = Number.POSITIVE_INFINITY;
+  private sceneMaxZ = Number.NEGATIVE_INFINITY;
   private frame = 0;
   private readonly rebases: RebaseEvent[] = [];
   private readonly scratchColor = new Color();
@@ -360,11 +388,21 @@ export class ThreeSceneBackend implements ISceneBackend {
     renderer.setPixelRatio(config.pixelRatio);
     renderer.setSize(config.canvas.clientWidth, config.canvas.clientHeight, false);
     this.renderer = renderer;
+    this.look = config.look;
+    this.materials = new PlasticMaterials(config.look.plastic, 1);
+    this.ghostMaterials = new PlasticMaterials(config.look.plastic, GHOST_OPACITY);
     this.scene.background = new Color(SKY_COLOR);
-    this.scene.add(new HemisphereLight(SKY_COLOR, GROUND_BOUNCE_COLOR, HEMISPHERE_INTENSITY));
-    const sun = new DirectionalLight(0xffffff, SUN_INTENSITY);
-    sun.position.set(0.45, 1, 0.3);
-    this.scene.add(sun);
+    this.light(renderer, config.look);
+    if (config.look.gtao || config.look.outlines || config.look.bevel || config.look.oit) {
+      this.pipeline = new LookPipeline(
+        renderer,
+        this.scene,
+        this.camera,
+        config.look,
+        SUN_DIRECTION,
+        config.pixelRatio,
+      );
+    }
     this.selection.visible = false;
     this.selection.matrixAutoUpdate = false;
     this.selection.renderOrder = 1;
@@ -377,7 +415,38 @@ export class ThreeSceneBackend implements ISceneBackend {
       backgroundSrgb: SKY_COLOR,
       activeApi: this.isWebGpu(renderer) ? "webgpu" : "webgl2",
       adapter: this.describeAdapter(renderer),
+      look: config.look,
     };
+  }
+
+  private light(renderer: WebGPURenderer, look: LookSettings): void {
+    const sun = this.sun;
+    sun.intensity = look.plastic ? PLASTIC_SUN_INTENSITY : SUN_INTENSITY;
+    sun.position.copy(SUN_DIRECTION);
+    this.scene.add(sun);
+    if (look.plastic) {
+      this.scene.environment = skyEnvironment(renderer);
+      this.scene.environmentIntensity = ENVIRONMENT_INTENSITY;
+      this.scene.add(new HemisphereLight(FILL_SKY_COLOR, FILL_GROUND_COLOR, FILL_INTENSITY));
+    } else {
+      this.scene.add(new HemisphereLight(SKY_COLOR, GROUND_BOUNCE_COLOR, HEMISPHERE_INTENSITY));
+    }
+    if (!look.shadows) return;
+    renderer.shadowMap.enabled = true;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+    sun.shadow.bias = SHADOW_BIAS;
+    sun.shadow.normalBias = SHADOW_NORMAL_BIAS;
+    sun.shadow.camera.layers.set(SHADOW_LAYER);
+    sun.shadow.camera.near = 1;
+    const shadowNode = new CSMShadowNode(sun, {
+      cascades: SHADOW_CASCADES,
+      maxFar: SHADOW_MIN_FAR_LDU,
+      mode: "practical",
+      lightMargin: SHADOW_LIGHT_MARGIN_LDU,
+    });
+    sun.shadow.shadowNode = shadowNode;
+    this.shadowNode = shadowNode;
   }
 
   private watchForFailure(renderer: WebGPURenderer, canvas: HTMLCanvasElement): void {
@@ -443,26 +512,36 @@ export class ThreeSceneBackend implements ISceneBackend {
     disposeLevel(this.detailedLevel);
     disposeLevel(this.farLevel);
     if (palette.far) assertSameParts(palette.detailed, palette.far);
+    const ldrawColor = (code: number) => {
+      const color = palette.ldrawColors.get(code);
+      if (color === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
+      return color;
+    };
     const linearColor = (code: number, out: Float32Array): void => {
-      const srgb = palette.ldrawColorsSrgb.get(code);
-      if (srgb === undefined) throw new Error(`LDraw colour ${code} is not in LDConfig`);
-      this.scratchColor.setHex(srgb, SRGBColorSpace);
+      this.scratchColor.setHex(ldrawColor(code).srgb, SRGBColorSpace);
       out[0] = this.scratchColor.r;
       out[1] = this.scratchColor.g;
       out[2] = this.scratchColor.b;
     };
+    const alphaOf = (code: number): number => ldrawColor(code).alpha;
     const level = (set: GeometrySet): LevelGeometries => ({
       parts: set.parts.map((part) => ({
         body: inheritBodyGeometry(part),
-        fixed: fixedColorGeometry(part, linearColor),
+        fixed: fixedColorGeometries(part, linearColor, alphaOf),
       })),
       studs: set.studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh)),
     });
     this.detailedLevel = level(palette.detailed);
     this.farLevel = palette.far ? level(palette.far) : EMPTY_LEVEL;
     this.tiered = palette.far !== undefined;
+    this.partBounds = new Float32Array(palette.detailed.parts.length * BOUNDS_FLOATS);
+    palette.detailed.parts.forEach((part, p) => {
+      this.partBounds.set([...part.boundsMin, ...part.boundsMax], p * BOUNDS_FLOATS);
+    });
     const colorCount = palette.colorsSrgb.length / COLOR_CHANNELS;
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
+    this.alphaSlots = [OPAQUE_ALPHA];
+    this.colorAlphaSlot = new Uint8Array(colorCount);
     for (let c = 0; c < colorCount; c++) {
       const o = c * COLOR_CHANNELS;
       this.scratchColor.setRGB(
@@ -474,6 +553,10 @@ export class ThreeSceneBackend implements ISceneBackend {
       this.linearColors[o] = this.scratchColor.r;
       this.linearColors[o + 1] = this.scratchColor.g;
       this.linearColors[o + 2] = this.scratchColor.b;
+      const alpha = palette.colorsAlpha[c] ?? OPAQUE_ALPHA;
+      let slot = this.alphaSlots.indexOf(alpha);
+      if (slot < 0) slot = this.alphaSlots.push(alpha) - 1;
+      this.colorAlphaSlot[c] = slot;
     }
   }
 
@@ -483,6 +566,10 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.chunks.set(key, record);
     this.chunkList.push(record);
     this.scene.add(record.group);
+    this.sceneMinX = Math.min(this.sceneMinX, record.minX);
+    this.sceneMaxX = Math.max(this.sceneMaxX, record.maxX);
+    this.sceneMinZ = Math.min(this.sceneMinZ, record.minZ);
+    this.sceneMaxZ = Math.max(this.sceneMaxZ, record.maxZ);
   }
 
   setVehicle(vehicle: number, model: ChunkInstances): void {
@@ -540,6 +627,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     disposeInstancedChildren(existing.detailed);
     disposeInstancedChildren(existing.shellBodies);
     disposeInstancedChildren(existing.coarseStuds);
+    disposeInstancedChildren(existing.shadowCasters);
     this.chunks.delete(key);
     this.chunkList = this.chunkList.filter((record) => record !== existing);
   }
@@ -554,7 +642,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     const ghost = new Group();
     ghost.matrixAutoUpdate = false;
     ghost.visible = false;
-    this.addInstances(ghost, undefined, undefined, model, this.ghostMaterials);
+    this.addInstances(ghost, undefined, undefined, undefined, model, this.ghostMaterials);
     this.ghost = ghost;
     this.scene.add(ghost);
   }
@@ -749,8 +837,10 @@ export class ThreeSceneBackend implements ISceneBackend {
     const detailed = new Group();
     const shellBodies = new Group();
     const coarseStuds = new Group();
+    const shadowCasters = this.look.shadows ? new Group() : undefined;
     group.add(detailed, shellBodies, coarseStuds);
-    this.addInstances(detailed, shellBodies, coarseStuds, chunk, this.solid);
+    if (shadowCasters) group.add(shadowCasters);
+    this.addInstances(detailed, shellBodies, coarseStuds, shadowCasters, chunk, this.materials);
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let minZ = Number.POSITIVE_INFINITY;
@@ -769,6 +859,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       detailed,
       shellBodies,
       coarseStuds,
+      shadowCasters ?? new Group(),
       chunk.originX,
       chunk.originZ,
       minX,
@@ -780,32 +871,72 @@ export class ThreeSceneBackend implements ISceneBackend {
     return record;
   }
 
+  private keyInstances(
+    select: ArrayLike<number>,
+    colorIndex: Uint16Array,
+    total: number,
+    selectCount: number,
+  ): InstanceKeys {
+    const slots = this.alphaSlots.length;
+    const keys = new Uint32Array(total);
+    for (let i = 0; i < total; i++) {
+      keys[i] = (select[i] ?? 0) * slots + (this.colorAlphaSlot[colorIndex[i] ?? 0] ?? 0);
+    }
+    return { keys, counts: countBy(keys, total, selectCount * slots) };
+  }
+
   private addInstances(
     detailed: Group,
     shellBodies: Group | undefined,
     coarseStuds: Group | undefined,
+    shadowCasters: Group | undefined,
     chunk: ChunkInstances,
-    materials: InstanceMaterials,
+    materials: PlasticMaterials,
   ): void {
-    const partCount = this.detailedLevel.parts.length;
-    const counts = countBy(chunk.partIndex, chunk.count, partCount);
-    for (let p = 0; p < partCount; p++) {
-      const count = counts[p] ?? 0;
+    const slots = this.alphaSlots.length;
+    const { keys, counts } = this.keyInstances(
+      chunk.partIndex,
+      chunk.colorIndex,
+      chunk.count,
+      this.detailedLevel.parts.length,
+    );
+    for (let key = 0; key < counts.length; key++) {
+      const count = counts[key] ?? 0;
       if (count === 0) continue;
+      const p = Math.floor(key / slots);
+      const alpha = this.alphaSlots[key % slots] ?? OPAQUE_ALPHA;
       const attributes = this.instanceAttributes(
-        chunk.partIndex,
+        keys,
         chunk.count,
-        p,
+        key,
         count,
         chunk.matrices,
         chunk.colorIndex,
       );
-      this.addPartMeshes(detailed, this.detailedLevel.parts[p], count, attributes, materials);
+      this.addPartMeshes(
+        detailed,
+        this.detailedLevel.parts[p],
+        alpha,
+        count,
+        attributes,
+        materials,
+      );
       if (shellBodies) {
-        this.addPartMeshes(shellBodies, this.farLevel.parts[p], count, attributes, materials);
+        this.addPartMeshes(
+          shellBodies,
+          this.farLevel.parts[p],
+          alpha,
+          count,
+          attributes,
+          materials,
+        );
+      }
+      if (shadowCasters && !this.tiered && alpha === OPAQUE_ALPHA) {
+        this.addShadowCasters(shadowCasters, this.detailedLevel.parts[p], count, attributes);
       }
     }
-    this.addStudMeshes(chunk.studs, detailed, coarseStuds, materials.body);
+    if (shadowCasters && this.tiered) this.addBoundsProxies(shadowCasters, chunk);
+    this.addStudMeshes(chunk.studs, detailed, coarseStuds, materials);
   }
 
   private instanceAttributes(
@@ -837,26 +968,28 @@ export class ThreeSceneBackend implements ISceneBackend {
   private addPartMeshes(
     layer: Group,
     geometries: PartGeometries | undefined,
+    alpha: number,
     count: number,
     attributes: InstanceAttributes,
-    materials: InstanceMaterials,
+    materials: PlasticMaterials,
   ): void {
-    if (geometries?.body) {
+    if (!geometries) return;
+    if (geometries.body) {
       layer.add(
         this.instancedMesh(
           geometries.body,
-          materials.body,
+          materials.instanceColored(alpha),
           count,
           attributes.matrices,
           attributes.colors,
         ),
       );
     }
-    if (geometries?.fixed) {
+    for (const fixed of geometries.fixed) {
       layer.add(
         this.instancedMesh(
-          geometries.fixed,
-          materials.fixed,
+          fixed.geometry,
+          materials.vertexColored(fixed.alpha),
           count,
           attributes.matrices,
           undefined,
@@ -865,22 +998,97 @@ export class ThreeSceneBackend implements ISceneBackend {
     }
   }
 
+  private addBoundsProxies(layer: Group, chunk: ChunkInstances): void {
+    let count = 0;
+    for (let i = 0; i < chunk.count; i++) {
+      if ((this.colorAlphaSlot[chunk.colorIndex[i] ?? 0] ?? 0) === 0) count++;
+    }
+    if (count === 0) return;
+    const matrices = new Float32Array(count * MATRIX4_FLOATS);
+    const m = chunk.matrices;
+    const b = this.partBounds;
+    let slot = 0;
+    for (let i = 0; i < chunk.count; i++) {
+      if ((this.colorAlphaSlot[chunk.colorIndex[i] ?? 0] ?? 0) !== 0) continue;
+      const s = i * INSTANCE_MATRIX_FLOATS;
+      const o = (chunk.partIndex[i] ?? 0) * BOUNDS_FLOATS;
+      const t = slot * MATRIX4_FLOATS;
+      for (let axis = 0; axis < 3; axis++) {
+        const size = (b[o + 3 + axis] ?? 0) - (b[o + axis] ?? 0);
+        matrices[t + axis * 4] = (m[s + axis] ?? 0) * size;
+        matrices[t + axis * 4 + 1] = (m[s + 4 + axis] ?? 0) * size;
+        matrices[t + axis * 4 + 2] = (m[s + 8 + axis] ?? 0) * size;
+      }
+      for (let row = 0; row < 3; row++) {
+        let centre = m[s + row * 4 + 3] ?? 0;
+        for (let axis = 0; axis < 3; axis++) {
+          const mid = ((b[o + axis] ?? 0) + (b[o + 3 + axis] ?? 0)) / 2;
+          centre += (m[s + row * 4 + axis] ?? 0) * mid;
+        }
+        matrices[t + 12 + row] = centre;
+      }
+      matrices[t + 15] = 1;
+      slot++;
+    }
+    const mesh = this.instancedMesh(
+      this.unitBox,
+      this.materials.instanceColored(OPAQUE_ALPHA),
+      count,
+      new InstancedBufferAttribute(matrices, MATRIX4_FLOATS),
+      undefined,
+    );
+    mesh.layers.set(SHADOW_LAYER);
+    mesh.castShadow = true;
+    mesh.receiveShadow = false;
+    layer.add(mesh);
+  }
+
+  private addShadowCasters(
+    layer: Group,
+    geometries: PartGeometries | undefined,
+    count: number,
+    attributes: InstanceAttributes,
+  ): void {
+    if (!geometries) return;
+    const caster = (geometry: BufferGeometry, material: MeshStandardNodeMaterial): void => {
+      const mesh = this.instancedMesh(geometry, material, count, attributes.matrices, undefined);
+      mesh.layers.set(SHADOW_LAYER);
+      mesh.castShadow = true;
+      mesh.receiveShadow = false;
+      layer.add(mesh);
+    };
+    if (geometries.body) caster(geometries.body, this.materials.instanceColored(OPAQUE_ALPHA));
+    for (const fixed of geometries.fixed) {
+      if (fixed.alpha === OPAQUE_ALPHA) {
+        caster(fixed.geometry, this.materials.vertexColored(OPAQUE_ALPHA));
+      }
+    }
+  }
+
   private addStudMeshes(
     studs: StudInstances,
     detailed: Group,
     coarse: Group | undefined,
-    material: MeshStandardNodeMaterial,
+    materials: PlasticMaterials,
   ): void {
     const primitiveCount = this.detailedLevel.studs.length;
-    const counts = countBy(studs.primitiveIndex, studs.count, primitiveCount);
-    for (let k = 0; k < primitiveCount; k++) {
-      const count = counts[k] ?? 0;
+    const slots = this.alphaSlots.length;
+    const { keys, counts } = this.keyInstances(
+      studs.primitiveIndex,
+      studs.colorIndex,
+      studs.count,
+      primitiveCount,
+    );
+    for (let key = 0; key < counts.length; key++) {
+      const count = counts[key] ?? 0;
+      const k = Math.floor(key / slots);
       const detailedGeometry = this.detailedLevel.studs[k];
       if (count === 0 || !detailedGeometry) continue;
+      const material = materials.instanceColored(this.alphaSlots[key % slots] ?? OPAQUE_ALPHA);
       const attributes = this.instanceAttributes(
-        studs.primitiveIndex,
+        keys,
         studs.count,
-        k,
+        key,
         count,
         studs.matrices,
         studs.colorIndex,
@@ -920,6 +1128,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     mesh.instanceMatrix = matrices;
     if (colors) mesh.instanceColor = colors;
     mesh.matrixAutoUpdate = false;
+    mesh.receiveShadow = this.look.shadows && !material.transparent;
     mesh.computeBoundingSphere();
     return mesh;
   }
@@ -932,6 +1141,25 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.camera.position.set(eyeX - this.renderOriginX, eyeY, eyeZ - this.renderOriginZ);
     this.camera.lookAt(atX - this.renderOriginX, atY, atZ - this.renderOriginZ);
     this.camera.updateMatrixWorld();
+    this.fitShadowRange();
+  }
+
+  private fitShadowRange(): void {
+    const shadowNode = this.shadowNode;
+    if (!shadowNode || this.chunkList.length === 0) return;
+    const dx = Math.max(Math.abs(this.sceneMinX - this.eyeX), Math.abs(this.sceneMaxX - this.eyeX));
+    const dz = Math.max(Math.abs(this.sceneMinZ - this.eyeZ), Math.abs(this.sceneMaxZ - this.eyeZ));
+    const needed = Math.max(Math.hypot(dx, dz, this.eyeY), SHADOW_MIN_FAR_LDU);
+    const fits = needed <= this.shadowFar && needed * SHADOW_FAR_HYSTERESIS >= this.shadowFar;
+    if (fits) return;
+    this.shadowFar = needed * SHADOW_FAR_HYSTERESIS;
+    shadowNode.maxFar = this.shadowFar;
+    const depthRange = SHADOW_LIGHT_MARGIN_LDU + 2 * this.shadowFar;
+    this.sun.shadow.camera.far = depthRange;
+    for (const cascade of shadowNode.lights) {
+      if (cascade.shadow) cascade.shadow.camera.far = depthRange;
+    }
+    if (shadowNode.camera !== null) shadowNode.updateFrustums();
   }
 
   private rebaseIfFar(): void {
@@ -995,8 +1223,11 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.renderer?.setSize(width, height, false);
     this.camera.aspect = width / Math.max(height, 1);
     this.camera.updateProjectionMatrix();
+    const bufferWidth = this.renderer?.domElement.width ?? width;
     const bufferHeight = this.renderer?.domElement.height ?? height;
     this.focalLengthPx = bufferHeight / (2 * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360));
+    this.pipeline?.resize(bufferWidth, bufferHeight, this.focalLengthPx);
+    if (this.shadowNode?.camera) this.shadowNode.updateFrustums();
   }
 
   private assignTiers(out: FrameStats): void {
@@ -1042,7 +1273,8 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.throwIfFailed();
     this.assignTiers(out);
     renderer.info.reset();
-    renderer.render(this.scene, this.camera);
+    if (this.pipeline) this.pipeline.render();
+    else renderer.render(this.scene, this.camera);
     out.drawCalls = renderer.info.render.drawCalls;
     out.triangles = renderer.info.render.triangles;
     out.renderOriginChunkX = this.renderOriginX / CHUNK_LDU;

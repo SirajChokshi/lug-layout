@@ -75,16 +75,33 @@ class MeshBuilder {
   }
 }
 
-export function fixedColorGeometry(
+export interface FixedColorGeometry {
+  readonly alpha: number;
+  readonly geometry: BufferGeometry;
+}
+
+export function fixedColorGeometries(
   part: PartAsset,
   linearColor: LinearColorLookup,
-): BufferGeometry | undefined {
-  const builder = new MeshBuilder();
+  alphaOf: (ldrawColor: number) => number,
+): ReadonlyArray<FixedColorGeometry> {
+  const builders = new Map<number, MeshBuilder>();
   const color = new Float32Array(COLOR_CHANNELS);
   for (const group of part.mesh.groups) {
     if (group.ldrawColor === INHERIT_COLOR) continue;
+    const alpha = alphaOf(group.ldrawColor);
+    let builder = builders.get(alpha);
+    if (!builder) {
+      builder = new MeshBuilder();
+      builders.set(alpha, builder);
+    }
     linearColor(group.ldrawColor, color);
     builder.addIndexed(part.mesh.positions, part.mesh.normals, group.indices, color);
   }
-  return builder.build();
+  const result: FixedColorGeometry[] = [];
+  for (const [alpha, builder] of builders) {
+    const built = builder.build();
+    if (built) result.push({ alpha, geometry: built });
+  }
+  return result;
 }

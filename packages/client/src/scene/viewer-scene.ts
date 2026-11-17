@@ -4,6 +4,7 @@ import {
   COLOR_CHANNELS,
   type ChunkInstances,
   type ISceneBackend,
+  type LdrawColor,
   type PartPalette,
 } from "@brr/render";
 
@@ -13,6 +14,7 @@ const hasSceneColor: PartFilter = (part) =>
   !CATALOG_ROLES.has(part.role) || part.displayColor !== undefined;
 
 export const PALETTE_PARTS: PartFilter = (part) => part.role !== "model" && hasSceneColor(part);
+const DIRECT_COLOR_ALPHA = 255;
 
 export interface SceneSummary {
   readonly bundleVersion: string;
@@ -85,24 +87,39 @@ export class ColorTable {
   }
 
   toSrgb(): Uint8Array {
-    const lookup = ldrawColorsSrgb(this.bundle);
+    const lookup = ldrawColors(this.bundle);
     const srgb = new Uint8Array(this.codes.length * COLOR_CHANNELS);
     this.codes.forEach((code, i) => {
-      const value = isDirectColor(code) ? directColorSrgb(code) : (lookup.get(code) ?? 0);
+      const value = isDirectColor(code) ? directColorSrgb(code) : (lookup.get(code)?.srgb ?? 0);
       srgb[i * COLOR_CHANNELS] = (value >> 16) & 0xff;
       srgb[i * COLOR_CHANNELS + 1] = (value >> 8) & 0xff;
       srgb[i * COLOR_CHANNELS + 2] = value & 0xff;
     });
     return srgb;
   }
+
+  toAlpha(): Uint8Array {
+    const lookup = ldrawColors(this.bundle);
+    return Uint8Array.from(this.codes, (code) =>
+      isDirectColor(code) ? DIRECT_COLOR_ALPHA : (lookup.get(code)?.alpha ?? 0),
+    );
+  }
 }
 
-export function ldrawColorsSrgb(bundle: PartBundle): ReadonlyMap<number, number> {
-  const colors = new Map(bundle.colors.map((c) => [c.code, Number.parseInt(c.rgb.slice(1), 16)]));
+export function ldrawColors(bundle: PartBundle): ReadonlyMap<number, LdrawColor> {
+  const colors = new Map<number, LdrawColor>(
+    bundle.colors.map((c) => [
+      c.code,
+      { srgb: Number.parseInt(c.rgb.slice(1), 16), alpha: c.alpha },
+    ]),
+  );
   for (const part of bundle.parts) {
     for (const group of part.mesh.groups) {
       if (isDirectColor(group.ldrawColor)) {
-        colors.set(group.ldrawColor, directColorSrgb(group.ldrawColor));
+        colors.set(group.ldrawColor, {
+          srgb: directColorSrgb(group.ldrawColor),
+          alpha: DIRECT_COLOR_ALPHA,
+        });
       }
     }
   }
@@ -118,7 +135,8 @@ function partPalette(
     detailed: { parts: bundle.parts, studPrimitives: bundle.studPrimitives },
     ...(far ? { far: { parts: far.parts, studPrimitives: far.studPrimitives } } : {}),
     colorsSrgb: colors.toSrgb(),
-    ldrawColorsSrgb: ldrawColorsSrgb(bundle),
+    colorsAlpha: colors.toAlpha(),
+    ldrawColors: ldrawColors(bundle),
   };
 }
 
