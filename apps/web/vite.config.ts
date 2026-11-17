@@ -38,6 +38,11 @@ function servesRemoteBundle(env: Record<string, string>): boolean {
   if (process.env["VERCEL"] && !remote) {
     throw new Error("Vercel builds load the part bundle from R2: set VITE_BUNDLE_BASE_URL");
   }
+  if (remote && !env["VITE_BUNDLE_MANIFEST_FILE"]) {
+    throw new Error(
+      "VITE_BUNDLE_MANIFEST_FILE must name a published manifest for when current/latest.json can't be read: manifest_file in infra/cloudflare/bundle-fallback.json",
+    );
+  }
   return remote;
 }
 

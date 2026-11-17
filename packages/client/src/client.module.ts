@@ -1,4 +1,9 @@
-import { BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE, catalogModule } from "@brr/catalog";
+import {
+  BUNDLE_BASE_URL,
+  BUNDLE_MANIFEST_FILE,
+  catalogModule,
+  DEFAULT_BUNDLE_MANIFEST_FILE,
+} from "@brr/catalog";
 import { renderModule } from "@brr/render";
 import type { RpcPort } from "@brr/rpc";
 import { storageModule } from "@brr/storage";
@@ -82,7 +87,9 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
       }
       return config.createImportWorker();
     });
-    bind(BUNDLE_MANIFEST_FILE).toConstantValue(config.bundleManifestFile ?? null);
+    bind(BUNDLE_MANIFEST_FILE).toConstantValue(
+      config.bundleManifestFile ?? DEFAULT_BUNDLE_MANIFEST_FILE,
+    );
     bind(LDRAW_LIBRARY_BASE_URL).toConstantValue(config.ldrawLibraryBaseUrl ?? null);
     bind(SIM_WORKER_PORT)
       .toDynamicValue(() => {
