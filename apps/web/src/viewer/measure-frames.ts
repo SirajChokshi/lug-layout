@@ -1,6 +1,6 @@
 import type { FrameStats, IViewerScene } from "@brr/client";
 import { MIN_SCENE_COVERAGE, type FrameCoverage } from "./frame-coverage.ts";
-import type { ViewerParams } from "./viewer-params.ts";
+import type { MeasurePace, ViewerParams } from "./viewer-params.ts";
 
 const COVERAGE_SAMPLES = 9;
 
@@ -26,6 +26,10 @@ export interface ChunkTiers {
   readonly far: number;
 }
 
+function nextAnimationFrame(pace: MeasurePace): Promise<number> | undefined {
+  return pace === "frame" ? new Promise((resolve) => requestAnimationFrame(resolve)) : undefined;
+}
+
 function percentile(sorted: Float64Array, fraction: number): number {
   const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1));
   return sorted[index] ?? Number.NaN;
@@ -35,17 +39,19 @@ function median(values: Float64Array, count: number): number {
   return percentile(values.slice(0, count).toSorted(), 0.5);
 }
 
-function sampleCoverage(
+async function sampleCoverage(
   scene: IViewerScene,
   canvas: HTMLCanvasElement,
   coverage: FrameCoverage,
   stats: FrameStats,
   measuredFrames: number,
-): number[] {
+  pace: MeasurePace,
+): Promise<number[]> {
   const lastMeasuredPosition = (measuredFrames - 1) / measuredFrames;
   const fractions: number[] = [];
   for (let k = 0; k < COVERAGE_SAMPLES; k++) {
     const t = (lastMeasuredPosition * k) / (COVERAGE_SAMPLES - 1);
+    await nextAnimationFrame(pace);
     scene.setCamera(t);
     scene.backend.renderFrame(stats);
     const fraction = coverage.sceneFraction(canvas);
@@ -67,6 +73,7 @@ export async function measureFrames(
   stats: FrameStats,
 ): Promise<FrameTimings> {
   for (let i = 0; i < params.warmupFrames; i++) {
+    await nextAnimationFrame(params.pace);
     scene.setCamera(i / params.warmupFrames);
     scene.backend.renderFrame(stats);
     await scene.backend.waitForGpu();
@@ -81,6 +88,7 @@ export async function measureFrames(
   const started = performance.now();
   let frames = 0;
   while (frames < params.measuredFrames && performance.now() - started < params.maxMeasureMs) {
+    await nextAnimationFrame(params.pace);
     const t0 = performance.now();
     scene.setCamera(frames / params.measuredFrames);
     scene.onFrame?.();
@@ -97,7 +105,14 @@ export async function measureFrames(
     farChunks[frames] = stats.farChunks;
     frames++;
   }
-  const sceneCoverage = sampleCoverage(scene, canvas, coverage, stats, params.measuredFrames);
+  const sceneCoverage = await sampleCoverage(
+    scene,
+    canvas,
+    coverage,
+    stats,
+    params.measuredFrames,
+    params.pace,
+  );
   const frameSorted = frameMs.slice(0, frames).toSorted();
   let total = 0;
   for (let i = 0; i < frames; i++) total += frameSorted[i] ?? 0;
