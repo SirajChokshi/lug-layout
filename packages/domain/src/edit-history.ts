@@ -3,7 +3,7 @@ import type { PlacementHandle, World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
 
-export type EditKind = "place" | "rotate" | "remove";
+export type EditKind = "place" | "move" | "rotate" | "remove";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface PlacementPose {

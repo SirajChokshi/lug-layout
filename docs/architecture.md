@@ -290,7 +290,7 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
 **How strictly rules apply depends on the mode (D4).**
 - In the **sandbox** (outside plan regions), rules 1, 2, the rest of rule 5, and rules 6 to 9 show as warnings. Building never stops for them.
 - Inside a **plan region**, the same rules are errors, and a region can only reach "Buildable as planned" (§7.3) with zero errors.
-- **Rules 3, 4 and rule 5's "track sits on a baseplate" apply everywhere** and are hard: the editor refuses a placement, rotation, removal, undo, redo or track run that would break them, and says why (P4).
+- **Rules 3, 4 and rule 5's "track sits on a baseplate" apply everywhere** and are hard: the editor refuses a placement, move, rotation, removal, undo, redo or track run that would break them, and says why (P4).
 
 **Placement decisions (owner, 2026-11-16).** These settle rules 3 to 5. They replace the §12 item 14 default for those rules.
 
@@ -309,7 +309,8 @@ Layouts can always be saved in an invalid state. They then show as **Draft** wit
 - **Upper models** land on the highest column under them (#53). They're supported when at least one anti-stud footprint cell meets a whole-plate stud at exactly that height, or when every footprint cell touches a stud-free top at that height. A solid-bottom cell over studs is refused.
 - **First-layer items** go at yPlates 0. One is refused where it would rise into a cell that already holds something above the datum. Baseplate-on-baseplate overlap is rule 4's job.
 - **Track** needs a baseplate under every stud cell its plan silhouette covers between its own connector planes (P6). The silhouette is the piece's own mesh, projected at the exact solver pose and clipped to those planes. A cell counts when a face overlaps its interior by more than the 1e-6 LDU representation ε of §5.3; touching an edge doesn't count. So an open end may be flush with a baseplate edge, two straights fill a 3811, and a piece that ends at a seam needs only its own baseplate.
-- **Removing, rotating or undoing** is refused if it would leave a placed model with no support or a laid track piece off the baseplates. A rotation is checked as a move to its new pose. A laid track piece can be removed in the track tool (click it, then Delete), so a baseplate under track is never locked for good.
+- **Removing, rotating or undoing** is refused if it would leave a placed model with no support or a laid track piece off the baseplates. A rotation is checked as a move to its new pose.
+- **Moving a placed item.** In the select tool, dragging a placed item picks it up whole: the ghost keeps the grab offset, takes the same snaps as placing it (its module grid, exact road edges, exact track joins), lands under the cursor like a new placement, and R turns it while held. Its own track is out of the layout while it's held, so it never joins itself. The drop is one `move` edit, checked like a placement with the item itself ignored, plus the removal check at its old pose; a refused drop leaves it where it was and says why. Escape cancels the drag. A laid track piece can be removed in the track tool (click it, then Delete), so a baseplate under track is never locked for good.
 
 *Rule 4 status (PR B, on PR A):*
 - **One volume index holds every placement** (`@brr/domain` `VolumeIndex`). It keeps per-chunk typed arrays of integer-LDU spans per stud cell, each tagged with its owner.

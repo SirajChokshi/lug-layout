@@ -89,7 +89,7 @@ import {
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
-export type EditorMode = "place" | "select" | "track";
+export type EditorMode = "place" | "select" | "track" | "move";
 
 export interface CatalogColorView {
   readonly code: number;
@@ -188,7 +188,7 @@ export interface RoadSnapView {
   readonly overlappingCells: number;
 }
 
-export type RefusedAction = "place" | "rotate" | "remove" | "undo" | "redo" | "track";
+export type RefusedAction = "place" | "move" | "rotate" | "remove" | "undo" | "redo" | "track";
 
 export interface RefusedEdit {
   readonly action: RefusedAction;
@@ -466,6 +466,13 @@ interface PendingAction {
   readonly report: RebuildReport;
 }
 
+interface MoveGrab {
+  readonly model: PlacedModel;
+  readonly offsetX: number;
+  readonly offsetZ: number;
+  readonly toolRot: number;
+}
+
 interface FrameTimes {
   readonly startMs: number;
   readonly submittedMs: number;
@@ -565,6 +572,7 @@ export class Editor implements IEditor {
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
+  private moving: MoveGrab | null = null;
   private ghostRot = 0;
   private hoverX = 0;
   private hoverZ = 0;
@@ -899,6 +907,7 @@ export class Editor implements IEditor {
   }
 
   dragStart(ndcX: number, ndcY: number): boolean {
+    if (this.state.mode === "select") return this.beginMove(ndcX, ndcY);
     const track = this.track;
     if (this.state.mode !== "track" || !track) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
@@ -909,6 +918,11 @@ export class Editor implements IEditor {
   }
 
   dragMove(ndcX: number, ndcY: number): void {
+    if (this.moving) {
+      this.hovering = this.groundHit(ndcX, ndcY);
+      this.snapHover();
+      return;
+    }
     const track = this.track;
     if (!track || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
@@ -919,8 +933,16 @@ export class Editor implements IEditor {
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.moving) {
+      if (this.groundHit(ndcX, ndcY)) {
+        this.hovering = true;
+        this.snapHover();
+      }
+      this.dropMove(eventTimeMs);
+      return;
+    }
     const track = this.track;
-    if (!track) return;
+    if (this.state.mode !== "track" || !track) return;
     if (this.groundHit(ndcX, ndcY)) track.moveDrag(this.hitX, this.hitZ);
     const commit = track.endDrag();
     this.backend.setGhost(null);
@@ -957,7 +979,120 @@ export class Editor implements IEditor {
     this.update({ track: this.trackView() });
   }
 
+  private modelUnder(ndcX: number, ndcY: number): PlacedModel | null {
+    this.backend.rayThrough(ndcX, ndcY, this.ray);
+    let best: PlacedModel | null = null;
+    let bestT = Number.POSITIVE_INFINITY;
+    for (const model of this.placed.models()) {
+      const t = model.rayHit(this.ray);
+      if (t < bestT) {
+        bestT = t;
+        best = model;
+      }
+    }
+    return best;
+  }
+
+  private beginMove(ndcX: number, ndcY: number): boolean {
+    const model = this.modelUnder(ndcX, ndcY);
+    if (!model || !this.groundHit(ndcX, ndcY)) return false;
+    const pose = model.handle;
+    this.select(model);
+    this.moving = {
+      model,
+      offsetX: pose.x - this.hitX,
+      offsetZ: pose.z - this.hitZ,
+      toolRot: this.ghostRot,
+    };
+    this.active = model.placeable;
+    this.ghostRot = pose.rot;
+    this.hovering = true;
+    this.syncHeldTrack(model);
+    this.backend.setGhost({ ...model.placeable.parts, studs: model.placeable.studs });
+    this.update({ mode: "move", activeItem: model.placeable.id, ghostRot: this.ghostRot });
+    this.snapHoverToLattice();
+    this.snapHover();
+    return true;
+  }
+
+  private endMove(): void {
+    const moving = this.moving;
+    if (!moving) return;
+    this.moving = null;
+    this.active = null;
+    this.ghostRot = moving.toolRot;
+    this.ghostCheck = null;
+    this.backend.setGhost(null);
+    this.syncHeldTrack();
+    this.update({
+      mode: "select",
+      activeItem: null,
+      ghost: null,
+      snap: null,
+      ghostRot: this.ghostRot,
+    });
+  }
+
+  private moveRefusal(model: PlacedModel): Refusal | null {
+    const placeable = model.placeable;
+    const snap = this.state.snap;
+    if (snap?.state === "refused") {
+      return {
+        rule: "road",
+        message: `${placeable.label} would leave ${snap.mismatchedCells} road edge cells mismatched and overlap ${snap.overlappingCells} road cells.`,
+      };
+    }
+    const check = this.ghostCheck;
+    if (!check) return null;
+    const refusal = this.ghostRefusal(placeable, check);
+    if (refusal) return refusal;
+    return this.removalRefusal([model], placeable.label, [
+      {
+        placeable,
+        x: this.hoverX,
+        z: this.hoverZ,
+        yPlates: check.yPlates,
+        rot: this.ghostRot,
+      },
+    ]);
+  }
+
+  private dropMove(eventTimeMs: number): void {
+    const moving = this.moving;
+    if (!moving) return;
+    const { model } = moving;
+    const pose = model.handle;
+    const check = this.ghostCheck;
+    const unmoved = pose.x === this.hoverX && pose.z === this.hoverZ && pose.rot === this.ghostRot;
+    const refusal = unmoved || !this.hovering || !check ? null : this.moveRefusal(model);
+    const target = { x: this.hoverX, z: this.hoverZ, rot: this.ghostRot };
+    this.endMove();
+    if (unmoved || !this.hovering || !check) return;
+    if (refusal) {
+      this.refuse("move", model.placeable.id, refusal);
+      return;
+    }
+    const edit = this.history.commit("move", [
+      {
+        placement: model.placement,
+        to: {
+          refId: pose.refId,
+          colorId: pose.colorId,
+          x: target.x,
+          z: target.z,
+          yPlates: check.yPlates,
+          rot: target.rot,
+        },
+      },
+    ]);
+    this.select(this.show(edit, eventTimeMs).added[0] ?? null);
+  }
+
   chooseItem(id: string | null): void {
+    if (this.moving) {
+      this.endMove();
+      if (id === null) return;
+    }
     this.showRefusalCells(null);
     if (id === TRACK_ITEM_ID && this.track) {
       this.active = null;
@@ -998,9 +1133,17 @@ export class Editor implements IEditor {
     return true;
   }
 
+  private pivotX(): number {
+    return this.hitX + (this.moving?.offsetX ?? 0);
+  }
+
+  private pivotZ(): number {
+    return this.hitZ + (this.moving?.offsetZ ?? 0);
+  }
+
   private snapHoverToLattice(): void {
-    this.hoverX = snapToGrid(this.hitX, STUD_LDU);
-    this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
+    this.hoverX = snapToGrid(this.pivotX(), STUD_LDU);
+    this.hoverZ = snapToGrid(this.pivotZ(), STUD_LDU);
   }
 
   private snapOutlineToGrid(): void {
@@ -1008,10 +1151,10 @@ export class Editor implements IEditor {
     if (!ground || !this.hovering) return;
     const snapped = snapOutline(
       ground,
-      this.hitX,
-      this.hitZ,
+      this.pivotX(),
+      this.pivotZ(),
       this.ghostRot,
-      this.groundOutlines(null),
+      this.groundOutlines(this.moving?.model ?? null),
     );
     this.hoverX = snapped.x;
     this.hoverZ = snapped.z;
@@ -1047,7 +1190,8 @@ export class Editor implements IEditor {
     if (refusal) return refusal;
     const ground = placeable.ground;
     if (!ground) return null;
-    if (onSeatGrid(ground, this.hoverX, this.hoverZ, this.ghostRot, this.groundOutlines(null))) {
+    const outlines = this.groundOutlines(this.moving?.model ?? null);
+    if (onSeatGrid(ground, this.hoverX, this.hoverZ, this.ghostRot, outlines)) {
       return null;
     }
     if (this.trackJoinsAt(placeable, check.yPlates) > 0) return null;
@@ -1070,7 +1214,7 @@ export class Editor implements IEditor {
       this.hoverX,
       this.hoverZ,
       this.ghostRot,
-      [],
+      this.moving ? [this.moving.model] : [],
       this.cursorLanding(),
     );
     this.ghostCheck = check;
@@ -1116,10 +1260,11 @@ export class Editor implements IEditor {
     }));
   }
 
-  private syncHeldTrack(): void {
+  private syncHeldTrack(except: PlacedModel | null = null): void {
     this.track?.syncHeld(
       this.placed
         .models()
+        .filter((model) => model !== except)
         .flatMap((model) =>
           this.heldRequests(
             model.placeable,
@@ -1315,17 +1460,7 @@ export class Editor implements IEditor {
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
       return;
     }
-    this.backend.rayThrough(ndcX, ndcY, this.ray);
-    let best: PlacedModel | null = null;
-    let bestT = Number.POSITIVE_INFINITY;
-    for (const model of this.placed.models()) {
-      const t = model.rayHit(this.ray);
-      if (t < bestT) {
-        bestT = t;
-        best = model;
-      }
-    }
-    this.select(best);
+    this.select(this.modelUnder(ndcX, ndcY));
   }
 
   private placeAt(
@@ -1551,6 +1686,7 @@ export class Editor implements IEditor {
   }
 
   deleteSelection(eventTimeMs: number): void {
+    if (this.moving) return;
     if (this.state.mode === "track") {
       this.removeSelectedTrack();
       return;
@@ -1567,6 +1703,7 @@ export class Editor implements IEditor {
   }
 
   undo(eventTimeMs: number): void {
+    this.endMove();
     const refusal = this.replayRefusal(this.history.peekUndo());
     if (refusal) {
       this.refuse("undo", refusal.item, refusal);
@@ -1576,6 +1713,7 @@ export class Editor implements IEditor {
   }
 
   redo(eventTimeMs: number): void {
+    this.endMove();
     const refusal = this.replayRefusal(this.history.peekRedo());
     if (refusal) {
       this.refuse("redo", refusal.item, refusal);

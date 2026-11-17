@@ -419,3 +419,49 @@ it("lets every standalone baseplate take a flush 3811 on each side, where it is 
     });
   });
 }, 300_000);
+
+function dragFrom(editor: IEditor, from: readonly [number, number], to: readonly [number, number]) {
+  editor.pointerMove(from[0] / NDC_TO_LDU, from[1] / NDC_TO_LDU);
+  const took = editor.dragStart(from[0] / NDC_TO_LDU, from[1] / NDC_TO_LDU);
+  editor.pointerMove(to[0] / NDC_TO_LDU, to[1] / NDC_TO_LDU);
+  editor.dragMove(to[0] / NDC_TO_LDU, to[1] / NDC_TO_LDU);
+  editor.dragEnd(to[0] / NDC_TO_LDU, to[1] / NDC_TO_LDU, 0);
+  return took;
+}
+
+it("drags a placed set as one unit: every baseplate follows, a drop into another placement is refused, undo puts it back", async () => {
+  const backend = new TopDownBackend();
+  const editor = await startEditor(backend);
+  const set = `omr:${SET_ON_BASEPLATES}`;
+  chooseGroup(editor, BASEPLATE);
+  clickAt(editor, 0, 0);
+  const [standalone] = backend.plates();
+  if (!standalone) throw new Error("the standalone baseplate was not drawn");
+  editor.chooseItem(set);
+  clickAt(editor, 0, FAR_Z);
+  editor.chooseItem(null);
+  const setPlatesNow = () => setPlates(backend, standalone);
+  const start = setPlatesNow();
+  expect(start.length).toBeGreaterThan(1);
+  const grab = [(start[0]?.minX ?? 0) + 7, (start[0]?.minZ ?? 0) + 7] as const;
+
+  const shift = 2 * MILS_MODULE_LDU;
+  expect(dragFrom(editor, grab, [grab[0] + shift, grab[1]])).toBe(true);
+  expect(editor.snapshot().lastRefusal).toBeNull();
+  const moved = setPlatesNow();
+  expect(moved).toEqual(
+    start.map((plate) => ({ ...plate, minX: plate.minX + shift, maxX: plate.maxX + shift })),
+  );
+  expect(editor.snapshot().placements).toBe(2);
+  expect(editor.snapshot().history.undo).toBe("move");
+
+  const ontoBaseplate = [standalone.minX + 7, standalone.minZ + 7] as const;
+  const grabMoved = [grab[0] + shift, grab[1]] as const;
+  dragFrom(editor, grabMoved, ontoBaseplate);
+  expect(editor.snapshot().lastRefusal?.action).toBe("move");
+  expect(editor.snapshot().lastRefusal?.rule).toBe("overlap");
+  expect(setPlatesNow()).toEqual(moved);
+
+  editor.undo(0);
+  expect(setPlatesNow()).toEqual(start);
+}, 120_000);

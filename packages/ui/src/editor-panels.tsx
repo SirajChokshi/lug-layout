@@ -162,7 +162,8 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
         Redo{history.redo === null ? "" : ` ${history.redo}`} (Ctrl+Shift+Z)
       </button>
       <p className="toolbar-hint">
-        Right-drag orbits, Shift-drag pans, the wheel zooms, C centres on the cursor.
+        Drag a placed model to move it (R turns it while held). Right-drag orbits, Shift-drag pans,
+        the wheel zooms, C centres on the cursor.
       </p>
     </div>
   );
@@ -223,6 +224,10 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
 
 function moduleGridText(wide: number, deep: number): string {
   return wide === deep ? `${wide}-stud` : `${wide}×${deep}-stud`;
+}
+
+function holdsGhost(snapshot: EditorSnapshot): boolean {
+  return snapshot.mode === "place" || snapshot.mode === "move";
 }
 
 function seatText(snapshot: EditorSnapshot): string {
@@ -294,7 +299,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
     ],
     [
       "Lands at (plates)",
-      snapshot.hover && snapshot.mode === "place" ? String(snapshot.hover.yPlates) : "–",
+      snapshot.hover && holdsGhost(snapshot) ? String(snapshot.hover.yPlates) : "–",
     ],
     ["Placements", integer.format(snapshot.placements)],
     [
@@ -365,7 +370,7 @@ export function CreditsFooter({
 export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const { ghost, lastRefusal } = snapshot;
   const ghostText =
-    snapshot.mode !== "place" || ghost === null
+    !holdsGhost(snapshot) || ghost === null
       ? "no item in hand"
       : ghost.refusal
         ? `refused: ${ghost.refusal.message}`
