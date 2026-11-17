@@ -18,10 +18,12 @@ import {
   worldPlacements,
   type AppliedEdit,
   type EditKind,
+  type BaseCells,
   type HistoryStep,
   type ModuleEdgeKind,
   type ModuleSide,
   type PlacementTarget,
+  type PendingChange,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
@@ -78,6 +80,7 @@ import {
 } from "./track-drawing.ts";
 import {
   PlacedChunks,
+  type PlacementCheck,
   type PlacedModel,
   type RebuildReport,
   type StudTotals,
@@ -91,6 +94,14 @@ import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
 import { creditsForWorld, exportFileName } from "./world-credits.ts";
+import {
+  carriesRefusal,
+  supportRefusal,
+  trackCarriedRefusal,
+  trackRunRefusal,
+  type Refusal,
+  type RefusalRule,
+} from "./placement-messages.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
@@ -212,13 +223,18 @@ export interface ModuleFitView {
   readonly sides: ReadonlyArray<{ readonly side: ModuleSide; readonly kind: ModuleEdgeKind }>;
 }
 
-export interface RefusedClick {
+export type RefusedAction = "place" | "rotate" | "remove" | "undo" | "redo" | "track";
+
+export interface RefusedEdit {
+  readonly action: RefusedAction;
   readonly item: string;
-  readonly x: number;
-  readonly z: number;
-  readonly rot: number;
-  readonly mismatchedCells: number;
-  readonly overlappingCells: number;
+  readonly rule: RefusalRule;
+  readonly message: string;
+}
+
+export interface GhostCheckView {
+  readonly yPlates: number;
+  readonly refusal: Refusal | null;
 }
 
 export interface EditorStats {
@@ -298,7 +314,8 @@ export type TrackCommitResult =
   | "refused-impossible"
   | "refused-limit"
   | "switch-straight"
-  | "switch-branching";
+  | "switch-branching"
+  | "refused-off-baseplate";
 
 export interface TrackPieceView {
   readonly item: string;
@@ -370,8 +387,9 @@ export interface EditorSnapshot {
   readonly modules: ModuleJoinView;
   readonly moduleFit: ModuleFitView | null;
   readonly snapModules: boolean;
-  readonly refusedClicks: number;
-  readonly lastRefusal: RefusedClick | null;
+  readonly refusals: number;
+  readonly lastRefusal: RefusedEdit | null;
+  readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
   readonly bundleVersion: string | null;
   readonly world: WorldFileView | null;
@@ -468,6 +486,8 @@ const TIER_CYCLE: ReadonlyArray<ChunkTier | null> = [null, "near", "mid", "far"]
 const MARKER_WIDTH_LDU = 6;
 const MARKER_LIFT_LDU = 1;
 const MARKER_HEIGHT_LDU = 2;
+const CELL_MARKER_INSET_LDU = 2;
+const CELL_MARKER_TOP_LDU = 1;
 const LISTED_ROAD_ISSUES = 12;
 const LISTED_MODULE_ISSUES = 12;
 const EMPTY_MODULES: ModuleJoinView = {
@@ -487,6 +507,26 @@ const EMPTY_ROADS: RoadJoinView = {
   overlaps: 0,
   issues: [],
 };
+
+function cellMarkers(cells: BaseCells, bottomY: number): EdgeMarker[] {
+  const markers: EdgeMarker[] = [];
+  for (let c = 0; c < cells.count; c++) {
+    const x = (cells.cellX[c] ?? 0) * STUD_LDU;
+    const z = (cells.cellZ[c] ?? 0) * STUD_LDU;
+    markers.push({
+      kind: "mismatch",
+      box: {
+        minX: x + CELL_MARKER_INSET_LDU,
+        maxX: x + STUD_LDU - CELL_MARKER_INSET_LDU,
+        minY: bottomY,
+        maxY: CELL_MARKER_TOP_LDU,
+        minZ: z + CELL_MARKER_INSET_LDU,
+        maxZ: z + STUD_LDU - CELL_MARKER_INSET_LDU,
+      },
+    });
+  }
+  return markers;
+}
 
 function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
   const minY = segment.topLdu + MARKER_LIFT_LDU;
@@ -663,8 +703,9 @@ export class Editor implements IEditor {
     modules: EMPTY_MODULES,
     moduleFit: null,
     snapModules: true,
-    refusedClicks: 0,
+    refusals: 0,
     lastRefusal: null,
+    ghost: null,
     track: null,
     bundleVersion: null,
     world: null,
@@ -712,6 +753,9 @@ export class Editor implements IEditor {
   private hoverX = 0;
   private hoverZ = 0;
   private hoverYPlates = 0;
+  private ghostCheck: PlacementCheck | null = null;
+  private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
+  private tableY = 0;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -793,7 +837,10 @@ export class Editor implements IEditor {
       this.placeables = placeables;
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.plans.setTableTopY(this.baseplateBottomY());
-      this.newTrack = () => new TrackDrawing(bundle.trackCatalog, palette.parts, colors);
+      this.newTrack = () =>
+        new TrackDrawing(bundle.trackCatalog, palette.parts, colors, (cells) =>
+          this.placed.trackSupport(cells, []),
+        );
       this.track = this.newTrack();
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
@@ -878,6 +925,9 @@ export class Editor implements IEditor {
         ]),
       ),
     );
+    const baseplate = groundParts[0];
+    if (!baseplate) throw new Error("the bundle has no baseplate");
+    this.tableY = baseplate.boundsMin[1];
     const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
       if (part.producedColors.length === 0) {
         throw new Error(`${part.id} has no produced colour in the bundle`);
@@ -890,13 +940,14 @@ export class Editor implements IEditor {
           colorOf(bundle.colors, code).name,
           palette.parts,
           colors,
+          this.tableY,
         ),
       );
     });
     const skipped: SkippedModel[] = [];
     for (const [{ bundle: modelBundle, entry, model }, far] of loaded) {
       const credit = { name: entry.name, source: entry.source, sections: model.sections };
-      if (model.lattice === null) {
+      if (model.lattice === null || model.cells === null) {
         skipped.push({ name: entry.name, reason: NO_LATTICE_REASON, credit });
         continue;
       }
@@ -1199,6 +1250,7 @@ export class Editor implements IEditor {
       target?.joins ? target.end : null,
       target && !target.joins ? [target.end] : [],
     );
+    this.showRefusalCells(track.dragView()?.offBaseplate?.missing ?? null);
     this.update({ track: this.trackView() });
   }
 
@@ -1244,6 +1296,10 @@ export class Editor implements IEditor {
     }
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    this.showRefusalCells(commit.offBaseplate?.missing ?? null);
+    if (commit.offBaseplate) {
+      this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.offBaseplate));
+    }
     this.update({ track: this.trackView() });
   }
 
@@ -1336,6 +1392,13 @@ export class Editor implements IEditor {
     const snap = held?.snap;
     if (!track || !held || !snap) return;
     const commit = track.placePiece(held.catalogIndex, snap.placement);
+    this.showRefusalCells(commit.offBaseplate?.missing ?? null);
+    if (commit.offBaseplate) {
+      this.lastTrackCommit = "refused-off-baseplate";
+      this.refuse("track", TRACK_ITEM_ID, trackRunRefusal(commit.offBaseplate));
+      this.update({ track: this.trackView() });
+      return;
+    }
     const report = this.rebuildTrackChunks(track, commit.chunks);
     this.pending = {
       step: "do",
@@ -1429,13 +1492,12 @@ export class Editor implements IEditor {
 
   private placeGhost(): void {
     if (!this.active || !this.hovering) return;
-    this.hoverYPlates = this.placed.restingHeight(
-      this.active,
-      this.hoverX,
-      this.hoverZ,
-      this.ghostRot,
-      null,
-    );
+    const check = this.placed.check(this.active, this.hoverX, this.hoverZ, this.ghostRot, []);
+    this.ghostCheck = check;
+    this.hoverYPlates = check.yPlates;
+    this.update({
+      ghost: { yPlates: check.yPlates, refusal: supportRefusal(this.active.label, check.verdict) },
+    });
     this.backend.placeGhost(
       this.hoverX,
       this.hoverYPlates * PLATE_LDU + GHOST_LIFT_LDU,
@@ -1522,24 +1584,27 @@ export class Editor implements IEditor {
       const moduleFit = this.snapGhostToModuleGrid();
       if (moduleFit?.occupied) {
         this.placeGhost();
-        this.update({ moduleFit, refusedClicks: this.state.refusedClicks + 1 });
+        this.update({ moduleFit });
+        this.refuse("place", this.active.id, {
+          rule: "module-grid",
+          message: `${this.active.label} would take module cell (${moduleFit.column}, ${moduleFit.row}), which another module already fills.`,
+        });
         return;
       }
       const snap = this.snapGhostToRoad();
       this.placeGhost();
+      this.update({ snap });
       if (snap?.state === "refused") {
-        this.update({
-          snap,
-          refusedClicks: this.state.refusedClicks + 1,
-          lastRefusal: {
-            item: this.active.id,
-            x: this.hoverX,
-            z: this.hoverZ,
-            rot: this.ghostRot,
-            mismatchedCells: snap.mismatchedCells,
-            overlappingCells: snap.overlappingCells,
-          },
+        this.refuse("place", this.active.id, {
+          rule: "road",
+          message: `${this.active.label} would leave ${snap.mismatchedCells} road edge cells mismatched and overlap ${snap.overlappingCells} road cells.`,
         });
+        return;
+      }
+      const check = this.ghostCheck;
+      const refusal = check ? supportRefusal(this.active.label, check.verdict) : null;
+      if (refusal) {
+        this.refuse("place", this.active.id, refusal);
         return;
       }
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
@@ -1578,7 +1643,7 @@ export class Editor implements IEditor {
         colorId: placeable.worldColor,
         x,
         z,
-        yPlates: this.placed.restingHeight(placeable, x, z, rot, null),
+        yPlates: this.placed.check(placeable, x, z, rot, []).yPlates,
         rot,
       }),
       eventTimeMs,
@@ -1686,20 +1751,19 @@ export class Editor implements IEditor {
   }
 
   private showMarkers(): void {
-    if (!this.state.showJoins) {
-      this.backend.setMarkers([]);
-      return;
-    }
     const ghost = this.moduleGhost;
     const surface = this.active?.module;
-    this.backend.setMarkers([
-      ...this.roadReport.segments.map((segment) => ({
-        box: markerBox(segment),
-        kind: segment.status,
-      })),
-      ...(this.modules?.markers() ?? []),
-      ...(ghost && surface && this.modules ? this.modules.ghostMarkers(ghost, surface) : []),
-    ]);
+    const joins: EdgeMarker[] = this.state.showJoins
+      ? [
+          ...this.roadReport.segments.map((segment) => ({
+            box: markerBox(segment),
+            kind: segment.status,
+          })),
+          ...(this.modules?.markers() ?? []),
+          ...(ghost && surface && this.modules ? this.modules.ghostMarkers(ghost, surface) : []),
+        ]
+      : [];
+    this.backend.setMarkers([...joins, ...this.refusalMarkers]);
   }
 
   private refreshModules(): void {
@@ -1820,7 +1884,18 @@ export class Editor implements IEditor {
     if (!model || this.readOnly) return;
     const pose = model.handle;
     const rot = (pose.rot + 1) % QUARTER_TURNS;
-    const yPlates = this.placed.restingHeight(model.placeable, pose.x, pose.z, rot, model);
+    const refusal = this.removalRefusal([model], model.placeable.label);
+    if (refusal) {
+      this.refuse("rotate", model.placeable.id, refusal);
+      return;
+    }
+    const check = this.placed.check(model.placeable, pose.x, pose.z, rot, [model]);
+    const turned = supportRefusal(model.placeable.label, check.verdict);
+    if (turned) {
+      this.refuse("rotate", model.placeable.id, turned);
+      return;
+    }
+    const yPlates = check.yPlates;
     const edit = this.history.commit("rotate", [
       {
         placement: model.placement,
@@ -1833,18 +1908,90 @@ export class Editor implements IEditor {
   deleteSelection(eventTimeMs: number): void {
     const model = this.selected;
     if (!model || this.readOnly) return;
+    const refusal = this.removalRefusal([model], model.placeable.label);
+    if (refusal) {
+      this.refuse("remove", model.placeable.id, refusal);
+      return;
+    }
     this.show(this.history.remove(model.placement), eventTimeMs);
     this.select(null);
   }
 
   undo(eventTimeMs: number): void {
     if (this.readOnly) return;
+    const refusal = this.replayRefusal(this.history.peekUndo());
+    if (refusal) {
+      this.refuse("undo", refusal.item, refusal);
+      return;
+    }
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
     if (this.readOnly) return;
+    const refusal = this.replayRefusal(this.history.peekRedo());
+    if (refusal) {
+      this.refuse("redo", refusal.item, refusal);
+      return;
+    }
     this.replay(this.history.redo(), eventTimeMs);
+  }
+
+  private modelOf(change: PendingChange): PlacedModel | null {
+    const handle = change.placement.handle;
+    return this.placed.models().find((model) => model.handle === handle) ?? null;
+  }
+
+  private removalRefusal(removed: ReadonlyArray<PlacedModel>, label: string): Refusal | null {
+    const carried = carriesRefusal(label, this.placed.lostSupport(removed));
+    if (carried) return carried;
+    const off = this.track?.unsupportedPieces((cells) => this.placed.trackSupport(cells, removed));
+    const first = off?.[0];
+    return first ? trackCarriedRefusal(label, first) : null;
+  }
+
+  private replayRefusal(
+    changes: ReadonlyArray<PendingChange> | null,
+  ): (Refusal & { readonly item: string }) | null {
+    if (!changes) return null;
+    const removed: PlacedModel[] = [];
+    for (const change of changes) {
+      const model = change.from ? this.modelOf(change) : null;
+      if (model) removed.push(model);
+    }
+    const first = removed[0];
+    if (first) {
+      const refusal = this.removalRefusal(removed, first.placeable.label);
+      if (refusal) return { ...refusal, item: first.placeable.id };
+    }
+    for (const change of changes) {
+      const to = change.to;
+      if (!to) continue;
+      const placeable = this.placeableAt(to.refId);
+      const check = this.placed.check(placeable, to.x, to.z, to.rot, removed);
+      const refusal = supportRefusal(placeable.label, check.verdict);
+      if (refusal) return { ...refusal, item: placeable.id };
+      if (check.yPlates !== to.yPlates) {
+        return {
+          rule: "support",
+          item: placeable.id,
+          message: `${placeable.label} was at ${to.yPlates} plates but would now land at ${check.yPlates}.`,
+        };
+      }
+    }
+    return null;
+  }
+
+  private refuse(action: RefusedAction, item: string, refusal: Refusal): void {
+    this.update({
+      refusals: this.state.refusals + 1,
+      lastRefusal: { action, item, rule: refusal.rule, message: refusal.message },
+    });
+  }
+
+  private showRefusalCells(cells: BaseCells | null): void {
+    this.refusalMarkers = cells ? cellMarkers(cells, this.tableY) : [];
+    this.showMarkers();
   }
 
   private replay(edit: AppliedEdit | null, eventTimeMs: number): void {
