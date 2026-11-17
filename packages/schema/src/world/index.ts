@@ -5,11 +5,11 @@ import {
   chunkOf,
   isLatticePose,
   isRot90,
-  zeta16,
-  zeta16ToStuds,
+  zeta16FloorStuds,
   type Zeta16,
 } from "@brr/math";
 import * as v from "valibot";
+import { decodeZeta16, encodeZeta16 } from "../bundle/index.ts";
 import { decode, type Decoded, type Issue } from "../decode/index.ts";
 
 export const WORLD_FORMAT = "brr.world";
@@ -47,6 +47,7 @@ const FiniteNumber = v.pipe(v.number(), v.finite("must be a finite number"));
 
 function strictMessage(issue: v.StrictObjectIssue | v.StrictTupleIssue): string {
   if (issue.expected === "never") return "is not part of this format";
+  if (issue.received === "undefined" && issue.expected?.startsWith('"')) return "is missing";
   return issue.type === "strict_tuple" ? "must be a pair [x, z]" : "must be an object";
 }
 
@@ -62,11 +63,11 @@ export function superChunkOf(x: number, z: number): SuperChunk {
 }
 
 export function encodeTrackPosition(position: Zeta16): string[] {
-  return position.map((coefficient) => coefficient.toString());
+  return encodeZeta16(position);
 }
 
 export function decodeTrackPosition(position: ReadonlyArray<string>): Zeta16 {
-  return zeta16(position.map((coefficient) => BigInt(coefficient)));
+  return decodeZeta16(position);
 }
 
 const COEFFICIENT_TEXT = /^(?:0|-?[1-9]\d*)$/u;
@@ -79,13 +80,13 @@ function readablePosition(position: ReadonlyArray<string>): boolean {
 }
 
 function onLattice(position: ReadonlyArray<string>): boolean {
-  const studs = zeta16ToStuds(decodeTrackPosition(position));
-  return isLatticePose(Math.round(studs.x * STUD_LDU), Math.round(studs.z * STUD_LDU), 0);
+  const studs = zeta16FloorStuds(decodeTrackPosition(position));
+  return isLatticePose(Number(studs.x) * STUD_LDU, Number(studs.z) * STUD_LDU, 0);
 }
 
 export function superChunkOfTrack(position: ReadonlyArray<string>): SuperChunk {
-  const studs = zeta16ToStuds(decodeTrackPosition(position));
-  return superChunkOf(studs.x * STUD_LDU, studs.z * STUD_LDU);
+  const studs = zeta16FloorStuds(decodeTrackPosition(position));
+  return superChunkOf(Number(studs.x) * STUD_LDU, Number(studs.z) * STUD_LDU);
 }
 
 export function compareSuperChunks(a: Readonly<SuperChunk>, b: Readonly<SuperChunk>): number {
@@ -236,10 +237,13 @@ export const TrackRecordV1 = v.strictObject(
   {
     index: Count,
     ref: v.pipe(v.string(), v.regex(CATALOG_REF, "is not a namespaced catalog id")),
-    heading: v.pipe(
-      SafeInteger,
-      v.minValue(0, "must be a heading 0-15"),
-      v.maxValue(ZETA16_ORDER - 1, "must be a heading 0-15"),
+    heading: v.config(
+      v.pipe(
+        SafeInteger,
+        v.minValue(0, "must be a heading 0-15"),
+        v.maxValue(ZETA16_ORDER - 1, "must be a heading 0-15"),
+      ),
+      { abortPipeEarly: true },
     ),
     position: v.config(
       v.pipe(
@@ -532,7 +536,8 @@ export function readWorldArchive(files: ReadonlyMap<string, string>): Decoded<Wo
     }
     shards.push(shard.value);
   }
-  if (worldTrack(shards).some((piece, position) => piece.index !== position)) {
+  const everyShardRead = shards.length === manifest.value.shards.length;
+  if (everyShardRead && worldTrack(shards).some((piece, position) => piece.index !== position)) {
     issues.push({
       path: MANIFEST_FILE,
       message: "the shards' track indices must run 0, 1, 2, … once each",

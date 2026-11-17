@@ -1,12 +1,15 @@
-import { ZETA16_ORDER, zeta16 } from "@brr/math";
+import { CHUNK_LDU, STUD_LDU, ZETA16_ORDER, zeta16 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { decode } from "../decode/index.ts";
 import {
+  SUPER_CHUNK_CHUNKS,
   WorldManifestV1,
   WorldShardV1,
   canonicalJson,
   encodeTrackPosition,
   readWorldArchive,
+  superChunkOfTrack,
+  worldShard,
   worldArchiveFiles,
   worldManifest,
   worldShards,
@@ -17,6 +20,7 @@ import {
 } from "./index.ts";
 
 const INT64_MAX = 2n ** 63n - 1n;
+const SUPER_CHUNK_STUDS = (SUPER_CHUNK_CHUNKS * CHUNK_LDU) / STUD_LDU;
 const ZEROS = ["0", "0", "0", "0", "0", "0", "0", "0"];
 
 const shard = {
@@ -48,6 +52,14 @@ function withPlacement(patch: Record<string, unknown>) {
 
 function withTrack(patch: Record<string, unknown>) {
   return { ...shard, track: [{ ...shard.track[0], ...patch }] };
+}
+
+function lcg(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state;
+  };
 }
 
 function reread(files: ReadonlyMap<string, string>) {
@@ -131,6 +143,21 @@ describe("world schema v1", () => {
   ])("rejects a manifest with %s at its path", (_name, value, path) => {
     const decoded = decode(WorldManifestV1, value);
     expect(decoded.ok ? [] : decoded.issues.map((issue) => issue.path)).toContain(path);
+  });
+
+  it("says a required key is missing", () => {
+    const { color: _color, ...withoutColor } = shard.placements[0] ?? { color: 0 };
+    const decoded = decode(WorldShardV1, { ...shard, placements: [withoutColor] });
+    expect(decoded.ok ? [] : decoded.issues).toEqual([
+      { path: "$.placements.0.color", message: "is missing" },
+    ]);
+  });
+
+  it("reports a fractional heading once", () => {
+    const decoded = decode(WorldShardV1, withTrack({ heading: 16.5 }));
+    expect(decoded.ok ? [] : decoded.issues).toEqual([
+      { path: "$.track.0.heading", message: "must be an integer" },
+    ]);
   });
 
   it("reports a fractional coordinate once, as not an integer", () => {
@@ -221,9 +248,56 @@ describe("world schema v1", () => {
       placements,
       track.filter((piece) => piece.index !== 4),
     );
-    expect(readWorldArchive(skipped)).toMatchObject({
-      ok: false,
-      issues: [{ path: "manifest.json" }],
-    });
+    const repeated = archiveFiles(
+      placements,
+      track.map((piece) => (piece.index === 4 ? { ...piece, index: 3 } : piece)),
+    );
+    for (const files of [skipped, repeated]) {
+      expect(readWorldArchive(files)).toEqual({
+        ok: false,
+        issues: [
+          {
+            path: "manifest.json",
+            message: "the shards' track indices must run 0, 1, 2, … once each",
+          },
+        ],
+      });
+    }
+  });
+
+  it("reports a shard it can't read without also blaming the track indices", () => {
+    const files = archiveFiles(placements, track);
+    const shardPath = [...files.keys()].find((name) => name.startsWith("shards/"));
+    if (!shardPath) throw new Error("the archive has no shard");
+    files.set(shardPath, "{");
+    const read = readWorldArchive(files);
+    expect(read.ok ? [] : read.issues.map((issue) => issue.path)).toEqual([shardPath]);
+  });
+
+  it("files symmetric track poses on super-chunk lines into the exact super-chunk", () => {
+    const next = lcg(31);
+    for (let i = 0; i < 2000; i++) {
+      const lineX = (next() % 17) - 8;
+      const insideZ = (next() % 9) - 4;
+      const a = BigInt((next() % 41) - 20);
+      const b = BigInt((next() % 41) - 20);
+      const c = BigInt((next() % 41) - 20);
+      const position = encodeTrackPosition(
+        zeta16([
+          BigInt(lineX * SUPER_CHUNK_STUDS),
+          a,
+          b,
+          c,
+          BigInt(insideZ * SUPER_CHUNK_STUDS + SUPER_CHUNK_STUDS / 2),
+          c,
+          b,
+          a,
+        ]),
+      );
+      expect(superChunkOfTrack(position)).toEqual([lineX, insideZ]);
+      const piece = { index: 0, ref: "ldraw:74747", heading: 4, position, yPlates: 0 };
+      expect(decode(WorldShardV1, worldShard([lineX, insideZ], [], [piece])).ok).toBe(true);
+    }
+    expect(superChunkOfTrack(["1024", "40", "0", "0", "0", "0", "0", "40"])).toEqual([4, 0]);
   });
 });

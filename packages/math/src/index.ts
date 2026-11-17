@@ -9,6 +9,7 @@ export {
 } from "./units.ts";
 export { isRot90, rot90Cos, rot90Sin } from "./rot90.ts";
 export { isLatticePose } from "./lattice.ts";
+export { zeta16FloorStuds, type FloorStuds } from "./zeta16-floor.ts";
 export { chunkKey, chunkOf } from "./chunk-key.ts";
 export {
   addZeta16,
