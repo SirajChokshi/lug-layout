@@ -56,21 +56,21 @@ variable "route_pattern" {
   }
 }
 
-variable "part_bundle_domains" {
-  description = "Custom domain per part bundle bucket in zone_id, keyed like part-bundles.json: production, preview. For example { production = \"parts.example.org\" }."
-  type        = map(string)
-  default     = {}
+variable "part_bundle_domain" {
+  description = "Custom domain serving the part bundle bucket in zone_id, for example parts.example.org."
+  type        = string
+  default     = null
 
   validation {
-    condition     = length(var.part_bundle_domains) == 0 || var.zone_id != null
-    error_message = "part_bundle_domains needs zone_id."
+    condition     = var.part_bundle_domain == null || var.zone_id != null
+    error_message = "part_bundle_domain needs zone_id."
   }
 }
 
 variable "part_bundle_r2_dev" {
-  description = "Part bundle buckets that stay public on their r2.dev domain. Keep a bucket here while any deployment, including a rollback target, still loads from its r2.dev URL; adding a custom domain doesn't remove it."
-  type        = set(string)
-  default     = ["production", "preview"]
+  description = "Keep the part bundle bucket public on its r2.dev domain. Leave it on while any deployment, including a rollback target, still loads from the r2.dev URL; setting part_bundle_domain doesn't turn it off."
+  type        = bool
+  default     = true
 }
 
 variable "worker_bundle" {
