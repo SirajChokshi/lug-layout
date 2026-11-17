@@ -448,3 +448,22 @@ it("undoes and redoes table edits in one timeline with placements", async () => 
   expect(state()).toEqual([2, [[640]]]);
   expect(editor.snapshot().history.redo).toBeNull();
 }, 120_000);
+
+it("fills a drawn table with whole 16 × 16 baseplates, several to a chunk, as one edit that undoes and redoes", async () => {
+  const { editor, plans } = await startEditor([]);
+  plans.drawTable({ minX: -160, minZ: 0, maxX: 2080, maxZ: 1440 });
+  const baseplate = editor.snapshot().catalog.find((item) => item.id.startsWith("ldraw:3867@"));
+  if (!baseplate) throw new Error("the bundle has no 3867");
+  editor.chooseItem(baseplate.id);
+
+  editor.fillTables(0);
+  expect(editor.snapshot().placements).toBe(24);
+  expect(editor.snapshot().lastFill).toEqual({ placed: 24, skipped: 0 });
+  editor.fillTables(0);
+  expect(editor.snapshot().placements).toBe(24);
+  editor.undo(0);
+  expect(editor.snapshot().placements).toBe(0);
+  editor.redo(0);
+  expect(editor.snapshot().placements).toBe(24);
+  expect(editor.snapshot().error).toBeNull();
+}, 120_000);

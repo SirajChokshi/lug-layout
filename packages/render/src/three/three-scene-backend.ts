@@ -136,6 +136,7 @@ const GUIDE_COLORS: Readonly<Record<GuideKind, number>> = {
   ruler: 0x0b5fff,
   dimension: 0x1b2a34,
   draft: 0xff8c00,
+  blocked: 0xe0202a,
 };
 const GUIDE_RENDER_ORDER = 3;
 const FLOOR_THICKNESS_LDU = 10;

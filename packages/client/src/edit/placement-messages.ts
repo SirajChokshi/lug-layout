@@ -7,7 +7,8 @@ export type RefusalRule =
   | "first-layer"
   | "support"
   | "carries"
-  | "track-support";
+  | "track-support"
+  | "fill";
 
 export interface Refusal {
   readonly rule: RefusalRule;

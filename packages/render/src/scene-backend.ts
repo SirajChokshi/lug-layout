@@ -155,7 +155,7 @@ export interface GroundGrid {
   readonly areas: ReadonlyArray<GridArea> | null;
 }
 
-export type GuideKind = "ruler" | "dimension" | "draft";
+export type GuideKind = "ruler" | "dimension" | "draft" | "blocked";
 
 export interface GuideSegment {
   readonly kind: GuideKind;

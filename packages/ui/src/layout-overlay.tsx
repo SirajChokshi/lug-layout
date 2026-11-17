@@ -73,8 +73,16 @@ function cursorText(snapshot: EditorSnapshot): string {
   return `x ${studsOf(hover.x)}, z ${studsOf(hover.z)} studs · ${cmOf(hover.x)}, ${cmOf(hover.z)} cm`;
 }
 
+function fillText(snapshot: EditorSnapshot): string | null {
+  const { lastFill } = snapshot;
+  if (!lastFill) return null;
+  const skipped = lastFill.skipped > 0 ? `, skipped ${lastFill.skipped} occupied` : "";
+  return `Filled ${lastFill.placed} ${lastFill.placed === 1 ? "plate" : "plates"}${skipped}`;
+}
+
 export function LayoutBar({ editor, snapshot }: OverlayProps) {
   const measuring = snapshot.mode === "measure";
+  const filled = fillText(snapshot);
   return (
     <div className="layout-bar" role="toolbar" aria-label="Layout guides">
       <span className="layout-cursor" data-cursor-studs={snapshot.hover ? "on" : "off"}>
@@ -100,6 +108,11 @@ export function LayoutBar({ editor, snapshot }: OverlayProps) {
         <button type="button" data-action="clear-rulers" onClick={() => editor.clearRulers()}>
           Clear {snapshot.rulers} {snapshot.rulers === 1 ? "ruler" : "rulers"}
         </button>
+      )}
+      {filled !== null && (
+        <span className="layout-hint" data-last-fill={snapshot.lastFill?.placed ?? 0}>
+          {filled}
+        </span>
       )}
     </div>
   );

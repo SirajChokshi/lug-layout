@@ -30,6 +30,10 @@ function itemName(snapshot: EditorSnapshot, id: string | null): string {
   return label.replaceAll("_", " ");
 }
 
+function holdingBaseplate(snapshot: EditorSnapshot): boolean {
+  return snapshot.catalog.find((item) => item.id === snapshot.activeItem)?.kind === "baseplate";
+}
+
 function pieces(count: number): string {
   return `${count} ${count === 1 ? "piece" : "pieces"}`;
 }
@@ -71,6 +75,7 @@ function view(snapshot: EditorSnapshot): ToolHintView {
         detail: `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
         hints: [
           gesture("Click", "place"),
+          ...(holdingBaseplate(snapshot) ? [gesture("Drag", "fill an area")] : []),
           key("rotate", "rotate"),
           key("open-palette", "another part"),
           key("select-tool", "done"),

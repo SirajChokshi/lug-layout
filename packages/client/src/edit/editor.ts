@@ -94,6 +94,18 @@ import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import { TableTool } from "./table-tool.ts";
+import {
+  MAX_FILL_TILES,
+  dragFill,
+  fillCounts,
+  fillGuides,
+  fillLabel,
+  packedFill,
+  takenByFirstLayer,
+  type FillOptions,
+  type FillPlan,
+  type FillTile,
+} from "./baseplate-fill.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
@@ -418,6 +430,12 @@ export interface EditorSnapshot {
   readonly showGrid: boolean;
   readonly rulers: number;
   readonly labels: ReadonlyArray<LabelView>;
+  readonly lastFill: FillResult | null;
+}
+
+export interface FillResult {
+  readonly placed: number;
+  readonly skipped: number;
 }
 
 export interface EditorCredits {
@@ -487,6 +505,7 @@ export interface IEditor {
   setShowGrid(show: boolean): void;
   setMeasuring(on: boolean): void;
   setTableTool(on: boolean): void;
+  fillTables(eventTimeMs: number): void;
   clearRulers(): void;
   projectLabels(out: Float64Array): void;
   dump(): EditorDump;
@@ -623,6 +642,15 @@ interface PendingAction {
   readonly report: RebuildReport;
 }
 
+interface BaseplateFill {
+  readonly placeable: Placeable;
+  readonly startX: number;
+  readonly startZ: number;
+  readonly startCellX: number;
+  readonly startCellZ: number;
+  plan: FillPlan | null;
+}
+
 interface FrameTimes {
   readonly startMs: number;
   readonly submittedMs: number;
@@ -744,6 +772,7 @@ export class Editor implements IEditor {
     showGrid: true,
     rulers: 0,
     labels: [],
+    lastFill: null,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -800,6 +829,7 @@ export class Editor implements IEditor {
   private gridAreasKey = "null";
   private readonly timeline: TimelineEntry[] = [];
   private readonly untimeline: TimelineEntry[] = [];
+  private fill: BaseplateFill | null = null;
   private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -1277,6 +1307,19 @@ export class Editor implements IEditor {
   }
 
   dragStart(ndcX: number, ndcY: number): boolean {
+    const baseplate = this.active?.kind === "baseplate" ? this.active : null;
+    if (this.state.mode === "place" && baseplate) {
+      if (!this.groundHit(ndcX, ndcY)) return false;
+      this.fill = {
+        placeable: baseplate,
+        startX: this.hitX,
+        startZ: this.hitZ,
+        startCellX: this.hoverX,
+        startCellZ: this.hoverZ,
+        plan: null,
+      };
+      return true;
+    }
     if (this.state.mode === "table") {
       if (!this.groundHit(ndcX, ndcY)) return false;
       this.tableTool.begin(this.hitX, this.hitZ, this.handleToleranceLdu(ndcX, ndcY));
@@ -1299,6 +1342,22 @@ export class Editor implements IEditor {
   }
 
   dragMove(ndcX: number, ndcY: number): void {
+    const fill = this.fill;
+    if (fill) {
+      if (!this.groundHit(ndcX, ndcY)) return;
+      const moved = this.hoverX !== fill.startCellX || this.hoverZ !== fill.startCellZ;
+      if (!moved && fill.plan === null) return;
+      if (fill.plan === null) this.backend.setGhost(null);
+      fill.plan = dragFill(
+        this.fillOptions(fill.placeable),
+        fill.startX,
+        fill.startZ,
+        this.hitX,
+        this.hitZ,
+      );
+      this.showGuides();
+      return;
+    }
     if (this.state.mode === "table") {
       if (this.groundHit(ndcX, ndcY)) this.tableTool.move(this.hitX, this.hitZ);
       this.showGuides();
@@ -1326,6 +1385,21 @@ export class Editor implements IEditor {
   }
 
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    const fill = this.fill;
+    if (fill) {
+      this.dragMove(ndcX, ndcY);
+      this.fill = null;
+      if (fill.plan === null) {
+        this.click(ndcX, ndcY, eventTimeMs);
+        return;
+      }
+      const { placeable } = fill;
+      this.backend.setGhost({ ...placeable.parts, studs: placeable.studs });
+      this.commitFill(placeable, fill.plan.tiles, eventTimeMs);
+      this.showGuides();
+      this.placeGhost();
+      return;
+    }
     if (this.state.mode === "table") {
       if (this.groundHit(ndcX, ndcY)) this.tableTool.move(this.hitX, this.hitZ);
       this.tableTool.end();
@@ -1988,6 +2062,78 @@ export class Editor implements IEditor {
     this.showGuides();
   }
 
+  fillTables(eventTimeMs: number): void {
+    const placeable = this.active?.kind === "baseplate" ? this.active : null;
+    if (!placeable) return;
+    const snapshot = this.plans.snapshot();
+    const check = snapshot.checks.find((c) => c.regionId === snapshot.activePlanId);
+    if (!check) return;
+    const options = this.fillOptions(placeable);
+    this.commitFill(
+      placeable,
+      check.tables.flatMap((top) => packedFill(options, top.surface)),
+      eventTimeMs,
+    );
+  }
+
+  private fillOptions(placeable: Placeable): FillOptions {
+    const footprints = this.placed
+      .models()
+      .filter((model) => model.placeable.layer === "first")
+      .map((model) => model.box);
+    const occupied = takenByFirstLayer(footprints);
+    const rot = this.ghostRot;
+    return {
+      box: placeable.box,
+      rot,
+      taken: (rect, x, z) =>
+        occupied(rect) ||
+        supportRefusal(placeable.label, this.placed.check(placeable, x, z, rot, []).verdict) !==
+          null,
+    };
+  }
+
+  private commitFill(
+    placeable: Placeable,
+    tiles: ReadonlyArray<FillTile>,
+    eventTimeMs: number,
+  ): void {
+    const { free, taken } = fillCounts(tiles);
+    if (tiles.length > MAX_FILL_TILES) {
+      this.refuse("place", placeable.id, {
+        rule: "fill",
+        message: `That fill needs ${tiles.length} plates; one fill places at most ${MAX_FILL_TILES}.`,
+      });
+      return;
+    }
+    if (free === 0) {
+      this.refuse("place", placeable.id, {
+        rule: "fill",
+        message: `Every ${placeable.label} spot in that area is already taken.`,
+      });
+      return;
+    }
+    const refId = this.placeables.indexOf(placeable);
+    const edit = this.history.commit(
+      "place",
+      tiles
+        .filter((tile) => !tile.taken)
+        .map((tile) => ({
+          placement: null,
+          to: {
+            refId,
+            colorId: placeable.worldColor,
+            x: tile.x,
+            z: tile.z,
+            yPlates: 0,
+            rot: this.ghostRot,
+          },
+        })),
+    );
+    this.show(edit, eventTimeMs);
+    this.update({ lastFill: { placed: free, skipped: taken } });
+  }
+
   private handleToleranceLdu(ndcX: number, ndcY: number): number {
     const x = this.hitX;
     const z = this.hitZ;
@@ -2026,6 +2172,7 @@ export class Editor implements IEditor {
     for (const ruler of this.rulers) guides.push(...rulerGuides(ruler, RULER_Y_LDU, "ruler"));
     if (this.draftRuler) guides.push(...rulerGuides(this.draftRuler, RULER_Y_LDU, "draft"));
     if (this.state.mode === "table") guides.push(...this.tableTool.guides(RULER_Y_LDU));
+    if (this.fill?.plan) guides.push(...fillGuides(this.fill.plan, RULER_Y_LDU));
     this.backend.setGuides(guides);
     this.update({ rulers: this.rulers.length });
   }
@@ -2036,6 +2183,7 @@ export class Editor implements IEditor {
     );
     if (this.draftRuler) labels.push(rulerLabel("draft", "draft", this.draftRuler, RULER_Y_LDU));
     if (state.mode === "table") labels.push(...this.tableTool.labels(RULER_Y_LDU));
+    if (this.fill?.plan) labels.push(fillLabel(this.fill.plan, RULER_Y_LDU));
     const active = this.active;
     if (state.mode === "place" && active && state.hover) {
       const box = placedBox(

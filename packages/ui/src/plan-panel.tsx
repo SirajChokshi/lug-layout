@@ -320,6 +320,8 @@ function TablesEditor({
   readonly plans: IPlanService;
 }) {
   const drawing = snapshot.mode === "table";
+  const held = snapshot.catalog.find((item) => item.id === snapshot.activeItem);
+  const baseplate = snapshot.mode === "place" && held?.kind === "baseplate" ? held : null;
   return (
     <section className="plan-section">
       <h3>Tables</h3>
@@ -334,6 +336,16 @@ function TablesEditor({
         onClick={() => editor.setTableTool(!drawing)}
       >
         {drawing ? "Done drawing tables (B)" : "Draw tables (B)"}
+      </button>
+      <button
+        type="button"
+        data-action="fill-tables"
+        disabled={baseplate === null || plan.footprint.tables.length === 0}
+        onClick={(event) => editor.fillTables(event.timeStamp)}
+      >
+        {baseplate === null
+          ? "Pick a baseplate to fill the tables"
+          : `Fill the tables with ${baseplate.label}${baseplate.color ? ` (${baseplate.color.name})` : ""}`}
       </button>
       {plan.footprint.tables.map((table) => (
         <div className="plan-item" key={table.id} data-table={table.id}>

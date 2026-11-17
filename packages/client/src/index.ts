@@ -49,6 +49,7 @@ export type {
   EditorSnapshot,
   EditorStats,
   EditorStatus,
+  FillResult,
   HistoryView,
   HoverView,
   ExportedWorld,
