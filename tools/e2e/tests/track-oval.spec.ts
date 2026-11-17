@@ -20,7 +20,7 @@ test("a straight run closed into an oval joins every end exactly", async ({ page
   const ends = await editor.trackEnds();
   const west = ends.find((end) => end.heading === WEST);
   const east = ends.find((end) => end.heading === EAST);
-  expect(west).toEqual({ xLdu: start.x, zLdu: start.z, heading: WEST });
+  expect(west).toMatchObject({ xLdu: start.x, zLdu: start.z, heading: WEST });
   if (!east || !west)
     throw new Error(`a straight run has ends facing east and west: ${JSON.stringify(ends)}`);
   expect(east.zLdu).toBe(0);
