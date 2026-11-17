@@ -177,6 +177,11 @@ function measurePace(value: string | null, look: LookSettings): MeasurePace {
   return "tight";
 }
 
+function modelView(params: URLSearchParams): ModelView {
+  if (params.get("camera") === "top") return "top";
+  return params.get("view") === "below" ? "below" : "orbit";
+}
+
 export function readViewerParams(search: string): ViewerParams {
   const params = new URLSearchParams(search);
   const look = lookSettings(params.get("look"));
@@ -205,7 +210,7 @@ export function readViewerParams(search: string): ViewerParams {
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",
-    modelView: params.get("camera") === "top" ? "top" : "orbit",
+    modelView: modelView(params),
     originChunkX,
     originChunkZ,
     dumpWorld: params.get("dumpWorld") === "1",

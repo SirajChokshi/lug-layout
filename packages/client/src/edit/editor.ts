@@ -18,7 +18,7 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
 } from "@brr/domain";
-import { PLATE_LDU, STUD_LDU, chunkOf } from "@brr/math";
+import { BRICK_LDU, PLATE_LDU, STUD_LDU, chunkOf } from "@brr/math";
 import {
   CAMERA_FOV_DEGREES,
   RAY_FLOATS,
@@ -40,6 +40,7 @@ import {
   PlacedChunks,
   type PlacedModel,
   type RebuildReport,
+  type StudTotals,
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
@@ -193,6 +194,21 @@ export interface TrackView {
   readonly solve: TrackSolveStats | null;
 }
 
+export interface HoverView {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+}
+
+export interface PlaceableCoverView {
+  readonly id: string;
+  readonly studsDrawnPerPlacement: number;
+  readonly studsCulledAtBake: number;
+  readonly footprintCells: number;
+  readonly flatCells: number;
+  readonly heightPlates: number;
+}
+
 export interface EditorSnapshot {
   readonly status: EditorStatus;
   readonly error: string | null;
@@ -204,13 +220,14 @@ export interface EditorSnapshot {
   readonly mode: EditorMode;
   readonly activeItem: string | null;
   readonly ghostRot: number;
-  readonly hover: { readonly x: number; readonly z: number } | null;
+  readonly hover: HoverView | null;
   readonly selection: SelectionView | null;
   readonly placements: number;
   readonly history: HistoryView;
   readonly lastLatency: LatencySample | null;
   readonly latencies: ReadonlyArray<LatencySample>;
   readonly stats: EditorStats | null;
+  readonly studs: StudTotals | null;
   readonly credits: EditorCredits | null;
   readonly roads: RoadJoinView;
   readonly showJoins: boolean;
@@ -239,9 +256,11 @@ export interface RoadPlacementDump {
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
+  readonly covers: ReadonlyArray<PlaceableCoverView>;
   readonly placements: PlacementDump;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
+  readonly studs: StudTotals;
 }
 
 export interface EditorOptions {
@@ -346,6 +365,7 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
     }
   }
 }
+const GHOST_LIFT_LDU = BRICK_LDU;
 
 interface PendingAction {
   readonly step: HistoryStep;
@@ -426,6 +446,7 @@ export class Editor implements IEditor {
     lastLatency: null,
     latencies: [],
     stats: null,
+    studs: null,
     credits: null,
     roads: EMPTY_ROADS,
     showJoins: true,
@@ -456,6 +477,7 @@ export class Editor implements IEditor {
   private ghostRot = 0;
   private hoverX = 0;
   private hoverZ = 0;
+  private hoverYPlates = 0;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -851,7 +873,24 @@ export class Editor implements IEditor {
 
   private placeGhost(): void {
     if (!this.active || !this.hovering) return;
-    this.backend.placeGhost(this.hoverX, 0, this.hoverZ, this.ghostRot);
+    this.hoverYPlates = this.placed.restingHeight(
+      this.active,
+      this.hoverX,
+      this.hoverZ,
+      this.ghostRot,
+      null,
+    );
+    this.backend.placeGhost(
+      this.hoverX,
+      this.hoverYPlates * PLATE_LDU + GHOST_LIFT_LDU,
+      this.hoverZ,
+      this.ghostRot,
+    );
+  }
+
+  private hoverView(): HoverView | null {
+    if (!this.hovering) return null;
+    return { x: this.hoverX, z: this.hoverZ, yPlates: this.hoverYPlates };
   }
 
   private snapGhostToRoad(): RoadSnapView | null {
@@ -897,7 +936,7 @@ export class Editor implements IEditor {
       this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
     }
     this.placeGhost();
-    this.update({ hover: this.hovering ? { x: this.hoverX, z: this.hoverZ } : null, snap });
+    this.update({ hover: this.hoverView(), snap });
   }
 
   pointerLeave(): void {
@@ -956,7 +995,7 @@ export class Editor implements IEditor {
         colorId: placeable.worldColor,
         x,
         z,
-        yPlates: 0,
+        yPlates: this.placed.restingHeight(placeable, x, z, rot, null),
         rot,
       }),
       eventTimeMs,
@@ -987,8 +1026,11 @@ export class Editor implements IEditor {
       };
     }
     this.refreshRoads();
+    this.placeGhost();
     this.update({
       placements: this.world.size,
+      hover: this.hoverView(),
+      studs: this.placed.studTotals(),
       history: {
         undo: this.history.nextUndo(),
         redo: this.history.nextRedo(),
@@ -1097,12 +1139,21 @@ export class Editor implements IEditor {
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
       this.placeGhost();
-      this.update({ ghostRot: this.ghostRot });
+      this.update({ ghostRot: this.ghostRot, hover: this.hoverView() });
       return;
     }
     const model = this.selected;
     if (!model) return;
-    this.select(this.show(this.history.rotate(model.placement), eventTimeMs).added[0] ?? null);
+    const pose = model.handle;
+    const rot = (pose.rot + 1) % QUARTER_TURNS;
+    const yPlates = this.placed.restingHeight(model.placeable, pose.x, pose.z, rot, model);
+    const edit = this.history.commit("rotate", [
+      {
+        placement: model.placement,
+        to: { refId: pose.refId, colorId: pose.colorId, x: pose.x, z: pose.z, yPlates, rot },
+      },
+    ]);
+    this.select(this.show(edit, eventTimeMs).added[0] ?? null);
   }
 
   deleteSelection(eventTimeMs: number): void {
@@ -1179,6 +1230,14 @@ export class Editor implements IEditor {
     return {
       refs: this.placeables.map((p) => p.id),
       frameShifts: this.placeables.map((p) => p.frameShift),
+      covers: this.placeables.map((p) => ({
+        id: p.id,
+        studsDrawnPerPlacement: p.studs.count,
+        studsCulledAtBake: p.bakedCoveredStuds,
+        footprintCells: p.cells.footprintCells,
+        flatCells: p.cells.flatCells,
+        heightPlates: p.cells.heightPlates,
+      })),
       placements: dumpPlacements(this.world),
       roadPlacements: this.roadModels.map((model, id) => ({
         id,
@@ -1189,6 +1248,7 @@ export class Editor implements IEditor {
         rot: model.handle.rot,
       })),
       roads: this.roadReport,
+      studs: this.placed.studTotals(),
     };
   }
 }

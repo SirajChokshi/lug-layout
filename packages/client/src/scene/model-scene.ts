@@ -6,7 +6,7 @@ import { chunkKey } from "@brr/math";
 import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./viewer-scene.ts";
 import { withStuds } from "./stud-stream.ts";
 
-export type ModelView = "orbit" | "top";
+export type ModelView = "orbit" | "top" | "below";
 
 export interface IModelScene extends IViewerScene {
   selectModel(name: string, view: ModelView): void;
@@ -57,6 +57,7 @@ export class ModelScene implements IModelScene {
       bundle.parts,
       colors,
       undefined,
+      model.studCover,
     );
     return showChunks(
       this.backend,
@@ -113,7 +114,7 @@ export class ModelScene implements IModelScene {
     const distance = this.radius * ORBIT_DISTANCE_FACTOR;
     this.backend.setView(
       this.centreX + distance * Math.cos(angle),
-      this.centreY + this.radius * ORBIT_ELEVATION_FACTOR,
+      this.centreY + (this.view === "below" ? -1 : 1) * this.radius * ORBIT_ELEVATION_FACTOR,
       this.centreZ + distance * Math.sin(angle),
       this.centreX,
       this.centreY,

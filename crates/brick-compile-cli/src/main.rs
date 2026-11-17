@@ -3,9 +3,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use brick_compile::affine::Vec3;
+use brick_compile::affine::{Affine, Vec3};
 use brick_compile::colors::parse_ldconfig;
 use brick_compile::compile::modified_note;
+use brick_compile::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
@@ -61,6 +62,7 @@ struct Args {
     out: PathBuf,
     lod: Lod,
     compiler: Option<PathBuf>,
+    cover_cache: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -84,6 +86,7 @@ fn parse_args() -> Result<Args, String> {
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         out: take("--out")?.into(),
+        cover_cache: values.get("--cover-cache").map(PathBuf::from),
         lod,
         compiler: values.get("--compiler").map(PathBuf::from),
     })
@@ -122,6 +125,69 @@ fn part_shape(part: &CompiledPart) -> PartShape {
             .unwrap_or([[0.0; 3]; 2])
             .map(|corner| corner.map(f64::from)),
     }
+}
+
+struct CoverParts<'a> {
+    library: &'a FsLibrary,
+    options: CompileOptions,
+    index: HashMap<String, usize>,
+    solids: Vec<PartSolid>,
+    studs: Vec<Vec<Affine>>,
+}
+
+impl CoverParts<'_> {
+    fn slot(&mut self, reference: &str) -> Result<usize, String> {
+        if let Some(&slot) = self.index.get(reference) {
+            return Ok(slot);
+        }
+        let compiled =
+            compile_part(self.library, reference, &self.options).map_err(|e| e.to_string())?;
+        self.solids.push(PartSolid::from_mesh(&compiled.mesh));
+        self.studs
+            .push(compiled.studs.iter().map(|stud| stud.matrix).collect());
+        self.index
+            .insert(reference.to_string(), self.solids.len() - 1);
+        Ok(self.solids.len() - 1)
+    }
+}
+
+fn cover_json(cover: &ModelCover) -> Value {
+    let cells = cover.cells.as_ref().map(|cells| {
+        json!({
+            "origin": cells.origin,
+            "size": [cells.width, cells.depth],
+            "bottomY": cells.bottom_y,
+            "footprint": cells.footprint,
+            "flat": cells.flat,
+            "columnBottom": cells.column_bottom,
+            "columnTop": cells.column_top,
+        })
+    });
+    json!({
+        "studs": cover.visible.len(),
+        "coveredStuds": cover.covered_count(),
+        "keptOpenBelow": cover.open_below,
+        "visibleBits": cover.visible_bits(),
+        "cells": cells,
+    })
+}
+
+fn cover_summary(cover: &ModelCover) -> Value {
+    let cells = cover.cells.as_ref().map(|cells| {
+        json!({
+            "footprintCells": cells.footprint.len(),
+            "flatCells": cells.flat.len(),
+            "restY": cells.bottom_y,
+            "size": [cells.width, cells.depth],
+            "heightPlates": cells.height_plates(),
+        })
+    });
+    json!({
+        "studs": cover.visible.len(),
+        "coveredStuds": cover.covered_count(),
+        "keptOpenBelow": cover.open_below,
+        "cells": cells,
+    })
 }
 
 fn credit(path: &str, header: &Header) -> Value {
@@ -300,12 +366,53 @@ fn run(args: &Args) -> Result<(), String> {
         }
         None => Value::Null,
     };
+    let cover_options = CompileOptions {
+        lod: Lod::Standard,
+        stud_primitives: stud_primitives.clone(),
+        unofficial_allowlist: unofficial_allowlist.clone(),
+    };
     let part_options = CompileOptions {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist,
     };
+    let mut stud_shape = StudShape {
+        height: 0.0,
+        radius: 0.0,
+    };
+    for name in &stud_primitives {
+        let standard = CompileOptions {
+            stud_primitives: Vec::new(),
+            ..cover_options.clone()
+        };
+        let compiled = compile_part(&library, name, &standard).map_err(|e| e.to_string())?;
+        let [min, max] = compiled
+            .mesh
+            .bounds()
+            .ok_or(format!("stud primitive {name} has no geometry"))?;
+        stud_shape.height = stud_shape.height.max(f64::from(max[1]));
+        stud_shape.radius = stud_shape
+            .radius
+            .max(f64::from(max[0] - min[0]) / 2.0)
+            .max(f64::from(max[2] - min[2]) / 2.0);
+    }
+    let mut cover_parts = CoverParts {
+        library: &library,
+        options: cover_options,
+        index: HashMap::new(),
+        solids: Vec::new(),
+        studs: Vec::new(),
+    };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
+    let ldconfig = library
+        .source(LDCONFIG)
+        .ok_or("LDConfig.ldr is missing from the LDraw library")?;
+    let opacity = Opacity::new(
+        parse_ldconfig(ldconfig)
+            .into_iter()
+            .filter(|color| color.alpha < u8::MAX)
+            .map(|color| color.code),
+    );
 
     let mut credits: BTreeMap<String, Value> = BTreeMap::new();
 
@@ -489,16 +596,90 @@ fn run(args: &Args) -> Result<(), String> {
                 bounds_max: shapes[index].bounds[1],
             })
             .collect();
-        let lattice_json = match model_lattice(&lattice_instances) {
-            Ok(lattice) => json!({
+        let lattice = match model_lattice(&lattice_instances) {
+            Ok(lattice) => Some(lattice),
+            Err(LatticeError::NoIntegerPhaseStuds) => None,
+            Err(e) => return Err(format!("{file}: {e}")),
+        };
+        let mut cover_slots = Vec::with_capacity(drawn.len());
+        for (instance, &index) in drawn.iter().zip(&instance_global_parts) {
+            let slot = cover_parts
+                .slot(&instance.part)
+                .map_err(|e| format!("{file}: {e}"))?;
+            if cover_parts.studs[slot].len() != shapes[index].studs.len() {
+                return Err(format!(
+                    "{file}: {} has {} studs at the standard LOD but {} in this bundle",
+                    instance.part,
+                    cover_parts.studs[slot].len(),
+                    shapes[index].studs.len()
+                ));
+            }
+            cover_slots.push(slot);
+        }
+        let cover_instances: Vec<CoverInstance> = drawn
+            .iter()
+            .zip(&cover_slots)
+            .map(|(instance, &slot)| CoverInstance {
+                matrix: &instance.matrix,
+                color: instance.color,
+                part: slot,
+                studs: &cover_parts.studs[slot],
+            })
+            .collect();
+        let cached = args
+            .cover_cache
+            .as_ref()
+            .map(|dir| dir.join(format!("{}.json", stem(name))));
+        let reuse = match (&cached, args.lod) {
+            (Some(path), Lod::Low | Lod::Far) if path.exists() => Some(
+                serde_json::from_slice::<Value>(&fs::read(path).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?,
+            ),
+            _ => None,
+        };
+        let (cover_file, cover_manifest) = match reuse {
+            Some(cached) => (cached["file"].clone(), cached["summary"].clone()),
+            None => {
+                let cover = model_cover(
+                    &cover_instances,
+                    &cover_parts.solids,
+                    &opacity,
+                    lattice.as_ref().map(|lattice| lattice.phase),
+                    stud_shape,
+                );
+                let pair = (cover_json(&cover), cover_summary(&cover));
+                if let (Some(path), Lod::Standard) = (&cached, args.lod) {
+                    fs::create_dir_all(path.parent().unwrap_or(&args.out))
+                        .map_err(|e| e.to_string())?;
+                    fs::write(
+                        path,
+                        serde_json::to_vec(&json!({ "file": pair.0, "summary": pair.1 }))
+                            .map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+                pair
+            }
+        };
+        let total_studs: usize = cover_slots
+            .iter()
+            .map(|&slot| cover_parts.studs[slot].len())
+            .sum();
+        if cover_file["studs"].as_u64() != Some(total_studs as u64) {
+            return Err(format!(
+                "{file}: the stud cover lists {} studs but the model has {total_studs}",
+                cover_file["studs"]
+            ));
+        }
+        let lattice_json = match &lattice {
+            Some(lattice) => json!({
                 "phase": lattice.phase,
                 "phaseLayerY": lattice.phase_layer_y,
                 "phaseLayerStuds": lattice.phase_layer_studs,
                 "phaseLayerAgreeing": lattice.phase_layer_agreeing,
                 "aabb": { "min": lattice.aabb_min, "max": lattice.aabb_max },
             }),
-            Err(LatticeError::NoIntegerPhaseStuds) => Value::Null,
-            Err(e) => return Err(format!("{file}: {e}")),
+            None => Value::Null,
         };
         let model_file = format!("model-{}.json", stem(name));
         let sections: Vec<Value> = baked
@@ -516,6 +697,7 @@ fn run(args: &Args) -> Result<(), String> {
             "inlinePartsResolvedToOfficial": inline_parts,
             "parts": model_parts,
             "lattice": lattice_json,
+            "cover": cover_file,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
             "vehicles": vehicles,
         });
@@ -543,6 +725,7 @@ fn run(args: &Args) -> Result<(), String> {
             "lattice": lattice_json,
             "vehicles": vehicles.len(),
             "sha256": entry["sha256"],
+            "cover": cover_manifest,
         });
         if !not_drawn.is_empty() {
             manifest_entry["notDrawn"] = json!(not_drawn);
@@ -553,9 +736,6 @@ fn run(args: &Args) -> Result<(), String> {
         models.push(manifest_entry);
     }
 
-    let ldconfig = library
-        .source(LDCONFIG)
-        .ok_or("LDConfig.ldr is missing from the LDraw library")?;
     let ldconfig_header = parse_ldraw(ldconfig).header;
     credits.insert(
         LDCONFIG.to_string(),
