@@ -12,6 +12,7 @@ import {
   type IImportScene,
   type IRunScene,
   PLAN_SERVICE,
+  WORLD_AUTOSAVE,
   type IViewerScene,
   type PlacementDump,
 } from "@brr/client";
@@ -121,6 +122,7 @@ function root(): ReactNode {
       <EditorApp
         editor={container.get(EDITOR)}
         plans={container.get(PLAN_SERVICE)}
+        autosave={container.get(WORLD_AUTOSAVE)}
         options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
         disclaimer={TRADEMARK_DISCLAIMER}
         showState={params.showEditState}

@@ -27,7 +27,7 @@ An **offline data pipeline** (Rust plus scripts, run in CI) compiles the LDraw C
 - a **sim worker** that runs trains on a derived track graph at a fixed timestep;
 - a **renderer**: three.js `WebGPURenderer` with automatic WebGL2 fallback, drawing instanced and merged *models* with LODs, culled studs, SSAO and outlines.
 
-A world is a manifest plus one JSON shard of placements per super-chunk, stored in IndexedDB and exported as a file. Plan regions export separately, together with their BOMs and printable plans. The MVP has no backend. Accounts, cloud saves and sharing come in P1.
+A world is a manifest plus one JSON shard of placements per super-chunk, stored in IndexedDB and exported as a file. The editor autosaves after every edit, writing only the shards whose bytes changed in one transaction, and reopens the autosave on start; one tab at a time owns it, and an autosave that can't be read is kept aside, never overwritten. Plan regions export separately, together with their BOMs and printable plans. The MVP has no backend. Accounts, cloud saves and sharing come in P1.
 
 ## 2. How the reports' conflicts are resolved
 

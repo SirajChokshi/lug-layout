@@ -1,4 +1,5 @@
-import type { EditorOptions, IEditor, IPlanService } from "@brr/client";
+import type { EditorOptions, IEditor, IPlanService, IWorldAutosave } from "@brr/client";
+import { AutosaveStatus } from "./autosave-status.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CreditsFooter,
@@ -16,6 +17,7 @@ import { useEditorSnapshot } from "./use-editor.ts";
 interface EditorAppProps {
   readonly editor: IEditor;
   readonly plans: IPlanService;
+  readonly autosave: IWorldAutosave;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -49,7 +51,14 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
   );
 }
 
-export function EditorApp({ editor, plans, options, disclaimer, showState }: EditorAppProps) {
+export function EditorApp({
+  editor,
+  plans,
+  autosave,
+  options,
+  disclaimer,
+  showState,
+}: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   return (
     <div
@@ -67,6 +76,7 @@ export function EditorApp({ editor, plans, options, disclaimer, showState }: Edi
     >
       <EditorCanvas editor={editor} options={options} />
       <EditorHud snapshot={snapshot} />
+      <AutosaveStatus autosave={autosave} editor={editor} disclaimer={disclaimer} />
       <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} />

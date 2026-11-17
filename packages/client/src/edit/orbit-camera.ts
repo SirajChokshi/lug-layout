@@ -1,4 +1,5 @@
 import type { ISceneBackend, WorldBox } from "@brr/render";
+import type { SavedViewV1 } from "@brr/schema/world";
 
 const ORBIT_RADIANS_PER_PX = 0.005;
 const PAN_FRACTION_PER_PX = 0.0015;
@@ -84,6 +85,26 @@ export class OrbitCamera {
     this.targetX = x;
     this.targetY = 0;
     this.targetZ = z;
+  }
+
+  view(): SavedViewV1 {
+    return {
+      targetX: this.targetX,
+      targetY: this.targetY,
+      targetZ: this.targetZ,
+      distance: this.distance,
+      yaw: this.yaw,
+      pitch: this.pitch,
+    };
+  }
+
+  restore(view: SavedViewV1): void {
+    this.targetX = view.targetX;
+    this.targetY = view.targetY;
+    this.targetZ = view.targetZ;
+    this.distance = clamp(view.distance, MIN_DISTANCE_LDU, MAX_TOP_DOWN_DISTANCE_LDU);
+    this.yaw = view.yaw;
+    this.pitch = clamp(view.pitch, MIN_PITCH, TOP_DOWN_PITCH);
   }
 
   apply(backend: ISceneBackend): void {

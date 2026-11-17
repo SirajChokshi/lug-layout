@@ -1,134 +1,30 @@
-import {
-  ASSET_FETCHER,
-  PART_BUNDLE_LOADER,
-  type BundleLod,
-  type BundleManifest,
-  type CompiledPartGlb,
-  type IAssetFetcher,
-  type ImportContext,
-  type IPartBundleLoader,
-  type ModelBundle,
-  type PartBundle,
-  type PartFilter,
-} from "@brr/catalog";
-import {
-  SCENE_BACKEND,
-  type BackendInfo,
-  type BufferMemory,
-  type ISceneBackend,
-  type RebaseEvent,
-} from "@brr/render";
-import { Container } from "inversify";
+import type { IAssetFetcher } from "@brr/catalog";
 import { readFile } from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";
-import { mainThreadModules } from "../client.module.ts";
-import { EDITOR } from "../tokens.ts";
+import { EditorHand, headlessContainer, startHeadlessEditor } from "../testing/headless-editor.ts";
 import { TRACK_ITEM_ID, type IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
-const PLACEABLE_SET = "7936-1";
-const STUDLESS_SET = "10016-1";
-const TOP_DOWN_SPAN_LDU = 4000;
-const BASEPLATE_PART = "ldraw:3811";
 
-class BundleDirectoryFetcher implements IAssetFetcher {
+const bundleFiles: IAssetFetcher = {
   async bytes(path: string): Promise<ArrayBuffer> {
     const buffer = await readFile(new URL(path, bundleRoot));
     return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-  }
+  },
+  text: (path: string) => readFile(new URL(path, bundleRoot), "utf8"),
+};
 
-  async text(path: string): Promise<string> {
-    return readFile(new URL(path, bundleRoot), "utf8");
-  }
-}
-
-class ModelSubsetLoader implements IPartBundleLoader {
-  constructor(
-    private readonly loader: IPartBundleLoader,
-    private readonly models: ReadonlyArray<string>,
-  ) {}
-
-  loadManifest(lod: BundleLod): Promise<BundleManifest> {
-    return this.loader.loadManifest(lod);
-  }
-
-  async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
-    const bundle = await this.loader.load(lod, include);
-    return { ...bundle, models: bundle.models.filter((m) => this.models.includes(m.name)) };
-  }
-
-  loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
-    return this.loader.loadModel(lod, name);
-  }
-
-  importContext(lod: BundleLod): Promise<ImportContext> {
-    return this.loader.importContext(lod);
-  }
-
-  loadPartSet(
-    lod: BundleLod,
-    partIds: ReadonlyArray<string>,
-    compiled: ReadonlyArray<CompiledPartGlb>,
-  ): Promise<PartBundle> {
-    return this.loader.loadPartSet(lod, partIds, compiled);
-  }
-}
-
-class HeadlessBackend implements ISceneBackend {
-  async init(): Promise<BackendInfo> {
-    return { requestedApi: "webgl2", activeApi: "webgl2", adapter: "none", backgroundSrgb: 0 };
-  }
-  setPalette(): void {}
-  setChunk(): void {}
-  deleteChunk(): void {}
-  setGhost(): void {}
-  placeGhost(): void {}
-  setSelectionBox(): void {}
-  setPlanOverlays(): void {}
-  setMarkers(): void {}
-  setVehicle(): void {}
-  setVehiclePose(): void {}
-  setIssueBoxes(): void {}
-  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
-    out.set([ndcX * TOP_DOWN_SPAN_LDU, TOP_DOWN_SPAN_LDU, ndcY * TOP_DOWN_SPAN_LDU, 0, -1, 0]);
-  }
-  setView(): void {}
-  resize(): void {}
-  renderFrame(): void {}
-  async waitForGpu(): Promise<void> {}
-  rebaseLog(): ReadonlyArray<RebaseEvent> {
-    return [];
-  }
-  bufferMemory(): BufferMemory {
-    return { vertexIndexBytes: 0, otherBytes: 0 };
-  }
-}
+const PLACEABLE_SET = "7936-1";
+const STUDLESS_SET = "10016-1";
+const BASEPLATE_PART = "ldraw:3811";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const canvas = {
-  clientWidth: 640,
-  clientHeight: 480,
-  dataset: {},
-} as unknown as HTMLCanvasElement;
-
-async function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDLESS_SET]) {
+function startEditor(models: ReadonlyArray<string> = [PLACEABLE_SET, STUDLESS_SET]) {
   vi.stubGlobal("requestAnimationFrame", () => 0);
-  const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-  const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
-  const editor = container.get(EDITOR);
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1 });
-  return { editor, manifest: await realLoader.loadManifest("standard") };
-}
-
-function ndcOf(xLdu: number, zLdu: number): readonly [number, number] {
-  return [xLdu / TOP_DOWN_SPAN_LDU, zLdu / TOP_DOWN_SPAN_LDU];
+  return startHeadlessEditor(headlessContainer(bundleFiles, models));
 }
 
 it("starts with a stud-less set in the bundle, leaving it out of the catalog and reporting it as skipped", async () => {
@@ -188,7 +84,7 @@ function layoutState(editor: IEditor): unknown {
 it("makes every gesture one undo step, and undo then redo walk back and forth through the exact layouts", async () => {
   const { editor } = await startEditor([]);
   const states = [layoutState(editor)];
-  let time = 0;
+  const hand = new EditorHand(editor);
   const gesture = (act: () => void): void => {
     const depth = editor.snapshot().history.undoDepth;
     act();
@@ -196,15 +92,9 @@ it("makes every gesture one undo step, and undo then redo walk back and forth th
     expect(editor.snapshot().history.undoDepth).toBe(depth + 1);
     states.push(layoutState(editor));
   };
-  const click = (x: number, z: number): void => {
-    editor.pointerMove(...ndcOf(x, z));
-    editor.click(...ndcOf(x, z), time++);
-  };
+  const click = (x: number, z: number): void => hand.click(x, z);
   const drag = (from: readonly [number, number], to: readonly [number, number]): void => {
-    editor.pointerMove(...ndcOf(...from));
-    expect(editor.dragStart(...ndcOf(...from))).toBe(true);
-    editor.dragMove(...ndcOf(...to));
-    editor.dragEnd(...ndcOf(...to), time++);
+    expect(hand.drag(from, to)).toBe(true);
   };
 
   const baseplate = editor.snapshot().catalog.find((item) => item.group === BASEPLATE_PART)?.id;
@@ -218,24 +108,24 @@ it("makes every gesture one undo step, and undo then redo walk back and forth th
   gesture(() => drag([320, 0], [900, 220]));
   drag([-160, 0], [-160, 0]);
   expect(editor.snapshot().track?.selected).not.toBeNull();
-  gesture(() => editor.deleteSelection(time++));
+  gesture(() => editor.deleteSelection(hand.time()));
   editor.chooseItem(null);
   click(0, 640);
   expect(editor.snapshot().selection?.item).toBe(baseplate);
-  gesture(() => editor.rotate(time++));
-  gesture(() => editor.deleteSelection(time++));
-  gesture(() => editor.clearWorld(time++));
+  gesture(() => editor.rotate(hand.time()));
+  gesture(() => editor.deleteSelection(hand.time()));
+  gesture(() => editor.clearWorld(hand.time()));
 
   for (let step = 1; step < states.length; step++) {
     expect(states[step]).not.toEqual(states[step - 1]);
   }
   for (let depth = states.length - 2; depth >= 0; depth--) {
-    editor.undo(time++);
+    editor.undo(hand.time());
     expect(layoutState(editor)).toEqual(states[depth]);
   }
   expect(editor.snapshot().history.undo).toBeNull();
   for (let depth = 1; depth < states.length; depth++) {
-    editor.redo(time++);
+    editor.redo(hand.time());
     expect(layoutState(editor)).toEqual(states[depth]);
   }
   expect(editor.snapshot().history.redo).toBeNull();

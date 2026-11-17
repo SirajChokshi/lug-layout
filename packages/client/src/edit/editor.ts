@@ -18,6 +18,7 @@ import {
   type BaseCells,
   type HistoryStep,
   type OwnerFilter,
+  type PlacementRequest,
   type TrackPieceAt,
   type TrackRequest,
   type RoadEdgeSegment,
@@ -30,9 +31,18 @@ import {
   STUD_LDU,
   chunkOf,
   composePose16,
+  pose16,
   posesJoin16,
   zeta16ToStuds,
 } from "@brr/math";
+import type { Issue } from "@brr/schema/decode";
+import {
+  decodeTrackPosition,
+  encodeTrackPosition,
+  type PlacementRecordV1,
+  type SavedViewV1,
+  type TrackRecordV1,
+} from "@brr/schema/world";
 import {
   CAMERA_FOV_DEGREES,
   RAY_FLOATS,
@@ -300,6 +310,7 @@ export interface EditorSnapshot {
   readonly lastRefusal: RefusedEdit | null;
   readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
+  readonly revision: number;
 }
 
 export interface EditorCredits {
@@ -326,6 +337,12 @@ export interface EditorDump {
   readonly roads: RoadJoinReport;
   readonly studs: StudTotals;
   readonly track: ReadonlyArray<TrackPieceDump>;
+}
+
+export interface WorldRecords {
+  readonly placements: ReadonlyArray<PlacementRecordV1>;
+  readonly track: ReadonlyArray<TrackRecordV1>;
+  readonly view: SavedViewV1;
 }
 
 export interface EditorOptions {
@@ -358,6 +375,8 @@ export interface IEditor {
   planOriginHere(): { readonly chunkX: number; readonly chunkZ: number };
   viewPlanFromAbove(planId: string): void;
   dump(): EditorDump;
+  worldRecords(): WorldRecords;
+  loadWorld(world: WorldRecords): ReadonlyArray<Issue>;
   clearWorld(eventTimeMs: number): void;
 }
 
@@ -547,6 +566,7 @@ export class Editor implements IEditor {
     lastRefusal: null,
     ghost: null,
     track: null,
+    revision: 0,
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -1331,6 +1351,7 @@ export class Editor implements IEditor {
     this.syncHeldTrack();
     this.placeGhost();
     this.update({
+      revision: this.state.revision + 1,
       placements: this.world.size,
       hover: this.hoverView(),
       studs: this.placed.studTotals(),
@@ -1610,6 +1631,69 @@ export class Editor implements IEditor {
       aspect,
     );
     this.camera.apply(this.backend);
+  }
+
+  worldRecords(): WorldRecords {
+    const placements = this.placed.models().map(({ placeable, handle }) => ({
+      ref: placeable.group,
+      color: placeable.worldColor,
+      x: handle.x,
+      z: handle.z,
+      yPlates: handle.yPlates,
+      rot: handle.rot,
+    }));
+    const track: TrackRecordV1[] = this.laidTrack().map(({ index, pose, yPlates }) => ({
+      index,
+      ref: this.track?.pieceId(index) ?? "",
+      heading: pose.heading,
+      position: encodeTrackPosition(pose.position),
+      yPlates,
+    }));
+    return { placements, track, view: this.camera.view() };
+  }
+
+  loadWorld(world: WorldRecords): ReadonlyArray<Issue> {
+    const drawing = this.track;
+    if (this.state.status !== "ready" || !drawing) {
+      return [{ path: "$", message: "the editor has not finished loading its catalog" }];
+    }
+    const issues: Issue[] = [];
+    const requests: PlacementRequest[] = this.placed
+      .models()
+      .map((model) => ({ placement: model.placement, to: null }));
+    world.placements.forEach((record, i) => {
+      const refId = this.placeables.findIndex(
+        (p) => p.group === record.ref && p.worldColor === record.color,
+      );
+      if (refId < 0) {
+        issues.push({
+          path: `$.placements.${i}`,
+          message: `${record.ref} in LDraw colour ${record.color} is not in this catalog`,
+        });
+        return;
+      }
+      const { x, z, yPlates, rot } = record;
+      requests.push({ placement: null, to: { refId, colorId: record.color, x, z, yPlates, rot } });
+    });
+    const lay: TrackPieceAt[] = [];
+    world.track.forEach((record, index) => {
+      const piece = drawing.catalogIndexOf(record.ref);
+      if (piece === null) {
+        issues.push({ path: `$.track.${index}`, message: `${record.ref} is not drawable track` });
+        return;
+      }
+      const pose = pose16(decodeTrackPosition(record.position), record.heading);
+      lay.push({ index, piece, pose, yPlates: record.yPlates });
+    });
+    if (issues.length > 0) return issues;
+    this.abandonTrackDrag();
+    this.select(null);
+    const edit = this.history.commit("clear", requests, { lift: this.laidTrack(), lay });
+    this.history.forget();
+    this.show(edit, performance.now());
+    this.camera.restore(world.view);
+    this.camera.apply(this.backend);
+    return [];
   }
 
   clearWorld(eventTimeMs: number): void {

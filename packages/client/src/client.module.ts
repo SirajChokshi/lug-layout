@@ -15,6 +15,8 @@ import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
 import { RunScene } from "./scene/run-scene.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
+import { WorldAutosave } from "./persist/world-autosave.ts";
+import { IndexedDbWorldStore } from "./persist/world-store.ts";
 import {
   CITY_SCENE,
   CREDITS,
@@ -31,6 +33,8 @@ import {
   SIM_WORKER_PORT,
   TRACK_SCENE,
   PLAN_SERVICE,
+  WORLD_AUTOSAVE,
+  WORLD_STORE,
 } from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
@@ -47,6 +51,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
+  bind(WORLD_STORE).to(IndexedDbWorldStore).inSingletonScope();
+  bind(WORLD_AUTOSAVE).to(WorldAutosave).inSingletonScope();
 });
 
 export interface MainThreadConfig {

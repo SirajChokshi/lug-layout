@@ -58,6 +58,7 @@ export type {
   RefusedEdit,
   RoadSnapState,
   RoadSnapView,
+  WorldRecords,
   PlaceableCoverView,
   SelectionView,
   SkippedCatalogModel,
@@ -136,7 +137,15 @@ export {
   SIM_CLIENT,
   TRACK_SCENE,
   PLAN_SERVICE,
+  WORLD_AUTOSAVE,
 } from "./tokens.ts";
+export type {
+  AutosaveState,
+  AutosaveView,
+  IWorldAutosave,
+  RestoredWorldView,
+  SetAsideView,
+} from "./persist/world-autosave.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type { ClosureState, RunBlock, TrackDragView } from "./edit/track-drawing.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";

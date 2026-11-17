@@ -13,6 +13,8 @@ import type { IRunScene } from "./scene/run-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
 import type { IViewerScene } from "./scene/viewer-scene.ts";
 import type { ISimClient } from "./sim/sim-client.ts";
+import type { IWorldAutosave } from "./persist/world-autosave.ts";
+import type { IWorldStore } from "./persist/world-store.ts";
 
 export const PART_DISPLAY_SCENE: ServiceIdentifier<IViewerScene> = Symbol.for(
   "brr.client.PartDisplayScene",
@@ -37,3 +39,7 @@ export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore
   "brr.client.RunningGearOverrides",
 );
 export const RUNNING_GEAR: ServiceIdentifier<IRunningGear> = Symbol.for("brr.client.RunningGear");
+export const WORLD_STORE: ServiceIdentifier<IWorldStore> = Symbol.for("brr.client.WorldStore");
+export const WORLD_AUTOSAVE: ServiceIdentifier<IWorldAutosave> = Symbol.for(
+  "brr.client.WorldAutosave",
+);

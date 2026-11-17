@@ -179,6 +179,11 @@ export class EditHistory {
     return applied;
   }
 
+  forget(): void {
+    this.done.length = 0;
+    this.undone.length = 0;
+  }
+
   undo(): AppliedEdit | null {
     const edit = this.done.pop();
     if (!edit) return null;

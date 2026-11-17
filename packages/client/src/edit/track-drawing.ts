@@ -816,6 +816,13 @@ export class TrackDrawing {
     return { run: { lift: [], lay }, goal: drag.goal, refusal: null, blocked: null };
   }
 
+  catalogIndexOf(pieceId: string): number | null {
+    for (const [catalogIndex, part] of this.byCatalogIndex) {
+      if (part.piece.id === pieceId) return catalogIndex;
+    }
+    return null;
+  }
+
   laidPiece(index: number): TrackPieceAt {
     return {
       index,
