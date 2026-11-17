@@ -62,7 +62,7 @@ class RecordingBackend implements ISceneBackend {
 }
 
 it.each([1, 2])(
-  "builds %i×%i tiles of the 4×4 bench layout with every part inside them",
+  "builds %i tiles per side of the 4×4 bench layout with every part inside them",
   async (tiles) => {
     const container = new Container();
     container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
