@@ -2,6 +2,7 @@ import {
   CITY_SCENE,
   CREDITS,
   EDITOR,
+  EDITOR_CAMERA,
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
@@ -129,6 +130,7 @@ function root(): ReactNode {
     return (
       <EditorApp
         editor={container.get(EDITOR)}
+        camera={container.get(EDITOR_CAMERA)}
         plans={container.get(PLAN_SERVICE)}
         options={{ api: params.api, pixelRatio: window.devicePixelRatio, look: params.look }}
         disclaimer={TRADEMARK_DISCLAIMER}

@@ -14,6 +14,7 @@ import {
   LineSegments,
   Mesh,
   MeshBasicNodeMaterial,
+  OrthographicCamera,
   PerspectiveCamera,
   Scene,
   SRGBColorSpace,
@@ -302,7 +303,7 @@ class VehicleRecord {
 export class ThreeSceneBackend implements ISceneBackend {
   private renderer: WebGPURenderer | undefined;
   private readonly scene = new Scene();
-  private readonly camera = new PerspectiveCamera(
+  private readonly perspective = new PerspectiveCamera(
     CAMERA_FOV_DEGREES,
     1,
     CAMERA_NEAR_LDU,
@@ -322,6 +323,17 @@ export class ThreeSceneBackend implements ISceneBackend {
   private readonly sun = new DirectionalLight(0xffffff, SUN_INTENSITY);
   private shadowNode: CSMShadowNode | undefined;
   private shadowFar = 0;
+  private readonly orthographic = new OrthographicCamera(
+    -1,
+    1,
+    1,
+    -1,
+    CAMERA_NEAR_LDU,
+    CAMERA_FAR_LDU,
+  );
+  private camera: PerspectiveCamera | OrthographicCamera = this.perspective;
+  private aspect = 1;
+  private orthoHalfHeight = 0;
   private ghost: Group | undefined;
   private ghostX = 0;
   private ghostZ = 0;
@@ -397,7 +409,7 @@ export class ThreeSceneBackend implements ISceneBackend {
       this.pipeline = new LookPipeline(
         renderer,
         this.scene,
-        this.camera,
+        this.perspective,
         config.look,
         SUN_DIRECTION,
         config.pixelRatio,
@@ -815,10 +827,18 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
     const camera = this.camera;
-    this.rayPoint.set(ndcX, ndcY, 0.5).unproject(camera).sub(camera.position).normalize();
-    out[0] = camera.position.x + this.renderOriginX;
-    out[1] = camera.position.y;
-    out[2] = camera.position.z + this.renderOriginZ;
+    if (camera === this.orthographic) {
+      this.rayPoint.set(ndcX, ndcY, -1).unproject(camera);
+      out[0] = this.rayPoint.x + this.renderOriginX;
+      out[1] = this.rayPoint.y;
+      out[2] = this.rayPoint.z + this.renderOriginZ;
+      camera.getWorldDirection(this.rayPoint);
+    } else {
+      this.rayPoint.set(ndcX, ndcY, 0.5).unproject(camera).sub(camera.position).normalize();
+      out[0] = camera.position.x + this.renderOriginX;
+      out[1] = camera.position.y;
+      out[2] = camera.position.z + this.renderOriginZ;
+    }
     out[3] = this.rayPoint.x;
     out[4] = this.rayPoint.y;
     out[5] = this.rayPoint.z;
@@ -1133,15 +1153,41 @@ export class ThreeSceneBackend implements ISceneBackend {
     return mesh;
   }
 
-  setView(eyeX: number, eyeY: number, eyeZ: number, atX: number, atY: number, atZ: number): void {
+  setView(
+    eyeX: number,
+    eyeY: number,
+    eyeZ: number,
+    atX: number,
+    atY: number,
+    atZ: number,
+    orthoHalfHeightLdu?: number,
+  ): void {
     this.eyeX = eyeX;
     this.eyeY = eyeY;
     this.eyeZ = eyeZ;
     this.rebaseIfFar();
-    this.camera.position.set(eyeX - this.renderOriginX, eyeY, eyeZ - this.renderOriginZ);
-    this.camera.lookAt(atX - this.renderOriginX, atY, atZ - this.renderOriginZ);
-    this.camera.updateMatrixWorld();
+    this.camera = orthoHalfHeightLdu === undefined ? this.perspective : this.orthographic;
+    if (orthoHalfHeightLdu !== undefined && orthoHalfHeightLdu !== this.orthoHalfHeight) {
+      this.orthoHalfHeight = orthoHalfHeightLdu;
+      this.fitOrthographic();
+    }
+    this.aim(this.perspective, eyeX, eyeY, eyeZ, atX, atY, atZ);
+    this.aim(this.orthographic, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.fitShadowRange();
+  }
+
+  private aim(
+    camera: PerspectiveCamera | OrthographicCamera,
+    eyeX: number,
+    eyeY: number,
+    eyeZ: number,
+    atX: number,
+    atY: number,
+    atZ: number,
+  ): void {
+    camera.position.set(eyeX - this.renderOriginX, eyeY, eyeZ - this.renderOriginZ);
+    camera.lookAt(atX - this.renderOriginX, atY, atZ - this.renderOriginZ);
+    camera.updateMatrixWorld();
   }
 
   private fitShadowRange(): void {
@@ -1160,6 +1206,15 @@ export class ThreeSceneBackend implements ISceneBackend {
       if (cascade.shadow) cascade.shadow.camera.far = depthRange;
     }
     if (shadowNode.camera !== null) shadowNode.updateFrustums();
+  }
+
+  private fitOrthographic(): void {
+    const camera = this.orthographic;
+    camera.top = this.orthoHalfHeight;
+    camera.bottom = -this.orthoHalfHeight;
+    camera.right = this.orthoHalfHeight * this.aspect;
+    camera.left = -camera.right;
+    camera.updateProjectionMatrix();
   }
 
   private rebaseIfFar(): void {
@@ -1221,8 +1276,10 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   resize(width: number, height: number): void {
     this.renderer?.setSize(width, height, false);
-    this.camera.aspect = width / Math.max(height, 1);
-    this.camera.updateProjectionMatrix();
+    this.aspect = width / Math.max(height, 1);
+    this.perspective.aspect = this.aspect;
+    this.perspective.updateProjectionMatrix();
+    this.fitOrthographic();
     const bufferWidth = this.renderer?.domElement.width ?? width;
     const bufferHeight = this.renderer?.domElement.height ?? height;
     this.focalLengthPx = bufferHeight / (2 * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360));
@@ -1240,13 +1297,19 @@ export class ThreeSceneBackend implements ISceneBackend {
     let near = 0;
     let mid = 0;
     let far = 0;
+    const orthographic = this.camera === this.orthographic;
+    const orthoStudPitchPx =
+      (STUD_PITCH_LDU * this.focalLengthPx * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360)) /
+      Math.max(this.orthoHalfHeight, CAMERA_NEAR_LDU);
     for (let i = 0; i < this.chunkList.length; i++) {
       const record = this.chunkList[i];
       if (!record) continue;
       const dx = Math.max(record.minX - this.eyeX, 0, this.eyeX - record.maxX);
       const dz = Math.max(record.minZ - this.eyeZ, 0, this.eyeZ - record.maxZ);
       const distance = Math.max(Math.hypot(dx, this.eyeY, dz), CAMERA_NEAR_LDU);
-      const studPitchPx = (STUD_PITCH_LDU * this.focalLengthPx) / distance;
+      const studPitchPx = orthographic
+        ? orthoStudPitchPx
+        : (STUD_PITCH_LDU * this.focalLengthPx) / distance;
       if (studPitchPx >= NEAR_MIN_STUD_PITCH_PX) {
         record.applyTier(TIER_NEAR);
         near++;
@@ -1273,7 +1336,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     this.throwIfFailed();
     this.assignTiers(out);
     renderer.info.reset();
-    if (this.pipeline) this.pipeline.render();
+    if (this.pipeline && this.camera === this.perspective) this.pipeline.render();
     else renderer.render(this.scene, this.camera);
     out.drawCalls = renderer.info.render.drawCalls;
     out.triangles = renderer.info.render.triangles;

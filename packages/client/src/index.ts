@@ -120,6 +120,7 @@ export {
   CITY_SCENE,
   CREDITS,
   EDITOR,
+  EDITOR_CAMERA,
   IMPORT_SCENE,
   MODEL_IMPORTER,
   MODEL_SCENE,
@@ -168,5 +169,12 @@ export {
   type KeyInput,
   type KeyPlatform,
 } from "./commands/key-chord.ts";
+export type {
+  CameraSnapshot,
+  IEditorCamera,
+  ScrollGesture,
+  ViewMode,
+  WheelInput,
+} from "./camera/editor-camera.ts";
 export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";

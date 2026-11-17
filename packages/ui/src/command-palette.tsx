@@ -7,6 +7,7 @@ import {
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
+  type IEditorCamera,
   type PaletteResult,
   type ShellCommandId,
 } from "@brr/client";
@@ -15,6 +16,7 @@ import { CommandKeys } from "./keys.tsx";
 
 interface CommandPaletteProps {
   readonly editor: IEditor;
+  readonly camera: IEditorCamera;
   readonly snapshot: EditorSnapshot;
   readonly recent: ReadonlyArray<string>;
   readonly onClose: () => void;
@@ -92,6 +94,7 @@ function CommandRow({
 
 export function CommandPalette({
   editor,
+  camera,
   snapshot,
   recent,
   onClose,
@@ -131,7 +134,7 @@ export function CommandPalette({
       return;
     }
     onClose();
-    runEditorAction(editor, id, eventTimeMs);
+    runEditorAction(editor, camera, id, eventTimeMs);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
