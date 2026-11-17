@@ -16,6 +16,7 @@ import {
   type DrawingKit,
   type EndGap,
   type TrackEnd,
+  placedPlanCells,
   planTrianglesOverlap,
   type BaseCells,
   type TrackMove,
@@ -47,6 +48,7 @@ import type { ColorTable } from "../scene/viewer-scene.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 import type { PlacedOverlap } from "./placed-chunks.ts";
 import {
+  localBoundsTriangles,
   localPlanTriangles,
   placedPlan,
   trackPlanTransform,
@@ -63,6 +65,7 @@ const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
 const FOOTPRINT_FLOATS = 4;
 const CELL_CACHE_LIMIT = 4096;
+const NO_CLIP = new Float64Array(0);
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -75,6 +78,7 @@ export interface KitPart {
   readonly yLdu: number;
   readonly heightLdu: number;
   readonly plan: Float64Array;
+  readonly bounds: Float64Array;
 }
 
 export type TrackSupportProbe = (cells: BaseCells) => TrackSupport;
@@ -85,6 +89,19 @@ export interface LaidTrackPiece {
   readonly cells: BaseCells;
   readonly bottomLdu: number;
   readonly topLdu: number;
+}
+
+export interface HeldTrackRequest {
+  readonly owner: number;
+  readonly label: string;
+  readonly catalogIndex: number;
+  readonly placement: Pose16;
+}
+
+interface HeldTrackPiece extends HeldTrackRequest {
+  readonly plan: PlacedPlan;
+  readonly boundsCells: BaseCells;
+  readonly ends: ReadonlyArray<Pose16>;
 }
 
 export interface TrackHost {
@@ -116,6 +133,7 @@ export type RunBlock =
       readonly kind: "crosses-track";
       readonly other: number;
       readonly otherId: string;
+      readonly inModel: string | null;
       readonly missing: BaseCells;
     });
 
@@ -338,6 +356,34 @@ function partBox(placed: Placed): WorldBox {
   };
 }
 
+function cellKey(cellX: number, cellZ: number): string {
+  return `${cellX},${cellZ}`;
+}
+
+function withoutCells(cells: BaseCells, remove: ReadonlyArray<BaseCells>): BaseCells {
+  if (remove.length === 0) return cells;
+  const drop = new Set<string>();
+  for (const other of remove) {
+    for (let c = 0; c < other.count; c++)
+      drop.add(cellKey(other.cellX[c] ?? 0, other.cellZ[c] ?? 0));
+  }
+  const keptX: number[] = [];
+  const keptZ: number[] = [];
+  for (let c = 0; c < cells.count; c++) {
+    const x = cells.cellX[c] ?? 0;
+    const z = cells.cellZ[c] ?? 0;
+    if (drop.has(cellKey(x, z))) continue;
+    keptX.push(x);
+    keptZ.push(z);
+  }
+  return {
+    count: keptX.length,
+    cellX: Int32Array.from(keptX),
+    cellZ: Int32Array.from(keptZ),
+    flat: new Uint8Array(keptX.length),
+  };
+}
+
 export function trackChunkKey(chunkX: number, chunkZ: number): number {
   return -1 - chunkKey(chunkX, chunkZ);
 }
@@ -347,6 +393,7 @@ export class TrackDrawing {
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
   private readonly byPieceId = new Map<string, KitPart>();
+  private readonly placeableParts: KitPart[] = [];
   readonly pieceSet: TrackPieceSet;
   private layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
@@ -355,6 +402,8 @@ export class TrackDrawing {
   private ends: Pose16[] = [];
   private gapList: ReadonlyArray<EndGap> = [];
   private piecePlans: PlacedPlan[] = [];
+  private held: ReadonlyArray<HeldTrackPiece> = [];
+  private combined: TrackLayout;
   private readonly planCache = new Map<string, PlacedPlan>();
   private drag: Drag | null = null;
   private lastSolveMs = 0;
@@ -371,15 +420,18 @@ export class TrackDrawing {
   ) {
     this.pieces = catalog.pieces;
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
+    this.combined = this.layout;
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
-      if (piece.system !== TRACK_SYSTEM || piece.status !== "certified") return;
-      const inKit = piece.kind === "straight" || piece.kind === "curve";
+      const certified = piece.system === TRACK_SYSTEM && piece.status === "certified";
+      const inKit = certified && (piece.kind === "straight" || piece.kind === "curve");
+      const held = parts.some((part) => part.id === piece.part);
+      if (!certified && !held) return;
       const partIndex = partForPiece(piece, parts);
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
-      if (part.producedColor === undefined) {
+      if (inKit && part.producedColor === undefined) {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
       }
       const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
@@ -390,15 +442,19 @@ export class TrackDrawing {
         piece,
         def,
         partIndex,
-        color: colors.indexOfCode(part.producedColor),
+        color: part.producedColor === undefined ? 0 : colors.indexOfCode(part.producedColor),
         yLdu: -part.boundsMin[1],
         heightLdu: Math.ceil(part.boundsMax[1] - part.boundsMin[1]),
         plan: localPlanTriangles(part),
+        bounds: localBoundsTriangles(part),
       };
       if (inKit) this.byDef.set(piece.id, kitPart);
       this.byCatalogIndex.set(catalogIndex, kitPart);
-      this.byPieceId.set(piece.id, kitPart);
-      placeable.push([catalogIndex, piece]);
+      if (certified) {
+        this.byPieceId.set(piece.id, kitPart);
+        placeable.push([catalogIndex, piece]);
+        this.placeableParts.push(kitPart);
+      }
     });
     this.pieceSet = new TrackPieceSet(placeable);
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
@@ -427,7 +483,7 @@ export class TrackDrawing {
   }
 
   pieceParts(): ReadonlyArray<KitPart> {
-    return [...this.byCatalogIndex.values()];
+    return this.placeableParts;
   }
 
   pieceByIndex(catalogIndex: number): KitPart {
@@ -560,6 +616,61 @@ export class TrackDrawing {
     return (spec?.connectors ?? []).map((_, c) => this.layout.connectorPose(piece, c));
   }
 
+  syncHeld(requests: ReadonlyArray<HeldTrackRequest>): void {
+    this.held = requests.flatMap((request) => {
+      const part = this.byCatalogIndex.get(request.catalogIndex);
+      if (!part) return [];
+      return [
+        {
+          ...request,
+          plan: this.planOf(part, request.placement),
+          boundsCells: this.boundsCellsOf(part, request.placement),
+          ends: this.connectorPoses(part, request.placement),
+        },
+      ];
+    });
+    this.recomputeEnds();
+  }
+
+  joinedLaidPieces(requests: ReadonlyArray<HeldTrackRequest>): ReadonlyArray<number> {
+    const ends: Pose16[] = [];
+    for (const request of requests) {
+      const part = this.byCatalogIndex.get(request.catalogIndex);
+      if (part) ends.push(...this.connectorPoses(part, request.placement));
+    }
+    const joined: number[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      const laid = this.laidConnectorPoses(p);
+      if (laid.some((a) => ends.some((b) => posesJoin16(a, b)))) joined.push(p);
+    }
+    return joined;
+  }
+
+  heldCells(requests: ReadonlyArray<HeldTrackRequest>): ReadonlySet<string> {
+    const cells = new Set<string>();
+    for (const request of requests) {
+      const part = this.byCatalogIndex.get(request.catalogIndex);
+      if (!part) continue;
+      const bounds = this.boundsCellsOf(part, request.placement);
+      for (let c = 0; c < bounds.count; c++) {
+        cells.add(cellKey(bounds.cellX[c] ?? 0, bounds.cellZ[c] ?? 0));
+      }
+    }
+    return cells;
+  }
+
+  private boundsCellsOf(part: KitPart, placement: Pose16): BaseCells {
+    return placedPlanCells(
+      part.bounds,
+      trackPlanTransform(placement, part.piece.partFrame),
+      NO_CLIP,
+    );
+  }
+
+  openEndPoses(): ReadonlyArray<Pose16> {
+    return this.ends;
+  }
+
   private crosses(
     a: PlacedPlan,
     aEnds: ReadonlyArray<Pose16>,
@@ -614,11 +725,39 @@ export class TrackDrawing {
       const { part, placement } = entry;
       const plan = this.planOf(part, placement);
       const at: RunPiece = { piece: i, pieceId: part.piece.id, pieces: entries.length };
-      const support = this.host.support(plan.support);
+      const pieceEnds = this.connectorPoses(part, placement);
+      const joinedHeld = this.held.filter((h) =>
+        h.ends.some((end) => pieceEnds.some((own) => posesJoin16(own, end))),
+      );
+      const checked = withoutCells(
+        plan.cells,
+        joinedHeld.map((h) => h.boundsCells),
+      );
+      for (const h of this.held) {
+        if (joinedHeld.includes(h)) continue;
+        const shared = this.crosses(plan, pieceEnds, h.plan, h.ends);
+        if (shared) {
+          const otherId = this.byCatalogIndex.get(h.catalogIndex)?.piece.id ?? "";
+          return {
+            ...at,
+            kind: "crosses-track",
+            other: -1,
+            otherId,
+            inModel: h.label,
+            missing: shared,
+          };
+        }
+      }
+      const support = this.host.support(
+        withoutCells(
+          plan.support,
+          joinedHeld.map((h) => h.boundsCells),
+        ),
+      );
       if (support.kind === "off-baseplate") {
         return { ...at, kind: "off-baseplate", cells: support.cells, missing: support.missing };
       }
-      const overlap = this.host.overlap(plan.cells, 0, part.heightLdu);
+      const overlap = this.host.overlap(checked, 0, part.heightLdu);
       if (overlap) {
         return {
           ...at,
@@ -632,14 +771,13 @@ export class TrackDrawing {
           },
         };
       }
-      const pieceEnds = this.connectorPoses(part, placement);
       for (const other of this.host.neighbours(plan.cells)) {
         const otherPlan = this.piecePlans[other];
         if (!otherPlan) continue;
         const shared = this.crosses(plan, pieceEnds, otherPlan, this.laidConnectorPoses(other));
         if (shared) {
           const otherId = this.placedAt(other).part.piece.id;
-          return { ...at, kind: "crosses-track", other, otherId, missing: shared };
+          return { ...at, kind: "crosses-track", other, otherId, inModel: null, missing: shared };
         }
       }
       for (let j = 0; j < plans.length; j++) {
@@ -654,6 +792,7 @@ export class TrackDrawing {
             kind: "crosses-track",
             other: -1 - j,
             otherId: earlierId,
+            inModel: null,
             missing: shared,
           };
         }
@@ -1010,7 +1149,7 @@ export class TrackDrawing {
     const graph = this.graph;
     for (let e = 0; e < graph.endCount; e++) {
       if ((graph.endPartner[e] ?? NO_END) === NO_END) continue;
-      const pose = this.layout.connectorPose(
+      const pose = this.combined.connectorPose(
         graph.endPlacement[e] ?? 0,
         graph.endConnector[e] ?? 0,
       );
@@ -1020,14 +1159,20 @@ export class TrackDrawing {
   }
 
   private recomputeEnds(): void {
-    this.graph = new TrackGraph(this.layout);
+    const combined = new TrackLayout(this.layout.pieces);
+    for (let p = 0; p < this.layout.count; p++) {
+      combined.place(this.layout.piece(p), this.layout.pose(p), this.layout.yPlates(p));
+    }
+    for (const h of this.held) combined.place(h.catalogIndex, h.placement, GROUND_PLATES);
+    this.combined = combined;
+    this.graph = new TrackGraph(combined);
     const ends: TrackEnd[] = [];
     for (const end of this.graph.openEnds) {
       const placement = this.graph.endPlacement[end] ?? 0;
       const connector = this.graph.endConnector[end] ?? 0;
       ends.push({
-        pose: this.layout.connectorPose(placement, connector),
-        yPlates: this.layout.yPlates(placement),
+        pose: combined.connectorPose(placement, connector),
+        yPlates: combined.yPlates(placement),
       });
     }
     this.ends = ends.map((end) => end.pose);
