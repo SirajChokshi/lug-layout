@@ -1,4 +1,4 @@
-import type { PartAsset } from "@brr/catalog";
+import type { PartShapeAsset } from "@brr/catalog";
 import { NO_STUD, type RoadSurface } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
@@ -24,7 +24,7 @@ export function roadSurface(
   instances: ChunkPartInstances,
   partBoxes: Float32Array,
   box: LocalBox,
-  parts: ReadonlyArray<PartAsset>,
+  parts: ReadonlyArray<PartShapeAsset>,
 ): RoadSurface {
   const minX = exactLdu(box.min[0], "surface min x");
   const minZ = exactLdu(box.min[2], "surface min z");

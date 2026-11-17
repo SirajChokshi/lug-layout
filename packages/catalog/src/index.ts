@@ -27,6 +27,7 @@ export type {
   ModelVoxels,
   PartModelLattice,
   PartAsset,
+  PartShapeAsset,
   PartBundle,
   PartFilter,
   PartMesh,

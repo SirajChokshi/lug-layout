@@ -240,6 +240,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       credits: manifest.credits,
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
+      trackShapes: manifest.trackShapes,
       milsEdgeRules: manifest.milsEdgeRules,
     };
   }
@@ -292,6 +293,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       credits: [...manifest.credits, ...compiledCredits],
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
+      trackShapes: manifest.trackShapes,
       milsEdgeRules: manifest.milsEdgeRules,
     };
   }
