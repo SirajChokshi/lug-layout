@@ -13,6 +13,7 @@ import {
   EditorHud,
   Inspector,
   PlacementToolbar,
+  PlacementRules,
   RoadJoins,
 } from "./editor-panels.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
@@ -96,7 +97,7 @@ export function EditorApp({
       data-ghost-rot={snapshot.ghostRot}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
-      data-refused={snapshot.refusedClicks}
+      data-refused={snapshot.refusals}
       data-road-joined={snapshot.roads.joinedCells}
       data-road-open={snapshot.roads.openCells}
       data-road-mismatch={snapshot.roads.mismatchedCells}
@@ -110,6 +111,7 @@ export function EditorApp({
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
+        <PlacementRules snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />
       </div>

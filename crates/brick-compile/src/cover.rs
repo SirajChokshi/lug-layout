@@ -380,6 +380,7 @@ pub struct CoverInstance<'a> {
     pub color: u32,
     pub part: usize,
     pub studs: &'a [Affine],
+    pub baseplate: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -388,6 +389,7 @@ pub struct ModelCells {
     pub width: usize,
     pub depth: usize,
     pub bottom_y: f64,
+    pub ground_y: Option<f64>,
     pub footprint: Vec<usize>,
     pub flat: Vec<usize>,
     pub column_bottom: Vec<i32>,
@@ -736,6 +738,31 @@ fn closed_below_all(
     closed
 }
 
+fn ground_top(instances: &[CoverInstance], boxes: &[[Vec3; 2]]) -> Option<f64> {
+    let upright = |instance: &CoverInstance| dot(up_of(instance.matrix), UP) >= UPRIGHT_COSINE;
+    let lowest = instances
+        .iter()
+        .zip(boxes)
+        .filter(|(instance, _)| upright(instance))
+        .map(|(_, [min, _])| min[1])
+        .fold(f64::INFINITY, f64::min);
+    let mut top: Option<f64> = None;
+    for (instance, [min, max]) in instances.iter().zip(boxes) {
+        if !upright(instance) || (min[1] - lowest).abs() > WELD_EPSILON_LDU {
+            continue;
+        }
+        if !instance.baseplate {
+            return None;
+        }
+        match top {
+            None => top = Some(max[1]),
+            Some(level) if (level - max[1]).abs() <= WELD_EPSILON_LDU => {}
+            Some(_) => return None,
+        }
+    }
+    top
+}
+
 pub fn model_cover(
     instances: &[CoverInstance],
     solids: &[PartSolid],
@@ -783,7 +810,9 @@ pub fn model_cover(
         .iter()
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
-    let cells = phase.map(|phase| model_cells(&boxes, &mut coverers, aabb, rest_y, phase));
+    let ground_y = ground_top(instances, &boxes);
+    let cells =
+        phase.map(|phase| model_cells(&boxes, &mut coverers, aabb, rest_y, ground_y, phase));
     ModelCover {
         visible,
         open_below,
@@ -796,6 +825,7 @@ fn model_cells(
     coverers: &mut Coverers,
     aabb: Bounds,
     bottom_y: f64,
+    ground_y: Option<f64>,
     phase: [u32; 2],
 ) -> ModelCells {
     let [phase_x, phase_z] = phase.map(f64::from);
@@ -828,7 +858,8 @@ fn model_cells(
 
     let mut column_bottom = vec![EMPTY_COLUMN; width * depth];
     let mut column_top = vec![EMPTY_COLUMN; width * depth];
-    let plates = |y: f64| (y - bottom_y) / PLATE_LDU;
+    let datum_y = ground_y.unwrap_or(bottom_y);
+    let plates = |y: f64| (y - datum_y) / PLATE_LDU;
     let slack = WELD_EPSILON_LDU / PLATE_LDU;
     for [min, max] in boxes {
         let (x0, x1) = overlapping_cells(min[0], max[0], origin[0], width);
@@ -853,6 +884,7 @@ fn model_cells(
         width,
         depth,
         bottom_y,
+        ground_y,
         footprint,
         flat,
         column_bottom,
@@ -947,6 +979,7 @@ mod tests {
                 color: *color,
                 part: *part,
                 studs: if i == 0 { studs } else { &[] },
+                baseplate: false,
             })
             .collect();
         model_cover(
@@ -1037,5 +1070,45 @@ mod tests {
             .expect("a phase gives cells");
         let lowest = -10.0 - 8.0 * cos - 20.0 * sin;
         assert!((cells.bottom_y - lowest).abs() < 1e-9, "{}", cells.bottom_y);
+    }
+
+    #[test]
+    fn a_model_standing_on_its_own_baseplates_measures_columns_from_their_top() {
+        let solids = [
+            solid([-20.0, -4.0, -20.0], [60.0, 0.0, 20.0], true, true, -4.0),
+            solid([-20.0, 0.0, -20.0], [20.0, 24.0, 20.0], true, false, 20.0),
+            solid([60.0, -4.0, -20.0], [100.0, 20.0, 20.0], true, true, 16.0),
+        ];
+        let identity = Affine::IDENTITY;
+        let cover = |parts: &[(usize, bool)]| {
+            let instances: Vec<CoverInstance> = parts
+                .iter()
+                .map(|&(part, baseplate)| CoverInstance {
+                    matrix: &identity,
+                    color: OPAQUE,
+                    part,
+                    studs: &[],
+                    baseplate,
+                })
+                .collect();
+            model_cover(
+                &instances,
+                &solids,
+                &Opacity::new([TRANS_CLEAR]),
+                Some([10, 10]),
+                STUD,
+            )
+            .cells
+            .expect("a phase gives cells")
+        };
+        let on_baseplate = cover(&[(0, true), (1, false)]);
+        assert_eq!(on_baseplate.ground_y, Some(0.0));
+        assert_eq!(on_baseplate.bottom_y, -4.0);
+        assert_eq!(on_baseplate.column_top, [3, 3, 0, 0, 3, 3, 0, 0]);
+        let beside_a_brick = cover(&[(0, true), (1, false), (2, false)]);
+        assert_eq!(
+            beside_a_brick.ground_y, None,
+            "a brick also stands on the rest plane"
+        );
     }
 }

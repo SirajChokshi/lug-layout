@@ -16,6 +16,7 @@ import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { roadSurface } from "./road-surface.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
+export type PlaceableLayer = "first" | "upper";
 
 export interface PlaceableCells {
   readonly cellX0: number;
@@ -23,6 +24,7 @@ export interface PlaceableCells {
   readonly width: number;
   readonly depth: number;
   readonly footprint: Uint8Array;
+  readonly baseplate: Uint8Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
   readonly footprintCells: number;
@@ -43,6 +45,7 @@ export interface Placeable {
   readonly group: string;
   readonly groupLabel: string;
   readonly kind: PlaceableKind;
+  readonly layer: PlaceableLayer;
   readonly worldColor: number;
   readonly parts: ChunkPartInstances;
   readonly studs: StudInstances;
@@ -135,6 +138,8 @@ function modelCells(
     for (const cell of cells.footprint) footprint[cell] = FOOTPRINT_ANTI_STUD;
     for (const cell of cells.flat) footprint[cell] = FOOTPRINT_FLAT;
   }
+  const baseplate = new Uint8Array(cells.width * cells.depth);
+  if (cells.groundY !== null) for (const cell of cells.flat) baseplate[cell] = 1;
   const columnBottom = new Int16Array(cells.columnBottom.length);
   const columnTop = new Int16Array(cells.columnTop.length);
   let heightPlates = 0;
@@ -155,6 +160,7 @@ function modelCells(
     width: cells.width,
     depth: cells.depth,
     footprint,
+    baseplate,
     columnBottom,
     columnTop,
     footprintCells: withFootprint ? cells.footprint.length : 0,
@@ -175,6 +181,7 @@ function partCells(part: PartAsset, shift: Vec3): PlaceableCells {
     width,
     depth,
     footprint: new Uint8Array(width * depth),
+    baseplate: new Uint8Array(width * depth).fill(isBaseplatePart(part) ? 1 : 0),
     columnBottom: new Int16Array(width * depth),
     columnTop: new Int16Array(width * depth).fill(heightPlates),
     footprintCells: 0,
@@ -256,25 +263,11 @@ function shiftedBox(min: Vec3, max: Vec3, shift: Vec3): LocalBox {
   };
 }
 
-function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | null {
-  const boxes = instanceBoxes(
-    {
-      originX: 0,
-      originZ: 0,
-      count: model.instanceCount,
-      partIndex: model.partIndex,
-      colorIndex: new Uint16Array(model.instanceCount),
-      matrices: model.matrices,
-    },
-    parts,
-  );
-  let top: number | null = null;
-  for (let i = 0; i < model.instanceCount; i++) {
-    if (parts[model.partIndex[i] ?? 0]?.role !== "ground") continue;
-    const y = boxes[i * BOX_FLOATS + 4] ?? 0;
-    top = top === null ? y : Math.max(top, y);
+function restingY(cells: ModelCells, name: string, role: ModelRole | undefined): number {
+  if (role === "mils-module" && cells.groundY === null) {
+    throw new Error(`MILS module ${name} does not stand on its own baseplate`);
   }
-  return top;
+  return cells.groundY ?? cells.restY;
 }
 
 function hasRoadPart(instances: ChunkPartInstances, parts: ReadonlyArray<PartAsset>): boolean {
@@ -286,18 +279,6 @@ function hasRoadPart(instances: ChunkPartInstances, parts: ReadonlyArray<PartAss
     if (part.role === "road") return true;
   }
   return false;
-}
-
-function restingY(
-  model: PartModel,
-  cells: ModelCells,
-  parts: ReadonlyArray<PartAsset>,
-  role: ModelRole | undefined,
-): number {
-  if (role !== "mils-module") return cells.restY;
-  const top = groundTop(model, parts);
-  if (top === null) throw new Error("a MILS module needs its own baseplate to stand on");
-  return top;
 }
 
 export function modelPlaceable(
@@ -313,7 +294,7 @@ export function modelPlaceable(
   if (lattice === null || cells === null) {
     throw new Error(`model ${name} has no stud lattice from the bake, so it cannot be placed`);
   }
-  const restingOn = restingY(model, cells, parts, role);
+  const restingOn = restingY(cells, name, role);
   const shift = modelFrameShift(lattice, cells, restingOn);
   const colorIndex = new Uint16Array(model.instanceCount);
   for (let i = 0; i < model.instanceCount; i++) {
@@ -338,12 +319,19 @@ export function modelPlaceable(
     group: id,
     groupLabel: label,
     kind: isModule ? "mils-module" : "model",
+    layer: cells.groundY === null ? "upper" : "first",
     worldColor: 0,
     parts: local,
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
-    cells: modelCells(cells, shift, name, (cells.restY - restingOn) / PLATE_LDU, !isModule),
+    cells: modelCells(
+      cells,
+      shift,
+      name,
+      ((cells.groundY ?? cells.restY) - restingOn) / PLATE_LDU,
+      !isModule,
+    ),
     box,
     partBoxes,
     frameShift: shift,
@@ -354,8 +342,18 @@ export function modelPlaceable(
 
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 
-function isBaseplate(part: PartAsset): boolean {
+export function isBaseplatePart(part: PartAsset): boolean {
   return part.boundsMax[1] - part.boundsMin[1] < PLATE_LDU;
+}
+
+function restingOnTable(part: PartAsset, tableY: number): number {
+  if (!isBaseplatePart(part)) return tableY - part.boundsMin[1];
+  if (part.boundsMax[1] !== 0) {
+    throw new Error(
+      `${part.id} is a baseplate whose top face is at y = ${part.boundsMax[1]}, not 0`,
+    );
+  }
+  return 0;
 }
 
 export function partPlaceable(
@@ -365,8 +363,9 @@ export function partPlaceable(
   colorName: string,
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
+  tableY: number,
 ): Placeable {
-  const shift: Vec3 = [0, isBaseplate(part) ? 0 : -part.boundsMin[1], 0];
+  const shift: Vec3 = [0, restingOnTable(part, tableY), 0];
   const local: ChunkPartInstances = {
     originX: 0,
     originZ: 0,
@@ -385,6 +384,7 @@ export function partPlaceable(
     group: part.id,
     groupLabel: `${part.id.replace("ldraw:", "")} ${part.title}`,
     kind: isRoad ? "road-plate" : "baseplate",
+    layer: "first",
     worldColor: ldrawColor,
     parts: local,
     studs,

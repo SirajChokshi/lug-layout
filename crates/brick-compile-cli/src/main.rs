@@ -6,7 +6,9 @@ use std::process::ExitCode;
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::colors::parse_ldconfig;
 use brick_compile::compile::modified_note;
-use brick_compile::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
+use brick_compile::cover::{
+    model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape, PLATE_LDU,
+};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
@@ -112,6 +114,13 @@ struct PartShape {
     bounds: [Vec3; 2],
 }
 
+impl PartShape {
+    fn is_baseplate(&self) -> bool {
+        let [min, max] = self.bounds;
+        max[1] - min[1] < PLATE_LDU && !self.studs.is_empty()
+    }
+}
+
 fn part_shape(part: &CompiledPart) -> PartShape {
     PartShape {
         studs: part
@@ -157,6 +166,7 @@ fn cover_json(cover: &ModelCover) -> Value {
             "origin": cells.origin,
             "size": [cells.width, cells.depth],
             "bottomY": cells.bottom_y,
+            "groundY": cells.ground_y,
             "footprint": cells.footprint,
             "flat": cells.flat,
             "columnBottom": cells.column_bottom,
@@ -178,6 +188,7 @@ fn cover_summary(cover: &ModelCover) -> Value {
             "footprintCells": cells.footprint.len(),
             "flatCells": cells.flat.len(),
             "restY": cells.bottom_y,
+            "groundY": cells.ground_y,
             "size": [cells.width, cells.depth],
             "heightPlates": cells.height_plates(),
         })
@@ -619,11 +630,13 @@ fn run(args: &Args) -> Result<(), String> {
         let cover_instances: Vec<CoverInstance> = drawn
             .iter()
             .zip(&cover_slots)
-            .map(|(instance, &slot)| CoverInstance {
+            .zip(&instance_global_parts)
+            .map(|((instance, &slot), &index)| CoverInstance {
                 matrix: &instance.matrix,
                 color: instance.color,
                 part: slot,
                 studs: &cover_parts.studs[slot],
+                baseplate: shapes[index].is_baseplate(),
             })
             .collect();
         let cached = args

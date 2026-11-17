@@ -24,6 +24,12 @@ export interface PlacementRequest {
   readonly to: PlacementPose | null;
 }
 
+export interface PendingChange {
+  readonly placement: PlacementRef;
+  readonly from: PlacementPose | null;
+  readonly to: PlacementPose | null;
+}
+
 export interface AppliedChange {
   readonly placement: PlacementRef;
   readonly from: PlacementPose | null;
@@ -95,6 +101,20 @@ export class EditHistory {
 
   nextRedo(): EditKind | null {
     return this.undone.at(-1)?.kind ?? null;
+  }
+
+  peekUndo(): ReadonlyArray<PendingChange> | null {
+    const edit = this.done.at(-1);
+    return edit
+      ? edit.changes.map((c) => ({ placement: c.ref, from: c.after, to: c.before }))
+      : null;
+  }
+
+  peekRedo(): ReadonlyArray<PendingChange> | null {
+    const edit = this.undone.at(-1);
+    return edit
+      ? edit.changes.map((c) => ({ placement: c.ref, from: c.before, to: c.after }))
+      : null;
   }
 
   place(pose: PlacementPose): AppliedEdit {
