@@ -20,6 +20,7 @@ export type {
 } from "./scene/viewer-scene.ts";
 export type { ITrackScene } from "./scene/track-scene.ts";
 export type { CityCamera, CityRequest, ICityScene } from "./scene/city-scene.ts";
+export type { ILayoutScene, LayoutRequest } from "./scene/layout-scene.ts";
 export type { PlacementDump } from "./scene/placements.ts";
 export type { IModelScene, ModelCamera, ModelView } from "./scene/model-scene.ts";
 export type { ICredits } from "./credits/credits-service.ts";
@@ -133,6 +134,7 @@ export {
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
+  LAYOUT_SCENE,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PART_DISPLAY_SCENE,
