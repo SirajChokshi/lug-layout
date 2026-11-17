@@ -11,7 +11,7 @@ use brick_compile::cover::{
 };
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
-use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
+use brick_compile::ldraw::{identity_redirect, normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, ModelInstance};
 use brick_compile::vehicle::{
     detect_vehicles, GuideKind, RailHeadBand, Vehicle, VehicleSignatures,
@@ -252,6 +252,11 @@ fn compile_entry(
     summary["license"] = json!(header.license);
     let shape = part_shape(&compiled);
     summary["baseplate"] = json!(shape.is_baseplate());
+    let alias = library
+        .source(&compiled.path)
+        .and_then(|source| identity_redirect(&parse_ldraw(source)))
+        .map(|target| format!("ldraw:{target}"));
+    summary["aliasOf"] = json!(alias);
     Ok((summary, shape))
 }
 
