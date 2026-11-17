@@ -162,13 +162,7 @@ export {
   type HudRegion,
   type PanelRect,
 } from "./layout/hud-region.ts";
-export {
-  EMPTY_HOTBAR,
-  HOTBAR_SLOTS,
-  hotbarRecent,
-  hotbarWith,
-  type Hotbar,
-} from "./commands/hotbar.ts";
+export { EMPTY_HOTBAR, HOTBAR_SLOTS, hotbarWith, type Hotbar } from "./commands/hotbar.ts";
 export {
   toolHints,
   type ToolHint,

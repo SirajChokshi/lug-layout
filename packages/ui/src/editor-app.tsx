@@ -1,12 +1,11 @@
 import {
-  hotbarRecent,
   type EditorOptions,
   type IEditor,
   type IEditorCamera,
   type IPlanService,
   type ShellCommandId,
 } from "@brr/client";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
@@ -26,6 +25,7 @@ import { useSafeArea } from "./safe-area.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
 import { useHotbar } from "./use-hotbar.ts";
+import { useRecentItems } from "./use-recent-items.ts";
 import { ViewControls } from "./view-controls.tsx";
 
 interface EditorAppProps {
@@ -75,7 +75,7 @@ export function EditorApp({
 }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   const hotbar = useHotbar(snapshot.activeItem);
-  const recent = useMemo(() => hotbarRecent(hotbar), [hotbar]);
+  const recent = useRecentItems(snapshot.activeItem);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const toggleOverlay = useCallback(

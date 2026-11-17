@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_HOTBAR, HOTBAR_SLOTS, hotbarRecent, hotbarWith, type Hotbar } from "./hotbar.ts";
+import { EMPTY_HOTBAR, HOTBAR_SLOTS, hotbarWith, type Hotbar } from "./hotbar.ts";
 
 function picks(ids: ReadonlyArray<string>, from: Hotbar = EMPTY_HOTBAR): Hotbar {
   return ids.reduce(hotbarWith, from);
@@ -17,9 +17,5 @@ describe("hotbar", () => {
     expect(hotbar.slots).toHaveLength(HOTBAR_SLOTS);
     expect(hotbar.slots[0]).toBe("part-1");
     expect(hotbar.slots[1]).toBe("new");
-  });
-
-  it("lists parts most recently used first", () => {
-    expect(hotbarRecent(picks(["a", "b", "c", "a"]))).toEqual(["a", "c", "b"]);
   });
 });

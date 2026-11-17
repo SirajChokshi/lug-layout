@@ -7,7 +7,7 @@ import {
   type HudRegion,
   type ToolHint,
 } from "@brr/client";
-import { useRef, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
 import { Chord } from "./keys.tsx";
 import { useHudRegion } from "./use-hud-region.ts";
 
@@ -19,6 +19,7 @@ interface ToolHudProps {
 
 const SHAPE_PX = 22;
 const MIN_SHAPE_PX = 6;
+const SLOT_BADGE_PX = 8;
 
 function hintKey(hint: ToolHint): string {
   return hint.kind === "key" ? hint.command : hint.gesture;
@@ -59,6 +60,25 @@ function bandStyle(region: HudRegion | null): CSSProperties | undefined {
   };
 }
 
+function fitCard(card: HTMLDivElement | null): void {
+  if (!card) return;
+  delete card.dataset["compact"];
+  if (card.scrollHeight > card.clientHeight + 1) card.dataset["compact"] = "";
+}
+
+function revealSlot(list: HTMLOListElement | null, item: string): void {
+  const slot = list?.querySelector(`[data-item="${CSS.escape(item)}"]`);
+  const card = list?.closest(".tool-hud");
+  if (!slot || !card) return;
+  const slotBox = slot.getBoundingClientRect();
+  const cardBox = card.getBoundingClientRect();
+  if (slotBox.top - SLOT_BADGE_PX < cardBox.top) {
+    card.scrollTop -= cardBox.top - slotBox.top + SLOT_BADGE_PX;
+  } else if (slotBox.bottom > cardBox.bottom) {
+    card.scrollTop += slotBox.bottom - cardBox.bottom;
+  }
+}
+
 function HotbarSlots({ snapshot, hotbar, onPickSlot }: ToolHudProps) {
   const { keys } = commandSpec("pick-slot");
   const items = hotbar.slots.map((id) => snapshot.catalog.find((entry) => entry.id === id));
@@ -66,8 +86,13 @@ function HotbarSlots({ snapshot, hotbar, onPickSlot }: ToolHudProps) {
     1,
     ...items.filter(hasFootprint).map((item) => Math.max(item.studsWide, item.studsDeep)),
   );
+  const listRef = useRef<HTMLOListElement>(null);
+  const active = snapshot.activeItem;
+  useEffect(() => {
+    if (active !== null) revealSlot(listRef.current, active);
+  }, [active]);
   return (
-    <ol className="hotbar" aria-label="Hotbar">
+    <ol ref={listRef} className="hotbar" aria-label="Hotbar">
       {hotbar.slots.map((id, slot) => {
         const item = items[slot];
         const label = (item?.label ?? id).replaceAll("_", " ");
@@ -101,11 +126,13 @@ function HotbarSlots({ snapshot, hotbar, onPickSlot }: ToolHudProps) {
 export function ToolHud(props: ToolHudProps) {
   const view = toolHints(props.snapshot);
   const bandRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const region = useHudRegion(bandRef);
+  useLayoutEffect(() => fitCard(cardRef.current));
   const title = view.detail === null ? view.title : `${view.title} · ${view.detail}`;
   return (
     <div ref={bandRef} className="tool-band" data-fits={region !== null} style={bandStyle(region)}>
-      <div className="tool-hud" data-tone={view.tone}>
+      <div ref={cardRef} className="tool-hud" data-tone={view.tone}>
         {props.hotbar.slots.length > 0 && <HotbarSlots {...props} />}
         <div className="tool-status" role="status" aria-live="polite">
           <span className="tool-title" title={title}>

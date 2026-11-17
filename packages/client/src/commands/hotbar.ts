@@ -31,10 +31,3 @@ export function hotbarWith(hotbar: Hotbar, id: string): Hotbar {
   lastUsed[slot] = clock;
   return { slots, lastUsed, clock };
 }
-
-export function hotbarRecent(hotbar: Hotbar): ReadonlyArray<string> {
-  return hotbar.slots
-    .map((id, slot) => ({ id, used: hotbar.lastUsed[slot] ?? 0 }))
-    .toSorted((a, b) => b.used - a.used)
-    .map((entry) => entry.id);
-}
