@@ -17,7 +17,9 @@ import {
   type BackendInfo,
   type BufferMemory,
   type ISceneBackend,
+  type GeometrySet,
   type LookSettings,
+  type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
 import { Container } from "inversify";
@@ -154,7 +156,10 @@ class HeadlessBackend implements ISceneBackend {
       look: NO_LOOK,
     };
   }
-  setPalette(): void {}
+  palette: PartPalette | null = null;
+  setPalette(palette: PartPalette): void {
+    this.palette = palette;
+  }
   setChunk(): void {}
   deleteChunk(): void {}
   setGhost(): void {}
@@ -188,6 +193,10 @@ class HeadlessBackend implements ISceneBackend {
   }
   forceTier(): void {}
   setFarModel(): void {}
+}
+
+function geometryPartIds(set: GeometrySet | undefined): ReadonlyArray<string> | undefined {
+  return set?.parts.map((part) => part.id);
 }
 
 afterEach(() => {
@@ -257,6 +266,14 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
     { name: STUDLESS_SET, reason: "no stud lattice from the bake" },
   ]);
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
+}, 120_000);
+
+it("lists the same parts in the same order in the near and far palettes once a train set is loaded", async () => {
+  const { editor, backend } = await startEditor();
+
+  expect(editor.playSetup()?.models.map((model) => model.name)).toContain(STUDLESS_SET);
+  expect(geometryPartIds(backend.palette?.far)).toEqual(geometryPartIds(backend.palette?.detailed));
+  expect(backend.palette?.detailed.parts.length).toBeGreaterThan(0);
 }, 120_000);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
