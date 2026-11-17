@@ -33,7 +33,7 @@
 - **Kept: translucent** counts studs that would be culled again if translucent colours could cover (`bake/witness-and-audit-output.txt`).
 - **The critic's own `below_witnesses`** (60 LDU free path; their code applied unchanged in a scratch copy, `bake/critic-witness-and-dense-audit.patch`) finds **0** visible culled studs in all 17 models. On `7bc8553` it found 2,868.
 - **Residual from a denser audit:** an independent test denser than the shipped one in every dimension (16 heights, 128 azimuths offset half a step, 1.25° elevation steps, 60 LDU) ran on every 10th culled stud, 1,982 in all.
-  - It finds 10 with an escape window narrower than the shipped sampling (`AUDITSAMPLE` lines), about 0.5%, so roughly 100 of the 19,865 culled studs.
+  - It finds 9 with an escape window narrower than the shipped sampling (`AUDITSAMPLE` lines), about 0.45%, so roughly 90 of the 19,865 culled studs.
   - These are pinhole and grazing gaps only a few degrees wide. One such case is a 7 px sliver in 10218-1 from below, which I traced and which the shipped sampling now keeps.
 
 ## From below in the real app (`?model=<set>&view=below&measure=1&warmup=1&frames=N`, N = 1–4)
