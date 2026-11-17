@@ -157,8 +157,8 @@ Older releases stay in D1 until their tables are dropped by hand; their SQLite f
 - **Public access.** Browsers fetch the objects directly, so the bucket needs a public domain. It's served on its r2.dev domain while `part_bundle_r2_dev` is true, which is the default. Cloudflare rate-limits r2.dev and recommends a custom domain for production. When `part_bundle_domain` is set (with `zone_id`), the bucket is also served on that domain, which goes through Cloudflare's cache. Terraform refuses a plan that would leave the bucket with no public domain.
 - **Switching from r2.dev to a custom domain.** Apps bake the base URL in at build time, so r2.dev has to stay on until nothing loads from it:
   1. Set `part_bundle_domain` and apply. `part_bundle_r2_dev` stays true, so both domains serve the same objects.
-  2. Set Vercel's `VITE_BUNDLE_BASE_URL` to the new `part_bundle_base_url` output and redeploy.
+  2. Commit the new `part_bundle_base_url` output as `public_base_url` in `part-bundles.json`, then redeploy Vercel Production.
   3. Set `part_bundle_r2_dev` to false and apply, but only once no deployment you might serve or roll back to was built against r2.dev. Such deployments lose their parts when r2.dev goes off.
 - **CORS.** `GET` and `HEAD` from any origin. The objects are public and immutable.
 - **Caching.** The uploader stores every object with `Cache-Control: public, max-age=31536000, immutable`. Manifests can be immutable too, because their name changes whenever their inputs do.
-- **The app's URL.** The `part_bundle_base_url` output is the web app's `VITE_BUNDLE_BASE_URL` in Vercel Production.
+- **The app's URL.** `public_base_url` in `part-bundles.json` is a committed copy of the `part_bundle_base_url` output. Terraform doesn't read it. The Vercel build and the part bundle workflow do, so neither needs a variable set.
