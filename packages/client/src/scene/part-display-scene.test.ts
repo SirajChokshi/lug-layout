@@ -32,6 +32,10 @@ class RecordingBackend implements ISceneBackend {
     throw new Error("not used");
   }
   setPalette(): void {}
+  addParts(): void {}
+  setPartMeshes(): void {}
+  setFarStuds(): void {}
+  setFarModelMesh(): void {}
   setChunk(_key: number, chunk: ChunkInstances): void {
     this.chunks.push(chunk);
   }

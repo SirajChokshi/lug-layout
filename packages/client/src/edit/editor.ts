@@ -44,6 +44,7 @@ import {
   type GraphicsApi,
   type LookSettings,
   type ISceneBackend,
+  type PartMeshUpdate,
   type WorldBox,
 } from "@brr/render";
 import { decode, issueText } from "@brr/schema/decode";
@@ -320,6 +321,8 @@ function farTierModelNames(near: NearModels): ReadonlyArray<string> {
   return [...kept, ...trains];
 }
 
+export type FarTierStatus = "loading" | "ready" | "unavailable";
+
 interface FarTier {
   readonly bundle: PartBundle;
   readonly palette: MergedParts;
@@ -409,6 +412,7 @@ export interface EditorSnapshot {
   readonly stats: EditorStats | null;
   readonly studs: StudTotals | null;
   readonly tier: ChunkTier | null;
+  readonly farTier: FarTierStatus;
   readonly farTierError: string | null;
   readonly measuring: boolean;
   readonly measurement: FrameMeasurement | null;
@@ -731,6 +735,7 @@ export class Editor implements IEditor {
     stats: null,
     studs: null,
     tier: null,
+    farTier: "loading",
     farTierError: null,
     measuring: false,
     measurement: null,
@@ -825,6 +830,7 @@ export class Editor implements IEditor {
   private statsSince = 0;
   private bomTables: EditorBomTables | null = null;
   private readonly notDrawnByPlaceable = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
+  private readonly modelPlaceables = new Map<string, Placeable>();
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -871,14 +877,7 @@ export class Editor implements IEditor {
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
       const near = await this.loadNearModels(bundle);
-      const far = await this.loadFarTier(farTierModelNames(near));
-      const { placeables, skipped, trains } = this.buildPlaceables(
-        bundle,
-        palette,
-        colors,
-        near,
-        far,
-      );
+      const { placeables, skipped, trains } = this.buildPlaceables(bundle, palette, colors, near);
       this.placeables = placeables;
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.play = { models: trains, parts: palette.parts, colors };
@@ -893,12 +892,6 @@ export class Editor implements IEditor {
       );
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
-        ...(far
-          ? {
-              far: { parts: far.palette.parts, studPrimitives: far.bundle.studPrimitives },
-              farModels: far.meshes,
-            }
-          : {}),
         colorsSrgb: colors.toSrgb(),
         colorsAlpha: colors.toAlpha(),
         ldrawColors: ldrawColors(bundle),
@@ -934,9 +927,42 @@ export class Editor implements IEditor {
       this.resizeToCanvas();
       this.camera.frame(performance.now());
       requestAnimationFrame(this.step);
+      void this.streamFarTier(palette, near);
     } catch (error) {
       this.update({ status: "error", error: String(error) });
     }
+  }
+
+  private async streamFarTier(palette: MergedParts, near: NearModels): Promise<void> {
+    const far = await this.loadFarTier(farTierModelNames(near));
+    if (!far) {
+      this.update({ farTier: "unavailable" });
+      return;
+    }
+    try {
+      this.applyFarTier(far, palette);
+      this.update({ farTier: "ready" });
+    } catch (error) {
+      this.update({ farTier: "unavailable", farTierError: errorText(error) });
+    }
+  }
+
+  private applyFarTier(far: FarTier, palette: MergedParts): void {
+    const farParts = new Map(far.palette.parts.map((part) => [part.id, part]));
+    const updates: PartMeshUpdate[] = [];
+    palette.parts.forEach((part, index) => {
+      const farPart = farParts.get(part.id);
+      if (farPart) updates.push({ index, level: "far", part: farPart });
+    });
+    this.backend.setPartMeshes(updates);
+    far.meshes.forEach((mesh, index) => this.backend.setFarModelMesh(index, mesh));
+    this.backend.setFarStuds(far.bundle.studPrimitives);
+    const farModels = new Map<Placeable, number>();
+    for (const [name, placeable] of this.modelPlaceables) {
+      const model = far.meshIndex.get(name);
+      if (model !== undefined) farModels.set(placeable, model);
+    }
+    this.placed.useFarModels(farModels);
   }
 
   private baseplateBottomY(): number {
@@ -1007,7 +1033,6 @@ export class Editor implements IEditor {
     palette: MergedParts,
     colors: ColorTable,
     near: NearModels,
-    far: FarTier | null,
   ): LoadedCatalog {
     const groundParts = bundle.parts
       .filter((part) => part.role === "ground")
@@ -1038,9 +1063,10 @@ export class Editor implements IEditor {
         credit,
         palette.parts,
         colors,
-        far?.meshIndex.get(entry.name) ?? null,
+        null,
       );
       this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
+      this.modelPlaceables.set(entry.name, placeable);
       placeables.push(placeable);
     }
     const trains = near.trains.map(({ bundle: modelBundle, entry, model }) =>

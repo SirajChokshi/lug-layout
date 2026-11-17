@@ -1,9 +1,11 @@
 import {
   PART_BUNDLE_LOADER,
   type IPartBundleLoader,
+  type PartAsset,
   type PartBundle,
   type PartFilter,
   type PartMesh,
+  type StudPrimitiveAsset,
 } from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
 import { EditHistory, World } from "@brr/domain";
@@ -18,6 +20,7 @@ import {
   type FarModelPlacement,
   type FrameStats,
   type ISceneBackend,
+  type PartMeshUpdate,
   type PartPalette,
   type PlanOverlay,
   type RebaseEvent,
@@ -111,6 +114,18 @@ class ChunkCapture implements ISceneBackend {
   }
   setPalette(palette: PartPalette): void {
     this.inner.setPalette(palette);
+  }
+  addParts(parts: ReadonlyArray<PartAsset>): void {
+    this.inner.addParts(parts);
+  }
+  setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
+    this.inner.setPartMeshes(updates);
+  }
+  setFarStuds(studPrimitives: ReadonlyArray<StudPrimitiveAsset>): void {
+    this.inner.setFarStuds(studPrimitives);
+  }
+  setFarModelMesh(modelIndex: number, mesh: PartMesh): void {
+    this.inner.setFarModelMesh(modelIndex, mesh);
   }
   setChunk(key: number, chunk: ChunkInstances): void {
     this.chunks.set(key, chunk);
