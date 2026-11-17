@@ -14,6 +14,7 @@ import {
   type BackendInfo,
   type BufferMemory,
   type ISceneBackend,
+  type LookSettings,
   type RebaseEvent,
 } from "@brr/render";
 import { STUD_LDU } from "@brr/math";
@@ -25,6 +26,14 @@ import { mainThreadModules } from "../client.module.ts";
 import { EDITOR } from "../tokens.ts";
 import { TRACK_ITEM_ID, type IEditor } from "./editor.ts";
 
+const NO_LOOK: LookSettings = {
+  plastic: false,
+  gtao: false,
+  outlines: false,
+  bevel: false,
+  shadows: false,
+  oit: false,
+};
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const GREEN_GROCER = "10185-1";
 const MARKET_STREET = "10190-1";
@@ -84,7 +93,13 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
 class TopDownBackend implements ISceneBackend {
   async init(): Promise<BackendInfo> {
-    return { requestedApi: "webgl2", activeApi: "webgl2", adapter: "none", backgroundSrgb: 0 };
+    return {
+      requestedApi: "webgl2",
+      activeApi: "webgl2",
+      adapter: "none",
+      backgroundSrgb: 0,
+      look: NO_LOOK,
+    };
   }
   setPalette(): void {}
   setChunk(): void {}
@@ -148,7 +163,7 @@ async function startEditor(models: ReadonlyArray<string>): Promise<IEditor> {
     clientHeight: 480,
     dataset: {},
   } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1 });
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK });
   await exactShapesLoaded(editor);
   return editor;
 }

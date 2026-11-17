@@ -1,5 +1,5 @@
 import { STUD_LDU } from "@brr/math";
-import { REPRESENTATION_EPSILON_LDU, packedCellKey, type PlaneTransform } from "./cell-raster.ts";
+import { REPRESENTATION_EPSILON_LDU, type PlaneTransform } from "./cell-raster.ts";
 
 export interface SolidSamples {
   readonly samplesPerStud: number;
@@ -113,51 +113,107 @@ export function solidsMeetInCell(
   return false;
 }
 
+interface TriangleCells {
+  readonly x0: number;
+  readonly x1: number;
+  readonly z0: number;
+  readonly z1: number;
+}
+
+function triangleCells(t: Float64Array, o: number): TriangleCells {
+  return {
+    x0: Math.floor(Math.min(t[o] ?? 0, t[o + 3] ?? 0, t[o + 6] ?? 0) / STUD_LDU),
+    x1: Math.floor(Math.max(t[o] ?? 0, t[o + 3] ?? 0, t[o + 6] ?? 0) / STUD_LDU),
+    z0: Math.floor(Math.min(t[o + 2] ?? 0, t[o + 5] ?? 0, t[o + 8] ?? 0) / STUD_LDU),
+    z1: Math.floor(Math.max(t[o + 2] ?? 0, t[o + 5] ?? 0, t[o + 8] ?? 0) / STUD_LDU),
+  };
+}
+
 export class PlanShell {
-  private readonly byCell = new Map<number, Int32Array>();
   private readonly triangles: Float64Array;
+  private readonly cellX0: number;
+  private readonly cellZ0: number;
+  private readonly width: number;
+  private readonly depth: number;
+  private readonly cellStart: Int32Array;
+  private readonly cellTriangles: Int32Array;
+  readonly bottomLdu: number;
 
   constructor(triangles: Float64Array) {
     this.triangles = triangles;
-    const lists = new Map<number, number[]>();
-    for (let t = 0; t + TRIANGLE_FLOATS <= triangles.length; t += TRIANGLE_FLOATS) {
-      const x0 = Math.min(triangles[t] ?? 0, triangles[t + 3] ?? 0, triangles[t + 6] ?? 0);
-      const x1 = Math.max(triangles[t] ?? 0, triangles[t + 3] ?? 0, triangles[t + 6] ?? 0);
-      const z0 = Math.min(triangles[t + 2] ?? 0, triangles[t + 5] ?? 0, triangles[t + 8] ?? 0);
-      const z1 = Math.max(triangles[t + 2] ?? 0, triangles[t + 5] ?? 0, triangles[t + 8] ?? 0);
-      for (let cz = Math.floor(z0 / STUD_LDU); cz <= Math.floor(z1 / STUD_LDU); cz++) {
-        for (let cx = Math.floor(x0 / STUD_LDU); cx <= Math.floor(x1 / STUD_LDU); cx++) {
-          const key = packedCellKey(cx, cz);
-          let list = lists.get(key);
-          if (!list) {
-            list = [];
-            lists.set(key, list);
-          }
-          list.push(t);
+    const count = Math.floor(triangles.length / TRIANGLE_FLOATS);
+    const cells: TriangleCells[] = [];
+    let bottom = Number.POSITIVE_INFINITY;
+    let x0 = 0;
+    let x1 = -1;
+    let z0 = 0;
+    let z1 = -1;
+    for (let k = 0; k < count; k++) {
+      const o = k * TRIANGLE_FLOATS;
+      bottom = Math.min(
+        bottom,
+        triangles[o + 1] ?? 0,
+        triangles[o + 4] ?? 0,
+        triangles[o + 7] ?? 0,
+      );
+      const c = triangleCells(triangles, o);
+      cells.push(c);
+      x0 = k === 0 ? c.x0 : Math.min(x0, c.x0);
+      x1 = k === 0 ? c.x1 : Math.max(x1, c.x1);
+      z0 = k === 0 ? c.z0 : Math.min(z0, c.z0);
+      z1 = k === 0 ? c.z1 : Math.max(z1, c.z1);
+    }
+    this.cellX0 = x0;
+    this.cellZ0 = z0;
+    this.width = x1 - x0 + 1;
+    this.depth = z1 - z0 + 1;
+    this.bottomLdu = bottom;
+    const counts = new Int32Array(this.width * this.depth + 1);
+    for (const c of cells) {
+      for (let cz = c.z0; cz <= c.z1; cz++) {
+        for (let cx = c.x0; cx <= c.x1; cx++) {
+          const at = (cz - z0) * this.width + (cx - x0) + 1;
+          counts[at] = (counts[at] ?? 0) + 1;
         }
       }
     }
-    for (const [key, list] of lists) this.byCell.set(key, Int32Array.from(list));
+    for (let i = 1; i < counts.length; i++) counts[i] = (counts[i] ?? 0) + (counts[i - 1] ?? 0);
+    this.cellStart = counts.slice();
+    const fill = counts.slice();
+    this.cellTriangles = new Int32Array(counts.at(-1) ?? 0);
+    cells.forEach((c, k) => {
+      for (let cz = c.z0; cz <= c.z1; cz++) {
+        for (let cx = c.x0; cx <= c.x1; cx++) {
+          const cell = (cz - z0) * this.width + (cx - x0);
+          this.cellTriangles[fill[cell] ?? 0] = k * TRIANGLE_FLOATS;
+          fill[cell] = (fill[cell] ?? 0) + 1;
+        }
+      }
+    });
   }
 
   spanAt(x: number, z: number, out: Float64Array): boolean {
-    const list = this.byCell.get(packedCellKey(Math.floor(x / STUD_LDU), Math.floor(z / STUD_LDU)));
-    if (!list) return false;
+    const cx = Math.floor(x / STUD_LDU) - this.cellX0;
+    const cz = Math.floor(z / STUD_LDU) - this.cellZ0;
+    if (cx < 0 || cz < 0 || cx >= this.width || cz >= this.depth) return false;
+    const cell = cz * this.width + cx;
+    const from = this.cellStart[cell] ?? 0;
+    const to = this.cellStart[cell + 1] ?? 0;
     const t = this.triangles;
     let bottom = Number.POSITIVE_INFINITY;
     let top = Number.NEGATIVE_INFINITY;
-    for (let k = 0; k < list.length; k++) {
-      const o = list[k] ?? 0;
+    for (let k = from; k < to; k++) {
+      const o = this.cellTriangles[k] ?? 0;
       const ax = t[o] ?? 0;
       const az = t[o + 2] ?? 0;
       const bx = t[o + 3] ?? 0;
       const bz = t[o + 5] ?? 0;
-      const cx = t[o + 6] ?? 0;
-      const cz = t[o + 8] ?? 0;
-      const area = (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+      const qx = t[o + 6] ?? 0;
+      const qz = t[o + 8] ?? 0;
+      const area = (bx - ax) * (qz - az) - (bz - az) * (qx - ax);
       if (area === 0) continue;
-      const wa = ((bx - x) * (cz - z) - (bz - z) * (cx - x)) / area;
-      const wb = ((cx - x) * (az - z) - (cz - z) * (ax - x)) / area;
+      const wa = ((bx - x) * (qz - z) - (bz - z) * (qx - x)) / area;
+      const wb = ((qx - x) * (az - z) - (qz - z) * (ax - x)) / area;
       const wc = 1 - wa - wb;
       if (wa < -COVERAGE_TOLERANCE || wb < -COVERAGE_TOLERANCE || wc < -COVERAGE_TOLERANCE)
         continue;
@@ -173,6 +229,12 @@ export class PlanShell {
     out[1] = top;
     return true;
   }
+}
+
+function restsOnStudLayer(solid: PlacedSolid, bottomLdu: number): boolean {
+  return (
+    solid.studLayerLdu !== null && bottomLdu >= solid.studLayerLdu - REPRESENTATION_EPSILON_LDU
+  );
 }
 
 export interface PlacedShell {
@@ -194,6 +256,7 @@ export function solidMeetsShellInCell(
   const pitch = STUD_LDU / perStud;
   const steps = solid.samples.stepsPerLdu;
   const lists = solid.samples.lists;
+  if (restsOnStudLayer(solid, shell.bottomLdu)) return false;
   const pattern = cellPattern(solid, cellX, cellZ);
   if (pattern === NO_LIST) return false;
   for (let j = 0; j < perStud; j++) {
@@ -208,12 +271,7 @@ export function solidMeetsShellInCell(
       }
       const shellBottom = shellSpan[0] ?? 0;
       const shellTop = shellSpan[1] ?? 0;
-      if (
-        solid.studLayerLdu !== null &&
-        shellBottom >= solid.studLayerLdu - REPRESENTATION_EPSILON_LDU
-      ) {
-        continue;
-      }
+      if (restsOnStudLayer(solid, shellBottom)) continue;
       const count = lists[list] ?? 0;
       for (let k = 0; k < count; k++) {
         const bottomLdu = ((lists[list + 1 + 2 * k] ?? 0) + solid.ySteps) / steps;
