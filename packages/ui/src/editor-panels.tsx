@@ -1,7 +1,6 @@
 import {
   TRACK_ITEM_ID,
   commandEnabled,
-  type EditorCredits,
   type EditorSnapshot,
   type IEditor,
   type LatencySample,
@@ -11,7 +10,7 @@ import {
   type ShellCommandId,
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
-import { CreditLinks, partsCreditText } from "./site-chrome.tsx";
+import { CreditLinks } from "./site-chrome.tsx";
 import { useState, type FormEvent } from "react";
 import { isCompactLayout } from "./use-compact-layout.ts";
 
@@ -524,28 +523,9 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   );
 }
 
-function modelCredits(credits: EditorCredits): string {
-  return credits.models
-    .map((model) => {
-      const authors = [...new Set(model.sections.map((s) => s.author).filter((a) => a !== ""))];
-      const licenses = [...new Set(model.sections.flatMap((s) => (s.license ? [s.license] : [])))];
-      return `${model.name}${authors.length > 0 ? ` by ${authors.join(", ")}` : ""}${licenses.length > 0 ? ` (${licenses.join("; ")})` : ""}`;
-    })
-    .join("; ");
-}
-
-export function CreditsFooter({
-  snapshot,
-  disclaimer,
-}: {
-  readonly snapshot: EditorSnapshot;
-  readonly disclaimer: string;
-}) {
-  const { credits } = snapshot;
+export function EditorFooter({ disclaimer }: { readonly disclaimer: string }) {
   return (
-    <footer>
-      {credits &&
-        `Models from the LDraw Official Model Repository: ${modelCredits(credits)}. ${partsCreditText(credits.partFiles, credits.partFilesLod)}`}
+    <footer className="editor-footer">
       {disclaimer} <CreditLinks />
     </footer>
   );
