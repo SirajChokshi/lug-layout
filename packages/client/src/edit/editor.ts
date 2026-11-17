@@ -6,6 +6,7 @@ import {
   type PartBundle,
   type PartMesh,
   type FilterablePart,
+  type StudPrimitiveAsset,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
 import {
@@ -104,6 +105,7 @@ import {
   type PlacementCheck,
   type PlacedModel,
   type RebuildReport,
+  type StudShapes,
   type StudTotals,
   type SurfaceHit,
   type ViewUpdate,
@@ -690,6 +692,29 @@ function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor 
   return color;
 }
 
+function studShapes(primitives: ReadonlyArray<StudPrimitiveAsset>): StudShapes {
+  const radius = new Float64Array(primitives.length);
+  const height = new Float64Array(primitives.length);
+  primitives.forEach((primitive, index) => {
+    const { positions } = primitive.mesh;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    let top = 0;
+    for (let v = 0; v < positions.length; v += 3) {
+      minX = Math.min(minX, positions[v] ?? 0);
+      maxX = Math.max(maxX, positions[v] ?? 0);
+      top = Math.max(top, positions[v + 1] ?? 0);
+      minZ = Math.min(minZ, positions[v + 2] ?? 0);
+      maxZ = Math.max(maxZ, positions[v + 2] ?? 0);
+    }
+    radius[index] = Math.max(maxX - minX, maxZ - minZ) / 2;
+    height[index] = top;
+  });
+  return { radius, height };
+}
+
 function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
@@ -930,6 +955,7 @@ export class Editor implements IEditor {
       );
       this.placeables = placeables;
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
+      this.placed.setStudShapes(studShapes(bundle.studPrimitives));
       this.bricks = new BrickCatalog(
         bundle.parts
           .filter(isBrickPart)

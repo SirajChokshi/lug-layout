@@ -98,6 +98,7 @@ class ModelSubsetLoader implements IPartBundleLoader {
   }
 }
 
+
 class HeadlessBackend implements ISceneBackend {
   async init(): Promise<BackendInfo> {
     return {
@@ -489,3 +490,69 @@ describe("placement rules across a world switch", () => {
     expect(editor.snapshot().lastRefusal?.rule).toBe("carries");
   }, 120_000);
 });
+
+type Bench = Pick<Awaited<ReturnType<typeof startEditor>>, "editor" | "backend">;
+
+function pointAt({ editor, backend }: Bench, x: number, z: number): void {
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+}
+
+function hold({ editor }: Bench, item: string, rot: number): void {
+  editor.chooseItem(item);
+  while (editor.snapshot().ghostRot !== rot) editor.rotate(0);
+}
+
+function placeAtCursor(bench: Bench, item: string, x: number, z: number, rot = 0): boolean {
+  hold(bench, item, rot);
+  pointAt(bench, x, z);
+  const before = bench.editor.snapshot().placements;
+  bench.editor.click(0, 0, 0);
+  return bench.editor.snapshot().placements > before;
+}
+
+function ghostAtPivot(
+  bench: Bench,
+  item: string,
+  pivot: readonly [number, number],
+  rot: number,
+  yPlates: number,
+): string | null | undefined {
+  hold(bench, item, rot);
+  for (let x = pivot[0] - 40; x <= pivot[0] + 60; x += 5) {
+    for (let z = pivot[1] - 40; z <= pivot[1] + 60; z += 5) {
+      pointAt(bench, x + 0.5, z + 0.5);
+      const { hover, ghost } = bench.editor.snapshot();
+      if (hover?.x === pivot[0] && hover.z === pivot[1] && ghost?.yPlates === yPlates) {
+        return ghost.refusal?.rule ?? null;
+      }
+    }
+  }
+  return undefined;
+}
+
+async function benchOnBaseplate(): Promise<Bench> {
+  const bench = await startEditor([]);
+  const baseplate = bench.editor
+    .snapshot()
+    .catalog.find((item) => item.id.startsWith("ldraw:3811@"));
+  expect(baseplate).toBeDefined();
+  placeAtCursor(bench, baseplate?.id ?? "", 0, 0);
+  expect(bench.editor.snapshot().placements).toBe(1);
+  return bench;
+}
+
+it("refuses a jumper whose centre stud would push into a part already overhanging it, in either order", async () => {
+  const overhangFirst = await benchOnBaseplate();
+  expect(placeAtCursor(overhangFirst, "ldraw:3001", 50, 50)).toBe(true);
+  expect(placeAtCursor(overhangFirst, "ldraw:3024", 50, 50)).toBe(true);
+  expect(placeAtCursor(overhangFirst, "ldraw:3794b", 50, 50, 1)).toBe(true);
+  expect(ghostAtPivot(overhangFirst, "ldraw:3794b", [40, 80], 0, 3)).toBe("overlap");
+
+  const jumperFirst = await benchOnBaseplate();
+  expect(placeAtCursor(jumperFirst, "ldraw:3001", 50, 50)).toBe(true);
+  expect(ghostAtPivot(jumperFirst, "ldraw:3794b", [40, 80], 0, 3)).toBeNull();
+  jumperFirst.editor.click(0, 0, 0);
+  expect(placeAtCursor(jumperFirst, "ldraw:3024", 50, 50)).toBe(true);
+  expect(placeAtCursor(jumperFirst, "ldraw:3794b", 50, 50, 1)).toBe(false);
+}, 120_000);

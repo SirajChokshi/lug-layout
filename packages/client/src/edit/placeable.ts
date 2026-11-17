@@ -129,14 +129,15 @@ function studLattice(studs: StudInstances): StudLattice {
     baseLdu[i] = base;
     const x = latticeCell(sx);
     const z = latticeCell(sz);
+    if (!Number.isInteger(sx) || !Number.isInteger(sz)) continue;
+    centreX[i] = sx;
+    centreZ[i] = sz;
     if (x !== null && z !== null) {
       onLattice[i] = 1;
       cellX[i] = x;
       cellZ[i] = z;
-    } else if (Number.isInteger(sx) && Number.isInteger(sz)) {
+    } else {
       offLattice[i] = 1;
-      centreX[i] = sx;
-      centreZ[i] = sz;
     }
   }
   return { onLattice, offLattice, cellX, cellZ, centreX, centreZ, baseLdu };
@@ -483,7 +484,7 @@ export function brickPlaceable(
 ): Placeable {
   const seat = part.seat;
   if (!seat) throw new Error(`${part.id} has no stud seat from the bake, so it cannot be placed`);
-  const lattice: ModelLattice = {
+  const lattice: PartModelLattice = {
     phaseX: seat.phaseX,
     phaseZ: seat.phaseZ,
     aabbMin: part.boundsMin,

@@ -1,4 +1,5 @@
-import type { BundleColor, PartAsset } from "@brr/catalog";
+import type { PartAsset } from "@brr/catalog";
+import type { BundleColor } from "@brr/schema/bundle";
 import { STUD_LDU } from "@brr/math";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import { brickPlaceable, type Placeable } from "./placeable.ts";

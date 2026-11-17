@@ -51,6 +51,7 @@ export interface VolumeHit {
 }
 
 export type OwnerFilter = (owner: number, cellX: number, cellZ: number) => boolean;
+export type SpanFilter = (owner: number, bottomLdu: number, topLdu: number) => boolean;
 
 export class VolumeIndex {
   private readonly byKey = new Map<number, VolumeChunk>();
@@ -121,6 +122,42 @@ export class VolumeIndex {
         out.topLdu = t;
         return true;
       }
+      r = chunk.records[r + NEXT] ?? NO_RECORD;
+    }
+    return false;
+  }
+
+  firstOverlapWhere(
+    cellX: number,
+    cellZ: number,
+    bottomLdu: number,
+    topLdu: number,
+    counts: SpanFilter,
+    out: VolumeHit,
+  ): boolean {
+    const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
+    if (!chunk) return false;
+    for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
+      const owner = chunk.records[r + OWNER] ?? 0;
+      const b = chunk.records[r + BOTTOM] ?? 0;
+      const t = chunk.records[r + TOP] ?? 0;
+      if (Math.max(b, bottomLdu) < Math.min(t, topLdu) && counts(owner, b, t)) {
+        out.owner = owner;
+        out.bottomLdu = b;
+        out.topLdu = t;
+        return true;
+      }
+      r = chunk.records[r + NEXT] ?? NO_RECORD;
+    }
+    return false;
+  }
+
+  hasTopAt(cellX: number, cellZ: number, topLdu: number, ignore: OwnerFilter): boolean {
+    const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
+    if (!chunk) return false;
+    for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
+      const owner = chunk.records[r + OWNER] ?? 0;
+      if (chunk.records[r + TOP] === topLdu && !ignore(owner, cellX, cellZ)) return true;
       r = chunk.records[r + NEXT] ?? NO_RECORD;
     }
     return false;

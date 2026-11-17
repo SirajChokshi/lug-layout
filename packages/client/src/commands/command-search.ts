@@ -26,6 +26,7 @@ const KIND_WORDS: Readonly<Record<CatalogItemView["kind"], string>> = {
   "road-plate": "road plate street",
   "mils-module": "mils module",
   model: "set model",
+  brick: "brick plate tile jumper part",
   track: "track rail train",
 };
 

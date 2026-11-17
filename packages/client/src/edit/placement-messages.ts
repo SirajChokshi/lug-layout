@@ -1,5 +1,12 @@
 import type { UpperSupport } from "@brr/domain";
-import type { LostSupport, PlacedOverlap, PlacementCheck, VolumeOwner } from "./placed-chunks.ts";
+import { PLATE_LDU } from "@brr/math";
+import type {
+  LostSupport,
+  PlacedOverlap,
+  PlacedStudClash,
+  PlacementCheck,
+  VolumeOwner,
+} from "./placed-chunks.ts";
 import type { OffBaseplate, RunBlock } from "./track-drawing.ts";
 
 export type RefusalRule =
@@ -77,6 +84,11 @@ export function supportRefusal(
         rule: "support",
         message: `${label} would land on a jumper's centre stud ${plates(support.yPlates)} up, over ${support.cells} of its base cells. That stud is half a stud off the grid, so it would push into the anti-studs instead of fitting them.`,
       };
+    case "stud-intrudes":
+      return {
+        rule: "support",
+        message: `${label} would take a stud at (${support.x}, ${support.z}), ${plates(support.baseLdu / PLATE_LDU)} up, where it has no anti-stud at its bottom, so the stud would push into it.`,
+      };
     case "no-studs-engaged":
       return {
         rule: "support",
@@ -89,8 +101,17 @@ export function supportRefusal(
   }
 }
 
+export function studClashRefusal(label: string, placed: PlacedStudClash): Refusal {
+  const { clash } = placed;
+  return {
+    rule: "overlap",
+    message: `${label} has a stud at (${clash.x}, ${clash.z}), ${plates(clash.baseLdu / PLATE_LDU)} up, that would push into ${ownerLabel(placed.owner)}, which has no anti-stud there.`,
+  };
+}
+
 export function checkRefusal(label: string, check: PlacementCheck): Refusal | null {
   if (check.overlap) return overlapRefusal(label, check.overlap);
+  if (check.studClash) return studClashRefusal(label, check.studClash);
   return check.support ? supportRefusal(label, check.support, check.restsOn) : null;
 }
 

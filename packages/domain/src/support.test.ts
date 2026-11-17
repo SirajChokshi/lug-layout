@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { StudIndex } from "./stud-index.ts";
 import { SupportGrid, trackSupport, upperSupport, type BaseCells } from "./support.ts";
 import { VolumeIndex } from "./volume-index.ts";
 
@@ -16,10 +17,17 @@ const TRACK_OWNER = 9;
 const keepAll = (): boolean => false;
 const ignoreTrack = (owner: number): boolean => owner === TRACK_OWNER;
 const TABLE_LDU = -4;
+const STUD_RADIUS = 6;
+const STUD_HEIGHT = 4;
+
+function stud(studs: StudIndex, owner: number, x: number, z: number, baseLdu: number): void {
+  studs.add(owner, x, z, baseLdu, baseLdu + STUD_HEIGHT, STUD_RADIUS, null);
+}
 
 function baseplate(
   support: SupportGrid,
   volumes: VolumeIndex,
+  studs: StudIndex,
   x0: number,
   z0: number,
   size: number,
@@ -27,7 +35,7 @@ function baseplate(
   for (let z = z0; z < z0 + size; z++) {
     for (let x = x0; x < x0 + size; x++) {
       support.markBaseplate(x, z);
-      support.raiseStud(x, z, 0);
+      stud(studs, BASEPLATE_OWNER, x * 20 + 10, z * 20 + 10, 0);
       volumes.add(BASEPLATE_OWNER, x, z, TABLE_LDU, 0);
     }
   }
@@ -36,12 +44,14 @@ function baseplate(
 describe("upperSupport", () => {
   const volumes = new VolumeIndex();
   const support = new SupportGrid();
-  baseplate(support, volumes, 0, 0, 4);
+  const studs = new StudIndex();
+  baseplate(support, volumes, studs, 0, 0, 4);
   volumes.add(2, 10, 0, 0, 24);
   volumes.add(3, 12, 0, 0, 8);
   volumes.add(3, 13, 0, 0, 8);
-  support.raiseOffsetStud(12, 0, 1);
-  support.raiseOffsetStud(13, 0, 1);
+  stud(studs, 3, 260, 10, 8);
+  volumes.add(4, 12, 0, 16, 40);
+  stud(studs, 4, 260, 10, 40);
 
   it.each([
     ["an anti-stud over a baseplate stud", [[1, 1, 0]], 0, "studs"],
@@ -77,16 +87,19 @@ describe("upperSupport", () => {
       1,
       "offset-stud",
     ],
+    ["a jumper's stud under a higher offset stud in the same cell", [[13, 0, 0]], 1, "offset-stud"],
   ] as const)("%s", (_name, list, yPlates, kind) => {
-    expect(upperSupport(cells(list), yPlates, volumes, support, keepAll).kind).toBe(kind);
+    expect(upperSupport(cells(list), yPlates, volumes, support, studs, keepAll).kind).toBe(kind);
   });
 
   it("never counts a track top as a flat top to rest on", () => {
     const railed = new VolumeIndex();
     railed.add(TRACK_OWNER, 30, 0, 0, 24);
     const onRails = cells([[30, 0, 0]]);
-    expect(upperSupport(onRails, 3, railed, support, keepAll).kind).toBe("flat");
-    expect(upperSupport(onRails, 3, railed, support, ignoreTrack).kind).toBe("no-studs-engaged");
+    expect(upperSupport(onRails, 3, railed, support, studs, keepAll).kind).toBe("flat");
+    expect(upperSupport(onRails, 3, railed, support, studs, ignoreTrack).kind).toBe(
+      "no-studs-engaged",
+    );
   });
 });
 
@@ -94,7 +107,7 @@ describe("trackSupport", () => {
   it("lists exactly the cells with no baseplate under them, never a covered non-baseplate cell", () => {
     const support = new SupportGrid();
     const volumes = new VolumeIndex();
-    baseplate(support, volumes, -2, -2, 2);
+    baseplate(support, volumes, new StudIndex(), -2, -2, 2);
     volumes.add(2, 1, -1, 0, 8);
     const run = cells([
       [-1, -1, 0],
