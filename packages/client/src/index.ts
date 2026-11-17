@@ -243,9 +243,7 @@ export {
   CATEGORY_LABEL,
   PALETTE_CATEGORIES,
   PaletteIndex,
-  colorChoices,
   colorDisplayName,
-  inColorOrder,
   itemInColor,
 } from "./catalog/palette-index.ts";
 export type {
