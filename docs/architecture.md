@@ -320,7 +320,7 @@ Extra plan rules:
 | Data | Format | Location |
 |---|---|---|
 | Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and OPFS |
-| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists, vehicle sidecars) plus one shard per super-chunk (placements, switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
+| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists, vehicle sidecars) plus one shard per super-chunk (placements; laid track as exact ℤ[ζ₁₆] poses with their global order; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
 | Plan export | `*.brrplan.zip`: the region's placements, its footprint and the models it references, so it reopens on its own | File |
 | Collection | An imported Rebrickable collection or CSV of what the user owns | IndexedDB |
 | Printable plan | SVG in the MVP, PDF in P1 | Download |
