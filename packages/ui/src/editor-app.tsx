@@ -12,7 +12,7 @@ import { BomPanel } from "./bom-panel.tsx";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
-  CreditsFooter,
+  EditorFooter,
   EditorHud,
   Inspector,
   PlacementToolbar,
@@ -174,7 +174,7 @@ export function EditorApp({
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
-      <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />
+      <EditorFooter disclaimer={disclaimer} />
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
       {overlay === "open-palette" && (
         <CommandPalette
