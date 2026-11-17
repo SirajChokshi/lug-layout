@@ -1,0 +1,359 @@
+{
+ "label": "before-01a2cee",
+ "base": "http://127.0.0.1:4173/",
+ "width": 1600,
+ "height": 1000,
+ "dpr": 2,
+ "frames": 120,
+ "warmup": 10,
+ "rows": [
+  {
+   "name": "webgpu-aerial-1",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120",
+   "api": "webgpu",
+   "adapter": "apple / metal-3",
+   "buffer": "3200x2000",
+   "medianMs": 9.099999904632568,
+   "p95Ms": 13.899999856948853,
+   "cpuSubmitMs": 3.299999952316284,
+   "draws": 1500,
+   "triangles": 6373895,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22607768,
+    "otherBytes": 244432,
+    "jsHeapBytes": 67555698
+   },
+   "loadMs": 552.2000000476837
+  },
+  {
+   "name": "webgpu-aerial-2",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120",
+   "api": "webgpu",
+   "adapter": "apple / metal-3",
+   "buffer": "3200x2000",
+   "medianMs": 9.300000190734863,
+   "p95Ms": 13.799999952316284,
+   "cpuSubmitMs": 3.299999952316284,
+   "draws": 1500,
+   "triangles": 6373895,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22607768,
+    "otherBytes": 244432,
+    "jsHeapBytes": 85229730
+   },
+   "loadMs": 476.90000009536743
+  },
+  {
+   "name": "webgpu-aerial-3",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgpu&camera=aerial&measure=1&warmup=10&frames=120",
+   "api": "webgpu",
+   "adapter": "apple / metal-3",
+   "buffer": "3200x2000",
+   "medianMs": 8.799999952316284,
+   "p95Ms": 13.299999952316284,
+   "cpuSubmitMs": 3,
+   "draws": 1500,
+   "triangles": 6373895,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22607768,
+    "otherBytes": 244432,
+    "jsHeapBytes": 63492946
+   },
+   "loadMs": 452.2000000476837
+  },
+  {
+   "name": "webgpu-street-1",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgpu&camera=street&measure=1&warmup=10&frames=120",
+   "api": "webgpu",
+   "adapter": "apple / metal-3",
+   "buffer": "3200x2000",
+   "medianMs": 6.599999904632568,
+   "p95Ms": 10.5,
+   "cpuSubmitMs": 2.4000000953674316,
+   "draws": 1147,
+   "triangles": 5754056,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22593008,
+    "otherBytes": 243952,
+    "jsHeapBytes": 62187845
+   },
+   "loadMs": 460.59999990463257
+  },
+  {
+   "name": "webgpu-street-2",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgpu&camera=street&measure=1&warmup=10&frames=120",
+   "api": "webgpu",
+   "adapter": "apple / metal-3",
+   "buffer": "3200x2000",
+   "medianMs": 6.400000095367432,
+   "p95Ms": 10.700000047683716,
+   "cpuSubmitMs": 2.4000000953674316,
+   "draws": 1147,
+   "triangles": 5754056,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22593008,
+    "otherBytes": 243952,
+    "jsHeapBytes": 69320926
+   },
+   "loadMs": 500.90000009536743
+  },
+  {
+   "name": "webgpu-street-3",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgpu&camera=street&measure=1&warmup=10&frames=120",
+   "api": "webgpu",
+   "adapter": "apple / metal-3",
+   "buffer": "3200x2000",
+   "medianMs": 6.3999998569488525,
+   "p95Ms": 10.299999952316284,
+   "cpuSubmitMs": 2.3000001907348633,
+   "draws": 1147,
+   "triangles": 5754056,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22593008,
+    "otherBytes": 243952,
+    "jsHeapBytes": 68593142
+   },
+   "loadMs": 425
+  },
+  {
+   "name": "webgl2-aerial-1",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120",
+   "api": "webgl2",
+   "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+   "buffer": "3200x2000",
+   "medianMs": 8.799999952316284,
+   "p95Ms": 9.400000095367432,
+   "cpuSubmitMs": 3,
+   "draws": 1500,
+   "triangles": 6373895,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22607768,
+    "otherBytes": 268848,
+    "jsHeapBytes": 71793345
+   },
+   "loadMs": 425.7999999523163
+  },
+  {
+   "name": "webgl2-aerial-2",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120",
+   "api": "webgl2",
+   "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+   "buffer": "3200x2000",
+   "medianMs": 9.299999952316284,
+   "p95Ms": 9.700000047683716,
+   "cpuSubmitMs": 3.200000047683716,
+   "draws": 1500,
+   "triangles": 6373895,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22607768,
+    "otherBytes": 268848,
+    "jsHeapBytes": 73462231
+   },
+   "loadMs": 422.2999999523163
+  },
+  {
+   "name": "webgl2-aerial-3",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgl2&camera=aerial&measure=1&warmup=10&frames=120",
+   "api": "webgl2",
+   "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+   "buffer": "3200x2000",
+   "medianMs": 9.299999952316284,
+   "p95Ms": 9.599999904632568,
+   "cpuSubmitMs": 3.0999999046325684,
+   "draws": 1500,
+   "triangles": 6373895,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22607768,
+    "otherBytes": 268848,
+    "jsHeapBytes": 67586081
+   },
+   "loadMs": 448.7999999523163
+  },
+  {
+   "name": "webgl2-street-1",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgl2&camera=street&measure=1&warmup=10&frames=120",
+   "api": "webgl2",
+   "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+   "buffer": "3200x2000",
+   "medianMs": 7.3999998569488525,
+   "p95Ms": 7.700000047683716,
+   "cpuSubmitMs": 2.299999952316284,
+   "draws": 1147,
+   "triangles": 5754056,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22593008,
+    "otherBytes": 268320,
+    "jsHeapBytes": 61209849
+   },
+   "loadMs": 416.7000000476837
+  },
+  {
+   "name": "webgl2-street-2",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgl2&camera=street&measure=1&warmup=10&frames=120",
+   "api": "webgl2",
+   "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+   "buffer": "3200x2000",
+   "medianMs": 7.900000095367432,
+   "p95Ms": 9.199999809265137,
+   "cpuSubmitMs": 2.5999999046325684,
+   "draws": 1147,
+   "triangles": 5754056,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22593008,
+    "otherBytes": 268320,
+    "jsHeapBytes": 82903486
+   },
+   "loadMs": 426
+  },
+  {
+   "name": "webgl2-street-3",
+   "url": "http://127.0.0.1:4173/?scene=layout&api=webgl2&camera=street&measure=1&warmup=10&frames=120",
+   "api": "webgl2",
+   "adapter": "Google Inc. (Apple) / ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max, Unspecified Version)",
+   "buffer": "3200x2000",
+   "medianMs": 7.5,
+   "p95Ms": 7.8999998569488525,
+   "cpuSubmitMs": 2.299999952316284,
+   "draws": 1147,
+   "triangles": 5754056,
+   "tiers": {
+    "near": 28,
+    "mid": 0,
+    "far": 0
+   },
+   "studsDrawnOfTotal": [
+    55051,
+    55051
+   ],
+   "sceneTriangles": 6391377,
+   "parts": 10258,
+   "memory": {
+    "vertexIndexBytes": 22593008,
+    "otherBytes": 268320,
+    "jsHeapBytes": 74911205
+   },
+   "loadMs": 415.2000000476837
+  }
+ ]
+}

@@ -1,0 +1,9 @@
+ref=siraj/layout-bench-b7e8 sha=01a2cee4021b837544bb2b71b2af0b7a5fe05a6d
+ProductName:		macOS
+ProductVersion:		26.6.2
+BuildVersion:		25G83
+Apple M4 Max
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=22610019)	100%; charged; 0:00 remaining present: true
+23:01  up 45 days,  9:52, 11 users, load averages: 14.00 9.84 6.61
+Google Chrome 157.0.8103.79 
