@@ -1,5 +1,4 @@
 import type { UpperSupport } from "@brr/domain";
-import { PLATE_LDU } from "@brr/math";
 import type { LostSupport, PlacedOverlap, PlacementCheck, VolumeOwner } from "./placed-chunks.ts";
 import type { OffBaseplate, RunBlock } from "./track-drawing.ts";
 
@@ -20,10 +19,6 @@ function plates(count: number): string {
   return count === 1 ? "1 plate" : `${count} plates`;
 }
 
-function platesOf(ldu: number): string {
-  return `${ldu / PLATE_LDU}`;
-}
-
 function ownerLabel(owner: VolumeOwner): string {
   switch (owner.kind) {
     case "model":
@@ -39,7 +34,8 @@ function ownerLabel(owner: VolumeOwner): string {
 
 function overlapText(placed: PlacedOverlap): string {
   const { overlap } = placed;
-  return `${ownerLabel(placed.owner)} at cell (${overlap.cellX}, ${overlap.cellZ}): it fills ${platesOf(overlap.candidateBottomLdu)} to ${platesOf(overlap.candidateTopLdu)} plates there, and ${ownerLabel(placed.owner)} fills ${platesOf(overlap.bottomLdu)} to ${platesOf(overlap.topLdu)}`;
+  const other = ownerLabel(placed.owner);
+  return `${other} at cell (${overlap.cellX}, ${overlap.cellZ}): there it fills ${overlap.candidateBottomLdu} to ${overlap.candidateTopLdu} LDU above the baseplate tops, and ${other} fills ${overlap.bottomLdu} to ${overlap.topLdu} LDU`;
 }
 
 export function overlapRefusal(label: string, placed: PlacedOverlap): Refusal {

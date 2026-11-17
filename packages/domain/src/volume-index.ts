@@ -50,7 +50,7 @@ export interface VolumeHit {
   topLdu: number;
 }
 
-export type OwnerFilter = (owner: number) => boolean;
+export type OwnerFilter = (owner: number, cellX: number, cellZ: number) => boolean;
 
 export class VolumeIndex {
   private readonly byKey = new Map<number, VolumeChunk>();
@@ -80,12 +80,16 @@ export class VolumeIndex {
     return top;
   }
 
-  topOwnerAt(cellX: number, cellZ: number, out: VolumeHit): boolean {
+  topOwnerAt(cellX: number, cellZ: number, ignore: OwnerFilter, out: VolumeHit): boolean {
     const chunk = this.byKey.get(cellChunkKey(cellX, cellZ));
     if (!chunk) return false;
     let found = false;
     for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
       const t = chunk.records[r + TOP] ?? NO_TOP;
+      if (ignore(chunk.records[r + OWNER] ?? 0, cellX, cellZ)) {
+        r = chunk.records[r + NEXT] ?? NO_RECORD;
+        continue;
+      }
       if (!found || t > out.topLdu) {
         out.owner = chunk.records[r + OWNER] ?? 0;
         out.bottomLdu = chunk.records[r + BOTTOM] ?? 0;
@@ -111,7 +115,7 @@ export class VolumeIndex {
       const owner = chunk.records[r + OWNER] ?? 0;
       const b = chunk.records[r + BOTTOM] ?? 0;
       const t = chunk.records[r + TOP] ?? 0;
-      if (!ignore(owner) && Math.max(b, bottomLdu) < Math.min(t, topLdu)) {
+      if (!ignore(owner, cellX, cellZ) && Math.max(b, bottomLdu) < Math.min(t, topLdu)) {
         out.owner = owner;
         out.bottomLdu = b;
         out.topLdu = t;
