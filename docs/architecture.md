@@ -83,9 +83,9 @@ Every part and model comes through a **`PartSource`** plugin. Each source declar
 
 ### 3.3 Model bake
 The browser import worker and the OMR ingest share the same code.
-1. Unpack and parse the file. For `.io`, prefer `modelv2.ldr`, then `model2.ldr`, then `model.ldr`.
-2. Resolve each part in order: our library, then aliases, then the Rebrickable crosswalk, then inline definitions. Parts that can't be resolved become box placeholders and get a badge.
-3. Map colors. Unknown Studio colors snap to the nearest canonical color, with a warning.
+1. Unpack and parse the file. For `.io`, read `modelv2.ldr` with Studio's type-11 part lines rewritten as standard type-1 lines, which reproduces Studio's own `model.ldr` exactly, and fall back to `model.ldr`. `model2.ldr` is read only for each part's `BL_Item_No`; its embedded Studio geometry is never used. Encrypted legacy archives are rejected with a "re-save in current Studio" message.
+2. Resolve each part against the pinned LDraw library: the prebuilt bundle first, then official parts compiled from the pinned mirror (license-gated; unofficial parts only through the allowlist). A Studio name that isn't an LDraw part is renamed only when the BrickLink crosswalk names exactly one LDraw part that exists at the pin. Inline definitions are compared with the official part and never drawn in its place. Parts that can't be resolved (not in the library, a missing subfile, refused by a gate, or an ambiguous, missing or custom Studio part) are skipped and reported, never turned into placeholders.
+3. Map colors. Instances in an unknown colour, including Studio-only codes, are skipped and reported, never snapped to a nearby colour.
 4. Build the **instance list**: part id, color id and a 4×3 matrix in LDU. Keep the **submodel tree**, because bogies and vehicles need it.
 5. Build the **BOM**, normalized through aliases and `part_relationships`.
 6. **Remove covered studs inside the model**: a stud with an anti-stud or solid underside directly above it is dropped.
