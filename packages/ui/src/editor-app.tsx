@@ -1,4 +1,4 @@
-import type { EditorOptions, IEditor } from "@brr/client";
+import type { EditorOptions, IEditor, IPlanService } from "@brr/client";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
   CatalogList,
@@ -8,10 +8,12 @@ import {
   PlacementToolbar,
   RoadJoins,
 } from "./editor-panels.tsx";
+import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 
 interface EditorAppProps {
   readonly editor: IEditor;
+  readonly plans: IPlanService;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -30,7 +32,22 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
   );
 }
 
-export function EditorApp({ editor, options, disclaimer, showState }: EditorAppProps) {
+function PlanState({ plans }: { readonly plans: IPlanService }) {
+  const snapshot = usePlanSnapshot(plans);
+  return (
+    <pre id="plan-state" data-plans={snapshot.plans.length}>
+      {JSON.stringify({
+        plans: snapshot.plans,
+        checks: snapshot.checks,
+        placements: snapshot.placements,
+        sandboxPlacements: snapshot.sandboxPlacements,
+        tableTopY: snapshot.tableTopY,
+      })}
+    </pre>
+  );
+}
+
+export function EditorApp({ editor, plans, options, disclaimer, showState }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   return (
     <div
@@ -48,6 +65,7 @@ export function EditorApp({ editor, options, disclaimer, showState }: EditorAppP
     >
       <EditorCanvas editor={editor} options={options} />
       <EditorHud snapshot={snapshot} />
+      <PlanPanel editor={editor} plans={plans} />
       <div className="side-panel">
         <PlacementToolbar editor={editor} snapshot={snapshot} />
         <CatalogList editor={editor} snapshot={snapshot} />
@@ -55,6 +73,7 @@ export function EditorApp({ editor, options, disclaimer, showState }: EditorAppP
         <RoadJoins editor={editor} snapshot={snapshot} />
       </div>
       {showState && <EditorState editor={editor} />}
+      {showState && <PlanState plans={plans} />}
       <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />
     </div>
   );

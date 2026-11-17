@@ -40,6 +40,8 @@ class RecordingBackend implements ISceneBackend {
   placeGhost(): void {}
   setSelectionBox(): void {}
   setMarkers(): void {}
+  setPlanOverlays(): void {}
+  setIssueBoxes(): void {}
   rayThrough(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
