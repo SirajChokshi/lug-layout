@@ -48,8 +48,11 @@ function issueText(issue: RoadTileIssue): string {
 
 function strokeText(stroke: RoadStrokeView): string {
   const parts: string[] = [];
+  if (stroke.removed > 0) parts.push(`${stroke.removed} erased`);
   if (stroke.laid > 0) parts.push(`${stroke.laid} new`);
-  if (stroke.replaced > 0) parts.push(`${stroke.replaced} upgraded`);
+  if (stroke.replaced > 0) {
+    parts.push(`${stroke.replaced} ${stroke.erasing ? "downgraded" : "upgraded"}`);
+  }
   if (stroke.overGround > 0) parts.push(`${stroke.overGround} swapped for ground under them`);
   if (stroke.kept > 0) parts.push(`${stroke.kept} already right`);
   const changes = parts.length > 0 ? parts.join(", ") : "nothing to change";
@@ -124,11 +127,17 @@ function releaseText(snapshot: EditorSnapshot): string {
   if (!last) return "none yet";
   const red = last.stroke.issues.length;
   return last.result === "laid"
-    ? `laid ${strokeText(last.stroke)}`
+    ? `${last.stroke.erasing ? "" : "laid "}${strokeText(last.stroke)}`
     : `refused, ${red} red ${red === 1 ? "tile" : "tiles"}; nothing laid`;
 }
 
-export function RoadDrawPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) {
+export function RoadDrawPanel({
+  editor,
+  snapshot,
+}: {
+  readonly editor: IEditor;
+  readonly snapshot: EditorSnapshot;
+}) {
   if (snapshot.mode !== "road") return null;
   const stroke = snapshot.roadStroke;
   const kit = snapshot.roadKits.find((k) => k.id === snapshot.roadKit);
@@ -149,6 +158,29 @@ export function RoadDrawPanel({ snapshot }: { readonly snapshot: EditorSnapshot 
       data-road-last={last?.result ?? ""}
     >
       <h2>Draw road</h2>
+      <div className="road-draw-modes" role="group" aria-label="Road tool">
+        <button
+          type="button"
+          data-action="road-draw-mode"
+          aria-pressed={!snapshot.roadErase}
+          onClick={() => editor.setRoadErase(false)}
+        >
+          Draw
+        </button>
+        <button
+          type="button"
+          data-action="road-erase-mode"
+          aria-pressed={snapshot.roadErase}
+          onClick={() => editor.setRoadErase(true)}
+        >
+          Erase
+        </button>
+      </div>
+      <p className="toolbar-hint">
+        {snapshot.roadErase
+          ? "Drag over this kit's road to lift it. A junction left behind becomes the piece with its remaining arms."
+          : "Drag to lay road. Release lays every tile as one undoable step."}
+      </p>
       <dl>
         <div>
           <dt>Kit</dt>

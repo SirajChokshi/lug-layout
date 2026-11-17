@@ -56,6 +56,7 @@ export type PlannedRoadTile =
       readonly replaces: boolean;
       readonly choices: ReadonlyArray<RoadPieceChoice>;
     }
+  | { readonly kind: "remove"; readonly ix: number; readonly iz: number; readonly arms: number }
   | {
       readonly kind: "refuse";
       readonly ix: number;
@@ -307,4 +308,46 @@ export function planRoadTiles(
     if (choices.length === 0) return { kind: "refuse", ix, iz, arms, reason: "no-piece" };
     return { kind: "lay", ix, iz, arms, replaces: existing !== null, choices };
   });
+}
+
+const JUNCTION_ARMS = 3;
+
+export function planRoadErase(
+  kit: RoadKit,
+  path: ReadonlyArray<RoadTile>,
+  existingAt: (ix: number, iz: number) => ExistingRoadTile | null,
+): ReadonlyArray<PlannedRoadTile> {
+  const removed = new Map<string, RoadTile & { readonly arms: number }>();
+  for (const { ix, iz } of path) {
+    const existing = existingAt(ix, iz);
+    if (existing?.sameKit) removed.set(tileKey(ix, iz), { ix, iz, arms: existing.arms });
+  }
+  const remaining = new Map<string, RoadTile & { arms: number }>();
+  for (const tile of removed.values()) {
+    for (const [, dx, dz] of SIDES) {
+      const ix = tile.ix + dx;
+      const iz = tile.iz + dz;
+      const key = tileKey(ix, iz);
+      if (removed.has(key)) continue;
+      const neighbour = existingAt(ix, iz);
+      const facing = armToward(-dx, -dz);
+      if (!neighbour?.sameKit || (neighbour.arms & facing) === 0) continue;
+      if (armCount(neighbour.arms) < JUNCTION_ARMS) continue;
+      const left = remaining.get(key) ?? { ix, iz, arms: neighbour.arms };
+      left.arms &= ~facing;
+      remaining.set(key, left);
+    }
+  }
+  const planned: PlannedRoadTile[] = [...removed.values()].map(({ ix, iz, arms }) => ({
+    kind: "remove",
+    ix,
+    iz,
+    arms,
+  }));
+  for (const { ix, iz, arms } of remaining.values()) {
+    if (arms === 0) continue;
+    const choices = roadPieceChoices(kit, arms, 0).filter((choice) => choice.arms === arms);
+    if (choices.length > 0) planned.push({ kind: "lay", ix, iz, arms, replaces: true, choices });
+  }
+  return planned;
 }

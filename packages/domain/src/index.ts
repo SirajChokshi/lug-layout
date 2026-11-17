@@ -14,6 +14,7 @@ export {
   ARM_BITS,
   armToward,
   extendRoadPath,
+  planRoadErase,
   planRoadTiles,
   roadKits,
   roadPieceChoices,
