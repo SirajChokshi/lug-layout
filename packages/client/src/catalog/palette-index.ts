@@ -150,6 +150,12 @@ export function colorChoices(
   return [...choices.values()].toSorted((a, b) => colorOrder(a.color, b.color));
 }
 
+export function inColorOrder(
+  items: ReadonlyArray<CatalogItemView>,
+): ReadonlyArray<CatalogItemView> {
+  return items.toSorted((a, b) => (a.color && b.color ? colorOrder(a.color, b.color) : 0));
+}
+
 export function itemInColor(entry: PaletteEntry, code: number): CatalogItemView | undefined {
   return entry.items.find((item) => item.color?.code === code);
 }

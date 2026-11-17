@@ -245,6 +245,7 @@ export {
   PaletteIndex,
   colorChoices,
   colorDisplayName,
+  inColorOrder,
   itemInColor,
 } from "./catalog/palette-index.ts";
 export type {

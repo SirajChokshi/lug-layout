@@ -1746,10 +1746,18 @@ footer a {
   cursor: default;
 }
 
-.palette-unavailable {
-  margin-left: auto;
-  font-style: italic;
-  color: #6b5200;
+.palette-unmade {
+  margin: 8px 0 0;
+}
+
+.palette-unmade > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #556;
+}
+
+.palette-unmade .palette-rows {
+  margin-top: 6px;
 }
 
 .palette-swatch[data-current-color="true"] {
