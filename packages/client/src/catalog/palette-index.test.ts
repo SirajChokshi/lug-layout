@@ -95,6 +95,7 @@ const milsTrack: CatalogItemView = {
   aliases: [],
   elements: [],
   displayColor: false,
+  thumbnail: null,
 };
 
 const index = new PaletteIndex(catalog, [
@@ -229,6 +230,7 @@ function trackPiece(number: string, title: string): CatalogItemView {
     aliases: [],
     elements: [],
     displayColor: false,
+    thumbnail: null,
   };
 }
 
