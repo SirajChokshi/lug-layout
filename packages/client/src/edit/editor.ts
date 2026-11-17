@@ -27,7 +27,6 @@ import {
   RoadNetwork,
   World,
   addShards,
-  railEdgesMate,
   worldPlacements,
   packedCellKey,
   type AppliedEdit,
@@ -107,7 +106,7 @@ import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
 import { CATALOG_SEARCH, CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
 import type { CatalogSearchView, ICatalogSearch } from "../catalog/catalog-search.ts";
-import { heldPlacements, latticePose16, latticeSnap } from "./model-track.ts";
+import { heldPlacements, latticePose16, latticeSnap, trackEndKeys } from "./model-track.ts";
 import {
   LAID_TRACK_PLATES,
   TRACK_SYSTEM,
@@ -580,6 +579,7 @@ const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const TRACK_SNAP_RADIUS_LDU = 3 * STUD_LDU;
 const P95 = 0.95;
 const DEGREES_PER_QUARTER_TURN = 90;
+const NO_END_KEYS: ReadonlyArray<string> = [];
 const EDGE_KIND_NAMES: Readonly<Record<ModuleEdgeKind, string>> = {
   terrain: "terrain",
   road: "paved road",
@@ -964,7 +964,16 @@ export class Editor implements IEditor {
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private modules: ModuleLayout | null = null;
   private moduleGhost: ModuleCandidate | null = null;
-  private refusalPlacement: GridPlacement | null = null;
+  private refusalMates: ReadonlyArray<string> = NO_END_KEYS;
+  private lastMates: {
+    readonly placeable: Placeable;
+    readonly x: number;
+    readonly z: number;
+    readonly yPlates: number;
+    readonly rot: number;
+    readonly keys: ReadonlyArray<string>;
+  } | null = null;
+  private readonly placedEndKeys = new WeakMap<PlacedModel, ReadonlySet<string>>();
   private canvas: HTMLCanvasElement | null = null;
   private framesSinceStats = 0;
   private measureFrame = -1;
@@ -2397,16 +2406,16 @@ export class Editor implements IEditor {
         };
       }
     }
-    this.refusalPlacement = own;
+    this.refusalMates = this.mateKeys(placeable, x, z, yPlates, rot);
     const clash = this.placed.tongueClash(placeable, x, z, rot, yPlates, ignore, this.matesRefusal);
-    this.refusalPlacement = null;
+    this.refusalMates = NO_END_KEYS;
     if (!clash) return null;
     const other = clash.other.placeable.label;
     return {
       rule: "track-end",
       message: clash.ownTongue
-        ? `${placeable.label}: its track end would run into ${other}. Only a rail module whose rail edge faces it can take the track end.`
-        : `${placeable.label} would fill the space where the track end of ${other} reaches past its edge. Only a rail module whose rail edge faces it can take the track end.`,
+        ? `${placeable.label}: its track end would run into ${other}. Only a model whose own track end joins it exactly can take the track end.`
+        : `${placeable.label} would fill the space where the track end of ${other} reaches past its edge. Only a model whose own track end joins it exactly can take the track end.`,
     };
   }
 
@@ -2426,11 +2435,48 @@ export class Editor implements IEditor {
     return layout.placement(surface, x, z, rot);
   }
 
+  private mateKeys(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    yPlates: number,
+    rot: number,
+  ): ReadonlyArray<string> {
+    const held = placeable.track;
+    if (!held) return NO_END_KEYS;
+    const last = this.lastMates;
+    if (
+      last &&
+      last.placeable === placeable &&
+      last.x === x &&
+      last.z === z &&
+      last.yPlates === yPlates &&
+      last.rot === rot
+    ) {
+      return last.keys;
+    }
+    const keys = trackEndKeys(held, { x, z, yPlates, rot }, true);
+    this.lastMates = { placeable, x, z, yPlates, rot, keys };
+    return keys;
+  }
+
+  private endKeysOf(model: PlacedModel): ReadonlySet<string> {
+    const cached = this.placedEndKeys.get(model);
+    if (cached) return cached;
+    const held = model.placeable.track;
+    const keys = new Set(held ? trackEndKeys(held, model.handle, false) : []);
+    this.placedEndKeys.set(model, keys);
+    return keys;
+  }
+
   private readonly matesRefusal = (other: PlacedModel): boolean => {
-    const own = this.refusalPlacement;
-    if (!own) return false;
-    const theirs = this.modules?.placementOf(other) ?? null;
-    return theirs !== null && railEdgesMate(own, theirs);
+    const mates = this.refusalMates;
+    if (mates.length === 0) return false;
+    const theirs = this.endKeysOf(other);
+    for (let k = 0; k < mates.length; k++) {
+      if (theirs.has(mates[k] ?? "")) return true;
+    }
+    return false;
   };
 
   private labelOf(id: string): string {

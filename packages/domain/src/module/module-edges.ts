@@ -151,17 +151,6 @@ function facing(side: ModuleSide): Across {
   return ACROSS[side];
 }
 
-export function railEdgesMate(a: GridPlacement, b: GridPlacement): boolean {
-  for (let index = 0; index < MODULE_SIDES.length; index++) {
-    const side = MODULE_SIDES[index];
-    if (side === undefined) continue;
-    const across = facing(side);
-    if (b.column !== a.column + across.dc || b.row !== a.row + across.dr) continue;
-    return a.edges[index]?.kind === RAIL_EDGE && b.edges[across.index]?.kind === RAIL_EDGE;
-  }
-  return false;
-}
-
 export class ModuleGrid {
   private readonly columns = new Map<number, Map<number, GridModule>>();
 
