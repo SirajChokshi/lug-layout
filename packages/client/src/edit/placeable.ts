@@ -1,4 +1,10 @@
-import type { PartModelLattice, PartAsset, PartModel } from "@brr/catalog";
+import {
+  EMPTY_COLUMN,
+  type ModelCells,
+  type PartAsset,
+  type PartModel,
+  type PartModelLattice,
+} from "@brr/catalog";
 import type { RoadSurface } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { ModelRole, Vec3 } from "@brr/schema/bundle";
@@ -11,6 +17,26 @@ import { roadSurface } from "./road-surface.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
 
+export interface PlaceableCells {
+  readonly cellX0: number;
+  readonly cellZ0: number;
+  readonly width: number;
+  readonly depth: number;
+  readonly footprint: Uint8Array;
+  readonly columnBottom: Int16Array;
+  readonly columnTop: Int16Array;
+  readonly footprintCells: number;
+  readonly flatCells: number;
+  readonly heightPlates: number;
+}
+
+export interface StudLattice {
+  readonly onLattice: Uint8Array;
+  readonly cellX: Int32Array;
+  readonly cellZ: Int32Array;
+  readonly baseLdu: Int32Array;
+}
+
 export interface Placeable {
   readonly id: string;
   readonly label: string;
@@ -20,6 +46,9 @@ export interface Placeable {
   readonly worldColor: number;
   readonly parts: ChunkPartInstances;
   readonly studs: StudInstances;
+  readonly studLattice: StudLattice;
+  readonly bakedCoveredStuds: number;
+  readonly cells: PlaceableCells;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
   readonly frameShift: Vec3;
@@ -28,6 +57,9 @@ export interface Placeable {
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
+export const FOOTPRINT_NONE = 0;
+export const FOOTPRINT_ANTI_STUD = 1;
+export const FOOTPRINT_FLAT = 2;
 
 function instanceBoxes(
   instances: ChunkPartInstances,
@@ -57,6 +89,129 @@ function instanceBoxes(
   return boxes;
 }
 
+function latticeCell(centre: number): number | null {
+  const cell = (centre - HALF_STUD_LDU) / STUD_LDU;
+  return Number.isInteger(cell) ? cell : null;
+}
+
+function studLattice(studs: StudInstances): StudLattice {
+  const onLattice = new Uint8Array(studs.count);
+  const cellX = new Int32Array(studs.count);
+  const cellZ = new Int32Array(studs.count);
+  const baseLdu = new Int32Array(studs.count);
+  const m = studs.matrices;
+  for (let i = 0; i < studs.count; i++) {
+    const o = i * INSTANCE_MATRIX_FLOATS;
+    const upright = m[o + 1] === 0 && m[o + 9] === 0 && (m[o + 5] ?? 0) > 0;
+    const x = latticeCell(m[o + 3] ?? 0);
+    const z = latticeCell(m[o + 11] ?? 0);
+    const base = m[o + 7] ?? 0;
+    if (!upright || x === null || z === null || !Number.isInteger(base)) continue;
+    onLattice[i] = 1;
+    cellX[i] = x;
+    cellZ[i] = z;
+    baseLdu[i] = base;
+  }
+  return { onLattice, cellX, cellZ, baseLdu };
+}
+
+function wholeCells(ldu: number, what: string): number {
+  const cells = ldu / STUD_LDU;
+  if (!Number.isInteger(cells)) {
+    throw new Error(`${what} ${ldu} LDU is not on the 20 LDU cell grid after the lattice shift`);
+  }
+  return cells;
+}
+
+function modelCells(
+  cells: ModelCells,
+  shift: Vec3,
+  label: string,
+  restPlatesInFrame: number,
+  withFootprint: boolean,
+): PlaceableCells {
+  const footprint = new Uint8Array(cells.width * cells.depth);
+  if (withFootprint) {
+    for (const cell of cells.footprint) footprint[cell] = FOOTPRINT_ANTI_STUD;
+    for (const cell of cells.flat) footprint[cell] = FOOTPRINT_FLAT;
+  }
+  const columnBottom = new Int16Array(cells.columnBottom.length);
+  const columnTop = new Int16Array(cells.columnTop.length);
+  let heightPlates = 0;
+  for (let i = 0; i < columnTop.length; i++) {
+    const top = cells.columnTop[i] ?? EMPTY_COLUMN;
+    if (top === EMPTY_COLUMN) {
+      columnBottom[i] = EMPTY_COLUMN;
+      columnTop[i] = EMPTY_COLUMN;
+      continue;
+    }
+    columnBottom[i] = Math.max(0, Math.floor((cells.columnBottom[i] ?? 0) + restPlatesInFrame));
+    columnTop[i] = Math.max(0, Math.ceil(top + restPlatesInFrame));
+    heightPlates = Math.max(heightPlates, columnTop[i] ?? 0);
+  }
+  return {
+    cellX0: wholeCells(cells.originX + shift[0], `${label} cell origin x`),
+    cellZ0: wholeCells(cells.originZ + shift[2], `${label} cell origin z`),
+    width: cells.width,
+    depth: cells.depth,
+    footprint,
+    columnBottom,
+    columnTop,
+    footprintCells: withFootprint ? cells.footprint.length : 0,
+    flatCells: withFootprint ? cells.flat.length : 0,
+    heightPlates,
+  };
+}
+
+function partCells(part: PartAsset, shift: Vec3): PlaceableCells {
+  const cellX0 = wholeCells(part.boundsMin[0], `${part.id} min x`);
+  const cellZ0 = wholeCells(part.boundsMin[2], `${part.id} min z`);
+  const width = wholeCells(part.boundsMax[0], `${part.id} max x`) - cellX0;
+  const depth = wholeCells(part.boundsMax[2], `${part.id} max z`) - cellZ0;
+  const heightPlates = Math.max(0, Math.ceil((part.boundsMax[1] + shift[1]) / PLATE_LDU));
+  return {
+    cellX0,
+    cellZ0,
+    width,
+    depth,
+    footprint: new Uint8Array(width * depth),
+    columnBottom: new Int16Array(width * depth),
+    columnTop: new Int16Array(width * depth).fill(heightPlates),
+    footprintCells: 0,
+    flatCells: 0,
+    heightPlates,
+  };
+}
+
+interface PlanBounds {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+}
+
+function footprintBounds(cells: ModelCells): PlanBounds | null {
+  if (cells.footprint.length === 0) return null;
+  let minI = Number.POSITIVE_INFINITY;
+  let maxI = Number.NEGATIVE_INFINITY;
+  let minJ = Number.POSITIVE_INFINITY;
+  let maxJ = Number.NEGATIVE_INFINITY;
+  for (const cell of cells.footprint) {
+    const i = cell % cells.width;
+    const j = Math.floor(cell / cells.width);
+    minI = Math.min(minI, i);
+    maxI = Math.max(maxI, i);
+    minJ = Math.min(minJ, j);
+    maxJ = Math.max(maxJ, j);
+  }
+  return {
+    minX: cells.originX + minI * STUD_LDU,
+    maxX: cells.originX + (maxI + 1) * STUD_LDU,
+    minZ: cells.originZ + minJ * STUD_LDU,
+    maxZ: cells.originZ + (maxJ + 1) * STUD_LDU,
+  };
+}
+
 export function phaseShift(phase: number): number {
   return HALF_STUD_LDU - phase;
 }
@@ -65,11 +220,21 @@ export function pivotOnStudCorner(centre: number): number {
   return Math.round(centre / STUD_LDU) * STUD_LDU;
 }
 
-export function modelFrameShift(lattice: PartModelLattice, restingOn: number): Vec3 {
+export function modelFrameShift(
+  lattice: PartModelLattice,
+  cells: ModelCells,
+  restingOn: number,
+): Vec3 {
   const shiftX = phaseShift(lattice.phaseX);
   const shiftZ = phaseShift(lattice.phaseZ);
-  const centreX = (lattice.aabbMin[0] + lattice.aabbMax[0]) / 2 + shiftX;
-  const centreZ = (lattice.aabbMin[2] + lattice.aabbMax[2]) / 2 + shiftZ;
+  const plan = footprintBounds(cells) ?? {
+    minX: lattice.aabbMin[0],
+    maxX: lattice.aabbMax[0],
+    minZ: lattice.aabbMin[2],
+    maxZ: lattice.aabbMax[2],
+  };
+  const centreX = (plan.minX + plan.maxX) / 2 + shiftX;
+  const centreZ = (plan.minZ + plan.maxZ) / 2 + shiftZ;
   return [shiftX - pivotOnStudCorner(centreX), -restingOn, shiftZ - pivotOnStudCorner(centreZ)];
 }
 
@@ -114,11 +279,11 @@ function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | 
 
 function restingY(
   model: PartModel,
-  lattice: PartModelLattice,
+  cells: ModelCells,
   parts: ReadonlyArray<PartAsset>,
   role: ModelRole | undefined,
 ): number {
-  if (role !== "mils-module") return lattice.aabbMin[1];
+  if (role !== "mils-module") return cells.restY;
   const top = groundTop(model, parts);
   if (top === null) throw new Error("a MILS module needs its own baseplate to stand on");
   return top;
@@ -133,11 +298,12 @@ export function modelPlaceable(
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
 ): Placeable {
-  const { lattice } = model;
-  if (lattice === null) {
+  const { lattice, cells } = model;
+  if (lattice === null || cells === null) {
     throw new Error(`model ${name} has no stud lattice from the bake, so it cannot be placed`);
   }
-  const shift = modelFrameShift(lattice, restingY(model, lattice, parts, role));
+  const restingOn = restingY(model, cells, parts, role);
+  const shift = modelFrameShift(lattice, cells, restingOn);
   const colorIndex = new Uint16Array(model.instanceCount);
   for (let i = 0; i < model.instanceCount; i++) {
     colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
@@ -154,6 +320,7 @@ export function modelPlaceable(
   const partBoxes = instanceBoxes(local, parts);
   const isModule = role === "mils-module";
   const id = isModule ? `generated:${name}` : `omr:${name}`;
+  const studs = withStuds(local, parts, colors, undefined, model.studCover).studs;
   return {
     id,
     label,
@@ -162,7 +329,10 @@ export function modelPlaceable(
     kind: isModule ? "mils-module" : "model",
     worldColor: 0,
     parts: local,
-    studs: withStuds(local, parts, colors, undefined).studs,
+    studs,
+    studLattice: studLattice(studs),
+    bakedCoveredStuds: model.studCover.covered,
+    cells: modelCells(cells, shift, name, (cells.restY - restingOn) / PLATE_LDU, !isModule),
     box,
     partBoxes,
     frameShift: shift,
@@ -197,6 +367,7 @@ export function partPlaceable(
   const box = shiftedBox(part.boundsMin, part.boundsMax, shift);
   const partBoxes = instanceBoxes(local, parts);
   const isRoad = part.role === "road";
+  const studs = withStuds(local, parts, colors, undefined).studs;
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
@@ -205,7 +376,10 @@ export function partPlaceable(
     kind: isRoad ? "road-plate" : "baseplate",
     worldColor: ldrawColor,
     parts: local,
-    studs: withStuds(local, parts, colors, undefined).studs,
+    studs,
+    studLattice: studLattice(studs),
+    bakedCoveredStuds: 0,
+    cells: partCells(part, shift),
     box,
     partBoxes,
     frameShift: shift,

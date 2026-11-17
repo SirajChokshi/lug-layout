@@ -48,6 +48,7 @@ export type {
   EditorStats,
   EditorStatus,
   HistoryView,
+  HoverView,
   IEditor,
   LatencySample,
   RoadIssueView,
@@ -56,6 +57,7 @@ export type {
   RefusedClick,
   RoadSnapState,
   RoadSnapView,
+  PlaceableCoverView,
   SelectionView,
   SkippedCatalogModel,
   TrackBomLine,
@@ -129,3 +131,4 @@ export {
 } from "./tokens.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
+export type { StudTotals } from "./edit/placed-chunks.ts";
