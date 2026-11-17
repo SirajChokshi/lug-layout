@@ -45,6 +45,7 @@ const PLATE_SPACING_LDU = 4000;
 const RUN_MODULES = 3;
 const MILS_MODULE_LDU = CHUNK_LDU;
 const JITTER_LDU = 0.5;
+const ROAD_BASEPLATE = "ldraw:44336p01";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -464,4 +465,42 @@ it("drags a placed set as one unit: every baseplate follows, a drop into another
 
   editor.undo(0);
   expect(setPlatesNow()).toEqual(start);
+}, 120_000);
+
+function at(x: number, z: number): readonly [number, number] {
+  return [x / NDC_TO_LDU, z / NDC_TO_LDU];
+}
+
+it("leaves a held road piece out of its own road snap and fit: turned in place it drops as a move, and held beside its old spot it joins nothing", async () => {
+  const editor = await startEditor(new TopDownBackend());
+  chooseGroup(editor, ROAD_BASEPLATE);
+  clickAt(editor, MILS_MODULE_LDU / 2, MILS_MODULE_LDU / 2);
+  editor.chooseItem(null);
+  expect(editor.snapshot().placements).toBe(1);
+  const grab = [MILS_MODULE_LDU / 2 + 7, MILS_MODULE_LDU / 2 + 7] as const;
+
+  editor.pointerMove(...at(...grab));
+  expect(editor.dragStart(...at(...grab))).toBe(true);
+  expect(editor.snapshot().snap).toEqual({
+    state: "free",
+    joinedCells: 0,
+    mismatchedCells: 0,
+    overlappingCells: 0,
+  });
+  editor.rotate(0);
+  editor.dragEnd(...at(...grab), 0);
+  expect(editor.snapshot().lastRefusal).toBeNull();
+  expect(editor.snapshot().history.undo).toBe("move");
+  expect(editor.snapshot().selection?.rot).toBe(1);
+
+  const east = [grab[0] + MILS_MODULE_LDU, grab[1]] as const;
+  editor.pointerMove(...at(...grab));
+  editor.dragStart(...at(...grab));
+  editor.pointerMove(...at(...east));
+  editor.dragMove(...at(...east));
+  expect(editor.snapshot().snap?.joinedCells).toBe(0);
+  editor.dragEnd(...at(...east), 0);
+  expect(editor.snapshot().lastRefusal).toBeNull();
+  expect(editor.snapshot().roads.joinedCells).toBe(0);
+  expect(editor.snapshot().placements).toBe(1);
 }, 120_000);

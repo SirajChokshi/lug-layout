@@ -13,6 +13,7 @@ interface Drag {
   readonly pointerId: number;
   readonly startX: number;
   readonly startY: number;
+  readonly startNdc: readonly [number, number];
   lastX: number;
   lastY: number;
   moved: boolean;
@@ -76,6 +77,7 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
+        startNdc: [x, y],
         lastX: event.clientX,
         lastY: event.clientY,
         moved: false,
@@ -102,7 +104,7 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       drag = null;
       canvas.releasePointerCapture(event.pointerId);
       if (finished.kind === "tool") {
-        const [x, y] = ndc(canvas, event);
+        const [x, y] = finished.moved ? ndc(canvas, event) : finished.startNdc;
         editor.dragEnd(x, y, event.timeStamp);
         return;
       }

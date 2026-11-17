@@ -1008,6 +1008,7 @@ export class Editor implements IEditor {
     this.ghostRot = pose.rot;
     this.hovering = true;
     this.syncHeldTrack(model);
+    this.holdRoads(model);
     this.backend.setGhost({ ...model.placeable.parts, studs: model.placeable.studs });
     this.update({ mode: "move", activeItem: model.placeable.id, ghostRot: this.ghostRot });
     this.snapHoverToLattice();
@@ -1024,6 +1025,7 @@ export class Editor implements IEditor {
     this.ghostCheck = null;
     this.backend.setGhost(null);
     this.syncHeldTrack();
+    this.holdRoads(null);
     this.update({
       mode: "select",
       activeItem: null,
@@ -1524,12 +1526,12 @@ export class Editor implements IEditor {
     return view;
   }
 
-  private roadPlacements(): ReadonlyArray<RoadPlacement> {
+  private roadPlacements(except: PlacedModel | null = null): ReadonlyArray<RoadPlacement> {
     const placements: RoadPlacement[] = [];
     for (let id = 0; id < this.roadModels.length; id++) {
       const model = this.roadModels[id];
       const surface = model?.placeable.road;
-      if (!model || !surface) continue;
+      if (!model || !surface || model === except) continue;
       placements.push({
         id,
         x: model.handle.x,
@@ -1540,6 +1542,12 @@ export class Editor implements IEditor {
       });
     }
     return placements;
+  }
+
+  private holdRoads(held: PlacedModel | null): void {
+    const placements = this.roadPlacements(held);
+    this.roadNetwork = new RoadNetwork(placements);
+    this.roadExtents = placements.map(cellExtent);
   }
 
   private refreshRoads(): void {
