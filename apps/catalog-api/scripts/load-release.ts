@@ -8,7 +8,8 @@ import { DatabaseSync } from "node:sqlite";
 import { finished } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { RELEASE_ID_HEX_LENGTH, releaseObjectKey } from "../src/release-schema.ts";
+import { RELEASE_ID_HEX_DIGITS } from "@brr/schema/catalog-api";
+import { releaseObjectKey } from "../src/release-schema.ts";
 import { releaseCounts, releaseProblems, releaseStatements } from "./release-sql.ts";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,7 +63,7 @@ async function main(): Promise<void> {
   const sqlitePath = resolve(values.sqlite);
   const started = performance.now();
   const sha256 = await fileSha256(sqlitePath);
-  const id = sha256.slice(0, RELEASE_ID_HEX_LENGTH);
+  const id = sha256.slice(0, RELEASE_ID_HEX_DIGITS);
   const bytes = (await stat(sqlitePath)).size;
   const objectKey = releaseObjectKey(id);
   const source = new DatabaseSync(sqlitePath, { readOnly: true });
@@ -72,17 +73,22 @@ async function main(): Promise<void> {
   const sqlPath = join(sqlCache, `${id}.sql`);
   const out = createWriteStream(sqlPath);
   let statements = 0;
-  for (const statement of releaseStatements(
-    source,
-    { id, sha256, bytes, objectKey, source: values.source, loadedAt: new Date().toISOString() },
-    !values["no-promote"],
-  )) {
+  const counts = releaseCounts(source);
+  const release = {
+    id,
+    sha256,
+    bytes,
+    object_key: objectKey,
+    source: values.source,
+    loaded_at: new Date().toISOString(),
+    counts: JSON.stringify(counts),
+  };
+  for (const statement of releaseStatements(source, release, !values["no-promote"])) {
     if (!out.write(`${statement};\n`)) await once(out, "drain");
     statements += 1;
   }
   out.end();
   await finished(out);
-  const counts = releaseCounts(source);
   source.close();
   const generated = performance.now();
   const target = values.remote ? ["--remote"] : ["--local", ...persistArgs(values["persist-to"])];

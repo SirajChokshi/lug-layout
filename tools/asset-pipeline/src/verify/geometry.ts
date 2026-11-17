@@ -1,3 +1,4 @@
+import { type TrackEnd, decodeZeta16 } from "@brr/schema/bundle";
 import {
   addZeta16,
   conjugateZeta16,
@@ -15,8 +16,7 @@ import {
   findTrackEnds,
   LDU_PER_STUD,
   relativeToEntry,
-  type RelativeTrackEnd,
-  type TrackEnd,
+  type MarkerEnd,
   type TrackEndMarker,
 } from "../track/track-ends.ts";
 
@@ -283,8 +283,8 @@ interface ArcFromEnds {
 
 export interface TrackEndReport {
   readonly part: string;
-  readonly ends: ReadonlyArray<TrackEnd>;
-  readonly relative: ReadonlyArray<RelativeTrackEnd>;
+  readonly ends: ReadonlyArray<MarkerEnd>;
+  readonly relative: ReadonlyArray<TrackEnd>;
   readonly outwardPointsAwayFromCentre: boolean;
   readonly arc: ArcFromEnds | null;
 }
@@ -298,8 +298,8 @@ function helpRotationPoint(help: ReadonlyArray<string>): Vec3 | null {
 }
 
 function arcFromEnds(
-  ends: ReadonlyArray<TrackEnd>,
-  relative: ReadonlyArray<RelativeTrackEnd>,
+  ends: ReadonlyArray<MarkerEnd>,
+  relative: ReadonlyArray<TrackEnd>,
   help: ReadonlyArray<string>,
 ): ArcFromEnds | null {
   const [first, second] = ends;
@@ -355,7 +355,7 @@ export function crossCheckLdcadTrackSnaps(
   library: LdrawLibrary,
   shadow: LdrawLibrary,
   part: string,
-  ends: ReadonlyArray<TrackEnd>,
+  ends: ReadonlyArray<MarkerEnd>,
 ): LdcadSnapCheck {
   const midpoints: Vec3[] = [];
   walkPart(library, `${part}.dat`, {
@@ -398,8 +398,8 @@ interface ComposedPose {
 }
 
 export function composeDivergingWithCurve(
-  switchEnd: RelativeTrackEnd,
-  curveEnd: RelativeTrackEnd,
+  switchEnd: TrackEnd,
+  curveEnd: TrackEnd,
   names: ReadonlyArray<string>,
 ): ComposedPose {
   const turn = switchEnd.headingSteps * ZETA16_STEP_RADIANS;
@@ -424,9 +424,10 @@ export function composeDivergingWithCurve(
       measuredResidualToExactLdu: null,
     };
   }
-  const curve = mirrored ? conjugateZeta16(curveEnd.coefficients) : curveEnd.coefficients;
+  const curveCoefficients = decodeZeta16(curveEnd.coefficients);
+  const curve = mirrored ? conjugateZeta16(curveCoefficients) : curveCoefficients;
   const exactCoefficients = addZeta16(
-    switchEnd.coefficients,
+    decodeZeta16(switchEnd.coefficients),
     rotateZeta16(curve, switchEnd.headingSteps),
   );
   const exact = zeta16ToStuds(exactCoefficients);

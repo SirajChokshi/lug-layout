@@ -1,4 +1,5 @@
-import type { BundleLod, CityCamera, ConsistEntry, GraphicsApi, TrainRequest } from "@brr/client";
+import type { CityCamera, ConsistEntry, GraphicsApi, TrainRequest } from "@brr/client";
+import type { BundleLod } from "@brr/schema/bundle";
 
 export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run" | "import";
 

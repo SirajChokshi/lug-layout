@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { modelStructure, parseLdraw, splitMultiPart, subfileReferences } from "./ldraw/parse.ts";
-import type { Palette, PaletteModel } from "./palette.ts";
+import type { Palette, PaletteModel } from "@brr/schema/bundle";
 
 export interface AuditLock {
   readonly files: Readonly<Record<string, string>>;

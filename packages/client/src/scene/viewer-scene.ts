@@ -1,11 +1,5 @@
-import {
-  directColorSrgb,
-  isDirectColor,
-  type BundleLod,
-  type ModelSection,
-  type PartBundle,
-  type PartFilter,
-} from "@brr/catalog";
+import { directColorSrgb, isDirectColor, type PartBundle, type PartFilter } from "@brr/catalog";
+import type { BundleLod, ModelSection } from "@brr/schema/bundle";
 import {
   COLOR_CHANNELS,
   type ChunkInstances,

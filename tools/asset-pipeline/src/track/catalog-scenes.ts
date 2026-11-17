@@ -12,7 +12,9 @@ import {
 import { applyToPoint, type Affine } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { INHERIT_COLOR } from "../ldraw/walk.ts";
-import { bundlePartId, ldrawPartOf, type CatalogPiece } from "./track-catalog.ts";
+import { decodeZeta16, type TrackPiece } from "@brr/schema/bundle";
+import type * as v from "valibot";
+import { bundlePartId, ldrawPartOf } from "./track-catalog.ts";
 import { findTrackEnds, LDU_PER_STUD, type TrackEndMarker } from "./track-ends.ts";
 
 const DECIMALS = 6;
@@ -34,13 +36,13 @@ export interface LayoutSpec {
 }
 
 interface Placed {
-  readonly piece: CatalogPiece;
+  readonly piece: v.InferInput<typeof TrackPiece>;
   readonly pose: Pose16;
 }
 
 export interface LayoutCheck {
   readonly name: string;
-  readonly status: CatalogPiece["status"];
+  readonly status: v.InferInput<typeof TrackPiece>["status"];
   readonly unverifiedPieces: ReadonlyArray<string>;
   readonly pieces: number;
   readonly connectors: number;
@@ -55,24 +57,30 @@ export interface CatalogScene {
   readonly check: LayoutCheck;
 }
 
-function pieceFor(pieces: ReadonlyArray<CatalogPiece>, part: string): CatalogPiece {
+function pieceFor(
+  pieces: ReadonlyArray<v.InferInput<typeof TrackPiece>>,
+  part: string,
+): v.InferInput<typeof TrackPiece> {
   const piece = pieces.find((candidate) => candidate.part === bundlePartId(part));
   if (piece === undefined)
     throw new Error(`layout uses ${part}, which is not in the track catalog`);
   return piece;
 }
 
-function connectorPose(piece: CatalogPiece, index: number): Pose16 {
+function connectorPose(piece: v.InferInput<typeof TrackPiece>, index: number): Pose16 {
   const connector = piece.connectors[index];
   if (connector === undefined) throw new Error(`${piece.id} has no connector ${index}`);
-  return pose16(connector.coefficients, connector.heading);
+  return pose16(decodeZeta16(connector.coefficients), connector.heading);
 }
 
 function worldConnector(placed: Placed, index: number): Pose16 {
   return composePose16(placed.pose, connectorPose(placed.piece, index));
 }
 
-function place(pieces: ReadonlyArray<CatalogPiece>, spec: LayoutSpec): ReadonlyArray<Placed> {
+function place(
+  pieces: ReadonlyArray<v.InferInput<typeof TrackPiece>>,
+  spec: LayoutSpec,
+): ReadonlyArray<Placed> {
   const placed: Placed[] = [];
   let tip: { placement: number; connector: number } | null = null;
   for (const step of spec.steps) {
@@ -193,7 +201,7 @@ function measuredGaps(
 export function catalogScene(
   library: LdrawLibrary,
   markers: ReadonlyArray<TrackEndMarker>,
-  pieces: ReadonlyArray<CatalogPiece>,
+  pieces: ReadonlyArray<v.InferInput<typeof TrackPiece>>,
   spec: LayoutSpec,
 ): CatalogScene {
   const placed = place(pieces, spec);

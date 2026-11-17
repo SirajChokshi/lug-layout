@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@brr/client": "workspace:*",
+    "@brr/schema": "workspace:*",
     "react": "19.3.1"
   },
   "devDependencies": {

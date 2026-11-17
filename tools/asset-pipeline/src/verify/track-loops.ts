@@ -1,3 +1,4 @@
+import { type TrackEnd, decodeZeta16 } from "@brr/schema/bundle";
 import {
   attachPose16,
   composePose16,
@@ -15,8 +16,7 @@ import {
   entryInwardAngle,
   findTrackEnds,
   relativeToEntry,
-  type RelativeTrackEnd,
-  type TrackEnd,
+  type MarkerEnd,
   type TrackEndMarker,
 } from "../track/track-ends.ts";
 import { rotationY, toLdraw, translated, type ScenePlacement } from "./scenes.ts";
@@ -38,8 +38,8 @@ const FULL_TURN = 2 * Math.PI;
 
 interface MeasuredPiece {
   readonly part: string;
-  readonly entry: TrackEnd;
-  readonly relative: ReadonlyArray<RelativeTrackEnd>;
+  readonly entry: MarkerEnd;
+  readonly relative: ReadonlyArray<TrackEnd>;
 }
 
 interface FloatPose {
@@ -133,7 +133,7 @@ const exactAlgebra: PoseAlgebra<Pose16> = {
       if (end.coefficients === null) {
         throw new Error(`${piece.part} end ${index} has no certified ℤ[ζ₁₆] pose`);
       }
-      return pose16(end.coefficients, end.headingSteps);
+      return pose16(decodeZeta16(end.coefficients), end.headingSteps);
     }),
   attach: attachPose16,
   compose: composePose16,
@@ -148,7 +148,7 @@ function floatAlgebra(round: Rounding, source: "measured" | "certified"): PoseAl
     return [round(round(cos * x) - round(sin * z)), round(round(sin * x) + round(cos * z))];
   };
   const wrap = (angle: number): number => round(angle - FULL_TURN * Math.round(angle / FULL_TURN));
-  const localEnd = (end: RelativeTrackEnd): FloatPose => {
+  const localEnd = (end: TrackEnd): FloatPose => {
     if (source === "measured") {
       return {
         x: round(end.xStuds),
@@ -159,7 +159,7 @@ function floatAlgebra(round: Rounding, source: "measured" | "certified"): PoseAl
       };
     }
     if (end.coefficients === null) throw new Error("certified float algebra needs certified ends");
-    const studs = zeta16ToStuds(end.coefficients);
+    const studs = zeta16ToStuds(decodeZeta16(end.coefficients));
     return {
       x: round(studs.x),
       z: round(studs.z),

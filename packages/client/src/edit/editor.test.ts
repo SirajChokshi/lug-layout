@@ -1,8 +1,6 @@
 import {
   ASSET_FETCHER,
   PART_BUNDLE_LOADER,
-  type BundleLod,
-  type BundleManifest,
   type CompiledPartGlb,
   type IAssetFetcher,
   type ImportContext,
@@ -11,6 +9,7 @@ import {
   type PartBundle,
   type PartFilter,
 } from "@brr/catalog";
+import type { BundleLod, BundleManifest } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,

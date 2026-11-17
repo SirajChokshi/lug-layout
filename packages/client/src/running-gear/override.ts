@@ -1,36 +1,19 @@
-import type { BakedVehicle, Vec3Tuple, VehicleBogie, VehicleCoupler } from "@brr/catalog";
+import type { PartVehicle } from "@brr/catalog";
+import {
+  RUNNING_GEAR_OVERRIDE_VERSION,
+  RunningGearOverride,
+  type BogieOverride,
+  type Vec3,
+  type VehicleCoupler,
+  type VehicleOverride,
+} from "@brr/schema/bundle";
+import { decode } from "@brr/schema/decode";
 import { runningGearSpanProblem } from "@brr/domain";
 import { vehicleSpec } from "../sim/consist.ts";
 import { distanceOutside, planBox, unionBox, type PlanBox } from "./instance-boxes.ts";
 
-export const RUNNING_GEAR_OVERRIDE_VERSION = 2;
-const MODEL_FRAME_OVERRIDE_VERSION = 1;
-
-export interface BogieOverride {
-  readonly instances: ReadonlyArray<number>;
-  readonly pivot: Vec3Tuple;
-}
-
-export interface CouplerOverride {
-  readonly instance: number;
-  readonly face: Vec3Tuple;
-}
-
-export interface VehicleOverride {
-  readonly vehicle: number;
-  readonly bogies?: ReadonlyArray<BogieOverride>;
-  readonly couplers?: ReadonlyArray<CouplerOverride>;
-}
-
-export interface RunningGearOverride {
-  readonly version: typeof RUNNING_GEAR_OVERRIDE_VERSION | typeof MODEL_FRAME_OVERRIDE_VERSION;
-  readonly modelSha256: string;
-  readonly model: string;
-  readonly vehicles: ReadonlyArray<VehicleOverride>;
-}
-
 export interface EffectiveVehicle {
-  readonly vehicle: BakedVehicle | null;
+  readonly vehicle: PartVehicle | null;
   readonly issues: ReadonlyArray<string>;
 }
 
@@ -41,16 +24,16 @@ interface PlanFrame {
   readonly sin: number;
 }
 
-function frameOf(vehicle: BakedVehicle): PlanFrame {
+function frameOf(vehicle: PartVehicle): PlanFrame {
   return {
-    x: vehicle.originXLdu,
-    z: vehicle.originZLdu,
-    cos: Math.cos(vehicle.yawRadians),
-    sin: Math.sin(vehicle.yawRadians),
+    x: vehicle.origin[0],
+    z: vehicle.origin[1],
+    cos: Math.cos(vehicle.yaw),
+    sin: Math.sin(vehicle.yaw),
   };
 }
 
-export function toModelFrame(vehicle: BakedVehicle, local: Vec3Tuple): Vec3Tuple {
+export function toModelFrame(vehicle: PartVehicle, local: Vec3): Vec3 {
   const f = frameOf(vehicle);
   return [
     f.x + local[0] * f.cos - local[2] * f.sin,
@@ -59,19 +42,19 @@ export function toModelFrame(vehicle: BakedVehicle, local: Vec3Tuple): Vec3Tuple
   ];
 }
 
-function toFrame(f: PlanFrame, model: Vec3Tuple): Vec3Tuple {
+function toFrame(f: PlanFrame, model: Vec3): Vec3 {
   const dx = model[0] - f.x;
   const dz = model[2] - f.z;
   return [dx * f.cos + dz * f.sin, model[1], -dx * f.sin + dz * f.cos];
 }
 
-export function vehicleInstances(vehicle: BakedVehicle): ReadonlyArray<number> {
+export function vehicleInstances(vehicle: PartVehicle): ReadonlyArray<number> {
   const all = [...vehicle.body];
   for (const bogie of vehicle.bogies) all.push(...bogie.instances);
   return all.toSorted((a, b) => a - b);
 }
 
-export function detectedBogies(vehicle: BakedVehicle): ReadonlyArray<BogieOverride> {
+export function detectedBogies(vehicle: PartVehicle): BogieOverride[] {
   return vehicle.bogies.map((bogie) => ({
     instances: [...bogie.instances],
     pivot: [...bogie.pivot],
@@ -80,7 +63,7 @@ export function detectedBogies(vehicle: BakedVehicle): ReadonlyArray<BogieOverri
 
 export function inVehicleFrame(
   override: RunningGearOverride,
-  vehicles: ReadonlyArray<BakedVehicle>,
+  vehicles: ReadonlyArray<PartVehicle>,
 ): RunningGearOverride {
   if (override.version === RUNNING_GEAR_OVERRIDE_VERSION) return override;
   return {
@@ -89,7 +72,7 @@ export function inVehicleFrame(
     vehicles: override.vehicles.map((entry) => {
       const vehicle = vehicles[entry.vehicle];
       if (!vehicle) return entry;
-      const local = (model: Vec3Tuple): Vec3Tuple => toFrame(frameOf(vehicle), model);
+      const local = (model: Vec3): Vec3 => toFrame(frameOf(vehicle), model);
       return {
         vehicle: entry.vehicle,
         ...(entry.bogies
@@ -103,21 +86,21 @@ export function inVehicleFrame(
   };
 }
 
-function along(f: PlanFrame, p: Vec3Tuple): number {
+function along(f: PlanFrame, p: Vec3): number {
   return (p[0] - f.x) * f.cos + (p[2] - f.z) * f.sin;
 }
 
 interface ModelGuides {
-  readonly front: Vec3Tuple;
-  readonly rear: Vec3Tuple;
+  readonly front: Vec3;
+  readonly rear: Vec3;
 }
 
 function chooseGuides(
   detected: PlanFrame,
-  pivots: ReadonlyArray<Vec3Tuple>,
-  fixed: ReadonlyArray<Vec3Tuple>,
+  pivots: ReadonlyArray<Vec3>,
+  fixed: ReadonlyArray<Vec3>,
 ): ModelGuides | string {
-  const ordered = (a: Vec3Tuple, b: Vec3Tuple): ModelGuides =>
+  const ordered = (a: Vec3, b: Vec3): ModelGuides =>
     along(detected, a) >= along(detected, b) ? { front: a, rear: b } : { front: b, rear: a };
   const [p0, p1] = pivots;
   if (pivots.length === 2 && p0 && p1) return ordered(p0, p1);
@@ -131,7 +114,7 @@ function chooseGuides(
 }
 
 export function effectiveVehicle(
-  baked: BakedVehicle,
+  baked: PartVehicle,
   override: VehicleOverride | undefined,
   boxes: Float64Array,
 ): EffectiveVehicle {
@@ -183,19 +166,17 @@ export function effectiveVehicle(
     };
   const frontCoupler = placed(baked.frontCoupler);
   const rearCoupler = placed(baked.rearCoupler);
-  const effectiveBogies: VehicleBogie[] = bogies.map((bogie, b) => ({
+  const effectiveBogies: PartVehicle["bogies"][number][] = bogies.map((bogie, b) => ({
     instances: Uint32Array.from(bogie.instances.toSorted((x, y) => x - y)),
     pivot: toFrame(frame, modelPivots[b] ?? bogie.pivot),
     axles: (bogieAxles[b] ?? []).map((axle) => toFrame(frame, axle)),
   }));
-  const vehicle: BakedVehicle = {
+  const vehicle: PartVehicle = {
     ...baked,
-    originXLdu: frame.x,
-    originZLdu: frame.z,
-    yawRadians: yaw,
+    origin: [frame.x, frame.z],
+    yaw,
     guideKind: bogies.length === 2 ? "bogiePivot" : "fixedAxle",
-    frontGuideLdu: half,
-    rearGuideLdu: -half,
+    guides: [half, -half],
     body: Uint32Array.from([...members].filter((i) => !owner.has(i))),
     bogies: effectiveBogies,
     fixedAxles: fixed.map((axle) => toFrame(frame, axle)),
@@ -227,9 +208,9 @@ function boxInFrame(f: PlanFrame, box: PlanBox): PlanBox {
 }
 
 function partBoundsIssues(
-  baked: BakedVehicle,
+  baked: PartVehicle,
   bogies: ReadonlyArray<BogieOverride>,
-  faces: ReadonlyMap<number, Vec3Tuple>,
+  faces: ReadonlyMap<number, Vec3>,
   boxes: Float64Array,
 ): string[] {
   const detected = frameOf(baked);
@@ -268,7 +249,7 @@ function partBoundsIssues(
   return issues;
 }
 
-function runningGearProblem(vehicle: BakedVehicle): string | null {
+function runningGearProblem(vehicle: PartVehicle): string | null {
   const { frontCoupler, rearCoupler } = vehicle;
   if (frontCoupler && rearCoupler) {
     try {
@@ -286,80 +267,7 @@ function runningGearProblem(vehicle: BakedVehicle): string | null {
   return null;
 }
 
-function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function vec3(value: unknown): Vec3Tuple | null {
-  if (!Array.isArray(value) || value.length !== 3) return null;
-  const [x, y, z] = value;
-  return typeof x === "number" && typeof y === "number" && typeof z === "number" ? [x, y, z] : null;
-}
-
-function indices(value: unknown): ReadonlyArray<number> | null {
-  if (!Array.isArray(value)) return null;
-  return value.every((v) => Number.isInteger(v) && v >= 0) ? (value as number[]) : null;
-}
-
-function parseVehicle(value: unknown): VehicleOverride | null {
-  const raw = record(value);
-  if (!raw || !Number.isInteger(raw["vehicle"])) return null;
-  const vehicle = Number(raw["vehicle"]);
-  let bogies: BogieOverride[] | undefined;
-  if (raw["bogies"] !== undefined) {
-    if (!Array.isArray(raw["bogies"])) return null;
-    bogies = [];
-    for (const entry of raw["bogies"]) {
-      const bogie = record(entry);
-      const instances = indices(bogie?.["instances"]);
-      const pivot = vec3(bogie?.["pivot"]);
-      if (!instances || !pivot) return null;
-      bogies.push({ instances, pivot });
-    }
-  }
-  let couplers: CouplerOverride[] | undefined;
-  if (raw["couplers"] !== undefined) {
-    if (!Array.isArray(raw["couplers"])) return null;
-    couplers = [];
-    for (const entry of raw["couplers"]) {
-      const coupler = record(entry);
-      const face = vec3(coupler?.["face"]);
-      const instance = coupler?.["instance"];
-      if (!face || !Number.isInteger(instance)) return null;
-      couplers.push({ instance: Number(instance), face });
-    }
-  }
-  return {
-    vehicle,
-    ...(bogies ? { bogies } : {}),
-    ...(couplers ? { couplers } : {}),
-  };
-}
-
 export function parseRunningGearOverride(value: unknown): RunningGearOverride | null {
-  const raw = record(value);
-  if (
-    !raw ||
-    (raw["version"] !== RUNNING_GEAR_OVERRIDE_VERSION &&
-      raw["version"] !== MODEL_FRAME_OVERRIDE_VERSION) ||
-    typeof raw["modelSha256"] !== "string" ||
-    typeof raw["model"] !== "string" ||
-    !Array.isArray(raw["vehicles"])
-  ) {
-    return null;
-  }
-  const vehicles: VehicleOverride[] = [];
-  for (const entry of raw["vehicles"]) {
-    const vehicle = parseVehicle(entry);
-    if (!vehicle) return null;
-    vehicles.push(vehicle);
-  }
-  return {
-    version: raw["version"],
-    modelSha256: raw["modelSha256"],
-    model: raw["model"],
-    vehicles,
-  };
+  const decoded = decode(RunningGearOverride, value);
+  return decoded.ok ? decoded.value : null;
 }

@@ -1,4 +1,5 @@
-import type { PartAsset, TrackCatalog, TrackPartFrame, TrackPiece } from "@brr/catalog";
+import type { PartAsset } from "@brr/catalog";
+import type { TrackCatalog, TrackPartFrame, TrackPiece } from "@brr/schema/bundle";
 import {
   drawingKit,
   layMoves,

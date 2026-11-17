@@ -1,4 +1,4 @@
-import type { TrackPiece } from "@brr/catalog";
+import type { TrackPiece } from "@brr/schema/bundle";
 import type { TrackGraph, TrackLayout } from "@brr/domain";
 import type { SimPathSegment, TrackGraphTopology } from "@brr/sim";
 
