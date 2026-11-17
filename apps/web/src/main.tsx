@@ -63,7 +63,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
     }
     case "model": {
       const modelScene = container.get(MODEL_SCENE);
-      modelScene.selectModel(viewer.model ?? "");
+      modelScene.selectModel(viewer.model ?? "", viewer.modelView);
       return { scene: modelScene, placements: null, run: null };
     }
     case "track": {

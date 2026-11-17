@@ -1,6 +1,6 @@
 export { catalogModule } from "./catalog.module.ts";
 export { directColorSrgb, isDirectColor } from "./colors.ts";
-export { BUNDLE_LODS, INHERIT_COLOR } from "./part-bundle.ts";
+export { BUNDLE_LODS, EMPTY_COLUMN, INHERIT_COLOR } from "./part-bundle.ts";
 export type { BundleInputs, BundleManifest, BundleSource } from "./manifest.ts";
 export type {
   BundleColor,
@@ -14,11 +14,13 @@ export type {
   IPartBundleLoader,
   MeshArrays,
   ModelBundle,
+  ModelCells,
   ModelLattice,
   ModelOrigin,
   ModelRole,
   ModelSection,
   ModelSet,
+  ModelStudCover,
   PartAsset,
   PartBundle,
   PartFilter,

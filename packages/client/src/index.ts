@@ -17,7 +17,7 @@ export type {
 export type { ITrackScene } from "./scene/track-scene.ts";
 export type { CityCamera, CityRequest, ICityScene } from "./scene/city-scene.ts";
 export type { PlacementDump } from "./scene/placements.ts";
-export type { IModelScene } from "./scene/model-scene.ts";
+export type { IModelScene, ModelView } from "./scene/model-scene.ts";
 export type { ICredits } from "./credits/credits-service.ts";
 export {
   licenseText,
@@ -46,6 +46,7 @@ export type {
   EditorStats,
   EditorStatus,
   HistoryView,
+  HoverView,
   IEditor,
   LatencySample,
   RoadIssueView,
@@ -54,6 +55,7 @@ export type {
   RefusedClick,
   RoadSnapState,
   RoadSnapView,
+  PlaceableCoverView,
   SelectionView,
   SkippedCatalogModel,
   TrackBomLine,
@@ -133,3 +135,4 @@ export {
 } from "./tokens.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type { ClosureState, TrackDragView } from "./edit/track-drawing.ts";
+export type { StudTotals } from "./edit/placed-chunks.ts";

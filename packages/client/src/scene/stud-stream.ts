@@ -1,4 +1,4 @@
-import { INHERIT_COLOR, type PartAsset, type PartRole } from "@brr/catalog";
+import { INHERIT_COLOR, type ModelStudCover, type PartAsset, type PartRole } from "@brr/catalog";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type StudInstances } from "@brr/render";
 import { STUD_LDU } from "@brr/math";
 import type { ChunkPartInstances } from "./placements.ts";
@@ -106,9 +106,17 @@ export function withStuds(
   parts: ReadonlyArray<PartAsset>,
   colors: ColorTable,
   coveringRoles: ReadonlySet<PartRole> | undefined,
+  bakedCover?: ModelStudCover,
 ): ChunkInstances {
   const covered = coveringRoles ? new CoveredStuds(parts, base, coveringRoles) : undefined;
-  return { ...base, studs: studStream(parts, colors, base, covered) };
+  return { ...base, studs: studStream(parts, colors, base, covered, bakedCover) };
+}
+
+const BITS_PER_WORD = 32;
+
+function bakedVisible(cover: ModelStudCover | undefined, stud: number): boolean {
+  if (!cover) return true;
+  return (((cover.visibleBits[stud >>> 5] ?? 0) >>> (stud & (BITS_PER_WORD - 1))) & 1) === 1;
 }
 
 function studStream(
@@ -116,11 +124,18 @@ function studStream(
   colors: ColorTable,
   instances: PartInstances,
   covered: CoveredStuds | undefined,
+  bakedCover: ModelStudCover | undefined,
 ): StudInstances {
   let totalStuds = 0;
   for (let i = 0; i < instances.count; i++) {
     totalStuds += parts[instances.partIndex[i] ?? 0]?.studPrimitiveIndex.length ?? 0;
   }
+  if (bakedCover && bakedCover.studs !== totalStuds) {
+    throw new Error(
+      `the bake's stud cover lists ${bakedCover.studs} studs but the model's parts have ${totalStuds}`,
+    );
+  }
+  let stud = 0;
   const primitiveIndex = new Uint8Array(totalStuds);
   const colorIndex = new Uint16Array(totalStuds);
   const matrices = new Float32Array(totalStuds * INSTANCE_MATRIX_FLOATS);
@@ -129,7 +144,8 @@ function studStream(
     const part = parts[instances.partIndex[i] ?? 0];
     if (!part) continue;
     const o = i * INSTANCE_MATRIX_FLOATS;
-    for (let s = 0; s < part.studPrimitiveIndex.length; s++) {
+    for (let s = 0; s < part.studPrimitiveIndex.length; s++, stud++) {
+      if (!bakedVisible(bakedCover, stud)) continue;
       const t = count * INSTANCE_MATRIX_FLOATS;
       composeInto(
         instances.matrices,

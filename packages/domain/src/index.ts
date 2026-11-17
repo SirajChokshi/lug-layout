@@ -98,3 +98,4 @@ export {
   type ClosureResult,
   type SearchBudget,
 } from "./track/closure.ts";
+export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";

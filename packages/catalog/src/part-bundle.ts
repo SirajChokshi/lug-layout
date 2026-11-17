@@ -109,9 +109,31 @@ export interface ModelLattice {
   readonly aabbMax: Vec3Tuple;
 }
 
+export const EMPTY_COLUMN = -1;
+
+export interface ModelCells {
+  readonly originX: number;
+  readonly originZ: number;
+  readonly width: number;
+  readonly depth: number;
+  readonly restY: number;
+  readonly footprint: Uint32Array;
+  readonly flat: Uint32Array;
+  readonly columnBottom: Int16Array;
+  readonly columnTop: Int16Array;
+}
+
+export interface ModelStudCover {
+  readonly studs: number;
+  readonly covered: number;
+  readonly visibleBits: Uint32Array;
+}
+
 export interface PartModel {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly lattice: ModelLattice | null;
+  readonly studCover: ModelStudCover;
+  readonly cells: ModelCells | null;
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint16Array;

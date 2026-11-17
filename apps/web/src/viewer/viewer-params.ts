@@ -1,4 +1,11 @@
-import type { BundleLod, CityCamera, ConsistEntry, GraphicsApi, TrainRequest } from "@brr/client";
+import type {
+  BundleLod,
+  CityCamera,
+  ConsistEntry,
+  GraphicsApi,
+  ModelView,
+  TrainRequest,
+} from "@brr/client";
 
 export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run" | "import";
 
@@ -8,6 +15,7 @@ export interface ViewerParams {
   readonly api: GraphicsApi;
   readonly lod: BundleLod;
   readonly model: string | null;
+  readonly modelView: ModelView;
   readonly track: string | null;
   readonly run: boolean;
   readonly consist: ReadonlyArray<ConsistEntry>;
@@ -121,6 +129,7 @@ export function readViewerParams(search: string): ViewerParams {
     api: params.get("api") === "webgl2" ? "webgl2" : "webgpu",
     lod: params.get("lod") === "low" ? "low" : "standard",
     model: params.get("model"),
+    modelView: params.get("view") === "below" ? "below" : "above",
     track: params.get("track"),
     run: params.get("run") === "1",
     consist: consistEntries(params.get("train") ?? DEFAULT_CONSIST),

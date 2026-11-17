@@ -74,11 +74,29 @@ export interface ModelFileLattice {
   readonly aabb: { readonly min: Vec3Tuple; readonly max: Vec3Tuple };
 }
 
+export interface ModelFileCells {
+  readonly origin: readonly [number, number];
+  readonly size: readonly [number, number];
+  readonly bottomY: number;
+  readonly footprint: ReadonlyArray<number>;
+  readonly flat: ReadonlyArray<number>;
+  readonly columnBottom: ReadonlyArray<number>;
+  readonly columnTop: ReadonlyArray<number>;
+}
+
+export interface ModelFileCover {
+  readonly studs: number;
+  readonly coveredStuds: number;
+  readonly visibleBits: ReadonlyArray<number>;
+  readonly cells: ModelFileCells | null;
+}
+
 export interface ModelFile {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly parts: ReadonlyArray<string>;
   readonly lattice: ModelFileLattice | null;
   readonly vehicles: ReadonlyArray<BakedVehicle>;
+  readonly cover: ModelFileCover;
   readonly instances: {
     readonly part: ReadonlyArray<number>;
     readonly color: ReadonlyArray<number>;
@@ -254,6 +272,48 @@ function isModelFileLattice(value: unknown): value is ModelFileLattice {
   );
 }
 
+const BITS_PER_WORD = 32;
+
+function isPair(value: unknown): value is readonly [number, number] {
+  return isNumberArray(value) && value.length === 2;
+}
+
+function isCellIndexList(value: unknown, cellCount: number): boolean {
+  return (
+    isNumberArray(value) &&
+    value.every((cell) => Number.isInteger(cell) && cell >= 0 && cell < cellCount)
+  );
+}
+
+function isModelFileCells(value: unknown): value is ModelFileCells {
+  if (!isRecord(value) || !isPair(value["origin"]) || !isPair(value["size"])) return false;
+  const [width, depth] = value["size"];
+  const cellCount = width * depth;
+  const columns = (column: unknown): boolean =>
+    isNumberArray(column) && column.length === cellCount && column.every(Number.isInteger);
+  return (
+    Number.isInteger(width) &&
+    Number.isInteger(depth) &&
+    typeof value["bottomY"] === "number" &&
+    isCellIndexList(value["footprint"], cellCount) &&
+    isCellIndexList(value["flat"], cellCount) &&
+    columns(value["columnBottom"]) &&
+    columns(value["columnTop"])
+  );
+}
+
+function isModelFileCover(value: unknown): value is ModelFileCover {
+  if (!isRecord(value)) return false;
+  const studs = value["studs"];
+  return (
+    typeof studs === "number" &&
+    typeof value["coveredStuds"] === "number" &&
+    isNumberArray(value["visibleBits"]) &&
+    value["visibleBits"].length === Math.ceil(studs / BITS_PER_WORD) &&
+    (value["cells"] === null || isModelFileCells(value["cells"]))
+  );
+}
+
 export function parseModelFile(value: unknown, label: string): ModelFile {
   if (!isRecord(value) || !isRecord(value["instances"]) || !isStringArray(value["parts"])) {
     throw new Error(`${label}: model file does not match the M1 bundle format`);
@@ -261,6 +321,9 @@ export function parseModelFile(value: unknown, label: string): ModelFile {
   const partCount = value["parts"].length;
   if (value["lattice"] !== null && !isModelFileLattice(value["lattice"])) {
     throw new Error(`${label}: model file lattice is neither null nor a phase and AABB`);
+  }
+  if (!isModelFileCover(value["cover"])) {
+    throw new Error(`${label}: model file has no stud cover and cell columns from the bake`);
   }
   const { part, color, matrix } = value["instances"];
   if (
