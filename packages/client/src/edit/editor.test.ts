@@ -572,3 +572,49 @@ it("refuses a rail edge against a plain or road module in either order, and join
     },
   });
 }, 120_000);
+
+it.each([
+  {
+    name: "a MILS curve beside a MILS straight",
+    models: ["mils-road-straight", "mils-road-curve"],
+    placed: "generated:mils-road-straight",
+    held: "generated:mils-road-curve",
+    heldAt: [960, 320],
+  },
+  {
+    name: "a road curve at a road straight's open end",
+    models: [],
+    placed: "ldraw:44336p04@72",
+    held: "ldraw:44342p02@72",
+    heldAt: [320, 960],
+  },
+] as const)(
+  "R cycles the fitting turns of $name, and the click lays the turn the ghost shows",
+  async ({ models, placed, held, heldAt }) => {
+    const { editor, backend } = await startEditor(models);
+    editor.chooseItem(placed);
+    backend.aim(320, 320);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    editor.chooseItem(held);
+    backend.aim(heldAt[0], heldAt[1]);
+    editor.pointerMove(0, 0);
+    const shown = () => {
+      const { ghostRot, moduleFit, snap } = editor.snapshot();
+      return { ghostRot, fit: moduleFit?.rot ?? (snap?.state === "snapped" ? ghostRot : null) };
+    };
+    const turns = [shown()];
+    for (let press = 0; press < 4; press++) {
+      editor.rotate(0);
+      turns.push(shown());
+    }
+    for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
+    const rots = turns.map((turn) => turn.ghostRot);
+    expect(new Set(rots).size).toBe(2);
+    expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
+    editor.click(0, 0, 0);
+    const { placements } = editor.dump();
+    expect(placements.rot.at(-1)).toBe(rots.at(-1));
+  },
+  120_000,
+);

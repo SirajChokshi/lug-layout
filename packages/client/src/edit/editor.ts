@@ -182,6 +182,7 @@ export type RoadSnapState = "snapped" | "free" | "refused";
 export interface RoadSnapView {
   readonly state: RoadSnapState;
   readonly joinedCells: number;
+  readonly joinedRoadCells: number;
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
 }
@@ -739,6 +740,7 @@ export class Editor implements IEditor {
   private active: Placeable | null = null;
   private selected: PlacedModel | null = null;
   private ghostRot = 0;
+  private placeRot = 0;
   private hoverX = 0;
   private hoverZ = 0;
   private hoverYPlates = 0;
@@ -1326,14 +1328,15 @@ export class Editor implements IEditor {
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
-    const moduleFit = this.snapGhostToModuleGrid();
+    const { moduleFit, snap } = this.snapGhost();
     this.placeGhost();
     if (!moduleFit) this.showMarkers();
     this.update({
       mode: placeable ? "place" : "select",
       activeItem: placeable?.id ?? null,
       moduleFit,
-      ghostRot: this.ghostRot,
+      snap,
+      ghostRot: this.placeRot,
     });
   }
 
@@ -1477,14 +1480,14 @@ export class Editor implements IEditor {
       this.active,
       this.hoverX,
       this.hoverZ,
-      this.ghostRot,
+      this.placeRot,
       null,
     );
     this.hoverRefusal = this.placementRefusal(
       this.active,
       this.hoverX,
       this.hoverZ,
-      this.ghostRot,
+      this.placeRot,
       this.hoverYPlates,
       null,
     );
@@ -1492,7 +1495,7 @@ export class Editor implements IEditor {
       this.hoverX,
       this.hoverYPlates * PLATE_LDU + GHOST_LIFT_LDU,
       this.hoverZ,
-      this.ghostRot,
+      this.placeRot,
     );
   }
 
@@ -1504,6 +1507,16 @@ export class Editor implements IEditor {
       yPlates: this.hoverYPlates,
       refusal: this.hoverRefusal,
     };
+  }
+
+  private snapGhost(): {
+    readonly moduleFit: ModuleFitView | null;
+    readonly snap: RoadSnapView | null;
+  } {
+    this.placeRot = this.ghostRot;
+    const moduleFit = this.snapGhostToModuleGrid();
+    const snap = this.snapGhostToRoad();
+    return { moduleFit, snap };
   }
 
   private snapGhostToRoad(): RoadSnapView | null {
@@ -1521,9 +1534,11 @@ export class Editor implements IEditor {
     if (snap) {
       this.hoverX = snap.x;
       this.hoverZ = snap.z;
+      this.placeRot = snap.rot;
       return {
         state: "snapped",
         joinedCells: snap.joinedCells,
+        joinedRoadCells: snap.joinedRoadCells,
         mismatchedCells: 0,
         overlappingCells: 0,
       };
@@ -1533,7 +1548,7 @@ export class Editor implements IEditor {
       x: this.hoverX,
       z: this.hoverZ,
       yLdu: 0,
-      rot: this.ghostRot,
+      rot: this.placeRot,
       surface,
     });
     const refused = fit.mismatchedCells > 0 || fit.overlappingCells > 0;
@@ -1542,8 +1557,7 @@ export class Editor implements IEditor {
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
-    const moduleFit = this.snapGhostToModuleGrid();
-    const snap = this.snapGhostToRoad();
+    const { moduleFit, snap } = this.snapGhost();
     const track = this.track;
     if (this.held) this.showHeldPiece();
     else if (this.state.mode === "track" && track && !track.dragView()) {
@@ -1554,7 +1568,7 @@ export class Editor implements IEditor {
       hover: this.hoverView(),
       snap,
       moduleFit,
-      ghostRot: this.ghostRot,
+      ghostRot: this.placeRot,
     });
   }
 
@@ -1576,13 +1590,12 @@ export class Editor implements IEditor {
     if (this.active && !this.readOnly) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
-      const moduleFit = this.snapGhostToModuleGrid();
+      const { moduleFit, snap } = this.snapGhost();
       if (moduleFit?.occupied) {
         this.placeGhost();
         this.update({ moduleFit, refusedClicks: this.state.refusedClicks + 1 });
         return;
       }
-      const snap = this.snapGhostToRoad();
       this.placeGhost();
       if (snap?.state === "refused") {
         this.update({
@@ -1592,7 +1605,7 @@ export class Editor implements IEditor {
             item: this.active.id,
             x: this.hoverX,
             z: this.hoverZ,
-            rot: this.ghostRot,
+            rot: this.placeRot,
             mismatchedCells: snap.mismatchedCells,
             overlappingCells: snap.overlappingCells,
             reason: ROAD_REFUSAL,
@@ -1601,10 +1614,10 @@ export class Editor implements IEditor {
         return;
       }
       if (this.hoverRefusal !== null) {
-        this.refuse(this.active.id, this.hoverX, this.hoverZ, this.ghostRot, this.hoverRefusal);
+        this.refuse(this.active.id, this.hoverX, this.hoverZ, this.placeRot, this.hoverRefusal);
         return;
       }
-      this.placeAt(this.active, this.hoverX, this.hoverZ, this.ghostRot, eventTimeMs);
+      this.placeAt(this.active, this.hoverX, this.hoverZ, this.placeRot, eventTimeMs);
       return;
     }
     this.backend.rayThrough(ndcX, ndcY, this.ray);
@@ -1850,7 +1863,7 @@ export class Editor implements IEditor {
       ? layout.bestCandidate(surface, this.ghostRot, this.hitX, this.hitZ)
       : layout.candidate(surface, this.ghostRot, this.hitX, this.hitZ);
     this.moduleGhost = candidate;
-    this.ghostRot = candidate.rot;
+    this.placeRot = candidate.rot;
     this.hoverX = candidate.x;
     this.hoverZ = candidate.z;
     this.showMarkers();
@@ -1912,11 +1925,16 @@ export class Editor implements IEditor {
       return;
     }
     if (this.active) {
-      this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
-      const moduleFit = this.snapGhostToModuleGrid();
+      this.ghostRot = (this.placeRot + 1) % QUARTER_TURNS;
+      if (this.hovering) {
+        this.hoverX = snapToLattice(this.hitX);
+        this.hoverZ = snapToLattice(this.hitZ);
+      }
+      const { moduleFit, snap } = this.snapGhost();
       this.placeGhost();
       this.update({
-        ghostRot: this.ghostRot,
+        ghostRot: this.placeRot,
+        snap,
         hover: this.hoverView(),
         ...(moduleFit ? { moduleFit } : {}),
       });
