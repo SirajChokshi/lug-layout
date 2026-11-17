@@ -369,7 +369,16 @@ export class EditorPage {
     return (await this.planState()).tableTopY;
   }
 
-  async counter(name: "refused" | "road-joined" | "road-open" | "road-mismatch"): Promise<number> {
+  async counter(
+    name:
+      | "refused"
+      | "road-joined"
+      | "road-open"
+      | "road-mismatch"
+      | "module-joined"
+      | "module-open"
+      | "module-mismatch",
+  ): Promise<number> {
     return Number(await this.root.getAttribute(`data-${name}`));
   }
 }
