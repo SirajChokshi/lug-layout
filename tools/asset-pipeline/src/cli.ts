@@ -343,7 +343,7 @@ async function bundleCommand(): Promise<void> {
 }
 
 const partBundleStorePath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
-const DEFAULT_WAIT_MINUTES = 20;
+const DEFAULT_WAIT_MINUTES = 21;
 const WAIT_INTERVAL_MS = 15_000;
 const MS_PER_MINUTE = 60_000;
 
