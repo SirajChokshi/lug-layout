@@ -1,0 +1,1 @@
+aerial parts=400000: 60 measured frames (+5 warmup); chunks 324; rebases with the PR rule 23; the old 8-chunk rule on the same eye path 23; rebase ms median 1.60 max 3.80 total 42.9; median CPU submit 15.00 ms, median frame 4385.4 ms

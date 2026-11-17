@@ -1,0 +1,7 @@
+## Long world name
+typed 215 characters; the field holds 200
+a 201-character name with trailing spaces: New enabled true
+"Riverside yard": New enabled true; issue line 0
+created and edited: "Riverside yard Saved · 1 placement · 1 shard"
+after reload: "Riverside yard Saved · 1 placement · 1 shard"
+(the schema caps names at 200; a 201-character name can't be typed into the field)
