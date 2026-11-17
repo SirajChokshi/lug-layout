@@ -108,6 +108,9 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       decodedOrThrow(decode(BundleManifest, JSON.parse(text)), `${lod}/${this.manifestFile}`),
     );
     this.manifests.set(lod, loading);
+    loading.catch(() => {
+      if (this.manifests.get(lod) === loading) this.manifests.delete(lod);
+    });
     return loading;
   }
 
