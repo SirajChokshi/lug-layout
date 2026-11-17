@@ -41,8 +41,14 @@ const IDENTIFIER_WORD = 3;
 const WHOLE_WORD = 2;
 const PREFIX_WORD = 1;
 const KEPT_INDEXES = 4;
-const MANIFEST_EDGE_TTL_SECONDS = 31_536_000;
 const NOT_PUBLISHED = 404;
+const manifestFetch = {
+  method: "GET",
+  cf: {
+    cacheEverything: true,
+    cacheTtlByStatus: { "200-299": 31_536_000, "300-599": -1 },
+  },
+};
 const LDRAW_NAMESPACE = /^ldraw:/u;
 const queryWord = /[\p{L}\p{N}]+/gu;
 const sizeWords = /(\d+)\s*x\s*(\d+)/gu;
@@ -212,9 +218,7 @@ async function readIndex(bundleBaseUrl: string, key: BundleManifestKey): Promise
   const url = new URL(bundleSearchObjectKey(key), bundleBaseUrl);
   let response: Response;
   try {
-    response = await fetch(url, {
-      cf: { cacheEverything: true, cacheTtl: MANIFEST_EDGE_TTL_SECONDS },
-    });
+    response = await fetch(url, manifestFetch);
   } catch (error) {
     return { kind: "unreadable", message: `the part bundle is unreachable: ${String(error)}` };
   }

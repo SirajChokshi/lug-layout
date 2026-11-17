@@ -417,6 +417,8 @@ describe("catalog API over a loaded release", () => {
 const MANIFEST_KEY = "7ad9e66acd1f7b18";
 const UNDECODABLE_KEY = "00000000000000ff";
 const FAILING_KEY = "00000000000000fe";
+const LATE_KEY = "00000000000000fd";
+const published = new Map<string, string>();
 const PLATE_BOUNDS = { min: [0, -8, 0], max: [640, 0, 640] };
 
 function catalogPart(
@@ -539,14 +541,13 @@ const bundleIndex = {
   },
 };
 
+function manifestPath(key: string): string {
+  return `/bundle/standard/manifest.${key}.json`;
+}
+
 function servePartBundle(): Promise<Server> {
-  const published: Readonly<Record<string, string>> = {
-    [`/bundle/standard/manifest.${MANIFEST_KEY}.json`]: JSON.stringify(bundleIndex),
-    [`/bundle/standard/manifest.${UNDECODABLE_KEY}.json`]: JSON.stringify({
-      ...bundleIndex,
-      colors: "none",
-    }),
-  };
+  published.set(manifestPath(MANIFEST_KEY), JSON.stringify(bundleIndex));
+  published.set(manifestPath(UNDECODABLE_KEY), JSON.stringify({ ...bundleIndex, colors: "none" }));
   const host = createServer((request, response) => {
     const path = request.url ?? "";
     bundleRequests.push(path);
@@ -554,7 +555,7 @@ function servePartBundle(): Promise<Server> {
       response.writeHead(503).end();
       return;
     }
-    const body = published[path];
+    const body = published.get(path);
     if (body === undefined) {
       response.writeHead(404).end();
       return;
@@ -655,6 +656,18 @@ describe("part search over a published bundle manifest", () => {
     expect(second.headers.get("x-cache")).toBe("HIT");
     const revalidated = await get(path, { "if-none-match": `"${MANIFEST_KEY}"` });
     expect(revalidated.status).toBe(304);
+  });
+
+  it("finds a manifest published after a request for its key was answered 404", async () => {
+    const before = await get(bundleSearch("3811", LATE_KEY));
+    await before.arrayBuffer();
+    published.set(manifestPath(LATE_KEY), JSON.stringify(bundleIndex));
+    const after = await get(bundleSearch("3811", LATE_KEY));
+    expect(before.status).toBe(404);
+    expect(after.status).toBe(200);
+    expect(
+      decodedOrThrow(decode(BundleSearchResponse, await after.json()), "late").results,
+    ).toHaveLength(3);
   });
 
   it("refuses bad queries, unknown or malformed keys, and manifests it cannot fetch or decode", async () => {
