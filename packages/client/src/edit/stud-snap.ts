@@ -25,35 +25,41 @@ function offsetsByDistance(radius: number): Int8Array {
 const OFFSETS = offsetsByDistance(STUD_SNAP_RADIUS_STUDS);
 
 export type CheckAt = (x: number, z: number, at: LandingAt) => PlacementCheck;
+export type FirstPlaceableShift = (yPlates: number, shifts: Int8Array) => number;
 
 export interface StudSnap {
   readonly x: number;
   readonly z: number;
   readonly at: LandingAt;
-  readonly check: PlacementCheck;
   readonly offsetStuds: readonly [number, number] | null;
 }
 
-export function placeable(check: PlacementCheck): boolean {
+function placeable(check: PlacementCheck): boolean {
   return check.overlap === null && (check.support === null || isSupported(check.support));
 }
 
-export function snapToStuds(x: number, z: number, cursor: LandingAt, checkAt: CheckAt): StudSnap {
+export function snapToStuds(
+  x: number,
+  z: number,
+  cursor: LandingAt,
+  checkAt: CheckAt,
+  firstShift: FirstPlaceableShift,
+): StudSnap {
   const first = checkAt(x, z, cursor);
-  const unchanged: StudSnap = { x, z, at: cursor, check: first, offsetStuds: null };
+  const unchanged: StudSnap = { x, z, at: cursor, offsetStuds: null };
   if (placeable(first) || first.support === null || first.support.kind === "no-base") {
     return unchanged;
   }
-  const at: LandingAt = { kind: "height", yPlates: first.yPlates };
-  for (let o = 0; o < OFFSETS.length; o += 2) {
-    const dx = OFFSETS[o] ?? 0;
-    const dz = OFFSETS[o + 1] ?? 0;
-    const sx = x + dx * STUD_LDU;
-    const sz = z + dz * STUD_LDU;
-    const check = checkAt(sx, sz, at);
-    if (placeable(check)) return { x: sx, z: sz, at, check, offsetStuds: [dx, dz] };
-  }
-  return unchanged;
+  const shift = firstShift(first.yPlates, OFFSETS);
+  if (shift < 0) return unchanged;
+  const dx = OFFSETS[2 * shift] ?? 0;
+  const dz = OFFSETS[2 * shift + 1] ?? 0;
+  return {
+    x: x + dx * STUD_LDU,
+    z: z + dz * STUD_LDU,
+    at: { kind: "height", yPlates: first.yPlates },
+    offsetStuds: [dx, dz],
+  };
 }
 
 function padRow(

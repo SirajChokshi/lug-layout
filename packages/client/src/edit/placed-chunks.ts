@@ -713,6 +713,66 @@ export class PlacedChunks {
     return engagedStuds(base, yPlates, this.volumes, this.support, this.isTrack);
   }
 
+  firstPlaceableShift(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+    shifts: Int8Array,
+    exemptAt: (dx: number, dz: number) => OwnerFilter,
+  ): number {
+    const cells = candidateCells(placeable, new LatticePose(x, z, rot));
+    const from = { base: cells.base, volumes: raised(cells.volumes, yPlates * PLATE_LDU) };
+    const base: BaseCells = {
+      count: from.base.count,
+      cellX: new Int32Array(from.base.count),
+      cellZ: new Int32Array(from.base.count),
+      flat: from.base.flat,
+    };
+    const volumes: CellVolumes = {
+      ...from.volumes,
+      cellX: new Int32Array(from.volumes.count),
+      cellZ: new Int32Array(from.volumes.count),
+    };
+    const hit: VolumeHit = { owner: 0, bottomLdu: 0, topLdu: 0 };
+    const blockedAt = (c: number, exempt: OwnerFilter): boolean =>
+      this.volumes.firstOverlap(
+        volumes.cellX[c] ?? 0,
+        volumes.cellZ[c] ?? 0,
+        volumes.bottomLdu[c] ?? 0,
+        volumes.topLdu[c] ?? 0,
+        exempt,
+        hit,
+      );
+    let hint = 0;
+    for (let s = 0; s < shifts.length; s += 2) {
+      const dx = shifts[s] ?? 0;
+      const dz = shifts[s + 1] ?? 0;
+      for (let c = 0; c < volumes.count; c++) {
+        volumes.cellX[c] = (from.volumes.cellX[c] ?? 0) + dx;
+        volumes.cellZ[c] = (from.volumes.cellZ[c] ?? 0) + dz;
+      }
+      const exempt = exemptAt(dx, dz);
+      if (volumes.count > 0 && blockedAt(hint, exempt)) continue;
+      for (let c = 0; c < base.count; c++) {
+        base.cellX[c] = (from.base.cellX[c] ?? 0) + dx;
+        base.cellZ[c] = (from.base.cellZ[c] ?? 0) + dz;
+      }
+      if (!isSupported(upperSupport(base, yPlates, this.volumes, this.support, this.isTrack))) {
+        continue;
+      }
+      let blocked = false;
+      for (let k = 1; k < volumes.count && !blocked; k++) {
+        const c = (hint + k) % volumes.count;
+        blocked = blockedAt(c, exempt);
+        if (blocked) hint = c;
+      }
+      if (!blocked) return s / 2;
+    }
+    return -1;
+  }
+
   trackOverlap(
     cells: BaseCells,
     bottomLdu: number,

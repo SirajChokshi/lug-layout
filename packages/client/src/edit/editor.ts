@@ -1119,8 +1119,29 @@ export class Editor implements IEditor {
     this.ghostLanding = this.cursorLanding();
     this.snappedStuds = null;
     if (!placeable || placeable.layer !== "upper" || !this.hovering) return;
-    const snap = snapToStuds(this.hoverX, this.hoverZ, this.ghostLanding, (x, z, at) =>
-      this.checkAt(placeable, x, z, this.ghostRot, [], at),
+    const { hoverX, hoverZ, ghostRot } = this;
+    const snap = snapToStuds(
+      hoverX,
+      hoverZ,
+      this.ghostLanding,
+      (x, z, at) => this.checkAt(placeable, x, z, ghostRot, [], at),
+      (yPlates, shifts) =>
+        this.placed.firstPlaceableShift(
+          placeable,
+          hoverX,
+          hoverZ,
+          ghostRot,
+          yPlates,
+          shifts,
+          (dx, dz) =>
+            this.trackExempt(
+              placeable,
+              hoverX + dx * STUD_LDU,
+              hoverZ + dz * STUD_LDU,
+              yPlates,
+              ghostRot,
+            ),
+        ),
     );
     this.hoverX = snap.x;
     this.hoverZ = snap.z;
