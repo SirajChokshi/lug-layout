@@ -350,6 +350,14 @@ export class EditorPage {
       .toSorted(byPosition);
   }
 
+  async lastRefusal(): Promise<{ readonly rule: string; readonly message: string }> {
+    const panel = this.page.locator("section.placement-rules");
+    return {
+      rule: (await panel.getAttribute("data-last-refusal-rule")) ?? "",
+      message: (await panel.locator('[data-rule="last-refusal"]').textContent()) ?? "",
+    };
+  }
+
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {
     return (await this.editState()).world.trackEnds;
   }
