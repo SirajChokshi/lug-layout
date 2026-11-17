@@ -1,4 +1,4 @@
-import type { BundleLod } from "@brr/client";
+import type { BundleLod } from "@brr/schema/bundle";
 import type { ReactNode } from "react";
 import type { CreditsState } from "./use-credits.ts";
 

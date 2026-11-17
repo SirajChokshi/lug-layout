@@ -507,7 +507,7 @@ infra/
 Dependencies only point downward; nothing imports a package from its own layer or a layer above.
 
 ```
-L6  apps/web                             apps/catalog-api (server; imports no @brr/* package)
+L6  apps/web                             apps/catalog-api (server; imports only schema)
 L5  ui                                   workers/*  (entry points)
 L4  client
 L3  sim · import
@@ -530,12 +530,12 @@ L0  math
 | `client` | math, domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) and from schema (bundle wire types) |
 | `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify |
 | `ui` | client (service interfaces, tokens, view models), schema types |
-| `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries) |
+| `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries), and *types only* from schema (owner ruling, 2026-11-17: no re-export layers, so `apps/web` names wire types where they are defined) |
 | `tools/asset-pipeline` | math, schema, domain, catalog, valibot, the brick-compile CLI; never imported by apps |
 | `apps/catalog-api` | schema and valibot only; `@brr/config` presets as dev tooling. Nothing imports it. |
 
 **Enforced rules:**
-- Every wire and file format (CDN bundle, catalog API, saved worlds) is one valibot schema in `schema`, with its type inferred from it (owner decision, 2026-11-16). Packages that run schemas depend on `valibot`; packages that only name the types use `import type` from `schema`.
+- Every wire and file format is one valibot schema in `schema`, with its type inferred from it (owner decision, 2026-11-16). That covers the CDN bundle (manifest, model files, GLB JSON) and the palette that feeds its compiler, the catalog API and the D1 release rows behind it, and saved worlds. A query's projection of D1 rows is composed from the row schemas next to its SQL in `apps/catalog-api`. Packages that run schemas depend on `valibot`; packages that only name the types use `import type` from `schema`.
 - `math`, `schema`, `domain` and `sim` are **pure**: no DOM, no three.js, no IndexedDB, no workers and no Inversify. They run unchanged in Node tests, in workers and in the pipeline.
 - Only `client`, `workers/*`, `apps/web` and the L2 adapter packages `storage`, `render`, `catalog` and `rpc` import `inversify` (owner decision, 2026-11-16). Only `apps/web` and each worker entry **create containers**; they are the composition roots.
 - `ui` never imports `domain`, `render` or `storage` directly. It goes through `client`.

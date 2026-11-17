@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AuditLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import type { Palette } from "../palette.ts";
+import type { Palette } from "@brr/schema/bundle";
 import { CATALOG_LAYOUTS, catalogScene } from "../track/catalog-scenes.ts";
 import { buildTrackCatalog } from "../track/track-catalog.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";

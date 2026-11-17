@@ -9,7 +9,6 @@ const Finite = v.pipe(v.number(), v.finite());
 const Integer = v.pipe(v.number(), v.integer());
 const Count = v.pipe(Integer, v.minValue(0));
 const StudPhase = v.pipe(Integer, v.minValue(0), v.maxValue(STUD_PHASES - 1));
-const Sha256Hex = v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/u));
 const IntegerString = v.pipe(v.string(), v.regex(/^-?\d+$/u));
 const Zeta16Coefficients = v.pipe(v.array(IntegerString), v.length(ZETA16_COEFFICIENT_COUNT));
 const Matrix = v.pipe(v.array(Finite), v.length(MATRIX_FLOATS));
@@ -21,6 +20,9 @@ export function encodeZeta16(value: Zeta16): string[] {
 export function decodeZeta16(coefficients: ReadonlyArray<string>): Zeta16 {
   return zeta16(coefficients.map((coefficient) => BigInt(coefficient)));
 }
+
+export const Sha256Hex = v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/u));
+export type Sha256Hex = v.InferOutput<typeof Sha256Hex>;
 
 export const Vec3 = v.tuple([Finite, Finite, Finite]);
 export type Vec3 = v.InferOutput<typeof Vec3>;
@@ -150,6 +152,9 @@ const InlinePartResolution = v.object({
 export const ModelOrigin = v.picklist(["omr", "generated"]);
 export type ModelOrigin = v.InferOutput<typeof ModelOrigin>;
 
+export const ModelSet = v.object({ name: v.string(), year: Integer, source: v.string() });
+export type ModelSet = v.InferOutput<typeof ModelSet>;
+
 export const ModelRole = v.picklist(["road-module"]);
 export type ModelRole = v.InferOutput<typeof ModelRole>;
 
@@ -157,7 +162,7 @@ export const BundleModelEntry = v.object({
   name: v.string(),
   file: v.string(),
   origin: ModelOrigin,
-  set: v.nullable(v.object({ name: v.string(), year: Integer, source: v.string() })),
+  set: v.nullable(ModelSet),
   role: v.optional(ModelRole),
   source: v.string(),
   authors: v.array(v.string()),
@@ -393,3 +398,40 @@ export const GltfDocument = v.object({
   extras: PartExtras,
 });
 export type GltfDocument = v.InferOutput<typeof GltfDocument>;
+
+export const PaletteModel = v.strictObject({
+  name: v.string(),
+  origin: ModelOrigin,
+  role: v.optional(ModelRole),
+  file: v.string(),
+  sha256: Sha256Hex,
+  source: v.string(),
+  retrieved: v.string(),
+  set: v.optional(v.strictObject(ModelSet.entries)),
+});
+export type PaletteModel = v.InferOutput<typeof PaletteModel>;
+
+export const AuditGroup = v.strictObject({ group: v.string(), parts: v.array(v.string()) });
+export type AuditGroup = v.InferOutput<typeof AuditGroup>;
+
+export const Palette = v.strictObject({
+  source: BundleSource,
+  config: v.array(v.string()),
+  studPrimitives: v.array(v.string()),
+  unofficialAllowlist: v.array(v.string()),
+  parts: v.array(
+    v.strictObject({ id: v.string(), role: PartRole, displayColor: v.optional(DisplayColor) }),
+  ),
+  omrSource: BundleSource,
+  models: v.array(PaletteModel),
+  vehicleParts: v.strictObject({
+    bogiePivots: v.array(v.string()),
+    pivotPins: v.array(v.string()),
+    wheelsets: v.array(v.string()),
+    wheels: v.array(v.string()),
+    couplers: v.array(v.string()),
+  }),
+  audit: v.array(AuditGroup),
+  connectivitySource: BundleSource,
+});
+export type Palette = v.InferOutput<typeof Palette>;

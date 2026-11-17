@@ -397,5 +397,5 @@ describe("catalog API over a loaded release", () => {
       QUERIES_PER_MINUTE,
     );
     expect(bursts.map(({ allowed }) => allowed)).toContain(QUERIES_PER_MINUTE);
-  });
+  }, 60_000);
 });

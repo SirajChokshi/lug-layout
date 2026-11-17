@@ -1,4 +1,16 @@
-import { ReleaseId } from "@brr/schema/catalog-api";
+import {
+  ColorRow,
+  CurrentReleaseRow,
+  InventoryMinifigRow,
+  InventoryPartRow,
+  MinifigRow,
+  PartCategoryRow,
+  PartRow,
+  ReleaseId,
+  ReleaseRow,
+  SetRow,
+  ThemeRow,
+} from "@brr/schema/catalog-api";
 import * as v from "valibot";
 
 export const RELEASES_TABLE = "catalog_releases";
@@ -12,92 +24,6 @@ export const SET_KIND_TOKEN = "set";
 export const MODULE_KIND_TOKEN = "module";
 export const SETS_FTS_RANK = "bm25(1.0, 1.0, 0.0)";
 export const THEME_COUNT_COLUMNS: ReadonlyArray<string> = ["set_count", "module_count"];
-
-const Integer = v.pipe(v.number(), v.integer());
-const Text = v.string();
-
-export const ThemeRow = v.object({
-  id: Integer,
-  name: Text,
-  parent_id: v.nullable(Integer),
-  path: Text,
-  set_count: Integer,
-  module_count: Integer,
-});
-export type ThemeRow = v.InferOutput<typeof ThemeRow>;
-
-export const SetRow = v.object({
-  id: Integer,
-  set_num: Text,
-  name: Text,
-  year: v.nullable(Integer),
-  theme_id: v.nullable(Integer),
-  num_parts: v.nullable(Integer),
-  kind: Integer,
-  author: v.nullable(Text),
-  description: v.nullable(Text),
-  tags: v.nullable(Text),
-  footprint: v.nullable(Text),
-});
-export type SetRow = v.InferOutput<typeof SetRow>;
-
-export const ColorRow = v.object({
-  id: Integer,
-  name: Text,
-  rgb: v.nullable(Text),
-  is_trans: v.nullable(Integer),
-});
-export type ColorRow = v.InferOutput<typeof ColorRow>;
-
-export const PartCategoryRow = v.object({ id: Integer, name: Text });
-export type PartCategoryRow = v.InferOutput<typeof PartCategoryRow>;
-
-export const PartRow = v.object({
-  id: Integer,
-  part_num: Text,
-  name: Text,
-  cat_id: v.nullable(Integer),
-  material: v.nullable(Text),
-});
-export type PartRow = v.InferOutput<typeof PartRow>;
-
-export const MinifigRow = v.object({
-  id: Integer,
-  fig_num: Text,
-  name: Text,
-  num_parts: v.nullable(Integer),
-});
-export type MinifigRow = v.InferOutput<typeof MinifigRow>;
-
-export const InventoryPartRow = v.object({
-  inventory_id: Integer,
-  part_id: Integer,
-  color_id: Integer,
-  is_spare: Integer,
-  quantity: Integer,
-});
-export type InventoryPartRow = v.InferOutput<typeof InventoryPartRow>;
-
-export const InventoryMinifigRow = v.object({
-  inventory_id: Integer,
-  minifig_id: Integer,
-  quantity: Integer,
-});
-export type InventoryMinifigRow = v.InferOutput<typeof InventoryMinifigRow>;
-
-export const ReleaseRow = v.object({
-  id: ReleaseId,
-  sha256: Text,
-  bytes: Integer,
-  object_key: Text,
-  source: Text,
-  loaded_at: Text,
-  counts: Text,
-});
-export type ReleaseRow = v.InferOutput<typeof ReleaseRow>;
-
-export const CurrentReleaseRow = v.object({ slot: v.literal("current"), release_id: ReleaseId });
-export type CurrentReleaseRow = v.InferOutput<typeof CurrentReleaseRow>;
 
 type NotNullSql<Type extends string> = `${Type} NOT NULL${string}` | `${Type} PRIMARY KEY${string}`;
 

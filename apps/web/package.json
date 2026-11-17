@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@brr/client": "workspace:*",
+    "@brr/schema": "workspace:*",
     "@brr/sim-worker": "workspace:*",
     "@brr/ui": "workspace:*",
     "inversify": "8.3.0",

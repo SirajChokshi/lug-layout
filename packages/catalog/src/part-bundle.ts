@@ -48,7 +48,7 @@ export interface StudPrimitiveAsset {
   readonly mesh: MeshArrays;
 }
 
-export interface ModelLattice {
+export interface PartModelLattice {
   readonly phaseX: number;
   readonly phaseZ: number;
   readonly aabbMin: Vec3;
@@ -57,7 +57,7 @@ export interface ModelLattice {
 
 export interface PartModel {
   readonly sections: ReadonlyArray<ModelSection>;
-  readonly lattice: ModelLattice | null;
+  readonly lattice: PartModelLattice | null;
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint16Array;

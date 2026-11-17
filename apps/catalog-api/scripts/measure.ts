@@ -1,3 +1,5 @@
+import { ReleaseResponse } from "@brr/schema/catalog-api";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -63,9 +65,11 @@ async function main(): Promise<void> {
     );
   }
   const perEndpoint = Number(values.samples);
-  const current = (await (await fetch(`${values.base}/v1/catalogs/current`)).json()) as {
-    release: { id: string };
-  };
+  const currentUrl = `${values.base}/v1/catalogs/current`;
+  const current = decodedOrThrow(
+    decode(ReleaseResponse, await (await fetch(currentUrl)).json()),
+    currentUrl,
+  );
   const release = current.release.id;
   const probes = plan(new DatabaseSync(resolve(values.sqlite), { readOnly: true }), perEndpoint);
   const samples: Sample[] = [];

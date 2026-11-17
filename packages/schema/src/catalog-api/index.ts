@@ -15,7 +15,8 @@ const THEME_MAX_OFFSET = 10_000;
 const queryWord = /[\p{L}\p{N}]+/gu;
 
 const Count = v.pipe(v.number(), v.integer(), v.minValue(0));
-const Id = v.pipe(v.number(), v.integer());
+const Integer = v.pipe(v.number(), v.integer());
+const Text = v.string();
 const Url = v.pipe(v.string(), v.url());
 
 function boundedInteger(fallback: string, min: number, max: number) {
@@ -88,13 +89,13 @@ export const ThemePageParams = v.object({
 });
 export type ThemePageParams = v.InferOutput<typeof ThemePageParams>;
 
-const ThemeRef = v.object({ id: Id, path: v.string(), href: Url });
+const ThemeRef = v.object({ id: Integer, path: v.string(), href: Url });
 
 export const SetSummary = v.object({
   id: v.string(),
   kind: v.picklist(["set", "module"]),
   name: v.string(),
-  year: v.nullable(Id),
+  year: v.nullable(Integer),
   numParts: v.nullable(Count),
   theme: v.nullable(ThemeRef),
   author: v.nullable(v.string()),
@@ -108,10 +109,10 @@ export const PartSummary = v.object({ id: v.string(), name: v.string(), category
 export type PartSummary = v.InferOutput<typeof PartSummary>;
 
 export const ThemeNode = v.object({
-  id: Id,
+  id: Integer,
   name: v.string(),
   path: v.string(),
-  parentId: v.nullable(Id),
+  parentId: v.nullable(Integer),
   setCount: Count,
   moduleCount: Count,
   href: Url,
@@ -158,7 +159,7 @@ export type SearchResponse = v.InferOutput<typeof SearchResponse>;
 export const InventoryLot = v.object({
   part: v.object({ id: v.string(), name: v.string() }),
   color: v.object({
-    id: Id,
+    id: Integer,
     name: v.nullable(v.string()),
     rgb: v.nullable(v.string()),
     isTransparent: v.boolean(),
@@ -199,3 +200,92 @@ export type ThemePageResponse = v.InferOutput<typeof ThemePageResponse>;
 
 export const ErrorResponse = v.object({ error: v.string() });
 export type ErrorResponse = v.InferOutput<typeof ErrorResponse>;
+
+export const ThemeRow = v.object({
+  id: Integer,
+  name: Text,
+  parent_id: v.nullable(Integer),
+  path: Text,
+  set_count: Integer,
+  module_count: Integer,
+});
+export type ThemeRow = v.InferOutput<typeof ThemeRow>;
+
+export const SetRow = v.object({
+  id: Integer,
+  set_num: Text,
+  name: Text,
+  year: v.nullable(Integer),
+  theme_id: v.nullable(Integer),
+  num_parts: v.nullable(Integer),
+  kind: Integer,
+  author: v.nullable(Text),
+  description: v.nullable(Text),
+  tags: v.nullable(Text),
+  footprint: v.nullable(Text),
+});
+export type SetRow = v.InferOutput<typeof SetRow>;
+
+export const ColorRow = v.object({
+  id: Integer,
+  name: Text,
+  rgb: v.nullable(Text),
+  is_trans: v.nullable(Integer),
+});
+export type ColorRow = v.InferOutput<typeof ColorRow>;
+
+export const PartCategoryRow = v.object({ id: Integer, name: Text });
+export type PartCategoryRow = v.InferOutput<typeof PartCategoryRow>;
+
+export const PartRow = v.object({
+  id: Integer,
+  part_num: Text,
+  name: Text,
+  cat_id: v.nullable(Integer),
+  material: v.nullable(Text),
+});
+export type PartRow = v.InferOutput<typeof PartRow>;
+
+export const MinifigRow = v.object({
+  id: Integer,
+  fig_num: Text,
+  name: Text,
+  num_parts: v.nullable(Integer),
+});
+export type MinifigRow = v.InferOutput<typeof MinifigRow>;
+
+export const InventoryPartRow = v.object({
+  inventory_id: Integer,
+  part_id: Integer,
+  color_id: Integer,
+  is_spare: Integer,
+  quantity: Integer,
+});
+export type InventoryPartRow = v.InferOutput<typeof InventoryPartRow>;
+
+export const InventoryMinifigRow = v.object({
+  inventory_id: Integer,
+  minifig_id: Integer,
+  quantity: Integer,
+});
+export type InventoryMinifigRow = v.InferOutput<typeof InventoryMinifigRow>;
+
+export const ReleaseRow = v.object({
+  id: ReleaseId,
+  sha256: Text,
+  bytes: Integer,
+  object_key: Text,
+  source: Text,
+  loaded_at: Text,
+  counts: Text,
+});
+export type ReleaseRow = v.InferOutput<typeof ReleaseRow>;
+
+export const CurrentReleaseRow = v.object({ slot: v.literal("current"), release_id: ReleaseId });
+export type CurrentReleaseRow = v.InferOutput<typeof CurrentReleaseRow>;
+
+export const CatalogRelease = v.object({
+  ...ReleaseRow.entries,
+  counts: v.pipe(v.string(), v.parseJson(), ReleaseCounts),
+});
+export type CatalogRelease = v.InferOutput<typeof CatalogRelease>;

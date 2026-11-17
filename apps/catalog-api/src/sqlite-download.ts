@@ -1,5 +1,5 @@
 import { IMMUTABLE_CACHE, NO_STORE, problem, withCors } from "./http.ts";
-import type { CatalogRelease } from "./releases.ts";
+import type { CatalogRelease } from "@brr/schema/catalog-api";
 
 const SQLITE_CONTENT_TYPE = "application/vnd.sqlite3";
 

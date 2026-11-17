@@ -8,7 +8,7 @@ export type {
   IPartBundleLoader,
   MeshArrays,
   ModelBundle,
-  ModelLattice,
+  PartModelLattice,
   PartAsset,
   PartBundle,
   PartFilter,

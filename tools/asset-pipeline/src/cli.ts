@@ -1,4 +1,4 @@
-import { BundleLod, BundleManifest, TrackCatalog } from "@brr/schema/bundle";
+import { BundleLod, BundleManifest, TrackCatalog, type Palette } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -21,7 +21,7 @@ import {
   type ModelRoots,
 } from "./fetch-ldraw.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
-import { readPalette, type Palette } from "./palette.ts";
+import { readPalette } from "./palette.ts";
 import { MANIFEST_FILE, publishBundle } from "./publish.ts";
 import {
   geometryReports,

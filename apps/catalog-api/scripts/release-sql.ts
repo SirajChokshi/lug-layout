@@ -1,4 +1,4 @@
-import type { ReleaseCounts } from "@brr/schema/catalog-api";
+import { ReleaseRow, type ReleaseCounts } from "@brr/schema/catalog-api";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
@@ -15,7 +15,6 @@ import {
   releaseTableEntries,
   releaseTableSpecs,
   releaseTables,
-  ReleaseRow,
   type ReleaseTable,
 } from "../src/release-schema.ts";
 

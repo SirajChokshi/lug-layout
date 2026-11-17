@@ -1,14 +1,7 @@
 import type { CatalogReader } from "./catalog-queries.ts";
-import { ReleaseCounts } from "@brr/schema/catalog-api";
+import { CatalogRelease, ReleaseRow } from "@brr/schema/catalog-api";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
-import * as v from "valibot";
-import { CURRENT_RELEASE_TABLE, RELEASES_TABLE, ReleaseRow } from "./release-schema.ts";
-
-export const CatalogRelease = v.object({
-  ...ReleaseRow.entries,
-  counts: v.pipe(v.string(), v.parseJson(), ReleaseCounts),
-});
-export type CatalogRelease = v.InferOutput<typeof CatalogRelease>;
+import { CURRENT_RELEASE_TABLE, RELEASES_TABLE } from "./release-schema.ts";
 
 const RELEASE_MEMO_MS = 300_000;
 const CURRENT_MEMO_MS = 30_000;

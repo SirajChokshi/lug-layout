@@ -1,4 +1,4 @@
-import type { ModelLattice, PartAsset, PartModel } from "@brr/catalog";
+import type { PartModelLattice, PartAsset, PartModel } from "@brr/catalog";
 import type { RoadSurface } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { ModelRole, Vec3 } from "@brr/schema/bundle";
@@ -63,7 +63,7 @@ export function pivotOnStudCorner(centre: number): number {
   return Math.round(centre / STUD_LDU) * STUD_LDU;
 }
 
-export function modelFrameShift(lattice: ModelLattice, restingOn: number): Vec3 {
+export function modelFrameShift(lattice: PartModelLattice, restingOn: number): Vec3 {
   const shiftX = phaseShift(lattice.phaseX);
   const shiftZ = phaseShift(lattice.phaseZ);
   const centreX = (lattice.aabbMin[0] + lattice.aabbMax[0]) / 2 + shiftX;
@@ -112,7 +112,7 @@ function groundTop(model: PartModel, parts: ReadonlyArray<PartAsset>): number | 
 
 function restingY(
   model: PartModel,
-  lattice: ModelLattice,
+  lattice: PartModelLattice,
   parts: ReadonlyArray<PartAsset>,
   role: ModelRole | undefined,
 ): number {

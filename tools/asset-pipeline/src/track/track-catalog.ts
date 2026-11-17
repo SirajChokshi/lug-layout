@@ -5,6 +5,7 @@ import {
   type PoseStatus,
   type TrackEnd,
   type TrackPathSegment,
+  type TrackCatalog,
   type TrackPiece,
   type TrackSystem,
 } from "@brr/schema/bundle";
@@ -89,8 +90,8 @@ export interface PieceChecks {
 
 export interface TrackCatalogReport {
   readonly frame: string;
-  readonly n: typeof ZETA16_ORDER;
-  readonly pieces: ReadonlyArray<v.InferInput<typeof TrackPiece>>;
+  readonly n: v.InferInput<typeof TrackCatalog>["n"];
+  readonly pieces: v.InferInput<typeof TrackCatalog>["pieces"];
   readonly checks: ReadonlyArray<PieceChecks>;
 }
 

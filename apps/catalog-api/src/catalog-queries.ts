@@ -8,24 +8,21 @@ import type {
   ThemePageResponse,
   ThemeRootsResponse,
 } from "@brr/schema/catalog-api";
-import { MIN_PREFIX_LETTERS } from "@brr/schema/catalog-api";
-import { decode, decodedOrThrow } from "@brr/schema/decode";
-import * as v from "valibot";
-import type { D1Cost } from "./http.ts";
 import {
   ColorRow,
   InventoryMinifigRow,
   InventoryPartRow,
   MinifigRow,
-  MODULE_KIND,
-  MODULE_KIND_TOKEN,
   PartCategoryRow,
   PartRow,
-  SET_KIND_TOKEN,
   SetRow,
   ThemeRow,
-  releaseTables,
-} from "./release-schema.ts";
+  MIN_PREFIX_LETTERS,
+} from "@brr/schema/catalog-api";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
+import * as v from "valibot";
+import type { D1Cost } from "./http.ts";
+import { MODULE_KIND, MODULE_KIND_TOKEN, SET_KIND_TOKEN, releaseTables } from "./release-schema.ts";
 import { inventoryHref, themeHref } from "./routes.ts";
 
 export type CatalogReader = Pick<D1DatabaseSession, "prepare" | "batch">;

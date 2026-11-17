@@ -1,4 +1,4 @@
-import type { ReleaseResponse, SearchResponse } from "@brr/schema/catalog-api";
+import type { CatalogRelease, ReleaseResponse, SearchResponse } from "@brr/schema/catalog-api";
 import type * as v from "valibot";
 import {
   searchCatalog,
@@ -22,7 +22,7 @@ import {
   withCors,
   withoutBody,
 } from "./http.ts";
-import { ReleaseDirectory, type CatalogRelease } from "./releases.ts";
+import { ReleaseDirectory } from "./releases.ts";
 import { canonicalUrl, parseRoute, releaseHref, sqliteHref, type Route } from "./routes.ts";
 import {
   parseRange,

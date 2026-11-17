@@ -6,7 +6,7 @@ import type {
   IAssetFetcher,
   IPartBundleLoader,
   ModelBundle,
-  ModelLattice,
+  PartModelLattice,
   PartAsset,
   PartBundle,
   PartFilter,
@@ -17,7 +17,7 @@ import { ASSET_FETCHER, BUNDLE_BASE_URL } from "./tokens.ts";
 const MATRIX_FLOATS = 12;
 const MAX_CONCURRENT_FETCHES = 32;
 
-function modelLattice(lattice: ModelFile["lattice"]): ModelLattice | null {
+function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   if (lattice === null) return null;
   const [phaseX, phaseZ] = lattice.phase;
   return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
@@ -172,7 +172,7 @@ function toPartAsset(
   }
   return {
     id: part.id,
-    title: part.title ?? part.id,
+    title: part.title,
     role: part.role,
     boundsMin: part.bounds.min,
     producedColor: part.displayColor?.ldraw,
