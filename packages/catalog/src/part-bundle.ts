@@ -129,8 +129,36 @@ export interface PartModel {
   readonly vehicles: ReadonlyArray<BakedVehicle>;
 }
 
+export interface BundlePartCount {
+  readonly part: string;
+  readonly ldrawColor: number | null;
+  readonly quantity: number;
+}
+
+export interface BundleModuleRecipe {
+  readonly groundPart: string;
+  readonly edgeJoinCells: ReadonlyArray<readonly [number, number]>;
+  readonly surfacePlates: number;
+  readonly substructure: ReadonlyArray<BundlePartCount>;
+}
+
+export interface BundleModuleProfile {
+  readonly id: "lego-modular" | "mils";
+  readonly moduleStuds: number;
+  readonly joinParts: ReadonlyArray<string>;
+  readonly joinLevelPlates: number;
+  readonly recipe: BundleModuleRecipe | null;
+  readonly source: string;
+}
+
+export interface BundleModuleStandards {
+  readonly groundParts: ReadonlyArray<string>;
+  readonly profiles: ReadonlyArray<BundleModuleProfile>;
+}
+
 export interface PartBundle {
   readonly bundleVersion: string;
+  readonly moduleStandards: BundleModuleStandards;
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
   readonly colors: ReadonlyArray<BundleColor>;

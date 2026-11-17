@@ -1,5 +1,6 @@
 import {
   BOM_SERVICE,
+  BUILDABLE_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -130,6 +131,7 @@ function root(): ReactNode {
       <EditorApp
         editor={container.get(EDITOR)}
         plans={container.get(PLAN_SERVICE)}
+        buildable={container.get(BUILDABLE_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
         options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
         disclaimer={TRADEMARK_DISCLAIMER}

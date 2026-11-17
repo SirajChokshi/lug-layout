@@ -21,6 +21,9 @@ export interface PlacedForPlan {
   readonly ref: string;
   readonly label: string;
   readonly box: WorldBox;
+  readonly x: number;
+  readonly z: number;
+  readonly rot: number;
 }
 
 export interface PlanSnapshot {

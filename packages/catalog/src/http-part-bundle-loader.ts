@@ -123,6 +123,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     ]);
     return {
       bundleVersion: manifest.bundleVersion,
+      moduleStandards: manifest.moduleStandards,
       parts: assets,
       studPrimitives,
       colors: manifest.colors,
@@ -176,6 +177,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     ]);
     return {
       bundleVersion: manifest.bundleVersion,
+      moduleStandards: manifest.moduleStandards,
       parts: assets,
       studPrimitives,
       colors: manifest.colors,

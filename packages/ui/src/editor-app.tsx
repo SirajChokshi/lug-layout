@@ -1,4 +1,11 @@
-import type { EditorOptions, IBomService, IEditor, IPlanService } from "@brr/client";
+import type {
+  EditorOptions,
+  IBomService,
+  IBuildableService,
+  IEditor,
+  IPlanService,
+} from "@brr/client";
+import { BuildablePanel, BuildableState } from "./buildable-panel.tsx";
 import { BomPanel } from "./bom-panel.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
 import {
@@ -15,6 +22,7 @@ import { useEditorSnapshot } from "./use-editor.ts";
 interface EditorAppProps {
   readonly editor: IEditor;
   readonly plans: IPlanService;
+  readonly buildable: IBuildableService;
   readonly bomService: IBomService;
   readonly options: EditorOptions;
   readonly disclaimer: string;
@@ -52,6 +60,7 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
 export function EditorApp({
   editor,
   plans,
+  buildable,
   bomService,
   options,
   disclaimer,
@@ -89,7 +98,11 @@ export function EditorApp({
           />
         )}
       </div>
+      <div className="buildable-dock">
+        <BuildablePanel plans={plans} buildable={buildable} />
+      </div>
       {showState && <EditorState editor={editor} />}
+      {showState && <BuildableState buildable={buildable} />}
       {showState && <PlanState plans={plans} />}
       <CreditsFooter snapshot={snapshot} disclaimer={disclaimer} />
     </div>

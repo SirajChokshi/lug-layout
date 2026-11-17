@@ -28,6 +28,7 @@ import type { CatalogSourceUse } from "./palette.ts";
 import { LdrawLibrary } from "./ldraw/library.ts";
 import { readPalette, type Palette } from "./palette.ts";
 import { attachCrosswalk, MANIFEST_FILE, publishBundle, type BundleInputs } from "./publish.ts";
+import { readModuleStandards } from "./module-standards.ts";
 import {
   geometryReports,
   licenseAuditReport,
@@ -49,6 +50,8 @@ const omrRoot = join(repoRoot, ".cache", "omr");
 const catalogRoot = join(repoRoot, ".cache", "catalog");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
+const geometryPath = join(verifiedFactsRoot, "geometry.json");
+const moduleStandardsPath = join(verifiedFactsRoot, "module-standards.json");
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(lockPath, "utf8")) as InputLock;
@@ -237,6 +240,7 @@ async function bundleCommand(): Promise<void> {
     omr: palette.omrSource,
     lockSha256: await fileSha256(lockPath),
     paletteSha256: await fileSha256(palettePath),
+    moduleStandardsSha256: await fileSha256(moduleStandardsPath),
   };
   const lock = await readLock();
   const catalog = catalogLock(lock);
@@ -271,7 +275,7 @@ async function bundleCommand(): Promise<void> {
       "--omr",
       omrRoot,
       "--geometry",
-      join(repoRoot, "docs", "verified-facts", "geometry.json"),
+      geometryPath,
       "--palette",
       palettePath,
       "--out",
@@ -283,7 +287,8 @@ async function bundleCommand(): Promise<void> {
     ]);
     await addTrackCatalog(out);
     await attachCrosswalk(out, crosswalk);
-    const { bundleVersion, files } = await publishBundle(out, inputs);
+    const moduleStandards = await readModuleStandards(moduleStandardsPath, geometryPath);
+    const { bundleVersion, files } = await publishBundle(out, inputs, { moduleStandards });
     process.stdout.write(
       `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
     );

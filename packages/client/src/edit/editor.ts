@@ -51,8 +51,10 @@ import {
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
-import { PLAN_SERVICE } from "../tokens.ts";
+import { BUILDABLE_SERVICE, PLAN_SERVICE } from "../tokens.ts";
+import type { IBuildableService } from "../plan/buildable-service.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
+import { itemSpecOf } from "./item-specs.ts";
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind;
@@ -384,6 +386,7 @@ export class Editor implements IEditor {
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
+    @inject(BUILDABLE_SERVICE) private readonly buildable: IBuildableService,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -420,6 +423,15 @@ export class Editor implements IEditor {
       const palette = new MergedParts(bundle.parts);
       this.placeables = await this.loadPlaceables(bundle, palette, colors);
       this.plans.setTableTopY(this.baseplateBottomY());
+      const crosswalk = await this.loader.loadCrosswalk(EDITOR_LOD);
+      this.buildable.setCatalog(
+        this.placeables.map((placeable) =>
+          itemSpecOf(placeable, palette.parts, bundle.moduleStandards),
+        ),
+        bundle.moduleStandards,
+        crosswalk,
+        Object.fromEntries(bundle.colors.map((color) => [color.code, color.name])),
+      );
       this.bomTables = { palette, colors, ldrawColors: bundle.colors.map((color) => color.code) };
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
@@ -466,6 +478,9 @@ export class Editor implements IEditor {
         ref: model.placeable.id,
         label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
         box: model.box,
+        x: model.handle.x,
+        z: model.handle.z,
+        rot: model.handle.rot,
       })),
     );
   }

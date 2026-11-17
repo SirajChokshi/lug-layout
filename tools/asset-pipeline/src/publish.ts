@@ -12,6 +12,7 @@ export interface BundleInputs {
   readonly omr: Palette["source"];
   readonly lockSha256: string;
   readonly paletteSha256: string;
+  readonly moduleStandardsSha256: string;
 }
 
 interface FileReference {
@@ -81,6 +82,7 @@ export async function attachCrosswalk(directory: string, crosswalk: unknown): Pr
 export async function publishBundle(
   directory: string,
   inputs: BundleInputs,
+  extras: Readonly<Record<string, unknown>>,
 ): Promise<PublishedBundle> {
   const manifestPath = join(directory, MANIFEST_FILE);
   const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -106,7 +108,7 @@ export async function publishBundle(
   if (unreferenced.length > 0) {
     throw new Error(`${directory} has files the manifest does not reference: ${unreferenced}`);
   }
-  const body = { ...compiled, inputs };
+  const body = { ...compiled, ...extras, inputs };
   const bundleVersion = sha256(JSON.stringify(body)).slice(0, CONTENT_HASH_HEX_DIGITS);
   await writeFile(manifestPath, `${JSON.stringify({ bundleVersion, ...body }, null, 2)}\n`);
   return { bundleVersion, files: published.size };

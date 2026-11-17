@@ -5,6 +5,7 @@ import { ContainerModule } from "inversify";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { PlanService } from "./plan/plan-service.ts";
+import { BuildableService } from "./plan/buildable-service.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { CityScene } from "./scene/city-scene.ts";
@@ -16,6 +17,7 @@ import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import {
   BOM_SERVICE,
+  BUILDABLE_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -43,6 +45,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(RUN_SCENE).to(RunScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
+  bind(BUILDABLE_SERVICE).to(BuildableService).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
 });
 

@@ -2,6 +2,7 @@ import type {
   BundleColor,
   BundleCredit,
   BundleModelEntry,
+  BundleModuleStandards,
   CatalogColorIds,
   CatalogCrosswalk,
   CatalogPartIds,
@@ -62,6 +63,7 @@ export interface BundleManifest {
   readonly inputs: BundleInputs;
   readonly trackCatalog: TrackCatalog;
   readonly crosswalk: { readonly file: string };
+  readonly moduleStandards: BundleModuleStandards;
 }
 
 export interface CrosswalkFilePart extends CatalogPartIds {
@@ -179,6 +181,56 @@ function isSource(value: unknown): boolean {
   );
 }
 
+function isStringList(value: unknown): value is ReadonlyArray<string> {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function isBomLine(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value["part"] === "string" &&
+    (value["ldrawColor"] === null || typeof value["ldrawColor"] === "number") &&
+    typeof value["quantity"] === "number"
+  );
+}
+
+function isCellRange(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 2 && value.every((v) => typeof v === "number");
+}
+
+function isModuleRecipe(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value["groundPart"] === "string" &&
+    Array.isArray(value["edgeJoinCells"]) &&
+    value["edgeJoinCells"].every(isCellRange) &&
+    typeof value["surfacePlates"] === "number" &&
+    Array.isArray(value["substructure"]) &&
+    value["substructure"].every(isBomLine)
+  );
+}
+
+function isModuleProfile(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value["id"] === "lego-modular" || value["id"] === "mils") &&
+    typeof value["moduleStuds"] === "number" &&
+    isStringList(value["joinParts"]) &&
+    typeof value["joinLevelPlates"] === "number" &&
+    (value["recipe"] === null || isModuleRecipe(value["recipe"])) &&
+    typeof value["source"] === "string"
+  );
+}
+
+function isModuleStandards(value: unknown): value is BundleModuleStandards {
+  return (
+    isRecord(value) &&
+    isStringList(value["groundParts"]) &&
+    Array.isArray(value["profiles"]) &&
+    value["profiles"].every(isModuleProfile)
+  );
+}
+
 export function parseManifest(value: unknown): BundleManifest {
   if (
     !isRecord(value) ||
@@ -205,7 +257,8 @@ export function parseManifest(value: unknown): BundleManifest {
     !isSource(value["inputs"]["ldraw"]) ||
     !isSource(value["inputs"]["omr"]) ||
     !isRecord(value["crosswalk"]) ||
-    typeof value["crosswalk"]["file"] !== "string"
+    typeof value["crosswalk"]["file"] !== "string" ||
+    !isModuleStandards(value["moduleStandards"])
   ) {
     throw new Error("bundle manifest does not match the M1 bundle format");
   }

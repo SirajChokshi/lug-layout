@@ -96,3 +96,30 @@ export {
   rebrickableCsv,
   type UncountedItem,
 } from "./bom/export-formats.ts";
+export {
+  modelSpec,
+  plateSpec,
+  roadwaysOf,
+  type PartCount,
+  type EdgeFeature,
+  type InstanceBoxes,
+  type ItemSpec,
+  type MilsRecipe,
+  type ModuleProfile,
+  type ModuleProfileId,
+  type ModuleStandards,
+} from "./plan/item-spec.ts";
+export {
+  checkBuildable,
+  DEFAULT_MAX_REACH_MM,
+  placementId,
+  type BuildableCatalog,
+  type BuildablePlacement,
+  type CatalogIds,
+  type BuildableReport,
+  type BuildableSettings,
+  type BuildableVerdict,
+  type PlacementBom,
+  type PlanBom,
+  type PlanBomEntry,
+} from "./plan/buildable.ts";

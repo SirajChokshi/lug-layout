@@ -93,6 +93,7 @@ export type {
 } from "@brr/domain";
 export {
   BOM_SERVICE,
+  BUILDABLE_SERVICE,
   CITY_SCENE,
   CREDITS,
   EDITOR,
@@ -117,3 +118,18 @@ export type {
   IBomSource,
 } from "./bom/bom-service.ts";
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
+export {
+  DEFAULT_MODULE_PROFILE,
+  type BuildableSnapshot,
+  type IBuildableService,
+  type PlanSettings,
+} from "./plan/buildable-service.ts";
+export type {
+  PartCount,
+  BuildableReport,
+  BuildableVerdict,
+  ModuleProfileId,
+  PlacementBom,
+  PlanBom,
+  PlanBomEntry,
+} from "@brr/domain";

@@ -20,7 +20,18 @@ import {
   type StudRect,
 } from "./plan-region.ts";
 
-export type PlanRuleId = "footprint" | "fit" | "crossesRegion" | "unchecked";
+export type PlanRuleId =
+  | "footprint"
+  | "fit"
+  | "crossesRegion"
+  | "unchecked"
+  | "overlap"
+  | "seam"
+  | "reach"
+  | "moduleGrid"
+  | "moduleJoin"
+  | "roadJoin"
+  | "bomMapping";
 export type IssueSeverity = "error" | "warning";
 
 export interface PlacementKey {
