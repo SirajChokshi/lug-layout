@@ -53,6 +53,8 @@ pub struct Flattened {
     pub hard_edges: Vec<[Vec3; 2]>,
     pub studs: Vec<StudReference>,
     pub technic_holes: Vec<ConnectorReference>,
+    pub technic_pins: Vec<ConnectorReference>,
+    pub body_bounds: Option<[Vec3; 2]>,
     pub files: Vec<VisitedFile>,
 }
 
@@ -67,6 +69,7 @@ pub struct Flattener<'a, L: Library> {
     lod: Lod,
     stud_primitives: &'a [String],
     technic_hole_primitives: &'a [String],
+    technic_pin_primitives: &'a [String],
     parsed: HashMap<String, Rc<LdrawFile>>,
 }
 
@@ -75,6 +78,7 @@ struct Frame {
     color: u32,
     flipped: bool,
     culling: bool,
+    in_technic_pin: bool,
     depth: usize,
 }
 
@@ -85,12 +89,18 @@ impl<'a, L: Library> Flattener<'a, L> {
             lod,
             stud_primitives,
             technic_hole_primitives: &[],
+            technic_pin_primitives: &[],
             parsed: HashMap::new(),
         }
     }
 
     pub fn with_technic_holes(mut self, technic_hole_primitives: &'a [String]) -> Self {
         self.technic_hole_primitives = technic_hole_primitives;
+        self
+    }
+
+    pub fn with_technic_pins(mut self, technic_pin_primitives: &'a [String]) -> Self {
+        self.technic_pin_primitives = technic_pin_primitives;
         self
     }
 
@@ -130,6 +140,7 @@ impl<'a, L: Library> Flattener<'a, L> {
             color: INHERIT_COLOR,
             flipped: false,
             culling: true,
+            in_technic_pin: false,
             depth: 0,
         };
         let file = self
@@ -197,6 +208,16 @@ impl<'a, L: Library> Flattener<'a, L> {
                             matrix: child_matrix,
                         });
                     }
+                    let technic_pin = self
+                        .technic_pin_primitives
+                        .iter()
+                        .any(|pin| pin == reference);
+                    if technic_pin {
+                        out.technic_pins.push(ConnectorReference {
+                            primitive: reference.clone(),
+                            matrix: child_matrix,
+                        });
+                    }
                     let child_path =
                         self.resolve(reference)
                             .ok_or_else(|| FlattenError::Unresolved {
@@ -214,6 +235,7 @@ impl<'a, L: Library> Flattener<'a, L> {
                         color: child_color,
                         flipped: frame.flipped ^ (matrix.determinant() < 0.0) ^ inverted,
                         culling: frame.culling && certified,
+                        in_technic_pin: frame.in_technic_pin || technic_pin,
                         depth: frame.depth + 1,
                     };
                     self.walk(&child_path, &child, &child_frame, out)?;
@@ -271,6 +293,17 @@ fn emit(
         frame.matrix.apply(points[1]),
         frame.matrix.apply(points[2]),
     ];
+    if !frame.in_technic_pin {
+        let [low, high] = out.body_bounds.unwrap_or([transformed[0], transformed[0]]);
+        let mut bounds = [low, high];
+        for point in transformed {
+            for axis in 0..3 {
+                bounds[0][axis] = bounds[0][axis].min(point[axis]);
+                bounds[1][axis] = bounds[1][axis].max(point[axis]);
+            }
+        }
+        out.body_bounds = Some(bounds);
+    }
     let clockwise = (winding == Winding::Cw) ^ frame.flipped;
     let ordered = if clockwise {
         [transformed[0], transformed[2], transformed[1]]

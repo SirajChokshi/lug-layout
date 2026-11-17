@@ -187,3 +187,33 @@ fn technic_brick_hole_ends_are_recorded_facing_into_the_part_and_still_meshed() 
     expected.sort_unstable();
     assert_eq!(mouths, expected);
 }
+
+#[test]
+fn technic_pin_halves_are_left_out_of_the_body_and_a_loose_pin_has_no_body() {
+    let library = fixture_library();
+    let options = CompileOptions {
+        technic_pin_primitives: ["confric5.dat", "connect.dat"].map(String::from).to_vec(),
+        ..CompileOptions::default()
+    };
+    let loose = compile_part(&library, "2780.dat", &options).expect("2780 compiles");
+    assert!(loose.mesh.bounds().is_some());
+    assert_eq!(loose.body_bounds, None);
+
+    let half = compile_part(&library, "4274.dat", &options).expect("4274 compiles");
+    let [mesh_min, mesh_max] = half.mesh.bounds().expect("4274 has geometry");
+    let [body_min, body_max] = half.body_bounds.expect("4274 has a stud end");
+    let mesh_span = f64::from(mesh_max[1] - mesh_min[1])
+        .max(f64::from(mesh_max[0] - mesh_min[0]))
+        .max(f64::from(mesh_max[2] - mesh_min[2]));
+    let body_span = (body_max[1] - body_min[1])
+        .max(body_max[0] - body_min[0])
+        .max(body_max[2] - body_min[2]);
+    assert!(body_span < mesh_span);
+
+    let brick = compile_part(&library, "3701.dat", &options).expect("3701 compiles");
+    let [min, max] = brick.mesh.bounds().expect("3701 has geometry");
+    assert_eq!(
+        brick.body_bounds,
+        Some([min.map(f64::from), max.map(f64::from)])
+    );
+}

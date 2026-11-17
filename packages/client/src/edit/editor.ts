@@ -231,10 +231,16 @@ export interface RefusedEdit {
   readonly message: string;
 }
 
+export interface TechnicTurnView {
+  readonly turns: number;
+  readonly joins: number;
+}
+
 interface TechnicSnap {
   readonly x: number;
   readonly z: number;
   readonly at: LandingAt;
+  readonly joins: number;
 }
 
 export interface GhostCheckView {
@@ -244,6 +250,7 @@ export interface GhostCheckView {
   readonly snappedStuds: readonly [number, number] | null;
   readonly technicJoins: number;
   readonly snappedToTechnic: boolean;
+  readonly technicTurn: TechnicTurnView | null;
   readonly trackJoins: number;
   readonly uncertifiedTrack: number;
 }
@@ -632,6 +639,7 @@ export class Editor implements IEditor {
   private ghostLanding: LandingAt = { kind: "height", yPlates: 0 };
   private snappedStuds: readonly [number, number] | null = null;
   private snappedToTechnic = false;
+  private technicTurn: TechnicTurnView | null = null;
   private technicJoins = new TechnicJoins();
   private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
   private connectionMarkers: ReadonlyArray<EdgeMarker> = [];
@@ -1198,7 +1206,7 @@ export class Editor implements IEditor {
       const z = hoverZ + dz;
       if (this.roadRefusedAt(placeable, x, z, rot)) continue;
       if (!acceptable(this.checkAt(placeable, x, z, rot, [], at))) continue;
-      return { x, z, at };
+      return { x, z, at, joins: this.technicJoins.joinsAt(ends, dx, dz, null) };
     }
     return null;
   }
@@ -1207,12 +1215,21 @@ export class Editor implements IEditor {
     const placeable = this.active;
     if (!placeable || !this.hovering || placeable.technic.count === 0) return false;
     const snap = this.technicSnap(placeable, this.ghostRot);
-    if (!snap) return false;
-    this.hoverX = snap.x;
-    this.hoverZ = snap.z;
-    this.ghostLanding = snap.at;
-    this.snappedToTechnic = true;
-    return true;
+    if (snap) {
+      this.hoverX = snap.x;
+      this.hoverZ = snap.z;
+      this.ghostLanding = snap.at;
+      this.snappedToTechnic = true;
+      return true;
+    }
+    for (let turns = 1; turns < QUARTER_TURNS; turns++) {
+      const turned = this.technicSnap(placeable, (this.ghostRot + turns) % QUARTER_TURNS);
+      if (turned) {
+        this.technicTurn = { turns, joins: turned.joins };
+        return false;
+      }
+    }
+    return false;
   }
 
   private refreshTechnic(): void {
@@ -1304,6 +1321,7 @@ export class Editor implements IEditor {
         snappedStuds: this.snappedStuds,
         technicJoins,
         snappedToTechnic: this.snappedToTechnic,
+        technicTurn: this.technicTurn,
         trackJoins: this.trackJoinsAt(this.active, check.yPlates),
         uncertifiedTrack: track?.uncertified.length ?? 0,
       },
@@ -1491,6 +1509,7 @@ export class Editor implements IEditor {
     this.ghostLanding = this.cursorLanding();
     this.snappedStuds = null;
     this.snappedToTechnic = false;
+    this.technicTurn = null;
     if (!moduleFit && this.snapGhostToTechnic()) return this.roadFit();
     const joined = this.snapGhostToRoad();
     const onTrack = this.snapGhostToTrack();

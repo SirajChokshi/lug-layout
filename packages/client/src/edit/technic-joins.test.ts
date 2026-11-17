@@ -29,6 +29,8 @@ import type { IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const MODULE = "mils-plain";
+const GROCER = "omr:10185-1";
+const MARKET = "omr:10190-1";
 const NDC_TO_LDU = 10_000;
 const RAY_START_Y = 1000;
 const NO_LOOK: LookSettings = {
@@ -128,13 +130,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startEditor(backend: ISceneBackend): Promise<IEditor> {
+async function startEditor(
+  backend: ISceneBackend,
+  models: ReadonlyArray<string> = [MODULE],
+): Promise<IEditor> {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, [MODULE]));
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const editor = container.get(EDITOR);
   const canvas = {
@@ -193,4 +198,42 @@ it("pins a MILS module where the module grid seats it beside another, from the h
   const poses = placements.x.map((x, i) => [x, placements.z[i]]);
   expect(poses).toContainEqual([flush.hover?.x, flush.hover?.z]);
   expect(poses).toHaveLength(2);
+}, 120_000);
+
+it("stands a modular flush against a neighbour whose Technic holes take its protruding pins, and says which turn would pin", async () => {
+  const editor = await startEditor(new TopDownBackend(), ["10185-1", "10190-1"]);
+  expect(editor.snapshot().error).toBeNull();
+  editor.chooseItem(GROCER);
+  aimAt(editor, 0, 0);
+  editor.click(0, 0, 0);
+  const depth = editor.snapshot().catalog.find((item) => item.id === GROCER)?.baseplate?.studsDeep;
+  if (depth === undefined) throw new Error(`${GROCER} has no baseplate`);
+
+  editor.chooseItem(MARKET);
+  aimAt(editor, 0, -depth);
+  const asLoaded = editor.snapshot().ghost;
+  expect(asLoaded?.technicJoins).toBe(0);
+  const turns = asLoaded?.technicTurn?.turns ?? 0;
+  expect(turns).toBeGreaterThan(0);
+
+  for (let t = 0; t < turns; t++) editor.rotate(0);
+  aimAt(editor, 0, -depth);
+  const turned = editor.snapshot();
+  expect(turned.ghost?.refusal).toBeNull();
+  expect(turned.ghost?.technicJoins).toBe(asLoaded?.technicTurn?.joins);
+
+  const gridStuds = editor.snapshot().baseplateGridStuds ?? 0;
+  aimAt(editor, gridStuds - 1, -depth);
+  const pulled = editor.snapshot();
+  expect(pulled.ghost?.snappedToTechnic).toBe(true);
+  expect(pulled.ghost?.technicJoins).toBe(turned.ghost?.technicJoins);
+  expect(pulled.hover).toEqual(turned.hover);
+
+  editor.click(((gridStuds - 1) * STUD_LDU) / NDC_TO_LDU, (-depth * STUD_LDU) / NDC_TO_LDU, 0);
+  expect(editor.snapshot().placements).toBe(2);
+  const { placements } = editor.dump();
+  expect(placements.x.map((x, i) => [x, placements.z[i]])).toContainEqual([
+    turned.hover?.x,
+    turned.hover?.z,
+  ]);
 }, 120_000);

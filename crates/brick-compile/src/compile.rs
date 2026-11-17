@@ -41,6 +41,7 @@ pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
     pub technic_hole_primitives: Vec<String>,
+    pub technic_pin_primitives: Vec<String>,
     pub unofficial_allowlist: Vec<String>,
 }
 
@@ -74,6 +75,7 @@ pub struct CompiledPart {
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
     pub technic_holes: Vec<ConnectorReference>,
+    pub body_bounds: Option<[Vec3; 2]>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
 }
 
@@ -109,7 +111,8 @@ pub fn compile_part<L: Library>(
     options: &CompileOptions,
 ) -> Result<CompiledPart, CompileError> {
     let mut flattener = Flattener::new(library, options.lod, &options.stud_primitives)
-        .with_technic_holes(&options.technic_hole_primitives);
+        .with_technic_holes(&options.technic_hole_primitives)
+        .with_technic_pins(&options.technic_pin_primitives);
     let path =
         flattener
             .resolve(reference)
@@ -150,11 +153,25 @@ pub fn compile_part<L: Library>(
             },
         })
         .collect();
+    let body_bounds = match flattened.body_bounds {
+        Some([low, high]) => {
+            let [a, b] = [to_y_up(low), to_y_up(high)];
+            Some([
+                [a[0].min(b[0]), a[1].min(b[1]), a[2].min(b[2])],
+                [a[0].max(b[0]), a[1].max(b[1]), a[2].max(b[2])],
+            ])
+        }
+        None if flattened.technic_pins.is_empty() => mesh
+            .bounds()
+            .map(|corners| corners.map(|corner| corner.map(f64::from))),
+        None => None,
+    };
     Ok(CompiledPart {
         path,
         mesh,
         studs,
         technic_holes,
+        body_bounds,
         flattened_files: flattened.files,
     })
 }

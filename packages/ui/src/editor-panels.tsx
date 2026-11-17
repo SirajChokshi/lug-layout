@@ -480,6 +480,18 @@ export function CreditsFooter({
   );
 }
 
+function turnText(ghost: GhostCheckView): string | null {
+  const turn = ghost.technicTurn;
+  if (turn === null) return null;
+  const holes = turn.joins === 1 ? "1 Technic hole" : `${turn.joins} Technic holes`;
+  return `turn it ${turn.turns * 90}° (R) and ${holes} would line up for pins`;
+}
+
+function refusedTurnText(ghost: GhostCheckView): string {
+  const turn = turnText(ghost);
+  return turn === null ? "" : ` Hint: ${turn}.`;
+}
+
 function connectionText(ghost: GhostCheckView): string {
   const phrases: string[] = [];
   if (ghost.studsEngaged > 0) {
@@ -501,6 +513,8 @@ function connectionText(ghost: GhostCheckView): string {
     phrases.push(`${holes} with a neighbour's for a pin`);
   }
   if (ghost.snappedToTechnic) phrases.push("snapped to line them up");
+  const turn = turnText(ghost);
+  if (turn !== null) phrases.push(turn);
   return phrases.map((phrase) => `; ${phrase}`).join("");
 }
 
@@ -510,7 +524,7 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
     snapshot.mode !== "place" || ghost === null
       ? "no item in hand"
       : ghost.refusal
-        ? `refused: ${ghost.refusal.message}`
+        ? `refused: ${ghost.refusal.message}${refusedTurnText(ghost)}`
         : `lands at ${ghost.yPlates} plates, supported${connectionText(ghost)}${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}`;
   return (
     <section
@@ -523,6 +537,7 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       data-ghost-snapped={ghost?.snappedStuds ? ghost.snappedStuds.join(",") : ""}
       data-ghost-technic-joins={ghost?.technicJoins ?? 0}
       data-ghost-technic-snap={ghost?.snappedToTechnic ? "1" : ""}
+      data-ghost-technic-turn={ghost?.technicTurn?.turns ?? ""}
       data-refusals={snapshot.refusals}
       data-last-refusal-rule={lastRefusal?.rule ?? ""}
     >

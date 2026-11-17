@@ -8,6 +8,17 @@
   "config": ["LDConfig.ldr"],
   "studPrimitives": ["stud.dat", "stud2.dat"],
   "technicHolePrimitives": ["peghole.dat"],
+  "technicPinPrimitives": [
+    "confric.dat",
+    "confric4.dat",
+    "confric5.dat",
+    "confric6.dat",
+    "confric9.dat",
+    "connect.dat",
+    "connect2.dat",
+    "connect3.dat",
+    "connect4.dat"
+  ],
   "unofficialAllowlist": [],
   "parts": [
     {

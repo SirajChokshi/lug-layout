@@ -134,6 +134,7 @@ fn compile(request: &Value) -> Result<Vec<u8>, String> {
         lod: parse_lod(&request["lod"])?,
         stud_primitives: strings(request, "studPrimitives"),
         technic_hole_primitives: strings(request, "technicHolePrimitives"),
+        technic_pin_primitives: strings(request, "technicPinPrimitives"),
         unofficial_allowlist: strings(request, "unofficialAllowlist"),
     };
     let mut blob: Vec<u8> = Vec::new();

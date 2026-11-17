@@ -142,6 +142,7 @@ struct CoverParts<'a> {
     index: HashMap<String, usize>,
     solids: Vec<PartSolid>,
     studs: Vec<Vec<Affine>>,
+    bodies: Vec<Option<[Vec3; 2]>>,
 }
 
 impl CoverParts<'_> {
@@ -152,6 +153,7 @@ impl CoverParts<'_> {
         let compiled =
             compile_part(self.library, reference, &self.options).map_err(|e| e.to_string())?;
         self.solids.push(PartSolid::from_mesh(&compiled.mesh));
+        self.bodies.push(compiled.body_bounds);
         self.studs
             .push(compiled.studs.iter().map(|stud| stud.matrix).collect());
         self.index
@@ -368,6 +370,12 @@ fn run(args: &Args) -> Result<(), String> {
         .iter()
         .filter_map(|v| v.as_str().map(str::to_string))
         .collect();
+    let technic_pin_primitives: Vec<String> = palette["technicPinPrimitives"]
+        .as_array()
+        .ok_or("palette.technicPinPrimitives must be an array")?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
     let unofficial_allowlist: Vec<String> = palette["unofficialAllowlist"]
         .as_array()
         .map(|list| {
@@ -380,6 +388,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: Vec::new(),
         technic_hole_primitives: Vec::new(),
+        technic_pin_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
     };
     let compiler = match &args.compiler {
@@ -395,12 +404,14 @@ fn run(args: &Args) -> Result<(), String> {
         lod: Lod::Standard,
         stud_primitives: stud_primitives.clone(),
         technic_hole_primitives: technic_hole_primitives.clone(),
+        technic_pin_primitives: technic_pin_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
     };
     let part_options = CompileOptions {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         technic_hole_primitives,
+        technic_pin_primitives,
         unofficial_allowlist,
     };
     let mut stud_shape = StudShape {
@@ -429,6 +440,7 @@ fn run(args: &Args) -> Result<(), String> {
         index: HashMap::new(),
         solids: Vec::new(),
         studs: Vec::new(),
+        bodies: Vec::new(),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
     let ldconfig = library
@@ -653,6 +665,7 @@ fn run(args: &Args) -> Result<(), String> {
                 part: slot,
                 studs: &cover_parts.studs[slot],
                 baseplate: shapes[index].is_baseplate(),
+                column_bounds: cover_parts.bodies[slot],
             })
             .collect();
         let cached = args

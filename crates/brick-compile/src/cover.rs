@@ -202,6 +202,10 @@ pub struct PartSolid {
 }
 
 impl PartSolid {
+    pub fn bounds(&self) -> [Vec3; 2] {
+        [self.min, self.max]
+    }
+
     pub fn from_mesh(mesh: &Mesh) -> Self {
         let point = |index: u32| {
             let k = index as usize * 3;
@@ -381,6 +385,7 @@ pub struct CoverInstance<'a> {
     pub part: usize,
     pub studs: &'a [Affine],
     pub baseplate: bool,
+    pub column_bounds: Option<[Vec3; 2]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -468,16 +473,20 @@ fn inverse(matrix: &Affine) -> Option<Affine> {
 }
 
 fn world_box(instance: &CoverInstance, solid: &PartSolid) -> [Vec3; 2] {
+    transformed_box(instance.matrix, [solid.min, solid.max])
+}
+
+fn transformed_box(matrix: &Affine, [min, max]: [Vec3; 2]) -> [Vec3; 2] {
     let mut bounds = Bounds::EMPTY;
     for i in 0..8 {
         let pick = |bit: usize, axis: usize| {
             if i & bit == 0 {
-                solid.min[axis]
+                min[axis]
             } else {
-                solid.max[axis]
+                max[axis]
             }
         };
-        bounds = bounds.grow(instance.matrix.apply([pick(1, 0), pick(2, 1), pick(4, 2)]));
+        bounds = bounds.grow(matrix.apply([pick(1, 0), pick(2, 1), pick(4, 2)]));
     }
     [bounds.min, bounds.max]
 }
@@ -814,8 +823,16 @@ pub fn model_cover(
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
     let ground_y = ground_top(instances, &boxes, rest_y);
+    let column_boxes: Vec<[Vec3; 2]> = instances
+        .iter()
+        .filter_map(|instance| {
+            instance
+                .column_bounds
+                .map(|body| transformed_box(instance.matrix, body))
+        })
+        .collect();
     let cells =
-        phase.map(|phase| model_cells(&boxes, &mut coverers, aabb, rest_y, ground_y, phase));
+        phase.map(|phase| model_cells(&column_boxes, &mut coverers, aabb, rest_y, ground_y, phase));
     ModelCover {
         visible,
         open_below,
@@ -983,6 +1000,7 @@ mod tests {
                 part: *part,
                 studs: if i == 0 { studs } else { &[] },
                 baseplate: false,
+                column_bounds: Some(solids[*part].bounds()),
             })
             .collect();
         model_cover(
@@ -1098,6 +1116,7 @@ mod tests {
                     part,
                     studs: &[],
                     baseplate,
+                    column_bounds: Some(solids[part].bounds()),
                 })
                 .collect();
             model_cover(
