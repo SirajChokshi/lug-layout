@@ -1,4 +1,5 @@
 import type { UpperSupport } from "@brr/domain";
+import { PLATE_LDU } from "@brr/math";
 import type { LostSupport, PlacedOverlap, PlacementCheck, VolumeOwner } from "./placed-chunks.ts";
 import type { OffBaseplate, RunBlock } from "./track-drawing.ts";
 
@@ -8,7 +9,9 @@ export type RefusalRule =
   | "support"
   | "overlap"
   | "carries"
-  | "track-support";
+  | "track-support"
+  | "clearance"
+  | "grade";
 
 export interface Refusal {
   readonly rule: RefusalRule;
@@ -19,12 +22,18 @@ function plates(count: number): string {
   return count === 1 ? "1 plate" : `${count} plates`;
 }
 
+function platesOf(ldu: number): string {
+  return `${(ldu / PLATE_LDU).toFixed(2).replace(/\.?0+$/u, "")} plates`;
+}
+
 function ownerLabel(owner: VolumeOwner): string {
   switch (owner.kind) {
     case "model":
       return owner.model.placeable.label;
     case "track":
       return `laid track piece ${owner.piece + 1} (${owner.pieceId})`;
+    case "pier":
+      return `the ${plates(owner.plates)} brick pier under raised track`;
     default: {
       const unhandled: never = owner;
       throw new Error(`unhandled owner ${String(unhandled)}`);
@@ -119,7 +128,29 @@ export function trackRunRefusal(block: RunBlock): Refusal {
     case "crosses-track":
       return {
         rule: "overlap",
-        message: `Track run refused: ${at} crosses ${crossedText(block.other, block.inModel)} (${block.otherId}) without joining it. Track only crosses through a real crossing part.`,
+        message: `Track run refused: ${at} crosses ${crossedText(block.other, block.inModel)} (${block.otherId}) at the same height without joining it. Track crosses level only through a real crossing part, or passes over with enough clearance.`,
+      };
+    case "low-clearance":
+      return {
+        rule: "clearance",
+        message: `Track run refused: ${at} passes ${block.gapLdu} LDU (${platesOf(block.gapLdu)}) above the rails of ${crossedText(block.other, block.inModel)} (${block.otherId}), but the tallest train, ${block.gauge}, stands ${block.needLdu.toFixed(1)} LDU (${platesOf(block.needLdu)}) above its rails. Raise the upper track.`,
+      };
+    case "pier-off-baseplate":
+      return {
+        rule: "track-support",
+        message: `Track run refused: the ${block.plates === 0 ? "ground joint" : `${plates(block.plates)} pier`} at an end of ${at} has ${block.missing.count} of its ${block.cells} stud cells off the baseplates. Every raised joint stands on a baseplate.`,
+      };
+    case "pier-blocked":
+      return {
+        rule: "overlap",
+        message: block.with
+          ? `Track run refused: the ${plates(block.plates)} pier at an end of ${at} would intersect ${overlapText(block.with)}.`
+          : `Track run refused: the ${plates(block.plates)} pier at an end of ${at} would stand on piece ${(block.runPiece ?? 0) + 1} of this run.`,
+      };
+    case "too-steep":
+      return {
+        rule: "grade",
+        message: `Track run refused: climbing from ${plates(block.fromPlates)} to ${plates(block.toPlates)} at ${plates(block.risePerPiece)} per piece needs ${Math.ceil(Math.abs(block.toPlates - block.fromPlates) / block.risePerPiece)} pieces, and the run has ${block.pieces}.`,
       };
     default: {
       const unhandled: never = block;

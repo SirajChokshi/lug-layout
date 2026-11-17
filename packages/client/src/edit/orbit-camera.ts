@@ -86,6 +86,38 @@ export class OrbitCamera {
     this.targetZ = z;
   }
 
+  project(
+    x: number,
+    y: number,
+    z: number,
+    fovYRadians: number,
+    aspect: number,
+  ): readonly [number, number] | null {
+    const horizontal = this.distance * Math.cos(this.pitch);
+    const eyeX = this.targetX + horizontal * Math.cos(this.yaw);
+    const eyeY = this.targetY + this.distance * Math.sin(this.pitch);
+    const eyeZ = this.targetZ + horizontal * Math.sin(this.yaw);
+    const fx = (this.targetX - eyeX) / this.distance;
+    const fy = (this.targetY - eyeY) / this.distance;
+    const fz = (this.targetZ - eyeZ) / this.distance;
+    const rightLength = Math.hypot(fz, fx);
+    const rx = -fz / rightLength;
+    const rz = fx / rightLength;
+    const ux = -rz * fy;
+    const uy = rz * fx - rx * fz;
+    const uz = rx * fy;
+    const dx = x - eyeX;
+    const dy = y - eyeY;
+    const dz = z - eyeZ;
+    const depth = dx * fx + dy * fy + dz * fz;
+    if (depth <= MIN_DISTANCE_LDU / 2) return null;
+    const halfTan = Math.tan(fovYRadians / 2);
+    return [
+      (dx * rx + dz * rz) / (depth * halfTan * aspect),
+      (dx * ux + dy * uy + dz * uz) / (depth * halfTan),
+    ];
+  }
+
   apply(backend: ISceneBackend): void {
     const horizontal = this.distance * Math.cos(this.pitch);
     backend.setView(
