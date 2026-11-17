@@ -1,10 +1,27 @@
 import type { EditorSnapshot } from "@brr/client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const CURSOR_OFFSET_PX = 18;
 
+function usePlacedSinceMove(placements: number): boolean {
+  const [quiet, setQuiet] = useState(false);
+  const seen = useRef(placements);
+  useEffect(() => {
+    if (placements > seen.current) setQuiet(true);
+    seen.current = placements;
+  }, [placements]);
+  useEffect(() => {
+    if (!quiet) return;
+    const wake = (): void => setQuiet(false);
+    window.addEventListener("pointermove", wake, { once: true });
+    return () => window.removeEventListener("pointermove", wake);
+  }, [quiet]);
+  return quiet;
+}
+
 export function PlacementCursor({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const ref = useRef<HTMLDivElement>(null);
+  const quiet = usePlacedSinceMove(snapshot.placements);
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent): void => {
@@ -17,7 +34,8 @@ export function PlacementCursor({ snapshot }: { readonly snapshot: EditorSnapsho
   }, []);
 
   const feedback = snapshot.ghostFeedback;
-  const message = snapshot.hover !== null || snapshot.track?.drag ? feedback?.message : null;
+  const pointing = snapshot.hover !== null || snapshot.track?.drag;
+  const message = pointing && !quiet ? feedback?.message : null;
   return (
     <div ref={ref} className="placement-cursor" aria-live="polite">
       {message && feedback && (

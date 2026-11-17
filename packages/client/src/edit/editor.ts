@@ -1335,6 +1335,14 @@ export class Editor implements IEditor {
     this.update({ hover: this.hoverView(), snap, ghostFeedback: this.placementFeedback(snap) });
   }
 
+  private aimGhost(): RoadSnapView | null {
+    this.hoverX = snapToGrid(this.hitX, STUD_LDU);
+    this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
+    const snap = this.snapGhost();
+    this.placeGhost();
+    return snap;
+  }
+
   private placementFeedback(snap: RoadSnapView | null): GhostFeedbackView | null {
     if (!this.active) return this.state.ghostFeedback;
     const road = roadGhostFeedback(snap);
@@ -1455,8 +1463,10 @@ export class Editor implements IEditor {
     }
     this.refreshRoads();
     this.syncHeldTrack();
-    this.placeGhost();
+    const snap = this.active ? this.aimGhost() : null;
     this.update({
+      snap,
+      ghostFeedback: this.placementFeedback(snap),
       placements: this.world.size,
       hover: this.hoverView(),
       studs: this.placed.studTotals(),
@@ -1575,10 +1585,7 @@ export class Editor implements IEditor {
   rotate(eventTimeMs: number): void {
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
-      this.hoverX = snapToGrid(this.hitX, STUD_LDU);
-      this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
-      const snap = this.snapGhost();
-      this.placeGhost();
+      const snap = this.aimGhost();
       this.update({
         ghostRot: this.ghostRot,
         hover: this.hoverView(),

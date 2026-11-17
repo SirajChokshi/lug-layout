@@ -180,19 +180,24 @@ it("shows the ghost as blocked, with a reason, exactly where a click would be re
   expect(editor.snapshot().placements).toBe(1);
 
   const seen = new Set<string>();
+  const clickMatchesGhost = (x: number, z: number): boolean => {
+    const feedback = editor.snapshot().ghostFeedback;
+    const refusalsBefore = editor.snapshot().refusals;
+    editor.click(...ndc(x, z), 0);
+    const refused = editor.snapshot().refusals > refusalsBefore;
+    seen.add(feedback?.tone ?? "none");
+    expect(feedback?.tone === "blocked").toBe(refused);
+    expect(feedback?.message !== null).toBe(feedback?.tone !== "valid");
+    return refused;
+  };
   for (const item of [road, baseplate, set]) {
     editor.chooseItem(item.id);
     for (let x = -1_000; x <= 1_000; x += 140) {
       for (let z = -1_000; z <= 1_000; z += 140) {
         editor.pointerMove(...ndc(x, z));
-        const feedback = editor.snapshot().ghostFeedback;
-        const refusalsBefore = editor.snapshot().refusals;
-        editor.click(...ndc(x, z), 0);
-        const refused = editor.snapshot().refusals > refusalsBefore;
-        if (!refused) editor.undo(0);
-        seen.add(feedback?.tone ?? "none");
-        expect(feedback?.tone === "blocked").toBe(refused);
-        expect(feedback?.message !== null).toBe(feedback?.tone !== "valid");
+        if (clickMatchesGhost(x, z)) continue;
+        if (!clickMatchesGhost(x, z)) editor.undo(0);
+        editor.undo(0);
       }
     }
   }
