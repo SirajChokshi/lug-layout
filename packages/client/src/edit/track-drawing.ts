@@ -4,6 +4,8 @@ import type { Decoded, Issue } from "@brr/schema/decode";
 import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
 import {
   NEAR_MISS_RADIUS_LDU,
+  NO_OBSTACLE,
+  TrackClearance,
   drawingKit,
   endGaps,
   FOOTPRINT_FLOATS,
@@ -14,6 +16,9 @@ import {
   NO_END,
   TrackGraph,
   TrackLayout,
+  footprintOutline,
+  type ClosureResult,
+  type ClosureSite,
   type DrawingKit,
   type EndGap,
   type TrackEnd,
@@ -23,6 +28,7 @@ import {
 } from "@brr/domain";
 import {
   CHUNK_LDU,
+  PLATE_LDU,
   STUD_LDU,
   ZETA16_ORDER,
   chunkKey,
@@ -55,6 +61,7 @@ const GHOST_SCRATCH_PIECES = 64;
 
 export interface KitPart {
   readonly footprints: Float64Array;
+  readonly outline: Float64Array;
   readonly meshY: readonly [number, number];
   readonly catalogIndex: number;
   readonly piece: TrackPiece;
@@ -64,8 +71,9 @@ export interface KitPart {
   readonly yLdu: number;
 }
 
-export type ClosureState = "exact" | "impossible" | "limit" | null;
-export type TrackRefusal = "impossible" | "limit";
+export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | null;
+export type TrackRefusal = "impossible" | "blocked" | "limit";
+const OBSTACLE_RECT_FLOATS = 4;
 
 export interface TrackDragView {
   readonly pieces: number;
@@ -158,6 +166,13 @@ interface Drag {
   goal: Pose16 | null;
   missStuds: number;
   target: number | null;
+  clearance: DragClearance | null;
+  readonly closures: Map<string, ClosureResult>;
+}
+
+interface DragClearance {
+  readonly field: TrackClearance;
+  readonly pieceIds: Int32Array;
 }
 
 interface Placed {
@@ -276,6 +291,8 @@ export class TrackDrawing {
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
+  private endOwners: number[] = [];
+  private obstacleRects: Float64Array = new Float64Array(0);
   private gapList: ReadonlyArray<EndGap> = [];
   private drag: Drag | null = null;
   private lastSolveMs = 0;
@@ -307,6 +324,7 @@ export class TrackDrawing {
       const shape = kitFootprints(piece, shapes);
       const kitPart: KitPart = {
         footprints: Float64Array.from(shape.footprints),
+        outline: footprintOutline(shape, piece.partFrame),
         meshY: [shape.minY, shape.maxY],
         catalogIndex,
         piece,
@@ -457,7 +475,77 @@ export class TrackDrawing {
       goal: null,
       missStuds: 0,
       target: null,
+      clearance: null,
+      closures: new Map(),
     };
+  }
+
+  setObstacles(rects: Float64Array): void {
+    if (rects.length % OBSTACLE_RECT_FLOATS !== 0) {
+      throw new RangeError(`obstacle rects come in ${OBSTACLE_RECT_FLOATS} floats each`);
+    }
+    this.obstacleRects = rects;
+  }
+
+  verticalRange(): readonly [number, number] {
+    let bottom = Number.POSITIVE_INFINITY;
+    let top = Number.NEGATIVE_INFINITY;
+    for (const part of this.byDef.values()) {
+      bottom = Math.min(bottom, part.yLdu + part.meshY[0]);
+      top = Math.max(top, part.yLdu + part.meshY[1]);
+    }
+    return [bottom, top];
+  }
+
+  private clearanceOf(drag: Drag): DragClearance {
+    if (drag.clearance) return drag.clearance;
+    const field = new TrackClearance();
+    const pieceIds = new Int32Array(this.layout.count).fill(NO_OBSTACLE);
+    const [, top] = this.verticalRange();
+    for (let p = 0; p < this.layout.count; p++) {
+      if (this.layout.yPlates(p) * PLATE_LDU >= top) continue;
+      const placed = this.placedAt(p);
+      pieceIds[p] = field.addPiece(placed.part.outline, placed.placement);
+    }
+    const rects = this.obstacleRects;
+    for (let r = 0; r < rects.length; r += OBSTACLE_RECT_FLOATS) {
+      field.addRect(rects[r] ?? 0, rects[r + 1] ?? 0, rects[r + 2] ?? 0, rects[r + 3] ?? 0);
+    }
+    drag.clearance = { field, pieceIds };
+    return drag.clearance;
+  }
+
+  private closureSite(drag: Drag, target: number): ClosureSite {
+    const { field, pieceIds } = this.clearanceOf(drag);
+    const owner = (end: number | null): number => {
+      const placement = end === null ? undefined : this.endOwners[end];
+      return placement === undefined ? NO_OBSTACLE : (pieceIds[placement] ?? NO_OBSTACLE);
+    };
+    return {
+      clearance: field,
+      outlineOf: (piece) => {
+        const part = this.byPieceId.get(piece.id);
+        if (!part) throw new Error(`${piece.id} is not a placeable track piece`);
+        return part.outline;
+      },
+      startOwner: owner(drag.fromEnd),
+      goalOwner: owner(target),
+    };
+  }
+
+  private closure(drag: Drag, start: Pose16, target: number, goal: Pose16): ClosureResult {
+    const key = `${target}|${start.heading}|${start.position.join(",")}`;
+    const cached = drag.closures.get(key);
+    if (cached) return cached;
+    const result = solveClosure(
+      this.kit,
+      start,
+      goal,
+      { now: () => performance.now(), limitMs: CLOSURE_BUDGET_MS },
+      this.closureSite(drag, target),
+    );
+    drag.closures.set(key, result);
+    return result;
   }
 
   private newRunStart(drag: Drag, hitX: number, hitZ: number): Pose16 | null {
@@ -491,18 +579,13 @@ export class TrackDrawing {
     const goal = target === null ? undefined : this.ends[target];
     drag.target = target;
     drag.goal = goal ?? null;
-    if (goal) {
-      const result = solveClosure(this.kit, start, goal, {
-        now: () => performance.now(),
-        limitMs: CLOSURE_BUDGET_MS,
-      });
+    if (target !== null && goal) {
+      const result = this.closure(drag, start, target, goal);
       drag.closure = result.kind;
-      if (result.kind === "exact") {
-        drag.moves = runMoves(this.kit, result.run);
-        drag.missStuds = 0;
-        this.recordSolve(began);
-        return;
-      }
+      drag.moves = result.kind === "exact" ? runMoves(this.kit, result.run) : [];
+      drag.missStuds = 0;
+      this.recordSolve(began);
+      return;
     } else {
       drag.closure = null;
     }
@@ -587,11 +670,15 @@ export class TrackDrawing {
   endDrag(): TrackCommit {
     const drag = this.drag;
     this.drag = null;
+    if (
+      drag?.closure === "impossible" ||
+      drag?.closure === "blocked" ||
+      drag?.closure === "limit"
+    ) {
+      return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
+    }
     if (!drag?.start || drag.moves.length === 0) {
       return { laid: 0, joined: false, refusal: null, chunks: [] };
-    }
-    if (drag.closure === "impossible" || drag.closure === "limit") {
-      return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
     }
     const { placed } = layMoves(drag.start, drag.moves);
     const entries: Placed[] = [];
@@ -757,15 +844,18 @@ export class TrackDrawing {
   private recomputeEnds(): void {
     this.graph = new TrackGraph(this.layout);
     const ends: TrackEnd[] = [];
+    const owners: number[] = [];
     for (const end of this.graph.openEnds) {
       const placement = this.graph.endPlacement[end] ?? 0;
       const connector = this.graph.endConnector[end] ?? 0;
+      owners.push(placement);
       ends.push({
         pose: this.layout.connectorPose(placement, connector),
         yPlates: this.layout.yPlates(placement),
       });
     }
     this.ends = ends.map((end) => end.pose);
+    this.endOwners = owners;
     this.gapList = endGaps(ends);
   }
 

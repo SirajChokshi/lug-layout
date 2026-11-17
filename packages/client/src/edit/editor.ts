@@ -108,6 +108,7 @@ import {
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { thumbnailUrls } from "../catalog/thumbnail-urls.ts";
+import { trackObstacleRects } from "./track-obstacles.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
@@ -350,6 +351,7 @@ export type TrackCommitResult =
   | "laid"
   | "joined"
   | "refused-impossible"
+  | "refused-blocked"
   | "refused-limit"
   | "switch-straight"
   | "switch-branching";
@@ -1596,6 +1598,7 @@ export class Editor implements IEditor {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
+    track.setObstacles(trackObstacleRects(this.placed.models(), track.verticalRange()));
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
     this.update({ track: this.trackView() });
     return true;
