@@ -31,6 +31,14 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const WORLD_PER_NDC = 10_000;
 const EYE_HEIGHT = 1_000;
 const TILE = 640;
+const NO_LOOK: LookSettings = {
+  plastic: false,
+  gtao: false,
+  outlines: false,
+  bevel: false,
+  shadows: false,
+  oit: false,
+};
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -79,15 +87,6 @@ class MilsModulesOnly implements IPartBundleLoader {
     return this.loader.loadPartSet(lod, partIds, compiled);
   }
 }
-
-const NO_LOOK: LookSettings = {
-  plastic: false,
-  gtao: false,
-  outlines: false,
-  bevel: false,
-  shadows: false,
-  oit: false,
-};
 
 class TopDownBackend implements ISceneBackend {
   async init(): Promise<BackendInfo> {
@@ -230,6 +229,64 @@ describe("draw road", () => {
     expect(
       editor.dump().roadPlacements.find((p) => p.x === centre(2) && p.z === centre(0))?.item,
     ).toBe("ldraw:44336p01@2");
+    editor.undo(0);
+    editor.chooseItem(null);
+  });
+
+  it("re-plans a stroke against the world as it is at release when undo or redo ran during the drag", () => {
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [0, 0],
+      [2, 0],
+    ]);
+    editor.undo(0);
+    expect(editor.dragStart(...ndc([0, 0]))).toBe(true);
+    editor.dragMove(...ndc([2, 0]));
+    editor.redo(0);
+    editor.dragEnd(...ndc([2, 0]), 0);
+    expect(editor.snapshot().placements).toBe(3);
+    expect(editor.snapshot().roads.overlaps).toBe(0);
+    editor.undo(0);
+    drag(editor, [
+      [0, 0],
+      [4, 0],
+    ]);
+    expect(editor.dragStart(...ndc([2, 0]))).toBe(true);
+    editor.dragMove(...ndc([2, 2]));
+    editor.undo(0);
+    expect(() => editor.dragEnd(...ndc([2, 2]), 0)).not.toThrow();
+    const { placements, roads } = editor.snapshot();
+    expect(placements).toBe(3);
+    expect(roads.overlaps).toBe(0);
+    expect(roads.mismatchedCells).toBe(0);
+    while (editor.snapshot().history.undoDepth > 0) editor.undo(0);
+    editor.chooseItem(null);
+  });
+
+  it("names every kit distinctly, so two plate families of one colour can't be confused", () => {
+    const labels = editor.snapshot().roadKits.map((kit) => kit.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("refuses a tile over a baseplate it can't replace and names the baseplate", () => {
+    editor.chooseItem("ldraw:4186@2");
+    editor.click(...ndc([0, 0]), 0);
+    editor.chooseItem(
+      kitId(
+        editor,
+        (label, edge) => label.startsWith("Dark Bluish Grey") && edge === "6 + 20 road + 6",
+      ),
+    );
+    drag(editor, [
+      [-1, 0],
+      [2, 0],
+    ]);
+    const snapshot = editor.snapshot();
+    expect(snapshot.placements).toBe(1);
+    expect(snapshot.lastRoadStroke?.result).toBe("refused");
+    expect(snapshot.lastRoadStroke?.stroke.issues).toContainEqual(
+      expect.objectContaining({ problem: "overlap", blocker: expect.stringContaining("4186") }),
+    );
     editor.undo(0);
     editor.chooseItem(null);
   });

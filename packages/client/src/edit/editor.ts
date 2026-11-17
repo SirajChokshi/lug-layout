@@ -790,7 +790,7 @@ export class Editor implements IEditor {
   private track: TrackDrawing | null = null;
   private newTrack: (() => TrackDrawing) | null = null;
   private roadDrawing: RoadDrawing | null = null;
-  private roadPreviewMarkers: RoadPreview["markers"] = [];
+  private roadPreviewMarkers: ReadonlyArray<EdgeMarker> = [];
   private lastTrackCommit: TrackCommitResult | null = null;
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
@@ -1307,10 +1307,8 @@ export class Editor implements IEditor {
   private roadDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
     const roads = this.roadDrawing;
     if (!roads) return;
-    if (this.groundHit(ndcX, ndcY)) {
-      this.showRoadPreview(roads.move(this.hitX, this.hitZ, ...this.roadNeighbours()));
-    }
-    const stroke = roads.end();
+    if (this.groundHit(ndcX, ndcY)) roads.extend(this.hitX, this.hitZ);
+    const stroke = roads.end(...this.roadNeighbours());
     this.clearRoadPreview();
     if (!stroke) return;
     if (stroke.requests.length === 0) {
@@ -1936,7 +1934,11 @@ export class Editor implements IEditor {
     this.roadNetwork = new RoadNetwork(placements);
     this.roadExtents = placements.map(cellExtent);
     this.roadReport = this.roadNetwork.report();
-    this.roadDrawing?.worldChanged();
+    const roads = this.roadDrawing;
+    if (roads) {
+      roads.worldChanged();
+      if (roads.isDragging()) this.showRoadPreview(roads.rerun(...this.roadNeighbours()));
+    }
     const checkMs = performance.now() - started;
     this.showMarkers();
     const report = this.roadReport;
