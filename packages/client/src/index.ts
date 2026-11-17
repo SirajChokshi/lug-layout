@@ -186,3 +186,16 @@ export type {
   TrackGapView,
 } from "./edit/track-drawing.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
+export {
+  CATEGORY_LABEL,
+  PALETTE_CATEGORIES,
+  PaletteIndex,
+  colorDisplayName,
+} from "./catalog/palette-index.ts";
+export type {
+  PaletteCategory,
+  PaletteEntry,
+  PaletteFilter,
+  PaletteHit,
+  PaletteTerms,
+} from "./catalog/palette-index.ts";
