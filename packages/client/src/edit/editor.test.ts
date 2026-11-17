@@ -212,6 +212,7 @@ it("makes every gesture one undo step, and undo then redo walk back and forth th
   gesture(() => click(0, 0));
   gesture(() => click(640, 0));
   gesture(() => click(0, 640));
+  gesture(() => click(640, 640));
   editor.chooseItem(TRACK_ITEM_ID);
   gesture(() => drag([-320, 0], [320, 0]));
   gesture(() => drag([320, 0], [900, 220]));
