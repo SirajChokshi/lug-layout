@@ -22,6 +22,7 @@ import {
   worldPlacements,
   type AppliedEdit,
   type EditKind,
+  type GridPlacement,
   type HistoryStep,
   type ModuleEdgeKind,
   type ModuleSide,
@@ -779,6 +780,7 @@ export class Editor implements IEditor {
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private modules: ModuleLayout | null = null;
   private moduleGhost: ModuleCandidate | null = null;
+  private refusalPlacement: GridPlacement | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private framesSinceStats = 0;
   private measureFrame = -1;
@@ -1678,8 +1680,7 @@ export class Editor implements IEditor {
     ignore: PlacedModel | null,
   ): string | null {
     const layout = this.modules;
-    const surface = placeable.module;
-    const own = surface && layout ? layout.placement(surface, x, z, rot) : null;
+    const own = this.gridPlacement(placeable, x, z, rot);
     if (own && layout) {
       const clash = layout.railEdgeClash(own);
       if (clash) {
@@ -1687,20 +1688,38 @@ export class Editor implements IEditor {
         return `${placeable.label}: its ${EDGE_KIND_NAMES[clash.kind]} edge on the ${clash.side} side would face the ${EDGE_KIND_NAMES[clash.facing]} edge of ${neighbour}. A rail edge only joins another rail edge, where the track ends mate.`;
       }
     }
-    const mates = (other: PlacedModel): boolean => {
-      const theirs = other.placeable.module;
-      if (!own || !layout || !theirs) return false;
-      const { x: ox, z: oz, rot: orot } = other.handle;
-      const placement = layout.placement(theirs, ox, oz, orot);
-      return placement !== null && railEdgesMate(own, placement);
-    };
-    const clash = this.placed.tongueClash(placeable, x, z, rot, yPlates, ignore, mates);
+    this.refusalPlacement = own;
+    const clash = this.placed.tongueClash(placeable, x, z, rot, yPlates, ignore, this.matesRefusal);
+    this.refusalPlacement = null;
     if (!clash) return null;
     const other = clash.other.placeable.label;
     return clash.ownTongue
       ? `${placeable.label}: its track end would run into ${other}. Only a rail module whose rail edge faces it can take the track end.`
       : `${placeable.label} would fill the space where the track end of ${other} reaches past its edge. Only a rail module whose rail edge faces it can take the track end.`;
   }
+
+  private gridPlacement(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+  ): GridPlacement | null {
+    const layout = this.modules;
+    const surface = placeable.module;
+    if (!layout || !surface) return null;
+    const ghost = this.moduleGhost;
+    if (placeable === this.active && ghost && ghost.x === x && ghost.z === z && ghost.rot === rot) {
+      return ghost;
+    }
+    return layout.placement(surface, x, z, rot);
+  }
+
+  private readonly matesRefusal = (other: PlacedModel): boolean => {
+    const own = this.refusalPlacement;
+    if (!own) return false;
+    const theirs = this.modules?.placementOf(other) ?? null;
+    return theirs !== null && railEdgesMate(own, theirs);
+  };
 
   private labelOf(id: string): string {
     return this.placeables.find((placeable) => placeable.id === id)?.label ?? id;
