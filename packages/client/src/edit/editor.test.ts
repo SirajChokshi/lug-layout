@@ -779,6 +779,7 @@ it("refuses to turn a baseplate while a set rests on it, turns the set itself, a
   const { editor, backend } = await startEditor([PLACEABLE_SET]);
   const place = placer(editor, backend);
   const set = `omr:${PLACEABLE_SET}`;
+  expect(await editor.prefetch(set)).toBe(true);
   place(BASEPLATE, 0, 0);
   place(set, 0, 0);
   const corner = 300;
