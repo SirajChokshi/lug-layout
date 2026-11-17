@@ -80,6 +80,7 @@ import {
 } from "./track-drawing.ts";
 import {
   PlacedChunks,
+  type LandingAt,
   type PendingPose,
   type PlacementCheck,
   type PlacedModel,
@@ -1508,9 +1509,24 @@ export class Editor implements IEditor {
     return true;
   }
 
+  private cursorLanding(): LandingAt {
+    return {
+      kind: "cursor",
+      cellX: Math.floor(this.hitX / STUD_LDU),
+      cellZ: Math.floor(this.hitZ / STUD_LDU),
+    };
+  }
+
   private placeGhost(): void {
     if (!this.active || !this.hovering) return;
-    const check = this.placed.check(this.active, this.hoverX, this.hoverZ, this.ghostRot, []);
+    const check = this.placed.check(
+      this.active,
+      this.hoverX,
+      this.hoverZ,
+      this.ghostRot,
+      [],
+      this.cursorLanding(),
+    );
     this.ghostCheck = check;
     this.hoverYPlates = check.yPlates;
     this.update({
@@ -1666,7 +1682,7 @@ export class Editor implements IEditor {
         colorId: placeable.worldColor,
         x,
         z,
-        yPlates: this.placed.check(placeable, x, z, rot, []).yPlates,
+        yPlates: this.placed.check(placeable, x, z, rot, [], this.cursorLanding()).yPlates,
         rot,
       }),
       eventTimeMs,
@@ -1907,7 +1923,10 @@ export class Editor implements IEditor {
     if (!model || this.readOnly) return;
     const pose = model.handle;
     const rot = (pose.rot + 1) % QUARTER_TURNS;
-    const check = this.placed.check(model.placeable, pose.x, pose.z, rot, [model]);
+    const check = this.placed.check(model.placeable, pose.x, pose.z, rot, [model], {
+      kind: "height",
+      yPlates: pose.yPlates,
+    });
     const turned = checkRefusal(model.placeable.label, check);
     if (turned) {
       this.refuse("rotate", model.placeable.id, turned);
@@ -2029,16 +2048,12 @@ export class Editor implements IEditor {
       const to = change.to;
       if (!to) continue;
       const placeable = this.placeableAt(to.refId);
-      const check = this.placed.check(placeable, to.x, to.z, to.rot, removed);
+      const check = this.placed.check(placeable, to.x, to.z, to.rot, removed, {
+        kind: "height",
+        yPlates: to.yPlates,
+      });
       const refusal = checkRefusal(placeable.label, check);
       if (refusal) return { ...refusal, item: placeable.id };
-      if (check.yPlates !== to.yPlates) {
-        return {
-          rule: "support",
-          item: placeable.id,
-          message: `${placeable.label} was at ${to.yPlates} plates but would now land at ${check.yPlates}.`,
-        };
-      }
     }
     return null;
   }
