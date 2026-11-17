@@ -98,7 +98,6 @@ class ModelSubsetLoader implements IPartBundleLoader {
   }
 }
 
-
 class HeadlessBackend implements ISceneBackend {
   async init(): Promise<BackendInfo> {
     return {
@@ -555,4 +554,28 @@ it("refuses a jumper whose centre stud would push into a part already overhangin
   jumperFirst.editor.click(0, 0, 0);
   expect(placeAtCursor(jumperFirst, "ldraw:3024", 50, 50)).toBe(true);
   expect(placeAtCursor(jumperFirst, "ldraw:3794b", 50, 50, 1)).toBe(false);
+}, 120_000);
+
+async function benchOnModel(model: string): Promise<Bench> {
+  const bench = await startEditor([model]);
+  expect(placeAtCursor(bench, `omr:${model}`, 0.5, 0.5)).toBe(true);
+  return bench;
+}
+
+it("seats a brick on a model stud that drifted less than half an LDU off its lattice point", async () => {
+  const bench = await benchOnModel("10218-1");
+  hold(bench, "ldraw:3005", 0);
+  pointAt(bench, -139.5, 20.5);
+  expect(bench.editor.snapshot().hover).toEqual({ x: -120, z: 40, yPlates: 62 });
+  expect(bench.editor.snapshot().ghost?.refusal).toBeNull();
+
+  expect(ghostAtPivot(bench, "ldraw:3005", [180, 240], 0, 74)).toBe("support");
+}, 120_000);
+
+it("refuses a brick over a model stud more than half an LDU off any lattice point", async () => {
+  const bench = await benchOnModel("10264-1");
+  hold(bench, "ldraw:3005", 0);
+  pointAt(bench, -59.5, 40.5);
+  expect(bench.editor.snapshot().hover).toEqual({ x: -40, z: 60, yPlates: 88 });
+  expect(bench.editor.snapshot().ghost?.refusal?.rule).toBe("support");
 }, 120_000);

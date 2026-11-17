@@ -146,7 +146,7 @@ function worldStuds(
   const { studs } = placeable;
   let count = 0;
   for (let i = 0; i < studs.count; i++) {
-    if (lattice.onLattice[i] === 1 || lattice.offLattice[i] === 1) count++;
+    if (lattice.upright[i] === 1) count++;
   }
   const out = {
     count,
@@ -158,7 +158,7 @@ function worldStuds(
   };
   let n = 0;
   for (let i = 0; i < studs.count; i++) {
-    if (lattice.onLattice[i] !== 1 && lattice.offLattice[i] !== 1) continue;
+    if (lattice.upright[i] !== 1) continue;
     const primitive = studs.primitiveIndex[i] ?? 0;
     const o = i * INSTANCE_MATRIX_FLOATS;
     const cx = lattice.centreX[i] ?? 0;

@@ -40,12 +40,12 @@ export interface PlaceableCells {
 
 export interface StudLattice {
   readonly onLattice: Uint8Array;
-  readonly offLattice: Uint8Array;
+  readonly upright: Uint8Array;
   readonly cellX: Int32Array;
   readonly cellZ: Int32Array;
-  readonly centreX: Int32Array;
-  readonly centreZ: Int32Array;
-  readonly baseLdu: Int32Array;
+  readonly centreX: Float64Array;
+  readonly centreZ: Float64Array;
+  readonly baseLdu: Float64Array;
 }
 
 export interface Placeable {
@@ -110,37 +110,52 @@ function latticeCell(centre: number): number | null {
   return Number.isInteger(cell) ? cell : null;
 }
 
+const STUD_DRIFT_LDU = 0.5;
+
+function nearestLatticePoint(ldu: number): number {
+  return Math.round(ldu / HALF_STUD_LDU) * HALF_STUD_LDU;
+}
+
+function seatedStudCentre(x: number, z: number, out: Float64Array): void {
+  const px = nearestLatticePoint(x);
+  const pz = nearestLatticePoint(z);
+  const drifted = Math.abs(x - px) <= STUD_DRIFT_LDU && Math.abs(z - pz) <= STUD_DRIFT_LDU;
+  out[0] = drifted ? px + 0 : x;
+  out[1] = drifted ? pz + 0 : z;
+}
+
+const seatedCentre = new Float64Array(2);
+
 function studLattice(studs: StudInstances): StudLattice {
   const onLattice = new Uint8Array(studs.count);
-  const offLattice = new Uint8Array(studs.count);
+  const upright = new Uint8Array(studs.count);
   const cellX = new Int32Array(studs.count);
   const cellZ = new Int32Array(studs.count);
-  const centreX = new Int32Array(studs.count);
-  const centreZ = new Int32Array(studs.count);
-  const baseLdu = new Int32Array(studs.count);
+  const centreX = new Float64Array(studs.count);
+  const centreZ = new Float64Array(studs.count);
+  const baseLdu = new Float64Array(studs.count);
   const m = studs.matrices;
   for (let i = 0; i < studs.count; i++) {
     const o = i * INSTANCE_MATRIX_FLOATS;
-    const upright = m[o + 1] === 0 && m[o + 9] === 0 && (m[o + 5] ?? 0) > 0;
+    if (m[o + 1] !== 0 || m[o + 9] !== 0 || (m[o + 5] ?? 0) <= 0) continue;
     const sx = m[o + 3] ?? 0;
     const sz = m[o + 11] ?? 0;
     const base = m[o + 7] ?? 0;
-    if (!upright || !Number.isInteger(base)) continue;
+    upright[i] = 1;
     baseLdu[i] = base;
-    const x = latticeCell(sx);
-    const z = latticeCell(sz);
-    if (!Number.isInteger(sx) || !Number.isInteger(sz)) continue;
-    centreX[i] = sx;
-    centreZ[i] = sz;
-    if (x !== null && z !== null) {
-      onLattice[i] = 1;
-      cellX[i] = x;
-      cellZ[i] = z;
-    } else {
-      offLattice[i] = 1;
-    }
+    seatedStudCentre(sx, sz, seatedCentre);
+    const cx = seatedCentre[0] ?? sx;
+    const cz = seatedCentre[1] ?? sz;
+    centreX[i] = cx;
+    centreZ[i] = cz;
+    const x = latticeCell(cx);
+    const z = latticeCell(cz);
+    if (x === null || z === null || !Number.isInteger(base)) continue;
+    onLattice[i] = 1;
+    cellX[i] = x;
+    cellZ[i] = z;
   }
-  return { onLattice, offLattice, cellX, cellZ, centreX, centreZ, baseLdu };
+  return { onLattice, upright, cellX, cellZ, centreX, centreZ, baseLdu };
 }
 
 function wholeCells(ldu: number, what: string): number {
