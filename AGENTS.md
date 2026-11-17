@@ -44,6 +44,7 @@ docs/                   architecture.md, verified-facts.md
 - `pnpm format` / `pnpm format:check` run oxfmt (there's no ESLint or Prettier)
 - `pnpm typecheck`, `pnpm test`, `pnpm build` run through Turborepo (add `--filter=@brr/<pkg>...` to scope)
 - `pnpm check` runs everything CI runs
+- `pnpm e2e` builds `apps/web` and runs the Playwright layout scenarios in `tools/e2e/tests` against `vite preview`, in installed Google Chrome on WebGL2 (SwiftShader without a GPU; set `CHROME` to use another binary). They drive the editor only through the UI: cursor positions come from the HUD's lattice readout, and poses are read from `?state=1`. CI and `pnpm check` run them
 - `pnpm --filter @brr/web dev`
 - `pnpm lint:rust` (no comments in `crates/`) and `pnpm check:rust` (fmt, clippy `-D warnings`, `cargo test`)
 - `pnpm --filter @brr/asset-pipeline fetch-ldraw` re-pins LDraw inputs (network; plain `fetch` would run pnpm's built-in). `restore-ldraw` downloads exactly the pinned files into the git-ignored `.cache/` (network once, then a no-op), `verify-ldraw` checks them offline, and `build` restores, verifies and compiles the bundle that `apps/web` serves at `/bundle/` in local dev. Deployed apps load it from R2 instead: CI uploads it when its inputs change, and the Vercel build ships no bundle (`docs/part-bundle.md`). LDraw `.dat` files and generated GLBs are never committed. `pnpm check` restores them first; the Rust integration test reads `.cache/ldraw`, so run `restore-ldraw` before a bare `cargo test`
