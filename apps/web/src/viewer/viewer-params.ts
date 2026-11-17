@@ -13,7 +13,7 @@ import {
 } from "@brr/client";
 import type { BundleLod } from "@brr/schema/bundle";
 
-export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run" | "import";
+export type AppMode = "edit" | "parts" | "model" | "city" | "layout" | "track" | "run" | "import";
 
 export type MeasurePace = "frame" | "tight";
 
@@ -39,6 +39,7 @@ export interface ViewerParams {
   readonly autopilotSeed: number | null;
   readonly city: boolean;
   readonly parts: number;
+  readonly tiles: number;
   readonly seed: number;
   readonly camera: CityCamera;
   readonly modelView: ModelView;
@@ -146,6 +147,7 @@ function placementRegion(value: string | null): PlacementRegion | null {
 function appMode(params: URLSearchParams): AppMode {
   const scene = params.get("scene");
   if (scene === "city") return "city";
+  if (scene === "layout") return "layout";
   if (params.get("track") !== null) return params.get("run") === "1" ? "run" : "track";
   if (params.get("model") !== null) return "model";
   if (scene === "parts") return "parts";
@@ -256,6 +258,7 @@ export function readViewerParams(search: string): ViewerParams {
     autopilotSeed: autopilotSeed(params.get("autopilot")),
     city: params.get("scene") === "city",
     parts: positiveNumber(params.get("parts"), DEFAULT_CITY_PARTS),
+    tiles: Math.floor(positiveNumber(params.get("tiles"), 1)),
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",
     modelView: modelView(params),

@@ -10,6 +10,7 @@ import type { ICityScene } from "./scene/city-scene.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
 import type { IRunningGear } from "./running-gear/running-gear-editor.ts";
 import type { IImportScene } from "./scene/import-scene.ts";
+import type { ILayoutScene } from "./scene/layout-scene.ts";
 import type { IModelScene } from "./scene/model-scene.ts";
 import type { IRunScene } from "./scene/run-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
@@ -22,6 +23,7 @@ export const PART_DISPLAY_SCENE: ServiceIdentifier<IViewerScene> = Symbol.for(
 export const MODEL_SCENE: ServiceIdentifier<IModelScene> = Symbol.for("brr.client.ModelScene");
 export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.client.TrackScene");
 export const CITY_SCENE: ServiceIdentifier<ICityScene> = Symbol.for("brr.client.CityScene");
+export const LAYOUT_SCENE: ServiceIdentifier<ILayoutScene> = Symbol.for("brr.client.LayoutScene");
 export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor");
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");

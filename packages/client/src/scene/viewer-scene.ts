@@ -2,8 +2,10 @@ import {
   directColorSrgb,
   isDirectColor,
   type ModelFarMesh,
+  type PartAsset,
   type PartBundle,
   type PartFilter,
+  type StudPrimitiveAsset,
 } from "@brr/catalog";
 import type { BundleLod, ModelSection } from "@brr/schema/bundle";
 import {
@@ -165,14 +167,21 @@ function partPalette(
   };
 }
 
+export interface SummarySource {
+  readonly bundleVersion: string;
+  readonly parts: ReadonlyArray<PartAsset>;
+  readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
+  readonly creditedFiles: number;
+}
+
 function summarize(
-  bundle: PartBundle,
+  source: SummarySource,
   chunks: ReadonlyArray<InstanceList>,
   studs: ReadonlyArray<StudList>,
   model: ModelCredit | null,
   farModel: ModelFarMesh | undefined,
 ): SceneSummary {
-  const instances = new Float64Array(bundle.parts.length);
+  const instances = new Float64Array(source.parts.length);
   for (const chunk of chunks) {
     for (let i = 0; i < chunk.count; i++) {
       const part = chunk.partIndex[i] ?? 0;
@@ -182,7 +191,7 @@ function summarize(
   let parts = 0;
   let studInstances = 0;
   let bodyTriangles = 0;
-  bundle.parts.forEach((part, p) => {
+  source.parts.forEach((part, p) => {
     const count = instances[p] ?? 0;
     let body = 0;
     for (const group of part.mesh.groups) body += group.indices.length / 3;
@@ -190,7 +199,7 @@ function summarize(
     studInstances += count * part.studPrimitiveIndex.length;
     bodyTriangles += count * body;
   });
-  const primitiveTriangles = bundle.studPrimitives.map(
+  const primitiveTriangles = source.studPrimitives.map(
     (primitive) => primitive.mesh.indices.length / 3,
   );
   let visibleStudInstances = 0;
@@ -202,14 +211,14 @@ function summarize(
     }
   }
   return {
-    bundleVersion: bundle.bundleVersion,
+    bundleVersion: source.bundleVersion,
     parts,
     modules: chunks.length,
     studInstances,
     visibleStudInstances,
     bodyTriangles,
     studTriangles,
-    creditedFiles: bundle.credits.length,
+    creditedFiles: source.creditedFiles,
     model,
     track: null,
     farModel: farModel
@@ -237,9 +246,28 @@ export function showChunks(
 ): SceneSummary {
   backend.setPalette(partPalette(bundle, far, farModel, colors));
   for (const chunk of chunks) backend.setChunk(chunk.key, chunk.instances);
+  return summarizeChunks(
+    {
+      bundleVersion: bundle.bundleVersion,
+      parts: bundle.parts,
+      studPrimitives: bundle.studPrimitives,
+      creditedFiles: bundle.credits.length,
+    },
+    chunks,
+    model,
+    farModel,
+  );
+}
+
+export function summarizeChunks(
+  source: SummarySource,
+  chunks: ReadonlyArray<KeyedChunk>,
+  model: ModelCredit | null,
+  farModel?: ModelFarMesh,
+): SceneSummary {
   const instances = chunks.map((chunk) => chunk.instances);
   return summarize(
-    bundle,
+    source,
     instances,
     instances.map((chunk) => chunk.studs),
     model,
