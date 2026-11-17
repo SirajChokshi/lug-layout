@@ -1,0 +1,6 @@
+## A2. Autosave transaction aborts (as a QuotaExceededError does), then a later save succeeds
+1. placed in super-chunk 0_0: saved "World 1 Saved · 1 placement · 1 shard"
+2. shard writes abort; placed at +10 km: failed "World 1 Not savedRetry"; error: saving failed: The transaction was aborted, so the request cannot be fulfilled. The edits stay in this tab and are saved with the next change.
+3. writes work again; placed in 0_0: saved "World 1 Saved · 3 placements · 2 shards"; HUD Placements 3; editor holds 3; error line: none
+4. after reload: "World 1 Saved · 3 placements · 2 shards"; placements 3 at x=[2860,2560,25002560]
+   => 0 placement(s) lost after the panel said Saved

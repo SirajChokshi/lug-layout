@@ -1,0 +1,5 @@
+## X1. No storage: edit, export, then import that archive with storage
+panel "World 1 Not saved: storage unavailable"; warning "Storage is unavailable, so nothing is saved (The operation is insecure). Export still works."; New disabled true
+placed 2; exported 167857 B sha256 8eb90bdceca17c41
+imported into a profile with storage: "World 1 Saved · 2 placements · 1 shard"; placements 2; error "none"
+re-export 167857 B, identical to the no-storage export: true

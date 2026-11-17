@@ -1,0 +1,9 @@
+## A failed save, refused switch, Retry, then the switch
+save fails: "World 1 Not savedRetry"
+New "Other": "World 1 Not savedRetry"; error: new world refused: "World 1" has unsaved edits (saving failed: The transaction was aborted, so the request cannot be fulfilled). Retry the save, or export the world first.
+closing the tab with unsaved edits: dialog beforeunload; tab still open true
+Retry: "World 1 Saved · 2 placements · 1 shard"; error line 0
+New "Other" now: "Other Saved · 0 placements · 0 shards"
+reopened World 1: "World 1 Saved · 2 placements · 1 shard"
+## Storage blocked: Import asks before replacing the world
+import with a placed baseplate: prompt "Storage is unavailable, so importing replaces "World 1" and its 1 placements, which aren't saved anywhere. Export it first if you want to keep it. Import anyway?"; dismissed → placements 1, "World 1 Not saved: storage unavailable"

@@ -1,0 +1,5 @@
+## T2. The writer tab deletes the world while a read-only tab waits for it
+tab 2: "World 1 Saved · 1 placement · 1 shard" read-only banner 1
+tab 1 deleted its current world: "World 1 Saved · 0 placements · 0 shards"; rows ["World 1 (0)"]; error "none"
+tab 2 after the delete: "World 1 Saved · 0 placements · 0 shards"; read-only banner 1; enabled catalog 0; error ""World 1" can't be reopened after the other tab let it go: world d1a149e1-0a69-438b-a2cc-db2e0d44f1e9 can't be read: world d1a149e1-0a69-438b-a2cc-db2e0d44f1e9: isn't in this browser's world list any more"
+dbs ["brr-world-d2fe54ed-1513-4692-a9c3-fc5102be0c8e","brr-worlds"]; rows ["World 1 (0)"]

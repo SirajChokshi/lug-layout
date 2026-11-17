@@ -173,3 +173,73 @@ if (run("forcedname")) {
   fs.writeFileSync(path.join(outDir, "forcedname.log"), `${log.join("\n")}\n`);
   await context.close();
 }
+
+if (run("retry")) {
+  note("## A failed save, refused switch, Retry, then the switch");
+  const context = await launch("retry", () => {
+    const realPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      const request = realPut.apply(this, args);
+      if (window.__failShardPuts && this.name === "shards") {
+        const transaction = this.transaction;
+        queueMicrotask(() => transaction.abort());
+      }
+      return request;
+    };
+  });
+  const page = context.pages()[0];
+  await open(page);
+  await placeBaseplate(page, 0, 0);
+  await saved(page, "Saved · 1 placement");
+  await page.evaluate(() => (window.__failShardPuts = true));
+  await placeBaseplate(page, 640, 0);
+  await page.waitForSelector('.world-name[data-save="failed"]', { timeout: 120000 });
+  note(`save fails: "${await line(page)}"`);
+  await page.fill('input[aria-label="New world name"]', "Other");
+  await page.click('form.world-new button[type="submit"]');
+  await page.waitForTimeout(2000);
+  note(`New "Other": "${await line(page)}"; error: ${await page.locator(".world-menu .error").innerText()}`);
+  await page.locator(".side-panel").screenshot({ path: path.join(outDir, "retry-refused.png") });
+  let unloadPrompt = "none";
+  page.once("dialog", (dialog) => {
+    unloadPrompt = dialog.type();
+    void dialog.dismiss();
+  });
+  await page.close({ runBeforeUnload: true });
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  note(`closing the tab with unsaved edits: dialog ${unloadPrompt}; tab still open ${!page.isClosed()}`);
+  await page.evaluate(() => (window.__failShardPuts = false));
+  await page.click(".world-retry");
+  await saved(page, "Saved · 2 placements");
+  note(`Retry: "${await line(page)}"; error line ${await page.locator(".world-menu .error").count()}`);
+  await page.click('form.world-new button[type="submit"]');
+  await page.waitForFunction(() => document.querySelector(".world-name strong")?.textContent === "Other");
+  note(`New "Other" now: "${await line(page)}"`);
+  await page.click('.world-row:has-text("World 1") >> text=Open');
+  await saved(page, "2 placements");
+  note(`reopened World 1: "${await line(page)}"`);
+  fs.writeFileSync(path.join(outDir, "retry.log"), `${log.join("\n")}\n`);
+  await context.close();
+}
+
+if (run("memoryimport")) {
+  note("## Storage blocked: Import asks before replacing the world");
+  const context = await launch("memoryimport", () => {
+    IDBFactory.prototype.open = function () {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    };
+  });
+  const page = context.pages()[0];
+  await open(page);
+  await placeBaseplate(page, 0, 0);
+  const prompts = [];
+  page.on("dialog", (dialog) => {
+    prompts.push(dialog.message());
+    void dialog.dismiss();
+  });
+  await page.setInputFiles("input.world-import", process.env.IMPORT_ARCHIVE);
+  await page.waitForTimeout(2000);
+  note(`import with a placed baseplate: prompt "${prompts[0] ?? "none"}"; dismissed → placements ${await page.$eval("#edit-state", (e) => JSON.parse(e.textContent).world.placements.x.length)}, "${await line(page)}"`);
+  fs.writeFileSync(path.join(outDir, "memoryimport.log"), `${log.join("\n")}\n`);
+  await context.close();
+}
