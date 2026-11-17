@@ -1,4 +1,5 @@
 {
   "extends": "@brr/config/tsconfig.lib.json",
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

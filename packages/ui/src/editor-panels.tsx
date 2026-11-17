@@ -57,18 +57,19 @@ function CatalogEntry({
   );
 }
 
-const CATALOG_GROUPS: ReadonlyArray<readonly [CatalogItemView["kind"], string]> = [
-  ["baseplate", "Baseplate"],
-  ["road-plate", "Road plates"],
-  ["road-module", "MILS road modules"],
-  ["model", "Sets"],
-];
+const CATALOG_GROUPS: Readonly<Record<CatalogItemView["kind"], string>> = {
+  baseplate: "Baseplate",
+  "road-plate": "Road plates",
+  "road-module": "MILS road modules",
+  track: "Track",
+  model: "Sets",
+};
 
 export function CatalogList({ editor, snapshot }: PanelProps) {
   return (
     <nav className="catalog" aria-label="Catalog">
       <h2>Catalog</h2>
-      {CATALOG_GROUPS.map(([kind, heading]) => {
+      {Object.entries(CATALOG_GROUPS).map(([kind, heading]) => {
         const items = snapshot.catalog.filter((item) => item.kind === kind);
         if (items.length === 0) return null;
         return (
@@ -336,7 +337,9 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   rows.push(
     [
       "Mode",
-      snapshot.mode === "place" ? `place ${itemLabel(snapshot, snapshot.activeItem)}` : "select",
+      snapshot.mode === "select"
+        ? "select"
+        : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
     ],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
     ["Road-edge snap", snapText(snapshot)],

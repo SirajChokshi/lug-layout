@@ -69,3 +69,32 @@ export {
   type PlanRuleId,
   type TableTop,
 } from "./plan/plan-rules.ts";
+export {
+  drawingKit,
+  MAX_TURN_CURVES,
+  type DrawingKit,
+  type DrawingKitResult,
+  type TurnSign,
+} from "./track/drawing-kit.ts";
+export {
+  advance,
+  connectorPose,
+  layMoves,
+  trackMove,
+  type PlacedPiece,
+  type TrackMove,
+  type TrackPieceDef,
+} from "./track/track-pose.ts";
+export {
+  runMoves,
+  solveDrag,
+  type DragPlan,
+  type TrackRun,
+  type TrackSegment,
+} from "./track/track-solver.ts";
+export {
+  solveClosure,
+  UNLIMITED_BUDGET,
+  type ClosureResult,
+  type SearchBudget,
+} from "./track/closure.ts";

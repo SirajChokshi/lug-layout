@@ -6,7 +6,7 @@ const LEFT_BUTTON = 0;
 const MIDDLE_BUTTON = 1;
 const RIGHT_BUTTON = 2;
 
-type DragKind = "click" | "orbit" | "pan";
+type DragKind = "click" | "orbit" | "pan" | "tool";
 
 interface Drag {
   readonly kind: DragKind;
@@ -69,8 +69,10 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       )
         return;
       canvas.setPointerCapture(event.pointerId);
+      const kind = dragKind(event);
+      const [x, y] = ndc(canvas, event);
       drag = {
-        kind: dragKind(event),
+        kind: kind === "click" && editor.dragStart(x, y) ? "tool" : kind,
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
@@ -90,6 +92,7 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > CLICK_SLOP_PX) {
         drag.moved = true;
       }
+      if (drag.kind === "tool") editor.dragMove(x, y);
       if (drag.kind === "orbit") editor.orbit(dx, dy);
       if (drag.kind === "pan") editor.pan(dx, dy);
     };
@@ -98,6 +101,11 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
       const finished = drag;
       drag = null;
       canvas.releasePointerCapture(event.pointerId);
+      if (finished.kind === "tool") {
+        const [x, y] = ndc(canvas, event);
+        editor.dragEnd(x, y, event.timeStamp);
+        return;
+      }
       if (finished.kind === "click" && !finished.moved) {
         const [x, y] = ndc(canvas, event);
         editor.click(x, y, event.timeStamp);
