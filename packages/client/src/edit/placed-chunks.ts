@@ -4,8 +4,10 @@ import {
   SupportGrid,
   VolumeIndex,
   cellChunkKey,
+  engagedStuds,
   firstOverlap,
   isSupported,
+  pickSurface,
   trackSupport,
   upperSupport,
   type AppliedEdit,
@@ -16,6 +18,7 @@ import {
   type PlacementHandle,
   type VolumeHit,
   type PlacementRef,
+  type SurfaceHit,
   type TrackSupport,
   type UpperSupport,
 } from "@brr/domain";
@@ -691,6 +694,23 @@ export class PlacedChunks {
         overlap: hit ? this.placedOverlap(hit) : null,
       };
     });
+  }
+
+  pickSurface(ray: Float64Array, out: SurfaceHit): boolean {
+    let ceiling = 0;
+    for (const entry of this.entries) ceiling = Math.max(ceiling, entry.box.maxY);
+    return pickSurface(ray, this.volumes, this.isTrack, 0, ceiling, out);
+  }
+
+  engagedStuds(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+  ): BaseCells {
+    const { base } = candidateCells(placeable, new LatticePose(x, z, rot));
+    return engagedStuds(base, yPlates, this.volumes, this.support, this.isTrack);
   }
 
   trackOverlap(

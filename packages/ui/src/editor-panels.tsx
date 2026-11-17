@@ -3,6 +3,7 @@ import {
   commandEnabled,
   type EditorCredits,
   type EditorSnapshot,
+  type GhostCheckView,
   type IEditor,
   type LatencySample,
   type ModuleFitView,
@@ -479,6 +480,14 @@ export function CreditsFooter({
   );
 }
 
+function connectionText(ghost: GhostCheckView): string {
+  const studs = ghost.studsEngaged === 1 ? "1 stud" : `${ghost.studsEngaged} studs`;
+  const engaged = ghost.studsEngaged > 0 ? `${studs} engaged` : "no stud engaged";
+  const snapped = ghost.snappedStuds;
+  if (snapped === null) return engaged;
+  return `${engaged}, snapped ${snapped[0]}, ${snapped[1]} studs from the cursor to the nearest spot that connects`;
+}
+
 export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const { ghost, lastRefusal } = snapshot;
   const ghostText =
@@ -486,7 +495,7 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       ? "no item in hand"
       : ghost.refusal
         ? `refused: ${ghost.refusal.message}`
-        : `lands at ${ghost.yPlates} plates, supported${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}`;
+        : `lands at ${ghost.yPlates} plates, supported; ${connectionText(ghost)}${ghost.trackJoins > 0 ? `; ${ghost.trackJoins} track ${ghost.trackJoins === 1 ? "end joins" : "ends join"} exactly` : ""}${ghost.uncertifiedTrack > 0 ? `; ${ghost.uncertifiedTrack} track ${ghost.uncertifiedTrack === 1 ? "part in it isn't" : "parts in it aren't"} certified, so ${ghost.uncertifiedTrack === 1 ? "its ends don't" : "their ends don't"} join` : ""}`;
   return (
     <section
       className="inspector placement-rules"
@@ -494,6 +503,8 @@ export function PlacementRules({ snapshot }: { readonly snapshot: EditorSnapshot
       data-ghost-refused={ghost?.refusal ? ghost.refusal.rule : ""}
       data-ghost-track-joins={ghost?.trackJoins ?? 0}
       data-ghost-uncertified-track={ghost?.uncertifiedTrack ?? 0}
+      data-ghost-studs={ghost?.studsEngaged ?? 0}
+      data-ghost-snapped={ghost?.snappedStuds ? ghost.snappedStuds.join(",") : ""}
       data-refusals={snapshot.refusals}
       data-last-refusal-rule={lastRefusal?.rule ?? ""}
     >

@@ -153,3 +153,4 @@ export {
   type PlaneTransform,
 } from "./cell-raster.ts";
 export { planTrianglesOverlap, type PlanBox } from "./plan-overlap.ts";
+export { engagedStuds, pickSurface, type SurfaceHit } from "./stud-connection.ts";

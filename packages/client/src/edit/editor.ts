@@ -23,6 +23,7 @@ import {
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
+  type SurfaceHit,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -76,6 +77,7 @@ import {
 } from "./placeable.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
+import { connectionMarkers, snapToStuds } from "./stud-snap.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
@@ -228,6 +230,8 @@ export interface RefusedEdit {
 export interface GhostCheckView {
   readonly yPlates: number;
   readonly refusal: Refusal | null;
+  readonly studsEngaged: number;
+  readonly snappedStuds: readonly [number, number] | null;
   readonly trackJoins: number;
   readonly uncertifiedTrack: number;
 }
@@ -490,6 +494,11 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
 }
 const GHOST_LIFT_LDU = BRICK_LDU;
 
+interface GhostAim {
+  readonly snap: RoadSnapView | null;
+  readonly moduleFit: ModuleFitView | null;
+}
+
 interface PendingAction {
   readonly step: HistoryStep;
   readonly action: EditAction;
@@ -608,7 +617,15 @@ export class Editor implements IEditor {
   private hoverZ = 0;
   private hoverYPlates = 0;
   private ghostCheck: PlacementCheck | null = null;
+  private ghostLanding: LandingAt = { kind: "height", yPlates: 0 };
+  private snappedStuds: readonly [number, number] | null = null;
   private refusalMarkers: ReadonlyArray<EdgeMarker> = [];
+  private connectionMarkers: ReadonlyArray<EdgeMarker> = [];
+  private readonly surface: SurfaceHit = { cellX: 0, cellZ: 0, topLdu: 0, x: 0, z: 0 };
+  private cursorX = 0;
+  private cursorZ = 0;
+  private cursorCellX = 0;
+  private cursorCellZ = 0;
   private tableY = 0;
   private baseplateGrid = STUD_LDU;
   private hovering = false;
@@ -1027,6 +1044,7 @@ export class Editor implements IEditor {
 
   chooseItem(id: string | null): void {
     this.showRefusalCells(null);
+    this.hideConnections();
     if (id === TRACK_ITEM_ID && this.track) {
       this.active = null;
       this.moduleGhost = null;
@@ -1052,9 +1070,7 @@ export class Editor implements IEditor {
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
-    const moduleFit = this.snapGhostToModuleGrid();
-    this.placeGhost();
-    if (!moduleFit) this.showMarkers();
+    const { moduleFit } = this.aimGhost();
     this.update({
       mode: placeable ? "place" : "select",
       activeItem: placeable?.id ?? null,
@@ -1065,23 +1081,92 @@ export class Editor implements IEditor {
 
   private groundHit(ndcX: number, ndcY: number): boolean {
     this.backend.rayThrough(ndcX, ndcY, this.ray);
+    if (this.active?.layer === "upper") return this.surfaceHit();
     const originY = this.ray[1] ?? 0;
     const directionY = this.ray[4] ?? 0;
     if (directionY >= 0) return false;
     const t = -originY / directionY;
     this.hitX = (this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t;
     this.hitZ = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
-    this.hoverX = snapToGrid(this.hitX, STUD_LDU);
-    this.hoverZ = snapToGrid(this.hitZ, STUD_LDU);
+    this.aimAt(Math.floor(this.hitX / STUD_LDU), Math.floor(this.hitZ / STUD_LDU));
     return true;
   }
 
+  private surfaceHit(): boolean {
+    const hit = this.surface;
+    if (!this.placed.pickSurface(this.ray, hit)) return false;
+    this.hitX = hit.x;
+    this.hitZ = hit.z;
+    this.aimAt(hit.cellX, hit.cellZ);
+    return true;
+  }
+
+  private aimAt(cellX: number, cellZ: number): void {
+    this.cursorCellX = cellX;
+    this.cursorCellZ = cellZ;
+    this.cursorX = snapToGrid(this.hitX, STUD_LDU);
+    this.cursorZ = snapToGrid(this.hitZ, STUD_LDU);
+    this.hoverX = this.cursorX;
+    this.hoverZ = this.cursorZ;
+  }
+
   private cursorLanding(): LandingAt {
-    return {
-      kind: "cursor",
-      cellX: Math.floor(this.hitX / STUD_LDU),
-      cellZ: Math.floor(this.hitZ / STUD_LDU),
-    };
+    return { kind: "cursor", cellX: this.cursorCellX, cellZ: this.cursorCellZ };
+  }
+
+  private snapGhostToStuds(): void {
+    const placeable = this.active;
+    this.ghostLanding = this.cursorLanding();
+    this.snappedStuds = null;
+    if (!placeable || placeable.layer !== "upper" || !this.hovering) return;
+    const snap = snapToStuds(this.hoverX, this.hoverZ, this.ghostLanding, (x, z, at) =>
+      this.checkAt(placeable, x, z, this.ghostRot, [], at),
+    );
+    this.hoverX = snap.x;
+    this.hoverZ = snap.z;
+    this.ghostLanding = snap.at;
+    this.snappedStuds = snap.offsetStuds;
+  }
+
+  private aimGhost(): GhostAim {
+    this.hoverX = this.cursorX;
+    this.hoverZ = this.cursorZ;
+    const moduleFit = this.snapGhostToModuleGrid();
+    const snap = this.snapGhost(moduleFit);
+    this.placeGhost();
+    if (!moduleFit) this.showMarkers();
+    return { snap, moduleFit };
+  }
+
+  private showConnections(placeable: Placeable, check: PlacementCheck): number {
+    const engaged =
+      placeable.layer === "upper"
+        ? this.placed.engagedStuds(
+            placeable,
+            this.hoverX,
+            this.hoverZ,
+            this.ghostRot,
+            check.yPlates,
+          )
+        : null;
+    this.connectionMarkers = connectionMarkers(
+      engaged ?? {
+        count: 0,
+        cellX: new Int32Array(0),
+        cellZ: new Int32Array(0),
+        flat: new Uint8Array(0),
+      },
+      check.yPlates,
+      check.overlap,
+    );
+    this.showMarkers();
+    return engaged?.count ?? 0;
+  }
+
+  private hideConnections(): void {
+    if (this.connectionMarkers.length === 0) return;
+    this.connectionMarkers = [];
+    this.showMarkers();
   }
 
   private placeGhost(): void {
@@ -1092,15 +1177,18 @@ export class Editor implements IEditor {
       this.hoverZ,
       this.ghostRot,
       [],
-      this.cursorLanding(),
+      this.ghostLanding,
     );
     this.ghostCheck = check;
     this.hoverYPlates = check.yPlates;
     const track = this.active.track;
+    const studsEngaged = this.showConnections(this.active, check);
     this.update({
       ghost: {
         yPlates: check.yPlates,
         refusal: checkRefusal(this.active.label, check),
+        studsEngaged,
+        snappedStuds: this.snappedStuds,
         trackJoins: this.trackJoinsAt(this.active, check.yPlates),
         uncertifiedTrack: track?.uncertified.length ?? 0,
       },
@@ -1285,6 +1373,8 @@ export class Editor implements IEditor {
   }
 
   private snapGhost(moduleFit: ModuleFitView | null): RoadSnapView | null {
+    this.ghostLanding = this.cursorLanding();
+    this.snappedStuds = null;
     const joined = this.snapGhostToRoad();
     const onTrack = this.snapGhostToTrack();
     if (joined || onTrack) return joined ?? this.roadFit();
@@ -1292,18 +1382,17 @@ export class Editor implements IEditor {
       this.hoverX = snapToGrid(this.hitX, this.baseplateGrid);
       this.hoverZ = snapToGrid(this.hitZ, this.baseplateGrid);
     }
+    this.snapGhostToStuds();
     return this.roadFit();
   }
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
-    const moduleFit = this.snapGhostToModuleGrid();
-    const snap = this.snapGhost(moduleFit);
     const track = this.track;
     if (this.state.mode === "track" && track && !track.dragView() && this.selectedTrack === null) {
       this.targetTrackEnd(this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null);
     }
-    this.placeGhost();
+    const { snap, moduleFit } = this.aimGhost();
     this.update({
       hover: this.hoverView(),
       snap,
@@ -1324,9 +1413,8 @@ export class Editor implements IEditor {
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
-      const moduleFit = this.snapGhostToModuleGrid();
+      const { snap, moduleFit } = this.aimGhost();
       if (moduleFit?.occupied) {
-        this.placeGhost();
         this.update({ moduleFit });
         this.refuse("place", this.active.id, {
           rule: "module-grid",
@@ -1334,8 +1422,6 @@ export class Editor implements IEditor {
         });
         return;
       }
-      const snap = this.snapGhost(moduleFit);
-      this.placeGhost();
       this.update({ snap });
       if (snap?.state === "refused") {
         this.refuse("place", this.active.id, {
@@ -1379,7 +1465,7 @@ export class Editor implements IEditor {
         colorId: placeable.worldColor,
         x,
         z,
-        yPlates: this.checkAt(placeable, x, z, rot, [], this.cursorLanding()).yPlates,
+        yPlates: this.checkAt(placeable, x, z, rot, [], this.ghostLanding).yPlates,
         rot,
       }),
       eventTimeMs,
@@ -1495,7 +1581,7 @@ export class Editor implements IEditor {
           ...(ghost && surface && this.modules ? this.modules.ghostMarkers(ghost, surface) : []),
         ]
       : [];
-    this.backend.setMarkers([...joins, ...this.refusalMarkers]);
+    this.backend.setMarkers([...joins, ...this.refusalMarkers, ...this.connectionMarkers]);
   }
 
   private refreshModules(): void {
@@ -1603,8 +1689,7 @@ export class Editor implements IEditor {
   rotate(eventTimeMs: number): void {
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
-      const moduleFit = this.snapGhostToModuleGrid();
-      this.placeGhost();
+      const { moduleFit } = this.aimGhost();
       this.update({
         ghostRot: this.ghostRot,
         hover: this.hoverView(),
