@@ -165,6 +165,7 @@ class HeadlessBackend implements ISceneBackend {
   setTrackEnds(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
+  deleteVehicle(): void {}
   setIssueBoxes(): void {}
   private aimX = 0;
   private aimZ = 0;

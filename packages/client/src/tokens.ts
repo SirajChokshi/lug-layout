@@ -16,6 +16,7 @@ import type { IRunScene } from "./scene/run-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
 import type { IViewerScene } from "./scene/viewer-scene.ts";
 import type { ISimClient } from "./sim/sim-client.ts";
+import type { ITrainPlay } from "./play/train-play.ts";
 
 export const PART_DISPLAY_SCENE: ServiceIdentifier<IViewerScene> = Symbol.for(
   "brr.client.PartDisplayScene",
@@ -47,3 +48,4 @@ export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
   "brr.client.TrademarkDisclaimer",
 );
 export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");
+export const TRAIN_PLAY: ServiceIdentifier<ITrainPlay> = Symbol.for("brr.client.TrainPlay");

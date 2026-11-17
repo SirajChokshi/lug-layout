@@ -4,6 +4,7 @@ import type {
   IEditor,
   IEditorCamera,
   IPlanService,
+  ITrainPlay,
   ShellCommandId,
 } from "@brr/client";
 import { useCallback, useState } from "react";
@@ -21,7 +22,9 @@ import {
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
+import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
 import { TrackPanel } from "./track-panel.tsx";
@@ -38,6 +41,7 @@ interface EditorAppProps {
   readonly camera: IEditorCamera;
   readonly plans: IPlanService;
   readonly bomService: IBomService;
+  readonly play: ITrainPlay;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -82,11 +86,13 @@ export function EditorApp({
   camera,
   plans,
   bomService,
+  play,
   options,
   disclaimer,
   showState,
 }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
+  const playSnapshot = usePlaySnapshot(play);
   const recent = useRecentItems(snapshot.activeItem);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
@@ -95,6 +101,7 @@ export function EditorApp({
     [],
   );
   useEditorKeys(editor, camera, {
+    play,
     onShellCommand: toggleOverlay,
     overlayOpen: overlay !== null,
     closeOverlay,
@@ -130,8 +137,8 @@ export function EditorApp({
       data-road-pieces={snapshot.roads.placements}
       data-mode={snapshot.mode}
     >
-      <EditorCanvas editor={editor} camera={camera} options={options} />
-      <ToolHud snapshot={snapshot} />
+      <EditorCanvas editor={editor} camera={camera} play={play} options={options} />
+      <ToolHud snapshot={snapshot} play={playSnapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
       <PlanPanel camera={camera} plans={plans} />
@@ -139,6 +146,12 @@ export function EditorApp({
         <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar editor={editor} snapshot={snapshot} onShellCommand={toggleOverlay} />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
+        <PlayPanel
+          editor={editor}
+          camera={camera}
+          play={play}
+          ready={snapshot.status === "ready"}
+        />
         <PalettePanel editor={editor} snapshot={snapshot} />
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
@@ -162,6 +175,7 @@ export function EditorApp({
         <CommandPalette
           editor={editor}
           camera={camera}
+          play={play}
           snapshot={snapshot}
           recent={recent}
           onClose={closeOverlay}

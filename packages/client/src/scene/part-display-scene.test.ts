@@ -46,6 +46,7 @@ class RecordingBackend implements ISceneBackend {
   rayThrough(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
+  deleteVehicle(): void {}
   setView(): void {}
   resize(): void {}
   renderFrame(): void {}

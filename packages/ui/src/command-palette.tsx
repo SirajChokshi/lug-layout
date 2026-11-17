@@ -1,22 +1,27 @@
 import {
   commandActive,
   commandEnabled,
+  isPlayCommand,
   isShellCommand,
   runEditorAction,
+  runPlayAction,
   searchPalette,
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
   type IEditorCamera,
+  type ITrainPlay,
   type PaletteResult,
   type ShellCommandId,
 } from "@brr/client";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CommandKeys } from "./keys.tsx";
+import { usePlaySnapshot } from "./use-play.ts";
 
 interface CommandPaletteProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
+  readonly play: ITrainPlay;
   readonly snapshot: EditorSnapshot;
   readonly recent: ReadonlyArray<string>;
   readonly onClose: () => void;
@@ -95,6 +100,7 @@ function CommandRow({
 export function CommandPalette({
   editor,
   camera,
+  play,
   snapshot,
   recent,
   onClose,
@@ -103,14 +109,15 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
+  const playSnapshot = usePlaySnapshot(play);
   const results = useMemo(
     () =>
       searchPalette(query, {
         catalog: snapshot.catalog,
         recent,
-        enabled: (id) => commandEnabled(id, snapshot),
+        enabled: (id) => commandEnabled(id, snapshot, playSnapshot),
       }),
-    [query, snapshot, recent],
+    [query, snapshot, playSnapshot, recent],
   );
   const active = Math.min(cursor, Math.max(results.length - 1, 0));
 
@@ -134,7 +141,8 @@ export function CommandPalette({
       return;
     }
     onClose();
-    runEditorAction(editor, camera, id, eventTimeMs);
+    if (isPlayCommand(id)) runPlayAction(editor, play, id);
+    else runEditorAction(editor, camera, id, eventTimeMs);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {

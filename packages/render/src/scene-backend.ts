@@ -149,7 +149,16 @@ export interface ISceneBackend {
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
   setVehicle(vehicle: number, model: ChunkInstances): void;
-  setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void;
+  setVehiclePose(
+    vehicle: number,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    pitch?: number,
+    roll?: number,
+  ): void;
+  deleteVehicle(vehicle: number): void;
   setView(
     eyeX: number,
     eyeY: number,
