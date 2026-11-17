@@ -1,0 +1,483 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "api": "webgl2",
+  "set": "2150-1",
+  "ghostHud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 820 ms | Mode | place 2150-1 | Ghost rotation | 0° | Road-edge snap | none | Cursor on lattice (LDU) | 0, 0 | Lands at (plates) | 0 | Placements | 1 | History (undo, redo) | 1, 0 | Last edit latency | 396.7 ms (place 3811 Baseplate 32 x 32, 0°) | Rebuilt for it | 4 chunks, 1 parts, 1,024 studs | Studs drawn | 1,024 | Studs culled inside models | 0 | Studs culled under footprints | 0 | Frame rate (rAF) | 2.6 fps | Draw calls | 160 | Drawn triangles | 413,002",
+  "placedHud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 820 ms | Mode | select | Ghost rotation | 0° | Road-edge snap | none | Cursor on lattice (LDU) | off the ground | Lands at (plates) | – | Placements | 2 | History (undo, redo) | 2, 0 | Last edit latency | 894.4 ms (place 2150-1, 0°) | Rebuilt for it | 4 chunks, 626 parts, 2,396 studs | Studs drawn | 2,396 | Studs culled inside models | 927 | Studs culled under footprints | 150 | Frame rate (rAF) | 3.2 fps | Draw calls | 259 | Drawn triangles | 406,022",
+  "world": {
+    "refs": [
+      "ldraw:3811",
+      "ldraw:44336p04",
+      "ldraw:44336p01",
+      "ldraw:44341p02",
+      "ldraw:44342p02",
+      "ldraw:44343p03",
+      "ldraw:30225b",
+      "ldraw:69958",
+      "ldraw:71772",
+      "ldraw:71772p01",
+      "generated:mils-road-straight",
+      "generated:mils-road-crosswalk",
+      "generated:mils-road-curve",
+      "generated:mils-road-t-junction",
+      "generated:mils-road-crossroads",
+      "omr:7936-1",
+      "omr:10264-1",
+      "omr:10185-1",
+      "omr:10190-1",
+      "omr:10218-1",
+      "omr:2150-1",
+      "omr:4554-1",
+      "omr:4555-1",
+      "omr:10128-1",
+      "omr:10133-1",
+      "omr:10014-1",
+      "omr:10022-1_Dining-Car",
+      "omr:10025-1_Baggage-Car",
+      "omr:10205-1",
+      "omr:10017-1"
+    ],
+    "frameShifts": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        16,
+        0
+      ],
+      [
+        0,
+        16,
+        0
+      ],
+      [
+        0,
+        16,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        -120,
+        8,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        -150,
+        8,
+        80
+      ],
+      [
+        -150,
+        8,
+        80
+      ],
+      [
+        -40,
+        4,
+        -300
+      ],
+      [
+        -100,
+        4,
+        -200
+      ],
+      [
+        0,
+        85.25,
+        -80
+      ],
+      [
+        0,
+        71,
+        0
+      ],
+      [
+        0,
+        79,
+        0
+      ],
+      [
+        0,
+        79,
+        0
+      ],
+      [
+        -70,
+        63,
+        0
+      ],
+      [
+        11,
+        87,
+        0
+      ]
+    ],
+    "covers": [
+      {
+        "id": "ldraw:3811",
+        "studsDrawnPerPlacement": 1024,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44336p04",
+        "studsDrawnPerPlacement": 384,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44336p01",
+        "studsDrawnPerPlacement": 384,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44341p02",
+        "studsDrawnPerPlacement": 264,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44342p02",
+        "studsDrawnPerPlacement": 501,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44343p03",
+        "studsDrawnPerPlacement": 144,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:30225b",
+        "studsDrawnPerPlacement": 512,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:69958",
+        "studsDrawnPerPlacement": 64,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 2
+      },
+      {
+        "id": "ldraw:71772",
+        "studsDrawnPerPlacement": 32,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 2
+      },
+      {
+        "id": "ldraw:71772p01",
+        "studsDrawnPerPlacement": 32,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 2
+      },
+      {
+        "id": "generated:mils-road-straight",
+        "studsDrawnPerPlacement": 2192,
+        "studsCulledAtBake": 608,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "generated:mils-road-crosswalk",
+        "studsDrawnPerPlacement": 2192,
+        "studsCulledAtBake": 608,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "generated:mils-road-curve",
+        "studsDrawnPerPlacement": 2192,
+        "studsCulledAtBake": 608,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "generated:mils-road-t-junction",
+        "studsDrawnPerPlacement": 2224,
+        "studsCulledAtBake": 480,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "generated:mils-road-crossroads",
+        "studsDrawnPerPlacement": 2256,
+        "studsCulledAtBake": 352,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "omr:7936-1",
+        "studsDrawnPerPlacement": 466,
+        "studsCulledAtBake": 156,
+        "footprintCells": 466,
+        "flatCells": 10,
+        "heightPlates": 32
+      },
+      {
+        "id": "omr:10264-1",
+        "studsDrawnPerPlacement": 3085,
+        "studsCulledAtBake": 4404,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 100
+      },
+      {
+        "id": "omr:10185-1",
+        "studsDrawnPerPlacement": 2881,
+        "studsCulledAtBake": 4726,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 105
+      },
+      {
+        "id": "omr:10190-1",
+        "studsDrawnPerPlacement": 2600,
+        "studsCulledAtBake": 2527,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 103
+      },
+      {
+        "id": "omr:10218-1",
+        "studsDrawnPerPlacement": 2729,
+        "studsCulledAtBake": 4311,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 89
+      },
+      {
+        "id": "omr:2150-1",
+        "studsDrawnPerPlacement": 1522,
+        "studsCulledAtBake": 927,
+        "footprintCells": 264,
+        "flatCells": 0,
+        "heightPlates": 72
+      },
+      {
+        "id": "omr:4554-1",
+        "studsDrawnPerPlacement": 1534,
+        "studsCulledAtBake": 913,
+        "footprintCells": 264,
+        "flatCells": 0,
+        "heightPlates": 72
+      },
+      {
+        "id": "omr:4555-1",
+        "studsDrawnPerPlacement": 2283,
+        "studsCulledAtBake": 713,
+        "footprintCells": 1536,
+        "flatCells": 1536,
+        "heightPlates": 76
+      },
+      {
+        "id": "omr:10128-1",
+        "studsDrawnPerPlacement": 1686,
+        "studsCulledAtBake": 451,
+        "footprintCells": 1536,
+        "flatCells": 1536,
+        "heightPlates": 67
+      },
+      {
+        "id": "omr:10133-1",
+        "studsDrawnPerPlacement": 659,
+        "studsCulledAtBake": 737,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 34
+      },
+      {
+        "id": "omr:10014-1",
+        "studsDrawnPerPlacement": 279,
+        "studsCulledAtBake": 300,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 36
+      },
+      {
+        "id": "omr:10022-1_Dining-Car",
+        "studsDrawnPerPlacement": 676,
+        "studsCulledAtBake": 568,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 30
+      },
+      {
+        "id": "omr:10025-1_Baggage-Car",
+        "studsDrawnPerPlacement": 494,
+        "studsCulledAtBake": 588,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 30
+      },
+      {
+        "id": "omr:10205-1",
+        "studsDrawnPerPlacement": 651,
+        "studsCulledAtBake": 314,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 31
+      },
+      {
+        "id": "omr:10017-1",
+        "studsDrawnPerPlacement": 310,
+        "studsCulledAtBake": 324,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 31
+      }
+    ],
+    "placements": {
+      "chunkKey": [
+        35184376283136,
+        35184376283136
+      ],
+      "slot": [
+        0,
+        1
+      ],
+      "refId": [
+        0,
+        20
+      ],
+      "colorId": [
+        2,
+        0
+      ],
+      "x": [
+        0,
+        0
+      ],
+      "z": [
+        0,
+        0
+      ],
+      "yPlates": [
+        0,
+        0
+      ],
+      "rot": [
+        0,
+        0
+      ]
+    },
+    "roadPlacements": [],
+    "roads": {
+      "placements": 0,
+      "joinedCells": 0,
+      "openCells": 0,
+      "mismatchedCells": 0,
+      "overlaps": [],
+      "segments": []
+    },
+    "studs": {
+      "drawn": 2396,
+      "culledInsideModels": 927,
+      "culledUnderFootprints": 150
+    }
+  }
+}

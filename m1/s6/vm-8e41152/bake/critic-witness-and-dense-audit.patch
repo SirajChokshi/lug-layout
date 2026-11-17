@@ -1,0 +1,226 @@
+diff -ru '--exclude=target' /agent/repos/lug-layout/crates/brick-compile/src/cover.rs crates/brick-compile/src/cover.rs
+--- /agent/repos/lug-layout/crates/brick-compile/src/cover.rs	2026-11-17 02:29:32.189900647 +0000
++++ crates/brick-compile/src/cover.rs	2026-11-17 03:49:57.865900647 +0000
+@@ -1039,3 +1039,197 @@
+         assert!((cells.bottom_y - lowest).abs() < 1e-9, "{}", cells.bottom_y);
+     }
+ }
++
++pub fn dense_audit(instances: &[CoverInstance], solids: &[PartSolid], opacity: &Opacity, visible: &[bool], stud: StudShape) -> usize {
++    let boxes: Vec<[Vec3; 2]> = instances.iter().map(|i| world_box(i, &solids[i.part])).collect();
++    let model = ModelSolids::new(instances, &boxes, solids, opacity);
++    let mut frames = Vec::new();
++    let mut culled_seen = 0usize;
++    let mut s = 0;
++    for inst in instances {
++        for st in inst.studs {
++            if !visible[s] { culled_seen += 1; if culled_seen % 10 == 0 { frames.push(StudFrame::of(&inst.matrix.then(st))); } }
++            s += 1;
++        }
++    }
++    let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
++    let chunk = frames.len().div_ceil(workers).max(1);
++    let mut found = vec![0usize; frames.len().div_ceil(chunk)];
++    std::thread::scope(|scope| {
++        for (slice, out) in frames.chunks(chunk).zip(found.iter_mut()) {
++            let model = &model;
++            scope.spawn(move || {
++                let mut seen = Vec::new();
++                for f in slice {
++                    let mut open = false;
++                    'stud: for hk in 1..=16 {
++                        let h = stud.height * (hk as f64 - 0.5) / 16.0;
++                        for k in 0..128 {
++                            let a = std::f64::consts::TAU * (k as f64 + 0.5) / 128.0;
++                            let r = [0, 1, 2].map(|i| f.across[i] * a.cos() + f.along[i] * a.sin());
++                            let p = [0, 1, 2].map(|i| f.base[i] + f.up[i] * h + r[i] * stud.radius * 1.001);
++                            for e in 1..72 {
++                                let (rise, run) = (-1.25 * e as f64).to_radians().sin_cos();
++                                let d = [0, 1, 2].map(|i| r[i] * run + f.up[i] * rise);
++                                if !model.blocked_within(p, d, 60.0, &mut seen) { open = true; break 'stud; }
++                            }
++                        }
++                    }
++                    if open { *out += 1; }
++                }
++            });
++        }
++    });
++    let open: usize = found.iter().sum();
++    eprintln!("AUDITSAMPLE sampled={} open={open}", frames.len());
++    open
++}
++
++pub fn sight_lines(instances: &[CoverInstance], solids: &[PartSolid], opacity: &Opacity, target: Vec3, eye: Vec3, stud: StudShape) -> Vec<(f64, f64, f64)> {
++    let boxes: Vec<[Vec3; 2]> = instances.iter().map(|i| world_box(i, &solids[i.part])).collect();
++    let model = ModelSolids::new(instances, &boxes, solids, opacity);
++    let mut out = Vec::new();
++    for (o, inst) in instances.iter().enumerate() {
++        for st in inst.studs {
++            let f = StudFrame::of(&inst.matrix.then(st));
++            if (0..3).any(|a| (f.base[a] - target[a]).abs() > 0.1) { continue; }
++            let _ = o;
++            for hk in 1..10 {
++                let h = stud.height * hk as f64 / 10.0;
++                for k in 0..64 {
++                    let a = std::f64::consts::TAU * k as f64 / 64.0;
++                    let r = [a.cos(), 0.0, a.sin()];
++                    let p = [0, 1, 2].map(|i| f.base[i] + f.up[i] * h + r[i] * stud.radius * 1.001);
++                    let d = sub(eye, p);
++                    let len = dot(d, d).sqrt();
++                    let dir = d.map(|v| v / len);
++                    if dot(dir, r) <= 0.0 { continue; }
++                    let mut seen = Vec::new();
++                    if !model.blocked_within(p, dir, len, &mut seen) {
++                        let mut first = 0.0;
++                        for reach in [5.0, 10.0, 20.0, 40.0, 60.0, 100.0, 200.0, 400.0] {
++                            if model.blocked_within(p, dir, reach, &mut seen) { first = reach; break; }
++                        }
++                        out.push((h, a.to_degrees(), first));
++                    }
++                }
++            }
++        }
++    }
++    out
++}
++
++fn first_hit_t(origin: Vec3, direction: Vec3, t: &[Vec3; 3]) -> Option<f64> {
++    let sub = |a: Vec3, b: Vec3| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
++    let cross = |a: Vec3, b: Vec3| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
++    let e1 = sub(t[1], t[0]);
++    let e2 = sub(t[2], t[0]);
++    let p = cross(direction, e2);
++    let det = dot(e1, p);
++    if det.abs() < 1e-12 {
++        return None;
++    }
++    let inv = 1.0 / det;
++    let s = sub(origin, t[0]);
++    let u = dot(s, p) * inv;
++    if !(-1e-9..=1.0 + 1e-9).contains(&u) {
++        return None;
++    }
++    let q = cross(s, e1);
++    let v = dot(direction, q) * inv;
++    if v < -1e-9 || u + v > 1.0 + 1e-9 {
++        return None;
++    }
++    let tt = dot(e2, q) * inv;
++    (tt > 1e-6).then_some(tt)
++}
++
++pub struct Witness {
++    pub stud: usize,
++    pub owner: usize,
++    pub from: Vec3,
++    pub direction: Vec3,
++}
++
++pub fn below_witnesses(
++    instances: &[CoverInstance],
++    solids: &[PartSolid],
++    visible: &[bool],
++    stud: StudShape,
++    free_ldu: f64,
++) -> Vec<Witness> {
++    let boxes: Vec<[Vec3; 2]> = instances.iter().map(|i| world_box(i, &solids[i.part])).collect();
++    let inverses: Vec<Option<Affine>> = instances.iter().map(|i| inverse(i.matrix)).collect();
++    let cell = 40.0;
++    let key = |v: f64| (v / cell).floor() as i64;
++    let mut grid: HashMap<BroadKey, Vec<usize>> = HashMap::new();
++    for (i, [min, max]) in boxes.iter().enumerate() {
++        for x in key(min[0])..=key(max[0]) {
++            for y in key(min[1])..=key(max[1]) {
++                for z in key(min[2])..=key(max[2]) {
++                    grid.entry((x, y, z)).or_default().push(i);
++                }
++            }
++        }
++    }
++    let blocked = |origin: Vec3, direction: Vec3| -> bool {
++        let end = [0, 1, 2].map(|a| origin[a] + direction[a] * free_ldu);
++        let lo = [0, 1, 2].map(|a| key(origin[a].min(end[a])));
++        let hi = [0, 1, 2].map(|a| key(origin[a].max(end[a])));
++        let mut seen = std::collections::HashSet::new();
++        for x in lo[0]..=hi[0] {
++            for y in lo[1]..=hi[1] {
++                for z in lo[2]..=hi[2] {
++                    for &i in grid.get(&(x, y, z)).map(|v| v.as_slice()).unwrap_or(&[]) {
++                        if !seen.insert(i) {
++                            continue;
++                        }
++                        let Some(inv) = &inverses[i] else { continue };
++                        let lo_o = inv.apply(origin);
++                        let lo_e = inv.apply(end);
++                        let ld = [0, 1, 2].map(|a| (lo_e[a] - lo_o[a]) / free_ldu);
++                        if solids[instances[i].part]
++                            .triangles
++                            .iter()
++                            .any(|t| first_hit_t(lo_o, ld, t).is_some_and(|tt| tt <= free_ldu))
++                        {
++                            return true;
++                        }
++                    }
++                }
++            }
++        }
++        false
++    };
++    let mut out = Vec::new();
++    let mut s = 0;
++    for (owner, instance) in instances.iter().enumerate() {
++        for st in instance.studs {
++            let index = s;
++            s += 1;
++            if visible[index] {
++                continue;
++            }
++            let frame = StudFrame::of(&instance.matrix.then(st));
++            if dot(frame.up, UP) < UPRIGHT_COSINE {
++                continue;
++            }
++            'search: for az in 0..16 {
++                let a = std::f64::consts::TAU * az as f64 / 16.0;
++                let radial = [a.cos(), 0.0, a.sin()];
++                for frac in [0.5, 0.95] {
++                    let from = [0, 1, 2].map(|k| frame.base[k] + UP[k] * stud.height * frac + radial[k] * stud.radius * 1.001);
++                    for elev in [-10.0f64, -20.0, -30.0, -45.0, -60.0] {
++                        let (sn, cs) = elev.to_radians().sin_cos();
++                        let direction = [radial[0] * cs, sn, radial[2] * cs];
++                        if !blocked(from, direction) {
++                            out.push(Witness { stud: index, owner, from, direction });
++                            break 'search;
++                        }
++                    }
++                }
++            }
++        }
++    }
++    out
++}
+diff -ru '--exclude=target' /agent/repos/lug-layout/crates/brick-compile-cli/src/main.rs crates/brick-compile-cli/src/main.rs
+--- /agent/repos/lug-layout/crates/brick-compile-cli/src/main.rs	2026-11-17 03:07:18.329900647 +0000
++++ crates/brick-compile-cli/src/main.rs	2026-11-17 03:49:57.865900647 +0000
+@@ -6,7 +6,7 @@
+ use brick_compile::affine::{Affine, Vec3};
+ use brick_compile::colors::parse_ldconfig;
+ use brick_compile::compile::modified_note;
+-use brick_compile::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
++use brick_compile::cover::{below_witnesses, dense_audit, model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
+ use brick_compile::inline::inline_part_distance;
+ use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
+ use brick_compile::ldraw::{parse as parse_ldraw, Header};
+@@ -581,6 +581,12 @@
+                 pair
+             }
+         };
++        if args.lod == Lod::Standard {
++            let cover = model_cover(&cover_instances, &cover_parts.solids, &opacity, lattice.as_ref().map(|l| l.phase), stud_shape);
++            let w = below_witnesses(&cover_instances, &cover_parts.solids, &cover.visible, stud_shape, 60.0);
++            let n = dense_audit(&cover_instances, &cover_parts.solids, &opacity, &cover.visible, stud_shape);
++            eprintln!("WITNESS {name} culled={} witnessed_visible_from_below={} dense_sample_open={n}", cover.covered_count(), w.len());
++        }
+         let total_studs: usize = cover_slots
+             .iter()
+             .map(|&slot| cover_parts.studs[slot].len())

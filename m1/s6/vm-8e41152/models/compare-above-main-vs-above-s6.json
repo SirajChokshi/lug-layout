@@ -1,0 +1,802 @@
+[
+  {
+    "set": "7936-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 71,
+    "maxChannelDelta": 24,
+    "diffBox": [
+      460,
+      307,
+      872,
+      486
+    ],
+    "studsBefore": 622,
+    "studsAfter": 466,
+    "trianglesBefore": 140604,
+    "trianglesAfter": 132444,
+    "drawCallsBefore": 72,
+    "drawCallsAfter": 72
+  },
+  {
+    "set": "7936-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 49,
+    "maxChannelDelta": 32,
+    "diffBox": [
+      416,
+      390,
+      930,
+      632
+    ],
+    "studsBefore": 622,
+    "studsAfter": 466,
+    "trianglesBefore": 140604,
+    "trianglesAfter": 132444,
+    "drawCallsBefore": 72,
+    "drawCallsAfter": 72
+  },
+  {
+    "set": "7936-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 14,
+    "maxChannelDelta": 10,
+    "diffBox": [
+      626,
+      527,
+      684,
+      603
+    ],
+    "studsBefore": 622,
+    "studsAfter": 466,
+    "trianglesBefore": 140604,
+    "trianglesAfter": 132444,
+    "drawCallsBefore": 72,
+    "drawCallsAfter": 72
+  },
+  {
+    "set": "7936-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 10,
+    "maxChannelDelta": 21,
+    "diffBox": [
+      614,
+      423,
+      800,
+      581
+    ],
+    "studsBefore": 622,
+    "studsAfter": 466,
+    "trianglesBefore": 140604,
+    "trianglesAfter": 132444,
+    "drawCallsBefore": 72,
+    "drawCallsAfter": 72
+  },
+  {
+    "set": "10264-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 359,
+    "maxChannelDelta": 85,
+    "diffBox": [
+      463,
+      208,
+      809,
+      682
+    ],
+    "studsBefore": 7489,
+    "studsAfter": 3085,
+    "trianglesBefore": 1222337,
+    "trianglesAfter": 994865,
+    "drawCallsBefore": 334,
+    "drawCallsAfter": 334
+  },
+  {
+    "set": "10264-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 137,
+    "maxChannelDelta": 63,
+    "diffBox": [
+      425,
+      268,
+      827,
+      744
+    ],
+    "studsBefore": 7489,
+    "studsAfter": 3085,
+    "trianglesBefore": 1222337,
+    "trianglesAfter": 994865,
+    "drawCallsBefore": 334,
+    "drawCallsAfter": 334
+  },
+  {
+    "set": "10264-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 149,
+    "maxChannelDelta": 22,
+    "diffBox": [
+      469,
+      251,
+      945,
+      684
+    ],
+    "studsBefore": 7489,
+    "studsAfter": 3085,
+    "trianglesBefore": 1222337,
+    "trianglesAfter": 994865,
+    "drawCallsBefore": 334,
+    "drawCallsAfter": 334
+  },
+  {
+    "set": "10264-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 193,
+    "maxChannelDelta": 32,
+    "diffBox": [
+      424,
+      260,
+      928,
+      683
+    ],
+    "studsBefore": 7489,
+    "studsAfter": 3085,
+    "trianglesBefore": 1222337,
+    "trianglesAfter": 994865,
+    "drawCallsBefore": 334,
+    "drawCallsAfter": 334
+  },
+  {
+    "set": "10185-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 330,
+    "maxChannelDelta": 47,
+    "diffBox": [
+      414,
+      169,
+      858,
+      732
+    ],
+    "studsBefore": 7607,
+    "studsAfter": 2881,
+    "trianglesBefore": 1036407,
+    "trianglesAfter": 805959,
+    "drawCallsBefore": 195,
+    "drawCallsAfter": 195
+  },
+  {
+    "set": "10185-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 126,
+    "maxChannelDelta": 29,
+    "diffBox": [
+      414,
+      197,
+      856,
+      706
+    ],
+    "studsBefore": 7607,
+    "studsAfter": 2881,
+    "trianglesBefore": 1036407,
+    "trianglesAfter": 805959,
+    "drawCallsBefore": 195,
+    "drawCallsAfter": 195
+  },
+  {
+    "set": "10185-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 63,
+    "maxChannelDelta": 32,
+    "diffBox": [
+      424,
+      250,
+      788,
+      755
+    ],
+    "studsBefore": 7607,
+    "studsAfter": 2881,
+    "trianglesBefore": 1036407,
+    "trianglesAfter": 805959,
+    "drawCallsBefore": 195,
+    "drawCallsAfter": 195
+  },
+  {
+    "set": "10185-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 77,
+    "maxChannelDelta": 32,
+    "diffBox": [
+      456,
+      230,
+      831,
+      749
+    ],
+    "studsBefore": 7607,
+    "studsAfter": 2881,
+    "trianglesBefore": 1036407,
+    "trianglesAfter": 805959,
+    "drawCallsBefore": 195,
+    "drawCallsAfter": 195
+  },
+  {
+    "set": "10190-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 150,
+    "maxChannelDelta": 34,
+    "diffBox": [
+      474,
+      171,
+      838,
+      765
+    ],
+    "studsBefore": 5127,
+    "studsAfter": 2600,
+    "trianglesBefore": 747071,
+    "trianglesAfter": 623087,
+    "drawCallsBefore": 146,
+    "drawCallsAfter": 146
+  },
+  {
+    "set": "10190-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 84,
+    "maxChannelDelta": 21,
+    "diffBox": [
+      453,
+      166,
+      806,
+      769
+    ],
+    "studsBefore": 5127,
+    "studsAfter": 2600,
+    "trianglesBefore": 747071,
+    "trianglesAfter": 623087,
+    "drawCallsBefore": 146,
+    "drawCallsAfter": 146
+  },
+  {
+    "set": "10190-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 104,
+    "maxChannelDelta": 34,
+    "diffBox": [
+      375,
+      160,
+      878,
+      688
+    ],
+    "studsBefore": 5127,
+    "studsAfter": 2600,
+    "trianglesBefore": 747071,
+    "trianglesAfter": 623087,
+    "drawCallsBefore": 146,
+    "drawCallsAfter": 146
+  },
+  {
+    "set": "10190-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 113,
+    "maxChannelDelta": 37,
+    "diffBox": [
+      401,
+      170,
+      845,
+      733
+    ],
+    "studsBefore": 5127,
+    "studsAfter": 2600,
+    "trianglesBefore": 747071,
+    "trianglesAfter": 623087,
+    "drawCallsBefore": 146,
+    "drawCallsAfter": 146
+  },
+  {
+    "set": "10218-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 293,
+    "maxChannelDelta": 65,
+    "diffBox": [
+      390,
+      170,
+      878,
+      730
+    ],
+    "studsBefore": 7040,
+    "studsAfter": 2729,
+    "trianglesBefore": 936913,
+    "trianglesAfter": 723937,
+    "drawCallsBefore": 222,
+    "drawCallsAfter": 222
+  },
+  {
+    "set": "10218-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 169,
+    "maxChannelDelta": 40,
+    "diffBox": [
+      385,
+      191,
+      907,
+      727
+    ],
+    "studsBefore": 7040,
+    "studsAfter": 2729,
+    "trianglesBefore": 936913,
+    "trianglesAfter": 723937,
+    "drawCallsBefore": 222,
+    "drawCallsAfter": 222
+  },
+  {
+    "set": "10218-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 83,
+    "maxChannelDelta": 21,
+    "diffBox": [
+      497,
+      143,
+      846,
+      781
+    ],
+    "studsBefore": 7040,
+    "studsAfter": 2729,
+    "trianglesBefore": 936913,
+    "trianglesAfter": 723937,
+    "drawCallsBefore": 222,
+    "drawCallsAfter": 222
+  },
+  {
+    "set": "10218-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 96,
+    "maxChannelDelta": 32,
+    "diffBox": [
+      472,
+      183,
+      809,
+      749
+    ],
+    "studsBefore": 7040,
+    "studsAfter": 2729,
+    "trianglesBefore": 936913,
+    "trianglesAfter": 723937,
+    "drawCallsBefore": 222,
+    "drawCallsAfter": 222
+  },
+  {
+    "set": "2150-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 29,
+    "maxChannelDelta": 45,
+    "diffBox": [
+      503,
+      317,
+      770,
+      637
+    ],
+    "studsBefore": 2449,
+    "studsAfter": 1522,
+    "trianglesBefore": 410478,
+    "trianglesAfter": 364062,
+    "drawCallsBefore": 157,
+    "drawCallsAfter": 157
+  },
+  {
+    "set": "2150-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 36,
+    "maxChannelDelta": 31,
+    "diffBox": [
+      504,
+      317,
+      776,
+      674
+    ],
+    "studsBefore": 2449,
+    "studsAfter": 1522,
+    "trianglesBefore": 410478,
+    "trianglesAfter": 364062,
+    "drawCallsBefore": 157,
+    "drawCallsAfter": 157
+  },
+  {
+    "set": "2150-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 39,
+    "maxChannelDelta": 55,
+    "diffBox": [
+      419,
+      407,
+      886,
+      590
+    ],
+    "studsBefore": 2449,
+    "studsAfter": 1522,
+    "trianglesBefore": 410478,
+    "trianglesAfter": 364062,
+    "drawCallsBefore": 157,
+    "drawCallsAfter": 157
+  },
+  {
+    "set": "2150-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 36,
+    "maxChannelDelta": 34,
+    "diffBox": [
+      414,
+      365,
+      921,
+      554
+    ],
+    "studsBefore": 2449,
+    "studsAfter": 1522,
+    "trianglesBefore": 410478,
+    "trianglesAfter": 364062,
+    "drawCallsBefore": 157,
+    "drawCallsAfter": 157
+  },
+  {
+    "set": "4554-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 23,
+    "maxChannelDelta": 17,
+    "diffBox": [
+      501,
+      343,
+      775,
+      655
+    ],
+    "studsBefore": 2447,
+    "studsAfter": 1534,
+    "trianglesBefore": 404254,
+    "trianglesAfter": 358510,
+    "drawCallsBefore": 150,
+    "drawCallsAfter": 150
+  },
+  {
+    "set": "4554-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 18,
+    "maxChannelDelta": 19,
+    "diffBox": [
+      504,
+      290,
+      783,
+      680
+    ],
+    "studsBefore": 2447,
+    "studsAfter": 1534,
+    "trianglesBefore": 404254,
+    "trianglesAfter": 358510,
+    "drawCallsBefore": 150,
+    "drawCallsAfter": 150
+  },
+  {
+    "set": "4554-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 22,
+    "maxChannelDelta": 38,
+    "diffBox": [
+      440,
+      316,
+      948,
+      601
+    ],
+    "studsBefore": 2447,
+    "studsAfter": 1534,
+    "trianglesBefore": 404254,
+    "trianglesAfter": 358510,
+    "drawCallsBefore": 150,
+    "drawCallsAfter": 150
+  },
+  {
+    "set": "4554-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 24,
+    "maxChannelDelta": 59,
+    "diffBox": [
+      376,
+      351,
+      920,
+      589
+    ],
+    "studsBefore": 2447,
+    "studsAfter": 1534,
+    "trianglesBefore": 404254,
+    "trianglesAfter": 358510,
+    "drawCallsBefore": 150,
+    "drawCallsAfter": 150
+  },
+  {
+    "set": "4555-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 75,
+    "maxChannelDelta": 67,
+    "diffBox": [
+      397,
+      286,
+      949,
+      683
+    ],
+    "studsBefore": 2996,
+    "studsAfter": 2283,
+    "trianglesBefore": 382201,
+    "trianglesAfter": 346057,
+    "drawCallsBefore": 141,
+    "drawCallsAfter": 141
+  },
+  {
+    "set": "4555-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 41,
+    "maxChannelDelta": 27,
+    "diffBox": [
+      371,
+      312,
+      847,
+      657
+    ],
+    "studsBefore": 2996,
+    "studsAfter": 2283,
+    "trianglesBefore": 382201,
+    "trianglesAfter": 346057,
+    "drawCallsBefore": 141,
+    "drawCallsAfter": 141
+  },
+  {
+    "set": "4555-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 35,
+    "maxChannelDelta": 30,
+    "diffBox": [
+      283,
+      270,
+      744,
+      664
+    ],
+    "studsBefore": 2996,
+    "studsAfter": 2283,
+    "trianglesBefore": 382201,
+    "trianglesAfter": 346057,
+    "drawCallsBefore": 141,
+    "drawCallsAfter": 141
+  },
+  {
+    "set": "4555-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 50,
+    "maxChannelDelta": 22,
+    "diffBox": [
+      379,
+      414,
+      905,
+      680
+    ],
+    "studsBefore": 2996,
+    "studsAfter": 2283,
+    "trianglesBefore": 382201,
+    "trianglesAfter": 346057,
+    "drawCallsBefore": 141,
+    "drawCallsAfter": 141
+  },
+  {
+    "set": "10128-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 52,
+    "maxChannelDelta": 42,
+    "diffBox": [
+      399,
+      323,
+      935,
+      609
+    ],
+    "studsBefore": 2137,
+    "studsAfter": 1686,
+    "trianglesBefore": 322239,
+    "trianglesAfter": 299295,
+    "drawCallsBefore": 124,
+    "drawCallsAfter": 124
+  },
+  {
+    "set": "10128-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 44,
+    "maxChannelDelta": 15,
+    "diffBox": [
+      334,
+      346,
+      879,
+      646
+    ],
+    "studsBefore": 2137,
+    "studsAfter": 1686,
+    "trianglesBefore": 322239,
+    "trianglesAfter": 299295,
+    "drawCallsBefore": 124,
+    "drawCallsAfter": 124
+  },
+  {
+    "set": "10128-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 33,
+    "maxChannelDelta": 18,
+    "diffBox": [
+      323,
+      470,
+      896,
+      642
+    ],
+    "studsBefore": 2137,
+    "studsAfter": 1686,
+    "trianglesBefore": 322239,
+    "trianglesAfter": 299295,
+    "drawCallsBefore": 124,
+    "drawCallsAfter": 124
+  },
+  {
+    "set": "10128-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 66,
+    "maxChannelDelta": 70,
+    "diffBox": [
+      385,
+      426,
+      940,
+      627
+    ],
+    "studsBefore": 2137,
+    "studsAfter": 1686,
+    "trianglesBefore": 322239,
+    "trianglesAfter": 299295,
+    "drawCallsBefore": 124,
+    "drawCallsAfter": 124
+  },
+  {
+    "set": "10133-1",
+    "cameraT": 0,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 25,
+    "maxChannelDelta": 62,
+    "diffBox": [
+      669,
+      302,
+      824,
+      610
+    ],
+    "studsBefore": 1396,
+    "studsAfter": 659,
+    "trianglesBefore": 208441,
+    "trianglesAfter": 172441,
+    "drawCallsBefore": 87,
+    "drawCallsAfter": 87
+  },
+  {
+    "set": "10133-1",
+    "cameraT": 0.5,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 13,
+    "maxChannelDelta": 51,
+    "diffBox": [
+      456,
+      415,
+      552,
+      612
+    ],
+    "studsBefore": 1396,
+    "studsAfter": 659,
+    "trianglesBefore": 208441,
+    "trianglesAfter": 172441,
+    "drawCallsBefore": 87,
+    "drawCallsAfter": 87
+  },
+  {
+    "set": "10133-1",
+    "cameraT": 0.6666666666666666,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 30,
+    "maxChannelDelta": 56,
+    "diffBox": [
+      441,
+      378,
+      715,
+      527
+    ],
+    "studsBefore": 1396,
+    "studsAfter": 659,
+    "trianglesBefore": 208441,
+    "trianglesAfter": 172441,
+    "drawCallsBefore": 87,
+    "drawCallsAfter": 87
+  },
+  {
+    "set": "10133-1",
+    "cameraT": 0.75,
+    "width": 1280,
+    "height": 801,
+    "differingPixels": 89,
+    "maxChannelDelta": 120,
+    "diffBox": [
+      382,
+      346,
+      899,
+      535
+    ],
+    "studsBefore": 1396,
+    "studsAfter": 659,
+    "trianglesBefore": 208441,
+    "trianglesAfter": 172441,
+    "drawCallsBefore": 87,
+    "drawCallsAfter": 87
+  }
+]

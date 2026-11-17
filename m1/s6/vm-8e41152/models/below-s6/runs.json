@@ -1,0 +1,722 @@
+[
+  {
+    "set": "7936-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=7936-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 622,
+    "visibleStudInstances": 466,
+    "studTriangles": 23520,
+    "drawnTriangles": 132444,
+    "drawCalls": 72,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 160.69999999925494
+  },
+  {
+    "set": "7936-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=7936-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 622,
+    "visibleStudInstances": 466,
+    "studTriangles": 23520,
+    "drawnTriangles": 132444,
+    "drawCalls": 72,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 140.30000000074506
+  },
+  {
+    "set": "7936-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=7936-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 622,
+    "visibleStudInstances": 466,
+    "studTriangles": 23520,
+    "drawnTriangles": 132444,
+    "drawCalls": 72,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 176.10000000149012
+  },
+  {
+    "set": "7936-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=7936-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 622,
+    "visibleStudInstances": 466,
+    "studTriangles": 23520,
+    "drawnTriangles": 132444,
+    "drawCalls": 72,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 136.5
+  },
+  {
+    "set": "10264-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=10264-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 7489,
+    "visibleStudInstances": 3085,
+    "studTriangles": 160512,
+    "drawnTriangles": 994865,
+    "drawCalls": 334,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 506
+  },
+  {
+    "set": "10264-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=10264-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 7489,
+    "visibleStudInstances": 3085,
+    "studTriangles": 160512,
+    "drawnTriangles": 994865,
+    "drawCalls": 334,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 540.3999999985099
+  },
+  {
+    "set": "10264-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=10264-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 7489,
+    "visibleStudInstances": 3085,
+    "studTriangles": 160512,
+    "drawnTriangles": 994865,
+    "drawCalls": 334,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 523
+  },
+  {
+    "set": "10264-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=10264-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 7489,
+    "visibleStudInstances": 3085,
+    "studTriangles": 160512,
+    "drawnTriangles": 994865,
+    "drawCalls": 334,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 643
+  },
+  {
+    "set": "10185-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=10185-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 7607,
+    "visibleStudInstances": 2881,
+    "studTriangles": 143184,
+    "drawnTriangles": 805959,
+    "drawCalls": 195,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 657.8000000007451
+  },
+  {
+    "set": "10185-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=10185-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 7607,
+    "visibleStudInstances": 2881,
+    "studTriangles": 143184,
+    "drawnTriangles": 805959,
+    "drawCalls": 195,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 601.3999999985099
+  },
+  {
+    "set": "10185-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=10185-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 7607,
+    "visibleStudInstances": 2881,
+    "studTriangles": 143184,
+    "drawnTriangles": 805959,
+    "drawCalls": 195,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 604.6999999992549
+  },
+  {
+    "set": "10185-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=10185-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 7607,
+    "visibleStudInstances": 2881,
+    "studTriangles": 143184,
+    "drawnTriangles": 805959,
+    "drawCalls": 195,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 511.69999999925494
+  },
+  {
+    "set": "10190-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=10190-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 5127,
+    "visibleStudInstances": 2600,
+    "studTriangles": 126864,
+    "drawnTriangles": 623087,
+    "drawCalls": 146,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 320.4000000022352
+  },
+  {
+    "set": "10190-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=10190-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 5127,
+    "visibleStudInstances": 2600,
+    "studTriangles": 126864,
+    "drawnTriangles": 623087,
+    "drawCalls": 146,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 494.69999999925494
+  },
+  {
+    "set": "10190-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=10190-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 5127,
+    "visibleStudInstances": 2600,
+    "studTriangles": 126864,
+    "drawnTriangles": 623087,
+    "drawCalls": 146,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 595.5
+  },
+  {
+    "set": "10190-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=10190-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 5127,
+    "visibleStudInstances": 2600,
+    "studTriangles": 126864,
+    "drawnTriangles": 623087,
+    "drawCalls": 146,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 406.79999999701977
+  },
+  {
+    "set": "10218-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=10218-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 7040,
+    "visibleStudInstances": 2729,
+    "studTriangles": 138000,
+    "drawnTriangles": 723937,
+    "drawCalls": 222,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 610.8000000007451
+  },
+  {
+    "set": "10218-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=10218-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 7040,
+    "visibleStudInstances": 2729,
+    "studTriangles": 138000,
+    "drawnTriangles": 723937,
+    "drawCalls": 222,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 413.3999999985099
+  },
+  {
+    "set": "10218-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=10218-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 7040,
+    "visibleStudInstances": 2729,
+    "studTriangles": 138000,
+    "drawnTriangles": 723937,
+    "drawCalls": 222,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 432.19999999925494
+  },
+  {
+    "set": "10218-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=10218-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 7040,
+    "visibleStudInstances": 2729,
+    "studTriangles": 138000,
+    "drawnTriangles": 723937,
+    "drawCalls": 222,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 468.30000000074506
+  },
+  {
+    "set": "2150-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=2150-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 2449,
+    "visibleStudInstances": 1522,
+    "studTriangles": 74544,
+    "drawnTriangles": 364062,
+    "drawCalls": 157,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 240.30000000074506
+  },
+  {
+    "set": "2150-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=2150-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 2449,
+    "visibleStudInstances": 1522,
+    "studTriangles": 74544,
+    "drawnTriangles": 364062,
+    "drawCalls": 157,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 269.69999999925494
+  },
+  {
+    "set": "2150-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=2150-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 2449,
+    "visibleStudInstances": 1522,
+    "studTriangles": 74544,
+    "drawnTriangles": 364062,
+    "drawCalls": 157,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 320.6000000014901
+  },
+  {
+    "set": "2150-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=2150-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 2449,
+    "visibleStudInstances": 1522,
+    "studTriangles": 74544,
+    "drawnTriangles": 364062,
+    "drawCalls": 157,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 243.19999999925494
+  },
+  {
+    "set": "4554-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=4554-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 2447,
+    "visibleStudInstances": 1534,
+    "studTriangles": 75120,
+    "drawnTriangles": 358510,
+    "drawCalls": 150,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 304.9000000022352
+  },
+  {
+    "set": "4554-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=4554-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 2447,
+    "visibleStudInstances": 1534,
+    "studTriangles": 75120,
+    "drawnTriangles": 358510,
+    "drawCalls": 150,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 223.19999999925494
+  },
+  {
+    "set": "4554-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=4554-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 2447,
+    "visibleStudInstances": 1534,
+    "studTriangles": 75120,
+    "drawnTriangles": 358510,
+    "drawCalls": 150,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 325.3999999985099
+  },
+  {
+    "set": "4554-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=4554-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 2447,
+    "visibleStudInstances": 1534,
+    "studTriangles": 75120,
+    "drawnTriangles": 358510,
+    "drawCalls": 150,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 269.0999999977648
+  },
+  {
+    "set": "4555-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=4555-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 2996,
+    "visibleStudInstances": 2283,
+    "studTriangles": 114864,
+    "drawnTriangles": 346057,
+    "drawCalls": 141,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 290.1000000014901
+  },
+  {
+    "set": "4555-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=4555-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 2996,
+    "visibleStudInstances": 2283,
+    "studTriangles": 114864,
+    "drawnTriangles": 346057,
+    "drawCalls": 141,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 306.80000000074506
+  },
+  {
+    "set": "4555-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=4555-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 2996,
+    "visibleStudInstances": 2283,
+    "studTriangles": 114864,
+    "drawnTriangles": 346057,
+    "drawCalls": 141,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 289.1000000014901
+  },
+  {
+    "set": "4555-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=4555-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 2996,
+    "visibleStudInstances": 2283,
+    "studTriangles": 114864,
+    "drawnTriangles": 346057,
+    "drawCalls": 141,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 246.19999999925494
+  },
+  {
+    "set": "10128-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=10128-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 2137,
+    "visibleStudInstances": 1686,
+    "studTriangles": 83472,
+    "drawnTriangles": 299295,
+    "drawCalls": 124,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 250.89999999850988
+  },
+  {
+    "set": "10128-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=10128-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 2137,
+    "visibleStudInstances": 1686,
+    "studTriangles": 83472,
+    "drawnTriangles": 299295,
+    "drawCalls": 124,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 207.5
+  },
+  {
+    "set": "10128-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=10128-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 2137,
+    "visibleStudInstances": 1686,
+    "studTriangles": 83472,
+    "drawnTriangles": 299295,
+    "drawCalls": 124,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 182.5
+  },
+  {
+    "set": "10128-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=10128-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 2137,
+    "visibleStudInstances": 1686,
+    "studTriangles": 83472,
+    "drawnTriangles": 299295,
+    "drawCalls": 124,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 239.5
+  },
+  {
+    "set": "10133-1",
+    "frames": 1,
+    "cameraT": 0,
+    "url": "http://127.0.0.1:5173/?model=10133-1&api=webgl2&measure=1&warmup=1&frames=1&view=below",
+    "error": false,
+    "studInstances": 1396,
+    "visibleStudInstances": 659,
+    "studTriangles": 32976,
+    "drawnTriangles": 172441,
+    "drawCalls": 87,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 188.30000000074506
+  },
+  {
+    "set": "10133-1",
+    "frames": 2,
+    "cameraT": 0.5,
+    "url": "http://127.0.0.1:5173/?model=10133-1&api=webgl2&measure=1&warmup=1&frames=2&view=below",
+    "error": false,
+    "studInstances": 1396,
+    "visibleStudInstances": 659,
+    "studTriangles": 32976,
+    "drawnTriangles": 172441,
+    "drawCalls": 87,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 205.60000000149012
+  },
+  {
+    "set": "10133-1",
+    "frames": 3,
+    "cameraT": 0.6666666666666666,
+    "url": "http://127.0.0.1:5173/?model=10133-1&api=webgl2&measure=1&warmup=1&frames=3&view=below",
+    "error": false,
+    "studInstances": 1396,
+    "visibleStudInstances": 659,
+    "studTriangles": 32976,
+    "drawnTriangles": 172441,
+    "drawCalls": 87,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 227.30000000074506
+  },
+  {
+    "set": "10133-1",
+    "frames": 4,
+    "cameraT": 0.75,
+    "url": "http://127.0.0.1:5173/?model=10133-1&api=webgl2&measure=1&warmup=1&frames=4&view=below",
+    "error": false,
+    "studInstances": 1396,
+    "visibleStudInstances": 659,
+    "studTriangles": 32976,
+    "drawnTriangles": 172441,
+    "drawCalls": 87,
+    "drawingBuffer": {
+      "width": 1280,
+      "height": 801,
+      "devicePixelRatio": 1.0000000577419996
+    },
+    "medianFrameMs": 214.19999999925494
+  }
+]

@@ -1,0 +1,82 @@
+diff --git a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+index fbb67de..91c0d10 100644
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -56,7 +56,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
+     }
+     case "model": {
+       const modelScene = container.get(MODEL_SCENE);
+-      modelScene.selectModel(viewer.model ?? "");
++      modelScene.selectModel(viewer.model ?? "", viewer.modelView);
+       return { scene: modelScene, placements: null, run: null };
+     }
+     case "track": {
+diff --git a/apps/web/src/viewer/viewer-params.ts b/apps/web/src/viewer/viewer-params.ts
+index 759621f..027266d 100644
+--- a/apps/web/src/viewer/viewer-params.ts
++++ b/apps/web/src/viewer/viewer-params.ts
+@@ -2,12 +2,15 @@ import type { BundleLod, CityCamera, GraphicsApi, TrainRequest } from "@brr/clie
+ 
+ export type AppMode = "edit" | "parts" | "model" | "city" | "track" | "run";
+ 
++export type ModelView = "above" | "below";
++
+ export interface ViewerParams {
+   readonly mode: AppMode;
+   readonly showEditState: boolean;
+   readonly api: GraphicsApi;
+   readonly lod: BundleLod;
+   readonly model: string | null;
++  readonly modelView: ModelView;
+   readonly track: string | null;
+   readonly run: boolean;
+   readonly trainModel: string;
+@@ -106,6 +109,7 @@ export function readViewerParams(search: string): ViewerParams {
+     api: params.get("api") === "webgl2" ? "webgl2" : "webgpu",
+     lod: params.get("lod") === "low" ? "low" : "standard",
+     model: params.get("model"),
++    modelView: params.get("view") === "below" ? "below" : "above",
+     track: params.get("track"),
+     run: params.get("run") === "1",
+     trainModel: params.get("train") ?? DEFAULT_TRAIN_MODEL,
+diff --git a/packages/client/src/scene/model-scene.ts b/packages/client/src/scene/model-scene.ts
+index ae8d3a3..9768acd 100644
+--- a/packages/client/src/scene/model-scene.ts
++++ b/packages/client/src/scene/model-scene.ts
+@@ -6,7 +6,7 @@ import { ColorTable, showChunks, type IViewerScene, type SceneSummary } from "./
+ import { withStuds } from "./stud-stream.ts";
+ 
+ export interface IModelScene extends IViewerScene {
+-  selectModel(name: string): void;
++  selectModel(name: string, view: "above" | "below"): void;
+ }
+ 
+ const ORBIT_DISTANCE_FACTOR = 2.8;
+@@ -16,6 +16,7 @@ const MIN_ORBIT_RADIUS_LDU = 200;
+ @injectable()
+ export class ModelScene implements IModelScene {
+   private modelName = "";
++  private elevationSign = 1;
+   private centreX = 0;
+   private centreY = 0;
+   private centreZ = 0;
+@@ -26,8 +27,9 @@ export class ModelScene implements IModelScene {
+     @inject(SCENE_BACKEND) readonly backend: ISceneBackend,
+   ) {}
+ 
+-  selectModel(name: string): void {
++  selectModel(name: string, view: "above" | "below"): void {
+     this.modelName = name;
++    this.elevationSign = view === "below" ? -1 : 1;
+   }
+ 
+   async load(lod: BundleLod): Promise<SceneSummary> {
+@@ -95,7 +97,7 @@ export class ModelScene implements IModelScene {
+     const distance = this.radius * ORBIT_DISTANCE_FACTOR;
+     this.backend.setView(
+       this.centreX + distance * Math.cos(angle),
+-      this.centreY + this.radius * ORBIT_ELEVATION_FACTOR,
++      this.centreY + this.elevationSign * this.radius * ORBIT_ELEVATION_FACTOR,
+       this.centreZ + distance * Math.sin(angle),
+       this.centreX,
+       this.centreY,

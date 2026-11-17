@@ -1,0 +1,11 @@
+import { chromium } from "playwright-core";
+const browser = await chromium.launch({ executablePath: "/usr/local/bin/google-chrome", args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const logs = [];
+page.on("console", (m) => logs.push(m.type() + ": " + m.text()));
+page.on("pageerror", (e) => logs.push("pageerror: " + e.message));
+await page.goto((process.env.BASE ?? "http://127.0.0.1:5173") + "/?mode=edit&api=webgl2");
+await page.waitForTimeout(15000);
+console.log((await page.locator("body").innerText()).slice(0, 1500));
+console.log(logs.filter((l) => !l.startsWith("debug")).join("\n").slice(0, 2000));
+await browser.close();

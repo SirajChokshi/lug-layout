@@ -1,0 +1,60 @@
+AUDITSAMPLE sampled=15 open=0
+WITNESS 7936-1 culled=156 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=440 open=1
+WITNESS 10264-1 culled=4404 witnessed_visible_from_below=0 dense_sample_open=1
+AUDITSAMPLE sampled=472 open=1
+WITNESS 10185-1 culled=4726 witnessed_visible_from_below=0 dense_sample_open=1
+AUDITSAMPLE sampled=252 open=1
+WITNESS 10190-1 culled=2527 witnessed_visible_from_below=0 dense_sample_open=1
+AUDITSAMPLE sampled=431 open=1
+WITNESS 10218-1 culled=4311 witnessed_visible_from_below=0 dense_sample_open=1
+AUDITSAMPLE sampled=92 open=4
+WITNESS 2150-1 culled=927 witnessed_visible_from_below=0 dense_sample_open=4
+AUDITSAMPLE sampled=91 open=1
+WITNESS 4554-1 culled=913 witnessed_visible_from_below=0 dense_sample_open=1
+AUDITSAMPLE sampled=71 open=0
+WITNESS 4555-1 culled=713 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=45 open=0
+WITNESS 10128-1 culled=451 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=73 open=0
+WITNESS 10133-1 culled=737 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=30 open=0
+WITNESS 10014-1 culled=300 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=79 open=0
+WITNESS 10020-1 culled=794 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=56 open=0
+WITNESS 10022-1_Dining-Car culled=568 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=58 open=0
+WITNESS 10025-1_Baggage-Car culled=588 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=31 open=0
+WITNESS 10205-1 culled=314 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=11 open=0
+WITNESS 10013-1 culled=117 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=15 open=0
+WITNESS 10016-1 culled=152 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=32 open=0
+WITNESS 10017-1 culled=324 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=0 open=0
+WITNESS switch-then-reversed-curve culled=0 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=0 open=0
+WITNESS road-baseplates culled=0 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=0 open=0
+WITNESS r40-circle-9v culled=0 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=0 open=0
+WITNESS oval-passing-siding-9v culled=0 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=0 open=0
+WITNESS passing-loop culled=0 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=0 open=0
+WITNESS figure-eight culled=0 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=0 open=0
+WITNESS plastic-oval culled=0 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=60 open=0
+WITNESS mils-road-straight culled=608 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=60 open=0
+WITNESS mils-road-crosswalk culled=608 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=60 open=0
+WITNESS mils-road-curve culled=608 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=48 open=0
+WITNESS mils-road-t-junction culled=480 witnessed_visible_from_below=0 dense_sample_open=0
+AUDITSAMPLE sampled=35 open=0
+WITNESS mils-road-crossroads culled=352 witnessed_visible_from_below=0 dense_sample_open=0

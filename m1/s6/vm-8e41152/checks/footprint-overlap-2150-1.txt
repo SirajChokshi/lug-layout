@@ -1,0 +1,2 @@
+omr:2150-1: 0 flat + 264 anti-stud footprint cells, 150 baseplate studs culled
+predicted baseplate studs culled under footprints: 150 | app reported: 150

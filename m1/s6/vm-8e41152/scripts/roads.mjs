@@ -1,0 +1,12 @@
+import { openEditor, placeWith, calibrate, state } from "./drive.mjs";
+const { browser, page } = await openEditor({ base: process.env.BASE ?? "http://127.0.0.1:5173" });
+const map = await calibrate(page);
+const s0 = await state(page);
+const ids = (s0.catalog ?? s0.items ?? []).map((i) => i.id ?? i).filter((id) => String(id).includes("road") || String(id).includes("69958"));
+console.log("road items", JSON.stringify(ids).slice(0, 300));
+await placeWith(page, map, "generated:mils-road-straight", 0, 0);
+await placeWith(page, map, "ldraw:3811", 640, 0);
+const s = await state(page);
+const w = s.world;
+console.log(JSON.stringify({ roadPlacements: w.roadPlacements, placements: w.placements, studs: w.studs, roads: { placements: w.roads?.placements, joined: w.roads?.joinedCells, open: w.roads?.openCells } }).slice(0, 900));
+await browser.close();

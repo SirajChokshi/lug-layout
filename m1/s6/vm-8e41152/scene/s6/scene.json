@@ -1,0 +1,1083 @@
+{
+  "base": "http://127.0.0.1:5173",
+  "api": "webgl2",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+  "slots": [
+    {
+      "set": "7936-1",
+      "x": -3200,
+      "z": -800
+    },
+    {
+      "set": "10264-1",
+      "x": -1600,
+      "z": -800
+    },
+    {
+      "set": "10185-1",
+      "x": 0,
+      "z": -800
+    },
+    {
+      "set": "10190-1",
+      "x": 1600,
+      "z": -800
+    },
+    {
+      "set": "10218-1",
+      "x": 3200,
+      "z": -800
+    },
+    {
+      "set": "2150-1",
+      "x": -3200,
+      "z": 800
+    },
+    {
+      "set": "4554-1",
+      "x": -1600,
+      "z": 800
+    },
+    {
+      "set": "4555-1",
+      "x": 0,
+      "z": 800
+    },
+    {
+      "set": "10128-1",
+      "x": 1600,
+      "z": 800
+    },
+    {
+      "set": "10133-1",
+      "x": 3200,
+      "z": 800
+    }
+  ],
+  "aerial": {
+    "name": "aerial",
+    "medianFrameMs": 1605,
+    "intervals": [
+      19.699999999254942,
+      1586.699999999255,
+      1593.199999999255,
+      1602.2000000029802,
+      1591.5,
+      1579.2999999970198,
+      1584.9000000022352,
+      2003.5,
+      1740.800000000745,
+      1719.199999999255,
+      1739.300000000745,
+      1727.5999999977648,
+      1722.699999999255,
+      1657.9000000022352,
+      1583.800000000745,
+      1586.5,
+      1591.5999999977648,
+      1605,
+      1632.9000000022352,
+      1642.5,
+      1623,
+      1607.0999999977648,
+      1627.199999999255,
+      1635,
+      1609.7000000029802,
+      1577.0999999977648,
+      1583.800000000745,
+      1575.5,
+      1600.5,
+      1561.300000000745
+    ],
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 781 ms | Mode | select | Ghost rotation | 0° | Road-edge snap | none | Cursor on lattice (LDU) | -10900, 480 | Lands at (plates) | – | Placements | 20 | History (undo, redo) | 20, 0 | Last edit latency | 3171.5 ms (place 10133-1, 0°) | Rebuilt for it | 4 chunks, 420 parts, 1,683 studs | Studs drawn | 22,907 | Studs culled inside models | 19,865 | Studs culled under footprints | 6,778 | Frame rate (rAF) | 0.6 fps | Draw calls | 2,600 | Drawn triangles | 4,987,664",
+    "canvas": {
+      "width": 1600,
+      "height": 1001,
+      "dpr": 1.0000000577419996
+    }
+  },
+  "street": {
+    "name": "street",
+    "medianFrameMs": 1274,
+    "intervals": [
+      15.600000001490116,
+      1262.199999999255,
+      1284.300000000745,
+      1273.699999999255,
+      1303.8999999985099,
+      1715.9000000022352,
+      1306,
+      1295.699999999255,
+      1273.800000000745,
+      1284.2999999970198,
+      1275.7000000029802,
+      1273.5,
+      1285.699999999255,
+      1272.8999999985099,
+      1268.9000000022352,
+      1265.5999999977648,
+      1265.199999999255,
+      1269.800000000745,
+      1270.800000000745,
+      1274,
+      1262.3999999985099,
+      1270.4000000022352,
+      1273.8999999985099,
+      1266.800000000745,
+      1281.5,
+      1299,
+      1282.8999999985099,
+      1289.4000000022352,
+      1295.300000000745,
+      1288.2999999970198
+    ],
+    "hud": "Brick Railroad | API | webgl2 | Adapter | Google Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver) | Load | 781 ms | Mode | select | Ghost rotation | 0° | Road-edge snap | none | Cursor on lattice (LDU) | off the ground | Lands at (plates) | – | Placements | 20 | History (undo, redo) | 20, 0 | Last edit latency | 3171.5 ms (place 10133-1, 0°) | Rebuilt for it | 4 chunks, 420 parts, 1,683 studs | Studs drawn | 22,907 | Studs culled inside models | 19,865 | Studs culled under footprints | 6,778 | Frame rate (rAF) | 0.8 fps | Draw calls | 1,822 | Drawn triangles | 3,726,383",
+    "canvas": {
+      "width": 1600,
+      "height": 1001,
+      "dpr": 1.0000000577419996
+    }
+  },
+  "world": {
+    "refs": [
+      "ldraw:3811",
+      "ldraw:44336p04",
+      "ldraw:44336p01",
+      "ldraw:44341p02",
+      "ldraw:44342p02",
+      "ldraw:44343p03",
+      "ldraw:30225b",
+      "ldraw:69958",
+      "ldraw:71772",
+      "ldraw:71772p01",
+      "generated:mils-road-straight",
+      "generated:mils-road-crosswalk",
+      "generated:mils-road-curve",
+      "generated:mils-road-t-junction",
+      "generated:mils-road-crossroads",
+      "omr:7936-1",
+      "omr:10264-1",
+      "omr:10185-1",
+      "omr:10190-1",
+      "omr:10218-1",
+      "omr:2150-1",
+      "omr:4554-1",
+      "omr:4555-1",
+      "omr:10128-1",
+      "omr:10133-1",
+      "omr:10014-1",
+      "omr:10022-1_Dining-Car",
+      "omr:10025-1_Baggage-Car",
+      "omr:10205-1",
+      "omr:10017-1"
+    ],
+    "frameShifts": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        16,
+        0
+      ],
+      [
+        0,
+        16,
+        0
+      ],
+      [
+        0,
+        16,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        -120,
+        8,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        -150,
+        8,
+        80
+      ],
+      [
+        -150,
+        8,
+        80
+      ],
+      [
+        -40,
+        4,
+        -300
+      ],
+      [
+        -100,
+        4,
+        -200
+      ],
+      [
+        0,
+        85.25,
+        -80
+      ],
+      [
+        0,
+        71,
+        0
+      ],
+      [
+        0,
+        79,
+        0
+      ],
+      [
+        0,
+        79,
+        0
+      ],
+      [
+        -70,
+        63,
+        0
+      ],
+      [
+        11,
+        87,
+        0
+      ]
+    ],
+    "covers": [
+      {
+        "id": "ldraw:3811",
+        "studsDrawnPerPlacement": 1024,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44336p04",
+        "studsDrawnPerPlacement": 384,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44336p01",
+        "studsDrawnPerPlacement": 384,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44341p02",
+        "studsDrawnPerPlacement": 264,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44342p02",
+        "studsDrawnPerPlacement": 501,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:44343p03",
+        "studsDrawnPerPlacement": 144,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:30225b",
+        "studsDrawnPerPlacement": 512,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 0
+      },
+      {
+        "id": "ldraw:69958",
+        "studsDrawnPerPlacement": 64,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 2
+      },
+      {
+        "id": "ldraw:71772",
+        "studsDrawnPerPlacement": 32,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 2
+      },
+      {
+        "id": "ldraw:71772p01",
+        "studsDrawnPerPlacement": 32,
+        "studsCulledAtBake": 0,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 2
+      },
+      {
+        "id": "generated:mils-road-straight",
+        "studsDrawnPerPlacement": 2192,
+        "studsCulledAtBake": 608,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "generated:mils-road-crosswalk",
+        "studsDrawnPerPlacement": 2192,
+        "studsCulledAtBake": 608,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "generated:mils-road-curve",
+        "studsDrawnPerPlacement": 2192,
+        "studsCulledAtBake": 608,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "generated:mils-road-t-junction",
+        "studsDrawnPerPlacement": 2224,
+        "studsCulledAtBake": 480,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "generated:mils-road-crossroads",
+        "studsDrawnPerPlacement": 2256,
+        "studsCulledAtBake": 352,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 9
+      },
+      {
+        "id": "omr:7936-1",
+        "studsDrawnPerPlacement": 466,
+        "studsCulledAtBake": 156,
+        "footprintCells": 466,
+        "flatCells": 10,
+        "heightPlates": 32
+      },
+      {
+        "id": "omr:10264-1",
+        "studsDrawnPerPlacement": 3085,
+        "studsCulledAtBake": 4404,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 100
+      },
+      {
+        "id": "omr:10185-1",
+        "studsDrawnPerPlacement": 2881,
+        "studsCulledAtBake": 4726,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 105
+      },
+      {
+        "id": "omr:10190-1",
+        "studsDrawnPerPlacement": 2600,
+        "studsCulledAtBake": 2527,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 103
+      },
+      {
+        "id": "omr:10218-1",
+        "studsDrawnPerPlacement": 2729,
+        "studsCulledAtBake": 4311,
+        "footprintCells": 1024,
+        "flatCells": 1024,
+        "heightPlates": 89
+      },
+      {
+        "id": "omr:2150-1",
+        "studsDrawnPerPlacement": 1522,
+        "studsCulledAtBake": 927,
+        "footprintCells": 264,
+        "flatCells": 0,
+        "heightPlates": 72
+      },
+      {
+        "id": "omr:4554-1",
+        "studsDrawnPerPlacement": 1534,
+        "studsCulledAtBake": 913,
+        "footprintCells": 264,
+        "flatCells": 0,
+        "heightPlates": 72
+      },
+      {
+        "id": "omr:4555-1",
+        "studsDrawnPerPlacement": 2283,
+        "studsCulledAtBake": 713,
+        "footprintCells": 1536,
+        "flatCells": 1536,
+        "heightPlates": 76
+      },
+      {
+        "id": "omr:10128-1",
+        "studsDrawnPerPlacement": 1686,
+        "studsCulledAtBake": 451,
+        "footprintCells": 1536,
+        "flatCells": 1536,
+        "heightPlates": 67
+      },
+      {
+        "id": "omr:10133-1",
+        "studsDrawnPerPlacement": 659,
+        "studsCulledAtBake": 737,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 34
+      },
+      {
+        "id": "omr:10014-1",
+        "studsDrawnPerPlacement": 279,
+        "studsCulledAtBake": 300,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 36
+      },
+      {
+        "id": "omr:10022-1_Dining-Car",
+        "studsDrawnPerPlacement": 676,
+        "studsCulledAtBake": 568,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 30
+      },
+      {
+        "id": "omr:10025-1_Baggage-Car",
+        "studsDrawnPerPlacement": 494,
+        "studsCulledAtBake": 588,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 30
+      },
+      {
+        "id": "omr:10205-1",
+        "studsDrawnPerPlacement": 651,
+        "studsCulledAtBake": 314,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 31
+      },
+      {
+        "id": "omr:10017-1",
+        "studsDrawnPerPlacement": 310,
+        "studsCulledAtBake": 324,
+        "footprintCells": 0,
+        "flatCells": 0,
+        "heightPlates": 31
+      }
+    ],
+    "placements": {
+      "chunkKey": [
+        35184334340094,
+        35184334340094,
+        35184351117310,
+        35184351117310,
+        35184376283134,
+        35184376283134,
+        35184393060350,
+        35184393060350,
+        35184418226174,
+        35184418226174,
+        35184334340097,
+        35184334340097,
+        35184351117313,
+        35184351117313,
+        35184376283137,
+        35184376283137,
+        35184393060353,
+        35184393060353,
+        35184418226177,
+        35184418226177
+      ],
+      "slot": [
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1
+      ],
+      "refId": [
+        0,
+        15,
+        0,
+        16,
+        0,
+        17,
+        0,
+        18,
+        0,
+        19,
+        0,
+        20,
+        0,
+        21,
+        0,
+        22,
+        0,
+        23,
+        0,
+        24
+      ],
+      "colorId": [
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0,
+        2,
+        0
+      ],
+      "x": [
+        -3200,
+        -3200,
+        -1600,
+        -1600,
+        0,
+        0,
+        1600,
+        1600,
+        3200,
+        3200,
+        -3200,
+        -3200,
+        -1600,
+        -1600,
+        0,
+        0,
+        1600,
+        1600,
+        3200,
+        3200
+      ],
+      "z": [
+        -800,
+        -800,
+        -800,
+        -800,
+        -800,
+        -800,
+        -800,
+        -800,
+        -800,
+        -800,
+        800,
+        800,
+        800,
+        800,
+        800,
+        800,
+        800,
+        800,
+        800,
+        800
+      ],
+      "yPlates": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "rot": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "roadPlacements": [],
+    "roads": {
+      "placements": 0,
+      "joinedCells": 0,
+      "openCells": 0,
+      "mismatchedCells": 0,
+      "overlaps": [],
+      "segments": []
+    },
+    "studs": {
+      "drawn": 22907,
+      "culledInsideModels": 19865,
+      "culledUnderFootprints": 6778
+    }
+  },
+  "latencies": [
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": -3200,
+      "z": -800,
+      "ms": 344.8999999985099,
+      "rebuildMs": 142,
+      "queueMs": 9.5,
+      "submitMs": 9.599999997764826,
+      "gpuWaitMs": 183.80000000074506,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:7936-1",
+      "rot": 0,
+      "x": -3200,
+      "z": -800,
+      "ms": 517.8000000007451,
+      "rebuildMs": 176.39999999850988,
+      "queueMs": 7.699999999254942,
+      "submitMs": 24,
+      "gpuWaitMs": 309.70000000298023,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 148,
+      "rebuiltStuds": 1156
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": -1600,
+      "z": -800,
+      "ms": 387.69999999925494,
+      "rebuildMs": 191.29999999701977,
+      "queueMs": 7.600000001490116,
+      "submitMs": 1.1000000014901161,
+      "gpuWaitMs": 187.69999999925494,
+      "rebuiltChunks": 2,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:10264-1",
+      "rot": 0,
+      "x": -1600,
+      "z": -800,
+      "ms": 1231.0999999977648,
+      "rebuildMs": 475.80000000074506,
+      "queueMs": 7.599999997764826,
+      "submitMs": 22.199999999254942,
+      "gpuWaitMs": 725.5,
+      "rebuiltChunks": 3,
+      "rebuiltInstances": 2568,
+      "rebuiltStuds": 3085
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": 0,
+      "z": -800,
+      "ms": 965.0999999977648,
+      "rebuildMs": 475.3999999985099,
+      "queueMs": 7.800000000745058,
+      "submitMs": 3.699999999254942,
+      "gpuWaitMs": 478.19999999925494,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:10185-1",
+      "rot": 0,
+      "x": 0,
+      "z": -800,
+      "ms": 1644.8999999985099,
+      "rebuildMs": 725.7999999970198,
+      "queueMs": 7.600000001490116,
+      "submitMs": 23.899999998509884,
+      "gpuWaitMs": 887.6000000014901,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 2406,
+      "rebuiltStuds": 2881
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": 1600,
+      "z": -800,
+      "ms": 1419.5,
+      "rebuildMs": 705.5,
+      "queueMs": 7.899999998509884,
+      "submitMs": 5.199999999254942,
+      "gpuWaitMs": 700.9000000022352,
+      "rebuiltChunks": 2,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:10190-1",
+      "rot": 0,
+      "x": 1600,
+      "z": -800,
+      "ms": 1901.3999999985099,
+      "rebuildMs": 889.5,
+      "queueMs": 7.799999997019768,
+      "submitMs": 13.900000002235174,
+      "gpuWaitMs": 990.1999999992549,
+      "rebuiltChunks": 3,
+      "rebuiltInstances": 1485,
+      "rebuiltStuds": 2600
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": 3200,
+      "z": -800,
+      "ms": 1789.3999999985099,
+      "rebuildMs": 886.1999999992549,
+      "queueMs": 7.400000002235174,
+      "submitMs": 6.299999997019768,
+      "gpuWaitMs": 889.5,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:10218-1",
+      "rot": 0,
+      "x": 3200,
+      "z": -800,
+      "ms": 2365.89999999851,
+      "rebuildMs": 1082.7999999970198,
+      "queueMs": 7.100000001490116,
+      "submitMs": 26.5,
+      "gpuWaitMs": 1249.5,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 2043,
+      "rebuiltStuds": 2729
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": -3200,
+      "z": 800,
+      "ms": 2119.39999999851,
+      "rebuildMs": 1046.0999999977648,
+      "queueMs": 7.699999999254942,
+      "submitMs": 8.200000002980232,
+      "gpuWaitMs": 1057.3999999985099,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:2150-1",
+      "rot": 0,
+      "x": -3200,
+      "z": 800,
+      "ms": 2430.39999999851,
+      "rebuildMs": 1169,
+      "queueMs": 7.099999997764826,
+      "submitMs": 21.100000001490116,
+      "gpuWaitMs": 1233.199999999255,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 626,
+      "rebuiltStuds": 2396
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": -1600,
+      "z": 800,
+      "ms": 2384.199999999255,
+      "rebuildMs": 1189.7999999970198,
+      "queueMs": 7.200000002980232,
+      "submitMs": 9.799999997019768,
+      "gpuWaitMs": 1177.4000000022352,
+      "rebuiltChunks": 2,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:4554-1",
+      "rot": 0,
+      "x": -1600,
+      "z": 800,
+      "ms": 2880.900000002235,
+      "rebuildMs": 1402.300000000745,
+      "queueMs": 8.199999999254942,
+      "submitMs": 23.400000002235174,
+      "gpuWaitMs": 1447,
+      "rebuiltChunks": 6,
+      "rebuiltInstances": 618,
+      "rebuiltStuds": 2408
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": 0,
+      "z": 800,
+      "ms": 2710.60000000149,
+      "rebuildMs": 1386.1000000014901,
+      "queueMs": 8.699999999254942,
+      "submitMs": 10.900000002235174,
+      "gpuWaitMs": 1304.8999999985099,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:4555-1",
+      "rot": 0,
+      "x": 0,
+      "z": 800,
+      "ms": 2973.699999999255,
+      "rebuildMs": 1433.1000000014901,
+      "queueMs": 7,
+      "submitMs": 24.599999997764826,
+      "gpuWaitMs": 1509,
+      "rebuiltChunks": 6,
+      "rebuiltInstances": 391,
+      "rebuiltStuds": 2283
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": 1600,
+      "z": 800,
+      "ms": 2857.300000000745,
+      "rebuildMs": 1423.5,
+      "queueMs": 7,
+      "submitMs": 12.100000001490116,
+      "gpuWaitMs": 1414.699999999255,
+      "rebuiltChunks": 2,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:10128-1",
+      "rot": 0,
+      "x": 1600,
+      "z": 800,
+      "ms": 3030.7000000029802,
+      "rebuildMs": 1489,
+      "queueMs": 7.200000002980232,
+      "submitMs": 20.5,
+      "gpuWaitMs": 1514,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 337,
+      "rebuiltStuds": 1686
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "ldraw:3811",
+      "rot": 0,
+      "x": 3200,
+      "z": 800,
+      "ms": 3046.5,
+      "rebuildMs": 1514.5,
+      "queueMs": 11,
+      "submitMs": 17.099999997764826,
+      "gpuWaitMs": 1503.9000000022352,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 1,
+      "rebuiltStuds": 1024
+    },
+    {
+      "step": "do",
+      "action": "place",
+      "item": "omr:10133-1",
+      "rot": 0,
+      "x": 3200,
+      "z": 800,
+      "ms": 3171.5,
+      "rebuildMs": 1572.8999999985099,
+      "queueMs": 7,
+      "submitMs": 18.900000002235174,
+      "gpuWaitMs": 1572.699999999255,
+      "rebuiltChunks": 4,
+      "rebuiltInstances": 420,
+      "rebuiltStuds": 1683
+    }
+  ]
+}
