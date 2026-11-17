@@ -73,6 +73,9 @@ function historyShortcut(editor: IEditor, event: KeyboardEvent): void {
   if (key === "z" && !event.shiftKey) editor.undo(event.timeStamp);
   else if (key === "z" || key === "y") editor.redo(event.timeStamp);
   else if (key === "a" && !event.shiftKey) editor.selectAll();
+  else if (key === "c" && !event.shiftKey) editor.copySelection();
+  else if (key === "x" && !event.shiftKey) editor.cutSelection(event.timeStamp);
+  else if (key === "v" && !event.shiftKey) editor.paste();
   else return;
   event.preventDefault();
 }

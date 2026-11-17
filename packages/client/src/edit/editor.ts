@@ -101,7 +101,7 @@ import {
 
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind;
-export type EditorMode = "place" | "select" | "track";
+export type EditorMode = "place" | "paste" | "select" | "track";
 
 export interface CatalogColorView {
   readonly code: number;
@@ -323,6 +323,13 @@ export interface EditorSnapshot {
   readonly ghost: GhostCheckView | null;
   readonly track: TrackView | null;
   readonly move: MoveView | null;
+  readonly paste: PasteView | null;
+  readonly clipboard: number;
+}
+
+export interface PasteView {
+  readonly models: number;
+  readonly refusal: string | null;
 }
 
 export interface MoveView {
@@ -381,6 +388,9 @@ export interface IEditor {
   rotate(eventTimeMs: number): void;
   deleteSelection(eventTimeMs: number): void;
   nudge(right: number, up: number, eventTimeMs: number): void;
+  copySelection(): void;
+  cutSelection(eventTimeMs: number): void;
+  paste(): void;
   undo(eventTimeMs: number): void;
   redo(eventTimeMs: number): void;
   orbit(dxPx: number, dyPx: number): void;
@@ -531,6 +541,33 @@ interface ModelChange {
   readonly to: PlacementPose | null;
 }
 
+interface ClipEntry {
+  readonly placeable: Placeable;
+  readonly pose: PlacementPose;
+}
+
+interface Clipboard {
+  readonly entries: ReadonlyArray<ClipEntry>;
+  readonly grid: number;
+}
+
+interface Pasting {
+  readonly clipboard: Clipboard;
+  rot: number;
+  poses: ReadonlyArray<PlacementPose>;
+  refusal: ItemRefusal | null;
+}
+
+function pendingOf(model: PlacedModel): PendingPose {
+  return { placeable: model.placeable, ...poseOf(model.handle) };
+}
+
+function turnedAboutOrigin(pose: PlacementPose, quarterTurns: number): PlacementPose {
+  let turned = pose;
+  for (let turn = 0; turn < quarterTurns; turn++) turned = quarterTurnAbout(turned, { x: 0, z: 0 });
+  return turned;
+}
+
 function poseOf(handle: PlacementHandle): PlacementPose {
   return {
     refId: handle.refId,
@@ -622,6 +659,8 @@ export class Editor implements IEditor {
     ghost: null,
     track: null,
     move: null,
+    paste: null,
+    clipboard: 0,
   };
   private readonly world = new World();
   private readonly history = new EditHistory(this.world);
@@ -644,6 +683,8 @@ export class Editor implements IEditor {
   private rotationPivot: LatticePoint | null = null;
   private picked: PlacementRef | null = null;
   private moving: MoveDrag | null = null;
+  private clipboard: Clipboard | null = null;
+  private pasting: Pasting | null = null;
   private ghostRot = 0;
   private hoverX = 0;
   private hoverZ = 0;
@@ -1039,6 +1080,7 @@ export class Editor implements IEditor {
       return;
     }
     this.cancelMove();
+    this.cancelPaste();
     this.showRefusalCells(null);
     if (id === TRACK_ITEM_ID && this.track) {
       this.active = null;
@@ -1308,6 +1350,7 @@ export class Editor implements IEditor {
       this.showEndMarker(end === null ? null : (track.openEnds()[end] ?? null));
     }
     this.placeGhost();
+    if (this.pasting) this.aimPaste(this.pasting);
     this.update({ hover: this.hoverView(), snap });
   }
 
@@ -1318,6 +1361,10 @@ export class Editor implements IEditor {
 
   click(ndcX: number, ndcY: number, eventTimeMs: number, additive = false): void {
     if (this.state.mode === "track") return;
+    if (this.pasting) {
+      if (this.groundHit(ndcX, ndcY)) this.dropPaste(this.pasting, eventTimeMs);
+      return;
+    }
     if (this.active) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -1600,6 +1647,11 @@ export class Editor implements IEditor {
       this.turnMove(this.moving);
       return;
     }
+    if (this.pasting) {
+      this.pasting.rot = (this.pasting.rot + 1) % QUARTER_TURNS;
+      this.aimPaste(this.pasting);
+      return;
+    }
     if (this.active) {
       this.ghostRot = (this.ghostRot + 1) % QUARTER_TURNS;
       this.placeGhost();
@@ -1709,7 +1761,7 @@ export class Editor implements IEditor {
 
   private dragChanged(drag: MoveDrag): void {
     if (!drag.ghostShown) {
-      this.backend.setGhost(groupGhost(drag.models, drag.origin.x, drag.origin.z));
+      this.backend.setGhost(groupGhost(drag.models.map(pendingOf), drag.origin.x, drag.origin.z));
       drag.ghostShown = true;
     }
     drag.changes = this.draggedChanges(drag);
@@ -1810,6 +1862,99 @@ export class Editor implements IEditor {
     this.commitModels("move", this.translated(models, dx, dz, false), eventTimeMs);
   }
 
+  copySelection(): void {
+    const models = this.selectedModels();
+    const bounds = unionBox(models.map((model) => model.box));
+    if (!bounds) return;
+    const grid = this.selectionGrid(models);
+    const origin = rotationPivot(bounds, grid);
+    this.clipboard = {
+      grid,
+      entries: models.map((model) => {
+        const pose = poseOf(model.handle);
+        return {
+          placeable: model.placeable,
+          pose: { ...pose, x: pose.x - origin.x, z: pose.z - origin.z },
+        };
+      }),
+    };
+    this.update({ clipboard: models.length });
+  }
+
+  cutSelection(eventTimeMs: number): void {
+    if (this.selectedModels().length === 0) return;
+    this.copySelection();
+    this.deleteSelection(eventTimeMs);
+  }
+
+  paste(): void {
+    const clipboard = this.clipboard;
+    if (!clipboard) return;
+    if (this.state.mode !== "select" || this.active) this.chooseItem(null);
+    this.cancelMove();
+    this.select([]);
+    const pasting: Pasting = { clipboard, rot: 0, poses: [], refusal: null };
+    this.pasting = pasting;
+    this.backend.setGhost(
+      groupGhost(
+        clipboard.entries.map(({ placeable, pose }) => ({ placeable, ...pose })),
+        0,
+        0,
+      ),
+    );
+    this.update({ mode: "paste", paste: { models: clipboard.entries.length, refusal: null } });
+    this.aimPaste(pasting);
+  }
+
+  private aimPaste(pasting: Pasting): void {
+    if (!this.hovering) return;
+    const { entries, grid } = pasting.clipboard;
+    const x = snapToGrid(this.hitX, grid);
+    const z = snapToGrid(this.hitZ, grid);
+    const landsAlone = entries.length === 1;
+    pasting.poses = entries.map(({ placeable, pose }) => {
+      const turned = turnedAboutOrigin(pose, pasting.rot);
+      const at = { ...turned, x: turned.x + x, z: turned.z + z };
+      if (!landsAlone) return at;
+      const landed = this.checkAt(placeable, at.x, at.z, at.rot, [], this.cursorLanding());
+      return { ...at, yPlates: landed.yPlates };
+    });
+    pasting.refusal = this.poseRefusal(
+      [],
+      pasting.poses.map((pose) => ({ placeable: this.placeableAt(pose.refId), ...pose })),
+    );
+    const lead = pasting.poses[0];
+    const entry = entries[0];
+    const dyLdu = lead && entry ? (lead.yPlates - entry.pose.yPlates) * PLATE_LDU : 0;
+    this.backend.placeGhost(x, dyLdu, z, pasting.rot);
+    this.update({
+      ghostRot: pasting.rot,
+      paste: { models: entries.length, refusal: pasting.refusal?.message ?? null },
+    });
+  }
+
+  private dropPaste(pasting: Pasting, eventTimeMs: number): void {
+    this.hovering = true;
+    this.aimPaste(pasting);
+    if (pasting.refusal) {
+      this.refuse("place", pasting.refusal.item, pasting.refusal);
+      return;
+    }
+    const edit = this.history.commit(
+      "place",
+      pasting.poses.map((to) => ({ placement: null, to })),
+    );
+    this.cancelPaste();
+    this.select(this.show(edit, eventTimeMs).added);
+  }
+
+  private cancelPaste(): void {
+    if (!this.pasting) return;
+    this.pasting = null;
+    this.backend.setGhost(null);
+    this.update({ mode: "select", paste: null, ghostRot: this.ghostRot });
+  }
+
   private selectTrack(piece: number | null): void {
     this.selectedTrack = piece;
     this.backend.setSelectionBox(piece === null || !this.track ? null : this.track.pieceBox(piece));
@@ -1861,11 +2006,20 @@ export class Editor implements IEditor {
   }
 
   private groupRefusal(changes: ReadonlyArray<ModelChange>): ItemRefusal | null {
-    const removed = changes.map(({ model }) => model);
     const moved: PendingPose[] = [];
     for (const { to } of changes) {
       if (to) moved.push({ placeable: this.placeableAt(to.refId), ...to });
     }
+    return this.poseRefusal(
+      changes.map(({ model }) => model),
+      moved,
+    );
+  }
+
+  private poseRefusal(
+    removed: ReadonlyArray<PlacedModel>,
+    moved: ReadonlyArray<PendingPose>,
+  ): ItemRefusal | null {
     return (
       this.carriedRefusal(removed, moved) ??
       this.placed.checkGroup(

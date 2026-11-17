@@ -1,6 +1,6 @@
 import { PLATE_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances } from "@brr/render";
-import type { PlacedModel } from "./placed-chunks.ts";
+import type { PendingPose } from "./placed-chunks.ts";
 
 const MATRIX_COLUMNS = 4;
 
@@ -12,15 +12,15 @@ interface Frame {
   readonly tz: number;
 }
 
-function frameOf(model: PlacedModel, originX: number, originZ: number): Frame {
-  const rot = model.handle.rot;
+function frameOf(pose: PendingPose, originX: number, originZ: number): Frame {
+  const rot = pose.rot;
   if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
   return {
     cos: rot90Cos(rot),
     sin: rot90Sin(rot),
-    tx: model.handle.x - originX,
-    ty: model.handle.yPlates * PLATE_LDU,
-    tz: model.handle.z - originZ,
+    tx: pose.x - originX,
+    ty: pose.yPlates * PLATE_LDU,
+    tz: pose.z - originZ,
   };
 }
 
@@ -46,15 +46,15 @@ function writeMatrix(
 }
 
 export function groupGhost(
-  models: ReadonlyArray<PlacedModel>,
+  poses: ReadonlyArray<PendingPose>,
   originX: number,
   originZ: number,
 ): ChunkInstances {
   let parts = 0;
   let studs = 0;
-  for (const model of models) {
-    parts += model.placeable.parts.count;
-    studs += model.placeable.studs.count;
+  for (const pose of poses) {
+    parts += pose.placeable.parts.count;
+    studs += pose.placeable.studs.count;
   }
   const ghost: ChunkInstances = {
     originX: 0,
@@ -72,9 +72,9 @@ export function groupGhost(
   };
   let part = 0;
   let stud = 0;
-  for (const model of models) {
-    const frame = frameOf(model, originX, originZ);
-    const source = model.placeable;
+  for (const pose of poses) {
+    const frame = frameOf(pose, originX, originZ);
+    const source = pose.placeable;
     for (let i = 0; i < source.parts.count; i++, part++) {
       ghost.partIndex[part] = source.parts.partIndex[i] ?? 0;
       ghost.colorIndex[part] = source.parts.colorIndex[i] ?? 0;

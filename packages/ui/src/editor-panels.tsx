@@ -106,7 +106,8 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
 }
 
 export function PlacementToolbar({ editor, snapshot }: PanelProps) {
-  const canRotate = snapshot.mode === "place" || snapshot.selection !== null;
+  const canRotate =
+    snapshot.mode === "place" || snapshot.mode === "paste" || snapshot.selection !== null;
   const { history } = snapshot;
   return (
     <div className="toolbar" role="toolbar" aria-label="Placement tools">
@@ -165,9 +166,10 @@ export function PlacementToolbar({ editor, snapshot }: PanelProps) {
       <p className="toolbar-hint">
         Click picks a model; Shift-, Ctrl- or Cmd-click adds or removes one; Ctrl+A picks all. Drag
         a model without modifiers to move the selection on the grid; R turns it while you hold it,
-        Esc puts it back. The arrow keys nudge the selection one step. Drag on empty ground, or with
-        a modifier held, to box-select: left to right takes models wholly inside, right to left
-        takes anything the box touches, Shift adds. Right-drag orbits, middle-drag or
+        Esc puts it back. The arrow keys nudge the selection one step. Ctrl+C copies, Ctrl+X cuts
+        and Ctrl+V pastes: the copy follows the cursor, R turns it, a click drops it. Drag on empty
+        ground, or with a modifier held, to box-select: left to right takes models wholly inside,
+        right to left takes anything the box touches, Shift adds. Right-drag orbits, middle-drag or
         Shift+right-drag pans, the wheel zooms, C centres on the cursor.
       </p>
     </div>
@@ -301,7 +303,9 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       "Mode",
       snapshot.mode === "select"
         ? "select"
-        : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
+        : snapshot.paste
+          ? `paste ${snapshot.paste.models} models${snapshot.paste.refusal ? `: refused, ${snapshot.paste.refusal}` : ""}`
+          : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
     ],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
     [

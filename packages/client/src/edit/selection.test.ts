@@ -247,3 +247,53 @@ it("lets go of a held drag cleanly when Delete or Ctrl+Z is pressed mid-drag", a
     expect(poses(editor).every((pose) => pose.z < FAR_LDU / 2)).toBe(true);
   }
 }, 120_000);
+
+it("pastes a copied group as one place command: same layout where it drops, turned by R, refused on top of the original", async () => {
+  const editor = await setOnBaseplate();
+  const home = poses(editor);
+  const plate = poseOf(editor, itemOf(editor, BASEPLATE));
+  const model = poseOf(editor, `omr:${UPPER_SET}`);
+  editor.selectAll();
+  editor.copySelection();
+  expect(editor.snapshot().clipboard).toBe(2);
+
+  editor.paste();
+  expect(editor.snapshot().mode).toBe("paste");
+  const refusals = editor.snapshot().refusals;
+  clickAt(editor, plate.x, plate.z);
+  expect(editor.snapshot().refusals).toBe(refusals + 1);
+  expect(poses(editor)).toEqual(home);
+
+  const depth = editor.snapshot().history.undoDepth;
+  clickAt(editor, FAR_LDU, 0);
+  expect(editor.snapshot().history.undoDepth).toBe(depth + 1);
+  expect(editor.snapshot().mode).toBe("select");
+  expect(editor.snapshot().selection?.count).toBe(2);
+  const pasted = poses(editor).filter(
+    (pose) => !home.some((h) => h.x === pose.x && h.z === pose.z),
+  );
+  const [pastedPlate, pastedModel] = pasted;
+  if (!pastedPlate || !pastedModel) throw new Error("the paste did not add both models");
+  expect([pastedModel.x - pastedPlate.x, pastedModel.z - pastedPlate.z]).toEqual([
+    model.x - plate.x,
+    model.z - plate.z,
+  ]);
+  expect([pastedPlate.yPlates, pastedModel.yPlates]).toEqual([plate.yPlates, model.yPlates]);
+
+  editor.undo(0);
+  expect(poses(editor)).toEqual(home);
+
+  editor.paste();
+  editor.rotate(0);
+  clickAt(editor, -FAR_LDU, 0);
+  const turned = poses(editor).filter(
+    (pose) => !home.some((h) => h.x === pose.x && h.z === pose.z),
+  );
+  const [turnedPlate, turnedModel] = turned;
+  if (!turnedPlate || !turnedModel) throw new Error("the turned paste did not add both models");
+  expect([turnedModel.x - turnedPlate.x, turnedModel.z - turnedPlate.z]).toEqual([
+    model.z - plate.z,
+    plate.x - model.x,
+  ]);
+  expect([turnedPlate.rot, turnedModel.rot]).toEqual([(plate.rot + 1) % 4, (model.rot + 1) % 4]);
+}, 120_000);
