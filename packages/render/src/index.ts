@@ -4,6 +4,8 @@ export type {
   BackendInfo,
   BufferMemory,
   ChunkInstances,
+  ChunkTier,
+  FarModelPlacement,
   FrameStats,
   GeometrySet,
   GraphicsApi,

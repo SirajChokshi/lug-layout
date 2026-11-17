@@ -1,4 +1,4 @@
-import { INHERIT_COLOR, type MeshArrays, type PartAsset } from "@brr/catalog";
+import { INHERIT_COLOR, type MeshArrays, type PartAsset, type PartMesh } from "@brr/catalog";
 import { BufferAttribute, BufferGeometry } from "three/webgpu";
 import { COLOR_CHANNELS } from "../scene-backend.ts";
 
@@ -81,13 +81,13 @@ export interface FixedColorGeometry {
 }
 
 export function fixedColorGeometries(
-  part: PartAsset,
+  mesh: PartMesh,
   linearColor: LinearColorLookup,
   alphaOf: (ldrawColor: number) => number,
 ): ReadonlyArray<FixedColorGeometry> {
   const builders = new Map<number, MeshBuilder>();
   const color = new Float32Array(COLOR_CHANNELS);
-  for (const group of part.mesh.groups) {
+  for (const group of mesh.groups) {
     if (group.ldrawColor === INHERIT_COLOR) continue;
     const alpha = alphaOf(group.ldrawColor);
     let builder = builders.get(alpha);
@@ -96,7 +96,7 @@ export function fixedColorGeometries(
       builders.set(alpha, builder);
     }
     linearColor(group.ldrawColor, color);
-    builder.addIndexed(part.mesh.positions, part.mesh.normals, group.indices, color);
+    builder.addIndexed(mesh.positions, mesh.normals, group.indices, color);
   }
   const result: FixedColorGeometry[] = [];
   for (const [alpha, builder] of builders) {

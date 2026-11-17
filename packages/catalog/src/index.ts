@@ -18,6 +18,8 @@ export type {
   ModelBundle,
   ModelCells,
   ModelStudCover,
+  ModelFarMesh,
+  ModelVoxels,
   PartModelLattice,
   PartAsset,
   PartBundle,

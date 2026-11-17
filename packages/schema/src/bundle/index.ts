@@ -242,6 +242,18 @@ export type ModelSet = v.InferOutput<typeof ModelSet>;
 export const ModelRole = v.picklist(["mils-module"]);
 export type ModelRole = v.InferOutput<typeof ModelRole>;
 
+const IntegerVec3 = v.tuple([Integer, Integer, Integer]);
+const CountVec3 = v.tuple([Count, Count, Count]);
+
+export const BundleFarMesh = v.object({
+  file: v.string(),
+  voxels: Count,
+  triangles: Count,
+  origin: IntegerVec3,
+  dims: CountVec3,
+});
+export type BundleFarMesh = v.InferOutput<typeof BundleFarMesh>;
+
 export const BundleModelEntry = v.object({
   name: v.string(),
   file: v.string(),
@@ -259,6 +271,7 @@ export const BundleModelEntry = v.object({
   sha256: Sha256Hex,
   cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
+  farMesh: v.optional(v.nullable(BundleFarMesh)),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
 
@@ -443,6 +456,12 @@ export const ModelFile = v.pipe(
 );
 export type ModelFile = v.InferOutput<typeof ModelFile>;
 
+const LdrawSource = v.object({
+  path: v.string(),
+  author: v.string(),
+  license: v.nullable(v.string()),
+});
+
 export const PartExtras = v.object({
   unit: v.literal("LDU"),
   upAxis: v.literal("+Y"),
@@ -455,9 +474,7 @@ export const PartExtras = v.object({
     ldrawOrg: v.nullable(v.string()),
     note: v.string(),
   }),
-  sources: v.array(
-    v.object({ path: v.string(), author: v.string(), license: v.nullable(v.string()) }),
-  ),
+  sources: v.array(LdrawSource),
   studs: v.array(v.object({ primitive: v.string(), color: Integer, matrix: Matrix })),
   bounds: Bounds,
 });
@@ -503,6 +520,36 @@ export const GltfDocument = v.object({
   extras: PartExtras,
 });
 export type GltfDocument = v.InferOutput<typeof GltfDocument>;
+
+export const FarMeshExtras = v.object({
+  unit: v.literal("LDU"),
+  upAxis: v.literal("+Y"),
+  model: v.string(),
+  ldraw: v.object({
+    file: v.string(),
+    name: v.string(),
+    source: v.string(),
+    authors: v.array(v.string()),
+    licenses: v.array(v.string()),
+    sections: v.array(ModelSection),
+    note: v.string(),
+    sources: v.pipe(v.array(LdrawSource), v.minLength(1)),
+  }),
+  voxels: v.object({
+    cellLdu: IntegerVec3,
+    cellMarginLdu: Finite,
+    origin: IntegerVec3,
+    dims: CountVec3,
+    count: Count,
+    cellIndex: v.string(),
+    geometry: v.string(),
+  }),
+  arrays: v.object({ voxelCells: GltfIndex, voxelColors: GltfIndex }),
+});
+export type FarMeshExtras = v.InferOutput<typeof FarMeshExtras>;
+
+export const FarMeshGltfDocument = v.object({ ...GltfDocument.entries, extras: FarMeshExtras });
+export type FarMeshGltfDocument = v.InferOutput<typeof FarMeshGltfDocument>;
 
 export const RUNNING_GEAR_OVERRIDE_VERSION = 2;
 export const MODEL_FRAME_OVERRIDE_VERSION = 1;

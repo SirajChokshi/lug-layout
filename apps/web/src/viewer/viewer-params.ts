@@ -1,6 +1,7 @@
 import {
   DEFAULT_LOOK_FEATURES,
   LOOK_FEATURES,
+  type ChunkTier,
   type CityCamera,
   type ConsistEntry,
   type GraphicsApi,
@@ -40,6 +41,9 @@ export interface ViewerParams {
   readonly seed: number;
   readonly camera: CityCamera;
   readonly modelView: ModelView;
+  readonly tier: ChunkTier | null;
+  readonly distanceLdu: number | null;
+  readonly zoom: boolean;
   readonly originChunkX: number;
   readonly originChunkZ: number;
   readonly dumpWorld: boolean;
@@ -182,6 +186,29 @@ function modelView(params: URLSearchParams): ModelView {
   return params.get("view") === "below" ? "below" : "orbit";
 }
 
+function chunkTier(value: string | null): ChunkTier | null {
+  switch (value) {
+    case null:
+    case "auto":
+      return null;
+    case "near":
+    case "mid":
+    case "far":
+      return value;
+    default:
+      throw new Error(`tier=${value} is not one of auto, near, mid, far`);
+  }
+}
+
+function distance(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`distance=${value} is not a positive number of LDU`);
+  }
+  return parsed;
+}
+
 export function readViewerParams(search: string): ViewerParams {
   const params = new URLSearchParams(search);
   const look = lookSettings(params.get("look"));
@@ -211,6 +238,9 @@ export function readViewerParams(search: string): ViewerParams {
     seed: positiveNumber(params.get("seed"), DEFAULT_SEED),
     camera: params.get("camera") === "street" ? "street" : "aerial",
     modelView: modelView(params),
+    tier: chunkTier(params.get("tier")),
+    distanceLdu: distance(params.get("distance")),
+    zoom: params.get("zoom") === "1",
     originChunkX,
     originChunkZ,
     dumpWorld: params.get("dumpWorld") === "1",

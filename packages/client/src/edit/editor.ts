@@ -4,6 +4,8 @@ import {
   type IPartBundleLoader,
   type PartAsset,
   type PartBundle,
+  type PartMesh,
+  type FilterablePart,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
 import {
@@ -30,6 +32,7 @@ import {
   SCENE_BACKEND,
   type BackendInfo,
   type EdgeMarker,
+  type ChunkTier,
   type FrameStats,
   type GraphicsApi,
   type LookSettings,
@@ -225,6 +228,10 @@ export interface EditorStats {
   readonly renderOriginChunkX: number;
   readonly renderOriginChunkZ: number;
   readonly rebases: number;
+  readonly nearChunks: number;
+  readonly midChunks: number;
+  readonly farChunks: number;
+  readonly nearestStudPitchPx: number;
 }
 
 export type SaveState = "saved" | "saving" | "failed" | "off";
@@ -243,6 +250,19 @@ export interface WorldFileView {
 export interface ExportedWorld {
   readonly fileName: string;
   readonly bytes: Uint8Array;
+}
+
+export interface FrameMeasurement {
+  readonly frames: number;
+  readonly medianFrameMs: number;
+  readonly p95FrameMs: number;
+  readonly medianCpuSubmitMs: number;
+  readonly drawCalls: number;
+  readonly triangles: number;
+  readonly nearChunks: number;
+  readonly midChunks: number;
+  readonly farChunks: number;
+  readonly nearestStudPitchPx: number;
 }
 
 export interface SkippedCatalogModel {
@@ -339,6 +359,9 @@ export interface EditorSnapshot {
   readonly latencies: ReadonlyArray<LatencySample>;
   readonly stats: EditorStats | null;
   readonly studs: StudTotals | null;
+  readonly tier: ChunkTier | null;
+  readonly measuring: boolean;
+  readonly measurement: FrameMeasurement | null;
   readonly credits: EditorCredits | null;
   readonly roads: RoadJoinView;
   readonly showJoins: boolean;
@@ -390,6 +413,7 @@ export interface EditorOptions {
   readonly api: GraphicsApi;
   readonly pixelRatio: number;
   readonly look: LookSettings;
+  readonly tier: ChunkTier | null;
 }
 
 export interface IEditor {
@@ -421,6 +445,8 @@ export interface IEditor {
   retrySave(): Promise<void>;
   exportWorld(): Promise<ExportedWorld>;
   importWorld(bytes: Uint8Array): Promise<boolean>;
+  measureFrames(): void;
+  cycleTier(): void;
   dump(): EditorDump;
 }
 
@@ -435,6 +461,10 @@ const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const P95 = 0.95;
 const QUARTER_TURNS = 4;
 const STATS_INTERVAL_MS = 500;
+const MEASURE_WARMUP_FRAMES = 5;
+const MEASURED_FRAMES = 60;
+const TIER_CYCLE: ReadonlyArray<ChunkTier | null> = [null, "near", "mid", "far"];
+
 const MARKER_WIDTH_LDU = 6;
 const MARKER_LIFT_LDU = 1;
 const MARKER_HEIGHT_LDU = 2;
@@ -533,6 +563,14 @@ interface FrameTimes {
   readonly presentedMs: number;
 }
 
+function isEditorPart(part: FilterablePart): boolean {
+  return part.role === "ground" || part.role === "road" || part.role === "track";
+}
+
+function quantileOfSorted(sorted: Float64Array, fraction: number): number {
+  return sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)] ?? Number.NaN;
+}
+
 interface OpenWorld {
   readonly id: string | null;
   readonly name: string;
@@ -614,6 +652,9 @@ export class Editor implements IEditor {
     latencies: [],
     stats: null,
     studs: null,
+    tier: null,
+    measuring: false,
+    measurement: null,
     credits: null,
     roads: EMPTY_ROADS,
     showJoins: true,
@@ -658,6 +699,7 @@ export class Editor implements IEditor {
     nearChunks: 0,
     midChunks: 0,
     farChunks: 0,
+    nearestStudPitchPx: 0,
     renderOriginChunkX: 0,
     renderOriginChunkZ: 0,
     rebaseCount: 0,
@@ -687,6 +729,9 @@ export class Editor implements IEditor {
   private moduleGhost: ModuleCandidate | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private framesSinceStats = 0;
+  private measureFrame = -1;
+  private readonly measuredFrameMs = new Float64Array(MEASURED_FRAMES);
+  private readonly measuredCpuMs = new Float64Array(MEASURED_FRAMES);
   private statsSince = 0;
 
   constructor(
@@ -727,14 +772,24 @@ export class Editor implements IEditor {
         antialias: true,
         look: options.look,
       });
-      const bundle = await this.loader.load(
-        EDITOR_LOD,
-        (part) => part.role === "ground" || part.role === "road" || part.role === "track",
-      );
+      this.backend.forceTier(options.tier);
+      this.update({ tier: options.tier });
+      const [bundle, farBundle] = await Promise.all([
+        this.loader.load(EDITOR_LOD, isEditorPart),
+        this.loader.load("far", isEditorPart),
+      ]);
       this.bundleVersion = bundle.bundleVersion;
       const colors = new ColorTable(bundle);
       const palette = new MergedParts(bundle.parts);
-      const { placeables, skipped } = await this.loadPlaceables(bundle, palette, colors);
+      const farPalette = new MergedParts(farBundle.parts);
+      const farModels: PartMesh[] = [];
+      const { placeables, skipped } = await this.loadPlaceables(
+        bundle,
+        palette,
+        farPalette,
+        farModels,
+        colors,
+      );
       this.placeables = placeables;
       this.modules = new ModuleLayout(bundle.milsEdgeRules);
       this.plans.setTableTopY(this.baseplateBottomY());
@@ -742,6 +797,8 @@ export class Editor implements IEditor {
       this.track = this.newTrack();
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives: bundle.studPrimitives },
+        far: { parts: farPalette.parts, studPrimitives: farBundle.studPrimitives },
+        farModels,
         colorsSrgb: colors.toSrgb(),
         colorsAlpha: colors.toAlpha(),
         ldrawColors: ldrawColors(bundle),
@@ -801,6 +858,8 @@ export class Editor implements IEditor {
   private async loadPlaceables(
     bundle: PartBundle,
     palette: MergedParts,
+    farPalette: MergedParts,
+    farModels: PartMesh[],
     colors: ColorTable,
   ): Promise<LoadedCatalog> {
     const groundParts = bundle.parts
@@ -812,7 +871,12 @@ export class Editor implements IEditor {
       ...bundle.models.filter((entry) => entry.origin === "omr"),
     ];
     const loaded = await Promise.all(
-      placeableModels.map((entry) => this.loader.loadModel(EDITOR_LOD, entry.name)),
+      placeableModels.map((entry) =>
+        Promise.all([
+          this.loader.loadModel(EDITOR_LOD, entry.name),
+          this.loader.loadModel("far", entry.name),
+        ]),
+      ),
     );
     const placeables: Placeable[] = [...groundParts, ...roadParts].flatMap((part) => {
       if (part.producedColors.length === 0) {
@@ -830,11 +894,17 @@ export class Editor implements IEditor {
       );
     });
     const skipped: SkippedModel[] = [];
-    for (const { bundle: modelBundle, entry, model } of loaded) {
+    for (const [{ bundle: modelBundle, entry, model }, far] of loaded) {
       const credit = { name: entry.name, source: entry.source, sections: model.sections };
       if (model.lattice === null) {
         skipped.push({ name: entry.name, reason: NO_LATTICE_REASON, credit });
         continue;
+      }
+      farPalette.remap(far.model, far.bundle.parts);
+      let farModel: number | null = null;
+      if (far.farMesh) {
+        farModels.push(far.farMesh.mesh);
+        farModel = farModels.length - 1;
       }
       placeables.push(
         modelPlaceable(
@@ -845,6 +915,7 @@ export class Editor implements IEditor {
           credit,
           palette.parts,
           colors,
+          farModel,
         ),
       );
     }
@@ -868,6 +939,10 @@ export class Editor implements IEditor {
         const submittedMs = performance.now();
         await this.backend.waitForGpu();
         this.recordLatency(pending, { startMs, submittedMs, presentedMs: performance.now() });
+      } else if (this.measureFrame >= 0) {
+        const submittedMs = performance.now();
+        await this.backend.waitForGpu();
+        this.recordMeasuredFrame(startMs, submittedMs, performance.now());
       }
       if (this.firstWorldFrame) {
         this.firstWorldFrame = false;
@@ -905,10 +980,54 @@ export class Editor implements IEditor {
         renderOriginChunkX: this.frameStats.renderOriginChunkX,
         renderOriginChunkZ: this.frameStats.renderOriginChunkZ,
         rebases: this.frameStats.rebaseCount,
+        nearChunks: this.frameStats.nearChunks,
+        midChunks: this.frameStats.midChunks,
+        farChunks: this.frameStats.farChunks,
+        nearestStudPitchPx: this.frameStats.nearestStudPitchPx,
       },
     });
     this.framesSinceStats = 0;
     this.statsSince = now;
+  }
+
+  cycleTier(): void {
+    const next = TIER_CYCLE[(TIER_CYCLE.indexOf(this.state.tier) + 1) % TIER_CYCLE.length] ?? null;
+    this.backend.forceTier(next);
+    this.update({ tier: next, measurement: null });
+  }
+
+  measureFrames(): void {
+    if (this.measureFrame >= 0 || this.state.status !== "ready") return;
+    this.measureFrame = 0;
+    this.update({ measuring: true });
+  }
+
+  private recordMeasuredFrame(startMs: number, submittedMs: number, presentedMs: number): void {
+    const index = this.measureFrame - MEASURE_WARMUP_FRAMES;
+    this.measureFrame++;
+    if (index < 0) return;
+    this.measuredFrameMs[index] = presentedMs - startMs;
+    this.measuredCpuMs[index] = submittedMs - startMs;
+    if (index < MEASURED_FRAMES - 1) return;
+    this.measureFrame = -1;
+    const frames = this.measuredFrameMs.toSorted();
+    const cpu = this.measuredCpuMs.toSorted();
+    const stats = this.frameStats;
+    this.update({
+      measuring: false,
+      measurement: {
+        frames: MEASURED_FRAMES,
+        medianFrameMs: quantileOfSorted(frames, 0.5),
+        p95FrameMs: quantileOfSorted(frames, P95),
+        medianCpuSubmitMs: quantileOfSorted(cpu, 0.5),
+        drawCalls: stats.drawCalls,
+        triangles: stats.triangles,
+        nearChunks: stats.nearChunks,
+        midChunks: stats.midChunks,
+        farChunks: stats.farChunks,
+        nearestStudPitchPx: stats.nearestStudPitchPx,
+      },
+    });
   }
 
   private recordLatency(pending: PendingAction, frame: FrameTimes): void {

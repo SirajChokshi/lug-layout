@@ -34,6 +34,8 @@ import {
   type ChunkInstances,
   type EdgeMarker,
   type MarkerKind,
+  type ChunkTier,
+  type FarModelPlacement,
   type GeometrySet,
   type FrameStats,
   type ISceneBackend,
@@ -91,6 +93,15 @@ const TIER_NEAR = 0;
 const TIER_MID = 1;
 const TIER_FAR = 2;
 const TIER_UNSET = 255;
+const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
+  near: TIER_NEAR,
+  mid: TIER_MID,
+  far: TIER_FAR,
+};
+const UPRIGHT_TOLERANCE = 1e-6;
+const CLASS_NOT_UPRIGHT = 1;
+const CLASS_VOXELIZED = 2;
+const INSTANCE_CLASSES = 4;
 const GHOST_OPACITY = 0.55;
 const SELECTION_COLOR = 0xff8c00;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
@@ -279,6 +290,12 @@ function disposeInstancedChildren(layer: Group): void {
   }
 }
 
+interface TierLayers {
+  readonly shellBodies: Group;
+  readonly midShells: Group;
+  readonly coarseStuds: Group;
+}
+
 interface InstanceAttributes {
   readonly matrices: InstancedBufferAttribute;
   readonly colors: InstancedBufferAttribute;
@@ -287,6 +304,27 @@ interface InstanceAttributes {
 interface InstanceKeys {
   readonly keys: Uint32Array;
   readonly counts: Uint32Array;
+}
+
+function isUpright(matrices: Float32Array, instance: number): boolean {
+  const o = instance * INSTANCE_MATRIX_FLOATS;
+  return (
+    Math.abs(matrices[o + 1] ?? 0) < UPRIGHT_TOLERANCE &&
+    Math.abs(matrices[o + 9] ?? 0) < UPRIGHT_TOLERANCE &&
+    Math.abs(matrices[o + 4] ?? 0) < UPRIGHT_TOLERANCE &&
+    Math.abs(matrices[o + 6] ?? 0) < UPRIGHT_TOLERANCE &&
+    Math.abs((matrices[o + 5] ?? 0) - 1) < UPRIGHT_TOLERANCE
+  );
+}
+
+function classKeys(alphaKeys: Uint32Array, chunk: ChunkInstances): Uint32Array {
+  const keys = new Uint32Array(chunk.count);
+  for (let i = 0; i < chunk.count; i++) {
+    const voxelized = (chunk.voxelized?.[i] ?? 0) !== 0 ? CLASS_VOXELIZED : 0;
+    const notUpright = isUpright(chunk.matrices, i) ? 0 : CLASS_NOT_UPRIGHT;
+    keys[i] = (alphaKeys[i] ?? 0) * INSTANCE_CLASSES + (voxelized | notUpright);
+  }
+  return keys;
 }
 
 function countBy(select: ArrayLike<number>, total: number, keys: number): Uint32Array {
@@ -305,6 +343,7 @@ class ChunkRecord {
     readonly group: Group,
     readonly detailed: Group,
     readonly shellBodies: Group,
+    readonly midShells: Group,
     readonly coarseStuds: Group,
     readonly shadowCasters: Group,
     readonly originX: number,
@@ -320,7 +359,12 @@ class ChunkRecord {
     this.tier = tier;
     this.detailed.visible = tier === TIER_NEAR;
     this.shellBodies.visible = tier !== TIER_NEAR;
+    this.midShells.visible = tier === TIER_MID;
     this.coarseStuds.visible = tier === TIER_MID;
+  }
+
+  layers(): ReadonlyArray<Group> {
+    return [this.detailed, this.shellBodies, this.midShells, this.coarseStuds, this.shadowCasters];
   }
 }
 
@@ -333,6 +377,15 @@ class VehicleRecord {
   constructor(
     readonly group: Group,
     readonly body: ChunkRecord,
+  ) {}
+}
+
+class FarModelNode {
+  constructor(
+    readonly group: Group,
+    readonly originX: number,
+    readonly originZ: number,
+    readonly chunkKeys: ReadonlyArray<number>,
   ) {}
 }
 
@@ -407,6 +460,11 @@ export class ThreeSceneBackend implements ISceneBackend {
   private readonly rayPoint = new Vector3();
   private detailedLevel: LevelGeometries = EMPTY_LEVEL;
   private farLevel: LevelGeometries = EMPTY_LEVEL;
+  private farModelGeometries: ReadonlyArray<ReadonlyArray<FixedColorGeometry>> = [];
+  private forcedTier: number | null = null;
+  private readonly farModelNodes = new Map<number, FarModelNode>();
+  private farModelList: FarModelNode[] = [];
+  private readonly farModelMatrix = new Float32Array(MATRIX4_FLOATS);
   private linearColors = new Float32Array(0);
   private alphaSlots: number[] = [OPAQUE_ALPHA];
   private colorAlphaSlot = new Uint8Array(0);
@@ -570,9 +628,15 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   setPalette(palette: PartPalette): void {
     this.clearChunks();
+    for (const node of this.farModelList) this.scene.remove(node.group);
+    this.farModelNodes.clear();
+    this.farModelList = [];
     this.setGhost(null);
     disposeLevel(this.detailedLevel);
     disposeLevel(this.farLevel);
+    for (const geometries of this.farModelGeometries) {
+      for (const fixed of geometries) fixed.geometry.dispose();
+    }
     if (palette.far) assertSameParts(palette.detailed, palette.far);
     const ldrawColor = (code: number) => {
       const color = palette.ldrawColors.get(code);
@@ -589,12 +653,15 @@ export class ThreeSceneBackend implements ISceneBackend {
     const level = (set: GeometrySet): LevelGeometries => ({
       parts: set.parts.map((part) => ({
         body: inheritBodyGeometry(part),
-        fixed: fixedColorGeometries(part, linearColor, alphaOf),
+        fixed: fixedColorGeometries(part.mesh, linearColor, alphaOf),
       })),
       studs: set.studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh)),
     });
     this.detailedLevel = level(palette.detailed);
     this.farLevel = palette.far ? level(palette.far) : EMPTY_LEVEL;
+    this.farModelGeometries = (palette.farModels ?? []).map((mesh) =>
+      fixedColorGeometries(mesh, linearColor, alphaOf),
+    );
     this.tiered = palette.far !== undefined;
     this.partBounds = new Float32Array(palette.detailed.parts.length * BOUNDS_FLOATS);
     palette.detailed.parts.forEach((part, p) => {
@@ -686,10 +753,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     const existing = this.chunks.get(key);
     if (!existing) return;
     this.scene.remove(existing.group);
-    disposeInstancedChildren(existing.detailed);
-    disposeInstancedChildren(existing.shellBodies);
-    disposeInstancedChildren(existing.coarseStuds);
-    disposeInstancedChildren(existing.shadowCasters);
+    for (const layer of existing.layers()) disposeInstancedChildren(layer);
     this.chunks.delete(key);
     this.chunkList = this.chunkList.filter((record) => record !== existing);
   }
@@ -704,7 +768,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     const ghost = new Group();
     ghost.matrixAutoUpdate = false;
     ghost.visible = false;
-    this.addInstances(ghost, undefined, undefined, undefined, model, this.ghostMaterials);
+    this.addInstances(ghost, undefined, undefined, model, this.ghostMaterials);
     this.ghost = ghost;
     this.scene.add(ghost);
   }
@@ -941,28 +1005,39 @@ export class ThreeSceneBackend implements ISceneBackend {
     group.updateMatrix();
     const detailed = new Group();
     const shellBodies = new Group();
+    const midShells = new Group();
     const coarseStuds = new Group();
     const shadowCasters = this.look.shadows ? new Group() : undefined;
-    group.add(detailed, shellBodies, coarseStuds);
+    group.add(detailed, shellBodies, midShells, coarseStuds);
     if (shadowCasters) group.add(shadowCasters);
-    this.addInstances(detailed, shellBodies, coarseStuds, shadowCasters, chunk, this.materials);
+    this.addInstances(
+      detailed,
+      { shellBodies, midShells, coarseStuds },
+      shadowCasters,
+      chunk,
+      this.materials,
+    );
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let minZ = Number.POSITIVE_INFINITY;
     let maxZ = Number.NEGATIVE_INFINITY;
-    for (let i = 0; i < chunk.count; i++) {
-      const x = chunk.originX + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0);
-      const z = chunk.originZ + (chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0);
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minZ = Math.min(minZ, z);
-      maxZ = Math.max(maxZ, z);
-    }
+    const extend = (matrices: Float32Array, count: number): void => {
+      for (let i = 0; i < count; i++) {
+        const x = chunk.originX + (matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0);
+        const z = chunk.originZ + (matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0);
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minZ = Math.min(minZ, z);
+        maxZ = Math.max(maxZ, z);
+      }
+    };
+    extend(chunk.matrices, chunk.count);
     group.updateMatrixWorld(true);
     const record = new ChunkRecord(
       group,
       detailed,
       shellBodies,
+      midShells,
       coarseStuds,
       shadowCasters ?? new Group(),
       chunk.originX,
@@ -992,8 +1067,7 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   private addInstances(
     detailed: Group,
-    shellBodies: Group | undefined,
-    coarseStuds: Group | undefined,
+    tiers: TierLayers | undefined,
     shadowCasters: Group | undefined,
     chunk: ChunkInstances,
     materials: PlasticMaterials,
@@ -1005,6 +1079,9 @@ export class ThreeSceneBackend implements ISceneBackend {
       chunk.count,
       this.detailedLevel.parts.length,
     );
+    const tiered = tiers !== undefined && this.tiered;
+    const tierKeys = tiered ? classKeys(keys, chunk) : new Uint32Array(0);
+    const tierCounts = countBy(tierKeys, tierKeys.length, counts.length * INSTANCE_CLASSES);
     for (let key = 0; key < counts.length; key++) {
       const count = counts[key] ?? 0;
       if (count === 0) continue;
@@ -1026,22 +1103,32 @@ export class ThreeSceneBackend implements ISceneBackend {
         attributes,
         materials,
       );
-      if (shellBodies) {
-        this.addPartMeshes(
-          shellBodies,
-          this.farLevel.parts[p],
-          alpha,
-          count,
-          attributes,
-          materials,
-        );
-      }
       if (shadowCasters && !this.tiered && alpha === OPAQUE_ALPHA) {
         this.addShadowCasters(shadowCasters, this.detailedLevel.parts[p], count, attributes);
       }
+      if (!tiered) continue;
+      for (let c = 0; c < INSTANCE_CLASSES; c++) {
+        const tierKey = key * INSTANCE_CLASSES + c;
+        const tierCount = tierCounts[tierKey] ?? 0;
+        if (tierCount === 0) continue;
+        const tierAttributes =
+          tierCount === count
+            ? attributes
+            : this.instanceAttributes(
+                tierKeys,
+                chunk.count,
+                tierKey,
+                tierCount,
+                chunk.matrices,
+                chunk.colorIndex,
+              );
+        const level = (c & CLASS_NOT_UPRIGHT) !== 0 ? this.detailedLevel : this.farLevel;
+        const layer = (c & CLASS_VOXELIZED) !== 0 ? tiers.midShells : tiers.shellBodies;
+        this.addPartMeshes(layer, level.parts[p], alpha, tierCount, tierAttributes, materials);
+      }
     }
     if (shadowCasters && this.tiered) this.addBoundsProxies(shadowCasters, chunk);
-    this.addStudMeshes(chunk.studs, detailed, coarseStuds, materials);
+    this.addStudMeshes(chunk.studs, detailed, tiers?.coarseStuds, materials);
   }
 
   private instanceAttributes(
@@ -1330,6 +1417,17 @@ export class ThreeSceneBackend implements ISceneBackend {
       record.group.updateMatrix();
       record.group.updateMatrixWorld(true);
     }
+    for (let i = 0; i < this.farModelList.length; i++) {
+      const node = this.farModelList[i];
+      if (!node) continue;
+      node.group.position.set(
+        node.originX - this.renderOriginX,
+        0,
+        node.originZ - this.renderOriginZ,
+      );
+      node.group.updateMatrix();
+      node.group.updateMatrixWorld(true);
+    }
     const ghost = this.ghost;
     if (ghost) {
       ghost.position.set(
@@ -1380,13 +1478,61 @@ export class ThreeSceneBackend implements ISceneBackend {
     if (this.shadowNode?.camera) this.shadowNode.updateFrustums();
   }
 
-  private assignTiers(out: FrameStats): void {
-    if (!this.tiered) {
-      out.nearChunks = this.chunkList.length;
-      out.midChunks = 0;
-      out.farChunks = 0;
-      return;
+  setFarModel(id: number, placement: FarModelPlacement | null): void {
+    const existing = this.farModelNodes.get(id);
+    if (existing) {
+      this.scene.remove(existing.group);
+      this.farModelNodes.delete(id);
+      this.farModelList = this.farModelList.filter((node) => node !== existing);
     }
+    if (!placement) return;
+    const geometries = this.farModelGeometries[placement.modelIndex];
+    if (!geometries) throw new Error(`far model ${placement.modelIndex} is not in the palette`);
+    const group = new Group();
+    group.matrixAutoUpdate = false;
+    group.position.set(
+      placement.originX - this.renderOriginX,
+      0,
+      placement.originZ - this.renderOriginZ,
+    );
+    group.updateMatrix();
+    writeMatrix4(placement.matrix, 0, this.farModelMatrix, 0);
+    for (const fixed of geometries) {
+      const material = this.materials.vertexColored(fixed.alpha);
+      const mesh = new Mesh(fixed.geometry, material);
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.fromArray(this.farModelMatrix);
+      mesh.receiveShadow = this.look.shadows && !material.transparent;
+      group.add(mesh);
+    }
+    group.updateMatrixWorld(true);
+    group.visible = false;
+    const node = new FarModelNode(group, placement.originX, placement.originZ, [
+      ...placement.chunkKeys,
+    ]);
+    this.farModelNodes.set(id, node);
+    this.farModelList.push(node);
+    this.scene.add(group);
+  }
+
+  private showFarModels(): void {
+    for (let n = 0; n < this.farModelList.length; n++) {
+      const node = this.farModelList[n];
+      if (!node) continue;
+      let anyFar = false;
+      for (let k = 0; k < node.chunkKeys.length; k++) {
+        const record = this.chunks.get(node.chunkKeys[k] ?? 0);
+        if (record?.tier === TIER_FAR) anyFar = true;
+      }
+      node.group.visible = this.tiered && anyFar;
+    }
+  }
+
+  forceTier(tier: ChunkTier | null): void {
+    this.forcedTier = tier === null ? null : TIER_BY_NAME[tier];
+  }
+
+  private assignTiers(out: FrameStats): void {
     let near = 0;
     let mid = 0;
     let far = 0;
@@ -1394,6 +1540,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     const orthoStudPitchPx =
       (STUD_PITCH_LDU * this.focalLengthPx * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360)) /
       Math.max(this.orthoHalfHeight, CAMERA_NEAR_LDU);
+    let nearestStudPitchPx = 0;
     for (let i = 0; i < this.chunkList.length; i++) {
       const record = this.chunkList[i];
       if (!record) continue;
@@ -1403,20 +1550,23 @@ export class ThreeSceneBackend implements ISceneBackend {
       const studPitchPx = orthographic
         ? orthoStudPitchPx
         : (STUD_PITCH_LDU * this.focalLengthPx) / distance;
-      if (studPitchPx >= NEAR_MIN_STUD_PITCH_PX) {
-        record.applyTier(TIER_NEAR);
-        near++;
-      } else if (studPitchPx >= MID_MIN_STUD_PITCH_PX) {
-        record.applyTier(TIER_MID);
-        mid++;
-      } else {
-        record.applyTier(TIER_FAR);
-        far++;
-      }
+      nearestStudPitchPx = Math.max(nearestStudPitchPx, studPitchPx);
+      let tier: number;
+      if (!this.tiered) tier = TIER_NEAR;
+      else if (this.forcedTier !== null) tier = this.forcedTier;
+      else if (studPitchPx >= NEAR_MIN_STUD_PITCH_PX) tier = TIER_NEAR;
+      else if (studPitchPx >= MID_MIN_STUD_PITCH_PX) tier = TIER_MID;
+      else tier = TIER_FAR;
+      record.applyTier(tier);
+      if (tier === TIER_NEAR) near++;
+      else if (tier === TIER_MID) mid++;
+      else far++;
     }
     out.nearChunks = near;
     out.midChunks = mid;
     out.farChunks = far;
+    out.nearestStudPitchPx = nearestStudPitchPx;
+    this.showFarModels();
   }
 
   bufferMemory(): BufferMemory {

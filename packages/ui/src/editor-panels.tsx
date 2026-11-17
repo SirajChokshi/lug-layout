@@ -457,7 +457,18 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
         "Render origin (chunks), rebases",
         `(${stats.renderOriginChunkX}, ${stats.renderOriginChunkZ}); ${stats.rebases}`,
       ],
+      ["Tier (L)", snapshot.tier ?? "auto"],
+      ["Chunk tiers near/mid/far", `${stats.nearChunks} / ${stats.midChunks} / ${stats.farChunks}`],
+      ["Projected stud pitch, nearest chunk", `${stats.nearestStudPitchPx.toFixed(1)} px`],
     );
+  }
+  const measured = snapshot.measurement;
+  if (snapshot.measuring) rows.push(["Frame time (M)", "measuring…"]);
+  else if (measured) {
+    rows.push([
+      "Frame time (M), GPU-synced",
+      `median ${measured.medianFrameMs.toFixed(1)} ms, p95 ${measured.p95FrameMs.toFixed(1)} ms over ${measured.frames} frames`,
+    ]);
   }
   return (
     <aside className="hud editor-hud">

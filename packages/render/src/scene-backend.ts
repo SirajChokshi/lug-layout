@@ -1,4 +1,4 @@
-import type { PartAsset, StudPrimitiveAsset } from "@brr/catalog";
+import type { PartAsset, PartMesh, StudPrimitiveAsset } from "@brr/catalog";
 
 export type GraphicsApi = "webgpu" | "webgl2";
 
@@ -34,6 +34,7 @@ export interface GeometrySet {
 export interface PartPalette {
   readonly detailed: GeometrySet;
   readonly far?: GeometrySet;
+  readonly farModels?: ReadonlyArray<PartMesh>;
   readonly colorsSrgb: Uint8Array;
   readonly colorsAlpha: Uint8Array;
   readonly ldrawColors: ReadonlyMap<number, LdrawColor>;
@@ -51,6 +52,14 @@ export interface StudInstances {
   readonly matrices: Float32Array;
 }
 
+export interface FarModelPlacement {
+  readonly modelIndex: number;
+  readonly originX: number;
+  readonly originZ: number;
+  readonly matrix: Float32Array;
+  readonly chunkKeys: ReadonlyArray<number>;
+}
+
 export interface ChunkInstances {
   readonly originX: number;
   readonly originZ: number;
@@ -59,7 +68,10 @@ export interface ChunkInstances {
   readonly colorIndex: Uint16Array;
   readonly matrices: Float32Array;
   readonly studs: StudInstances;
+  readonly voxelized?: Uint8Array;
 }
+
+export type ChunkTier = "near" | "mid" | "far";
 
 export interface FrameStats {
   drawCalls: number;
@@ -67,6 +79,7 @@ export interface FrameStats {
   nearChunks: number;
   midChunks: number;
   farChunks: number;
+  nearestStudPitchPx: number;
   renderOriginChunkX: number;
   renderOriginChunkZ: number;
   rebaseCount: number;
@@ -151,6 +164,8 @@ export interface ISceneBackend {
   waitForGpu(): Promise<void>;
   bufferMemory(): BufferMemory;
   rebaseLog(): ReadonlyArray<RebaseEvent>;
+  forceTier(tier: ChunkTier | null): void;
+  setFarModel(id: number, placement: FarModelPlacement | null): void;
 }
 
 export const INSTANCE_MATRIX_FLOATS = 12;
