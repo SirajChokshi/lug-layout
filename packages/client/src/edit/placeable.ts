@@ -544,6 +544,12 @@ export function partGround(
   );
 }
 
+export function partPlan(part: PartAsset): GroundFootprint {
+  const [minX, , minZ] = part.boundsMin;
+  const [maxX, topY, maxZ] = part.boundsMax;
+  return { topY, minX, maxX, minZ, maxZ, plates: 1, spacings: [maxX - minX, maxZ - minZ] };
+}
+
 export function partPlaceable(
   part: PartAsset,
   partIndex: number,
@@ -555,9 +561,8 @@ export function partPlaceable(
   grid: number,
 ): Placeable {
   const ground = partGround(partIndex, parts);
-  const shift: Vec3 = ground
-    ? seatOnGround(ground, grid, 0, 0)
-    : [0, tableY - part.boundsMin[1], 0];
+  const seat = seatOnGround(ground ?? partPlan(part), grid, 0, 0);
+  const shift: Vec3 = ground ? seat : [seat[0], tableY - part.boundsMin[1], seat[2]];
   const local: ChunkPartInstances = {
     originX: 0,
     originZ: 0,

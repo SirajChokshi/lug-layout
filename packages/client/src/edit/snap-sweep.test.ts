@@ -31,6 +31,7 @@ const QUARTER_TURNS = 4;
 const HALF_TURN_16 = 8;
 const OFF_LATTICE = [7, 3] as const;
 const ONE_STUD_OFF = [27, -23] as const;
+const OFF_BASEPLATE_GRID = [87, 53] as const;
 const AREA_LDU = 8000;
 const NEAR_LDU = 3000;
 const BASEPLATE_LDU = 640;
@@ -72,10 +73,6 @@ interface Area {
   readonly maxX: number;
   readonly minZ: number;
   readonly maxZ: number;
-}
-
-interface Rect extends Area {
-  readonly topY: number;
 }
 
 interface StudCount {
@@ -165,8 +162,8 @@ class SweepBackend implements ISceneBackend {
     return { upright, onCentre };
   }
 
-  groundRects(area: Area): Rect[] {
-    const rects: Rect[] = [];
+  groundRects(area: Area): Area[] {
+    const rects: Area[] = [];
     for (const chunk of this.chunks.values()) {
       for (let i = 0; i < chunk.count; i++) {
         const part = this.parts[chunk.partIndex[i] ?? 0];
@@ -174,7 +171,7 @@ class SweepBackend implements ISceneBackend {
         const m = chunk.matrices.subarray(i * INSTANCE_MATRIX_FLOATS);
         const [minX, maxX] = extent(m, 0, part, chunk.originX);
         const [minZ, maxZ] = extent(m, 2, part, chunk.originZ);
-        const rect = { minX, maxX, minZ, maxZ, topY: extent(m, 1, part, 0)[1] };
+        const rect = { minX, maxX, minZ, maxZ };
         if (inside(area, (minX + maxX) / 2, (minZ + maxZ) / 2)) rects.push(rect);
       }
     }
@@ -329,10 +326,6 @@ function sameArea(a: Area, b: Area): boolean {
   return a.minX === b.minX && a.maxX === b.maxX && a.minZ === b.minZ && a.maxZ === b.maxZ;
 }
 
-function atBaseplateTop(rects: ReadonlyArray<Rect>): Rect[] {
-  return rects.filter((rect) => rect.topY === 0);
-}
-
 it(
   "lands every first-layer catalog item on the stud lattice where its ghost showed, at every quarter turn, and turns it in place about that pivot",
   async () => {
@@ -349,8 +342,8 @@ it(
       const studsOnCentre = new Set<number>();
       for (let rot = 0; rot < QUARTER_TURNS; rot++) {
         const at = { item: item.id, rot };
-        const cursorX = (index + 1) * AREA_LDU + OFF_LATTICE[0];
-        const cursorZ = rot * AREA_LDU + OFF_LATTICE[1];
+        const cursorX = (index + 1) * AREA_LDU + OFF_BASEPLATE_GRID[0];
+        const cursorZ = rot * AREA_LDU + OFF_BASEPLATE_GRID[1];
         const area = around(cursorX, cursorZ);
         editor.chooseItem(item.id);
         turnTo(editor, rot);
@@ -376,8 +369,7 @@ it(
             : studs.onCentre === studs.upright;
         note(problems, seated, { ...at, studs });
         const ground = backend.groundRects(area);
-        const gridded = atBaseplateTop(ground);
-        note(problems, ground.length > 0 && gridded.every((r) => edgesOn(r, grid)), {
+        note(problems, ground.length > 0 && ground.every((r) => edgesOn(r, grid)), {
           ...at,
           ground,
         });
@@ -398,7 +390,7 @@ it(
           editor.rotate(0);
           const turned = editor.snapshot().selection;
           const expected = { ...ghost, yPlates: 0, rot: (rot + turn) % QUARTER_TURNS };
-          const turnedRects = atBaseplateTop(backend.groundRects(area));
+          const turnedRects = backend.groundRects(area);
           note(
             problems,
             turned !== null &&
@@ -597,7 +589,7 @@ function sameSquare(a: CatalogItemView, b: CatalogItemView): boolean {
 function cleanFlushTurns(
   { editor, backend }: Sweep,
   area: Area,
-  anchorRect: Rect,
+  anchorRect: Area,
   neighbour: CatalogItemView,
   cursorX: number,
   cursorZ: number,

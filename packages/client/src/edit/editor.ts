@@ -123,6 +123,7 @@ import {
   modelGround,
   modelPlaceable,
   partGround,
+  partPlan,
   partPlaceable,
   type Placeable,
 } from "./placeable.ts";
@@ -1131,8 +1132,8 @@ export class Editor implements IEditor {
       farModel: far?.meshIndex.get(entry.name) ?? null,
     }));
     const grounds = [
-      ...[...groundParts, ...roadParts].map((part) =>
-        partGround(palette.indexOf(part.id), palette.parts),
+      ...[...groundParts, ...roadParts].map(
+        (part) => partGround(palette.indexOf(part.id), palette.parts) ?? partPlan(part),
       ),
       ...models.map(({ entry, model }) => modelGround(model, palette.parts, entry.name)),
     ];
@@ -1866,7 +1867,7 @@ export class Editor implements IEditor {
     const joined = this.snapGhostToRoad();
     if (joined) return { moduleFit, snap: joined };
     const onTrack = this.snapGhostToTrack();
-    if (!onTrack && !moduleFit && this.active?.ground && this.hovering) {
+    if (!onTrack && !moduleFit && this.active?.layer === "first" && this.hovering) {
       this.hoverX = snapToGrid(this.hitX, this.baseplateGrid);
       this.hoverZ = snapToGrid(this.hitZ, this.baseplateGrid);
     }
