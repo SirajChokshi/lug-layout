@@ -95,7 +95,13 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
       return { scene: container.get(PART_DISPLAY_SCENE), placements: null, run: null };
     case "import": {
       const importScene = container.get(IMPORT_SCENE);
-      return { scene: importScene, placements: null, run: null, importScene, bomSource: importScene };
+      return {
+        scene: importScene,
+        placements: null,
+        run: null,
+        importScene,
+        bomSource: importScene,
+      };
     }
     case "edit":
       throw new Error("the editor is not a viewer scene");
