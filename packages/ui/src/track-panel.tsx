@@ -1,4 +1,10 @@
-import type { EditorSnapshot, TrackDragView, TrackGapView, TrackView } from "@brr/client";
+import type {
+  EditorSnapshot,
+  TrackDragView,
+  TrackGapView,
+  TrackPieceView,
+  TrackView,
+} from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const LISTED_GAPS = 8;
@@ -33,6 +39,31 @@ function closureText(drag: TrackDragView): string {
   }
 }
 
+function heldRows(held: TrackPieceView): ReadonlyArray<readonly [string, string]> {
+  const rows: Array<readonly [string, string]> = [
+    ["Holding", held.label],
+    [
+      "Attach",
+      held.snapped
+        ? `end ${held.connector + 1} of ${held.connectors} on an open end, exactly${held.joins > 1 ? ` (${held.joins} ends join)` : ""}`
+        : "free on the stud grid (R turns it): move onto an open end to attach",
+    ],
+  ];
+  if (held.misses > 0) {
+    rows.push([
+      "Near miss",
+      `${held.misses === 1 ? "an end" : `${held.misses} ends`} would sit close to another open end without joining (red)`,
+    ]);
+  }
+  if (held.mirror !== null) rows.push(["X swaps to", held.mirror]);
+  return rows;
+}
+
+function switchText(track: TrackView): string {
+  const branching = track.switches.filter((s) => s.lever === "branching").length;
+  return `${integer.format(track.switches.length)} (${integer.format(branching)} set to branch)`;
+}
+
 function dragRows(drag: TrackDragView): ReadonlyArray<readonly [string, string]> {
   return [
     ["Drawing from", drag.fromOpenEnd ? "an open end" : "a new start on the stud grid"],
@@ -52,6 +83,10 @@ function commitText(track: TrackView): string {
       return "refused: no exact join exists";
     case "refused-limit":
       return "refused: search hit its time limit";
+    case "switch-straight":
+      return "switch thrown to the straight route";
+    case "switch-branching":
+      return "switch thrown to the branching route";
     case null:
       return "none yet";
     default: {
@@ -74,8 +109,10 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
     ["Open ends", integer.format(track.openEnds)],
     ["Coincident ends not joined", integer.format(track.coincidentEndIssues)],
     ["Near-miss gaps", integer.format(track.gaps.length)],
+    ["Switches", switchText(track)],
     ["Last release", commitText(track)],
   ];
+  if (track.held) rows.push(...heldRows(track.held));
   if (track.drag) rows.push(...dragRows(track.drag));
   if (track.solve) {
     rows.push([
@@ -93,9 +130,13 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-last-commit={track.lastCommit ?? ""}
       data-closure={track.drag?.closure ?? ""}
       data-gaps={track.gaps.length}
+      data-switches={track.switches.map((s) => s.lever).join(",")}
+      data-held={track.held?.item ?? ""}
+      data-snapped={track.held?.snapped ? "1" : ""}
+      data-held-misses={track.held?.misses ?? 0}
     >
       <h2>Track</h2>
-      {snapshot.mode === "track" && (
+      {snapshot.mode === "track" && !track.held && (
         <p className="toolbar-hint">
           Drag from an open end (or from empty ground) to lay track. Release over another open end
           to join it exactly. Amber arrows mark open ends; red arrows mark two ends that nearly meet

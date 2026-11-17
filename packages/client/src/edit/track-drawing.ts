@@ -1,6 +1,7 @@
 import type { PartAsset } from "@brr/catalog";
 import type { TrackCatalog, TrackPartFrame, TrackPiece } from "@brr/schema/bundle";
 import {
+  NEAR_MISS_RADIUS_LDU,
   drawingKit,
   endGaps,
   layMoves,
@@ -23,8 +24,11 @@ import {
   ZETA16_ORDER,
   chunkKey,
   chunkOf,
+  attachPose16,
+  composePose16,
   normalizeHeading16,
   POSE16_IDENTITY,
+  posesJoin16,
   pose16,
   pose16Equals,
   zeta16,
@@ -35,6 +39,7 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
+import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -90,6 +95,26 @@ export interface TrackEndView {
   readonly heading: number;
 }
 
+export interface PieceSnap {
+  readonly placement: Pose16;
+  readonly end: number | null;
+  readonly joins: number;
+  readonly misses: ReadonlyArray<number>;
+}
+
+export interface SwitchThrow {
+  readonly chunk: number;
+  readonly lever: Lever;
+}
+
+export interface SwitchLeverView {
+  readonly placement: number;
+  readonly element: string;
+  readonly lever: Lever;
+  readonly xLdu: number;
+  readonly zLdu: number;
+}
+
 export interface TrackGapView {
   readonly a: TrackEndView;
   readonly b: TrackEndView;
@@ -113,6 +138,10 @@ interface Drag {
 interface Placed {
   readonly part: KitPart;
   readonly placement: Pose16;
+}
+
+function normalizeConnector(connector: number, count: number): number {
+  return ((connector % count) + count) % count;
 }
 
 function endView(end: Pose16): TrackEndView {
@@ -242,6 +271,7 @@ export class TrackDrawing {
   readonly kit: DrawingKit;
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
+  readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
@@ -261,12 +291,10 @@ export class TrackDrawing {
   ) {
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.graph = new TrackGraph(this.layout);
+    const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
-      const inKit =
-        piece.system === TRACK_SYSTEM &&
-        piece.status === "certified" &&
-        (piece.kind === "straight" || piece.kind === "curve");
-      if (!inKit) return;
+      if (piece.system !== TRACK_SYSTEM || piece.status !== "certified") return;
+      const inKit = piece.kind === "straight" || piece.kind === "curve";
       const partIndex = partForPiece(piece, parts);
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
@@ -284,9 +312,11 @@ export class TrackDrawing {
         color: colors.indexOfCode(part.producedColor),
         yLdu: -part.boundsMin[1],
       };
-      this.byDef.set(piece.id, kitPart);
+      if (inKit) this.byDef.set(piece.id, kitPart);
       this.byCatalogIndex.set(catalogIndex, kitPart);
+      placeable.push([catalogIndex, piece]);
     });
+    this.pieceSet = new TrackPieceSet(placeable);
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
     if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
     this.kit = result.kit;
@@ -300,11 +330,20 @@ export class TrackDrawing {
     return this.layout.count;
   }
 
-  countOf(pieceId: string): number {
-    const part = this.byDef.get(pieceId);
+  pieceParts(): ReadonlyArray<KitPart> {
+    return [...this.byCatalogIndex.values()];
+  }
+
+  pieceByIndex(catalogIndex: number): KitPart {
+    const part = this.byCatalogIndex.get(catalogIndex);
+    if (!part) throw new RangeError(`catalog piece ${catalogIndex} is not placeable`);
+    return part;
+  }
+
+  countOf(catalogIndex: number): number {
     let count = 0;
     for (let p = 0; p < this.layout.count; p++) {
-      if (part && this.layout.piece(p) === part.catalogIndex) count++;
+      if (this.layout.piece(p) === catalogIndex) count++;
     }
     return count;
   }
@@ -315,7 +354,7 @@ export class TrackDrawing {
 
   private placedAt(placement: number): Placed {
     const part = this.byCatalogIndex.get(this.layout.piece(placement));
-    if (!part) throw new Error(`placement ${placement} is not a drawing-kit piece`);
+    if (!part) throw new Error(`placement ${placement} is not a placeable track piece`);
     return { part, placement: this.layout.pose(placement) };
   }
 
@@ -510,26 +549,151 @@ export class TrackDrawing {
       return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
     }
     const { placed } = layMoves(drag.start, drag.moves);
-    const touched = new Set<number>();
+    const entries: Placed[] = [];
     placed.forEach((piece, i) => {
       const move = drag.moves[i];
-      if (!move) return;
-      const entry: Placed = { part: this.kitPart(move), placement: piece.placement };
-      const index = this.layout.place(entry.part.catalogIndex, piece.placement, GROUND_PLATES);
-      const centre = partCentre(entry);
-      const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
+      if (move) entries.push({ part: this.kitPart(move), placement: piece.placement });
+    });
+    const chunks = this.commitPlaced(entries);
+    return {
+      laid: entries.length,
+      joined: drag.goal !== null && this.graphJoins(drag.goal),
+      refusal: null,
+      chunks,
+    };
+  }
+
+  private commitPlaced(entries: ReadonlyArray<Placed>): ReadonlyArray<number> {
+    const touched = new Set<number>();
+    for (const entry of entries) {
+      const index = this.layout.place(entry.part.catalogIndex, entry.placement, GROUND_PLATES);
+      const key = this.chunkOfPlaced(entry);
       const members = this.chunkMembers.get(key) ?? [];
       members.push(index);
       this.chunkMembers.set(key, members);
       touched.add(key);
-    });
+    }
     this.recomputeEnds();
-    return {
-      laid: placed.length,
-      joined: drag.goal !== null && this.graphJoins(drag.goal),
-      refusal: null,
-      chunks: [...touched],
+    return [...touched];
+  }
+
+  private chunkOfPlaced(placed: Placed): number {
+    const centre = partCentre(placed);
+    return trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
+  }
+
+  snapPiece(
+    catalogIndex: number,
+    connector: number,
+    hitX: number,
+    hitZ: number,
+    free: Pose16,
+  ): PieceSnap {
+    const part = this.pieceByIndex(catalogIndex);
+    const connectors = part.def.connectors;
+    const local = connectors[normalizeConnector(connector, connectors.length)];
+    if (!local) throw new RangeError(`${part.piece.id} has no connector ${connector}`);
+    const end = this.endNear(hitX, hitZ, null);
+    const target = end === null ? undefined : this.ends[end];
+    const placement = attachPose16(local, target ?? free);
+    let joins = 0;
+    const misses: number[] = [];
+    for (const own of connectors) {
+      const pose = composePose16(placement, own);
+      const studs = zeta16ToStuds(pose.position);
+      this.ends.forEach((open, index) => {
+        if (posesJoin16(open, pose)) {
+          joins++;
+          return;
+        }
+        const at = zeta16ToStuds(open.position);
+        const gapLdu = Math.hypot(at.x - studs.x, at.z - studs.z) * STUD_LDU;
+        if (gapLdu <= NEAR_MISS_RADIUS_LDU) misses.push(index);
+      });
+    }
+    return { placement, end: target ? end : null, joins, misses };
+  }
+
+  pieceGhost(
+    catalogIndex: number,
+    placement: Pose16,
+  ): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } {
+    const part = this.pieceByIndex(catalogIndex);
+    const origin = zeta16ToStuds(placement.position);
+    const originX = origin.x * STUD_LDU;
+    const originZ = origin.z * STUD_LDU;
+    const partIndex = this.ghostParts.subarray(0, 1);
+    const colorIndex = this.ghostColors.subarray(0, 1);
+    const matrices = this.ghostMatrices.subarray(0, INSTANCE_MATRIX_FLOATS);
+    partIndex[0] = part.partIndex;
+    colorIndex[0] = part.color;
+    writeMatrix(matrices, 0, placement, part.piece.partFrame, part.yLdu, originX, originZ);
+    const base: ChunkPartInstances = {
+      originX,
+      originZ,
+      count: 1,
+      partIndex,
+      colorIndex,
+      matrices,
     };
+    return {
+      instances: withStuds(base, this.parts, this.colors, undefined),
+      x: originX,
+      z: originZ,
+    };
+  }
+
+  placePiece(catalogIndex: number, placement: Pose16): TrackCommit {
+    const part = this.pieceByIndex(catalogIndex);
+    const before = this.graph.joinCount;
+    const chunks = this.commitPlaced([{ part, placement }]);
+    return { laid: 1, joined: this.graph.joinCount > before, refusal: null, chunks };
+  }
+
+  switchAt(xLdu: number, zLdu: number): number | null {
+    let best: number | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let p = 0; p < this.layout.count; p++) {
+      const placed = this.placedAt(p);
+      if (this.pieceSet.thrown(placed.part.catalogIndex) === null) continue;
+      const box = partBox(placed);
+      if (xLdu < box.minX || xLdu > box.maxX || zLdu < box.minZ || zLdu > box.maxZ) continue;
+      const centre = partCentre(placed);
+      const distance = Math.hypot(centre.x - xLdu, centre.z - zLdu);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  throwSwitch(placement: number): SwitchThrow | null {
+    const placed = this.placedAt(placement);
+    const thrown = this.pieceSet.thrown(placed.part.catalogIndex);
+    if (thrown === null) return null;
+    this.layout.replace(placement, thrown);
+    const lever = this.pieceSet.lever(thrown);
+    if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
+    return { chunk: this.chunkOfPlaced(placed), lever };
+  }
+
+  switchLevers(): ReadonlyArray<SwitchLeverView> {
+    const levers: SwitchLeverView[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      const placed = this.placedAt(p);
+      const lever = this.pieceSet.lever(placed.part.catalogIndex);
+      if (lever === null) continue;
+      const centre = partCentre(placed);
+      levers.push({
+        placement: p,
+        element: this.pieceSet.element(placed.part.catalogIndex).element,
+        lever,
+        xLdu: centre.x,
+        zLdu: centre.z,
+      });
+    }
+    return levers;
   }
 
   private graphJoins(end: Pose16): boolean {

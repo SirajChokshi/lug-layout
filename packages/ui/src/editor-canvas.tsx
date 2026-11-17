@@ -160,6 +160,14 @@ export function EditorCanvas({ editor, options }: EditorCanvasProps) {
         case "C":
           editor.centreOnCursor();
           break;
+        case "x":
+        case "X":
+          editor.mirrorPiece();
+          break;
+        case "q":
+        case "Q":
+          editor.cycleConnector();
+          break;
         case "t":
         case "T":
           editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
