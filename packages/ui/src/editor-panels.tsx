@@ -1,5 +1,6 @@
 import {
   TRACK_ITEM_ID,
+  commandEnabled,
   type EditorCredits,
   type EditorSnapshot,
   type IEditor,
@@ -222,7 +223,6 @@ export function PlacementToolbar({
   snapshot,
   onShellCommand,
 }: PanelProps & { readonly onShellCommand: (id: ShellCommandId) => void }) {
-  const canRotate = snapshot.mode === "place" || snapshot.selection !== null;
   const { history } = snapshot;
   return (
     <div className="toolbar" role="toolbar" aria-label="Placement tools">
@@ -243,10 +243,10 @@ export function PlacementToolbar({
       </button>
       <button
         type="button"
-        disabled={!canRotate}
+        disabled={!commandEnabled("rotate", snapshot)}
         onClick={(event) => editor.rotate(event.timeStamp)}
       >
-        Rotate 90° ({shortcutText("rotate")})
+        Rotate ({shortcutText("rotate")})
       </button>
       <button
         type="button"
