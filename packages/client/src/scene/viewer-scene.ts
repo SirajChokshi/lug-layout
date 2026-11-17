@@ -3,6 +3,7 @@ import {
   COLOR_CHANNELS,
   type ChunkInstances,
   type ISceneBackend,
+  type LdrawColor,
   type PartPalette,
 } from "@brr/render";
 
@@ -79,20 +80,30 @@ export class ColorTable {
   }
 
   toSrgb(): Uint8Array {
-    const lookup = ldrawColorsSrgb(this.bundle);
+    const lookup = ldrawColors(this.bundle);
     const srgb = new Uint8Array(this.codes.length * COLOR_CHANNELS);
     this.codes.forEach((code, i) => {
-      const value = lookup.get(code) ?? 0;
+      const value = lookup.get(code)?.srgb ?? 0;
       srgb[i * COLOR_CHANNELS] = (value >> 16) & 0xff;
       srgb[i * COLOR_CHANNELS + 1] = (value >> 8) & 0xff;
       srgb[i * COLOR_CHANNELS + 2] = value & 0xff;
     });
     return srgb;
   }
+
+  toAlpha(): Uint8Array {
+    const lookup = ldrawColors(this.bundle);
+    return Uint8Array.from(this.codes, (code) => lookup.get(code)?.alpha ?? 0);
+  }
 }
 
-export function ldrawColorsSrgb(bundle: PartBundle): ReadonlyMap<number, number> {
-  return new Map(bundle.colors.map((c) => [c.code, Number.parseInt(c.rgb.slice(1), 16)]));
+export function ldrawColors(bundle: PartBundle): ReadonlyMap<number, LdrawColor> {
+  return new Map(
+    bundle.colors.map((c) => [
+      c.code,
+      { srgb: Number.parseInt(c.rgb.slice(1), 16), alpha: c.alpha },
+    ]),
+  );
 }
 
 function partPalette(
@@ -104,7 +115,8 @@ function partPalette(
     detailed: { parts: bundle.parts, studPrimitives: bundle.studPrimitives },
     ...(far ? { far: { parts: far.parts, studPrimitives: far.studPrimitives } } : {}),
     colorsSrgb: colors.toSrgb(),
-    ldrawColorsSrgb: ldrawColorsSrgb(bundle),
+    colorsAlpha: colors.toAlpha(),
+    ldrawColors: ldrawColors(bundle),
   };
 }
 

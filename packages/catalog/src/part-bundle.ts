@@ -56,6 +56,7 @@ export interface BundleColor {
   readonly code: number;
   readonly name: string;
   readonly rgb: string;
+  readonly alpha: number;
 }
 
 export interface BundleCredit {

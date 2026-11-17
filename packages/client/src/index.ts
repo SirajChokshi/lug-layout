@@ -4,9 +4,12 @@ export type {
   BufferMemory,
   FrameStats,
   GraphicsApi,
+  LookFeature,
+  LookSettings,
   RebaseEvent,
   SceneBackendConfig,
 } from "@brr/render";
+export { DEFAULT_LOOK_FEATURES, LOOK_FEATURES } from "@brr/render";
 export { mainThreadModules, type MainThreadConfig } from "./client.module.ts";
 export type {
   IViewerScene,
@@ -17,7 +20,7 @@ export type {
 export type { ITrackScene } from "./scene/track-scene.ts";
 export type { CityCamera, CityRequest, ICityScene } from "./scene/city-scene.ts";
 export type { PlacementDump } from "./scene/placements.ts";
-export type { IModelScene } from "./scene/model-scene.ts";
+export type { IModelScene, ModelView } from "./scene/model-scene.ts";
 export type { ICredits } from "./credits/credits-service.ts";
 export {
   licenseText,

@@ -1,10 +1,12 @@
-import type {
-  IRunScene,
-  IViewerScene,
-  PlacementDump,
-  RunStatus,
-  SimBenchResult,
-  TrackSummary,
+import {
+  LOOK_FEATURES,
+  type IRunScene,
+  type IViewerScene,
+  type LookSettings,
+  type PlacementDump,
+  type RunStatus,
+  type SimBenchResult,
+  type TrackSummary,
 } from "@brr/client";
 import { CreditLinks, partsCreditText } from "@brr/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -149,6 +151,11 @@ function renderOriginText(report: ViewerReport): string {
   return `(${frame.renderOriginChunkX}, ${frame.renderOriginChunkZ}); ${frame.rebaseCount} rebases${lastText}`;
 }
 
+function lookText(look: LookSettings): string {
+  const enabled = LOOK_FEATURES.filter((feature) => look[feature]);
+  return enabled.length > 0 ? enabled.join(", ") : "none (M0 look)";
+}
+
 function percent(fraction: number): string {
   return `${(fraction * 100).toFixed(0)}%`;
 }
@@ -182,6 +189,7 @@ function hudRows(report: ViewerReport): ReadonlyArray<readonly [string, string]>
   const rows: Array<readonly [string, string]> = [
     ["API", api],
     ["Adapter", backend.adapter],
+    ["Look", lookText(backend.look)],
     [
       "Drawing buffer",
       `${report.drawingBuffer.width}×${report.drawingBuffer.height} px (devicePixelRatio ${Number(report.drawingBuffer.devicePixelRatio.toFixed(2))})`,

@@ -57,7 +57,7 @@ function viewerScene(viewer: ViewerParams): ViewerChoice {
     }
     case "model": {
       const modelScene = container.get(MODEL_SCENE);
-      modelScene.selectModel(viewer.model ?? "");
+      modelScene.selectModel(viewer.model ?? "", viewer.modelView);
       return { scene: modelScene, placements: null, run: null };
     }
     case "track": {
@@ -111,7 +111,7 @@ function root(): ReactNode {
       <EditorApp
         editor={container.get(EDITOR)}
         plans={container.get(PLAN_SERVICE)}
-        options={{ api: params.api, pixelRatio: window.devicePixelRatio }}
+        options={{ api: params.api, pixelRatio: window.devicePixelRatio, look: params.look }}
         disclaimer={TRADEMARK_DISCLAIMER}
         showState={params.showEditState}
       />
