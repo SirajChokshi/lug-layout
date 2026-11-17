@@ -102,6 +102,37 @@ describe("road joins (layout rule 7)", () => {
     expect(mixed.mismatchedCells).toBeGreaterThan(0);
   });
 
+  it("treats a road end butted against a sidewalk as an open road end, not a mismatch", () => {
+    const straight = roadBaseplate("44336");
+    const end = at(0, straight, 0, 0);
+    const sideOn = at(1, straight, 640, 0, 1);
+    const report = new RoadNetwork([end, sideOn]).report();
+    expect(report.mismatchedCells).toBe(0);
+    expect(report.steppedCells).toBeGreaterThan(0);
+    const facing = report.segments.filter((s) => s.placement === 1 && s.side === "minX");
+    expect(facing.map((s) => [s.status, (s.to - s.from) / STUD])).toEqual(
+      expect.arrayContaining([["open", 20]]),
+    );
+    expect(new RoadNetwork([end]).fit(sideOn)).toMatchObject({
+      joinedCells: 12,
+      joinedRoadCells: 0,
+      steppedCells: 20,
+      mismatchedCells: 0,
+    });
+  });
+
+  it("reports sidewalks one plate apart in height as a step with both heights", () => {
+    const straight = roadBaseplate("44336");
+    const report = new RoadNetwork([at(0, straight, 0, 0), at(1, straight, 640, 0, 0, 8)]).report();
+    expect(report.mismatchedCells).toBe(0);
+    expect(report.steppedCells).toBe(32);
+    expect(report.segments.find((s) => s.placement === 0 && s.side === "maxX")).toMatchObject({
+      status: "step",
+      ownTopLdu: 0,
+      neighbourTopLdu: 8,
+    });
+  });
+
   it("reports overlapping pieces and refuses them as a fit", () => {
     const network = new RoadNetwork([at(0, plate, 0, 0), at(1, plate, 160, 0)]);
     expect(network.report().overlaps).toEqual([[0, 1]]);
@@ -109,6 +140,7 @@ describe("road joins (layout rule 7)", () => {
     expect(new RoadNetwork([at(0, plate, 0, 0)]).fit(at(1, plate, 0, 320))).toEqual({
       joinedCells: 16,
       joinedRoadCells: 16,
+      steppedCells: 0,
       mismatchedCells: 0,
       overlappingCells: 0,
     });

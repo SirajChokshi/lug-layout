@@ -22,7 +22,7 @@ export interface RoadPlacement {
 }
 
 export type RoadSide = "minX" | "maxX" | "minZ" | "maxZ";
-export type RoadCellStatus = "joined" | "open" | "mismatch";
+export type RoadCellStatus = "joined" | "open" | "step" | "mismatch";
 
 export interface RoadEdgeSegment {
   readonly placement: number;
@@ -31,6 +31,8 @@ export interface RoadEdgeSegment {
   readonly from: number;
   readonly to: number;
   readonly topLdu: number;
+  readonly ownTopLdu: number;
+  readonly neighbourTopLdu: number | null;
   readonly status: RoadCellStatus;
 }
 
@@ -38,6 +40,7 @@ export interface RoadJoinReport {
   readonly placements: number;
   readonly joinedCells: number;
   readonly openCells: number;
+  readonly steppedCells: number;
   readonly mismatchedCells: number;
   readonly overlaps: ReadonlyArray<readonly [number, number]>;
   readonly segments: ReadonlyArray<RoadEdgeSegment>;
@@ -46,6 +49,7 @@ export interface RoadJoinReport {
 export interface RoadFit {
   readonly joinedCells: number;
   readonly joinedRoadCells: number;
+  readonly steppedCells: number;
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
 }
@@ -93,6 +97,16 @@ class CellMap<T> {
 
 function sameSurface(a: Cell, b: Cell): boolean {
   return a.top === b.top && a.stud === b.stud && a.road === b.road;
+}
+
+function contact(cell: Cell, neighbour: Cell, roadsMeet: boolean): RoadCellStatus {
+  if (sameSurface(cell, neighbour)) return "joined";
+  if (roadsMeet) return "mismatch";
+  return cell.road !== 0 ? "open" : "step";
+}
+
+function pairKey(from: number, to: number): string {
+  return `${from}|${to}`;
 }
 
 export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell> {
@@ -149,6 +163,8 @@ interface EdgeCell {
   readonly line: number;
   readonly along: number;
   readonly topLdu: number;
+  readonly ownTopLdu: number;
+  readonly neighbourTopLdu: number | null;
   readonly status: RoadCellStatus;
 }
 
@@ -160,7 +176,7 @@ interface EdgeRun {
 }
 
 function runKey(cell: EdgeCell): string {
-  return `${cell.placement}|${cell.side}|${cell.line}|${cell.status}|${cell.topLdu}`;
+  return `${cell.placement}|${cell.side}|${cell.line}|${cell.status}|${cell.ownTopLdu}|${cell.neighbourTopLdu}`;
 }
 
 function mergeSegments(cells: ReadonlyArray<EdgeCell>): ReadonlyArray<RoadEdgeSegment> {
@@ -197,6 +213,8 @@ function mergeSegments(cells: ReadonlyArray<EdgeCell>): ReadonlyArray<RoadEdgeSe
         from: from * STUD_LDU,
         to: index * STUD_LDU,
         topLdu: first.topLdu,
+        ownTopLdu: first.ownTopLdu,
+        neighbourTopLdu: first.neighbourTopLdu,
         status: first.status,
       });
       from = null;
@@ -300,23 +318,49 @@ export class RoadNetwork {
     const edgeCells: EdgeCell[] = [];
     let joinedCells = 0;
     let openCells = 0;
+    let steppedCells = 0;
     let mismatchedCells = 0;
+    const roadFacing = new Set<string>();
+    for (const cells of this.placed) {
+      for (const cell of cells) {
+        if (cell.road === 0) continue;
+        for (const [, dx, dz] of SIDES) {
+          const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
+          if (neighbour && neighbour.placement !== cell.placement) {
+            roadFacing.add(pairKey(cell.placement, neighbour.placement));
+          }
+        }
+      }
+    }
+    const roadsMeet = (a: number, b: number): boolean =>
+      roadFacing.has(pairKey(a, b)) && roadFacing.has(pairKey(b, a));
     for (const cells of this.placed) {
       for (const cell of cells) {
         for (const [side, dx, dz] of SIDES) {
           const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
           if (neighbour?.placement === cell.placement) continue;
-          let status: RoadCellStatus;
-          if (!neighbour) {
-            if (cell.road === 0) continue;
-            status = "open";
-            openCells++;
-          } else if (sameSurface(cell, neighbour)) {
-            status = "joined";
-            if (cell.placement < neighbour.placement) joinedCells++;
-          } else {
-            status = "mismatch";
-            if (cell.placement < neighbour.placement) mismatchedCells++;
+          if (!neighbour && cell.road === 0) continue;
+          const status: RoadCellStatus = neighbour
+            ? contact(cell, neighbour, roadsMeet(cell.placement, neighbour.placement))
+            : "open";
+          const firstOfPair = !neighbour || cell.placement < neighbour.placement;
+          switch (status) {
+            case "joined":
+              if (firstOfPair) joinedCells++;
+              break;
+            case "mismatch":
+              if (firstOfPair) mismatchedCells++;
+              break;
+            case "open":
+              openCells++;
+              break;
+            case "step":
+              if (firstOfPair || neighbour?.road !== 0) steppedCells++;
+              break;
+            default: {
+              const unhandled: never = status;
+              throw new Error(`unhandled road cell status ${String(unhandled)}`);
+            }
           }
           edgeCells.push({
             placement: cell.placement,
@@ -324,6 +368,8 @@ export class RoadNetwork {
             line: edgeLine(side, cell.cellX, cell.cellZ),
             along: alongEdge(side, cell.cellX, cell.cellZ),
             topLdu: Math.max(cell.top, neighbour?.top ?? cell.top),
+            ownTopLdu: cell.top,
+            neighbourTopLdu: neighbour?.top ?? null,
             status,
           });
         }
@@ -333,6 +379,7 @@ export class RoadNetwork {
       placements: this.placed.length,
       joinedCells,
       openCells,
+      steppedCells,
       mismatchedCells,
       overlaps: [...this.overlapPairs].map((pair) => {
         const [a = 0, b = 0] = pair.split(",").map(Number);
@@ -360,13 +407,28 @@ export class RoadNetwork {
     }
     let joinedCells = 0;
     let joinedRoadCells = 0;
+    let steppedCells = 0;
     let mismatchedCells = 0;
-    for (let e = 0; e < edges.length; e += STAMP_EDGE_INTS) {
+    const neighbourAt = (e: number): Cell | undefined => {
       const c = (edges[e] ?? 0) * STAMP_CELL_INTS;
-      const neighbour = this.cells.get(
+      return this.cells.get(
         (cells[c] ?? 0) + offsetX + (edges[e + 1] ?? 0),
         (cells[c + 1] ?? 0) + offsetZ + (edges[e + 2] ?? 0),
       );
+    };
+    const ownRoadFacing = new Set<number>();
+    const roadFacingOwn = new Set<number>();
+    for (let e = 0; e < edges.length; e += STAMP_EDGE_INTS) {
+      const neighbour = neighbourAt(e);
+      if (!neighbour) continue;
+      if ((cells[(edges[e] ?? 0) * STAMP_CELL_INTS + 4] ?? 0) !== 0) {
+        ownRoadFacing.add(neighbour.placement);
+      }
+      if (neighbour.road !== 0) roadFacingOwn.add(neighbour.placement);
+    }
+    for (let e = 0; e < edges.length; e += STAMP_EDGE_INTS) {
+      const c = (edges[e] ?? 0) * STAMP_CELL_INTS;
+      const neighbour = neighbourAt(e);
       if (!neighbour) continue;
       const stud = cells[c + 3] ?? NO_STUD;
       const road = cells[c + 4] ?? 0;
@@ -374,38 +436,63 @@ export class RoadNetwork {
         neighbour.top === (cells[c + 2] ?? 0) + y &&
         neighbour.stud === (stud === NO_STUD ? NO_STUD : stud + y) &&
         neighbour.road === road;
-      if (!same) {
-        mismatchedCells++;
-        continue;
-      }
-      joinedCells++;
-      if (road !== 0) joinedRoadCells++;
+      const roadsMeet =
+        ownRoadFacing.has(neighbour.placement) && roadFacingOwn.has(neighbour.placement);
+      if (same) {
+        joinedCells++;
+        if (road !== 0) joinedRoadCells++;
+      } else if (roadsMeet) mismatchedCells++;
+      else steppedCells++;
     }
-    return { joinedCells, joinedRoadCells, mismatchedCells, overlappingCells };
+    return { joinedCells, joinedRoadCells, steppedCells, mismatchedCells, overlappingCells };
   }
 
   private fitCells(candidate: RoadPlacement): RoadFit {
     const cells = placedCells(candidate);
     const own = new CellMap<boolean>();
     for (const cell of cells) own.set(cell.cellX, cell.cellZ, true);
-    let joinedCells = 0;
-    let joinedRoadCells = 0;
-    let mismatchedCells = 0;
     let overlappingCells = 0;
+    const contacts: Array<readonly [PlacedCell, Cell]> = [];
     for (const cell of cells) {
       if (this.cells.has(cell.cellX, cell.cellZ)) overlappingCells++;
       for (const [, dx, dz] of SIDES) {
         if (own.has(cell.cellX + dx, cell.cellZ + dz)) continue;
         const neighbour = this.cells.get(cell.cellX + dx, cell.cellZ + dz);
-        if (!neighbour) continue;
-        if (!sameSurface(cell, neighbour)) {
-          mismatchedCells++;
-          continue;
-        }
-        joinedCells++;
-        if (cell.road !== 0) joinedRoadCells++;
+        if (neighbour) contacts.push([cell, neighbour]);
       }
     }
-    return { joinedCells, joinedRoadCells, mismatchedCells, overlappingCells };
+    const ownRoadFacing = new Set(
+      contacts.filter(([c]) => c.road !== 0).map(([, n]) => n.placement),
+    );
+    const roadFacingOwn = new Set(
+      contacts.filter(([, n]) => n.road !== 0).map(([, n]) => n.placement),
+    );
+    let joinedCells = 0;
+    let joinedRoadCells = 0;
+    let steppedCells = 0;
+    let mismatchedCells = 0;
+    for (const [cell, neighbour] of contacts) {
+      const roadsMeet =
+        ownRoadFacing.has(neighbour.placement) && roadFacingOwn.has(neighbour.placement);
+      const status = contact(cell, neighbour, roadsMeet);
+      switch (status) {
+        case "joined":
+          joinedCells++;
+          if (cell.road !== 0) joinedRoadCells++;
+          break;
+        case "mismatch":
+          mismatchedCells++;
+          break;
+        case "open":
+        case "step":
+          steppedCells++;
+          break;
+        default: {
+          const unhandled: never = status;
+          throw new Error(`unhandled road cell status ${String(unhandled)}`);
+        }
+      }
+    }
+    return { joinedCells, joinedRoadCells, steppedCells, mismatchedCells, overlappingCells };
   }
 }

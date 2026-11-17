@@ -287,7 +287,7 @@ Failing a badge never blocks placement. Users fix their bricks in their own CAD 
 4. **No overlap.** Placements' occupancy and keep-out volumes don't intersect, except at declared connectors.
 5. **Track.** Ends join exactly (§5.3). Open ends are errors unless capped by a buffer part or marked open by the user. Track at an angle off the lattice can't claim stud support and must rest on flat support. A connected run stays at one height (the MVP is flat).
 6. **Clearance.** The profile's parallel spacing is respected, and the swept envelope of the widest and longest consist placed on a layout is checked along curves and switches. S-curves without a straight between them get a warning.
-7. **Roads.** Road edges that meet have equal lane and curb patterns. Level crossings must use real crossing parts.
+7. **Roads.** Road edges that meet have equal lane and curb patterns: where both pieces show road cells along a shared edge, every cell must match, or it's a mismatch and the placement is refused. A road end against terrain or a sidewalk is an open road end, and differing terrain or sidewalk cells (another height or stud pattern) are a step that needs a transition. Both are warnings, so modules can still sit flush on the grid. Level crossings must use real crossing parts.
 8. **Modules** (when a profile is active): modules are on the 32-stud grid, edge connectors are present and aligned, and the surface height matches the profile.
 9. **BOM flags.** Third-party parts, mixed 9V and plastic track in a powered loop, and any use of the optional "real-world play" tolerance mode (off by default and never counted as Valid).
 

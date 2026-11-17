@@ -35,10 +35,36 @@ interface PanelProps {
   readonly snapshot: EditorSnapshot;
 }
 
+const PLATE_LDU = 8;
+
+function plates(heightLdu: number): string {
+  const count = heightLdu / PLATE_LDU;
+  return `${Number.isInteger(count) ? count : count.toFixed(1)} ${count === 1 ? "plate" : "plates"}`;
+}
+
+function issuePrefix(issue: RoadIssueView): string {
+  switch (issue.status) {
+    case "open":
+      return "Open road end: ";
+    case "step":
+      return "Step, needs a transition: ";
+    case "mismatch":
+      return "Mismatch: ";
+    default: {
+      const unhandled: never = issue.status;
+      throw new Error(`unhandled road issue ${String(unhandled)}`);
+    }
+  }
+}
+
 function issueText(issue: RoadIssueView): string {
   const axis = issue.side === "minX" || issue.side === "maxX" ? "x" : "z";
   const along = axis === "x" ? "z" : "x";
-  return `${issue.item.replace(/^[a-z]+:/u, "")} ${issue.side} edge at ${axis} = ${issue.line}, ${along} ${issue.from}…${issue.to}, top ${issue.topLdu} LDU`;
+  const heights =
+    issue.neighbourTopLdu === null || issue.neighbourTopLdu === issue.ownTopLdu
+      ? `top ${plates(issue.ownTopLdu)}`
+      : `${plates(issue.ownTopLdu)} against ${plates(issue.neighbourTopLdu)}`;
+  return `${issue.item.replace(/^[a-z]+:/u, "")} ${issue.side} edge at ${axis} = ${issue.line}, ${along} ${issue.from}…${issue.to}, ${heights}`;
 }
 
 export function RoadJoins({ editor, snapshot }: PanelProps) {
@@ -48,7 +74,8 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
       <summary>
         <h2>Road joins</h2>
         <span className="road-joins-summary">
-          {roads.joinedCells} joined · {roads.openCells} open · {roads.mismatchedCells} mismatched
+          {roads.joinedCells} joined · {roads.openCells} open · {roads.steppedCells} stepped ·{" "}
+          {roads.mismatchedCells} mismatched
         </span>
       </summary>
       <label className="road-joins-toggle">
@@ -57,7 +84,7 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
           checked={snapshot.showJoins}
           onChange={(event) => editor.setShowJoins(event.target.checked)}
         />
-        Show join markers (green joined, amber open, red mismatch)
+        Show join markers (green joined, amber open road end or height step, red mismatch)
       </label>
       <label className="road-joins-toggle">
         <input
@@ -85,6 +112,10 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
           <dd data-road="open">{roads.openCells}</dd>
         </div>
         <div>
+          <dt>Stepped edge cells (need a transition)</dt>
+          <dd data-road="step">{roads.steppedCells}</dd>
+        </div>
+        <div>
           <dt>Mismatched edge cells</dt>
           <dd data-road="mismatch">{roads.mismatchedCells}</dd>
         </div>
@@ -108,7 +139,7 @@ export function RoadJoins({ editor, snapshot }: PanelProps) {
               key={`${issue.item}-${issue.side}-${issue.line}-${issue.from}`}
               className={issue.status}
             >
-              {issue.status === "open" ? "Open: " : "Mismatch: "}
+              {issuePrefix(issue)}
               {issueText(issue)}
             </li>
           ))}
@@ -253,12 +284,16 @@ function snapText(snapshot: EditorSnapshot): string {
   if (!snap) return "none";
   switch (snap.state) {
     case "snapped":
-      return snap.joinedRoadCells > 0
-        ? `snapped, lanes join on ${snap.joinedRoadCells} of ${snap.joinedCells} edge cells`
+      if (snap.joinedRoadCells > 0) {
+        return `snapped, lanes join on ${snap.joinedRoadCells} of ${snap.joinedCells} edge cells`;
+      }
+      return snap.steppedCells > 0
+        ? `snapped flush, ${snap.steppedCells} edge cells step or end a road (needs a transition)`
         : `snapped beside a sidewalk, ${snap.joinedCells} edge cells join`;
     case "free":
-      return snap.joinedCells > 0
-        ? `exact here, ${snap.joinedCells} edge cells join`
+      if (snap.joinedCells > 0) return `exact here, ${snap.joinedCells} edge cells join`;
+      return snap.steppedCells > 0
+        ? `fits here, ${snap.steppedCells} edge cells step or end a road`
         : "free, touches no road";
     case "refused":
       return `click refused: ${snap.mismatchedCells} mismatched, ${snap.overlappingCells} overlapping cells`;

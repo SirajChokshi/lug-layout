@@ -81,6 +81,14 @@ describe("road-edge snap", () => {
     }
   });
 
+  it("snaps flush against a surface at another height instead of refusing it, still corner-aligned", () => {
+    const raised = world([{ ...straight, yLdu: 32 }]);
+    const sideX = cellExtent(straight).maxX;
+    const snap = snapToRoadEdge(raised.network, raised.extents, curve, 0, 0, sideX + 300, 140);
+    expect(snap).toMatchObject({ x: sideX + PLATE_SPAN / 2, z: straight.z, joinedCells: 0 });
+    expect(snap?.steppedCells).toBeGreaterThan(0);
+  });
+
   it("never snaps an 8-stud dual carriageway end onto a 6-stud road end, whatever the rotation", () => {
     const dual = roadBaseplate("30225b");
     for (const preferred of QUARTER_TURNS) {

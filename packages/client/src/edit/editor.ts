@@ -120,13 +120,15 @@ export interface HistoryView {
 }
 
 export interface RoadIssueView {
-  readonly status: "open" | "mismatch";
+  readonly status: "open" | "step" | "mismatch";
   readonly item: string;
   readonly side: RoadEdgeSegment["side"];
   readonly line: number;
   readonly from: number;
   readonly to: number;
   readonly topLdu: number;
+  readonly ownTopLdu: number;
+  readonly neighbourTopLdu: number | null;
 }
 
 export interface RoadJoinView {
@@ -134,6 +136,7 @@ export interface RoadJoinView {
   readonly placements: number;
   readonly joinedCells: number;
   readonly openCells: number;
+  readonly steppedCells: number;
   readonly mismatchedCells: number;
   readonly overlaps: number;
   readonly issues: ReadonlyArray<RoadIssueView>;
@@ -145,6 +148,7 @@ export interface RoadSnapView {
   readonly state: RoadSnapState;
   readonly joinedCells: number;
   readonly joinedRoadCells: number;
+  readonly steppedCells: number;
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
 }
@@ -316,11 +320,18 @@ const MARKER_WIDTH_LDU = 6;
 const MARKER_LIFT_LDU = 1;
 const MARKER_HEIGHT_LDU = 2;
 const LISTED_ROAD_ISSUES = 12;
+const ISSUE_ORDER: ReadonlyArray<RoadEdgeSegment["status"]> = [
+  "mismatch",
+  "step",
+  "open",
+  "joined",
+];
 const EMPTY_ROADS: RoadJoinView = {
   checkMs: 0,
   placements: 0,
   joinedCells: 0,
   openCells: 0,
+  steppedCells: 0,
   mismatchedCells: 0,
   overlaps: 0,
   issues: [],
@@ -1023,6 +1034,7 @@ export class Editor implements IEditor {
         state: "snapped",
         joinedCells: snap.joinedCells,
         joinedRoadCells: snap.joinedRoadCells,
+        steppedCells: snap.steppedCells,
         mismatchedCells: 0,
         overlappingCells: 0,
       };
@@ -1191,7 +1203,10 @@ export class Editor implements IEditor {
     this.showRoadMarkers();
     const report = this.roadReport;
     const issues: RoadIssueView[] = [];
-    for (const segment of report.segments) {
+    const bySeverity = report.segments.toSorted(
+      (a, b) => ISSUE_ORDER.indexOf(a.status) - ISSUE_ORDER.indexOf(b.status),
+    );
+    for (const segment of bySeverity) {
       if (segment.status === "joined" || issues.length >= LISTED_ROAD_ISSUES) continue;
       issues.push({
         status: segment.status,
@@ -1201,6 +1216,8 @@ export class Editor implements IEditor {
         from: segment.from,
         to: segment.to,
         topLdu: segment.topLdu,
+        ownTopLdu: segment.ownTopLdu,
+        neighbourTopLdu: segment.neighbourTopLdu,
       });
     }
     this.update({
@@ -1209,6 +1226,7 @@ export class Editor implements IEditor {
         placements: report.placements,
         joinedCells: report.joinedCells,
         openCells: report.openCells,
+        steppedCells: report.steppedCells,
         mismatchedCells: report.mismatchedCells,
         overlaps: report.overlaps.length,
         issues,
@@ -1220,7 +1238,7 @@ export class Editor implements IEditor {
     const joins: EdgeMarker[] = this.state.showJoins
       ? this.roadReport.segments.map((segment) => ({
           box: markerBox(segment),
-          kind: segment.status,
+          kind: segment.status === "step" ? "open" : segment.status,
         }))
       : [];
     this.backend.setMarkers([...joins, ...this.roadPreviewMarkers]);

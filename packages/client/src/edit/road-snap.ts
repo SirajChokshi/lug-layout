@@ -14,6 +14,7 @@ export interface RoadSnap {
   readonly rot: number;
   readonly joinedCells: number;
   readonly joinedRoadCells: number;
+  readonly steppedCells: number;
 }
 
 const QUARTER_TURNS = 4;
@@ -69,6 +70,9 @@ function better(candidate: Ranked, best: Ranked | null): boolean {
   if (candidate.snap.joinedRoadCells !== best.snap.joinedRoadCells) {
     return candidate.snap.joinedRoadCells > best.snap.joinedRoadCells;
   }
+  if (candidate.snap.joinedCells > 0 !== best.snap.joinedCells > 0) {
+    return candidate.snap.joinedCells > 0;
+  }
   if (candidate.distance !== best.distance) return candidate.distance < best.distance;
   return candidate.turn < best.turn;
 }
@@ -100,10 +104,18 @@ export function snapToRoadEdge(
           cursorZ - (z + (ghost.minZ + ghost.maxZ) / 2),
         );
         const fit = network.fit({ id: -1, x, z, yLdu, rot, surface });
-        if (fit.joinedCells === 0 || fit.mismatchedCells > 0 || fit.overlappingCells > 0) continue;
+        const touching = fit.joinedCells + fit.steppedCells > 0;
+        if (!touching || fit.mismatchedCells > 0 || fit.overlappingCells > 0) continue;
         if (fit.joinedRoadCells === 0 && !cornerFlush(extent, ghost, x, z)) continue;
         const candidate: Ranked = {
-          snap: { x, z, rot, joinedCells: fit.joinedCells, joinedRoadCells: fit.joinedRoadCells },
+          snap: {
+            x,
+            z,
+            rot,
+            joinedCells: fit.joinedCells,
+            joinedRoadCells: fit.joinedRoadCells,
+            steppedCells: fit.steppedCells,
+          },
           distance,
           turn,
         };
