@@ -1,3 +1,4 @@
 {
-  "bucket_name": "brr-part-bundles"
+  "bucket_name": "brr-part-bundles",
+  "public_base_url": "https://pub-3223db7496e940cc821de2e207245b2f.r2.dev/"
 }
