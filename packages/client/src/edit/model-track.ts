@@ -183,6 +183,26 @@ export function heldPlacements(
   }));
 }
 
+export interface TrackFrame {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly rot: number;
+}
+
+export function trackEndKeys(
+  track: ModelTrack,
+  at: TrackFrame,
+  facing: boolean,
+): ReadonlyArray<string> {
+  const frame = latticePose16(at.x, at.z, at.rot);
+  return track.openEnds.map((end) => {
+    const pose = composePose16(frame, end.local);
+    const heading = normalizeHeading16(pose.heading + (facing ? HALF_TURN_16 : 0));
+    return `${at.yPlates + end.plates}|${heading}|${pose.position.join(",")}`;
+  });
+}
+
 export interface LatticeSnap {
   readonly xLdu: number;
   readonly zLdu: number;

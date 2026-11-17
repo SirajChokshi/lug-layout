@@ -38,7 +38,6 @@ export {
   MODULE_SIDES,
   ModuleGrid,
   NO_TOP,
-  railEdgesMate,
   type GridModule,
   type GridPlacement,
   type RailEdgeClash,
