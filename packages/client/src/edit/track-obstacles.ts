@@ -14,9 +14,9 @@ function seatsAt(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<numbe
   const seats = new Set<number>();
   for (const model of models) {
     const onLattice = model.placeable.studLattice.onLattice;
-    for (let i = 0; i < model.studBaseLdu.length; i++) {
-      if (onLattice[i] !== ON_LATTICE || model.studBaseLdu[i] !== baseLdu) continue;
-      seats.add(cellKey(model.studCellX[i] ?? 0, model.studCellZ[i] ?? 0));
+    for (let i = 0; i < model.placeable.studs.count; i++) {
+      if (onLattice[i] !== ON_LATTICE || model.studBaseLdu(i) !== baseLdu) continue;
+      seats.add(cellKey(model.studCellX(i), model.studCellZ(i)));
     }
   }
   return seats;
