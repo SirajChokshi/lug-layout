@@ -1186,6 +1186,11 @@ describe("SnapMating", () => {
     const blindCap = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 20]]);
     expect(mating.ranges(slidingNeck, blindCap)).toEqual(rangesInLdu([0, 0]));
   });
+
+  it("keeps a rooted male shorter than a through female from sinking past its root", () => {
+    const deepThroughHole = shape(0, false, [[SECTION_ROUND, 6, 20]]);
+    expect(mating.ranges(STUD, deepThroughHole)).toEqual(rangesInLdu([0, 0]));
+  });
 });
 
 const FACE_TOKEN = "token-face";
