@@ -236,7 +236,6 @@ export { SparseConnectorFinder } from "./connect/sparse-connector-finder.ts";
 export { TrackEndFinder } from "./connect/track-end-finder.ts";
 export { ConnectionSolver } from "./connect/connection-solver.ts";
 export {
-  NO_VOLUME_TOP,
   VolumeIndex,
   firstOverlap,
   type CellVolumes,

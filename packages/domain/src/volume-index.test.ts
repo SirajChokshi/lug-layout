@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  NO_VOLUME_TOP,
-  VolumeIndex,
-  firstOverlap,
-  type CellVolumes,
-  type OverlapHit,
-} from "./volume-index.ts";
+import { VolumeIndex, firstOverlap, type CellVolumes, type OverlapHit } from "./volume-index.ts";
 
 const keepAll = (): boolean => false;
 const ignoreSlab = (owner: number): boolean => owner === 1;
@@ -41,12 +35,6 @@ function stack(): VolumeIndex {
 }
 
 describe("VolumeIndex", () => {
-  it("keeps every span in a cell and reports the highest top, on both sides of zero", () => {
-    const index = stack();
-    expect(index.topAt(-1, -1)).toBe(96);
-    expect(index.topAt(0, 0)).toBe(NO_VOLUME_TOP);
-  });
-
   it.each([
     ["a span resting on the stack's top", [[-1, -1, 96, 104]], null],
     ["a span in the free gap under an overhang", [[-1, -1, 24, 80]], null],
@@ -73,13 +61,17 @@ describe("VolumeIndex", () => {
     expect(firstOverlap(volumes([[-1, -1, -4, 0]]), stack(), ignoreSlab, hit())).toBe(false);
   });
 
-  it("removes exactly one owner's span and reuses its record", () => {
+  it("removes exactly one owner's span, only once, and indexes a span added after it", () => {
     const index = stack();
     index.remove(3, -1, -1, 80, 96);
-    expect(index.topAt(-1, -1)).toBe(24);
     expect(firstOverlap(volumes([[-1, -1, 24, 81]]), index, keepAll, hit())).toBe(false);
+    const kept = hit();
+    expect(firstOverlap(volumes([[-1, -1, 20, 30]]), index, keepAll, kept)).toBe(true);
+    expect(kept.owner).toBe(2);
     index.add(4, -1, -1, 40, 48);
-    expect(index.topAt(-1, -1)).toBe(48);
+    const added = hit();
+    expect(firstOverlap(volumes([[-1, -1, 44, 45]]), index, keepAll, added)).toBe(true);
+    expect(added.owner).toBe(4);
     expect(() => index.remove(3, -1, -1, 80, 96)).toThrow(RangeError);
   });
 
