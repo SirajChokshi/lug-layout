@@ -129,11 +129,11 @@ function preparedLoop() {
 }
 
 async function pastFirstFrame() {
-  const started = preparedLoop();
-  started.start();
-  await started.settledFrame();
-  started.published.length = 0;
-  return started;
+  const prepared = preparedLoop();
+  prepared.start();
+  await prepared.settledFrame();
+  prepared.published.length = 0;
+  return prepared;
 }
 
 async function measuredRun(loop: IEditorFrameLoop, settledFrame: () => Promise<void>) {
