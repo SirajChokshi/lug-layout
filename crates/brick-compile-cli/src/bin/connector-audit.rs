@@ -812,6 +812,10 @@ fn run() -> Result<(), String> {
         .as_str()
         .ok_or(format!("{inferred_path}: cavityProbe must be a part path"))?
         .to_string();
+    let axle_part = inferred_json["axleProbe"]
+        .as_str()
+        .ok_or(format!("{inferred_path}: axleProbe must be a part path"))?
+        .to_string();
     let focus: Vec<String> = values
         .get("--focus")
         .map(|v| v.split(',').map(str::to_string).collect())
@@ -820,9 +824,11 @@ fn run() -> Result<(), String> {
     let mut extractor = ConnectorExtractor::new(
         ShadowSnaps::new(&library, &shadow),
         PrimitiveConnectors::new(&library, primitive_table.clone()),
-        InferredFeatures::new(&library, vocabulary.clone(), &probe_part)?,
+        InferredFeatures::new(&library, vocabulary.clone(), &probe_part)?
+            .with_axle_probe(&axle_part)?,
     );
-    let mut tier4_alone = InferredFeatures::new(&library, vocabulary, &probe_part)?;
+    let mut tier4_alone =
+        InferredFeatures::new(&library, vocabulary, &probe_part)?.with_axle_probe(&axle_part)?;
     if let Some(out) = values.get("--unidentified-tube-receptors") {
         let mut primitives = PrimitiveConnectors::new(&library, primitive_table.clone());
         let mut rows: Vec<Value> = Vec::new();

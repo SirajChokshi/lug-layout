@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use super::profile::Point;
 use crate::affine::Vec3;
 use crate::flatten::Triangle;
 use crate::lattice::STUD_LDU;
@@ -245,6 +246,31 @@ fn clip(polygon: Vec<Local>, at: f64, keep_above: bool) -> Vec<Local> {
 
 fn slab_clip(polygon: Vec<Local>, from: f64, to: f64) -> Vec<Local> {
     clip(clip(polygon, from, true), to, false)
+}
+
+fn prism_clip(polygon: &[Local], piece: &[Point]) -> Vec<Local> {
+    let mut out = polygon.to_vec();
+    for k in 0..piece.len() {
+        if out.is_empty() {
+            break;
+        }
+        let (a, b) = (piece[k], piece[(k + 1) % piece.len()]);
+        let side = |p: &Local| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        let mut kept = Vec::with_capacity(out.len() + 1);
+        for (m, p) in out.iter().enumerate() {
+            let q = out[(m + 1) % out.len()];
+            let (sp, sq) = (side(p), side(&q));
+            if sp >= 0.0 {
+                kept.push(*p);
+            }
+            if (sp >= 0.0) != (sq >= 0.0) {
+                let t = sp / (sp - sq);
+                kept.push([0, 1, 2].map(|c| p[c] + t * (q[c] - p[c])));
+            }
+        }
+        out = kept;
+    }
+    out
 }
 
 fn turn(a: Local, b: Local, c: [f64; 2]) -> f64 {
@@ -542,6 +568,18 @@ impl Solid {
         self.facets.is_empty()
     }
 
+    pub fn bounds(&self) -> (Vec3, Vec3) {
+        self.facets.iter().fold(
+            ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]),
+            |(low, high), facet| {
+                (
+                    [0, 1, 2].map(|k| low[k].min(facet.low[k])),
+                    [0, 1, 2].map(|k| high[k].max(facet.high[k])),
+                )
+            },
+        )
+    }
+
     fn near(&self, probe: &Probe, reach: f64) -> Vec<u32> {
         let (i, j) = plan_axes(probe.axis);
         let column = &self.columns[probe.axis];
@@ -652,6 +690,50 @@ impl Solid {
                     faces_probe = Some(faces_probe.unwrap_or(true) && along < 0.0);
                 }
                 _ => {}
+            }
+        }
+        Floor { depth, faces_probe }
+    }
+
+    pub fn cross_section(&self, probe: &Probe, range: (f64, f64), reach: f64) -> Vec<Vec<Point>> {
+        self.near(probe, reach)
+            .into_iter()
+            .filter_map(|index| {
+                let facet = &self.facets[index as usize];
+                let (low, high) = self.depth_range(probe, facet);
+                if high < range.0 || low > range.1 {
+                    return None;
+                }
+                let clipped = slab_clip(self.polygon(probe, facet), range.0, range.1);
+                (!clipped.is_empty()).then(|| clipped.iter().map(|p| [p[0], p[1]]).collect())
+            })
+            .collect()
+    }
+
+    pub fn profile_floor(&self, probe: &Probe, pieces: &[Vec<Point>], reach: f64) -> Floor {
+        let mut depth = f64::INFINITY;
+        let mut attaining: Vec<(f64, Option<f64>)> = Vec::new();
+        for index in self.near(probe, reach) {
+            let facet = &self.facets[index as usize];
+            if self.depth_range(probe, facet).1 < -IDENTIFY_LDU {
+                continue;
+            }
+            let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
+            for piece in pieces {
+                let inside = prism_clip(&polygon, piece);
+                if let Some(d) = inside.iter().map(|p| p[2]).reduce(f64::min) {
+                    depth = depth.min(d);
+                    attaining.push((d, facet.front.map(|front| front[probe.axis] * probe.inward)));
+                }
+            }
+        }
+        let mut faces_probe = None;
+        for (d, along) in attaining {
+            if d > depth + IDENTIFY_LDU {
+                continue;
+            }
+            if let Some(along) = along.filter(|a| *a != 0.0) {
+                faces_probe = Some(faces_probe.unwrap_or(true) && along < 0.0);
             }
         }
         Floor { depth, faces_probe }

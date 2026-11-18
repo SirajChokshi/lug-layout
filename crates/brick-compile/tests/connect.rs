@@ -1142,3 +1142,101 @@ fn a_face_already_held_gets_no_second_receptor() {
         }
     )));
 }
+
+fn hub_ring(y: i32, outer: i32, inner: i32) -> String {
+    let rects = [
+        (-outer, -inner, -outer, outer),
+        (inner, outer, -outer, outer),
+        (-inner, inner, -outer, -inner),
+        (-inner, inner, inner, outer),
+    ];
+    rects
+        .iter()
+        .map(|(x0, x1, z0, z1)| {
+            format!("4 16 {x1} {y} {z1} {x1} {y} {z0} {x0} {y} {z0} {x0} {y} {z1}\n")
+        })
+        .collect()
+}
+
+fn custom_hub(hole: &str) -> String {
+    format!(
+        "0 Custom Hub\n0 BFC CERTIFY CCW\n1 16 0 20 0 20 0 0 0 -20 0 0 0 20 box5.dat\n{hole}\n0 BFC INVERTNEXT\n1 16 0 4 0 6 0 0 0 1 0 0 0 6 4-4disc.dat\n1 16 0 20 0 6 0 0 0 1 0 0 0 6 4-4ndis.dat\n{}",
+        hub_ring(20, 20, 6)
+    )
+}
+
+#[test]
+fn custom_parts_get_axle_holes_and_axles_from_their_geometry() {
+    let turn = 0.5f64.sqrt();
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            (
+                "parts/hub.dat",
+                custom_hub("1 16 0 20 0 1 0 0 0 -16 0 0 0 1 axlehole.dat"),
+            ),
+            (
+                "parts/turned.dat",
+                custom_hub(&format!(
+                    "1 16 0 20 0 {turn} 0 {turn} 0 -16 0 {} 0 {turn} axlehole.dat",
+                    -turn
+                )),
+            ),
+            (
+                "parts/round.dat",
+                custom_hub("0 BFC INVERTNEXT\n1 16 0 20 0 6 0 0 0 -16 0 0 0 6 4-4cyli.dat"),
+            ),
+            (
+                "parts/stub.dat",
+                "0 Custom Stub\n0 BFC CERTIFY CCW\n1 16 0 8 0 20 0 0 0 -8 0 0 0 20 box5.dat\n4 16 20 8 20 20 8 -20 -20 8 -20 -20 8 20\n1 16 0 0 0 1 0 0 0 -20 0 0 0 1 axlehol8.dat\n1 16 0 -20 0 1 0 0 0 1 0 0 0 1 axleend.dat\n"
+                    .to_string(),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let axles = |connectors: &[Connector]| -> Vec<Connector> {
+        connectors
+            .iter()
+            .filter(|c| match &c.shape {
+                Shape::Cylinder { sections, .. } => sections[0].shape == SectionShape::Axle,
+                _ => false,
+            })
+            .cloned()
+            .collect()
+    };
+    let hub = axles(&inferred.infer("parts/hub.dat").connectors);
+    assert_eq!(hub.len(), 1);
+    let face = &faces_of(&hub)[0];
+    assert_eq!(
+        (face.gender, face.source, face.origin, face.axis),
+        (
+            Gender::Female,
+            Source::Inferred,
+            [0.0, -20.0, 0.0],
+            [0.0, -1.0, 0.0]
+        )
+    );
+    assert_eq!(
+        (face.sections[0].size, face.sections[0].length),
+        (6.0, 16.0)
+    );
+    let turned = axles(&inferred.infer("parts/turned.dat").connectors);
+    assert_eq!(turned.len(), 1);
+    let m = turned[0].placement.m;
+    let arm = [m[0], m[4], m[8]];
+    assert!(
+        (arm[0].abs() - turn).abs() <= 1e-9 && arm[1] == 0.0 && (arm[2].abs() - turn).abs() <= 1e-9
+    );
+    assert!(axles(&inferred.infer("parts/round.dat").connectors).is_empty());
+    let stub = axles(&inferred.infer("parts/stub.dat").connectors);
+    assert_eq!(stub.len(), 1);
+    let face = &faces_of(&stub)[0];
+    assert_eq!(
+        (face.gender, face.origin, face.sections[0].length),
+        (Gender::Male, [0.0, 0.0, 0.0], 20.0)
+    );
+}

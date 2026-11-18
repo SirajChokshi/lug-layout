@@ -1,7 +1,9 @@
+mod axle;
 mod faces;
 mod inferred;
 mod meta;
 mod primitive;
+mod profile;
 mod shadow;
 mod solid;
 
