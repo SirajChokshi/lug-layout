@@ -55,12 +55,13 @@ interface Interval {
 }
 
 const ZERO = exactRational(0n, 1n);
+const ONE = exactRational(1n, 1n);
 const TWO = exactRational(2n, 1n);
 const PROBE_RADIUS_SQUARED = exactRational(BigInt(RAIL_TOP_PROBE_RADIUS_LDU ** 2), 1n);
 const SCAN_FROM = exactRational(BigInt(-LATERAL_SCAN_LDU), 1n);
 const SCAN_TO = exactRational(BigInt(LATERAL_SCAN_LDU), 1n);
 
-function exactPoint(point: PlanPoint): ExactPlanPoint {
+function exactPlanPoint(point: PlanPoint): ExactPlanPoint {
   return { x: exactRationalFromFloat64(point.x), z: exactRationalFromFloat64(point.z) };
 }
 
@@ -123,7 +124,7 @@ export function railHeadsAtEnd(
   origin: PlanPoint,
   along: number,
 ): RailHeads | null {
-  const exactOrigin = exactPoint(origin);
+  const exactOrigin = exactPlanPoint(origin);
   const levels = flat
     .filter((polygon) => nearOrigin(polygon, exactOrigin))
     .map((polygon) => polygon.y)
@@ -160,7 +161,7 @@ function insidePolygon(polygon: ReadonlyArray<ExactPlanPoint>, point: ExactPlanP
 }
 
 export function onRailHead(heads: RailHeads, point: PlanPoint): boolean {
-  const exact = exactPoint(point);
+  const exact = exactPlanPoint(point);
   return heads.polygons.some((polygon) => insidePolygon(polygon, exact));
 }
 
@@ -180,7 +181,7 @@ function crossingInterval(
     if (exactRationalEquals(denominator, ZERO)) continue;
     const alongEdge = divideExactRational(cross(toStart, normal), denominator);
     if (compareExactRational(alongEdge, ZERO) < 0) continue;
-    if (compareExactRational(alongEdge, exactRational(1n, 1n)) > 0) continue;
+    if (compareExactRational(alongEdge, ONE) > 0) continue;
     crossings.push(divideExactRational(cross(toStart, edge), denominator));
   }
   const [first, ...rest] = crossings;
@@ -207,10 +208,10 @@ export function railSection(
   along: number,
   inwardLdu: number,
 ): RailSection | null {
-  const direction = exactPoint({ x: Math.cos(along), z: Math.sin(along) });
-  const normal = exactPoint({ x: -Math.sin(along), z: Math.cos(along) });
+  const direction = exactPlanPoint({ x: Math.cos(along), z: Math.sin(along) });
+  const normal = exactPlanPoint({ x: -Math.sin(along), z: Math.cos(along) });
   const inward = exactRationalFromFloat64(inwardLdu);
-  const start = exactPoint(origin);
+  const start = exactPlanPoint(origin);
   const centre = {
     x: addExactRational(start.x, multiplyExactRational(direction.x, inward)),
     z: addExactRational(start.z, multiplyExactRational(direction.z, inward)),

@@ -12,8 +12,9 @@ import {
 import type * as v from "valibot";
 import {
   conjugateZeta16,
-  exactRationalFromDecimal,
   exactRationalToFloat64,
+  formatExactDecimal,
+  formatExactRational,
   HALF_TURN_16,
   normalizeHeading16,
   rotateZeta16,
@@ -23,7 +24,9 @@ import {
   zeta16,
   zeta16Direction,
   zeta16ToStuds,
+  type ExactDecimalText,
   type ExactRational,
+  type ExactRationalText,
   type Zeta16,
 } from "@brr/math";
 import type { LdrawLibrary } from "../ldraw/library.ts";
@@ -73,8 +76,8 @@ export interface ConnectorCheck {
   readonly marker: string;
   readonly derivation: string;
   readonly markerResidualLdu: number;
-  readonly railCentreOffsetLdu: number | null;
-  readonly railHalfSpacingLdu: number | null;
+  readonly railCentreOffsetLdu: ExactRationalText | null;
+  readonly railHalfSpacingLdu: ExactRationalText | null;
 }
 
 export interface RouteCheck {
@@ -87,7 +90,7 @@ export interface RouteCheck {
 
 export interface PieceChecks {
   readonly id: string;
-  readonly railTopY: number;
+  readonly railTopY: ExactDecimalText;
   readonly connectors: ReadonlyArray<ConnectorCheck>;
   readonly routes: ReadonlyArray<RouteCheck>;
 }
@@ -311,8 +314,8 @@ function endInPart(
   return { origin: toPartFrame(frame, pose), along: pose.heading + Math.PI + frame.inward };
 }
 
-function ldu(value: ExactRational | undefined): number | null {
-  return value === undefined ? null : exactRationalToFloat64(value);
+function rationalText(value: ExactRational | undefined): ExactRationalText | null {
+  return value === undefined ? null : formatExactRational(value);
 }
 
 function railCheck(heads: RailHeads, frame: EntryFrame, end: ExactEnd): RailSection | null {
@@ -400,14 +403,14 @@ export function buildTrackPiece(
   };
   const checks: PieceChecks = {
     id: piece.id,
-    railTopY: exactRationalToFloat64(exactRationalFromDecimal(heads.topY)),
+    railTopY: formatExactDecimal(heads.topY),
     connectors: order.map((index, connector) => ({
       connector,
       marker: relative[index]?.marker ?? "",
       derivation: ordered[connector]?.derivation ?? "",
       markerResidualLdu: ordered[connector]?.residualLdu ?? Number.NaN,
-      railCentreOffsetLdu: ldu(sections[connector]?.centreOffsetLdu),
-      railHalfSpacingLdu: ldu(sections[connector]?.halfSpacingLdu),
+      railCentreOffsetLdu: rationalText(sections[connector]?.centreOffsetLdu),
+      railHalfSpacingLdu: rationalText(sections[connector]?.halfSpacingLdu),
     })),
     routes: fitted.map(({ from, to, path }) => ({
       from,
