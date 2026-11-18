@@ -38,11 +38,24 @@ const startSimWorker = (): Worker =>
   new Worker(new URL("@brr/sim-worker/entry", import.meta.url), { type: "module" });
 const createImportWorker = (): Worker =>
   new Worker(new URL("@brr/import-worker/entry", import.meta.url), { type: "module" });
+const IMPORT_BAKE_HELPERS_MAX = 3;
+const THREADS_KEPT_FOR_EDITOR = 3;
+const DEVICE_GIB_PER_BAKE_HELPER = 2;
+function deviceMemoryGib(): number {
+  const reported: unknown = Reflect.get(navigator, "deviceMemory");
+  return typeof reported === "number" ? reported : Number.POSITIVE_INFINITY;
+}
+const importBakeHelpers = Math.min(
+  IMPORT_BAKE_HELPERS_MAX,
+  Math.max(0, navigator.hardwareConcurrency - THREADS_KEPT_FOR_EDITOR),
+  Math.floor(deviceMemoryGib() / DEVICE_GIB_PER_BAKE_HELPER),
+);
 container.load(
   ...mainThreadModules({
     bundleBaseUrl,
     startSimWorker,
     createImportWorker,
+    importBakeHelpers,
     ...(import.meta.env.VITE_BUNDLE_MANIFEST_FILE === undefined
       ? {}
       : { bundleManifestFile: import.meta.env.VITE_BUNDLE_MANIFEST_FILE }),
