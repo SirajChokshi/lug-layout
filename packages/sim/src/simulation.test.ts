@@ -339,11 +339,13 @@ describe("Coupled running gear on a circle", () => {
       return edge % 2 === 0 ? route * arcLength + offset : (route + 1) * arcLength - offset;
     };
     const head = headAlong();
-    const length = sim.bodyLengthLdu(0);
+    sim.solveBody(0);
+    const length = sim.trainBodyLength[0] ?? 0;
     expect(sim.reverse(0)).toBe(true);
     const moved = (((head - headAlong()) % circumference) + circumference) % circumference;
     expect(moved).toBeCloseTo(length, 6);
-    expect(sim.bodyLengthLdu(0)).toBeCloseTo(length, 6);
+    sim.solveBody(0);
+    expect(sim.trainBodyLength[0]).toBeCloseTo(length, 6);
   });
 });
 

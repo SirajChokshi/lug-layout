@@ -4,7 +4,8 @@ import { NO_BLOCK, type BlockMap } from "./block-map.ts";
 export interface AutopilotTrains {
   readonly trains: number;
   readonly trainSpeed: Float64Array;
-  bodyLengthLdu(train: number): number;
+  readonly trainBodyLength: Float64Array;
+  solveBody(train: number): void;
   driveAtTopSpeed(train: number): void;
 }
 
@@ -15,6 +16,7 @@ const XORSHIFT_C = 5;
 export class Autopilot {
   private readonly state = new Uint32Array(1);
   private readonly idleTicks: Int32Array;
+  private readonly freeStops: Int32Array;
 
   constructor(
     private readonly blocks: BlockMap,
@@ -26,6 +28,7 @@ export class Autopilot {
   ) {
     this.state[0] = seed === 0 ? 1 : seed;
     this.idleTicks = new Int32Array(trainCapacity);
+    this.freeStops = new Int32Array(blocks.blockCount);
   }
 
   update(trains: AutopilotTrains): void {
@@ -40,7 +43,8 @@ export class Autopilot {
       this.idleTicks[train] = idle;
       const due = state === "waiting" ? idle >= this.retryTicks : idle >= this.dwellTicks;
       if (!due) continue;
-      const target = this.pickStop(train, trains.bodyLengthLdu(train));
+      trains.solveBody(train);
+      const target = this.pickStop(train, trains);
       if (target === NO_BLOCK) continue;
       this.keeper.goTo(train, target);
       trains.driveAtTopSpeed(train);
@@ -48,37 +52,30 @@ export class Autopilot {
     }
   }
 
-  private pickStop(train: number, lengthLdu: number): number {
+  private pickStop(train: number, trains: AutopilotTrains): number {
     const current = this.keeper.targetBlock[train] ?? NO_BLOCK;
-    let candidates = 0;
+    const neededLdu = (trains.trainBodyLength[train] ?? 0) + 2 * BLOCK_CLEARANCE_LDU;
+    let count = 0;
     for (let block = 0; block < this.blocks.blockCount; block++) {
-      if (this.isFreeStop(block, current, lengthLdu)) candidates++;
+      if (
+        block !== current &&
+        this.blocks.blockIsJunction[block] === 0 &&
+        this.keeper.blockIsFree(block) &&
+        (this.blocks.blockLengthLdu[block] ?? 0) >= neededLdu
+      ) {
+        this.freeStops[count++] = block;
+      }
     }
-    if (candidates === 0) return NO_BLOCK;
-    let pick = this.next() % candidates;
-    for (let block = 0; block < this.blocks.blockCount; block++) {
-      if (!this.isFreeStop(block, current, lengthLdu)) continue;
-      if (pick === 0) return block;
-      pick--;
-    }
-    return NO_BLOCK;
+    if (count === 0) return NO_BLOCK;
+    this.advanceRandom();
+    return this.freeStops[(this.state[0] ?? 0) % count] ?? NO_BLOCK;
   }
 
-  private isFreeStop(block: number, current: number, lengthLdu: number): boolean {
-    return (
-      block !== current &&
-      this.blocks.blockIsJunction[block] === 0 &&
-      this.keeper.blockIsFree(block) &&
-      (this.blocks.blockLengthLdu[block] ?? 0) >= lengthLdu + 2 * BLOCK_CLEARANCE_LDU
-    );
-  }
-
-  private next(): number {
+  private advanceRandom(): void {
     let x = this.state[0] ?? 1;
     x ^= x << XORSHIFT_A;
     x ^= x >>> XORSHIFT_B;
     x ^= x << XORSHIFT_C;
     this.state[0] = x;
-    return this.state[0] ?? 0;
   }
 }
