@@ -5,6 +5,8 @@ import {
   type EditorSnapshot,
   type IEditor,
   type LatencySample,
+  type MeshCounts,
+  type MeshProgress,
   type PlaySnapshot,
   type RoadIssueView,
   type ShellCommandId,
@@ -17,9 +19,20 @@ import { isCompactLayout } from "./use-compact-layout.ts";
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
 
-function meshesText(meshes: EditorSnapshot["meshes"]): string {
-  const failed = meshes.failed > 0 ? `, ${integer.format(meshes.failed)} failed` : "";
-  return `${integer.format(meshes.loaded)} of ${integer.format(meshes.wanted)} loaded${failed}`;
+function countText(count: number, label: string): string {
+  return count > 0 ? `, ${integer.format(count)} ${label}` : "";
+}
+
+function meshCountsText(counts: MeshCounts, meshes: string, standIn: string): string {
+  const note = counts.loaded < counts.wanted ? ` (${standIn} stand in)` : "";
+  return `${integer.format(counts.loaded)} of ${integer.format(counts.wanted)} ${meshes}loaded${countText(counts.failed, "failed")}${countText(counts.absent, "absent")}${note}`;
+}
+
+function partMeshesText(meshes: MeshProgress): string {
+  return [
+    meshCountsText(meshes.detailedPartMeshes, "detailed-level meshes ", "placeholders"),
+    meshCountsText(meshes.farPartMeshes, "far-level meshes ", "detailed-level meshes"),
+  ].join(", ");
 }
 
 function ldu(value: number): string {
@@ -394,7 +407,11 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       "History (undo, redo)",
       `${integer.format(snapshot.history.undoDepth)}, ${integer.format(snapshot.history.redoDepth)}`,
     ],
-    ["Part meshes", meshesText(snapshot.meshes)],
+    ["Part meshes", partMeshesText(snapshot.meshes)],
+    [
+      "Far model meshes",
+      meshCountsText(snapshot.meshes.farModelMeshes, "", "far-level part meshes"),
+    ],
     ["Last edit latency", latencyText(snapshot.lastLatency, snapshot)],
     ["Rebuilt for it", rebuildText(snapshot.lastLatency)],
   );

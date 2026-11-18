@@ -7,11 +7,11 @@ import {
   posesJoin16,
   STUD_LDU,
   ZETA16_ORDER,
+  ZETA16_STEP_RADIANS,
   zeta16ToStuds,
   type Pose16,
 } from "@brr/math";
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import { ZETA16_STEP_RADIANS } from "../track/cyclotomic.ts";
 import {
   entryInwardAngle,
   findTrackEnds,
