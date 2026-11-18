@@ -9,6 +9,7 @@ use super::{
 
 const META_PREFIX: &str = "!LDCAD";
 const IDENTITY_ROTATION: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+const FINGERS_CENTRED_WHEN_UNSTATED: bool = true;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Meta {
@@ -86,8 +87,12 @@ impl Params {
     }
 
     fn flag(&mut self, key: &'static str) -> Result<bool, MetaError> {
+        self.flag_or(key, false)
+    }
+
+    fn flag_or(&mut self, key: &'static str, absent: bool) -> Result<bool, MetaError> {
         match self.take(key) {
-            None => Ok(false),
+            None => Ok(absent),
             Some(value) if value.eq_ignore_ascii_case("true") => Ok(true),
             Some(value) if value.eq_ignore_ascii_case("false") => Ok(false),
             Some(value) => Err(self.malformed(key, &value)),
@@ -313,7 +318,7 @@ fn meta(params: &mut Params) -> Result<Option<Meta>, MetaError> {
                 first: params.gender("genderofs")?,
                 widths,
                 radius,
-                center: params.flag("center")?,
+                center: params.flag_or("center", FINGERS_CENTRED_WHEN_UNSTATED)?,
             };
             snap(params, shape)?
         }

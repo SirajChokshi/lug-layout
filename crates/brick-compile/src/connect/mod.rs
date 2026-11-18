@@ -16,8 +16,8 @@ use crate::flatten::Library;
 use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
 
 pub use faces::{
-    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT,
-    FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
+    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
+    FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};

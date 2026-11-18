@@ -42,7 +42,6 @@ impl PartRecords {
 
 fn unreadable_name(reason: Unreadable) -> &'static str {
     match reason {
-        Unreadable::FingerHinge => "fingerHinge",
         Unreadable::Generic => "generic",
         Unreadable::ClosedAtBothEnds => "closedAtBothEnds",
     }
