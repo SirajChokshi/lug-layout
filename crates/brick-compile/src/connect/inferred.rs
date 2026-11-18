@@ -1091,13 +1091,6 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     )
                     .is_some_and(|floor| floor.faces_probe != Some(false))
             });
-            if opens_further_out {
-                inference.issues.push(Issue::Uninferred {
-                    origin: probe.entrance,
-                    reason: Uninferred::EntranceInsideCavity,
-                });
-                continue;
-            }
             if probe.radius == self.probe.radius {
                 let (i, j) = plan_axes(probe.axis);
                 mouths.insert((
@@ -1107,6 +1100,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     key(probe.entrance[j]),
                     key(probe.entrance[probe.axis]),
                 ));
+            }
+            if opens_further_out {
+                inference.issues.push(Issue::Uninferred {
+                    origin: probe.entrance,
+                    reason: Uninferred::EntranceInsideCavity,
+                });
+                continue;
             }
             let length = self
                 .vocabulary
