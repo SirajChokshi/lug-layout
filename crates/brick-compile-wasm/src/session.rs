@@ -11,7 +11,7 @@ use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
-use brick_compile::{compile_part, CompileOptions, Lod};
+use brick_compile::{compile_part, CompileOptions, Lod, TechnicPrimitives};
 
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
@@ -58,6 +58,7 @@ impl Session {
                 lod,
                 stud_primitives,
                 unofficial_allowlist,
+                primitives,
                 parts,
                 inline_checks,
             } => {
@@ -67,6 +68,10 @@ impl Session {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
                     unofficial_allowlist: unofficial_allowlist.clone(),
+                    technic: primitives.as_ref().map_or_else(
+                        || Ok(TechnicPrimitives::default()),
+                        TechnicPrimitives::from_table,
+                    )?,
                     rolling_mode,
                 };
                 let model = request.text("source")?;

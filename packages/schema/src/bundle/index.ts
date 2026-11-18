@@ -520,11 +520,35 @@ export const CompilerVehicles = v.object({
   ),
 });
 export type CompilerVehicles = v.InferOutput<typeof CompilerVehicles>;
+export const TECHNIC_ROLES = ["hole", "pin", "axleEnd"] as const;
+
+export const PrimitiveConnectorTable = v.strictObject({
+  source: BundleSource,
+  license: v.string(),
+  primitives: v.array(
+    v.strictObject({
+      file: v.string(),
+      title: v.string(),
+      derivation: v.string(),
+      snaps: v.optional(v.array(v.string())),
+      whereOpen: v.optional(v.array(v.string())),
+      holeEnd: v.optional(
+        v.strictObject({
+          counterbore: v.strictObject({ radius: Finite, length: Finite }),
+          boreRadius: Finite,
+        }),
+      ),
+      technic: v.optional(v.picklist(TECHNIC_ROLES)),
+    }),
+  ),
+});
+export type PrimitiveConnectorTable = v.InferOutput<typeof PrimitiveConnectorTable>;
 
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
   vehicles: v.optional(CompilerVehicles),
+  primitives: v.optional(PrimitiveConnectorTable),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -764,6 +788,7 @@ export const CompilerRequest = v.variant("op", [
     lod: BundleLod,
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
+    primitives: v.nullable(PrimitiveConnectorTable),
     parts: StringList,
     inlineChecks: v.pipe(
       v.array(v.strictObject({ inline: v.string(), official: v.string() })),

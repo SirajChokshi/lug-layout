@@ -46,6 +46,7 @@ pub enum Operation {
         lod: LodName,
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
+        primitives: Option<serde_json::Value>,
         parts: Vec<String>,
         inline_checks: Vec<InlineCheck>,
     },

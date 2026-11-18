@@ -13,7 +13,7 @@ use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
-use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
+use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
 use serde_json::{json, Value};
 
 const DISCLAIMER: &str =
@@ -58,6 +58,7 @@ struct Args {
     fixtures: PathBuf,
     omr: PathBuf,
     palette: PathBuf,
+    primitives: PathBuf,
     out: PathBuf,
     lod: Lod,
     compiler: Option<PathBuf>,
@@ -84,6 +85,7 @@ fn parse_args() -> Result<Args, String> {
         omr: take("--omr")?.into(),
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
+        primitives: take("--primitives")?.into(),
         out: take("--out")?.into(),
         cover_cache: values.get("--cover-cache").map(PathBuf::from),
         lod,
@@ -391,10 +393,16 @@ fn run(args: &Args) -> Result<(), String> {
                 .collect()
         })
         .unwrap_or_default();
+    let primitive_table: Value = serde_json::from_slice(
+        &fs::read(&args.primitives).map_err(|e| format!("{}: {e}", args.primitives.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
+    let technic = TechnicPrimitives::from_table(&primitive_table)?;
     let primitive_options = CompileOptions {
         lod: args.lod,
         stud_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+        technic: TechnicPrimitives::default(),
         rolling_mode: RollingMode::Skip,
     };
     let compiler = match &args.compiler {
@@ -402,7 +410,11 @@ fn run(args: &Args) -> Result<(), String> {
             fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
             fs::copy(path, args.out.join(COMPILER_FILE))
                 .map_err(|e| format!("{}: {e}", path.display()))?;
-            json!({ "file": COMPILER_FILE, "unofficialAllowlist": unofficial_allowlist })
+            json!({
+                "file": COMPILER_FILE,
+                "unofficialAllowlist": unofficial_allowlist,
+                "primitives": primitive_table,
+            })
         }
         None => Value::Null,
     };
@@ -410,6 +422,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+        technic,
         rolling_mode: RollingMode::ReadBy(required_stud_roundness(&library, &stud_primitives)?),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
