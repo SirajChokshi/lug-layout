@@ -11,6 +11,7 @@ alwaysApply: false
 - **Pure packages need no mocks.** Construct engines directly with real data from `@brr/test-fixtures`.
 - **Services:** build a container from the real `ContainerModule`s, override only the boundary tokens (storage, rpc, scene backend) with in-memory fakes, then resolve through tokens.
 - **Exact math and rules:** prefer property tests (for example, any closed loop of pieces returns the identity pose, and joins are symmetric) plus explicit negative cases. A broken join must be rejected, not just a good one accepted.
+- **Placement and connection features** are tested on arbitrary and custom inputs, such as a synthetic model built from official parts or an imported file that isn't in the palette, and never only on curated official sets or generated templates (see `real-world-compatibility.mdc`).
 - **Layout and plan rules** get headless tests: a minimal world fixture, then the expected issue list (rule id, placement ids, severity in sandbox mode and in plan mode).
 - **Goldens** (baked models, BOMs, exported `.mpd`/`.brr.zip`, round-trip worlds) live in `packages/test-fixtures`. Update them only on purpose, and explain why in the commit.
 - **Benches:** `*.bench.ts` cover hot loops and include a frame or tick allocation probe. They run in `turbo bench`. Phase gates use the real Tier A numbers.
