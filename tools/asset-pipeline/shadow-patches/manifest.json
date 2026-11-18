@@ -334,6 +334,67 @@
           "root": ""
         }
       }
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "measuredCaps",
+      "measured": {
+        "caps": "none",
+        "ends": {
+          "far": "free",
+          "start": "free"
+        },
+        "replacedCaps": "one",
+        "title": "Minifig Tool Wand"
+      },
+      "part": "36752a",
+      "snap": 0,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 6   R 2.75 20] [slide=true] [pos=0 -6 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=none] [secs=R 4 2] [pos=0 0 -1] [ori=1 0 0 0 0 1 0 -1 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=none] [secs=R 4 2] [pos=-1 0 0] [ori=0 -1 0 0 0 1 -1 0 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=none] [secs=R 4 2] [pos=0 -1 0] [ori=0 0 -1 0 -1 0 -1 0 0]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "measuredCaps",
+      "measured": {
+        "caps": "one",
+        "ends": {
+          "far": "free",
+          "start": {
+            "gap": "0.0005",
+            "radius": "4"
+          }
+        },
+        "replacedCaps": "two",
+        "title": "Minifig Sextant"
+      },
+      "part": "30154",
+      "snap": 1,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=two] [secs=R 4 8] [slide=true] [pos=0 10 0] [ori=1 0 0 0 -1 0 0 0 -1]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=two] [secs=R 4 12] [slide=true] [pos=0 28 0] [ori=1 0 0 0 -1 0 0 0 -1]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
     }
   ]
 }
