@@ -58,13 +58,6 @@ function compiledManifest() {
     catalogParts: [],
     trackCatalog: { n: 16, pieces: [] },
     trackShapes: [],
-    milsEdgeRules: {
-      source: "test",
-      moduleStuds: 32,
-      surfacePlates: 4,
-      surfaceTolerancePlates: 1,
-      features: [],
-    },
     compiler: null,
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },

@@ -10,14 +10,7 @@ import {
 import { decode, issueText } from "@brr/schema/decode";
 import * as v from "valibot";
 
-const SearchedModel = v.pick(BundleModelEntry, [
-  "name",
-  "file",
-  "origin",
-  "set",
-  "role",
-  "sections",
-]);
+const SearchedModel = v.pick(BundleModelEntry, ["name", "file", "origin", "set", "sections"]);
 type SearchedModel = v.InferOutput<typeof SearchedModel>;
 const SearchedIndex = v.object({
   colors: BundleIndex.entries.colors,
@@ -48,7 +41,6 @@ const SECTION_LABEL: Readonly<Record<BundleSearchSection, string>> = {
   track: "Track",
   baseplates: "Baseplates",
   road: "Road",
-  mils: "MILS modules",
   sets: "Sets",
 };
 const IDENTIFIER_WORD = 3;
@@ -123,17 +115,17 @@ function setLabel(model: SearchedModel): string {
 }
 
 function modelItem(model: SearchedModel): IndexedItem {
-  const isModule = model.role === "mils-module";
+  const generated = model.origin === "generated";
   return indexed(
     {
-      id: isModule ? `generated:${model.name}` : `omr:${model.name}`,
-      label: isModule ? (model.sections[0]?.title ?? model.name) : setLabel(model),
-      section: isModule ? "mils" : "sets",
-      kind: isModule ? "mils-module" : "model",
+      id: `${model.origin}:${model.name}`,
+      label: generated ? (model.sections[0]?.title ?? model.name) : setLabel(model),
+      section: "sets",
+      kind: "model",
       file: model.file,
     },
-    isModule ? [] : [model.name],
-    isModule ? [model.name] : [model.set?.name ?? ""],
+    generated ? [] : [model.name],
+    generated ? [model.name] : [model.set?.name ?? ""],
   );
 }
 
@@ -167,10 +159,7 @@ export class BundleSearchIndex {
   private readonly items: ReadonlyArray<IndexedItem>;
 
   constructor(index: SearchedIndex) {
-    const placeableModels = index.models.filter(
-      (model) => model.role === "mils-module" || model.origin === "omr",
-    );
-    this.items = [...trackItems(index), ...partItems(index), ...placeableModels.map(modelItem)];
+    this.items = [...trackItems(index), ...partItems(index), ...index.models.map(modelItem)];
   }
 
   search(tokens: ReadonlyArray<string>, limit: number): ReadonlyArray<BundleSearchHit> {

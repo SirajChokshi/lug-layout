@@ -17,12 +17,12 @@ Every object except the pointer is stored with `Cache-Control: public, max-age=3
 
 ## What a LOD holds
 
-The manifest is the small index the editor reads first. It holds the colours, stud primitives, model entries, track catalog and MILS edge rules. It also lists the `catalogParts`: the ground, road and track parts the editor offers, each with the file of its shape. And it holds each track piece's `trackShapes`: its plan footprint at all 16 headings, the convex hull of its mesh in plan (the outline the editor's closure check uses), and its height range, all measured from its mesh. Everything else is in files the manifest names:
+The manifest is the small index the editor reads first. It holds the colours, stud primitives, model entries and track catalog. It also lists the `catalogParts`: the ground, road and track parts the editor offers, each with the file of its shape. And it holds each track piece's `trackShapes`: its plan footprint at all 16 headings, the convex hull of its mesh in plan (the outline the editor's closure check uses), and its height range, all measured from its mesh. Everything else is in files the manifest names:
 - `partTable`: every bundled part (id, path, GLB file, bounds, licence);
 - `creditTable`: the attribution of every LDraw file the bundle uses;
 - each model file is that model's record: its instances, stud cells and cover, plus the shape of every part it places;
 - a part's shape (`shape-<id>.<sha>.json`) is what placement needs from it without its mesh: bounds, role, stud records, track ends and produced colours;
-- `thumbnails` (standard LOD only) maps each palette item to its picture, `thumb/<item>.<sha>.png`: every ground and road part in each produced colour, and every placeable set and MILS module. The pipeline renders them from the GLBs it has just compiled with a deterministic CPU rasterizer (`tools/asset-pipeline/src/thumbnails/`): 112×112 RGBA, a fixed three-quarter view of the item's box, LDConfig colours, key, fill and ambient light, translucent colours blended last, an edge outline and 3× supersampling. The same inputs give the same bytes, so the files content-address like everything else.
+- `thumbnails` (standard LOD only) maps each palette item to its picture, `thumb/<item>.<sha>.png`: every ground and road part in each produced colour, and every model with a stud lattice. The pipeline renders them from the GLBs it has just compiled with a deterministic CPU rasterizer (`tools/asset-pipeline/src/thumbnails/`): 112×112 RGBA, a fixed three-quarter view of the item's box, LDConfig colours, key, fill and ambient light, translucent colours blended last, an edge outline and 3× supersampling. The same inputs give the same bytes, so the files content-address like everything else.
 
 GLBs are only ever needed to draw.
 

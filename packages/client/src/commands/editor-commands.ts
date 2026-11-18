@@ -87,7 +87,7 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     title: "Draw road",
     group: "Tools",
     keys: [{ key: "g" }],
-    keywords: "street lay plates mils",
+    keywords: "street lay plates",
   },
   {
     id: "rotate",

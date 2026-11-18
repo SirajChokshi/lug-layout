@@ -133,13 +133,7 @@ export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {
 
 export type PartBundle = Pick<
   BundleManifest,
-  | "bundleVersion"
-  | "colors"
-  | "credits"
-  | "models"
-  | "trackCatalog"
-  | "trackShapes"
-  | "milsEdgeRules"
+  "bundleVersion" | "colors" | "credits" | "models" | "trackCatalog" | "trackShapes"
 > & {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;

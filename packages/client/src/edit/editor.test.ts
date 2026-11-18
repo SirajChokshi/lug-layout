@@ -330,7 +330,7 @@ async function partMeshes(paths: ReadonlyArray<string>, lod: BundleLod): Promise
   );
 }
 
-it("starts from the index, part shapes and the MILS module and train records, fetching no part mesh and at most 16 files at once", async () => {
+it("starts from the index, part shapes and the train records, fetching no part mesh and at most 16 files at once", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
   const { editor, manifest } = await startEditor(null, fetcher);
 
@@ -454,57 +454,6 @@ it("offers every baseplate and road plate in exactly the produced colours the bu
     part.producedColors?.colors.map((color) => color.ldraw),
   ]);
   expect(offered).toEqual(produced);
-}, 120_000);
-
-it("loads every MILS module template, including the rail module whose joiners reach past its baseplate", async () => {
-  const bundled = await new BundleDirectoryFetcher().text("standard/manifest.json");
-  const modules = (JSON.parse(bundled) as BundleManifest).models
-    .filter((model) => model.role === "mils-module")
-    .map((model) => model.name);
-  expect(modules).toContain("mils-rail-straight");
-  const { editor } = await startEditor(modules);
-
-  const snapshot = editor.snapshot();
-  expect(snapshot.error).toBeNull();
-  expect(snapshot.status).toBe("ready");
-  expect(
-    snapshot.catalog.filter((item) => item.kind === "mils-module").map((item) => item.id),
-  ).toEqual(modules.map((name) => `generated:${name}`));
-}, 120_000);
-
-it("undoes, redoes, rotates and deletes placed MILS modules, keeping the module joins current", async () => {
-  const { editor, backend } = await startEditor(["mils-road-straight", "mils-road-curve"]);
-  const moduleLdu = 640;
-  const placeAt = (item: string, column: number, row: number) => {
-    editor.chooseItem(item);
-    backend.aim(column * moduleLdu + moduleLdu / 2, row * moduleLdu + moduleLdu / 2);
-    editor.pointerMove(0, 0);
-    editor.click(0, 0, 0);
-  };
-  const counts = () => {
-    const { placements, modules, error } = editor.snapshot();
-    return { placements, joined: modules.joined, open: modules.open, error };
-  };
-  placeAt("generated:mils-road-straight", 0, 0);
-  placeAt("generated:mils-road-curve", 1, 0);
-  expect(counts()).toEqual({ placements: 2, joined: 2, open: 6, error: null });
-
-  editor.undo(0);
-  expect(counts()).toEqual({ placements: 1, joined: 0, open: 4, error: null });
-  editor.redo(0);
-  expect(counts()).toEqual({ placements: 2, joined: 2, open: 6, error: null });
-
-  editor.chooseItem(null);
-  backend.aim(moduleLdu * 1.5, moduleLdu / 2);
-  editor.click(0, 0, 0);
-  expect(editor.snapshot().selection?.item).toBe("generated:mils-road-curve");
-  editor.rotate(0);
-  expect(counts().placements).toBe(2);
-  expect(editor.snapshot().modules.joined + editor.snapshot().modules.mismatched).toBe(2);
-  editor.undo(0);
-  expect(counts()).toEqual({ placements: 2, joined: 2, open: 6, error: null });
-  editor.deleteSelection(0);
-  expect(counts()).toEqual({ placements: 1, joined: 0, open: 4, error: null });
 }, 120_000);
 
 interface MemoryWorld {
@@ -660,42 +609,6 @@ describe("unsaved edits after a failed save", () => {
   });
 });
 
-it.each([2, 3])(
-  "chains %i rail modules end to end, flush on the ground with their rail edges joined",
-  async (count) => {
-    const { editor, backend } = await startEditor(["mils-rail-straight"]);
-    const moduleLdu = 640;
-    for (let column = 0; column < count; column++) {
-      editor.chooseItem("generated:mils-rail-straight");
-      backend.aim(column * moduleLdu + moduleLdu / 2, moduleLdu / 2);
-      editor.pointerMove(0, 0);
-      editor.click(0, 0, 0);
-    }
-    const { placements } = editor.dump();
-    const { modules, lastRefusal, error } = editor.snapshot();
-    const columns = Array.from({ length: count }, (_, column) => column);
-    expect({
-      x: placements.x.toSorted((a, b) => a - b),
-      yPlates: placements.yPlates,
-      seams: modules.joined / 2,
-      mismatched: modules.mismatched,
-      lastRefusal,
-      error,
-    }).toEqual({
-      x: columns.map((column) => column * moduleLdu + moduleLdu / 2),
-      yPlates: columns.map(() => 0),
-      seams: count - 1,
-      mismatched: 0,
-      lastRefusal: null,
-      error: null,
-    });
-  },
-  120_000,
-);
-
-const RAIL_MODULE = "generated:mils-rail-straight";
-const RAIL_LABEL = "Rail Module Straight (project rule, not MILS)";
-
 function placer(editor: IEditor, backend: HeadlessBackend) {
   return (item: string, x: number, z: number) => {
     editor.chooseItem(item);
@@ -707,119 +620,38 @@ function placer(editor: IEditor, backend: HeadlessBackend) {
   };
 }
 
-it("refuses a 10264-1 Corner Garage in a rail module's track end in either order, and takes it beside a terrain edge", async () => {
-  const { editor, backend } = await startEditor(["mils-rail-straight", "10264-1"]);
-  const place = placer(editor, backend);
-  const garage = "omr:10264-1";
-  expect(await editor.prefetch(garage)).toBe(true);
-
-  place(RAIL_MODULE, 320, 320);
-  const intoTrackEnd = place(garage, 960, 320);
-  const besideTerrain = place(garage, 320, 960);
-  editor.undo(0);
-  editor.undo(0);
-  place(garage, 960, 320);
-  const trackEndIntoGarage = place(RAIL_MODULE, 320, 320);
-
-  expect({ intoTrackEnd, besideTerrain, trackEndIntoGarage }).toEqual({
-    intoTrackEnd: {
-      placements: 1,
-      refusedClicks: 1,
-      reason: expect.stringContaining(`the track end of ${RAIL_LABEL}`),
-    },
-    besideTerrain: { placements: 2, refusedClicks: 1, reason: expect.any(String) },
-    trackEndIntoGarage: {
-      placements: 1,
-      refusedClicks: 2,
-      reason: expect.stringContaining(`${RAIL_LABEL}: its track end would run into 10264-1`),
-    },
-  });
-}, 120_000);
-
-it("refuses a rail edge against a plain or road module in either order, and joins terrain edges beside it", async () => {
-  const { editor, backend } = await startEditor([
-    "mils-rail-straight",
-    "mils-plain",
-    "mils-road-straight",
-  ]);
-  const place = placer(editor, backend);
-  const facingRail = expect.stringContaining(`would face the rail edge of ${RAIL_LABEL}`);
-
-  place(RAIL_MODULE, 320, 320);
-  const plainOnRail = place("generated:mils-plain", 960, 320);
-  const roadOnRail = place("generated:mils-road-straight", 960, 320);
-  const plainOnTerrain = place("generated:mils-plain", 320, 960);
-  editor.undo(0);
-  editor.undo(0);
-  editor.setSnapModules(false);
-  place("generated:mils-plain", 960, 320);
-  const railOnPlain = place(RAIL_MODULE, 320, 320);
-
-  expect({ plainOnRail, roadOnRail, plainOnTerrain, railOnPlain }).toEqual({
-    plainOnRail: { placements: 1, refusedClicks: 1, reason: facingRail },
-    roadOnRail: { placements: 1, refusedClicks: 2, reason: facingRail },
-    plainOnTerrain: { placements: 2, refusedClicks: 2, reason: facingRail },
-    railOnPlain: {
-      placements: 1,
-      refusedClicks: 3,
-      reason: expect.stringContaining(
-        `${RAIL_LABEL}: its rail edge on the maxX side would face the terrain edge of MILS Basic Terrain Module`,
-      ),
-    },
-  });
-}, 120_000);
-
-it.each([
-  {
-    name: "a MILS curve beside a MILS straight",
-    models: ["mils-road-straight", "mils-road-curve"],
-    placed: "generated:mils-road-straight",
-    held: "generated:mils-road-curve",
-    heldAt: [960, 320],
-  },
-  {
-    name: "a road curve at a road straight's open end",
-    models: [],
-    placed: "ldraw:44336p04@72",
-    held: "ldraw:44342p02@72",
-    heldAt: [320, 960],
-  },
-] as const)(
-  "R cycles the fitting turns of $name, and the click lays the turn the ghost shows",
-  async ({ models, placed, held, heldAt }) => {
-    const { editor, backend } = await startEditor(models);
-    editor.chooseItem(placed);
-    backend.aim(320, 320);
-    editor.pointerMove(0, 0);
-    editor.click(0, 0, 0);
-    editor.chooseItem(held);
-    backend.aim(heldAt[0], heldAt[1]);
-    editor.pointerMove(0, 0);
-    const shown = () => {
-      const { ghostRot, moduleFit, snap } = editor.snapshot();
-      return { ghostRot, fit: moduleFit?.rot ?? (snap?.state === "snapped" ? ghostRot : null) };
-    };
-    for (const direction of [1, -1] as const) {
-      const turns = [shown()];
-      for (let press = 0; press < 4; press++) {
-        editor.rotate(0, direction);
-        const turned = shown();
-        editor.pointerMove(0, 0);
-        expect(shown()).toEqual(turned);
-        turns.push(turned);
-      }
-      for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
-      const rots = turns.map((turn) => turn.ghostRot);
-      expect(new Set(rots).size).toBe(2);
-      expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
+it("R cycles the fitting turns of a road curve at a road straight's open end, and the click lays the turn the ghost shows", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem("ldraw:44336p04@72");
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem("ldraw:44342p02@72");
+  backend.aim(320, 960);
+  editor.pointerMove(0, 0);
+  const shown = () => {
+    const { ghostRot, snap } = editor.snapshot();
+    return { ghostRot, fit: snap?.state === "snapped" ? ghostRot : null };
+  };
+  for (const direction of [1, -1] as const) {
+    const turns = [shown()];
+    for (let press = 0; press < 4; press++) {
+      editor.rotate(0, direction);
+      const turned = shown();
+      editor.pointerMove(0, 0);
+      expect(shown()).toEqual(turned);
+      turns.push(turned);
     }
-    const shownRot = shown().ghostRot;
-    editor.click(0, 0, 0);
-    const { placements } = editor.dump();
-    expect(placements.rot.at(-1)).toBe(shownRot);
-  },
-  120_000,
-);
+    for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
+    const rots = turns.map((turn) => turn.ghostRot);
+    expect(new Set(rots).size).toBe(2);
+    expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
+  }
+  const shownRot = shown().ghostRot;
+  editor.click(0, 0, 0);
+  const { placements } = editor.dump();
+  expect(placements.rot.at(-1)).toBe(shownRot);
+}, 120_000);
 
 function selectAt(editor: IEditor, backend: HeadlessBackend, x: number, z: number) {
   editor.chooseItem(null);
@@ -898,24 +730,6 @@ it("refuses to turn a placed road plate into a mismatch with its neighbour, the 
     unsnapped: expect.objectContaining({ rot: 1, refusal: null }),
   });
   expect(turned.roadCells).toBeGreaterThan(0);
-}, 120_000);
-
-it("takes a 10185-1 Green Grocer flush against a rail edge when none of its parts reach the track end", async () => {
-  const { editor, backend } = await startEditor(["mils-rail-straight", "10185-1"]);
-  const place = placer(editor, backend);
-  place(RAIL_MODULE, 320, 320);
-  expect(await editor.prefetch("omr:10185-1")).toBe(true);
-  editor.chooseItem("omr:10185-1");
-  editor.rotate(0);
-  editor.rotate(0);
-  const flush = place("omr:10185-1", 960, 320);
-  const { placements } = editor.dump();
-
-  expect({ flush, yPlates: placements.yPlates, rot: placements.rot.toSorted() }).toEqual({
-    flush: { placements: 2, refusedClicks: 0, reason: null },
-    yPlates: [0, 0],
-    rot: [0, 2],
-  });
 }, 120_000);
 
 class OtherTabLocks implements IWorldLocks {
@@ -1103,6 +917,7 @@ it.each([
   "with a 3811 placed, $name is refused only where two baseplates would share space",
   async ({ held, at, expected }) => {
     const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    expect(await editor.prefetch(PLAIN_MODULE)).toBe(true);
     expect(await editor.prefetch(SET)).toBe(true);
     const place = placer(editor, backend);
     place(BASEPLATE, 0, 0);
@@ -1141,6 +956,7 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
 
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
   const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  expect(await editor.prefetch(PLAIN_MODULE)).toBe(true);
   expect(await editor.prefetch(SET)).toBe(true);
   const place = placer(editor, backend);
   place(PLAIN_MODULE, 320, 320);
@@ -1191,6 +1007,7 @@ it.each([
   "deletes the support when $name, since the set keeps its resting height",
   async ({ lay, remove }) => {
     const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    expect(await editor.prefetch(PLAIN_MODULE)).toBe(true);
     expect(await editor.prefetch(SET)).toBe(true);
     const place = placer(editor, backend);
     for (const [item, x, z] of lay) place(item, x, z);
