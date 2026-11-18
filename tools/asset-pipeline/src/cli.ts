@@ -89,6 +89,7 @@ import {
 import {
   geometryReports,
   licenseAuditReport,
+  magnetSeatReports,
   readSources,
   trackCatalogReports,
   writeReports,
@@ -330,9 +331,13 @@ async function factsCommand(check: boolean): Promise<void> {
   const palette = await readPalette(palettePath);
   const { audit } = lock;
   if (audit === undefined) throw new Error("ldraw.lock.json has no audit inputs; run fetch-ldraw");
+  const connectivity = connectivityLock(lock);
+  const omrModels = palette.models.filter((model) => model.origin === "omr");
   const problems = [
     ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyAuditInputs(audit, auditRoot, connectivityRoot)),
+    ...(await verifyConnectivity(connectivity, palette.connectivitySource, bundleConnectivityRoot)),
+    ...(await verifyModels(omrModels, modelRoots)),
   ];
   if (problems.length > 0) {
     process.stderr.write(
@@ -356,6 +361,19 @@ async function factsCommand(check: boolean): Promise<void> {
     }),
     ...geometryReports(lock.source, auditLibrary, shadowLibrary, palette.studPrimitives),
     ...trackCatalogReports(auditLibrary, palette),
+    ...magnetSeatReports(
+      lock,
+      connectivity,
+      new LdrawLibrary([ldrawRoot]),
+      new LdrawLibrary([bundleConnectivityRoot]),
+      await Promise.all(
+        omrModels.map(async (model) => ({
+          name: model.file,
+          sha256: model.sha256,
+          source: await readFile(modelPath(model, modelRoots), "utf8"),
+        })),
+      ),
+    ),
   ];
   if (await writeReports(reports, verifiedFactsRoot, check)) process.exitCode = 1;
 }
