@@ -891,6 +891,25 @@ describe("flared sections", () => {
     expect(mating.freedom(tipFlare, blind, 0, AXIS_POS_X).spins).toBe(true);
   });
 
+  it("hold a male flare where it has sprung open and the next move would squeeze it, not where it's squeezed already", () => {
+    const lipped = (caps: number): number =>
+      shape(caps, false, [
+        [SECTION_ROUND, 6, 10],
+        [SECTION_FLARE_JOINS_PREVIOUS, FLARE, 2],
+      ]);
+    const grooved = shape(0, false, [
+      [SECTION_ROUND, 6, 6],
+      [SECTION_ROUND, 8, 3],
+      [SECTION_ROUND, 6, 6],
+    ]);
+    expect(mating.offsets(lipped(CAP_ROOT), grooved)).toEqual(Int32Array.from([0, 3, 4]));
+    const roundThenSquare = shape(0, false, [
+      [SECTION_ROUND, 6, 12],
+      [SECTION_SQUARE, 6, 8],
+    ]);
+    expect(mating.offsets(lipped(0), roundThenSquare)).toEqual(Int32Array.from([-10, 0]));
+  });
+
   it("read a female flare as round at its own radius, whatever sits beside it", () => {
     const grooved = shape(0, false, [
       [SECTION_SQUARE, 6, 4],

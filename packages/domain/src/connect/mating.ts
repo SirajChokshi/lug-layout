@@ -174,7 +174,7 @@ export class SnapMating {
       ) {
         const femaleTo = femaleFrom + shapes.span(f);
         const meeting = maleTo === femaleFrom || femaleTo === maleFrom;
-        if (meeting && this.blocks(m, f)) return true;
+        if (meeting && this.blocks(m, f, female, offset, maleFrom, maleTo)) return true;
         femaleFrom = femaleTo;
       }
       maleFrom = maleTo;
@@ -182,13 +182,55 @@ export class SnapMating {
     return false;
   }
 
-  private blocks(m: number, f: number): boolean {
+  private blocks(
+    m: number,
+    f: number,
+    female: number,
+    offset: number,
+    maleFrom: number,
+    maleTo: number,
+  ): boolean {
     const shapes = this.shapes;
     const code = shapes.maleCode(m);
     if (!hasReading(code) || !hasReading(shapes.femaleCode(f))) return false;
-    return (
+    if (
       containment(code, shapes.maleSize(m), shapes.femaleCode(f), shapes.femaleSize(f)) === MISFIT
+    ) {
+      return true;
+    }
+    const relaxed = shapes.maleRelaxedSize(m);
+    return (
+      containment(code, relaxed, shapes.femaleCode(f), shapes.femaleSize(f)) === MISFIT &&
+      this.relaxedWithin(code, relaxed, female, offset, maleFrom, maleTo)
     );
+  }
+
+  private relaxedWithin(
+    code: number,
+    relaxed: number,
+    female: number,
+    offset: number,
+    maleFrom: number,
+    maleTo: number,
+  ): boolean {
+    const shapes = this.shapes;
+    let femaleFrom = offset;
+    for (
+      let f = shapes.firstSection(female);
+      f < shapes.firstSection(female) + shapes.sectionCount(female);
+      f++
+    ) {
+      const femaleTo = femaleFrom + shapes.span(f);
+      const overlapping = Math.min(maleTo, femaleTo) - Math.max(maleFrom, femaleFrom) > 0;
+      if (
+        overlapping &&
+        containment(code, relaxed, shapes.femaleCode(f), shapes.femaleSize(f)) === MISFIT
+      ) {
+        return false;
+      }
+      femaleFrom = femaleTo;
+    }
+    return true;
   }
 
   private stopsAllow(male: number, female: number, offset: number): boolean {

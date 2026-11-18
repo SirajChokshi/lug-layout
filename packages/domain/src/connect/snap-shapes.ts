@@ -115,6 +115,10 @@ export class SnapShapes {
     return this.maleSizeOf[section] ?? 0;
   }
 
+  maleRelaxedSize(section: number): number {
+    return this.sizeOf[section] ?? 0;
+  }
+
   femaleCode(section: number): number {
     return this.femaleCodeOf[section] ?? 0;
   }
