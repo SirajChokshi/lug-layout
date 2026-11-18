@@ -26,7 +26,7 @@ import {
   type SubfileLine,
   subfileLines,
 } from "./pinned-library.ts";
-import { type RailHeadBands } from "./placement.ts";
+import { CONTACT_FRACTION, type RailHeadBands } from "./placement.ts";
 import type { Vec3 } from "../assembly.ts";
 import type { Bundle } from "../bundle.ts";
 import { producedColors } from "../generator.ts";
@@ -108,7 +108,6 @@ export interface TrainPools {
 const LIBRARY_PART_PREFIX = /^parts\//u;
 const ROUND_OUTLINE_TOLERANCE = 0.02;
 const OUTER_PRIMITIVE_FRACTION = 0.9;
-const CONTACT_FRACTION = 0.5;
 const RUN_SLAB_LDU = 1;
 const WINDOW_LDU = 12;
 const INHERITED_COLOUR = 16;

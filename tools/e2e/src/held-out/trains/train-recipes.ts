@@ -541,7 +541,7 @@ const splitAcrossPivot: Recipe = (context) => {
   );
 };
 
-const RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
+export const CAR_RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
   ["axle car", axleCar],
   ["bogie car", bogieCar(2, false)],
   ["single-axle bogie car", bogieCar(1, false)],
@@ -560,5 +560,3 @@ const RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
   ["two-pivot truck", lockedTruck("two pivots")],
   ["rigid truck", lockedTruck("rigid")],
 ];
-
-export const CAR_RECIPES = RECIPES;
