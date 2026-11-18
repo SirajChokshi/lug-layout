@@ -124,6 +124,12 @@ impl TriangleTree {
         }
     }
 
+    pub fn confirms(&self, ray: &Ray, hit: TriangleHit, counts: impl Fn(usize) -> bool) -> bool {
+        counts(hit.triangle)
+            && self.nodes[hit.leaf].bounds.entry(ray).is_some()
+            && self.triangles[hit.triangle].blocks(ray)
+    }
+
     pub fn find_hit<T>(
         &self,
         ray: &Ray,
