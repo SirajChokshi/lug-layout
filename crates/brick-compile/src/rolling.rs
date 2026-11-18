@@ -1076,7 +1076,7 @@ impl Ring {
 
 enum RingCircles {
     Absent,
-    DenserOnly {
+    ReferenceOnly {
         centre: [f64; 2],
         radii: [Option<f64>; 2],
     },
@@ -1313,7 +1313,7 @@ impl<'a> Strip<'a> {
             )
         } else {
             let Some((own, _)) = other.circle() else {
-                return RingCircles::DenserOnly {
+                return RingCircles::ReferenceOnly {
                     centre: circle.centre,
                     radii,
                 };
@@ -1415,7 +1415,7 @@ impl<'a> Strip<'a> {
                 self.candidate(extents_centre, Vec::new(), [None; 2])
                     .reading(roundness)
             }
-            RingCircles::DenserOnly { centre, radii } => self
+            RingCircles::ReferenceOnly { centre, radii } => self
                 .candidate(centre, vec![centre], radii)
                 .unread_when_outward(UnreadBand::Irregular),
             RingCircles::Misaligned { centres, radii } => {
