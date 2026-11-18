@@ -11,8 +11,8 @@ use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
 
 pub use faces::{
-    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARED_FAR_END,
-    FLARED_NEAR_END, ROUND, SQUARE,
+    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT,
+    FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
 pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};

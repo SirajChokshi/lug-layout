@@ -7,7 +7,7 @@ use brick_compile::connect::{
     mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, InferredFeatures,
     Issue, MatingFace, PrimitiveConnectors, PrimitiveTable, Section, SectionShape,
     SectionVocabulary, ShadowSnaps, Shape, Source, Uninferred, Unreadable, CAP_FAR, CAP_ROOT,
-    ROUND, SQUARE,
+    FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::Library;
@@ -526,6 +526,39 @@ fn a_stud_is_attached_only_at_its_root_so_a_deep_blind_receptor_takes_it() {
 }
 
 type FaceSummary = (Vec3, Vec3, u8, Vec<f64>);
+
+#[test]
+fn flare_codes_name_their_partner_in_face_order() {
+    for descriptor in [
+        "[gender=M] [caps=one] [secs=R 6 16   _L 6.25 2]",
+        "[gender=M] [caps=B] [secs=R 6 16   _L 6.25 2]",
+        "[gender=F] [caps=none] [secs=L_ 6.5 2   R 6 16   _L 6.5 2]",
+    ] {
+        let library = memory(&[("parts/part.dat", "0 Part\n")]);
+        let text = format!("0 !LDCAD SNAP_CYL {descriptor}\n");
+        let shadow = memory(&[("parts/part.dat", &text)]);
+        let connectors = ShadowSnaps::new(&library, &shadow)
+            .snaps("parts/part.dat")
+            .connectors;
+        let faces = faces_of(&connectors);
+        assert!(!faces.is_empty(), "{descriptor}");
+        for face in faces {
+            let codes: Vec<u8> = face.sections.iter().map(|s| s.code).collect();
+            for (i, &code) in codes.iter().enumerate() {
+                let partner = match code {
+                    FLARE_JOINS_PREVIOUS => i.checked_sub(1),
+                    FLARE_JOINS_NEXT => Some(i + 1),
+                    _ => continue,
+                };
+                assert_eq!(
+                    partner.and_then(|p| codes.get(p)),
+                    Some(&ROUND),
+                    "{descriptor}: {codes:?}"
+                );
+            }
+        }
+    }
+}
 
 #[test]
 fn caps_read_as_attached_male_ends_and_blind_female_ends() {

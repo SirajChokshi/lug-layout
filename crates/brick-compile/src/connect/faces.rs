@@ -8,8 +8,8 @@ pub const CAP_FAR: u8 = 2;
 pub const ROUND: u8 = 0;
 pub const AXLE: u8 = 1;
 pub const SQUARE: u8 = 2;
-pub const FLARED_FAR_END: u8 = 3;
-pub const FLARED_NEAR_END: u8 = 4;
+pub const FLARE_JOINS_PREVIOUS: u8 = 3;
+pub const FLARE_JOINS_NEXT: u8 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FaceSection {
@@ -41,8 +41,8 @@ fn code(shape: SectionShape) -> u8 {
         SectionShape::Round => ROUND,
         SectionShape::Axle => AXLE,
         SectionShape::Square => SQUARE,
-        SectionShape::FlexibleEnd => FLARED_FAR_END,
-        SectionShape::FlexibleStart => FLARED_NEAR_END,
+        SectionShape::FlexibleEnd => FLARE_JOINS_PREVIOUS,
+        SectionShape::FlexibleStart => FLARE_JOINS_NEXT,
     }
 }
 
@@ -53,6 +53,15 @@ fn closed_ends(gender: Gender, caps: Caps) -> (bool, bool) {
         (Caps::A, _) | (Caps::One, Gender::Male) => (true, false),
         (Caps::B, _) | (Caps::One, Gender::Female) => (false, true),
     }
+}
+
+fn reversed_section(section: &FaceSection) -> FaceSection {
+    let code = match section.code {
+        FLARE_JOINS_PREVIOUS => FLARE_JOINS_NEXT,
+        FLARE_JOINS_NEXT => FLARE_JOINS_PREVIOUS,
+        other => other,
+    };
+    FaceSection { code, ..*section }
 }
 
 fn along(point: Vec3, direction: Vec3, distance: f64) -> Vec3 {
@@ -76,7 +85,8 @@ impl Cylinder<'_> {
         let total: f64 = self.sections.iter().map(|s| s.length).sum();
         let far = along(start, direction, total);
         let in_order = self.sections.to_vec();
-        let backwards: Vec<FaceSection> = self.sections.iter().rev().copied().collect();
+        let backwards: Vec<FaceSection> =
+            self.sections.iter().rev().map(reversed_section).collect();
         let face = |origin, axis, sections, caps| MatingFace {
             source: self.source,
             gender: self.gender,
