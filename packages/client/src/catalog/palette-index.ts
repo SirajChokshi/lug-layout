@@ -1,13 +1,12 @@
 import type { CatalogColorView, CatalogItemView } from "../edit/editor.ts";
 
-export type PaletteCategory = "track" | "baseplates" | "road" | "mils" | "sets";
+export type PaletteCategory = "track" | "baseplates" | "road" | "sets";
 export type PaletteFilter = PaletteCategory | "all";
 
 export const PALETTE_CATEGORIES: ReadonlyArray<PaletteCategory> = [
   "track",
   "baseplates",
   "road",
-  "mils",
   "sets",
 ];
 
@@ -67,7 +66,6 @@ const CATEGORY_OF: Readonly<Record<CatalogItemView["kind"], PaletteCategory>> = 
   track: "track",
   baseplate: "baseplates",
   "road-plate": "road",
-  "mils-module": "mils",
   model: "sets",
 };
 
@@ -75,7 +73,6 @@ export const CATEGORY_LABEL: Readonly<Record<PaletteCategory, string>> = {
   track: "Track",
   baseplates: "Baseplates",
   road: "Road",
-  mils: "MILS modules",
   sets: "Sets",
 };
 

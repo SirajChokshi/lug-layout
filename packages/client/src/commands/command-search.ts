@@ -24,7 +24,6 @@ export interface PaletteSources {
 const KIND_WORDS: Readonly<Record<CatalogItemView["kind"], string>> = {
   baseplate: "baseplate plate ground",
   "road-plate": "road plate street",
-  "mils-module": "mils module",
   model: "set model",
   track: "track rail train",
 };

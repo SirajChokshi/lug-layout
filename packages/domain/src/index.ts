@@ -33,25 +33,6 @@ export {
 } from "./road-tiles.ts";
 export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
-  classifyModuleEdge,
-  edgesJoin,
-  MODULE_SIDES,
-  ModuleGrid,
-  NO_TOP,
-  railEdgesMate,
-  type GridModule,
-  type GridPlacement,
-  type RailEdgeClash,
-  type ModuleEdge,
-  type ModuleEdgeKind,
-  type ModuleEdgeReport,
-  type ModuleEdgeStatus,
-  type ModuleFit,
-  type ModuleJoinCounts,
-  type ModuleJoinReport,
-  type ModuleSide,
-} from "./module/module-edges.ts";
-export {
   EditHistory,
   type AppliedChange,
   type AppliedEdit,

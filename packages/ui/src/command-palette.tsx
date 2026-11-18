@@ -33,7 +33,6 @@ const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const KIND_LABELS: Readonly<Record<CatalogItemView["kind"], string>> = {
   baseplate: "Baseplate",
   "road-plate": "Road",
-  "mils-module": "MILS module",
   model: "Set",
   track: "Track",
 };

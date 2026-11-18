@@ -407,24 +407,6 @@ function TrackSection({ editor, snapshot }: PaletteProps) {
   );
 }
 
-function MilsNotes() {
-  return (
-    <>
-      <p className="palette-note" data-mils-flag="heights">
-        Every module follows MILS (HispaBrick Magazine 013–016): a 32×32 module with its surface 4
-        plates above the baseplate, and a 2×2 corner then a 1×4 Technic brick at each end of every
-        side. Paths (4 studs) and earth tracks (8 studs) sit at the surface, paved roads (16 studs)
-        one plate above it, and rivers (8 studs) at 2 plates with banks rising a plate per stud.
-        Each feature is centred on the edges it crosses, and curves are single 90° elements.
-      </p>
-      <p className="palette-note" data-mils-flag="track">
-        The rail module is a project rule, not MILS: MILS has no train rules (HispaBrick Magazine
-        026, "MILS (VII)"). It centres one pair of 9V straights on the 4-plate surface.
-      </p>
-    </>
-  );
-}
-
 function PaintedSection({
   category,
   entries,
@@ -507,18 +489,15 @@ function CategorySection({
           paint={paint}
         />
       );
-    case "mils":
     case "sets": {
       const items = entries.flatMap((entry) => entry.items);
-      const noun = category === "mils" ? "modules" : "sets";
       return (
-        <Section id={category} title={CATEGORY_LABEL[category]} count={`${items.length} ${noun}`}>
+        <Section id={category} title={CATEGORY_LABEL[category]} count={`${items.length} sets`}>
           <ul>
             {items.map((item) => (
               <ItemButton key={item.id} item={item} editor={editor} snapshot={snapshot} />
             ))}
           </ul>
-          {category === "mils" && <MilsNotes />}
         </Section>
       );
     }
@@ -616,7 +595,7 @@ const TABS: ReadonlyArray<Tab> = ["all", "favorites", ...PALETTE_CATEGORIES];
 function tabLabel(tab: Tab): string {
   if (tab === "all") return "All";
   if (tab === "favorites") return "★";
-  return CATEGORY_LABEL[tab].replace(" modules", "");
+  return CATEGORY_LABEL[tab];
 }
 
 function tabName(tab: Tab): string {

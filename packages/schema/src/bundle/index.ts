@@ -1,6 +1,5 @@
 import { pose16, ZETA16_COEFFICIENT_COUNT, ZETA16_ORDER, zeta16, type Zeta16 } from "@brr/math";
 import * as v from "valibot";
-import { MilsEdgeRules } from "./mils-profile.ts";
 
 const MATRIX_FLOATS = 12;
 const STUD_PHASES = 20;
@@ -456,7 +455,6 @@ export const BundleIndex = v.object({
   }),
   trackCatalog: TrackCatalog,
   trackShapes: v.array(TrackShape),
-  milsEdgeRules: MilsEdgeRules,
   compiler: v.nullable(BundleCompiler),
   crosswalk: FileRef,
   partTable: FileRef,
@@ -854,9 +852,6 @@ export type Palette = v.InferOutput<typeof Palette>;
 
 export {
   MilsBuild,
-  MilsEdgeFeatureRule,
-  MilsEdgeRules,
-  MilsEdgeStandard,
   MilsBuildFeature,
   MilsBuildRiver,
   MilsFeature,

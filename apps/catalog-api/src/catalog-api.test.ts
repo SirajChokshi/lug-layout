@@ -602,7 +602,7 @@ describe("part search over a published bundle manifest", () => {
       tan: ["ldraw:3811@19"],
       "mils road": ["generated:mils-road-straight"],
       "9v cur": ["track:lego-9v"],
-      "passing loop": [],
+      "passing loop": ["generated:passing-loop"],
       "crossroads gree": ["ldraw:44343p01@2"],
       "crossroads gr": [],
       "crossroad whi": [],

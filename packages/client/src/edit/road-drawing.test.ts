@@ -37,6 +37,8 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const WORLD_PER_NDC = 10_000;
 const EYE_HEIGHT = 1_000;
 const TILE = 640;
+const PLACED_MODEL_NAME = "mils-plain";
+const PLACED_MODEL = `generated:${PLACED_MODEL_NAME}`;
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -57,7 +59,7 @@ class BundleDirectoryFetcher implements IAssetFetcher {
   }
 }
 
-class MilsModulesOnly implements IPartBundleLoader {
+class ModelSubsetLoader implements IPartBundleLoader {
   constructor(private readonly loader: IPartBundleLoader) {}
 
   loadManifestFile(): Promise<string> {
@@ -66,7 +68,7 @@ class MilsModulesOnly implements IPartBundleLoader {
 
   async loadIndex(lod: BundleLod): Promise<BundleIndex> {
     const index = await this.loader.loadIndex(lod);
-    return { ...index, models: index.models.filter((m) => m.role === "mils-module") };
+    return { ...index, models: index.models.filter((m) => m.name === PLACED_MODEL_NAME) };
   }
 
   loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
@@ -99,7 +101,7 @@ class MilsModulesOnly implements IPartBundleLoader {
 
   async load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
     const bundle = await this.loader.load(lod, include);
-    return { ...bundle, models: bundle.models.filter((m) => m.role === "mils-module") };
+    return { ...bundle, models: bundle.models.filter((m) => m.name === PLACED_MODEL_NAME) };
   }
 
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
@@ -181,7 +183,7 @@ async function startEditor(): Promise<IEditor> {
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new MilsModulesOnly(realLoader));
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader));
   container.rebind(SCENE_BACKEND).toConstantValue(new TopDownBackend());
   const editor = container.get(EDITOR);
   const canvas = {
@@ -388,23 +390,21 @@ describe("draw road", () => {
     editor.chooseItem(null);
   });
 
-  it.each(["generated:mils-river-straight", "generated:mils-plain"])(
-    "refuses a stroke over a %s instead of swapping it for road",
-    (module) => {
-      editor.chooseItem(module);
-      editor.click(...ndc([1, 0]), 0);
-      editor.chooseItem(kitId(editor, completeKits[0][1]));
-      drag(editor, [
-        [0, 0],
-        [2, 0],
-      ]);
-      expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
-      expect(placedItems(editor)).toEqual([module]);
-      editor.undo(0);
-      expect(editor.snapshot().placements).toBe(0);
-      editor.chooseItem(null);
-    },
-  );
+  it("refuses a stroke over a placed model instead of swapping it for road", async () => {
+    expect(await editor.prefetch(PLACED_MODEL)).toBe(true);
+    editor.chooseItem(PLACED_MODEL);
+    editor.click(...ndc([1, 0]), 0);
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [0, 0],
+      [2, 0],
+    ]);
+    expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
+    expect(placedItems(editor)).toEqual([PLACED_MODEL]);
+    editor.undo(0);
+    expect(editor.snapshot().placements).toBe(0);
+    editor.chooseItem(null);
+  });
 
   const groundUnderRoad = [
     ["6-stud Green road plates", "ldraw:3811@72", completeKits[1][1]],

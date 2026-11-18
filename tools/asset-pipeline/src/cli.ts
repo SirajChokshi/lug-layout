@@ -2,7 +2,6 @@ import {
   BundleIndex,
   BundleLod,
   BundleManifest,
-  MilsEdgeRules,
   TrackCatalog,
   type CatalogSourceUse,
   type Palette,
@@ -334,14 +333,9 @@ async function addVerifiedFacts(directory: string): Promise<void> {
     throw new Error(`track catalog pieces missing from the bundle: ${missing}`);
   }
   const bundledCatalog = { n: catalog["n"], pieces: catalog["pieces"] };
-  const rulesPath = join(repoRoot, BUNDLE_DATA_FILES.milsEdgeRules);
-  const milsEdgeRules = decodedOrThrow(
-    decode(MilsEdgeRules, JSON.parse(await readFile(rulesPath, "utf8"))),
-    rulesPath,
-  );
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, milsEdgeRules }, null, 2)}\n`,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog }, null, 2)}\n`,
   );
 }
 
