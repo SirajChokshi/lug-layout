@@ -91,19 +91,6 @@ export function flatPolygons(library: LdrawLibrary, part: string): ReadonlyArray
   });
 }
 
-function headsOnLevels(
-  flat: ReadonlyArray<FlatPolygon>,
-  levels: ReadonlyArray<ExactDecimal>,
-): RailHeads | null {
-  const [topY] = levels;
-  if (topY === undefined) return null;
-  const onALevel = (y: ExactDecimal) => levels.some((level) => compareExactDecimal(y, level) === 0);
-  return {
-    topY,
-    polygons: flat.filter((polygon) => onALevel(polygon.y)).map((polygon) => polygon.outline),
-  };
-}
-
 function nearOrigin(polygon: FlatPolygon, origin: ExactPlanPoint): boolean {
   return polygon.outline.some((point) => {
     const offset = sub(point, origin);
@@ -115,26 +102,61 @@ function nearOrigin(polygon: FlatPolygon, origin: ExactPlanPoint): boolean {
   });
 }
 
-export function railHeadsAtEnd(
+interface LevelScan {
+  readonly y: ExactDecimal;
+  readonly polygons: ReadonlyArray<ReadonlyArray<ExactPlanPoint>>;
+  readonly intervals: ReadonlyArray<Interval>;
+}
+
+function adjacentRunsSmallestFirst<T>(fromTop: ReadonlyArray<T>): ReadonlyArray<ReadonlyArray<T>> {
+  const runs: T[][] = [];
+  for (let runLength = 1; runLength <= fromTop.length; runLength += 1) {
+    for (let start = 0; start + runLength <= fromTop.length; start += 1) {
+      runs.push(fromTop.slice(start, start + runLength));
+    }
+  }
+  return runs;
+}
+
+function levelsFromTopNear(
   flat: ReadonlyArray<FlatPolygon>,
-  origin: PlanPoint,
-  along: number,
-): RailHeads | null {
-  const exactOrigin = exactPlanPoint(origin);
-  const levels = flat
-    .filter((polygon) => nearOrigin(polygon, exactOrigin))
+  origin: ExactPlanPoint,
+): ReadonlyArray<ExactDecimal> {
+  return flat
+    .filter((polygon) => nearOrigin(polygon, origin))
     .map((polygon) => polygon.y)
     .toSorted(compareExactDecimal)
     .filter(
       (y, index, sorted) => index === 0 || compareExactDecimal(y, sorted[index - 1] ?? y) !== 0,
     );
-  for (let count = 1; count <= levels.length; count += 1) {
-    for (let first = 0; first + count <= levels.length; first += 1) {
-      const heads = headsOnLevels(flat, levels.slice(first, first + count));
-      if (heads !== null && railSection(heads, origin, along, RAIL_SECTION_INWARD_LDU) !== null) {
-        return heads;
-      }
-    }
+}
+
+export function railHeadsAtEnd(
+  flat: ReadonlyArray<FlatPolygon>,
+  origin: PlanPoint,
+  along: number,
+): RailHeads | null {
+  const line = scanLine(origin, along, RAIL_SECTION_INWARD_LDU);
+  const levels = levelsFromTopNear(flat, exactPlanPoint(origin));
+  const scanned = new Map<number, LevelScan>();
+  const scanOfLevel = (index: number): LevelScan => {
+    const known = scanned.get(index);
+    if (known !== undefined) return known;
+    const y = levels[index];
+    if (y === undefined) throw new Error(`no measured level ${index}`);
+    const polygons = flat
+      .filter((polygon) => compareExactDecimal(polygon.y, y) === 0)
+      .map((polygon) => polygon.outline);
+    const scan = { y, polygons, intervals: scanIntervals(polygons, line) };
+    scanned.set(index, scan);
+    return scan;
+  };
+  for (const run of adjacentRunsSmallestFirst(levels.map((_, index) => index))) {
+    const scans = run.map(scanOfLevel);
+    const [top] = scans;
+    if (top === undefined) continue;
+    if (sectionOf(scans.flatMap((scan) => scan.intervals)) === null) continue;
+    return { topY: top.y, polygons: scans.flatMap((scan) => scan.polygons) };
   }
   return null;
 }
@@ -202,12 +224,12 @@ function mergedRuns(intervals: ReadonlyArray<Interval>): ReadonlyArray<Interval>
   return runs.filter((run) => compareExactRational(run.from, run.to) < 0);
 }
 
-export function railSection(
-  heads: RailHeads,
-  origin: PlanPoint,
-  along: number,
-  inwardLdu: number,
-): RailSection | null {
+interface ScanLine {
+  readonly centre: ExactPlanPoint;
+  readonly normal: ExactPlanPoint;
+}
+
+function scanLine(origin: PlanPoint, along: number, inwardLdu: number): ScanLine {
   const direction = exactPlanPoint({ x: Math.cos(along), z: Math.sin(along) });
   const normal = exactPlanPoint({ x: -Math.sin(along), z: Math.cos(along) });
   const inward = exactRationalFromFloat64(inwardLdu);
@@ -216,12 +238,22 @@ export function railSection(
     x: addExactRational(start.x, multiplyExactRational(direction.x, inward)),
     z: addExactRational(start.z, multiplyExactRational(direction.z, inward)),
   };
-  const intervals = heads.polygons.flatMap((polygon) => {
-    const interval = crossingInterval(polygon, centre, normal);
+  return { centre, normal };
+}
+
+function scanIntervals(
+  polygons: ReadonlyArray<ReadonlyArray<ExactPlanPoint>>,
+  line: ScanLine,
+): ReadonlyArray<Interval> {
+  return polygons.flatMap((polygon) => {
+    const interval = crossingInterval(polygon, line.centre, line.normal);
     if (interval === null) return [];
     const clipped = { from: greater(interval.from, SCAN_FROM), to: lesser(interval.to, SCAN_TO) };
     return compareExactRational(clipped.from, clipped.to) <= 0 ? [clipped] : [];
   });
+}
+
+function sectionOf(intervals: ReadonlyArray<Interval>): RailSection | null {
   const railCentresLdu = mergedRuns(intervals).map((run) =>
     divideExactRational(addExactRational(run.from, run.to), TWO),
   );
@@ -232,4 +264,13 @@ export function railSection(
     halfSpacingLdu: divideExactRational(subtractExactRational(far, near), TWO),
     centreOffsetLdu: divideExactRational(addExactRational(far, near), TWO),
   };
+}
+
+export function railSection(
+  heads: RailHeads,
+  origin: PlanPoint,
+  along: number,
+  inwardLdu: number,
+): RailSection | null {
+  return sectionOf(scanIntervals(heads.polygons, scanLine(origin, along, inwardLdu)));
 }

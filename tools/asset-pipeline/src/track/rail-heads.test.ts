@@ -27,7 +27,7 @@ writeFileSync(
     "0 Custom rail whose two heads sit at different measured levels",
     "0 Name: custom-split-rail.dat",
     "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
-    "1 16 0 -16.05 50 20 0 0 0 1 0 0 0 3 head.dat",
+    "1 16 0 -16.5 50 20 0 0 0 1 0 0 0 3 head.dat",
     "1 16 0 -16 -50 20 0 0 0 1 0 0 0 3 head.dat",
     "4 16 -20 8 -80 20 8 -80 20 8 80 -20 8 80",
   ].join("\r\n"),
@@ -58,9 +58,11 @@ describe("rail heads", () => {
     if (section === null || near === undefined || far === undefined) {
       throw new Error("the scan line finds no rail pair");
     }
+    const nearCentre = exactRational(-10003n, 200n);
+    const farCentre = exactRational(10003n, 200n);
     const halfSpacing = exactRational(10003n, 200n);
-    expect(exactRationalEquals(near, exactRational(-10003n, 200n))).toBe(true);
-    expect(exactRationalEquals(far, halfSpacing)).toBe(true);
+    expect(exactRationalEquals(near, nearCentre)).toBe(true);
+    expect(exactRationalEquals(far, farCentre)).toBe(true);
     expect(exactRationalEquals(section.halfSpacingLdu, halfSpacing)).toBe(true);
     expect(exactRationalEquals(section.centreOffsetLdu, exactRational(0n, 1n))).toBe(true);
   });
@@ -75,7 +77,7 @@ describe("rail heads", () => {
   it("read a rail pair across adjacent measured levels when no single level holds both heads", () => {
     const split = railHeadsAtEnd(flatPolygons(library, "custom-split-rail"), end, 0);
     if (split === null) throw new Error("the split rail has no rail pair");
-    expect(formatExactDecimal(split.topY)).toBe("-16.05");
+    expect(formatExactDecimal(split.topY)).toBe("-16.5");
     const section = railSection(split, end, 0, INWARD_LDU);
     if (section === null) throw new Error("the scan line finds no rail pair");
     expect(exactRationalEquals(section.halfSpacingLdu, exactRational(50n, 1n))).toBe(true);
