@@ -14,6 +14,7 @@ import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as v from "valibot";
+import { BUNDLE_DATA_FILES, FIXTURES_DIRECTORY } from "./bundle-data.ts";
 import { bundleInputKey, remoteManifestFile } from "./bundle-key.ts";
 import {
   bundleBuildKey,
@@ -64,18 +65,16 @@ import {
 import {
   geometryReports,
   licenseAuditReport,
-  MILS_EDGE_RULES_FILE,
   readSources,
-  TRACK_CATALOG_FILE,
   trackCatalogReports,
   writeReports,
 } from "./verify/facts.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
-const palettePath = join(toolRoot, "palette.json");
-const lockPath = join(toolRoot, "ldraw.lock.json");
-const fixturesRoot = join(repoRoot, "packages", "test-fixtures");
+const palettePath = join(repoRoot, BUNDLE_DATA_FILES.palette);
+const lockPath = join(repoRoot, BUNDLE_DATA_FILES.lock);
+const fixturesRoot = join(repoRoot, FIXTURES_DIRECTORY);
 const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
@@ -313,7 +312,7 @@ async function fileSha256(path: string): Promise<string> {
 async function addVerifiedFacts(directory: string): Promise<void> {
   const manifestPath = join(directory, MANIFEST_FILE);
   const manifest: Record<string, unknown> = JSON.parse(await readFile(manifestPath, "utf8"));
-  const catalogPath = join(verifiedFactsRoot, TRACK_CATALOG_FILE);
+  const catalogPath = join(repoRoot, BUNDLE_DATA_FILES.trackCatalog);
   const catalog: Record<string, unknown> = JSON.parse(await readFile(catalogPath, "utf8"));
   const bundled = new Set(
     decodedOrThrow(decode(v.pick(BundleManifest, ["parts"]), manifest), manifestPath).parts.map(
@@ -327,7 +326,7 @@ async function addVerifiedFacts(directory: string): Promise<void> {
     throw new Error(`track catalog pieces missing from the bundle: ${missing}`);
   }
   const bundledCatalog = { n: catalog["n"], pieces: catalog["pieces"] };
-  const rulesPath = join(verifiedFactsRoot, MILS_EDGE_RULES_FILE);
+  const rulesPath = join(repoRoot, BUNDLE_DATA_FILES.milsEdgeRules);
   const milsEdgeRules = decodedOrThrow(
     decode(MilsEdgeRules, JSON.parse(await readFile(rulesPath, "utf8"))),
     rulesPath,
@@ -427,7 +426,7 @@ async function bundleCommand(): Promise<void> {
       "--omr",
       omrRoot,
       "--geometry",
-      join(repoRoot, "docs", "verified-facts", "geometry.json"),
+      join(repoRoot, BUNDLE_DATA_FILES.geometry),
       "--palette",
       palettePath,
       "--out",

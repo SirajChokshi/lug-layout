@@ -27,6 +27,7 @@
         "$TURBO_ROOT$/docs/verified-facts/scenes/**",
         "$TURBO_ROOT$/docs/verified-facts/geometry.json",
         "$TURBO_ROOT$/docs/verified-facts/track-catalog.json",
+        "$TURBO_ROOT$/docs/verified-facts/mils-edge-rules.json",
         "$TURBO_ROOT$/packages/schema/src/bundle/**",
         "!$TURBO_ROOT$/packages/schema/src/bundle/**/*.test.ts",
         "$TURBO_ROOT$/packages/schema/src/decode/**",
