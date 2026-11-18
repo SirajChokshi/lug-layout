@@ -10,7 +10,7 @@ use crate::ldraw::{self, Line};
 use super::meta::{parse_metas, Meta};
 use super::{
     column, finished, length, placed, translation, Caps, Connector, Gender, Issue, Scaling,
-    Section, SectionShape, Shape, Source,
+    Section, SectionShape, Shape, Source, Status,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -172,6 +172,7 @@ fn through(a: &PlacedEnd, b: &PlacedEnd) -> Connector {
     );
     Connector {
         source: Source::Primitive,
+        status: Status::Verified,
         id: None,
         group: None,
         shape: Shape::Cylinder {

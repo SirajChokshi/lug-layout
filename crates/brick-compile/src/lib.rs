@@ -1,5 +1,6 @@
 pub mod affine;
 pub mod bake;
+pub mod bands;
 pub mod clip;
 pub mod colors;
 pub mod compile;

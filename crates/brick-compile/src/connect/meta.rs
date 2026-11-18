@@ -4,7 +4,7 @@ use crate::affine::{Affine, Vec3};
 
 use super::{
     Bounding, Caps, Connector, Gender, GenericMatch, Grid, Scaling, Section, SectionShape, Shape,
-    Source,
+    Source, Status,
 };
 
 const META_PREFIX: &str = "!LDCAD";
@@ -266,6 +266,7 @@ fn parse_free_placement(params: &mut Params) -> Result<bool, MetaError> {
 fn snap(params: &mut Params, shape: Shape) -> Result<Meta, MetaError> {
     Ok(Meta::Snap(Connector {
         source: Source::Shadow,
+        status: Status::Verified,
         id: params.label("id"),
         group: params.label("group"),
         shape,

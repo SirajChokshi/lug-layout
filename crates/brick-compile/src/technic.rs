@@ -180,19 +180,19 @@ fn identify_up(v: f64) -> i32 {
     identify(v).unwrap_or(v.ceil() as i32)
 }
 
+pub fn identified_steps(r: f64) -> Option<i32> {
+    let steps = f64::from(STEPS_PER_LDU);
+    let q = r * steps;
+    let n = q.round();
+    ((q - n).abs() <= IDENTIFY_LDU * steps).then_some(n as i32)
+}
+
 fn stepped(r: f64, outward: fn(f64) -> f64) -> i32 {
     if !r.is_finite() {
         return UNBOUNDED_STEPS;
     }
-    let steps = f64::from(STEPS_PER_LDU);
-    let q = r * steps;
-    let n = q.round();
-    let value = if (q - n).abs() <= IDENTIFY_LDU * steps {
-        n
-    } else {
-        outward(q)
-    };
-    (value as i32).min(UNBOUNDED_STEPS)
+    let value = identified_steps(r).unwrap_or_else(|| outward(r * f64::from(STEPS_PER_LDU)) as i32);
+    value.min(UNBOUNDED_STEPS)
 }
 
 fn steps_up(r: f64) -> i32 {

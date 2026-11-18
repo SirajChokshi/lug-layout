@@ -17,7 +17,7 @@ pub use faces::{
 pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
-pub use shadow::ShadowSnaps;
+pub use shadow::{ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;
@@ -28,6 +28,13 @@ pub enum Source {
     Shadow,
     Primitive,
     Inferred,
+    Patch,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Status {
+    Verified,
+    Unverified,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -147,6 +154,7 @@ impl Grid {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Connector {
     pub source: Source,
+    pub status: Status,
     pub id: Option<String>,
     pub group: Option<String>,
     pub shape: Shape,
@@ -540,6 +548,8 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                 } => {
                     let entrance = MatingFace {
                         source: Source::Inferred,
+                        status: Status::Unverified,
+                        group: None,
                         gender: Gender::Female,
                         origin: [origin[0], -origin[1], -origin[2]].map(|c| c + 0.0),
                         axis: [0.0; 3],
