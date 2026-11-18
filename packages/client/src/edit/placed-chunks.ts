@@ -36,9 +36,9 @@ export interface PlacedModel {
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
   readonly box: WorldBox;
-  readonly studCellX: Int32Array;
-  readonly studCellZ: Int32Array;
-  readonly studBaseLdu: Int32Array;
+  studCellX(stud: number): number;
+  studCellZ(stud: number): number;
+  studBaseLdu(stud: number): number;
   rayHit(ray: Float64Array): number;
   worldPartBoxes(): Float64Array;
 }
@@ -80,9 +80,115 @@ export function rayBoxDistance(
   return hit ? (rayRange[0] ?? 0) : Number.POSITIVE_INFINITY;
 }
 
-interface Contribution {
-  parts: number;
-  studs: number;
+const FOOTPRINT_FLAG = 1;
+const COLUMNS_FLAG = 2;
+const INITIAL_TOUCHED_CAPACITY = 4;
+const NOT_TOUCHED = -1;
+
+class TouchedChunks {
+  private keys = new Float64Array(INITIAL_TOUCHED_CAPACITY);
+  private parts = new Uint32Array(INITIAL_TOUCHED_CAPACITY);
+  private studs = new Uint32Array(INITIAL_TOUCHED_CAPACITY);
+  private flags = new Uint8Array(INITIAL_TOUCHED_CAPACITY);
+  private rows = 0;
+
+  get length(): number {
+    return this.rows;
+  }
+
+  rowOf(key: number): number {
+    for (let row = 0; row < this.rows; row++) {
+      if (this.keys[row] === key) return row;
+    }
+    return NOT_TOUCHED;
+  }
+
+  keyAt(row: number): number {
+    return this.keys[row] ?? 0;
+  }
+
+  partCountAt(row: number): number {
+    return this.parts[row] ?? 0;
+  }
+
+  studCountAt(row: number): number {
+    return this.studs[row] ?? 0;
+  }
+
+  contributes(row: number): boolean {
+    return this.partCountAt(row) + this.studCountAt(row) > 0;
+  }
+
+  hasFootprint(row: number): boolean {
+    return ((this.flags[row] ?? 0) & FOOTPRINT_FLAG) !== 0;
+  }
+
+  hasColumns(row: number): boolean {
+    return ((this.flags[row] ?? 0) & COLUMNS_FLAG) !== 0;
+  }
+
+  contributedKeys(): number[] {
+    const keys: number[] = [];
+    for (let row = 0; row < this.rows; row++) {
+      if (this.contributes(row)) keys.push(this.keyAt(row));
+    }
+    return keys;
+  }
+
+  keysWithColumns(): number[] {
+    const keys: number[] = [];
+    for (let row = 0; row < this.rows; row++) {
+      if (this.hasColumns(row)) keys.push(this.keyAt(row));
+    }
+    return keys;
+  }
+
+  addPart(key: number): void {
+    const row = this.findOrAddRow(key);
+    this.parts[row] = this.partCountAt(row) + 1;
+  }
+
+  addStud(key: number): void {
+    const row = this.findOrAddRow(key);
+    this.studs[row] = this.studCountAt(row) + 1;
+  }
+
+  markFootprint(key: number): void {
+    this.setFlag(key, FOOTPRINT_FLAG);
+  }
+
+  markColumns(key: number): void {
+    this.setFlag(key, COLUMNS_FLAG);
+  }
+
+  private setFlag(key: number, flag: number): void {
+    const row = this.findOrAddRow(key);
+    this.flags[row] = (this.flags[row] ?? 0) | flag;
+  }
+
+  private findOrAddRow(key: number): number {
+    const row = this.rowOf(key);
+    if (row !== NOT_TOUCHED) return row;
+    if (this.rows === this.keys.length) this.grow();
+    this.keys[this.rows] = key;
+    return this.rows++;
+  }
+
+  private grow(): void {
+    const capacity = this.keys.length * 2;
+    const keys = new Float64Array(capacity);
+    const parts = new Uint32Array(capacity);
+    const studs = new Uint32Array(capacity);
+    const flags = new Uint8Array(capacity);
+    keys.set(this.keys);
+    parts.set(this.parts);
+    studs.set(this.studs);
+    flags.set(this.flags);
+    this.keys = keys;
+    this.parts = parts;
+    this.studs = studs;
+    this.flags = flags;
+  }
 }
 
 class LatticePose {
@@ -258,15 +364,7 @@ function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: Lat
 }
 
 class PlacedEntry implements PlacedModel {
-  readonly partKeys: Float64Array;
-  readonly studKeys: Float64Array;
-  readonly studCellX: Int32Array;
-  readonly studCellZ: Int32Array;
-  readonly studBaseLdu: Int32Array;
-  readonly studCulled: Uint8Array;
-  readonly contributions = new Map<number, Contribution>();
-  readonly footprintKeys = new Set<number>();
-  readonly columnKeys = new Set<number>();
+  readonly chunks = new TouchedChunks();
   readonly slab: Float64Array | null;
   readonly box: WorldBox;
   readonly pose: LatticePose;
@@ -289,32 +387,9 @@ class PlacedEntry implements PlacedModel {
     this.yLdu = handle.yPlates * PLATE_LDU;
     this.cos = this.pose.cos;
     this.sin = this.pose.sin;
-    this.partKeys = this.keysOf(
-      placeable.parts.matrices,
-      placeable.parts.count,
-      chunkOrigins,
-      "parts",
-    );
-    this.studKeys = this.keysOf(
-      placeable.studs.matrices,
-      placeable.studs.count,
-      chunkOrigins,
-      "studs",
-    );
-    const studs = placeable.studLattice;
-    const count = placeable.studs.count;
-    this.studCellX = new Int32Array(count);
-    this.studCellZ = new Int32Array(count);
-    this.studBaseLdu = new Int32Array(count);
-    this.studCulled = new Uint8Array(count);
-    for (let i = 0; i < count; i++) {
-      const lx = studs.cellX[i] ?? 0;
-      const lz = studs.cellZ[i] ?? 0;
-      this.studCellX[i] = this.pose.worldCellX(lx, lz);
-      this.studCellZ[i] = this.pose.worldCellZ(lx, lz);
-      this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
-    }
-    this.registerCells(chunkOrigins);
+    this.tallyParts(chunkOrigins);
+    this.tallyStuds(chunkOrigins);
+    this.markCells(chunkOrigins);
     this.slab = placeable.slabDepthLdu > 0 ? new Float64Array(BOX_FLOATS) : null;
     if (this.slab) slabBox(placeable, this.pose, this.yLdu, this.slab, 0);
     this.box = this.worldBox();
@@ -329,7 +404,7 @@ class PlacedEntry implements PlacedModel {
     return boxes;
   }
 
-  private registerCells(chunkOrigins: Map<number, readonly [number, number]>): void {
+  private markCells(chunkOrigins: Map<number, readonly [number, number]>): void {
     const { cells } = this.placeable;
     for (let j = 0; j < cells.depth; j++) {
       for (let i = 0; i < cells.width; i++) {
@@ -340,9 +415,9 @@ class PlacedEntry implements PlacedModel {
         const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
         const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
         const key = cellChunkKey(wx, wz);
-        if (occupied) this.columnKeys.add(key);
+        if (occupied) this.chunks.markColumns(key);
         if (footprint) {
-          this.footprintKeys.add(key);
+          this.chunks.markFootprint(key);
           if (!chunkOrigins.has(key)) {
             chunkOrigins.set(key, [
               chunkOf(wx * STUD_LDU + HALF_STUD_LDU),
@@ -411,67 +486,86 @@ class PlacedEntry implements PlacedModel {
     return this.yLdu + bottom * PLATE_LDU <= ldu && ldu <= this.yLdu + top * PLATE_LDU;
   }
 
-  markCulled(
-    key: number,
+  studCellX(stud: number): number {
+    const lattice = this.placeable.studLattice;
+    return this.pose.worldCellX(lattice.cellX[stud] ?? 0, lattice.cellZ[stud] ?? 0);
+  }
+
+  studCellZ(stud: number): number {
+    const lattice = this.placeable.studLattice;
+    return this.pose.worldCellZ(lattice.cellX[stud] ?? 0, lattice.cellZ[stud] ?? 0);
+  }
+
+  studBaseLdu(stud: number): number {
+    return this.yLdu + (this.placeable.studLattice.baseLdu[stud] ?? 0);
+  }
+
+  private isStudCulled(
+    stud: number,
     covers: ReadonlyArray<PlacedEntry>,
     closers: ReadonlyArray<PlacedEntry>,
-  ): number {
-    const onLattice = this.placeable.studLattice.onLattice;
-    let visible = 0;
-    for (let i = 0; i < this.studKeys.length; i++) {
-      if (this.studKeys[i] !== key) continue;
-      let culled = 0;
-      if (onLattice[i] === 1) {
-        const cx = this.studCellX[i] ?? 0;
-        const cz = this.studCellZ[i] ?? 0;
-        const base = this.studBaseLdu[i] ?? 0;
-        for (let c = 0; c < covers.length; c++) {
-          const cover = covers[c];
-          if (!cover || cover === this) continue;
-          const kind = cover.footprintKind(cx, cz, base);
-          if (
-            kind === FOOTPRINT_FLAT ||
-            (kind === FOOTPRINT_ANTI_STUD && closedAround(cx, cz, base, cover, closers))
-          ) {
-            culled = 1;
-            break;
-          }
-        }
+  ): boolean {
+    if (this.placeable.studLattice.onLattice[stud] !== 1) return false;
+    const cx = this.studCellX(stud);
+    const cz = this.studCellZ(stud);
+    const base = this.studBaseLdu(stud);
+    for (let c = 0; c < covers.length; c++) {
+      const cover = covers[c];
+      if (!cover || cover === this) continue;
+      const kind = cover.footprintKind(cx, cz, base);
+      if (
+        kind === FOOTPRINT_FLAT ||
+        (kind === FOOTPRINT_ANTI_STUD && closedAround(cx, cz, base, cover, closers))
+      ) {
+        return true;
       }
-      this.studCulled[i] = culled;
-      if (culled === 0) visible++;
     }
-    return visible;
+    return false;
   }
 
-  private keysOf(
+  private chunkXOf(matrices: Float32Array, i: number): number {
+    const o = i * INSTANCE_MATRIX_FLOATS;
+    return chunkOf(this.x + this.cos * (matrices[o + 3] ?? 0) + this.sin * (matrices[o + 11] ?? 0));
+  }
+
+  private chunkZOf(matrices: Float32Array, i: number): number {
+    const o = i * INSTANCE_MATRIX_FLOATS;
+    return chunkOf(this.z - this.sin * (matrices[o + 3] ?? 0) + this.cos * (matrices[o + 11] ?? 0));
+  }
+
+  private inChunk(matrices: Float32Array, i: number, chunkX: number, chunkZ: number): boolean {
+    return this.chunkXOf(matrices, i) === chunkX && this.chunkZOf(matrices, i) === chunkZ;
+  }
+
+  private recordChunkKey(
     matrices: Float32Array,
-    count: number,
+    i: number,
     chunkOrigins: Map<number, readonly [number, number]>,
-    field: keyof Contribution,
-  ): Float64Array {
-    const keys = new Float64Array(count);
-    for (let i = 0; i < count; i++) {
-      const o = i * INSTANCE_MATRIX_FLOATS;
-      const lx = matrices[o + 3] ?? 0;
-      const lz = matrices[o + 11] ?? 0;
-      const chunkX = chunkOf(this.x + this.cos * lx + this.sin * lz);
-      const chunkZ = chunkOf(this.z - this.sin * lx + this.cos * lz);
-      const key = chunkKey(chunkX, chunkZ);
-      keys[i] = key;
-      if (!chunkOrigins.has(key)) chunkOrigins.set(key, [chunkX, chunkZ]);
-      let contribution = this.contributions.get(key);
-      if (!contribution) {
-        contribution = { parts: 0, studs: 0 };
-        this.contributions.set(key, contribution);
-      }
-      contribution[field]++;
-    }
-    return keys;
+  ): number {
+    const chunkX = this.chunkXOf(matrices, i);
+    const chunkZ = this.chunkZOf(matrices, i);
+    const key = chunkKey(chunkX, chunkZ);
+    if (!chunkOrigins.has(key)) chunkOrigins.set(key, [chunkX, chunkZ]);
+    return key;
   }
 
-  rebuildKeys(): Set<number> {
-    return new Set([...this.contributions.keys(), ...this.footprintKeys]);
+  private tallyParts(chunkOrigins: Map<number, readonly [number, number]>): void {
+    const { matrices, count } = this.placeable.parts;
+    for (let i = 0; i < count; i++)
+      this.chunks.addPart(this.recordChunkKey(matrices, i, chunkOrigins));
+  }
+
+  private tallyStuds(chunkOrigins: Map<number, readonly [number, number]>): void {
+    const { matrices, count } = this.placeable.studs;
+    for (let i = 0; i < count; i++)
+      this.chunks.addStud(this.recordChunkKey(matrices, i, chunkOrigins));
+  }
+
+  addRebuildKeys(out: Set<number>): void {
+    const { chunks } = this;
+    for (let row = 0; row < chunks.length; row++) {
+      if (chunks.contributes(row) || chunks.hasFootprint(row)) out.add(chunks.keyAt(row));
+    }
   }
 
   farModelPlacement(farModel: number): FarModelPlacement {
@@ -497,7 +591,7 @@ class PlacedEntry implements PlacedModel {
         cos,
         this.z - originZ - sin * sx + cos * sz,
       ),
-      chunkKeys: [...this.contributions.keys()],
+      chunkKeys: this.chunks.contributedKeys(),
     };
   }
 
@@ -561,39 +655,64 @@ class PlacedEntry implements PlacedModel {
     };
   }
 
-  writeInto(
-    source: Float32Array,
-    keys: Float64Array,
-    skip: Uint8Array | null,
-    key: number,
-    originX: number,
-    originZ: number,
+  writeParts(
+    chunkX: number,
+    chunkZ: number,
     target: Float32Array,
     firstSlot: number,
     selected: Uint32Array,
   ): number {
+    const { matrices, count } = this.placeable.parts;
     let slot = firstSlot;
-    const { cos, sin } = this;
-    const tx = this.x - originX;
-    const tz = this.z - originZ;
-    for (let i = 0; i < keys.length; i++) {
-      if (keys[i] !== key || skip?.[i] === 1) continue;
-      const s = i * INSTANCE_MATRIX_FLOATS;
-      const t = slot * INSTANCE_MATRIX_FLOATS;
-      for (let col = 0; col < 4; col++) {
-        const row0 = source[s + col] ?? 0;
-        const row2 = source[s + 8 + col] ?? 0;
-        target[t + col] = cos * row0 + sin * row2;
-        target[t + 4 + col] = source[s + 4 + col] ?? 0;
-        target[t + 8 + col] = -sin * row0 + cos * row2;
-      }
-      target[t + 3] = (target[t + 3] ?? 0) + tx;
-      target[t + 7] = (target[t + 7] ?? 0) + this.yLdu;
-      target[t + 11] = (target[t + 11] ?? 0) + tz;
-      selected[slot] = i;
-      slot++;
+    for (let i = 0; i < count; i++) {
+      if (!this.inChunk(matrices, i, chunkX, chunkZ)) continue;
+      this.writeInstance(matrices, i, chunkX, chunkZ, target, slot);
+      selected[slot++] = i;
     }
     return slot;
+  }
+
+  writeDrawnStuds(
+    chunkX: number,
+    chunkZ: number,
+    covers: ReadonlyArray<PlacedEntry>,
+    closers: ReadonlyArray<PlacedEntry>,
+    target: Float32Array,
+    firstSlot: number,
+    selected: Uint32Array,
+  ): number {
+    const { matrices, count } = this.placeable.studs;
+    let slot = firstSlot;
+    for (let i = 0; i < count; i++) {
+      if (!this.inChunk(matrices, i, chunkX, chunkZ) || this.isStudCulled(i, covers, closers))
+        continue;
+      this.writeInstance(matrices, i, chunkX, chunkZ, target, slot);
+      selected[slot++] = i;
+    }
+    return slot;
+  }
+
+  private writeInstance(
+    source: Float32Array,
+    i: number,
+    chunkX: number,
+    chunkZ: number,
+    target: Float32Array,
+    slot: number,
+  ): void {
+    const { cos, sin } = this;
+    const s = i * INSTANCE_MATRIX_FLOATS;
+    const t = slot * INSTANCE_MATRIX_FLOATS;
+    for (let col = 0; col < 4; col++) {
+      const row0 = source[s + col] ?? 0;
+      const row2 = source[s + 8 + col] ?? 0;
+      target[t + col] = cos * row0 + sin * row2;
+      target[t + 4 + col] = source[s + 4 + col] ?? 0;
+      target[t + 8 + col] = -sin * row0 + cos * row2;
+    }
+    target[t + 3] = (target[t + 3] ?? 0) + this.x - chunkX * CHUNK_LDU;
+    target[t + 7] = (target[t + 7] ?? 0) + this.yLdu;
+    target[t + 11] = (target[t + 11] ?? 0) + this.z - chunkZ * CHUNK_LDU;
   }
 }
 
@@ -677,7 +796,10 @@ export class PlacedChunks {
     for (const entry of this.entries) {
       if (entry.placeable !== placeable) continue;
       this.showFarModel(entry);
-      for (const key of entry.contributions.keys()) keys.add(key);
+      const { chunks } = entry;
+      for (let row = 0; row < chunks.length; row++) {
+        if (chunks.contributes(row)) keys.add(chunks.keyAt(row));
+      }
     }
     return this.rebuild([...keys].toSorted((a, b) => a - b));
   }
@@ -698,13 +820,13 @@ export class PlacedChunks {
     const touched = new Set<number>();
     for (const change of edit.changes) {
       if (!change.removed) continue;
-      for (const key of this.detach(change.removed).rebuildKeys()) touched.add(key);
+      this.detach(change.removed).addRebuildKeys(touched);
     }
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
       const entry = this.insert(change.placement, change.added, placeableOf(change.to.refId));
-      for (const key of entry.rebuildKeys()) touched.add(key);
+      entry.addRebuildKeys(touched);
       added.push(entry);
     }
     return { added, report: this.rebuild(touched) };
@@ -721,16 +843,16 @@ export class PlacedChunks {
     for (let e = 0; e < this.entries.length; e++) {
       if (this.entries[e] === ignore) ignored = this.entries[e] ?? null;
     }
-    if (ignored) this.restamp(ignored.columnKeys, new Set([ignored]));
+    if (ignored) this.restamp(ignored.chunks.keysWithColumns(), new Set([ignored]));
     const yPlates = restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
-    if (ignored) this.restamp(ignored.columnKeys, NO_ENTRIES);
+    if (ignored) this.restamp(ignored.chunks.keysWithColumns(), NO_ENTRIES);
     return yPlates;
   }
 
   riderOn(model: PlacedModel): PlacedModel | null {
     const base = this.entries.find((entry) => entry === model);
     if (!base) return null;
-    for (const key of base.columnKeys) {
+    for (const key of base.chunks.keysWithColumns()) {
       for (const entry of this.byColumnChunk.get(key) ?? []) {
         if (entry !== base && entry.restsOn(base)) return entry;
       }
@@ -760,14 +882,14 @@ export class PlacedChunks {
     const base = this.entries.find((entry) => entry === removed);
     if (!base) return null;
     const riders = new Set<PlacedEntry>();
-    for (const key of base.columnKeys) {
+    for (const key of base.chunks.keysWithColumns()) {
       for (const entry of this.byColumnChunk.get(key) ?? []) {
         if (entry !== base && entry.handle.yPlates > 0) riders.add(entry);
       }
     }
     for (const rider of riders) {
       const without = new Set([base, rider]);
-      const keys = new Set([...base.columnKeys, ...rider.columnKeys]);
+      const keys = new Set([...base.chunks.keysWithColumns(), ...rider.chunks.keysWithColumns()]);
       this.restamp(keys, without);
       const yPlates = restingHeight(this.occupancy, rider.placeable, rider.pose);
       this.restamp(keys, NO_ENTRIES);
@@ -801,7 +923,7 @@ export class PlacedChunks {
     return [...found];
   }
 
-  private restamp(keys: ReadonlySet<number>, except: ReadonlySet<PlacedEntry>): void {
+  private restamp(keys: Iterable<number>, except: ReadonlySet<PlacedEntry>): void {
     for (const key of keys) {
       this.occupancy.clearChunk(key);
       for (const entry of this.byColumnChunk.get(key) ?? []) {
@@ -813,7 +935,7 @@ export class PlacedChunks {
   addAll(placements: ReadonlyArray<PlacementSource>): RebuildReport {
     const keys = new Set<number>();
     for (const { placement, handle, placeable } of placements) {
-      for (const key of this.insert(placement, handle, placeable).rebuildKeys()) keys.add(key);
+      this.insert(placement, handle, placeable).addRebuildKeys(keys);
     }
     return this.rebuild([...keys].toSorted((a, b) => a - b));
   }
@@ -839,9 +961,13 @@ export class PlacedChunks {
     const entry = new PlacedEntry(this.nextId++, placement, handle, placeable, this.chunkOrigins);
     this.entries.push(entry);
     if (this.farModelOf(placeable) !== null) this.showFarModel(entry);
-    for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
-    for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
-    for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
+    const { chunks } = entry;
+    for (let row = 0; row < chunks.length; row++) {
+      const key = chunks.keyAt(row);
+      if (chunks.contributes(row)) addTo(this.byChunk, key, entry);
+      if (chunks.hasFootprint(row)) addTo(this.byFootprintChunk, key, entry);
+      if (chunks.hasColumns(row)) addTo(this.byColumnChunk, key, entry);
+    }
     if (entry.slab) this.slabbed.push(entry);
     entry.stampColumns(this.occupancy, null);
     return entry;
@@ -853,12 +979,16 @@ export class PlacedChunks {
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
     this.backend.setFarModel(entry.id, null);
-    for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
-    for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
-    for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
+    const { chunks } = entry;
+    for (let row = 0; row < chunks.length; row++) {
+      const key = chunks.keyAt(row);
+      this.byChunk.get(key)?.delete(entry);
+      this.byFootprintChunk.get(key)?.delete(entry);
+      this.byColumnChunk.get(key)?.delete(entry);
+    }
     const slabbed = this.slabbed.indexOf(entry);
     if (slabbed >= 0) this.slabbed.splice(slabbed, 1);
-    this.restamp(entry.columnKeys, NO_ENTRIES);
+    this.restamp(entry.chunks.keysWithColumns(), NO_ENTRIES);
     return entry;
   }
 
@@ -878,85 +1008,76 @@ export class PlacedChunks {
   private rebuildChunk(key: number): ChunkInstances {
     const origin = this.chunkOrigins.get(key);
     if (!origin) throw new Error(`chunk ${key} has no recorded origin`);
-    const originX = origin[0] * CHUNK_LDU;
-    const originZ = origin[1] * CHUNK_LDU;
+    const [chunkX, chunkZ] = origin;
     const entries = inWorldOrder(this.byChunk.get(key) ?? new Set<PlacedEntry>());
     const covers = [...(this.byFootprintChunk.get(key) ?? [])];
     const closers = covers.length > 0 ? this.columnsAround(key) : [];
     let partCount = 0;
-    let studCount = 0;
     let studsBefore = 0;
     for (const entry of entries) {
-      const contribution = entry.contributions.get(key);
-      partCount += contribution?.parts ?? 0;
-      studsBefore += contribution?.studs ?? 0;
-      studCount += entry.markCulled(key, covers, closers);
+      const row = entry.chunks.rowOf(key);
+      partCount += entry.chunks.partCountAt(row);
+      studsBefore += entry.chunks.studCountAt(row);
     }
-    this.chunkStuds.set(key, { drawn: studCount, culled: studsBefore - studCount });
-    const voxelizedFlags = new Uint8Array(partCount);
-    const chunk: ChunkInstances = {
-      originX,
-      originZ,
-      count: partCount,
-      partIndex: new Uint16Array(partCount),
-      colorIndex: new Uint16Array(partCount),
-      matrices: new Float32Array(partCount * INSTANCE_MATRIX_FLOATS),
-      voxelized: voxelizedFlags,
-      studs: {
-        count: studCount,
-        primitiveIndex: new Uint8Array(studCount),
-        colorIndex: new Uint16Array(studCount),
-        matrices: new Float32Array(studCount * INSTANCE_MATRIX_FLOATS),
-      },
-    };
-    if (partCount === 0 && studCount === 0) {
-      this.backend.deleteChunk(key);
-      this.chunkStuds.delete(key);
-      return chunk;
-    }
+    const partIndex = new Uint16Array(partCount);
+    const colorIndex = new Uint16Array(partCount);
+    const matrices = new Float32Array(partCount * INSTANCE_MATRIX_FLOATS);
+    const voxelized = new Uint8Array(partCount);
+    const studPrimitives = new Uint8Array(studsBefore);
+    const studColors = new Uint16Array(studsBefore);
+    const studMatrices = new Float32Array(studsBefore * INSTANCE_MATRIX_FLOATS);
     const selectedParts = new Uint32Array(partCount);
-    const selectedStuds = new Uint32Array(studCount);
+    const selectedStuds = new Uint32Array(studsBefore);
     let partSlot = 0;
     let studSlot = 0;
     for (const entry of entries) {
       const { parts, studs } = entry.placeable;
       const firstPart = partSlot;
-      partSlot = entry.writeInto(
-        parts.matrices,
-        entry.partKeys,
-        null,
-        key,
-        originX,
-        originZ,
-        chunk.matrices,
-        partSlot,
-        selectedParts,
-      );
-      const voxelized = this.farModelOf(entry.placeable) === null ? 0 : 1;
+      partSlot = entry.writeParts(chunkX, chunkZ, matrices, partSlot, selectedParts);
+      const voxel = this.farModelOf(entry.placeable) === null ? 0 : 1;
       for (let slot = firstPart; slot < partSlot; slot++) {
         const i = selectedParts[slot] ?? 0;
-        chunk.partIndex[slot] = parts.partIndex[i] ?? 0;
-        chunk.colorIndex[slot] = parts.colorIndex[i] ?? 0;
-        voxelizedFlags[slot] = voxelized;
+        partIndex[slot] = parts.partIndex[i] ?? 0;
+        colorIndex[slot] = parts.colorIndex[i] ?? 0;
+        voxelized[slot] = voxel;
       }
       const firstStud = studSlot;
-      studSlot = entry.writeInto(
-        studs.matrices,
-        entry.studKeys,
-        entry.studCulled,
-        key,
-        originX,
-        originZ,
-        chunk.studs.matrices,
+      studSlot = entry.writeDrawnStuds(
+        chunkX,
+        chunkZ,
+        covers,
+        closers,
+        studMatrices,
         studSlot,
         selectedStuds,
       );
       for (let slot = firstStud; slot < studSlot; slot++) {
         const i = selectedStuds[slot] ?? 0;
-        chunk.studs.primitiveIndex[slot] = studs.primitiveIndex[i] ?? 0;
-        chunk.studs.colorIndex[slot] = studs.colorIndex[i] ?? 0;
+        studPrimitives[slot] = studs.primitiveIndex[i] ?? 0;
+        studColors[slot] = studs.colorIndex[i] ?? 0;
       }
     }
+    const chunk: ChunkInstances = {
+      originX: chunkX * CHUNK_LDU,
+      originZ: chunkZ * CHUNK_LDU,
+      count: partCount,
+      partIndex,
+      colorIndex,
+      matrices,
+      voxelized,
+      studs: {
+        count: studSlot,
+        primitiveIndex: studPrimitives.slice(0, studSlot),
+        colorIndex: studColors.slice(0, studSlot),
+        matrices: studMatrices.slice(0, studSlot * INSTANCE_MATRIX_FLOATS),
+      },
+    };
+    if (partCount === 0 && studSlot === 0) {
+      this.backend.deleteChunk(key);
+      this.chunkStuds.delete(key);
+      return chunk;
+    }
+    this.chunkStuds.set(key, { drawn: studSlot, culled: studsBefore - studSlot });
     this.backend.setChunk(key, chunk);
     return chunk;
   }
