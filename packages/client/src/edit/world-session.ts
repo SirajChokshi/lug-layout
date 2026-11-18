@@ -4,7 +4,6 @@ import { decode, issueText, type Issue } from "@brr/schema/decode";
 import {
   WORLD_NAME_MAX_LENGTH,
   WorldName,
-  importRef,
   referencedImports,
   shardEntry,
   worldHeader,
@@ -75,7 +74,7 @@ export interface IEditedWorld {
   validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue>;
   load(shards: ReadonlyArray<WorldShardV1>): Promise<ReadonlyArray<Issue>>;
   clear(): void;
-  addImport(file: ImportedFile): Promise<string | null>;
+  addImportedModel(file: ImportedFile): Promise<string | null>;
 }
 
 export interface IWorldFiles {
@@ -96,17 +95,12 @@ export interface IWorldSession extends IWorldFiles {
   placementsEdited(edit: AppliedEdit): void;
   trackEdited(): void;
   pollCamera(): void;
-  importModelFile(file: ModelFileInput): Promise<ModelFileImport>;
+  addModelFile(file: ModelFileInput): Promise<string | null>;
 }
 
 export interface ModelFileInput {
   readonly name: string;
   readonly bytes: Uint8Array;
-}
-
-export interface ModelFileImport {
-  readonly done: boolean;
-  readonly item: string | null;
 }
 
 const CAMERA_SAVE_DELAY_MS = 500;
@@ -469,21 +463,20 @@ export class WorldSession implements IWorldSession {
     const started = performance.now();
     const stored = await this.repository.read(id);
     if (!stored.ok) throw new Error(`world ${id} can't be read: ${issueText(stored.issues)}`);
-    await this.addImports(stored.value.shards, (sha256) => this.repository.importedFile(sha256));
+    await this.ensureImports(stored.value.shards, (sha256) => this.repository.importedFile(sha256));
     await this.loadShards(id, stored.value.manifest, stored.value.shards, started);
   }
 
-  private async addImports(
+  private async ensureImports(
     shards: ReadonlyArray<WorldShardV1>,
-    stored: (sha256: string) => Promise<ImportedFile | undefined>,
+    fileOf: (sha256: string) => Promise<ImportedFile | undefined>,
   ): Promise<void> {
     for (const sha256 of referencedImports(shards)) {
-      if (this.importedFiles.has(sha256)) continue;
-      const file = await stored(sha256);
+      const file = this.importedFiles.get(sha256) ?? (await fileOf(sha256));
       if (!file) {
         throw new Error(`it places an imported file (sha256 ${sha256}) that isn't stored here`);
       }
-      if ((await this.editedWorld().addImport(file)) === null) {
+      if ((await this.editedWorld().addImportedModel(file)) === null) {
         throw new Error(`the imported file ${file.name} can't be placed any more`);
       }
       this.importedFiles.set(sha256, file);
@@ -603,7 +596,7 @@ export class WorldSession implements IWorldSession {
       if (!archive.ok) throw new Error(issueText(archive.issues));
       const { manifest, shards, imports } = archive.value;
       const carried = new Map(imports.map((file) => [file.sha256, file]));
-      await this.addImports(shards, async (sha256) => carried.get(sha256));
+      await this.ensureImports(shards, async (sha256) => carried.get(sha256));
       if (this.state.storageError === null) {
         for (const file of imports) await this.repository.putImportedFile(file);
       }
@@ -619,25 +612,24 @@ export class WorldSession implements IWorldSession {
     });
   }
 
-  async importModelFile(input: ModelFileInput): Promise<ModelFileImport> {
+  async addModelFile(input: ModelFileInput): Promise<string | null> {
     let item: string | null = null;
-    const done = await this.fileAction(
+    await this.fileAction(
       "model import",
       async () => {
         const sha256 = await contentSha256(input.bytes);
-        if (this.importedFiles.has(sha256)) {
-          item = importRef(sha256);
-          return;
-        }
-        const file = { sha256, name: input.name, bytes: input.bytes.slice() };
-        const placed = await this.editedWorld().addImport(file);
+        const known = this.importedFiles.get(sha256);
+        const file = known ?? { sha256, name: input.name, bytes: input.bytes.slice() };
+        const placed = await this.editedWorld().addImportedModel(file);
         if (placed === null) return;
-        this.importedFiles.set(sha256, file);
-        if (this.state.storageError === null) await this.repository.putImportedFile(file);
+        if (!known) {
+          this.importedFiles.set(sha256, file);
+          if (this.state.storageError === null) await this.repository.putImportedFile(file);
+        }
         item = placed;
       },
       true,
     );
-    return { done, item };
+    return item;
   }
 }

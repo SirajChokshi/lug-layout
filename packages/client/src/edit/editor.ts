@@ -1128,7 +1128,7 @@ export class Editor implements IEditor, IEditedWorld {
     return this.importer.importText(file.name, new TextDecoder().decode(file.bytes), EDITOR_LOD);
   }
 
-  private async addImportedModel(file: ImportedFile): Promise<Placeable | null> {
+  private async bakeImportedModel(file: ImportedFile): Promise<Placeable | null> {
     const view = {
       file: file.name,
       status: "importing",
@@ -1195,16 +1195,16 @@ export class Editor implements IEditor, IEditedWorld {
     return placeable;
   }
 
-  async addImport(file: ImportedFile): Promise<string | null> {
+  async addImportedModel(file: ImportedFile): Promise<string | null> {
     const id = importRef(file.sha256);
     if (this.slots.some((slot) => slot.id === id)) return id;
-    return (await this.addImportedModel(file)) === null ? null : id;
+    return (await this.bakeImportedModel(file)) === null ? null : id;
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
-    const { done, item } = await this.session.importModelFile(file);
+    const item = await this.session.addModelFile(file);
     if (item !== null && !this.state.readOnly) this.chooseItem(item);
-    return done;
+    return item !== null;
   }
 
   private syncColors(): void {
