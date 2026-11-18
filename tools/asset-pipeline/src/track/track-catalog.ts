@@ -19,6 +19,7 @@ import {
   ZETA16_ORDER,
   ZETA16_ZERO,
   zeta16,
+  zeta16Direction,
   zeta16ToStuds,
   type Zeta16,
 } from "@brr/math";
@@ -279,18 +280,24 @@ function mirrorSegment(segment: TrackPathSegment): TrackPathSegment {
     : { ...segment, sweepRadians: -segment.sweepRadians };
 }
 
+function halfStepRotation(halfSteps: number): { readonly cos: number; readonly sin: number } {
+  const whole = zeta16Direction(Math.floor(halfSteps / 2));
+  if (halfSteps % 2 === 0) return { cos: whole.x, sin: whole.z };
+  const cosHalf = Math.cos(PART_FRAME_HEADING_GRID);
+  const sinHalf = Math.sin(PART_FRAME_HEADING_GRID);
+  return {
+    cos: whole.x * cosHalf - whole.z * sinHalf,
+    sin: whole.z * cosHalf + whole.x * sinHalf,
+  };
+}
+
 function partFrameInBundle(frame: EntryFrame): v.InferInput<typeof TrackPiece>["partFrame"] {
-  const cos = Math.cos(-frame.inward);
-  const sin = Math.sin(-frame.inward);
+  const rounded = Math.round(frame.inward / PART_FRAME_HEADING_GRID);
+  const halfSteps = ((rounded % HALF_STEPS_PER_TURN) + HALF_STEPS_PER_TURN) % HALF_STEPS_PER_TURN;
+  const { cos, sin } = halfStepRotation(HALF_STEPS_PER_TURN - halfSteps);
   const x = -frame.origin.x * cos + frame.origin.z * sin;
   const z = -frame.origin.x * sin - frame.origin.z * cos;
-  const halfSteps = Math.round(frame.inward / PART_FRAME_HEADING_GRID);
-  return {
-    xLdu: x,
-    zLdu: -z,
-    headingHalfSteps:
-      ((halfSteps % HALF_STEPS_PER_TURN) + HALF_STEPS_PER_TURN) % HALF_STEPS_PER_TURN,
-  };
+  return { xLdu: x, zLdu: -z, headingHalfSteps: halfSteps };
 }
 
 function endInPart(

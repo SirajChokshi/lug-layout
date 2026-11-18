@@ -9,6 +9,7 @@ import {
   drawingKit,
   endGaps,
   FOOTPRINT_FLOATS,
+  freePlacement,
   layMoves,
   runMoves,
   solveClosure,
@@ -40,7 +41,9 @@ import {
   posesJoin16,
   pose16,
   pose16Equals,
+  QUARTER_TURN_16,
   zeta16,
+  zeta16Direction,
   zeta16ToStuds,
   type Pose16,
 } from "@brr/math";
@@ -53,6 +56,7 @@ import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
+const QUARTER_TURN_RADIANS = Math.PI / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
@@ -211,17 +215,31 @@ interface PartTransform {
   readonly s: number;
 }
 
+interface PlaneRotation {
+  readonly c: number;
+  readonly s: number;
+}
+
+function partRotation(heading: number, frame: TrackPartFrame): PlaneRotation {
+  const { x: cosTheta, z: sinTheta } = zeta16Direction(heading);
+  const offset = frame.headingHalfSteps * HALF_STEP_RADIANS;
+  const cosHalf = Math.cos(offset);
+  const sinHalf = Math.sin(offset);
+  return {
+    c: cosTheta * cosHalf - sinTheta * sinHalf,
+    s: sinTheta * cosHalf + cosTheta * sinHalf,
+  };
+}
+
 function partTransform(placement: Pose16, frame: TrackPartFrame): PartTransform {
   const studs = zeta16ToStuds(placement.position);
-  const theta = placement.heading * HEADING_RADIANS;
-  const cosTheta = Math.cos(theta);
-  const sinTheta = Math.sin(theta);
-  const phi = theta + frame.headingHalfSteps * HALF_STEP_RADIANS;
+  const { x: cosTheta, z: sinTheta } = zeta16Direction(placement.heading);
+  const { c, s } = partRotation(placement.heading, frame);
   return {
     x: studs.x * STUD_LDU + cosTheta * frame.xLdu - sinTheta * frame.zLdu,
     z: studs.z * STUD_LDU + sinTheta * frame.xLdu + cosTheta * frame.zLdu,
-    c: Math.cos(phi),
-    s: Math.sin(phi),
+    c,
+    s,
   };
 }
 
@@ -553,7 +571,8 @@ export class TrackDrawing {
     const dx = hitX - drag.anchorX;
     const dz = hitZ - drag.anchorZ;
     if (Math.hypot(dx, dz) < MIN_START_DRAG_LDU) return null;
-    const heading = normalizeHeading16(Math.round(Math.atan2(dz, dx) / HEADING_RADIANS));
+    const quarterTurns = Math.round(Math.atan2(dz, dx) / QUARTER_TURN_RADIANS);
+    const heading = normalizeHeading16(quarterTurns * QUARTER_TURN_16);
     const position = zeta16([
       BigInt(drag.anchorX / STUD_LDU),
       0n,
@@ -724,11 +743,12 @@ export class TrackDrawing {
   ): PieceSnap {
     const part = this.pieceByIndex(catalogIndex);
     const connectors = part.def.connectors;
-    const local = connectors[normalizeConnector(connector, connectors.length)];
+    const held = normalizeConnector(connector, connectors.length);
+    const local = connectors[held];
     if (!local) throw new RangeError(`${part.piece.id} has no connector ${connector}`);
     const end = this.endNear(hitX, hitZ, null);
     const target = end === null ? undefined : this.ends[end];
-    const placement = attachPose16(local, target ?? free);
+    const placement = target ? attachPose16(local, target) : freePlacement(part.def, held, free);
     let joins = 0;
     const misses: number[] = [];
     for (const own of connectors) {

@@ -117,7 +117,7 @@
       ],
       "partFrame": {
         "xLdu": 156.0730294984053,
-        "zLdu": 15.371700497664728,
+        "zLdu": 15.371700497664731,
         "headingHalfSteps": 1
       }
     },
@@ -176,7 +176,7 @@
       ],
       "partFrame": {
         "xLdu": 160,
-        "zLdu": -3.9188697572715304e-14,
+        "zLdu": 0,
         "headingHalfSteps": 0
       }
     },
@@ -236,7 +236,7 @@
       ],
       "partFrame": {
         "xLdu": 156.07225805549513,
-        "zLdu": 15.3717754365486,
+        "zLdu": 15.371775436548603,
         "headingHalfSteps": 1
       }
     },
@@ -474,7 +474,7 @@
           ],
           "heading": 15,
           "status": "certified",
-          "residualLdu": 8.921173213213257e-7
+          "residualLdu": 8.921174634225937e-7
         }
       ],
       "routes": [
@@ -496,13 +496,13 @@
           "segments": [
             {
               "kind": "arc",
-              "radiusLdu": 800,
-              "sweepRadians": -0.6435011087932847
+              "radiusLdu": 799.9999999999994,
+              "sweepRadians": -0.643501108793285
             },
             {
               "kind": "arc",
-              "radiusLdu": 800,
-              "sweepRadians": 0.2508020270945599
+              "radiusLdu": 799.9999999999994,
+              "sweepRadians": 0.25080202709456023
             }
           ]
         }
@@ -565,7 +565,7 @@
           ],
           "heading": 15,
           "status": "certified",
-          "residualLdu": 8.921173213213257e-7
+          "residualLdu": 8.921174634225937e-7
         }
       ],
       "routes": [
@@ -587,13 +587,13 @@
           "segments": [
             {
               "kind": "arc",
-              "radiusLdu": 800,
-              "sweepRadians": -0.6435011087932847
+              "radiusLdu": 799.9999999999994,
+              "sweepRadians": -0.643501108793285
             },
             {
               "kind": "arc",
-              "radiusLdu": 800,
-              "sweepRadians": 0.2508020270945599
+              "radiusLdu": 799.9999999999994,
+              "sweepRadians": 0.25080202709456023
             }
           ]
         }
@@ -656,7 +656,7 @@
           ],
           "heading": 4,
           "status": "certified",
-          "residualLdu": 1.7763568394002505e-14
+          "residualLdu": 0
         },
         {
           "coefficients": [
@@ -980,7 +980,7 @@
           "connector": 2,
           "marker": "s/2867as03.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
-          "markerResidualLdu": 8.921173213213257e-7,
+          "markerResidualLdu": 8.921174634225937e-7,
           "railCentreOffsetLdu": 0.25,
           "railHalfSpacingLdu": 50.515625
         }
@@ -1037,7 +1037,7 @@
           "connector": 2,
           "marker": "s/2867as03.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
-          "markerResidualLdu": 8.921173213213257e-7,
+          "markerResidualLdu": 8.921174634225937e-7,
           "railCentreOffsetLdu": 0.25,
           "railHalfSpacingLdu": 50.515625
         }
@@ -1094,8 +1094,8 @@
           "connector": 2,
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
-          "markerResidualLdu": 1.7763568394002505e-14,
-          "railCentreOffsetLdu": -0.015625,
+          "markerResidualLdu": 0,
+          "railCentreOffsetLdu": 0.015625,
           "railHalfSpacingLdu": 50.25
         },
         {
@@ -1123,8 +1123,8 @@
           "to": 3,
           "family": "straight",
           "railCoverage": [
-            0.9565217391304348,
-            0.9565217391304348
+            0.9192546583850931,
+            0.9254658385093167
           ],
           "rejected": []
         }

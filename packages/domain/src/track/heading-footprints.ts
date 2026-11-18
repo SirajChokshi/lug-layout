@@ -1,16 +1,28 @@
-import { ZETA16_ORDER } from "@brr/math";
+import { ZETA16_ORDER, zeta16Direction } from "@brr/math";
 
 export const FOOTPRINT_FLOATS = 4;
 export const HEADING_FOOTPRINT_FLOATS = ZETA16_ORDER * FOOTPRINT_FLOATS;
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 
+function headingRotation(
+  heading: number,
+  headingHalfSteps: number,
+): { readonly c: number; readonly s: number } {
+  const { x: cosTheta, z: sinTheta } = zeta16Direction(heading);
+  const offset = headingHalfSteps * HALF_STEP_RADIANS;
+  const cosHalf = Math.cos(offset);
+  const sinHalf = Math.sin(offset);
+  return {
+    c: cosTheta * cosHalf - sinTheta * sinHalf,
+    s: sinTheta * cosHalf + cosTheta * sinHalf,
+  };
+}
+
 export function headingFootprints(positions: Float32Array, headingHalfSteps: number): Float64Array {
   const boxes = new Float64Array(HEADING_FOOTPRINT_FLOATS);
   for (let heading = 0; heading < ZETA16_ORDER; heading++) {
-    const phi = heading * HEADING_RADIANS + headingHalfSteps * HALF_STEP_RADIANS;
-    const c = Math.cos(phi);
-    const s = Math.sin(phi);
+    const { c, s } = headingRotation(heading, headingHalfSteps);
     let minX = Number.POSITIVE_INFINITY;
     let minZ = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;

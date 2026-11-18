@@ -78,7 +78,7 @@
             "headingErrorDegrees": 0.000403
           },
           "float64Certified": {
-            "gapLdu": 2.41e-13,
+            "gapLdu": 3.73e-13,
             "headingErrorDegrees": 2.54e-14
           },
           "float32Certified": {
@@ -107,7 +107,7 @@
             "headingErrorDegrees": 0.00186
           },
           "float64Certified": {
-            "gapLdu": 1.14e-11,
+            "gapLdu": 1.11e-11,
             "headingErrorDegrees": 4.07e-13
           },
           "float32Certified": {
