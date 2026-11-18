@@ -1,3 +1,4 @@
+use crate::sixteenths;
 use std::f64::consts::PI;
 use std::ops::Range;
 
@@ -6,7 +7,7 @@ use serde_json::{json, Value};
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{ReferenceSpan, Triangle, VisitedFile};
 
-pub const STEPS_PER_LDU: i32 = 16;
+pub const STEPS_PER_LDU: i32 = sixteenths::PER_LDU;
 const IDENTIFY_LDU: f64 = 0.0005;
 const UNBOUNDED_STEPS: i32 = 1 << 20;
 const DEGENERATE_LDU: f64 = 1e-9;
@@ -180,18 +181,12 @@ fn identify_up(v: f64) -> i32 {
     identify(v).unwrap_or(v.ceil() as i32)
 }
 
-pub fn identified_steps(r: f64) -> Option<i32> {
-    let steps = f64::from(STEPS_PER_LDU);
-    let q = r * steps;
-    let n = q.round();
-    ((q - n).abs() <= IDENTIFY_LDU * steps).then_some(n as i32)
-}
-
 fn stepped(r: f64, outward: fn(f64) -> f64) -> i32 {
     if !r.is_finite() {
         return UNBOUNDED_STEPS;
     }
-    let value = identified_steps(r).unwrap_or_else(|| outward(r * f64::from(STEPS_PER_LDU)) as i32);
+    let value =
+        sixteenths::identified(r).unwrap_or_else(|| outward(r * f64::from(STEPS_PER_LDU)) as i32);
     value.min(UNBOUNDED_STEPS)
 }
 

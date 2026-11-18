@@ -375,7 +375,7 @@ fn finished(connector: &Connector, issues: &mut Vec<Issue>) -> Connector {
 enum Slot {
     Lattice {
         polarity: u8,
-        origin: [i64; 3],
+        sixteenths: [i64; 3],
         axis: u8,
     },
     Free {
@@ -457,7 +457,7 @@ fn slots(connector: &Connector) -> Vec<Slot> {
             match (lattice, code) {
                 ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
                     polarity,
-                    origin: [x, y, z],
+                    sixteenths: [x, y, z],
                     axis,
                 },
                 _ => Slot::Free {
@@ -509,7 +509,7 @@ fn face_slot(face: &MatingFace) -> Slot {
     match (lattice, direction_code(face.axis)) {
         ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
             polarity,
-            origin: [x, y, z],
+            sixteenths: [x, y, z],
             axis,
         },
         _ => Slot::Free {

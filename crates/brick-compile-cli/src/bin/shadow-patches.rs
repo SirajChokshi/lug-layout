@@ -8,7 +8,8 @@ use brick_compile::bands::{end_faces, outward_round_bands, EndFace};
 use brick_compile::connect::{mating_faces, Gender, ShadowPatches, ShadowSnaps, Source, Status};
 use brick_compile::flatten::{resolve_reference, Flattener, Library, Lod};
 use brick_compile::ldraw::{parse, Line};
-use brick_compile::technic::{identified_steps, is_circular_primitive, STEPS_PER_LDU};
+use brick_compile::sixteenths;
+use brick_compile::technic::is_circular_primitive;
 use brick_compile_cli::LazyLibrary;
 use serde_json::{json, Value};
 
@@ -114,10 +115,11 @@ fn written(v: f64) -> Result<f64, String> {
 }
 
 fn identified_radius(r: f64) -> Result<f64, String> {
-    identified_steps(r)
-        .map(|steps| f64::from(steps) / f64::from(STEPS_PER_LDU))
+    sixteenths::identified(r)
+        .map(|steps| f64::from(steps) / f64::from(sixteenths::PER_LDU))
         .ok_or(format!(
-            "radius {r} is not within {IDENTIFY_LDU} LDU of a 1/{STEPS_PER_LDU} LDU step"
+            "radius {r} is not within {IDENTIFY_LDU} LDU of a 1/{} LDU step",
+            sixteenths::PER_LDU
         ))
 }
 
