@@ -1,3 +1,4 @@
+import type { CompilerVehicles } from "@brr/schema/bundle";
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 import { BrickCompiler } from "./brick-compiler.ts";
@@ -8,6 +9,13 @@ const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/"
 const pinnedLibrary = new URL("../../../.cache/ldraw/", import.meta.url);
 const probeFile = new URL("../test-data/critic-gap.mpd", import.meta.url);
 const holeProbeFile = new URL("../test-data/critic-gap-3.mpd", import.meta.url);
+const paletteTemplate = new URL(
+  "../../../docs/verified-facts/scenes/mils-road-straight.ldr",
+  import.meta.url,
+);
+const PALETTE_TEMPLATE_MODEL = "mils-road-straight";
+const BAKE_TIMEOUT_MS = 120_000;
+const OPAQUE_ALPHA = 255;
 const HTTP_NOT_FOUND = 404;
 const COLOR_NOT_IN_LDCONFIG = 99_999;
 const MAIN_COLOUR = 16;
@@ -18,8 +26,34 @@ interface Manifest {
   readonly source: { readonly repo: string; readonly commit: string; readonly root: string };
   readonly partTable: { readonly file: string };
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
-  readonly colors: ReadonlyArray<{ readonly code: number }>;
-  readonly compiler: { readonly file: string };
+  readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
+  readonly compiler: { readonly file: string; readonly vehicles?: CompilerVehicles };
+  readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
+}
+
+interface BundledModel {
+  readonly lattice: {
+    readonly phase: readonly [number, number];
+    readonly aabb: { readonly min: ReadonlyArray<number>; readonly max: ReadonlyArray<number> };
+  } | null;
+  readonly cover: {
+    readonly studs: number;
+    readonly coveredStuds: number;
+    readonly visibleBits: ReadonlyArray<number>;
+    readonly cells: {
+      readonly origin: readonly [number, number];
+      readonly size: readonly [number, number];
+      readonly bottomY: number;
+      readonly footprint: ReadonlyArray<number>;
+      readonly flat: ReadonlyArray<number>;
+      readonly columnBottom: ReadonlyArray<number>;
+      readonly columnTop: ReadonlyArray<number>;
+    } | null;
+  };
+}
+
+async function bundleManifest(): Promise<Manifest> {
+  return JSON.parse(await readFile(new URL("manifest.json", bundleRoot), "utf8")) as Manifest;
 }
 
 async function importWith(
@@ -27,9 +61,7 @@ async function importWith(
   fileName: string,
   text: string,
 ): Promise<ImportResult> {
-  const manifest = JSON.parse(
-    await readFile(new URL("manifest.json", bundleRoot), "utf8"),
-  ) as Manifest;
+  const manifest = await bundleManifest();
   const partTable = JSON.parse(
     await readFile(new URL(manifest.partTable.file, bundleRoot), "utf8"),
   ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
@@ -50,6 +82,10 @@ async function importWith(
     unofficialAllowlist: [],
     bundlePartIds: partTable.parts.map((part) => part.id),
     ldconfigCodes: manifest.colors.map((color) => color.code),
+    translucentColors: manifest.colors
+      .filter((color) => color.alpha < OPAQUE_ALPHA)
+      .map((color) => color.code),
+    vehicles: manifest.compiler.vehicles ?? null,
   });
 }
 
@@ -144,3 +180,46 @@ it("reports an inline copy with a hole in a large face, and draws only the file'
   );
   expect(result.instanceCount).toBe(1);
 });
+
+it(
+  "bakes an imported file to the same lattice, stud cover, footprint and columns as the bundle's own bake of that file",
+  async () => {
+    const manifest = await bundleManifest();
+    const entry = manifest.models.find((model) => model.name === PALETTE_TEMPLATE_MODEL);
+    if (!entry) throw new Error(`the bundle has no ${PALETTE_TEMPLATE_MODEL}`);
+    const bundled = JSON.parse(
+      await readFile(new URL(entry.file, bundleRoot), "utf8"),
+    ) as BundledModel;
+
+    const { bake } = await importWith(
+      pinnedMirror,
+      "mils-road-straight.ldr",
+      await readFile(paletteTemplate, "utf8"),
+    );
+
+    const cells = bundled.cover.cells;
+    expect(bundled.lattice).not.toBeNull();
+    expect(cells).not.toBeNull();
+    expect(bake?.lattice).toEqual({
+      phaseX: bundled.lattice?.phase[0],
+      phaseZ: bundled.lattice?.phase[1],
+      aabbMin: bundled.lattice?.aabb.min,
+      aabbMax: bundled.lattice?.aabb.max,
+    });
+    expect(bake?.studCover.studs).toBe(bundled.cover.studs);
+    expect(bake?.studCover.covered).toBe(bundled.cover.coveredStuds);
+    expect([...(bake?.studCover.visibleBits ?? [])]).toEqual(bundled.cover.visibleBits);
+    expect(
+      bake?.cells && {
+        origin: [bake.cells.originX, bake.cells.originZ],
+        size: [bake.cells.width, bake.cells.depth],
+        bottomY: bake.cells.restY,
+        footprint: [...bake.cells.footprint],
+        flat: [...bake.cells.flat],
+        columnBottom: [...bake.cells.columnBottom],
+        columnTop: [...bake.cells.columnTop],
+      },
+    ).toEqual(cells);
+  },
+  BAKE_TIMEOUT_MS,
+);

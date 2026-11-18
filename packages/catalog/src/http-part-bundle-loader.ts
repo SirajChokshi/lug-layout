@@ -1,4 +1,5 @@
 import {
+  ALPHA_OPAQUE,
   BundleIndex,
   CreditTableFile,
   CrosswalkFile,
@@ -323,6 +324,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       studPrimitiveNames: manifest.studPrimitives.map((primitive) => primitive.name),
       partIds: manifest.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
+      translucentCodes: manifest.colors
+        .filter((color) => color.alpha < ALPHA_OPAQUE)
+        .map((color) => color.code),
+      vehicles: manifest.compiler.vehicles ?? null,
     };
   }
 

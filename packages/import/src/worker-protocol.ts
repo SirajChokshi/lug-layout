@@ -27,10 +27,28 @@ export type ImportWorkerResponse =
   | { readonly id: number; readonly kind: "failed"; readonly message: string };
 
 export function transferablesOf(model: ImportResult): Transferable[] {
+  const { bake } = model;
   return [
     model.partIndex.buffer,
     model.ldrawColor.buffer,
     model.matrices.buffer,
     ...model.compiled.map((part) => part.glb.buffer),
+    ...(bake
+      ? [
+          bake.studCover.visibleBits.buffer,
+          ...(bake.cells
+            ? [
+                bake.cells.footprint.buffer,
+                bake.cells.flat.buffer,
+                bake.cells.columnBottom.buffer,
+                bake.cells.columnTop.buffer,
+              ]
+            : []),
+          ...bake.vehicles.flatMap((vehicle) => [
+            vehicle.body.buffer,
+            ...vehicle.bogies.map((bogie) => bogie.instances.buffer),
+          ]),
+        ]
+      : []),
   ];
 }

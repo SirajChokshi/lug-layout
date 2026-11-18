@@ -97,6 +97,8 @@ export class WorkerModelImporter implements IModelImporter {
       unofficialAllowlist: context.unofficialAllowlist,
       bundlePartIds: context.partIds,
       ldconfigCodes: context.ldconfigCodes,
+      translucentColors: context.translucentCodes,
+      vehicles: context.vehicles,
     };
   }
 
