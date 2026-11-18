@@ -8,6 +8,7 @@ use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, ModelInstance};
+use brick_compile::rolling::Roundness;
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
 use brick_compile::{compile_part, CompileError, CompileOptions, Lod};
@@ -61,6 +62,7 @@ impl Session {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
                     unofficial_allowlist: unofficial_allowlist.clone(),
+                    roundness: Roundness::measured(&self.library, stud_primitives),
                 };
                 let model = request.text("source")?;
                 Ok(compile(
@@ -163,9 +165,11 @@ fn compile(
     body: &mut Body,
 ) -> Reply {
     let mut parts = Vec::with_capacity(references.len());
+    let roundness_needs = library.take_requested();
     for reference in references {
         let result = compile_part(library, reference, options);
-        let requested = library.take_requested();
+        let mut requested = library.take_requested();
+        requested.extend(roundness_needs.iter().cloned());
         let reference = reference.clone();
         parts.push(match result {
             _ if !requested.is_empty() => PartOutcome::Need {
@@ -246,6 +250,10 @@ fn bake(
         if scanned.insert(reference) {
             scan.closure(reference);
         }
+    }
+    let mut coarse_scan = Flattener::new(library, Lod::Low, &[]);
+    for stud in inputs.stud_primitives {
+        coarse_scan.closure(stud);
     }
     let requested = library.take_requested();
     if !requested.is_empty() {

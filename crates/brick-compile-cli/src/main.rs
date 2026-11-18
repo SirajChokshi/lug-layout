@@ -11,6 +11,7 @@ use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, ModelInstance};
+use brick_compile::rolling::Roundness;
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
@@ -384,6 +385,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+        roundness: None,
     };
     let compiler = match &args.compiler {
         Some(path) => {
@@ -398,6 +400,10 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+        roundness: Some(
+            Roundness::measured(&library, &stud_primitives)
+                .ok_or("the stud primitives draw no closed round band to measure roundness by")?,
+        ),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
     let ldconfig = library

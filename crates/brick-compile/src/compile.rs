@@ -6,6 +6,7 @@ use crate::glb;
 use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
+use crate::rolling::{read_rolling, read_standard_rolling, Rolling, Roundness};
 use crate::voxel::VOXEL_NOTE;
 
 pub const MODIFIED_NOTE: &str =
@@ -40,6 +41,7 @@ pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
     pub unofficial_allowlist: Vec<String>,
+    pub roundness: Option<Roundness>,
 }
 
 const UNOFFICIAL_PREFIX: &str = "Unofficial_";
@@ -72,6 +74,7 @@ pub struct CompiledPart {
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
+    pub rolling: Option<Rolling>,
 }
 
 fn to_y_up(p: Vec3) -> Vec3 {
@@ -118,6 +121,12 @@ pub fn compile_part<L: Library>(
     for triangle in &mut flattened.triangles {
         triangle.points = triangle.points.map(to_y_up);
     }
+    let rolling = options.roundness.and_then(|roundness| match options.lod {
+        Lod::Standard => Some(read_rolling(&flattened.triangles, roundness)),
+        Lod::Low | Lod::Far => {
+            read_standard_rolling(library, &path, roundness, &options.stud_primitives)
+        }
+    });
     if options.lod == Lod::Far {
         occlusion::drop_hidden_from_above(&mut flattened.triangles);
     }
@@ -141,6 +150,7 @@ pub fn compile_part<L: Library>(
         mesh,
         studs,
         flattened_files: flattened.files,
+        rolling,
     })
 }
 
@@ -164,7 +174,7 @@ impl CompiledPart {
             .map(|s| json!({ "primitive": s.primitive, "color": s.color, "matrix": s.matrix.m }))
             .collect();
         let [min, max] = self.mesh.bounds().unwrap_or([[0.0; 3]; 2]);
-        json!({
+        let mut extras = json!({
             "unit": "LDU",
             "upAxis": "+Y",
             "ldraw": {
@@ -179,7 +189,11 @@ impl CompiledPart {
             "sources": sources,
             "studs": studs,
             "bounds": { "min": min, "max": max },
-        })
+        });
+        if let Some(rolling) = &self.rolling {
+            extras["rolling"] = rolling.to_json();
+        }
+        extras
     }
 
     pub fn to_glb(&self) -> Vec<u8> {
