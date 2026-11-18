@@ -211,9 +211,10 @@ export {
   SECTION_AXLE,
   SECTION_ROUND,
   SECTION_SQUARE,
+  NO_GROUP,
   SnapShapes,
 } from "./connect/snap-shapes.ts";
-export { SnapMating } from "./connect/mating.ts";
+export { SnapMating, type MateFreedom } from "./connect/mating.ts";
 export { ModelConnectors, type PartInstances } from "./connect/model-connectors.ts";
 export { CandidatePoses, type LatticePose, type SnapWindow } from "./connect/candidate-poses.ts";
 export { MateReport } from "./connect/mate-report.ts";

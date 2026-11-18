@@ -3,6 +3,7 @@ export const SECTION_AXLE = 1;
 export const SECTION_SQUARE = 2;
 export const CAP_ROOT = 1;
 export const CAP_FAR = 2;
+export const NO_GROUP = "";
 const INITIAL_SHAPES = 16;
 const INITIAL_SECTIONS = 64;
 
@@ -15,10 +16,12 @@ export class SnapShapes {
   private firstOf = new Int32Array(INITIAL_SHAPES);
   private countOf = new Int32Array(INITIAL_SHAPES);
   private lengthOf = new Float64Array(INITIAL_SHAPES);
+  private groupOf = new Int32Array(INITIAL_SHAPES);
   private codeOf = new Uint8Array(INITIAL_SECTIONS);
   private sizeOf = new Float32Array(INITIAL_SECTIONS);
   private spanOf = new Float32Array(INITIAL_SECTIONS);
   private readonly ids = new Map<string, number>();
+  private readonly groups = new Map<string, number>([[NO_GROUP, 0]]);
 
   get count(): number {
     return this.shapes;
@@ -34,12 +37,13 @@ export class SnapShapes {
     codes: ArrayLike<number>,
     sizes: ArrayLike<number>,
     lengths: ArrayLike<number>,
+    group: string = NO_GROUP,
   ): number {
     const n = codes.length;
     if (n === 0 || sizes.length !== n || lengths.length !== n) {
       throw new RangeError(`a snap shape needs one size and length per section, got ${n} sections`);
     }
-    const key = shapeKey(caps, slide, codes, sizes, lengths);
+    const key = shapeKey(caps, slide, codes, sizes, lengths, group);
     const existing = this.ids.get(key);
     if (existing !== undefined) return existing;
     if (this.shapes === this.capsOf.length) this.growShapes();
@@ -47,6 +51,7 @@ export class SnapShapes {
     const shape = this.shapes++;
     this.capsOf[shape] = caps;
     this.slideOf[shape] = slide ? 1 : 0;
+    this.groupOf[shape] = this.groupToken(group);
     this.firstOf[shape] = this.sections;
     this.countOf[shape] = n;
     let length = 0;
@@ -67,6 +72,10 @@ export class SnapShapes {
 
   caps(shape: number): number {
     return this.capsOf[shape] ?? 0;
+  }
+
+  group(shape: number): number {
+    return this.groupOf[shape] ?? 0;
   }
 
   slides(shape: number): boolean {
@@ -97,6 +106,15 @@ export class SnapShapes {
     return this.spanOf[section] ?? 0;
   }
 
+  private groupToken(group: string): number {
+    let token = this.groups.get(group);
+    if (token === undefined) {
+      token = this.groups.size;
+      this.groups.set(group, token);
+    }
+    return token;
+  }
+
   private growShapes(): void {
     const capacity = this.capsOf.length * 2;
     this.capsOf = copied(this.capsOf, new Uint8Array(capacity));
@@ -104,6 +122,7 @@ export class SnapShapes {
     this.firstOf = copied(this.firstOf, new Int32Array(capacity));
     this.countOf = copied(this.countOf, new Int32Array(capacity));
     this.lengthOf = copied(this.lengthOf, new Float64Array(capacity));
+    this.groupOf = copied(this.groupOf, new Int32Array(capacity));
   }
 
   private growSections(): void {
@@ -120,8 +139,9 @@ function shapeKey(
   codes: ArrayLike<number>,
   sizes: ArrayLike<number>,
   lengths: ArrayLike<number>,
+  group: string,
 ): string {
-  const parts = [String(caps), slide ? "slide" : "fixed"];
+  const parts = [String(caps), slide ? "slide" : "fixed", JSON.stringify(group)];
   for (let s = 0; s < codes.length; s++) {
     parts.push(`${codes[s]}:${Math.fround(sizes[s] ?? 0)}:${Math.fround(lengths[s] ?? 0)}`);
   }

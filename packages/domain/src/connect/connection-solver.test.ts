@@ -745,3 +745,37 @@ describe("ConnectionSolver with track ends", () => {
     expect(joins).toBeGreaterThanOrEqual(400);
   });
 });
+
+const through = (code: number, size: number): number => shape(0, false, [[code, size, 8]]);
+const peg = (code: number, size: number): number => shape(CAP_ROOT, false, [[code, size, 8]]);
+const grouped = (caps: number, group: string): number =>
+  shapes.intern(caps, false, [SECTION_ROUND], [6], [4], group);
+
+describe("SnapMating", () => {
+  it("reads rotation freedom from the section rule: round and cross in round spin, cross in cross and square in square lock", () => {
+    expect(mating.freedom(STUD, PLATE_RECEPTOR, 0, AXIS_NEG_Y)).toEqual({
+      spins: true,
+      axis: AXIS_POS_Y,
+    });
+    expect(mating.freedom(peg(SECTION_AXLE, 6), through(SECTION_ROUND, 6), 0, AXIS_NEG_X)).toEqual({
+      spins: true,
+      axis: AXIS_POS_X,
+    });
+    expect(
+      mating.freedom(peg(SECTION_AXLE, 6), through(SECTION_AXLE, 6), 0, AXIS_POS_X).spins,
+    ).toBe(false);
+    expect(
+      mating.freedom(peg(SECTION_SQUARE, 4), through(SECTION_SQUARE, 4), 0, AXIS_POS_Y).spins,
+    ).toBe(false);
+    expect(() => mating.freedom(STUD, PLATE_RECEPTOR, 3, AXIS_POS_Y)).toThrow(RangeError);
+  });
+
+  it("mates connectors carrying a group only with the same opaque group token", () => {
+    expect(mating.engages(grouped(CAP_ROOT, "token-a"), grouped(CAP_FAR, "token-a"), 0)).toBe(true);
+    expect(mating.engages(grouped(CAP_ROOT, "token-a"), grouped(CAP_FAR, "token-b"), 0)).toBe(
+      false,
+    );
+    expect(mating.engages(grouped(CAP_ROOT, "token-a"), PLATE_RECEPTOR, 0)).toBe(false);
+    expect(mating.engages(STUD, grouped(CAP_FAR, "token-a"), 0)).toBe(false);
+  });
+});

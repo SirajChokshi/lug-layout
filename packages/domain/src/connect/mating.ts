@@ -1,4 +1,13 @@
 import {
+  AXIS_FREE,
+  AXIS_NEG_X,
+  AXIS_NEG_Y,
+  AXIS_NEG_Z,
+  AXIS_POS_X,
+  AXIS_POS_Y,
+  AXIS_POS_Z,
+} from "./connector-table.ts";
+import {
   CAP_FAR,
   CAP_ROOT,
   SECTION_AXLE,
@@ -36,6 +45,31 @@ function containment(
     : inside(maleSize, femaleSize);
 }
 
+function locksRotation(maleCode: number, femaleCode: number): boolean {
+  return maleCode === femaleCode && maleCode !== SECTION_ROUND;
+}
+
+function axisLine(axis: number): number {
+  switch (axis) {
+    case AXIS_POS_X:
+    case AXIS_NEG_X:
+      return AXIS_POS_X;
+    case AXIS_POS_Y:
+    case AXIS_NEG_Y:
+      return AXIS_POS_Y;
+    case AXIS_POS_Z:
+    case AXIS_NEG_Z:
+      return AXIS_POS_Z;
+    default:
+      return AXIS_FREE;
+  }
+}
+
+export interface MateFreedom {
+  readonly spins: boolean;
+  readonly axis: number;
+}
+
 export class SnapMating {
   private readonly memo = new Map<number, Int32Array>();
 
@@ -57,8 +91,24 @@ export class SnapMating {
     return false;
   }
 
+  freedom(maleShape: number, femaleShape: number, offset: number, maleAxis: number): MateFreedom {
+    if (!this.engages(maleShape, femaleShape, offset)) {
+      throw new RangeError(
+        `shapes ${maleShape} and ${femaleShape} don't mate at offset ${offset}, so they have no freedom to report`,
+      );
+    }
+    const shapes = this.shapes;
+    let spins = true;
+    this.overlaps(maleShape, femaleShape, offset, (m, f) => {
+      if (locksRotation(shapes.code(m), shapes.code(f))) spins = false;
+      return spins;
+    });
+    return { spins, axis: axisLine(maleAxis) };
+  }
+
   private engagedOffsets(male: number, female: number): Int32Array {
     const shapes = this.shapes;
+    if (shapes.group(male) !== shapes.group(female)) return NO_OFFSETS;
     const maleLength = shapes.length(male);
     const femaleLength = shapes.length(female);
     let low = 0;
@@ -85,6 +135,22 @@ export class SnapMating {
 
   private contains(male: number, female: number, offset: number): boolean {
     const shapes = this.shapes;
+    let touched = false;
+    const fits = this.overlaps(male, female, offset, (m, f) => {
+      const fit = containment(shapes.code(m), shapes.size(m), shapes.code(f), shapes.size(f));
+      touched ||= fit === TOUCHING;
+      return fit !== MISFIT;
+    });
+    return fits && touched;
+  }
+
+  private overlaps(
+    male: number,
+    female: number,
+    offset: number,
+    visit: (maleSection: number, femaleSection: number) => boolean,
+  ): boolean {
+    const shapes = this.shapes;
     let m = shapes.firstSection(male);
     const maleEnd = m + shapes.sectionCount(male);
     let f = shapes.firstSection(female);
@@ -93,12 +159,9 @@ export class SnapMating {
     let maleTo = shapes.span(m);
     let femaleFrom = offset;
     let femaleTo = offset + shapes.span(f);
-    let touched = false;
     while (m < maleEnd && f < femaleEnd) {
-      if (Math.min(maleTo, femaleTo) > Math.max(maleFrom, femaleFrom)) {
-        const fit = containment(shapes.code(m), shapes.size(m), shapes.code(f), shapes.size(f));
-        if (fit === MISFIT) return false;
-        touched ||= fit === TOUCHING;
+      if (Math.min(maleTo, femaleTo) > Math.max(maleFrom, femaleFrom) && !visit(m, f)) {
+        return false;
       }
       if (maleTo <= femaleTo) {
         m++;
@@ -110,6 +173,6 @@ export class SnapMating {
         femaleTo += shapes.span(f);
       }
     }
-    return touched;
+    return true;
   }
 }
