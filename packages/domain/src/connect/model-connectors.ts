@@ -10,6 +10,13 @@ import {
 } from "./connector-table.ts";
 import { SIXTEENTHS_PER_LDU, ZETA16_COEFFICIENT_COUNT } from "@brr/math";
 import { WORLD_TRACK_FRAME, type TrackEnd } from "../track/end-gaps.ts";
+import {
+  MATE_PASS_MODEL,
+  MATE_PASS_PART,
+  MATE_PASS_SUBMODEL,
+  MatePairs,
+  type MatePass,
+} from "./mate-pairs.ts";
 import type { SnapMating } from "./mating.ts";
 import {
   ALL_COORDINATES,
@@ -30,8 +37,7 @@ const LINE_KEYS = 4;
 const ALONG = 3;
 const INT32_LIMIT = 2 ** 31;
 const PART_FRAME = Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
-
-type Pass = "model" | "submodel" | "part";
+const INITIAL_MATES = 64;
 
 interface Frames {
   readonly shape: Uint16Array;
@@ -41,6 +47,7 @@ interface Frames {
   readonly origin: Int32Array;
   readonly axis: Int8Array;
   readonly instance: Uint32Array;
+  readonly connector: Uint32Array;
   readonly piece: Uint16Array;
 }
 
@@ -53,6 +60,7 @@ function allocateFrames(count: number): Frames {
     origin: new Int32Array(count * VECTOR_FLOATS),
     axis: new Int8Array(count),
     instance: new Uint32Array(count),
+    connector: new Uint32Array(count),
     piece: new Uint16Array(count),
   };
 }
@@ -126,15 +134,94 @@ function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
   return { heading, position, yPlates };
 }
 
+function doubled<A extends Uint8Array | Uint32Array | Int32Array>(
+  array: A,
+  allocate: (length: number) => A,
+): A {
+  const next = allocate(array.length * 2);
+  next.set(array);
+  return next;
+}
+
+class MateRecorder {
+  private male = new Uint32Array(INITIAL_MATES);
+  private female = new Uint32Array(INITIAL_MATES);
+  private pass = new Uint8Array(INITIAL_MATES);
+  private offset = new Int32Array(INITIAL_MATES);
+  private size = 0;
+
+  get count(): number {
+    return this.size;
+  }
+
+  add(male: number, female: number, pass: MatePass, offset: number): void {
+    if (this.size === this.male.length) {
+      this.male = doubled(this.male, (length) => new Uint32Array(length));
+      this.female = doubled(this.female, (length) => new Uint32Array(length));
+      this.pass = doubled(this.pass, (length) => new Uint8Array(length));
+      this.offset = doubled(this.offset, (length) => new Int32Array(length));
+    }
+    const k = this.size++;
+    this.male[k] = male;
+    this.female[k] = female;
+    this.pass[k] = pass;
+    this.offset[k] = offset;
+  }
+
+  pairs(
+    frames: Frames,
+    parts: ReadonlyArray<ConnectorTable | null>,
+    instances: PartInstances,
+  ): MatePairs {
+    const count = this.size;
+    const male = this.male;
+    const female = this.female;
+    const order = new Uint32Array(count);
+    for (let k = 0; k < count; k++) order[k] = k;
+    order.sort((a, b) => (male[a] ?? 0) - (male[b] ?? 0) || (female[a] ?? 0) - (female[b] ?? 0));
+    const maleInstance = new Uint32Array(count);
+    const femaleInstance = new Uint32Array(count);
+    const maleConnector = new Uint32Array(count);
+    const femaleConnector = new Uint32Array(count);
+    const pass = new Uint8Array(count);
+    const mateAxis = new Int8Array(count);
+    const mateOffset = new Int32Array(count);
+    for (let k = 0; k < count; k++) {
+      const r = order[k] ?? 0;
+      const m = male[r] ?? 0;
+      const f = female[r] ?? 0;
+      const instance = frames.instance[m] ?? 0;
+      const local = frames.connector[m] ?? 0;
+      maleInstance[k] = instance;
+      femaleInstance[k] = frames.instance[f] ?? 0;
+      maleConnector[k] = local;
+      femaleConnector[k] = frames.connector[f] ?? 0;
+      pass[k] = this.pass[r] ?? MATE_PASS_MODEL;
+      mateAxis[k] = parts[instances.partIndex[instance] ?? -1]?.axis[local] ?? AXIS_FREE;
+      mateOffset[k] = this.offset[r] ?? 0;
+    }
+    return new MatePairs(
+      maleInstance,
+      femaleInstance,
+      maleConnector,
+      femaleConnector,
+      pass,
+      mateAxis,
+      mateOffset,
+    );
+  }
+}
+
 class InternalMates {
   readonly consumed: Uint8Array;
+  readonly records = new MateRecorder();
   private readonly reach: number;
   private readonly keys: Int32Array;
   private readonly order: Uint32Array;
   private readonly connector: Uint32Array;
   private readonly axis: Int8Array;
   private size = 0;
-  private pass: Pass = "model";
+  private pass: MatePass = MATE_PASS_MODEL;
   private pairFrame = MODEL_ROOT;
   private readonly byLine = (a: number, b: number): number => this.compare(a, b, LINE_KEYS);
 
@@ -169,12 +256,11 @@ class InternalMates {
     this.order[n] = n;
   }
 
-  consume(pass: Pass, pairFrame = MODEL_ROOT): number {
+  consume(pass: MatePass, pairFrame = MODEL_ROOT): void {
     this.pass = pass;
     this.pairFrame = pairFrame;
     const count = this.size;
     this.order.subarray(0, count).sort(this.byLine);
-    let mates = 0;
     let start = 0;
     while (start < count) {
       const first = this.order[start] ?? 0;
@@ -183,47 +269,37 @@ class InternalMates {
       for (let i = start; i < end; i++) {
         const male = this.order[i] ?? 0;
         if (this.frames.gender[this.connector[male] ?? 0] !== GENDER_MALE) continue;
-        mates += this.occupyAlong(male, i, start, end);
+        this.occupyAlong(male, i, start, end);
       }
       start = end;
     }
-    return mates;
   }
 
-  private occupyAlong(male: number, at: number, start: number, end: number): number {
+  private occupyAlong(male: number, at: number, start: number, end: number): void {
     const along = this.along(male);
     const reach = this.reach;
-    let mates = 0;
     for (let j = at - 1; j >= start && along - this.along(this.order[j] ?? 0) <= reach; j--) {
-      mates += this.occupy(male, this.order[j] ?? 0);
+      this.occupy(male, this.order[j] ?? 0);
     }
     for (let j = at + 1; j < end && this.along(this.order[j] ?? 0) - along <= reach; j++) {
-      mates += this.occupy(male, this.order[j] ?? 0);
+      this.occupy(male, this.order[j] ?? 0);
     }
-    return mates;
   }
 
-  private occupy(male: number, female: number): number {
-    if (!this.mates(male, female)) return 0;
-    this.consumed[this.connector[male] ?? 0] = 1;
-    this.consumed[this.connector[female] ?? 0] = 1;
-    return 1;
-  }
-
-  private mates(male: number, female: number): boolean {
+  private occupy(male: number, female: number): void {
     const frames = this.frames;
     const maleConnector = this.connector[male] ?? 0;
     const femaleConnector = this.connector[female] ?? 0;
-    if (frames.gender[femaleConnector] !== GENDER_FEMALE) return false;
+    if (frames.gender[femaleConnector] !== GENDER_FEMALE) return;
     const axis = this.axis[male] ?? 0;
-    if (this.axis[female] !== oppositeAxis(axis)) return false;
-    if (!this.admits(maleConnector, femaleConnector)) return false;
+    if (this.axis[female] !== oppositeAxis(axis)) return;
+    if (!this.admits(maleConnector, femaleConnector)) return;
     const offset = (this.along(female) - this.along(male)) * axisSign(axis);
-    return this.mating.engages(
-      frames.shape[maleConnector] ?? 0,
-      frames.shape[femaleConnector] ?? 0,
-      offset,
-    );
+    const maleShape = frames.shape[maleConnector] ?? 0;
+    if (!this.mating.engages(maleShape, frames.shape[femaleConnector] ?? 0, offset)) return;
+    this.consumed[maleConnector] = 1;
+    this.consumed[femaleConnector] = 1;
+    this.records.add(maleConnector, femaleConnector, this.pass, offset);
   }
 
   private admits(maleConnector: number, femaleConnector: number): boolean {
@@ -234,11 +310,11 @@ class InternalMates {
     const judgedInModelFrame =
       frames.axis[maleConnector] !== AXIS_FREE && frames.axis[femaleConnector] !== AXIS_FREE;
     switch (this.pass) {
-      case "model":
+      case MATE_PASS_MODEL:
         return true;
-      case "part":
+      case MATE_PASS_PART:
         return a === b && !judgedInModelFrame;
-      case "submodel":
+      case MATE_PASS_SUBMODEL:
         return (
           a !== b &&
           !judgedInModelFrame &&
@@ -294,7 +370,7 @@ function mateInSubmodelFrames(
   firstConnector: Uint32Array,
   modelFrameAxis: Int8Array,
   search: InternalMates,
-): number {
+): void {
   const nodes = submodels.count;
   const bucket = new Uint32Array(nodes + 1);
   for (let i = 0; i < instances.count; i++) {
@@ -314,7 +390,6 @@ function mateInSubmodelFrames(
   }
   const transform = new Float64Array(TRANSFORM_FLOATS);
   const point = new IdentifiedPoint();
-  let mates = 0;
   for (let n = nodes - 1; n >= 0; n--) {
     const members = member.subarray(bucket[n] ?? 0, bucket[n + 1] ?? 0);
     if (!holdsConnectorOffModelFrame(parts, instances, members, firstConnector, modelFrameAxis)) {
@@ -331,9 +406,8 @@ function mateInSubmodelFrames(
         if (axis !== AXIS_FREE) search.add(first + c, axis, point.sixteenths);
       }
     }
-    mates += search.consume("submodel", n);
+    search.consume(MATE_PASS_SUBMODEL, n);
   }
-  return mates;
 }
 
 function hasSeveralPieces(part: ConnectorTable | null | undefined): boolean {
@@ -349,11 +423,10 @@ function mateInPartFrames(
   firstConnector: Uint32Array,
   modelFrameAxis: Int8Array,
   search: InternalMates,
-): number {
+): void {
   const pieced = new Uint8Array(parts.length);
   for (let p = 0; p < parts.length; p++) pieced[p] = hasSeveralPieces(parts[p]) ? 1 : 0;
   const point = new IdentifiedPoint();
-  let mates = 0;
   for (let i = 0; i < instances.count; i++) {
     const index = instances.partIndex[i] ?? -1;
     const part = parts[index];
@@ -365,9 +438,8 @@ function mateInPartFrames(
       const axis = identifyConnector(PART_FRAME, part, c, point);
       if (axis !== AXIS_FREE) search.add(first + c, axis, point.sixteenths);
     }
-    mates += search.consume("part");
+    search.consume(MATE_PASS_PART);
   }
-  return mates;
 }
 
 export class ModelConnectors {
@@ -380,7 +452,8 @@ export class ModelConnectors {
     readonly origin: Int32Array,
     readonly axis: Int8Array,
     readonly instance: Uint32Array,
-    readonly internalMates: number,
+    readonly connector: Uint32Array,
+    readonly mates: MatePairs,
     readonly offLattice: number,
     readonly instancesWithoutConnectors: number,
     readonly trackEndCount: number,
@@ -388,6 +461,10 @@ export class ModelConnectors {
     readonly trackPosition: Int32Array,
     readonly trackYPlates: Int32Array,
   ) {}
+
+  get internalMates(): number {
+    return this.mates.count;
+  }
 
   static fromParts(
     parts: ReadonlyArray<ConnectorTable | null>,
@@ -427,6 +504,7 @@ export class ModelConnectors {
         frames.source[g] = part.source[c] ?? 0;
         frames.status[g] = part.status[c] ?? 0;
         frames.instance[g] = i;
+        frames.connector[g] = c;
         frames.piece[g] = part.piece[c] ?? 0;
         const axis = identifyConnector(transform, part, c, point);
         frames.axis[g] = axis;
@@ -435,9 +513,9 @@ export class ModelConnectors {
         search.add(g, axis, point.sixteenths);
       }
     }
-    let internalMates = search.consume("model");
+    search.consume(MATE_PASS_MODEL);
     if (nested) {
-      internalMates += mateInSubmodelFrames(
+      mateInSubmodelFrames(
         parts,
         instances,
         nested,
@@ -447,7 +525,7 @@ export class ModelConnectors {
         search,
       );
     }
-    internalMates += mateInPartFrames(parts, instances, firstConnector, frames.axis, search);
+    mateInPartFrames(parts, instances, firstConnector, frames.axis, search);
     let occupied = 0;
     let offLattice = 0;
     for (let k = 0; k < total; k++) {
@@ -464,6 +542,7 @@ export class ModelConnectors {
       exposed.status[n] = frames.status[k] ?? 0;
       exposed.axis[n] = frames.axis[k] ?? 0;
       exposed.instance[n] = frames.instance[k] ?? 0;
+      exposed.connector[n] = frames.connector[k] ?? 0;
       for (let v = 0; v < VECTOR_FLOATS; v++) {
         exposed.origin[n * VECTOR_FLOATS + v] = frames.origin[k * VECTOR_FLOATS + v] ?? 0;
       }
@@ -479,7 +558,8 @@ export class ModelConnectors {
       exposed.origin,
       exposed.axis,
       exposed.instance,
-      internalMates,
+      exposed.connector,
+      search.records.pairs(frames, parts, instances),
       offLattice,
       withoutConnectors,
       trackEnds.length,
