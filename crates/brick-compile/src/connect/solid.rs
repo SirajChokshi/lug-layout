@@ -2588,7 +2588,7 @@ mod tests {
 
     #[test]
     fn nothing_beyond_a_probes_reach_is_its_nearest_wall() {
-        let reach = 6.0 + HALF_GRID_LDU;
+        let reach = 6.0 + HALF_GRID_LDU + IDENTIFY_LDU;
         let corner = upright([13.0, 12.0], [12.0, 13.0]);
         let inside = upright([12.0, -3.0], [12.0, 3.0]);
         let range = (IDENTIFY_LDU, 10.0 - IDENTIFY_LDU);

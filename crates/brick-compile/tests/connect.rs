@@ -1446,6 +1446,62 @@ fn an_axle_end_flush_with_a_plate_that_never_reaches_it_is_still_an_axle_end() {
     assert_eq!(male_axles("parts/stub-beside-a-plate.dat"), alone);
 }
 
+fn custom_pocket(half_width: f64) -> String {
+    let (w, o, d, h) = (half_width, 40.0, 8.0, 16.0);
+    let quads = [
+        [[-o, 0.0, -o], [o, 0.0, -o], [w, 0.0, -w], [-w, 0.0, -w]],
+        [[-w, 0.0, w], [w, 0.0, w], [o, 0.0, o], [-o, 0.0, o]],
+        [[-o, 0.0, -o], [-w, 0.0, -w], [-w, 0.0, w], [-o, 0.0, o]],
+        [[w, 0.0, -w], [o, 0.0, -o], [o, 0.0, o], [w, 0.0, w]],
+        [[-w, 0.0, -w], [w, 0.0, -w], [w, d, -w], [-w, d, -w]],
+        [[-w, 0.0, w], [w, 0.0, w], [w, d, w], [-w, d, w]],
+        [[-w, 0.0, -w], [-w, 0.0, w], [-w, d, w], [-w, d, -w]],
+        [[w, 0.0, -w], [w, 0.0, w], [w, d, w], [w, d, -w]],
+        [[-w, d, -w], [w, d, -w], [w, d, w], [-w, d, w]],
+        [[-o, 0.0, -o], [o, 0.0, -o], [o, h, -o], [-o, h, -o]],
+        [[-o, 0.0, o], [o, 0.0, o], [o, h, o], [-o, h, o]],
+        [[-o, 0.0, -o], [-o, 0.0, o], [-o, h, o], [-o, h, -o]],
+        [[o, 0.0, -o], [o, 0.0, o], [o, h, o], [o, h, -o]],
+        [[-o, h, -o], [o, h, -o], [o, h, o], [-o, h, o]],
+    ];
+    let mut text = String::from("0 Custom Pocket\n0 BFC NOCERTIFY\n");
+    for quad in quads {
+        let points: Vec<String> = quad
+            .iter()
+            .map(|p| format!("{} {} {}", p[0], p[1], p[2]))
+            .collect();
+        text += &format!("4 16 {}\n", points.join(" "));
+    }
+    text
+}
+
+#[test]
+fn a_wall_half_a_stud_from_the_stud_probe_within_identification_bounds_its_loose_cavity() {
+    let stud_radius = 6.0;
+    let wall = stud_radius + STUD_LDU / 2.0 + 0.0003;
+    let library = with_parts(
+        pinned("ldraw"),
+        &[("parts/pocket.dat", custom_pocket(wall))],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let at_the_centre: Vec<f64> = inferred
+        .infer("parts/pocket.dat")
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::Uninferred {
+                origin: [0.0, 0.0, 0.0],
+                reason: Uninferred::LooseCavity { clearance },
+            } => Some(*clearance),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(at_the_centre.len(), 1, "{at_the_centre:?}");
+    assert!((at_the_centre[0] - (wall - stud_radius)).abs() <= 1e-9);
+}
+
 const ROUND_HOLE: &str = "0 BFC INVERTNEXT\n1 16 0 20 0 6 0 0 0 -16 0 0 0 6 4-4cyli.dat";
 
 fn sorted_debug<T: std::fmt::Debug>(items: impl IntoIterator<Item = T>) -> Vec<String> {
