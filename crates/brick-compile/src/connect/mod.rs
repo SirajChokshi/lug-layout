@@ -20,13 +20,13 @@ pub use faces::{
     mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
     FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
-pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
+pub use inferred::{Inference, InferredFeatures, Openness, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use records::{
     is_connectivity, record_json, source_code, status_code, PartRecords, TierRecord,
 };
-pub use shadow::{ShadowPatches, ShadowSnaps};
+pub use shadow::{IncludeRefusal, ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;

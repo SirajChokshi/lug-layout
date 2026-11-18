@@ -16,6 +16,16 @@ use super::{
 const MAX_DEPTH: usize = 64;
 const PART_FOLDER: &str = "parts/";
 const IDENTITY_ROTATION: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+const SUBFILE_LINE: &str = "1";
+const SUBFILE_POSITION: std::ops::Range<usize> = 2..5;
+const SUBFILE_ORIENTATION: std::ops::Range<usize> = 5..14;
+const SUBFILE_REFERENCE: usize = 14;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncludeRefusal {
+    NotInLibrary,
+    PiecesWouldBeLost,
+}
 
 #[derive(Default)]
 struct Gathered {
@@ -129,6 +139,35 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             curated: gathered.curated,
             issues,
         }
+    }
+
+    pub fn inheritance_includes(&mut self, path: &str) -> Result<Vec<String>, IncludeRefusal> {
+        let library = self.library;
+        let text = library.source(path).ok_or(IncludeRefusal::NotInLibrary)?;
+        let mut includes = Vec::new();
+        for line in text.lines() {
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            if tokens.first() != Some(&SUBFILE_LINE) || tokens.len() <= SUBFILE_REFERENCE {
+                continue;
+            }
+            let reference = tokens[SUBFILE_REFERENCE..].join(" ");
+            let Some(child) = resolve_reference(library, Lod::Standard, &reference) else {
+                continue;
+            };
+            let inherited = self.gather(&child, 1);
+            if inherited.connectors.is_empty() && inherited.suppressed.is_empty() {
+                continue;
+            }
+            includes.push(format!(
+                "0 !LDCAD SNAP_INCL [ref={reference}] [pos={}] [ori={}]",
+                tokens[SUBFILE_POSITION].join(" "),
+                tokens[SUBFILE_ORIENTATION].join(" ")
+            ));
+        }
+        if !includes.is_empty() && !self.numbering.map(path).is_empty() {
+            return Err(IncludeRefusal::PiecesWouldBeLost);
+        }
+        Ok(includes)
     }
 
     fn closure_issues(&self, path: &str, seen: &mut HashSet<String>, out: &mut Vec<Issue>) {
