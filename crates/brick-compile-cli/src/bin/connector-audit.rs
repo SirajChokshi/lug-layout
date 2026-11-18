@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
@@ -780,6 +781,12 @@ fn table(rows: BTreeMap<String, usize>) -> Value {
     )
 }
 
+fn digest(value: &impl std::fmt::Debug) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    format!("{value:?}").hash(&mut hasher);
+    hasher.finish()
+}
+
 fn run() -> Result<(), String> {
     let mut values = HashMap::new();
     let mut raw = std::env::args().skip(1);
@@ -889,6 +896,31 @@ fn run() -> Result<(), String> {
             };
             let (connectors, issues) = primitives.connectors(&path);
             lines += &format!("{part}\t{connectors:?}\t{issues:?}\n");
+        }
+        return fs::write(out, lines).map_err(|e| format!("{out}: {e}"));
+    }
+    if let Some(out) = values.get("--digest") {
+        let mut lines = String::new();
+        let mut dump = String::new();
+        for part in &list {
+            let Some(path) = resolve_reference(&library, Lod::Standard, part) else {
+                continue;
+            };
+            let extraction = extractor.extract(&path);
+            let started = Instant::now();
+            let inference = tier4_alone.infer(&path);
+            let ms = started.elapsed().as_secs_f64() * 1000.0;
+            if values.contains_key("--dump") {
+                dump += &format!("{part}\n{extraction:#?}\n{inference:#?}\n");
+            }
+            lines += &format!(
+                "{part}\t{:016x}\t{:016x}\t{ms:.3}\n",
+                digest(&extraction),
+                digest(&inference)
+            );
+        }
+        if let Some(path) = values.get("--dump") {
+            fs::write(path, dump).map_err(|e| format!("{path}: {e}"))?;
         }
         return fs::write(out, lines).map_err(|e| format!("{out}: {e}"));
     }
