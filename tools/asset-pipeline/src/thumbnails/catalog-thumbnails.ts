@@ -52,14 +52,6 @@ interface CompiledPart {
 const ThumbnailInputs = v.pick(BundleIndex, ["catalogParts", "studPrimitives", "colors", "models"]);
 type ThumbnailInputs = v.InferOutput<typeof ThumbnailInputs>;
 
-export function modelItemId(entry: Pick<BundleModelEntry, "name" | "role">): string {
-  return entry.role === "mils-module" ? `generated:${entry.name}` : `omr:${entry.name}`;
-}
-
-export function isPlaceableModel(entry: Pick<BundleModelEntry, "origin" | "role">): boolean {
-  return entry.role === "mils-module" || entry.origin === "omr";
-}
-
 export function thumbnailFile(item: string): string {
   return `${THUMBNAIL_DIRECTORY}/${item.replace(UNSAFE_FILE_CHARACTERS, "-")}.png`;
 }
@@ -238,8 +230,8 @@ export async function renderCatalogThumbnails(
     }
   }
   for (const entry of manifest.models) {
-    if (!isPlaceableModel(entry) || entry.lattice === null) continue;
-    await write(modelItemId(entry), () => bundle.modelScene(entry));
+    if (entry.lattice === null) continue;
+    await write(`${entry.origin}:${entry.name}`, () => bundle.modelScene(entry));
   }
   return rendered;
 }

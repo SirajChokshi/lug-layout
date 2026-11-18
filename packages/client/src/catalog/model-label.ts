@@ -1,6 +1,8 @@
-export function modelLabel(entry: {
-  readonly name: string;
-  readonly set: { readonly name: string; readonly year: number } | null;
-}): string {
+import type { BundleModelEntry } from "@brr/schema/bundle";
+
+export function modelLabel(
+  entry: Pick<BundleModelEntry, "name" | "origin" | "set" | "sections">,
+): string {
+  if (entry.origin === "generated") return entry.sections[0]?.title ?? entry.name;
   return entry.set ? `${entry.name} ${entry.set.name} (${entry.set.year})` : entry.name;
 }

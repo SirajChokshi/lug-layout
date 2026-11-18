@@ -51,7 +51,6 @@ function itemKind(item: CatalogItemView | undefined): ItemKind {
     case "road-plate":
       return "road";
     case "model":
-    case "mils-module":
       return "model";
     case "track":
       return "track";

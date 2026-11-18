@@ -22,18 +22,13 @@ import {
   BomCounter,
   countPlacements,
   EditHistory,
-  MODULE_SIDES,
   RoadNetwork,
   World,
   addShards,
-  railEdgesMate,
   worldPlacements,
   type AppliedEdit,
   type EditKind,
-  type GridPlacement,
   type HistoryStep,
-  type ModuleEdgeKind,
-  type ModuleSide,
   type PlacementTarget,
   type PlacementContents,
   type RoadEdgeSegment,
@@ -121,7 +116,6 @@ import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
 import { thumbnailUrls } from "../catalog/thumbnail-urls.ts";
 import { trackObstacleRects } from "./track-obstacles.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
-import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
   ROAD_KIT_PREFIX,
@@ -236,35 +230,6 @@ export interface RoadSnapView {
   readonly joinedRoadCells: number;
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
-}
-
-export interface ModuleIssueView {
-  readonly item: string;
-  readonly x: number;
-  readonly z: number;
-  readonly side: ModuleSide;
-  readonly kind: ModuleEdgeKind;
-  readonly facing: ModuleEdgeKind | null;
-}
-
-export interface ModuleJoinView {
-  readonly modules: number;
-  readonly joined: number;
-  readonly mismatched: number;
-  readonly open: number;
-  readonly offGrid: number;
-  readonly issues: ReadonlyArray<ModuleIssueView>;
-}
-
-export interface ModuleFitView {
-  readonly column: number;
-  readonly row: number;
-  readonly rot: number;
-  readonly occupied: boolean;
-  readonly joined: number;
-  readonly mismatched: number;
-  readonly open: number;
-  readonly sides: ReadonlyArray<{ readonly side: ModuleSide; readonly kind: ModuleEdgeKind }>;
 }
 
 export interface RefusedClick {
@@ -443,9 +408,6 @@ export interface EditorSnapshot {
   readonly showJoins: boolean;
   readonly snapRoads: boolean;
   readonly snap: RoadSnapView | null;
-  readonly modules: ModuleJoinView;
-  readonly moduleFit: ModuleFitView | null;
-  readonly snapModules: boolean;
   readonly refusedClicks: number;
   readonly lastRefusal: RefusedClick | null;
   readonly track: TrackView | null;
@@ -524,7 +486,6 @@ export interface IEditor extends IBomSource {
   redo(eventTimeMs: number): void;
   setShowJoins(show: boolean): void;
   setSnapRoads(snap: boolean): void;
-  setSnapModules(snap: boolean): void;
   goTo(x: number, z: number): void;
   readonly worldNameMaxLength: number;
   worldNameIssue(name: string): string | null;
@@ -557,15 +518,6 @@ const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const P95 = 0.95;
 const DEGREES_PER_QUARTER_TURN = 90;
 const ROAD_REFUSAL = "its road edges would mismatch or overlap placed road pieces";
-const EDGE_KIND_NAMES: Readonly<Record<ModuleEdgeKind, string>> = {
-  terrain: "terrain",
-  road: "paved road",
-  track: "earth track",
-  path: "path",
-  river: "river",
-  rail: "rail",
-  other: "non-MILS",
-};
 interface RoadCellCounts {
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
@@ -580,15 +532,6 @@ const MARKER_WIDTH_LDU = 6;
 const MARKER_LIFT_LDU = 1;
 const MARKER_HEIGHT_LDU = 2;
 const LISTED_ROAD_ISSUES = 12;
-const LISTED_MODULE_ISSUES = 12;
-const EMPTY_MODULES: ModuleJoinView = {
-  modules: 0,
-  joined: 0,
-  mismatched: 0,
-  open: 0,
-  offGrid: 0,
-  issues: [],
-};
 const EMPTY_ROADS: RoadJoinView = {
   checkMs: 0,
   placements: 0,
@@ -727,7 +670,6 @@ function catalogItem(
   part: PartShapeAsset | undefined,
 ): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
-  const moduleStuds = placeable.module?.studs;
   const produced = part?.producedColors;
   const ldrawNumber = placeable.group.replace(/^ldraw:/u, "");
   return {
@@ -738,8 +680,8 @@ function catalogItem(
     color: colored ? colorOf(colors, placeable.worldColor) : null,
     kind: placeable.kind,
     parts: placeable.parts.count,
-    studsWide: moduleStuds ?? Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
-    studsDeep: moduleStuds ?? Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+    studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
+    studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
     thumbnail: thumbnails.get(placeable.id) ?? null,
     aliases: produced && produced.rebrickable !== ldrawNumber ? [produced.rebrickable] : [],
     elements:
@@ -770,7 +712,7 @@ function studsAcross(min: number, max: number): number {
 }
 
 function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, string>): CatalogSlot {
-  const id = `omr:${entry.name}`;
+  const id = `${entry.origin}:${entry.name}`;
   const label = modelLabel(entry);
   const aabb = entry.lattice?.aabb;
   return {
@@ -843,9 +785,6 @@ export class Editor implements IEditor {
     showJoins: true,
     snapRoads: true,
     snap: null,
-    modules: EMPTY_MODULES,
-    moduleFit: null,
-    snapModules: true,
     refusedClicks: 0,
     lastRefusal: null,
     track: null,
@@ -928,9 +867,6 @@ export class Editor implements IEditor {
   private roadExtents: ReadonlyArray<CellExtent> = [];
   private roadNetwork = new RoadNetwork([]);
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
-  private modules: ModuleLayout | null = null;
-  private moduleGhost: ModuleCandidate | null = null;
-  private refusalPlacement: GridPlacement | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private framesSinceStats = 0;
   private measureFrame = -1;
@@ -994,9 +930,7 @@ export class Editor implements IEditor {
       const colors = new ColorTable(colorSource);
       for (const color of index.colors) colors.indexOfCode(color.code);
       this.colors = colors;
-      const startModels = index.models.filter(
-        (entry) => entry.role === "mils-module" || entry.vehicles > 0,
-      );
+      const startModels = index.models.filter((entry) => entry.vehicles > 0);
       const [studPrimitives, shapes, startRecords] = await Promise.all([
         this.loader.loadStudPrimitives(EDITOR_LOD),
         Promise.all(index.catalogParts.map((part) => this.loader.loadPartShape(EDITOR_LOD, part))),
@@ -1013,16 +947,15 @@ export class Editor implements IEditor {
       const { slots, placeables, skipped, trains } = this.buildCatalog(index, shapes, startRecords);
       this.slots = slots;
       this.placeables = placeables;
-      this.modules = new ModuleLayout(index.milsEdgeRules);
       this.play = { models: trains, parts: palette.parts, colors };
       this.plans.setTableTopY(this.baseplateBottomY());
       this.newTrack = () => new TrackDrawing(index, palette.parts, colors);
       this.track = this.newTrack();
       this.bomTables = { palette, colors, ldrawColors: index.colors.map((color) => color.code) };
-      this.roadDrawing = new RoadDrawing(this.loadedPlaceables(), (family, placeable) =>
-        family === "mils"
-          ? "MILS road modules"
-          : `${colorOf(index.colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
+      this.roadDrawing = new RoadDrawing(
+        this.loadedPlaceables(),
+        (placeable) =>
+          `${colorOf(index.colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
       );
       this.backend.setPalette({
         detailed: { parts: palette.parts, studPrimitives },
@@ -1159,11 +1092,7 @@ export class Editor implements IEditor {
     );
     const records = new Map(startRecords.map((record) => [record.entry.name, record]));
     const skipped: SkippedModel[] = [];
-    const models = [
-      ...index.models.filter((entry) => entry.role === "mils-module"),
-      ...index.models.filter((entry) => entry.origin === "omr"),
-    ];
-    for (const entry of models) {
+    for (const entry of index.models) {
       if (entry.lattice === null) {
         skipped.push({
           name: entry.name,
@@ -1221,7 +1150,8 @@ export class Editor implements IEditor {
     for (const part of record.parts) this.meshes?.register(palette.indexOf(part.id), part.meshFile);
     const placeable = modelPlaceable(
       entry.name,
-      entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : modelLabel(entry),
+      entry.origin,
+      modelLabel(entry),
       entry.role,
       merged,
       { name: entry.name, source: entry.source, sections: model.sections },
@@ -1780,8 +1710,6 @@ export class Editor implements IEditor {
     const pieceIndex = id === null || !track ? null : this.trackPieceIndex(track, id);
     if ((id === TRACK_ITEM_ID || pieceIndex !== null) && track) {
       this.active = null;
-      this.moduleGhost = null;
-      this.showMarkers();
       track.cancelDrag();
       this.held =
         pieceIndex === null
@@ -1822,14 +1750,12 @@ export class Editor implements IEditor {
     this.active = placeable;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
-    const { moduleFit, snap } = this.snapGhost();
+    const snap = this.snapGhost();
     this.placeGhost();
-    if (!moduleFit) this.showMarkers();
     this.update({
       mode: placeable ? "place" : "select",
       activeItem: placeable?.id ?? null,
       pendingItem: null,
-      moduleFit,
       snap,
       ghostRot: this.placeRot,
     });
@@ -1837,15 +1763,12 @@ export class Editor implements IEditor {
 
   private choosePending(id: string, refId: number): void {
     this.active = null;
-    this.moduleGhost = null;
     this.backend.setGhost(null);
     this.select(null);
-    this.showMarkers();
     this.update({
       mode: "place",
       activeItem: id,
       pendingItem: id,
-      moduleFit: null,
       snap: null,
       ghostRot: this.placeRot,
     });
@@ -2034,17 +1957,8 @@ export class Editor implements IEditor {
     };
   }
 
-  private snapGhost(): {
-    readonly moduleFit: ModuleFitView | null;
-    readonly snap: RoadSnapView | null;
-  } {
+  private snapGhost(): RoadSnapView | null {
     this.placeRot = this.ghostRot;
-    const moduleFit = this.snapGhostToModuleGrid();
-    const snap = this.snapGhostToRoad();
-    return { moduleFit, snap };
-  }
-
-  private snapGhostToRoad(): RoadSnapView | null {
     const surface = this.active?.road;
     if (!surface || !this.hovering || !this.state.snapRoads) return null;
     const snap = snapToRoadEdge(
@@ -2083,7 +1997,7 @@ export class Editor implements IEditor {
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
-    const { moduleFit, snap } = this.snapGhost();
+    const snap = this.snapGhost();
     if (this.state.mode === "road" && this.roadDrawing && this.hovering) {
       this.showRoadPreview(this.roadDrawing.hover(this.hitX, this.hitZ, ...this.roadNeighbours()));
     }
@@ -2096,16 +2010,13 @@ export class Editor implements IEditor {
     this.update({
       hover: this.hoverView(),
       snap,
-      moduleFit,
       ghostRot: this.placeRot,
     });
   }
 
   pointerLeave(): void {
     this.hovering = false;
-    this.moduleGhost = null;
-    this.showMarkers();
-    this.update({ hover: null, moduleFit: null });
+    this.update({ hover: null });
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
@@ -2132,12 +2043,7 @@ export class Editor implements IEditor {
     if (this.active && !this.readOnly) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
-      const { moduleFit, snap } = this.snapGhost();
-      if (moduleFit?.occupied) {
-        this.placeGhost();
-        this.update({ moduleFit, refusedClicks: this.state.refusedClicks + 1 });
-        return;
-      }
+      const snap = this.snapGhost();
       this.placeGhost();
       if (snap?.state === "refused") {
         this.update({
@@ -2212,51 +2118,10 @@ export class Editor implements IEditor {
     yPlates: number,
     ignore: PlacedModel | null,
   ): string | null {
-    const layout = this.modules;
-    const own = this.gridPlacement(placeable, x, z, rot);
-    if (own && layout) {
-      const clash = layout.railEdgeClash(own);
-      if (clash) {
-        const neighbour = this.labelOf(layout.module(clash.neighbour)?.item ?? "");
-        return `${placeable.label}: its ${EDGE_KIND_NAMES[clash.kind]} edge on the ${clash.side} side would face the ${EDGE_KIND_NAMES[clash.facing]} edge of ${neighbour}. A rail edge only joins another rail edge, where the track ends mate.`;
-      }
-    }
     const overlap = this.placed.slabClash(placeable, x, z, rot, yPlates, ignore);
-    if (overlap) {
-      return `${placeable.label} would overlap ${overlap.placeable.label} at the same height. Two baseplates can't share the same space.`;
-    }
-    this.refusalPlacement = own;
-    const clash = this.placed.tongueClash(placeable, x, z, rot, yPlates, ignore, this.matesRefusal);
-    this.refusalPlacement = null;
-    if (!clash) return null;
-    const other = clash.other.placeable.label;
-    return clash.ownTongue
-      ? `${placeable.label}: its track end would run into ${other}. Only a rail module whose rail edge faces it can take the track end.`
-      : `${placeable.label} would fill the space where the track end of ${other} reaches past its edge. Only a rail module whose rail edge faces it can take the track end.`;
+    if (!overlap) return null;
+    return `${placeable.label} would overlap ${overlap.placeable.label} at the same height. Two baseplates can't share the same space.`;
   }
-
-  private gridPlacement(
-    placeable: Placeable,
-    x: number,
-    z: number,
-    rot: number,
-  ): GridPlacement | null {
-    const layout = this.modules;
-    const surface = placeable.module;
-    if (!layout || !surface) return null;
-    const ghost = this.moduleGhost;
-    if (placeable === this.active && ghost && ghost.x === x && ghost.z === z && ghost.rot === rot) {
-      return ghost;
-    }
-    return layout.placement(surface, x, z, rot);
-  }
-
-  private readonly matesRefusal = (other: PlacedModel): boolean => {
-    const own = this.refusalPlacement;
-    if (!own) return false;
-    const theirs = this.modules?.placementOf(other) ?? null;
-    return theirs !== null && railEdgesMate(own, theirs);
-  };
 
   private labelOf(id: string): string {
     return this.slots.find((slot) => slot.id === id)?.view.label ?? id;
@@ -2319,7 +2184,6 @@ export class Editor implements IEditor {
         report: view.report,
       };
     }
-    this.refreshModules();
     this.refreshRoads();
     this.placeGhost();
     this.update({
@@ -2401,89 +2265,18 @@ export class Editor implements IEditor {
   }
 
   private showMarkers(): void {
-    const ghost = this.moduleGhost;
-    const surface = this.active?.module;
     const joins: EdgeMarker[] = this.state.showJoins
-      ? [
-          ...this.roadReport.segments.map((segment) => ({
-            box: markerBox(segment),
-            kind: segment.status,
-          })),
-          ...(this.modules?.markers() ?? []),
-          ...(ghost && surface && this.modules ? this.modules.ghostMarkers(ghost, surface) : []),
-        ]
+      ? this.roadReport.segments.map((segment) => ({
+          box: markerBox(segment),
+          kind: segment.status,
+        }))
       : [];
     this.backend.setMarkers([...joins, ...this.roadPreviewMarkers]);
-  }
-
-  private refreshModules(): void {
-    const layout = this.modules;
-    if (!layout) return;
-    const report = layout.refresh(this.placed.models());
-    const issues: ModuleIssueView[] = [];
-    for (const edge of report.edges) {
-      if (edge.status !== "mismatch" || issues.length >= LISTED_MODULE_ISSUES) continue;
-      const module = layout.module(edge.module);
-      if (!module) continue;
-      issues.push({
-        item: module.item,
-        x: module.x,
-        z: module.z,
-        side: edge.side,
-        kind: edge.kind,
-        facing: edge.facing,
-      });
-    }
-    this.update({
-      modules: {
-        modules: report.modules,
-        joined: report.joined,
-        mismatched: report.mismatched,
-        open: report.open,
-        offGrid: layout.offGrid,
-        issues,
-      },
-    });
-    this.showMarkers();
-  }
-
-  private snapGhostToModuleGrid(): ModuleFitView | null {
-    const surface = this.active?.module;
-    const layout = this.modules;
-    if (!surface || !layout || !this.hovering || !layout.fitsGrid(surface)) {
-      this.moduleGhost = null;
-      return null;
-    }
-    const candidate = this.state.snapModules
-      ? layout.bestCandidate(surface, this.ghostRot, this.turnDirection, this.hitX, this.hitZ)
-      : layout.candidate(surface, this.ghostRot, this.hitX, this.hitZ);
-    this.moduleGhost = candidate;
-    this.placeRot = candidate.rot;
-    this.hoverX = candidate.x;
-    this.hoverZ = candidate.z;
-    this.showMarkers();
-    return {
-      column: candidate.column,
-      row: candidate.row,
-      rot: candidate.rot,
-      occupied: layout.isOccupied(candidate.column, candidate.row),
-      joined: candidate.fit.joined,
-      mismatched: candidate.fit.mismatched,
-      open: candidate.fit.open,
-      sides: MODULE_SIDES.map((side, index) => ({
-        side,
-        kind: candidate.edges[index]?.kind ?? "other",
-      })),
-    };
   }
 
   setShowJoins(show: boolean): void {
     this.update({ showJoins: show });
     this.showMarkers();
-  }
-
-  setSnapModules(snap: boolean): void {
-    this.update({ snapModules: snap });
   }
 
   searchCatalog(query: string): void {
@@ -2603,13 +2396,12 @@ export class Editor implements IEditor {
         this.hoverX = snapToLattice(this.hitX);
         this.hoverZ = snapToLattice(this.hitZ);
       }
-      const { moduleFit, snap } = this.snapGhost();
+      const snap = this.snapGhost();
       this.placeGhost();
       this.update({
         ghostRot: this.placeRot,
         snap,
         hover: this.hoverView(),
-        ...(moduleFit ? { moduleFit } : {}),
       });
       return;
     }

@@ -62,7 +62,7 @@ async function enterMode(page: Page, mode: Mode): Promise<void> {
     case "road": {
       await page.locator('.palette [data-section="road"] [data-item]').first().click();
       await expect(toolHud).toHaveAttribute("data-tone", "place");
-      const roadJoins = page.locator(".road-joins:not(.module-joins)");
+      const roadJoins = page.locator(".road-joins");
       await roadJoins.locator("> summary").click();
       await expect(roadJoins).toHaveAttribute("open", "");
       return;

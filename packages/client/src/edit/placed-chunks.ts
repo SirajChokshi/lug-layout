@@ -172,9 +172,7 @@ class LatticePose {
   }
 }
 
-const EMPTY_BOXES = new Float32Array(0);
 const scratchBox = new Float64Array(BOX_FLOATS);
-const scratchTongue = new Float64Array(BOX_FLOATS);
 
 const NEIGHBOUR_DX = Int8Array.of(-1, 0, 1, -1, 1, -1, 0, 1);
 const NEIGHBOUR_DZ = Int8Array.of(-1, -1, -1, 0, 0, 1, 1, 1);
@@ -220,24 +218,6 @@ function boxesOverlap(a: Float64Array, ao: number, b: Float64Array, bo: number):
     (a[ao + 2] ?? 0) < (b[bo + 5] ?? 0) &&
     (b[bo + 2] ?? 0) < (a[ao + 5] ?? 0)
   );
-}
-
-function partsOverlap(
-  placeable: Placeable,
-  pose: LatticePose,
-  yLdu: number,
-  box: Float64Array,
-  from: number,
-): boolean {
-  const { min, max } = placeable.box;
-  pose.worldBoxOf(min[0], min[1], min[2], max[0], max[1], max[2], yLdu, scratchBox, 0);
-  if (!boxesOverlap(scratchBox, 0, box, from)) return false;
-  const boxes = placeable.partBoxes;
-  for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
-    pose.worldBox(boxes, b, yLdu, scratchBox, 0);
-    if (boxesOverlap(scratchBox, 0, box, from)) return true;
-  }
-  return false;
 }
 
 function slabBox(
@@ -287,7 +267,6 @@ class PlacedEntry implements PlacedModel {
   readonly contributions = new Map<number, Contribution>();
   readonly footprintKeys = new Set<number>();
   readonly columnKeys = new Set<number>();
-  readonly tongueBoxes: Float64Array;
   readonly slab: Float64Array | null;
   readonly box: WorldBox;
   readonly pose: LatticePose;
@@ -336,18 +315,9 @@ class PlacedEntry implements PlacedModel {
       this.studBaseLdu[i] = this.yLdu + (studs.baseLdu[i] ?? 0);
     }
     this.registerCells(chunkOrigins);
-    const tongues = placeable.tongueBoxes ?? EMPTY_BOXES;
-    this.tongueBoxes = new Float64Array(tongues.length);
-    for (let b = 0; b < tongues.length; b += BOX_FLOATS) {
-      this.pose.worldBox(tongues, b, this.yLdu, this.tongueBoxes, b);
-    }
     this.slab = placeable.slabDepthLdu > 0 ? new Float64Array(BOX_FLOATS) : null;
     if (this.slab) slabBox(placeable, this.pose, this.yLdu, this.slab, 0);
     this.box = this.worldBox();
-  }
-
-  partsOverlap(box: Float64Array, from: number): boolean {
-    return partsOverlap(this.placeable, this.pose, this.yLdu, box, from);
   }
 
   worldPartBoxes(): Float64Array {
@@ -629,11 +599,6 @@ class PlacedEntry implements PlacedModel {
 
 const NO_ENTRIES: ReadonlySet<PlacedEntry> = new Set();
 
-export interface TongueClash {
-  readonly other: PlacedModel;
-  readonly ownTongue: boolean;
-}
-
 export interface RebuildReport {
   readonly chunks: number;
   readonly instances: number;
@@ -696,7 +661,6 @@ export class PlacedChunks {
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private readonly occupancy = new OccupancyGrid();
   private nextId = 0;
-  private readonly tongued: PlacedEntry[] = [];
   private readonly slabbed: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
   private readonly farModels = new Map<Placeable, number>();
@@ -812,39 +776,6 @@ export class PlacedChunks {
     return null;
   }
 
-  tongueClash(
-    placeable: Placeable,
-    x: number,
-    z: number,
-    rot: number,
-    yPlates: number,
-    ignore: PlacedModel | null,
-    mates: (other: PlacedModel) => boolean,
-  ): TongueClash | null {
-    const pose = this.probe.at(x, z, rot);
-    const yLdu = yPlates * PLATE_LDU;
-    for (let e = 0; e < this.tongued.length; e++) {
-      const entry = this.tongued[e];
-      if (!entry || entry === ignore || mates(entry)) continue;
-      const tongues = entry.tongueBoxes;
-      for (let b = 0; b < tongues.length; b += BOX_FLOATS) {
-        if (partsOverlap(placeable, pose, yLdu, tongues, b)) {
-          return { other: entry, ownTongue: false };
-        }
-      }
-    }
-    const own = placeable.tongueBoxes ?? EMPTY_BOXES;
-    for (let b = 0; b < own.length; b += BOX_FLOATS) {
-      pose.worldBox(own, b, yLdu, scratchTongue, 0);
-      for (let e = 0; e < this.entries.length; e++) {
-        const entry = this.entries[e];
-        if (!entry || entry === ignore || mates(entry)) continue;
-        if (entry.partsOverlap(scratchTongue, 0)) return { other: entry, ownTongue: true };
-      }
-    }
-    return null;
-  }
-
   studTotals(): StudTotals {
     let drawn = 0;
     let culledUnderFootprints = 0;
@@ -895,7 +826,6 @@ export class PlacedChunks {
     this.byChunk.clear();
     this.byFootprintChunk.clear();
     this.byColumnChunk.clear();
-    this.tongued.length = 0;
     this.slabbed.length = 0;
     this.chunkStuds.clear();
     this.entries.length = 0;
@@ -912,7 +842,6 @@ export class PlacedChunks {
     for (const key of entry.contributions.keys()) addTo(this.byChunk, key, entry);
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
-    if (entry.tongueBoxes.length > 0) this.tongued.push(entry);
     if (entry.slab) this.slabbed.push(entry);
     entry.stampColumns(this.occupancy, null);
     return entry;
@@ -927,8 +856,6 @@ export class PlacedChunks {
     for (const key of entry.contributions.keys()) this.byChunk.get(key)?.delete(entry);
     for (const key of entry.footprintKeys) this.byFootprintChunk.get(key)?.delete(entry);
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
-    const tongued = this.tongued.indexOf(entry);
-    if (tongued >= 0) this.tongued.splice(tongued, 1);
     const slabbed = this.slabbed.indexOf(entry);
     if (slabbed >= 0) this.slabbed.splice(slabbed, 1);
     this.restamp(entry.columnKeys, NO_ENTRIES);

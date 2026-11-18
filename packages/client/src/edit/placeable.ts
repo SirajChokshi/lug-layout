@@ -7,16 +7,15 @@ import {
 } from "@brr/catalog";
 import type { RoadSurface } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import type { ModelRole, Vec3 } from "@brr/schema/bundle";
+import type { ModelOrigin, ModelRole, Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
-import { moduleSurface, type ModuleSurface } from "./module-surface.ts";
 import { roadSurface } from "./road-surface.ts";
 
-export type PlaceableKind = "baseplate" | "road-plate" | "mils-module" | "model";
+export type PlaceableKind = "baseplate" | "road-plate" | "model";
 
 export interface PlaceableCells {
   readonly cellX0: number;
@@ -56,8 +55,6 @@ export interface Placeable {
   readonly farModel: number | null;
   readonly credit: ModelCredit | null;
   readonly road: RoadSurface | null;
-  readonly module: ModuleSurface | null;
-  readonly tongueBoxes: Float32Array | null;
   readonly slabDepthLdu: number;
 }
 
@@ -133,13 +130,10 @@ function modelCells(
   shift: Vec3,
   label: string,
   restPlatesInFrame: number,
-  withFootprint: boolean,
 ): PlaceableCells {
   const footprint = new Uint8Array(cells.width * cells.depth);
-  if (withFootprint) {
-    for (const cell of cells.footprint) footprint[cell] = FOOTPRINT_ANTI_STUD;
-    for (const cell of cells.flat) footprint[cell] = FOOTPRINT_FLAT;
-  }
+  for (const cell of cells.footprint) footprint[cell] = FOOTPRINT_ANTI_STUD;
+  for (const cell of cells.flat) footprint[cell] = FOOTPRINT_FLAT;
   const columnBottom = new Int16Array(cells.columnBottom.length);
   const columnTop = new Int16Array(cells.columnTop.length);
   let heightPlates = 0;
@@ -162,95 +156,10 @@ function modelCells(
     footprint,
     columnBottom,
     columnTop,
-    footprintCells: withFootprint ? cells.footprint.length : 0,
-    flatCells: withFootprint ? cells.flat.length : 0,
+    footprintCells: cells.footprint.length,
+    flatCells: cells.flat.length,
     heightPlates,
   };
-}
-
-function requireOnlyTrackPastModuleEdges(
-  instances: ChunkPartInstances,
-  partBoxes: Float32Array,
-  parts: ReadonlyArray<PartShapeAsset>,
-  surface: ModuleSurface,
-  label: string,
-): void {
-  const maxX = surface.minX + surface.studs * STUD_LDU;
-  const maxZ = surface.minZ + surface.studs * STUD_LDU;
-  for (let i = 0; i < instances.count; i++) {
-    const part = parts[instances.partIndex[i] ?? 0];
-    if (!part || part.role === "track") continue;
-    const b = i * BOX_FLOATS;
-    const inside =
-      (partBoxes[b] ?? 0) >= surface.minX &&
-      (partBoxes[b + 2] ?? 0) >= surface.minZ &&
-      (partBoxes[b + 3] ?? 0) <= maxX &&
-      (partBoxes[b + 5] ?? 0) <= maxZ;
-    if (!inside) {
-      throw new Error(
-        `${label}: ${part.id} reaches past the module's baseplate, where only a track end may`,
-      );
-    }
-  }
-}
-
-function moduleCells(cells: PlaceableCells, surface: ModuleSurface, label: string): PlaceableCells {
-  const cellX0 = wholeCells(surface.minX, `${label} baseplate min x`);
-  const cellZ0 = wholeCells(surface.minZ, `${label} baseplate min z`);
-  const size = surface.studs;
-  const columnBottom = new Int16Array(size * size).fill(EMPTY_COLUMN);
-  const columnTop = new Int16Array(size * size).fill(EMPTY_COLUMN);
-  let heightPlates = 0;
-  for (let j = 0; j < size; j++) {
-    const fromJ = cellZ0 - cells.cellZ0 + j;
-    for (let i = 0; i < size; i++) {
-      const fromI = cellX0 - cells.cellX0 + i;
-      if (fromI < 0 || fromJ < 0 || fromI >= cells.width || fromJ >= cells.depth) continue;
-      const from = fromJ * cells.width + fromI;
-      const top = cells.columnTop[from] ?? EMPTY_COLUMN;
-      if (top === EMPTY_COLUMN) continue;
-      columnBottom[j * size + i] = cells.columnBottom[from] ?? 0;
-      columnTop[j * size + i] = top;
-      heightPlates = Math.max(heightPlates, top);
-    }
-  }
-  return {
-    cellX0,
-    cellZ0,
-    width: size,
-    depth: size,
-    footprint: new Uint8Array(size * size),
-    columnBottom,
-    columnTop,
-    footprintCells: 0,
-    flatCells: 0,
-    heightPlates,
-  };
-}
-
-function trackTongueBoxes(
-  instances: ChunkPartInstances,
-  partBoxes: Float32Array,
-  parts: ReadonlyArray<PartShapeAsset>,
-  surface: ModuleSurface,
-): Float32Array {
-  const minX = surface.minX;
-  const minZ = surface.minZ;
-  const maxX = minX + surface.studs * STUD_LDU;
-  const maxZ = minZ + surface.studs * STUD_LDU;
-  const tongues: number[] = [];
-  for (let i = 0; i < instances.count; i++) {
-    if (parts[instances.partIndex[i] ?? 0]?.role !== "track") continue;
-    const [loX = 0, loY = 0, loZ = 0, hiX = 0, hiY = 0, hiZ = 0] = partBoxes.subarray(
-      i * BOX_FLOATS,
-      (i + 1) * BOX_FLOATS,
-    );
-    if (loX < minX) tongues.push(loX, loY, loZ, minX, hiY, hiZ);
-    if (hiX > maxX) tongues.push(maxX, loY, loZ, hiX, hiY, hiZ);
-    if (loZ < minZ) tongues.push(loX, loY, loZ, hiX, hiY, minZ);
-    if (hiZ > maxZ) tongues.push(loX, loY, maxZ, hiX, hiY, hiZ);
-  }
-  return Float32Array.from(tongues);
 }
 
 function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
@@ -371,17 +280,6 @@ function groundTop(model: PartModel, parts: ReadonlyArray<PartShapeAsset>): numb
   return top;
 }
 
-function hasRoadPart(instances: ChunkPartInstances, parts: ReadonlyArray<PartShapeAsset>): boolean {
-  for (let i = 0; i < instances.count; i++) {
-    const index = instances.partIndex[i];
-    const part = index === undefined ? undefined : parts[index];
-    if (!part)
-      throw new Error(`instance ${i} names part ${String(index)}, which the palette lacks`);
-    if (part.role === "road") return true;
-  }
-  return false;
-}
-
 function restingY(
   model: PartModel,
   cells: ModelCells,
@@ -396,6 +294,7 @@ function restingY(
 
 export function modelPlaceable(
   name: string,
+  origin: ModelOrigin,
   label: string,
   role: ModelRole | undefined,
   model: PartModel,
@@ -424,34 +323,28 @@ export function modelPlaceable(
   };
   const box = shiftedBox(lattice.aabbMin, lattice.aabbMax, shift);
   const partBoxes = instanceBoxes(local, parts);
-  const isModule = role === "mils-module";
-  const id = isModule ? `generated:${name}` : `omr:${name}`;
+  const id = `${origin}:${name}`;
   const studs = withStuds(local, parts, colors, model.studCover).studs;
-  const module = isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null;
-  if (module) requireOnlyTrackPastModuleEdges(local, partBoxes, parts, module, name);
   const restPlates = (cells.restY - restingOn) / PLATE_LDU;
-  const placedCells = modelCells(cells, shift, name, restPlates, !isModule);
   return {
     id,
     label,
     group: id,
     groupLabel: label,
-    kind: isModule ? "mils-module" : "model",
+    kind: "model",
     worldColor: 0,
     parts: local,
     studs,
     studLattice: studLattice(studs),
     bakedCoveredStuds: model.studCover.covered,
-    cells: module ? moduleCells(placedCells, module, name) : placedCells,
+    cells: modelCells(cells, shift, name, restPlates),
     box,
     partBoxes,
     frameShift: shift,
     farModel,
-    credit: isModule ? null : credit,
-    road: isModule && hasRoadPart(local, parts) ? roadSurface(local, partBoxes, box, parts) : null,
-    module,
-    tongueBoxes: module ? trackTongueBoxes(local, partBoxes, parts, module) : null,
-    slabDepthLdu: isModule ? depthBelowRest(box) : 0,
+    credit,
+    road: null,
+    slabDepthLdu: role === "mils-module" ? depthBelowRest(box) : 0,
   };
 }
 
@@ -500,8 +393,6 @@ export function partPlaceable(
     farModel: null,
     credit: null,
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
-    module: null,
-    tongueBoxes: null,
     slabDepthLdu: depthBelowRest(box),
   };
 }

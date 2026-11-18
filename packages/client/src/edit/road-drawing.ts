@@ -119,10 +119,6 @@ function shapeOf(arms: number): RoadShape | null {
   return arms === 0 ? null : roadShape(arms);
 }
 
-function familyOf(placeable: Placeable): string {
-  return placeable.kind === "mils-module" ? "mils" : String(placeable.worldColor);
-}
-
 function boxesMeet(a: WorldBox, b: WorldBox): boolean {
   return a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
 }
@@ -163,11 +159,13 @@ export class RoadDrawing {
 
   constructor(
     private readonly placeables: ReadonlyArray<Placeable>,
-    familyLabel: (family: string, placeable: Placeable) => string,
+    familyLabel: (placeable: Placeable) => string,
   ) {
     const kits = roadKits(
       placeables.flatMap((placeable, ref) =>
-        placeable.road ? [{ ref, family: familyOf(placeable), surface: placeable.road }] : [],
+        placeable.road
+          ? [{ ref, family: String(placeable.worldColor), surface: placeable.road }]
+          : [],
       ),
     );
     this.kits = kits
@@ -179,7 +177,7 @@ export class RoadDrawing {
           kit,
           view: {
             id: `${ROAD_KIT_PREFIX}${index}`,
-            label: `${familyLabel(kit.family, first)}, ${kitTraits(kit)}`,
+            label: `${familyLabel(first)}, ${kitTraits(kit)}`,
             edge: edgeText(kit),
             tileStuds: kit.tileLdu / STUD_LDU,
             shapes: kit.shapes,
