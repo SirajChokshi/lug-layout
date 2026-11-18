@@ -214,6 +214,8 @@ export {
   SECTION_AXLE,
   SECTION_ROUND,
   SECTION_SQUARE,
+  SECTION_FLARE_JOINS_NEXT,
+  SECTION_FLARE_JOINS_PREVIOUS,
   NO_GROUP,
   SnapShapes,
 } from "./connect/snap-shapes.ts";

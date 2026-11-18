@@ -41,6 +41,8 @@ import {
   SECTION_AXLE,
   SECTION_ROUND,
   SECTION_SQUARE,
+  SECTION_FLARE_JOINS_NEXT,
+  SECTION_FLARE_JOINS_PREVIOUS,
   NO_GROUP,
   SnapShapes,
 } from "./snap-shapes.ts";
@@ -851,5 +853,54 @@ describe("zero-length grouped faces", () => {
     expect(matesAt(engine, facing, pose(0, 0, 0))).toBe(2);
     expect(matesAt(engine, facing, pose(STUD_LDU, 0, 0))).toBe(0);
     expect(matesAt(engine, single(facePair(AXIS_POS_X)), pose(0, 0, 0))).toBe(0);
+  });
+});
+
+const FLARE = 6.25;
+const GROOVE = 6.5;
+
+describe("flared sections", () => {
+  it("seat a male flare as round at its round partner's radius, from either end", () => {
+    const blind = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 18]]);
+    const tipFlare = shape(CAP_ROOT, false, [
+      [SECTION_ROUND, 6, 16],
+      [SECTION_FLARE_JOINS_PREVIOUS, FLARE, 2],
+    ]);
+    const rootFlare = shape(CAP_ROOT, false, [
+      [SECTION_FLARE_JOINS_NEXT, FLARE, 2],
+      [SECTION_ROUND, 6, 16],
+    ]);
+    expect(mating.engages(tipFlare, blind, 0)).toBe(true);
+    expect(mating.engages(rootFlare, blind, 0)).toBe(true);
+    expect(mating.freedom(tipFlare, blind, 0, AXIS_POS_X).spins).toBe(true);
+  });
+
+  it("read a female flare as round at its own radius, whatever sits beside it", () => {
+    const grooved = shape(0, false, [
+      [SECTION_SQUARE, 6, 4],
+      [SECTION_FLARE_JOINS_PREVIOUS, GROOVE, 2],
+      [SECTION_ROUND, 6, 12],
+    ]);
+    const roundPeg = shape(CAP_ROOT, false, [[SECTION_ROUND, 6, 14]]);
+    expect(mating.offsets(roundPeg, grooved)).toEqual(Int32Array.from([0]));
+  });
+
+  it("never mate a male flare whose partner isn't round, or that has no partner", () => {
+    const axleBore = shape(0, false, [[SECTION_ROUND, 4, 12]]);
+    const axleFlare = shape(CAP_ROOT, false, [
+      [SECTION_AXLE, 4, 11],
+      [SECTION_FLARE_JOINS_PREVIOUS, 4.25, 1],
+    ]);
+    expect(mating.offsets(axleFlare, axleBore)).toEqual(new Int32Array(0));
+    const fresh = new SnapShapes();
+    const bore = fresh.intern(0, false, [SECTION_ROUND], [6], [12]);
+    const orphan = fresh.intern(
+      CAP_ROOT,
+      false,
+      [SECTION_FLARE_JOINS_PREVIOUS, SECTION_ROUND],
+      [FLARE, 6],
+      [2, 10],
+    );
+    expect(new SnapMating(fresh).offsets(orphan, bore)).toEqual(new Int32Array(0));
   });
 });

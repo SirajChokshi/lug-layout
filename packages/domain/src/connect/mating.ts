@@ -100,7 +100,7 @@ export class SnapMating {
     const shapes = this.shapes;
     let spins = true;
     this.overlaps(maleShape, femaleShape, offset, (m, f) => {
-      if (locksRotation(shapes.code(m), shapes.code(f))) spins = false;
+      if (locksRotation(shapes.maleCode(m), shapes.femaleCode(f))) spins = false;
       return spins;
     });
     return { spins, axis: axisLine(maleAxis) };
@@ -137,7 +137,12 @@ export class SnapMating {
     const shapes = this.shapes;
     let touched = false;
     const fits = this.overlaps(male, female, offset, (m, f) => {
-      const fit = containment(shapes.code(m), shapes.size(m), shapes.code(f), shapes.size(f));
+      const fit = containment(
+        shapes.maleCode(m),
+        shapes.maleSize(m),
+        shapes.femaleCode(f),
+        shapes.femaleSize(f),
+      );
       touched ||= fit === TOUCHING;
       return fit !== MISFIT;
     });

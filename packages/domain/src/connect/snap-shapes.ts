@@ -1,6 +1,8 @@
 export const SECTION_ROUND = 0;
 export const SECTION_AXLE = 1;
 export const SECTION_SQUARE = 2;
+export const SECTION_FLARE_JOINS_PREVIOUS = 3;
+export const SECTION_FLARE_JOINS_NEXT = 4;
 export const CAP_ROOT = 1;
 export const CAP_FAR = 2;
 export const NO_GROUP = "";
@@ -20,6 +22,10 @@ export class SnapShapes {
   private codeOf = new Uint8Array(INITIAL_SECTIONS);
   private sizeOf = new Float32Array(INITIAL_SECTIONS);
   private spanOf = new Float32Array(INITIAL_SECTIONS);
+  private maleCodeOf = new Uint8Array(INITIAL_SECTIONS);
+  private maleSizeOf = new Float32Array(INITIAL_SECTIONS);
+  private femaleCodeOf = new Uint8Array(INITIAL_SECTIONS);
+  private femaleSizeOf = new Float32Array(INITIAL_SECTIONS);
   private readonly ids = new Map<string, number>();
   private readonly groups = new Map<string, number>([[NO_GROUP, 0]]);
 
@@ -66,6 +72,7 @@ export class SnapShapes {
       length += this.spanOf[this.sections] ?? 0;
       this.sections++;
     }
+    this.readRoles(this.firstOf[shape] ?? 0, n);
     this.lengthOf[shape] = length;
     this.longestLength = Math.max(this.longestLength, length);
     this.ids.set(key, shape);
@@ -96,16 +103,38 @@ export class SnapShapes {
     return this.countOf[shape] ?? 0;
   }
 
-  code(section: number): number {
-    return this.codeOf[section] ?? 0;
-  }
-
-  size(section: number): number {
-    return this.sizeOf[section] ?? 0;
-  }
-
   span(section: number): number {
     return this.spanOf[section] ?? 0;
+  }
+
+  maleCode(section: number): number {
+    return this.maleCodeOf[section] ?? 0;
+  }
+
+  maleSize(section: number): number {
+    return this.maleSizeOf[section] ?? 0;
+  }
+
+  femaleCode(section: number): number {
+    return this.femaleCodeOf[section] ?? 0;
+  }
+
+  femaleSize(section: number): number {
+    return this.femaleSizeOf[section] ?? 0;
+  }
+
+  private readRoles(first: number, count: number): void {
+    for (let s = first; s < first + count; s++) {
+      const code = this.codeOf[s] ?? 0;
+      const size = this.sizeOf[s] ?? 0;
+      const partner = flarePartner(code, s, first, count);
+      const flare = partner !== NOT_A_FLARE;
+      const seated = flare && partner !== NO_PARTNER && this.codeOf[partner] === SECTION_ROUND;
+      this.maleCodeOf[s] = seated ? SECTION_ROUND : code;
+      this.maleSizeOf[s] = seated ? (this.sizeOf[partner] ?? 0) : size;
+      this.femaleCodeOf[s] = flare ? SECTION_ROUND : code;
+      this.femaleSizeOf[s] = size;
+    }
   }
 
   private groupToken(group: string): number {
@@ -132,7 +161,25 @@ export class SnapShapes {
     this.codeOf = copied(this.codeOf, new Uint8Array(capacity));
     this.sizeOf = copied(this.sizeOf, new Float32Array(capacity));
     this.spanOf = copied(this.spanOf, new Float32Array(capacity));
+    this.maleCodeOf = copied(this.maleCodeOf, new Uint8Array(capacity));
+    this.maleSizeOf = copied(this.maleSizeOf, new Float32Array(capacity));
+    this.femaleCodeOf = copied(this.femaleCodeOf, new Uint8Array(capacity));
+    this.femaleSizeOf = copied(this.femaleSizeOf, new Float32Array(capacity));
   }
+}
+
+const NOT_A_FLARE = -2;
+const NO_PARTNER = -1;
+
+function flarePartner(code: number, section: number, first: number, count: number): number {
+  const neighbour =
+    code === SECTION_FLARE_JOINS_PREVIOUS
+      ? section - 1
+      : code === SECTION_FLARE_JOINS_NEXT
+        ? section + 1
+        : NOT_A_FLARE;
+  if (neighbour === NOT_A_FLARE) return NOT_A_FLARE;
+  return neighbour >= first && neighbour < first + count ? neighbour : NO_PARTNER;
 }
 
 function shapeKey(
