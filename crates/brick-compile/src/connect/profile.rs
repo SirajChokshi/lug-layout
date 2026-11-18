@@ -57,6 +57,10 @@ fn point_segment(p: Point, a: Point, b: Point) -> f64 {
 }
 
 fn segments_cross(a: Point, b: Point, c: Point, d: Point) -> bool {
+    let apart = |k: usize| a[k].max(b[k]) < c[k].min(d[k]) || c[k].max(d[k]) < a[k].min(b[k]);
+    if apart(0) || apart(1) {
+        return false;
+    }
     let (d1, d2) = (turn(c, d, a), turn(c, d, b));
     let (d3, d4) = (turn(a, b, c), turn(a, b, d));
     d1 * d2 <= 0.0 && d3 * d4 <= 0.0 && (d1 != d2 || d1 != 0.0) && (d3 != d4 || d3 != 0.0)
@@ -76,12 +80,15 @@ fn edges(points: &[Point]) -> impl Iterator<Item = (Point, Point)> + '_ {
     (0..points.len()).map(move |k| (points[k], points[(k + 1) % points.len()]))
 }
 
+const PLAN_AXES: [Point; 2] = [[1.0, 0.0], [0.0, 1.0]];
+
 fn axes<'a>(a: &'a [Point], b: &'a [Point]) -> impl Iterator<Item = Point> + 'a {
     edges(a)
         .chain(edges(b))
         .map(|(p, q)| sub(q, p))
         .filter(|d| d[0] != 0.0 || d[1] != 0.0)
         .map(|d| [-d[1], d[0]])
+        .chain(PLAN_AXES)
 }
 
 fn extent(points: &[Point], axis: Point) -> (f64, f64) {
@@ -424,23 +431,39 @@ impl Placed {
         })
     }
 
-    pub fn swept_contact(&self, polygon: &[Point], step: Point) -> bool {
-        self.pieces.iter().any(|piece| {
-            let mut points = piece.points.clone();
-            points.extend(
-                piece
-                    .points
-                    .iter()
-                    .map(|p| [p[0] + step[0], p[1] + step[1]]),
-            );
-            overlap(&hull(&points), polygon, true)
-        })
+    pub fn swept(&self, step: Point) -> Swept {
+        Swept {
+            hulls: self
+                .pieces
+                .iter()
+                .map(|piece| {
+                    let mut points = piece.points.clone();
+                    points.extend(
+                        piece
+                            .points
+                            .iter()
+                            .map(|p| [p[0] + step[0], p[1] + step[1]]),
+                    );
+                    hull(&points)
+                })
+                .collect(),
+        }
     }
 
     pub fn contact(&self, polygon: &[Point]) -> bool {
         self.pieces
             .iter()
             .any(|piece| overlap(&piece.points, polygon, true))
+    }
+}
+
+pub struct Swept {
+    hulls: Vec<Vec<Point>>,
+}
+
+impl Swept {
+    pub fn contact(&self, polygon: &[Point]) -> bool {
+        self.hulls.iter().any(|hull| overlap(hull, polygon, true))
     }
 }
 
@@ -469,4 +492,37 @@ fn polygon_distance(a: &[Point], b: &[Point]) -> f64 {
 
 pub fn collides(pieces: &[Vec<Point>], polygon: &[Point]) -> bool {
     pieces.iter().any(|piece| overlap(piece, polygon, false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unit_square() -> Placed {
+        let triangles = [
+            [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0]],
+            [[-1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]],
+        ];
+        Profile::from_triangles(&triangles, 1e-6)
+            .expect("a square is a profile")
+            .placed([0.0, 0.0], 0.0)
+    }
+
+    #[test]
+    fn an_outline_side_is_covered_only_by_a_wall_that_reaches_it() {
+        let square = unit_square();
+        let three_sides = vec![
+            vec![[-1.0, -1.0], [1.0, -1.0], [0.0, -1.0]],
+            vec![[-1.0, 1.0], [-1.0, -1.0], [-1.0, 0.0]],
+            vec![[1.0, 1.0], [-1.0, 1.0], [0.0, 1.0]],
+        ];
+        let with = |wall: Vec<Point>| {
+            let mut section = three_sides.clone();
+            section.push(wall);
+            square.outline_covered(&section, 1e-4)
+        };
+        assert!(with(vec![[1.0, -1.0], [1.0, 1.0], [1.0, 0.0]]));
+        assert!(!with(vec![[1.0, 5.0], [1.0, 7.0], [1.0, 6.0]]));
+        assert!(!with(vec![[5.0, 5.0], [7.0, 7.0], [6.0, 6.0]]));
+    }
 }

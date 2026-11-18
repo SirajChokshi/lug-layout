@@ -940,8 +940,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
 
     fn probe(&self, solid: &Solid, walls: &Slab, probe: &Probe) -> Probed {
         let reach = self.probe.reach;
-        let floor = solid.floor(probe, probe.radius - IDENTIFY_LDU);
-        if floor.depth < reach - IDENTIFY_LDU || floor.faces_probe == Some(false) {
+        let Some(floor) =
+            solid.floor_beyond(probe, probe.radius - IDENTIFY_LDU, reach - IDENTIFY_LDU)
+        else {
+            return Probed::Rejected;
+        };
+        if floor.faces_probe == Some(false) {
             return Probed::Rejected;
         }
         let (i, j) = plan_axes(probe.axis);
@@ -1093,8 +1097,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 if separation <= IDENTIFY_LDU {
                     return false;
                 }
-                let floor = solid.floor(outer, outer.radius - IDENTIFY_LDU);
-                floor.depth >= separation - IDENTIFY_LDU && floor.faces_probe != Some(false)
+                solid
+                    .floor_beyond(
+                        outer,
+                        outer.radius - IDENTIFY_LDU,
+                        separation - IDENTIFY_LDU,
+                    )
+                    .is_some_and(|floor| floor.faces_probe != Some(false))
             });
             if opens_further_out {
                 inference.issues.push(Issue::Uninferred {
@@ -1206,10 +1215,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 }
             }
         }
-        let mut lines: Vec<(Gender, AxleEnds)> = through
-            .into_values()
+        let mut lines: Vec<(Gender, AxleEnds)> = by_key(through)
+            .into_iter()
             .map(|e| (Gender::Female, e))
-            .chain(bare.into_values().map(|e| (Gender::Male, e)))
+            .chain(by_key(bare).into_iter().map(|e| (Gender::Male, e)))
             .collect();
         lines.sort_by(|a, b| {
             let first = |e: &AxleEnds| e.iter().flatten().next().map(|(p, _)| p.entrance);
@@ -1291,7 +1300,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 ends[side] = Some(*probe);
             }
         }
-        let mut lines: Vec<[Option<Probe>; 2]> = lines.into_values().collect();
+        let mut lines: Vec<[Option<Probe>; 2]> = by_key(lines);
         lines.sort_by(|a, b| {
             let first = |e: &[Option<Probe>; 2]| e.iter().flatten().next().map(|p| p.entrance);
             first(a)
@@ -1348,8 +1357,16 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
     }
 }
 
+pub(super) fn by_key<K: Ord, V>(map: HashMap<K, V>) -> Vec<V> {
+    let mut entries: Vec<(K, V)> = map.into_iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.into_iter().map(|(_, value)| value).collect()
+}
+
 fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run> {
     let mut runs = Vec::new();
+    let mut walls: Vec<(WallKey, Vec<Band>)> = walls.into_iter().collect();
+    walls.sort_by_key(|(key, _)| *key);
     for ((axis, _, _, _, facing), mut pieces) in walls {
         pieces.sort_by(|a, b| a.from.total_cmp(&b.from).then(a.to.total_cmp(&b.to)));
         let mut bands: Vec<Band> = Vec::new();

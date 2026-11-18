@@ -3,6 +3,7 @@ use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, SQRT_2};
 
 use crate::affine::Vec3;
 
+use super::inferred::by_key;
 use super::profile::{collides, Placed, Point, Profile};
 use super::solid::{plan_axes, Probe, Solid, HALF_GRID_LDU, IDENTIFY_LDU};
 
@@ -74,6 +75,17 @@ fn bisect(contact: impl Fn(f64) -> bool, first: f64, last: f64, scale: f64) -> f
     free
 }
 
+fn within(section: &[Vec<Point>], low: Point, high: Point) -> Vec<&Vec<Point>> {
+    section
+        .iter()
+        .filter(|polygon| {
+            (0..2).all(|k| {
+                polygon.iter().any(|p| p[k] >= low[k]) && polygon.iter().any(|p| p[k] <= high[k])
+            })
+        })
+        .collect()
+}
+
 fn offset(forward: f64, back: f64) -> f64 {
     (forward - back).abs() / 2.0
 }
@@ -135,13 +147,14 @@ impl AxleProbe {
                         radius: inner,
                         ..probe
                     };
-                    let clear = solid.floor(&disc, inner - IDENTIFY_LDU).depth.min(far);
-                    let outcome = if clear > 2.0 * IDENTIFY_LDU {
-                        self.hole(solid, &probe, clear, far)
-                    } else if clear <= IDENTIFY_LDU {
-                        self.tip(solid, &probe, far)
-                    } else {
-                        None
+                    let floor = solid.floor_beyond(&disc, inner - IDENTIFY_LDU, IDENTIFY_LDU);
+                    let clear = floor.map(|floor| floor.depth.min(far));
+                    let outcome = match clear {
+                        Some(clear) if clear > 2.0 * IDENTIFY_LDU => {
+                            self.hole(solid, &probe, clear, far)
+                        }
+                        Some(clear) if clear > IDENTIFY_LDU => None,
+                        _ => self.tip(solid, &probe, far),
                     };
                     match outcome {
                         Some(Ok(
@@ -168,7 +181,7 @@ impl AxleProbe {
                 }
             }
         }
-        let mut blind: Vec<(f64, AxleFound)> = holes.into_values().collect();
+        let mut blind: Vec<(f64, AxleFound)> = by_key(holes);
         blind.sort_by(|a, b| {
             let at = |f: &AxleFound| match f {
                 AxleFound::Hole { probe, .. } | AxleFound::Axle { probe, .. } => probe.entrance,
@@ -218,12 +231,17 @@ impl AxleProbe {
 
     fn located(&self, placed: &Placed, angle: f64, section: &[Vec<Point>]) -> Result<(), AxleMiss> {
         let mut travel = [0.0; 8];
+        let reach = self.radius() + IDENTIFY_LDU;
         for (k, step) in STEPS.iter().enumerate() {
             let span = step[0].hypot(step[1]);
+            let path = within(
+                section,
+                [step[0].min(0.0) - reach, step[1].min(0.0) - reach],
+                [step[0].max(0.0) + reach, step[1].max(0.0) + reach],
+            );
             let contact = |s: f64| {
-                section
-                    .iter()
-                    .any(|p| placed.swept_contact(p, [step[0] * s, step[1] * s]))
+                let swept = placed.swept([step[0] * s, step[1] * s]);
+                path.iter().any(|p| swept.contact(p))
             };
             travel[k] = bisect(contact, IDENTIFY_LDU / span, 1.0, span) * span;
             if travel[k].is_infinite() {
@@ -231,10 +249,11 @@ impl AxleProbe {
             }
         }
         let radius = self.radius();
+        let swing = within(section, [-reach, -reach], [reach, reach]);
         let turning = |sign: f64| {
             let contact = |phi: f64| {
                 let turned = self.profile.placed([0.0, 0.0], angle + sign * phi);
-                section.iter().any(|p| turned.contact(p))
+                swing.iter().any(|p| turned.contact(p))
             };
             bisect(contact, IDENTIFY_LDU / radius, FRAC_PI_4, radius) * radius
         };
@@ -269,7 +288,7 @@ impl AxleProbe {
         far: f64,
     ) -> Option<Result<AxleFound, AxleMiss>> {
         let near = (IDENTIFY_LDU, clear - IDENTIFY_LDU);
-        if solid.nearest(probe, near, self.radius()) >= self.radius() - IDENTIFY_LDU {
+        if !solid.comes_within(probe, near, self.radius(), self.radius() - IDENTIFY_LDU) {
             return None;
         }
         let glance = solid.cross_section(probe, near, self.radius() + IDENTIFY_LDU);
@@ -304,8 +323,7 @@ impl AxleProbe {
 
     fn tip(&self, solid: &Solid, probe: &Probe, far: f64) -> Option<Result<AxleFound, AxleMiss>> {
         let reach = self.radius() + IDENTIFY_LDU;
-        let cap = solid.cross_section(probe, (-IDENTIFY_LDU, IDENTIFY_LDU), reach);
-        if cap.iter().flatten().any(|p| p[0].hypot(p[1]) > reach) {
+        if solid.section_reaches(probe, (-IDENTIFY_LDU, IDENTIFY_LDU), reach, reach) {
             return None;
         }
         let glance = solid.cross_section(
