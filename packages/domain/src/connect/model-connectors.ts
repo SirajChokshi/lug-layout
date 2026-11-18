@@ -8,6 +8,8 @@ import {
   oppositeAxis,
   type ConnectorTable,
 } from "./connector-table.ts";
+import { SIXTEENTHS_PER_LDU, ZETA16_COEFFICIENT_COUNT } from "@brr/math";
+import type { TrackEnd } from "../track/end-gaps.ts";
 import type { SnapMating } from "./mating.ts";
 
 export const IDENTIFICATION_RESIDUAL_LDU = 0.0005;
@@ -17,17 +19,19 @@ const Y = 1;
 const Z = 2;
 const LINE_KEYS = 4;
 const ALONG = 3;
+const INT32_LIMIT = 2 ** 31;
 
 export interface PartInstances {
   readonly count: number;
   readonly partIndex: ArrayLike<number>;
-  readonly matrices: ArrayLike<number>;
+  readonly matrices: Float64Array;
 }
 
 interface Frames {
   readonly shape: Uint16Array;
   readonly gender: Uint8Array;
   readonly source: Uint8Array;
+  readonly status: Uint8Array;
   readonly origin: Int32Array;
   readonly axis: Int8Array;
   readonly instance: Uint32Array;
@@ -38,6 +42,7 @@ function allocateFrames(count: number): Frames {
     shape: new Uint16Array(count),
     gender: new Uint8Array(count),
     source: new Uint8Array(count),
+    status: new Uint8Array(count),
     origin: new Int32Array(count * VECTOR_FLOATS),
     axis: new Int8Array(count),
     instance: new Uint32Array(count),
@@ -71,6 +76,32 @@ function axisVector(part: ConnectorTable, connector: number, out: Float64Array):
   out[axisDimension(code)] = axisSign(code);
 }
 
+interface TrackEnds {
+  readonly heading: Uint8Array;
+  readonly position: Int32Array;
+  readonly yPlates: Int32Array;
+}
+
+function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
+  const heading = new Uint8Array(ends.length);
+  const position = new Int32Array(ends.length * ZETA16_COEFFICIENT_COUNT);
+  const yPlates = new Int32Array(ends.length);
+  for (let e = 0; e < ends.length; e++) {
+    const end = ends[e];
+    if (!end) continue;
+    heading[e] = end.pose.heading;
+    yPlates[e] = end.yPlates;
+    for (let k = 0; k < ZETA16_COEFFICIENT_COUNT; k++) {
+      const coefficient = Number(end.pose.position[k] ?? 0n);
+      if (Math.abs(coefficient) >= INT32_LIMIT) {
+        throw new RangeError(`track end ${e} has coefficient ${coefficient}, beyond int32 studs`);
+      }
+      position[e * ZETA16_COEFFICIENT_COUNT + k] = coefficient;
+    }
+  }
+  return { heading, position, yPlates };
+}
+
 class InternalMates {
   readonly consumed: Uint8Array;
   private readonly reach: number;
@@ -83,7 +114,7 @@ class InternalMates {
     private readonly mating: SnapMating,
   ) {
     this.consumed = new Uint8Array(count);
-    this.reach = mating.shapes.longest;
+    this.reach = Math.ceil(mating.shapes.longest * SIXTEENTHS_PER_LDU);
     this.keys = new Int32Array(count * LINE_KEYS);
     this.order = new Uint32Array(count);
     for (let i = 0; i < count; i++) {
@@ -160,18 +191,24 @@ export class ModelConnectors {
     readonly shape: Uint16Array,
     readonly gender: Uint8Array,
     readonly source: Uint8Array,
+    readonly status: Uint8Array,
     readonly origin: Int32Array,
     readonly axis: Int8Array,
     readonly instance: Uint32Array,
     readonly internalMates: number,
     readonly offLattice: number,
     readonly instancesWithoutConnectors: number,
+    readonly trackEndCount: number,
+    readonly trackHeading: Uint8Array,
+    readonly trackPosition: Int32Array,
+    readonly trackYPlates: Int32Array,
   ) {}
 
   static fromParts(
     parts: ReadonlyArray<ConnectorTable | null>,
     instances: PartInstances,
     mating: SnapMating,
+    trackEnds: ReadonlyArray<TrackEnd> = [],
   ): ModelConnectors {
     let total = 0;
     let withoutConnectors = 0;
@@ -223,10 +260,15 @@ export class ModelConnectors {
           r4 * dx + r5 * dy + r6 * dz,
           r8 * dx + r9 * dy + r10 * dz,
         );
-        const ix = Math.round(wx);
-        const iy = Math.round(wy);
-        const iz = Math.round(wz);
-        const residual = Math.hypot(wx - ix, wy - iy, wz - iz);
+        const ix = Math.round(wx * SIXTEENTHS_PER_LDU);
+        const iy = Math.round(wy * SIXTEENTHS_PER_LDU);
+        const iz = Math.round(wz * SIXTEENTHS_PER_LDU);
+        const residual =
+          Math.hypot(
+            wx * SIXTEENTHS_PER_LDU - ix,
+            wy * SIXTEENTHS_PER_LDU - iy,
+            wz * SIXTEENTHS_PER_LDU - iz,
+          ) / SIXTEENTHS_PER_LDU;
         if (axis === AXIS_FREE || residual > IDENTIFICATION_RESIDUAL_LDU) {
           offLattice++;
           continue;
@@ -239,6 +281,7 @@ export class ModelConnectors {
         frames.shape[exact] = part.shape[c] ?? 0;
         frames.gender[exact] = part.gender[c] ?? 0;
         frames.source[exact] = part.source[c] ?? 0;
+        frames.status[exact] = part.status[c] ?? 0;
         frames.instance[exact] = i;
         exact++;
       }
@@ -252,6 +295,7 @@ export class ModelConnectors {
       exposed.shape[n] = frames.shape[i] ?? 0;
       exposed.gender[n] = frames.gender[i] ?? 0;
       exposed.source[n] = frames.source[i] ?? 0;
+      exposed.status[n] = frames.status[i] ?? 0;
       exposed.axis[n] = frames.axis[i] ?? 0;
       exposed.instance[n] = frames.instance[i] ?? 0;
       for (let k = 0; k < VECTOR_FLOATS; k++) {
@@ -259,17 +303,23 @@ export class ModelConnectors {
       }
       n++;
     }
+    const track = exactTrackEnds(trackEnds);
     return new ModelConnectors(
       n,
       exposed.shape,
       exposed.gender,
       exposed.source,
+      exposed.status,
       exposed.origin,
       exposed.axis,
       exposed.instance,
       internalMates,
       offLattice,
       withoutConnectors,
+      trackEnds.length,
+      track.heading,
+      track.position,
+      track.yPlates,
     );
   }
 }

@@ -7,15 +7,22 @@ import {
   type SnapWindow,
 } from "../src/connect/candidate-poses.ts";
 import { ConnectionSolver } from "../src/connect/connection-solver.ts";
+import { pose16, zeta16 } from "@brr/math";
+import type { TrackEnd } from "../src/track/end-gaps.ts";
 import {
+  AXIS_NEG_X,
   AXIS_NEG_Y,
+  AXIS_POS_X,
   AXIS_POS_Y,
   ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
   SOURCE_SHADOW,
+  STATUS_VERIFIED,
 } from "../src/connect/connector-table.ts";
 import { LatticeStudFinder } from "../src/connect/lattice-stud-finder.ts";
+import { SparseConnectorFinder } from "../src/connect/sparse-connector-finder.ts";
+import { TrackEndFinder } from "../src/connect/track-end-finder.ts";
 import { MateReport } from "../src/connect/mate-report.ts";
 import { SnapMating } from "../src/connect/mating.ts";
 import { ModelConnectors } from "../src/connect/model-connectors.ts";
@@ -33,6 +40,11 @@ const PLATE_CAVITY = PLATE_LDU - STUD_REACH;
 const shapes = new SnapShapes();
 const mating = new SnapMating(shapes);
 const STUD = shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [STUD_RADIUS], [STUD_REACH]);
+const PIN = shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [STUD_RADIUS], [8]);
+const PIN_HOLE = shapes.intern(0, false, [SECTION_ROUND], [STUD_RADIUS], [STUD_LDU]);
+const EDGE_HOLES_PER_SIDE = 4;
+const EDGE_HOLE_HEIGHT = 14;
+const TRACK_MODELS = 400;
 function receptor(depth: number): number {
   return shapes.intern(CAP_FAR, false, [SECTION_ROUND], [STUD_RADIUS], [depth]);
 }
@@ -84,6 +96,7 @@ function slab(
     shape,
     gender,
     new Uint8Array(count).fill(SOURCE_SHADOW),
+    new Uint8Array(count).fill(STATUS_VERIFIED),
     origin,
     axis,
     new Float32Array(count * 3),
@@ -91,38 +104,69 @@ function slab(
 }
 
 function baseplate(): ConnectorTable {
-  const count = BASEPLATE_STUDS * BASEPLATE_STUDS;
+  const studs = BASEPLATE_STUDS * BASEPLATE_STUDS;
+  const count = studs + 2 * EDGE_HOLES_PER_SIDE;
+  const shape = new Uint16Array(count).fill(STUD);
+  const gender = new Uint8Array(count);
   const origin = new Float32Array(count * 3);
+  const axis = new Int8Array(count).fill(AXIS_POS_Y);
   for (let j = 0; j < BASEPLATE_STUDS; j++) {
     for (let i = 0; i < BASEPLATE_STUDS; i++) {
       origin.set([i * STUD_LDU + HALF, 0, j * STUD_LDU + HALF], (j * BASEPLATE_STUDS + i) * 3);
     }
   }
+  for (let k = 0; k < EDGE_HOLES_PER_SIDE; k++) {
+    const z = (k * 8 + 2) * STUD_LDU + HALF;
+    const hole = studs + k;
+    shape[hole] = PIN_HOLE;
+    gender[hole] = GENDER_FEMALE;
+    origin.set([0, -EDGE_HOLE_HEIGHT, z], hole * 3);
+    axis[hole] = AXIS_NEG_X;
+    const pin = studs + EDGE_HOLES_PER_SIDE + k;
+    shape[pin] = PIN;
+    gender[pin] = GENDER_MALE;
+    origin.set([BASEPLATE_STUDS * STUD_LDU - STUD_LDU, -EDGE_HOLE_HEIGHT, z], pin * 3);
+    axis[pin] = AXIS_POS_X;
+  }
   return new ConnectorTable(
-    new Uint16Array(count).fill(STUD),
-    new Uint8Array(count),
+    shape,
+    gender,
     new Uint8Array(count).fill(SOURCE_SHADOW),
+    new Uint8Array(count).fill(STATUS_VERIFIED),
     origin,
-    new Int8Array(count).fill(AXIS_POS_Y),
+    axis,
     new Float32Array(count * 3),
+  );
+}
+
+function trackPiece(): ModelConnectors {
+  const ends: TrackEnd[] = [
+    { pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 8), yPlates: 0 },
+    { pose: pose16(zeta16([16n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0), yPlates: 0 },
+  ];
+  return ModelConnectors.fromParts(
+    [],
+    { count: 0, partIndex: [], matrices: new Float64Array(0) },
+    mating,
+    ends,
   );
 }
 
 function one(part: ConnectorTable): ModelConnectors {
   return ModelConnectors.fromParts(
     [part],
-    { count: 1, partIndex: [0], matrices: Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0) },
+    { count: 1, partIndex: [0], matrices: Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0) },
     mating,
   );
 }
 
 function tower(brick: ConnectorTable): {
   parts: ConnectorTable[];
-  matrices: Float32Array;
+  matrices: Float64Array;
   count: number;
 } {
   const count = TOWER_COLUMNS * TOWER_HEIGHT;
-  const matrices = new Float32Array(count * MATRIX_FLOATS);
+  const matrices = new Float64Array(count * MATRIX_FLOATS);
   let n = 0;
   for (let c = 0; c < TOWER_COLUMNS; c++) {
     for (let h = 0; h < TOWER_HEIGHT; h++) {
@@ -172,6 +216,7 @@ async function timed(calls: number, warmup: number, run: (k: number) => void): P
     run(k);
     samples[k] = performance.now() - start;
   }
+  for (let k = 0; k < PROBE_CALLS; k++) run(k);
   await settle();
   const gcBefore = collections;
   const heapBefore = process.memoryUsage().heapUsed;
@@ -188,7 +233,11 @@ async function timed(calls: number, warmup: number, run: (k: number) => void): P
   };
 }
 
-const solver = new ConnectionSolver([new LatticeStudFinder(mating)]);
+const solver = new ConnectionSolver([
+  new LatticeStudFinder(mating),
+  new SparseConnectorFinder(mating),
+  new TrackEndFinder(),
+]);
 const plate = one(baseplate());
 const brickPart = slab(2, 4, BRICK_PLATES * PLATE_LDU, BRICK_CAVITY, true);
 const brick = one(brickPart);
@@ -216,6 +265,15 @@ for (let b = 0; b < BRICKS; b++) {
     for (let i = 0; i < 2; i++) heights[(cz + j) * WORLD_CELLS + cx + i] = top + BRICK_PLATES;
   }
   solver.insert(brick, { x: cx * STUD_LDU, z: cz * STUD_LDU, yPlates: top, rot: 0 });
+}
+const track = trackPiece();
+for (let t = 0; t < TRACK_MODELS; t++) {
+  solver.insert(track, {
+    x: Math.floor(random() * WORLD_CELLS) * STUD_LDU,
+    z: Math.floor(random() * WORLD_CELLS) * STUD_LDU,
+    yPlates: 0,
+    rot: Math.floor(random() * 4),
+  });
 }
 const buildMs = performance.now() - buildStart;
 const worldStuds = BASEPLATES_PER_SIDE ** 2 * BASEPLATE_STUDS ** 2 + BRICKS * 8;
@@ -263,6 +321,8 @@ function aimAt(k: number): void {
 
 const hovered = [
   ["2×4 brick", brick],
+  ["32×32 baseplate with 8 Technic edge connectors", plate],
+  ["16-stud track piece (2 ends)", track],
   ["32×32 plate", one(slab(32, 32, PLATE_LDU, PLATE_CAVITY, true))],
   ["64×64 plate", one(slab(64, 64, PLATE_LDU, PLATE_CAVITY, true))],
 ] as const;
@@ -319,10 +379,10 @@ observer.disconnect();
 process.stdout.write(
   [
     `node ${process.version}, ${cpus()[0]?.model ?? "unknown CPU"} (${cpus().length} threads)`,
-    `world: ${BASEPLATES_PER_SIDE ** 2} baseplates of ${BASEPLATE_STUDS}×${BASEPLATE_STUDS} and ${BRICKS.toLocaleString("en-US")} 2×4 bricks = ${(BASEPLATES_PER_SIDE ** 2 + BRICKS).toLocaleString("en-US")} parts, ${worldStuds.toLocaleString("en-US")} studs; index built in ${buildMs.toFixed(0)} ms`,
+    `world: ${BASEPLATES_PER_SIDE ** 2} baseplates of ${BASEPLATE_STUDS}×${BASEPLATE_STUDS} (each with ${2 * EDGE_HOLES_PER_SIDE} Technic edge connectors), ${BRICKS.toLocaleString("en-US")} 2×4 bricks and ${TRACK_MODELS} track pieces = ${(BASEPLATES_PER_SIDE ** 2 + BRICKS + TRACK_MODELS).toLocaleString("en-US")} parts, ${worldStuds.toLocaleString("en-US")} studs; finders: lattice studs, sparse, track ends; index built in ${buildMs.toFixed(0)} ms`,
     `window: 3×3 cells × 3 heights × 4 turns; ${HOVER_CALLS} calls after ${WARMUP_CALLS} warm-up over ${HOVER_POSITIONS} seeded cursor positions; checksum ${checksum}`,
     "",
-    `| Operation | p50 ms | p95 ms | GCs in ${PROBE_CALLS.toLocaleString("en-US")} probe calls | heap growth over the probe (bytes) |`,
+    `| Operation | p50 ms | p95 ms | GCs in ${PROBE_CALLS.toLocaleString("en-US")} steady-state probe calls | heap growth over those calls (bytes) |`,
     "|---|---|---|---|---|",
     ...rows,
     "",
