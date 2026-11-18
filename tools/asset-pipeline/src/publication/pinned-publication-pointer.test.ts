@@ -7,10 +7,14 @@ import {
   decodeJsonFile,
   movePointer,
   pinnedIndexPointer,
-  prunePointed,
+  pruneUnreferenced,
   readPointer,
+  runPointerCommand,
   uploadPublication,
+  verifyServedPointer,
   type PinnedIndex,
+  type PointerAdapter,
+  type PointerCommands,
   type Publication,
 } from "./pinned-publication.ts";
 import { contentAddressedName } from "../publish.ts";
@@ -127,8 +131,8 @@ it("keeps exactly what the current and previous manifests reference, and a secon
   const third = await publish(store, ["c", "d"]);
   const before = [...store.objects.keys()];
 
-  const pruned = await prunePointed(pointer, store, false);
-  const again = await prunePointed(pointer, store, false);
+  const pruned = await pruneUnreferenced(pointer, store, false);
+  const again = await pruneUnreferenced(pointer, store, false);
 
   const live = new Set([pointer.key, ...second.keys, ...third.keys]);
   expect([...store.objects.keys()].toSorted()).toEqual([...live].toSorted());
@@ -145,7 +149,7 @@ it("keeps a leaf the previous manifest still references after a third release", 
   await publish(store, ["a", "b"]);
   await publish(store, ["b", "c"]);
 
-  await prunePointed(pointer, store, false);
+  await pruneUnreferenced(pointer, store, false);
 
   expect(leafKeys(store)).toEqual(["a", "b", "c"].map(leafKey).toSorted());
 });
@@ -173,12 +177,12 @@ it("refuses to point at a manifest the bucket doesn't hold", async () => {
   expect(store.objects.has(pointer.key)).toBe(false);
 });
 
-async function threeReleases(): Promise<{ store: MemoryStore; previous: ToyPin }> {
+async function threeReleases(): Promise<{ store: MemoryStore; oldest: Release; previous: ToyPin }> {
   const store = new MemoryStore();
-  await publish(store, ["a"]);
+  const oldest = await publish(store, ["a"]);
   const previous = await publish(store, ["b"]);
   await publish(store, ["c"]);
-  return { store, previous: previous.pin };
+  return { store, oldest, previous: previous.pin };
 }
 
 function previousIndexKey(previous: ToyPin): string {
@@ -204,7 +208,7 @@ it("refuses and deletes nothing when the previous manifest is missing, differs f
     { store: nested.store, reason: "differs from its content address" },
   ]) {
     const before = [...store.objects.keys()].toSorted();
-    await expect(prunePointed(pointer, store, false)).rejects.toThrow(reason);
+    await expect(pruneUnreferenced(pointer, store, false)).rejects.toThrow(reason);
     expect([...store.objects.keys()].toSorted()).toEqual(before);
   }
 });
@@ -215,7 +219,9 @@ it("refuses and deletes nothing when no pointer is stored", async () => {
   await uploadPublication(toy, store, root, pin);
   const before = store.objects.size;
 
-  await expect(prunePointed(pointer, store, false)).rejects.toThrow("nothing says what is live");
+  await expect(pruneUnreferenced(pointer, store, false)).rejects.toThrow(
+    "nothing says what is live",
+  );
   expect(store.objects.size).toBe(before);
 });
 
@@ -223,9 +229,9 @@ it("a dry run deletes nothing and lists exactly what the prune then deletes", as
   const { store } = await threeReleases();
   const before = store.objects.size;
 
-  const dry = await prunePointed(pointer, store, true);
+  const dry = await pruneUnreferenced(pointer, store, true);
   const unchanged = store.objects.size;
-  const real = await prunePointed(pointer, store, false);
+  const real = await pruneUnreferenced(pointer, store, false);
 
   expect(unchanged).toBe(before);
   expect(dry.deleted).toBe(0);
@@ -233,13 +239,106 @@ it("a dry run deletes nothing and lists exactly what the prune then deletes", as
   expect(real.deleted).toBe(dry.doomed.length);
 });
 
-it("keeps what the adapter's extra references name, beside the current and previous manifests", async () => {
+it("keeps every file of a manifest the adapter retains, beside the current and previous manifests", async () => {
+  const { store, oldest } = await threeReleases();
+  const retaining = { ...pointer, retained: async () => [oldest.pin.index] };
+
+  const pruned = await pruneUnreferenced(retaining, store, false);
+
+  expect(pruned.deleted).toBe(0);
+  expect(oldest.keys.every((key) => store.objects.has(key))).toBe(true);
+});
+
+it("refuses and deletes nothing when the manifests reference nothing", async () => {
   const { store } = await threeReleases();
-  const oldest = leafKey("a");
-  const keeping = { ...pointer, extra: async () => new Set([oldest]) };
+  const before = store.objects.size;
+  const empty = { ...pointer, references: async () => ({ indexes: [], files: [] }) };
 
-  await prunePointed(keeping, store, false);
+  await expect(pruneUnreferenced(empty, store, false)).rejects.toThrow("reference nothing");
+  expect(store.objects.size).toBe(before);
+});
 
-  expect(store.objects.has(oldest)).toBe(true);
-  expect(leafKeys(store)).toEqual(["a", "b", "c"].map(leafKey).toSorted());
+class PointingWhileListing extends MemoryStore {
+  constructor(private readonly pointDuringListing: (store: MemoryStore) => Promise<void>) {
+    super();
+  }
+
+  override async list(prefix: string): Promise<ReadonlyArray<StoredObject>> {
+    const listed = await super.list(prefix);
+    await this.pointDuringListing(this);
+    return listed;
+  }
+}
+
+it("refuses and deletes nothing when the pointer moves while the bucket is listed", async () => {
+  const next = await release(["d"]);
+  const store = new PointingWhileListing((bucket) =>
+    movePointer(pointer, bucket, next.pin.index).then(() => undefined),
+  );
+  await publish(store, ["a"]);
+  await publish(store, ["b"]);
+  await publish(store, ["c"]);
+  await uploadPublication(toy, store, next.root, next.pin);
+  const before = store.objects.size;
+
+  await expect(pruneUnreferenced(pointer, store, false)).rejects.toThrow(
+    "changed during the prune",
+  );
+  expect(store.objects.size).toBe(before);
+  expect(next.keys.every((key) => store.objects.has(key))).toBe(true);
+});
+
+it("verifies every referenced file against the SHA-256 its manifest gives, content-addressed or not", async () => {
+  const store = new MemoryStore();
+  const part = new TextEncoder().encode("1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n");
+  const library: PointerAdapter<string> = {
+    ...pointer,
+    key: "library/latest.json",
+    prefixes: ["library/"],
+    decode: (bytes) => JSON.parse(new TextDecoder().decode(bytes)),
+    encode: (state) => new TextEncoder().encode(JSON.stringify(state)),
+    sameManifest: (a, b) => a === b,
+    describeManifest: (commit) => commit,
+    references: async (commit) => ({
+      indexes: [],
+      files: [
+        { key: `library/${commit}/parts/3001.dat`, sha256Prefix: sha256Hex(part) },
+        { key: `library/${commit}/parts/short.dat`, sha256Prefix: "ab" },
+      ],
+    }),
+    retained: async () => [],
+  };
+  const read = (key: string) => store.get(key);
+  await store.put(library.key, library.encode({ current: "c1", previous: null }));
+  await store.put("library/c1/parts/3001.dat", part);
+  await store.put("library/c1/parts/short.dat", part);
+
+  const intact = await verifyServedPointer(library, read, "all");
+  await store.put("library/c1/parts/3001.dat", new TextEncoder().encode("0 tampered\n"));
+  const tampered = await verifyServedPointer(library, read, "all");
+
+  expect(intact).toEqual(["library/c1/parts/short.dat names no usable SHA-256 prefix"]);
+  expect(tampered).toEqual([
+    "library/c1/parts/3001.dat differs from its SHA-256",
+    "library/c1/parts/short.dat names no usable SHA-256 prefix",
+  ]);
+});
+
+it("refuses a pointer command flag it does not know before touching the bucket", async () => {
+  const untouchable: PointerCommands<ToyPin, PinnedIndex> = {
+    publication: toy,
+    storeConfigPath: "/nonexistent/store.json",
+    root: "/nonexistent",
+    readPin: () => Promise.reject(new Error("read the pin")),
+    describeVerified: () => "",
+    pointer,
+    manifestOf: (pin) => pin.index,
+  };
+
+  await expect(runPointerCommand(untouchable, ["prune", "--dryrun"])).rejects.toThrow(
+    "prune takes --dry-run; it does not take --dryrun",
+  );
+  await expect(runPointerCommand(untouchable, ["point", "--all"])).rejects.toThrow(
+    "point takes no flags; it does not take --all",
+  );
 });

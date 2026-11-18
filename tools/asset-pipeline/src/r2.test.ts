@@ -17,6 +17,7 @@ describe("signS3Request", () => {
       name: "GET object with a range",
       method: "GET" as const,
       path: "/test.txt",
+      query: {},
       headers: { Range: "bytes=0-9" },
       payload: "",
       signature: "f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41",
@@ -25,6 +26,7 @@ describe("signS3Request", () => {
       name: "PUT object with an encoded key",
       method: "PUT" as const,
       path: `/${encodeObjectPath("test$file.text")}`,
+      query: {},
       headers: {
         Date: "Fri, 24 May 2013 00:00:00 GMT",
         "x-amz-storage-class": "REDUCED_REDUNDANCY",
@@ -32,23 +34,69 @@ describe("signS3Request", () => {
       payload: "Welcome to Amazon S3.",
       signature: "98ad721746da40c64f1a55b78f14c238d841ea1380cd77a1b5971af0ece108bd",
     },
-  ])("matches the AWS SigV4 example: $name", ({ method, path, headers, payload, signature }) => {
-    const signed = signS3Request(
-      { method, host: AWS_EXAMPLE_HOST, path, headers, payloadSha256: sha256Hex(payload) },
-      AWS_EXAMPLE_CREDENTIALS,
-      "us-east-1",
-      AWS_EXAMPLE_DATE,
-    );
-    expect(signed["authorization"]).toMatch(new RegExp(`Signature=${signature}$`, "u"));
-  });
+    {
+      name: "GET bucket lifecycle, a parameter without a value",
+      method: "GET" as const,
+      path: "/",
+      query: { lifecycle: "" },
+      headers: {},
+      payload: "",
+      signature: "fea454ca298b7da1c68078a5d1bdbfbbe0d65c699e0f91ac7a200a0136783543",
+    },
+    {
+      name: "GET bucket listing with query parameters",
+      method: "GET" as const,
+      path: "/",
+      query: { prefix: "J", "max-keys": "2" },
+      headers: {},
+      payload: "",
+      signature: "34b48302e7b5fa45bde8084f4b7868a86f0a534bc59db6670ed5711ef69dc6f7",
+    },
+  ])(
+    "matches the AWS SigV4 example: $name",
+    ({ method, path, query, headers, payload, signature }) => {
+      const signed = signS3Request(
+        { method, host: AWS_EXAMPLE_HOST, path, query, headers, payloadSha256: sha256Hex(payload) },
+        AWS_EXAMPLE_CREDENTIALS,
+        "us-east-1",
+        AWS_EXAMPLE_DATE,
+      );
+      expect(signed["authorization"]).toMatch(new RegExp(`Signature=${signature}$`, "u"));
+    },
+  );
 });
 
 const PAGE_KEYS = 2;
 const BUCKET = "bucket";
+const REFUSED_PREFIX = "p/refused";
+const XML_ENTITIES: ReadonlyArray<readonly [string, string]> = [
+  ["&", "&amp;"],
+  ["<", "&lt;"],
+  [">", "&gt;"],
+  ["'", "&#x27;"],
+  ["ü", "&#252;"],
+  ["€", "&euro;"],
+];
+
+function escaped(text: string): string {
+  return XML_ENTITIES.reduce((out, [raw, entity]) => out.replaceAll(raw, entity), text);
+}
+
+const NAMED_ENTITIES: ReadonlyArray<readonly [string, string]> = [
+  ["'", "&apos;"],
+  ['"', "&quot;"],
+];
+
+function unescaped(text: string): string {
+  return [...NAMED_ENTITIES, ...XML_ENTITIES]
+    .toReversed()
+    .reduce((out, [raw, entity]) => out.replaceAll(entity, raw), text);
+}
 
 async function withBucket(
   keys: ReadonlyArray<string>,
   run: (store: R2ObjectStore, requests: string[], held: Set<string>) => Promise<void>,
+  listing: { readonly dropsTokens: boolean } = { dropsTokens: false },
 ): Promise<void> {
   const held = new Set(keys);
   const requests: string[] = [];
@@ -65,10 +113,14 @@ async function withBucket(
           response.writeHead(400).end("<Error><Code>BadDigest</Code></Error>");
           return;
         }
-        for (const [, key = ""] of body.toString().matchAll(/<Key>([^<]*)<\/Key>/gu)) {
-          held.delete(key);
+        const errors: string[] = [];
+        for (const [, text = ""] of body.toString().matchAll(/<Key>([^<]*)<\/Key>/gu)) {
+          const key = unescaped(text);
+          if (key.startsWith(REFUSED_PREFIX)) {
+            errors.push(`<Error><Key>${text}</Key><Code>AccessDenied</Code></Error>`);
+          } else held.delete(key);
         }
-        response.writeHead(200).end("<DeleteResult></DeleteResult>");
+        response.writeHead(200).end(`<DeleteResult>${errors.join("")}</DeleteResult>`);
         return;
       }
       const prefix = url.searchParams.get("prefix") ?? "";
@@ -76,11 +128,17 @@ async function withBucket(
       const start = Number(url.searchParams.get("continuation-token") ?? "0");
       const page = listed.slice(start, start + PAGE_KEYS);
       const truncated = start + PAGE_KEYS < listed.length;
-      const contents = page.map((key) => `<Contents><Key>${key}</Key><Size>3</Size></Contents>`);
+      const contents = page.map(
+        (key) => `<Contents><Key>${escaped(key)}</Key><Size>3</Size></Contents>`,
+      );
+      const token =
+        truncated && !listing.dropsTokens
+          ? `<NextContinuationToken>${start + PAGE_KEYS}</NextContinuationToken>`
+          : "";
       response
         .writeHead(200)
         .end(
-          `<ListBucketResult>${contents.join("")}<IsTruncated>${truncated}</IsTruncated>${truncated ? `<NextContinuationToken>${start + PAGE_KEYS}</NextContinuationToken>` : ""}</ListBucketResult>`,
+          `<ListBucketResult>${contents.join("")}<IsTruncated>${truncated}</IsTruncated>${token}</ListBucketResult>`,
         );
     });
   });
@@ -100,22 +158,52 @@ async function withBucket(
 
 describe("R2ObjectStore listing and deletion", () => {
   it("lists every key under a prefix, following continuation tokens across pages", async () => {
-    const keys = ["p/a", "p/b", "p/c", "p/d", "p/e", "q/z"];
+    const keys = ["p/a", "p/a&<b>", "p/c'ü", "p/d", "p/e", "q/z"];
     await withBucket(keys, async (store, requests) => {
       const listed = await store.list("p/");
 
-      expect(listed).toEqual(["p/a", "p/b", "p/c", "p/d", "p/e"].map((key) => ({ key, size: 3 })));
+      expect(listed).toEqual(
+        ["p/a", "p/a&<b>", "p/c'ü", "p/d", "p/e"].map((key) => ({ key, size: 3 })),
+      );
       expect(requests).toHaveLength(Math.ceil(5 / PAGE_KEYS));
     });
   });
 
+  it("refuses a listing with an XML reference it cannot decode instead of guessing the key", async () => {
+    await withBucket(["p/€"], async (store) => {
+      await expect(store.list("p/")).rejects.toThrow("unrecognised XML reference &euro;");
+    });
+  });
+
+  it("refuses a listing truncated without a continuation token instead of returning part of it", async () => {
+    await withBucket(
+      ["p/a", "p/b", "p/c"],
+      async (store) => {
+        await expect(store.list("p/")).rejects.toThrow(
+          "truncated without a new continuation token",
+        );
+      },
+      { dropsTokens: true },
+    );
+  });
+
   it("deletes keys in batches of at most a thousand, and a key already gone counts as deleted", async () => {
-    const keys = Array.from({ length: 1001 }, (_, i) => `p/${i}`);
+    const keys = [...Array.from({ length: 999 }, (_, i) => `p/${i}`), "p/a&<b>", "p/c'ü"];
     await withBucket(keys, async (store, requests, held) => {
       await store.delete([...keys, "p/gone"]);
 
       expect(held.size).toBe(0);
       expect(requests.filter((request) => request.startsWith("POST"))).toHaveLength(2);
+    });
+  });
+
+  it("fails when DeleteObjects answers 200 but refuses a key", async () => {
+    const refused = `${REFUSED_PREFIX}/a`;
+    await withBucket(["p/a", refused], async (store, _requests, held) => {
+      await expect(store.delete(["p/a", refused])).rejects.toThrow(
+        `DeleteObjects refused: <Key>${refused}</Key><Code>AccessDenied</Code>`,
+      );
+      expect([...held]).toEqual([refused]);
     });
   });
 });

@@ -1,6 +1,6 @@
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
 import * as v from "valibot";
@@ -388,9 +388,14 @@ export interface PublicationPointer<TManifest> {
   readonly previous: TManifest | null;
 }
 
+export interface ReferencedFile {
+  readonly key: string;
+  readonly sha256Prefix: string;
+}
+
 export interface ManifestReferences {
   readonly indexes: ReadonlyArray<string>;
-  readonly leaves: ReadonlyArray<string>;
+  readonly files: ReadonlyArray<ReferencedFile>;
 }
 
 export interface PointerAdapter<TManifest> {
@@ -399,10 +404,10 @@ export interface PointerAdapter<TManifest> {
   readonly headers: Readonly<Record<string, string>>;
   decode(bytes: Uint8Array): PublicationPointer<TManifest>;
   encode(pointer: PublicationPointer<TManifest>): Uint8Array;
-  same(a: TManifest, b: TManifest): boolean;
-  describe(manifest: TManifest): string;
+  sameManifest(a: TManifest, b: TManifest): boolean;
+  describeManifest(manifest: TManifest): string;
   references(manifest: TManifest, read: ObjectReader): Promise<ManifestReferences>;
-  extra(read: ObjectReader): Promise<ReadonlySet<string>>;
+  retained(): Promise<ReadonlyArray<TManifest>>;
 }
 
 export function nextPointer<TManifest>(
@@ -410,7 +415,7 @@ export function nextPointer<TManifest>(
   existing: PublicationPointer<TManifest> | null,
   manifest: TManifest,
 ): PublicationPointer<TManifest> {
-  if (existing !== null && adapter.same(existing.current, manifest)) return existing;
+  if (existing !== null && adapter.sameManifest(existing.current, manifest)) return existing;
   return { current: manifest, previous: existing?.current ?? null };
 }
 
@@ -426,6 +431,31 @@ function pointed<TManifest>(pointer: PublicationPointer<TManifest>): TManifest[]
   return pointer.previous === null ? [pointer.current] : [pointer.current, pointer.previous];
 }
 
+const HEX = /^[0-9a-f]+$/u;
+const SHA256_HEX_DIGITS = 64;
+
+function contentAddressOf(file: string): string {
+  const extension = extname(file);
+  const stem = file.slice(0, file.length - extension.length);
+  const digest = stem.slice(stem.lastIndexOf(".") + 1);
+  if (extension === "" || digest.length !== CONTENT_HASH_HEX_DIGITS || !HEX.test(digest)) {
+    throw new Error(`${file} is not content-addressed`);
+  }
+  return digest;
+}
+
+function digestProblem(file: ReferencedFile, bytes: Uint8Array): string | undefined {
+  const prefix = file.sha256Prefix;
+  if (
+    prefix.length < CONTENT_HASH_HEX_DIGITS ||
+    prefix.length > SHA256_HEX_DIGITS ||
+    !HEX.test(prefix)
+  ) {
+    return `${file.key} names no usable SHA-256 prefix`;
+  }
+  return sha256Hex(bytes).startsWith(prefix) ? undefined : `${file.key} differs from its SHA-256`;
+}
+
 export function pinnedIndexReferences<TPin>(
   publication: Publication<TPin>,
   list: (file: string, bytes: Uint8Array) => IndexListing,
@@ -438,10 +468,15 @@ export function pinnedIndexReferences<TPin>(
       throw new Error(`${top} differs from its pinned SHA-256`);
     }
     const indexes = [top];
-    const leaves: string[] = [];
+    const files: ReferencedFile[] = [];
     const seen = new Set<string>([manifest.file]);
     const descend = async (listing: IndexListing): Promise<void> => {
-      leaves.push(...listing.leaves.map((file) => objectKey(publication, file)));
+      files.push(
+        ...listing.leaves.map((file) => ({
+          key: objectKey(publication, file),
+          sha256Prefix: contentAddressOf(file),
+        })),
+      );
       for (const { file } of listing.indexes) {
         if (seen.has(file)) throw new Error(`${file} is listed by more than one index`);
         seen.add(file);
@@ -456,7 +491,7 @@ export function pinnedIndexReferences<TPin>(
       }
     };
     await descend(list(manifest.file, bytes));
-    return { indexes, leaves };
+    return { indexes, files };
   };
 }
 
@@ -480,10 +515,11 @@ export function pinnedIndexPointer<TPin>(
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
     decode: (bytes) => decodeJsonFile(PointerFile, bytes, key),
     encode: (pointer) => new TextEncoder().encode(JSON.stringify(pointer)),
-    same: (a, b) => a.file === b.file && a.sha256 === b.sha256,
-    describe: (manifest) => `${manifest.file} ${manifest.sha256.slice(0, CONTENT_HASH_HEX_DIGITS)}`,
+    sameManifest: (a, b) => a.file === b.file && a.sha256 === b.sha256,
+    describeManifest: (manifest) =>
+      `${manifest.file} ${manifest.sha256.slice(0, CONTENT_HASH_HEX_DIGITS)}`,
     references: pinnedIndexReferences(publication, list),
-    extra: async () => new Set(),
+    retained: async () => [],
   };
 }
 
@@ -517,17 +553,18 @@ export async function verifyServedPointer<TManifest>(
   if (pointer === null) return [`${adapter.key} is not served`];
   const problems: string[] = [];
   for (const manifest of pointed(pointer)) {
-    const listed = await adapter.references(manifest, read).catch((error: unknown) => {
-      problems.push(`${adapter.describe(manifest)}: ${String(error)}`);
-      return { indexes: [], leaves: [] };
-    });
+    const listed = await adapter
+      .references(manifest, read)
+      .catch((error: unknown): ManifestReferences => {
+        problems.push(`${adapter.describeManifest(manifest)}: ${String(error)}`);
+        return { indexes: [], files: [] };
+      });
     if (scope !== "all") continue;
-    await runAll(listed.leaves, async (key) => {
-      const bytes = await read(key);
-      if (bytes === undefined) problems.push(`${key} is not served`);
-      else if (!isContentAddressed(key, bytes)) {
-        problems.push(`${key} differs from its content address`);
-      }
+    await runAll(listed.files, async (file) => {
+      const bytes = await read(file.key);
+      const problem =
+        bytes === undefined ? `${file.key} is not served` : digestProblem(file, bytes);
+      if (problem !== undefined) problems.push(problem);
     });
   }
   return problems.toSorted();
@@ -539,24 +576,30 @@ export interface PruneOutcome {
   readonly deleted: number;
 }
 
-export async function prunePointed<TManifest>(
+export async function pruneUnreferenced<TManifest>(
   adapter: PointerAdapter<TManifest>,
   store: PrunableStore,
   dryRun: boolean,
 ): Promise<PruneOutcome> {
   const read = (key: string) => store.get(key);
-  const pointer = await readPointer(adapter, read);
-  if (pointer === null)
+  const pointerBytes = await read(adapter.key);
+  if (pointerBytes === undefined) {
     throw new Error(`${adapter.key} is not stored, so nothing says what is live`);
+  }
+  const pointer = adapter.decode(pointerBytes);
   const live = new Set<string>();
-  for (const manifest of pointed(pointer)) {
-    const { indexes, leaves } = await adapter.references(manifest, read);
-    for (const key of [...indexes, ...leaves]) live.add(key);
+  for (const manifest of [...pointed(pointer), ...(await adapter.retained())]) {
+    const { indexes, files } = await adapter.references(manifest, read);
+    for (const key of indexes) live.add(key);
+    for (const file of files) live.add(file.key);
   }
   if (live.size === 0) throw new Error(`the manifests ${adapter.key} names reference nothing`);
-  for (const key of await adapter.extra(read)) live.add(key);
   live.add(adapter.key);
   const stored = (await Promise.all(adapter.prefixes.map((prefix) => store.list(prefix)))).flat();
+  const pointerAfterListing = await read(adapter.key);
+  if (pointerAfterListing === undefined || !isDeepStrictEqual(pointerAfterListing, pointerBytes)) {
+    throw new Error(`${adapter.key} changed during the prune, so nothing was deleted`);
+  }
   const doomed = stored.filter((object) => !live.has(object.key));
   if (!dryRun) await store.delete(doomed.map((object) => object.key));
   return { live: live.size, doomed, deleted: dryRun ? 0 : doomed.length };
@@ -577,9 +620,10 @@ async function pointCommand<TPin, TManifest>(
     store,
     commands.manifestOf(await commands.readPin()),
   );
-  const previous = pointer.previous === null ? "none" : commands.pointer.describe(pointer.previous);
+  const previous =
+    pointer.previous === null ? "none" : commands.pointer.describeManifest(pointer.previous);
   process.stdout.write(
-    `${commands.pointer.key}: current ${commands.pointer.describe(pointer.current)}, previous ${previous}${moved ? "" : " (unchanged)"}\n`,
+    `${commands.pointer.key}: current ${commands.pointer.describeManifest(pointer.current)}, previous ${previous}${moved ? "" : " (unchanged)"}\n`,
   );
 }
 
@@ -592,7 +636,7 @@ async function currentCommand<TPin, TManifest>(
       ? null
       : await readPointer(commands.pointer, httpReader(baseUrl)).catch(() => null);
   const manifest = commands.manifestOf(await commands.readPin());
-  const current = pointer !== null && commands.pointer.same(pointer.current, manifest);
+  const current = pointer !== null && commands.pointer.sameManifest(pointer.current, manifest);
   process.stdout.write(
     `${commands.pointer.key}: ${current ? "names" : "does not name"} the pinned manifest as current\n`,
   );
@@ -614,7 +658,7 @@ async function verifyPointerCommand<TPin, TManifest>(
     return;
   }
   process.stdout.write(
-    `${baseUrl}: the current and previous manifests ${commands.pointer.key} names, and ${scope === "all" ? "every file they reference" : "their index files"}, match their pins and content addresses\n`,
+    `${baseUrl}: the current and previous manifests ${commands.pointer.key} names, and ${scope === "all" ? "every file they reference" : "their index files"}, match their pins and SHA-256 digests\n`,
   );
 }
 
@@ -624,7 +668,7 @@ async function pruneCommand<TPin, TManifest>(
 ): Promise<void> {
   const store = await bucketStore(commands.storeConfigPath);
   if (store === undefined) throw new Error("set CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN_ID");
-  const { live, doomed, deleted } = await prunePointed(commands.pointer, store, dryRun);
+  const { live, doomed, deleted } = await pruneUnreferenced(commands.pointer, store, dryRun);
   const bytes = doomed.reduce((sum, object) => sum + object.size, 0);
   if (dryRun) {
     for (const object of doomed)
@@ -635,26 +679,40 @@ async function pruneCommand<TPin, TManifest>(
   );
 }
 
+function pointerFlags(argv: ReadonlyArray<string>, allowed: ReadonlyArray<string>): Set<string> {
+  const given = argv.slice(1);
+  const unknown = given.filter((flag) => !allowed.includes(flag));
+  if (unknown.length > 0) {
+    const accepted = allowed.length === 0 ? "no flags" : allowed.join(", ");
+    throw new Error(`${argv[0]} takes ${accepted}; it does not take ${unknown.join(", ")}`);
+  }
+  return new Set(given);
+}
+
 export async function runPointerCommand<TPin, TManifest>(
   commands: PointerCommands<TPin, TManifest>,
   argv: ReadonlyArray<string>,
 ): Promise<boolean> {
   switch (argv[0]) {
     case "point":
+      pointerFlags(argv, []);
       await pointCommand(commands);
       return true;
     case "current":
+      pointerFlags(argv, []);
       await currentCommand(commands);
       return true;
-    case "verify-pointer":
+    case "verify-pointer": {
+      const flags = pointerFlags(argv, ["--all", "--wait"]);
       await verifyPointerCommand(
         commands,
-        argv.includes("--all") ? "all" : "indexes",
-        argv.includes("--wait"),
+        flags.has("--all") ? "all" : "indexes",
+        flags.has("--wait"),
       );
       return true;
+    }
     case "prune":
-      await pruneCommand(commands, argv.includes("--dry-run"));
+      await pruneCommand(commands, pointerFlags(argv, ["--dry-run"]).has("--dry-run"));
       return true;
     default:
       return false;

@@ -138,24 +138,38 @@ The records publish to `brr-part-bundles` under `library-bake/`, through `src/pu
 
 Uploading puts the index last, so a served index always has its files behind it. The upload skips any object the bucket already has, so an unchanged library uploads nothing new.
 
-**Keeping only the current and previous libraries.** `library-bake/latest.json` is the pointer: `{ "current": …, "previous": … }`, each naming a top index and its SHA-256. One PUT writes it, so both change together. Pointing at a new index makes the old current the previous; pointing at the current again changes nothing. After the pointer moves, `prune` deletes every object under `library-bake/` that neither the current nor the previous manifest references. A manifest references its top index, its 256 buckets, and every record and GLB its buckets list. Keeping the previous library means a site rolled back to the earlier build still finds every file. `prune` refuses, deleting nothing, if the pointer, either manifest or any bucket can't be read and verified against its pin or content address, or if the live set is empty. `prune --dry-run` lists every key and its size that it would delete.
+**Keeping only the current and previous libraries.** `library-bake/latest.json` is the pointer: `{ "current": …, "previous": … }`, each naming a top index and its SHA-256. One PUT writes it, so both change together. Pointing at a new index makes the old current the previous; pointing at the current again changes nothing. After the pointer moves, `prune` deletes every object under `library-bake/` that neither the current nor the previous manifest references. A manifest references its top index, its 256 buckets, and every record and GLB its buckets list. Keeping the previous library means a site rolled back to the earlier build still finds every file. `prune` refuses, deleting nothing, if:
+- the pointer, either manifest or any bucket can't be read and verified against its pin or content address;
+- the live set is empty;
+- the pointer changes while the bucket is being listed.
 
-The pointer and prune are generic, in `pinned-publication.ts` (`PointerAdapter`, `movePointer`, `verifyServedPointer`, `prunePointed`, `runPointerCommand`):
+`prune --dry-run` lists every key and its size that it would delete. Each pointer command refuses a flag it doesn't take, so a mistyped `--dry-run` never prunes.
+
+The pointer and prune are generic, in `pinned-publication.ts` (`PointerAdapter`, `movePointer`, `verifyServedPointer`, `pruneUnreferenced`, `runPointerCommand`):
 - **Adapters define the pointer.** An adapter gives the pointer's key and how to read and write it, so an existing pointer can keep its shape. The part bundle's `current/latest.json` can keep `manifestFile` and add `previous` beside it.
-- **Manifests are generic.** An adapter says what a manifest references, and can add extra references to keep beyond the current and previous manifests.
+- **Manifests are generic.** An adapter says what a manifest references:
+  - the index files it read and verified on the way;
+  - every other file, each with the SHA-256 it must have. For content-addressed files that's the prefix in the name; for files an index lists by full hash, like an LDraw library commit's, it's that hash.
+
+  `verify-pointer --all` checks every file against it.
+- **Adapters can retain more manifests.** Their files are kept beyond the current and previous ones, and are verified the same way. The part bundle can retain its committed fallback manifest, and the LDraw library the commits the live bundle manifests name.
 - **`library-bake`** is the first adapter. `pinnedIndexPointer` serves any publication pinned by an index's SHA-256.
 
 `.github/workflows/library-bake.yml` runs on `main` when the pin, `src/library-bake/**`, `src/publication/**`, `src/r2.ts` or the bucket config change, and on demand:
 - **`status`** asks whether the public URL already serves the pinned index, and whether `latest.json` names it as current.
-- **`publish`** runs when either answer is no, and always on demand, so a rerun finishes an interrupted prune. It runs in the `production` environment with the same Cloudflare token and secret handling as the part bundle's `publish`, in this order:
-  1. it rebuilds the records and checks them against the pin and the licence gate (`library-bake --check`), and uploads them, unless the bucket already holds the pinned index;
-  2. it checks every served file of the new manifest against its content address (`verify-served --all --wait`);
-  3. it moves the pointer (`point`), which first checks the bucket holds the manifest and its buckets;
+- **`publish`** runs on every run. It uses the `production` environment, with the same Cloudflare token and secret handling as the part bundle's `publish`, in this order:
+  1. unless the bucket already holds the pinned index, it rebuilds the records, checks them against the pin and the licence gate (`library-bake --check`), and uploads them;
+  2. unless the pointer already names the served pinned index as current, it checks every served file of the new manifest against its content address (`verify-served --all --wait`);
+  3. it moves the pointer (`point`), after checking that the bucket holds the manifest and its buckets;
   4. it checks the current and previous manifests through the served pointer (`verify-pointer --wait`);
   5. it lists what pruning would delete (`prune --dry-run`);
   6. it prunes (`prune`).
 
-**Publishing is serialized.** The workflow and its `publish` job each have a concurrency group with `cancel-in-progress: false`, so two publishes never overlap. A prune never sees another run's freshly uploaded objects before that run has pointed at them. That, with the reference set, is what makes pruning safe: there is no time-based grace period.
+  Every step is idempotent, so any later run, pushed or on demand, finishes a publish or prune that an earlier run left unfinished.
+
+**Publishing is serialized.** The workflow has one concurrency group with `cancel-in-progress: false`, so two runs never overlap. A prune never sees another run's freshly uploaded objects before that run has pointed at them. That, with the reference set, is what makes pruning safe: there is no time-based grace period. A pending run that a newer one replaces loses nothing, because the newer run does the whole sequence for its own, later pin.
+
+**Between publishes the bucket holds the current and previous libraries.** During a publish it briefly holds a third, the new upload, until `prune` deletes the oldest. If a run stops before its prune, the third stays until the next run.
 
 The same commands run by hand: `pnpm --filter @brr/asset-pipeline library-bake published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]`. `upload` reads `dist/library-bake`, so run `library-bake` first. Readers find the records at the bucket's public URL (`public_base_url` in `infra/cloudflare/part-bundles.json`, or `PART_BUNDLE_BASE_URL`) plus `library-bake/`.
 

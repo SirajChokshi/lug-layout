@@ -133,8 +133,26 @@ const XML_ENTITIES: Readonly<Record<string, string>> = {
   "&apos;": "'",
 };
 
+const DECIMAL = 10;
+const HEXADECIMAL = 16;
+
+function xmlCharacter(reference: string): string {
+  const named = XML_ENTITIES[reference];
+  if (named !== undefined) return named;
+  const hex = /^&#x([0-9a-f]+);$/iu.exec(reference)?.[1];
+  const decimal = /^&#([0-9]+);$/u.exec(reference)?.[1];
+  const codePoint =
+    hex !== undefined
+      ? Number.parseInt(hex, HEXADECIMAL)
+      : decimal !== undefined
+        ? Number.parseInt(decimal, DECIMAL)
+        : undefined;
+  if (codePoint === undefined) throw new Error(`unrecognised XML reference ${reference}`);
+  return String.fromCodePoint(codePoint);
+}
+
 function xmlText(value: string): string {
-  return value.replace(/&(?:amp|lt|gt|quot|apos);/gu, (entity) => XML_ENTITIES[entity] ?? entity);
+  return value.replace(/&[^;&]*;?/gu, xmlCharacter);
 }
 
 function xmlField(xml: string, name: string): string | undefined {
@@ -233,10 +251,12 @@ export class R2ObjectStore implements PrunableStore {
       if (!response.ok) throw new Error(`listing ${prefix} failed with ${response.status}`);
       const xml = await response.text();
       objects.push(...listedObjects(xml));
-      token =
-        xmlField(xml, "IsTruncated") === "true"
-          ? xmlField(xml, "NextContinuationToken")
-          : undefined;
+      const truncated = xmlField(xml, "IsTruncated") === "true";
+      const next = xmlField(xml, "NextContinuationToken");
+      if (truncated && (next === undefined || next === token)) {
+        throw new Error(`listing ${prefix} was truncated without a new continuation token`);
+      }
+      token = truncated ? next : undefined;
     } while (token !== undefined);
     return objects;
   }

@@ -51,15 +51,11 @@ jobs:
         run: node tools/asset-pipeline/src/library-bake/cli.ts current
 
   publish:
-    name: Publish library bake records
+    name: Publish library bake records and prune old ones
     needs: status
-    if: needs.status.outputs.served != 'true' || needs.status.outputs.current != 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: production
-    concurrency:
-      group: library-bake-publish
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -102,7 +98,7 @@ jobs:
           CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
         run: node tools/asset-pipeline/src/library-bake/cli.ts upload
       - name: Verify every served file of the new manifest against its content address
-        if: steps.status.outputs.configured == 'true'
+        if: steps.status.outputs.configured == 'true' && (steps.status.outputs.published == 'false' || needs.status.outputs.served != 'true' || needs.status.outputs.current != 'true')
         env:
           PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
         run: node tools/asset-pipeline/src/library-bake/cli.ts verify-served --all --wait

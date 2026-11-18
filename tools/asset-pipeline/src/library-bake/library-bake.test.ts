@@ -290,7 +290,8 @@ it("the library-bake pointer's manifest references its index, every bucket, and 
     );
   };
 
-  const { indexes, leaves } = await libraryBakePointer.references(pin.index, read);
+  const { indexes, files: referenced } = await libraryBakePointer.references(pin.index, read);
+  const leaves = referenced.map((file) => file.key);
 
   const files = (await filesUnder(inputs.out)).filter((file) => file !== LIBRARY_BAKE_INDEX);
   expect([...indexes, ...leaves].toSorted()).toEqual(
