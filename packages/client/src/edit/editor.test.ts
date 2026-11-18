@@ -824,6 +824,13 @@ function refusedBake(fileName: string): ImportResult {
     partIndex: new Uint32Array(),
     ldrawColor: new Uint32Array(),
     matrices: new Float32Array(),
+    partTransforms: new Float64Array(),
+    submodels: {
+      count: 0,
+      parent: new Int32Array(),
+      matrices: new Float64Array(),
+      ofPart: new Int32Array(),
+    },
     compiled: [],
     bake: null,
   };
