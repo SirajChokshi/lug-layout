@@ -44,7 +44,7 @@ export function withStuds(
 
 const BITS_PER_WORD = 32;
 
-function bakedVisible(cover: ModelStudCover | undefined, stud: number): boolean {
+export function bakedVisible(cover: ModelStudCover | undefined, stud: number): boolean {
   if (!cover) return true;
   return (((cover.visibleBits[stud >>> 5] ?? 0) >>> (stud & (BITS_PER_WORD - 1))) & 1) === 1;
 }

@@ -62,7 +62,7 @@ function asModel(drawing: TrackDrawing): TrackInstances {
       matrices.push(...m);
     }
   }
-  return { count: partIndex.length, partIndex, matrices: Float32Array.from(matrices) };
+  return { count: partIndex.length, partIndex, matrices: Float64Array.from(matrices) };
 }
 
 function sortedEnds(
