@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -9,12 +8,12 @@ use std::time::Instant;
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::connect::{
     mating_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue, MatingFace,
-    PrimitiveConnectors, PrimitiveTable, SectionShape, SectionVocabulary, ShadowSnaps, Shape,
-    Source, Uninferred,
+    PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowSnaps, Shape, Source, Uninferred,
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::model::{bake_model, official_reference};
+use brick_compile_cli::{read_section_vocabulary, LazyLibrary};
 use serde_json::{json, Value};
 
 const SAME_LDU: f64 = 0.01;
@@ -23,56 +22,12 @@ const MALE_STUD_TITLES: [&str; 3] = ["Stud", "Stud Open", "Stud Truncated"];
 const HOLE_END: &str = "p/peghole.dat";
 const MOVED: &str = "~Moved";
 const EXAMPLES: usize = 12;
-const COMMENTED_SNAP: &str = "0 //!LDCAD SNAP_";
 const TUBE_TITLE: &str = "Stud Tube Open";
 const AXLE_TITLE: &str = "Technic Axle";
 const FACE_KEY_STEPS: f64 = 2000.0;
 const SIXTEENTHS: f64 = 16.0;
 const IDENTIFY_LDU: f64 = 0.0005;
 const CLEARANCE_STEPS: f64 = 1000.0;
-const LIVE_SNAP: &str = "0 !LDCAD SNAP_";
-
-struct LazyLibrary {
-    root: PathBuf,
-    revive_commented_snaps: bool,
-    loaded: RefCell<HashMap<String, Option<&'static str>>>,
-}
-
-impl LazyLibrary {
-    fn new(root: PathBuf) -> Self {
-        LazyLibrary {
-            root,
-            revive_commented_snaps: false,
-            loaded: RefCell::new(HashMap::new()),
-        }
-    }
-
-    fn reviving_commented_snaps(root: PathBuf) -> Self {
-        LazyLibrary {
-            revive_commented_snaps: true,
-            ..LazyLibrary::new(root)
-        }
-    }
-}
-
-impl Library for LazyLibrary {
-    fn source(&self, path: &str) -> Option<&str> {
-        if let Some(found) = self.loaded.borrow().get(path) {
-            return *found;
-        }
-        let found: Option<&'static str> = fs::read(self.root.join(path)).ok().map(|bytes| {
-            let text = String::from_utf8_lossy(&bytes).into_owned();
-            let text = if self.revive_commented_snaps {
-                text.replace(COMMENTED_SNAP, LIVE_SNAP)
-            } else {
-                text
-            };
-            &*Box::leak(text.into_boxed_str())
-        });
-        self.loaded.borrow_mut().insert(path.to_string(), found);
-        found
-    }
-}
 
 type AuditSlot = (Option<Gender>, [i64; 3], [i64; 3]);
 
@@ -327,6 +282,7 @@ fn source_key(source: Source) -> &'static str {
         Source::Shadow => "tier 1 shadow",
         Source::Primitive => "tier 2 primitive",
         Source::Inferred => "tier 4 inferred",
+        Source::Patch => "project shadow patch",
     }
 }
 
@@ -389,30 +345,6 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
             "geometry spanning more than 65,536 half-stud squares on some axis; on that axis it stays off the cell index and seeds no probes of its own"
         }
     }
-}
-
-fn shadow_texts(root: &Path) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("dat"))
-            {
-                if let Ok(bytes) = fs::read(&path) {
-                    out.push(String::from_utf8_lossy(&bytes).into_owned());
-                }
-            }
-        }
-    }
-    out
 }
 
 type FaceKey = (u8, [i64; 3], [i64; 3]);
@@ -804,8 +736,7 @@ fn run() -> Result<(), String> {
     let library = LazyLibrary::new(ldraw.clone());
     let shadow_root = PathBuf::from(take("--shadow")?);
     let shadow = LazyLibrary::new(shadow_root.clone());
-    let vocabulary =
-        SectionVocabulary::from_metas(shadow_texts(&shadow_root).iter().map(String::as_str));
+    let vocabulary = read_section_vocabulary(Path::new(&take("--vocabulary")?))?;
     let revived = LazyLibrary::reviving_commented_snaps(shadow_root);
     let mut revived_snaps = ShadowSnaps::new(&library, &revived);
     let mut commented_fills: Vec<Value> = Vec::new();
