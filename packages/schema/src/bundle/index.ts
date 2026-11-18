@@ -5,7 +5,7 @@ const MATRIX_FLOATS = 12;
 const STUD_PHASES = 20;
 const BITS_PER_WORD = 32;
 export const EMPTY_COLUMN = -1;
-const ALPHA_OPAQUE = 255;
+export const ALPHA_OPAQUE = 255;
 
 const Finite = v.pipe(v.number(), v.finite());
 const Integer = v.pipe(v.number(), v.integer());
@@ -380,9 +380,22 @@ export const StudPrimitive = v.object({
 });
 export type StudPrimitive = v.InferOutput<typeof StudPrimitive>;
 
+export const CompilerVehicles = v.object({
+  parts: v.object({
+    bogiePivots: v.array(v.string()),
+    pivotPins: v.array(v.string()),
+    wheelsets: v.array(v.string()),
+    wheels: v.array(v.string()),
+    couplers: v.array(v.string()),
+  }),
+  railHeads: v.array(v.object({ railPart: v.string(), inner: Finite, outer: Finite })),
+});
+export type CompilerVehicles = v.InferOutput<typeof CompilerVehicles>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
+  vehicles: v.optional(CompilerVehicles),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -591,6 +604,159 @@ export const ModelVehicle = v.pipe(
   ),
 );
 export type ModelVehicle = v.InferOutput<typeof ModelVehicle>;
+
+const ByteRange = v.pipe(v.tuple([Count, Count]), v.readonly());
+const IndexRange = v.tuple([Count, Count]);
+
+const StringList = v.pipe(v.array(v.string()), v.readonly());
+
+export const CompilerRequest = v.variant("op", [
+  v.strictObject({ op: v.literal("readModel") }),
+  v.strictObject({ op: v.literal("readStudio") }),
+  v.strictObject({
+    op: v.literal("compile"),
+    lod: BundleLod,
+    studPrimitives: StringList,
+    unofficialAllowlist: StringList,
+    parts: StringList,
+    inlineChecks: v.pipe(
+      v.array(v.strictObject({ inline: v.string(), official: v.string() })),
+      v.readonly(),
+    ),
+  }),
+  v.strictObject({
+    op: v.literal("bake"),
+    studPrimitives: StringList,
+    unofficialAllowlist: StringList,
+    translucentColors: v.pipe(v.array(Count), v.readonly()),
+    vehicles: v.nullable(CompilerVehicles),
+  }),
+]);
+export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
+
+export const CompilerLibraryDelta = v.strictObject({
+  key: v.string(),
+  files: v.pipe(v.array(v.strictObject({ path: v.string(), bytes: ByteRange })), v.readonly()),
+  absent: StringList,
+});
+export type CompilerLibraryDelta = v.InferOutput<typeof CompilerLibraryDelta>;
+
+export const CompilerEnvelope = v.strictObject({
+  request: CompilerRequest,
+  segments: v.record(v.string(), ByteRange),
+  library: v.exactOptional(CompilerLibraryDelta),
+});
+export type CompilerEnvelope = v.InferOutput<typeof CompilerEnvelope>;
+
+export const CompilerBlobs = v.record(v.string(), ByteRange);
+export type CompilerBlobs = v.InferOutput<typeof CompilerBlobs>;
+
+export const CompilerModelRead = v.object({
+  status: v.literal("read"),
+  sections: v.array(ModelSection),
+  parts: v.array(v.string()),
+  inlineParts: v.array(v.object({ inline: v.string(), official: v.string() })),
+  looseGeometry: v.array(
+    v.object({ section: v.string(), triangles: Count, quads: Count, occurrences: Count }),
+  ),
+  instances: Count,
+  blobs: CompilerBlobs,
+});
+export type CompilerModelRead = v.InferOutput<typeof CompilerModelRead>;
+
+const CompilerNeed = v.object({ status: v.literal("need"), paths: v.array(v.string()) });
+
+const CompilerFailure = v.object({
+  status: v.literal("failed"),
+  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial"]),
+  message: v.string(),
+  missing: v.exactOptional(v.string()),
+  from: v.exactOptional(v.string()),
+  path: v.exactOptional(v.string()),
+  ldrawOrg: v.exactOptional(v.string()),
+});
+
+const Reference = { reference: v.string() };
+const InlinePair = { inline: v.string(), official: v.string() };
+
+export const CompilerCompile = v.object({
+  status: v.literal("compiled"),
+  parts: v.array(
+    v.variant("status", [
+      v.object({
+        status: v.literal("compiled"),
+        ...Reference,
+        glb: ByteRange,
+        file: v.string(),
+        header: ModelSection,
+        files: Count,
+      }),
+      v.object({ ...CompilerNeed.entries, ...Reference }),
+      v.object({ ...CompilerFailure.entries, ...Reference }),
+    ]),
+  ),
+  inline: v.array(
+    v.variant("status", [
+      v.object({
+        status: v.literal("measured"),
+        ...InlinePair,
+        maxMeasuredDistanceLdu: Finite,
+        surfaceWithinWeld: v.boolean(),
+        inlineColors: v.array(Count),
+        officialColors: v.array(Count),
+        colorsMatch: v.boolean(),
+        withinWeld: v.boolean(),
+      }),
+      v.object({ ...CompilerNeed.entries, ...InlinePair }),
+      v.object({ ...CompilerFailure.entries, ...InlinePair }),
+    ]),
+  ),
+  weldEpsilonLdu: Finite,
+});
+export type CompilerCompile = v.InferOutput<typeof CompilerCompile>;
+
+export const CompilerVehicle = v.object({
+  origin: v.tuple([Finite, Finite]),
+  yaw: Finite,
+  guideKind: VehicleGuideKind,
+  guides: v.tuple([Finite, Finite]),
+  body: IndexRange,
+  bogies: v.array(v.object({ instances: IndexRange, pivot: Vec3, axles: v.array(Vec3) })),
+  fixedAxles: v.array(Vec3),
+  wheelsets: v.array(VehicleWheelset),
+  frontCoupler: v.nullable(VehicleCoupler),
+  rearCoupler: v.nullable(VehicleCoupler),
+  railContacts: v.array(VehicleRailContact),
+});
+export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
+
+export const CompilerBaked = v.object({
+  status: v.literal("baked"),
+  instances: Count,
+  lattice: v.nullable(ModelLattice),
+  latticeIssue: v.exactOptional(v.string()),
+  cover: v.object({
+    studs: Count,
+    coveredStuds: Count,
+    keptOpenBelow: Count,
+    cells: v.nullable(
+      v.object({ origin: v.tuple([Finite, Finite]), size: CellGridSize, bottomY: Finite }),
+    ),
+  }),
+  vehicles: v.exactOptional(v.array(CompilerVehicle)),
+  vehicleIssue: v.exactOptional(v.string()),
+  blobs: CompilerBlobs,
+});
+export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
+
+export const CompilerBake = v.variant("status", [
+  CompilerBaked,
+  CompilerNeed,
+  v.object({ status: v.literal("failed"), message: v.string() }),
+]);
+export type CompilerBake = v.InferOutput<typeof CompilerBake>;
+
+export const CompilerError = v.object({ status: v.literal("error"), message: v.string() });
 
 function vehicleInstances(vehicle: ModelVehicle): ReadonlyArray<number> {
   return [

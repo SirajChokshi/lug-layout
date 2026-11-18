@@ -313,7 +313,7 @@ const compilerWasm = join(
   "target",
   COMPILER_TARGET,
   "release",
-  "brick-compile-wasm.wasm",
+  "brick_compile_wasm.wasm",
 );
 
 function runCargo(args: ReadonlyArray<string>): void {

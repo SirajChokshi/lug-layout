@@ -1,15 +1,18 @@
 import type {
-  BakeOutput,
+  BakedModel,
   BrickCompiler,
   CompileLod,
   Failure,
   InlineOutcome,
   InlinePart,
   LdrawHeader,
+  LibraryFiles,
   LooseGeometry,
+  ModelRead,
   PartOutcome,
 } from "./brick-compiler.ts";
 import { isDirectColor } from "@brr/catalog/colors";
+import type { CompilerVehicles } from "@brr/schema/bundle";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
 
@@ -22,6 +25,8 @@ export interface ImportJob {
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly bundlePartIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
+  readonly translucentColors: ReadonlyArray<number>;
+  readonly vehicles: CompilerVehicles | null;
 }
 
 interface Counted {
@@ -64,8 +69,9 @@ export interface ColorIssue {
 }
 
 export interface ImportTimings {
-  readonly bakeMs: number;
+  readonly readMs: number;
   readonly resolveMs: number;
+  readonly bakeMs: number;
   readonly totalMs: number;
 }
 
@@ -82,6 +88,8 @@ export interface ImportReport {
   readonly unknownColors: ReadonlyArray<ColorIssue>;
   readonly directColors: ReadonlyArray<number>;
   readonly compileRounds: number;
+  readonly bakeRounds: number;
+  readonly bakeIssue: string | null;
   readonly fetched: MirrorStats;
   readonly timings: ImportTimings;
 }
@@ -91,6 +99,8 @@ export interface CompiledGlb {
   readonly glb: Uint8Array;
 }
 
+export type ModelBake = Omit<BakedModel, "status">;
+
 export interface ImportResult {
   readonly report: ImportReport;
   readonly partIds: ReadonlyArray<string>;
@@ -99,6 +109,7 @@ export interface ImportResult {
   readonly ldrawColor: Uint32Array;
   readonly matrices: Float32Array;
   readonly compiled: ReadonlyArray<CompiledGlb>;
+  readonly bake: ModelBake | null;
   readonly studio?: StudioReport;
 }
 
@@ -117,6 +128,28 @@ interface Outcomes {
   readonly weldEpsilonLdu: number;
 }
 
+interface ImportLibrary extends LibraryFiles {
+  readonly files: Map<string, string>;
+  readonly absent: Set<string>;
+}
+
+interface Assembled {
+  readonly result: Omit<ImportResult, "bake" | "report"> & {
+    readonly report: Omit<ImportReport, "bakeRounds" | "bakeIssue" | "fetched" | "timings">;
+  };
+  readonly drawn: Uint8Array;
+}
+
+interface BakeRounds {
+  readonly bake: ModelBake | null;
+  readonly issue: string | null;
+  readonly rounds: number;
+}
+
+function libraryKey(source: MirrorSource): string {
+  return `${source.repo}@${source.commit}/${source.root}`;
+}
+
 export class ModelImportEngine {
   constructor(
     private readonly compiler: BrickCompiler,
@@ -126,36 +159,103 @@ export class ModelImportEngine {
 
   async importText(job: ImportJob): Promise<ImportResult> {
     const started = this.now();
-    const baked = await this.compiler.bake(job.text);
-    const bakedAt = this.now();
+    const read = this.compiler.readModel(job.text);
+    const readAt = this.now();
+    const library: ImportLibrary = {
+      key: libraryKey(job.source),
+      files: new Map(),
+      absent: new Set(),
+    };
     const bundleIds = new Set(job.bundlePartIds);
-    const officialOf = new Map(baked.inlineParts.map((part) => [part.inline, part.official]));
-    const officials = new Set(baked.parts.map((key) => officialOf.get(key) ?? key));
+    const officialOf = new Map(read.inlineParts.map((part) => [part.inline, part.official]));
+    const officials = new Set(read.parts.map((key) => officialOf.get(key) ?? key));
     const outside = [...officials].filter((reference) => !bundleIds.has(bundlePartId(reference)));
-    const outcomes = await this.resolveOutside(job, outside, baked.inlineParts);
+    const outcomes = await this.resolveOutside(job, library, outside, read.inlineParts);
     const resolvedAt = this.now();
-    const counts = instanceCounts(baked);
-    const parts = baked.parts.map((key, index) => {
+    const counts = instanceCounts(read);
+    const parts = read.parts.map((key, index) => {
       const official = officialOf.get(key);
       const instances = counts[index] ?? 0;
       return official === undefined
         ? officialResolution({ reference: key, official: key, instances }, bundleIds, outcomes)
         : inlineResolution({ reference: key, official, instances }, bundleIds, outcomes);
     });
-    return assemble(job, baked, parts, outcomes, this.mirror.stats(), {
-      bakeMs: bakedAt - started,
-      resolveMs: resolvedAt - bakedAt,
-      totalMs: resolvedAt - started,
-    });
+    const assembled = assemble(job, read, parts, outcomes);
+    const baked = await this.bakeDrawn(job, library, assembled.drawn);
+    const bakedAt = this.now();
+    return {
+      ...assembled.result,
+      bake: baked.bake,
+      report: {
+        ...assembled.result.report,
+        bakeRounds: baked.rounds,
+        bakeIssue: baked.issue,
+        fetched: this.mirror.stats(),
+        timings: {
+          readMs: readAt - started,
+          resolveMs: resolvedAt - readAt,
+          bakeMs: bakedAt - resolvedAt,
+          totalMs: bakedAt - started,
+        },
+      },
+    };
+  }
+
+  private async fetchNeeded(library: ImportLibrary, needed: ReadonlySet<string>): Promise<void> {
+    const unknown = [...needed].filter(
+      (path) => !library.files.has(path) && !library.absent.has(path),
+    );
+    if (needed.size > 0 && unknown.length === 0) {
+      throw new Error(`compiler keeps asking for files it already has: ${[...needed]}`);
+    }
+    const probe = await this.mirror.probe(unknown, FETCH_CONCURRENCY);
+    for (const [path, text] of probe.found) library.files.set(path, text);
+    for (const path of probe.absent) library.absent.add(path);
+  }
+
+  private async bakeDrawn(
+    job: ImportJob,
+    library: ImportLibrary,
+    drawn: Uint8Array,
+  ): Promise<BakeRounds> {
+    if (!drawn.includes(1)) return { bake: null, issue: "nothing in the file is drawn", rounds: 0 };
+    for (let rounds = 1; rounds <= MAX_COMPILE_ROUNDS; rounds++) {
+      const outcome = this.compiler.bake(
+        {
+          source: job.text,
+          drawn,
+          studPrimitives: job.studPrimitives,
+          unofficialAllowlist: job.unofficialAllowlist,
+          translucentColors: job.translucentColors,
+          vehicles: job.vehicles,
+        },
+        library,
+      );
+      switch (outcome.status) {
+        case "baked": {
+          const { status: _baked, ...bake } = outcome;
+          return { bake, issue: null, rounds };
+        }
+        case "failed":
+          return { bake: null, issue: outcome.message, rounds };
+        case "need":
+          await this.fetchNeeded(library, new Set(outcome.paths));
+          break;
+        default: {
+          const unhandled: never = outcome;
+          throw new Error(`unhandled bake outcome ${String(unhandled)}`);
+        }
+      }
+    }
+    throw new Error(`bake closure still growing after ${MAX_COMPILE_ROUNDS} rounds`);
   }
 
   private async resolveOutside(
     job: ImportJob,
+    library: ImportLibrary,
     outside: ReadonlyArray<string>,
     inlineParts: ReadonlyArray<InlinePart>,
   ): Promise<Outcomes> {
-    const files: Record<string, string> = {};
-    const absent = new Set<string>();
     const parts = new Map<string, Exclude<PartOutcome, { status: "need" }>>();
     const inline = new Map<string, Exclude<InlineOutcome, { status: "need" }>>();
     let pendingParts = [...outside];
@@ -167,16 +267,17 @@ export class ModelImportEngine {
         throw new Error(`part closure still growing after ${MAX_COMPILE_ROUNDS} rounds`);
       }
       rounds++;
-      const output = await this.compiler.compile({
-        lod: job.lod,
-        studPrimitives: job.studPrimitives,
-        unofficialAllowlist: job.unofficialAllowlist,
-        files,
-        absent: [...absent],
-        parts: pendingParts,
-        model: job.text,
-        inlineChecks: pendingChecks,
-      });
+      const output = this.compiler.compile(
+        {
+          lod: job.lod,
+          studPrimitives: job.studPrimitives,
+          unofficialAllowlist: job.unofficialAllowlist,
+          parts: pendingParts,
+          model: job.text,
+          inlineChecks: pendingChecks,
+        },
+        library,
+      );
       weldEpsilonLdu = output.weldEpsilonLdu;
       const needed = new Set<string>();
       pendingParts = [];
@@ -197,21 +298,15 @@ export class ModelImportEngine {
           inline.set(outcome.inline, outcome);
         }
       }
-      const unknown = [...needed].filter((path) => !(path in files) && !absent.has(path));
-      if (needed.size > 0 && unknown.length === 0) {
-        throw new Error(`compiler keeps asking for files it already has: ${[...needed]}`);
-      }
-      const probe = await this.mirror.probe(unknown, FETCH_CONCURRENCY);
-      for (const [path, text] of probe.found) files[path] = text;
-      for (const path of probe.absent) absent.add(path);
+      await this.fetchNeeded(library, needed);
     }
     return { parts, inline, rounds, weldEpsilonLdu };
   }
 }
 
-function instanceCounts(baked: BakeOutput): Uint32Array {
-  const counts = new Uint32Array(baked.parts.length);
-  for (const part of baked.instances.part) counts[part] = (counts[part] ?? 0) + 1;
+function instanceCounts(read: ModelRead): Uint32Array {
+  const counts = new Uint32Array(read.parts.length);
+  for (const part of read.instancePart) counts[part] = (counts[part] ?? 0) + 1;
   return counts;
 }
 
@@ -314,22 +409,23 @@ function isDrawable(
 
 function assemble(
   job: ImportJob,
-  baked: BakeOutput,
+  read: ModelRead,
   parts: ReadonlyArray<PartResolution>,
   outcomes: Outcomes,
-  fetched: MirrorStats,
-  timings: ImportTimings,
-): ImportResult {
+): Assembled {
   const ldconfig = new Set(job.ldconfigCodes);
   const unknownColors = new Map<number, number>();
   const directColors = new Set<number>();
   const localIndex = new Map<string, number>();
   const partIds: string[] = [];
-  const { part, color, matrix } = baked.instances;
+  const part = read.instancePart;
+  const color = read.instanceColor;
+  const matrix = read.instanceMatrix;
   const total = part.length;
   const partIndex = new Uint32Array(total);
   const ldrawColor = new Uint32Array(total);
   const matrices = new Float32Array(total * MATRIX_FLOATS);
+  const drawnMask = new Uint8Array(total);
   let drawn = 0;
   for (let i = 0; i < total; i++) {
     const source = part[i] ?? 0;
@@ -350,9 +446,11 @@ function assemble(
     }
     partIndex[drawn] = local;
     ldrawColor[drawn] = code;
-    for (let k = 0; k < MATRIX_FLOATS; k++) {
-      matrices[drawn * MATRIX_FLOATS + k] = matrix[i * MATRIX_FLOATS + k] ?? 0;
-    }
+    matrices.set(
+      matrix.subarray(i * MATRIX_FLOATS, (i + 1) * MATRIX_FLOATS),
+      drawn * MATRIX_FLOATS,
+    );
+    drawnMask[i] = 1;
     drawn++;
   }
   const compiled: CompiledGlb[] = [];
@@ -366,27 +464,28 @@ function assemble(
     compiled.push({ partId: resolved.partId, glb: outcome.glb });
   }
   return {
-    report: {
-      fileName: job.fileName,
-      mirror: job.source,
-      lod: job.lod,
-      sections: baked.sections,
-      instanceCount: total,
-      drawnInstanceCount: drawn,
-      parts,
-      inlineParts: baked.inlineParts,
-      looseGeometry: baked.looseGeometry,
-      unknownColors: [...unknownColors].map(([code, instances]) => ({ code, instances })),
-      directColors: [...directColors],
-      compileRounds: outcomes.rounds,
-      fetched,
-      timings,
+    drawn: drawnMask,
+    result: {
+      report: {
+        fileName: job.fileName,
+        mirror: job.source,
+        lod: job.lod,
+        sections: read.sections,
+        instanceCount: total,
+        drawnInstanceCount: drawn,
+        parts,
+        inlineParts: read.inlineParts,
+        looseGeometry: read.looseGeometry,
+        unknownColors: [...unknownColors].map(([code, instances]) => ({ code, instances })),
+        directColors: [...directColors],
+        compileRounds: outcomes.rounds,
+      },
+      partIds,
+      instanceCount: drawn,
+      partIndex: partIndex.slice(0, drawn),
+      ldrawColor: ldrawColor.slice(0, drawn),
+      matrices: matrices.slice(0, drawn * MATRIX_FLOATS),
+      compiled,
     },
-    partIds,
-    instanceCount: drawn,
-    partIndex: partIndex.slice(0, drawn),
-    ldrawColor: ldrawColor.slice(0, drawn),
-    matrices: matrices.slice(0, drawn * MATRIX_FLOATS),
-    compiled,
   };
 }

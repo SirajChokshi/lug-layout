@@ -53,7 +53,7 @@ export async function prepareStudioImport(
   exists: LdrawPartExists,
   knownColors: ReadonlySet<number>,
 ): Promise<StudioPrepared> {
-  const archive = await compiler.readStudio(bytes);
+  const archive = compiler.readStudio(bytes);
   if (archive.status === "rejected") return { kind: "rejected", file, rejection: archive };
   const mapping = await mapStudioParts(archive, crosswalk, exists, knownColors);
   return {
