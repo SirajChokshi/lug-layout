@@ -31,6 +31,7 @@ const MODE_TRIANGLES = 4;
 const VEC3 = 3;
 const TRIANGLE_FLOATS = 9;
 const BATCH = 150;
+const MAX_COMPILE_ROUNDS = 8;
 
 interface GltfJson {
   readonly meshes: ReadonlyArray<{
@@ -141,29 +142,47 @@ export class PartReader {
     references: ReadonlyArray<string>,
     vocabulary: ReadonlyArray<string>,
   ): Promise<Map<string, Glb>> {
-    const { files, absent } = await this.library.files(references);
-    const output = new BrickCompiler(this.bundle.compiler).compile(
-      {
-        lod: this.bundle.job.lod,
-        studPrimitives: vocabulary,
-        unofficialAllowlist: this.bundle.job.unofficialAllowlist,
-        connectors: {
-          primitives: this.bundle.job.primitives,
-          sectionVocabulary: this.bundle.job.sectionVocabulary,
-          cavityProbe: this.bundle.job.cavityProbe,
-          infer: [],
+    const closure = await this.library.files(references);
+    const files = new Map(Object.entries(closure.files));
+    const absent = new Set(closure.absent);
+    const compiler = new BrickCompiler(this.bundle.compiler);
+    for (let round = 0; round < MAX_COMPILE_ROUNDS; round++) {
+      const output = compiler.compile(
+        {
+          lod: this.bundle.job.lod,
+          studPrimitives: vocabulary,
+          unofficialAllowlist: this.bundle.job.unofficialAllowlist,
+          connectors: {
+            primitives: this.bundle.job.primitives,
+            sectionVocabulary: this.bundle.job.sectionVocabulary,
+            cavityProbe: this.bundle.job.cavityProbe,
+            infer: [],
+          },
+          parts: references,
+          model: "",
+          inlineChecks: [],
         },
-        parts: references,
-        model: "",
-        inlineChecks: [],
-      },
-      { key: PINNED_LIBRARY_KEY, files: new Map(Object.entries(files)), absent: new Set(absent) },
-    );
-    const out = new Map<string, Glb>();
-    for (const outcome of output.parts) {
-      if (outcome.status === "compiled") out.set(outcome.reference, readGlb(outcome.glb));
+        { key: PINNED_LIBRARY_KEY, files, absent },
+      );
+      const needed = output.parts.flatMap((outcome) =>
+        outcome.status === "need" ? outcome.paths : [],
+      );
+      if (needed.length === 0) {
+        const out = new Map<string, Glb>();
+        for (const outcome of output.parts) {
+          if (outcome.status === "compiled") out.set(outcome.reference, readGlb(outcome.glb));
+        }
+        return out;
+      }
+      for (const path of new Set(needed)) {
+        const text = await this.library.text(path);
+        if (text === null) absent.add(path);
+        else files.set(path, text);
+      }
     }
-    return out;
+    throw new Error(
+      `compiling ${references.length} parts still needs files after ${MAX_COMPILE_ROUNDS} rounds`,
+    );
   }
 
   async frames(

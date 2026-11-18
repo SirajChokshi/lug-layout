@@ -3,6 +3,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::affine::{Affine, Vec3};
+use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
 use crate::ldraw::{self, LdrawFile, Line, Winding};
 use crate::license::{self, LicenseVerdict};
 
@@ -11,6 +12,10 @@ const MAX_DEPTH: usize = 64;
 
 pub trait Library {
     fn source(&self, path: &str) -> Option<&str>;
+
+    fn parsed(&self, path: &str) -> Option<Rc<LdrawFile>> {
+        self.source(path).map(|text| Rc::new(ldraw::parse(text)))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -91,6 +96,8 @@ pub struct Flattener<'a, L: Library> {
     records_span: Option<&'a dyn Fn(&str) -> bool>,
     parsed: HashMap<String, Rc<LdrawFile>>,
     first_unresolved: Option<FlattenError>,
+    root: String,
+    malformed: Vec<MalformedGeometry>,
 }
 
 struct Frame {
@@ -110,12 +117,18 @@ impl<'a, L: Library> Flattener<'a, L> {
             records_span: None,
             parsed: HashMap::new(),
             first_unresolved: None,
+            root: String::new(),
+            malformed: Vec::new(),
         }
     }
 
     pub fn recording_spans(mut self, records_span: &'a dyn Fn(&str) -> bool) -> Self {
         self.records_span = Some(records_span);
         self
+    }
+
+    pub fn malformed(&self) -> &[MalformedGeometry] {
+        &self.malformed
     }
 
     pub fn resolve(&self, reference: &str) -> Option<String> {
@@ -139,7 +152,7 @@ impl<'a, L: Library> Flattener<'a, L> {
         if let Some(file) = self.parsed.get(path) {
             return Some(Rc::clone(file));
         }
-        let file = Rc::new(ldraw::parse(self.library.source(path)?));
+        let file = self.library.parsed(path)?;
         self.parsed.insert(path.to_string(), Rc::clone(&file));
         Some(file)
     }
@@ -172,6 +185,8 @@ impl<'a, L: Library> Flattener<'a, L> {
 
     pub fn flatten(&mut self, path: &str) -> Result<Flattened, FlattenError> {
         self.first_unresolved = None;
+        self.root = path.to_string();
+        self.malformed.clear();
         let mut out = Flattened::default();
         let frame = Frame {
             matrix: Affine::IDENTITY,
@@ -205,6 +220,14 @@ impl<'a, L: Library> Flattener<'a, L> {
         self.stud_primitives.iter().any(|stud| stud == reference)
     }
 
+    fn check_line(&mut self, path: &str, local: &[f64], placed: &[f64]) {
+        if non_finite(local) {
+            record(&mut self.malformed, path, Malformation::NonFinite);
+        } else if let Some(malformation) = unplaceable(placed) {
+            record(&mut self.malformed, &self.root, malformation);
+        }
+    }
+
     fn walk(
         &mut self,
         path: &str,
@@ -216,6 +239,9 @@ impl<'a, L: Library> Flattener<'a, L> {
             return Err(FlattenError::TooDeep {
                 path: path.to_string(),
             });
+        }
+        if file.unparsed > 0 {
+            record(&mut self.malformed, path, Malformation::Unparsed);
         }
         let mut certified = false;
         let mut winding = Winding::Ccw;
@@ -238,7 +264,10 @@ impl<'a, L: Library> Flattener<'a, L> {
                     let child_matrix = frame.matrix.then(matrix);
                     let inverted = invert_next;
                     invert_next = false;
-                    if self.is_stud(reference) {
+                    let stud = self.is_stud(reference);
+                    let placed: &[f64] = if stud { &child_matrix.m } else { &[] };
+                    self.check_line(path, &matrix.m, placed);
+                    if stud {
                         out.studs.push(StudReference {
                             primitive: reference.clone(),
                             color: child_color,
@@ -272,14 +301,20 @@ impl<'a, L: Library> Flattener<'a, L> {
                         });
                     }
                 }
-                Line::Edge { points } => out
-                    .hard_edges
-                    .push([frame.matrix.apply(points[0]), frame.matrix.apply(points[1])]),
+                Line::Edge { points } => {
+                    let edge = points.map(|point| frame.matrix.apply(point));
+                    self.check_line(path, points.as_flattened(), edge.as_flattened());
+                    out.hard_edges.push(edge);
+                }
                 Line::Triangle { color, points } => {
+                    let placed = points.map(|point| frame.matrix.apply(point));
+                    self.check_line(path, points.as_flattened(), placed.as_flattened());
                     let culling = frame.culling && certified;
                     emit(out, frame, *color, culling, winding, *points);
                 }
                 Line::Quad { color, points } => {
+                    let placed = points.map(|point| frame.matrix.apply(point));
+                    self.check_line(path, points.as_flattened(), placed.as_flattened());
                     let culling = frame.culling && certified;
                     emit(
                         out,

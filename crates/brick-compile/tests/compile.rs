@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+use brick_compile::compile::RollingMode;
 use brick_compile::flatten::FlattenError;
 use brick_compile::license::LicenseVerdict;
 use brick_compile::technic::{Line, Pin, TechnicPart};
@@ -333,4 +334,30 @@ fn circular_primitives_have_16_48_and_8_segments_on_the_unit_circle() {
         angles.dedup();
         assert_eq!(angles.len(), segments, "{primitive}");
     }
+}
+
+#[test]
+fn a_resolved_part_is_refused_when_its_rolling_surfaces_need_a_missing_stud_ring() {
+    let part = format!("0 Part\n{CA}\n0 BFC CERTIFY CCW\n3 16 0 0 0 1 0 0 0 0 1\n");
+    let library = memory(&[("parts/part.dat", &part)]);
+    let missing_ring = CompileOptions {
+        rolling_mode: RollingMode::NoStudRing,
+        ..CompileOptions::default()
+    };
+
+    let refused = compile_part(&library, "part.dat", &missing_ring);
+    assert_eq!(refused.err(), Some(CompileError::NoStudRing));
+
+    let skipped = compile_part(&library, "part.dat", &CompileOptions::default())
+        .expect("compiles when rolling surfaces are not read");
+    assert_eq!(skipped.rolling, None);
+
+    let absent = compile_part(&library, "absent.dat", &missing_ring);
+    assert_eq!(
+        absent.err(),
+        Some(CompileError::Flatten(FlattenError::Unresolved {
+            reference: "absent.dat".into(),
+            from: String::new(),
+        }))
+    );
 }

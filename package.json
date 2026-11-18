@@ -10,7 +10,7 @@
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "check": "pnpm --filter @brr/asset-pipeline restore-ldraw && pnpm lint && pnpm lint:boundaries && pnpm lint:rust && pnpm format:check && pnpm check:infra && pnpm check:rust && pnpm --filter @brr/asset-pipeline section-vocabulary --check && turbo run typecheck test build && pnpm e2e",
+    "check": "pnpm --filter @brr/asset-pipeline restore-ldraw && pnpm lint && pnpm lint:boundaries && pnpm lint:rust && pnpm format:check && pnpm check:infra && pnpm check:rust && pnpm --filter @brr/asset-pipeline section-vocabulary --check && turbo run typecheck test build && pnpm --filter @brr/import test:bundle-models && pnpm e2e",
     "lint:rust": "node tools/rust-comment-check/src/cli.ts crates",
     "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
     "lint:boundaries": "depcruise --config .dependency-cruiser.json packages apps tools/asset-pipeline/src",

@@ -12,6 +12,7 @@
   "dependencies": {
     "@brr/catalog": "workspace:*",
     "@brr/import": "workspace:*",
+    "@brr/rpc": "workspace:*",
     "@brr/schema": "workspace:*",
     "inversify": "8.3.0"
   },

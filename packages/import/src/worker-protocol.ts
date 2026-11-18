@@ -1,6 +1,6 @@
 import type { BricklinkPartCandidates } from "@brr/catalog";
 import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
-import type { ImportResult, ImportJob } from "./model-import.ts";
+import type { ImportResult, ImportJob, ModelBake } from "./model-import.ts";
 
 export interface LdrawTextInput {
   readonly kind: "ldraw";
@@ -17,7 +17,7 @@ export interface StudioFileInput {
 export type ImportInput = LdrawTextInput | StudioFileInput;
 
 export interface ImportWorkerRequest {
-  readonly id: number;
+  readonly kind: "import";
   readonly compilerUrl: string;
   readonly bundleBaseUrl: string;
   readonly connectorIndexes: ConnectorIndexPaths;
@@ -26,8 +26,26 @@ export interface ImportWorkerRequest {
 }
 
 export type ImportWorkerResponse =
-  | { readonly id: number; readonly kind: "imported"; readonly model: ImportResult }
-  | { readonly id: number; readonly kind: "failed"; readonly message: string };
+  | { readonly kind: "imported"; readonly model: ImportResult }
+  | { readonly kind: "failed"; readonly message: string };
+
+export function bakeTransferables(bake: ModelBake): Transferable[] {
+  return [
+    bake.studCover.visibleBits.buffer,
+    ...(bake.cells
+      ? [
+          bake.cells.footprint.buffer,
+          bake.cells.flat.buffer,
+          bake.cells.columnBottom.buffer,
+          bake.cells.columnTop.buffer,
+        ]
+      : []),
+    ...bake.vehicles.flatMap((vehicle) => [
+      vehicle.body.buffer,
+      ...vehicle.bogies.map((bogie) => bogie.instances.buffer),
+    ]),
+  ];
+}
 
 function connectorBuffers(connectors: PartConnectors): ArrayBufferLike[] {
   return [
@@ -50,29 +68,16 @@ function connectorBuffers(connectors: PartConnectors): ArrayBufferLike[] {
 }
 
 export function transferablesOf(model: ImportResult): Transferable[] {
-  const { bake } = model;
   return [
     model.partIndex.buffer,
     model.ldrawColor.buffer,
     model.matrices.buffer,
+    model.partTransforms.buffer,
+    model.submodels.parent.buffer,
+    model.submodels.matrices.buffer,
+    model.submodels.ofPart.buffer,
     ...model.compiled.map((part) => part.glb.buffer),
     ...model.connectors.flatMap((connectors) => (connectors ? connectorBuffers(connectors) : [])),
-    ...(bake
-      ? [
-          bake.studCover.visibleBits.buffer,
-          ...(bake.cells
-            ? [
-                bake.cells.footprint.buffer,
-                bake.cells.flat.buffer,
-                bake.cells.columnBottom.buffer,
-                bake.cells.columnTop.buffer,
-              ]
-            : []),
-          ...bake.vehicles.flatMap((vehicle) => [
-            vehicle.body.buffer,
-            ...vehicle.bogies.map((bogie) => bogie.instances.buffer),
-          ]),
-        ]
-      : []),
+    ...(model.bake ? bakeTransferables(model.bake) : []),
   ];
 }

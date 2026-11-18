@@ -36,6 +36,8 @@ export interface PlaySnapshot {
   readonly direction: number;
   readonly derailSpeedLduPerS: number;
   readonly bogiesOffTrack: number;
+  readonly trainXLdu: number;
+  readonly trainZLdu: number;
   readonly switches: ReadonlyArray<PlaySwitchView>;
   readonly following: boolean;
   readonly tick: number;
@@ -93,6 +95,8 @@ const IDLE: PlaySnapshot = {
   direction: 1,
   derailSpeedLduPerS: 0,
   bogiesOffTrack: 0,
+  trainXLdu: 0,
+  trainZLdu: 0,
   switches: [],
   following: false,
   tick: 0,
@@ -283,16 +287,21 @@ export class TrainPlay implements ITrainPlay {
 
   private followTrain(): void {
     const camera = this.camera;
+    const centre = this.trainCentre();
+    if (camera && centre) camera(centre.x, centre.z);
+  }
+
+  private trainCentre(): { readonly x: number; readonly z: number } | null {
     const frame = this.sim.latestFrame();
     const layout = this.layout;
-    if (!camera || !frame || !layout || layout.vehicles === 0) return;
+    if (!frame || !layout || layout.vehicles === 0) return null;
     const first = layout.vehiclePoseStart;
     const last = first + (layout.vehicles - 1) * layout.vehiclePoseFloats;
     const data = frame.data;
-    camera(
-      ((data[first] ?? 0) + (data[last] ?? 0)) / 2,
-      ((data[first + 1] ?? 0) + (data[last + 1] ?? 0)) / 2,
-    );
+    return {
+      x: ((data[first] ?? 0) + (data[last] ?? 0)) / 2,
+      z: ((data[first + 1] ?? 0) + (data[last + 1] ?? 0)) / 2,
+    };
   }
 
   click(ndcX: number, ndcY: number): boolean {
@@ -344,7 +353,10 @@ export class TrainPlay implements ITrainPlay {
     )
       ? this.switchViews(states)
       : this.state.switches;
+    const centre = this.trainCentre();
     this.update({
+      trainXLdu: centre?.x ?? 0,
+      trainZLdu: centre?.z ?? 0,
       speedLduPerS: data[layout.trainSpeedStart] ?? 0,
       direction: data[layout.trainDirectionStart] ?? 1,
       derailSpeedLduPerS: data[layout.trainDerailSpeedStart] ?? 0,

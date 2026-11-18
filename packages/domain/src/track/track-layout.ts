@@ -7,6 +7,7 @@ import {
   ZETA16_COEFFICIENT_COUNT,
   type Pose16,
 } from "@brr/math";
+import { WORLD_TRACK_FRAME, type TrackFrame } from "./end-gaps.ts";
 
 export interface TrackRoute {
   readonly from: number;
@@ -61,6 +62,10 @@ export class TrackLayout {
   private yPlatesOf = new Int16Array(INITIAL_CAPACITY);
   private riseOf = new Int8Array(INITIAL_CAPACITY);
   private positionOf = new BigInt64Array(INITIAL_CAPACITY * ZETA16_COEFFICIENT_COUNT);
+  private frameOf = new Uint32Array(INITIAL_CAPACITY);
+  private readonly frames = new Map<number, TrackFrame>([
+    [WORLD_TRACK_FRAME.id, WORLD_TRACK_FRAME],
+  ]);
 
   constructor(readonly pieces: ReadonlyArray<TrackPieceSpec>) {
     pieces.forEach(checkPiece);
@@ -70,7 +75,13 @@ export class TrackLayout {
     return this.size;
   }
 
-  place(piece: number, placement: Pose16, yPlates: number, risePlates = 0): number {
+  place(
+    piece: number,
+    placement: Pose16,
+    yPlates: number,
+    risePlates = 0,
+    frame: TrackFrame = WORLD_TRACK_FRAME,
+  ): number {
     const spec = this.pieces[piece];
     if (!spec || !Number.isInteger(piece))
       throw new RangeError(`track piece ${piece} is not in the layout's piece table`);
@@ -93,8 +104,17 @@ export class TrackLayout {
         throw new RangeError(`track position coefficient ${coefficient} does not fit int64 studs`);
       }
     }
+    const known = this.frames.get(frame.id);
+    if (known && (known.xLdu !== frame.xLdu || known.zLdu !== frame.zLdu)) {
+      throw new RangeError(`track frame ${frame.id} is already placed at another offset`);
+    }
+    if (!Number.isInteger(frame.id) || frame.id < 0) {
+      throw new RangeError(`track frame ${frame.id} is not a non-negative integer`);
+    }
+    this.frames.set(frame.id, frame);
     if (this.size === this.capacity) this.grow();
     const slot = this.size++;
+    this.frameOf[slot] = frame.id;
     this.pieceOf[slot] = piece;
     this.headingOf[slot] = pose16(placement.position, placement.heading).heading;
     this.yPlatesOf[slot] = yPlates;
@@ -107,7 +127,13 @@ export class TrackLayout {
     const local = this.pieces[piece]?.connectors[connector];
     if (!local) throw new RangeError(`track piece ${piece} has no connector ${connector}`);
     const placement = attachPose16(local, this.connectorPose(target.placement, target.connector));
-    return this.place(piece, placement, this.endYPlates(target.placement, target.connector));
+    return this.place(
+      piece,
+      placement,
+      this.endYPlates(target.placement, target.connector),
+      0,
+      this.frame(target.placement),
+    );
   }
 
   replace(placement: number, piece: number): void {
@@ -137,6 +163,11 @@ export class TrackLayout {
   yPlates(placement: number): number {
     this.checkPlacement(placement);
     return this.yPlatesOf[placement] ?? 0;
+  }
+
+  frame(placement: number): TrackFrame {
+    this.checkPlacement(placement);
+    return this.frames.get(this.frameOf[placement] ?? WORLD_TRACK_FRAME.id) ?? WORLD_TRACK_FRAME;
   }
 
   rise(placement: number): number {
@@ -191,5 +222,8 @@ export class TrackLayout {
     const positionOf = new BigInt64Array(this.capacity * ZETA16_COEFFICIENT_COUNT);
     positionOf.set(this.positionOf);
     this.positionOf = positionOf;
+    const frameOf = new Uint32Array(this.capacity);
+    frameOf.set(this.frameOf);
+    this.frameOf = frameOf;
   }
 }

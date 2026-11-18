@@ -6,14 +6,15 @@ use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
-    mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, InferredFeatures,
-    Issue, MatingFace, PrimitiveConnectors, PrimitiveTable, Section, SectionShape,
+    mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, Grid, InferredFeatures,
+    Issue, MatingFace, MetaError, PrimitiveConnectors, PrimitiveTable, Section, SectionShape,
     SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable,
     CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT,
     FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
+use brick_compile::lattice::{Malformation, STUD_LDU};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::technic::is_circular_primitive;
 use brick_compile::Library;
@@ -1036,6 +1037,108 @@ fn a_cavity_is_placed_only_where_its_free_travel_centres_the_stud_on_the_grid_po
     );
 }
 
+fn custom_slot(half_length: i32, wall_lines: &[i32]) -> String {
+    let (w, d) = (30, 10);
+    let mut text = String::from("0 Custom Slot\n0 BFC CERTIFY CCW\n");
+    text += &format!("1 16 0 8 0 {w} 0 0 0 -8 0 0 0 {d} box5.dat\n");
+    text += &format!("0 BFC INVERTNEXT\n1 16 0 8 0 {half_length} 0 0 0 -4 0 0 0 6 box5.dat\n");
+    let xs = [-w, -half_length, half_length, w];
+    let zs = [-d, -6, 6, d];
+    for a in 0..3 {
+        for b in 0..3 {
+            if a == 1 && b == 1 {
+                continue;
+            }
+            let (x0, x1, z0, z1) = (xs[a], xs[a + 1], zs[b], zs[b + 1]);
+            text += &format!("4 16 {x1} 8 {z1} {x1} 8 {z0} {x0} 8 {z0} {x0} 8 {z1}\n");
+        }
+    }
+    for x in wall_lines {
+        text += &format!("3 16 {x} 8 21 {x} 4 27 {x} 4 90\n");
+    }
+    text
+}
+
+#[test]
+fn a_wall_off_to_the_side_does_not_stop_a_stud_sliding_toward_its_line() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/slot.dat", custom_slot(16, &[])),
+            ("parts/walled.dat", custom_slot(16, &[-10, 10])),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut at_mouth = |path: &str| -> (Vec<Uninferred>, usize) {
+        let inference = inferred.infer(path);
+        let reasons = inference
+            .issues
+            .iter()
+            .filter_map(|issue| match issue {
+                Issue::Uninferred { origin, reason } if *origin == [0.0, 8.0, 0.0] => Some(*reason),
+                _ => None,
+            })
+            .collect();
+        let receptors = faces_of(&inference.connectors)
+            .iter()
+            .filter(|f| f.gender == Gender::Female && f.origin[0] == 0.0 && f.origin[2] == 0.0)
+            .count();
+        (reasons, receptors)
+    };
+    let open = at_mouth("parts/slot.dat");
+    assert_eq!(open, (vec![Uninferred::SlidingCavity], 0));
+    assert_eq!(at_mouth("parts/walled.dat"), open);
+}
+
+fn slit_pocket(far_brick: bool) -> String {
+    let upright = |(x0, z0): (f64, f64), (x1, z1): (f64, f64)| {
+        format!("4 16 {x0} 0 {z0} {x1} 0 {z1} {x1} 8 {z1} {x0} 8 {z0}\n")
+    };
+    let mut text = String::from("0 Custom Slit Pocket\n");
+    for (x0, x1, z0, z1) in [
+        (6, 10, -10, 10),
+        (-10, -6, -10, 10),
+        (-6, 6, 6, 10),
+        (-6, 6, -10, -6),
+    ] {
+        text += &format!("4 16 {x0} 0 {z0} {x1} 0 {z0} {x1} 0 {z1} {x0} 0 {z1}\n");
+    }
+    text += &upright((6.0, -6.0), (6.0, 4.0));
+    text += &upright((-6.0, 6.0), (4.0, 6.0));
+    text += &upright((-6.0, -6.0), (-6.0, 6.0));
+    text += &upright((-6.0, -6.0), (6.0, -6.0));
+    text += "4 16 -6 8 -6 6 8 -6 6 8 6 -6 8 6\n";
+    if far_brick {
+        text +=
+            "1 16 141.421 0 141.421 -0.707107 0 -0.707107 0 1 0 0.707107 0 -0.707107 3009.dat\n";
+    }
+    text
+}
+
+#[test]
+fn a_pocket_with_a_slit_takes_a_receptor_only_when_a_far_brick_closes_the_slit() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/slit.dat", slit_pocket(false)),
+            ("parts/slit-closed.dat", slit_pocket(true)),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut centred = |path: &str| -> usize {
+        faces_of(&inferred.infer(path).connectors)
+            .iter()
+            .filter(|f| f.gender == Gender::Female && f.origin == [0.0, 0.0, 0.0])
+            .count()
+    };
+    assert_eq!(centred("parts/slit.dat"), 0);
+    assert_eq!(centred("parts/slit-closed.dat"), 1);
+}
+
 fn female_faces(connectors: &[Connector]) -> Vec<MatingFace> {
     let mut found: Vec<MatingFace> = faces_of(connectors)
         .into_iter()
@@ -1279,6 +1382,426 @@ fn a_group_matched_disc_generic_reads_as_one_contact_face_per_gender() {
                 "{unreadable}"
             );
         }
+    }
+}
+
+fn hub_ring(y: i32, outer: i32, inner: i32) -> String {
+    let rects = [
+        (-outer, -inner, -outer, outer),
+        (inner, outer, -outer, outer),
+        (-inner, inner, -outer, -inner),
+        (-inner, inner, inner, outer),
+    ];
+    rects
+        .iter()
+        .map(|(x0, x1, z0, z1)| {
+            format!("4 16 {x1} {y} {z1} {x1} {y} {z0} {x0} {y} {z0} {x0} {y} {z1}\n")
+        })
+        .collect()
+}
+
+fn custom_hub(hole: &str) -> String {
+    format!(
+        "0 Custom Hub\n0 BFC CERTIFY CCW\n1 16 0 20 0 20 0 0 0 -20 0 0 0 20 box5.dat\n{hole}\n0 BFC INVERTNEXT\n1 16 0 4 0 6 0 0 0 1 0 0 0 6 4-4disc.dat\n1 16 0 20 0 6 0 0 0 1 0 0 0 6 4-4ndis.dat\n{}",
+        hub_ring(20, 20, 6)
+    )
+}
+
+fn custom_cross_stub(notch_depth: f64) -> String {
+    let mut outline = vec![[2.0, 2.0]];
+    if notch_depth > 0.0 {
+        outline.extend([
+            [3.3, 2.0],
+            [3.3, 2.0 - notch_depth],
+            [4.3, 2.0 - notch_depth],
+            [4.3, 2.0],
+        ]);
+    }
+    outline.extend([
+        [5.602, 2.0],
+        [6.0, 0.0],
+        [5.602, -2.0],
+        [2.0, -2.0],
+        [2.0, -5.602],
+        [0.0, -6.0],
+        [-2.0, -5.602],
+        [-2.0, -2.0],
+        [-5.602, -2.0],
+        [-6.0, 0.0],
+        [-5.602, 2.0],
+        [-2.0, 2.0],
+        [-2.0, 5.602],
+        [0.0, 6.0],
+        [2.0, 5.602],
+    ]);
+    let mut text = String::from(
+        "0 Custom Cross Stub\n0 BFC NOCERTIFY\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 axleend.dat\n",
+    );
+    for (k, p) in outline.iter().enumerate() {
+        let q = outline[(k + 1) % outline.len()];
+        text += &format!(
+            "4 16 {} 0 {} {} 0 {} {} 16 {} {} 16 {}\n",
+            p[0], p[1], q[0], q[1], q[0], q[1], p[0], p[1]
+        );
+    }
+    text + "1 16 0 16 0 10 0 0 0 8 0 0 0 10 box5.dat\n"
+}
+
+#[test]
+fn a_stub_notched_along_one_arm_side_is_not_taken_for_an_axle() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/whole.dat", custom_cross_stub(0.0)),
+            ("parts/notched.dat", custom_cross_stub(0.5)),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let mut male_axles = |path: &str| {
+        inferred
+            .infer(path)
+            .connectors
+            .iter()
+            .filter(|c| {
+                matches!(&c.shape, Shape::Cylinder { gender: Gender::Male, sections, .. }
+                    if sections[0].shape == SectionShape::Axle)
+            })
+            .count()
+    };
+    assert_eq!(male_axles("parts/whole.dat"), 1);
+    assert_eq!(male_axles("parts/notched.dat"), 0);
+}
+
+const CUSTOM_AXLE_STUB: &str = "0 Custom Stub\n0 BFC CERTIFY CCW\n1 16 0 8 0 20 0 0 0 -8 0 0 0 20 box5.dat\n4 16 20 8 20 20 8 -20 -20 8 -20 -20 8 20\n1 16 0 0 0 1 0 0 0 -20 0 0 0 1 axlehol8.dat\n1 16 0 -20 0 1 0 0 0 1 0 0 0 1 axleend.dat\n";
+
+#[test]
+fn custom_parts_get_axle_holes_and_axles_from_their_geometry() {
+    let turn = 0.5f64.sqrt();
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            (
+                "parts/hub.dat",
+                custom_hub("1 16 0 20 0 1 0 0 0 -16 0 0 0 1 axlehole.dat"),
+            ),
+            (
+                "parts/turned.dat",
+                custom_hub(&format!(
+                    "1 16 0 20 0 {turn} 0 {turn} 0 -16 0 {} 0 {turn} axlehole.dat",
+                    -turn
+                )),
+            ),
+            (
+                "parts/round.dat",
+                custom_hub("0 BFC INVERTNEXT\n1 16 0 20 0 6 0 0 0 -16 0 0 0 6 4-4cyli.dat"),
+            ),
+            ("parts/stub.dat", CUSTOM_AXLE_STUB.to_string()),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let axles = |connectors: &[Connector]| -> Vec<Connector> {
+        connectors
+            .iter()
+            .filter(|c| match &c.shape {
+                Shape::Cylinder { sections, .. } => sections[0].shape == SectionShape::Axle,
+                _ => false,
+            })
+            .cloned()
+            .collect()
+    };
+    let hub = axles(&inferred.infer("parts/hub.dat").connectors);
+    assert_eq!(hub.len(), 1);
+    let face = &faces_of(&hub)[0];
+    assert_eq!(
+        (face.gender, face.source, face.origin, face.axis),
+        (
+            Gender::Female,
+            Source::Inferred,
+            [0.0, -20.0, 0.0],
+            [0.0, -1.0, 0.0]
+        )
+    );
+    assert_eq!(
+        (face.sections[0].size, face.sections[0].length),
+        (6.0, 16.0)
+    );
+    let turned = axles(&inferred.infer("parts/turned.dat").connectors);
+    assert_eq!(turned.len(), 1);
+    let m = turned[0].placement.m;
+    let arm = [m[0], m[4], m[8]];
+    assert!(
+        (arm[0].abs() - turn).abs() <= 1e-9 && arm[1] == 0.0 && (arm[2].abs() - turn).abs() <= 1e-9
+    );
+    assert!(axles(&inferred.infer("parts/round.dat").connectors).is_empty());
+    let stub = axles(&inferred.infer("parts/stub.dat").connectors);
+    assert_eq!(stub.len(), 1);
+    let face = &faces_of(&stub)[0];
+    assert_eq!(
+        (face.gender, face.origin, face.sections[0].length),
+        (Gender::Male, [0.0, 0.0, 0.0], 20.0)
+    );
+}
+
+#[test]
+fn an_axle_end_flush_with_a_plate_that_never_reaches_it_is_still_an_axle_end() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/stub.dat", CUSTOM_AXLE_STUB.to_string()),
+            (
+                "parts/stub-beside-a-plate.dat",
+                "0 Stub Beside A Plate\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stub.dat\n1 16 45 -20 15 1 0 0 0 1 0 0 0 1 3710.dat\n"
+                    .to_string(),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let mut male_axles = |path: &str| {
+        let connectors: Vec<Connector> = inferred
+            .infer(path)
+            .connectors
+            .into_iter()
+            .filter(|c| {
+                matches!(&c.shape, Shape::Cylinder { gender: Gender::Male, sections, .. }
+                    if sections[0].shape == SectionShape::Axle)
+            })
+            .collect();
+        face_keys(&connectors)
+    };
+    let alone = male_axles("parts/stub.dat");
+    assert_eq!(alone.len(), 1);
+    assert_eq!(male_axles("parts/stub-beside-a-plate.dat"), alone);
+}
+
+fn custom_pocket(half_width: f64) -> String {
+    let (w, o, d, h) = (half_width, 40.0, 8.0, 16.0);
+    let quads = [
+        [[-o, 0.0, -o], [o, 0.0, -o], [w, 0.0, -w], [-w, 0.0, -w]],
+        [[-w, 0.0, w], [w, 0.0, w], [o, 0.0, o], [-o, 0.0, o]],
+        [[-o, 0.0, -o], [-w, 0.0, -w], [-w, 0.0, w], [-o, 0.0, o]],
+        [[w, 0.0, -w], [o, 0.0, -o], [o, 0.0, o], [w, 0.0, w]],
+        [[-w, 0.0, -w], [w, 0.0, -w], [w, d, -w], [-w, d, -w]],
+        [[-w, 0.0, w], [w, 0.0, w], [w, d, w], [-w, d, w]],
+        [[-w, 0.0, -w], [-w, 0.0, w], [-w, d, w], [-w, d, -w]],
+        [[w, 0.0, -w], [w, 0.0, w], [w, d, w], [w, d, -w]],
+        [[-w, d, -w], [w, d, -w], [w, d, w], [-w, d, w]],
+        [[-o, 0.0, -o], [o, 0.0, -o], [o, h, -o], [-o, h, -o]],
+        [[-o, 0.0, o], [o, 0.0, o], [o, h, o], [-o, h, o]],
+        [[-o, 0.0, -o], [-o, 0.0, o], [-o, h, o], [-o, h, -o]],
+        [[o, 0.0, -o], [o, 0.0, o], [o, h, o], [o, h, -o]],
+        [[-o, h, -o], [o, h, -o], [o, h, o], [-o, h, o]],
+    ];
+    let mut text = String::from("0 Custom Pocket\n0 BFC NOCERTIFY\n");
+    for quad in quads {
+        let points: Vec<String> = quad
+            .iter()
+            .map(|p| format!("{} {} {}", p[0], p[1], p[2]))
+            .collect();
+        text += &format!("4 16 {}\n", points.join(" "));
+    }
+    text
+}
+
+#[test]
+fn a_wall_half_a_stud_from_the_stud_probe_within_identification_bounds_its_loose_cavity() {
+    let stud_radius = 6.0;
+    let wall = stud_radius + STUD_LDU / 2.0 + 0.0003;
+    let library = with_parts(
+        pinned("ldraw"),
+        &[("parts/pocket.dat", custom_pocket(wall))],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let at_the_centre: Vec<f64> = inferred
+        .infer("parts/pocket.dat")
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::Uninferred {
+                origin: [0.0, 0.0, 0.0],
+                reason: Uninferred::LooseCavity { clearance },
+            } => Some(*clearance),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(at_the_centre.len(), 1, "{at_the_centre:?}");
+    assert!((at_the_centre[0] - (wall - stud_radius)).abs() <= 1e-9);
+}
+
+const ROUND_HOLE: &str = "0 BFC INVERTNEXT\n1 16 0 20 0 6 0 0 0 -16 0 0 0 6 4-4cyli.dat";
+
+fn sorted_debug<T: std::fmt::Debug>(items: impl IntoIterator<Item = T>) -> Vec<String> {
+    let mut out: Vec<String> = items.into_iter().map(|item| format!("{item:?}")).collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn geometry_far_from_the_origin_extracts_exactly_like_the_same_geometry_near_it() {
+    let far = 10_000_000;
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/plate.dat", custom_plate(4, 4, &[(-30, -30)])),
+            (
+                "parts/twin.dat",
+                format!(
+                    "0 Twin\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 plate.dat\n1 16 {far} 0 {far} 1 0 0 0 1 0 0 0 1 plate.dat\n"
+                ),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let plate = inferred.infer("parts/plate.dat");
+    let twin = inferred.infer("parts/twin.dat");
+    assert!(!plate.connectors.is_empty());
+    assert!(!plate.issues.is_empty());
+    let shift = 16 * i64::from(far);
+    let mut expected = face_keys(&plate.connectors);
+    expected.extend(face_keys(&plate.connectors).into_iter().map(
+        |(gender, origin, axis, sections)| {
+            (
+                gender,
+                [origin[0] + shift, origin[1], origin[2] - shift],
+                axis,
+                sections,
+            )
+        },
+    ));
+    expected.sort();
+    assert_eq!(face_keys(&twin.connectors), expected);
+    let shifted = plate.issues.iter().map(|issue| match issue {
+        Issue::Uninferred { origin, reason } => Issue::Uninferred {
+            origin: [
+                origin[0] + f64::from(far),
+                origin[1],
+                origin[2] + f64::from(far),
+            ],
+            reason: *reason,
+        },
+        other => other.clone(),
+    });
+    assert_eq!(
+        sorted_debug(&twin.issues),
+        sorted_debug(plate.issues.iter().cloned().chain(shifted))
+    );
+}
+
+#[test]
+fn tier_4_reports_malformed_geometry_and_infers_nothing_from_that_part() {
+    let malformed = |file: &str, malformation| Issue::MalformedGeometry {
+        file: file.to_string(),
+        malformation,
+    };
+    let with = |extra: &str| format!("{}{extra}\n", custom_hub(ROUND_HOLE));
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/hub.dat", custom_hub(ROUND_HOLE)),
+            ("parts/infinite.dat", with("3 16 0 20 0 1e400 20 0 0 20 1")),
+            ("parts/unreadable.dat", with("3 16 0 20 0 abc 20 0 0 20 1")),
+            ("parts/sliver.dat", with("3 16 0 20 0 4e16 20 0 0 20 1")),
+            (
+                "parts/far.dat",
+                with("1 16 3000000000000 0 0 1 0 0 0 1 0 0 0 1 s/sliver.dat"),
+            ),
+            (
+                "parts/nested.dat",
+                with("1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/not-a-number.dat"),
+            ),
+            (
+                "parts/nested-matrix.dat",
+                with("1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/not-a-number-matrix.dat"),
+            ),
+            (
+                "parts/unflattened.dat",
+                with("1 16 0 0 0 1 0 0 0 1 0 0 0 1 not-in-the-library.dat\n3 16 0 20 0 1e400 20 0 0 20 1"),
+            ),
+            (
+                "parts/s/sliver.dat",
+                "0 Sliver\n3 16 0 0 0 1 0 0 0 0 1\n".to_string(),
+            ),
+            (
+                "parts/s/not-a-number.dat",
+                "0 Not A Number\n3 16 0 0 0 NaN 0 0 0 0 1\n".to_string(),
+            ),
+            (
+                "parts/s/not-a-number-matrix.dat",
+                "0 Not A Number Matrix\n1 16 0 0 0 NaN 0 0 0 1 0 0 0 1 s/sliver.dat\n".to_string(),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let hub = inferred.infer("parts/hub.dat");
+    assert_eq!(
+        face_keys(&hub.connectors),
+        vec![round_face(Gender::Female, [0.0, -20.0, 0.0], -1, 6.0, 16.0)]
+    );
+    let cases = [
+        (
+            "parts/infinite.dat",
+            vec![malformed("parts/infinite.dat", Malformation::NonFinite)],
+        ),
+        (
+            "parts/unreadable.dat",
+            vec![malformed("parts/unreadable.dat", Malformation::Unparsed)],
+        ),
+        (
+            "parts/sliver.dat",
+            vec![malformed("parts/sliver.dat", Malformation::Unresolvable)],
+        ),
+        (
+            "parts/far.dat",
+            vec![malformed("parts/far.dat", Malformation::Unresolvable)],
+        ),
+        (
+            "parts/nested.dat",
+            vec![malformed(
+                "parts/s/not-a-number.dat",
+                Malformation::NonFinite,
+            )],
+        ),
+        (
+            "parts/nested-matrix.dat",
+            vec![
+                malformed("parts/s/not-a-number-matrix.dat", Malformation::NonFinite),
+                malformed("parts/nested-matrix.dat", Malformation::NonFinite),
+            ],
+        ),
+        (
+            "parts/unflattened.dat",
+            vec![
+                malformed("parts/unflattened.dat", Malformation::NonFinite),
+                Issue::Uninferred {
+                    origin: [0.0; 3],
+                    reason: Uninferred::Unflattened,
+                },
+            ],
+        ),
+    ];
+    for (part, expected) in cases {
+        let inference = inferred.infer(part);
+        assert!(inference.connectors.is_empty(), "{part}");
+        assert_eq!(inference.issues, expected, "{part}");
     }
 }
 
@@ -1737,4 +2260,431 @@ fn a_section_vocabulary_writes_ldcad_section_codes_and_reads_back_unchanged() {
         })
     );
     assert_eq!(SectionVocabulary::from_json(&written), Ok(vocabulary));
+}
+
+#[test]
+fn tiers_one_and_two_drop_and_report_references_they_cannot_place_and_keep_the_rest() {
+    let part = "0 Studs\n\
+        1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n\
+        1 16 20 0 0 NaN 0 0 0 1 0 0 0 1 stud.dat\n\
+        1 16 3000000000000 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n\
+        1 16 0 0 abc 1 0 0 0 1 0 0 0 1 stud.dat\n\
+        1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/bad-studs.dat\n\
+        1 16 40 0 0 1 0 0 0 1 0 0 0 1 stud3a.dat\n\
+        1 16 60 0 0 1 0 0 0 1 0 0 0 inf stud3a.dat\n\
+        1 16 -3000000000000 0 0 1 0 0 0 1 0 0 0 1 stud3a.dat\n";
+    let bad_studs = "0 Bad Studs\n\
+        1 16 0 0 0 NaN 0 0 0 1 0 0 0 1 stud.dat\n\
+        1 16 0 0 0 NaN 0 0 0 1 0 0 0 1 stud3a.dat\n";
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/studs.dat", part.to_string()),
+            ("parts/s/bad-studs.dat", bad_studs.to_string()),
+            (
+                "parts/open-grid.dat",
+                "0 Open Grid\n1 16 2251799813690 4 0 1 0 0 0 1 0 0 0 1 stud4.dat\n".to_string(),
+            ),
+            ("parts/snap-grid.dat", "0 Snap Grid\n".to_string()),
+            ("parts/snap-include.dat", "0 Snap Include\n".to_string()),
+            ("parts/snap-fine.dat", "0 Snap Fine\n".to_string()),
+            ("parts/snap-two-kinds.dat", "0 Snap Two Kinds\n".to_string()),
+            ("parts/snap-child.dat", "0 Snap Child\n".to_string()),
+            ("parts/snap-long-child.dat", "0 Snap Long Child\n".to_string()),
+            ("parts/snap-wide-child.dat", "0 Snap Wide Child\n".to_string()),
+            ("parts/snap-step-child.dat", "0 Snap Step Child\n".to_string()),
+            (
+                "parts/snap-step.dat",
+                "0 Snap Step\n1 16 0 0 0 10 0 0 0 1 0 0 0 1 snap-step-child.dat\n".to_string(),
+            ),
+            (
+                "parts/snap-long.dat",
+                "0 Snap Long\n1 16 0 0 0 1 0 0 0 1000000000000 0 0 0 1 snap-long-child.dat\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-long-cleared.dat",
+                "0 Snap Long Cleared\n1 16 0 0 0 1 0 0 0 1000000000000 0 0 0 1 snap-long-child.dat\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-wide.dat",
+                "0 Snap Wide\n1 16 0 0 0 200000000000 0 0 0 1 0 0 0 1 snap-wide-child.dat\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-cleared.dat",
+                "0 Snap Cleared\n1 16 3000000000000 0 0 1 0 0 0 1 0 0 0 1 snap-child.dat\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-twice.dat",
+                "0 Snap Twice\n1 16 3000000000000 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n".to_string(),
+            ),
+            (
+                "parts/long-stud.dat",
+                "0 Long Stud\n1 16 0 0 0 1 0 0 0 1000000000000 0 0 0 1 stud3a.dat\n".to_string(),
+            ),
+            (
+                "parts/snap-parent.dat",
+                "0 Snap Parent\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 snap-grid.dat\n".to_string(),
+            ),
+            ("parts/snap-centred.dat", "0 Snap Centred\n".to_string()),
+            (
+                "parts/snap-not-a-number.dat",
+                "0 Snap Not A Number\n".to_string(),
+            ),
+        ],
+    );
+    let shadow = with_parts(
+        pinned("ldcad-shadow"),
+        &[
+            (
+                "parts/snap-grid.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [grid=3 1 2000000000000 20]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-child.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4]\n".to_string(),
+            ),
+            (
+                "parts/snap-long-child.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [scale=YOnly]\n".to_string(),
+            ),
+            (
+                "parts/snap-long-cleared.dat",
+                "0 !LDCAD SNAP_CLEAR\n".to_string(),
+            ),
+            (
+                "parts/snap-step-child.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [grid=1 1 1e308 20]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-wide-child.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [grid=C 2 C 2 20 20]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-cleared.dat",
+                "0 !LDCAD SNAP_CLEAR\n0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-twice.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [grid=3 1 2000000000000 20]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-two-kinds.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [grid=3 1 1e308 20]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-fine.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [grid=3 1 20 20]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-centred.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [pos=3000000000000 0 0] [grid=C 3 1 3000000000000 20]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/snap-not-a-number.dat",
+                "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R NaN 4]\n".to_string(),
+            ),
+            (
+                "parts/snap-include.dat",
+                "0 !LDCAD SNAP_INCL [ref=box5.dat] [pos=3000000000000 0 0]\n0 !LDCAD SNAP_INCL [ref=box5.dat] [pos=NaN 0 0]\n"
+                    .to_string(),
+            ),
+        ],
+    );
+    let table = PrimitiveTable::from_json(
+        &serde_json::from_str(&fs::read_to_string(table_path()).expect("table reads"))
+            .expect("table is json"),
+    )
+    .expect("table parses");
+    let malformed = |file: &str, malformation| Issue::MalformedGeometry {
+        file: file.to_string(),
+        malformation,
+    };
+    let findings = sorted_debug([
+        malformed("parts/studs.dat", Malformation::NonFinite),
+        malformed("parts/studs.dat", Malformation::Unparsed),
+        malformed("parts/studs.dat", Malformation::Unresolvable),
+        malformed("parts/s/bad-studs.dat", Malformation::NonFinite),
+    ]);
+    let mut snaps = ShadowSnaps::new(&library, &shadow);
+    let studs = snaps.snaps("parts/studs.dat");
+    let shadow_origins: Vec<Vec3> = studs.connectors.iter().map(origin).collect();
+    assert_eq!(shadow_origins, vec![[0.0, 0.0, 0.0]]);
+    assert_eq!(sorted_debug(&studs.issues), findings);
+    let gridded = snaps.snaps("parts/snap-grid.dat");
+    let cells: Vec<(Vec3, bool)> = gridded
+        .connectors
+        .iter()
+        .map(|cell| (origin(cell), cell.grid.is_none()))
+        .collect();
+    assert_eq!(
+        cells,
+        vec![
+            ([0.0, 0.0, 0.0], true),
+            ([2_000_000_000_000.0, 0.0, 0.0], true)
+        ]
+    );
+    assert_eq!(
+        gridded.issues,
+        vec![malformed("parts/snap-grid.dat", Malformation::Unresolvable)]
+    );
+    let inherited = snaps.snaps("parts/snap-parent.dat");
+    let inherited_cells: Vec<Vec3> = inherited.connectors.iter().map(origin).collect();
+    assert_eq!(
+        inherited_cells,
+        vec![[0.0, 0.0, 0.0], [2_000_000_000_000.0, 0.0, 0.0]]
+    );
+    assert_eq!(
+        inherited.issues,
+        vec![malformed("parts/snap-grid.dat", Malformation::Unresolvable)]
+    );
+    let two_kinds = snaps.snaps("parts/snap-two-kinds.dat");
+    let two_kinds_cells: Vec<Vec3> = two_kinds.connectors.iter().map(origin).collect();
+    assert_eq!(two_kinds_cells, vec![[0.0, 0.0, 0.0]]);
+    assert_eq!(
+        sorted_debug(&two_kinds.issues),
+        sorted_debug([
+            malformed("parts/snap-two-kinds.dat", Malformation::Unresolvable),
+            malformed("parts/snap-two-kinds.dat", Malformation::NonFinite),
+        ])
+    );
+    let fine = snaps.snaps("parts/snap-fine.dat");
+    let fine_grids: Vec<Option<Grid>> = fine.connectors.iter().map(|c| c.grid).collect();
+    assert_eq!(
+        fine_grids,
+        vec![Some(Grid {
+            counts: [3, 1, 1],
+            centered: [false; 3],
+            steps: [20.0, 0.0, -20.0],
+        })]
+    );
+    assert!(fine.issues.is_empty());
+    let cleared = snaps.snaps("parts/snap-cleared.dat");
+    let cleared_origins: Vec<Vec3> = cleared.connectors.iter().map(origin).collect();
+    assert_eq!(cleared_origins, vec![[0.0, 0.0, 0.0]]);
+    assert!(cleared.issues.is_empty());
+    let still_cleared: Vec<Vec3> = cleared.suppressed.iter().map(origin).collect();
+    assert_eq!(still_cleared, vec![[3_000_000_000_000.0, 0.0, 0.0]]);
+    let long = snaps.snaps("parts/snap-long.dat");
+    assert!(long.connectors.is_empty());
+    assert_eq!(
+        long.issues,
+        vec![malformed("parts/snap-long.dat", Malformation::Unresolvable)]
+    );
+    let long_cleared = snaps.snaps("parts/snap-long-cleared.dat");
+    assert!(long_cleared.connectors.is_empty());
+    assert!(long_cleared.issues.is_empty());
+    let long_suppressed: Vec<Vec3> = long_cleared.suppressed.iter().map(origin).collect();
+    assert_eq!(long_suppressed, vec![[0.0, 0.0, 0.0]]);
+    let wide = snaps.snaps("parts/snap-wide.dat");
+    let wide_grids: Vec<Option<Grid>> = wide.connectors.iter().map(|c| c.grid).collect();
+    assert_eq!(
+        wide_grids,
+        vec![Some(Grid {
+            counts: [2, 1, 2],
+            centered: [true, false, true],
+            steps: [4_000_000_000_000.0, 0.0, -20.0],
+        })]
+    );
+    assert!(!wide
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, Issue::MalformedGeometry { .. })));
+    let step = snaps.snaps("parts/snap-step.dat");
+    assert!(step.connectors.is_empty());
+    assert_eq!(
+        step.issues
+            .iter()
+            .filter(|issue| matches!(issue, Issue::MalformedGeometry { .. }))
+            .collect::<Vec<_>>(),
+        vec![&malformed("parts/snap-step.dat", Malformation::NonFinite)]
+    );
+    let twice = snaps.snaps("parts/snap-twice.dat");
+    assert_eq!(
+        twice.issues,
+        vec![malformed(
+            "parts/snap-twice.dat",
+            Malformation::Unresolvable
+        )]
+    );
+    let centred = snaps.snaps("parts/snap-centred.dat");
+    let centred_cells: Vec<(Vec3, bool)> = centred
+        .connectors
+        .iter()
+        .map(|cell| (origin(cell), cell.grid.is_none()))
+        .collect();
+    assert_eq!(centred_cells, vec![([0.0, 0.0, 0.0], true)]);
+    assert_eq!(
+        centred.issues,
+        vec![malformed(
+            "parts/snap-centred.dat",
+            Malformation::Unresolvable
+        )]
+    );
+    let unreadable = |file: &str, kind: &str, key: &str, value: &str| Issue::Meta {
+        file: file.to_string(),
+        error: MetaError::Malformed {
+            kind: kind.to_string(),
+            key: key.to_string(),
+            value: value.to_string(),
+        },
+    };
+    let not_a_number = snaps.snaps("parts/snap-not-a-number.dat");
+    assert!(not_a_number.connectors.is_empty());
+    assert_eq!(
+        not_a_number.issues,
+        vec![unreadable(
+            "parts/snap-not-a-number.dat",
+            "SNAP_CYL",
+            "secs",
+            "R NaN 4"
+        )]
+    );
+    let included = snaps.snaps("parts/snap-include.dat");
+    assert!(included.connectors.is_empty());
+    assert_eq!(
+        sorted_debug(&included.issues),
+        sorted_debug([
+            unreadable("parts/snap-include.dat", "SNAP_INCL", "pos", "NaN 0 0"),
+            malformed("parts/snap-include.dat", Malformation::Unresolvable),
+        ])
+    );
+    let mut primitives = PrimitiveConnectors::new(&library, table.clone());
+    let (primitive, issues) = primitives.connectors("parts/studs.dat");
+    let primitive_origins: Vec<Vec3> = primitive.iter().map(origin).collect();
+    assert_eq!(primitive_origins, vec![[40.0, 0.0, 0.0]]);
+    assert_eq!(sorted_debug(&issues), findings);
+    let (long, long_issues) = primitives.connectors("parts/long-stud.dat");
+    assert!(long.is_empty());
+    assert_eq!(
+        long_issues,
+        vec![malformed("parts/long-stud.dat", Malformation::Unresolvable)]
+    );
+    let (_, open_grid) = primitives.connectors("parts/open-grid.dat");
+    assert_eq!(
+        open_grid,
+        vec![malformed("parts/open-grid.dat", Malformation::Unresolvable)]
+    );
+    let cells = primitives.where_open("parts/open-grid.dat");
+    assert_eq!(cells.len(), 2);
+    assert!(cells
+        .iter()
+        .all(|cell| origin(cell)[0] == 2_251_799_813_680.0));
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow),
+        PrimitiveConnectors::new(&library, table),
+        InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+            .expect("the pinned stud measures"),
+    );
+    let extraction = extractor.extract("parts/studs.dat");
+    let reported = extraction
+        .issues
+        .iter()
+        .filter(|issue| matches!(issue, Issue::MalformedGeometry { .. }));
+    assert_eq!(sorted_debug(reported), findings);
+}
+
+#[test]
+fn geometry_over_the_square_budget_is_reported_once_and_probed_where_it_matters() {
+    let top_ring: String = hub_ring(0, 20, 6)
+        .lines()
+        .map(|line| {
+            let t: Vec<&str> = line.split_whitespace().collect();
+            format!(
+                "4 16 {} {} {} {}\n",
+                t[11..14].join(" "),
+                t[8..11].join(" "),
+                t[5..8].join(" "),
+                t[2..5].join(" ")
+            )
+        })
+        .collect();
+    let through_block = format!(
+        "0 Through Block\n0 BFC CERTIFY CCW\n1 16 0 20 0 20 0 0 0 -20 0 0 0 20 box4.dat\n0 BFC INVERTNEXT\n1 16 0 20 0 6 0 0 0 -20 0 0 0 6 4-4cyli.dat\n{top_ring}{}",
+        hub_ring(20, 20, 6)
+    );
+    let closed_by = |reach: i32| {
+        format!("{through_block}3 16 -{reach} 20 -{reach} {reach} 20 -{reach} 0 20 {reach}\n")
+    };
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/hub.dat", custom_hub(ROUND_HOLE)),
+            (
+                "parts/hub-over-a-huge-facet.dat",
+                format!(
+                    "{}3 16 -1000000 40 -1000000 0 40 1000000 1000000 40 -1000000\n3 16 -500000 60 -500000 0 60 500000 500000 60 -500000\n",
+                    custom_hub(ROUND_HOLE)
+                ),
+            ),
+            (
+                "parts/hub-in-a-huge-ring.dat",
+                format!(
+                    "{}1 16 0 20 0 1500 0 0 0 -16 0 0 0 1500 4-4cyli.dat\n",
+                    custom_hub(ROUND_HOLE)
+                ),
+            ),
+            ("parts/through.dat", through_block.clone()),
+            ("parts/closed-by-a-small-facet.dat", closed_by(40)),
+            ("parts/closed-by-a-huge-facet.dat", closed_by(1_000_000)),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let oversized = |inference: &brick_compile::connect::Inference| -> Vec<(Vec3, f64)> {
+        inference
+            .issues
+            .iter()
+            .filter_map(|issue| match issue {
+                Issue::Uninferred {
+                    origin,
+                    reason: Uninferred::Oversized { squares },
+                } => Some((*origin, *squares)),
+                _ => None,
+            })
+            .collect()
+    };
+    let hub_face = vec![round_face(Gender::Female, [0.0, -20.0, 0.0], -1, 6.0, 16.0)];
+    let hub = inferred.infer("parts/hub.dat");
+    assert_eq!(face_keys(&hub.connectors), hub_face);
+    assert!(oversized(&hub).is_empty());
+    let across = |half: f64| 2.0 * half / (STUD_LDU / 2.0) + 1.0;
+    let over_facet = inferred.infer("parts/hub-over-a-huge-facet.dat");
+    assert_eq!(face_keys(&over_facet.connectors), hub_face);
+    assert_eq!(
+        oversized(&over_facet),
+        vec![(
+            [0.0, 40.0, -1_000_000.0 / 3.0],
+            across(1_000_000.0) * across(1_000_000.0)
+        )]
+    );
+    let in_ring = inferred.infer("parts/hub-in-a-huge-ring.dat");
+    assert_eq!(face_keys(&in_ring.connectors), hub_face);
+    assert_eq!(
+        oversized(&in_ring),
+        vec![([0.0, 4.0, 0.0], across(1500.0) * across(1500.0))]
+    );
+    let through = inferred.infer("parts/through.dat");
+    let small = inferred.infer("parts/closed-by-a-small-facet.dat");
+    let huge = inferred.infer("parts/closed-by-a-huge-facet.dat");
+    let blind = vec![round_face(Gender::Female, [0.0, 0.0, 0.0], 1, 6.0, 20.0)];
+    assert_ne!(face_keys(&through.connectors), blind);
+    assert!(oversized(&small).is_empty());
+    assert_eq!(face_keys(&small.connectors), blind);
+    assert_eq!(oversized(&huge).len(), 1);
+    assert_eq!(face_keys(&huge.connectors), blind);
 }

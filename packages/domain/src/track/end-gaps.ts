@@ -8,9 +8,22 @@ import {
   type Pose16,
 } from "@brr/math";
 
+export interface TrackFrame {
+  readonly id: number;
+  readonly xLdu: number;
+  readonly zLdu: number;
+}
+
+export const WORLD_TRACK_FRAME: TrackFrame = { id: 0, xLdu: 0, zLdu: 0 };
+
 export interface TrackEnd {
   readonly pose: Pose16;
   readonly yPlates: number;
+  readonly frame: TrackFrame;
+}
+
+export function trackEndsJoin(a: TrackEnd, b: TrackEnd): boolean {
+  return a.frame.id === b.frame.id && a.yPlates === b.yPlates && posesJoin16(a.pose, b.pose);
 }
 
 export interface EndGap {
@@ -46,7 +59,12 @@ export function endGaps(
   const cells = new Map<string, PlacedEnd[]>();
   const placed = ends.map((end, index): PlacedEnd => {
     const studs = zeta16ToStuds(end.pose.position);
-    return { index, x: studs.x * STUD_LDU, z: studs.z * STUD_LDU, end };
+    return {
+      index,
+      x: studs.x * STUD_LDU + end.frame.xLdu,
+      z: studs.z * STUD_LDU + end.frame.zLdu,
+      end,
+    };
   });
   for (const end of placed) {
     const key = cellKey(
@@ -65,7 +83,7 @@ export function endGaps(
     for (let dx = -1; dx <= 1; dx++) {
       for (let dz = -1; dz <= 1; dz++) {
         for (const b of cells.get(cellKey(cellX + dx, cellZ + dz, a.end.yPlates)) ?? []) {
-          if (b.index <= a.index || posesJoin16(a.end.pose, b.end.pose)) continue;
+          if (b.index <= a.index || trackEndsJoin(a.end, b.end)) continue;
           const gapLdu = Math.hypot(b.x - a.x, b.z - a.z);
           if (gapLdu > radiusLdu) continue;
           gaps.push({

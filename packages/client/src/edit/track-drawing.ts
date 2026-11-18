@@ -23,9 +23,11 @@ import {
   type DrawingKit,
   type EndGap,
   type TrackEnd,
+  type TrackFrame,
   type TrackMove,
   type TrackPieceDef,
   type TrackPieceSpec,
+  WORLD_TRACK_FRAME,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -51,6 +53,7 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
+import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
@@ -188,11 +191,11 @@ function normalizeConnector(connector: number, count: number): number {
   return ((connector % count) + count) % count;
 }
 
-function endView(end: Pose16): TrackEndView {
+function endView(end: Pose16, frame: TrackFrame = WORLD_TRACK_FRAME): TrackEndView {
   const studs = zeta16ToStuds(end.position);
   return {
-    xLdu: studs.x * STUD_LDU,
-    zLdu: studs.z * STUD_LDU,
+    xLdu: studs.x * STUD_LDU + frame.xLdu,
+    zLdu: studs.z * STUD_LDU + frame.zLdu,
     heading: end.heading,
     headingRadians: end.heading * HEADING_RADIANS,
   };
@@ -306,10 +309,13 @@ export class TrackDrawing {
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
+  private held: ReadonlyArray<FramedTrackPiece> = [];
+  private combined: TrackLayout;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
   private endOwners: number[] = [];
+  private openList: TrackEnd[] = [];
   private obstacleRects: Float64Array = new Float64Array(0);
   private gapList: ReadonlyArray<EndGap> = [];
   private footprints: ReadonlyArray<TrackFootprint> | null = null;
@@ -328,6 +334,7 @@ export class TrackDrawing {
     this.pieces = catalog.pieces;
     const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
+    this.combined = this.layout;
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
@@ -372,7 +379,7 @@ export class TrackDrawing {
     const part = straight ? this.parts[straight.partIndex] : undefined;
     if (!straight || !part) throw new Error(`the ${TRACK_SYSTEM} kit has no straight to run on`);
     return {
-      layout: this.layout,
+      layout: this.combined,
       pieces: this.pieces,
       railPart: straight.piece.part,
       railTopY: straight.yLdu + part.boundsMax[1],
@@ -412,23 +419,25 @@ export class TrackDrawing {
   }
 
   openEnds(): ReadonlyArray<TrackEndView> {
-    return this.ends.map(endView);
+    return this.openList.map((end) => endView(end.pose, end.frame));
   }
 
   gaps(): ReadonlyArray<TrackGapView> {
     return this.gapList.map((gap) => {
-      const a = this.ends[gap.a] ?? POSE16_IDENTITY;
-      const b = this.ends[gap.b] ?? POSE16_IDENTITY;
-      const from = zeta16ToStuds(a.position);
-      const to = zeta16ToStuds(b.position);
+      const endA = this.openList[gap.a];
+      const endB = this.openList[gap.b];
+      const a = endA?.pose ?? POSE16_IDENTITY;
+      const b = endB?.pose ?? POSE16_IDENTITY;
+      const viewA = endView(a, endA?.frame);
+      const viewB = endView(b, endB?.frame);
       const theta = a.heading * HEADING_RADIANS;
-      const dx = to.x - from.x;
-      const dz = to.z - from.z;
+      const dx = (viewB.xLdu - viewA.xLdu) / STUD_LDU;
+      const dz = (viewB.zLdu - viewA.zLdu) / STUD_LDU;
       return {
-        a: endView(a),
-        b: endView(b),
-        xStuds: from.x,
-        zStuds: from.z,
+        a: viewA,
+        b: viewB,
+        xStuds: viewA.xLdu / STUD_LDU,
+        zStuds: viewA.zLdu / STUD_LDU,
         gapStuds: gap.gapLdu / STUD_LDU,
         aheadStuds: dx * Math.cos(theta) + dz * Math.sin(theta),
         asideStuds: dz * Math.cos(theta) - dx * Math.sin(theta),
@@ -440,15 +449,21 @@ export class TrackDrawing {
 
   routes(): ReadonlyArray<TrackRouteView> {
     const routes: TrackRouteView[] = [];
-    for (let p = 0; p < this.layout.count; p++) {
-      for (const route of this.placedAt(p).part.piece.routes) {
+    const layout = this.combined;
+    for (let p = 0; p < layout.count; p++) {
+      for (const route of this.pieces[layout.piece(p)]?.routes ?? []) {
         routes.push({
-          from: endView(this.layout.connectorPose(p, route.from)),
-          to: endView(this.layout.connectorPose(p, route.to)),
+          from: endView(layout.connectorPose(p, route.from), layout.frame(p)),
+          to: endView(layout.connectorPose(p, route.to), layout.frame(p)),
         });
       }
     }
     return routes;
+  }
+
+  syncHeld(held: ReadonlyArray<FramedTrackPiece>): void {
+    this.held = held;
+    this.recomputeEnds();
   }
 
   gappedEnds(): ReadonlySet<number> {
@@ -854,7 +869,8 @@ export class TrackDrawing {
     const graph = this.graph;
     for (let e = 0; e < graph.endCount; e++) {
       if ((graph.endPartner[e] ?? NO_END) === NO_END) continue;
-      const pose = this.layout.connectorPose(
+      if (graph.endFrame[e] !== WORLD_TRACK_FRAME.id) continue;
+      const pose = this.combined.connectorPose(
         graph.endPlacement[e] ?? 0,
         graph.endConnector[e] ?? 0,
       );
@@ -863,23 +879,48 @@ export class TrackDrawing {
     return false;
   }
 
+  private combine(): TrackLayout {
+    if (this.held.length === 0) return this.layout;
+    const combined = new TrackLayout(this.pieces.map(pieceSpec));
+    for (let p = 0; p < this.layout.count; p++) {
+      combined.place(
+        this.layout.piece(p),
+        this.layout.pose(p),
+        this.layout.yPlates(p),
+        this.layout.rise(p),
+      );
+    }
+    for (const piece of this.held)
+      combined.place(piece.catalogIndex, piece.placement, piece.yPlates, 0, piece.frame);
+    return combined;
+  }
+
   private recomputeEnds(): void {
     this.footprints = null;
-    this.graph = new TrackGraph(this.layout);
-    const ends: TrackEnd[] = [];
+    this.combined = this.combine();
+    this.graph = new TrackGraph(this.combined);
+    const world: TrackEnd[] = [];
+    const inRunFrames: TrackEnd[] = [];
     const owners: number[] = [];
     for (const end of this.graph.openEnds) {
       const placement = this.graph.endPlacement[end] ?? 0;
       const connector = this.graph.endConnector[end] ?? 0;
+      const open: TrackEnd = {
+        pose: this.combined.connectorPose(placement, connector),
+        yPlates: this.combined.yPlates(placement),
+        frame: this.combined.frame(placement),
+      };
+      if (open.frame.id !== WORLD_TRACK_FRAME.id) {
+        inRunFrames.push(open);
+        continue;
+      }
       owners.push(placement);
-      ends.push({
-        pose: this.layout.connectorPose(placement, connector),
-        yPlates: this.layout.yPlates(placement),
-      });
+      world.push(open);
     }
-    this.ends = ends.map((end) => end.pose);
+    this.ends = world.map((end) => end.pose);
     this.endOwners = owners;
-    this.gapList = endGaps(ends);
+    this.openList = [...world, ...inRunFrames];
+    this.gapList = endGaps(this.openList);
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {
