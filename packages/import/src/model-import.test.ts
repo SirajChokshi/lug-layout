@@ -227,6 +227,17 @@ it(
   BAKE_TIMEOUT_MS,
 );
 
+function band(from: number, to: number, radii: readonly [number, number]) {
+  return {
+    source: "measured",
+    axis: 0,
+    at: [0, 0],
+    from: from * SIXTEENTHS_PER_LDU,
+    to: to * SIXTEENTHS_PER_LDU,
+    radii: radii.map((radius) => radius * SIXTEENTHS_PER_LDU),
+  };
+}
+
 it(
   "measures the whole outward profile of a wheelset the bundle doesn't hold when the import compiles it",
   async () => {
@@ -239,14 +250,6 @@ it(
     const [compiled] = result.compiled;
     if (!compiled) throw new Error("the import compiled no part");
     const { rolling } = parseGlb(compiled.glb.slice().buffer, compiled.partId).document.extras;
-    const band = (from: number, to: number, radii: readonly [number, number]) => ({
-      source: "measured",
-      axis: 0,
-      at: [0, 0],
-      from: from * SIXTEENTHS_PER_LDU,
-      to: to * SIXTEENTHS_PER_LDU,
-      radii: radii.map((radius) => radius * SIXTEENTHS_PER_LDU),
-    });
     expect(rolling?.surfaces).toEqual([
       band(-56, -53.5, [0, 2.5]),
       band(-53.5, -52, [2.5, 2.5]),
