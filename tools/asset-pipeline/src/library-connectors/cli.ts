@@ -14,7 +14,11 @@ import {
   extractShadowArchive,
   pinnedShadowArchive,
 } from "../section-vocabulary.ts";
-import { runPublicationCommand, writeOrCheckPin, type ServedScope } from "../publication/pinned-publication.ts";
+import {
+  runPublicationCommand,
+  writeOrCheckPin,
+  type ServedScope,
+} from "../publication/pinned-publication.ts";
 import { assembleLibraryConnectors, LIBRARY_CONNECTORS_PIN } from "./assemble.ts";
 import { libraryConnectorsPublication } from "./publish.ts";
 
