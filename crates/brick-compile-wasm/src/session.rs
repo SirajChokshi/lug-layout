@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
-use brick_compile::cover::ModelCover;
+use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
@@ -30,6 +30,8 @@ struct BakeInputs<'a> {
     unofficial_allowlist: &'a [String],
     translucent: HashSet<u32>,
     vehicles: Option<&'a VehicleInputs>,
+    shard: CoverShard,
+    visibility_only: bool,
 }
 
 impl Session {
@@ -72,11 +74,21 @@ impl Session {
                     body,
                 ))
             }
+            Operation::BakeNeeds { stud_primitives } => {
+                let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
+                let paths = missing_bake_files(&self.library, &drawn, stud_primitives);
+                Ok(if paths.is_empty() {
+                    Reply::Complete
+                } else {
+                    Reply::Need { paths }
+                })
+            }
             Operation::Bake {
                 stud_primitives,
                 unofficial_allowlist,
                 translucent_colors,
                 vehicles,
+                shard,
             } => {
                 let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
                 let inputs = BakeInputs {
@@ -84,6 +96,8 @@ impl Session {
                     unofficial_allowlist,
                     translucent: translucent_colors.iter().copied().collect(),
                     vehicles: vehicles.as_ref(),
+                    shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
+                    visibility_only: shard.is_some_and(|shard| shard.visibility_only),
                 };
                 Ok(bake(&self.library, &drawn, &inputs, body))
             }
@@ -230,24 +244,32 @@ fn drawn_instances(source: &str, mask: &[u8]) -> Result<Vec<ModelInstance>, Stri
         .collect())
 }
 
+fn missing_bake_files(
+    library: &TrackingLibrary,
+    drawn: &[ModelInstance],
+    stud_primitives: &[String],
+) -> Vec<String> {
+    let mut scan = Flattener::new(library, Lod::Standard, &[]);
+    let mut scanned: HashSet<&str> = HashSet::new();
+    for reference in drawn
+        .iter()
+        .map(|instance| instance.part.as_str())
+        .chain(stud_primitives.iter().map(String::as_str))
+    {
+        if scanned.insert(reference) {
+            scan.closure(reference);
+        }
+    }
+    library.take_requested()
+}
+
 fn bake(
     library: &TrackingLibrary,
     drawn: &[ModelInstance],
     inputs: &BakeInputs,
     body: &mut Body,
 ) -> Reply {
-    let mut scan = Flattener::new(library, Lod::Standard, &[]);
-    let mut scanned: HashSet<&str> = HashSet::new();
-    for reference in drawn
-        .iter()
-        .map(|instance| instance.part.as_str())
-        .chain(inputs.stud_primitives.iter().map(String::as_str))
-    {
-        if scanned.insert(reference) {
-            scan.closure(reference);
-        }
-    }
-    let requested = library.take_requested();
+    let requested = missing_bake_files(library, drawn, inputs.stud_primitives);
     if !requested.is_empty() {
         return Reply::Need { paths: requested };
     }
@@ -285,12 +307,27 @@ fn bake_drawn(
         .iter()
         .map(|instance| &shapes[instance.part.as_str()])
         .collect();
+    if inputs.visibility_only {
+        let cover = baker
+            .cover(drawn, None, inputs.shard)
+            .map_err(|e| e.to_string())?;
+        put_cover(body, &cover)?;
+        return Ok(Reply::Baked {
+            instances: drawn.len(),
+            lattice: None,
+            lattice_issue: None,
+            cover: Cover::from(&cover),
+            vehicles: None,
+            vehicle_issue: None,
+            blobs: body.take_blobs(),
+        });
+    }
     let (lattice, lattice_issue) = match drawn_lattice(drawn, &drawn_shapes) {
         Ok(lattice) => (lattice, None),
         Err(error) => (None, Some(error.to_string())),
     };
     let cover = baker
-        .cover(drawn, lattice.as_ref())
+        .cover(drawn, lattice.as_ref(), inputs.shard)
         .map_err(|e| e.to_string())?;
     put_cover(body, &cover)?;
     let (vehicles, vehicle_issue) = match inputs.vehicles {

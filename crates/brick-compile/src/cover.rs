@@ -32,6 +32,7 @@ const BELOW_START_OUTSIDE: f64 = 1.001;
 const BELOW_REACH_LDU: f64 = 3.0 * STUD_LDU;
 const PROBE_KEY_SCALE: f64 = 1_000.0;
 const RIM_PROBE_FRACTION: f64 = 0.9;
+const CANDIDATES_PER_DEAL: usize = 32;
 const UP: Vec3 = [0.0, 1.0, 0.0];
 const DOWN: Vec3 = [0.0, -1.0, 0.0];
 
@@ -256,6 +257,26 @@ impl StudFrame {
             }
         }
         true
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CoverShard {
+    pub from: usize,
+    pub to: usize,
+    pub of: usize,
+}
+
+impl CoverShard {
+    pub const WHOLE: CoverShard = CoverShard {
+        from: 0,
+        to: 1,
+        of: 1,
+    };
+
+    fn takes(&self, candidate: usize) -> bool {
+        let slot = (candidate / CANDIDATES_PER_DEAL) % self.of;
+        (self.from..self.to).contains(&slot)
     }
 }
 
@@ -723,6 +744,7 @@ pub fn model_cover(
     opacity: &Opacity,
     phase: Option<[u32; 2]>,
     stud: StudShape,
+    shard: CoverShard,
 ) -> ModelCover {
     let boxes: Vec<[Vec3; 2]> = instances
         .iter()
@@ -752,6 +774,12 @@ pub fn model_cover(
             visible.push(true);
         }
     }
+    let candidates: Vec<(usize, StudFrame)> = candidates
+        .into_iter()
+        .enumerate()
+        .filter(|(candidate, _)| shard.takes(*candidate))
+        .map(|(_, taken)| taken)
+        .collect();
     let closed = closed_below_all(&model, &candidates, stud);
     let mut open_below = 0;
     for ((index, _), closed) in candidates.iter().zip(closed) {
@@ -996,6 +1024,7 @@ mod tests {
             &Opacity::new([TRANS_CLEAR]),
             phase,
             STUD,
+            CoverShard::WHOLE,
         )
     }
 

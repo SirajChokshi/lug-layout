@@ -610,6 +610,16 @@ const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
 
+export const BakeShard = v.pipe(
+  v.strictObject({ from: Count, to: Count, of: Count, visibilityOnly: v.boolean() }),
+  v.check(
+    (shard) => shard.from <= shard.to && shard.to <= shard.of && shard.of > 0,
+    "a bake shard is a slice of the candidates",
+  ),
+  v.readonly(),
+);
+export type BakeShard = v.InferOutput<typeof BakeShard>;
+
 export const CompilerRequest = v.variant("op", [
   v.strictObject({ op: v.literal("readModel") }),
   v.strictObject({ op: v.literal("readStudio") }),
@@ -625,11 +635,16 @@ export const CompilerRequest = v.variant("op", [
     ),
   }),
   v.strictObject({
+    op: v.literal("bakeNeeds"),
+    studPrimitives: StringList,
+  }),
+  v.strictObject({
     op: v.literal("bake"),
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
     translucentColors: v.pipe(v.array(Count), v.readonly()),
     vehicles: v.nullable(CompilerVehicles),
+    shard: v.exactOptional(BakeShard),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -748,6 +763,12 @@ export const CompilerBaked = v.object({
   blobs: CompilerBlobs,
 });
 export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
+
+export const CompilerBakeNeeds = v.variant("status", [
+  v.object({ status: v.literal("complete") }),
+  CompilerNeed,
+]);
+export type CompilerBakeNeeds = v.InferOutput<typeof CompilerBakeNeeds>;
 
 export const CompilerBake = v.variant("status", [
   CompilerBaked,
