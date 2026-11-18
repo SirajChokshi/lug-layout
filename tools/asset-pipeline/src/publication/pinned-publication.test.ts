@@ -47,17 +47,15 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function listedShelf(file: string, bytes: Uint8Array, pin: ShelfPin): IndexListing {
+function listedShelf(_file: string, bytes: Uint8Array, pin: ShelfPin): IndexListing {
   const parsed = JSON.parse(new TextDecoder().decode(bytes)) as {
     shelves?: string[];
     items?: string[];
   };
-  return file === "shelf.json"
-    ? {
-        indexes: (parsed.shelves ?? []).map((shelf) => ({ file: shelf, leaves: pin.items })),
-        leaves: [],
-      }
-    : { indexes: [], leaves: parsed.items ?? [] };
+  return {
+    indexes: (parsed.shelves ?? []).map((shelf) => ({ file: shelf, leaves: pin.items })),
+    leaves: parsed.items ?? [],
+  };
 }
 
 const shelf: Publication<ShelfPin> = {
@@ -132,4 +130,25 @@ it("writes a pin, then reports whether a rebuild matches it", async () => {
   expect(await writeOrCheckPin(path, schema, { index: "a" }, false)).toBe("written");
   expect(await writeOrCheckPin(path, schema, { index: "a" }, true)).toBe("matches");
   expect(await writeOrCheckPin(path, schema, { index: "b" }, true)).toBe("differs");
+});
+
+it("refuses an index tree that loops back to its pinned index, and verify-served reports it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pinned-publication-"));
+  roots.push(root);
+  const item = await addressed(root, "a.json", encoder.encode('{"a":1}'));
+  const looping = encoder.encode(JSON.stringify({ items: [item], shelves: ["shelf.json"] }));
+  const inner = await addressed(root, "items.json", looping);
+  const index = encoder.encode(JSON.stringify({ shelves: [inner] }));
+  await writeFile(join(root, "shelf.json"), index);
+  const pin = { index: { file: "shelf.json", sha256: sha256Hex(index) }, items: 1 };
+  await expect(uploadPublication(shelf, new MemoryStore(), root, pin)).rejects.toThrow(
+    "shelf.json is listed by more than one index",
+  );
+  const store = new MemoryStore();
+  await store.put(`shelf/${inner}`, looping, {});
+  await store.put(`shelf/${item}`, encoder.encode('{"a":1}'), {});
+  await store.put(publicationIndexKey(shelf, pin), index, {});
+  expect(await verifyServedPublication(shelf, store.read, pin, "all")).toEqual([
+    "shelf.json is listed by more than one index",
+  ]);
 });
