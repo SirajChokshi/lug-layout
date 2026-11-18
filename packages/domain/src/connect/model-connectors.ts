@@ -1,16 +1,22 @@
 import {
+  AXIS_FREE,
   GENDER_FEMALE,
   GENDER_MALE,
   VECTOR_FLOATS,
+  axisDimension,
+  axisSign,
+  oppositeAxis,
   type ConnectorTable,
 } from "./connector-table.ts";
-import { axialOffsetEngages, profilesFit } from "./mating.ts";
+import type { SnapMating } from "./mating.ts";
 
 export const IDENTIFICATION_RESIDUAL_LDU = 0.0005;
 const MATRIX_FLOATS = 12;
 const X = 0;
 const Y = 1;
 const Z = 2;
+const LINE_KEYS = 4;
+const ALONG = 3;
 
 export interface PartInstances {
   readonly count: number;
@@ -19,10 +25,9 @@ export interface PartInstances {
 }
 
 interface Frames {
-  readonly profile: Uint8Array;
+  readonly shape: Uint16Array;
   readonly gender: Uint8Array;
-  readonly radius: Float32Array;
-  readonly reach: Float32Array;
+  readonly source: Uint8Array;
   readonly origin: Int32Array;
   readonly axis: Int8Array;
   readonly instance: Uint32Array;
@@ -30,49 +35,59 @@ interface Frames {
 
 function allocateFrames(count: number): Frames {
   return {
-    profile: new Uint8Array(count),
+    shape: new Uint16Array(count),
     gender: new Uint8Array(count),
-    radius: new Float32Array(count),
-    reach: new Float32Array(count),
+    source: new Uint8Array(count),
     origin: new Int32Array(count * VECTOR_FLOATS),
-    axis: new Int8Array(count * VECTOR_FLOATS),
+    axis: new Int8Array(count),
     instance: new Uint32Array(count),
   };
 }
 
-function axisDimension(axis: Int8Array, connector: number): number {
-  const o = connector * VECTOR_FLOATS;
-  if (axis[o + X] !== 0) return X;
-  return axis[o + Y] !== 0 ? Y : Z;
+function identifiedAxis(x: number, y: number, z: number): number {
+  const ux = Math.round(x);
+  const uy = Math.round(y);
+  const uz = Math.round(z);
+  const unit = Math.abs(ux) + Math.abs(uy) + Math.abs(uz) === 1;
+  const close =
+    Math.abs(x - ux) <= IDENTIFICATION_RESIDUAL_LDU &&
+    Math.abs(y - uy) <= IDENTIFICATION_RESIDUAL_LDU &&
+    Math.abs(z - uz) <= IDENTIFICATION_RESIDUAL_LDU;
+  if (!unit || !close) return AXIS_FREE;
+  const dimension = ux !== 0 ? X : uy !== 0 ? Y : Z;
+  const negative = ux + uy + uz < 0 ? 1 : 0;
+  return dimension * 2 + negative;
 }
 
-const LINE_KEYS = 4;
-const ALONG = 3;
-
-function axesOpposite(axis: Int8Array, a: number, b: number): boolean {
-  const oa = a * VECTOR_FLOATS;
-  const ob = b * VECTOR_FLOATS;
-  return (
-    axis[oa + X] === -(axis[ob + X] ?? 0) &&
-    axis[oa + Y] === -(axis[ob + Y] ?? 0) &&
-    axis[oa + Z] === -(axis[ob + Z] ?? 0)
-  );
+function axisVector(part: ConnectorTable, connector: number, out: Float64Array): void {
+  const code = part.axis[connector] ?? AXIS_FREE;
+  if (code === AXIS_FREE) {
+    for (let k = 0; k < VECTOR_FLOATS; k++) {
+      out[k] = part.axisFree[connector * VECTOR_FLOATS + k] ?? 0;
+    }
+    return;
+  }
+  out.fill(0);
+  out[axisDimension(code)] = axisSign(code);
 }
 
 class InternalMates {
   readonly consumed: Uint8Array;
+  private readonly reach: number;
   private readonly keys: Int32Array;
   private readonly order: Uint32Array;
 
   constructor(
     private readonly frames: Frames,
     private readonly count: number,
+    private readonly mating: SnapMating,
   ) {
     this.consumed = new Uint8Array(count);
+    this.reach = mating.longestShape();
     this.keys = new Int32Array(count * LINE_KEYS);
     this.order = new Uint32Array(count);
     for (let i = 0; i < count; i++) {
-      const dimension = axisDimension(frames.axis, i);
+      const dimension = axisDimension(frames.axis[i] ?? 0);
       const o = i * VECTOR_FLOATS;
       const k = i * LINE_KEYS;
       this.keys[k] = dimension;
@@ -107,7 +122,7 @@ class InternalMates {
 
   private partner(male: number, at: number, start: number, end: number): number {
     const along = this.along(male);
-    const reach = this.frames.reach[male] ?? 0;
+    const reach = this.reach;
     for (let j = at - 1; j >= start && along - this.along(this.order[j] ?? 0) <= reach; j--) {
       if (this.mates(male, this.order[j] ?? 0)) return this.order[j] ?? 0;
     }
@@ -120,16 +135,10 @@ class InternalMates {
   private mates(male: number, female: number): boolean {
     const frames = this.frames;
     if (this.consumed[female] === 1 || frames.gender[female] !== GENDER_FEMALE) return false;
-    const fits = profilesFit(
-      frames.profile[male] ?? 0,
-      frames.radius[male] ?? 0,
-      frames.profile[female] ?? 0,
-      frames.radius[female] ?? 0,
-    );
-    if (!fits || !axesOpposite(frames.axis, male, female)) return false;
-    const direction = frames.axis[male * VECTOR_FLOATS + (this.keys[male * LINE_KEYS] ?? 0)] ?? 0;
-    const offset = (this.along(female) - this.along(male)) * direction;
-    return axialOffsetEngages(offset, frames.reach[male] ?? 0, frames.reach[female] ?? 0);
+    const axis = frames.axis[male] ?? 0;
+    if (frames.axis[female] !== oppositeAxis(axis)) return false;
+    const offset = (this.along(female) - this.along(male)) * axisSign(axis);
+    return this.mating.engages(frames.shape[male] ?? 0, frames.shape[female] ?? 0, offset);
   }
 
   private along(connector: number): number {
@@ -148,10 +157,9 @@ class InternalMates {
 export class ModelConnectors {
   private constructor(
     readonly count: number,
-    readonly profile: Uint8Array,
+    readonly shape: Uint16Array,
     readonly gender: Uint8Array,
-    readonly radius: Float32Array,
-    readonly reach: Float32Array,
+    readonly source: Uint8Array,
     readonly origin: Int32Array,
     readonly axis: Int8Array,
     readonly instance: Uint32Array,
@@ -163,6 +171,7 @@ export class ModelConnectors {
   static fromParts(
     parts: ReadonlyArray<ConnectorTable | null>,
     instances: PartInstances,
+    mating: SnapMating,
   ): ModelConnectors {
     let total = 0;
     let withoutConnectors = 0;
@@ -180,6 +189,7 @@ export class ModelConnectors {
       throw new RangeError(`${instances.count} instances need ${MATRIX_FLOATS} matrix floats each`);
     }
     const frames = allocateFrames(total);
+    const direction = new Float64Array(VECTOR_FLOATS);
     let exact = 0;
     let offLattice = 0;
     const m = instances.matrices;
@@ -187,43 +197,37 @@ export class ModelConnectors {
       const part = parts[instances.partIndex[i] ?? -1];
       if (!part) continue;
       const o = i * MATRIX_FLOATS;
+      const r0 = m[o] ?? 0;
+      const r1 = m[o + 1] ?? 0;
+      const r2 = m[o + 2] ?? 0;
+      const r4 = m[o + 4] ?? 0;
+      const r5 = m[o + 5] ?? 0;
+      const r6 = m[o + 6] ?? 0;
+      const r8 = m[o + 8] ?? 0;
+      const r9 = m[o + 9] ?? 0;
+      const r10 = m[o + 10] ?? 0;
       for (let c = 0; c < part.count; c++) {
         const v = c * VECTOR_FLOATS;
         const px = part.origin[v + X] ?? 0;
         const py = part.origin[v + Y] ?? 0;
         const pz = part.origin[v + Z] ?? 0;
-        const dx = part.axis[v + X] ?? 0;
-        const dy = part.axis[v + Y] ?? 0;
-        const dz = part.axis[v + Z] ?? 0;
-        const r0 = m[o] ?? 0;
-        const r1 = m[o + 1] ?? 0;
-        const r2 = m[o + 2] ?? 0;
-        const r4 = m[o + 4] ?? 0;
-        const r5 = m[o + 5] ?? 0;
-        const r6 = m[o + 6] ?? 0;
-        const r8 = m[o + 8] ?? 0;
-        const r9 = m[o + 9] ?? 0;
-        const r10 = m[o + 10] ?? 0;
         const wx = r0 * px + r1 * py + r2 * pz + (m[o + 3] ?? 0);
         const wy = r4 * px + r5 * py + r6 * pz + (m[o + 7] ?? 0);
         const wz = r8 * px + r9 * py + r10 * pz + (m[o + 11] ?? 0);
-        const ax = r0 * dx + r1 * dy + r2 * dz;
-        const ay = r4 * dx + r5 * dy + r6 * dz;
-        const az = r8 * dx + r9 * dy + r10 * dz;
+        axisVector(part, c, direction);
+        const dx = direction[X] ?? 0;
+        const dy = direction[Y] ?? 0;
+        const dz = direction[Z] ?? 0;
+        const axis = identifiedAxis(
+          r0 * dx + r1 * dy + r2 * dz,
+          r4 * dx + r5 * dy + r6 * dz,
+          r8 * dx + r9 * dy + r10 * dz,
+        );
         const ix = Math.round(wx);
         const iy = Math.round(wy);
         const iz = Math.round(wz);
-        const ux = Math.round(ax);
-        const uy = Math.round(ay);
-        const uz = Math.round(az);
-        const unitAxis = Math.abs(ux) + Math.abs(uy) + Math.abs(uz) === 1;
-        const originResidual = Math.hypot(wx - ix, wy - iy, wz - iz);
-        const axisResidual = Math.hypot(ax - ux, ay - uy, az - uz);
-        if (
-          !unitAxis ||
-          originResidual > IDENTIFICATION_RESIDUAL_LDU ||
-          axisResidual > IDENTIFICATION_RESIDUAL_LDU
-        ) {
+        const residual = Math.hypot(wx - ix, wy - iy, wz - iz);
+        if (axis === AXIS_FREE || residual > IDENTIFICATION_RESIDUAL_LDU) {
           offLattice++;
           continue;
         }
@@ -231,49 +235,38 @@ export class ModelConnectors {
         frames.origin[e + X] = ix;
         frames.origin[e + Y] = iy;
         frames.origin[e + Z] = iz;
-        frames.axis[e + X] = ux;
-        frames.axis[e + Y] = uy;
-        frames.axis[e + Z] = uz;
-        frames.profile[exact] = part.profile[c] ?? 0;
+        frames.axis[exact] = axis;
+        frames.shape[exact] = part.shape[c] ?? 0;
         frames.gender[exact] = part.gender[c] ?? 0;
-        frames.radius[exact] = part.radius[c] ?? 0;
-        frames.reach[exact] = part.reach[c] ?? 0;
+        frames.source[exact] = part.source[c] ?? 0;
         frames.instance[exact] = i;
         exact++;
       }
     }
-    const search = new InternalMates(frames, exact);
+    const search = new InternalMates(frames, exact, mating);
     const internalMates = search.consume();
-    const consumed = search.consumed;
-    const exposed = exact - 2 * internalMates;
-    const out = allocateFrames(exposed);
+    const exposed = allocateFrames(exact - 2 * internalMates);
     let n = 0;
     for (let i = 0; i < exact; i++) {
-      if (consumed[i] === 1) continue;
-      out.profile[n] = frames.profile[i] ?? 0;
-      out.gender[n] = frames.gender[i] ?? 0;
-      out.radius[n] = frames.radius[i] ?? 0;
-      out.reach[n] = frames.reach[i] ?? 0;
-      out.instance[n] = frames.instance[i] ?? 0;
-      out.origin.set(
-        frames.origin.subarray(i * VECTOR_FLOATS, (i + 1) * VECTOR_FLOATS),
-        n * VECTOR_FLOATS,
-      );
-      out.axis.set(
-        frames.axis.subarray(i * VECTOR_FLOATS, (i + 1) * VECTOR_FLOATS),
-        n * VECTOR_FLOATS,
-      );
+      if (search.consumed[i] === 1) continue;
+      exposed.shape[n] = frames.shape[i] ?? 0;
+      exposed.gender[n] = frames.gender[i] ?? 0;
+      exposed.source[n] = frames.source[i] ?? 0;
+      exposed.axis[n] = frames.axis[i] ?? 0;
+      exposed.instance[n] = frames.instance[i] ?? 0;
+      for (let k = 0; k < VECTOR_FLOATS; k++) {
+        exposed.origin[n * VECTOR_FLOATS + k] = frames.origin[i * VECTOR_FLOATS + k] ?? 0;
+      }
       n++;
     }
     return new ModelConnectors(
-      exposed,
-      out.profile,
-      out.gender,
-      out.radius,
-      out.reach,
-      out.origin,
-      out.axis,
-      out.instance,
+      n,
+      exposed.shape,
+      exposed.gender,
+      exposed.source,
+      exposed.origin,
+      exposed.axis,
+      exposed.instance,
       internalMates,
       offLattice,
       withoutConnectors,

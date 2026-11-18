@@ -1,9 +1,15 @@
 import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
-import { GENDER_FEMALE, GENDER_MALE, VECTOR_FLOATS } from "./connector-table.ts";
+import {
+  AXIS_NEG_Y,
+  AXIS_POS_Y,
+  GENDER_FEMALE,
+  GENDER_MALE,
+  VECTOR_FLOATS,
+} from "./connector-table.ts";
 import type { MateFinder } from "./mate-finder.ts";
 import type { MateReport } from "./mate-report.ts";
-import { maxAxialOffset, profilesFit } from "./mating.ts";
+import type { SnapMating } from "./mating.ts";
 import type { ModelConnectors } from "./model-connectors.ts";
 import { StudLevel } from "./stud-level.ts";
 
@@ -27,83 +33,91 @@ function checkPose(pose: LatticePose): void {
   }
 }
 
+function verticalSign(axis: number): number {
+  if (axis === AXIS_POS_Y) return 1;
+  return axis === AXIS_NEG_Y ? -1 : 0;
+}
+
 class StudClasses {
-  private readonly profile: number[] = [];
-  private readonly radius: number[] = [];
+  private readonly shape: number[] = [];
   private readonly gender: number[] = [];
   private readonly axisY: number[] = [];
-  private readonly reach: number[] = [];
+  private readonly source: number[] = [];
   pairStart = new Int32Array(1);
   pairClass = new Int32Array(0);
   pairStep = new Int8Array(0);
-  pairMaxOffset = new Int32Array(0);
+  pairSource = new Uint8Array(0);
+  pairOffsetStart = new Int32Array(1);
+  offsets = new Int32Array(0);
+
+  constructor(private readonly mating: SnapMating) {}
 
   classOf(model: ModelConnectors, connector: number): number {
-    const profile = model.profile[connector] ?? 0;
-    const radius = model.radius[connector] ?? 0;
+    const shape = model.shape[connector] ?? 0;
     const gender = model.gender[connector] ?? 0;
-    const axisY = model.axis[connector * VECTOR_FLOATS + 1] ?? 0;
-    const reach = model.reach[connector] ?? 0;
-    for (let c = 0; c < this.profile.length; c++) {
+    const axisY = verticalSign(model.axis[connector] ?? 0);
+    const source = model.source[connector] ?? 0;
+    for (let c = 0; c < this.shape.length; c++) {
       if (
-        this.profile[c] === profile &&
-        this.radius[c] === radius &&
+        this.shape[c] === shape &&
         this.gender[c] === gender &&
         this.axisY[c] === axisY &&
-        this.reach[c] === reach
+        this.source[c] === source
       ) {
         return c;
       }
     }
-    this.profile.push(profile);
-    this.radius.push(radius);
+    this.shape.push(shape);
     this.gender.push(gender);
     this.axisY.push(axisY);
-    this.reach.push(reach);
+    this.source.push(source);
     this.rebuildPairs();
-    return this.profile.length - 1;
+    return this.shape.length - 1;
   }
 
-  private mateOffset(male: number, female: number): number {
-    const fits =
-      this.gender[male] === GENDER_MALE &&
-      this.gender[female] === GENDER_FEMALE &&
-      this.axisY[male] === -(this.axisY[female] ?? 0) &&
-      profilesFit(
-        this.profile[male] ?? 0,
-        this.radius[male] ?? 0,
-        this.profile[female] ?? 0,
-        this.radius[female] ?? 0,
-      );
-    return fits ? maxAxialOffset(this.reach[male] ?? 0, this.reach[female] ?? 0) : -1;
+  private engagement(own: number, other: number): Int32Array | null {
+    if (this.axisY[own] !== -(this.axisY[other] ?? 0)) return null;
+    if (this.gender[own] === GENDER_MALE && this.gender[other] === GENDER_FEMALE) {
+      return this.mating.offsets(this.shape[own] ?? 0, this.shape[other] ?? 0);
+    }
+    if (this.gender[own] === GENDER_FEMALE && this.gender[other] === GENDER_MALE) {
+      return this.mating.offsets(this.shape[other] ?? 0, this.shape[own] ?? 0);
+    }
+    return null;
   }
 
   private rebuildPairs(): void {
-    const classes = this.profile.length;
+    const classes = this.shape.length;
     const start = new Int32Array(classes + 1);
     const partner: number[] = [];
     const step: number[] = [];
-    const maxOffset: number[] = [];
+    const source: number[] = [];
+    const offsetStart: number[] = [0];
+    const offsets: number[] = [];
     for (let own = 0; own < classes; own++) {
       start[own] = partner.length;
       for (let other = 0; other < classes; other++) {
-        const offset = Math.max(this.mateOffset(own, other), this.mateOffset(other, own));
-        if (offset < 0) continue;
+        const engaged = this.engagement(own, other);
+        if (!engaged || engaged.length === 0) continue;
         partner.push(other);
         step.push(this.axisY[own] ?? 0);
-        maxOffset.push(offset);
+        source.push(Math.max(this.source[own] ?? 0, this.source[other] ?? 0));
+        for (let k = 0; k < engaged.length; k++) offsets.push(engaged[k] ?? 0);
+        offsetStart.push(offsets.length);
       }
     }
     start[classes] = partner.length;
     this.pairStart = start;
     this.pairClass = Int32Array.from(partner);
     this.pairStep = Int8Array.from(step);
-    this.pairMaxOffset = Int32Array.from(maxOffset);
+    this.pairSource = Uint8Array.from(source);
+    this.pairOffsetStart = Int32Array.from(offsetStart);
+    this.offsets = Int32Array.from(offsets);
   }
 }
 
 export class LatticeStudFinder implements MateFinder {
-  private readonly classes = new StudClasses();
+  private readonly classes: StudClasses;
   private readonly levels = new Map<number, StudLevel>();
   private rasterModel: ModelConnectors | null = null;
   private rasterPhaseX = 0;
@@ -121,6 +135,10 @@ export class LatticeStudFinder implements MateFinder {
   private groupWords = new Int32Array(INITIAL_GROUPS);
   private groupOffset = new Int32Array(INITIAL_GROUPS);
   private raster = new Uint32Array(0);
+
+  constructor(mating: SnapMating) {
+    this.classes = new StudClasses(mating);
+  }
 
   insert(model: ModelConnectors, pose: LatticePose): void {
     this.stamp(model, pose, true);
@@ -167,8 +185,12 @@ export class LatticeStudFinder implements MateFinder {
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
         const step = classes.pairStep[p] ?? 0;
-        for (let d = 0; d <= (classes.pairMaxOffset[p] ?? 0); d++) {
-          const level = this.levels.get(levelKey(partner, y + step * d));
+        for (
+          let k = classes.pairOffsetStart[p] ?? 0;
+          k < (classes.pairOffsetStart[p + 1] ?? 0);
+          k++
+        ) {
+          const level = this.levels.get(levelKey(partner, y + step * (classes.offsets[k] ?? 0)));
           if (!level) continue;
           n += level.countRows(this.raster, offset, rows, words, cellX + minX, cellZ + minZ);
         }
@@ -197,8 +219,14 @@ export class LatticeStudFinder implements MateFinder {
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
         const step = classes.pairStep[p] ?? 0;
-        for (let d = 0; d <= (classes.pairMaxOffset[p] ?? 0); d++) {
-          if (this.levels.get(levelKey(partner, y + step * d))?.has(x, z)) out.push(i);
+        const source = classes.pairSource[p] ?? 0;
+        for (
+          let k = classes.pairOffsetStart[p] ?? 0;
+          k < (classes.pairOffsetStart[p + 1] ?? 0);
+          k++
+        ) {
+          const level = this.levels.get(levelKey(partner, y + step * (classes.offsets[k] ?? 0)));
+          if (level?.has(x, z)) out.push(i, source);
         }
       }
     }
@@ -245,8 +273,12 @@ export class LatticeStudFinder implements MateFinder {
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
         const step = classes.pairStep[p] ?? 0;
-        for (let d = 0; d <= (classes.pairMaxOffset[p] ?? 0); d++) {
-          if (this.levels.has(levelKey(partner, y + step * d))) return true;
+        for (
+          let k = classes.pairOffsetStart[p] ?? 0;
+          k < (classes.pairOffsetStart[p + 1] ?? 0);
+          k++
+        ) {
+          if (this.levels.has(levelKey(partner, y + step * (classes.offsets[k] ?? 0)))) return true;
         }
       }
     }
@@ -317,7 +349,7 @@ export class LatticeStudFinder implements MateFinder {
     for (let i = 0; i < model.count; i++) {
       this.connectorGroup[at + i] = NOT_ON_LATTICE;
       const o = i * VECTOR_FLOATS;
-      if ((model.axis[o + 1] ?? 0) === 0) continue;
+      if (verticalSign(model.axis[i] ?? 0) === 0) continue;
       const mx = model.origin[o] ?? 0;
       const mz = model.origin[o + 2] ?? 0;
       const fromCentreX = cos * mx + sin * mz + phaseX - STUD_CENTRE_LDU;

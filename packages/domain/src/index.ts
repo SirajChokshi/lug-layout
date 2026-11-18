@@ -191,12 +191,29 @@ export {
   type UncountedItem,
 } from "./bom/export-formats.ts";
 export {
+  AXIS_FREE,
+  AXIS_NEG_X,
+  AXIS_NEG_Y,
+  AXIS_NEG_Z,
+  AXIS_POS_X,
+  AXIS_POS_Y,
+  AXIS_POS_Z,
   ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
-  PROFILE_CROSS,
-  PROFILE_ROUND,
+  SOURCE_INFERRED,
+  SOURCE_PRIMITIVE,
+  SOURCE_SHADOW,
 } from "./connect/connector-table.ts";
+export {
+  CAP_FAR,
+  CAP_ROOT,
+  SECTION_AXLE,
+  SECTION_ROUND,
+  SECTION_SQUARE,
+  SnapShapes,
+} from "./connect/snap-shapes.ts";
+export { SnapMating } from "./connect/mating.ts";
 export { ModelConnectors, type PartInstances } from "./connect/model-connectors.ts";
 export { CandidatePoses, type LatticePose, type SnapWindow } from "./connect/candidate-poses.ts";
 export { MateReport } from "./connect/mate-report.ts";

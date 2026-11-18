@@ -7,10 +7,19 @@ import {
   type SnapWindow,
 } from "../src/connect/candidate-poses.ts";
 import { ConnectionSolver } from "../src/connect/connection-solver.ts";
-import { ConnectorTable, GENDER_FEMALE, GENDER_MALE } from "../src/connect/connector-table.ts";
+import {
+  AXIS_NEG_Y,
+  AXIS_POS_Y,
+  ConnectorTable,
+  GENDER_FEMALE,
+  GENDER_MALE,
+  SOURCE_SHADOW,
+} from "../src/connect/connector-table.ts";
 import { LatticeStudFinder } from "../src/connect/lattice-stud-finder.ts";
 import { MateReport } from "../src/connect/mate-report.ts";
+import { SnapMating } from "../src/connect/mating.ts";
 import { ModelConnectors } from "../src/connect/model-connectors.ts";
+import { CAP_FAR, CAP_ROOT, SECTION_ROUND, SnapShapes } from "../src/connect/snap-shapes.ts";
 
 const BASEPLATE_STUDS = 32;
 const BASEPLATES_PER_SIDE = 44;
@@ -21,6 +30,12 @@ const STUD_RADIUS = 6;
 const STUD_REACH = 4;
 const BRICK_CAVITY = BRICK_PLATES * PLATE_LDU - STUD_REACH;
 const PLATE_CAVITY = PLATE_LDU - STUD_REACH;
+const shapes = new SnapShapes();
+const mating = new SnapMating(shapes);
+const STUD = shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [STUD_RADIUS], [STUD_REACH]);
+function receptor(depth: number): number {
+  return shapes.intern(CAP_FAR, false, [SECTION_ROUND], [STUD_RADIUS], [depth]);
+}
 const HALF = STUD_LDU / 2;
 const HOVER_POSITIONS = 256;
 const HOVER_CALLS = 2_000;
@@ -47,55 +62,58 @@ function slab(
   studs: boolean,
 ): ConnectorTable {
   const count = width * depth * (studs ? 2 : 1);
-  const profile = new Uint8Array(count);
+  const shape = new Uint16Array(count);
   const gender = new Uint8Array(count);
-  const radius = new Float32Array(count).fill(STUD_RADIUS);
   const origin = new Float32Array(count * 3);
-  const axis = new Float32Array(count * 3);
-  const reach = new Float32Array(count);
+  const axis = new Int8Array(count);
+  const cavityShape = receptor(cavity);
   let n = 0;
   for (let layer = 0; layer < (studs ? 2 : 1); layer++) {
     const male = studs && layer === 0;
     for (let j = 0; j < depth; j++) {
       for (let i = 0; i < width; i++) {
+        shape[n] = male ? STUD : cavityShape;
         gender[n] = male ? GENDER_MALE : GENDER_FEMALE;
         origin.set([i * STUD_LDU + HALF, male ? height : 0, j * STUD_LDU + HALF], n * 3);
-        axis.set([0, male ? 1 : -1, 0], n * 3);
-        reach[n] = male ? STUD_REACH : cavity;
+        axis[n] = male ? AXIS_POS_Y : AXIS_NEG_Y;
         n++;
       }
     }
   }
-  return new ConnectorTable(profile, gender, radius, origin, axis, reach);
+  return new ConnectorTable(
+    shape,
+    gender,
+    new Uint8Array(count).fill(SOURCE_SHADOW),
+    origin,
+    axis,
+    new Float32Array(count * 3),
+  );
 }
 
 function baseplate(): ConnectorTable {
   const count = BASEPLATE_STUDS * BASEPLATE_STUDS;
   const origin = new Float32Array(count * 3);
-  const axis = new Float32Array(count * 3);
   for (let j = 0; j < BASEPLATE_STUDS; j++) {
     for (let i = 0; i < BASEPLATE_STUDS; i++) {
-      const n = j * BASEPLATE_STUDS + i;
-      origin.set([i * STUD_LDU + HALF, 0, j * STUD_LDU + HALF], n * 3);
-      axis[n * 3 + 1] = 1;
+      origin.set([i * STUD_LDU + HALF, 0, j * STUD_LDU + HALF], (j * BASEPLATE_STUDS + i) * 3);
     }
   }
   return new ConnectorTable(
+    new Uint16Array(count).fill(STUD),
     new Uint8Array(count),
-    new Uint8Array(count),
-    new Float32Array(count).fill(STUD_RADIUS),
+    new Uint8Array(count).fill(SOURCE_SHADOW),
     origin,
-    axis,
-    new Float32Array(count).fill(STUD_REACH),
+    new Int8Array(count).fill(AXIS_POS_Y),
+    new Float32Array(count * 3),
   );
 }
 
 function one(part: ConnectorTable): ModelConnectors {
-  return ModelConnectors.fromParts([part], {
-    count: 1,
-    partIndex: [0],
-    matrices: Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0),
-  });
+  return ModelConnectors.fromParts(
+    [part],
+    { count: 1, partIndex: [0], matrices: Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0) },
+    mating,
+  );
 }
 
 function tower(brick: ConnectorTable): {
@@ -170,7 +188,7 @@ async function timed(calls: number, warmup: number, run: (k: number) => void): P
   };
 }
 
-const solver = new ConnectionSolver([new LatticeStudFinder()]);
+const solver = new ConnectionSolver([new LatticeStudFinder(mating)]);
 const plate = one(baseplate());
 const brickPart = slab(2, 4, BRICK_PLATES * PLATE_LDU, BRICK_CAVITY, true);
 const brick = one(brickPart);
@@ -289,11 +307,11 @@ const loadSamples = new Float64Array(LOAD_RUNS);
 let loaded: ModelConnectors | null = null;
 for (let r = 0; r < LOAD_RUNS; r++) {
   const start = performance.now();
-  loaded = ModelConnectors.fromParts(big.parts, {
-    count: big.count,
-    partIndex: new Uint16Array(big.count),
-    matrices: big.matrices,
-  });
+  loaded = ModelConnectors.fromParts(
+    big.parts,
+    { count: big.count, partIndex: new Uint16Array(big.count), matrices: big.matrices },
+    mating,
+  );
   loadSamples[r] = performance.now() - start;
 }
 observer.disconnect();
