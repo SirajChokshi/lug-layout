@@ -6,9 +6,10 @@ import {
   type LoadedSession,
   type SimReply,
   type SimRequest,
+  type SimSessionFactory,
 } from "@brr/sim";
 import { inject, injectable } from "inversify";
-import { SIM_CLOCK, SIM_PORT } from "./tokens.ts";
+import { SIM_CLOCK, SIM_PORT, SIM_SESSION_FACTORY } from "./tokens.ts";
 
 export interface ISimClock {
   now(): number;
@@ -31,6 +32,7 @@ export class SimWorkerHost {
   constructor(
     @inject(SIM_PORT) port: RpcPort,
     @inject(SIM_CLOCK) private readonly clock: ISimClock,
+    @inject(SIM_SESSION_FACTORY) private readonly createSession: SimSessionFactory,
   ) {
     this.endpoint = new RpcEndpoint(port, SIM_PROTOCOL);
   }
@@ -50,7 +52,7 @@ export class SimWorkerHost {
       case "load": {
         this.setRunning(false);
         this.spareFrames.length = 0;
-        this.current = loadSession(request.load);
+        this.current = loadSession(this.createSession, request.load);
         this.endpoint.reply(id, { kind: "loaded", loaded: this.current.loaded });
         this.postFrame(0, 0);
         return;
@@ -71,7 +73,7 @@ export class SimWorkerHost {
       case "bench": {
         const { scenario, session } = this.loaded();
         const live = session.simulation;
-        const copy = replay(scenario, session.log, live.tick);
+        const copy = replay(this.createSession, scenario, session.log, live.tick);
         const replayHash = copy.stateHash();
         const start = this.clock.now();
         for (let i = 0; i < request.ticks; i++) copy.step();
