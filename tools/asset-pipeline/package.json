@@ -14,6 +14,7 @@
     "facts": "node src/cli.ts facts",
     "colors": "node src/cli.ts colors",
     "ldraw-library": "node src/library/cli.ts",
+    "library-bake": "node src/library-bake/cli.ts",
     "test": "vitest run"
   },
   "dependencies": {

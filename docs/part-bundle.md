@@ -70,6 +70,69 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 4. Optionally, override the committed URL with Vercel's `VITE_BUNDLE_BASE_URL` or the repository variable `PART_BUNDLE_BASE_URL`; neither is needed.
 5. To move to a custom domain later, follow the three steps in the infra README; step 2 is now committing the new URL as `public_base_url`. `ignoreCommand` skips commits that touch only `infra/`, so redeploy Production by hand after that commit. r2.dev stays on until no deployment loads from it.
 
+## Precompiled bake records for the pinned library
+
+`pnpm --filter @brr/asset-pipeline library-bake` compiles every part of the pinned LDraw library (`kulits/ldraw-parts` at the commit `ldraw.lock.json` pins, every `parts/*.dat`) once, natively. Each part gets two files:
+- a **bake record**, which is everything the import-time bake reads from a compiled part;
+- its **standard GLB**, the same bytes the import compiler's `compile` op returns.
+
+They go to `tools/asset-pipeline/dist/library-bake`. The import will fetch them for pinned parts instead of compiling those parts. Parts outside the pinned library, such as MPD-embedded and Studio custom parts, keep compiling at import.
+
+**Compile options.** The records use the palette's `studPrimitives` and `unofficialAllowlist` and the Technic primitive table `primitive-connectors.json`, the same options the bundle manifest gives the import compiler. The index records all three, so a reader with other options can tell the records don't apply.
+
+**Failures.** A part that doesn't compile, or whose geometry bounds can't be read, is listed under `failed` with the compiler's own message and gets no record or GLB. Bounds fail only the way the part's geometry does: an unresolved reference, or malformed geometry with its findings. They are never defaulted.
+
+**Run time:** 24,985 parts in about 25 s on 8 cores. 24,983 produce records; 2 (`93606dyf`, `93606dyg`) reference a file the pinned library doesn't have and are listed as failed.
+
+### Record format
+
+Every record is little-endian, versioned by its magic `BRRBAKE1`, and lossless. `BakeRecord` in `crates/brick-compile/src/record.rs` encodes and decodes it, refusing a truncated, padded or inconsistent record. The fields, in order:
+
+| Field | Encoding |
+|---|---|
+| Magic | `BRRBAKE1`, 8 bytes |
+| Counts | vertices V, colour groups G and stud references S, each u32 |
+| Whole-geometry bounds | min then max, 6 × f64 |
+| Positions | 3V × f32, the compiled mesh's positions bit for bit |
+| Group headers | G × (colour u32, index count u32) |
+| Indices | every group's indices in group order; u16 when V ≤ 65,536, otherwise u32 |
+| Stud references | S × (colour u32, primitive name as u16 length plus UTF-8, matrix as 12 × f64) |
+| Tree order | T = indices / 3 entries; u16 when T ≤ 65,536, otherwise u32 |
+
+**Whole-geometry bounds** are the part's bounds with stud geometry included, in f64 from the LDraw points. Vehicle detection measures every drawn part's contact graph from exactly these (`vehicle::part_bounds`). Zeros are stored as +0.0. `f64::min` and `f64::max` leave the sign of a zero result unspecified, and native and WASM code generation pick differently: the parity gate found 1,202 parts whose bounds differed only by that sign.
+
+**Tree order** is the permutation `TriangleTree::build` produces for the part's triangles, taken in group order. `PartSolid::from_record` rebuilds the identical tree from it, without sorting, through `TriangleTree::from_order`:
+- **Speed:** 105 ms instead of 1,160 ms over the distinct parts of 89 inputs.
+- **Size cost:** 19% of the library's compressed record bytes, and 181 KB extra for 10185-1.
+- **Builder invariants** that `BRRBAKE1` depends on:
+  - leaves hold at most 4 triangles (`LEAF_TRIANGLES`);
+  - a branch splits along the widest axis of its bounds;
+  - the lower child takes the first half (`len / 2`) of its triangles, stably sorted by the sum of their corners on that axis.
+- **Changing any invariant** changes the records: bump the magic and rebuild the pin.
+- **Verification:** `library-bake` decodes every record it writes and refuses to finish unless the solid rebuilt from it equals `PartSolid::from_mesh` of the compiled part, bit for bit.
+
+Normals, hard edges and file headers aren't recorded, because the bake doesn't read them. Attribution comes from the standard GLB's `extras`, as it does for parts compiled at import.
+
+### Index and pin
+
+The index is two levels, so a reader fetches only what its parts need:
+- **`library-bake.json`** (about 4 KB compressed) holds the LDraw source, the compile options, the CA licences in use, the failed parts with their errors, and the content-addressed names of 256 bucket files.
+- **Each bucket** (about 3 KB compressed) maps the part ids whose FNV-1a hash of the id's UTF-16 code units falls in it (`libraryBakeBucket` in `@brr/schema/bundle`) to their content-addressed record and GLB files.
+
+`tools/asset-pipeline/library-bake.json` is committed and pins the index's SHA-256 together with the counts of parts, records, failures and licence refusals. Before anything is written, each part's source licences must all be CA. A refused part fails the command and is never shipped.
+
+### Drift and parity
+
+`library-bake --check` recomputes everything and fails when the result differs from the pin.
+
+`pnpm --filter @brr/e2e library-bake-parity` then compiles every part, through `@brr/import`'s `BrickCompiler` on the shipped `brick_compile_wasm.wasm`, using the `compile` op with `records: true`. It compares every record, every standard GLB and every failure byte for byte with the native output, and fails on any difference. That takes about 50 s on 8 workers.
+
+`pnpm library-bake:check` runs both, as does CI's `library-bake` job; the required `check` status needs it.
+
+The `compile` op returns records only at the standard LOD, and refuses `records` at any other.
+
+Publishing to `brr-part-bundles` comes in a following change, through `src/publication/pinned-publication.ts` like library connectors. `src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
+
 ## Local development
 
 Nothing changes locally. `pnpm --filter @brr/asset-pipeline build` writes `tools/asset-pipeline/dist/bundle`, and `vite` serves it at `/bundle/`. To use the published bundle instead:
