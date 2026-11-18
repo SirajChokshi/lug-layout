@@ -23,6 +23,7 @@ import {
   AXIS_NEG_Z,
   AXIS_POS_Y,
   AXIS_POS_Z,
+  AXIS_FREE,
   ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
@@ -31,6 +32,10 @@ import {
   SOURCE_SHADOW,
   STATUS_UNVERIFIED,
   STATUS_VERIFIED,
+  VECTOR_FLOATS,
+  axisDimension,
+  axisSign,
+  oppositeAxis,
 } from "./connector-table.ts";
 import { LatticeStudFinder } from "./lattice-stud-finder.ts";
 import { MateReport } from "./mate-report.ts";
@@ -42,11 +47,14 @@ import { TrackEndFinder } from "./track-end-finder.ts";
 import {
   CAP_FAR,
   CAP_ROOT,
+  FINGER_RADIUS_UNSTATED,
   SECTION_AXLE,
   SECTION_ROUND,
   SECTION_SQUARE,
   SECTION_FLARE_JOINS_NEXT,
   SECTION_FLARE_JOINS_PREVIOUS,
+  SECTION_FEMALE_FINGER,
+  SECTION_MALE_FINGER,
   NO_GROUP,
   SnapShapes,
 } from "./snap-shapes.ts";
@@ -1619,4 +1627,155 @@ describe("ConnectionSolver against every coaxial pair", () => {
     },
     PROPERTY_TIMEOUT_MS,
   );
+});
+
+const FINGER_X = 40;
+const FINGER_Y = 12;
+const FINGER_TOKEN = "token-finger";
+const SIXTEENTH = 1 / SIXTEENTHS_PER_LDU;
+
+function fingerCodes(firstMale: boolean, widths: ReadonlyArray<number>): number[] {
+  return widths.map((_, k) =>
+    (k % 2 === 0) === firstMale ? SECTION_MALE_FINGER : SECTION_FEMALE_FINGER,
+  );
+}
+
+function fingers(
+  codes: ReadonlyArray<number>,
+  widths: ReadonlyArray<number>,
+  radius = FINGER_RADIUS_UNSTATED,
+  group = NO_GROUP,
+): number {
+  return shapes.intern(
+    0,
+    false,
+    codes,
+    widths.map(() => radius),
+    widths,
+    group,
+  );
+}
+
+function lone(code: number, width: number): number {
+  return fingers([code], [width]);
+}
+
+function radiiEngage(maleRadius: number, femaleRadius: number, group = NO_GROUP): boolean {
+  const finger = fingers([SECTION_MALE_FINGER], [8], maleRadius, group);
+  return mating.engages(finger, fingers([SECTION_FEMALE_FINGER], [8], femaleRadius, group), 0);
+}
+
+function fingerHalf(
+  firstMale: boolean,
+  widths: ReadonlyArray<number>,
+  axis: number,
+): ConnectorTable {
+  const codes = fingerCodes(firstMale, widths);
+  const reach = (axisSign(axis) * widths.reduce((sum, width) => sum + width, 0)) / 2;
+  const start = [FINGER_X - reach, FINGER_Y, HALF] as const;
+  const far = [FINGER_X + reach, FINGER_Y, HALF] as const;
+  const inOrder = fingers(codes, widths);
+  const backwards = fingers(codes.toReversed(), widths.toReversed());
+  return table([
+    { shape: inOrder, gender: GENDER_MALE, origin: start, axis },
+    { shape: inOrder, gender: GENDER_FEMALE, origin: start, axis: oppositeAxis(axis) },
+    { shape: backwards, gender: GENDER_MALE, origin: far, axis: oppositeAxis(axis) },
+    { shape: backwards, gender: GENDER_FEMALE, origin: far, axis },
+  ]);
+}
+
+function freeFaces(part: ConnectorTable, shiftLdu: number): ConnectorTable {
+  const origin = Float32Array.from(part.origin, (value, k) =>
+    k % VECTOR_FLOATS === 0 ? value + shiftLdu : value,
+  );
+  const axisFree = new Float32Array(part.count * VECTOR_FLOATS);
+  for (let c = 0; c < part.count; c++) {
+    const code = part.axis[c] ?? AXIS_FREE;
+    axisFree[c * VECTOR_FLOATS + axisDimension(code)] = axisSign(code);
+  }
+  const axis = new Int8Array(part.count).fill(AXIS_FREE);
+  return new ConnectorTable(
+    part.shape,
+    part.gender,
+    part.source,
+    part.status,
+    origin,
+    axis,
+    axisFree,
+  );
+}
+
+function exposure(connectors: ModelConnectors): number[] {
+  return [connectors.count, connectors.internalMates, connectors.offLattice];
+}
+
+describe("finger sequences", () => {
+  const uneven = [3.5, 5, 1.5];
+
+  it("mate two halves whose fingers interleave exactly, whichever way their sequences run, and never a swapped finger order or a copy", () => {
+    const engine = allFamilies();
+    engine.insert(single(fingerHalf(true, uneven, AXIS_POS_X)), pose(0, 0, 0));
+    const partner = single(fingerHalf(false, uneven, AXIS_POS_X));
+    expect(matesAt(engine, partner, pose(0, 0, 0))).toBe(4);
+    expect(matesAt(engine, partner, pose(1, 0, 0))).toBe(0);
+    const runningBack = single(fingerHalf(false, uneven.toReversed(), AXIS_NEG_X));
+    expect(matesAt(engine, runningBack, pose(0, 0, 0))).toBe(4);
+    const swapped = single(fingerHalf(false, uneven.toReversed(), AXIS_POS_X));
+    expect(matesAt(engine, swapped, pose(0, 0, 0))).toBe(0);
+    expect(matesAt(engine, single(fingerHalf(true, uneven, AXIS_POS_X)), pose(0, 0, 0))).toBe(0);
+    const candidates = new CandidatePoses();
+    engine.rank(partner, window(pose(1, 0, 0), 1, 1, 4), candidates);
+    expect([candidates.x[0], candidates.z[0], candidates.rot[0], candidates.votes[0]]).toEqual([
+      0, 0, 0, 4,
+    ]);
+  });
+
+  it("consume both halves of a joint inside one model, identifying free faces like any other, while a lone or unidentified half stays exposed", () => {
+    const half = fingerHalf(false, uneven, AXIS_POS_X);
+    const offGrid = freeFaces(half, SIXTEENTH / 2);
+    const joint = (other: ConnectorTable, shiftLdu: number): ModelConnectors =>
+      model(
+        [fingerHalf(true, uneven, AXIS_POS_X), other],
+        [
+          [0, translation(0, 0, 0)],
+          [1, translation(shiftLdu, 0, 0)],
+        ],
+      );
+    expect(exposure(joint(half, 0))).toEqual([0, 4, 0]);
+    expect(exposure(joint(offGrid, -SIXTEENTH / 2))).toEqual([0, 4, 0]);
+    expect(exposure(joint(offGrid, 0))).toEqual([4, 0, 4]);
+    expect(exposure(single(fingerHalf(true, uneven, AXIS_POS_X)))).toEqual([4, 0, 0]);
+  });
+
+  it("seat a finger only in a gap of exactly its width, to the sixteenth, at every such gap of a longer sequence", () => {
+    const finger = lone(SECTION_MALE_FINGER, 8);
+    expect(mating.ranges(finger, lone(SECTION_FEMALE_FINGER, 8))).toEqual(rangesInLdu([0, 0]));
+    const none = new Int32Array(0);
+    expect(mating.ranges(finger, lone(SECTION_FEMALE_FINGER, 8 + SIXTEENTH))).toEqual(none);
+    expect(mating.ranges(finger, lone(SECTION_FEMALE_FINGER, 8 - SIXTEENTH))).toEqual(none);
+    const knuckles = [8, 8, 8, 8, 8];
+    expect(mating.ranges(finger, fingers(fingerCodes(true, knuckles), knuckles))).toEqual(
+      rangesInLdu([-24, -24], [-8, -8]),
+    );
+  });
+
+  it("need equal radii between ungrouped fingers only where both state one", () => {
+    expect(radiiEngage(1.5, 1.5)).toBe(true);
+    expect(radiiEngage(9.5, 9)).toBe(false);
+    expect(radiiEngage(9.5, FINGER_RADIUS_UNSTATED)).toBe(true);
+    expect(radiiEngage(FINGER_RADIUS_UNSTATED, 1.5)).toBe(true);
+  });
+
+  it("mate grouped fingers on their token and widths, whatever radii they state", () => {
+    expect(radiiEngage(2, 4, FINGER_TOKEN)).toBe(true);
+  });
+
+  it("leave a finger mate free about its own axis only, unlike a face contact", () => {
+    const finger = lone(SECTION_MALE_FINGER, 8);
+    expect(mating.freedom(finger, lone(SECTION_FEMALE_FINGER, 8), 0, AXIS_POS_Z)).toEqual({
+      spins: true,
+      axis: AXIS_POS_Z,
+      freeAboutVertical: false,
+    });
+  });
 });

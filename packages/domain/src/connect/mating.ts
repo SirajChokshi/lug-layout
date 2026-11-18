@@ -11,7 +11,10 @@ import {
 import {
   CAP_FAR,
   CAP_ROOT,
+  FINGER_RADIUS_UNSTATED,
   SECTION_AXLE,
+  SECTION_FEMALE_FINGER,
+  SECTION_MALE_FINGER,
   SECTION_ROUND,
   SECTION_SQUARE,
   type SnapShapes,
@@ -47,6 +50,21 @@ function containment(
   return maleCode === SECTION_SQUARE
     ? inside(2 * maleSize * maleSize, femaleSize * femaleSize)
     : inside(maleSize, femaleSize);
+}
+
+function interleaves(maleCode: number, femaleCode: number): boolean {
+  return (
+    (maleCode === SECTION_MALE_FINGER && femaleCode === SECTION_FEMALE_FINGER) ||
+    (maleCode === SECTION_FEMALE_FINGER && femaleCode === SECTION_MALE_FINGER)
+  );
+}
+
+function radiiAgree(maleRadius: number, femaleRadius: number): boolean {
+  return (
+    maleRadius === FINGER_RADIUS_UNSTATED ||
+    femaleRadius === FINGER_RADIUS_UNSTATED ||
+    maleRadius === femaleRadius
+  );
 }
 
 function locksRotation(maleCode: number, femaleCode: number): boolean {
@@ -311,19 +329,28 @@ export class SnapMating {
   }
 
   private contains(male: number, female: number, offset: number): boolean {
-    const shapes = this.shapes;
     let touched = false;
-    const fits = this.overlaps(male, female, offset, (m, f) => {
-      const fit = containment(
-        shapes.maleCode(m),
-        shapes.maleSize(m),
-        shapes.femaleCode(f),
-        shapes.femaleSize(f),
-      );
+    const comparesRadii = !this.shapes.grouped(male);
+    const fits = this.overlaps(male, female, offset, (m, f, shared) => {
+      const fit = this.fit(m, f, shared, comparesRadii);
       touched ||= fit === TOUCHING;
       return fit !== MISFIT;
     });
     return fits && touched;
+  }
+
+  private fit(m: number, f: number, shared: number, comparesRadii: boolean): number {
+    const shapes = this.shapes;
+    const maleCode = shapes.maleCode(m);
+    const femaleCode = shapes.femaleCode(f);
+    const maleSize = shapes.maleSize(m);
+    const femaleSize = shapes.femaleSize(f);
+    if (interleaves(maleCode, femaleCode)) {
+      const exact = shared === shapes.span(m) && shared === shapes.span(f);
+      const radii = !comparesRadii || radiiAgree(maleSize, femaleSize);
+      return exact && radii ? TOUCHING : MISFIT;
+    }
+    return containment(maleCode, maleSize, femaleCode, femaleSize);
   }
 
   private overlaps(

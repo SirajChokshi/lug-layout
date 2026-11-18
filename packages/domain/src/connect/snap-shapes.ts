@@ -3,9 +3,13 @@ export const SECTION_AXLE = 1;
 export const SECTION_SQUARE = 2;
 export const SECTION_FLARE_JOINS_PREVIOUS = 3;
 export const SECTION_FLARE_JOINS_NEXT = 4;
+export const SECTION_MALE_FINGER = 5;
+export const SECTION_FEMALE_FINGER = 6;
+export const FINGER_RADIUS_UNSTATED = 0;
 export const CAP_ROOT = 1;
 export const CAP_FAR = 2;
 export const NO_GROUP = "";
+const NO_GROUP_TOKEN = 0;
 const INITIAL_SHAPES = 16;
 const INITIAL_SECTIONS = 64;
 
@@ -27,7 +31,7 @@ export class SnapShapes {
   private femaleCodeOf = new Uint8Array(INITIAL_SECTIONS);
   private femaleSizeOf = new Float32Array(INITIAL_SECTIONS);
   private readonly ids = new Map<string, number>();
-  private readonly groups = new Map<string, number>([[NO_GROUP, 0]]);
+  private readonly groups = new Map<string, number>([[NO_GROUP, NO_GROUP_TOKEN]]);
 
   get count(): number {
     return this.shapes;
@@ -84,7 +88,11 @@ export class SnapShapes {
   }
 
   group(shape: number): number {
-    return this.groupOf[shape] ?? 0;
+    return this.groupOf[shape] ?? NO_GROUP_TOKEN;
+  }
+
+  grouped(shape: number): boolean {
+    return this.group(shape) !== NO_GROUP_TOKEN;
   }
 
   slides(shape: number): boolean {
