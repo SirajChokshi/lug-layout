@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use brick_compile::affine::Vec3;
 use brick_compile::bands::{end_faces, outward_round_bands};
+use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
     mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, InferredFeatures,
     Issue, MatingFace, PrimitiveConnectors, PrimitiveTable, Section, SectionShape,
@@ -1366,4 +1367,36 @@ fn connectors_half_an_ldu_apart_keep_their_own_slots_on_the_sixteenth_grid() {
         extract("-8.0003"),
         vec![(Source::Shadow, Some([0, 128, 0]))]
     );
+}
+
+#[test]
+fn the_48723_bore_measures_as_round_sections_then_axle_lobes() {
+    let library = pinned("ldraw");
+    let records = |reference: &str| is_circular_primitive(reference);
+    let flattened = Flattener::new(&library, Lod::Standard, &[])
+        .recording_spans(&records)
+        .flatten("parts/48723.dat")
+        .expect("48723 flattens");
+    let bore = BoreAxis {
+        point: [0.0, 2.0, 0.0],
+        direction: [0.0, -1.0, 0.0],
+        from: -12.0,
+        to: 12.0,
+    };
+    let section = |shape, length| BoreSection { shape, length };
+    let round = |radius| BoreShape::Round { radius };
+    let measured = |axle_tip| {
+        bore_sections(&flattened.triangles, &flattened.spans, &bore, axle_tip)
+            .expect("every section identifies")
+    };
+    assert_eq!(
+        measured(Some(6.0)),
+        vec![
+            section(round(8.0), 2.0),
+            section(round(6.0), 16.0),
+            section(round(8.0), 3.0),
+            section(BoreShape::Axle { tip: 6.0 }, 3.0),
+        ]
+    );
+    assert_eq!(measured(None).last(), Some(&section(round(4.0), 3.0)));
 }

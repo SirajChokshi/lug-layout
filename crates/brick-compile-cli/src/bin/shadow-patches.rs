@@ -5,7 +5,11 @@ use std::process::ExitCode;
 
 use brick_compile::affine::Vec3;
 use brick_compile::bands::{end_faces, outward_round_bands, EndFace};
-use brick_compile::connect::{mating_faces, Gender, ShadowPatches, ShadowSnaps, Source, Status};
+use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
+use brick_compile::connect::{
+    mating_faces, parse_metas, Gender, Meta, SectionShape, ShadowPatches, ShadowSnaps, Shape,
+    Source, Status,
+};
 use brick_compile::flatten::{resolve_reference, Flattener, Library, Lod};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::sixteenths;
@@ -14,6 +18,10 @@ use brick_compile_cli::LazyLibrary;
 use serde_json::{json, Value};
 
 const WIDEST_BAND_END_FACES: &str = "widestOutwardRoundBandEndFaces";
+const MEASURED_SECTIONS: &str = "measuredSections";
+const SNAP_PREFIX: &str = "0 !LDCAD SNAP_";
+const SECS_KEY: &str = "[secs=";
+const SECTION_GAP: &str = "   ";
 const PART_FOLDER: &str = "parts/";
 const LDRAW_LIBRARY: &str = "ldraw-library";
 const DECIMALS: usize = 4;
@@ -21,13 +29,23 @@ const IDENTIFY_LDU: f64 = 0.0005;
 const VERIFIED: &str = "verified";
 const UNVERIFIED: &str = "unverified";
 
+enum Feature {
+    CouplingFaces { id: String, group: String },
+    MeasuredSections { snap: usize },
+}
+
 struct Entry {
     part: String,
-    id: String,
-    group: String,
-    feature: String,
+    feature: Feature,
     status: String,
     added: String,
+}
+
+struct Sections {
+    title: String,
+    replaced: String,
+    measured: Vec<BoreSection>,
+    text: String,
 }
 
 struct Measured {
@@ -78,11 +96,22 @@ fn entries(manifest: &Value) -> Result<Vec<Entry>, String> {
                     "status must be {VERIFIED} or {UNVERIFIED}, not {status}"
                 ));
             }
+            let feature = match text(entry, "feature")?.as_str() {
+                WIDEST_BAND_END_FACES => Feature::CouplingFaces {
+                    id: text(entry, "id")?,
+                    group: text(entry, "group")?,
+                },
+                MEASURED_SECTIONS => Feature::MeasuredSections {
+                    snap: entry["snap"]
+                        .as_u64()
+                        .and_then(|i| usize::try_from(i).ok())
+                        .ok_or("a measuredSections entry needs a snap index")?,
+                },
+                other => return Err(format!("unknown feature {other}")),
+            };
             Ok(Entry {
                 part: text(entry, "part")?,
-                id: text(entry, "id")?,
-                group: text(entry, "group")?,
-                feature: text(entry, "feature")?,
+                feature,
                 status,
                 added: text(entry, "added")?,
             })
@@ -156,13 +185,10 @@ fn closure(library: &LazyLibrary, path: &str, seen: &mut BTreeSet<String>) {
 
 fn measure(
     library: &LazyLibrary,
-    entry: &Entry,
+    part: &str,
     patched: &HashSet<String>,
 ) -> Result<Measured, String> {
-    if entry.feature != WIDEST_BAND_END_FACES {
-        return Err(format!("{}: unknown feature {}", entry.part, entry.feature));
-    }
-    let path = patch_path(&entry.part);
+    let path = patch_path(part);
     let records = |reference: &str| is_circular_primitive(reference);
     let flattened = Flattener::new(library, Lod::Standard, &[])
         .recording_spans(&records)
@@ -236,7 +262,7 @@ fn ori(columns: [Vec3; 3]) -> String {
         .join(" ")
 }
 
-fn snap_line(entry: &Entry, gender: Gender, face: &EndFace) -> Result<String, String> {
+fn snap_line(id: &str, group: &str, gender: Gender, face: &EndFace) -> Result<String, String> {
     let [x, y, z] = male_frame(face.normal);
     let (letter, columns) = match gender {
         Gender::Male => ("M", [x, y, z]),
@@ -249,38 +275,231 @@ fn snap_line(entry: &Entry, gender: Gender, face: &EndFace) -> Result<String, St
         .collect::<Result<_, _>>()?;
     Ok(format!(
         "0 !LDCAD SNAP_GEN [id={}] [group={}] [gender={letter}] [bounding=cyl {} 0] [match=group] [pos={}] [ori={}]",
-        entry.id,
-        entry.group,
+        id,
+        group,
         number(identified_radius(face.radius)?),
         pos.join(" "),
         ori(columns),
     ))
 }
 
-fn patch_text(entry: &Entry, measured: &Measured, source: &Value) -> Result<String, String> {
+fn header(title: &str, added: &str, source: &Value) -> Vec<String> {
     let commit = source["commit"].as_str().unwrap_or_default();
-    let mut lines = vec![
-        format!("0 LDCad shadow info for \"{}\"", measured.title),
+    vec![
+        format!("0 LDCad shadow info for \"{title}\""),
         String::new(),
         "0 Author: Brick Railroad project additions".to_string(),
         "0 !LICENSE CC BY-SA 4.0, see LICENSE.md".to_string(),
         String::new(),
         format!(
-            "0 !HISTORY {} {{Brick Railroad}} Measured from {}@{} geometry",
-            entry.added,
+            "0 !HISTORY {added} {{Brick Railroad}} Measured from {}@{} geometry",
             source["repo"].as_str().unwrap_or_default(),
             &commit[..commit.len().min(8)],
         ),
         String::new(),
-    ];
+    ]
+}
+
+fn patch_text(
+    entry: &Entry,
+    id: &str,
+    group: &str,
+    measured: &Measured,
+    source: &Value,
+) -> Result<String, String> {
+    let mut lines = header(&measured.title, &entry.added, source);
     if !measured.clears.is_empty() {
-        lines.push(format!("0 !LDCAD SNAP_CLEAR [id={}]", entry.id));
+        lines.push(format!("0 !LDCAD SNAP_CLEAR [id={id}]"));
     }
     for face in &measured.faces {
-        lines.push(snap_line(entry, Gender::Male, face)?);
-        lines.push(snap_line(entry, Gender::Female, face)?);
+        lines.push(snap_line(id, group, Gender::Male, face)?);
+        lines.push(snap_line(id, group, Gender::Female, face)?);
     }
     Ok(lines.join("\n") + "\n")
+}
+
+fn upstream_snaps(
+    part: &str,
+    row: &Value,
+    shadow: Option<&LazyLibrary>,
+) -> Result<Vec<String>, String> {
+    if let Some(files) = shadow {
+        let text = files
+            .source(&patch_path(part))
+            .ok_or(format!("{part} has no upstream shadow file"))?;
+        return Ok(text
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with(SNAP_PREFIX))
+            .map(str::to_string)
+            .collect());
+    }
+    row["upstream"]["snaps"]
+        .as_array()
+        .map(|lines| {
+            lines
+                .iter()
+                .filter_map(|line| line.as_str().map(str::to_string))
+                .collect()
+        })
+        .ok_or(format!("{part}: no recorded upstream snaps; pass --shadow"))
+}
+
+fn secs_value(line: &str) -> Option<&str> {
+    let start = line.find(SECS_KEY)? + SECS_KEY.len();
+    let length = line[start..].find(']')?;
+    Some(&line[start..start + length])
+}
+
+fn secs_text(sections: &[BoreSection]) -> String {
+    sections
+        .iter()
+        .map(|section| {
+            let (letter, size) = match section.shape {
+                BoreShape::Round { radius } => ("R", radius),
+                BoreShape::Axle { tip } => ("A", tip),
+            };
+            format!("{letter} {} {}", number(size), number(section.length))
+        })
+        .collect::<Vec<_>>()
+        .join(SECTION_GAP)
+}
+
+fn measure_sections(
+    library: &LazyLibrary,
+    entry: &Entry,
+    snap: usize,
+    upstream: &[String],
+    source: &Value,
+) -> Result<Sections, String> {
+    let path = patch_path(&entry.part);
+    let target = upstream
+        .get(snap)
+        .ok_or(format!("{path}: no upstream snap {snap}"))?;
+    let parsed = parse_metas(target)
+        .into_iter()
+        .next()
+        .ok_or(format!("{path}: snap {snap} doesn't parse"))?
+        .map_err(|e| format!("{path}: {e:?}"))?;
+    let Meta::Snap(connector) = parsed.meta else {
+        return Err(format!("{path}: snap {snap} isn't a snap"));
+    };
+    let Shape::Cylinder {
+        gender: Gender::Female,
+        sections,
+        center,
+        ..
+    } = &connector.shape
+    else {
+        return Err(format!("{path}: snap {snap} isn't a female SNAP_CYL"));
+    };
+    let total: f64 = sections.iter().map(|s| s.length).sum();
+    let m = &connector.placement.m;
+    let local_y = [m[1], m[5], m[9]];
+    let scale = local_y.iter().map(|c| c * c).sum::<f64>().sqrt();
+    let from = if *center { -total / 2.0 } else { 0.0 };
+    let axis = BoreAxis {
+        point: [m[3], m[7], m[11]],
+        direction: local_y.map(|c| -c / scale + 0.0),
+        from,
+        to: from + total,
+    };
+    let axle_tip = sections
+        .iter()
+        .find(|s| s.shape == SectionShape::Axle)
+        .map(|s| s.radius);
+    let records = |reference: &str| is_circular_primitive(reference);
+    let flattened = Flattener::new(library, Lod::Standard, &[])
+        .recording_spans(&records)
+        .flatten(&path)
+        .map_err(|e| format!("{path}: {e:?}"))?;
+    let measured = bore_sections(&flattened.triangles, &flattened.spans, &axis, axle_tip)
+        .map_err(|e| format!("{path}: {e:?}"))?;
+    let replaced = secs_value(target)
+        .ok_or(format!("{path}: snap {snap} has no secs"))?
+        .to_string();
+    let corrected = target.replacen(
+        &format!("{SECS_KEY}{replaced}]"),
+        &format!("{SECS_KEY}{}]", secs_text(&measured)),
+        1,
+    );
+    let title = title(library, &path)?;
+    let mut lines = header(&title, &entry.added, source);
+    lines.push("0 !LDCAD SNAP_CLEAR".to_string());
+    for (index, line) in upstream.iter().enumerate() {
+        lines.push(if index == snap {
+            corrected.clone()
+        } else {
+            line.clone()
+        });
+    }
+    Ok(Sections {
+        title,
+        replaced,
+        measured,
+        text: lines.join("\n") + "\n",
+    })
+}
+
+fn sections_round_trip(
+    library: &LazyLibrary,
+    upstream: &[String],
+    patches: &MemoryLibrary,
+    verified: &HashSet<String>,
+    entry: &Entry,
+    sections: &Sections,
+) -> Result<(), String> {
+    let path = patch_path(&entry.part);
+    let upstream_file = MemoryLibrary([(path.clone(), upstream.join("\n") + "\n")].into());
+    let extraction = ShadowSnaps::new(library, &upstream_file)
+        .patched(ShadowPatches {
+            files: patches,
+            verified,
+        })
+        .snaps(&path);
+    let snaps = upstream
+        .iter()
+        .flat_map(|line| parse_metas(line))
+        .filter(|parsed| matches!(parsed, Ok(p) if matches!(p.meta, Meta::Snap(_))))
+        .count();
+    let status = if entry.status == VERIFIED {
+        Status::Verified
+    } else {
+        Status::Unverified
+    };
+    let measured: Vec<(SectionShape, f64, f64)> = sections
+        .measured
+        .iter()
+        .map(|s| match s.shape {
+            BoreShape::Round { radius } => (SectionShape::Round, radius, s.length),
+            BoreShape::Axle { tip } => (SectionShape::Axle, tip, s.length),
+        })
+        .collect();
+    let corrected = extraction
+        .connectors
+        .iter()
+        .filter(|c| match &c.shape {
+            Shape::Cylinder { sections, .. } => {
+                sections
+                    .iter()
+                    .map(|s| (s.shape, s.radius, s.length))
+                    .collect::<Vec<_>>()
+                    == measured
+            }
+            _ => false,
+        })
+        .count();
+    let all_patched = extraction
+        .connectors
+        .iter()
+        .all(|c| c.source == Source::Patch && c.status == status);
+    if extraction.connectors.len() != snaps || corrected != 1 || !all_patched {
+        return Err(format!(
+            "{path}: the patch reads back as {} connectors, {corrected} with the measured sections",
+            extraction.connectors.len()
+        ));
+    }
+    Ok(())
 }
 
 fn y_up(v: Vec3) -> Vec3 {
@@ -289,14 +508,15 @@ fn y_up(v: Vec3) -> Vec3 {
 
 fn round_trip(
     library: &LazyLibrary,
-    shadow: &MemoryLibrary,
     patches: &MemoryLibrary,
     verified: &HashSet<String>,
     entry: &Entry,
+    group: &str,
     measured: &Measured,
 ) -> Result<(), String> {
+    let shadow = MemoryLibrary(HashMap::new());
     let path = patch_path(&entry.part);
-    let extraction = ShadowSnaps::new(library, shadow)
+    let extraction = ShadowSnaps::new(library, &shadow)
         .patched(ShadowPatches {
             files: patches,
             verified,
@@ -320,7 +540,7 @@ fn round_trip(
             let found = faces.iter().filter(|f| {
                 f.gender == gender
                     && f.status == status
-                    && f.group.as_deref() == Some(entry.group.as_str())
+                    && f.group.as_deref() == Some(group)
                     && (0..3).all(|k| {
                         (f.origin[k] - y_up(face.origin)[k]).abs() <= IDENTIFY_LDU
                             && (f.axis[k] - y_up(face.normal)[k]).abs() <= IDENTIFY_LDU
@@ -428,6 +648,30 @@ fn coverage(
     Ok(Value::Array(rows))
 }
 
+fn faces_json(measured: &Measured) -> Result<Value, String> {
+    let faces: Vec<Value> = measured
+        .faces
+        .iter()
+        .map(|face| {
+            Ok(json!({
+                "origin": face.origin.map(|c| written(c).unwrap_or(c)),
+                "normal": vector(face.normal),
+                "radius": identified_radius(face.radius)?,
+            }))
+        })
+        .collect::<Result<_, String>>()?;
+    Ok(json!({
+        "title": measured.title,
+        "band": measured.band,
+        "faces": faces,
+        "clearsInherited": measured.clears,
+    }))
+}
+
+fn ldraw_shadow_source(lock: &Value) -> Value {
+    lock["audit"]["connectivity"]["source"].clone()
+}
+
 fn ldraw_source(lock: &Value) -> Result<Value, String> {
     let entry = &lock["catalog"][LDRAW_LIBRARY];
     let files = entry["files"]
@@ -474,34 +718,62 @@ fn run() -> Result<bool, String> {
         .filter(|e| e.status == VERIFIED)
         .map(|e| patch_path(&e.part))
         .collect();
+    let shadow = values
+        .get("--shadow")
+        .map(|root| LazyLibrary::new(PathBuf::from(root)));
+    let shadow_source = ldraw_shadow_source(&read_json(Path::new(&take("--lock")?))?);
+    let rows: Vec<Value> = manifest["patches"].as_array().cloned().unwrap_or_default();
     let mut texts = HashMap::new();
-    let mut measured_all = Vec::new();
-    for entry in &list {
-        let measured = measure(&library, entry, &patched)?;
-        texts.insert(
-            patch_path(&entry.part),
-            patch_text(entry, &measured, &source)?,
-        );
-        measured_all.push(measured);
+    let mut measured_rows: Vec<(Value, Option<Value>)> = Vec::new();
+    let mut faces_checks = Vec::new();
+    let mut sections_checks = Vec::new();
+    for (entry, row) in list.iter().zip(&rows) {
+        match &entry.feature {
+            Feature::CouplingFaces { id, group } => {
+                let measured = measure(&library, &entry.part, &patched)?;
+                texts.insert(
+                    patch_path(&entry.part),
+                    patch_text(entry, id, group, &measured, &source)?,
+                );
+                measured_rows.push((faces_json(&measured)?, None));
+                faces_checks.push((entry, group, measured));
+            }
+            Feature::MeasuredSections { snap } => {
+                let upstream = upstream_snaps(&entry.part, row, shadow.as_ref())?;
+                let sections = measure_sections(&library, entry, *snap, &upstream, &source)?;
+                texts.insert(patch_path(&entry.part), sections.text.clone());
+                measured_rows.push((
+                    json!({
+                        "title": sections.title,
+                        "replacedSecs": sections.replaced,
+                        "secs": secs_text(&sections.measured),
+                    }),
+                    Some(json!({ "source": shadow_source, "snaps": upstream })),
+                ));
+                sections_checks.push((entry, upstream, sections));
+            }
+        }
     }
     let patch_library = MemoryLibrary(texts.clone());
-    let no_upstream = MemoryLibrary(HashMap::new());
-    for (entry, measured) in list.iter().zip(&measured_all) {
-        round_trip(
+    for (entry, group, measured) in &faces_checks {
+        round_trip(&library, &patch_library, &verified, entry, group, measured)?;
+    }
+    for (entry, upstream, sections) in &sections_checks {
+        sections_round_trip(
             &library,
-            &no_upstream,
+            upstream,
             &patch_library,
             &verified,
             entry,
-            measured,
+            sections,
         )?;
     }
     if let Some(report) = values.get("--report") {
-        let shadow = LazyLibrary::new(PathBuf::from(take("--shadow")?));
+        let shadow = shadow.as_ref().ok_or("--report needs --shadow")?;
         let rows = coverage(
             &ldraw_root,
             &library,
-            &shadow,
+            shadow,
             &patch_library,
             &verified,
             &patched,
@@ -512,24 +784,11 @@ fn run() -> Result<bool, String> {
     let mut updated = manifest.clone();
     updated["ldraw"] = source;
     if let Some(rows) = updated["patches"].as_array_mut() {
-        for (row, measured) in rows.iter_mut().zip(&measured_all) {
-            let faces: Vec<Value> = measured
-                .faces
-                .iter()
-                .map(|face| {
-                    Ok(json!({
-                        "origin": face.origin.map(|c| written(c).unwrap_or(c)),
-                        "normal": vector(face.normal),
-                        "radius": identified_radius(face.radius)?,
-                    }))
-                })
-                .collect::<Result<_, String>>()?;
-            row["measured"] = json!({
-                "title": measured.title,
-                "band": measured.band,
-                "faces": faces,
-                "clearsInherited": measured.clears,
-            });
+        for (row, (measured, upstream)) in rows.iter_mut().zip(measured_rows) {
+            row["measured"] = measured;
+            if let Some(upstream) = upstream {
+                row["upstream"] = upstream;
+            }
         }
     }
     let mut drift = Vec::new();
