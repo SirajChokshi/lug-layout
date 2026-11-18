@@ -8,6 +8,7 @@ import {
   exactRationalFromDecimal,
   exactRationalFromFloat64,
   multiplyExactRational,
+  STUD_LDU,
   subtractExactRational,
   type ExactDecimal,
   type ExactRational,
@@ -15,7 +16,7 @@ import {
 import { exactPolygons, type ExactPlacement } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 
-export const RAIL_SECTION_INWARD_LDU = 20;
+export const RAIL_SECTION_INWARD_LDU = STUD_LDU;
 
 export interface PlanPoint {
   readonly x: number;
@@ -232,23 +233,23 @@ interface SideExtreme {
 
 export function scanEndAt(origin: PlanPoint, heading: number, endSleeper: ExactPlacement): ScanEnd {
   const direction = headingDirection(heading);
-  const extremes: { lowest?: SideExtreme; highest?: SideExtreme } = {};
+  const extremes: { least?: SideExtreme; greatest?: SideExtreme } = {};
   endSleeper.visitVertices(([x, , z]) => {
     const point = { x: exactRationalFromDecimal(x), z: exactRationalFromDecimal(z) };
     const side = cross(point, direction);
-    const { lowest, highest } = extremes;
-    if (lowest === undefined || compareExactRational(side, lowest.side) < 0) {
-      extremes.lowest = { point, side };
+    const { least, greatest } = extremes;
+    if (least === undefined || compareExactRational(side, least.side) < 0) {
+      extremes.least = { point, side };
     }
-    if (highest === undefined || compareExactRational(side, highest.side) > 0) {
-      extremes.highest = { point, side };
+    if (greatest === undefined || compareExactRational(side, greatest.side) > 0) {
+      extremes.greatest = { point, side };
     }
   });
-  const { lowest, highest } = extremes;
-  if (lowest === undefined || highest === undefined) {
+  const { least, greatest } = extremes;
+  if (least === undefined || greatest === undefined) {
     throw new Error("an end sleeper has no vertices");
   }
-  return { origin, heading, endSleeperExtremes: [lowest.point, highest.point] };
+  return { origin, heading, endSleeperExtremes: [least.point, greatest.point] };
 }
 
 function offsetAcross(
