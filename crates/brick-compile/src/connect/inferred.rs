@@ -44,6 +44,7 @@ pub enum Uninferred {
     UnknownFacing { radius: f64 },
     OpenArc { radius: f64 },
     Unflattened,
+    Oversized { cells: f64 },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -521,30 +522,49 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
         let borrowed = Borrowed(self.library);
-        let flattened = Flattener::new(&borrowed, Lod::Standard, &[]).flatten(path);
-        let mut issues = Vec::new();
-        let prepared = match flattened {
-            Err(_) => {
-                issues.push(Issue::Uninferred {
-                    origin: [0.0; 3],
-                    reason: Uninferred::Unflattened,
-                });
-                Prepared {
+        let mut flattener = Flattener::new(&borrowed, Lod::Standard, &[]);
+        let flattened = flattener.flatten(path);
+        let mut issues: Vec<Issue> = flattener
+            .malformed()
+            .iter()
+            .cloned()
+            .map(Issue::from)
+            .collect();
+        let malformed = !issues.is_empty();
+        let prepared =
+            match flattened {
+                Err(_) => {
+                    issues.push(Issue::Uninferred {
+                        origin: [0.0; 3],
+                        reason: Uninferred::Unflattened,
+                    });
+                    Prepared {
+                        solid: None,
+                        runs: Vec::new(),
+                        issues,
+                    }
+                }
+                Ok(_) if malformed => Prepared {
                     solid: None,
                     runs: Vec::new(),
                     issues,
+                },
+                Ok(flattened) => {
+                    let placed = self.placed(path, &mut issues);
+                    let solid = Solid::new(&flattened.triangles, placed.surfaces);
+                    issues.extend(solid.largest_oversized().map(|(origin, cells)| {
+                        Issue::Uninferred {
+                            origin,
+                            reason: Uninferred::Oversized { cells },
+                        }
+                    }));
+                    Prepared {
+                        solid: (!solid.is_empty()).then_some(solid),
+                        runs: placed.runs,
+                        issues,
+                    }
                 }
-            }
-            Ok(flattened) => {
-                let placed = self.placed(path, &mut issues);
-                let solid = Solid::new(&flattened.triangles, placed.surfaces);
-                Prepared {
-                    solid: (!solid.is_empty()).then_some(solid),
-                    runs: placed.runs,
-                    issues,
-                }
-            }
-        };
+            };
         let prepared = Rc::new(prepared);
         self.prepared = Some((path.to_string(), Rc::clone(&prepared)));
         prepared
@@ -1013,21 +1033,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         };
         for plane in solid.planes() {
             let inward = -plane.outward;
-            let steps = |low: f64, high: f64| {
-                let first = ((low - IDENTIFY_LDU) / HALF_GRID_LDU).ceil() as i64;
-                let last = ((high + IDENTIFY_LDU) / HALF_GRID_LDU).floor() as i64;
-                first..=last
-            };
-            for a in steps(plane.min[0], plane.max[0]) {
-                for b in steps(plane.min[1], plane.max[1]) {
-                    let center = [a as f64 * HALF_GRID_LDU, b as f64 * HALF_GRID_LDU];
-                    add(Probe {
-                        axis: plane.axis,
-                        inward,
-                        entrance: point_on(plane.axis, center, plane.at),
-                        radius: self.probe.radius,
-                    });
-                }
+            for center in solid.grid(&plane, self.probe.radius + HALF_GRID_LDU) {
+                add(Probe {
+                    axis: plane.axis,
+                    inward,
+                    entrance: point_on(plane.axis, center, plane.at),
+                    radius: self.probe.radius,
+                });
             }
             for (run, radius) in bores.iter().filter(|(r, _)| r.axis == plane.axis) {
                 let inside = (0..2).all(|k| {

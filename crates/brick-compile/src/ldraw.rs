@@ -43,6 +43,7 @@ pub struct Header {
 pub struct LdrawFile {
     pub header: Header,
     pub lines: Vec<Line>,
+    pub unparsed: usize,
 }
 
 pub fn normalize_reference(reference: &str) -> String {
@@ -128,10 +129,12 @@ fn parse_meta(tokens: &[&str], header: &mut Header) -> Option<Line> {
 }
 
 const SUBFILE_NUMBER_COUNT: usize = 12;
+const GEOMETRY_KINDS: [&str; 4] = ["1", "2", "3", "4"];
 
 pub fn parse(source: &str) -> LdrawFile {
     let mut header = Header::default();
     let mut lines = Vec::new();
+    let mut unparsed = 0;
     let mut first = true;
     for raw in source.lines() {
         let tokens: Vec<&str> = raw.split_whitespace().collect();
@@ -164,11 +167,17 @@ pub fn parse(source: &str) -> LdrawFile {
             }),
             _ => None,
         };
-        if let Some(line) = parsed {
-            lines.push(line);
+        match parsed {
+            Some(line) => lines.push(line),
+            None if GEOMETRY_KINDS.contains(kind) => unparsed += 1,
+            None => {}
         }
     }
-    LdrawFile { header, lines }
+    LdrawFile {
+        header,
+        lines,
+        unparsed,
+    }
 }
 
 fn parse_subfile(rest: &[&str]) -> Option<Line> {

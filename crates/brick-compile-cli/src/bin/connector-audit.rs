@@ -341,6 +341,9 @@ fn issue_key(issue: &Issue) -> String {
         }
         Issue::UnresolvedInclude { reference, .. } => format!("unresolved include {reference}"),
         Issue::TooDeep { .. } => "too deep".to_string(),
+        Issue::MalformedGeometry { malformation, .. } => {
+            format!("malformed geometry: {malformation:?}")
+        }
         Issue::ScaledFixedShape { source, .. } => {
             format!(
                 "{}: scaled reference to a fixed-size snap",
@@ -382,6 +385,9 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
         Uninferred::UnknownFacing { .. } => "round feature without BFC facing",
         Uninferred::OpenArc { .. } => "inward open arc wider than half a circle",
         Uninferred::Unflattened => "part does not flatten",
+        Uninferred::Oversized { .. } => {
+            "geometry too large for the cell index on some axis; it seeds no probes on that axis"
+        }
     }
 }
 
