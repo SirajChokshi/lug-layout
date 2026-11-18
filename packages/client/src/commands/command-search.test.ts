@@ -24,6 +24,7 @@ function baseplate(
     thumbnail: null,
     aliases: [],
     elements: [],
+    displayColor: false,
   };
 }
 
@@ -45,6 +46,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     thumbnail: null,
     aliases: ["44336pr0001"],
     elements: [],
+    displayColor: false,
   },
 ];
 

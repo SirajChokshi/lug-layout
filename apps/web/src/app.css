@@ -362,26 +362,6 @@ footer {
   object-fit: contain;
 }
 
-.palette-row:has(> .palette-thumb) {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  column-gap: 8px;
-  row-gap: 3px;
-  align-items: start;
-}
-
-.palette-row > .palette-thumb {
-  grid-row: span 2;
-}
-
-.catalog-item:has(> .palette-thumb) {
-  align-items: center;
-}
-
-.catalog-item > .palette-thumb + .catalog-name {
-  flex: 1;
-}
-
 .palette-swatches {
   display: flex;
   flex-wrap: wrap;
@@ -1875,4 +1855,33 @@ footer a {
   color: #556;
   text-decoration: underline;
   cursor: pointer;
+}
+
+.palette-thumb-empty {
+  display: block;
+}
+
+.palette .palette-row,
+.palette .palette-result {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 3px;
+  align-items: start;
+}
+
+.palette-row > .palette-thumb,
+.palette-result > .palette-thumb {
+  grid-row: span 2;
+}
+
+.palette-row > :not(.palette-thumb),
+.palette-result > :not(.palette-thumb, .palette-star) {
+  grid-column: 2;
+}
+
+.palette-item-row .catalog-item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }

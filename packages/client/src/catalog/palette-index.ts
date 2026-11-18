@@ -369,6 +369,29 @@ export class PaletteIndex {
     return entries;
   }
 
+  defaultItem(
+    items: ReadonlyArray<CatalogItemView>,
+    current: number | null,
+  ): CatalogItemView | undefined {
+    const first = items[0];
+    if (!first) return undefined;
+    const common = this.commonestColor(CATEGORY_OF[first.kind]);
+    return (
+      items.find((item) => item.color !== null && item.color.code === current) ??
+      items.find((item) => item.displayColor) ??
+      items.find((item) => item.color !== null && item.color.code === common) ??
+      first
+    );
+  }
+
+  private commonestColor(category: PaletteCategory): number | null {
+    let best: PaletteColorChoice | null = null;
+    for (const choice of this.colorChoices(category)) {
+      if (!best || choice.parts > best.parts) best = choice;
+    }
+    return best ? best.color.code : null;
+  }
+
   colorChoices(filter: PaletteFilter): ReadonlyArray<PaletteColorChoice> {
     const cached = this.choiceCache.get(filter);
     if (cached) return cached;
