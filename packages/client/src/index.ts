@@ -39,6 +39,13 @@ export type {
   CatalogColorView,
   CatalogItemModel,
   CatalogItemView,
+  ICatalogAssets,
+  IPlaceableCatalog,
+  ImportOutcome,
+  SkippedCatalogModel,
+  StartedCatalog,
+} from "./catalog/placeable-catalog.ts";
+export type {
   CatalogPartView,
   EditAction,
   EditorCredits,
@@ -65,7 +72,6 @@ export type {
   RoadSnapView,
   PlaceableCoverView,
   SelectionView,
-  SkippedCatalogModel,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
