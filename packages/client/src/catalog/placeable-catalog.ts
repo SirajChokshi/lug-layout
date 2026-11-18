@@ -122,7 +122,7 @@ interface SkippedModel extends SkippedCatalogModel {
 }
 
 const FAR_LOD: BundleLod = "far";
-export const NO_LATTICE_REASON = "no stud lattice from the bake";
+const NO_LATTICE_REASON = "no stud lattice from the bake";
 const STUDIO_FILE = /\.io$/iu;
 const IMPORTED_SOURCE = "imported file";
 
@@ -238,7 +238,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     farModelMeshes: NO_MESHES,
   };
   private slots: CatalogSlot[] = [];
-  private table: Array<Placeable | null> = [];
+  private placeablesByRefId: Array<Placeable | null> = [];
   private readonly loads = new Map<number, Promise<Placeable>>();
   private readonly modelNames = new Map<Placeable, string>();
   private readonly notDrawnSections = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
@@ -273,7 +273,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     });
     this.backend.setNeededMeshListener(this.meshes);
     for (const shape of shapes) this.meshes.register(palette.indexOf(shape.id), shape.meshFile);
-    const skipped = this.buildSlots(index, shapes);
+    const skipped = this.buildCatalog(index, shapes);
     this.backend.setPalette({
       detailed: { parts: palette.parts, studPrimitives },
       colorsSrgb: colors.toSrgb(),
@@ -291,7 +291,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     };
   }
 
-  private buildSlots(index: BundleIndex, shapes: ReadonlyArray<PartShapeRecord>): SkippedModel[] {
+  private buildCatalog(index: BundleIndex, shapes: ReadonlyArray<PartShapeRecord>): SkippedModel[] {
     const palette = this.requirePalette();
     const colors = this.colors();
     const thumbnails = thumbnailUrls(this.bundleBaseUrl, index.lod, index.thumbnails);
@@ -308,7 +308,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const roadParts = index.catalogParts
       .filter((part) => part.role === "road")
       .map((part) => shapeOf(part.id));
-    const table: Array<Placeable | null> = [...groundParts, ...roadParts].flatMap((part) => {
+    const placeables: Array<Placeable | null> = [...groundParts, ...roadParts].flatMap((part) => {
       const produced = part.producedColors?.colors ?? [];
       if (produced.length === 0) {
         throw new Error(`${part.id} has no produced colour in the bundle`);
@@ -324,7 +324,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
         ),
       );
     });
-    const slots: CatalogSlot[] = table.flatMap((placeable) =>
+    const slots: CatalogSlot[] = placeables.flatMap((placeable) =>
       placeable
         ? [placeableSlot(placeable, index.colors, thumbnails, shapeOf(placeable.group))]
         : [],
@@ -339,11 +339,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
         });
         continue;
       }
-      table.push(null);
+      placeables.push(null);
       slots.push(lazySlot(entry, thumbnails));
     }
     this.slots = slots;
-    this.table = table;
+    this.placeablesByRefId = placeables;
     return skipped;
   }
 
@@ -375,7 +375,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   }
 
   placeables(): ReadonlyArray<Placeable | null> {
-    return this.table;
+    return this.placeablesByRefId;
   }
 
   itemRefId(itemId: string): number | null {
@@ -394,7 +394,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   }
 
   load(refId: number): Promise<Placeable> {
-    const loaded = this.table[refId];
+    const loaded = this.placeablesByRefId[refId];
     if (loaded) return Promise.resolve(loaded);
     const pending = this.loads.get(refId);
     if (pending) return pending;
@@ -403,8 +403,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       return Promise.reject(new Error(`no catalog item has ref id ${refId}`));
     }
     const loading = this.loader.loadModelRecord(this.lod, model).then((record) => {
-      const placeable = this.table[refId] ?? this.modelPlaceableFrom(record);
-      this.table[refId] = placeable;
+      const placeable = this.placeablesByRefId[refId] ?? this.modelPlaceableFrom(record);
+      this.placeablesByRefId[refId] = placeable;
       return placeable;
     });
     this.loads.set(refId, loading);
@@ -516,7 +516,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     );
     this.installMerged(palette, before);
     this.bakes.set(placeable, model);
-    this.table.push(placeable);
+    this.placeablesByRefId.push(placeable);
     const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
     this.slots.push(slot);
     return { ...reports, item: slot.view, credit };

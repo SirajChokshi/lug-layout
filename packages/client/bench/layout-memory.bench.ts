@@ -116,7 +116,7 @@ const RULES: OwnerRules = {
         ...fields(SCENE, ["chunks", "chunkList", "scene"]),
       ]),
     ],
-    ["Editor", fields(PART_MESHES, ["placeables", "palette", "slots", "modelPlaceables"])],
+    ["PlaceableCatalog", fields(PART_MESHES, ["placeablesByRefId", "palette", "slots"])],
     ["PlacedEntry", fields(PART_MESHES, ["placeable"])],
     ["PlacedChunks", new Map([...fields(SCENE, ["backend"]), ...fields(OCCUPANCY, ["occupancy"])])],
     ["ChunkRecord", fields(INSTANCES, ["page"])],
