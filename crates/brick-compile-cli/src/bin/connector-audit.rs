@@ -7,8 +7,9 @@ use std::time::Instant;
 
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::connect::{
-    Connector, ConnectorExtractor, Gender, Issue, PrimitiveConnectors, PrimitiveTable,
-    SectionShape, ShadowSnaps, Shape, Source,
+    mating_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue, MatingFace,
+    PrimitiveConnectors, PrimitiveTable, SectionShape, SectionVocabulary, ShadowSnaps, Shape,
+    Source, Uninferred,
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
 use brick_compile::ldraw::{parse, Line};
@@ -21,6 +22,11 @@ const HOLE_END: &str = "p/peghole.dat";
 const MOVED: &str = "~Moved";
 const EXAMPLES: usize = 12;
 const COMMENTED_SNAP: &str = "0 //!LDCAD SNAP_";
+const TUBE_TITLE: &str = "Stud Tube Open";
+const FACE_KEY_STEPS: f64 = 2000.0;
+const SIXTEENTHS: f64 = 16.0;
+const IDENTIFY_LDU: f64 = 0.0005;
+const CLEARANCE_STEPS: f64 = 1000.0;
 const LIVE_SNAP: &str = "0 !LDCAD SNAP_";
 
 struct LazyLibrary {
@@ -84,6 +90,7 @@ fn audit_slots(connector: &Connector) -> Vec<AuditSlot> {
 enum Feature {
     Stud,
     HoleEnd,
+    Tube,
 }
 
 fn y_up_point(p: Vec3) -> Vec3 {
@@ -162,6 +169,9 @@ fn features(
             out.push((Feature::HoleEnd, name, placed));
             continue;
         }
+        if child.starts_with("p/") && title_of(library, &child).starts_with(TUBE_TITLE) {
+            out.push((Feature::Tube, name, placed));
+        }
         features(library, &child, &placed, depth + 1, out);
     }
 }
@@ -212,8 +222,22 @@ fn agrees(feature: Feature, at: &Affine, connectors: &[Connector]) -> bool {
                     && dot(p.axis, up).abs() >= 1.0 - PARALLEL
                     && norm(sub(v, p.axis.map(|c| c * dot(v, p.axis)))) <= SAME_LDU
             }
+            Feature::Tube => false,
         })
     })
+}
+
+fn tube_receptor(at: &Affine, faces: &[MatingFace]) -> Option<Source> {
+    let origin = y_up_point(translation(at));
+    let out = unit(y_up_point(column(at, 1)));
+    faces
+        .iter()
+        .find(|f| {
+            f.gender == Gender::Female
+                && norm(sub(f.origin, origin)) <= SAME_LDU
+                && dot(f.axis, out) >= 1.0 - PARALLEL
+        })
+        .map(|f| f.source)
 }
 
 fn sections_key(connector: &Connector) -> String {
@@ -270,6 +294,7 @@ fn source_key(source: Source) -> &'static str {
     match source {
         Source::Shadow => "tier 1 shadow",
         Source::Primitive => "tier 2 primitive",
+        Source::Inferred => "tier 4 inferred",
     }
 }
 
@@ -299,7 +324,135 @@ fn issue_key(issue: &Issue) -> String {
             source_key(kept.0),
             source_key(lower.0)
         ),
+        Issue::Uninferred { reason, .. } => format!("tier 4: {}", uninferred_key(reason)),
     }
+}
+
+fn uninferred_key(reason: &Uninferred) -> &'static str {
+    match reason {
+        Uninferred::UnidentifiedSize { .. } => "size or length not in the section vocabulary",
+        Uninferred::UnidentifiedOrigin => "origin not on the 1/16-LDU grid",
+        Uninferred::LooseCavity { .. } => "probe free and enclosed but touching nothing",
+        Uninferred::UnpairedThroughCavity { .. } => "through cavity whose far end was not probed",
+        Uninferred::TiltedRound { .. } => "round feature on a tilted axis",
+        Uninferred::UnknownFacing { .. } => "round feature without BFC facing",
+        Uninferred::OpenArc { .. } => "inward open arc wider than half a circle",
+        Uninferred::Unflattened => "part does not flatten",
+    }
+}
+
+fn shadow_texts(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("dat"))
+            {
+                if let Ok(bytes) = fs::read(&path) {
+                    out.push(String::from_utf8_lossy(&bytes).into_owned());
+                }
+            }
+        }
+    }
+    out
+}
+
+type FaceKey = (u8, [i64; 3], [i64; 3]);
+
+fn face_key(face: &MatingFace) -> FaceKey {
+    let sixteenths = |c: f64| {
+        let steps = (c * SIXTEENTHS).round();
+        if (c - steps / SIXTEENTHS).abs() <= IDENTIFY_LDU {
+            steps as i64 * FACE_KEY_STEPS as i64
+        } else {
+            (c * SIXTEENTHS * FACE_KEY_STEPS).round() as i64
+        }
+    };
+    (
+        u8::from(face.gender == Gender::Female),
+        face.origin.map(sixteenths),
+        face.axis.map(|c| (c * FACE_KEY_STEPS).round() as i64),
+    )
+}
+
+fn faces_of(connectors: &[Connector], source: Option<Source>) -> Vec<MatingFace> {
+    connectors
+        .iter()
+        .filter(|c| source.is_none_or(|s| c.source == s))
+        .filter_map(|c| mating_faces(c).ok())
+        .flatten()
+        .collect()
+}
+
+fn face_family(face: &MatingFace) -> String {
+    let gender = if face.gender == Gender::Male {
+        "M"
+    } else {
+        "F"
+    };
+    let code = match face.sections.first().map(|s| s.code) {
+        Some(0) => "R",
+        Some(1) => "A",
+        Some(2) => "S",
+        Some(_) => "flared",
+        None => "none",
+    };
+    format!("{gender} {code}")
+}
+
+fn section_agreement(kept: &MatingFace, inferred: &MatingFace) -> &'static str {
+    let same = |a: f64, b: f64| (a - b).abs() <= 0.0005;
+    let identical = kept.sections.len() == inferred.sections.len()
+        && kept
+            .sections
+            .iter()
+            .zip(&inferred.sections)
+            .all(|(a, b)| a.code == b.code && same(a.size, b.size) && same(a.length, b.length))
+        && kept.caps == inferred.caps;
+    if identical {
+        return "identical sections and caps";
+    }
+    let (Some(a), Some(b)) = (kept.sections.first(), inferred.sections.first()) else {
+        return "profile differs";
+    };
+    match (a.code == b.code, same(a.size, b.size)) {
+        (true, true) => "same profile; length or caps differ",
+        (false, true) => "same size; profile code differs",
+        _ => "profile size differs",
+    }
+}
+
+#[derive(Default)]
+struct Coverage {
+    parts: usize,
+    before: usize,
+    after: usize,
+    before_female: usize,
+    after_female: usize,
+    gained: usize,
+    completed: usize,
+    inferred_faces: usize,
+    examples_gained: Vec<String>,
+    examples_without: Vec<String>,
+}
+
+#[derive(Default)]
+struct Oracle {
+    parts: usize,
+    inferred: usize,
+    inferred_matching: usize,
+    curated_by_family: BTreeMap<String, [usize; 2]>,
+    inferred_by_family: BTreeMap<String, [usize; 2]>,
+    agreement: BTreeMap<&'static str, usize>,
+    false_positive_parts: BTreeMap<String, usize>,
 }
 
 fn category(title: &str) -> &'static str {
@@ -414,6 +567,8 @@ fn run() -> Result<(), String> {
     let library = LazyLibrary::new(ldraw.clone());
     let shadow_root = PathBuf::from(take("--shadow")?);
     let shadow = LazyLibrary::new(shadow_root.clone());
+    let vocabulary =
+        SectionVocabulary::from_metas(shadow_texts(&shadow_root).iter().map(String::as_str));
     let revived = LazyLibrary::reviving_commented_snaps(shadow_root);
     let mut revived_snaps = ShadowSnaps::new(&library, &revived);
     let mut commented_fills: Vec<Value> = Vec::new();
@@ -423,11 +578,33 @@ fn run() -> Result<(), String> {
         serde_json::from_slice(&fs::read(&table_path).map_err(|e| format!("{table_path}: {e}"))?)
             .map_err(|e| format!("{table_path}: {e}"))?;
     let primitive_table = PrimitiveTable::from_json(&table_json)?;
+    let inferred_path = take("--inferred")?;
+    let inferred_json: Value = serde_json::from_slice(
+        &fs::read(&inferred_path).map_err(|e| format!("{inferred_path}: {e}"))?,
+    )
+    .map_err(|e| format!("{inferred_path}: {e}"))?;
+    let probe_part = inferred_json["cavityProbe"]
+        .as_str()
+        .ok_or(format!("{inferred_path}: cavityProbe must be a part path"))?
+        .to_string();
+    let focus: Vec<String> = values
+        .get("--focus")
+        .map(|v| v.split(',').map(str::to_string).collect())
+        .unwrap_or_default();
     let list = parts(&values, &ldraw)?;
     let mut extractor = ConnectorExtractor::new(
         ShadowSnaps::new(&library, &shadow),
         PrimitiveConnectors::new(&library, primitive_table.clone()),
+        InferredFeatures::new(&library, vocabulary.clone(), &probe_part)?,
     );
+    let mut tier4_alone = InferredFeatures::new(&library, vocabulary, &probe_part)?;
+    let mut coverage: BTreeMap<&str, Coverage> = BTreeMap::new();
+    let mut oracle = Oracle::default();
+    let mut tubes: BTreeMap<String, usize> = BTreeMap::new();
+    let mut tube_examples: Vec<Value> = Vec::new();
+    let mut loose: BTreeMap<i64, usize> = BTreeMap::new();
+    let mut tier4_timings: Vec<(f64, String, usize)> = Vec::new();
+    let mut focused: Vec<Value> = Vec::new();
     let mut tier2_alone = PrimitiveConnectors::new(&library, primitive_table);
     let mut by_source: BTreeMap<String, usize> = BTreeMap::new();
     let mut by_family: BTreeMap<String, usize> = BTreeMap::new();
@@ -465,7 +642,12 @@ fn run() -> Result<(), String> {
             .filter(|c| c.source == Source::Primitive)
             .count();
         counts[3] += usize::from(tier2_added > 0);
-        if tier2_added > 0 {
+        let lower_added = extraction
+            .connectors
+            .iter()
+            .filter(|c| c.source != Source::Shadow)
+            .count();
+        if lower_added > 0 {
             let live: std::collections::HashSet<AuditSlot> = extraction
                 .connectors
                 .iter()
@@ -482,7 +664,7 @@ fn run() -> Result<(), String> {
             for connector in extraction
                 .connectors
                 .iter()
-                .filter(|c| c.source == Source::Primitive)
+                .filter(|c| c.source != Source::Shadow)
             {
                 if audit_slots(connector)
                     .iter()
@@ -491,7 +673,8 @@ fn run() -> Result<(), String> {
                     commented_fills.push(json!({
                         "part": part,
                         "title": title,
-                        "tier2": sections_key(connector),
+                        "tier": source_key(connector.source),
+                        "connector": sections_key(connector),
                         "at": translation(&connector.placement),
                     }));
                 }
@@ -555,12 +738,157 @@ fn run() -> Result<(), String> {
         if extraction.connectors.is_empty() && tally.examples_without.len() < EXAMPLES {
             tally.examples_without.push(part.clone());
         }
+        let started_tier4 = Instant::now();
+        let inference = tier4_alone.infer(&path);
+        let alone_issues = inference.issues;
+        let mut alone = inference.connectors;
+        alone.extend(inference.off_lattice);
+        tier4_timings.push((
+            started_tier4.elapsed().as_secs_f64() * 1000.0,
+            part.clone(),
+            alone.len(),
+        ));
+        for issue in &alone_issues {
+            if let Issue::Uninferred {
+                reason: Uninferred::LooseCavity { clearance },
+                ..
+            } = issue
+            {
+                *loose
+                    .entry((clearance * CLEARANCE_STEPS).round() as i64)
+                    .or_default() += 1;
+            }
+        }
+        let all_faces = faces_of(&extraction.connectors, None);
+        let inferred_kept = faces_of(&extraction.connectors, Some(Source::Inferred));
+        let before_any = extraction
+            .connectors
+            .iter()
+            .any(|c| c.source != Source::Inferred);
+        let before_female = extraction
+            .connectors
+            .iter()
+            .any(|c| c.source != Source::Inferred && gender_of(c) == Some(Gender::Female));
+        let after_female = extraction
+            .connectors
+            .iter()
+            .any(|c| gender_of(c) == Some(Gender::Female));
+        let cell = coverage.entry(category(&title)).or_default();
+        cell.parts += 1;
+        cell.before += usize::from(before_any);
+        cell.after += usize::from(!extraction.connectors.is_empty());
+        cell.before_female += usize::from(before_female);
+        cell.after_female += usize::from(after_female);
+        cell.inferred_faces += inferred_kept.len();
+        cell.completed += usize::from(extraction.curated && !inferred_kept.is_empty());
+        if !before_any && !extraction.connectors.is_empty() {
+            cell.gained += 1;
+            if cell.examples_gained.len() < EXAMPLES {
+                cell.examples_gained.push(part.clone());
+            }
+        }
+        if extraction.connectors.is_empty() && cell.examples_without.len() < EXAMPLES {
+            cell.examples_without.push(part.clone());
+        }
+        if extraction.curated {
+            let curated_faces = faces_of(&extraction.connectors, Some(Source::Shadow));
+            let alone_faces = faces_of(&alone, None);
+            let curated_keys: HashMap<FaceKey, &MatingFace> =
+                curated_faces.iter().map(|f| (face_key(f), f)).collect();
+            let inferred_keys: std::collections::HashSet<FaceKey> =
+                alone_faces.iter().map(face_key).collect();
+            oracle.parts += 1;
+            for face in &alone_faces {
+                oracle.inferred += 1;
+                let family = oracle
+                    .inferred_by_family
+                    .entry(face_family(face))
+                    .or_default();
+                family[0] += 1;
+                match curated_keys.get(&face_key(face)) {
+                    Some(kept) => {
+                        oracle.inferred_matching += 1;
+                        family[1] += 1;
+                        *oracle
+                            .agreement
+                            .entry(section_agreement(kept, face))
+                            .or_default() += 1;
+                    }
+                    None => {
+                        *oracle.false_positive_parts.entry(part.clone()).or_default() += 1;
+                    }
+                }
+            }
+            for face in &curated_faces {
+                let family = oracle
+                    .curated_by_family
+                    .entry(face_family(face))
+                    .or_default();
+                family[0] += 1;
+                family[1] += usize::from(inferred_keys.contains(&face_key(face)));
+            }
+        }
+        if focus.contains(part) {
+            let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
+            for face in &all_faces {
+                *by_kind
+                    .entry(format!(
+                        "{} — {}",
+                        source_key(face.source),
+                        face_family(face)
+                    ))
+                    .or_default() += 1;
+            }
+            let listed = |faces: &[MatingFace]| -> Vec<Value> {
+                faces
+                    .iter()
+                    .map(|f| {
+                        json!({
+                            "source": source_key(f.source),
+                            "family": face_family(f),
+                            "origin": f.origin,
+                            "axis": f.axis,
+                            "sections": f.sections.iter().map(|s| [f64::from(s.code), s.size, s.length]).collect::<Vec<_>>(),
+                            "caps": f.caps,
+                        })
+                    })
+                    .collect()
+            };
+            focused.push(json!({
+                "part": part,
+                "title": title,
+                "faces": table(by_kind),
+                "kept": listed(&all_faces),
+                "tier4Alone": listed(&faces_of(&alone, None)),
+                "tier4Issues": alone_issues.iter().map(|i| format!("{i:?}")).collect::<Vec<_>>(),
+            }));
+        }
         let mut found = Vec::new();
         features(&library, &path, &Affine::IDENTITY, 0, &mut found);
         for (feature, primitive, at) in found {
+            if feature == Feature::Tube {
+                let verdict = match (tube_receptor(&at, &all_faces), extraction.curated) {
+                    (Some(Source::Inferred), true) => "curated part: tier 4 receptor",
+                    (Some(Source::Inferred), false) => "uncurated part: tier 4 receptor",
+                    (Some(_), _) => "receptor from tier 1 or 2",
+                    (None, true) => "curated part: no receptor",
+                    (None, false) => "uncurated part: no receptor",
+                };
+                *tubes.entry(verdict.to_string()).or_default() += 1;
+                if verdict.ends_with("no receptor") && tube_examples.len() < 40 {
+                    tube_examples.push(json!({
+                        "part": part,
+                        "title": title,
+                        "tube": primitive,
+                        "at": y_up_point(translation(&at)),
+                    }));
+                }
+                continue;
+            }
             let label = match feature {
                 Feature::Stud => "male stud primitive (#247 census) → male cylinder at its frame",
                 Feature::HoleEnd => "peghole.dat → coaxial female cylinder",
+                Feature::Tube => continue,
             };
             let entry = checks.entry(label).or_default();
             entry[0] += 1;
@@ -613,7 +941,56 @@ fn run() -> Result<(), String> {
             .unwrap_or(0.0)
     };
     timings.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let mut tier4_sorted: Vec<f64> = tier4_timings.iter().map(|t| t.0).collect();
+    tier4_sorted.sort_by(f64::total_cmp);
+    let tier4_pick = |p: f64| {
+        tier4_sorted
+            .get(((tier4_sorted.len() as f64 - 1.0) * p).round() as usize)
+            .copied()
+            .unwrap_or(0.0)
+    };
+    tier4_timings.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let mut false_positive_parts: Vec<(String, usize)> =
+        oracle.false_positive_parts.clone().into_iter().collect();
+    false_positive_parts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let tier4 = json!({
+        "coverageByCategory": coverage.iter().map(|(k, c)| json!({
+            "category": k,
+            "parts": c.parts,
+            "withConnectorsBefore": c.before,
+            "withConnectorsAfter": c.after,
+            "withFemaleBefore": c.before_female,
+            "withFemaleAfter": c.after_female,
+            "partsGainingTheirFirstConnector": c.gained,
+            "curatedPartsCompleted": c.completed,
+            "inferredFacesKept": c.inferred_faces,
+            "examplesGained": c.examples_gained,
+            "examplesStillWithout": c.examples_without,
+        })).collect::<Vec<_>>(),
+        "oracleOnCuratedParts": {
+            "parts": oracle.parts,
+            "inferredFaces": oracle.inferred,
+            "inferredFacesAtATier1Face": oracle.inferred_matching,
+            "precision": oracle.inferred_matching as f64 / oracle.inferred.max(1) as f64,
+            "inferredByFamily": oracle.inferred_by_family.iter().map(|(k, v)| json!({ "family": k, "inferred": v[0], "atATier1Face": v[1] })).collect::<Vec<_>>(),
+            "tier1ByFamily": oracle.curated_by_family.iter().map(|(k, v)| json!({ "family": k, "tier1": v[0], "alsoInferred": v[1], "recall": v[1] as f64 / v[0].max(1) as f64 })).collect::<Vec<_>>(),
+            "sectionsAtMatchedFaces": oracle.agreement.iter().map(|(k, v)| json!({ "kind": k, "count": v })).collect::<Vec<_>>(),
+            "partsWithMostUnmatchedInferredFaces": false_positive_parts.iter().take(40).map(|(p, n)| json!({ "part": p, "unmatched": n })).collect::<Vec<_>>(),
+        },
+        "tubeInteriors": table(tubes),
+        "tubeInteriorExamplesWithoutReceptor": tube_examples,
+        "looseCavityClearancesLdu": loose.iter().map(|(k, v)| json!({ "clearance": *k as f64 / CLEARANCE_STEPS, "count": v })).collect::<Vec<_>>(),
+        "focus": focused,
+        "timingMs": {
+            "total": tier4_sorted.iter().sum::<f64>(),
+            "median": tier4_pick(0.5),
+            "p95": tier4_pick(0.95),
+            "max": tier4_sorted.last(),
+            "slowest": tier4_timings.iter().take(8).map(|t| json!({ "part": t.1, "ms": t.0, "connectors": t.2 })).collect::<Vec<_>>(),
+        },
+    });
     let report = json!({
+        "tier4": tier4,
         "parts": list.len(),
         "extracted": counts[0],
         "unresolved": counts[4],
