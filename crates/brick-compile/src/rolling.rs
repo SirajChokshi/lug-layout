@@ -244,16 +244,19 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
             .iter()
             .for_each(|&t| reported_by_a_strip[t] = true);
     }
-    let mut described_by_vertices = vec![false; triangles.len()];
+    let mut kept_by_vertices = vec![false; triangles.len()];
     for (component, readings) in mesh.vertex_revolutions(roundness, &settled) {
         let reads_a_band = readings.iter().any(|r| matches!(r, BandReading::Read(_)));
         let strips_cover_it = component.iter().all(|&t| reported_by_a_strip[t]);
         if strips_cover_it && !reads_a_band {
             continue;
         }
-        component
+        let describes_it = readings
             .iter()
-            .for_each(|&t| described_by_vertices[t] = true);
+            .any(|r| matches!(r, BandReading::Read(_) | BandReading::Unread(_)));
+        if describes_it {
+            component.iter().for_each(|&t| kept_by_vertices[t] = true);
+        }
         for reading in readings {
             match reading {
                 BandReading::NotRound | BandReading::Inward => {}
@@ -265,9 +268,7 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
     unread.extend(
         strip_reports
             .into_iter()
-            .filter(|(_, strip_triangles)| {
-                !strip_triangles.iter().any(|&t| described_by_vertices[t])
-            })
+            .filter(|(_, strip_triangles)| !strip_triangles.iter().all(|&t| kept_by_vertices[t]))
             .map(|(band, _)| band),
     );
     let mut surfaces = Vec::new();
