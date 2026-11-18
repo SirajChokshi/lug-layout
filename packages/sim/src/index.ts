@@ -8,21 +8,12 @@ export {
 export { simTrackFromGraph, type TrackGraphTopology } from "./graph-track.ts";
 export { createSimSession } from "./create-sim-session.ts";
 export { loadSession, type LoadedSession } from "./load.ts";
-export type {
-  SimBenchResult,
-  SimFrameMessage,
-  SimLoad,
-  SimLoaded,
-  SimReply,
-  SimRequest,
-} from "./protocol.ts";
+export type { SimFrameMessage, SimLoad, SimLoaded, SimReply, SimRequest } from "./protocol.ts";
 export type { PlanPose, SimPathSegment } from "./route-geometry.ts";
 export {
-  replay,
   simFrameLayout,
   type SimCommand,
   type SimFrameLayout,
-  type SimLogEntry,
   type SimRailway,
   type SimScenario,
   type SimSession,
