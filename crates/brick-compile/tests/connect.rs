@@ -1220,6 +1220,75 @@ fn custom_hub(hole: &str) -> String {
     )
 }
 
+fn custom_cross_stub(notch_depth: f64) -> String {
+    let mut outline = vec![[2.0, 2.0]];
+    if notch_depth > 0.0 {
+        outline.extend([
+            [3.3, 2.0],
+            [3.3, 2.0 - notch_depth],
+            [4.3, 2.0 - notch_depth],
+            [4.3, 2.0],
+        ]);
+    }
+    outline.extend([
+        [5.602, 2.0],
+        [6.0, 0.0],
+        [5.602, -2.0],
+        [2.0, -2.0],
+        [2.0, -5.602],
+        [0.0, -6.0],
+        [-2.0, -5.602],
+        [-2.0, -2.0],
+        [-5.602, -2.0],
+        [-6.0, 0.0],
+        [-5.602, 2.0],
+        [-2.0, 2.0],
+        [-2.0, 5.602],
+        [0.0, 6.0],
+        [2.0, 5.602],
+    ]);
+    let mut text = String::from(
+        "0 Custom Cross Stub\n0 BFC NOCERTIFY\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 axleend.dat\n",
+    );
+    for (k, p) in outline.iter().enumerate() {
+        let q = outline[(k + 1) % outline.len()];
+        text += &format!(
+            "4 16 {} 0 {} {} 0 {} {} 16 {} {} 16 {}\n",
+            p[0], p[1], q[0], q[1], q[0], q[1], p[0], p[1]
+        );
+    }
+    text + "1 16 0 16 0 10 0 0 0 8 0 0 0 10 box5.dat\n"
+}
+
+#[test]
+fn a_stub_notched_along_one_arm_side_is_not_taken_for_an_axle() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/whole.dat", custom_cross_stub(0.0)),
+            ("parts/notched.dat", custom_cross_stub(0.5)),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let mut male_axles = |path: &str| {
+        inferred
+            .infer(path)
+            .connectors
+            .iter()
+            .filter(|c| {
+                matches!(&c.shape, Shape::Cylinder { gender: Gender::Male, sections, .. }
+                    if sections[0].shape == SectionShape::Axle)
+            })
+            .count()
+    };
+    assert_eq!(male_axles("parts/whole.dat"), 1);
+    assert_eq!(male_axles("parts/notched.dat"), 0);
+}
+
 #[test]
 fn custom_parts_get_axle_holes_and_axles_from_their_geometry() {
     let turn = 0.5f64.sqrt();
