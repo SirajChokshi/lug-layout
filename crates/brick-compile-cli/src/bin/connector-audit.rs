@@ -335,6 +335,9 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
         Uninferred::LooseCavity { .. } => {
             "probe free, blocked along the four lattice axes, touching nothing"
         }
+        Uninferred::SlidingCavity => {
+            "probe gripped but free to slide a half-grid step (the cavity does not locate it)"
+        }
         Uninferred::UnpairedThroughCavity { .. } => "through cavity whose far end was not probed",
         Uninferred::TiltedRound { .. } => "round feature on a tilted axis",
         Uninferred::UnknownFacing { .. } => "round feature without BFC facing",

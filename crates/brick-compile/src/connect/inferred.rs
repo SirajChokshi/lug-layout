@@ -33,6 +33,7 @@ pub enum Uninferred {
     UnidentifiedSize { size: f64, length: f64 },
     UnidentifiedOrigin,
     LooseCavity { clearance: f64 },
+    SlidingCavity,
     UnpairedThroughCavity { radius: f64 },
     TiltedRound { radius: f64 },
     UnknownFacing { radius: f64 },
@@ -170,6 +171,7 @@ enum Probed {
     Blind(f64),
     Through,
     Loose(f64),
+    Sliding,
     Rejected,
 }
 
@@ -761,11 +763,11 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             };
         }
         let range = (IDENTIFY_LDU, reach - IDENTIFY_LDU);
-        if solid.bore_continues_outward(probe)
-            || !solid.enclosed(walls, center, outward_wall)
-            || !solid.confined(probe, range, &LATTICE_STEPS)
-        {
+        if solid.bore_continues_outward(probe) || !solid.enclosed(walls, center, outward_wall) {
             return Probed::Rejected;
+        }
+        if !solid.confined(probe, range, &LATTICE_STEPS) {
+            return Probed::Sliding;
         }
         if floor.depth.is_infinite() {
             Probed::Through
@@ -858,6 +860,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         });
                     }
                 }
+                Probed::Sliding => inference.issues.push(Issue::Uninferred {
+                    origin: probe.entrance,
+                    reason: Uninferred::SlidingCavity,
+                }),
                 Probed::Through => through.push(probe),
                 Probed::Blind(depth) => {
                     let length = self
