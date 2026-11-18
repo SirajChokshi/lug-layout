@@ -14,6 +14,7 @@ function plate(
   kind: "baseplate" | "road-plate",
   studs: number,
   colors: ReadonlyArray<CatalogItemView["color"] & object>,
+  produced: { readonly rebrickable?: string; readonly elements?: Record<number, string[]> } = {},
 ): ReadonlyArray<CatalogItemView> {
   return colors.map((color) => ({
     id: `ldraw:${id}@${color.code}`,
@@ -26,15 +27,23 @@ function plate(
     studsWide: studs,
     studsDeep: studs,
     thumbnail: null,
+    aliases: produced.rebrickable ? [produced.rebrickable] : [],
+    elements: produced.elements?.[color.code] ?? [],
   }));
 }
 
 const catalog: ReadonlyArray<CatalogItemView> = [
   ...plate("4186", "Baseplate 48 x 48", "baseplate", 48, [GREEN, TAN, LIGHT_GREY]),
-  ...plate("3811", "Baseplate 32 x 32", "baseplate", 32, [GREEN, DARK_GREEN, TAN, DARK_GREY]),
+  ...plate("3811", "Baseplate 32 x 32", "baseplate", 32, [GREEN, DARK_GREEN, TAN, DARK_GREY], {
+    elements: { [GREEN.code]: ["381128", "4219692"], [TAN.code]: ["4106730"] },
+  }),
   ...plate("3867", "Baseplate 16 x 16", "baseplate", 16, [GREEN, DARK_GREY]),
-  ...plate("44336p03", "Baseplate 32 x 32 Road 6-Stud Runway", "road-plate", 32, [DARK_GREY]),
-  ...plate("2358p02", "Baseplate 48 x 48 Road Crossroads", "road-plate", 48, [DARK_GREY]),
+  ...plate("44336p03", "Baseplate 32 x 32 Road 6-Stud Runway", "road-plate", 32, [DARK_GREY], {
+    rebrickable: "44336pr0003",
+  }),
+  ...plate("2358p02", "Baseplate 48 x 48 Road Crossroads", "road-plate", 48, [DARK_GREY], {
+    rebrickable: "2358pr0002",
+  }),
   {
     id: "omr:7938-1",
     label: "7938-1 Passenger Train",
@@ -46,6 +55,8 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     studsWide: 8,
     studsDeep: 90,
     thumbnail: null,
+    aliases: [],
+    elements: [],
   },
   {
     id: "track:lego-9v",
@@ -58,6 +69,8 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     studsWide: 16,
     studsDeep: 8,
     thumbnail: null,
+    aliases: [],
+    elements: [],
   },
 ];
 
@@ -80,6 +93,16 @@ it("ranks an exact part number above parts that only contain it", () => {
   expect(keys("3811")[0]).toBe("ldraw:3811");
   expect(keys("44336")).toEqual(["ldraw:44336p03"]);
   expect(keys("2865")).toEqual(["track:lego-9v"]);
+});
+
+it("finds a part by its Rebrickable number and a colour by its LEGO element id, codes exactly", () => {
+  expect(keys("44336pr0003")).toEqual(["ldraw:44336p03"]);
+  expect(keys("44336pr0004")).toEqual([]);
+  expect(keys("2358pr")).toEqual(["ldraw:2358p02"]);
+  expect(colorsOf("4219692", "ldraw:3811")).toEqual(["Green"]);
+  expect(colorsOf("41067", "ldraw:3811")).toEqual(["Tan"]);
+  expect(keys("4219693")).toEqual([]);
+  expect(keys("3812")).toEqual([]);
 });
 
 it("matches a size however it is written, in either order", () => {
