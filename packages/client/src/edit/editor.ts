@@ -499,8 +499,6 @@ export interface IEditor extends IBomSource, IWorldFiles {
   dump(): EditorDump;
 }
 
-const NO_PART_TRANSFORMS = { count: 0, partIndex: [], matrices: new Float64Array(0) };
-
 interface Connected {
   readonly model: ModelConnectors;
   readonly volumes: CellVolumes;
@@ -2620,7 +2618,11 @@ export class Editor implements IEditor, IEditedWorld {
     let connected = this.connected.get(placeable);
     if (!connected) {
       connected = {
-        model: this.search.model([], NO_PART_TRANSFORMS, this.trackOf(placeable)?.openEnds ?? []),
+        model: this.search.model(
+          this.requirePalette().parts.map(() => null),
+          placeable.partTransforms,
+          this.trackOf(placeable)?.openEnds ?? [],
+        ),
         volumes: placeableVolumes(placeable),
       };
       this.connected.set(placeable, connected);
@@ -2660,7 +2662,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!catalog) return null;
     let track = this.modelTrack.get(placeable);
     if (!track) {
-      track = modelTrackEnds(placeable.parts, this.requirePalette().parts, catalog);
+      track = modelTrackEnds(placeable.partTransforms, this.requirePalette().parts, catalog);
       this.modelTrack.set(placeable, track);
     }
     return track;

@@ -26,7 +26,7 @@ const QUARTER_TURN_STEPS = ZETA16_ORDER / 4;
 export interface TrackInstances {
   readonly count: number;
   readonly partIndex: ArrayLike<number>;
-  readonly matrices: Float32Array;
+  readonly matrices: Float64Array;
 }
 
 export interface HeldTrackPiece {
@@ -65,7 +65,7 @@ function piecesByPart(catalog: TrackCatalog): Map<string, PieceOfPart | null> {
   return byPart;
 }
 
-function exactQuarterTurnOnWholeLdu(m: Float32Array, o: number): boolean {
+function exactQuarterTurnOnWholeLdu(m: Float64Array, o: number): boolean {
   return (
     m[o + 1] === 0 &&
     m[o + 4] === 0 &&
@@ -93,7 +93,7 @@ function exactPosition(xLdu: number, zLdu: number): Zeta16 | null {
   return certifiedZeta16({ x: xStuds, y: zStuds }, UNROUNDED_TOLERANCE_LDU);
 }
 
-function piecePose(m: Float32Array, o: number, piece: PieceOfPart): Pose16 | null {
+function piecePose(m: Float64Array, o: number, piece: PieceOfPart): Pose16 | null {
   if (!exactQuarterTurnOnWholeLdu(m, o)) return null;
   const phi = Math.atan2(m[o + 8] ?? 0, m[o] ?? 0);
   const steps = (phi - piece.headingHalfSteps * HALF_STEP_RADIANS) / HEADING_RADIANS;
@@ -106,7 +106,7 @@ function piecePose(m: Float32Array, o: number, piece: PieceOfPart): Pose16 | nul
   return position ? pose16(position, normalizeHeading16(heading)) : null;
 }
 
-function piecePlates(m: Float32Array, o: number, part: PartShapeAsset): number | null {
+function piecePlates(m: Float64Array, o: number, part: PartShapeAsset): number | null {
   const plates = ((m[o + 7] ?? 0) + part.boundsMin[1]) / PLATE_LDU;
   return Number.isInteger(plates) ? plates : null;
 }
