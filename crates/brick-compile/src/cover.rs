@@ -723,6 +723,12 @@ fn closed_below_all(
         return Vec::new();
     }
     let workers = thread::available_parallelism().map_or(1, |n| n.get());
+    if workers == 1 {
+        return candidates
+            .iter()
+            .map(|(_, stud)| model.closed_below(*stud, shape))
+            .collect();
+    }
     let chunk = candidates.len().div_ceil(workers);
     let mut closed = vec![false; candidates.len()];
     thread::scope(|scope| {
