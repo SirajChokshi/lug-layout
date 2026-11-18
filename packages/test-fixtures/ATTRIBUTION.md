@@ -469,6 +469,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/axl5ho10.dat` | Technic Axle Hole Rounded Tooth Surface | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/axl5hol8.dat` | Technic Axle Hole Rounded Perimeter | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/axl5hol9.dat` | Technic Axle Hole Rounded Tooth Outer Edges | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/axleend.dat` | Technic Axle End Surface | Steve Bliss [sbliss] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/axleend2.dat` | Technic Axle End Beveled | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/axleend20.dat` | Technic Axle End 20 LDU | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/axlehol2.dat` | Technic Axle Hole Side Edges | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
