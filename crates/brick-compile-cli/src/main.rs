@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, MODIFIED_NOTE};
-use brick_compile::cover::ModelCover;
+use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
@@ -656,7 +656,7 @@ fn run(args: &Args) -> Result<(), String> {
             Some(cached) => (cached["file"].clone(), cached["summary"].clone()),
             None => {
                 let cover = baker
-                    .cover(&drawn, lattice.as_ref())
+                    .cover(&drawn, lattice.as_ref(), CoverShard::WHOLE)
                     .map_err(|e| format!("{file}: {e}"))?;
                 let pair = (cover_json(&cover), cover_summary(&cover));
                 if let (Some(path), Lod::Standard) = (&cached, args.lod) {

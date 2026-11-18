@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use brick_compile::cover::CoverShard;
 use brick_compile::vehicle::{RailHeadBand, VehicleSignatures};
 use brick_compile::Lod;
 use serde::Deserialize;
@@ -48,12 +49,37 @@ pub enum Operation {
         parts: Vec<String>,
         inline_checks: Vec<InlineCheck>,
     },
+    BakeNeeds {
+        stud_primitives: Vec<String>,
+    },
     Bake {
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
         translucent_colors: Vec<u32>,
         vehicles: Option<VehicleInputs>,
+        shard: Option<Shard>,
     },
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Shard {
+    from: usize,
+    to: usize,
+    of: usize,
+    pub visibility_only: bool,
+}
+
+impl Shard {
+    pub fn cover(&self) -> Result<CoverShard, String> {
+        let Shard { from, to, of, .. } = *self;
+        if from > to || to > of || of == 0 {
+            return Err(format!(
+                "bake shard {from}..{to} of {of} is not a slice of the candidates"
+            ));
+        }
+        Ok(CoverShard { from, to, of })
+    }
 }
 
 #[derive(Clone, Copy, Deserialize)]
