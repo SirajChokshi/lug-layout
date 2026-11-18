@@ -2,7 +2,10 @@ import { LibraryBakeBucket, LibraryBakeIndex, type LibraryBakePin } from "@brr/s
 import { extname } from "node:path";
 import {
   decodeJsonFile,
+  pinnedIndexPointer,
   type IndexListing,
+  type PinnedIndex,
+  type PointerAdapter,
   type Publication,
 } from "../publication/pinned-publication.ts";
 import { LIBRARY_BAKE_INDEX } from "./assemble.ts";
@@ -40,3 +43,11 @@ export const libraryBakePublication: Publication<LibraryBakePin> = {
   list: listed,
   contentType,
 };
+
+export const LIBRARY_BAKE_POINTER = "latest.json";
+
+export const libraryBakePointer: PointerAdapter<PinnedIndex> = pinnedIndexPointer(
+  libraryBakePublication,
+  listed,
+  LIBRARY_BAKE_POINTER,
+);

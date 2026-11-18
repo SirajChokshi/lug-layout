@@ -9,12 +9,13 @@ import { BUNDLE_DATA_FILES } from "../bundle-data.ts";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
 import { extractLibrary, pinnedArchive } from "../library/ldraw-library.ts";
 import {
+  runPointerCommand,
   runPublicationCommand,
   writeOrCheckPin,
   type ServedScope,
 } from "../publication/pinned-publication.ts";
 import { assembleLibraryBake, LIBRARY_BAKE_PIN } from "./assemble.ts";
-import { libraryBakePublication } from "./publish.ts";
+import { libraryBakePointer, libraryBakePublication } from "./publish.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -149,13 +150,22 @@ switch (process.argv[2]) {
   case "verify-served":
     await runPublicationCommand(commands, process.argv.slice(2));
     break;
+  case "point":
+  case "current":
+  case "verify-pointer":
+  case "prune":
+    await runPointerCommand(
+      { ...commands, pointer: libraryBakePointer, manifestOf: (pin) => pin.index },
+      process.argv.slice(2),
+    );
+    break;
   case undefined:
   case "--check":
     await precompute(process.argv.includes("--check"));
     break;
   default:
     process.stderr.write(
-      "usage: library-bake [--check] | published | upload | served | verify-served [--all] [--wait]\n",
+      "usage: library-bake [--check] | published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]\n",
     );
     process.exitCode = 1;
 }

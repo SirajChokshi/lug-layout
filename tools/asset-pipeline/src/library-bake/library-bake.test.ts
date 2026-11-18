@@ -17,9 +17,10 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
 import { publicationIndexKey, uploadPublication } from "../publication/pinned-publication.ts";
+import { contentAddressedName } from "../publish.ts";
 import type { ObjectStore } from "../r2.ts";
 import { assembleLibraryBake, LIBRARY_BAKE_INDEX, LIBRARY_BAKE_PIN } from "./assemble.ts";
-import { libraryBakePublication } from "./publish.ts";
+import { libraryBakePointer, libraryBakePublication } from "./publish.ts";
 
 const CA = "Licensed under CC BY 4.0 : see CAreadme.txt";
 const NOT_CA = "Redistributable under CCAL version 2.0 : see CAreadme.txt but not quite";
@@ -269,4 +270,34 @@ it("routes the CLI's served command to the committed pin's index under library-b
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+it("the library-bake pointer's manifest references its index, every bucket, and every record and GLB", async () => {
+  const inputs = await build([
+    [{ id: "ldraw:3001" }, { id: "ldraw:3040b" }],
+    [{ id: "ldraw:3626c" }],
+  ]);
+  const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
+  const read = async (key: string) => {
+    const file = key.slice("library-bake/".length);
+    const name =
+      file === contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256)
+        ? LIBRARY_BAKE_INDEX
+        : file;
+    return readFile(join(inputs.out, name)).then(
+      (bytes) => new Uint8Array(bytes),
+      () => undefined,
+    );
+  };
+
+  const { indexes, leaves } = await libraryBakePointer.references(pin.index, read);
+
+  const files = (await filesUnder(inputs.out)).filter((file) => file !== LIBRARY_BAKE_INDEX);
+  expect([...indexes, ...leaves].toSorted()).toEqual(
+    [
+      `library-bake/${contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256)}`,
+      ...files.map((file) => `library-bake/${file}`),
+    ].toSorted(),
+  );
+  expect(leaves.every((key) => !key.startsWith("library-bake/buckets/"))).toBe(true);
 });
