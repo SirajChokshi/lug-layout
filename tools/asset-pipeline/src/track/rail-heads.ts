@@ -1,12 +1,26 @@
+import {
+  addExactRational,
+  compareExactDecimal,
+  compareExactRational,
+  divideExactRational,
+  EXACT_DECIMAL_ZERO,
+  exactRational,
+  exactRationalEquals,
+  exactRationalFromDecimal,
+  exactRationalFromFloat64,
+  multiplyExactRational,
+  parseExactDecimal,
+  subtractExactDecimal,
+  subtractExactRational,
+  type ExactDecimal,
+  type ExactRational,
+} from "@brr/math";
+import { exactPolygons } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import { isStudPrimitive } from "../ldraw/parse.ts";
-import { walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
 
-const FLAT_EPSILON = 1e-6;
 const LATERAL_SCAN_LDU = 90;
-const LATERAL_SCAN_STEP_LDU = 0.03125;
 const RAIL_TOP_PROBE_RADIUS_LDU = 70;
-const RAIL_LEVEL_BAND_LDU = 0.25;
+const RAIL_LEVEL_BAND_LDU = parseExactDecimal("0.25");
 export const RAIL_SECTION_INWARD_LDU = 20;
 
 export interface PlanPoint {
@@ -14,50 +28,94 @@ export interface PlanPoint {
   readonly z: number;
 }
 
+interface ExactPlanPoint {
+  readonly x: ExactRational;
+  readonly z: ExactRational;
+}
+
 export interface RailHeads {
-  readonly topY: number;
-  readonly polygons: ReadonlyArray<ReadonlyArray<PlanPoint>>;
+  readonly topY: ExactDecimal;
+  readonly polygons: ReadonlyArray<ReadonlyArray<ExactPlanPoint>>;
 }
 
 export interface RailSection {
-  readonly railCentresLdu: ReadonlyArray<number>;
-  readonly halfSpacingLdu: number;
-  readonly centreOffsetLdu: number;
-}
-
-function isFlat(polygon: PlacedPolygon): boolean {
-  const [first, ...rest] = polygon.vertices;
-  return (
-    first !== undefined && rest.every((vertex) => Math.abs(vertex[1] - first[1]) < FLAT_EPSILON)
-  );
+  readonly railCentresLdu: ReadonlyArray<ExactRational>;
+  readonly halfSpacingLdu: ExactRational;
+  readonly centreOffsetLdu: ExactRational;
 }
 
 interface FlatPolygon {
-  readonly y: number;
-  readonly outline: ReadonlyArray<PlanPoint>;
+  readonly y: ExactDecimal;
+  readonly outline: ReadonlyArray<ExactPlanPoint>;
+}
+
+interface Interval {
+  readonly from: ExactRational;
+  readonly to: ExactRational;
+}
+
+const ZERO = exactRational(0n, 1n);
+const TWO = exactRational(2n, 1n);
+const PROBE_RADIUS_SQUARED = exactRational(BigInt(RAIL_TOP_PROBE_RADIUS_LDU ** 2), 1n);
+const SCAN_FROM = exactRational(BigInt(-LATERAL_SCAN_LDU), 1n);
+const SCAN_TO = exactRational(BigInt(LATERAL_SCAN_LDU), 1n);
+
+function exactPoint(point: PlanPoint): ExactPlanPoint {
+  return { x: exactRationalFromFloat64(point.x), z: exactRationalFromFloat64(point.z) };
+}
+
+function sub(a: ExactPlanPoint, b: ExactPlanPoint): ExactPlanPoint {
+  return { x: subtractExactRational(a.x, b.x), z: subtractExactRational(a.z, b.z) };
+}
+
+function cross(a: ExactPlanPoint, b: ExactPlanPoint): ExactRational {
+  return subtractExactRational(multiplyExactRational(a.x, b.z), multiplyExactRational(a.z, b.x));
+}
+
+function lesser(a: ExactRational, b: ExactRational): ExactRational {
+  return compareExactRational(a, b) <= 0 ? a : b;
+}
+
+function greater(a: ExactRational, b: ExactRational): ExactRational {
+  return compareExactRational(a, b) >= 0 ? a : b;
 }
 
 export function flatPolygons(library: LdrawLibrary, part: string): ReadonlyArray<FlatPolygon> {
-  const flat: FlatPolygon[] = [];
-  walkPart(library, `${part}.dat`, {
-    reference: (placed) => (isStudPrimitive(placed.file) ? "skip" : "descend"),
-    polygon: (placed) => {
-      const y = placed.vertices[0]?.[1];
-      if (y !== undefined && isFlat(placed)) {
-        flat.push({ y, outline: placed.vertices.map(([x, , z]) => ({ x, z })) });
-      }
-    },
+  return exactPolygons(library, part, true).flatMap((polygon) => {
+    const [first, ...rest] = polygon.vertices;
+    if (first === undefined) return [];
+    const flat = rest.every((vertex) => compareExactDecimal(vertex[1], first[1]) === 0);
+    if (!flat) return [];
+    const outline = polygon.vertices.map(([x, , z]) => ({
+      x: exactRationalFromDecimal(x),
+      z: exactRationalFromDecimal(z),
+    }));
+    return [{ y: first[1], outline }];
   });
-  return flat;
 }
 
-function headsAtLevel(flat: ReadonlyArray<FlatPolygon>, level: number): RailHeads {
+function headsAtLevel(flat: ReadonlyArray<FlatPolygon>, level: ExactDecimal): RailHeads {
+  const withinBand = (y: ExactDecimal) => {
+    const gap = subtractExactDecimal(y, level);
+    const magnitude =
+      compareExactDecimal(gap, EXACT_DECIMAL_ZERO) < 0 ? subtractExactDecimal(level, y) : gap;
+    return compareExactDecimal(magnitude, RAIL_LEVEL_BAND_LDU) <= 0;
+  };
   return {
     topY: level,
-    polygons: flat
-      .filter((polygon) => Math.abs(polygon.y - level) <= RAIL_LEVEL_BAND_LDU)
-      .map((polygon) => polygon.outline),
+    polygons: flat.filter((polygon) => withinBand(polygon.y)).map((polygon) => polygon.outline),
   };
+}
+
+function nearOrigin(polygon: FlatPolygon, origin: ExactPlanPoint): boolean {
+  return polygon.outline.some((point) => {
+    const offset = sub(point, origin);
+    const squared = addExactRational(
+      multiplyExactRational(offset.x, offset.x),
+      multiplyExactRational(offset.z, offset.z),
+    );
+    return compareExactRational(squared, PROBE_RADIUS_SQUARED) <= 0;
+  });
 }
 
 export function railHeadsAtEnd(
@@ -65,18 +123,14 @@ export function railHeadsAtEnd(
   origin: PlanPoint,
   along: number,
 ): RailHeads | null {
-  const levels = [
-    ...new Set(
-      flat
-        .filter((polygon) =>
-          polygon.outline.some(
-            (point) =>
-              Math.hypot(point.x - origin.x, point.z - origin.z) <= RAIL_TOP_PROBE_RADIUS_LDU,
-          ),
-        )
-        .map((polygon) => polygon.y),
-    ),
-  ].toSorted((a, b) => a - b);
+  const exactOrigin = exactPoint(origin);
+  const levels = flat
+    .filter((polygon) => nearOrigin(polygon, exactOrigin))
+    .map((polygon) => polygon.y)
+    .toSorted(compareExactDecimal)
+    .filter(
+      (y, index, sorted) => index === 0 || compareExactDecimal(y, sorted[index - 1] ?? y) !== 0,
+    );
   for (const level of levels) {
     const heads = headsAtLevel(flat, level);
     if (railSection(heads, origin, along, RAIL_SECTION_INWARD_LDU) !== null) return heads;
@@ -84,24 +138,67 @@ export function railHeadsAtEnd(
   return null;
 }
 
-function insidePolygon(polygon: ReadonlyArray<PlanPoint>, point: PlanPoint): boolean {
+function insidePolygon(polygon: ReadonlyArray<ExactPlanPoint>, point: ExactPlanPoint): boolean {
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
     const a = polygon[i];
     const b = polygon[j];
     if (a === undefined || b === undefined) continue;
-    if (
-      a.z > point.z !== b.z > point.z &&
-      point.x < ((b.x - a.x) * (point.z - a.z)) / (b.z - a.z) + a.x
-    ) {
-      inside = !inside;
-    }
+    const aAbove = compareExactRational(a.z, point.z) > 0;
+    const bAbove = compareExactRational(b.z, point.z) > 0;
+    if (aAbove === bAbove) continue;
+    const crossingX = addExactRational(
+      divideExactRational(
+        multiplyExactRational(subtractExactRational(b.x, a.x), subtractExactRational(point.z, a.z)),
+        subtractExactRational(b.z, a.z),
+      ),
+      a.x,
+    );
+    if (compareExactRational(point.x, crossingX) < 0) inside = !inside;
   }
   return inside;
 }
 
 export function onRailHead(heads: RailHeads, point: PlanPoint): boolean {
-  return heads.polygons.some((polygon) => insidePolygon(polygon, point));
+  const exact = exactPoint(point);
+  return heads.polygons.some((polygon) => insidePolygon(polygon, exact));
+}
+
+function crossingInterval(
+  polygon: ReadonlyArray<ExactPlanPoint>,
+  centre: ExactPlanPoint,
+  normal: ExactPlanPoint,
+): Interval | null {
+  const crossings: ExactRational[] = [];
+  for (let i = 0; i < polygon.length; i += 1) {
+    const a = polygon[i];
+    const b = polygon[(i + 1) % polygon.length];
+    if (a === undefined || b === undefined) continue;
+    const edge = sub(b, a);
+    const toStart = sub(a, centre);
+    const denominator = cross(normal, edge);
+    if (exactRationalEquals(denominator, ZERO)) continue;
+    const alongEdge = divideExactRational(cross(toStart, normal), denominator);
+    if (compareExactRational(alongEdge, ZERO) < 0) continue;
+    if (compareExactRational(alongEdge, exactRational(1n, 1n)) > 0) continue;
+    crossings.push(divideExactRational(cross(toStart, edge), denominator));
+  }
+  const [first, ...rest] = crossings;
+  if (first === undefined) return null;
+  return { from: rest.reduce(lesser, first), to: rest.reduce(greater, first) };
+}
+
+function mergedRuns(intervals: ReadonlyArray<Interval>): ReadonlyArray<Interval> {
+  const runs: Interval[] = [];
+  for (const interval of intervals.toSorted((a, b) => compareExactRational(a.from, b.from))) {
+    const last = runs.at(-1);
+    if (last !== undefined && compareExactRational(interval.from, last.to) <= 0) {
+      runs[runs.length - 1] = { from: last.from, to: greater(last.to, interval.to) };
+    } else {
+      runs.push(interval);
+    }
+  }
+  return runs.filter((run) => compareExactRational(run.from, run.to) < 0);
 }
 
 export function railSection(
@@ -110,30 +207,28 @@ export function railSection(
   along: number,
   inwardLdu: number,
 ): RailSection | null {
+  const direction = exactPoint({ x: Math.cos(along), z: Math.sin(along) });
+  const normal = exactPoint({ x: -Math.sin(along), z: Math.cos(along) });
+  const inward = exactRationalFromFloat64(inwardLdu);
+  const start = exactPoint(origin);
   const centre = {
-    x: origin.x + Math.cos(along) * inwardLdu,
-    z: origin.z + Math.sin(along) * inwardLdu,
+    x: addExactRational(start.x, multiplyExactRational(direction.x, inward)),
+    z: addExactRational(start.z, multiplyExactRational(direction.z, inward)),
   };
-  const normal = { x: -Math.sin(along), z: Math.cos(along) };
-  const runs: Array<{ from: number; to: number }> = [];
-  let open: number | null = null;
-  for (
-    let offset = -LATERAL_SCAN_LDU;
-    offset <= LATERAL_SCAN_LDU;
-    offset += LATERAL_SCAN_STEP_LDU
-  ) {
-    const inside = onRailHead(heads, {
-      x: centre.x + normal.x * offset,
-      z: centre.z + normal.z * offset,
-    });
-    if (inside && open === null) open = offset;
-    if (!inside && open !== null) {
-      runs.push({ from: open, to: offset - LATERAL_SCAN_STEP_LDU });
-      open = null;
-    }
-  }
-  const railCentresLdu = runs.map((run) => (run.from + run.to) / 2);
+  const intervals = heads.polygons.flatMap((polygon) => {
+    const interval = crossingInterval(polygon, centre, normal);
+    if (interval === null) return [];
+    const clipped = { from: greater(interval.from, SCAN_FROM), to: lesser(interval.to, SCAN_TO) };
+    return compareExactRational(clipped.from, clipped.to) <= 0 ? [clipped] : [];
+  });
+  const railCentresLdu = mergedRuns(intervals).map((run) =>
+    divideExactRational(addExactRational(run.from, run.to), TWO),
+  );
   const [near, far] = railCentresLdu;
   if (railCentresLdu.length !== 2 || near === undefined || far === undefined) return null;
-  return { railCentresLdu, halfSpacingLdu: (far - near) / 2, centreOffsetLdu: (far + near) / 2 };
+  return {
+    railCentresLdu,
+    halfSpacingLdu: divideExactRational(subtractExactRational(far, near), TWO),
+    centreOffsetLdu: divideExactRational(addExactRational(far, near), TWO),
+  };
 }

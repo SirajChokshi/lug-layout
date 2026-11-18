@@ -12,6 +12,8 @@ import {
 import type * as v from "valibot";
 import {
   conjugateZeta16,
+  exactRationalFromDecimal,
+  exactRationalToFloat64,
   HALF_TURN_16,
   normalizeHeading16,
   rotateZeta16,
@@ -21,6 +23,7 @@ import {
   zeta16,
   zeta16Direction,
   zeta16ToStuds,
+  type ExactRational,
   type Zeta16,
 } from "@brr/math";
 import type { LdrawLibrary } from "../ldraw/library.ts";
@@ -308,6 +311,10 @@ function endInPart(
   return { origin: toPartFrame(frame, pose), along: pose.heading + Math.PI + frame.inward };
 }
 
+function ldu(value: ExactRational | undefined): number | null {
+  return value === undefined ? null : exactRationalToFloat64(value);
+}
+
 function railCheck(heads: RailHeads, frame: EntryFrame, end: ExactEnd): RailSection | null {
   const { origin, along } = endInPart(frame, end);
   return railSection(heads, origin, along, RAIL_SECTION_INWARD_LDU);
@@ -343,8 +350,9 @@ export function buildTrackPiece(
   );
   if (heads === null) throw new Error(`${part}: no rail pair at the reference end`);
   const sections = ordered.map((end) => railCheck(heads, frame, end));
-  const halfSpacing = sections[0]?.halfSpacingLdu;
-  if (halfSpacing === undefined) throw new Error(`${part}: no rail pair at the reference end`);
+  const referenceSection = sections[0];
+  if (!referenceSection) throw new Error(`${part}: no rail pair at the reference end`);
+  const halfSpacing = exactRationalToFloat64(referenceSection.halfSpacingLdu);
   const fitted = routes.map(([from, to]) => {
     const start = ordered[from];
     const finish = ordered[to];
@@ -392,14 +400,14 @@ export function buildTrackPiece(
   };
   const checks: PieceChecks = {
     id: piece.id,
-    railTopY: heads.topY,
+    railTopY: exactRationalToFloat64(exactRationalFromDecimal(heads.topY)),
     connectors: order.map((index, connector) => ({
       connector,
       marker: relative[index]?.marker ?? "",
       derivation: ordered[connector]?.derivation ?? "",
       markerResidualLdu: ordered[connector]?.residualLdu ?? Number.NaN,
-      railCentreOffsetLdu: sections[connector]?.centreOffsetLdu ?? null,
-      railHalfSpacingLdu: sections[connector]?.halfSpacingLdu ?? null,
+      railCentreOffsetLdu: ldu(sections[connector]?.centreOffsetLdu),
+      railHalfSpacingLdu: ldu(sections[connector]?.halfSpacingLdu),
     })),
     routes: fitted.map(({ from, to, path }) => ({
       from,

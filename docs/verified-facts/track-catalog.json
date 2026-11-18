@@ -715,7 +715,7 @@
           "marker": "s/53401s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0,
+          "railCentreOffsetLdu": 4.898587196589413e-15,
           "railHalfSpacingLdu": 50
         },
         {
@@ -723,7 +723,7 @@
           "marker": "s/53401s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0,
+          "railCentreOffsetLdu": 2.4492935982947065e-15,
           "railHalfSpacingLdu": 50
         }
       ],
@@ -749,16 +749,16 @@
           "marker": "s/53400s03.dat",
           "derivation": "reference end",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": -0.25,
-          "railHalfSpacingLdu": 50.015625
+          "railCentreOffsetLdu": -0.25100544110335593,
+          "railHalfSpacingLdu": 50.015983552637664
         },
         {
           "connector": 1,
           "marker": "s/53400s04.dat",
           "derivation": "arc: radius 40 studs from the file's !HELP rotation point (0/-800), turn -1 step from the end markers; not certified (no unique field candidate within the file's precision)",
           "markerResidualLdu": 0.0014847741947485202,
-          "railCentreOffsetLdu": 0.25,
-          "railHalfSpacingLdu": 50.015625
+          "railCentreOffsetLdu": 0.25075263868868897,
+          "railHalfSpacingLdu": 50.01573770236437
         }
       ],
       "routes": [
@@ -783,7 +783,7 @@
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 9.797174393178826e-15,
           "railHalfSpacingLdu": 50.5
         },
         {
@@ -791,7 +791,7 @@
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 7.837739514543061e-14,
-          "railCentreOffsetLdu": -0.015625,
+          "railCentreOffsetLdu": -7.102951435054649e-14,
           "railHalfSpacingLdu": 50.5
         }
       ],
@@ -817,16 +817,16 @@
           "marker": "s/2867as04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": -0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": -0.2581259025494102,
+          "railHalfSpacingLdu": 50.5111572436491
         },
         {
           "connector": 1,
           "marker": "s/2867as03.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 7.741948029150472e-7,
-          "railCentreOffsetLdu": 0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": 0.25812495920431305,
+          "railHalfSpacingLdu": 50.51115806083905
         }
       ],
       "routes": [
@@ -851,15 +851,15 @@
           "marker": "s/2859s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": -0.125,
-          "railHalfSpacingLdu": 50.640625
+          "railCentreOffsetLdu": -0.1346436508219734,
+          "railHalfSpacingLdu": 50.63464365082198
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 2.4492935982947065e-15,
           "railHalfSpacingLdu": 50.5
         },
         {
@@ -867,8 +867,8 @@
           "marker": "s/2867as04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 8.921174634225937e-7,
-          "railCentreOffsetLdu": -0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": -0.2581376168651198,
+          "railHalfSpacingLdu": 50.51114957946907
         }
       ],
       "routes": [
@@ -908,15 +908,15 @@
           "marker": "s/2859s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": -0.125,
-          "railHalfSpacingLdu": 50.640625
+          "railCentreOffsetLdu": -0.1346436508219734,
+          "railHalfSpacingLdu": 50.63464365082198
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 2.4492935982947065e-15,
           "railHalfSpacingLdu": 50.5
         },
         {
@@ -924,8 +924,8 @@
           "marker": "s/2867as04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 8.921174634225937e-7,
-          "railCentreOffsetLdu": -0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": -0.2581376168651198,
+          "railHalfSpacingLdu": 50.51114957946907
         }
       ],
       "routes": [
@@ -965,15 +965,15 @@
           "marker": "s/2859s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.140625,
-          "railHalfSpacingLdu": 50.625
+          "railCentreOffsetLdu": 0.13464365082198362,
+          "railHalfSpacingLdu": 50.63464365082198
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 2.4492935982947065e-15,
           "railHalfSpacingLdu": 50.5
         },
         {
@@ -981,8 +981,8 @@
           "marker": "s/2867as03.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 8.921174634225937e-7,
-          "railCentreOffsetLdu": 0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": 0.2581367983173028,
+          "railHalfSpacingLdu": 50.5111503980169
         }
       ],
       "routes": [
@@ -1022,15 +1022,15 @@
           "marker": "s/2859s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.140625,
-          "railHalfSpacingLdu": 50.625
+          "railCentreOffsetLdu": 0.13464365082198362,
+          "railHalfSpacingLdu": 50.63464365082198
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 2.4492935982947065e-15,
           "railHalfSpacingLdu": 50.5
         },
         {
@@ -1038,8 +1038,8 @@
           "marker": "s/2867as03.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 8.921174634225937e-7,
-          "railCentreOffsetLdu": 0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": 0.2581367983173028,
+          "railHalfSpacingLdu": 50.5111503980169
         }
       ],
       "routes": [
@@ -1079,7 +1079,7 @@
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 4.898587196589413e-15,
           "railHalfSpacingLdu": 50.25
         },
         {
@@ -1087,7 +1087,7 @@
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 2.4492935982947065e-15,
           "railHalfSpacingLdu": 50.25
         },
         {
@@ -1095,7 +1095,7 @@
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 6.123233995736766e-15,
           "railHalfSpacingLdu": 50.25
         },
         {
@@ -1103,7 +1103,7 @@
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
+          "railCentreOffsetLdu": 3.673940397442059e-15,
           "railHalfSpacingLdu": 50.25
         }
       ],
