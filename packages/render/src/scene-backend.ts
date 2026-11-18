@@ -42,6 +42,11 @@ export interface PartPalette {
 
 export type PaletteLevel = "detailed" | "far";
 
+export interface NeededMeshListener {
+  hold(detailedIndices: Uint32Array, farIndices: Uint32Array): void;
+  release(detailedIndices: Uint32Array, farIndices: Uint32Array): void;
+}
+
 export interface PartMeshUpdate {
   readonly index: number;
   readonly level: PaletteLevel;
@@ -163,6 +168,7 @@ export interface ISceneBackend {
   setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void;
   setChunk(key: number, chunk: ChunkInstances): void;
   deleteChunk(key: number): void;
+  setNeededMeshListener(listener: NeededMeshListener | null): void;
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
   setSelectionBox(box: WorldBox | null): void;

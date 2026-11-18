@@ -22,7 +22,6 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".css": "text/css",
   ".svg": "image/svg+xml",
 };
-const MESHES_LOADED = /^([\d,]+) of ([\d,]+) loaded/u;
 const TIERS_IN_KEY_ORDER: ReadonlyArray<string> = ["far", "near", "mid"];
 const CHUNK_TIER_COLUMNS: ReadonlyArray<string> = ["near", "mid", "far"];
 
@@ -89,11 +88,6 @@ function count(text: string | undefined): number {
   return Number((text ?? "").replaceAll(",", ""));
 }
 
-function meshesLoaded(reading: HudReading): boolean {
-  const match = MESHES_LOADED.exec(reading["Part meshes"] ?? "");
-  return match !== null && count(match[1]) >= count(match[2]) && count(match[2]) > 0;
-}
-
 function everyChunkAt(reading: HudReading, tier: string): boolean {
   const chunks = (reading["Chunk tiers near/mid/far"] ?? "").split(" / ").map(count);
   const total = chunks.reduce((sum, n) => sum + n, 0);
@@ -108,37 +102,15 @@ async function until(check: () => Promise<boolean>, what: string): Promise<void>
   }
 }
 
-class NetworkActivity {
-  private inFlight = 0;
-  private lastActivityMs = performance.now();
-
-  constructor(page: Page) {
-    page.on("request", () => this.started());
-    page.on("requestfinished", () => this.ended());
-    page.on("requestfailed", () => this.ended());
-  }
-
-  quietFor(ms: number): boolean {
-    return this.inFlight === 0 && performance.now() - this.lastActivityMs >= ms;
-  }
-
-  private started(): void {
-    this.inFlight++;
-    this.lastActivityMs = performance.now();
-  }
-
-  private ended(): void {
-    this.inFlight--;
-    this.lastActivityMs = performance.now();
-  }
+async function meshesSettled(page: Page): Promise<boolean> {
+  const editor = page.locator(".editor");
+  return (
+    (await editor.getAttribute("data-far-tier")) === "ready" &&
+    (await editor.getAttribute("data-meshes")) === "settled"
+  );
 }
 
-async function settleAt(
-  page: Page,
-  network: NetworkActivity,
-  tier: string,
-  settleMs: number,
-): Promise<HudReading> {
+async function settleAt(page: Page, tier: string, settleMs: number): Promise<HudReading> {
   let previousCallsAndTriangles = "";
   let reading: HudReading = {};
   await until(async () => {
@@ -147,11 +119,11 @@ async function settleAt(
     const callsAndTriangles = `${reading["Draw calls"]} ${reading["Drawn triangles"]}`;
     const settled =
       callsAndTriangles === previousCallsAndTriangles &&
-      network.quietFor(settleMs) &&
-      everyChunkAt(reading, tier);
+      everyChunkAt(reading, tier) &&
+      (await meshesSettled(page));
     previousCallsAndTriangles = callsAndTriangles;
     return settled;
-  }, `every chunk at the ${tier} tier, no network request in flight for ${settleMs} ms, and the same draw calls and triangles across that time`);
+  }, `every chunk at the ${tier} tier, every wanted mesh settled, and the same draw calls and triangles for ${settleMs} ms`);
   return reading;
 }
 
@@ -205,7 +177,6 @@ async function measureWorld(
 ): Promise<Measurement[]> {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const network = new NetworkActivity(page);
   await page.goto(`${baseUrl}?api=webgl2&tier=far`);
   await page.waitForSelector('.editor[data-status="ready"]', {
     state: "attached",
@@ -213,11 +184,7 @@ async function measureWorld(
   });
   await page.setInputFiles(IMPORT_INPUT, worldPath);
   await until(async () => count((await readHud(page))["Placements"]) > 0, "the world to import");
-  await page.waitForSelector('.editor[data-far-tier="ready"]', {
-    state: "attached",
-    timeout: READY_TIMEOUT_MS,
-  });
-  await until(async () => meshesLoaded(await readHud(page)), "part meshes");
+  await until(() => meshesSettled(page), "the far tier and every wanted mesh");
   await page.getByRole("button", { name: "Fit all" }).click({ timeout: READY_TIMEOUT_MS });
   const world = basename(worldPath).replace(/\.brr\.zip$/u, "");
   const cdp = await page.context().newCDPSession(page);
@@ -225,7 +192,7 @@ async function measureWorld(
   const rows: Measurement[] = [];
   for (const tier of TIERS_IN_KEY_ORDER) {
     await forceTier(page, tier);
-    const reading = await settleAt(page, network, tier, settleMs);
+    const reading = await settleAt(page, tier, settleMs);
     if (errors.length > 0) throw new Error(errors.join("\n"));
     rows.push(await measureTier(page, cdp, world, tier, outDir, reading));
   }
