@@ -1,0 +1,12 @@
+0 LDCad shadow info for "~Magnet Cylindrical in Casing (Complete) (Obsolete)"
+
+0 Author: Brick Railroad project additions
+0 !LICENSE CC BY-SA 4.0, see LICENSE.md
+
+0 !HISTORY 2026-11-18 {Brick Railroad} Measured from kulits/ldraw-parts@c70360d1 geometry
+
+0 !LDCAD SNAP_CLEAR [id=couplingFace]
+0 !LDCAD SNAP_GEN [id=couplingFace] [group=magnet] [gender=M] [bounding=cyl 15 0] [match=group] [pos=0 0 8] [ori=1 0 0 0 0 1 0 -1 0]
+0 !LDCAD SNAP_GEN [id=couplingFace] [group=magnet] [gender=F] [bounding=cyl 15 0] [match=group] [pos=0 0 8] [ori=1 0 0 0 0 -1 0 1 0]
+0 !LDCAD SNAP_GEN [id=couplingFace] [group=magnet] [gender=M] [bounding=cyl 15 0] [match=group] [pos=0 0 -8] [ori=1 0 0 0 0 -1 0 1 0]
+0 !LDCAD SNAP_GEN [id=couplingFace] [group=magnet] [gender=F] [bounding=cyl 15 0] [match=group] [pos=0 0 -8] [ori=1 0 0 0 0 1 0 -1 0]

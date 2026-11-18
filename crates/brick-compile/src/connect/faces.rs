@@ -1,6 +1,8 @@
 use crate::affine::Vec3;
 
-use super::{column, Caps, Connector, Gender, SectionShape, Shape, Source};
+use super::{
+    column, Bounding, Caps, Connector, Gender, GenericMatch, SectionShape, Shape, Source, Status,
+};
 
 pub const CAP_ROOT: u8 = 1;
 pub const CAP_FAR: u8 = 2;
@@ -21,6 +23,8 @@ pub struct FaceSection {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatingFace {
     pub source: Source,
+    pub status: Status,
+    pub group: Option<String>,
     pub gender: Gender,
     pub origin: Vec3,
     pub axis: Vec3,
@@ -74,6 +78,8 @@ fn reversed(direction: Vec3) -> Vec3 {
 
 struct Cylinder<'a> {
     source: Source,
+    status: Status,
+    group: &'a Option<String>,
     gender: Gender,
     sections: &'a [FaceSection],
     closed: (bool, bool),
@@ -89,6 +95,8 @@ impl Cylinder<'_> {
             self.sections.iter().rev().map(reversed_section).collect();
         let face = |origin, axis, sections, caps| MatingFace {
             source: self.source,
+            status: self.status,
+            group: self.group.clone(),
             gender: self.gender,
             origin,
             axis,
@@ -126,6 +134,34 @@ impl Cylinder<'_> {
             }
         })
     }
+}
+
+fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<MatingFace> {
+    let direction = column(&connector.placement, 1);
+    let axis = match gender {
+        Gender::Male => direction,
+        Gender::Female => reversed(direction),
+    };
+    connector
+        .grid
+        .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets())
+        .into_iter()
+        .map(|offset| MatingFace {
+            source: connector.source,
+            status: connector.status,
+            group: connector.group.clone(),
+            gender,
+            origin: connector.placement.apply(offset),
+            axis,
+            sections: vec![FaceSection {
+                code: ROUND,
+                size: radius,
+                length: 0.0,
+            }],
+            caps: 0,
+            slide: false,
+        })
+        .collect()
 }
 
 pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable> {
@@ -168,10 +204,18 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
             *slide,
         ),
         Shape::Finger { .. } => return Err(Unreadable::FingerHinge),
+        Shape::Generic {
+            gender,
+            bounding: Bounding::Cylinder { radius, .. },
+            matching: Some(GenericMatch::Group),
+            free_placement: false,
+        } if connector.group.is_some() => return Ok(contact_faces(connector, *gender, *radius)),
         Shape::Generic { .. } => return Err(Unreadable::Generic),
     };
     let cylinder = Cylinder {
         source: connector.source,
+        status: connector.status,
+        group: &connector.group,
         gender,
         sections: &sections,
         closed,
