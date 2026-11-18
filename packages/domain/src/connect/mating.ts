@@ -1,3 +1,4 @@
+import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import {
   AXIS_FREE,
   AXIS_NEG_X,
@@ -86,21 +87,27 @@ export class SnapMating {
     return offsets;
   }
 
-  engages(maleShape: number, femaleShape: number, offset: number): boolean {
+  engages(maleShape: number, femaleShape: number, offsetSixteenths: number): boolean {
     const offsets = this.offsets(maleShape, femaleShape);
-    for (let i = 0; i < offsets.length; i++) if (offsets[i] === offset) return true;
+    for (let i = 0; i < offsets.length; i++) if (offsets[i] === offsetSixteenths) return true;
     return false;
   }
 
-  freedom(maleShape: number, femaleShape: number, offset: number, maleAxis: number): MateFreedom {
-    if (!this.engages(maleShape, femaleShape, offset)) {
+  freedom(
+    maleShape: number,
+    femaleShape: number,
+    offsetSixteenths: number,
+    maleAxis: number,
+  ): MateFreedom {
+    if (!this.engages(maleShape, femaleShape, offsetSixteenths)) {
       throw new RangeError(
-        `shapes ${maleShape} and ${femaleShape} don't mate at offset ${offset}, so they have no freedom to report`,
+        `shapes ${maleShape} and ${femaleShape} don't mate at offset ${offsetSixteenths}/${SIXTEENTHS_PER_LDU} LDU, so they have no freedom to report`,
       );
     }
     const shapes = this.shapes;
     let locked = false;
     let inserted = false;
+    const offset = offsetSixteenths / SIXTEENTHS_PER_LDU;
     this.overlaps(maleShape, femaleShape, offset, (m, f, shared) => {
       if (shared === 0) return true;
       inserted = true;
@@ -115,15 +122,19 @@ export class SnapMating {
     if (shapes.group(male) !== shapes.group(female)) return NO_OFFSETS;
     const maleLength = shapes.length(male);
     const femaleLength = shapes.length(female);
+    const travel = (maleLength - femaleLength) * SIXTEENTHS_PER_LDU;
     let low = 0;
     let high = 0;
     if (shapes.slides(male) || shapes.slides(female)) {
-      low = femaleLength <= maleLength ? 0 : Math.ceil(maleLength - femaleLength);
-      high = femaleLength <= maleLength ? Math.floor(maleLength - femaleLength) : 0;
+      low = femaleLength <= maleLength ? 0 : Math.ceil(travel);
+      high = femaleLength <= maleLength ? Math.floor(travel) : 0;
     }
     const valid: number[] = [];
     for (let d = low; d <= high; d++) {
-      if (this.stopsAllow(male, female, d) && this.contains(male, female, d)) valid.push(d);
+      const offset = d / SIXTEENTHS_PER_LDU;
+      if (this.stopsAllow(male, female, offset) && this.contains(male, female, offset)) {
+        valid.push(d);
+      }
     }
     return valid.length === 0 ? NO_OFFSETS : Int32Array.from(valid);
   }

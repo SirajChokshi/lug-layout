@@ -1,13 +1,16 @@
-import { PLATE_LDU, STUD_LDU } from "@brr/math";
+import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
 import { VECTOR_FLOATS, axisDimension, axisSign, oppositeAxis } from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import {
+  PLATE_SIXTEENTHS,
   QUARTER_TURNS,
+  STUD_SIXTEENTHS,
   checkPose,
   isLatticeStud,
   phaseOf,
   rotatedAxis,
+  sixteenths,
   verticalSign,
   turnCos,
   turnSin,
@@ -18,8 +21,8 @@ import type { MateReport } from "./mate-report.ts";
 import type { SnapMating } from "./mating.ts";
 import type { ModelConnectors } from "./model-connectors.ts";
 
-const CELL_LDU = STUD_LDU;
-const REGION_LDU = 8 * STUD_LDU;
+const CELL_SIXTEENTHS = STUD_SIXTEENTHS;
+const REGION_SIXTEENTHS = 8 * STUD_SIXTEENTHS;
 const NO_SLOT = MISSING;
 const CELL_KEY_INTS = 3;
 const MODEL_KEY_INTS = 4;
@@ -30,7 +33,7 @@ const X = 0;
 const Y = 1;
 const Z = 2;
 const AXIAL_GROUP = -1;
-const STUD_CENTRE_LDU = STUD_LDU / 2;
+const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
 
 function cellOf(ldu: number, size: number): number {
   return Math.floor(ldu / size);
@@ -40,12 +43,19 @@ function axisStep(axis: number, dimension: number): number {
   return axisDimension(axis) === dimension ? axisSign(axis) : 0;
 }
 
-function phaseKey(x: number, z: number): number {
-  return phaseOf(x) * STUD_LDU + phaseOf(z);
+function phaseKey(x16: number, z16: number): number {
+  return phaseOf(x16) * STUD_SIXTEENTHS + phaseOf(z16);
 }
 
 function latticeKey(pose: LatticePose): number {
-  return phaseKey(STUD_CENTRE_LDU - pose.x, STUD_CENTRE_LDU - pose.z);
+  return phaseKey(
+    STUD_CENTRE_SIXTEENTHS - sixteenths(pose.x),
+    STUD_CENTRE_SIXTEENTHS - sixteenths(pose.z),
+  );
+}
+
+function isWholeLdu(sixteenthsAlong: number): boolean {
+  return sixteenthsAlong % SIXTEENTHS_PER_LDU === 0;
 }
 
 class TurnedModel {
@@ -91,9 +101,9 @@ export class SparseConnectorFinder implements MateFinder {
     const turned = this.turn(model);
     for (let i = 0; i < model.count; i++) {
       const at = (pose.rot * model.count + i) * VECTOR_FLOATS;
-      const x = (turned.position[at + X] ?? 0) + pose.x;
-      const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_LDU;
-      const z = (turned.position[at + Z] ?? 0) + pose.z;
+      const x = (turned.position[at + X] ?? 0) + sixteenths(pose.x);
+      const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_SIXTEENTHS;
+      const z = (turned.position[at + Z] ?? 0) + sixteenths(pose.z);
       const axis = turned.axis[pose.rot * model.count + i] ?? 0;
       if (isLatticeStud(axis, x, z)) continue;
       const slot = this.allocate();
@@ -104,9 +114,9 @@ export class SparseConnectorFinder implements MateFinder {
       this.slotClass[slot] = turned.connectorClass[i] ?? UNCLASSED;
       this.slotSource[slot] = model.source[i] ?? 0;
       this.slotStatus[slot] = model.status[i] ?? 0;
-      this.slotNext[slot] = this.cells.get(this.keyOf(x, y, z, CELL_LDU));
+      this.slotNext[slot] = this.cells.get(this.keyOf(x, y, z, CELL_SIXTEENTHS));
       this.cells.set(this.cellKey, slot);
-      this.slotRegionNext[slot] = this.regions.get(this.keyOf(x, y, z, REGION_LDU));
+      this.slotRegionNext[slot] = this.regions.get(this.keyOf(x, y, z, REGION_SIXTEENTHS));
       this.regions.set(this.cellKey, slot);
     }
   }
@@ -116,9 +126,9 @@ export class SparseConnectorFinder implements MateFinder {
     const turned = this.turn(model);
     for (let i = 0; i < model.count; i++) {
       const at = (pose.rot * model.count + i) * VECTOR_FLOATS;
-      const x = (turned.position[at + X] ?? 0) + pose.x;
-      const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_LDU;
-      const z = (turned.position[at + Z] ?? 0) + pose.z;
+      const x = (turned.position[at + X] ?? 0) + sixteenths(pose.x);
+      const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_SIXTEENTHS;
+      const z = (turned.position[at + Z] ?? 0) + sixteenths(pose.z);
       const axis = turned.axis[pose.rot * model.count + i] ?? 0;
       if (isLatticeStud(axis, x, z)) continue;
       const slot = this.unlinkCell(x, y, z, axis, turned.connectorClass[i] ?? UNCLASSED);
@@ -131,19 +141,21 @@ export class SparseConnectorFinder implements MateFinder {
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
     checkPose(window);
     const turned = this.turn(model);
-    const reach = this.mating.shapes.longest;
-    const spanXZ = window.cells * STUD_LDU + reach;
-    const spanY = window.plates * PLATE_LDU + reach;
-    const baseY = window.yPlates * PLATE_LDU;
+    const reach = Math.ceil(sixteenths(this.mating.shapes.longest));
+    const spanXZ = window.cells * STUD_SIXTEENTHS + reach;
+    const spanY = window.plates * PLATE_SIXTEENTHS + reach;
+    const baseX = sixteenths(window.x);
+    const baseY = window.yPlates * PLATE_SIXTEENTHS;
+    const baseZ = sixteenths(window.z);
     for (let t = 0; t < window.turns; t++) {
       const rot = (window.rot + t) % QUARTER_TURNS;
       const b = rot * BOX_INTS;
-      const fromX = cellOf(window.x + (turned.box[b] ?? 0) - spanXZ, REGION_LDU);
-      const toX = cellOf(window.x + (turned.box[b + 3] ?? 0) + spanXZ, REGION_LDU);
-      const fromY = cellOf(baseY + (turned.box[b + 1] ?? 0) - spanY, REGION_LDU);
-      const toY = cellOf(baseY + (turned.box[b + 4] ?? 0) + spanY, REGION_LDU);
-      const fromZ = cellOf(window.z + (turned.box[b + 2] ?? 0) - spanXZ, REGION_LDU);
-      const toZ = cellOf(window.z + (turned.box[b + 5] ?? 0) + spanXZ, REGION_LDU);
+      const fromX = cellOf(baseX + (turned.box[b] ?? 0) - spanXZ, REGION_SIXTEENTHS);
+      const toX = cellOf(baseX + (turned.box[b + 3] ?? 0) + spanXZ, REGION_SIXTEENTHS);
+      const fromY = cellOf(baseY + (turned.box[b + 1] ?? 0) - spanY, REGION_SIXTEENTHS);
+      const toY = cellOf(baseY + (turned.box[b + 4] ?? 0) + spanY, REGION_SIXTEENTHS);
+      const fromZ = cellOf(baseZ + (turned.box[b + 2] ?? 0) - spanXZ, REGION_SIXTEENTHS);
+      const toZ = cellOf(baseZ + (turned.box[b + 5] ?? 0) + spanXZ, REGION_SIXTEENTHS);
       for (let rx = fromX; rx <= toX; rx++) {
         for (let ry = fromY; ry <= toY; ry++) {
           for (let rz = fromZ; rz <= toZ; rz++) {
@@ -205,9 +217,9 @@ export class SparseConnectorFinder implements MateFinder {
     const ownStatus = model.status[i] ?? 0;
     let n = 0;
     const at = m * VECTOR_FLOATS;
-    const x = (turned.position[at + X] ?? 0) + pose.x;
-    const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_LDU;
-    const z = (turned.position[at + Z] ?? 0) + pose.z;
+    const x = (turned.position[at + X] ?? 0) + sixteenths(pose.x);
+    const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_SIXTEENTHS;
+    const z = (turned.position[at + Z] ?? 0) + sixteenths(pose.z);
     const axis = turned.axis[m] ?? 0;
     const own = turned.connectorClass[i] ?? UNCLASSED;
     const partnerAxis = oppositeAxis(axis);
@@ -226,7 +238,7 @@ export class SparseConnectorFinder implements MateFinder {
         const qy = y + dy * d;
         const qz = z + dz * d;
         for (
-          let slot = this.cells.get(this.keyOf(qx, qy, qz, CELL_LDU));
+          let slot = this.cells.get(this.keyOf(qx, qy, qz, CELL_SIXTEENTHS));
           slot !== NO_SLOT;
           slot = this.slotNext[slot] ?? NO_SLOT
         ) {
@@ -263,27 +275,27 @@ export class SparseConnectorFinder implements MateFinder {
     const wanted = oppositeAxis(this.slotAxis[slot] ?? 0);
     if (((turned.axesOfTurn[rot] ?? 0) & (1 << wanted)) === 0) return;
     const slotClass = this.slotClass[slot] ?? UNCLASSED;
-    const sx = (this.slotX[slot] ?? 0) - window.x;
-    const sy = (this.slotY[slot] ?? 0) - window.yPlates * PLATE_LDU;
-    const sz = (this.slotZ[slot] ?? 0) - window.z;
-    const spanXZ = window.cells * STUD_LDU;
-    const spanY = window.plates * PLATE_LDU;
+    const sx = (this.slotX[slot] ?? 0) - sixteenths(window.x);
+    const sy = (this.slotY[slot] ?? 0) - window.yPlates * PLATE_SIXTEENTHS;
+    const sz = (this.slotZ[slot] ?? 0) - sixteenths(window.z);
+    const spanXZ = window.cells * STUD_SIXTEENTHS;
+    const spanY = window.plates * PLATE_SIXTEENTHS;
     const ax = Math.abs(axisStep(wanted, X)) * reach;
     const ay = Math.abs(axisStep(wanted, Y)) * reach;
     const az = Math.abs(axisStep(wanted, Z)) * reach;
     for (
-      let cx = cellOf(sx - spanXZ - ax, CELL_LDU);
-      cx <= cellOf(sx + spanXZ + ax, CELL_LDU);
+      let cx = cellOf(sx - spanXZ - ax, CELL_SIXTEENTHS);
+      cx <= cellOf(sx + spanXZ + ax, CELL_SIXTEENTHS);
       cx++
     ) {
       for (
-        let cy = cellOf(sy - spanY - ay, CELL_LDU);
-        cy <= cellOf(sy + spanY + ay, CELL_LDU);
+        let cy = cellOf(sy - spanY - ay, CELL_SIXTEENTHS);
+        cy <= cellOf(sy + spanY + ay, CELL_SIXTEENTHS);
         cy++
       ) {
         for (
-          let cz = cellOf(sz - spanXZ - az, CELL_LDU);
-          cz <= cellOf(sz + spanXZ + az, CELL_LDU);
+          let cz = cellOf(sz - spanXZ - az, CELL_SIXTEENTHS);
+          cz <= cellOf(sz + spanXZ + az, CELL_SIXTEENTHS);
           cz++
         ) {
           this.modelKey[0] = rot;
@@ -312,8 +324,9 @@ export class SparseConnectorFinder implements MateFinder {
                   sy - axisStep(wanted, Y) * d - (turned.position[m * VECTOR_FLOATS + Y] ?? 0);
                 const shiftZ =
                   sz - axisStep(wanted, Z) * d - (turned.position[m * VECTOR_FLOATS + Z] ?? 0);
-                if (shiftY % PLATE_LDU !== 0) continue;
-                const plates = shiftY / PLATE_LDU;
+                if (!isWholeLdu(shiftX) || !isWholeLdu(shiftZ)) continue;
+                if (shiftY % PLATE_SIXTEENTHS !== 0) continue;
+                const plates = shiftY / PLATE_SIXTEENTHS;
                 if (
                   Math.abs(shiftX) > spanXZ ||
                   Math.abs(shiftZ) > spanXZ ||
@@ -321,7 +334,12 @@ export class SparseConnectorFinder implements MateFinder {
                 ) {
                   continue;
                 }
-                out.add(window.x + shiftX, window.z + shiftZ, window.yPlates + plates, rot);
+                out.add(
+                  window.x + shiftX / SIXTEENTHS_PER_LDU,
+                  window.z + shiftZ / SIXTEENTHS_PER_LDU,
+                  window.yPlates + plates,
+                  rot,
+                );
               }
             }
           }
@@ -363,9 +381,9 @@ export class SparseConnectorFinder implements MateFinder {
         turned.axesOfTurn[rot] = (turned.axesOfTurn[rot] ?? 0) | (1 << (turned.axis[m] ?? 0));
         this.grow(turned.box, b, x, y, z, i === 0);
         this.modelKey[0] = rot;
-        this.modelKey[1] = cellOf(x, CELL_LDU);
-        this.modelKey[2] = cellOf(y, CELL_LDU);
-        this.modelKey[3] = cellOf(z, CELL_LDU);
+        this.modelKey[1] = cellOf(x, CELL_SIXTEENTHS);
+        this.modelKey[2] = cellOf(y, CELL_SIXTEENTHS);
+        this.modelKey[3] = cellOf(z, CELL_SIXTEENTHS);
         turned.next[m] = turned.cells.get(this.modelKey);
         turned.cells.set(this.modelKey, m);
       }
@@ -433,7 +451,7 @@ export class SparseConnectorFinder implements MateFinder {
   }
 
   private unlinkCell(x: number, y: number, z: number, axis: number, own: number): number {
-    const key = this.keyOf(x, y, z, CELL_LDU);
+    const key = this.keyOf(x, y, z, CELL_SIXTEENTHS);
     let previous = NO_SLOT;
     for (let slot = this.cells.get(key); slot !== NO_SLOT; slot = this.slotNext[slot] ?? NO_SLOT) {
       const same =
@@ -447,7 +465,7 @@ export class SparseConnectorFinder implements MateFinder {
         continue;
       }
       const next = this.slotNext[slot] ?? NO_SLOT;
-      if (previous === NO_SLOT) this.cells.set(this.keyOf(x, y, z, CELL_LDU), next);
+      if (previous === NO_SLOT) this.cells.set(this.keyOf(x, y, z, CELL_SIXTEENTHS), next);
       else this.slotNext[previous] = next;
       return slot;
     }
@@ -459,7 +477,7 @@ export class SparseConnectorFinder implements MateFinder {
     const y = this.slotY[target] ?? 0;
     const z = this.slotZ[target] ?? 0;
     let previous = NO_SLOT;
-    const key = this.keyOf(x, y, z, REGION_LDU);
+    const key = this.keyOf(x, y, z, REGION_SIXTEENTHS);
     for (
       let slot = this.regions.get(key);
       slot !== NO_SLOT;
@@ -470,7 +488,7 @@ export class SparseConnectorFinder implements MateFinder {
         continue;
       }
       const next = this.slotRegionNext[slot] ?? NO_SLOT;
-      if (previous === NO_SLOT) this.regions.set(this.keyOf(x, y, z, REGION_LDU), next);
+      if (previous === NO_SLOT) this.regions.set(this.keyOf(x, y, z, REGION_SIXTEENTHS), next);
       else this.slotRegionNext[previous] = next;
       return;
     }
