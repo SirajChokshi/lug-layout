@@ -354,7 +354,7 @@ export class WorldSession implements IWorldSession {
       pinnedBundleVersion: this.bundleVersion,
       openMs: 0,
     };
-    await this.replaceEditedWorld(current.name, []);
+    await this.loadEditedWorld(current.name, []);
     this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
     this.update({ storageError: reason, worlds: [] });
@@ -428,15 +428,12 @@ export class WorldSession implements IWorldSession {
       pinnedBundleVersion: this.bundleVersion,
       openMs: performance.now() - started,
     };
-    await this.replaceEditedWorld(name, []);
+    await this.loadEditedWorld(name, []);
     this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
   }
 
-  private async replaceEditedWorld(
-    name: string,
-    shards: ReadonlyArray<WorldShardV1>,
-  ): Promise<void> {
+  private async loadEditedWorld(name: string, shards: ReadonlyArray<WorldShardV1>): Promise<void> {
     const issues = await this.editedWorld().load(shards);
     if (issues.length > 0) {
       throw new Error(`world "${name}" can't be opened: ${issueText(issues)}`);
@@ -449,7 +446,7 @@ export class WorldSession implements IWorldSession {
     shards: ReadonlyArray<WorldShardV1>,
     started: number,
   ): Promise<void> {
-    await this.replaceEditedWorld(manifest.name, shards);
+    await this.loadEditedWorld(manifest.name, shards);
     const opened = {
       id,
       name: manifest.name,
