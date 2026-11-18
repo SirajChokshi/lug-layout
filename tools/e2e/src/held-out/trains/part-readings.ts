@@ -147,6 +147,7 @@ export class PartReader {
         lod: this.bundle.job.lod,
         studPrimitives: vocabulary,
         unofficialAllowlist: this.bundle.job.unofficialAllowlist,
+        primitives: this.bundle.job.primitives,
         parts: references,
         model: "",
         inlineChecks: [],

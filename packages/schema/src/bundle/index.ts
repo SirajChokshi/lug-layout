@@ -402,6 +402,7 @@ export const PrimitiveConnectorTable = v.strictObject({
       title: v.string(),
       derivation: v.string(),
       snaps: v.optional(v.array(v.string())),
+      whereOpen: v.optional(v.array(v.string())),
       holeEnd: v.optional(
         v.strictObject({
           counterbore: v.strictObject({ radius: Finite, length: Finite }),
