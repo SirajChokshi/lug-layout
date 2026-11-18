@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compareExactDecimal, parseExactDecimal } from "./exact-decimal.ts";
 import {
   addExactRational,
+  ceilExactRational,
   compareExactRational,
   divideExactRational,
   exactRational,
@@ -14,6 +15,7 @@ import {
   exactRationalFromFloat64,
   exactRationalFromSixteenths,
   exactRationalToFloat64,
+  floorExactRational,
   isCanonicalExactRationalText,
   subtractExactRational,
 } from "./exact-rational.ts";
@@ -105,6 +107,29 @@ describe("exact rationals", () => {
     );
     expect(formatExactRational(radius)).toEqual({ numerator: "1153", denominator: "55" });
     expect(() => divideExactRational(atFrom, exactRational(0n, 1n))).toThrow("divided by zero");
+  });
+
+  it("round toward minus and plus infinity, exactly at integers", () => {
+    const cases: ReadonlyArray<readonly [bigint, bigint, bigint, bigint]> = [
+      [7n, 2n, 3n, 4n],
+      [-7n, 2n, -4n, -3n],
+      [6n, 3n, 2n, 2n],
+      [-6n, 3n, -2n, -2n],
+      [0n, 1n, 0n, 0n],
+      [-1n, 3n, -1n, 0n],
+    ];
+    for (const [numerator, denominator, floor, ceil] of cases) {
+      const value = exactRational(numerator, denominator);
+      expect([floorExactRational(value), ceilExactRational(value)]).toEqual([floor, ceil]);
+    }
+  });
+
+  it("find the integer sixteenths strictly inside a rail head band", () => {
+    const [inner, outer] = [fromDecimal("46.9"), fromDecimal("53.1")];
+    const oneSixteenth = exactRationalFromSixteenths(1);
+    const first = floorExactRational(divideExactRational(inner, oneSixteenth)) + 1n;
+    const last = ceilExactRational(divideExactRational(outer, oneSixteenth)) - 1n;
+    expect([first, last]).toEqual([751n, 849n]);
   });
 
   it("stay reduced with the sign on the numerator", () => {

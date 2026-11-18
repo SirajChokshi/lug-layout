@@ -56,6 +56,7 @@ export {
 } from "./exact-decimal.ts";
 export {
   addExactRational,
+  ceilExactRational,
   compareExactRational,
   divideExactRational,
   exactRational,
@@ -65,6 +66,7 @@ export {
   multiplyExactRational,
   parseExactRational,
   exactRationalEquals,
+  floorExactRational,
   exactRationalFromDecimal,
   exactRationalFromFloat64,
   exactRationalFromSixteenths,

@@ -235,6 +235,10 @@ fn vehicle_signatures(palette: &Value) -> Result<VehicleSignatures, String> {
     })
 }
 
+fn is_positive_decimal(text: &str) -> bool {
+    !text.starts_with('-') && text.bytes().any(|digit| (b'1'..=b'9').contains(&digit))
+}
+
 struct RailHeadText {
     rail_part: String,
     inner: String,
@@ -260,12 +264,7 @@ fn rail_head_texts(geometry: &Value) -> Result<Vec<RailHeadText>, String> {
             };
             let outward = heads
                 .iter()
-                .find(|head| {
-                    head["from"]
-                        .as_str()
-                        .and_then(|from| from.parse::<f64>().ok())
-                        .is_some_and(|from| from > 0.0)
-                })
+                .find(|head| head["from"].as_str().is_some_and(is_positive_decimal))
                 .ok_or(format!("rail {part} has no rail head on the +z side"))?;
             Ok(RailHeadText {
                 rail_part: format!("ldraw:{}", stem(part)),

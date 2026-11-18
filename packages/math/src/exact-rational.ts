@@ -137,6 +137,17 @@ export function meanExactRational(a: ExactRational, b: ExactRational): ExactRati
   );
 }
 
+export function floorExactRational(value: ExactRational): bigint {
+  const quotient = value.numerator / value.denominator;
+  return value.numerator < 0n && quotient * value.denominator !== value.numerator
+    ? quotient - 1n
+    : quotient;
+}
+
+export function ceilExactRational(value: ExactRational): bigint {
+  return -floorExactRational({ numerator: -value.numerator, denominator: value.denominator });
+}
+
 export function compareExactRational(a: ExactRational, b: ExactRational): -1 | 0 | 1 {
   const difference = a.numerator * b.denominator - b.numerator * a.denominator;
   return difference < 0n ? -1 : difference > 0n ? 1 : 0;
