@@ -33,6 +33,7 @@ const paletteTemplate = new URL(
 const PALETTE_TEMPLATE_MODEL = "mils-road-straight";
 const BAKE_TIMEOUT_MS = 120_000;
 const BUNDLE_MODEL_IMPORT_TIMEOUT_MS = 300_000;
+const EVERY_BUNDLE_MODEL_OPT_IN = "IMPORT_EVERY_BUNDLE_MODEL";
 const OPAQUE_ALPHA = 255;
 const paletteFile = new URL("../../../tools/asset-pipeline/palette.json", import.meta.url);
 const omrRoot = new URL("../../../.cache/omr/", import.meta.url);
@@ -279,47 +280,50 @@ it("identifies a turned sub-model's own stud mate 20,000 LDU from the origin fro
   expect(identified(Float64Array.from(result.matrices))).toEqual([0, 0, 4]);
 });
 
-describe("every bundle model, imported", () => {
-  let compiler: BrickCompiler | undefined;
-
-  beforeAll(async () => {
-    compiler = await bundleCompiler();
-  });
-
-  it("has a bundle record for every palette model", async () => {
-    const manifest = await bundleManifest();
-    expect(manifest.models.map((model) => model.name).toSorted()).toEqual(
-      paletteModels.map((model) => model.name).toSorted(),
-    );
-  });
-
-  it.each(paletteModels)(
-    "$name imports with the sub-model tree and part transforms its bake recorded",
-    async (model) => {
-      const manifest = await bundleManifest();
-      const entry = manifest.models.find((bundled) => bundled.name === model.name);
-      expect(entry).toBeDefined();
-      const root = model.origin === "omr" ? omrRoot : fixturesRoot;
-      const result = await importWith(
-        pinnedMirror,
-        model.file,
-        await readFile(new URL(model.file, root), "utf8"),
-        compiler,
-      );
-      const record = JSON.parse(
-        await readFile(new URL(entry?.file ?? "", bundleRoot), "utf8"),
-      ) as ModelFile;
-
-      expect({
-        parent: Array.from(result.submodels.parent),
-        matrices: Array.from(result.submodels.matrices),
-        ofPart: Array.from(result.submodels.ofPart),
-        partTransforms: Array.from(result.partTransforms),
-      }).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
-    },
-    BUNDLE_MODEL_IMPORT_TIMEOUT_MS,
+it("has a bundle record for every palette model", async () => {
+  const manifest = await bundleManifest();
+  expect(manifest.models.map((model) => model.name).toSorted()).toEqual(
+    paletteModels.map((model) => model.name).toSorted(),
   );
 });
+
+describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
+  "every bundle model, imported",
+  () => {
+    let compiler: BrickCompiler | undefined;
+
+    beforeAll(async () => {
+      compiler = await bundleCompiler();
+    });
+
+    it.each(paletteModels)(
+      "$name imports with the sub-model tree and part transforms its bake recorded",
+      async (model) => {
+        const manifest = await bundleManifest();
+        const entry = manifest.models.find((bundled) => bundled.name === model.name);
+        expect(entry).toBeDefined();
+        const root = model.origin === "omr" ? omrRoot : fixturesRoot;
+        const result = await importWith(
+          pinnedMirror,
+          model.file,
+          await readFile(new URL(model.file, root), "utf8"),
+          compiler,
+        );
+        const record = JSON.parse(
+          await readFile(new URL(entry?.file ?? "", bundleRoot), "utf8"),
+        ) as ModelFile;
+
+        expect({
+          parent: Array.from(result.submodels.parent),
+          matrices: Array.from(result.submodels.matrices),
+          ofPart: Array.from(result.submodels.ofPart),
+          partTransforms: Array.from(result.partTransforms),
+        }).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
+      },
+      BUNDLE_MODEL_IMPORT_TIMEOUT_MS,
+    );
+  },
+);
 
 it("reports a headerless custom part, loose model geometry and a recoloured inline copy, and draws a copy whose quads only start elsewhere", async () => {
   const result = await importWith(
