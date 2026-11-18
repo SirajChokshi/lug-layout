@@ -125,15 +125,37 @@ jobs:
             tools/e2e/test-results
           retention-days: 7
 
+  library-connectors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: .cache/catalog
+          key: library-connector-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+      - run: pnpm --filter @brr/asset-pipeline library-connectors --check
+
   check:
     if: ${{ always() }}
-    needs: [verify, e2e]
+    needs: [verify, e2e, library-connectors]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - env:
           VERIFY: ${{ needs.verify.result }}
           E2E: ${{ needs.e2e.result }}
+          LIBRARY_CONNECTORS: ${{ needs.library-connectors.result }}
         run: |
-          echo "verify: $VERIFY, e2e: $E2E"
-          test "$VERIFY" = success && test "$E2E" = success
+          echo "verify: $VERIFY, e2e: $E2E, library connectors: $LIBRARY_CONNECTORS"
+          test "$VERIFY" = success && test "$E2E" = success && test "$LIBRARY_CONNECTORS" = success
