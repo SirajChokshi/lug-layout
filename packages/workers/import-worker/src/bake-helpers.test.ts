@@ -6,7 +6,8 @@ import {
   type IBakeHelper,
   type ImportResult,
 } from "@brr/import";
-import type { CompilerVehicles } from "@brr/schema/bundle";
+import { SectionVocabularyFile, type CompilerVehicles } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile } from "node:fs/promises";
 import { MessageChannel } from "node:worker_threads";
 import { afterEach, expect, it } from "vitest";
@@ -35,7 +36,12 @@ interface Manifest {
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
   readonly tablePlane: { readonly depthBelowTopLdu: number };
-  readonly compiler: { readonly file: string; readonly vehicles?: CompilerVehicles };
+  readonly compiler: {
+    readonly file: string;
+    readonly vehicles?: CompilerVehicles;
+    readonly sectionVocabulary: { readonly file: string };
+    readonly cavityProbe: string;
+  };
 }
 
 const pinnedMirror: FetchFunction = async (url) => {
@@ -56,11 +62,17 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
   const partTable = JSON.parse(
     await readFile(new URL(manifest.partTable.file, bundleRoot), "utf8"),
   ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
+  const vocabularyFile = new URL(manifest.compiler.sectionVocabulary.file, bundleRoot);
+  const vocabulary = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
+    vocabularyFile.pathname,
+  );
   return (fileName: string, text: string, commit: string, helpers: ReadonlyArray<IBakeHelper>) => {
     const source = { ...manifest.source, commit };
     const engine = new ModelImportEngine(
       new BrickCompiler(module),
       new LdrawMirror(source, pinnedMirror),
+      { read: async () => ({ kind: "unlisted" }) },
       () => 0,
       helpers,
     );
@@ -72,6 +84,8 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
       studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
       unofficialAllowlist: [],
       primitives: null,
+      sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+      cavityProbe: manifest.compiler.cavityProbe,
       bundlePartIds: partTable.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
       translucentColors: manifest.colors

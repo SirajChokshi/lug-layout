@@ -1,9 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use serde_json::{json, Value};
+
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Flattener, Library, Lod};
 use crate::ldraw::{self, Line, Winding};
+use crate::pieces::{PieceMap, PieceNumbering, NO_PIECE};
 
 use super::axle::{AxleFound, AxleMiss, AxleProbe};
 use super::meta::{parse_metas, Meta};
@@ -13,7 +16,8 @@ use super::solid::{
     Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
 };
 use super::{
-    finished, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape, Source, Status,
+    finished, joined_pieces, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape,
+    Source, Status,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -54,6 +58,41 @@ pub struct Inference {
     pub issues: Vec<Issue>,
 }
 
+const SHAPE_CODES: [(SectionShape, &str); 5] = [
+    (SectionShape::Round, "R"),
+    (SectionShape::Axle, "A"),
+    (SectionShape::Square, "S"),
+    (SectionShape::FlexibleEnd, "_L"),
+    (SectionShape::FlexibleStart, "L_"),
+];
+const GENDER_CODES: [(Gender, &str); 2] = [(Gender::Male, "M"), (Gender::Female, "F")];
+
+fn shape_code(shape: SectionShape) -> &'static str {
+    SHAPE_CODES
+        .iter()
+        .find_map(|&(s, code)| (s == shape).then_some(code))
+        .unwrap_or_default()
+}
+
+fn shape_of(code: &str) -> Option<SectionShape> {
+    SHAPE_CODES
+        .iter()
+        .find_map(|&(shape, c)| (c == code).then_some(shape))
+}
+
+fn gender_code(gender: Gender) -> &'static str {
+    GENDER_CODES
+        .iter()
+        .find_map(|&(g, code)| (g == gender).then_some(code))
+        .unwrap_or_default()
+}
+
+fn gender_of(code: &str) -> Option<Gender> {
+    GENDER_CODES
+        .iter()
+        .find_map(|&(gender, c)| (c == code).then_some(gender))
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SectionVocabulary {
     sizes: Vec<(Gender, SectionShape, f64)>,
@@ -86,11 +125,71 @@ impl SectionVocabulary {
                 }
             }
         }
+        Self::sorted(sizes, lengths)
+    }
+
+    fn sorted(
+        mut sizes: Vec<(Gender, SectionShape, f64)>,
+        mut lengths: Vec<(SectionShape, f64)>,
+    ) -> Self {
         sizes.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)).then(a.2.total_cmp(&b.2)));
         sizes.dedup();
         lengths.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
         lengths.dedup();
         SectionVocabulary { sizes, lengths }
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "sizes": self
+                .sizes
+                .iter()
+                .map(|&(gender, shape, size)| json!({
+                    "gender": gender_code(gender),
+                    "shape": shape_code(shape),
+                    "size": size,
+                }))
+                .collect::<Vec<_>>(),
+            "lengths": self
+                .lengths
+                .iter()
+                .map(|&(shape, length)| json!({ "shape": shape_code(shape), "length": length }))
+                .collect::<Vec<_>>(),
+        })
+    }
+
+    pub fn from_json(value: &Value) -> Result<Self, String> {
+        let entries = |key: &str| {
+            value[key]
+                .as_array()
+                .ok_or(format!("a section vocabulary needs a {key} array"))
+        };
+        let number = |entry: &Value, key: &str| {
+            entry[key]
+                .as_f64()
+                .ok_or(format!("vocabulary entry {entry} needs a numeric {key}"))
+        };
+        let shape = |entry: &Value| {
+            entry["shape"]
+                .as_str()
+                .and_then(shape_of)
+                .ok_or(format!("vocabulary entry {entry} names no section shape"))
+        };
+        let sizes = entries("sizes")?
+            .iter()
+            .map(|entry| {
+                let gender = entry["gender"]
+                    .as_str()
+                    .and_then(gender_of)
+                    .ok_or(format!("vocabulary entry {entry} names no gender"))?;
+                Ok((gender, shape(entry)?, number(entry, "size")?))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let lengths = entries("lengths")?
+            .iter()
+            .map(|entry| Ok((shape(entry)?, number(entry, "length")?)))
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self::sorted(sizes, lengths))
     }
 
     fn unique(mut found: impl Iterator<Item = f64>) -> Option<f64> {
@@ -144,9 +243,10 @@ struct RoundRef {
     matrix: Affine,
     inverted: bool,
     certified: bool,
+    trail: Vec<u32>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct Run {
     axis: usize,
     center: [f64; 2],
@@ -154,6 +254,7 @@ struct Run {
     from: f64,
     to: f64,
     facing: f64,
+    pieces: Vec<u16>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -163,6 +264,7 @@ struct Band {
     arcs: Vec<(f64, f64)>,
     center: [f64; 2],
     radius: f64,
+    pieces: Vec<u16>,
 }
 
 type WallKey = (usize, i64, i64, i64, i8);
@@ -421,6 +523,7 @@ pub struct InferredFeatures<'a, L: Library + ?Sized> {
     units: HashMap<String, Option<Rc<UnitRound>>>,
     rounds: HashMap<String, Rc<Vec<RoundRef>>>,
     prepared: Option<(String, Rc<Prepared>)>,
+    numbering: PieceNumbering<'a, L>,
 }
 
 impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
@@ -440,12 +543,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             units: HashMap::new(),
             rounds: HashMap::new(),
             prepared: None,
+            numbering: PieceNumbering::new(library),
         };
         let path = resolve_reference(library, Lod::Standard, probe_part)
             .ok_or(format!("probe part {probe_part} is not in the library"))?;
         let mut issues = Vec::new();
         let males: Vec<Run> = features
-            .placed(&path, &mut issues)
+            .placed(&path, &PieceMap::default(), &mut issues)
             .runs
             .into_iter()
             .filter(|run| run.facing > 0.0)
@@ -497,7 +601,8 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
         let borrowed = Borrowed(self.library);
-        let mut flattener = Flattener::new(&borrowed, Lod::Standard, &[]);
+        let pieces = self.numbering.map(path);
+        let mut flattener = Flattener::new(&borrowed, Lod::Standard, &[]).numbering_pieces(&pieces);
         let flattened = flattener.flatten(path);
         let mut issues: Vec<Issue> = flattener
             .malformed()
@@ -524,8 +629,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 issues,
             },
             Ok(flattened) => {
-                let placed = self.placed(path, &mut issues);
-                let solid = Solid::new(&flattened.triangles, placed.surfaces);
+                let placed = self.placed(path, &pieces, &mut issues);
+                let solid = Solid::new(
+                    &flattened.triangles,
+                    &flattened.triangle_pieces(),
+                    placed.surfaces,
+                );
                 issues.extend(solid.largest_oversized().map(|(origin, squares)| {
                     Issue::Uninferred {
                         origin,
@@ -665,6 +774,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             if let Some(source) = self.library.source(path) {
                 let mut certified = false;
                 let mut invert_next = false;
+                let mut ordinal: u32 = 0;
                 for line in ldraw::parse(source).lines {
                     let (matrix, reference) = match line {
                         Line::Certify(_) => {
@@ -685,6 +795,8 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         _ => continue,
                     };
                     let inverted = std::mem::take(&mut invert_next);
+                    let here = ordinal;
+                    ordinal += 1;
                     let Some(child) = resolve_reference(self.library, Lod::Standard, &reference)
                     else {
                         continue;
@@ -695,6 +807,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                             matrix,
                             inverted,
                             certified,
+                            trail: vec![here],
                         });
                         continue;
                     }
@@ -704,6 +817,9 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                             matrix: matrix.then(&inner.matrix),
                             inverted: inverted ^ inner.inverted,
                             certified: certified && inner.certified,
+                            trail: std::iter::once(here)
+                                .chain(inner.trail.iter().copied())
+                                .collect(),
                         });
                     }
                 }
@@ -714,11 +830,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         found
     }
 
-    fn placed(&mut self, path: &str, issues: &mut Vec<Issue>) -> Placed {
+    fn placed(&mut self, path: &str, pieces: &PieceMap, issues: &mut Vec<Issue>) -> Placed {
         let mut surfaces = Vec::new();
         let mut walls: HashMap<WallKey, Vec<Band>> = HashMap::new();
         let mut reported: HashSet<[i64; 4]> = HashSet::new();
         for round in self.round_refs(path, 0).iter() {
+            let piece = pieces.piece(&round.trail);
             let m = &round.matrix;
             let (c0, c1, c2) = (column(m, 0), column(m, 1), column(m, 2));
             let t = [m.m[3], m.m[7], m.m[11]];
@@ -799,6 +916,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 full,
                 arcs: arcs.clone(),
                 facing,
+                piece,
             });
             if !is_wall {
                 continue;
@@ -816,6 +934,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     arcs,
                     center,
                     radius: rx,
+                    pieces: vec![piece],
                 });
         }
         Placed {
@@ -921,12 +1040,20 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         );
         Some(match sizes {
             (Some(radius), Some(reach)) => MaleCandidate {
-                connector: cylinder(Gender::Male, caps, radius, reach, frame, false),
+                connector: cylinder(Gender::Male, caps, radius, reach, frame, false, &run.pieces),
                 identified: true,
                 tip: tip_key,
             },
             _ => MaleCandidate {
-                connector: cylinder(Gender::Male, caps, run.radius, length, frame, false),
+                connector: cylinder(
+                    Gender::Male,
+                    caps,
+                    run.radius,
+                    length,
+                    frame,
+                    false,
+                    &run.pieces,
+                ),
                 identified: false,
                 tip: tip_key,
             },
@@ -984,7 +1111,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 .vocabulary
                 .size(Gender::Female, SectionShape::Round, run.radius)
             {
-                Some(radius) => bores.push((*run, radius)),
+                Some(radius) => bores.push((run.clone(), radius)),
                 None => inference.issues.push(Issue::Uninferred {
                     origin: point_on(run.axis, run.center, run.from),
                     reason: Uninferred::UnidentifiedSize {
@@ -1113,6 +1240,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 .vocabulary
                 .length(SectionShape::Round, depth)
                 .unwrap_or(self.probe.reach);
+            let pieces = solid.contributors(&probe, range, Some(depth));
             self.keep(
                 cylinder(
                     Gender::Female,
@@ -1121,11 +1249,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     length,
                     ldraw_frame(probe.entrance, unit_axis(probe.axis, -probe.inward)),
                     false,
+                    &pieces,
                 ),
                 inference,
             );
         }
-        self.through_holes(&through, inference);
+        self.through_holes(solid, range, &through, inference);
         mouths
     }
 
@@ -1169,6 +1298,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         [axle.female, depth],
                         axle_frame(probe.entrance, probe.axis, -probe.inward, angle),
                         false,
+                        &solid.contributors(&probe, (0.0, depth), Some(depth)),
                     ),
                     inference,
                 ),
@@ -1196,6 +1326,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                             [axle.male, length],
                             axle_frame(root, probe.axis, probe.inward, angle),
                             false,
+                            &solid.contributors(&probe, (0.0, length), None),
                         ),
                         inference,
                     );
@@ -1242,6 +1373,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 Gender::Female => axle.female,
                 Gender::Male => axle.male,
             };
+            let span = (0.0, high - low);
             self.keep_axle(
                 axle_cylinder(
                     gender,
@@ -1249,6 +1381,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     [size, high - low],
                     axle_frame(middle, rising.axis, 1.0, angle),
                     true,
+                    &joined_pieces(
+                        &solid.contributors(&rising, span, None),
+                        &solid.contributors(&falling, span, None),
+                    ),
                 ),
                 inference,
             );
@@ -1269,7 +1405,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         }
     }
 
-    fn through_holes(&self, through: &[Probe], inference: &mut Inference) {
+    fn through_holes(
+        &self,
+        solid: &Solid,
+        range: (f64, f64),
+        through: &[Probe],
+        inference: &mut Inference,
+    ) {
         let mut lines: HashMap<(usize, i64, i64, i64), [Option<Probe>; 2]> = HashMap::new();
         for probe in through {
             let (i, j) = plan_axes(probe.axis);
@@ -1321,6 +1463,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             let span = high - low;
             let middle = [0, 1, 2].map(|k| (rising.entrance[k] + falling.entrance[k]) / 2.0);
             let frame = ldraw_frame(middle, unit_axis(rising.axis, 1.0));
+            let pieces = joined_pieces(
+                &solid.contributors(&rising, range, None),
+                &solid.contributors(&falling, range, None),
+            );
             match self.vocabulary.length(SectionShape::Round, span) {
                 Some(length) => self.keep(
                     cylinder(
@@ -1330,11 +1476,20 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         length,
                         frame,
                         true,
+                        &pieces,
                     ),
                     inference,
                 ),
                 None => self.unidentified(
-                    cylinder(Gender::Female, Caps::None, rising.radius, span, frame, true),
+                    cylinder(
+                        Gender::Female,
+                        Caps::None,
+                        rising.radius,
+                        span,
+                        frame,
+                        true,
+                        &pieces,
+                    ),
                     rising.radius,
                     span,
                     inference,
@@ -1400,6 +1555,7 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
                         && (band.to - piece.to).abs() <= IDENTIFY_LDU =>
                 {
                     band.arcs.extend(piece.arcs);
+                    band.pieces = joined_pieces(&band.pieces, &piece.pieces);
                 }
                 _ => bands.push(piece),
             }
@@ -1418,7 +1574,10 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
                 continue;
             }
             match current.as_mut() {
-                Some(run) if band.from <= run.to + IDENTIFY_LDU => run.to = run.to.max(band.to),
+                Some(run) if band.from <= run.to + IDENTIFY_LDU => {
+                    run.to = run.to.max(band.to);
+                    run.pieces = joined_pieces(&run.pieces, &band.pieces);
+                }
                 _ => {
                     runs.extend(current.take());
                     current = Some(Run {
@@ -1428,6 +1587,7 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
                         from: band.from,
                         to: band.to,
                         facing: f64::from(facing),
+                        pieces: band.pieces,
                     });
                 }
             }
@@ -1470,6 +1630,7 @@ fn cylinder(
     length: f64,
     placement: Affine,
     center: bool,
+    pieces: &[u16],
 ) -> Connector {
     sectioned(
         gender,
@@ -1481,6 +1642,7 @@ fn cylinder(
         },
         placement,
         [center, false],
+        pieces,
     )
 }
 
@@ -1490,6 +1652,7 @@ fn axle_cylinder(
     [radius, length]: [f64; 2],
     placement: Affine,
     center: bool,
+    pieces: &[u16],
 ) -> Connector {
     sectioned(
         gender,
@@ -1501,6 +1664,7 @@ fn axle_cylinder(
         },
         placement,
         [center, true],
+        pieces,
     )
 }
 
@@ -1510,6 +1674,7 @@ fn sectioned(
     section: Section,
     placement: Affine,
     [center, slide]: [bool; 2],
+    pieces: &[u16],
 ) -> Connector {
     Connector {
         source: Source::Inferred,
@@ -1526,6 +1691,11 @@ fn sectioned(
         },
         placement,
         grid: None,
+        pieces: if pieces.is_empty() {
+            vec![NO_PIECE]
+        } else {
+            pieces.to_vec()
+        },
     }
 }
 
