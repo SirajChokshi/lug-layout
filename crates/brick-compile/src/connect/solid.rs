@@ -1,5 +1,6 @@
 use std::cell::{OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::f64::consts::{FRAC_PI_2, TAU};
 use std::hash::{BuildHasherDefault, Hasher};
 use std::rc::Rc;
 
@@ -194,6 +195,49 @@ struct Facet {
 struct SlabPolygon {
     facet: usize,
     points: Ring,
+    bounds: PlanBounds,
+    finite: bool,
+}
+
+#[derive(Clone, Copy)]
+struct PlanBounds {
+    low: [f64; 2],
+    high: [f64; 2],
+}
+
+impl PlanBounds {
+    fn of(points: &[Local]) -> Self {
+        let mut bounds = PlanBounds {
+            low: [f64::INFINITY; 2],
+            high: [f64::NEG_INFINITY; 2],
+        };
+        for p in points {
+            bounds.widen(PlanBounds {
+                low: [p[0], p[1]],
+                high: [p[0], p[1]],
+            });
+        }
+        bounds
+    }
+
+    fn everywhere() -> Self {
+        PlanBounds {
+            low: [f64::NEG_INFINITY; 2],
+            high: [f64::INFINITY; 2],
+        }
+    }
+
+    fn widen(&mut self, other: PlanBounds) {
+        for k in 0..2 {
+            self.low[k] = self.low[k].min(other.low[k]);
+            self.high[k] = self.high[k].max(other.high[k]);
+        }
+    }
+}
+
+struct CellGroup {
+    bounds: PlanBounds,
+    cells: Vec<((i64, i64), PlanBounds)>,
 }
 
 pub struct Slab {
@@ -203,8 +247,38 @@ pub struct Slab {
     range: (f64, f64),
     polygons: Vec<SlabPolygon>,
     cells: Cells<(i64, i64), Vec<u32>>,
+    groups: OnceCell<Vec<((i64, i64), CellGroup)>>,
     oversized: Vec<u32>,
     extent: ([i64; 2], [i64; 2]),
+}
+
+impl Slab {
+    fn groups(&self) -> &[((i64, i64), CellGroup)] {
+        self.groups.get_or_init(|| {
+            let mut groups: Cells<(i64, i64), CellGroup> = Cells::default();
+            for (&(x, y), found) in &self.cells {
+                let mut bounds = self.polygons[found[0] as usize].bounds;
+                for &index in found {
+                    let polygon = &self.polygons[index as usize];
+                    bounds.widen(if polygon.finite {
+                        polygon.bounds
+                    } else {
+                        PlanBounds::everywhere()
+                    });
+                }
+                groups
+                    .entry((group_of(x), group_of(y)))
+                    .and_modify(|group| group.bounds.widen(bounds))
+                    .or_insert_with(|| CellGroup {
+                        bounds,
+                        cells: Vec::new(),
+                    })
+                    .cells
+                    .push(((x, y), bounds));
+            }
+            groups.into_iter().collect()
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -365,11 +439,38 @@ fn in_window<'a, V>(
     keys.into_iter().all(|key| visit(&cells[&key]))
 }
 
-fn next_visited_ring(ring: i64, last: i64, next_check: i64, next_occupied: Option<i64>) -> i64 {
-    let next_due = next_check.min(last);
-    next_occupied
-        .map_or(next_due, |occupied| occupied.min(next_due))
-        .max(ring + 1)
+const GROUP_CELLS: i64 = 8;
+
+fn group_of(cell: i64) -> i64 {
+    cell.div_euclid(GROUP_CELLS)
+}
+
+fn ring((x, y): (i64, i64), home: [i64; 2]) -> i64 {
+    (x - home[0]).abs().max((y - home[1]).abs())
+}
+
+type Nearness = (i64, (i64, i64));
+
+fn nearness(key: (i64, i64), home: [i64; 2]) -> Nearness {
+    (ring(key, home), key)
+}
+
+const ATAN2_SLACK: f64 = 64.0 * f64::EPSILON;
+
+fn angular_span(center: [f64; 2], bounds: PlanBounds) -> Option<(f64, f64)> {
+    let low = [bounds.low[0] - center[0], bounds.low[1] - center[1]];
+    let high = [bounds.high[0] - center[0], bounds.high[1] - center[1]];
+    if (0..2).all(|k| low[k] <= 0.0 && high[k] >= 0.0) {
+        return None;
+    }
+    let corners = [
+        [low[0], low[1]],
+        [high[0], low[1]],
+        [high[0], high[1]],
+        [low[0], high[1]],
+    ];
+    span_of(&corners.map(|p| p[1].atan2(p[0])))
+        .filter(|&(from, to)| (to - from).rem_euclid(TAU) < FRAC_PI_2)
 }
 
 fn cell_ranges_meet(low: [f64; 2], high: [f64; 2], window: [[i64; 2]; 2]) -> bool {
@@ -753,6 +854,30 @@ impl Coverage {
         use std::f64::consts::PI;
         self.within_turn
             && matches!(self.covered.as_slice(), [(low, high)] if *low <= -PI && *high >= PI)
+    }
+
+    fn covers_box(&self, center: [f64; 2], bounds: PlanBounds) -> bool {
+        self.within_turn && angular_span(center, bounds).is_some_and(|span| self.covers_span(span))
+    }
+
+    fn covers_span(&self, (low, high): (f64, f64)) -> bool {
+        use std::f64::consts::PI;
+        let covers = |from: f64, to: f64| {
+            let at = self.covered.partition_point(|&(_, end)| end < to);
+            self.covered
+                .get(at)
+                .is_some_and(|&(start, _)| start <= from)
+        };
+        let (from, to) = (low - ATAN2_SLACK, high + ATAN2_SLACK);
+        if high < low {
+            covers(from, PI) && covers(-PI, to)
+        } else if from < -PI {
+            covers(-PI, to) && covers(from + TAU, PI)
+        } else if to > PI {
+            covers(from, PI) && covers(-PI, to - TAU)
+        } else {
+            covers(from, to)
+        }
     }
 }
 
@@ -1404,6 +1529,8 @@ impl Solid {
             }
             polygons.push(SlabPolygon {
                 facet: index,
+                bounds: PlanBounds::of(&plan),
+                finite: plan.iter().all(|p| p[0].is_finite() && p[1].is_finite()),
                 points: plan,
             });
         }
@@ -1411,26 +1538,13 @@ impl Solid {
         let mut oversized_polygons = Vec::new();
         let mut extent = ([i64::MAX; 2], [i64::MIN; 2]);
         for (index, polygon) in polygons.iter().enumerate() {
-            let lowest = [0, 1].map(|k| {
-                polygon
-                    .points
-                    .iter()
-                    .map(|p| p[k])
-                    .fold(f64::INFINITY, f64::min)
-            });
-            let highest = [0, 1].map(|k| {
-                polygon
-                    .points
-                    .iter()
-                    .map(|p| p[k])
-                    .fold(f64::NEG_INFINITY, f64::max)
-            });
-            if beyond_cell_budget(lowest, highest) {
+            let PlanBounds { low, high } = polygon.bounds;
+            if beyond_cell_budget(low, high) {
                 oversized_polygons.push(index as u32);
                 continue;
             }
-            let low = lowest.map(cell);
-            let high = highest.map(cell);
+            let low = low.map(cell);
+            let high = high.map(cell);
             for k in 0..2 {
                 extent.0[k] = extent.0[k].min(low[k]);
                 extent.1[k] = extent.1[k].max(high[k]);
@@ -1448,6 +1562,7 @@ impl Solid {
             range,
             polygons,
             cells,
+            groups: OnceCell::new(),
             oversized: oversized_polygons,
             extent,
         }
@@ -1743,7 +1858,6 @@ impl Solid {
         if coverage.complete() {
             return true;
         }
-        let home = [cell(center[0]), cell(center[1])];
         for &index in &slab.oversized {
             let polygon = &slab.polygons[index as usize];
             if self.encloses(
@@ -1755,79 +1869,55 @@ impl Solid {
                 return true;
             }
         }
-        let indexed = (0..2).all(|k| slab.extent.0[k] <= slab.extent.1[k]);
-        if !indexed {
-            return !coverage.within_turn && covers_circle(&arcs, 0.0);
-        }
-        let rings = (0..2)
-            .map(|k| (home[k] - slab.extent.0[k]).max(slab.extent.1[k] - home[k]))
-            .max()
-            .unwrap_or(0)
-            .max(0);
+        let home = [cell(center[0]), cell(center[1])];
+        let home_group = home.map(group_of);
+        let mut groups: Vec<(Nearness, &CellGroup)> = slab
+            .groups()
+            .iter()
+            .map(|(key, group)| (nearness(*key, home_group), group))
+            .collect();
+        groups.sort_unstable_by_key(|(order, _)| *order);
         let mut seen = vec![false; slab.polygons.len()];
-        let mut visit = |found: &[u32], arcs: &mut Vec<(f64, f64)>, coverage: &mut Coverage| {
-            found.iter().any(|&index| {
-                let index = index as usize;
-                !std::mem::replace(&mut seen[index], true)
-                    && self.encloses(
-                        &slab.polygons[index],
-                        center,
-                        (&coaxial, &ignores),
-                        (arcs, coverage),
-                    )
-            })
-        };
-        let ring_of = |(x, y): (i64, i64)| (x - home[0]).abs().max((y - home[1]).abs());
-        let side = (2 * rings + 1) as f64;
-        let sparse = sparser_than(&slab.cells, side * side);
-        let mut order: Vec<(i64, (i64, i64))> = Vec::new();
-        if sparse {
-            order.extend(slab.cells.keys().map(|&key| (ring_of(key), key)));
-            order.sort_unstable();
-        }
-        let mut pending = order.iter().peekable();
-        let mut checked = 0;
-        let mut next_check = 0;
-        let mut ring = 0;
-        while ring <= rings {
-            if sparse {
-                while let Some(&(_, key)) = pending.next_if(|entry| entry.0 == ring) {
-                    if visit(&slab.cells[&key], &mut arcs, &mut coverage) {
-                        return true;
+        let mut cells: Vec<(Nearness, PlanBounds)> = Vec::new();
+        let (mut checked, mut next_check) = (0, 1);
+        for (visited, (_, group)) in groups.into_iter().enumerate() {
+            if !coverage.covers_box(center, group.bounds) {
+                cells.clear();
+                cells.extend(
+                    group
+                        .cells
+                        .iter()
+                        .map(|&(key, bounds)| (nearness(key, home), bounds)),
+                );
+                cells.sort_unstable_by_key(|(order, _)| *order);
+                for &((_, key), bounds) in &cells {
+                    if coverage.covers_box(center, bounds) {
+                        continue;
                     }
-                }
-            } else {
-                for x in home[0] - ring..=home[0] + ring {
-                    for y in home[1] - ring..=home[1] + ring {
-                        if ring_of((x, y)) != ring {
-                            continue;
-                        }
-                        let Some(found) = slab.cells.get(&(x, y)) else {
-                            continue;
-                        };
-                        if visit(found, &mut arcs, &mut coverage) {
+                    for &index in &slab.cells[&key] {
+                        let index = index as usize;
+                        if !std::mem::replace(&mut seen[index], true)
+                            && self.encloses(
+                                &slab.polygons[index],
+                                center,
+                                (&coaxial, &ignores),
+                                (&mut arcs, &mut coverage),
+                            )
+                        {
                             return true;
                         }
                     }
                 }
             }
-            let due = ring == rings || ring == next_check;
-            if !coverage.within_turn && due && arcs.len() > checked {
-                if covers_circle(&arcs, 0.0) {
+            if !coverage.within_turn && visited + 1 == next_check {
+                if arcs.len() > checked && covers_circle(&arcs, 0.0) {
                     return true;
                 }
                 checked = arcs.len();
+                next_check *= 2;
             }
-            if ring == next_check {
-                next_check = (next_check * 2).max(1);
-            }
-            ring = if sparse {
-                next_visited_ring(ring, rings, next_check, pending.peek().map(|entry| entry.0))
-            } else {
-                ring + 1
-            };
         }
-        false
+        !coverage.within_turn && covers_circle(&arcs, 0.0)
     }
 
     fn encloses(
@@ -2182,5 +2272,127 @@ mod tests {
         let seeded = solid.grid(&plane, 25.0);
         assert!(!seeded.is_empty());
         assert!(seeded.iter().all(|point| point[1].abs() > 700.0));
+    }
+
+    fn toward(degrees: f64, radius: f64) -> [f64; 2] {
+        let angle = degrees.to_radians();
+        [radius * angle.cos(), radius * angle.sin()]
+    }
+
+    fn upright(a: [f64; 2], b: [f64; 2]) -> [Triangle; 2] {
+        let low = |p: [f64; 2]| [p[0], 0.0, p[1]];
+        let high = |p: [f64; 2]| [p[0], 10.0, p[1]];
+        [
+            Triangle {
+                color: 16,
+                points: [low(a), low(b), high(b)],
+                double_sided: true,
+            },
+            Triangle {
+                color: 16,
+                points: [low(a), high(b), high(a)],
+                double_sided: true,
+            },
+        ]
+    }
+
+    fn ring_of(segments: usize, missing: &[usize]) -> Vec<Triangle> {
+        let step = 360.0 / segments as f64;
+        (0..segments)
+            .filter(|k| !missing.contains(k))
+            .flat_map(|k| {
+                upright(
+                    toward(k as f64 * step, 30.0),
+                    toward(((k + 1) % segments) as f64 * step, 30.0),
+                )
+            })
+            .collect()
+    }
+
+    fn ring_without(missing: &[usize]) -> Vec<Triangle> {
+        ring_of(16, missing)
+    }
+
+    fn encloses_centre(walls: &[Triangle]) -> bool {
+        let solid = Solid::new(walls, Vec::new());
+        let slab = solid.slab(1, 1.0, 0.0, (0.0, 10.0), |_| false);
+        solid.blocked_on_axes(&slab, [0.0, 0.0], |_| false)
+            && solid.enclosed(&slab, [0.0, 0.0], |_| false)
+    }
+
+    #[test]
+    fn a_far_wall_closes_the_one_gap_a_near_ring_leaves() {
+        let gap = ring_without(&[2]);
+        let far = |from: f64, to: f64| upright(toward(from, 600.0), toward(to, 600.0));
+        let elsewhere = upright(toward(190.0, 600.0), toward(230.0, 600.0));
+        let closed: Vec<Triangle> = [gap.as_slice(), &far(40.0, 72.0), &elsewhere].concat();
+        assert!(encloses_centre(&closed));
+        let in_two: Vec<Triangle> = [gap.as_slice(), &far(40.0, 57.0), &far(56.0, 72.0)].concat();
+        assert!(encloses_centre(&in_two));
+        let sliver_open: Vec<Triangle> = [gap.as_slice(), &far(46.0, 72.0)].concat();
+        assert!(!encloses_centre(&sliver_open));
+        assert!(!encloses_centre(&[gap.as_slice(), &elsewhere].concat()));
+    }
+
+    #[test]
+    fn a_covered_wall_beside_the_closing_wall_does_not_hide_it() {
+        let gap = ring_of(128, &[16]);
+        let far = |from: f64, to: f64| upright(toward(from, 620.0), toward(to, 620.0));
+        let decoy = far(41.0, 43.0);
+        let closer = far(44.5, 48.5);
+        assert!(encloses_centre(&[gap.as_slice(), &decoy, &closer].concat()));
+        assert!(!encloses_centre(&[gap.as_slice(), &decoy].concat()));
+    }
+
+    #[test]
+    fn every_group_and_cell_bounds_each_vertex_it_lists() {
+        let unreadable = Triangle {
+            color: 16,
+            points: [
+                [300.0, 0.0, 300.0],
+                [f64::NAN, 10.0, 310.0],
+                [310.0, 10.0, 300.0],
+            ],
+            double_sided: true,
+        };
+        let walls: Vec<Triangle> = [
+            ring_of(128, &[16]),
+            upright(toward(41.0, 620.0), toward(43.0, 620.0)).to_vec(),
+            upright(toward(44.5, 620.0), toward(48.5, 620.0)).to_vec(),
+            upright(toward(200.0, 90.0), toward(260.0, 140.0)).to_vec(),
+            vec![unreadable],
+        ]
+        .concat();
+        let solid = Solid::new(&walls, Vec::new());
+        let slab = solid.slab(1, 1.0, 0.0, (0.0, 10.0), |_| false);
+        let holds = |bounds: PlanBounds, point: &Local| {
+            (0..2).all(|k| {
+                (bounds.low[k] <= point[k] && point[k] <= bounds.high[k])
+                    || (bounds.low[k] == f64::NEG_INFINITY && bounds.high[k] == f64::INFINITY)
+            })
+        };
+        let mut listed = 0;
+        for (_, group) in slab.groups() {
+            for &(key, bounds) in &group.cells {
+                for &index in &slab.cells[&key] {
+                    for point in slab.polygons[index as usize].points.iter() {
+                        assert!(holds(bounds, point));
+                        assert!(holds(group.bounds, point));
+                    }
+                    listed += 1;
+                }
+            }
+        }
+        assert!(listed > slab.polygons.len());
+        assert!(slab.polygons.iter().any(|polygon| !polygon.finite));
+    }
+
+    #[test]
+    fn a_gap_across_the_back_of_the_turn_is_closed_by_a_far_wall() {
+        let gap = ring_without(&[7, 8]);
+        let behind = upright(toward(150.0, 600.0), toward(210.0, 600.0));
+        assert!(encloses_centre(&[gap.as_slice(), &behind].concat()));
+        let short = upright(toward(150.0, 600.0), toward(200.0, 600.0));
+        assert!(!encloses_centre(&[gap.as_slice(), &short].concat()));
     }
 }

@@ -202,11 +202,12 @@ impl AxleProbe {
                     continue;
                 }
                 let distance = (p[0] * d[1] - p[1] * d[0]).abs() / span;
-                let direction = d[1].atan2(d[0]);
+                let mut direction = None;
                 for [side, along] in &self.sides {
                     if (distance - side).abs() > IDENTIFY_LDU {
                         continue;
                     }
+                    let direction = *direction.get_or_insert_with(|| d[1].atan2(d[0]));
                     let mut angle = (direction - along).rem_euclid(FRAC_PI_2);
                     if FRAC_PI_2 - angle <= within {
                         angle = 0.0;
