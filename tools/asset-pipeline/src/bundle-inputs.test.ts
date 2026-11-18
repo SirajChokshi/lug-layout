@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { BUNDLE_DATA_FILES, FIXTURES_DIRECTORY } from "./bundle-data.ts";
 import { bundleInputFiles } from "./bundle-key.ts";
-import { readPalette } from "./palette.ts";
+import { readFixtureModels, readPalette } from "./palette.ts";
 
 const pipelineSource = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(pipelineSource, "..", "..", "..");
@@ -54,7 +54,8 @@ describe("bundle inputs", () => {
 
   it("hash every data file the bundle command reads and every generated model it compiles", async () => {
     const palette = await readPalette(join(repoRoot, BUNDLE_DATA_FILES.palette));
-    const generatedModels = palette.models
+    const fixtures = await readFixtureModels(join(repoRoot, BUNDLE_DATA_FILES.fixtureModels));
+    const generatedModels = [...palette.models, ...fixtures.models]
       .filter((model) => model.origin === "generated")
       .map((model) => repoPath(join(repoRoot, FIXTURES_DIRECTORY, model.file)));
     expect(generatedModels.length).toBeGreaterThan(0);

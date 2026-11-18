@@ -4,12 +4,14 @@ import {
   BundleManifest,
   TrackCatalog,
   type CatalogSourceUse,
+  type CrosswalkFile,
   type Palette,
+  type PaletteModel,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFile, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as v from "valibot";
@@ -22,7 +24,7 @@ import {
   recordBundleBuild,
   type BundleBuildKey,
 } from "./built-bundle.ts";
-import { deriveCrosswalk } from "./catalog/crosswalk.ts";
+import { deriveCrosswalk, type LdrawPartFacts } from "./catalog/crosswalk.ts";
 import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
 import { bomCheck } from "./catalog/bom-check.ts";
 import {
@@ -30,6 +32,7 @@ import {
   paletteCategoryProblems,
   PART_CATEGORY_SOURCE,
   readLdrawCategories,
+  type LdrawCategories,
 } from "./catalog/part-categories.ts";
 import {
   catalogSourceDirectory,
@@ -56,7 +59,7 @@ import {
   readProducedColorInputs,
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
-import { readPalette } from "./palette.ts";
+import { readFixtureModels, readPalette } from "./palette.ts";
 import { attachCrosswalk, MANIFEST_FILE, publishBundle } from "./publish.ts";
 import { attachRecords } from "./records.ts";
 import { R2ObjectStore, sha256Hex } from "./r2.ts";
@@ -78,6 +81,7 @@ import {
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
 const palettePath = join(repoRoot, BUNDLE_DATA_FILES.palette);
+const fixtureModelsPath = join(repoRoot, BUNDLE_DATA_FILES.fixtureModels);
 const lockPath = join(repoRoot, BUNDLE_DATA_FILES.lock);
 const fixturesRoot = join(repoRoot, FIXTURES_DIRECTORY);
 const ldrawRoot = join(repoRoot, ".cache", "ldraw");
@@ -89,15 +93,21 @@ const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const TEST_DATA_DIRECTORIES = [join("packages", "import", "test-data")];
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
 const bundleRoot = join(toolRoot, "dist", "bundle");
+const fixtureBundleRoot = join(toolRoot, "fixture-bundle");
+const FIXTURE_LOD: BundleLod = "standard";
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(lockPath, "utf8")) as InputLock;
 }
 
+async function paletteAndFixtureModels(palette: Palette): Promise<ReadonlyArray<PaletteModel>> {
+  return [...palette.models, ...(await readFixtureModels(fixtureModelsPath)).models];
+}
+
 async function restoreModels(palette: Palette): Promise<void> {
   const { present, downloaded, pruned } = await restoreFiles(
     palette.omrSource,
-    omrFiles(palette),
+    omrFiles(await paletteAndFixtureModels(palette)),
     omrRoot,
   );
   process.stdout.write(
@@ -108,10 +118,11 @@ async function restoreModels(palette: Palette): Promise<void> {
 async function fetchCommand(): Promise<void> {
   const palette = await readPalette(palettePath);
   await restoreModels(palette);
-  const modelProblems = await verifyModels(palette, modelRoots);
+  const models = await paletteAndFixtureModels(palette);
+  const modelProblems = await verifyModels(models, modelRoots);
   if (modelProblems.length > 0) throw new Error(modelProblems.join("\n"));
   const modelSources = await Promise.all(
-    palette.models.map((model) => readFile(modelPath(model, modelRoots), "utf8")),
+    models.map((model) => readFile(modelPath(model, modelRoots), "utf8")),
   );
   const closure = await fetchClosure(palette, ldrawRoot, modelSources);
   const audit = await fetchAuditInputs(palette, auditRoot, connectivityRoot);
@@ -125,7 +136,7 @@ async function fetchCommand(): Promise<void> {
 async function writeAttribution(lock: InputLock, palette: Palette): Promise<void> {
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
-    await renderModelAttribution(palette, modelRoots),
+    await renderModelAttribution(await paletteAndFixtureModels(palette), modelRoots),
     await renderTestDataAttribution(repoRoot, TEST_DATA_DIRECTORIES),
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
@@ -193,7 +204,7 @@ async function verifyCommand(): Promise<void> {
   const lock = await readLock();
   const problems = [
     ...(await verifyClosure(lock, ldrawRoot)),
-    ...(await verifyModels(palette, modelRoots)),
+    ...(await verifyModels(await paletteAndFixtureModels(palette), modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
   ];
@@ -376,23 +387,85 @@ async function reportReusedBundle(buildKey: BundleBuildKey): Promise<void> {
   }
 }
 
+interface LodBuild {
+  readonly palette: string;
+  readonly out: string;
+  readonly lod: BundleLod;
+}
+
+interface SharedBuild {
+  readonly inputs: Omit<v.InferInput<typeof BundleIndex>["inputs"], "paletteSha256">;
+  readonly crosswalk: CrosswalkFile;
+  readonly coverCache: string;
+  readonly ldrawParts: ReadonlyMap<string, LdrawPartFacts>;
+  readonly categories: LdrawCategories;
+}
+
+async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild): Promise<void> {
+  await rm(out, { recursive: true, force: true });
+  runCargo([
+    "run",
+    "--release",
+    "--quiet",
+    "-p",
+    "brick-compile-cli",
+    "--",
+    "--ldraw",
+    ldrawRoot,
+    "--fixtures",
+    fixturesRoot,
+    "--omr",
+    omrRoot,
+    "--geometry",
+    join(repoRoot, BUNDLE_DATA_FILES.geometry),
+    "--palette",
+    palette,
+    "--out",
+    out,
+    "--lod",
+    lod,
+    "--compiler",
+    compilerWasm,
+    "--cover-cache",
+    shared.coverCache,
+  ]);
+  await attachPartCategories(join(out, MANIFEST_FILE), shared.ldrawParts, shared.categories);
+  await addVerifiedFacts(out);
+  await attachCrosswalk(out, shared.crosswalk);
+  await attachRecords(out);
+  const started = performance.now();
+  reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
+  const inputs = { ...shared.inputs, paletteSha256: await fileSha256(palette) };
+  const { bundleVersion, files } = await publishBundle(out, inputs);
+  process.stdout.write(
+    `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
+  );
+}
+
+async function writeFixturePalette(palette: Palette, path: string): Promise<void> {
+  const fixtures = await readFixtureModels(fixtureModelsPath);
+  await rm(fixtureBundleRoot, { recursive: true, force: true });
+  await mkdir(fixtureBundleRoot, { recursive: true });
+  await writeFile(path, `${JSON.stringify({ ...palette, models: fixtures.models }, null, 2)}\n`);
+}
+
 async function bundleCommand(): Promise<void> {
   await restoreCommand();
   await verifyCommand();
   if (process.exitCode) return;
   const buildKey = await bundleBuildKey(repoRoot);
-  if (await isBundleBuiltFrom(repoRoot, bundleRoot, BundleLod.options, buildKey)) {
+  const fixturePalette = join(fixtureBundleRoot, "palette.json");
+  const builds: ReadonlyArray<LodBuild> = [
+    ...BundleLod.options.map((lod) => ({ palette: palettePath, out: join(bundleRoot, lod), lod })),
+    { palette: fixturePalette, out: join(fixtureBundleRoot, FIXTURE_LOD), lod: FIXTURE_LOD },
+  ];
+  const outputs = builds.map((build) => build.out);
+  if (await isBundleBuiltFrom(repoRoot, bundleRoot, outputs, buildKey)) {
     await reportReusedBundle(buildKey);
     return;
   }
   await forgetBundleBuild(bundleRoot);
   const palette = await readPalette(palettePath);
-  const inputs = {
-    ldraw: palette.source,
-    omr: palette.omrSource,
-    lockSha256: await fileSha256(lockPath),
-    paletteSha256: await fileSha256(palettePath),
-  };
   const lock = await readLock();
   const catalog = catalogLock(lock);
   const crosswalkInputs = await readCrosswalkInputs(catalog, catalogRoot, lock.source, ldrawRoot);
@@ -416,46 +489,15 @@ async function bundleCommand(): Promise<void> {
   ]);
   const coverCache = join(toolRoot, "dist", "cover-cache");
   await rm(coverCache, { recursive: true, force: true });
-  for (const lod of BundleLod.options) {
-    const out = join(bundleRoot, lod);
-    await rm(out, { recursive: true, force: true });
-    runCargo([
-      "run",
-      "--release",
-      "--quiet",
-      "-p",
-      "brick-compile-cli",
-      "--",
-      "--ldraw",
-      ldrawRoot,
-      "--fixtures",
-      fixturesRoot,
-      "--omr",
-      omrRoot,
-      "--geometry",
-      join(repoRoot, BUNDLE_DATA_FILES.geometry),
-      "--palette",
-      palettePath,
-      "--out",
-      out,
-      "--lod",
-      lod,
-      "--compiler",
-      compilerWasm,
-      "--cover-cache",
-      coverCache,
-    ]);
-    await attachPartCategories(join(out, MANIFEST_FILE), crosswalkInputs.ldrawParts, categories);
-    await addVerifiedFacts(out);
-    await attachCrosswalk(out, crosswalk);
-    await attachRecords(out);
-    const started = performance.now();
-    reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
-    const { bundleVersion, files } = await publishBundle(out, inputs);
-    process.stdout.write(
-      `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
-    );
-  }
+  await writeFixturePalette(palette, fixturePalette);
+  const inputs = {
+    ldraw: palette.source,
+    omr: palette.omrSource,
+    lockSha256: await fileSha256(lockPath),
+  };
+  const ldrawParts = crosswalkInputs.ldrawParts;
+  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories };
+  for (const build of builds) await compileLod(build, shared);
   await recordBundleBuild(bundleRoot, buildKey);
 }
 

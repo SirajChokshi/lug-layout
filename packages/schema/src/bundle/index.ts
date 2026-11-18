@@ -850,6 +850,9 @@ export const Palette = v.strictObject({
 });
 export type Palette = v.InferOutput<typeof Palette>;
 
+export const FixtureModels = v.strictObject({ models: v.array(PaletteModel) });
+export type FixtureModels = v.InferOutput<typeof FixtureModels>;
+
 export {
   MilsBuild,
   MilsBuildFeature,

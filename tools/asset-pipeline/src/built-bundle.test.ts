@@ -33,7 +33,8 @@ function git(...args: ReadonlyArray<string>): void {
 }
 
 async function isBuilt(): Promise<boolean> {
-  return isBundleBuiltFrom(repo, join(repo, BUNDLE_DIRECTORY), LODS, await bundleBuildKey(repo));
+  const outputs = LODS.map((lod) => join(repo, BUNDLE_DIRECTORY, lod));
+  return isBundleBuiltFrom(repo, join(repo, BUNDLE_DIRECTORY), outputs, await bundleBuildKey(repo));
 }
 
 async function recordBuild(): Promise<void> {
