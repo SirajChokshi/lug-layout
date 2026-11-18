@@ -10,7 +10,8 @@ import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
-import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
+import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
+import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -44,6 +45,12 @@ export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Sym
 );
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",
+);
+export const IMPORT_BAKE_HELPERS: ServiceIdentifier<number> = Symbol.for(
+  "brr.client.ImportBakeHelpers",
+);
+export const IMPORT_WORKER_POOL: ServiceIdentifier<IImportWorkerPool> = Symbol.for(
+  "brr.client.ImportWorkerPool",
 );
 export const MODEL_IMPORTER: ServiceIdentifier<IModelImporter> = Symbol.for(
   "brr.client.ModelImporter",

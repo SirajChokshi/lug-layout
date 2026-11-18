@@ -21,7 +21,8 @@ import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { WorldSession } from "./edit/world-session.ts";
-import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
+import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
+import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
@@ -38,8 +39,10 @@ import {
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
+  IMPORT_BAKE_HELPERS,
   IMPORT_WORKER_FACTORY,
   LDRAW_LIBRARY_BASE_URL,
+  IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE_DRAG,
@@ -64,6 +67,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
+  bind(IMPORT_WORKER_POOL).to(ImportWorkerPool).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();
@@ -96,6 +100,7 @@ const clientModule = new ContainerModule(({ bind }) => {
 export interface MainThreadConfig {
   readonly bundleBaseUrl: string;
   readonly createImportWorker?: ImportWorkerFactory;
+  readonly importBakeHelpers?: number;
   readonly bundleManifestFile?: string;
   readonly ldrawLibraryBaseUrl?: string;
   readonly catalogApiBaseUrl?: string;
@@ -112,6 +117,7 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
       }
       return config.createImportWorker();
     });
+    bind(IMPORT_BAKE_HELPERS).toConstantValue(config.importBakeHelpers ?? 0);
     bind(BUNDLE_MANIFEST_FILE).toConstantValue(
       config.bundleManifestFile ?? DEFAULT_BUNDLE_MANIFEST_FILE,
     );

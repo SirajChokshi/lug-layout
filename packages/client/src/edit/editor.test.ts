@@ -816,6 +816,7 @@ function refusedBake(fileName: string): ImportResult {
       compileRounds: 0,
       bakeRounds: 1,
       bakeIssue: NO_LATTICE_REASON,
+      bakeHelpersFailed: 0,
       fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
       timings: { readMs: 0, resolveMs: 0, bakeMs: 0, totalMs: 0 },
     },

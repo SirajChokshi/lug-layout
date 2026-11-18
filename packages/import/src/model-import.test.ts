@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 import { BrickCompiler } from "./brick-compiler.ts";
 import { LdrawMirror, type FetchFunction } from "./ldraw-mirror.ts";
-import { ModelImportEngine, type ImportResult } from "./model-import.ts";
+import { ModelImportEngine, type IBakeHelper, type ImportResult } from "./model-import.ts";
 
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = new URL("../../../.cache/ldraw/", import.meta.url);
 const probeFile = new URL("../test-data/critic-gap.mpd", import.meta.url);
 const holeProbeFile = new URL("../test-data/critic-gap-3.mpd", import.meta.url);
+const customPileFile = new URL("../test-data/custom-pile.ldr", import.meta.url);
 const paletteTemplate = new URL(
   "../../../docs/verified-facts/scenes/mils-road-straight.ldr",
   import.meta.url,
@@ -56,22 +57,46 @@ async function bundleManifest(): Promise<Manifest> {
   return JSON.parse(await readFile(new URL("manifest.json", bundleRoot), "utf8")) as Manifest;
 }
 
+async function compilerModule(): Promise<WebAssembly.Module> {
+  const manifest = await bundleManifest();
+  return new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot)));
+}
+
+async function reactorHelpers(count: number): Promise<ReadonlyArray<IBakeHelper>> {
+  const module = await compilerModule();
+  return Array.from({ length: count }, (): IBakeHelper => {
+    const reactor = new BrickCompiler(module);
+    return { bake: async (request, library) => reactor.bake(request, library) };
+  });
+}
+
+const crashingHelper: IBakeHelper = {
+  bake: async () => {
+    throw new Error("the helper's reactor trapped");
+  },
+};
+
+const silentHelper: IBakeHelper = { bake: () => new Promise(() => undefined) };
+
+const outOfSyncHelper: IBakeHelper = {
+  bake: async (_, library) => ({ status: "need", paths: [...library.files.keys()].slice(0, 1) }),
+};
+
 async function importWith(
   fetchUrl: FetchFunction,
   fileName: string,
   text: string,
+  helpers: ReadonlyArray<IBakeHelper> = [],
 ): Promise<ImportResult> {
   const manifest = await bundleManifest();
   const partTable = JSON.parse(
     await readFile(new URL(manifest.partTable.file, bundleRoot), "utf8"),
   ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
-  const compiler = new BrickCompiler(
-    new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot))),
-  );
   const engine = new ModelImportEngine(
-    compiler,
+    new BrickCompiler(await compilerModule()),
     new LdrawMirror(manifest.source, fetchUrl),
     () => 0,
+    helpers,
   );
   return engine.importText({
     fileName,
@@ -181,9 +206,9 @@ it("reports an inline copy with a hole in a large face, and draws only the file'
   expect(result.instanceCount).toBe(1);
 });
 
-it(
-  "bakes an imported file to the same lattice, stud cover, footprint and columns as the bundle's own bake of that file",
-  async () => {
+it.each([0, 2])(
+  "bakes an imported file to the same lattice, stud cover, footprint and columns as the bundle's own bake of that file, with %i helper reactors",
+  async (helperReactors) => {
     const manifest = await bundleManifest();
     const entry = manifest.models.find((model) => model.name === PALETTE_TEMPLATE_MODEL);
     if (!entry) throw new Error(`the bundle has no ${PALETTE_TEMPLATE_MODEL}`);
@@ -195,6 +220,7 @@ it(
       pinnedMirror,
       "mils-road-straight.ldr",
       await readFile(paletteTemplate, "utf8"),
+      await reactorHelpers(helperReactors),
     );
 
     const cells = bundled.cover.cells;
@@ -220,6 +246,27 @@ it(
         columnTop: [...bake.cells.columnTop],
       },
     ).toEqual(cells);
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "bakes a custom file the same when helpers crash, never answer or ask for files the primary holds, with the primary baking their slices",
+  async () => {
+    const text = await readFile(customPileFile, "utf8");
+    const alone = await importWith(pinnedMirror, "custom-pile.ldr", text);
+    const failing = await importWith(pinnedMirror, "custom-pile.ldr", text, [
+      ...(await reactorHelpers(1)),
+      crashingHelper,
+      silentHelper,
+      outOfSyncHelper,
+    ]);
+
+    expect(alone.bake?.studCover.covered).toBeGreaterThan(0);
+    expect(alone.bake?.studCover.covered).toBeLessThan(alone.bake?.studCover.studs ?? 0);
+    expect(alone.report.bakeHelpersFailed).toBe(0);
+    expect(failing.report.bakeHelpersFailed).toBe(3);
+    expect(failing.bake).toEqual(alone.bake);
   },
   BAKE_TIMEOUT_MS,
 );

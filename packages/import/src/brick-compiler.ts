@@ -1,7 +1,9 @@
 import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
 import {
   CompilerBake,
+  CompilerBakeNeeds,
   CompilerCompile,
+  type BakeShard,
   CompilerError,
   CompilerModelRead,
   StudioRead,
@@ -85,6 +87,7 @@ export interface BakeRequest {
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly translucentColors: ReadonlyArray<number>;
   readonly vehicles: CompilerVehicles | null;
+  readonly shard?: BakeShard;
 }
 
 export interface BakedModel {
@@ -103,6 +106,10 @@ export interface BakeFailure {
 }
 
 export type BakeOutcome = BakedModel | Need | BakeFailure;
+
+export type BakeNeedsRequest = Pick<BakeRequest, "source" | "drawn" | "studPrimitives">;
+
+export type BakeNeeds = { readonly status: "complete" } | Need;
 
 interface Response {
   readonly header: unknown;
@@ -313,6 +320,15 @@ export class BrickCompiler {
         return { ...outcome, glb: body.slice(offset, offset + length) };
       }),
     };
+  }
+
+  bakeNeeds(request: BakeNeedsRequest, library: LibraryFiles): BakeNeeds {
+    const { header } = this.call(
+      { op: "bakeNeeds", studPrimitives: request.studPrimitives },
+      { source: utf8.encode(request.source), drawn: request.drawn },
+      library,
+    );
+    return decodedOrThrow(decode(CompilerBakeNeeds, header), "brick-compile bakeNeeds");
   }
 
   bake(request: BakeRequest, library: LibraryFiles): BakeOutcome {
