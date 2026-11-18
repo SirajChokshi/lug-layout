@@ -1,4 +1,5 @@
 use crate::affine::{Affine, Vec3};
+use crate::exact::Decimal;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Winding {
@@ -40,9 +41,17 @@ pub struct Header {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum ExactNumbers {
+    Unavailable,
+    Matrix(Box<[Decimal; 12]>),
+    Points(Vec<[Decimal; 3]>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct LdrawFile {
     pub header: Header,
     pub lines: Vec<Line>,
+    pub exact: Vec<ExactNumbers>,
 }
 
 pub fn normalize_reference(reference: &str) -> String {
@@ -68,6 +77,28 @@ fn parse_numbers<const N: usize>(tokens: &[&str]) -> Option<[f64; N]> {
         *slot = token.parse().ok()?;
     }
     Some(out)
+}
+
+fn exact_numbers<const N: usize>(tokens: &[&str]) -> Option<[Decimal; N]> {
+    let mut out = [Decimal::parse("0")?; N];
+    for (slot, token) in out.iter_mut().zip(tokens.get(..N)?) {
+        *slot = Decimal::parse(token)?;
+    }
+    Some(out)
+}
+
+fn exact_line(kind: &str, rest: &[&str]) -> ExactNumbers {
+    let numbers = rest.get(1..).unwrap_or_default();
+    let found = match kind {
+        "1" => exact_numbers::<SUBFILE_NUMBER_COUNT>(numbers)
+            .map(|n| ExactNumbers::Matrix(Box::new(n))),
+        "3" => exact_numbers::<9>(numbers)
+            .map(|n| ExactNumbers::Points(n.chunks(3).map(|p| [p[0], p[1], p[2]]).collect())),
+        "4" => exact_numbers::<12>(numbers)
+            .map(|n| ExactNumbers::Points(n.chunks(3).map(|p| [p[0], p[1], p[2]]).collect())),
+        _ => None,
+    };
+    found.unwrap_or(ExactNumbers::Unavailable)
 }
 
 fn points<const N: usize>(numbers: &[f64]) -> [Vec3; N] {
@@ -132,6 +163,7 @@ const SUBFILE_NUMBER_COUNT: usize = 12;
 pub fn parse(source: &str) -> LdrawFile {
     let mut header = Header::default();
     let mut lines = Vec::new();
+    let mut exact = Vec::new();
     let mut first = true;
     for raw in source.lines() {
         let tokens: Vec<&str> = raw.split_whitespace().collect();
@@ -165,10 +197,15 @@ pub fn parse(source: &str) -> LdrawFile {
             _ => None,
         };
         if let Some(line) = parsed {
+            exact.push(exact_line(kind, rest));
             lines.push(line);
         }
     }
-    LdrawFile { header, lines }
+    LdrawFile {
+        header,
+        lines,
+        exact,
+    }
 }
 
 fn parse_subfile(rest: &[&str]) -> Option<Line> {

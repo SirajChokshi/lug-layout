@@ -1952,3 +1952,107 @@ fn every_shadow_and_primitive_face_of_a_composite_takes_the_lowest_piece_whose_o
     }
     assert!([1, 2, 3].iter().all(|piece| labelled.contains(piece)));
 }
+
+fn inferred_segments(library: &MemoryLibrary, part: &str) -> Vec<(Gender, u8, [[i64; 3]; 2])> {
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let sixteenths = |p: Vec3| p.map(|c| (c * 16.0).round() as i64);
+    let inference = inferred.infer(part);
+    let mut out: Vec<(Gender, u8, [[i64; 3]; 2])> = inference
+        .connectors
+        .iter()
+        .chain(&inference.off_lattice)
+        .flat_map(|connector| mating_faces(connector).expect("mating faces"))
+        .map(|face| {
+            let length: f64 = face.sections.iter().map(|s| s.length).sum();
+            let tip = [0, 1, 2].map(|k| face.origin[k] + face.axis[k] * length);
+            let mut ends = [sixteenths(face.origin), sixteenths(tip)];
+            ends.sort_unstable();
+            (face.gender, face.caps, ends)
+        })
+        .collect();
+    out.sort_unstable_by_key(|(gender, caps, ends)| (*gender as u8, *caps, *ends));
+    out
+}
+
+fn mapped(
+    segments: &[(Gender, u8, [[i64; 3]; 2])],
+    map: impl Fn([i64; 3]) -> [i64; 3],
+) -> Vec<(Gender, u8, [[i64; 3]; 2])> {
+    let mut out: Vec<_> = segments
+        .iter()
+        .map(|(gender, caps, ends)| {
+            let mut moved = ends.map(&map);
+            moved.sort_unstable();
+            (*gender, *caps, moved)
+        })
+        .collect();
+    out.sort_unstable_by_key(|(gender, caps, ends)| (*gender as u8, *caps, *ends));
+    out
+}
+
+fn with_compositions(files: &[(&str, &str)]) -> MemoryLibrary {
+    let mut library = pinned("ldraw");
+    for (path, reference) in files {
+        library.0.insert(
+            path.to_string(),
+            format!("0 {path}\n0 BFC CERTIFY CCW\n{reference}\n"),
+        );
+    }
+    library
+}
+
+#[test]
+fn a_mirrored_wheel_infers_the_mirrored_faces() {
+    let wheel = "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3464b.dat\n1 256 0 0 0 -1 0 0 0 1 0 0 0 -1 3641.dat";
+    let library = with_compositions(&[
+        ("parts/wheel.dat", wheel),
+        (
+            "parts/wheel-z.dat",
+            "1 16 0 0 0 1 0 0 0 1 0 0 0 -1 wheel.dat",
+        ),
+        (
+            "parts/wheel-x.dat",
+            "1 16 0 0 0 -1 0 0 0 1 0 0 0 1 wheel.dat",
+        ),
+    ]);
+    let wheel = inferred_segments(&library, "parts/wheel.dat");
+    assert!(!wheel.is_empty());
+    assert_eq!(
+        inferred_segments(&library, "parts/wheel-z.dat"),
+        mapped(&wheel, |[x, y, z]| [x, y, -z])
+    );
+    assert_eq!(
+        inferred_segments(&library, "parts/wheel-x.dat"),
+        mapped(&wheel, |[x, y, z]| [-x, y, z])
+    );
+}
+
+#[test]
+fn quarter_turns_about_the_vertical_infer_the_turned_faces() {
+    let library = with_compositions(&[
+        (
+            "parts/turn-1.dat",
+            "1 16 0 0 0 0 0 1 0 1 0 -1 0 0 26047.dat",
+        ),
+        (
+            "parts/turn-2.dat",
+            "1 16 0 0 0 -1 0 0 0 1 0 0 0 -1 26047.dat",
+        ),
+        (
+            "parts/turn-3.dat",
+            "1 16 0 0 0 0 0 -1 0 1 0 1 0 0 26047.dat",
+        ),
+    ]);
+    let quarter = |[x, y, z]: [i64; 3]| [-z, y, x];
+    let mut expected = inferred_segments(&library, "parts/26047.dat");
+    assert!(expected.len() >= 3);
+    for turn in 1..=3 {
+        expected = mapped(&expected, quarter);
+        assert_eq!(
+            inferred_segments(&library, &format!("parts/turn-{turn}.dat")),
+            expected
+        );
+    }
+}

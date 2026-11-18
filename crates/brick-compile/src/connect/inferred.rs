@@ -1,18 +1,22 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
+use crate::exact::{
+    covers_circle as covers_exactly, span, Arc, Bearing, Decimal, Direction, Exact, ExactAffine,
+};
 use crate::flatten::{resolve_reference, Flattener, Library, Lod};
-use crate::ldraw::{self, Line, Winding};
+use crate::ldraw::{self, ExactNumbers, Line, Winding};
 use crate::pieces::{PieceMap, PieceNumbering, NO_PIECE};
-use crate::trig::{atan2, planar_length};
+use crate::trig::planar_length;
 
 use super::meta::{parse_metas, Meta};
 use super::solid::{
-    covers_circle, identified, plan_axes, sixteenth, span_of, Probe, RoundShape, RoundSurface,
-    Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
+    identified, plan_axes, sixteenth, Probe, RoundShape, RoundSurface, Slab, Solid, HALF_GRID_LDU,
+    IDENTIFY_LDU,
 };
 use super::{
     finished, joined_pieces, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape,
@@ -231,8 +235,7 @@ enum UnitShape {
 #[derive(Debug)]
 struct UnitRound {
     shape: UnitShape,
-    arcs: Vec<(f64, f64)>,
-    ends: Vec<([f64; 2], [f64; 2])>,
+    arcs: Option<Vec<Arc>>,
     facing: Option<f64>,
 }
 
@@ -240,6 +243,7 @@ struct UnitRound {
 struct RoundRef {
     unit: Rc<UnitRound>,
     matrix: Affine,
+    exact: Option<Rc<ExactAffine>>,
     inverted: bool,
     certified: bool,
     trail: Vec<u32>,
@@ -249,6 +253,7 @@ struct RoundRef {
 struct Run {
     axis: usize,
     center: [f64; 2],
+    exact_center: Direction,
     radius: f64,
     from: f64,
     to: f64,
@@ -260,8 +265,9 @@ struct Run {
 struct Band {
     from: f64,
     to: f64,
-    arcs: Vec<(f64, f64)>,
+    arcs: Option<Vec<Arc>>,
     center: [f64; 2],
+    exact_center: Option<Direction>,
     radius: f64,
     pieces: Vec<u16>,
 }
@@ -413,7 +419,12 @@ fn unit_round(source: &str) -> Option<UnitRound> {
     let mut certified = false;
     let mut winding = Winding::Ccw;
     let mut polygons: Vec<(Vec<Vec3>, bool, Winding)> = Vec::new();
-    for line in &file.lines {
+    let mut exact_polygons: Vec<Option<Vec<[Decimal; 3]>>> = Vec::new();
+    for (line, exact) in file.lines.iter().zip(&file.exact) {
+        let exact_points = match exact {
+            ExactNumbers::Points(points) => Some(points.clone()),
+            _ => None,
+        };
         match line {
             Line::Certify(w) => {
                 certified = true;
@@ -422,8 +433,14 @@ fn unit_round(source: &str) -> Option<UnitRound> {
             Line::NoCertify => certified = false,
             Line::SetWinding(w) => winding = *w,
             Line::Subfile { .. } => return None,
-            Line::Triangle { points, .. } => polygons.push((points.to_vec(), certified, winding)),
-            Line::Quad { points, .. } => polygons.push((points.to_vec(), certified, winding)),
+            Line::Triangle { points, .. } => {
+                polygons.push((points.to_vec(), certified, winding));
+                exact_polygons.push(exact_points);
+            }
+            Line::Quad { points, .. } => {
+                polygons.push((points.to_vec(), certified, winding));
+                exact_polygons.push(exact_points);
+            }
             Line::Edge { .. } | Line::InvertNext => {}
         }
     }
@@ -466,10 +483,9 @@ fn unit_round(source: &str) -> Option<UnitRound> {
         return None;
     };
     let mut facings = Vec::new();
-    let mut arcs = Vec::new();
-    let mut ends = Vec::new();
+    let mut arcs = Some(Vec::new());
     let mut all_certified = true;
-    for (points, certified, winding) in &polygons {
+    for ((points, certified, winding), exact) in polygons.iter().zip(&exact_polygons) {
         let normal = polygon_normal(points, *winding);
         let count = points.len() as f64;
         let centroid = [0, 2].map(|k| points.iter().map(|p| p[k]).sum::<f64>() / count);
@@ -478,16 +494,19 @@ fn unit_round(source: &str) -> Option<UnitRound> {
             UnitShape::Annulus { .. } => normal[1].signum(),
         });
         all_certified &= *certified;
-        let rim: Vec<[f64; 2]> = points
-            .iter()
-            .filter(|p| radius(p) > IDENTIFY_LDU)
-            .map(|p| [p[0], p[2]])
-            .collect();
-        let angles: Vec<f64> = rim.iter().map(|p| atan2(p[1], p[0])).collect();
-        if let Some((low, high)) = span_of(&angles) {
-            let point = |angle: f64| rim[angles.iter().position(|a| *a == angle).unwrap_or(0)];
-            arcs.push((low, high));
-            ends.push((point(low), point(high)));
+        let rim: Option<Vec<Direction>> = exact.as_ref().map(|exact| {
+            points
+                .iter()
+                .zip(exact)
+                .filter(|(p, _)| radius(p) > IDENTIFY_LDU)
+                .map(|(_, e)| [e[0].exact(), e[2].exact()])
+                .collect()
+        });
+        match (&mut arcs, rim) {
+            (Some(found), Some(rim)) => {
+                found.extend(span(rim.into_iter().map(Bearing::Raw).collect()))
+            }
+            _ => arcs = None,
         }
     }
     let first = facings[0];
@@ -495,15 +514,15 @@ fn unit_round(source: &str) -> Option<UnitRound> {
     Some(UnitRound {
         shape,
         arcs,
-        ends,
         facing: (agree && all_certified).then_some(first),
     })
 }
 
-fn arc_length(arcs: &[(f64, f64)]) -> f64 {
+fn arc_length(arcs: &[Arc]) -> f64 {
     use std::f64::consts::TAU;
     arcs.iter()
-        .map(|&(low, high)| {
+        .map(|(low, high)| (low.angle(), high.angle()))
+        .map(|(low, high)| {
             if high >= low {
                 high - low
             } else {
@@ -581,6 +600,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         let pieces = self.numbering.map(path);
         let flattened = Flattener::new(&borrowed, Lod::Standard, &[])
             .numbering_pieces(&pieces)
+            .exact_geometry()
             .flatten(path);
         let mut issues = Vec::new();
         let prepared = match flattened {
@@ -600,6 +620,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 let solid = Solid::new(
                     &flattened.triangles,
                     &flattened.triangle_pieces(),
+                    &flattened.exact,
                     placed.surfaces,
                 );
                 Prepared {
@@ -735,7 +756,14 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 let mut certified = false;
                 let mut invert_next = false;
                 let mut ordinal: u32 = 0;
-                for line in ldraw::parse(source).lines {
+                let file = ldraw::parse(source);
+                for (line, exact) in file.lines.into_iter().zip(file.exact) {
+                    let exact_matrix = match exact {
+                        ExactNumbers::Matrix(numbers) => {
+                            Some(Rc::new(ExactAffine::from_ldraw(&numbers)))
+                        }
+                        _ => None,
+                    };
                     let (matrix, reference) = match line {
                         Line::Certify(_) => {
                             certified = true;
@@ -765,6 +793,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         out.push(RoundRef {
                             unit,
                             matrix,
+                            exact: exact_matrix,
                             inverted,
                             certified,
                             trail: vec![here],
@@ -775,6 +804,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         out.push(RoundRef {
                             unit: Rc::clone(&inner.unit),
                             matrix: matrix.then(&inner.matrix),
+                            exact: match (&exact_matrix, &inner.exact) {
+                                (Some(outer), Some(inner)) => Some(Rc::new(outer.then(inner))),
+                                _ => None,
+                            },
                             inverted: inverted ^ inner.inverted,
                             certified: certified && inner.certified,
                             trail: std::iter::once(here)
@@ -810,7 +843,11 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 continue;
             }
             let is_wall = round.unit.shape == UnitShape::Wall;
-            let full = covers_circle(&round.unit.arcs, 0.0);
+            let full = round
+                .unit
+                .arcs
+                .as_ref()
+                .is_some_and(|arcs| covers_exactly(arcs));
             let mut worth_reporting = |issues: &mut Vec<Issue>, reason: Uninferred| {
                 if is_wall
                     && full
@@ -838,23 +875,41 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     });
             let (i, j) = plan_axes(axis);
             let center = [t[i], t[j]];
-            let orientation = c0[i] * c2[j] - c0[j] * c2[i];
-            let map = |point: [f64; 2]| {
-                let direction = [0, 1, 2].map(|k| c0[k] * point[0] + c2[k] * point[1]);
-                atan2(direction[j], direction[i])
-            };
-            let arcs: Vec<(f64, f64)> = round
-                .unit
-                .ends
-                .iter()
-                .map(|&(low, high)| {
-                    if orientation > 0.0 {
-                        (map(low), map(high))
-                    } else {
-                        (map(high), map(low))
-                    }
-                })
-                .collect();
+            let arcs: Option<Vec<Arc>> =
+                round
+                    .exact
+                    .as_ref()
+                    .zip(round.unit.arcs.as_ref())
+                    .map(|(matrix, unit_arcs)| {
+                        let (c0, c2) = (matrix.column(0), matrix.column(2));
+                        let map = |end: &Bearing| -> Bearing {
+                            let Bearing::Raw(d) = end else {
+                                return end.clone();
+                            };
+                            Bearing::identify(
+                                [
+                                    c0[i].mul(&d[0]).add(&c2[i].mul(&d[1])),
+                                    c0[j].mul(&d[0]).add(&c2[j].mul(&d[1])),
+                                ],
+                                1.0,
+                            )
+                        };
+                        let turning = c0[i].mul(&c2[j]).sub(&c0[j].mul(&c2[i])).sign();
+                        unit_arcs
+                            .iter()
+                            .map(|(low, high)| {
+                                if turning == Ordering::Greater {
+                                    (map(low), map(high))
+                                } else {
+                                    (map(high), map(low))
+                                }
+                            })
+                            .collect()
+                    });
+            let exact_center: Option<Direction> = round.exact.as_ref().map(|matrix| {
+                let t = matrix.translation();
+                [t[i].clone(), t[j].clone()]
+            });
             let ends = (t[axis], t[axis] + c1[axis]);
             let (from, to) = (ends.0.min(ends.1), ends.0.max(ends.1));
             let shape = match round.unit.shape {
@@ -893,6 +948,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     to,
                     arcs,
                     center,
+                    exact_center,
                     radius: rx,
                     pieces: vec![piece],
                 });
@@ -979,7 +1035,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     RoundSurface::is_wall,
                 )
             });
-        if solid.enclosed(flank, run.center, RoundSurface::is_wall) {
+        if solid.enclosed(flank, run.center, &run.exact_center, RoundSurface::is_wall) {
             return None;
         }
         let frame = ldraw_frame(
@@ -1020,7 +1076,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         })
     }
 
-    fn probe(&self, solid: &Solid, walls: &Slab, probe: &Probe) -> Probed {
+    fn probe(
+        &self,
+        solid: &Solid,
+        walls: &Slab,
+        probe: &Probe,
+        exact_center: &Direction,
+    ) -> Probed {
         let reach = self.probe.reach;
         let floor = solid.floor(probe, probe.radius - IDENTIFY_LDU);
         if floor.depth < reach - IDENTIFY_LDU || floor.faces_probe == Some(false) {
@@ -1037,14 +1099,16 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             return Probed::Rejected;
         }
         if nearest > probe.radius + IDENTIFY_LDU {
-            return if solid.blocked_on_axes(walls, center, outward_wall) {
+            return if solid.blocked_on_axes(walls, center, exact_center, outward_wall) {
                 Probed::Loose(nearest - probe.radius)
             } else {
                 Probed::Rejected
             };
         }
         let range = (IDENTIFY_LDU, reach - IDENTIFY_LDU);
-        if solid.bore_continues_outward(probe) || !solid.enclosed(walls, center, outward_wall) {
+        if solid.bore_continues_outward(probe)
+            || !solid.enclosed(walls, center, exact_center, outward_wall)
+        {
             return Probed::Rejected;
         }
         if !solid.confined(probe, range, &LATTICE_STEPS) {
@@ -1060,7 +1124,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         }
     }
 
-    fn candidates(&self, solid: &Solid, runs: &[Run], inference: &mut Inference) -> Vec<Probe> {
+    fn candidates(
+        &self,
+        solid: &Solid,
+        runs: &[Run],
+        inference: &mut Inference,
+    ) -> (Vec<Probe>, Vec<Direction>) {
         let mut bores: Vec<(Run, f64)> = Vec::new();
         for run in runs.iter().filter(|r| r.facing < 0.0) {
             match self
@@ -1078,8 +1147,9 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
         let mut probes: Vec<Probe> = Vec::new();
+        let mut centers: Vec<Direction> = Vec::new();
         let mut seen: HashSet<(usize, i8, [i64; 3], i64)> = HashSet::new();
-        let mut add = |probe: Probe| {
+        let mut add = |probe: Probe, center: Direction| {
             if seen.insert((
                 probe.axis,
                 probe.inward as i8,
@@ -1087,6 +1157,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 key(probe.radius),
             )) {
                 probes.push(probe);
+                centers.push(center);
             }
         };
         for plane in solid.planes() {
@@ -1099,12 +1170,15 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             for a in steps(plane.min[0], plane.max[0]) {
                 for b in steps(plane.min[1], plane.max[1]) {
                     let center = [a as f64 * HALF_GRID_LDU, b as f64 * HALF_GRID_LDU];
-                    add(Probe {
-                        axis: plane.axis,
-                        inward,
-                        entrance: point_on(plane.axis, center, plane.at),
-                        radius: self.probe.radius,
-                    });
+                    add(
+                        Probe {
+                            axis: plane.axis,
+                            inward,
+                            entrance: point_on(plane.axis, center, plane.at),
+                            radius: self.probe.radius,
+                        },
+                        center.map(Exact::from_f64),
+                    );
                 }
             }
             for (run, radius) in bores.iter().filter(|(r, _)| r.axis == plane.axis) {
@@ -1113,16 +1187,19 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         && run.center[k] <= plane.max[k] + IDENTIFY_LDU
                 });
                 if inside {
-                    add(Probe {
-                        axis: plane.axis,
-                        inward,
-                        entrance: point_on(plane.axis, run.center, plane.at),
-                        radius: *radius,
-                    });
+                    add(
+                        Probe {
+                            axis: plane.axis,
+                            inward,
+                            entrance: point_on(plane.axis, run.center, plane.at),
+                            radius: *radius,
+                        },
+                        run.exact_center.clone(),
+                    );
                 }
             }
         }
-        probes
+        (probes, centers)
     }
 
     fn cavities(
@@ -1135,17 +1212,17 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         let mut blind: Vec<(Probe, f64)> = Vec::new();
         let mut slabs: HashMap<(usize, i8, i64), Slab> = HashMap::new();
         let range = (IDENTIFY_LDU, self.probe.reach - IDENTIFY_LDU);
-        let candidates = self.candidates(solid, runs, inference);
+        let (candidates, centers) = self.candidates(solid, runs, inference);
         let mut columns: HashMap<Column, Vec<usize>> = HashMap::new();
         for (index, probe) in candidates.iter().enumerate() {
             columns.entry(column_of(probe)).or_default().push(index);
         }
-        for probe in &candidates {
+        for (probe, exact_center) in candidates.iter().zip(&centers) {
             let at = probe.entrance[probe.axis];
             let slab = slabs
                 .entry((probe.axis, probe.inward as i8, key(at)))
                 .or_insert_with(|| solid.slab(probe.axis, probe.inward, at, range, outward_wall));
-            match self.probe(solid, slab, probe) {
+            match self.probe(solid, slab, probe, exact_center) {
                 Probed::Rejected => {}
                 Probed::Loose(clearance) => {
                     if probe.radius == self.probe.radius {
@@ -1322,7 +1399,10 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
                     if (band.from - piece.from).abs() <= IDENTIFY_LDU
                         && (band.to - piece.to).abs() <= IDENTIFY_LDU =>
                 {
-                    band.arcs.extend(piece.arcs);
+                    match (&mut band.arcs, piece.arcs) {
+                        (Some(arcs), Some(more)) => arcs.extend(more),
+                        _ => band.arcs = None,
+                    }
                     band.pieces = joined_pieces(&band.pieces, &piece.pieces);
                 }
                 _ => bands.push(piece),
@@ -1330,8 +1410,11 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
         }
         let mut current: Option<Run> = None;
         for band in bands {
-            if !covers_circle(&band.arcs, IDENTIFY_LDU / band.radius) {
-                if facing < 0 && arc_length(&band.arcs) > std::f64::consts::PI {
+            let covered = band.arcs.as_ref().is_some_and(|arcs| covers_exactly(arcs));
+            let exact_center = band.exact_center.clone().filter(|_| covered);
+            let Some(exact_center) = exact_center else {
+                let open = band.arcs.as_deref().map_or(0.0, arc_length);
+                if facing < 0 && open > std::f64::consts::PI {
                     issues.push(Issue::Uninferred {
                         origin: point_on(axis, band.center, band.from),
                         reason: Uninferred::OpenArc {
@@ -1340,7 +1423,7 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
                     });
                 }
                 continue;
-            }
+            };
             match current.as_mut() {
                 Some(run) if band.from <= run.to + IDENTIFY_LDU => {
                     run.to = run.to.max(band.to);
@@ -1351,6 +1434,7 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
                     current = Some(Run {
                         axis,
                         center: band.center,
+                        exact_center,
                         radius: band.radius,
                         from: band.from,
                         to: band.to,

@@ -1,11 +1,19 @@
+use std::cell::OnceCell;
 use std::collections::HashMap;
 
 use crate::affine::Vec3;
-use crate::flatten::Triangle;
+use crate::exact::{
+    approximate_span, approximately_covers, clip_between, contains as arc_contains,
+    covers_circle as covers_exactly, ray_crosses, span, touches_origin, Approximate,
+    ApproximateArc, Arc, Bearing, Direction, Exact, ExactVec3, Homogeneous,
+};
+use crate::flatten::{ExactTriangle, Triangle};
 use crate::lattice::STUD_LDU;
-use crate::trig::{atan2, planar_length};
+use crate::trig::planar_length;
 
 pub const IDENTIFY_LDU: f64 = 0.0005;
+const CERTAIN_LDU: f64 = 1e-6;
+const FLOAT_ERROR_LDU: f64 = 1e-9;
 pub const HALF_GRID_LDU: f64 = STUD_LDU / 2.0;
 const TRAVEL_PRECISION_LDU: f64 = IDENTIFY_LDU / 64.0;
 
@@ -55,7 +63,7 @@ pub struct RoundSurface {
     pub center: [f64; 2],
     pub shape: RoundShape,
     pub full: bool,
-    pub arcs: Vec<(f64, f64)>,
+    pub arcs: Option<Vec<Arc>>,
     pub facing: Option<f64>,
     pub piece: u16,
 }
@@ -149,6 +157,7 @@ pub struct Plane {
 
 struct Facet {
     points: [Vec3; 3],
+    exact: Option<ExactTriangle>,
     front: Option<Vec3>,
     low: Vec3,
     high: Vec3,
@@ -166,9 +175,17 @@ pub struct Slab {
     inward: f64,
     at: f64,
     range: (f64, f64),
+    planes: (Exact, Exact),
     polygons: Vec<SlabPolygon>,
+    clipped: Vec<OnceCell<Vec<Homogeneous>>>,
     cells: HashMap<(i64, i64), Vec<u32>>,
     extent: ([i64; 2], [i64; 2]),
+}
+
+struct Around<'a> {
+    slab: &'a Slab,
+    center: [f64; 2],
+    exact_center: &'a Direction,
 }
 
 struct Surroundings<'s> {
@@ -180,6 +197,7 @@ struct Surroundings<'s> {
 
 pub struct Solid {
     facets: Vec<Facet>,
+    world: Vec<OnceCell<Option<[ExactVec3; 3]>>>,
     columns: [HashMap<(i64, i64), Vec<u32>>; 3],
     surfaces: Vec<RoundSurface>,
     axes: HashMap<(usize, i64, i64), Vec<usize>>,
@@ -404,56 +422,6 @@ fn first_depth(polygon: &[Local], inside: f64) -> Option<f64> {
     best
 }
 
-pub fn span_of(angles: &[f64]) -> Option<(f64, f64)> {
-    use std::f64::consts::{PI, TAU};
-    let reference = *angles.first()?;
-    let offset = |a: f64| {
-        let mut d = a - reference;
-        if d > PI {
-            d -= TAU;
-        } else if d <= -PI {
-            d += TAU;
-        }
-        d
-    };
-    let low = angles
-        .iter()
-        .copied()
-        .min_by(|a, b| offset(*a).total_cmp(&offset(*b)))?;
-    let high = angles
-        .iter()
-        .copied()
-        .max_by(|a, b| offset(*a).total_cmp(&offset(*b)))?;
-    Some((low, high))
-}
-
-fn arc(polygon: &[Local]) -> Option<(f64, f64)> {
-    let angles: Vec<f64> = polygon.iter().map(|p| atan2(p[1], p[0])).collect();
-    span_of(&angles)
-}
-
-pub fn covers_circle(arcs: &[(f64, f64)], slack: f64) -> bool {
-    use std::f64::consts::PI;
-    let mut pieces: Vec<(f64, f64)> = Vec::with_capacity(arcs.len() + 1);
-    for &(low, high) in arcs {
-        if high >= low {
-            pieces.push((low, high));
-        } else {
-            pieces.push((low, PI));
-            pieces.push((-PI, high));
-        }
-    }
-    pieces.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut reached = -PI;
-    for (low, high) in pieces {
-        if low > reached + slack {
-            return false;
-        }
-        reached = reached.max(high);
-    }
-    reached + slack >= PI
-}
-
 fn axis_probe(axis: usize, center: [f64; 2], along: f64, inward: f64) -> Probe {
     let (i, j) = plan_axes(axis);
     let mut entrance = [0.0; 3];
@@ -469,10 +437,15 @@ fn axis_probe(axis: usize, center: [f64; 2], along: f64, inward: f64) -> Probe {
 }
 
 impl Solid {
-    pub fn new(triangles: &[Triangle], pieces: &[u16], surfaces: Vec<RoundSurface>) -> Self {
+    pub fn new(
+        triangles: &[Triangle],
+        pieces: &[u16],
+        exact: &[Option<ExactTriangle>],
+        surfaces: Vec<RoundSurface>,
+    ) -> Self {
         let mut columns: [HashMap<(i64, i64), Vec<u32>>; 3] = Default::default();
         let mut facets = Vec::with_capacity(triangles.len());
-        for (triangle, &piece) in triangles.iter().zip(pieces) {
+        for (source, (triangle, &piece)) in triangles.iter().zip(pieces).enumerate() {
             let [a, b, c] = triangle.points;
             let normal = cross(sub(b, a), sub(c, a));
             if normal == [0.0; 3] {
@@ -491,6 +464,7 @@ impl Solid {
             }
             facets.push(Facet {
                 points: triangle.points,
+                exact: exact.get(source).cloned().flatten(),
                 front: (!triangle.double_sided).then_some(normal),
                 low,
                 high,
@@ -499,6 +473,7 @@ impl Solid {
             });
         }
         let mut solid = Solid {
+            world: facets.iter().map(|_| OnceCell::new()).collect(),
             facets,
             columns,
             surfaces: Vec::new(),
@@ -789,23 +764,57 @@ impl Solid {
                 }
             }
         }
+        let along = |depth: f64| Exact::from_f64(at).add(&Exact::from_f64(inward * depth));
+        let ends = (along(range.0), along(range.1));
+        let planes = if ends.0.compare(&ends.1) == std::cmp::Ordering::Greater {
+            (ends.1, ends.0)
+        } else {
+            ends
+        };
         Slab {
             axis,
             inward,
             at,
             range,
+            planes,
+            clipped: polygons.iter().map(|_| OnceCell::new()).collect(),
             polygons,
             cells,
             extent,
         }
     }
 
-    fn shifted(polygon: &SlabPolygon, center: [f64; 2]) -> Vec<Local> {
-        polygon
-            .points
-            .iter()
-            .map(|p| [p[0] - center[0], p[1] - center[1], 0.0])
-            .collect()
+    fn exact_polygon(
+        &self,
+        slab: &Slab,
+        index: usize,
+        center: &Direction,
+    ) -> Option<Vec<Direction>> {
+        let facet = slab.polygons[index].facet;
+        let world = self.world[facet]
+            .get_or_init(|| self.facets[facet].exact.as_ref().map(ExactTriangle::points))
+            .as_ref()?;
+        let clipped = slab.clipped[index].get_or_init(|| {
+            clip_between(
+                world.iter().cloned().map(Homogeneous::of).collect(),
+                slab.axis,
+                &slab.planes.0,
+                &slab.planes.1,
+            )
+        });
+        let axes = plan_axes(slab.axis);
+        (!clipped.is_empty()).then(|| clipped.iter().map(|p| p.relative(axes, center)).collect())
+    }
+
+    fn polygon_arc(&self, slab: &Slab, index: usize, directions: Vec<Direction>) -> Option<Arc> {
+        let weights = slab.clipped[index].get()?;
+        span(
+            directions
+                .into_iter()
+                .zip(weights)
+                .map(|(direction, point)| Bearing::identify(direction, point.weight.to_f64()))
+                .collect(),
+        )
     }
 
     fn in_slab(slab: &Slab, surface: &RoundSurface, probe: &Probe) -> bool {
@@ -969,7 +978,7 @@ impl Solid {
         probe: &Probe,
         coaxial: &[usize],
         ignores: &impl Fn(&RoundSurface) -> bool,
-    ) -> Option<Vec<(f64, f64)>> {
+    ) -> Option<Vec<Arc>> {
         let mut arcs = Vec::new();
         for &index in coaxial {
             let surface = &self.surfaces[index];
@@ -979,7 +988,7 @@ impl Solid {
             if surface.full || surface.nearest() == 0.0 {
                 return None;
             }
-            arcs.extend(surface.arcs.iter().copied());
+            arcs.extend(surface.arcs.iter().flatten().cloned());
         }
         Some(arcs)
     }
@@ -988,6 +997,7 @@ impl Solid {
         &self,
         slab: &Slab,
         center: [f64; 2],
+        exact_center: &Direction,
         ignores: impl Fn(&RoundSurface) -> bool,
     ) -> bool {
         let probe = axis_probe(slab.axis, center, slab.at, slab.inward);
@@ -995,17 +1005,22 @@ impl Solid {
         let Some(arcs) = self.coaxial_arcs(slab, &probe, &coaxial, &ignores) else {
             return true;
         };
-        self.rays_blocked(slab, center, &coaxial, &arcs, &ignores)
+        let around = Around {
+            slab,
+            center,
+            exact_center,
+        };
+        self.rays_blocked(&around, &coaxial, &arcs, &ignores)
     }
 
     fn rays_blocked(
         &self,
-        slab: &Slab,
-        center: [f64; 2],
+        around: &Around,
         coaxial: &[usize],
-        arcs: &[(f64, f64)],
+        arcs: &[Arc],
         ignores: &impl Fn(&RoundSurface) -> bool,
     ) -> bool {
+        let Around { slab, center, .. } = *around;
         if slab.polygons.is_empty() {
             return false;
         }
@@ -1015,28 +1030,138 @@ impl Solid {
                 .owner
                 .is_some_and(|o| coaxial.contains(&o) || ignores(&self.surfaces[o]))
         };
-        let covered_by_coaxial = |direction: [f64; 2]| {
-            let angle = atan2(direction[1], direction[0]);
-            arcs.iter().any(|&(low, high)| {
-                if high >= low {
-                    (low..=high).contains(&angle)
-                } else {
-                    angle >= low || angle <= high
-                }
-            })
-        };
-        [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]]
+        let unit = |value: i64| Exact::integer(value);
+        [(0, 1), (0, -1), (1, 1), (1, -1)]
             .into_iter()
-            .all(|direction| {
-                covered_by_coaxial(direction)
-                    || Self::ray_hits(slab, home, center, direction, &blocks)
+            .all(|(along, sign)| {
+                let mut direction = [unit(0), unit(0)];
+                direction[along] = unit(sign);
+                arcs.iter()
+                    .any(|arc| arc_contains(arc, &Bearing::Raw(direction.clone())))
+                    || self.ray_hits(around, home, along, sign, &blocks)
             })
+    }
+
+    fn ray_hits(
+        &self,
+        around: &Around,
+        home: [i64; 2],
+        along: usize,
+        sign: i64,
+        blocks: &impl Fn(&SlabPolygon) -> bool,
+    ) -> bool {
+        let slab = around.slab;
+        let center = around.exact_center;
+        let clears = |polygon: &SlabPolygon| {
+            let offset = |p: &Local, k: usize| p[k] - around.center[k];
+            let all = |test: &dyn Fn(&Local) -> bool| polygon.points.iter().all(test);
+            all(&|p| offset(p, 1 - along) > CERTAIN_LDU)
+                || all(&|p| offset(p, 1 - along) < -CERTAIN_LDU)
+                || all(&|p| offset(p, along) * (sign as f64) < -CERTAIN_LDU)
+        };
+        let across = 1 - along;
+        let forward = if sign > 0 {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        };
+        let mut seen = vec![false; slab.polygons.len()];
+        let mut step = home;
+        loop {
+            for row in [-1, 0, 1] {
+                let mut at = step;
+                at[across] += row;
+                let Some(found) = slab.cells.get(&(at[0], at[1])) else {
+                    continue;
+                };
+                for &index in found {
+                    let index = index as usize;
+                    if std::mem::replace(&mut seen[index], true) {
+                        continue;
+                    }
+                    let polygon = &slab.polygons[index];
+                    if !blocks(polygon) || clears(polygon) {
+                        continue;
+                    }
+                    let Some(directions) = self.exact_polygon(slab, index, center) else {
+                        continue;
+                    };
+                    if touches_origin(&directions) || ray_crosses(&directions, along, forward) {
+                        return true;
+                    }
+                }
+            }
+            step[along] += sign;
+            let past = if sign > 0 {
+                step[along] > slab.extent.1[along]
+            } else {
+                step[along] < slab.extent.0[along]
+            };
+            if past {
+                return false;
+            }
+        }
+    }
+
+    fn approximately_enclosed(
+        &self,
+        around: &Around,
+        probe: &Probe,
+        coaxial: &[usize],
+        arcs: &[Arc],
+        ignores: &impl Fn(&RoundSurface) -> bool,
+    ) -> Option<bool> {
+        let slab = around.slab;
+        let mut approximate: Vec<ApproximateArc> = arcs
+            .iter()
+            .map(|(low, high)| {
+                (
+                    low.approximate(FLOAT_ERROR_LDU),
+                    high.approximate(FLOAT_ERROR_LDU),
+                )
+            })
+            .collect();
+        for polygon in &slab.polygons {
+            let facet = &self.facets[polygon.facet];
+            if facet
+                .owner
+                .is_some_and(|o| coaxial.contains(&o) || ignores(&self.surfaces[o]))
+            {
+                continue;
+            }
+            let (low, high) = self.depth_range(probe, facet);
+            let sliver = high - slab.range.0 <= CERTAIN_LDU || slab.range.1 - low <= CERTAIN_LDU;
+            if sliver || facet.exact.is_none() {
+                return None;
+            }
+            let shifted: Vec<Local> = polygon
+                .points
+                .iter()
+                .map(|p| [p[0] - around.center[0], p[1] - around.center[1], 0.0])
+                .collect();
+            let edge = (0..shifted.len())
+                .map(|k| segment_radius(shifted[k], shifted[(k + 1) % shifted.len()]))
+                .fold(f64::INFINITY, f64::min);
+            if edge <= CERTAIN_LDU {
+                return None;
+            }
+            if contains(&shifted, [0.0, 0.0]) {
+                return Some(true);
+            }
+            let ends: Option<Vec<Approximate>> = shifted
+                .iter()
+                .map(|p| Approximate::of(p[0], p[1], FLOAT_ERROR_LDU))
+                .collect();
+            approximate.push(approximate_span(ends?)?);
+        }
+        approximately_covers(&approximate)
     }
 
     pub fn enclosed(
         &self,
         slab: &Slab,
         center: [f64; 2],
+        exact_center: &Direction,
         ignores: impl Fn(&RoundSurface) -> bool,
     ) -> bool {
         let probe = axis_probe(slab.axis, center, slab.at, slab.inward);
@@ -1045,10 +1170,20 @@ impl Solid {
             return true;
         };
         if slab.polygons.is_empty() {
-            return covers_circle(&arcs, 0.0);
+            return covers_exactly(&arcs);
         }
-        if !self.rays_blocked(slab, center, &coaxial, &arcs, &ignores) {
+        let around = Around {
+            slab,
+            center,
+            exact_center,
+        };
+        if !self.rays_blocked(&around, &coaxial, &arcs, &ignores) {
             return false;
+        }
+        if let Some(decided) =
+            self.approximately_enclosed(&around, &probe, &coaxial, &arcs, &ignores)
+        {
+            return decided;
         }
         let home = [cell(center[0]), cell(center[1])];
         let rings = (0..2)
@@ -1079,17 +1214,19 @@ impl Solid {
                         {
                             continue;
                         }
-                        let shifted = Self::shifted(polygon, center);
-                        if nearest_radius(&shifted) == 0.0 {
+                        let Some(directions) = self.exact_polygon(slab, index, exact_center) else {
+                            continue;
+                        };
+                        if touches_origin(&directions) {
                             return true;
                         }
-                        arcs.extend(arc(&shifted));
+                        arcs.extend(self.polygon_arc(slab, index, directions));
                     }
                 }
             }
             let due = ring == rings || ring == next_check;
             if due && arcs.len() > checked {
-                if covers_circle(&arcs, 0.0) {
+                if covers_exactly(&arcs) {
                     return true;
                 }
                 checked = arcs.len();
@@ -1099,54 +1236,6 @@ impl Solid {
             }
         }
         false
-    }
-
-    fn ray_hits(
-        slab: &Slab,
-        home: [i64; 2],
-        center: [f64; 2],
-        direction: [f64; 2],
-        blocks: &impl Fn(&SlabPolygon) -> bool,
-    ) -> bool {
-        let (along, across) = if direction[0] != 0.0 { (0, 1) } else { (1, 0) };
-        let sign = direction[along];
-        let mut step = home;
-        loop {
-            if let Some(found) = slab.cells.get(&(step[0], step[1])) {
-                for &index in found {
-                    let polygon = &slab.polygons[index as usize];
-                    if !blocks(polygon) {
-                        continue;
-                    }
-                    let shifted = Self::shifted(polygon, center);
-                    let hit = shifted.iter().enumerate().any(|(k, a)| {
-                        let b = shifted[(k + 1) % shifted.len()];
-                        let (a_across, b_across) = (a[across], b[across]);
-                        if (a_across > 0.0 && b_across > 0.0) || (a_across < 0.0 && b_across < 0.0)
-                        {
-                            return false;
-                        }
-                        if a_across == b_across {
-                            return a[along] * sign >= 0.0 || b[along] * sign >= 0.0;
-                        }
-                        let t = a_across / (a_across - b_across);
-                        (a[along] + t * (b[along] - a[along])) * sign >= 0.0
-                    });
-                    if hit || nearest_radius(&shifted) == 0.0 {
-                        return true;
-                    }
-                }
-            }
-            step[along] += sign as i64;
-            let past = if sign > 0.0 {
-                step[along] > slab.extent.1[along]
-            } else {
-                step[along] < slab.extent.0[along]
-            };
-            if past {
-                return false;
-            }
-        }
     }
 
     pub fn stands_on(&self, probe: &Probe, at: f64, radius: f64, toward: f64) -> bool {

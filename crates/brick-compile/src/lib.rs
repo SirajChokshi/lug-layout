@@ -8,6 +8,7 @@ pub mod compile;
 pub mod connect;
 pub mod cover;
 pub mod ends;
+pub mod exact;
 pub mod flatten;
 pub mod glb;
 pub mod inline;
