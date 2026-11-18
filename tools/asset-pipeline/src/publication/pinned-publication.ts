@@ -427,6 +427,16 @@ export async function readPointer<TManifest>(
   return bytes === undefined ? null : adapter.decode(bytes);
 }
 
+function sameManifests<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  a: ReadonlyArray<TManifest>,
+  b: ReadonlyArray<TManifest>,
+): boolean {
+  const covers = (from: ReadonlyArray<TManifest>, to: ReadonlyArray<TManifest>) =>
+    from.every((manifest) => to.some((other) => adapter.sameManifest(manifest, other)));
+  return covers(a, b) && covers(b, a);
+}
+
 async function keptManifests<TManifest>(
   adapter: PointerAdapter<TManifest>,
   pointer: PublicationPointer<TManifest>,
@@ -595,9 +605,9 @@ export async function pruneUnreferenced<TManifest>(
   if (pointerBytes === undefined) {
     throw new Error(`${adapter.key} is not stored, so nothing says what is live`);
   }
-  const pointer = adapter.decode(pointerBytes);
+  const kept = await keptManifests(adapter, adapter.decode(pointerBytes));
   const live = new Set<string>();
-  for (const manifest of await keptManifests(adapter, pointer)) {
+  for (const manifest of kept) {
     const { indexes, files } = await adapter.references(manifest, read);
     for (const key of indexes) live.add(key);
     for (const file of files) live.add(file.key);
@@ -608,6 +618,12 @@ export async function pruneUnreferenced<TManifest>(
   const pointerAfterListing = await read(adapter.key);
   if (pointerAfterListing === undefined || !isDeepStrictEqual(pointerAfterListing, pointerBytes)) {
     throw new Error(`${adapter.key} changed during the prune, so nothing was deleted`);
+  }
+  const keptAfterListing = await keptManifests(adapter, adapter.decode(pointerAfterListing));
+  if (!sameManifests(adapter, kept, keptAfterListing)) {
+    throw new Error(
+      `the manifests ${adapter.key} keeps changed during the prune, so nothing was deleted`,
+    );
   }
   const doomed = stored.filter((object) => !live.has(object.key));
   if (!dryRun) await store.delete(doomed.map((object) => object.key));

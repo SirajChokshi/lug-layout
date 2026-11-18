@@ -294,6 +294,24 @@ it("refuses and deletes nothing when the pointer moves while the bucket is liste
   expect(next.keys.every((key) => store.objects.has(key))).toBe(true);
 });
 
+it("refuses and deletes nothing when the manifests the adapter retains change while the bucket is listed", async () => {
+  let retainedNow: PinnedIndex[] = [];
+  const store = new PointingWhileListing(async () => {
+    retainedNow = [oldest.pin.index];
+  });
+  const oldest = await publish(store, ["a"]);
+  await publish(store, ["b"]);
+  await publish(store, ["c"]);
+  const retaining = { ...pointer, retained: async () => retainedNow };
+  const before = store.objects.size;
+
+  await expect(pruneUnreferenced(retaining, store, false)).rejects.toThrow(
+    "keeps changed during the prune",
+  );
+  expect(store.objects.size).toBe(before);
+  expect(oldest.keys.every((key) => store.objects.has(key))).toBe(true);
+});
+
 it("verifies every referenced file against the SHA-256 its manifest gives, content-addressed or not", async () => {
   const store = new MemoryStore();
   const part = new TextEncoder().encode("1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n");

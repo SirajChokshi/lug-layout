@@ -77,6 +77,7 @@ const XML_ENTITIES: ReadonlyArray<readonly [string, string]> = [
   ["ü", "&#252;"],
   ["€", "&euro;"],
   ["¤", "&#x110000;"],
+  ["\ud800", "&#xD800;"],
 ];
 
 function escaped(text: string): string {
@@ -173,6 +174,7 @@ describe("R2ObjectStore listing and deletion", () => {
   it.each([
     ["p/€", "&euro;"],
     ["p/¤", "&#x110000;"],
+    ["p/\ud800", "&#xD800;"],
   ])(
     "refuses a listing whose key %s comes back with the reference %s, instead of guessing it",
     async (key, reference) => {
