@@ -474,6 +474,14 @@ fn run(args: &Args) -> Result<(), String> {
     .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
     let technic = TechnicPrimitives::from_table(&primitive_table)?;
     let section_vocabulary = read_section_vocabulary(&args.vocabulary)?;
+    let inferred: Value = serde_json::from_slice(
+        &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", args.inferred.display()))?;
+    let probe_part = inferred["cavityProbe"].as_str().ok_or(format!(
+        "{}: cavityProbe must be a part path",
+        args.inferred.display()
+    ))?;
     let primitive_options = CompileOptions {
         lod: args.lod,
         stud_primitives: Vec::new(),
@@ -489,7 +497,7 @@ fn run(args: &Args) -> Result<(), String> {
                 "file": COMPILER_FILE,
                 "unofficialAllowlist": unofficial_allowlist,
                 "primitives": primitive_table,
-                "sectionVocabulary": section_vocabulary.to_json(),
+                "cavityProbe": probe_part,
             })
         }
         None => Value::Null,
@@ -854,14 +862,6 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?;
     let verified = verified_patch_paths(&patch_manifest);
-    let inferred: Value = serde_json::from_slice(
-        &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
-    )
-    .map_err(|e| format!("{}: {e}", args.inferred.display()))?;
-    let probe_part = inferred["cavityProbe"].as_str().ok_or(format!(
-        "{}: cavityProbe must be a part path",
-        args.inferred.display()
-    ))?;
     let mut extractor = ConnectorExtractor::new(
         ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
             files: &patch_files,

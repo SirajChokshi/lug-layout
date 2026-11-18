@@ -13,7 +13,11 @@ import type {
   PartOutcome,
 } from "./brick-compiler.ts";
 import { isDirectColor } from "@brr/catalog/colors";
-import type { CompilerVehicles, PrimitiveConnectorTable } from "@brr/schema/bundle";
+import type {
+  CompilerVehicles,
+  PrimitiveConnectorTable,
+  SectionVocabulary,
+} from "@brr/schema/bundle";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
 
@@ -25,6 +29,8 @@ export interface ImportJob {
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly primitives: PrimitiveConnectorTable | null;
+  readonly sectionVocabulary: SectionVocabulary;
+  readonly cavityProbe: string;
   readonly bundlePartIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentColors: ReadonlyArray<number>;
@@ -122,6 +128,7 @@ export interface PartConnectorSource {
 }
 
 const MAX_COMPILE_ROUNDS = 64;
+const ONLY_PINNED_PARTS_ARE_COMPILED: ReadonlyArray<string> = [];
 const FETCH_CONCURRENCY = 16;
 const MATRIX_FLOATS = 12;
 
@@ -291,7 +298,12 @@ export class ModelImportEngine {
           lod: job.lod,
           studPrimitives: job.studPrimitives,
           unofficialAllowlist: job.unofficialAllowlist,
-          primitives: job.primitives,
+          connectors: {
+            primitives: job.primitives,
+            sectionVocabulary: job.sectionVocabulary,
+            cavityProbe: job.cavityProbe,
+            infer: ONLY_PINNED_PARTS_ARE_COMPILED,
+          },
           parts: pendingParts,
           model: job.text,
           inlineChecks: pendingChecks,

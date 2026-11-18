@@ -163,6 +163,7 @@ pub enum PartOutcome {
         file: String,
         header: Section,
         files: usize,
+        connectors: Option<serde_json::Value>,
     },
     Need {
         reference: String,

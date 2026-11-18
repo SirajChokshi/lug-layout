@@ -5,15 +5,18 @@ import {
   catalogModule,
   type PartConnectors,
 } from "@brr/catalog";
+import { BrickCompiler, type CompileRequest, type PartOutcome } from "@brr/import";
 import {
   BundleIndex,
   CONNECTIVITY_SOURCES,
+  CONNECTOR_SOURCE,
   ConnectorIndexFile,
   ConnectorRecordFile,
   SectionVocabularyFile,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { Container } from "inversify";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -32,6 +35,11 @@ const HTTP_NOT_FOUND = 404;
 const LOD = "standard";
 const TECHNIC_PART = "ldraw:52031";
 const UNBUNDLED_PART = "ldraw:3023b";
+const INFERRED_ONLY_PART = "ldraw:1751";
+const INFERRED_ONLY_FILE = "parts/1751.dat";
+const INFERRED_ONLY_FACES = 25;
+const OUTSIDE_PINNED_LIBRARY = "brr-renamed-1751.dat";
+const COMPILE_ROUNDS = 16;
 
 let server: Server;
 let base = "";
@@ -130,15 +138,17 @@ async function bundleLoader() {
   return container.get(PART_BUNDLE_LOADER);
 }
 
-it("hands the import path the committed section vocabulary that the bundle's tier 4 records were inferred with", async () => {
+it("hands the import path the committed section vocabulary, pinned by its SHA-256, that the bundle's tier 4 records were inferred with", async () => {
   const context = await (await bundleLoader()).importContext(LOD);
   const committed = decodedOrThrow(
     decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
     vocabularyFile.pathname,
   );
   expect(context.sectionVocabulary).toEqual({
-    sizes: committed.sizes,
-    lengths: committed.lengths,
+    sha256: createHash("sha256")
+      .update(await readFile(vocabularyFile))
+      .digest("hex"),
+    vocabulary: { sizes: committed.sizes, lengths: committed.lengths },
   });
 });
 
@@ -168,6 +178,8 @@ it("gives a bundle part the same connector table from the catalog loader as when
         studPrimitives: context.studPrimitiveNames,
         unofficialAllowlist: context.unofficialAllowlist,
         primitives: context.primitives,
+        sectionVocabulary: context.sectionVocabulary.vocabulary,
+        cavityProbe: context.cavityProbe,
         bundlePartIds: context.partIds.filter((partId) => partId !== TECHNIC_PART),
         ldconfigCodes: context.ldconfigCodes,
         translucentColors: context.translucentCodes,
@@ -193,4 +205,54 @@ it("gives a bundle part the same connector table from the catalog loader as when
   expect(imported.connectors[technic]).toEqual(fromCatalog);
   expect(imported.connectors[unbundled]).toBeNull();
   expect(imported.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
+});
+
+async function pinnedFile(path: string): Promise<string | null> {
+  return readFile(new URL(path, pinnedLibrary), "utf8").catch(() => null);
+}
+
+it("infers tier 4 at import for a part outside the pinned library with the bundle's section vocabulary, face for face what the bundle bake published for the same geometry", async () => {
+  const context = await (await bundleLoader()).importContext(LOD);
+  const compiler = new BrickCompiler(
+    await WebAssembly.compile(await readFile(new URL(context.compilerPath, bundleRoot))),
+  );
+  const geometry = await pinnedFile(INFERRED_ONLY_FILE);
+  if (geometry === null) throw new Error(`${INFERRED_ONLY_FILE} is not in the pinned library`);
+  const files = new Map([[`parts/${OUTSIDE_PINNED_LIBRARY}`, geometry]]);
+  const absent = new Set<string>();
+  const request: CompileRequest = {
+    lod: LOD,
+    studPrimitives: context.studPrimitiveNames,
+    unofficialAllowlist: context.unofficialAllowlist,
+    connectors: {
+      primitives: context.primitives,
+      sectionVocabulary: context.sectionVocabulary.vocabulary,
+      cavityProbe: context.cavityProbe,
+      infer: [OUTSIDE_PINNED_LIBRARY],
+    },
+    parts: [OUTSIDE_PINNED_LIBRARY],
+    model: "",
+    inlineChecks: [],
+  };
+  let outcome: PartOutcome | undefined;
+  for (let round = 0; round < COMPILE_ROUNDS; round++) {
+    [outcome] = compiler.compile(request, { key: "pinned", files, absent }).parts;
+    if (outcome?.status !== "need") break;
+    for (const path of outcome.paths) {
+      const text = await pinnedFile(path);
+      if (text === null) absent.add(path);
+      else files.set(path, text);
+    }
+  }
+
+  const records = await publishedRecords(INFERRED_ONLY_PART);
+  expect(records).toHaveLength(1);
+  const [bundled] = records;
+  expect(bundled?.faces.source).toEqual(
+    Array.from({ length: INFERRED_ONLY_FACES }, () => CONNECTOR_SOURCE.inferred),
+  );
+  expect(outcome?.status === "compiled" ? outcome.connectors : outcome).toEqual({
+    ...bundled,
+    part: OUTSIDE_PINNED_LIBRARY,
+  });
 });

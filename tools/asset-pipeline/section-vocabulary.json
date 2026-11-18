@@ -9,6 +9,10 @@
     "file": "ldcad-shadow-library.tar.gz",
     "sha256": "a91dbdb5487a5796bdb76de64966e11e9c25ee1de56121000d7d943d3cfa1b3a"
   },
+  "license": "CC BY-SA 4.0",
+  "attribution": [
+    "Section sizes and lengths derived from the LDCad Shadow Library by Roland Melkert and the LDCad Shadow Library contributors, github.com/RolandMelkert/LDCadShadowLibrary at 9b1131fb1991f8c0bfc072325e4e12f6271aba35, CC BY-SA 4.0"
+  ],
   "sizes": [
     {
       "gender": "M",

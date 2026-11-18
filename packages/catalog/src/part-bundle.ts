@@ -158,6 +158,11 @@ export interface ModelBundle {
   readonly farMesh: ModelFarMesh | undefined;
 }
 
+export interface PinnedSectionVocabulary {
+  readonly sha256: string;
+  readonly vocabulary: SectionVocabulary;
+}
+
 export interface ImportContext {
   readonly bundleVersion: string;
   readonly source: BundleSource;
@@ -166,7 +171,8 @@ export interface ImportContext {
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly studPrimitiveNames: ReadonlyArray<string>;
   readonly primitives: PrimitiveConnectorTable | null;
-  readonly sectionVocabulary: SectionVocabulary | null;
+  readonly sectionVocabulary: PinnedSectionVocabulary;
+  readonly cavityProbe: string;
   readonly partIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
@@ -217,6 +223,7 @@ export interface IPartBundleLoader {
   importContext(lod: BundleLod): Promise<ImportContext>;
   loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null>;
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution>;
+  loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null>;
   loadPartSet(
     lod: BundleLod,
     partIds: ReadonlyArray<string>,

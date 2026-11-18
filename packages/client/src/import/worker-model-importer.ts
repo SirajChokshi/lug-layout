@@ -96,6 +96,8 @@ export class WorkerModelImporter implements IModelImporter {
       studPrimitives: context.studPrimitiveNames,
       unofficialAllowlist: context.unofficialAllowlist,
       primitives: context.primitives,
+      sectionVocabulary: context.sectionVocabulary.vocabulary,
+      cavityProbe: context.cavityProbe,
       bundlePartIds: context.partIds,
       ldconfigCodes: context.ldconfigCodes,
       translucentColors: context.translucentCodes,

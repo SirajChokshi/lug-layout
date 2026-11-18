@@ -429,12 +429,16 @@ export const SectionVocabulary = v.strictObject({
 });
 export type SectionVocabulary = v.InferOutput<typeof SectionVocabulary>;
 
+export const SectionVocabularyRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
   vehicles: v.optional(CompilerVehicles),
   primitives: v.optional(PrimitiveConnectorTable),
-  sectionVocabulary: v.optional(SectionVocabulary),
+  sectionVocabulary: SectionVocabularyRef,
+  cavityProbe: v.string(),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -733,6 +737,14 @@ const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
 
+export const CompilerConnectorInputs = v.strictObject({
+  primitives: v.nullable(PrimitiveConnectorTable),
+  sectionVocabulary: SectionVocabulary,
+  cavityProbe: v.string(),
+  infer: StringList,
+});
+export type CompilerConnectorInputs = v.InferOutput<typeof CompilerConnectorInputs>;
+
 export const CompilerRequest = v.variant("op", [
   v.strictObject({ op: v.literal("readModel") }),
   v.strictObject({ op: v.literal("readStudio") }),
@@ -741,7 +753,7 @@ export const CompilerRequest = v.variant("op", [
     lod: BundleLod,
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
-    primitives: v.nullable(PrimitiveConnectorTable),
+    connectors: CompilerConnectorInputs,
     parts: StringList,
     inlineChecks: v.pipe(
       v.array(v.strictObject({ inline: v.string(), official: v.string() })),
@@ -814,6 +826,7 @@ export const CompilerCompile = v.object({
         file: v.string(),
         header: ModelSection,
         files: Count,
+        connectors: v.nullable(ConnectorRecordFile),
       }),
       v.object({ ...CompilerNeed.entries, ...Reference }),
       v.object({ ...CompilerFailure.entries, ...Reference }),
@@ -1086,6 +1099,8 @@ export type GithubArchive = v.InferOutput<typeof GithubArchive>;
 export const SectionVocabularyFile = v.strictObject({
   source: GithubArchive,
   archive: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  license: v.string(),
+  attribution: v.array(v.string()),
   ...SectionVocabulary.entries,
 });
 export type SectionVocabularyFile = v.InferOutput<typeof SectionVocabularyFile>;

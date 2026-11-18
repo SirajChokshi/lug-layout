@@ -12,6 +12,7 @@ use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
 use brick_compile::{compile_part, CompileError, CompileOptions, Lod, TechnicPrimitives};
 
+use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
     BogieHeader, Cover, Failure, InlineOutcome, InlinePair, Lattice, LooseGeometry, PartOutcome,
@@ -54,7 +55,7 @@ impl Session {
                 lod,
                 stud_primitives,
                 unofficial_allowlist,
-                primitives,
+                connectors,
                 parts,
                 inline_checks,
             } => {
@@ -62,20 +63,22 @@ impl Session {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
                     unofficial_allowlist: unofficial_allowlist.clone(),
-                    technic: primitives.as_ref().map_or_else(
+                    technic: connectors.primitives.as_ref().map_or_else(
                         || Ok(TechnicPrimitives::default()),
                         TechnicPrimitives::from_table,
                     )?,
                 };
+                let inference = ConnectorInference::new(connectors)?;
                 let model = request.text("source")?;
-                Ok(compile(
+                compile(
                     &self.library,
                     &options,
+                    &inference,
                     parts,
                     inline_checks,
                     &model,
                     body,
-                ))
+                )
             }
             Operation::Bake {
                 stud_primitives,
@@ -162,15 +165,30 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
 fn compile(
     library: &TrackingLibrary,
     options: &CompileOptions,
+    inference: &ConnectorInference,
     references: &[String],
     inline_checks: &[InlineCheck],
     model: &str,
     body: &mut Body,
-) -> Reply {
+) -> Result<Reply, String> {
     let mut parts = Vec::with_capacity(references.len());
     for reference in references {
         let result = compile_part(library, reference, options);
-        let requested = library.take_requested();
+        let mut requested = library.take_requested();
+        let connectors = match &result {
+            Ok(compiled) if requested.is_empty() && inference.wants(reference) => {
+                let header = &compiled.flattened_files[0].header;
+                let license = header.license.as_deref().unwrap_or_default();
+                let record = inference.record(library, reference, &compiled.path, license);
+                requested = library.take_requested();
+                if requested.is_empty() {
+                    Some(record?)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
         let reference = reference.clone();
         parts.push(match result {
             _ if !requested.is_empty() => PartOutcome::Need {
@@ -183,6 +201,7 @@ fn compile(
                 file: compiled.path.clone(),
                 header: Section::from(&compiled.flattened_files[0].header),
                 files: compiled.flattened_files.len(),
+                connectors,
             },
             Err(error) => PartOutcome::Failed {
                 reference,
@@ -210,11 +229,11 @@ fn compile(
             },
         });
     }
-    Reply::Compiled {
+    Ok(Reply::Compiled {
         parts,
         inline,
         weld_epsilon_ldu: WELD_EPSILON_LDU,
-    }
+    })
 }
 
 fn drawn_instances(source: &str, mask: &[u8]) -> Result<Vec<ModelInstance>, String> {

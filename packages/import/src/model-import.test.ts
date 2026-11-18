@@ -1,5 +1,6 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
-import type { CompilerVehicles } from "@brr/schema/bundle";
+import { SectionVocabularyFile, type CompilerVehicles } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
@@ -31,7 +32,9 @@ interface Manifest {
   readonly compiler: {
     readonly file: string;
     readonly vehicles?: CompilerVehicles;
-    readonly primitives?: CompileRequest["primitives"];
+    readonly primitives?: CompileRequest["connectors"]["primitives"];
+    readonly sectionVocabulary: { readonly file: string };
+    readonly cavityProbe: string;
   };
   readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
   readonly connectors: { readonly file: string };
@@ -75,6 +78,11 @@ async function importWith(
   const compiler = new BrickCompiler(
     new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot))),
   );
+  const vocabularyFile = new URL(manifest.compiler.sectionVocabulary.file, bundleRoot);
+  const vocabulary = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
+    vocabularyFile.pathname,
+  );
   const engine = new ModelImportEngine(
     compiler,
     new LdrawMirror(manifest.source, fetchUrl),
@@ -92,6 +100,8 @@ async function importWith(
     studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: [],
     primitives: manifest.compiler.primitives ?? null,
+    sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+    cavityProbe: manifest.compiler.cavityProbe,
     bundlePartIds: partTable.parts.map((part) => part.id),
     ldconfigCodes: manifest.colors.map((color) => color.code),
     translucentColors: manifest.colors

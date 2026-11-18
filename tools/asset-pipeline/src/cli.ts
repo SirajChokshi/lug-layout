@@ -65,7 +65,12 @@ import {
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
 import { readFixtureModels, readPalette } from "./palette.ts";
-import { attachCrosswalk, MANIFEST_FILE, publishBundle } from "./publish.ts";
+import {
+  attachCrosswalk,
+  attachSectionVocabulary,
+  MANIFEST_FILE,
+  publishBundle,
+} from "./publish.ts";
 import { attachRecords } from "./records.ts";
 import {
   extractShadowArchive,
@@ -522,6 +527,7 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
     "--cover-cache",
     shared.coverCache,
   ]);
+  await attachSectionVocabulary(out, join(repoRoot, BUNDLE_DATA_FILES.sectionVocabulary));
   await attachPartCategories(join(out, MANIFEST_FILE), shared.ldrawParts, shared.categories);
   await addVerifiedFacts(out);
   await attachCrosswalk(out, shared.crosswalk);

@@ -181,6 +181,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.loadConnectivityAttribution(lod);
   }
 
+  loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null> {
+    return this.loader.loadSectionVocabularyAttribution(lod);
+  }
+
   loadPartSet(
     lod: BundleLod,
     partIds: ReadonlyArray<string>,

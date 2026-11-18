@@ -1,4 +1,5 @@
 import {
+  CONNECTIVITY_LICENSE,
   SectionVocabulary,
   SectionVocabularyFile,
   type CatalogSourceUse,
@@ -14,6 +15,7 @@ import type { CatalogLock } from "./fetch-ldraw.ts";
 
 export const CONNECTOR_SOURCE_USE: CatalogSourceUse = "connectors";
 const SHADOW_EXTENSION = ".dat";
+const SHADOW_AUTHORS = "Roland Melkert and the LDCad Shadow Library contributors";
 
 export interface PinnedShadowArchive {
   readonly name: string;
@@ -75,6 +77,10 @@ export async function extractShadowArchive(
   return files;
 }
 
+export function shadowVocabularyAttribution(source: GithubArchive): string {
+  return `Section sizes and lengths derived from the LDCad Shadow Library by ${SHADOW_AUTHORS}, github.com/${source.repo} at ${source.commit}, ${CONNECTIVITY_LICENSE}`;
+}
+
 export function sectionVocabularyFile(
   archive: PinnedShadowArchive,
   derived: unknown,
@@ -84,6 +90,8 @@ export function sectionVocabularyFile(
     decode(SectionVocabularyFile, {
       source: archive.source,
       archive: { file: archive.file, sha256: archive.sha256 },
+      license: CONNECTIVITY_LICENSE,
+      attribution: [shadowVocabularyAttribution(archive.source)],
       ...vocabulary,
     }),
     "section vocabulary",

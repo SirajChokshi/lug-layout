@@ -1,9 +1,15 @@
 import { CONNECTIVITY_LICENSE, CONNECTOR_SOURCE } from "@brr/schema/bundle";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { MANIFEST_FILE, publishBundle } from "./publish.ts";
+import {
+  attachSectionVocabulary,
+  MANIFEST_FILE,
+  publishBundle,
+  SECTION_VOCABULARY_FILE,
+} from "./publish.ts";
 import { CA_LICENSE_LINES } from "./verify/license-audit.ts";
 import { encodePng } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
@@ -60,7 +66,7 @@ function compiledManifest() {
     catalogParts: [],
     trackCatalog: { n: 16, pieces: [] },
     trackShapes: [],
-    compiler: null,
+    compiler: null as { file: string; unofficialAllowlist: string[]; cavityProbe: string } | null,
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },
     creditTable: { file: "credits.json" },
@@ -108,6 +114,22 @@ function connectorIndex(
     attribution,
     source,
     parts: { [BRICK]: { file: `${pkg}-3001.json` } } as Record<string, { file: string } | null>,
+  };
+}
+
+function sectionVocabulary() {
+  return {
+    source: { kind: "github-archive" as const, repo: source.repo, commit: source.commit, root: "" },
+    archive: { file: "shadow.tar.gz", sha256: SHA256_ZERO },
+    license: CONNECTIVITY_LICENSE,
+    attribution: [
+      "Section sizes and lengths derived from the LDCad Shadow Library by Roland Melkert",
+    ],
+    sizes: [
+      { gender: "M", shape: "R", size: 6 },
+      { gender: "F", shape: "R", size: 6 },
+    ],
+    lengths: [{ shape: "R", length: 8 }],
   };
 }
 
@@ -203,6 +225,8 @@ interface CompiledBundle {
   readonly connectorIndex: ReturnType<typeof connectorIndex>;
   readonly connectorRecord: ReturnType<typeof connectorRecord>;
   readonly files: Map<string, Buffer>;
+  vocabulary: ReturnType<typeof sectionVocabulary> | null;
+  readonly afterAttach: Array<(directory: string) => Promise<void>>;
 }
 
 const inputs = { ldraw: source, omr: source, lockSha256: SHA256_ZERO, paletteSha256: SHA256_ZERO };
@@ -211,7 +235,7 @@ const directories: string[] = [];
 async function publish(edit: (bundle: CompiledBundle) => void) {
   const directory = await mkdtemp(join(tmpdir(), "brr-publish-"));
   directories.push(directory);
-  const bundle = {
+  const bundle: CompiledBundle = {
     manifest: compiledManifest(),
     gltf: studGltf(),
     model: modelFile(),
@@ -226,6 +250,8 @@ async function publish(edit: (bundle: CompiledBundle) => void) {
     connectorIndex: connectorIndex("connectors", [PART_LICENSE], []),
     connectorRecord: connectorRecord(PART_LICENSE, CONNECTOR_SOURCE.primitive),
     files: new Map<string, Buffer>(),
+    vocabulary: null,
+    afterAttach: [],
   };
   edit(bundle);
   const connectorFiles = {
@@ -247,7 +273,35 @@ async function publish(edit: (bundle: CompiledBundle) => void) {
     await mkdir(dirname(join(directory, name)), { recursive: true });
     await writeFile(join(directory, name), bytes);
   }
+  if (bundle.vocabulary !== null) {
+    const committed = await mkdtemp(join(tmpdir(), "brr-vocabulary-"));
+    directories.push(committed);
+    const vocabularyPath = join(committed, SECTION_VOCABULARY_FILE);
+    await writeFile(vocabularyPath, `${JSON.stringify(bundle.vocabulary, null, 2)}\n`);
+    await attachSectionVocabulary(directory, vocabularyPath);
+  }
+  for (const tamper of bundle.afterAttach) await tamper(directory);
   return { directory, published: await publishBundle(directory, inputs) };
+}
+
+const COMPILER_FILE = "compiler.wasm";
+
+function withCompiler(bundle: CompiledBundle): ReturnType<typeof sectionVocabulary> {
+  bundle.manifest.compiler = {
+    file: COMPILER_FILE,
+    unofficialAllowlist: [],
+    cavityProbe: "p/stud.dat",
+  };
+  bundle.files.set(COMPILER_FILE, Buffer.from("compiler bytes"));
+  const vocabulary = sectionVocabulary();
+  bundle.vocabulary = vocabulary;
+  return vocabulary;
+}
+
+async function editJson(path: string, edit: (value: Record<string, unknown>) => void) {
+  const value: Record<string, unknown> = JSON.parse(await readFile(path, "utf8"));
+  edit(value);
+  await writeFile(path, JSON.stringify(value));
 }
 
 function withThumbnail(bytes: Buffer) {
@@ -362,6 +416,88 @@ describe("publishBundle", () => {
     expect(addressed).toBeDefined();
     expect(model.shapes[0].file).toBe(addressed);
     expect(table.parts[0].file).toBe(addressed);
+  });
+
+  it("publishes the section vocabulary byte for byte as its own content-addressed asset, which the manifest references with its SHA-256", async () => {
+    const { directory, published } = await publish(withCompiler);
+    expect(published.files).toBe(11);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    const { file, sha256 } = manifest.compiler.sectionVocabulary;
+    expect(file).toMatch(/^section-vocabulary\.[0-9a-f]{16}\.json$/u);
+    const written = `${JSON.stringify(sectionVocabulary(), null, 2)}\n`;
+    expect((await readFile(join(directory, file))).toString("utf8")).toBe(written);
+    expect(sha256).toBe(createHash("sha256").update(written).digest("hex"));
+  });
+
+  it.each([
+    {
+      file: "section vocabulary values inlined in the manifest's compiler section",
+      edit: (bundle: CompiledBundle) => {
+        const { sizes, lengths } = withCompiler(bundle);
+        bundle.afterAttach.push((directory) =>
+          editJson(join(directory, MANIFEST_FILE), (manifest) => {
+            manifest["compiler"] = {
+              ...bundle.manifest.compiler,
+              sectionVocabulary: { sizes, lengths },
+            };
+          }),
+        );
+      },
+      refusal:
+        "manifest.json carries section vocabulary values at $.compiler.sectionVocabulary.sizes[0], $.compiler.sectionVocabulary.sizes[1], $.compiler.sectionVocabulary.lengths[0]; they ship only in the CC BY-SA section vocabulary asset",
+    },
+    {
+      file: "a section vocabulary entry in a CC BY connector record",
+      edit: (bundle: CompiledBundle) => {
+        const { sizes } = withCompiler(bundle);
+        Object.assign(bundle.connectorRecord, { sections: sizes.slice(0, 1) });
+      },
+      refusal:
+        "connectors-3001.json carries section vocabulary values at $.sections[0]; they ship only in the CC BY-SA section vocabulary asset",
+    },
+    {
+      file: "a section vocabulary entry in a GLB's JSON chunk",
+      edit: (bundle: CompiledBundle) => {
+        const { lengths } = withCompiler(bundle);
+        Object.assign(bundle.gltf.extras, { section: lengths[0] });
+      },
+      refusal:
+        "stud.glb carries section vocabulary values at $.extras.section; they ship only in the CC BY-SA section vocabulary asset",
+    },
+    {
+      file: "a section vocabulary under another licence",
+      edit: (bundle: CompiledBundle) => {
+        withCompiler(bundle).license = PART_LICENSE;
+      },
+      refusal: `section-vocabulary.json: the section vocabulary is licensed ${PART_LICENSE}, not ${CONNECTIVITY_LICENSE}`,
+    },
+    {
+      file: "a section vocabulary without attribution",
+      edit: (bundle: CompiledBundle) => {
+        withCompiler(bundle).attribution = [];
+      },
+      refusal: "section-vocabulary.json: the section vocabulary names no attribution",
+    },
+    {
+      file: "a section vocabulary derived from another shadow commit than the connectivity package",
+      edit: (bundle: CompiledBundle) => {
+        withCompiler(bundle).source.commit = "def";
+      },
+      refusal:
+        "section-vocabulary.json: the section vocabulary is derived from owner/repo@def, but the connectivity package from owner/repo@abc",
+    },
+    {
+      file: "a section vocabulary whose bytes are not the ones the manifest's SHA-256 names",
+      edit: (bundle: CompiledBundle) => {
+        withCompiler(bundle);
+        bundle.afterAttach.push((directory) =>
+          editJson(join(directory, SECTION_VOCABULARY_FILE), () => undefined),
+        );
+      },
+      refusal: "but the manifest references",
+    },
+  ])("refuses $file", async ({ edit, refusal }) => {
+    await expect(publish(edit)).rejects.toThrow(refusal);
   });
 
   it.each([
