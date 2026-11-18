@@ -8,7 +8,7 @@ import {
 } from "../src/connect/candidate-poses.ts";
 import { ConnectionSolver } from "../src/connect/connection-solver.ts";
 import { pose16, zeta16 } from "@brr/math";
-import type { TrackEnd } from "../src/track/end-gaps.ts";
+import { WORLD_TRACK_FRAME, type TrackEnd } from "../src/track/end-gaps.ts";
 import {
   AXIS_NEG_X,
   AXIS_NEG_Y,
@@ -348,8 +348,16 @@ function baseplate(): ConnectorTable {
 
 function trackPiece(): ModelConnectors {
   const ends: TrackEnd[] = [
-    { pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 8), yPlates: 0 },
-    { pose: pose16(zeta16([16n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0), yPlates: 0 },
+    {
+      pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 8),
+      yPlates: 0,
+      frame: WORLD_TRACK_FRAME,
+    },
+    {
+      pose: pose16(zeta16([16n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
+      yPlates: 0,
+      frame: WORLD_TRACK_FRAME,
+    },
   ];
   return ModelConnectors.fromParts(
     [],

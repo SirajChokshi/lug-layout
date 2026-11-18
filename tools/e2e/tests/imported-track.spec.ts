@@ -9,6 +9,10 @@ const EDITOR_DECIMALS = 3;
 const FAR_LDU = 20_480;
 const OFF_FIELD_RADIANS = (0.1 * Math.PI) / 180;
 const TYPE_ONE_FIELDS = 15;
+const FULL_THROTTLE_PRESSES = 10;
+const TRAIN_WITHOUT_TRACK = "omr:10014-1";
+const LAP_DEADLINE_MS = 90_000;
+const SAMPLE_MS = 150;
 
 interface Reference {
   readonly color: string;
@@ -108,6 +112,22 @@ async function layout(
   return { text, pieces: references.length };
 }
 
+function sweptTurns(path: ReadonlyArray<readonly [number, number]>): number {
+  if (path.length < 2) return 0;
+  const xs = path.map(([x]) => x);
+  const zs = path.map(([, z]) => z);
+  const centreX = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const centreZ = (Math.min(...zs) + Math.max(...zs)) / 2;
+  let swept = 0;
+  for (let i = 1; i < path.length; i++) {
+    const [x0, z0] = path[i - 1] ?? [0, 0];
+    const [x1, z1] = path[i] ?? [0, 0];
+    const step = Math.atan2(z1 - centreZ, x1 - centreX) - Math.atan2(z0 - centreZ, x0 - centreX);
+    swept += Math.atan2(Math.sin(step), Math.cos(step));
+  }
+  return Math.abs(swept) / (2 * Math.PI);
+}
+
 async function importAndPlace(page: Page, file: string): Promise<EditorPage> {
   const editor = await EditorPage.open(page);
   await editor.serveLdrawLibrary();
@@ -132,7 +152,7 @@ test("the verified R40 circle imported as a file identifies all 16 curves and cl
   const editor = await importAndPlace(page, file);
 
   expect(pieces).toBe(16);
-  expect(await editor.modelTrack()).toEqual({ pieces, offField: 0, unanchored: 0 });
+  expect(await editor.modelTrack()).toEqual({ pieces, runFrame: 0, offField: 0, unanchored: 0 });
   expect(await editor.trackEnds()).toEqual([]);
 });
 
@@ -150,7 +170,7 @@ test("a layout of circles, a figure-eight and switches turned in 22.5° steps fa
 
   const editor = await importAndPlace(page, file);
 
-  expect(await editor.modelTrack()).toEqual({ pieces, offField: 0, unanchored: 0 });
+  expect(await editor.modelTrack()).toEqual({ pieces, runFrame: 0, offField: 0, unanchored: 0 });
   expect(await editor.trackEnds()).toEqual([]);
 });
 
@@ -173,11 +193,11 @@ test("the layouts turned in quarter turns and written with three decimals, as LD
 
   const editor = await importAndPlace(page, file);
 
-  expect(await editor.modelTrack()).toEqual({ pieces, offField: 0, unanchored: 0 });
+  expect(await editor.modelTrack()).toEqual({ pieces, runFrame: 0, offField: 0, unanchored: 0 });
   expect(await editor.trackEnds()).toEqual([]);
 });
 
-test("layouts turned off the quarter turns and written with three decimals are reported unanchored, with nothing placed on a guessed pose", async ({
+test("layouts turned off the quarter turns and written with three decimals are identified in run frames, joined only inside them", async ({
   page,
 }) => {
   const { text, pieces } = await layout(
@@ -196,8 +216,56 @@ test("layouts turned off the quarter turns and written with three decimals are r
 
   const editor = await importAndPlace(page, file);
 
-  expect(await editor.modelTrack()).toEqual({ pieces: 0, offField: 0, unanchored: pieces });
+  expect(await editor.modelTrack()).toEqual({
+    pieces: 0,
+    runFrame: pieces,
+    offField: 0,
+    unanchored: 0,
+  });
   expect(await editor.trackEnds()).toEqual([]);
+});
+
+test("a train runs a full lap on an imported loop turned 22.5° and written with three decimals", async ({
+  page,
+}) => {
+  const { text, pieces } = await layout(
+    "turned-loop-three-decimals",
+    [{ scene: "r40-circle-9v", turns: 3, offset: [FAR_LDU, 0] }],
+    () => {},
+    EDITOR_DECIMALS,
+  );
+  const file = test.info().outputPath("turned-loop-three-decimals.ldr");
+  await writeFile(file, text);
+  const editor = await importAndPlace(page, file);
+  expect(await editor.modelTrack()).toEqual({
+    pieces: 0,
+    runFrame: pieces,
+    offField: 0,
+    unanchored: 0,
+  });
+
+  await editor.placeAt(TRAIN_WITHOUT_TRACK, { x: 0, z: 0 });
+  await editor.escape();
+  await editor.press("t");
+  expect(await editor.modelTrack()).toEqual({
+    pieces: 0,
+    runFrame: pieces,
+    offField: 0,
+    unanchored: 0,
+  });
+  await editor.escape();
+  await editor.startPlay();
+  for (let press = 0; press < FULL_THROTTLE_PRESSES; press++) await editor.press("]");
+
+  const path: Array<readonly [number, number]> = [];
+  const deadline = Date.now() + LAP_DEADLINE_MS;
+  while (sweptTurns(path) < 1 && Date.now() < deadline) {
+    const state = await editor.playState();
+    expect(state).toMatchObject({ status: "running", bogiesOff: 0, derailSpeed: 0 });
+    path.push([state.xLdu, state.zLdu]);
+    await page.waitForTimeout(SAMPLE_MS);
+  }
+  expect(sweptTurns(path)).toBeGreaterThanOrEqual(1);
 });
 
 test("a curve turned 0.1° off the field is reported and nothing joins it", async ({ page }) => {
@@ -214,6 +282,11 @@ test("a curve turned 0.1° off the field is reported and nothing joins it", asyn
 
   const editor = await importAndPlace(page, file);
 
-  expect(await editor.modelTrack()).toEqual({ pieces: pieces - 1, offField: 1, unanchored: 0 });
+  expect(await editor.modelTrack()).toEqual({
+    pieces: pieces - 1,
+    runFrame: 0,
+    offField: 1,
+    unanchored: 0,
+  });
   expect(await editor.trackEnds()).toHaveLength(2);
 });
