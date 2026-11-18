@@ -18,6 +18,6 @@ alwaysApply: false
 - **Naming:** files in `kebab-case.ts`, classes and types in `PascalCase`, service interfaces prefixed `I` (`ILayoutService`), tokens in `SCREAMING_SNAKE`, branded ids where mixing would be a bug (`PartId`, `ModelHash`).
 - **Immutability:** `readonly` fields and `ReadonlyArray` by default. Typed arrays are the deliberate mutable exception (see the hot-path rule).
 - **Errors:** validation returns issue lists and never throws. Throw only for programmer errors and broken invariants.
-- **Numbers:** `bigint` only for exact track coefficients. Use integers for LDU, and floats only in render and sim derivations.
+- **Numbers:** `bigint` only for exact track coefficients and the `@brr/math` exact-decimal and exact-rational types. Use integers for LDU, and floats only in render and sim derivations.
 - **React (ui only):** function components, no business logic. Read state through client view models and call client service interfaces. No domain or render imports.
 - **No comments at all** (see `no-comments.mdc`).

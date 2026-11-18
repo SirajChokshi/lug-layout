@@ -235,7 +235,13 @@ fn vehicle_signatures(palette: &Value) -> Result<VehicleSignatures, String> {
     })
 }
 
-fn rail_head_bands(geometry: &Value) -> Result<Vec<RailHeadBand>, String> {
+struct RailHeadText {
+    rail_part: String,
+    inner: String,
+    outer: String,
+}
+
+fn rail_head_texts(geometry: &Value) -> Result<Vec<RailHeadText>, String> {
     geometry["rails"]
         .as_array()
         .ok_or("geometry.rails must be an array")?
@@ -247,18 +253,24 @@ fn rail_head_bands(geometry: &Value) -> Result<Vec<RailHeadBand>, String> {
             let heads = rail["railHeads"]
                 .as_array()
                 .ok_or("rails[].railHeads must be an array")?;
+            let text = |head: &Value, end: &str| {
+                head[end].as_str().map(str::to_string).ok_or(format!(
+                    "rail {part}: railHeads[].{end} must be a decimal string"
+                ))
+            };
             let outward = heads
                 .iter()
-                .find(|head| head["from"].as_f64().is_some_and(|from| from > 0.0))
+                .find(|head| {
+                    head["from"]
+                        .as_str()
+                        .and_then(|from| from.parse::<f64>().ok())
+                        .is_some_and(|from| from > 0.0)
+                })
                 .ok_or(format!("rail {part} has no rail head on the +z side"))?;
-            Ok(RailHeadBand {
+            Ok(RailHeadText {
                 rail_part: format!("ldraw:{}", stem(part)),
-                inner: outward["from"]
-                    .as_f64()
-                    .ok_or("railHeads[].from must be a number")?,
-                outer: outward["to"]
-                    .as_f64()
-                    .ok_or("railHeads[].to must be a number")?,
+                inner: text(outward, "from")?,
+                outer: text(outward, "to")?,
             })
         })
         .collect()
@@ -473,14 +485,18 @@ fn run(args: &Args) -> Result<(), String> {
     }
 
     let signatures = vehicle_signatures(&palette)?;
-    let rails = rail_head_bands(&geometry)?;
+    let rail_texts = rail_head_texts(&geometry)?;
+    let rails = rail_texts
+        .iter()
+        .map(|rail| RailHeadBand::from_decimals(&rail.rail_part, &rail.inner, &rail.outer))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut compiler = compiler;
     if let Some(entry) = compiler.as_object_mut() {
         entry.insert(
             "vehicles".into(),
             json!({
                 "parts": palette["vehicleParts"],
-                "railHeads": rails
+                "railHeads": rail_texts
                     .iter()
                     .map(|rail| json!({ "railPart": rail.rail_part, "inner": rail.inner, "outer": rail.outer }))
                     .collect::<Vec<_>>(),

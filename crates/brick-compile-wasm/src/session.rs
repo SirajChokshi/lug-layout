@@ -295,7 +295,7 @@ fn bake_drawn(
     put_cover(body, &cover)?;
     let (vehicles, vehicle_issue) = match inputs.vehicles {
         None => (None, None),
-        Some(vehicles) => match baker.vehicles(drawn, &vehicles.signatures(), &vehicles.rails()) {
+        Some(vehicles) => match baker.vehicles(drawn, &vehicles.signatures(), &vehicles.rails()?) {
             Ok(detected) => (Some(vehicle_headers(body, &detected)?), None),
             Err(error) => (None, Some(error.to_string())),
         },

@@ -69,7 +69,7 @@ LDraw facts in this file come from the pin above, not from these downloads. Rows
 
 ## Geometry
 
-All geometry is measured at the bundle's pin, from the `audit` closure that `fetch-ldraw` pins, by `tools/asset-pipeline/src/verify/geometry.ts` (run through `cli.ts facts`). The full output is in `docs/verified-facts/geometry.json`. Values are **as modelled in LDraw**, in the LDraw part frame (−Y up, 1 LDU = 0.4 mm), before any y-up conversion.
+All geometry is measured at the bundle's pin, from the `audit` closure that `fetch-ldraw` pins, by `tools/asset-pipeline/src/verify/geometry.ts` (run through `cli.ts facts`). The full output is in `docs/verified-facts/geometry.json`. Values are **as modelled in LDraw**, in the LDraw part frame (−Y up, 1 LDU = 0.4 mm), before any y-up conversion. Rail measurements (`rails[]`) are exact: each vertex is composed from the LDraw decimal literals with exact decimal arithmetic, so rail heads, widths and gauges are written as canonical decimal strings (53401's head is `46.9` to `53.1`, 6.2 LDU wide) and read back with `@brr/math` `parseExactDecimal`. 53401's ±46.9/±53.1 aren't sixteenths, so they're never identified to the 1/16 grid.
 
 Track ends are the origins of the end-sleeper sub-files listed in `tools/asset-pipeline/src/track/track-end-markers.json`, with the outward direction taken from each placement's matrix. The report checks every declared outward direction against the part's bounds (all agree), and the LDCad `traintrk` snaps against the marker origins (they coincide).
 

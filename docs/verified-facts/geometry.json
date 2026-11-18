@@ -671,44 +671,44 @@
     {
       "part": "74746",
       "sectionX": 20,
-      "railTopY": -16,
+      "railTopY": "-16",
       "railHeads": [
         {
-          "from": -53.625,
-          "to": -47.375
+          "from": "-53.625",
+          "to": "-47.375"
         },
         {
-          "from": 47.375,
-          "to": 53.625
+          "from": "47.375",
+          "to": "53.625"
         }
       ],
-      "railCentreSpacingLdu": 101,
-      "innerGaugeLdu": 94.75,
-      "innerGaugeMm": 37.9,
-      "railHeadWidthLdu": 6.25,
-      "trackWidthLdu": 160,
-      "railTopAboveUndersideLdu": 24
+      "railCentreSpacingLdu": "101",
+      "innerGaugeLdu": "94.75",
+      "innerGaugeMm": "37.9",
+      "railHeadWidthLdu": "6.25",
+      "trackWidthLdu": "160",
+      "railTopAboveUndersideLdu": "24"
     },
     {
       "part": "53401",
       "sectionX": 20,
-      "railTopY": -16,
+      "railTopY": "-16",
       "railHeads": [
         {
-          "from": -53.1,
-          "to": -46.9
+          "from": "-53.1",
+          "to": "-46.9"
         },
         {
-          "from": 46.9,
-          "to": 53.1
+          "from": "46.9",
+          "to": "53.1"
         }
       ],
-      "railCentreSpacingLdu": 100,
-      "innerGaugeLdu": 93.8,
-      "innerGaugeMm": 37.52,
-      "railHeadWidthLdu": 6.200000000000003,
-      "trackWidthLdu": 160,
-      "railTopAboveUndersideLdu": 24
+      "railCentreSpacingLdu": "100",
+      "innerGaugeLdu": "93.8",
+      "innerGaugeMm": "37.52",
+      "railHeadWidthLdu": "6.2",
+      "trackWidthLdu": "160",
+      "railTopAboveUndersideLdu": "24"
     }
   ],
   "baseplates": [
