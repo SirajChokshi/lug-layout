@@ -115,6 +115,10 @@ impl Cylinder<'_> {
             Gender::Male if far_closed && !start_closed => {
                 vec![face(far, reversed(direction), backwards, CAP_ROOT)]
             }
+            Gender::Male if !start_closed && !far_closed => vec![
+                face(start, direction, in_order, 0),
+                face(far, reversed(direction), backwards, 0),
+            ],
             Gender::Male => {
                 let caps = if far_closed {
                     CAP_ROOT | CAP_FAR

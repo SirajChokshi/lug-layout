@@ -566,10 +566,17 @@ fn flare_codes_name_their_partner_in_face_order() {
 
 #[test]
 fn caps_read_as_attached_male_ends_and_blind_female_ends() {
-    let cases: [(&str, Vec<FaceSummary>); 7] = [
+    let cases: [(&str, Vec<FaceSummary>); 8] = [
         (
             "[gender=M] [caps=one] [secs=R 6 4]",
             vec![([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], CAP_ROOT, vec![4.0])],
+        ),
+        (
+            "[gender=M] [caps=none] [secs=R 6 4   R 8 2]",
+            vec![
+                ([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0, vec![4.0, 2.0]),
+                ([0.0, 6.0, 0.0], [0.0, -1.0, 0.0], 0, vec![2.0, 4.0]),
+            ],
         ),
         (
             "[gender=M] [caps=B] [secs=R 4.5 2   R 4 15.5]",
