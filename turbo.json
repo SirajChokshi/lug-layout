@@ -19,6 +19,7 @@
         "!src/library/**",
         "!src/library-bake/**",
         "!src/pointer/**",
+        "!src/publication/**",
         "palette.json",
         "fixture-models.json",
         "primitive-connectors.json",
