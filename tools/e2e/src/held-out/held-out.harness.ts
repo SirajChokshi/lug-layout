@@ -1,9 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { randomInt } from "node:crypto";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { LdrawMirror, type FetchFunction } from "@brr/import";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { STUD_LDU } from "@brr/math";
 import { expect, it } from "vitest";
+import { acceptanceMarkdown, runAcceptance } from "./acceptance.ts";
+import { collisions } from "./assembly.ts";
 import { bundlePartGlb, openBundle, type Bundle } from "./bundle.ts";
 import { checkInput, type ConnectorMemo, type InputChecks } from "./checks.ts";
 import { fetchPinned, formatOf, readCorpus } from "./corpus.ts";
@@ -11,16 +15,13 @@ import {
   blockPools,
   generateBuilds,
   isPoolCandidate,
+  modulePair,
+  needsLdrawText,
+  type BlockPools,
   type GeneratedKind,
   type PoolCandidate,
 } from "./generator.ts";
-import { overlappingPairs } from "./generated-integrity.ts";
-import {
-  cachingFetch,
-  importThroughWorkerPath,
-  type HeldOutInput,
-  type ImportOutcome,
-} from "./import-path.ts";
+import { cachingFetch, importThroughWorkerPath, type HeldOutInput } from "./import-path.ts";
 import { partExtras } from "./part-connectors.ts";
 import { markdownReport, partCoverage, type CheckedInput, type InputSet } from "./report.ts";
 
@@ -34,6 +35,8 @@ const DEFAULT_BUILDS_PER_KIND = 4;
 const HARNESS_TIMEOUT_MS = 3_600_000;
 const MS_PER_SECOND = 1000;
 const STUD_TOP_Y = 7;
+const PALETTE_TEMPLATE = "docs/verified-facts/scenes/mils-plain.ldr";
+const SQUARE_MODULE_LDU = 640;
 
 const SET_OF_KIND: Readonly<Record<GeneratedKind, InputSet>> = {
   "MILS-style module": "generated MILS-style modules",
@@ -57,14 +60,28 @@ function revision(): string {
     .trim();
 }
 
-async function poolCandidates(bundle: Bundle): Promise<PoolCandidate[]> {
+async function poolCandidates(bundle: Bundle, fetchUrl: FetchFunction): Promise<PoolCandidate[]> {
+  const mirror = new LdrawMirror(bundle.source, fetchUrl);
   const candidates: PoolCandidate[] = [];
   for (const part of bundle.parts.values()) {
     if (!isPoolCandidate(part.title)) continue;
     const extras = partExtras(await bundlePartGlb(bundle, part), part.id);
-    candidates.push({ part, studTopsY: extras.studs.map((stud) => stud.matrix[STUD_TOP_Y] ?? 0) });
+    candidates.push({
+      part,
+      studTopsY: extras.studs.map((stud) => stud.matrix[STUD_TOP_Y] ?? 0),
+      ldrawText: needsLdrawText(part.title) ? ((await mirror.file(part.path)) ?? null) : null,
+    });
   }
   return candidates;
+}
+
+function bareBaseplate(pools: BlockPools): string {
+  const square = pools.baseplates.find(
+    (block) =>
+      block.width * STUD_LDU === SQUARE_MODULE_LDU && block.depth * STUD_LDU === SQUARE_MODULE_LDU,
+  );
+  if (!square) throw new Error("the bundle has no square module baseplate");
+  return `0 Bare baseplate\n0 Name: baseplate.ldr\n1 2 0 0 0 1 0 0 0 1 0 0 0 1 ${square.reference}\n`;
 }
 
 interface Detail {
@@ -99,21 +116,14 @@ it(
     const memo: ConnectorMemo = new Map();
     const checked: CheckedInput[] = [];
     const details: Detail[] = [];
-    const run = async (
-      set: InputSet,
-      label: string,
-      input: HeldOutInput,
-    ): Promise<ImportOutcome> => {
+    const run = async (set: InputSet, label: string, input: HeldOutInput): Promise<void> => {
       const outcome = await importThroughWorkerPath(bundle, fetchUrl, input);
       const checks = await checkInput(outcome, bundle, memo);
       checked.push({ set, checks });
       details.push({ input: label, set, checks });
       process.stdout.write(`${set}: ${checked.length} inputs checked\n`);
-      return outcome;
     };
     const unsound: string[] = [];
-    const overlapsOf = (outcome: ImportOutcome): number =>
-      outcome.kind === "imported" ? overlappingPairs(outcome.result, bundle) : -1;
 
     const corpus = await readCorpus(CORPUS);
     for (const file of corpus) {
@@ -128,25 +138,44 @@ it(
     }
 
     const perKind = Number(process.env["HELD_OUT_BUILDS_PER_KIND"] ?? DEFAULT_BUILDS_PER_KIND);
-    const pools = blockPools(await poolCandidates(bundle), bundle.parts.values(), bundle.colors);
+    const pools = blockPools(
+      await poolCandidates(bundle, fetchUrl),
+      bundle.parts.values(),
+      bundle.colors,
+    );
     const encoder = new TextEncoder();
     const builds = join(CACHE_ROOT, "results", `seed-${seed}`);
     await mkdir(builds, { recursive: true });
     for (const build of generateBuilds(pools, seed, perKind)) {
       await writeFile(join(builds, build.name), build.text);
-      const built = await run(SET_OF_KIND[build.kind], build.name, {
+      await run(SET_OF_KIND[build.kind], build.name, {
         name: build.name,
         format: "ldraw",
         bytes: encoder.encode(build.text),
       });
-      const doubled = await run("generated copies with a doubled part", `${build.name} doubled`, {
+      await run("generated copies with a doubled part", `${build.name} doubled`, {
         name: build.name,
         format: "ldraw",
         bytes: encoder.encode(build.collidingText),
       });
-      if (overlapsOf(built) !== 0) unsound.push(`${build.name}: parts overlap`);
-      if (overlapsOf(doubled) < 1) unsound.push(`${build.name} doubled: no part overlaps`);
+      if (collisions(build.assembly) !== 0) unsound.push(`${build.name}: parts collide`);
+      if (collisions(build.collidingAssembly) < 1)
+        unsound.push(`${build.name} doubled: no collision`);
     }
+
+    const pair = modulePair(pools, seed);
+    for (const model of [pair.subject, pair.renamedSubject, pair.partner]) {
+      await writeFile(join(builds, model.names.file), model.text);
+    }
+    const acceptance = await runAcceptance({
+      bundle,
+      fetchUrl,
+      pair,
+      templateName: basename(PALETTE_TEMPLATE),
+      templateText: await readFile(join(REPO_ROOT, PALETTE_TEMPLATE), "utf8"),
+      bareBaseplate: bareBaseplate(pools),
+      repoRoot: REPO_ROOT,
+    });
 
     const report = markdownReport(
       {
@@ -159,7 +188,7 @@ it(
         elapsedSeconds: Math.round((performance.now() - started) / MS_PER_SECOND),
       },
       checked,
-    );
+    ).concat("\n", acceptanceMarkdown(acceptance));
     const results = join(CACHE_ROOT, "results");
     await mkdir(results, { recursive: true });
     await writeFile(join(results, `seed-${seed}.md`), report);
@@ -175,9 +204,13 @@ it(
         ),
       "generated builds use only bundle parts, so each must import cleanly",
     ).toEqual([]);
-    expect(unsound, "a generated build overlaps nowhere, and its doubled copy somewhere").toEqual(
+    expect(unsound, "a generated build collides nowhere, and its doubled copy somewhere").toEqual(
       [],
     );
+    expect(
+      acceptance.scenarioProblems,
+      "the acceptance pair joins only by its pins when aligned, and a pin collides one stud off",
+    ).toEqual([]);
   },
   HARNESS_TIMEOUT_MS,
 );
