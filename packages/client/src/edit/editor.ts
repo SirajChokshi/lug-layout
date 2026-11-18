@@ -332,6 +332,9 @@ export interface TrackPieceView {
 
 export interface TrackView {
   readonly pieces: number;
+  readonly modelPieces: number;
+  readonly offField: number;
+  readonly unanchored: number;
   readonly bom: ReadonlyArray<TrackBomLine>;
   readonly openEnds: number;
   readonly joins: number;
@@ -1550,8 +1553,12 @@ export class Editor implements IEditor, IEditedWorld {
     const samples = track.solveSamplesMs.toSorted((a, b) => a - b);
     const at = (q: number): number =>
       samples[Math.min(samples.length - 1, Math.floor(q * samples.length))] ?? 0;
+    const inModels = this.modelTrackCounts();
     return {
       pieces: track.pieceCount,
+      modelPieces: inModels.pieces,
+      offField: inModels.offField,
+      unanchored: inModels.unanchored,
       bom: this.bomLines(track),
       openEnds: track.openEnds().length,
       joins: track.joinedPairs(),
@@ -2666,6 +2673,25 @@ export class Editor implements IEditor, IEditedWorld {
       this.modelTrack.set(placeable, track);
     }
     return track;
+  }
+
+  private modelTrackCounts(): {
+    readonly pieces: number;
+    readonly offField: number;
+    readonly unanchored: number;
+  } {
+    let pieces = 0;
+    let offField = 0;
+    let unanchored = 0;
+    for (const model of this.placed.models()) {
+      const track = this.trackOf(model.placeable);
+      pieces += track?.pieces.length ?? 0;
+      for (const piece of track?.uncertified ?? []) {
+        if (piece.reason === "noAnchor") unanchored++;
+        else offField++;
+      }
+    }
+    return { pieces, offField, unanchored };
   }
 
   private syncModelTrack(): void {
