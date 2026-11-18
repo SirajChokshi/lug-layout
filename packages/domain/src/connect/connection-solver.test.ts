@@ -514,6 +514,55 @@ describe("ModelConnectors", () => {
     expect(matesAt(engine, piece, pose(0, 0, 2))).toBe(4);
   });
 
+  it("occupies every hole an axle passes through and both copies of a stud declared twice, in whichever frame they engage", () => {
+    const length = 3 * PLATE_LDU;
+    const shaft = shape(0, true, [[SECTION_AXLE, 6, length]]);
+    const axle = table([
+      { shape: shaft, gender: GENDER_MALE, origin: [0, 0, 0], axis: AXIS_POS_Y },
+      { shape: shaft, gender: GENDER_MALE, origin: [0, length, 0], axis: AXIS_NEG_Y },
+    ]);
+    const hole = shape(0, false, [[SECTION_AXLE, 6, PLATE_LDU]]);
+    const beam = table([
+      { shape: hole, gender: GENDER_FEMALE, origin: [0, 0, 0], axis: AXIS_NEG_Y },
+      { shape: hole, gender: GENDER_FEMALE, origin: [0, PLATE_LDU, 0], axis: AXIS_POS_Y },
+    ]);
+    const stack = model(
+      [axle, beam],
+      [
+        [0, translation(0, 0, 0)],
+        [1, translation(0, 0, 0)],
+        [1, translation(0, PLATE_LDU, 0)],
+        [1, translation(0, 2 * PLATE_LDU, 0)],
+      ],
+    );
+    expect([stack.internalMates, stack.count]).toEqual([6, 0]);
+    const lean = IDENTIFICATION_RESIDUAL_LDU / (1.25 * PLATE_LDU);
+    const leaningSoOnlyTheLowerFacesIdentifyInTheModelFrame = assembled(
+      [axle, beam],
+      [{ parent: MODEL_ROOT, local: [1, -lean, 0, 0, lean, 1, 0, 0, 0, 0, 1, 0] }],
+      [
+        { part: 1, submodel: 0, local: IDENTITY },
+        { part: 0, submodel: 0, local: IDENTITY },
+        { part: 1, submodel: 0, local: translation(0, PLATE_LDU, 0) },
+        { part: 1, submodel: 0, local: translation(0, 2 * PLATE_LDU, 0) },
+      ],
+      true,
+    );
+    expect(tally(leaningSoOnlyTheLowerFacesIdentifyInTheModelFrame)).toEqual([0, 6, 0]);
+    const doubledStud = table([
+      { shape: STUD, gender: GENDER_MALE, origin: [HALF, PLATE_LDU, HALF], axis: AXIS_POS_Y },
+      { shape: STUD, gender: GENDER_MALE, origin: [HALF, PLATE_LDU, HALF], axis: AXIS_POS_Y },
+    ]);
+    const covered = model(
+      [doubledStud, block(1, 1, PLATE_LDU, PLATE_RECEPTOR)],
+      [
+        [0, translation(0, 0, 0)],
+        [1, translation(0, PLATE_LDU, 0)],
+      ],
+    );
+    expect([covered.internalMates, covered.count]).toEqual([2, 1]);
+  });
+
   it("identifies connector frames within 0.0005 LDU of the sixteenth-LDU grid and reports the rest", () => {
     const stud = table([
       { shape: STUD, gender: GENDER_MALE, origin: [HALF, 0, HALF], axis: AXIS_POS_Y },

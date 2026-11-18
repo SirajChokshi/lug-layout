@@ -172,37 +172,38 @@ class InternalMates {
       while (end < count && this.compare(first, this.order[end] ?? 0, ALONG) === 0) end++;
       for (let i = start; i < end; i++) {
         const male = this.order[i] ?? 0;
-        const maleConnector = this.connector[male] ?? 0;
-        if (this.consumed[maleConnector] === 1) continue;
-        if (this.frames.gender[maleConnector] !== GENDER_MALE) continue;
-        const female = this.partner(male, i, start, end);
-        if (female < 0) continue;
-        this.consumed[maleConnector] = 1;
-        this.consumed[this.connector[female] ?? 0] = 1;
-        mates++;
+        if (this.frames.gender[this.connector[male] ?? 0] !== GENDER_MALE) continue;
+        mates += this.occupyAlong(male, i, start, end);
       }
       start = end;
     }
     return mates;
   }
 
-  private partner(male: number, at: number, start: number, end: number): number {
+  private occupyAlong(male: number, at: number, start: number, end: number): number {
     const along = this.along(male);
     const reach = this.reach;
+    let mates = 0;
     for (let j = at - 1; j >= start && along - this.along(this.order[j] ?? 0) <= reach; j--) {
-      if (this.mates(male, this.order[j] ?? 0)) return this.order[j] ?? 0;
+      mates += this.occupy(male, this.order[j] ?? 0);
     }
     for (let j = at + 1; j < end && this.along(this.order[j] ?? 0) - along <= reach; j++) {
-      if (this.mates(male, this.order[j] ?? 0)) return this.order[j] ?? 0;
+      mates += this.occupy(male, this.order[j] ?? 0);
     }
-    return -1;
+    return mates;
+  }
+
+  private occupy(male: number, female: number): number {
+    if (!this.mates(male, female)) return 0;
+    this.consumed[this.connector[male] ?? 0] = 1;
+    this.consumed[this.connector[female] ?? 0] = 1;
+    return 1;
   }
 
   private mates(male: number, female: number): boolean {
     const frames = this.frames;
     const maleConnector = this.connector[male] ?? 0;
     const femaleConnector = this.connector[female] ?? 0;
-    if (this.consumed[femaleConnector] === 1) return false;
     if (frames.gender[femaleConnector] !== GENDER_FEMALE) return false;
     const axis = this.axis[male] ?? 0;
     if (this.axis[female] !== oppositeAxis(axis)) return false;
@@ -218,8 +219,12 @@ class InternalMates {
   }
 
   private sharesPairFrame(maleConnector: number, femaleConnector: number): boolean {
-    const a = this.frames.instance[maleConnector] ?? 0;
-    const b = this.frames.instance[femaleConnector] ?? 0;
+    const frames = this.frames;
+    if (frames.axis[maleConnector] !== AXIS_FREE && frames.axis[femaleConnector] !== AXIS_FREE) {
+      return false;
+    }
+    const a = frames.instance[maleConnector] ?? 0;
+    const b = frames.instance[femaleConnector] ?? 0;
     return a !== b && this.submodelFrames.lowestCommonFrame(a, b) === this.pairFrame;
   }
 
@@ -236,12 +241,32 @@ class InternalMates {
   }
 }
 
+function holdsConnectorOffModelFrame(
+  parts: ReadonlyArray<ConnectorTable | null>,
+  instances: PartInstances,
+  members: Uint32Array,
+  firstConnector: Uint32Array,
+  modelFrameAxis: Int8Array,
+): boolean {
+  for (let e = 0; e < members.length; e++) {
+    const i = members[e] ?? 0;
+    const part = parts[instances.partIndex[i] ?? -1];
+    if (!part) continue;
+    const first = firstConnector[i] ?? 0;
+    for (let c = 0; c < part.count; c++) {
+      if (modelFrameAxis[first + c] === AXIS_FREE) return true;
+    }
+  }
+  return false;
+}
+
 function mateInSubmodelFrames(
   parts: ReadonlyArray<ConnectorTable | null>,
   instances: PartInstances,
   submodels: SubmodelInstances,
   submodelFrames: SubmodelFrames,
   firstConnector: Uint32Array,
+  modelFrameAxis: Int8Array,
   search: InternalMates,
 ): number {
   const nodes = submodels.count;
@@ -265,6 +290,10 @@ function mateInSubmodelFrames(
   const point = new IdentifiedPoint();
   let mates = 0;
   for (let n = nodes - 1; n >= 0; n--) {
+    const members = member.subarray(bucket[n] ?? 0, bucket[n + 1] ?? 0);
+    if (!holdsConnectorOffModelFrame(parts, instances, members, firstConnector, modelFrameAxis)) {
+      continue;
+    }
     search.clear();
     for (let e = bucket[n] ?? 0; e < (bucket[n + 1] ?? 0); e++) {
       const i = member[e] ?? 0;
@@ -272,7 +301,6 @@ function mateInSubmodelFrames(
       if (!part || !submodelFrames.relate(i, n, transform)) continue;
       const first = firstConnector[i] ?? 0;
       for (let c = 0; c < part.count; c++) {
-        if (search.consumed[first + c] === 1) continue;
         const axis = identifyConnector(transform, part, c, point);
         if (axis !== AXIS_FREE) search.add(first + c, axis, point.sixteenths);
       }
@@ -354,14 +382,17 @@ export class ModelConnectors {
         nested,
         submodelFrames,
         firstConnector,
+        frames.axis,
         search,
       );
     }
+    let occupied = 0;
     let offLattice = 0;
     for (let k = 0; k < total; k++) {
-      if (search.consumed[k] === 0 && frames.axis[k] === AXIS_FREE) offLattice++;
+      if (search.consumed[k] === 1) occupied++;
+      else if (frames.axis[k] === AXIS_FREE) offLattice++;
     }
-    const exposed = allocateFrames(total - 2 * internalMates - offLattice);
+    const exposed = allocateFrames(total - occupied - offLattice);
     let n = 0;
     for (let k = 0; k < total; k++) {
       if (search.consumed[k] === 1 || frames.axis[k] === AXIS_FREE) continue;
