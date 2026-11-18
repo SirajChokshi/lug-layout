@@ -1,0 +1,5 @@
+0 Baseplate Row
+0 Name: baseplate-row.ldr
+0 Author: Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents
+1 16 0 0 320 1 0 0 0 1 0 0 0 1 3811.dat
+1 16 0 0 960 1 0 0 0 1 0 0 0 1 44336.dat

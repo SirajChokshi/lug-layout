@@ -2,7 +2,7 @@
   "extends": "@brr/config/tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2024", "WebWorker"],
-    "types": []
+    "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src", "vitest.config.ts"]
 }

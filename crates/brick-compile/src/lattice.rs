@@ -3,7 +3,46 @@ use std::collections::BTreeMap;
 use crate::affine::{Affine, Vec3};
 
 pub const STUD_LDU: f64 = 20.0;
+pub const IDENTIFY_LDU: f64 = 0.0005;
+pub const RESOLVABLE_LDU: f64 = IDENTIFY_LDU / f64::EPSILON;
 const LAYER_KEY_SCALE: f64 = 1_000.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Malformation {
+    NonFinite,
+    Unparsed,
+    Unresolvable,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MalformedGeometry {
+    pub file: String,
+    pub malformation: Malformation,
+}
+
+pub fn non_finite(values: &[f64]) -> bool {
+    values.iter().any(|value| !value.is_finite())
+}
+
+pub fn unplaceable(values: &[f64]) -> Option<Malformation> {
+    if non_finite(values) {
+        Some(Malformation::NonFinite)
+    } else if values.iter().any(|value| value.abs() > RESOLVABLE_LDU) {
+        Some(Malformation::Unresolvable)
+    } else {
+        None
+    }
+}
+
+pub fn record(found: &mut Vec<MalformedGeometry>, file: &str, malformation: Malformation) {
+    let finding = MalformedGeometry {
+        file: file.to_string(),
+        malformation,
+    };
+    if !found.contains(&finding) {
+        found.push(finding);
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LatticeInstance<'a> {

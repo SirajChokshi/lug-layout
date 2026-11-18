@@ -17,6 +17,7 @@ pub mod license;
 pub mod mesh;
 pub mod model;
 pub mod occlusion;
+pub mod rolling;
 pub mod sixteenths;
 pub mod studio;
 pub mod surface;

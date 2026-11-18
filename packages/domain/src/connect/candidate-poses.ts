@@ -58,6 +58,9 @@ export class CandidatePoses {
   }
 
   add(x: number, z: number, yPlates: number, rot: number): void {
+    if (!Number.isInteger(x) || !Number.isInteger(z) || !Number.isInteger(yPlates)) {
+      throw new RangeError(`candidate ${x}, ${z}, ${yPlates} is not an exact lattice pose`);
+    }
     for (let i = 0; i < this.size; i++) {
       if (this.xs[i] === x && this.zs[i] === z && this.ys[i] === yPlates && this.rots[i] === rot) {
         return;

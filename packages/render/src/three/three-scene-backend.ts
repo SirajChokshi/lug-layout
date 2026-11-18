@@ -40,6 +40,8 @@ import {
   type ISceneBackend,
   type LdrawColor,
   type LookSettings,
+  type NeededMeshListener,
+  type PaletteLevel,
   type PartMeshUpdate,
   type PartPalette,
   type PlanOverlay,
@@ -60,6 +62,7 @@ import {
   type StudPrimitiveAsset,
 } from "@brr/catalog";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
+import { type ChunkNeeds, ChunkNeedsBuilder } from "./chunk-needs.ts";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import {
   MATRIX4_FLOATS,
@@ -117,6 +120,7 @@ const TIER_NEAR = 0;
 const TIER_MID = 1;
 const TIER_FAR = 2;
 const TIER_UNSET = 255;
+const TIER_COUNT = 3;
 const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
   near: TIER_NEAR,
   mid: TIER_MID,
@@ -300,7 +304,12 @@ interface InstanceAttributes {
 }
 
 class ChunkRecord {
+  key = 0;
+  needsRebuild = false;
   tier = TIER_UNSET;
+  studPitchPx = 0;
+  heldNeeds: ChunkNeeds | null = null;
+  heldTier = TIER_UNSET;
 
   constructor(
     readonly page: InstancePage,
@@ -310,19 +319,22 @@ class ChunkRecord {
     readonly midShells: Group,
     readonly coarseStuds: Group,
     readonly shadowCasters: Group,
+    readonly needs: ChunkNeeds,
+    readonly tiered: boolean,
     readonly minX: number,
     readonly maxX: number,
     readonly minZ: number,
     readonly maxZ: number,
   ) {}
 
-  applyTier(tier: number): void {
-    if (tier === this.tier) return;
+  applyTier(tier: number): boolean {
+    if (tier === this.tier) return false;
     this.tier = tier;
     this.detailed.visible = tier === TIER_NEAR;
     this.shellBodies.visible = tier !== TIER_NEAR;
     this.midShells.visible = tier === TIER_MID;
     this.coarseStuds.visible = tier === TIER_MID;
+    return true;
   }
 
   layers(): ReadonlyArray<Group> {
@@ -443,6 +455,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly farModelPlacements = new Map<number, FarModelPlacement>();
   private ldrawColorTable: ReadonlyMap<number, LdrawColor> = new Map();
   private ghostPage: InstancePage | null = null;
+  private ghostNeeds: ChunkNeeds | null = null;
+  private neededMeshListener: NeededMeshListener | null = null;
+  private readonly rebuildKeys: number[] = [];
   private ghostPose: readonly [number, number, number, number] | null = null;
   private forcedTier: number | null = null;
   private readonly farModelNodes = new Map<number, FarModelNode>();
@@ -737,8 +752,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
-    this.changed = true;
     const changed = new Set<number>();
+    const detailedChanged = new Set<number>();
+    const farChanged = new Set<number>();
     for (const { index, level, part } of updates) {
       if (index >= this.detailedLevel.parts.length) {
         throw new RangeError(`part ${index} is not in the palette`);
@@ -746,11 +762,33 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       const geometries = level === "far" ? this.farLevel : this.detailedLevel;
       disposePart(geometries.parts[index]);
       geometries.parts[index] = this.partGeometries(part);
-      if (level === "detailed") this.setPartBounds(index, part);
-      if (level === "detailed" || this.tiered) changed.add(index);
+      if (level === "detailed") {
+        this.setPartBounds(index, part);
+        detailedChanged.add(index);
+        changed.add(index);
+      } else if (this.tiered) {
+        farChanged.add(index);
+        changed.add(index);
+      }
     }
     if (changed.size === 0) return;
-    this.rebuildPages((page) => usesAnyShape(page.partRuns, changed));
+    for (const [key, record] of Array.from(this.chunks)) {
+      if (!usesAnyShape(record.page.partRuns, changed)) continue;
+      if (
+        record.needs.drawsAnyPart(record.tier, detailedChanged, farChanged, this.farLevel.parts)
+      ) {
+        this.placeChunk(key, record.page);
+      } else {
+        record.needsRebuild = true;
+      }
+    }
+    for (const [vehicle, record] of Array.from(this.vehicles)) {
+      if (usesAnyShape(record.body.page.partRuns, detailedChanged)) {
+        this.rebuildVehicle(vehicle, record.body.page);
+      }
+    }
+    const ghost = this.ghostPage;
+    if (ghost && usesAnyShape(ghost.partRuns, detailedChanged)) this.rebuildGhost(ghost);
   }
 
   setFarStuds(studPrimitives: ReadonlyArray<StudPrimitiveAsset>): void {
@@ -789,8 +827,20 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private placeChunk(key: number, page: InstancePage): void {
+    this.changed = true;
+    const replaced = this.chunks.get(key);
+    const samePage =
+      replaced !== undefined && replaced.page === page && replaced.tiered === this.tiered;
     this.removeChunk(key);
-    const record = this.buildChunk(page);
+    const record = this.buildChunk(
+      page,
+      samePage ? replaced.needs : new ChunkNeedsBuilder(TIER_COUNT),
+    );
+    record.key = key;
+    record.studPitchPx = this.studPitchPx(record, this.orthoStudPitchPx());
+    record.applyTier(this.tierOf(record.studPitchPx));
+    this.inheritHolds(record, replaced);
+    this.syncNeeds(record);
     this.placeGroup(record.group, page.originX, page.originZ);
     this.chunks.set(key, record);
     this.chunkList.push(record);
@@ -807,8 +857,18 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private placeVehicleBody(vehicle: number, page: InstancePage): void {
+    this.changed = true;
+    const replaced = this.vehicles.get(vehicle)?.body;
+    const samePage =
+      replaced !== undefined && replaced.page === page && replaced.tiered === this.tiered;
     this.removeVehicle(vehicle);
-    const body = this.buildChunk(page);
+    const body = this.buildChunk(
+      page,
+      samePage ? replaced.needs : new ChunkNeedsBuilder(TIER_COUNT),
+    );
+    body.applyTier(TIER_NEAR);
+    this.inheritHolds(body, replaced);
+    this.syncNeeds(body);
     const group = new Group();
     group.add(body.group);
     const record = new VehicleRecord(group, body);
@@ -849,6 +909,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   deleteVehicle(vehicle: number): void {
     this.changed = true;
+    const body = this.vehicles.get(vehicle)?.body;
+    if (body) this.releaseHolds(body);
     this.removeVehicle(vehicle);
   }
 
@@ -876,7 +938,41 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   deleteChunk(key: number): void {
     this.changed = true;
+    const record = this.chunks.get(key);
+    if (record) this.releaseHolds(record);
     this.removeChunk(key);
+  }
+
+  setNeededMeshListener(listener: NeededMeshListener | null): void {
+    this.neededMeshListener = listener;
+  }
+
+  private inheritHolds(record: ChunkRecord, replaced: ChunkRecord | undefined): void {
+    if (!replaced) return;
+    record.heldNeeds = replaced.heldNeeds;
+    record.heldTier = replaced.heldTier;
+  }
+
+  private syncNeeds(record: ChunkRecord): void {
+    const held = record.heldNeeds;
+    if (held === record.needs && record.heldTier === record.tier) return;
+    this.neededMeshListener?.hold(
+      record.needs.detailedAt(record.tier),
+      record.needs.farAt(record.tier),
+    );
+    if (held) this.release(held, record.heldTier);
+    record.heldNeeds = record.needs;
+    record.heldTier = record.tier;
+  }
+
+  private releaseHolds(record: ChunkRecord): void {
+    if (record.heldNeeds) this.release(record.heldNeeds, record.heldTier);
+    record.heldNeeds = null;
+    record.heldTier = TIER_UNSET;
+  }
+
+  private release(needs: ChunkNeeds, tier: number): void {
+    this.neededMeshListener?.release(needs.detailedAt(tier), needs.farAt(tier));
   }
 
   private removeChunk(key: number): void {
@@ -894,20 +990,36 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private showGhost(page: InstancePage | null): void {
+    this.changed = true;
     if (this.ghost) {
       this.scene.remove(this.ghost);
       disposeInstancedChildren(this.ghost);
       this.ghost = undefined;
     }
+    const held = this.ghostNeeds;
+    const samePage = page !== null && page === this.ghostPage;
     this.ghostPose = null;
     this.ghostPage = page;
-    if (!page) return;
+    this.ghostNeeds = null;
+    if (!page) {
+      if (held) this.release(held, TIER_NEAR);
+      return;
+    }
     const ghost = new Group();
     ghost.matrixAutoUpdate = false;
     ghost.visible = false;
-    this.addInstances(ghost, undefined, undefined, page, this.ghostMaterials);
+    const builder = samePage && held ? null : new ChunkNeedsBuilder(TIER_COUNT);
+    this.addInstances(ghost, undefined, undefined, page, this.ghostMaterials, builder);
     this.ghost = ghost;
     this.scene.add(ghost);
+    if (!builder) {
+      this.ghostNeeds = held;
+      return;
+    }
+    const needs = builder.build();
+    this.neededMeshListener?.hold(needs.detailedAt(TIER_NEAR), needs.farAt(TIER_NEAR));
+    if (held) this.release(held, TIER_NEAR);
+    this.ghostNeeds = needs;
   }
 
   private rebuildGhost(page: InstancePage): void {
@@ -1144,11 +1256,17 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private clearChunks(): void {
-    for (const key of this.chunks.keys()) this.removeChunk(key);
-    for (const vehicle of this.vehicles.keys()) this.removeVehicle(vehicle);
+    for (const [key, record] of this.chunks) {
+      this.releaseHolds(record);
+      this.removeChunk(key);
+    }
+    for (const [vehicle, record] of this.vehicles) {
+      this.releaseHolds(record.body);
+      this.removeVehicle(vehicle);
+    }
   }
 
-  private buildChunk(page: InstancePage): ChunkRecord {
+  private buildChunk(page: InstancePage, needs: ChunkNeeds | ChunkNeedsBuilder): ChunkRecord {
     const group = new Group();
     group.matrixAutoUpdate = false;
     group.updateMatrix();
@@ -1165,6 +1283,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       shadowCasters,
       page,
       this.materials,
+      needs instanceof ChunkNeedsBuilder ? needs : null,
     );
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
@@ -1187,12 +1306,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       midShells,
       coarseStuds,
       shadowCasters ?? new Group(),
+      needs instanceof ChunkNeedsBuilder ? needs.build() : needs,
+      this.tiered,
       minX,
       maxX,
       minZ,
       maxZ,
     );
-    record.applyTier(TIER_NEAR);
     return record;
   }
 
@@ -1209,6 +1329,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     shadowCasters: Group | undefined,
     page: InstancePage,
     materials: PlasticMaterials,
+    needs: ChunkNeedsBuilder | null,
   ): void {
     const runs = page.partRuns;
     const count = runs.shape.length;
@@ -1223,6 +1344,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       const attributes = this.pageAttributes(page, start, end);
       const geometries = this.detailedLevel.parts[p];
       this.addPartMeshes(detailed, geometries, alpha, end - start, attributes, materials);
+      needs?.need(TIER_NEAR, "detailed", p);
       if (shadowCasters && !this.tiered && alpha === OPAQUE_ALPHA) {
         this.addShadowCasters(shadowCasters, geometries, end - start, attributes);
       }
@@ -1233,10 +1355,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
           const runEnd = runs.end[run] ?? 0;
           const runAttributes =
             next - first === 1 ? attributes : this.pageAttributes(page, runStart, runEnd);
-          const level = isNotUpright(c) ? this.detailedLevel : this.farLevel;
+          const levelName: PaletteLevel = isNotUpright(c) ? "detailed" : "far";
+          const level = levelName === "detailed" ? this.detailedLevel : this.farLevel;
           const layer = isVoxelized(c) ? tiers.midShells : tiers.shellBodies;
           const shell = level.parts[p] ?? geometries;
           this.addPartMeshes(layer, shell, alpha, runEnd - runStart, runAttributes, materials);
+          needs?.need(TIER_MID, levelName, p);
+          if (layer === tiers.shellBodies) needs?.need(TIER_FAR, levelName, p);
         }
       }
       first = next;
@@ -1410,14 +1535,17 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     atZ: number,
     orthoHalfHeightLdu?: number,
   ): void {
-    if (eyeX !== this.eyeX || eyeY !== this.eyeY || eyeZ !== this.eyeZ) {
-      this.eyeMovedAt = performance.now();
-      this.changed = true;
-    }
+    const eyeMoved = eyeX !== this.eyeX || eyeY !== this.eyeY || eyeZ !== this.eyeZ;
+    if (eyeMoved) this.eyeMovedAt = performance.now();
     const camera = orthoHalfHeightLdu === undefined ? this.perspective : this.orthographic;
-    if (atX !== this.atX || atY !== this.atY || atZ !== this.atZ || camera !== this.camera) {
-      this.changed = true;
-    }
+    const viewChanged =
+      eyeMoved ||
+      atX !== this.atX ||
+      atY !== this.atY ||
+      atZ !== this.atZ ||
+      camera !== this.camera ||
+      (orthoHalfHeightLdu !== undefined && orthoHalfHeightLdu !== this.orthoHalfHeight);
+    if (viewChanged) this.changed = true;
     this.eyeX = eyeX;
     this.eyeY = eyeY;
     this.eyeZ = eyeZ;
@@ -1431,11 +1559,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     if (orthoHalfHeightLdu !== undefined && orthoHalfHeightLdu !== this.orthoHalfHeight) {
       this.orthoHalfHeight = orthoHalfHeightLdu;
       this.fitOrthographic();
-      this.changed = true;
     }
     this.aim(this.perspective, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.aim(this.orthographic, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.fitShadowRange();
+    if (viewChanged) this.applyTiers();
   }
 
   private aim(
@@ -1550,7 +1678,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     stage.renderer.setSize(sizePx, sizePx, false);
     const group = new Group();
     const page = pageOf(model, this.linearColors, this.colorAlphaSlot);
-    this.addInstances(group, undefined, undefined, page, this.materials);
+    this.addInstances(group, undefined, undefined, page, this.materials, null);
     group.position.set(
       -(box.minX + box.maxX) / 2,
       -(box.minY + box.maxY) / 2,
@@ -1609,6 +1737,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.focalLengthPx = bufferHeight / (2 * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360));
     this.pipeline?.resize(bufferWidth, bufferHeight, this.focalLengthPx);
     if (this.shadowNode?.camera) this.shadowNode.updateFrustums();
+    this.applyTiers();
   }
 
   setFarModel(id: number, placement: FarModelPlacement | null): void {
@@ -1666,43 +1795,72 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   forceTier(tier: ChunkTier | null): void {
     this.changed = true;
     this.forcedTier = tier === null ? null : TIER_BY_NAME[tier];
+    this.applyTiers();
   }
 
-  private assignTiers(out: FrameStats): void {
+  private applyTiers(): void {
+    const orthoStudPitchPx = this.orthoStudPitchPx();
+    for (let i = 0; i < this.chunkList.length; i++) {
+      const record = this.chunkList[i];
+      if (!record) continue;
+      record.studPitchPx = this.studPitchPx(record, orthoStudPitchPx);
+      if (record.applyTier(this.tierOf(record.studPitchPx))) {
+        this.changed = true;
+        if (record.needsRebuild) this.rebuildKeys.push(record.key);
+        else this.syncNeeds(record);
+      }
+    }
+    for (let i = 0; i < this.rebuildKeys.length; i++) {
+      const key = this.rebuildKeys[i] ?? 0;
+      const record = this.chunks.get(key);
+      if (record) this.placeChunk(key, record.page);
+    }
+    this.rebuildKeys.length = 0;
+  }
+
+  private orthoStudPitchPx(): number {
+    return (
+      (STUD_PITCH_LDU * this.focalLengthPx * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360)) /
+      Math.max(this.orthoHalfHeight, CAMERA_NEAR_LDU)
+    );
+  }
+
+  private studPitchPx(record: ChunkRecord, orthoStudPitchPx: number): number {
+    if (this.camera === this.orthographic) return orthoStudPitchPx;
+    const dx = Math.max(record.minX - this.eyeX, 0, this.eyeX - record.maxX);
+    const dz = Math.max(record.minZ - this.eyeZ, 0, this.eyeZ - record.maxZ);
+    const distance = Math.max(
+      Math.sqrt(dx * dx + this.eyeY * this.eyeY + dz * dz),
+      CAMERA_NEAR_LDU,
+    );
+    return (STUD_PITCH_LDU * this.focalLengthPx) / distance;
+  }
+
+  private tierOf(studPitchPx: number): number {
+    if (!this.tiered) return TIER_NEAR;
+    if (this.forcedTier !== null) return this.forcedTier;
+    if (studPitchPx >= NEAR_MIN_STUD_PITCH_PX) return TIER_NEAR;
+    if (studPitchPx >= MID_MIN_STUD_PITCH_PX) return TIER_MID;
+    return TIER_FAR;
+  }
+
+  private readTierStats(out: FrameStats): void {
     let near = 0;
     let mid = 0;
     let far = 0;
-    const orthographic = this.camera === this.orthographic;
-    const orthoStudPitchPx =
-      (STUD_PITCH_LDU * this.focalLengthPx * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360)) /
-      Math.max(this.orthoHalfHeight, CAMERA_NEAR_LDU);
     let nearestStudPitchPx = 0;
     for (let i = 0; i < this.chunkList.length; i++) {
       const record = this.chunkList[i];
       if (!record) continue;
-      const dx = Math.max(record.minX - this.eyeX, 0, this.eyeX - record.maxX);
-      const dz = Math.max(record.minZ - this.eyeZ, 0, this.eyeZ - record.maxZ);
-      const distance = Math.max(Math.hypot(dx, this.eyeY, dz), CAMERA_NEAR_LDU);
-      const studPitchPx = orthographic
-        ? orthoStudPitchPx
-        : (STUD_PITCH_LDU * this.focalLengthPx) / distance;
-      nearestStudPitchPx = Math.max(nearestStudPitchPx, studPitchPx);
-      let tier: number;
-      if (!this.tiered) tier = TIER_NEAR;
-      else if (this.forcedTier !== null) tier = this.forcedTier;
-      else if (studPitchPx >= NEAR_MIN_STUD_PITCH_PX) tier = TIER_NEAR;
-      else if (studPitchPx >= MID_MIN_STUD_PITCH_PX) tier = TIER_MID;
-      else tier = TIER_FAR;
-      record.applyTier(tier);
-      if (tier === TIER_NEAR) near++;
-      else if (tier === TIER_MID) mid++;
+      nearestStudPitchPx = Math.max(nearestStudPitchPx, record.studPitchPx);
+      if (record.tier === TIER_NEAR) near++;
+      else if (record.tier === TIER_MID) mid++;
       else far++;
     }
     out.nearChunks = near;
     out.midChunks = mid;
     out.farChunks = far;
     out.nearestStudPitchPx = nearestStudPitchPx;
-    this.showFarModels();
   }
 
   bufferMemory(): BufferMemory {
@@ -1713,7 +1871,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const renderer = this.renderer;
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
     this.throwIfFailed();
-    this.assignTiers(out);
+    this.readTierStats(out);
+    this.showFarModels();
     renderer.info.reset();
     if (this.pipeline && this.camera === this.perspective) this.pipeline.render();
     else renderer.render(this.scene, this.camera);

@@ -1,7 +1,12 @@
 mod common;
 
+use std::fs;
+use std::path::Path;
+
 use brick_compile::affine::Affine;
-use brick_compile::cover::{model_cover, CoverInstance, ModelCells, Opacity, PartSolid, StudShape};
+use brick_compile::cover::{
+    model_cover, CoverInstance, CoverShard, ModelCells, Opacity, PartSolid, StudShape,
+};
 use brick_compile::{compile_part, CompileOptions};
 use common::fixture_library;
 
@@ -9,6 +14,17 @@ const STUD: StudShape = StudShape {
     height: 4.0,
     radius: 6.0,
 };
+fn table_depth() -> f64 {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/verified-facts/geometry.json");
+    let geometry: serde_json::Value =
+        serde_json::from_slice(&fs::read(path).expect("geometry facts are readable"))
+            .expect("geometry facts are JSON");
+    geometry["tablePlane"]["depthBelowTopLdu"]
+        .as_f64()
+        .expect("geometry facts record the table plane depth")
+}
+
 fn cells_of(part: &str) -> ModelCells {
     let options = CompileOptions {
         stud_primitives: vec!["stud.dat".to_string(), "stud2.dat".to_string()],
@@ -34,9 +50,18 @@ fn cells_of(part: &str) -> ModelCells {
         part: 0,
         studs: &studs,
     }];
-    model_cover(&instances, &solids, &Opacity::new([]), Some(phase), STUD)
-        .cells
-        .expect("a lattice phase gives cells")
+    let stud_layer_y = studs.iter().map(|s| s.m[7]).fold(f64::INFINITY, f64::min);
+    model_cover(
+        &instances,
+        &solids,
+        &Opacity::new([]),
+        Some((phase, stud_layer_y)),
+        STUD,
+        CoverShard::WHOLE,
+        table_depth(),
+    )
+    .cells
+    .expect("a lattice phase gives cells")
 }
 
 #[test]

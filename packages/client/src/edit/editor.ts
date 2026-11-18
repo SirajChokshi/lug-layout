@@ -4,12 +4,12 @@ import type {
   BundleLod,
   BundleModelEntry,
   NotDrawnSection,
+  TrackCatalog,
 } from "@brr/schema/bundle";
 import {
   BUNDLE_BASE_URL,
   PART_BUNDLE_LOADER,
   withPlaceholderMesh,
-  type FetchPriority,
   type IPartBundleLoader,
   type ModelCells,
   type ModelRecord,
@@ -19,9 +19,11 @@ import {
   type PartShapeRecord,
 } from "@brr/catalog";
 import { MergedParts } from "./merged-parts.ts";
-import { PartMeshStream, type MeshProgress } from "./part-mesh-stream.ts";
+import { NO_MESHES, type MeshCounts, type MeshProgress } from "./mesh-progress.ts";
+import { PartMeshStream, type PartMeshProgress } from "./part-mesh-stream.ts";
 import {
   BomCounter,
+  WORLD_TRACK_FRAME,
   countPlacements,
   EditHistory,
   RoadNetwork,
@@ -36,6 +38,8 @@ import {
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
+  type CellVolumes,
+  type ModelConnectors,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -72,9 +76,19 @@ import {
 } from "../bom/bom-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
-import { MODEL_IMPORTER, WORLD_SESSION } from "../tokens.ts";
+import { MODEL_IMPORTER, PLACEMENT_SEARCH, WORLD_SESSION } from "../tokens.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { modelLabel, withoutYear } from "../catalog/model-label.ts";
+import {
+  heldPieces,
+  heldRuns,
+  latticeFrame,
+  modelTrackEnds,
+  type FramedTrackPiece,
+  type ModelTrackEnds,
+} from "../connect/model-track-ends.ts";
+import { placeableVolumes } from "../connect/placeable-volumes.ts";
+import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
   TRACK_SYSTEM,
   TrackDrawing,
@@ -320,6 +334,10 @@ export interface TrackPieceView {
 
 export interface TrackView {
   readonly pieces: number;
+  readonly modelPieces: number;
+  readonly runFramePieces: number;
+  readonly offField: number;
+  readonly unanchored: number;
   readonly bom: ReadonlyArray<TrackBomLine>;
   readonly openEnds: number;
   readonly joins: number;
@@ -485,6 +503,11 @@ export interface IEditor extends IBomSource, IWorldFiles {
   playSetup(): PlaySetup | null;
   catalogItemModel(itemId: string): Promise<CatalogItemModel | null>;
   dump(): EditorDump;
+}
+
+interface Connected {
+  readonly model: ModelConnectors;
+  readonly volumes: CellVolumes;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
@@ -765,7 +788,7 @@ export class Editor implements IEditor, IEditedWorld {
     farTier: "loading",
     farTierError: null,
     pendingItem: null,
-    meshes: { wanted: 0, loaded: 0, failed: 0 },
+    meshes: { detailedPartMeshes: NO_MESHES, farPartMeshes: NO_MESHES, farModelMeshes: NO_MESHES },
     measuring: false,
     measurement: null,
     credits: null,
@@ -813,6 +836,11 @@ export class Editor implements IEditor, IEditedWorld {
   private palette: MergedParts | null = null;
   private colors: ColorTable | null = null;
   private meshes: PartMeshStream | null = null;
+  private partMeshes: PartMeshProgress = {
+    detailedPartMeshes: NO_MESHES,
+    farPartMeshes: NO_MESHES,
+  };
+  private farModelMeshes: MeshCounts = NO_MESHES;
   private installedColors = 0;
   private readonly farModelIndex = new Map<string, number>();
   private farReady = false;
@@ -830,6 +858,13 @@ export class Editor implements IEditor, IEditedWorld {
   private hitX = 0;
   private hitZ = 0;
   private track: TrackDrawing | null = null;
+  private trackCatalog: TrackCatalog | null = null;
+  private readonly modelTrack = new Map<Placeable, ModelTrackEnds>();
+  private heldTrackModels: ReadonlyArray<PlacedModel> = [];
+  private readonly searchIds = new Map<PlacedModel, number>();
+  private readonly searchModels = new Map<number, PlacedModel>();
+  private readonly connected = new Map<Placeable, Connected>();
+  private nextSearchId = 1;
   private newTrack: (() => TrackDrawing) | null = null;
   private roadDrawing: RoadDrawing | null = null;
   private roadPreviewMarkers: ReadonlyArray<EdgeMarker> = [];
@@ -865,6 +900,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
     @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
     @inject(MODEL_IMPORTER) private readonly importer: IModelImporter,
+    @inject(PLACEMENT_SEARCH) private readonly search: IPlacementSearch,
   ) {
     this.placed = new PlacedChunks(backend);
     this.state = { ...this.state, ...session.view() };
@@ -917,14 +953,17 @@ export class Editor implements IEditor, IEditedWorld {
       ]);
       const palette = new MergedParts(shapes.map(withPlaceholderMesh));
       this.palette = palette;
-      this.meshes = new PartMeshStream(this.loader, this.backend, palette, EDITOR_LOD, (meshes) =>
-        this.update({ meshes }),
-      );
+      this.meshes = new PartMeshStream(this.loader, this.backend, palette, EDITOR_LOD, (meshes) => {
+        this.partMeshes = meshes;
+        this.publishMeshes();
+      });
+      this.backend.setNeededMeshListener(this.meshes);
       for (const shape of shapes) this.meshes.register(palette.indexOf(shape.id), shape.meshFile);
       const { slots, placeables, skipped } = this.buildCatalog(index, shapes);
       this.slots = slots;
       this.placeables = placeables;
       this.plans.setTableTopY(this.baseplateBottomY());
+      this.trackCatalog = index.trackCatalog;
       this.newTrack = () => new TrackDrawing(index, palette.parts, colors);
       this.track = this.newTrack();
       this.bomTables = { palette, colors, ldrawColors: index.colors.map((color) => color.code) };
@@ -1000,14 +1039,31 @@ export class Editor implements IEditor, IEditedWorld {
     if (name === undefined || this.farModelIndex.has(name)) return;
     const farModel = this.farModelIndex.size;
     this.farModelIndex.set(name, farModel);
+    this.countFarModelMesh("wanted");
     void this.loader.loadFarModelMesh(name, "low").then(
       (mesh) => {
-        if (!mesh) return;
+        if (!mesh) {
+          this.countFarModelMesh("absent");
+          return;
+        }
         this.backend.setFarModelMesh(farModel, mesh);
         this.placed.useFarModel(placeable, farModel);
+        this.countFarModelMesh("loaded");
       },
-      (error: unknown) => this.update({ farTierError: errorText(error) }),
+      (error: unknown) => {
+        this.countFarModelMesh("failed");
+        this.update({ farTierError: errorText(error) });
+      },
     );
+  }
+
+  private countFarModelMesh(count: keyof MeshCounts): void {
+    this.farModelMeshes = { ...this.farModelMeshes, [count]: this.farModelMeshes[count] + 1 };
+    this.publishMeshes();
+  }
+
+  private publishMeshes(): void {
+    this.update({ meshes: { ...this.partMeshes, farModelMeshes: this.farModelMeshes } });
   }
 
   private async countCreditedFiles(): Promise<void> {
@@ -1054,6 +1110,7 @@ export class Editor implements IEditor, IEditedWorld {
           colorOf(index.colors, code).name,
           palette.parts,
           colors,
+          index.tablePlane.depthBelowTopLdu,
         ),
       );
     });
@@ -1100,7 +1157,6 @@ export class Editor implements IEditor, IEditedWorld {
       `${entry.origin}:${entry.name}`,
       entry.name,
       modelLabel(entry),
-      entry.role,
       merged,
       { name: entry.name, source: entry.source, sections: model.sections },
       palette.parts,
@@ -1159,6 +1215,8 @@ export class Editor implements IEditor, IEditedWorld {
       partIndex: Uint16Array.from(result.partIndex),
       ldrawColor: result.ldrawColor,
       matrices: result.matrices,
+      partTransforms: result.partTransforms,
+      submodels: result.submodels,
       vehicles: bake.vehicles,
     };
     const id = importRef(file.sha256);
@@ -1171,7 +1229,6 @@ export class Editor implements IEditor, IEditedWorld {
       id,
       file.name,
       file.name,
-      undefined,
       palette.remap(model, set.parts),
       credit,
       palette.parts,
@@ -1236,15 +1293,12 @@ export class Editor implements IEditor, IEditedWorld {
     return loading;
   }
 
-  private requestMeshes(placeable: Placeable, priority: FetchPriority): void {
-    this.meshes?.request(new Set(placeable.parts.partIndex), priority);
+  private requestMeshes(placeable: Placeable): void {
+    this.meshes?.request(new Set(placeable.parts.partIndex));
   }
 
   private requestTrackMeshes(track: TrackDrawing): void {
-    this.meshes?.request(
-      track.pieceParts().map((kit) => kit.partIndex),
-      "high",
-    );
+    this.meshes?.request(track.pieceParts().map((kit) => kit.partIndex));
   }
 
   async prefetch(id: string): Promise<boolean> {
@@ -1522,8 +1576,13 @@ export class Editor implements IEditor, IEditedWorld {
     const samples = track.solveSamplesMs.toSorted((a, b) => a - b);
     const at = (q: number): number =>
       samples[Math.min(samples.length - 1, Math.floor(q * samples.length))] ?? 0;
+    const inModels = this.modelTrackCounts();
     return {
       pieces: track.pieceCount,
+      modelPieces: inModels.pieces,
+      runFramePieces: inModels.runFrame,
+      offField: inModels.offField,
+      unanchored: inModels.unanchored,
       bom: this.bomLines(track),
       openEnds: track.openEnds().length,
       joins: track.joinedPairs(),
@@ -1709,7 +1768,7 @@ export class Editor implements IEditor, IEditedWorld {
     const kit = this.roadDrawing?.kitViews().find((view) => view.id === kitId);
     for (const piece of kit?.pieces ?? []) {
       const placeable = this.placeables[this.slots.findIndex((slot) => slot.id === piece.item)];
-      if (placeable) this.requestMeshes(placeable, "high");
+      if (placeable) this.requestMeshes(placeable);
     }
   }
 
@@ -1790,7 +1849,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     const placeable = refId < 0 ? null : (this.placeables[refId] ?? null);
     if (placeable) {
-      this.requestMeshes(placeable, "high");
+      this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
     this.active = placeable;
@@ -2210,8 +2269,10 @@ export class Editor implements IEditor, IEditedWorld {
 
   private show(edit: AppliedEdit, eventTimeMs: number): ViewUpdate {
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
+    for (const model of view.removed) this.unsearchable(model);
+    for (const model of view.added) this.searchable(model);
     for (const placeable of new Set(view.added.map((model) => model.placeable))) {
-      this.requestMeshes(placeable, "high");
+      this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
     this.session.placementsEdited(edit);
@@ -2231,6 +2292,7 @@ export class Editor implements IEditor, IEditedWorld {
       };
     }
     this.refreshRoads();
+    this.syncModelTrack();
     this.refreshTrains();
     this.placeGhost();
     this.update({
@@ -2525,6 +2587,16 @@ export class Editor implements IEditor, IEditedWorld {
       this.update({ selectionRefusal: `Can't delete. ${reason}` });
       return;
     }
+    const stranded = this.strandedBy(model);
+    if (stranded) {
+      const label = model.placeable.label;
+      const left = stranded.placeable.label;
+      const reason = `${label}: ${left} connects only through it, so deleting it would leave ${left} unconnected. Delete ${left} first.`;
+      const { x, z, rot } = model.handle;
+      this.refuse(model.placeable.id, x, z, rot, reason);
+      this.update({ selectionRefusal: `Can't delete. ${reason}` });
+      return;
+    }
     this.show(this.history.remove(model.placement), eventTimeMs);
     this.select(null);
   }
@@ -2573,6 +2645,112 @@ export class Editor implements IEditor, IEditedWorld {
       .flatMap((model) => (model.placeable.credit ? [model.placeable.credit] : []));
   }
 
+  private connectedOf(placeable: Placeable): Connected {
+    let connected = this.connected.get(placeable);
+    if (!connected) {
+      connected = {
+        model: this.search.model(
+          this.requirePalette().parts.map(() => null),
+          placeable.partTransforms,
+          this.trackOf(placeable)?.openEnds ?? [],
+        ),
+        volumes: placeableVolumes(placeable),
+      };
+      this.connected.set(placeable, connected);
+    }
+    return connected;
+  }
+
+  private searchable(model: PlacedModel): void {
+    const id = this.nextSearchId++;
+    const { model: connectors, volumes } = this.connectedOf(model.placeable);
+    const { x, z, yPlates, rot } = model.handle;
+    this.search.add(id, connectors, volumes, { x, z, yPlates, rot });
+    this.searchIds.set(model, id);
+    this.searchModels.set(id, model);
+  }
+
+  private unsearchable(model: PlacedModel): void {
+    const id = this.searchIds.get(model);
+    if (id === undefined) return;
+    this.search.remove(id);
+    this.searchIds.delete(model);
+    this.searchModels.delete(id);
+  }
+
+  private strandedBy(model: PlacedModel): PlacedModel | null {
+    const id = this.searchIds.get(model);
+    if (id === undefined) return null;
+    const stranded = this.search.strandedByRemoval(
+      id,
+      (other) => (this.searchModels.get(other)?.handle.yPlates ?? 0) <= 0,
+    );
+    return stranded === null ? null : (this.searchModels.get(stranded) ?? null);
+  }
+
+  private trackOf(placeable: Placeable): ModelTrackEnds | null {
+    const catalog = this.trackCatalog;
+    if (!catalog) return null;
+    let track = this.modelTrack.get(placeable);
+    if (!track) {
+      track = modelTrackEnds(placeable.partTransforms, this.requirePalette().parts, catalog);
+      this.modelTrack.set(placeable, track);
+    }
+    return track;
+  }
+
+  private modelTrackCounts(): {
+    readonly pieces: number;
+    readonly runFrame: number;
+    readonly offField: number;
+    readonly unanchored: number;
+  } {
+    let pieces = 0;
+    let runFrame = 0;
+    let offField = 0;
+    let unanchored = 0;
+    for (const model of this.placed.models()) {
+      const track = this.trackOf(model.placeable);
+      pieces += track?.pieces.length ?? 0;
+      for (const run of track?.runs ?? []) runFrame += run.pieces.length;
+      for (const piece of track?.uncertified ?? []) {
+        if (piece.reason === "noAnchor") unanchored++;
+        else offField++;
+      }
+    }
+    return { pieces, runFrame, offField, unanchored };
+  }
+
+  private syncModelTrack(): void {
+    const drawing = this.track;
+    if (!drawing) return;
+    const carrying = this.placed.models().filter((model) => {
+      const track = this.trackOf(model.placeable);
+      return (track?.pieces.length ?? 0) + (track?.runs.length ?? 0) > 0;
+    });
+    const unchanged =
+      carrying.length === this.heldTrackModels.length &&
+      carrying.every((model, i) => model === this.heldTrackModels[i]);
+    if (unchanged) return;
+    this.heldTrackModels = carrying;
+    const held: FramedTrackPiece[] = [];
+    let nextRunFrame = WORLD_TRACK_FRAME.id + 1;
+    for (const model of carrying) {
+      const track = this.trackOf(model.placeable);
+      const { x, z, yPlates, rot } = model.handle;
+      const frame = latticeFrame(x, z, rot);
+      if (!track || !frame) continue;
+      held.push(
+        ...heldPieces(track, frame, yPlates),
+        ...heldRuns(track, frame, yPlates, nextRunFrame),
+      );
+      nextRunFrame += track.runs.length;
+    }
+    drawing.syncHeld(held);
+    this.showTrackEnds(null);
+    this.update({ track: this.trackView() });
+  }
+
   validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue> {
     const restored = this.restore(shards);
     return restored.ok ? [] : restored.issues;
@@ -2584,12 +2762,13 @@ export class Editor implements IEditor, IEditedWorld {
     if (!restored.ok) return restored.issues;
     this.replaceWorld(restored.value);
     for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
-      this.requestMeshes(placeable, "high");
+      this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
     const { track } = restored.value;
     if (track && track.pieceCount > 0) this.requestTrackMeshes(track);
     this.refreshRoads();
+    this.syncModelTrack();
     this.refreshTrains();
     this.syncPlan();
     return [];
@@ -2614,6 +2793,10 @@ export class Editor implements IEditor, IEditedWorld {
       const chunk = track?.chunkInstances(key);
       if (chunk) this.backend.setChunk(key, chunk);
     }
+    this.heldTrackModels = [];
+    this.search.clear();
+    this.searchIds.clear();
+    this.searchModels.clear();
     this.showTrackEnds(null);
     this.world = world;
     this.history = new EditHistory(world);
@@ -2623,6 +2806,7 @@ export class Editor implements IEditor, IEditedWorld {
         return placeable ? [{ placement: this.history.adopt(handle), handle, placeable }] : [];
       }),
     );
+    for (const model of this.placed.models()) this.searchable(model);
     this.update({
       placements: world.size,
       history: this.historyView(),
@@ -2679,7 +2863,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (refId < 0) return null;
     const placeable = await this.ensurePlaceable(refId).catch(() => null);
     if (!placeable) return null;
-    await this.meshes?.whenLoaded(new Set(placeable.parts.partIndex), "low");
+    await this.meshes?.whenLoaded(new Set(placeable.parts.partIndex));
     const { min, max } = placeable.box;
     return {
       model: { ...placeable.parts, studs: placeable.studs },

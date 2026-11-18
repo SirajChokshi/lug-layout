@@ -1,6 +1,6 @@
 import type { ImportResult, PartResolution } from "@brr/import";
 import { bundlePartGlb, type Bundle } from "./bundle.ts";
-import type { ImportOutcome } from "./import-path.ts";
+import type { LimitedOutcome } from "./import-limit.ts";
 import { partConnectors, type PartConnectors } from "./part-connectors.ts";
 
 export const CHECKS = [
@@ -67,8 +67,18 @@ function grouped(entries: ReadonlyArray<readonly [string, string]>): Finding[] {
   return [...byClass].map(([bugClass, parts]) => ({ bugClass, parts: [...parts].toSorted() }));
 }
 
-function importOutcome(outcome: ImportOutcome): CheckOutcome {
+function importOutcome(outcome: LimitedOutcome): CheckOutcome {
   switch (outcome.kind) {
+    case "unfinished":
+      return {
+        kind: "fail",
+        findings: [
+          {
+            bugClass: `import does not finish within the harness's ${outcome.limitSeconds} s per-input limit`,
+            parts: [],
+          },
+        ],
+      };
     case "threw":
       return {
         kind: "fail",
@@ -190,7 +200,7 @@ async function connectorOutcome(
 }
 
 export async function checkInput(
-  outcome: ImportOutcome,
+  outcome: LimitedOutcome,
   bundle: Bundle,
   memo: ConnectorMemo,
 ): Promise<InputChecks> {
