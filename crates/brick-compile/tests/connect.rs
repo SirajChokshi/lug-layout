@@ -869,6 +869,89 @@ fn a_custom_plate_gets_its_studs_tube_interiors_and_hollow_stud_bore_and_reports
 }
 
 #[test]
+fn a_stud_tube_whose_entrance_lies_inside_a_deeper_skirt_is_its_receptor_sleeve_not_a_male() {
+    let mut plate = String::from("0 Custom Open-Sided Plate\n0 BFC CERTIFY CCW\n");
+    plate += "1 16 0 2 0 20 0 0 0 2 0 0 0 20 box.dat\n";
+    plate += "1 16 -19 7 0 1 0 0 0 3 0 0 0 20 box.dat\n";
+    plate += "1 16 0 7 19 20 0 0 0 3 0 0 0 1 box.dat\n";
+    plate += "1 16 0 7 -19 20 0 0 0 3 0 0 0 1 box.dat\n";
+    plate += "1 16 0 4 0 1 0 0 0 -1 0 0 0 1 stud4.dat\n";
+    for (x, z) in [(-10, -10), (-10, 10), (10, -10), (10, 10)] {
+        plate += &format!("1 16 {x} 0 {z} 1 0 0 0 1 0 0 0 1 stud.dat\n");
+    }
+    let library = with_parts(pinned("ldraw"), &[("parts/custom.dat", plate)]);
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let inference = inferred.infer("parts/custom.dat");
+    assert!(inference.off_lattice.is_empty());
+    let males: Vec<FaceKey> = face_keys(&inference.connectors)
+        .into_iter()
+        .filter(|key| key.0 == Gender::Male)
+        .collect();
+    let mut studs: Vec<FaceKey> = [-10.0, 10.0]
+        .iter()
+        .flat_map(|&x| [-10.0, 10.0].map(|z| round_face(Gender::Male, [x, 0.0, z], 1, 6.0, 4.0)))
+        .collect();
+    studs.sort();
+    assert_eq!(males, studs);
+    let sleeves: Vec<[f64; 3]> = inference
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::Uninferred {
+                origin,
+                reason: Uninferred::SleeveOfReceptor,
+            } => Some(*origin),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sleeves, vec![[0.0, 4.0, 0.0]]);
+}
+
+#[test]
+fn a_collar_round_a_through_stud_hole_stays_a_male() {
+    let collar = [
+        "0 Custom Collared Round Link End",
+        "0 BFC CERTIFY CCW",
+        "0 BFC INVERTNEXT",
+        "1 16 0 -8 0 -6 0 0 0 16 0 0 0 -6 4-4cylo.dat",
+        "1 16 0 8 0 -2 0 0 0 -1 0 0 0 2 4-4ring3.dat",
+        "1 16 0 8 0 -8 0 0 0 -4 0 0 0 -8 4-4cylo.dat",
+        "1 16 0 4 0 -1 0 0 0 -1 0 0 0 -1 4-4ring8.dat",
+        "1 16 0 -4 0 9 0 0 0 8 0 0 0 -9 4-4cylo.dat",
+        "1 16 0 -4 0 -1 0 0 0 1 0 0 0 -1 4-4ring8.dat",
+        "1 16 0 -8 0 -8 0 0 0 4 0 0 0 8 4-4cylo.dat",
+        "1 16 0 -8 0 -2 0 0 0 1 0 0 0 2 4-4ring3.dat",
+    ]
+    .join("\n");
+    let library = with_parts(pinned("ldraw"), &[("parts/custom.dat", collar)]);
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let inference = inferred.infer("parts/custom.dat");
+    let mut found = inference.connectors.clone();
+    found.extend(inference.off_lattice.iter().cloned());
+    let males: Vec<FaceKey> = face_keys(&found)
+        .into_iter()
+        .filter(|key| key.0 == Gender::Male)
+        .collect();
+    let mut collars = vec![
+        round_face(Gender::Male, [0.0, 4.0, 0.0], 1, 8.0, 4.0),
+        round_face(Gender::Male, [0.0, -4.0, 0.0], -1, 8.0, 4.0),
+    ];
+    collars.sort();
+    assert_eq!(males, collars);
+    assert!(!inference.issues.iter().any(|issue| matches!(
+        issue,
+        Issue::Uninferred {
+            reason: Uninferred::SleeveOfReceptor,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn inferred_connectors_fill_only_empty_slots_and_never_a_slot_a_clear_wiped() {
     let mut plate = custom_plate(3, 1, &[]);
     plate += "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/marker.dat\n";
