@@ -2,7 +2,10 @@ import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
+import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
+import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
+import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
@@ -25,6 +28,13 @@ export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
 export const CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
   "brr.client.CatalogSearch",
+);
+export const PALETTE_SEARCH: ServiceIdentifier<IPaletteSearch> = Symbol.for(
+  "brr.client.PaletteSearch",
+);
+export const PALETTE_DRAG: ServiceIdentifier<IPaletteDrag> = Symbol.for("brr.client.PaletteDrag");
+export const PALETTE_PREFETCH: ServiceIdentifier<IPalettePrefetch> = Symbol.for(
+  "brr.client.PalettePrefetch",
 );
 export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Symbol.for(
   "brr.client.ImportWorkerFactory",

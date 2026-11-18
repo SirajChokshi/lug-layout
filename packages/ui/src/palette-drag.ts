@@ -1,7 +1,7 @@
-import type { CatalogItemView, IEditor } from "@brr/client";
+import type { CatalogItemView, IPaletteDrag } from "@brr/client";
 import type { DragEvent } from "react";
 
-export const PALETTE_ITEM_MIME = "application/x-brr-palette-item";
+const PALETTE_ITEM_MIME = "application/x-brr-palette-item";
 
 export interface PaletteDragProps {
   readonly draggable: true;
@@ -9,33 +9,19 @@ export interface PaletteDragProps {
   readonly onDragEnd: () => void;
 }
 
-interface PaletteDrag {
-  readonly item: string;
-  readonly activeBefore: string | null;
-}
-
-let current: PaletteDrag | null = null;
-
 export function paletteDragProps(
-  editor: IEditor,
+  drag: IPaletteDrag,
   item: CatalogItemView,
 ): PaletteDragProps | Record<string, never> {
-  if (item.kind === "track") return {};
+  if (!item.draggable) return {};
   return {
     draggable: true,
     onDragStart: (event) => {
-      current = { item: item.id, activeBefore: editor.snapshot().activeItem };
       event.dataTransfer.setData(PALETTE_ITEM_MIME, item.id);
       event.dataTransfer.effectAllowed = "copy";
-      editor.chooseItem(item.id);
+      drag.start(item.id);
     },
-    onDragEnd: () => {
-      const finished = current;
-      current = null;
-      if (finished && finished.activeBefore !== finished.item) {
-        editor.chooseItem(finished.activeBefore);
-      }
-    },
+    onDragEnd: () => drag.end(),
   };
 }
 

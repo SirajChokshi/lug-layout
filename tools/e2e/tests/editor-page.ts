@@ -264,6 +264,15 @@ export class EditorPage {
     return point;
   }
 
+  async dragOnto(source: Locator, point: ScreenPoint): Promise<void> {
+    const box = await this.canvas.boundingBox();
+    if (!box) throw new Error("the editor canvas is not laid out");
+    await source.dragTo(this.canvas, {
+      targetPosition: { x: point.sx - box.x, y: point.sy - box.y },
+    });
+    await this.settle();
+  }
+
   async placeAt(item: string, target: LatticePoint, rot = 0): Promise<void> {
     const point = await this.aim(item, target, rot);
     await this.page.mouse.click(point.sx, point.sy);
