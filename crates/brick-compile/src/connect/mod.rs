@@ -548,7 +548,9 @@ fn merge(
         match holder {
             Some(Occupant::Tier(index)) => {
                 let kept = &mut extraction.connectors[index];
-                kept.pieces = joined_pieces(&kept.pieces, &candidate.pieces);
+                if candidate.source != Source::Inferred || kept.source == Source::Inferred {
+                    kept.pieces = joined_pieces(&kept.pieces, &candidate.pieces);
+                }
                 if !same_sections(&kept.shape, &candidate.shape) {
                     let disagreement = Issue::SectionDisagreement {
                         origin: translation(&candidate.placement),
