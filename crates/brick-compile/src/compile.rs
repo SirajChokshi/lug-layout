@@ -38,11 +38,11 @@ pub enum CompileError {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub enum Rolling {
+pub enum RollingMode {
     #[default]
-    NotRead,
-    ReadBy(Roundness),
-    StudRingMissing,
+    Skip,
+    By(Roundness),
+    NoStudRing,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -50,7 +50,7 @@ pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
     pub unofficial_allowlist: Vec<String>,
-    pub rolling: Rolling,
+    pub rolling_mode: RollingMode,
 }
 
 const UNOFFICIAL_PREFIX: &str = "Unofficial_";
@@ -141,8 +141,8 @@ pub fn required_stud_roundness<L: Library>(
     stud_roundness(library, stud_primitives).ok_or_else(|| NO_STUD_RING.to_string())
 }
 
-pub fn rolling_from_studs<L: Library>(library: &L, stud_primitives: &[String]) -> Rolling {
-    stud_roundness(library, stud_primitives).map_or(Rolling::StudRingMissing, Rolling::ReadBy)
+pub fn rolling_mode_from_studs<L: Library>(library: &L, stud_primitives: &[String]) -> RollingMode {
+    stud_roundness(library, stud_primitives).map_or(RollingMode::NoStudRing, RollingMode::By)
 }
 
 pub fn stud_roundness<L: Library>(library: &L, stud_primitives: &[String]) -> Option<Roundness> {
@@ -176,10 +176,10 @@ pub fn compile_part<L: Library>(
             }))?;
     let mut flattened = flattener.flatten(&path).map_err(CompileError::Flatten)?;
     license_gate(&flattened, &options.unofficial_allowlist)?;
-    let roundness = match options.rolling {
-        Rolling::NotRead => None,
-        Rolling::ReadBy(roundness) => Some(roundness),
-        Rolling::StudRingMissing => return Err(CompileError::NoStudRing),
+    let roundness = match options.rolling_mode {
+        RollingMode::Skip => None,
+        RollingMode::By(roundness) => Some(roundness),
+        RollingMode::NoStudRing => return Err(CompileError::NoStudRing),
     };
     for triangle in &mut flattened.triangles {
         triangle.points = triangle.points.map(to_y_up);

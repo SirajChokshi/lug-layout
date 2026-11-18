@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
-use brick_compile::compile::{modified_note, required_stud_roundness, Rolling, MODIFIED_NOTE};
+use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
 use brick_compile::cover::ModelCover;
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
@@ -384,7 +384,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
-        rolling: Rolling::NotRead,
+        rolling_mode: RollingMode::Skip,
     };
     let compiler = match &args.compiler {
         Some(path) => {
@@ -399,7 +399,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
-        rolling: Rolling::ReadBy(required_stud_roundness(&library, &stud_primitives)?),
+        rolling_mode: RollingMode::By(required_stud_roundness(&library, &stud_primitives)?),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
     let ldconfig = library
