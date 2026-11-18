@@ -126,16 +126,10 @@ export function buildSimTrack(input: SimTrackInput): BuiltSimTrack {
   return { track, maxEndResidualLdu, maxEndHeadingResidualRadians };
 }
 
-export function trackPoint(
-  track: SimTrack,
-  edge: number,
-  offset: number,
-  out: Float64Array,
-  outIndex: number,
-): void {
+export function trackPoint(track: SimTrack, edge: number, io: Float64Array, at: number): void {
   const first = track.segmentStart[edge] ?? 0;
   const last = (track.segmentStart[edge + 1] ?? first) - 1;
-  let s = offset;
+  let s = io[at] ?? 0;
   let i = first;
   while (i < last && s > (track.segmentLength[i] ?? 0)) {
     s -= track.segmentLength[i] ?? 0;
@@ -149,17 +143,16 @@ export function trackPoint(
   if (s > length && k !== 0) {
     const endHeading = h + k * length;
     const beyond = s - length;
-    out[outIndex] = x + (Math.sin(endHeading) - Math.sin(h)) / k + beyond * Math.cos(endHeading);
-    out[outIndex + 1] =
-      z - (Math.cos(endHeading) - Math.cos(h)) / k + beyond * Math.sin(endHeading);
+    io[at] = x + (Math.sin(endHeading) - Math.sin(h)) / k + beyond * Math.cos(endHeading);
+    io[at + 1] = z - (Math.cos(endHeading) - Math.cos(h)) / k + beyond * Math.sin(endHeading);
     return;
   }
   if (k === 0) {
-    out[outIndex] = x + s * Math.cos(h);
-    out[outIndex + 1] = z + s * Math.sin(h);
+    io[at] = x + s * Math.cos(h);
+    io[at + 1] = z + s * Math.sin(h);
     return;
   }
   const turned = h + k * s;
-  out[outIndex] = x + (Math.sin(turned) - Math.sin(h)) / k;
-  out[outIndex + 1] = z - (Math.cos(turned) - Math.cos(h)) / k;
+  io[at] = x + (Math.sin(turned) - Math.sin(h)) / k;
+  io[at + 1] = z - (Math.cos(turned) - Math.cos(h)) / k;
 }

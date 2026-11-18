@@ -125,7 +125,7 @@ export function packSpecOnlyGeometry(
 }
 
 export interface PathSampler {
-  pointBehind(distance: number, out: Float64Array, outIndex: number): void;
+  pointBehind(io: Float64Array, at: number): void;
 }
 
 const P_LEAD = 0;
@@ -177,10 +177,6 @@ export class RunningGearPoser {
     g[COUPLED] = source[at + COUPLED] ?? 0;
   }
 
-  lengthLdu(): number {
-    return (this.geometry[FRONT_COUPLER + C_X] ?? 0) - (this.geometry[REAR_COUPLER + C_X] ?? 0);
-  }
-
   writeTrain(
     path: PathSampler,
     source: Float64Array,
@@ -192,23 +188,26 @@ export class RunningGearPoser {
     pivotStart: number,
     poses: Float64Array | null,
     poseStart: number,
-  ): number {
-    let distance = 0;
+    lengths: Float64Array,
+    lengthAt: number,
+  ): void {
+    const g = this.geometry;
+    this.frontCouplerDistance = 0;
     for (let k = 0; k < count; k++) {
       const v = mirrored ? first + count - 1 - k : first + k;
       this.load(source, geometryAt[v] ?? 0, mirrored);
-      const coupled = (this.geometry[COUPLED] ?? 0) === 1;
-      if (k > 0 && coupled && this.aheadCoupled) distance += this.coupleBehind(path, distance);
-      else this.pose(path, distance);
+      const coupled = (g[COUPLED] ?? 0) === 1;
+      if (k > 0 && coupled && this.aheadCoupled) this.coupleBehind(path);
+      else this.pose(path);
       this.emit(v, mirrored, pivots, pivotStart, poses, poseStart);
       const s = this.scratch;
       this.ahead[0] = s[P_REAR_COUPLER] ?? 0;
       this.ahead[1] = s[P_REAR_COUPLER + 1] ?? 0;
       this.ahead[2] = s[P_REAR_COUPLER_YAW] ?? 0;
       this.aheadCoupled = coupled;
-      distance += this.lengthLdu();
+      this.frontCouplerDistance += (g[FRONT_COUPLER + C_X] ?? 0) - (g[REAR_COUPLER + C_X] ?? 0);
     }
-    return distance;
+    lengths[lengthAt] = this.frontCouplerDistance;
   }
 
   private emit(
@@ -245,46 +244,32 @@ export class RunningGearPoser {
     poses[o + 8] = (s[ownRearYaw] ?? 0) + turn;
   }
 
-  private contactGap(): number {
+  private coupleBehind(path: PathSampler): void {
     const s = this.scratch;
     const ahead = this.ahead;
-    const frontYaw = s[P_FRONT_COUPLER_YAW] ?? 0;
-    const rearYaw = ahead[2] ?? 0;
-    const nx = Math.cos(frontYaw) - Math.cos(rearYaw);
-    const nz = Math.sin(frontYaw) - Math.sin(rearYaw);
-    const length = Math.hypot(nx, nz);
-    return (
-      (((ahead[0] ?? 0) - (s[P_FRONT_COUPLER] ?? 0)) * nx +
-        ((ahead[1] ?? 0) - (s[P_FRONT_COUPLER + 1] ?? 0)) * nz) /
-      length
-    );
-  }
-
-  private coupleBehind(path: PathSampler, nominal: number): number {
+    const nominal = this.frontCouplerDistance;
     let shift = 0;
     for (let i = 0; i < NEWTON_ITERATIONS; i++) {
-      this.pose(path, nominal + shift);
-      const gap = this.contactGap();
-      if (Math.abs(gap) < NEWTON_TOLERANCE_LDU) return shift;
+      this.frontCouplerDistance = nominal + shift;
+      this.pose(path);
+      const frontYaw = s[P_FRONT_COUPLER_YAW] ?? 0;
+      const rearYaw = ahead[2] ?? 0;
+      const nx = Math.cos(frontYaw) - Math.cos(rearYaw);
+      const nz = Math.sin(frontYaw) - Math.sin(rearYaw);
+      const gap =
+        (((ahead[0] ?? 0) - (s[P_FRONT_COUPLER] ?? 0)) * nx +
+          ((ahead[1] ?? 0) - (s[P_FRONT_COUPLER + 1] ?? 0)) * nz) /
+        Math.sqrt(nx * nx + nz * nz);
+      if (Math.abs(gap) < NEWTON_TOLERANCE_LDU) return;
       shift -= gap;
     }
-    this.pose(path, nominal + shift);
-    return shift;
+    this.frontCouplerDistance = nominal + shift;
+    this.pose(path);
   }
 
-  private behind(x: number, spread: number): number {
-    return (
-      this.frontCouplerDistance +
-      (this.geometry[FRONT_COUPLER + C_X] ?? 0) -
-      x +
-      spread * this.guideSpread
-    );
-  }
-
-  private pose(path: PathSampler, frontCouplerDistance: number): void {
+  private pose(path: PathSampler): void {
     const g = this.geometry;
     const s = this.scratch;
-    this.frontCouplerDistance = frontCouplerDistance;
     this.guideSpread = 0;
     if ((g[COUPLED] ?? 0) === 1) this.spreadGuides(path);
     else {
@@ -312,18 +297,15 @@ export class RunningGearPoser {
   private spreadGuides(path: PathSampler): void {
     const g = this.geometry;
     const s = this.scratch;
-    const spacing = Math.hypot(
-      (g[FRONT_GUIDE + G_PIVOT_X] ?? 0) - (g[REAR_GUIDE + G_PIVOT_X] ?? 0),
-      (g[FRONT_GUIDE + G_PIVOT_Z] ?? 0) - (g[REAR_GUIDE + G_PIVOT_Z] ?? 0),
-    );
+    const spanX = (g[FRONT_GUIDE + G_PIVOT_X] ?? 0) - (g[REAR_GUIDE + G_PIVOT_X] ?? 0);
+    const spanZ = (g[FRONT_GUIDE + G_PIVOT_Z] ?? 0) - (g[REAR_GUIDE + G_PIVOT_Z] ?? 0);
+    const spacing = Math.sqrt(spanX * spanX + spanZ * spanZ);
     for (let i = 0; i < NEWTON_ITERATIONS; i++) {
       this.guide(path, FRONT_GUIDE, -0.5, P_FRONT_PIVOT, P_FRONT_BOGIE_YAW);
       this.guide(path, REAR_GUIDE, 0.5, P_REAR_PIVOT, P_REAR_BOGIE_YAW);
-      const error =
-        Math.hypot(
-          (s[P_FRONT_PIVOT] ?? 0) - (s[P_REAR_PIVOT] ?? 0),
-          (s[P_FRONT_PIVOT + 1] ?? 0) - (s[P_REAR_PIVOT + 1] ?? 0),
-        ) - spacing;
+      const apartX = (s[P_FRONT_PIVOT] ?? 0) - (s[P_REAR_PIVOT] ?? 0);
+      const apartZ = (s[P_FRONT_PIVOT + 1] ?? 0) - (s[P_REAR_PIVOT + 1] ?? 0);
+      const error = Math.sqrt(apartX * apartX + apartZ * apartZ) - spacing;
       if (Math.abs(error) < NEWTON_TOLERANCE_LDU) return;
       this.guideSpread -= error;
     }
@@ -342,14 +324,19 @@ export class RunningGearPoser {
     const s = this.scratch;
     const pivotX = g[at + G_PIVOT_X] ?? 0;
     const pivotZ = g[at + G_PIVOT_Z] ?? 0;
+    const front = this.frontCouplerDistance + (g[FRONT_COUPLER + C_X] ?? 0);
+    const spreadShift = spread * this.guideSpread;
     if ((g[at + G_PIVOTS] ?? 0) === 0) {
-      path.pointBehind(this.behind(pivotX, spread), s, pivotOut);
+      s[pivotOut] = front - pivotX + spreadShift;
+      path.pointBehind(s, pivotOut);
       return;
     }
     const lead = g[at + G_LEAD] ?? 0;
     const trail = g[at + G_TRAIL] ?? 0;
-    path.pointBehind(this.behind(lead, spread), s, P_LEAD);
-    path.pointBehind(this.behind(trail, spread), s, P_TRAIL);
+    s[P_LEAD] = front - lead + spreadShift;
+    path.pointBehind(s, P_LEAD);
+    s[P_TRAIL] = front - trail + spreadShift;
+    path.pointBehind(s, P_TRAIL);
     const ax = s[P_LEAD] ?? 0;
     const az = s[P_LEAD + 1] ?? 0;
     const bx = s[P_TRAIL] ?? 0;
