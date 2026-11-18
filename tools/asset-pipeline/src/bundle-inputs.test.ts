@@ -1,8 +1,8 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { BUNDLE_DATA_FILES, FIXTURES_DIRECTORY } from "./bundle-data.ts";
+import { BUNDLE_DATA_DIRECTORIES, BUNDLE_DATA_FILES, FIXTURES_DIRECTORY } from "./bundle-data.ts";
 import { bundleInputFiles } from "./bundle-key.ts";
 import { readFixtureModels, readPalette } from "./palette.ts";
 
@@ -63,4 +63,19 @@ describe("bundle inputs", () => {
     const read = [...Object.values(BUNDLE_DATA_FILES), ...generatedModels];
     expect(read.filter((file) => !inputs.has(file))).toEqual([]);
   });
+
+  it.each(Object.entries(BUNDLE_DATA_DIRECTORIES))(
+    "hash every tracked file in the %s directory the bundle command reads",
+    (_, directory) => {
+      const tracked = execFileSync("git", ["ls-files", "-z", "--", directory], {
+        cwd: repoRoot,
+        encoding: "utf8",
+      })
+        .split("\0")
+        .filter((path) => path !== "");
+      expect(tracked.length).toBeGreaterThan(0);
+      const inputs = new Set(bundleInputFiles(repoRoot));
+      expect(tracked.filter((file) => !inputs.has(file))).toEqual([]);
+    },
+  );
 });

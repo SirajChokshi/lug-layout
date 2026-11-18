@@ -1,5 +1,6 @@
 import { BrickCompiler, type BakeRequest, type CompileLod, type CompileOutput } from "@brr/import";
-import type { PrimitiveConnectorTable } from "@brr/schema/bundle";
+import { SectionVocabularyFile, type PrimitiveConnectorTable } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
@@ -20,6 +21,8 @@ interface Manifest {
     readonly unofficialAllowlist: ReadonlyArray<string>;
     readonly vehicles?: NonNullable<BakeRequest["vehicles"]>;
     readonly primitives?: PrimitiveConnectorTable;
+    readonly sectionVocabulary: ManifestFile;
+    readonly cavityProbe: string;
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
 }
@@ -87,6 +90,11 @@ for (const lod of lods) {
   const compiler = new BrickCompiler(
     new WebAssembly.Module(await readFile(join(directory, manifest.compiler.file))),
   );
+  const vocabularyPath = join(directory, manifest.compiler.sectionVocabulary.file);
+  const { sizes, lengths } = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyPath, "utf8"))),
+    vocabularyPath,
+  );
   const bundled = new Map<string, Uint8Array>();
   const { parts } = JSON.parse(
     await readFile(join(directory, manifest.partTable.file), "utf8"),
@@ -107,7 +115,12 @@ for (const lod of lods) {
         lod,
         studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
         unofficialAllowlist: manifest.compiler.unofficialAllowlist,
-        primitives: manifest.compiler.primitives ?? null,
+        connectors: {
+          primitives: manifest.compiler.primitives ?? null,
+          sectionVocabulary: { sizes, lengths },
+          cavityProbe: manifest.compiler.cavityProbe,
+          infer: [],
+        },
         parts: [...references.keys()],
         model: "",
         inlineChecks: [],

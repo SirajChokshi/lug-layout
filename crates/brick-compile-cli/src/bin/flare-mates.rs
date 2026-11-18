@@ -1,17 +1,17 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::affine::Vec3;
 use brick_compile::connect::{
     mating_faces, parse_metas, ConnectorExtractor, FaceSection, Gender, InferredFeatures,
-    MatingFace, Meta, PrimitiveConnectors, PrimitiveTable, SectionShape, SectionVocabulary,
-    ShadowPatches, ShadowSnaps, Shape, AXLE, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
+    MatingFace, Meta, PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowPatches,
+    ShadowSnaps, Shape, AXLE, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
 use brick_compile::flatten::{resolve_reference, Lod};
 use brick_compile::model::{bake_model, official_reference};
-use brick_compile_cli::{shadow_texts, LazyLibrary};
+use brick_compile_cli::{read_section_vocabulary, LazyLibrary};
 use serde_json::{json, Value};
 
 const COAXIAL_LDU: f64 = 0.01;
@@ -92,6 +92,12 @@ fn contained(
     offset: f64,
     rule: Rule,
 ) -> Result<bool, String> {
+    if male.group != female.group {
+        return Err(format!(
+            "groups differ: male {:?}, female {:?}",
+            male.group, female.group
+        ));
+    }
     let male_spans = spans(&male.sections, 0.0);
     let female_spans = spans(&female.sections, offset);
     let mut overlapped = false;
@@ -199,9 +205,14 @@ struct Placed {
 
 fn run() -> Result<bool, String> {
     let mut values = HashMap::new();
+    let mut all_males = false;
     let mut raw = std::env::args().skip(1);
     while let Some(flag) = raw.next() {
-        values.insert(flag, raw.next().unwrap_or_default());
+        if flag == "--all-males" {
+            all_males = true;
+        } else {
+            values.insert(flag, raw.next().unwrap_or_default());
+        }
     }
     let take = |k: &str| values.get(k).cloned().ok_or(format!("missing {k}"));
     let library = LazyLibrary::new(PathBuf::from(take("--ldraw")?));
@@ -217,8 +228,7 @@ fn run() -> Result<bool, String> {
     let probe_part = inferred["cavityProbe"]
         .as_str()
         .ok_or(format!("{inferred_path}: cavityProbe must be a part path"))?;
-    let vocabulary =
-        SectionVocabulary::from_metas(shadow_texts(&shadow_root).iter().map(String::as_str));
+    let vocabulary = read_section_vocabulary(Path::new(&take("--vocabulary")?))?;
     let patches = values
         .get("--patches")
         .map(|root| LazyLibrary::new(PathBuf::from(root)));
@@ -288,7 +298,8 @@ fn run() -> Result<bool, String> {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
         for male in placed.iter().filter(|p| {
-            p.face.gender == Gender::Male && p.face.sections.iter().any(|s| is_flare(s.code))
+            p.face.gender == Gender::Male
+                && (all_males || p.face.sections.iter().any(|s| is_flare(s.code)))
         }) {
             for female in placed
                 .iter()
@@ -316,7 +327,7 @@ fn run() -> Result<bool, String> {
                     _ => "does not mate under the proposed rule",
                 };
                 *totals.entry(key).or_default() += 1;
-                if key != "mates only under the proposed rule" || report.len() < 400 {
+                if all_males || key != "mates only under the proposed rule" || report.len() < 400 {
                     report.push(json!({
                         "model": name,
                         "result": key,

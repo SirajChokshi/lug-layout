@@ -18,6 +18,12 @@ export class IntKeyMap {
     return at === MISSING ? MISSING : (this.values[at] ?? MISSING);
   }
 
+  clear(): void {
+    if (this.used === 0) return;
+    this.occupied.fill(0);
+    this.used = 0;
+  }
+
   set(key: Int32Array, value: number): void {
     let at = this.find(key);
     if (at === MISSING) {

@@ -1,12 +1,15 @@
+import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
   importStudioFile,
   type BrickCompiler,
+  type FetchFunction,
   type IBakeHelper,
   type ImportResult,
   type ImportWorkerRequest,
   type LdrawMirror,
   type MirrorSource,
   type ModelImportEngine,
+  type PartConnectorSource,
 } from "@brr/import";
 import { inject, injectable } from "inversify";
 import type { IBakeHelperRegistry } from "./bake-helper-registry.ts";
@@ -14,6 +17,7 @@ import type { ICompilerLoader } from "./compiler-loader.ts";
 import {
   BAKE_HELPER_REGISTRY,
   COMPILER_LOADER,
+  IMPORT_FETCH,
   LDRAW_MIRROR_FACTORY,
   MODEL_IMPORT_ENGINE_FACTORY,
 } from "./tokens.ts";
@@ -27,24 +31,49 @@ export type LdrawMirrorFactory = (source: MirrorSource, baseUrl: string | undefi
 export type ModelImportEngineFactory = (
   compiler: BrickCompiler,
   mirror: LdrawMirror,
+  connectors: PartConnectorSource,
   helpers: ReadonlyArray<IBakeHelper>,
 ) => ModelImportEngine;
 
 @injectable()
 export class ImportWorkerService implements IImportWorkerService {
+  private readonly records = new Map<string, ConnectorRecords>();
+
   constructor(
     @inject(COMPILER_LOADER) private readonly compilers: ICompilerLoader,
     @inject(BAKE_HELPER_REGISTRY) private readonly bakeHelpers: IBakeHelperRegistry,
     @inject(LDRAW_MIRROR_FACTORY) private readonly createMirror: LdrawMirrorFactory,
     @inject(MODEL_IMPORT_ENGINE_FACTORY) private readonly createEngine: ModelImportEngineFactory,
+    @inject(IMPORT_FETCH) private readonly fetchUrl: FetchFunction,
   ) {}
+
+  private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
+    const base = new URL(request.bundleBaseUrl.replace(/\/?$/u, "/"));
+    const key = JSON.stringify([base.href, request.connectorIndexes, request.connectorVocabulary]);
+    let records = this.records.get(key);
+    if (records === undefined) {
+      records = new ConnectorRecords(
+        async (path) => {
+          const url = new URL(path, base);
+          const response = await this.fetchUrl(url.href);
+          if (!response.ok) throw new Error(`GET ${url.href} failed with ${response.status}`);
+          return response.json();
+        },
+        request.connectorIndexes,
+        request.connectorVocabulary,
+      );
+      this.records.set(key, records);
+    }
+    return records;
+  }
 
   async run(request: ImportWorkerRequest): Promise<ImportResult> {
     const compiler = await this.compilers.load(request.compilerUrl);
     const helpers = this.bakeHelpers.helpers(request.compilerUrl);
+    const connectors = this.connectorRecords(request);
     const { input } = request;
     const mirror = this.createMirror(input.job.source, request.ldrawLibraryUrl);
-    const engine = this.createEngine(compiler, mirror, helpers);
+    const engine = this.createEngine(compiler, mirror, connectors, helpers);
     switch (input.kind) {
       case "ldraw":
         return engine.importText(input.job);

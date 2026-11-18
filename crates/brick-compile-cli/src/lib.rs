@@ -1,12 +1,35 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use brick_compile::connect::SectionVocabulary;
 use brick_compile::flatten::Library;
+use serde_json::Value;
 
 const COMMENTED_SNAP: &str = "0 //!LDCAD SNAP_";
 const LIVE_SNAP: &str = "0 !LDCAD SNAP_";
+const PART_FOLDER: &str = "parts/";
+const VERIFIED: &str = "verified";
+
+pub fn patch_path(part: &str) -> String {
+    if part.contains('/') {
+        format!("{part}.dat")
+    } else {
+        format!("{PART_FOLDER}{part}.dat")
+    }
+}
+
+pub fn verified_patch_paths(manifest: &Value) -> HashSet<String> {
+    manifest["patches"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["status"] == VERIFIED)
+        .filter_map(|entry| entry["part"].as_str())
+        .map(patch_path)
+        .collect()
+}
 
 pub struct LazyLibrary {
     root: PathBuf,
@@ -72,4 +95,11 @@ pub fn shadow_texts(root: &Path) -> Vec<String> {
         }
     }
     out
+}
+
+pub fn read_section_vocabulary(path: &Path) -> Result<SectionVocabulary, String> {
+    let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    SectionVocabulary::from_json(&value).map_err(|e| format!("{}: {e}", path.display()))
 }
