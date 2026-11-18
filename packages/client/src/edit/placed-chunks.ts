@@ -236,6 +236,27 @@ function partsOverlap(
   return false;
 }
 
+function slabBox(
+  placeable: Placeable,
+  pose: LatticePose,
+  yLdu: number,
+  out: Float64Array,
+  to: number,
+): void {
+  const { cellX0, cellZ0, width, depth } = placeable.cells;
+  pose.worldBoxOf(
+    cellX0 * STUD_LDU,
+    -placeable.slabDepthLdu,
+    cellZ0 * STUD_LDU,
+    (cellX0 + width) * STUD_LDU,
+    0,
+    (cellZ0 + depth) * STUD_LDU,
+    yLdu,
+    out,
+    to,
+  );
+}
+
 function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: LatticePose): number {
   const { cells } = placeable;
   let yPlates = 0;
@@ -263,6 +284,7 @@ class PlacedEntry implements PlacedModel {
   readonly footprintKeys = new Set<number>();
   readonly columnKeys = new Set<number>();
   readonly tongueBoxes: Float64Array;
+  readonly slab: Float64Array | null;
   readonly box: WorldBox;
   readonly pose: LatticePose;
   readonly x: number;
@@ -315,6 +337,8 @@ class PlacedEntry implements PlacedModel {
     for (let b = 0; b < tongues.length; b += BOX_FLOATS) {
       this.pose.worldBox(tongues, b, this.yLdu, this.tongueBoxes, b);
     }
+    this.slab = placeable.slabDepthLdu > 0 ? new Float64Array(BOX_FLOATS) : null;
+    if (this.slab) slabBox(placeable, this.pose, this.yLdu, this.slab, 0);
     this.box = this.worldBox();
   }
 
@@ -590,6 +614,8 @@ class PlacedEntry implements PlacedModel {
   }
 }
 
+const NO_ENTRIES: ReadonlySet<PlacedEntry> = new Set();
+
 export interface TongueClash {
   readonly other: PlacedModel;
   readonly ownTongue: boolean;
@@ -658,6 +684,7 @@ export class PlacedChunks {
   private readonly occupancy = new OccupancyGrid();
   private nextId = 0;
   private readonly tongued: PlacedEntry[] = [];
+  private readonly slabbed: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
   private readonly farModels = new Map<Placeable, number>();
 
@@ -717,9 +744,9 @@ export class PlacedChunks {
     for (let e = 0; e < this.entries.length; e++) {
       if (this.entries[e] === ignore) ignored = this.entries[e] ?? null;
     }
-    if (ignored) this.restamp(ignored.columnKeys, ignored);
+    if (ignored) this.restamp(ignored.columnKeys, new Set([ignored]));
     const yPlates = restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
-    if (ignored) this.restamp(ignored.columnKeys, null);
+    if (ignored) this.restamp(ignored.columnKeys, NO_ENTRIES);
     return yPlates;
   }
 
@@ -730,6 +757,44 @@ export class PlacedChunks {
       for (const entry of this.byColumnChunk.get(key) ?? []) {
         if (entry !== base && entry.restsOn(base)) return entry;
       }
+    }
+    return null;
+  }
+
+  slabClash(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+    ignore: PlacedModel | null,
+  ): PlacedModel | null {
+    if (placeable.slabDepthLdu <= 0) return null;
+    slabBox(placeable, this.probe.at(x, z, rot), yPlates * PLATE_LDU, scratchBox, 0);
+    for (let e = 0; e < this.slabbed.length; e++) {
+      const entry = this.slabbed[e];
+      if (!entry?.slab || entry === ignore) continue;
+      if (boxesOverlap(scratchBox, 0, entry.slab, 0)) return entry;
+    }
+    return null;
+  }
+
+  strandedRider(removed: PlacedModel): PlacedModel | null {
+    const base = this.entries.find((entry) => entry === removed);
+    if (!base) return null;
+    const riders = new Set<PlacedEntry>();
+    for (const key of base.columnKeys) {
+      for (const entry of this.byColumnChunk.get(key) ?? []) {
+        if (entry !== base && entry.handle.yPlates > 0) riders.add(entry);
+      }
+    }
+    for (const rider of riders) {
+      const without = new Set([base, rider]);
+      const keys = new Set([...base.columnKeys, ...rider.columnKeys]);
+      this.restamp(keys, without);
+      const yPlates = restingHeight(this.occupancy, rider.placeable, rider.pose);
+      this.restamp(keys, NO_ENTRIES);
+      if (yPlates < rider.handle.yPlates) return rider;
     }
     return null;
   }
@@ -792,11 +857,11 @@ export class PlacedChunks {
     return [...found];
   }
 
-  private restamp(keys: ReadonlySet<number>, except: PlacedEntry | null): void {
+  private restamp(keys: ReadonlySet<number>, except: ReadonlySet<PlacedEntry>): void {
     for (const key of keys) {
       this.occupancy.clearChunk(key);
       for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (entry !== except) entry.stampColumns(this.occupancy, key);
+        if (!except.has(entry)) entry.stampColumns(this.occupancy, key);
       }
     }
   }
@@ -818,6 +883,7 @@ export class PlacedChunks {
     this.byFootprintChunk.clear();
     this.byColumnChunk.clear();
     this.tongued.length = 0;
+    this.slabbed.length = 0;
     this.chunkStuds.clear();
     this.entries.length = 0;
   }
@@ -834,6 +900,7 @@ export class PlacedChunks {
     for (const key of entry.footprintKeys) addTo(this.byFootprintChunk, key, entry);
     for (const key of entry.columnKeys) addTo(this.byColumnChunk, key, entry);
     if (entry.tongueBoxes.length > 0) this.tongued.push(entry);
+    if (entry.slab) this.slabbed.push(entry);
     entry.stampColumns(this.occupancy, null);
     return entry;
   }
@@ -849,7 +916,9 @@ export class PlacedChunks {
     for (const key of entry.columnKeys) this.byColumnChunk.get(key)?.delete(entry);
     const tongued = this.tongued.indexOf(entry);
     if (tongued >= 0) this.tongued.splice(tongued, 1);
-    this.restamp(entry.columnKeys, null);
+    const slabbed = this.slabbed.indexOf(entry);
+    if (slabbed >= 0) this.slabbed.splice(slabbed, 1);
+    this.restamp(entry.columnKeys, NO_ENTRIES);
     return entry;
   }
 
