@@ -3,11 +3,12 @@ import {
   mainThreadModules,
   TRACK_ITEM_ID,
   TRAIN_PLAY,
+  type EditorActionId,
   type EditorSnapshot,
   type IEditor,
   type PlaySnapshot,
 } from "@brr/client";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Container } from "inversify";
 import { createElement } from "react";
 import { afterEach, expect, it } from "vitest";
@@ -52,6 +53,7 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
         id: TRACK_ITEM_ID,
         label: "Track",
         group: "track",
+        shortLabel: "Track",
         groupLabel: "Track",
         color: null,
         kind: "track",
@@ -62,6 +64,9 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
         aliases: [],
         elements: [],
         displayColor: false,
+        draggable: false,
+        toggleable: true,
+        listedUnder: null,
       },
     ],
     roadKit: "road",
@@ -80,6 +85,7 @@ it("disables the toolbar's editing buttons while a train runs, as the keys are",
       editor,
       snapshot,
       play: { ...play, status },
+      onEditorAction: () => {},
       onShellCommand: () => {},
     });
 
@@ -89,4 +95,22 @@ it("disables the toolbar's editing buttons while a train runs, as the keys are",
   rerender(toolbar("running"));
   expect(disabledStates(EDITING_BUTTONS)).toEqual(EDITING_BUTTONS.map(() => true));
   expect(disabledStates(PLAY_SAFE_BUTTONS)).toEqual(PLAY_SAFE_BUTTONS.map(() => false));
+});
+
+it("runs the client's draw-track and draw-road commands from the toolbar's draw buttons", () => {
+  const { editor, play } = services();
+  const ran: EditorActionId[] = [];
+  render(
+    createElement(PlacementToolbar, {
+      editor,
+      snapshot: editableSnapshot(editor),
+      play,
+      onEditorAction: (id) => ran.push(id),
+      onShellCommand: () => {},
+    }),
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: /^Draw track/u }));
+  fireEvent.click(screen.getByRole("button", { name: /^Draw road/u }));
+  expect(ran).toEqual(["draw-track", "draw-road"]);
 });

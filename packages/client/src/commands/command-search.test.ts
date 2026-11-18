@@ -15,6 +15,7 @@ function baseplate(
     id: `ldraw:${part}@${code}`,
     label: `${part} ${title}, ${colorName}`,
     group: `ldraw:${part}`,
+    shortLabel: `${part} ${studs}×${studs}`,
     groupLabel: `${part} ${title}`,
     color: { code, name: colorName, rgb },
     kind: "baseplate",
@@ -25,6 +26,9 @@ function baseplate(
     aliases: [],
     elements: [],
     displayColor: false,
+    draggable: true,
+    toggleable: false,
+    listedUnder: null,
   };
 }
 
@@ -37,6 +41,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     id: "ldraw:44336p01@2",
     label: "44336p01 Baseplate 32 x 32 Road 6-Stud Straight with Yellow Road Edge Pattern, Green",
     group: "ldraw:44336p01",
+    shortLabel: "44336p01 32×32",
     groupLabel: "44336p01 Baseplate 32 x 32 Road 6-Stud Straight with Yellow Road Edge Pattern",
     color: { code: 2, name: "Green", rgb: "#00852B" },
     kind: "road-plate",
@@ -47,6 +52,9 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     aliases: ["44336pr0001"],
     elements: [],
     displayColor: false,
+    draggable: true,
+    toggleable: false,
+    listedUnder: null,
   },
 ];
 
