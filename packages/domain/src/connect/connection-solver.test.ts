@@ -836,6 +836,11 @@ describe("SnapMating", () => {
       [SECTION_ROUND, 6, 16],
     ]);
     expect(mating.offsets(collaredPin, through(SECTION_ROUND, 6))).toEqual(offsetsInLdu(-4, 6));
+    const boreInTwoHalves = shape(0, false, [
+      [SECTION_ROUND, 6, 4],
+      [SECTION_ROUND, 6, 4],
+    ]);
+    expect(mating.offsets(collaredPin, boreInTwoHalves)).toEqual(offsetsInLdu(-4, 6));
     const shallowReceptor = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 2]]);
     expect(mating.offsets(STUD, shallowReceptor)).toEqual(offsetsInLdu(2));
     const barHeldAtBothEnds = shape(CAP_ROOT | CAP_FAR, false, [[SECTION_ROUND, 4, 12]]);

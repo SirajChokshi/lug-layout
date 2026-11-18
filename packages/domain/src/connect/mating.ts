@@ -132,23 +132,33 @@ export class SnapMating {
       low = femaleLength <= maleLength ? 0 : Math.ceil(travel);
       high = femaleLength <= maleLength ? Math.floor(travel) : 0;
     }
-    const candidates: number[] = [];
-    for (let d = low; d <= high; d++) candidates.push(d);
-    this.pushBoundaryMeetings(male, female, candidates);
-    candidates.sort((a, b) => a - b);
+    const seats = this.boundaryMeetings(male, female);
     const valid: number[] = [];
-    for (let i = 0; i < candidates.length; i++) {
-      const d = candidates[i] ?? 0;
-      if (i > 0 && d === candidates[i - 1]) continue;
+    let s = 0;
+    for (; s < seats.length && (seats[s] ?? 0) < low; s++) {
+      this.keepSeat(male, female, seats[s] ?? 0, valid);
+    }
+    for (let d = low; d <= high; d++) {
       const offset = d / SIXTEENTHS_PER_LDU;
-      if (!this.stopsAllow(male, female, offset) || !this.contains(male, female, offset)) continue;
-      if ((d >= low && d <= high) || this.seated(male, female, offset)) valid.push(d);
+      if (this.stopsAllow(male, female, offset) && this.contains(male, female, offset)) {
+        valid.push(d);
+      }
+    }
+    for (; s < seats.length; s++) {
+      if ((seats[s] ?? 0) > high) this.keepSeat(male, female, seats[s] ?? 0, valid);
     }
     return valid.length === 0 ? NO_OFFSETS : Int32Array.from(valid);
   }
 
-  private pushBoundaryMeetings(male: number, female: number, out: number[]): void {
+  private keepSeat(male: number, female: number, sixteenths: number, valid: number[]): void {
+    const offset = sixteenths / SIXTEENTHS_PER_LDU;
+    if (!this.stopsAllow(male, female, offset) || !this.contains(male, female, offset)) return;
+    if (this.seated(male, female, offset)) valid.push(sixteenths);
+  }
+
+  private boundaryMeetings(male: number, female: number): number[] {
     const shapes = this.shapes;
+    const meetings: number[] = [];
     let maleAt = 0;
     for (let m = 0; m <= shapes.sectionCount(male); m++) {
       if (m > 0) maleAt += shapes.span(shapes.firstSection(male) + m - 1);
@@ -156,9 +166,11 @@ export class SnapMating {
       for (let f = 0; f <= shapes.sectionCount(female); f++) {
         if (f > 0) femaleAt += shapes.span(shapes.firstSection(female) + f - 1);
         const d = (maleAt - femaleAt) * SIXTEENTHS_PER_LDU;
-        if (Number.isInteger(d)) out.push(d);
+        if (Number.isInteger(d)) meetings.push(d);
       }
     }
+    meetings.sort((a, b) => a - b);
+    return meetings.filter((d, i) => i === 0 || d !== meetings[i - 1]);
   }
 
   private seated(male: number, female: number, offset: number): boolean {
