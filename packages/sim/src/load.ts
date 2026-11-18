@@ -1,6 +1,6 @@
 import { simTrackFromGraph } from "./graph-track.ts";
 import type { SimLoad, SimLoaded } from "./protocol.ts";
-import { SimSession, type SimScenario } from "./sim-session.ts";
+import type { SimScenario, SimSession, SimSessionFactory } from "./sim-session.ts";
 import { SIM_TICK_HZ } from "./simulation.ts";
 
 export interface LoadedSession {
@@ -9,7 +9,7 @@ export interface LoadedSession {
   readonly loaded: SimLoaded;
 }
 
-export function loadSession(load: SimLoad): LoadedSession {
+export function loadSession(createSession: SimSessionFactory, load: SimLoad): LoadedSession {
   const built = simTrackFromGraph(load.graph, load.routeSegments);
   const scenario: SimScenario = {
     track: built.track,
@@ -18,7 +18,7 @@ export function loadSession(load: SimLoad): LoadedSession {
     railway: { topology: load.graph, autopilotSeed: load.autopilotSeed },
     openEnds: load.openEnds,
   };
-  const session = new SimSession(scenario);
+  const session = createSession(scenario);
   return {
     scenario,
     session,
