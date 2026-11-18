@@ -1,4 +1,4 @@
-import type { CatalogColorView, CatalogItemView } from "../edit/editor.ts";
+import type { CatalogColorView, CatalogItemView } from "./placeable-catalog.ts";
 
 export type PaletteCategory = "track" | "baseplates" | "road" | "sets";
 export type PaletteFilter = PaletteCategory | "all";

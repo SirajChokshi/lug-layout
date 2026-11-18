@@ -20,6 +20,21 @@ pub struct MalformedGeometry {
     pub malformation: Malformation,
 }
 
+pub fn describe_malformed(findings: &[MalformedGeometry]) -> String {
+    let described: Vec<String> = findings
+        .iter()
+        .map(|finding| {
+            let what = match finding.malformation {
+                Malformation::NonFinite => "a non-finite number",
+                Malformation::Unparsed => "a line that does not parse",
+                Malformation::Unresolvable => "a position beyond the resolvable range",
+            };
+            format!("{what} in {}", finding.file)
+        })
+        .collect();
+    format!("malformed geometry: {}", described.join("; "))
+}
+
 pub fn non_finite(values: &[f64]) -> bool {
     values.iter().any(|value| !value.is_finite())
 }
