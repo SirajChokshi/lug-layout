@@ -106,11 +106,17 @@ describe("road joins (layout rule 7)", () => {
     const network = new RoadNetwork([at(0, plate, 0, 0), at(1, plate, 160, 0)]);
     expect(network.report().overlaps).toEqual([[0, 1]]);
     expect(network.fit(at(2, plate, 0, 160)).overlappingCells).toBeGreaterThan(0);
-    expect(new RoadNetwork([at(0, plate, 0, 0)]).fit(at(1, plate, 0, 320))).toEqual({
+    expect(network.cleanFit(at(2, plate, 0, 160))).toBeNull();
+    const single = new RoadNetwork([at(0, plate, 0, 0)]);
+    const abutted = {
       joinedCells: 16,
       joinedRoadCells: 16,
       mismatchedCells: 0,
       overlappingCells: 0,
-    });
+    };
+    expect(single.fit(at(1, plate, 0, 320))).toEqual(abutted);
+    expect(single.cleanFit(at(1, plate, 0, 320))).toEqual(abutted);
+    expect(single.cleanFit(at(1, plate, 0, 320, 0, 8))).toBeNull();
+    expect(single.cleanFit(at(1, plate, 0, 640))).toBeNull();
   });
 });
