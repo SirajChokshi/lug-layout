@@ -51,7 +51,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import { EDITOR, TRAIN_PLAY } from "../tokens.ts";
+import type { ImportResult } from "@brr/import";
+import type { IModelImporter } from "../import/worker-model-importer.ts";
+import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY } from "../tokens.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -794,6 +796,88 @@ it("offers none of the editing commands on a selection in a world another tab ho
   const readOnly = selectBaseplate();
   expect(readOnly.readOnly).toBe(true);
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
+}, 120_000);
+
+const NO_LATTICE_REASON = "no stud lattice from the bake";
+
+function refusedBake(fileName: string): ImportResult {
+  return {
+    report: {
+      fileName,
+      mirror: { repo: "", commit: "", root: "" },
+      lod: "standard",
+      sections: [],
+      instanceCount: 0,
+      drawnInstanceCount: 0,
+      parts: [],
+      inlineParts: [],
+      looseGeometry: [],
+      unknownColors: [],
+      directColors: [],
+      compileRounds: 0,
+      bakeRounds: 1,
+      bakeIssue: NO_LATTICE_REASON,
+      fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
+      timings: { readMs: 0, resolveMs: 0, bakeMs: 0, totalMs: 0 },
+    },
+    partIds: [],
+    instanceCount: 0,
+    partIndex: new Uint32Array(),
+    ldrawColor: new Uint32Array(),
+    matrices: new Float32Array(),
+    compiled: [],
+    bake: null,
+  };
+}
+
+class RefusingModelImporter implements IModelImporter {
+  async importText(fileName: string): Promise<ImportResult> {
+    return refusedBake(fileName);
+  }
+
+  async importStudio(fileName: string): Promise<ImportResult> {
+    return refusedBake(fileName);
+  }
+}
+
+it("resolves a model file the bake refuses as not imported and keeps the chosen item, so a drop places nothing", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
+  container.rebind(MODEL_IMPORTER).toConstantValue(new RefusingModelImporter());
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  editor.chooseItem(BASEPLATE);
+
+  const imported = await editor.importModelFile({
+    name: "no-studs.ldr",
+    bytes: new TextEncoder().encode("0 A model with no studs\n"),
+  });
+
+  const { activeItem, modelImport, catalog } = editor.snapshot();
+  expect({
+    imported,
+    activeItem,
+    status: modelImport?.status,
+    reason: modelImport?.reason,
+    listed: catalog.some((item) => item.id.startsWith("import:")),
+  }).toEqual({
+    imported: false,
+    activeItem: BASEPLATE,
+    status: "refused",
+    reason: NO_LATTICE_REASON,
+    listed: false,
+  });
 }, 120_000);
 
 const SET = `omr:${PLACEABLE_SET}`;

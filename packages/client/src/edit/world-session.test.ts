@@ -114,7 +114,7 @@ class BaseplateWorld implements IEditedWorld {
     this.replace(new World());
   }
 
-  async addImport(): Promise<string | null> {
+  async addImportedModel(): Promise<string | null> {
     return null;
   }
 
