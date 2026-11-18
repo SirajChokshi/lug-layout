@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod};
+use crate::compile::{refuse_malformed, CompileError};
+use crate::flatten::{Flattened, Flattener, Library, Lod};
 use crate::mesh::WELD_EPSILON_LDU;
 use crate::model::mpd_sections;
 use crate::surface::{surface_match, Face, SurfaceMatch};
@@ -59,16 +60,21 @@ pub fn compare_inline_part<L: Library>(
     model_source: &str,
     inline: &str,
     official: &str,
-) -> Result<InlineComparison, FlattenError> {
+) -> Result<InlineComparison, CompileError> {
     let sections_first = SectionsFirst {
         sections: mpd_sections(model_source),
         library,
     };
-    let inline_flattened = Flattener::new(&sections_first, Lod::Standard, &[]).flatten(inline);
-    let official_flattened =
-        Flattener::new(library, Lod::Standard, &[]).flatten(&format!("parts/{official}"));
-    let inline_faces = faces_by_color(&inline_flattened?);
-    let official_faces = faces_by_color(&official_flattened?);
+    let mut inline_flattener = Flattener::new(&sections_first, Lod::Standard, &[]);
+    let inline_flattened = inline_flattener.flatten(inline);
+    let mut official_flattener = Flattener::new(library, Lod::Standard, &[]);
+    let official_flattened = official_flattener.flatten(&format!("parts/{official}"));
+    let inline_flattened = inline_flattened.map_err(CompileError::Flatten)?;
+    let official_flattened = official_flattened.map_err(CompileError::Flatten)?;
+    refuse_malformed(inline_flattener.malformed())?;
+    refuse_malformed(official_flattener.malformed())?;
+    let inline_faces = faces_by_color(&inline_flattened);
+    let official_faces = faces_by_color(&official_flattened);
     let surface = inline_faces
         .iter()
         .filter_map(|(color, faces)| {

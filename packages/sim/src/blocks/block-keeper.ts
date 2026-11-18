@@ -1,6 +1,6 @@
 import { NO_EDGE, NO_SWITCH } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
-import { RoutePlanner } from "../routing/route-planner.ts";
+import type { RoutePlanner } from "../routing/route-planner.ts";
 import { NO_BLOCK, nextEdge, reverseEdge, type BlockMap } from "./block-map.ts";
 
 export const NO_TRAIN = -1;
@@ -50,7 +50,6 @@ export class BlockKeeper {
   private readonly heldEndS: Float64Array;
   private readonly placed: Uint8Array;
   private readonly mode: Uint8Array;
-  private readonly planner: RoutePlanner;
   private readonly route: Int32Array;
   private readonly reverseRoute: Int32Array;
   private readonly reverseFromOffset = new Float64Array(1);
@@ -58,7 +57,8 @@ export class BlockKeeper {
   private readonly occupiedPenaltyLdu: number;
 
   constructor(
-    private readonly blocks: BlockMap,
+    readonly blocks: BlockMap,
+    private readonly planner: RoutePlanner,
     readonly trainCapacity: number,
   ) {
     const { graph } = blocks;
@@ -77,7 +77,6 @@ export class BlockKeeper {
     this.heldEndS = new Float64Array(trainCapacity);
     this.placed = new Uint8Array(trainCapacity);
     this.mode = new Uint8Array(trainCapacity);
-    this.planner = new RoutePlanner(blocks);
     this.route = new Int32Array(graph.edgeCount);
     this.reverseRoute = new Int32Array(graph.edgeCount);
     this.penalty = new Float64Array(graph.placementCount);
