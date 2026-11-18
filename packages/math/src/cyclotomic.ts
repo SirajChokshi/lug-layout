@@ -5,6 +5,7 @@ export const ZETA16_STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 export const COEFFICIENT_BOUND = 64;
 export const CERTIFIED_RESIDUAL_LIMIT_LDU = 0.0005;
 export const UNROUNDED_TOLERANCE_LDU = 1e-6;
+export const IDENTIFICATION_REPRESENTATION_GUARD_LDU = 1e-9;
 const LDU_PER_STUD = STUD_LDU;
 
 interface PlanePoint {

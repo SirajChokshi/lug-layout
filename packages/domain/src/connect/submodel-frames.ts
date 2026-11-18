@@ -1,4 +1,8 @@
-import { CERTIFIED_RESIDUAL_LIMIT_LDU, SIXTEENTHS_PER_LDU } from "@brr/math";
+import {
+  CERTIFIED_RESIDUAL_LIMIT_LDU,
+  IDENTIFICATION_REPRESENTATION_GUARD_LDU,
+  SIXTEENTHS_PER_LDU,
+} from "@brr/math";
 import { AXIS_FREE, AXIS_NEG_Z, VECTOR_FLOATS, axisDimension } from "./connector-table.ts";
 
 export const IDENTIFICATION_RESIDUAL_LDU = CERTIFIED_RESIDUAL_LIMIT_LDU;
@@ -6,6 +10,8 @@ export const MODEL_ROOT = -1;
 export const NO_FRAME = -2;
 export const TRANSFORM_FLOATS = 12;
 export const ALL_COORDINATES = 0b111;
+const ACCEPTED_DEVIATION_LDU =
+  IDENTIFICATION_RESIDUAL_LDU + IDENTIFICATION_REPRESENTATION_GUARD_LDU;
 const TRANSFORM_ROW = 4;
 const TRANSLATION = 3;
 const X = 0;
@@ -50,9 +56,9 @@ function identifiedAxis(x: number, y: number, z: number): number {
   const uz = Math.round(z);
   const unit = Math.abs(ux) + Math.abs(uy) + Math.abs(uz) === 1;
   const close =
-    Math.abs(x - ux) <= IDENTIFICATION_RESIDUAL_LDU &&
-    Math.abs(y - uy) <= IDENTIFICATION_RESIDUAL_LDU &&
-    Math.abs(z - uz) <= IDENTIFICATION_RESIDUAL_LDU;
+    Math.abs(x - ux) <= ACCEPTED_DEVIATION_LDU &&
+    Math.abs(y - uy) <= ACCEPTED_DEVIATION_LDU &&
+    Math.abs(z - uz) <= ACCEPTED_DEVIATION_LDU;
   if (!unit || !close) return AXIS_FREE;
   const dimension = ux !== 0 ? X : uy !== 0 ? Y : Z;
   const negative = ux + uy + uz < 0 ? 1 : 0;
@@ -107,7 +113,7 @@ export function identifyPoint(
     ) / SIXTEENTHS_PER_LDU;
   out.residual = residual;
   out.sixteenths.fill(0);
-  if (!(residual <= IDENTIFICATION_RESIDUAL_LDU)) return false;
+  if (!(residual <= ACCEPTED_DEVIATION_LDU)) return false;
   if (wantX) out.sixteenths[X] = ix;
   if (wantY) out.sixteenths[Y] = iy;
   if (wantZ) out.sixteenths[Z] = iz;
