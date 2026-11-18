@@ -68,6 +68,17 @@ pub enum Caps {
     B,
 }
 
+impl Caps {
+    pub fn closed_ends(self, gender: Gender) -> (bool, bool) {
+        match (self, gender) {
+            (Caps::None, _) => (false, false),
+            (Caps::Two, _) => (true, true),
+            (Caps::A, _) | (Caps::One, Gender::Male) => (true, false),
+            (Caps::B, _) | (Caps::One, Gender::Female) => (false, true),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Scaling {
     Fixed,
@@ -212,7 +223,7 @@ pub struct Extraction {
     pub issues: Vec<Issue>,
 }
 
-fn column(m: &Affine, c: usize) -> Vec3 {
+pub(crate) fn column(m: &Affine, c: usize) -> Vec3 {
     [m.m[c], m.m[4 + c], m.m[8 + c]]
 }
 

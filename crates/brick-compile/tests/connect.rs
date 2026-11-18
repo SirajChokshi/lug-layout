@@ -11,7 +11,8 @@ use brick_compile::connect::{
     SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable,
     CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
-use brick_compile::flatten::{Flattener, Lod};
+use brick_compile::ends::{read_end, End, Reading};
+use brick_compile::flatten::{Flattener, Lod, Triangle};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::technic::is_circular_primitive;
 use brick_compile::Library;
@@ -1421,5 +1422,66 @@ fn a_bore_through_a_cone_flange_measures_its_cylinder_wall_only() {
             shape: BoreShape::Round { radius: 4.0 },
             length: 10.0
         }])
+    );
+}
+
+#[test]
+fn an_end_is_closed_only_by_geometry_between_its_radius_and_a_female_reach() {
+    let end = End {
+        point: [0.0, 0.0, 0.0],
+        outward: [0.0, 1.0, 0.0],
+        radius: 4.0,
+    };
+    let beyond_at = |inner: f64, outer: f64| {
+        [Triangle {
+            color: 16,
+            points: [[inner, 2.0, -1.0], [inner, 2.0, 1.0], [outer, 3.0, 0.0]],
+            double_sided: false,
+        }]
+    };
+    assert_eq!(read_end(&beyond_at(0.0, 4.0), &end), Reading::Free);
+    assert!(matches!(
+        read_end(&beyond_at(5.0, 9.0), &end),
+        Reading::Blocked(b) if b.gap == 2.0
+    ));
+    assert_eq!(read_end(&beyond_at(15.0, 30.0), &end), Reading::Free);
+    let wide = End {
+        radius: 10.0,
+        ..end
+    };
+    assert_eq!(
+        read_end(&beyond_at(15.0, 30.0), &wide),
+        Reading::WiderThanReach
+    );
+}
+
+#[test]
+fn the_wand_handle_is_free_at_both_ends_and_the_sextant_handle_only_at_its_tip() {
+    let library = pinned("ldraw");
+    let triangles = |part: &str| {
+        Flattener::new(&library, Lod::Standard, &[])
+            .flatten(part)
+            .expect("part flattens")
+            .triangles
+    };
+    let wand = triangles("parts/36752a.dat");
+    let handle_end = |y: f64, outward: f64, radius: f64| End {
+        point: [0.0, y, 0.0],
+        outward: [0.0, outward, 0.0],
+        radius,
+    };
+    assert_eq!(read_end(&wand, &handle_end(-6.0, 1.0, 4.0)), Reading::Free);
+    assert_eq!(
+        read_end(&wand, &handle_end(-32.0, -1.0, 2.75)),
+        Reading::Free
+    );
+    let sextant = triangles("parts/30154.dat");
+    assert!(matches!(
+        read_end(&sextant, &handle_end(28.0, -1.0, 4.0)),
+        Reading::Blocked(_)
+    ));
+    assert_eq!(
+        read_end(&sextant, &handle_end(40.0, 1.0, 4.0)),
+        Reading::Free
     );
 }
