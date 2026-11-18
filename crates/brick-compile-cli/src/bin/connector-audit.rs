@@ -851,6 +851,7 @@ fn run() -> Result<(), String> {
     let mut disagreeing_faces: Vec<Value> = Vec::new();
     let mut tier2_alone = PrimitiveConnectors::new(&library, primitive_table);
     let mut duplicate_faces = [0usize; 2];
+    let mut duplicate_pairs: BTreeMap<String, usize> = BTreeMap::new();
     let mut duplicate_examples: Vec<Value> = Vec::new();
     let mut by_source: BTreeMap<String, usize> = BTreeMap::new();
     let mut by_family: BTreeMap<String, usize> = BTreeMap::new();
@@ -1036,6 +1037,22 @@ fn run() -> Result<(), String> {
             });
             if let Some(other) = earlier {
                 part_duplicates += 1;
+                let same_size = match (face.sections.first(), other.sections.first()) {
+                    (Some(a), Some(b)) => a.code == b.code && (a.size - b.size).abs() <= SAME_LDU,
+                    _ => false,
+                };
+                *duplicate_pairs
+                    .entry(format!(
+                        "{} then {}{}",
+                        source_key(other.source),
+                        source_key(face.source),
+                        if same_size {
+                            ", same section size"
+                        } else {
+                            ", different section"
+                        }
+                    ))
+                    .or_default() += 1;
                 if duplicate_examples.len() < 40 {
                     duplicate_examples.push(json!({
                         "part": part,
@@ -1360,6 +1377,7 @@ fn run() -> Result<(), String> {
         "femaleFacesHeldTwice": {
             "faces": duplicate_faces[0],
             "parts": duplicate_faces[1],
+            "byPair": table(duplicate_pairs),
             "examples": duplicate_examples,
         },
         "axleFeatures": {
