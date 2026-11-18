@@ -1,14 +1,19 @@
-import type {
-  EditorOptions,
-  IBomService,
-  IEditor,
-  IEditorCamera,
-  IPaletteMemory,
-  IPaletteThumbnails,
-  IPlanService,
-  IRunningGear,
-  ITrainPlay,
-  ShellCommandId,
+import {
+  runEditorAction,
+  type EditorActionId,
+  type EditorOptions,
+  type IBomService,
+  type IEditor,
+  type IEditorCamera,
+  type IPaletteDrag,
+  type IPaletteMemory,
+  type IPalettePrefetch,
+  type IPaletteSearch,
+  type IPaletteThumbnails,
+  type IPlanService,
+  type IRunningGear,
+  type ITrainPlay,
+  type ShellCommandId,
 } from "@brr/client";
 import { useCallback, useState } from "react";
 import { BomPanel } from "./bom-panel.tsx";
@@ -44,8 +49,11 @@ interface EditorAppProps {
   readonly plans: IPlanService;
   readonly bomService: IBomService;
   readonly play: ITrainPlay;
-  readonly palette: IPaletteMemory;
-  readonly thumbnails: IPaletteThumbnails;
+  readonly paletteSearch: IPaletteSearch;
+  readonly paletteDrag: IPaletteDrag;
+  readonly palettePrefetch: IPalettePrefetch;
+  readonly paletteMemory: IPaletteMemory;
+  readonly paletteThumbnails: IPaletteThumbnails;
   readonly runningGear: IRunningGear;
   readonly options: EditorOptions;
   readonly disclaimer: string;
@@ -92,8 +100,11 @@ export function EditorApp({
   plans,
   bomService,
   play,
-  palette,
-  thumbnails,
+  paletteSearch,
+  paletteDrag,
+  palettePrefetch,
+  paletteMemory,
+  paletteThumbnails,
   runningGear,
   options,
   disclaimer,
@@ -107,6 +118,10 @@ export function EditorApp({
   const toggleOverlay = useCallback(
     (id: ShellCommandId) => setOverlay((open) => (open === id ? null : id)),
     [],
+  );
+  const runAction = useCallback(
+    (id: EditorActionId, eventTimeMs: number) => runEditorAction(editor, camera, id, eventTimeMs),
+    [editor, camera],
   );
   useEditorKeys(editor, camera, {
     play,
@@ -138,7 +153,13 @@ export function EditorApp({
       data-road-pieces={snapshot.roads.placements}
       data-mode={snapshot.mode}
     >
-      <EditorCanvas editor={editor} camera={camera} play={play} options={options} />
+      <EditorCanvas
+        editor={editor}
+        camera={camera}
+        play={play}
+        paletteDrag={paletteDrag}
+        options={options}
+      />
       <ToolHud snapshot={snapshot} play={playSnapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
@@ -149,6 +170,7 @@ export function EditorApp({
           editor={editor}
           snapshot={snapshot}
           play={playSnapshot}
+          onEditorAction={runAction}
           onShellCommand={toggleOverlay}
         />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
@@ -162,8 +184,11 @@ export function EditorApp({
         <PalettePanel
           editor={editor}
           snapshot={snapshot}
-          memory={palette}
-          thumbnails={thumbnails}
+          search={paletteSearch}
+          drag={paletteDrag}
+          prefetch={palettePrefetch}
+          memory={paletteMemory}
+          thumbnails={paletteThumbnails}
         />
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />

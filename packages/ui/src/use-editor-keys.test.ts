@@ -2,6 +2,7 @@ import {
   EDITOR,
   EDITOR_CAMERA,
   mainThreadModules,
+  PALETTE_DRAG,
   TRAIN_PLAY,
   type EditorOptions,
 } from "@brr/client";
@@ -38,6 +39,7 @@ function services() {
     editor: container.get(EDITOR),
     camera: container.get(EDITOR_CAMERA),
     play: container.get(TRAIN_PLAY),
+    paletteDrag: container.get(PALETTE_DRAG),
   };
 }
 
@@ -67,7 +69,7 @@ function RoadJoinsWithKeys({
 }: {
   readonly onShellCommand?: (id: ShellCommandId) => void;
 }) {
-  const { editor, camera, play } = services();
+  const { editor, camera, play, paletteDrag } = services();
   function Panel() {
     const snapshot = useEditorSnapshot(editor);
     useEditorKeys(editor, camera, {
@@ -79,7 +81,7 @@ function RoadJoinsWithKeys({
     return createElement(
       "div",
       null,
-      createElement(EditorCanvas, { editor, camera, play, options: CANVAS_OPTIONS }),
+      createElement(EditorCanvas, { editor, camera, play, paletteDrag, options: CANVAS_OPTIONS }),
       createElement(RoadJoins, { editor, snapshot }),
     );
   }

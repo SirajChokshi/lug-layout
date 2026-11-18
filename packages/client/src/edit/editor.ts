@@ -93,9 +93,8 @@ import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
-import { CATALOG_SEARCH, CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
-import type { CatalogSearchView, ICatalogSearch } from "../catalog/catalog-search.ts";
-import { modelLabel } from "../catalog/model-label.ts";
+import { CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import { modelLabel, withoutYear } from "../catalog/model-label.ts";
 import {
   TRACK_SYSTEM,
   TrackDrawing,
@@ -154,6 +153,7 @@ export interface CatalogPartView {
 export interface CatalogItemView {
   readonly id: string;
   readonly label: string;
+  readonly shortLabel: string;
   readonly group: string;
   readonly groupLabel: string;
   readonly color: CatalogColorView | null;
@@ -165,6 +165,9 @@ export interface CatalogItemView {
   readonly aliases: ReadonlyArray<string>;
   readonly elements: ReadonlyArray<string>;
   readonly displayColor: boolean;
+  readonly draggable: boolean;
+  readonly toggleable: boolean;
+  readonly listedUnder: string | null;
 }
 
 export interface LatencySample {
@@ -424,7 +427,6 @@ export interface EditorSnapshot {
   readonly roadStroke: RoadStrokeView | null;
   readonly lastRoadStroke: RoadStrokeResult | null;
   readonly roadErase: boolean;
-  readonly catalogSearch: CatalogSearchView;
 }
 
 export interface EditorCredits {
@@ -501,7 +503,6 @@ export interface IEditor extends IBomSource {
   setRoadErase(erase: boolean): void;
   playSetup(): PlaySetup | null;
   loadPlayMeshes(): void;
-  searchCatalog(query: string): void;
   catalogItemModel(itemId: string): Promise<CatalogItemModel | null>;
   dump(): EditorDump;
 }
@@ -514,6 +515,7 @@ export const TRACK_PIECE_PREFIX = "track-piece:";
 const TRACK_PIECE_GROUP = "track-pieces";
 const TRACK_PIECE_GROUP_LABEL = "Track pieces";
 const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
+const TRACK_SHORT_LABEL = "Track";
 const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const P95 = 0.95;
 const DEGREES_PER_QUARTER_TURN = 90;
@@ -672,21 +674,29 @@ function catalogItem(
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const produced = part?.producedColors;
   const ldrawNumber = placeable.group.replace(/^ldraw:/u, "");
+  const studsWide = Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU);
+  const studsDeep = Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU);
   return {
     id: placeable.id,
     label: placeable.label,
+    shortLabel: colored
+      ? `${placeable.group.replace(/^[a-z]+:/u, "")} ${studsWide}×${studsDeep}`
+      : withoutYear(placeable.label),
     group: placeable.group,
     groupLabel: placeable.groupLabel,
     color: colored ? colorOf(colors, placeable.worldColor) : null,
     kind: placeable.kind,
     parts: placeable.parts.count,
-    studsWide: Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
-    studsDeep: Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+    studsWide,
+    studsDeep,
     thumbnail: thumbnails.get(placeable.id) ?? null,
     aliases: produced && produced.rebrickable !== ldrawNumber ? [produced.rebrickable] : [],
     elements:
       produced?.colors.find((color) => color.ldraw === placeable.worldColor)?.elements ?? [],
     displayColor: part !== undefined && part.producedColor === placeable.worldColor,
+    draggable: true,
+    toggleable: false,
+    listedUnder: null,
   };
 }
 
@@ -722,6 +732,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
     view: {
       id,
       label,
+      shortLabel: withoutYear(label),
       group: id,
       groupLabel: label,
       color: null,
@@ -733,6 +744,9 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
       aliases: [],
       elements: [],
       displayColor: false,
+      draggable: true,
+      toggleable: false,
+      listedUnder: null,
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -801,7 +815,6 @@ export class Editor implements IEditor {
     roadStroke: null,
     lastRoadStroke: null,
     roadErase: false,
-    catalogSearch: { query: "", status: "off", hits: [] },
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -889,12 +902,9 @@ export class Editor implements IEditor {
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
     @inject(CREDITS) private readonly credits: ICredits,
     @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
-    @inject(CATALOG_SEARCH) private readonly catalogSearch: ICatalogSearch,
     @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
   ) {
     this.placed = new PlacedChunks(backend);
-    this.state = { ...this.state, catalogSearch: catalogSearch.view() };
-    catalogSearch.subscribe(() => this.update({ catalogSearch: catalogSearch.view() }));
   }
 
   subscribe(listener: () => void): () => void {
@@ -1398,6 +1408,7 @@ export class Editor implements IEditor {
     return {
       id: TRACK_ITEM_ID,
       label: TRACK_ITEM_LABEL,
+      shortLabel: TRACK_SHORT_LABEL,
       group: TRACK_ITEM_ID,
       groupLabel: TRACK_ITEM_LABEL,
       color: null,
@@ -1409,6 +1420,9 @@ export class Editor implements IEditor {
       aliases: [],
       elements: [],
       displayColor: false,
+      draggable: false,
+      toggleable: true,
+      listedUnder: null,
     };
   }
 
@@ -1423,6 +1437,7 @@ export class Editor implements IEditor {
       return {
         id: `${TRACK_PIECE_PREFIX}${kit.piece.id}`,
         label: `${element.replace(/^[a-z]+:/u, "")} ${title}`,
+        shortLabel: TRACK_SHORT_LABEL,
         group: TRACK_PIECE_GROUP,
         groupLabel: TRACK_PIECE_GROUP_LABEL,
         color: null,
@@ -1434,6 +1449,9 @@ export class Editor implements IEditor {
         aliases: [],
         elements: [],
         displayColor: false,
+        draggable: false,
+        toggleable: true,
+        listedUnder: TRACK_ITEM_ID,
       };
     });
   }
@@ -2277,10 +2295,6 @@ export class Editor implements IEditor {
   setShowJoins(show: boolean): void {
     this.update({ showJoins: show });
     this.showMarkers();
-  }
-
-  searchCatalog(query: string): void {
-    this.catalogSearch.search(query);
   }
 
   setRoadErase(erase: boolean): void {

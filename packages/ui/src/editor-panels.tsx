@@ -1,6 +1,7 @@
 import {
-  TRACK_ITEM_ID,
+  commandActive,
   commandEnabled,
+  type EditorActionId,
   type EditorSnapshot,
   type IEditor,
   type LatencySample,
@@ -130,9 +131,11 @@ export function PlacementToolbar({
   editor,
   snapshot,
   play,
+  onEditorAction,
   onShellCommand,
 }: PanelProps & {
   readonly play: PlaySnapshot;
+  readonly onEditorAction: (id: EditorActionId, eventTimeMs: number) => void;
   readonly onShellCommand: (id: ShellCommandId) => void;
 }) {
   const { history } = snapshot;
@@ -148,18 +151,18 @@ export function PlacementToolbar({
       <button
         type="button"
         data-action="draw-track"
-        aria-pressed={snapshot.mode === "track"}
+        aria-pressed={commandActive("draw-track", snapshot)}
         disabled={!commandEnabled("draw-track", snapshot, play)}
-        onClick={() => editor.chooseItem(snapshot.mode === "track" ? null : TRACK_ITEM_ID)}
+        onClick={(event) => onEditorAction("draw-track", event.timeStamp)}
       >
         Draw track ({shortcutText("draw-track")})
       </button>
       <button
         type="button"
         data-action="draw-road-tool"
-        aria-pressed={snapshot.mode === "road"}
+        aria-pressed={commandActive("draw-road", snapshot)}
         disabled={!commandEnabled("draw-road", snapshot, play)}
-        onClick={() => editor.chooseItem(snapshot.mode === "road" ? null : snapshot.roadKit)}
+        onClick={(event) => onEditorAction("draw-road", event.timeStamp)}
       >
         Draw road ({shortcutText("draw-road")})
       </button>

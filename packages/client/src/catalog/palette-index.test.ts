@@ -24,6 +24,7 @@ function plate(
     id: `ldraw:${id}@${color.code}`,
     label: `${id} ${title}, ${color.name}`,
     group: `ldraw:${id}`,
+    shortLabel: `${id} ${studs}×${studs}`,
     groupLabel: `${id} ${title}`,
     color,
     kind,
@@ -34,6 +35,9 @@ function plate(
     aliases: produced.rebrickable ? [produced.rebrickable] : [],
     elements: produced.elements?.[color.code] ?? [],
     displayColor: produced.display === color.code,
+    draggable: true,
+    toggleable: false,
+    listedUnder: null,
   }));
 }
 
@@ -54,6 +58,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     id: "omr:7938-1",
     label: "7938-1 Passenger Train",
     group: "omr:7938-1",
+    shortLabel: "7938-1 Passenger Train",
     groupLabel: "7938-1 Passenger Train",
     color: null,
     kind: "model",
@@ -64,11 +69,15 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     aliases: [],
     elements: [],
     displayColor: false,
+    draggable: true,
+    toggleable: false,
+    listedUnder: null,
   },
   {
     id: "track:lego-9v",
     label: "Track: 9V straights and R40 curves",
     group: "track:lego-9v",
+    shortLabel: "Track",
     groupLabel: "Track: 9V straights and R40 curves",
     color: null,
     kind: "track",
@@ -79,6 +88,9 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     aliases: [],
     elements: [],
     displayColor: false,
+    draggable: false,
+    toggleable: true,
+    listedUnder: null,
   },
 ];
 
