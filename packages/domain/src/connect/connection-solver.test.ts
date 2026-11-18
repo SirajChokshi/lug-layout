@@ -82,6 +82,7 @@ const BRICK_RECEPTOR = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 20]]);
 const BRICK_LDU = 3 * PLATE_LDU;
 const UNMODELLED_SECTION = 7;
 const HALF = STUD_LDU / 2;
+const PROPERTY_TIMEOUT_MS = 30_000;
 
 function table(specs: ReadonlyArray<Spec>): ConnectorTable {
   return new ConnectorTable(
@@ -1410,17 +1411,41 @@ function worldConnectors(piece: ModelConnectors, at: LatticePose): WorldConnecto
 const connectorKey = (p: WorldConnector): string =>
   `${p.at.join(",")}/${p.axis}/${p.shape}/${p.gender}`;
 
+function coaxialLine(axis: number, at: readonly [number, number, number]): string {
+  const dimension = axis >> 1;
+  return `${axis}/${at[(dimension + 1) % 3]}/${at[(dimension + 2) % 3]}`;
+}
+
+const worldLines = new WeakMap<
+  ReadonlyArray<WorldConnector>,
+  { size: number; lines: Map<string, WorldConnector[]> }
+>();
+
+function linesOf(world: ReadonlyArray<WorldConnector>): Map<string, WorldConnector[]> {
+  const known = worldLines.get(world);
+  if (known && known.size === world.length) return known.lines;
+  const lines = new Map<string, WorldConnector[]>();
+  for (const other of world) {
+    const key = coaxialLine(other.axis, other.at);
+    const line = lines.get(key);
+    if (line) line.push(other);
+    else lines.set(key, [other]);
+  }
+  worldLines.set(world, { size: world.length, lines });
+  return lines;
+}
+
 function engagedPairs(
   held: ModelConnectors,
   at: LatticePose,
   world: ReadonlyArray<WorldConnector>,
 ): number[] {
+  const lines = linesOf(world);
   return worldConnectors(held, at).map((own) => {
     let n = 0;
-    for (const other of world) {
-      if (own.gender === other.gender || (own.axis ^ 1) !== other.axis) continue;
+    for (const other of lines.get(coaxialLine(own.axis ^ 1, own.at)) ?? []) {
+      if (own.gender === other.gender) continue;
       const dimension = own.axis >> 1;
-      if ([0, 1, 2].some((k) => k !== dimension && own.at[k] !== other.at[k])) continue;
       const [male, female] = own.gender === GENDER_MALE ? [own, other] : [other, own];
       const toward = (male.axis & 1) === 0 ? 1 : -1;
       const offset = ((female.at[dimension] ?? 0) - (male.at[dimension] ?? 0)) * toward;
@@ -1481,108 +1506,117 @@ describe("ConnectionSolver against every coaxial pair", () => {
     );
   }
 
-  it("mates and votes exactly the coaxial pairs that SnapMating engages, on seeded worlds and after stamping the held model", () => {
-    let seed = 0x6a7e;
-    const next = (span: number): number => {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      return seed % span;
-    };
-    const randomSpecs = (count: number): Map<string, Spec> => {
-      const specs = new Map<string, Spec>();
-      while (specs.size < count) {
-        const [s, gender] = PALETTE[next(PALETTE.length)] ?? PALETTE[0];
-        const axis = AXES[next(AXES.length)] ?? AXIS_POS_Y;
-        const coordinate = (k: number): number =>
-          k === axis >> 1
-            ? next(ALONG_STEPS) * ALONG_STEP_LDU
-            : next(ACROSS_STEPS) * ACROSS_STEP_LDU;
-        const spec: Spec = {
-          shape: s,
-          gender,
-          origin: [coordinate(0), coordinate(1), coordinate(2)],
-          axis,
-        };
-        specs.set(specKey(spec), spec);
-      }
-      return specs;
-    };
-    const randomPiece = (count: number): ModelConnectors =>
-      single(table([...randomSpecs(count).values()]));
-    const withPartnersAStudAlong = (count: number): ModelConnectors => {
-      const specs = randomSpecs(count);
-      for (const own of Array.from(specs.values())) {
-        const partner = partnerAtOffsetZero(own);
-        if (!partner) continue;
-        const [x, y, z] = own.origin;
-        const spec: Spec = {
-          shape: partner[0],
-          gender: partner[1],
-          origin: [x + STUD_LDU, y, z],
-          axis: own.axis ^ 1,
-        };
-        if (!specs.has(specKey(spec))) specs.set(specKey(spec), spec);
-      }
-      return single(table([...specs.values()]));
-    };
-    const randomPose = (): LatticePose =>
-      pose((next(3) - 1) * HALF, (next(3) - 1) * HALF, next(3) - 1, next(4) as QuarterTurn);
-    let mates = 0;
-    let votes = 0;
-    for (let trial = 0; trial < 32; trial++) {
-      const solver = allFamilies();
-      const world: WorldConnector[] = [];
-      const seen = new Set<string>();
-      const placeAt = (piece: ModelConnectors, at: LatticePose): boolean => {
-        const connectors = worldConnectors(piece, at);
-        if (connectors.some((c) => seen.has(connectorKey(c)))) return false;
-        for (const c of connectors) seen.add(connectorKey(c));
-        world.push(...connectors);
-        solver.insert(piece, at);
-        return true;
+  it(
+    "mates and votes exactly the coaxial pairs that SnapMating engages, on seeded worlds and after stamping the held model",
+    () => {
+      let seed = 0x6a7e;
+      const next = (span: number): number => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        return seed % span;
       };
-      const heldIsLarge = trial % 2 === 0;
-      for (let m = 0; m < 8; m++) {
-        const piece = randomPiece(heldIsLarge ? 4 : 40);
-        while (!placeAt(piece, randomPose()));
+      const randomSpecs = (count: number): Map<string, Spec> => {
+        const specs = new Map<string, Spec>();
+        while (specs.size < count) {
+          const [s, gender] = PALETTE[next(PALETTE.length)] ?? PALETTE[0];
+          const axis = AXES[next(AXES.length)] ?? AXIS_POS_Y;
+          const coordinate = (k: number): number =>
+            k === axis >> 1
+              ? next(ALONG_STEPS) * ALONG_STEP_LDU
+              : next(ACROSS_STEPS) * ACROSS_STEP_LDU;
+          const spec: Spec = {
+            shape: s,
+            gender,
+            origin: [coordinate(0), coordinate(1), coordinate(2)],
+            axis,
+          };
+          specs.set(specKey(spec), spec);
+        }
+        return specs;
+      };
+      const randomPiece = (count: number): ModelConnectors =>
+        single(table([...randomSpecs(count).values()]));
+      const withPartnersAStudAlong = (count: number): ModelConnectors => {
+        const specs = randomSpecs(count);
+        for (const own of Array.from(specs.values())) {
+          const partner = partnerAtOffsetZero(own);
+          if (!partner) continue;
+          const [x, y, z] = own.origin;
+          const spec: Spec = {
+            shape: partner[0],
+            gender: partner[1],
+            origin: [x + STUD_LDU, y, z],
+            axis: own.axis ^ 1,
+          };
+          if (!specs.has(specKey(spec))) specs.set(specKey(spec), spec);
+        }
+        return single(table([...specs.values()]));
+      };
+      const randomPose = (): LatticePose =>
+        pose((next(3) - 1) * HALF, (next(3) - 1) * HALF, next(3) - 1, next(4) as QuarterTurn);
+      let mates = 0;
+      let votes = 0;
+      for (let trial = 0; trial < 32; trial++) {
+        const solver = allFamilies();
+        const world: WorldConnector[] = [];
+        const seen = new Set<string>();
+        const placeAt = (piece: ModelConnectors, at: LatticePose): boolean => {
+          const connectors = worldConnectors(piece, at);
+          if (connectors.some((c) => seen.has(connectorKey(c)))) return false;
+          for (const c of connectors) seen.add(connectorKey(c));
+          world.push(...connectors);
+          solver.insert(piece, at);
+          return true;
+        };
+        const heldIsLarge = trial % 2 === 0;
+        for (let m = 0; m < 8; m++) {
+          const piece = randomPiece(heldIsLarge ? 4 : 40);
+          while (!placeAt(piece, randomPose()));
+        }
+        const held = withPartnersAStudAlong(heldIsLarge ? 30 : 2);
+        const candidates = new CandidatePoses();
+        let at = randomPose();
+        for (let probe = 0; probe < 10; probe++) {
+          if (probe === 5) {
+            const rot = at.rot as QuarterTurn;
+            placeAt(
+              held,
+              pose(
+                at.x - rot90Cos(rot) * STUD_LDU,
+                at.z + rot90Sin(rot) * STUD_LDU,
+                at.yPlates,
+                rot,
+              ),
+            );
+          } else {
+            at = randomPose();
+          }
+          const report = evaluated(solver, held, at);
+          const reported = Array<number>(held.count).fill(0);
+          for (let k = 0; k < report.count; k++) {
+            const c = report.connector[k] ?? 0;
+            reported[c] = (reported[c] ?? 0) + 1;
+          }
+          expect(reported).toEqual(engagedPairs(held, at, world));
+          mates += report.count;
+          solver.rank(held, window(at, 1, 1, 4), candidates);
+          for (let i = 0; i < candidates.count; i++) {
+            const candidate = pose(
+              candidates.x[i] ?? 0,
+              candidates.z[i] ?? 0,
+              candidates.yPlates[i] ?? 0,
+              (candidates.rot[i] ?? 0) as QuarterTurn,
+            );
+            const engaged = engagedPairs(held, candidate, world).reduce((a, b) => a + b, 0);
+            expect(candidates.votes[i]).toBe(engaged);
+            votes += engaged;
+          }
+          solver.rank(held, window(at, 0, 0, 1), candidates);
+          expect([candidates.count, candidates.votes[0]]).toEqual([1, report.count]);
+        }
       }
-      const held = withPartnersAStudAlong(heldIsLarge ? 30 : 2);
-      const candidates = new CandidatePoses();
-      let at = randomPose();
-      for (let probe = 0; probe < 10; probe++) {
-        if (probe === 5) {
-          const rot = at.rot as QuarterTurn;
-          placeAt(
-            held,
-            pose(at.x - rot90Cos(rot) * STUD_LDU, at.z + rot90Sin(rot) * STUD_LDU, at.yPlates, rot),
-          );
-        } else {
-          at = randomPose();
-        }
-        const report = evaluated(solver, held, at);
-        const reported = Array<number>(held.count).fill(0);
-        for (let k = 0; k < report.count; k++) {
-          const c = report.connector[k] ?? 0;
-          reported[c] = (reported[c] ?? 0) + 1;
-        }
-        expect(reported).toEqual(engagedPairs(held, at, world));
-        mates += report.count;
-        solver.rank(held, window(at, 1, 1, 4), candidates);
-        for (let i = 0; i < candidates.count; i++) {
-          const candidate = pose(
-            candidates.x[i] ?? 0,
-            candidates.z[i] ?? 0,
-            candidates.yPlates[i] ?? 0,
-            (candidates.rot[i] ?? 0) as QuarterTurn,
-          );
-          const engaged = engagedPairs(held, candidate, world).reduce((a, b) => a + b, 0);
-          expect(candidates.votes[i]).toBe(engaged);
-          votes += engaged;
-        }
-        solver.rank(held, window(at, 0, 0, 1), candidates);
-        expect([candidates.count, candidates.votes[0]]).toEqual([1, report.count]);
-      }
-    }
-    expect(mates).toBeGreaterThanOrEqual(50);
-    expect(votes).toBeGreaterThanOrEqual(5_000);
-  });
+      expect(mates).toBeGreaterThanOrEqual(50);
+      expect(votes).toBeGreaterThanOrEqual(5_000);
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
 });
