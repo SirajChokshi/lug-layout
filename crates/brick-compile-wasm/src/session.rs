@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
-use brick_compile::compile::stud_roundness;
+use brick_compile::compile::{stud_roundness, NO_STUD_RING};
 use brick_compile::cover::ModelCover;
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
@@ -20,8 +20,6 @@ use crate::reply::{
 };
 use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
 use crate::tracking::TrackingLibrary;
-
-const NO_STUD_RING: &str = "the stud primitives draw no closed round band to measure roundness by";
 
 #[derive(Default)]
 pub struct Session {

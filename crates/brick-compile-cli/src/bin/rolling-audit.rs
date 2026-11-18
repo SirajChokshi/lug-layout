@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use brick_compile::compile::stud_roundness;
+use brick_compile::compile::required_stud_roundness;
 use brick_compile::flatten::{Library, Lod};
 use brick_compile::{compile_part, CompileOptions};
 use serde_json::json;
@@ -40,6 +40,7 @@ struct Args {
     parts: Vec<String>,
     studs: Vec<String>,
     repeat: usize,
+    lod: Lod,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -87,11 +88,18 @@ fn parse_args() -> Result<Args, String> {
         .transpose()?
         .unwrap_or(DEFAULT_REPEAT)
         .max(1);
+    let lod = match values.get("--lod").map(String::as_str) {
+        None | Some("standard") => Lod::Standard,
+        Some("low") => Lod::Low,
+        Some("far") => Lod::Far,
+        Some(other) => return Err(format!("--lod {other} is not standard, low or far")),
+    };
     Ok(Args {
         ldraw,
         parts,
         studs,
         repeat,
+        lod,
     })
 }
 
@@ -111,10 +119,9 @@ fn run(args: &Args) -> Result<(), String> {
         root: args.ldraw.clone(),
         loaded: RefCell::new(HashMap::new()),
     };
-    let roundness = stud_roundness(&library, &args.studs)
-        .ok_or("the stud primitives draw no closed round band to measure roundness by")?;
+    let roundness = required_stud_roundness(&library, &args.studs)?;
     let without = CompileOptions {
-        lod: Lod::Standard,
+        lod: args.lod,
         stud_primitives: args.studs.clone(),
         unofficial_allowlist: Vec::new(),
         roundness: None,

@@ -3,9 +3,10 @@ mod common;
 use std::f64::consts::TAU;
 
 use brick_compile::compile::stud_roundness;
-use brick_compile::rolling::{Ends, RollingSurface, SurfaceReason, UnreadBand};
+use brick_compile::rolling::{BandPlace, RollingSurface, UnreadBand, UnreadEnds};
 use brick_compile::{compile_part, CompileOptions, Library, Lod};
 use common::{fixture_library, MemoryLibrary};
+use serde_json::json;
 
 const LICENSE: &str = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n";
 const WOUND: &str = "0 BFC CERTIFY CCW\n";
@@ -225,8 +226,8 @@ fn sixteenths(ldu: f64) -> i32 {
     (ldu * 16.0) as i32
 }
 
-fn ends(from: Option<f64>, to: Option<f64>) -> Ends {
-    Ends {
+fn ends(from: Option<f64>, to: Option<f64>) -> UnreadEnds {
+    UnreadEnds {
         from: from.map(sixteenths),
         to: to.map(sixteenths),
     }
@@ -242,9 +243,8 @@ fn surface(axis: usize, at: [f64; 2], from: f64, to: f64, radii: [f64; 2]) -> Ro
     }
 }
 
-fn unread(reason: SurfaceReason, axis: usize, at: [f64; 2], from: f64, to: f64) -> UnreadBand {
-    UnreadBand::Surface {
-        reason,
+fn place(axis: usize, at: [f64; 2], from: f64, to: f64) -> BandPlace {
+    BandPlace {
         axis,
         at: Some(at.map(sixteenths)),
         ends: ends(Some(from), Some(to)),
@@ -277,7 +277,10 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
         rolling.unread,
         vec![
             UnreadBand::Unoriented,
-            UnreadBand::Centre { axis: 1 },
+            UnreadBand::Centre {
+                axis: 1,
+                ends: ends(Some(0.0), Some(8.0)),
+            },
             UnreadBand::Radius {
                 axis: 1,
                 at: [sixteenths(-60.0), sixteenths(-60.0)],
@@ -286,17 +289,29 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
             UnreadBand::Width {
                 axis: 1,
                 at: [sixteenths(60.0), sixteenths(-60.0)],
+                radii: [sixteenths(10.0), sixteenths(10.0)],
                 ends: ends(Some(0.0), None),
             },
-            unread(SurfaceReason::Faceted, 2, [60.0, 0.0], -10.0, 0.0),
-            unread(SurfaceReason::Partial, 0, [12.0, -60.0], 20.0, 30.0),
-            unread(SurfaceReason::Facing, 2, [-60.0, 40.0], -10.0, 0.0),
-            unread(SurfaceReason::Irregular, 0, [40.0, 60.0], 40.0, 50.0),
+            UnreadBand::Faceted(place(2, [60.0, 0.0], -10.0, 0.0)),
+            UnreadBand::Partial(place(0, [12.0, -60.0], 20.0, 30.0)),
+            UnreadBand::Facing(place(2, [-60.0, 40.0], -10.0, 0.0)),
+            UnreadBand::Irregular(place(0, [40.0, 60.0], 40.0, 50.0)),
         ]
     );
+    let extras = compiled.extras();
+    assert_eq!(extras["rolling"]["surfaces"][0]["source"], "measured");
     assert_eq!(
-        compiled.extras()["rolling"]["surfaces"][0]["source"],
-        "measured"
+        extras["rolling"]["unread"],
+        json!([
+            { "reason": "unoriented" },
+            { "reason": "centre", "axis": 1, "from": 0, "to": 128 },
+            { "reason": "radius", "axis": 1, "at": [-960, -960], "from": 0, "to": 128 },
+            { "reason": "width", "axis": 1, "at": [960, -960], "radii": [160, 160], "from": 0 },
+            { "reason": "faceted", "axis": 2, "at": [960, 0], "from": -160, "to": 0 },
+            { "reason": "partial", "axis": 0, "at": [192, -960], "from": 320, "to": 480 },
+            { "reason": "facing", "axis": 2, "at": [-960, 640], "from": -160, "to": 0 },
+            { "reason": "irregular", "axis": 0, "at": [640, 960], "from": 640, "to": 800 },
+        ])
     );
 }
 
@@ -333,6 +348,7 @@ fn the_official_train_wheel_reads_its_whole_outward_profile_at_every_lod() {
             surface(2, [0.0, 0.0], -1.0, 2.0, [6.25, 6.25]),
         ]
     );
+    assert_eq!(standard.unread, vec![]);
     let low = compile_part(&library, "2879.dat", &options(&library, Lod::Low))
         .expect("compiles")
         .rolling;

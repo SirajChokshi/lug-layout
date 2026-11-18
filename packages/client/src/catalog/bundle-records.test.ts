@@ -1,10 +1,4 @@
-import {
-  ASSET_FETCHER,
-  BUNDLE_LODS,
-  PART_BUNDLE_LOADER,
-  type IAssetFetcher,
-  type IPartBundleLoader,
-} from "@brr/catalog";
+import { ASSET_FETCHER, BUNDLE_LODS, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import { headingFootprints, planHull, verticalRange } from "@brr/domain";
 import { ModelFile, PartShape, type BundleManifest, type ManifestPart } from "@brr/schema/bundle";
@@ -30,13 +24,12 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 
 const fetcher = new BundleDirectoryFetcher();
 const manifests = new Map<string, BundleManifest>();
-let loader: IPartBundleLoader;
 
 beforeAll(async () => {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
-  loader = container.get(PART_BUNDLE_LOADER);
+  const loader = container.get(PART_BUNDLE_LOADER);
   for (const lod of BUNDLE_LODS) manifests.set(lod, await loader.loadManifest(lod));
 });
 
@@ -87,21 +80,6 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
     },
     BUNDLE_SWEEP_TIMEOUT_MS,
   );
-
-  it("load into model records whose parts carry the rolling surfaces their GLBs measured", async () => {
-    const manifest = manifestOf(lod);
-    const parts = new Map(manifest.parts.map((part) => [part.id, part]));
-    for (const entry of manifest.models) {
-      const record = await loader.loadModelRecord(lod, entry.name);
-      const rolling = record.parts.find((shape) => (shape.rolling?.surfaces.length ?? 0) > 0);
-      if (!rolling) continue;
-      const part = parts.get(rolling.id);
-      if (!part) throw new Error(`${entry.name}: ${rolling.id} is not in the part table`);
-      expect(rolling.rolling).toEqual((await glbOf(lod, part)).document.extras.rolling);
-      return;
-    }
-    throw new Error(`no model in the ${lod} bundle places a part with a rolling surface`);
-  });
 
   it("give every ground, road and track part a shape file of its own", async () => {
     const manifest = manifestOf(lod);

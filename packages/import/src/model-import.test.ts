@@ -62,6 +62,7 @@ async function importWith(
   fetchUrl: FetchFunction,
   fileName: string,
   text: string,
+  studPrimitives?: ReadonlyArray<string>,
 ): Promise<ImportResult> {
   const manifest = await bundleManifest();
   const partTable = JSON.parse(
@@ -80,7 +81,7 @@ async function importWith(
     text,
     lod: "standard",
     source: manifest.source,
-    studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
+    studPrimitives: studPrimitives ?? manifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: [],
     bundlePartIds: partTable.parts.map((part) => part.id),
     ldconfigCodes: manifest.colors.map((color) => color.code),
@@ -265,6 +266,15 @@ it(
       band(52, 53.5, [2.5, 2.5]),
       band(53.5, 56, [2.5, 0]),
     ]);
+    expect(rolling?.unread).toEqual([]);
   },
   BAKE_TIMEOUT_MS,
 );
+
+it("refuses to compile parts when the stud primitives draw no ring to measure roundness by", async () => {
+  await expect(
+    importWith(pinnedMirror, "wheelset.ldr", "1 0 0 0 0 1 0 0 0 1 0 0 0 1 70720c01.dat\n", [
+      "not-a-stud.dat",
+    ]),
+  ).rejects.toThrow(/stud primitives draw no closed round band/u);
+});

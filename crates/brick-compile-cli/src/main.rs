@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
-use brick_compile::compile::{modified_note, stud_roundness, MODIFIED_NOTE};
+use brick_compile::compile::{modified_note, required_stud_roundness, MODIFIED_NOTE};
 use brick_compile::cover::ModelCover;
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
@@ -399,10 +399,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
-        roundness: Some(
-            stud_roundness(&library, &stud_primitives)
-                .ok_or("the stud primitives draw no closed round band to measure roundness by")?,
-        ),
+        roundness: Some(required_stud_roundness(&library, &stud_primitives)?),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
     let ldconfig = library

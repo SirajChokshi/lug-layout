@@ -121,6 +121,16 @@ fn standard_triangles<L: Library>(
         .collect())
 }
 
+pub const NO_STUD_RING: &str =
+    "the stud primitives draw no closed round band to measure roundness by";
+
+pub fn required_stud_roundness<L: Library>(
+    library: &L,
+    stud_primitives: &[String],
+) -> Result<Roundness, String> {
+    stud_roundness(library, stud_primitives).ok_or_else(|| NO_STUD_RING.to_string())
+}
+
 pub fn stud_roundness<L: Library>(library: &L, stud_primitives: &[String]) -> Option<Roundness> {
     let at = |lod: Lod| -> Vec<Vec<Triangle>> {
         let mut flattener = Flattener::new(library, lod, &[]);

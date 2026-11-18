@@ -26,18 +26,17 @@ pub struct RollingSurface {
     pub radii: [i32; 2],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SurfaceReason {
-    Faceted,
-    Partial,
-    Facing,
-    Irregular,
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Ends {
+pub struct UnreadEnds {
     pub from: Option<i32>,
     pub to: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BandPlace {
+    pub axis: usize,
+    pub at: Option<[i32; 2]>,
+    pub ends: UnreadEnds,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -45,23 +44,23 @@ pub enum UnreadBand {
     Unoriented,
     Centre {
         axis: usize,
+        ends: UnreadEnds,
     },
     Radius {
         axis: usize,
         at: [i32; 2],
-        ends: Ends,
+        ends: UnreadEnds,
     },
     Width {
         axis: usize,
         at: [i32; 2],
-        ends: Ends,
+        radii: [i32; 2],
+        ends: UnreadEnds,
     },
-    Surface {
-        reason: SurfaceReason,
-        axis: usize,
-        at: Option<[i32; 2]>,
-        ends: Ends,
-    },
+    Faceted(BandPlace),
+    Partial(BandPlace),
+    Facing(BandPlace),
+    Irregular(BandPlace),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -70,20 +69,9 @@ pub struct PartRolling {
     pub unread: Vec<UnreadBand>,
 }
 
-impl SurfaceReason {
-    fn name(self) -> &'static str {
-        match self {
-            SurfaceReason::Faceted => "faceted",
-            SurfaceReason::Partial => "partial",
-            SurfaceReason::Facing => "facing",
-            SurfaceReason::Irregular => "irregular",
-        }
-    }
-}
-
-impl Ends {
-    fn of(lo: f64, hi: f64) -> Ends {
-        Ends {
+impl UnreadEnds {
+    fn of(lo: f64, hi: f64) -> UnreadEnds {
+        UnreadEnds {
             from: sixteenths::identified(lo),
             to: sixteenths::identified(hi),
         }
@@ -101,33 +89,49 @@ impl Ends {
 
 impl UnreadBand {
     fn json(self) -> Value {
-        match self {
+        let mut out = match self {
             UnreadBand::Unoriented => json!({ "reason": "unoriented" }),
-            UnreadBand::Centre { axis } => json!({ "reason": "centre", "axis": axis }),
-            UnreadBand::Radius { axis, at, ends } | UnreadBand::Width { axis, at, ends } => {
-                let reason = if matches!(self, UnreadBand::Radius { .. }) {
-                    "radius"
-                } else {
-                    "width"
-                };
-                let mut out = json!({ "reason": reason, "axis": axis, "at": at });
-                ends.write(&mut out);
-                out
+            UnreadBand::Centre { axis, .. } => json!({ "reason": "centre", "axis": axis }),
+            UnreadBand::Radius { axis, at, .. } => {
+                json!({ "reason": "radius", "axis": axis, "at": at })
             }
-            UnreadBand::Surface {
-                reason,
-                axis,
-                at,
-                ends,
+            UnreadBand::Width {
+                axis, at, radii, ..
             } => {
-                let mut out = json!({ "reason": reason.name(), "axis": axis });
-                if let Some(at) = at {
-                    out["at"] = json!(at);
-                }
-                ends.write(&mut out);
-                out
+                json!({ "reason": "width", "axis": axis, "at": at, "radii": radii })
             }
+            UnreadBand::Faceted(place) => place.json("faceted"),
+            UnreadBand::Partial(place) => place.json("partial"),
+            UnreadBand::Facing(place) => place.json("facing"),
+            UnreadBand::Irregular(place) => place.json("irregular"),
+        };
+        if let Some(ends) = self.ends() {
+            ends.write(&mut out);
         }
+        out
+    }
+
+    fn ends(self) -> Option<UnreadEnds> {
+        match self {
+            UnreadBand::Unoriented => None,
+            UnreadBand::Centre { ends, .. }
+            | UnreadBand::Radius { ends, .. }
+            | UnreadBand::Width { ends, .. } => Some(ends),
+            UnreadBand::Faceted(place)
+            | UnreadBand::Partial(place)
+            | UnreadBand::Facing(place)
+            | UnreadBand::Irregular(place) => Some(place.ends),
+        }
+    }
+}
+
+impl BandPlace {
+    fn json(self, reason: &str) -> Value {
+        let mut out = json!({ "reason": reason, "axis": self.axis });
+        if let Some(at) = self.at {
+            out["at"] = json!(at);
+        }
+        out
     }
 }
 
@@ -229,15 +233,15 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
             None => unread.push(UnreadBand::Width {
                 axis: band.axis,
                 at: band.at,
-                ends: Ends::of(band.lo, band.hi),
+                radii: band.radii,
+                ends: UnreadEnds::of(band.lo, band.hi),
             }),
         }
     }
-    unread.extend(mesh.smooth_surfaces(roundness, &explained));
+    unread.extend(mesh.unexplained_revolutions(roundness, &explained));
     surfaces.sort_unstable();
     surfaces.dedup();
     unread.sort_unstable();
-    unread.dedup();
     PartRolling { surfaces, unread }
 }
 
@@ -562,7 +566,7 @@ impl<'a> Mesh<'a> {
         }
     }
 
-    fn smooth_surfaces(&self, roundness: Roundness, explained: &[bool]) -> Vec<UnreadBand> {
+    fn unexplained_revolutions(&self, roundness: Roundness, explained: &[bool]) -> Vec<UnreadBand> {
         let member: Vec<bool> = self
             .triangles
             .iter()
@@ -575,13 +579,18 @@ impl<'a> Mesh<'a> {
         })
         .into_iter()
         .filter(|component| component.len() >= roundness.coarse_facets)
-        .filter_map(|component| self.smooth_surface(&component, explained))
+        .filter_map(|component| self.unexplained_revolution(&component, explained, roundness))
         .collect()
     }
 
-    fn smooth_surface(&self, component: &[usize], explained: &[bool]) -> Option<UnreadBand> {
+    fn unexplained_revolution(
+        &self,
+        component: &[usize],
+        explained: &[bool],
+        roundness: Roundness,
+    ) -> Option<UnreadBand> {
         let normals: Vec<Vec3> = component.iter().filter_map(|&t| self.normals[t]).collect();
-        let direction = revolution_axis(&normals)?;
+        let (direction, scatter) = revolution_axis(&normals, roundness.coarse_turn_cosine)?;
         let aligned = aligned_axis(direction);
         if aligned.is_some() && component.iter().any(|&t| explained[t]) {
             return None;
@@ -614,8 +623,8 @@ impl<'a> Mesh<'a> {
                 .then(a.1[1].total_cmp(&b.1[1]))
         });
         points.dedup();
-        let centre =
-            coaxial_centre(&points, AXIS_RESIDUAL * size).or_else(|| one_circle(&points))?;
+        let ring_spread = (scatter + f64::EPSILON) * size;
+        let centre = coaxial_centre(&points, ring_spread).or_else(|| one_circle(&points))?;
         let facing = self.facing(component, |normal, at| {
             let r = offset(projected(at), centre);
             let n = projected(normal);
@@ -641,12 +650,11 @@ impl<'a> Mesh<'a> {
         };
         let sign = direction[axis].signum();
         let (from, to) = if sign < 0.0 { (-hi, -lo) } else { (lo, hi) };
-        Some(UnreadBand::Surface {
-            reason: SurfaceReason::Irregular,
+        Some(UnreadBand::Irregular(BandPlace {
             axis,
             at,
-            ends: Ends::of(from, to),
-        })
+            ends: UnreadEnds::of(from, to),
+        }))
     }
 }
 
@@ -663,21 +671,8 @@ fn aligned_axis(direction: Vec3) -> Option<usize> {
     found
 }
 
-fn revolution_axis(normals: &[Vec3]) -> Option<Vec3> {
+fn revolution_axis(normals: &[Vec3], turn_cosine: f64) -> Option<(Vec3, f64)> {
     let first = *normals.first()?;
-    let distinct = |a: Vec3, b: Vec3| sub(a, b).iter().any(|c| c.abs() > AXIS_RESIDUAL);
-    let mut seen: Vec<Vec3> = Vec::new();
-    for &n in normals {
-        if seen.iter().all(|&s| distinct(s, n)) {
-            seen.push(n);
-            if seen.len() > 3 {
-                break;
-            }
-        }
-    }
-    if seen.len() <= 3 {
-        return None;
-    }
     let far = normals
         .iter()
         .copied()
@@ -686,24 +681,27 @@ fn revolution_axis(normals: &[Vec3]) -> Option<Vec3> {
     let third = normals.iter().copied().max_by(|a, b| {
         length(cross(spread, sub(*a, first))).total_cmp(&length(cross(spread, sub(*b, first))))
     })?;
-    let axis = unit(cross(spread, sub(third, first)))?;
-    let level = dot(first, axis);
-    if normals
-        .iter()
-        .any(|&n| (dot(n, axis) - level).abs() > AXIS_RESIDUAL)
-    {
+    let turned_apart = |a: Vec3, b: Vec3| dot(a, b) <= turn_cosine;
+    if !(turned_apart(first, far) && turned_apart(first, third) && turned_apart(far, third)) {
         return None;
     }
+    let axis = unit(cross(spread, sub(third, first)))?;
+    let level = dot(first, axis);
+    let scatter = normals
+        .iter()
+        .map(|&n| (dot(n, axis) - level).abs())
+        .fold(0.0, f64::max);
     let leading = axis
         .iter()
         .copied()
         .find(|c| c.abs() > AXIS_RESIDUAL)
         .unwrap_or(1.0);
-    Some(if leading < 0.0 {
+    let axis = if leading < 0.0 {
         axis.map(|c| -c + 0.0)
     } else {
         axis
-    })
+    };
+    Some((axis, scatter))
 }
 
 fn plane_basis(direction: Vec3) -> [Vec3; 2] {
@@ -737,7 +735,7 @@ fn coaxial_centre(points: &[(f64, [f64; 2])], ring_spread: f64) -> Option<[f64; 
             .map(|i| (i, (i + 1) % around.len()))
             .collect();
         let circle = Circle::fitted(&around, &chords, fitted)?;
-        if centre.is_some_and(|c| planar_distance(c, fitted) >= circle.bend) {
+        if centre.is_some_and(|c| planar_distance(c, fitted) >= circle.sagitta) {
             return None;
         }
         centre.get_or_insert(fitted);
@@ -760,7 +758,7 @@ fn one_circle(points: &[(f64, [f64; 2])]) -> Option<[f64; 2]> {
 struct Circle {
     centre: [f64; 2],
     radius: f64,
-    bend: f64,
+    sagitta: f64,
 }
 
 impl Circle {
@@ -770,7 +768,7 @@ impl Circle {
         centre: [f64; 2],
         radius: f64,
     ) -> Option<Circle> {
-        let bend = chords
+        let sagitta = chords
             .iter()
             .map(|&(a, b)| {
                 let middle = [
@@ -780,15 +778,15 @@ impl Circle {
                 radius - planar_distance(middle, centre)
             })
             .fold(f64::INFINITY, f64::min);
-        let on_circle = bend > 0.0
-            && bend.is_finite()
+        let on_circle = sagitta > 0.0
+            && sagitta.is_finite()
             && points
                 .iter()
-                .all(|p| (planar_distance(*p, centre) - radius).abs() < bend);
+                .all(|p| (planar_distance(*p, centre) - radius).abs() < sagitta);
         on_circle.then_some(Circle {
             centre,
             radius,
-            bend,
+            sagitta,
         })
     }
 
@@ -851,7 +849,7 @@ impl Ring {
         let (centre, extents_radius) = self.extents();
         let circumradius = self.circumradius(centre);
         let by_extents = Circle::about(&self.points, &self.chords, centre, circumradius)
-            .filter(|c| (extents_radius - c.radius).abs() < c.bend);
+            .filter(|c| (extents_radius - c.radius).abs() < c.sagitta);
         if let Some(circle) = by_extents {
             return Some((
                 Circle {
@@ -875,12 +873,12 @@ impl Ring {
 struct ClosedCircles {
     centre: [f64; 2],
     radii: [f64; 2],
-    shaped: usize,
+    denser_ring: usize,
 }
 
 impl ClosedCircles {
     fn turn_cosine(&self, rings: &[Ring; 2]) -> f64 {
-        let ring = &rings[self.shaped];
+        let ring = &rings[self.denser_ring];
         ring.chords
             .iter()
             .map(|&(a, b)| {
@@ -969,26 +967,26 @@ impl<'a> Strip<'a> {
         if !self.is_closed() {
             return None;
         }
-        let shaped = usize::from(self.rings[1].points.len() > self.rings[0].points.len());
-        let (circle, _) = self.rings[shaped].circle()?;
+        let denser_ring = usize::from(self.rings[1].points.len() > self.rings[0].points.len());
+        let (circle, _) = self.rings[denser_ring].circle()?;
         let mut radii = [0.0; 2];
-        radii[shaped] = circle.radius;
-        let other = &self.rings[1 - shaped];
+        radii[denser_ring] = circle.radius;
+        let other = &self.rings[1 - denser_ring];
         if other.is_apex() {
-            if planar_distance(other.points[0], circle.centre) >= circle.bend {
+            if planar_distance(other.points[0], circle.centre) >= circle.sagitta {
                 return None;
             }
         } else {
             let (own, _) = other.circle()?;
-            if planar_distance(own.centre, circle.centre) >= circle.bend.min(own.bend) {
+            if planar_distance(own.centre, circle.centre) >= circle.sagitta.min(own.sagitta) {
                 return None;
             }
-            radii[1 - shaped] = own.radius;
+            radii[1 - denser_ring] = own.radius;
         }
         Some(ClosedCircles {
             centre: circle.centre,
             radii,
-            shaped,
+            denser_ring,
         })
     }
 
@@ -1031,13 +1029,12 @@ impl<'a> Strip<'a> {
         }
     }
 
-    fn surface(&self, reason: SurfaceReason, centre: [f64; 2]) -> StripReading {
-        StripReading::Unread(UnreadBand::Surface {
-            reason,
+    fn place(&self, centre: Option<[f64; 2]>) -> BandPlace {
+        BandPlace {
             axis: self.axis,
-            at: self.on_line(centre),
-            ends: Ends::of(self.lo, self.hi),
-        })
+            at: centre.and_then(|c| self.on_line(c)),
+            ends: UnreadEnds::of(self.lo, self.hi),
+        }
     }
 
     fn reading(&self, roundness: Roundness) -> StripReading {
@@ -1048,9 +1045,9 @@ impl<'a> Strip<'a> {
             return StripReading::NotRound;
         };
         match self.facing_about(centre) {
-            Facing::Unknown => self.surface(SurfaceReason::Facing, centre),
+            Facing::Unknown => StripReading::Unread(UnreadBand::Facing(self.place(Some(centre)))),
             Facing::Inward => StripReading::Inward,
-            Facing::Outward => self.surface(SurfaceReason::Partial, centre),
+            Facing::Outward => StripReading::Unread(UnreadBand::Partial(self.place(Some(centre)))),
         }
     }
 
@@ -1059,24 +1056,20 @@ impl<'a> Strip<'a> {
             return StripReading::NotRound;
         }
         let Some(circles) = self.closed_circles() else {
-            let shaped = self.rings.iter().max_by_key(|r| r.points.len());
-            let centre = shaped.map_or([0.0; 2], |r| r.extents().0);
+            let denser_ring = self.rings.iter().max_by_key(|r| r.points.len());
+            let centre = denser_ring.map_or([0.0; 2], |r| r.extents().0);
             return match self.facing_about(centre) {
                 Facing::Inward => StripReading::Inward,
-                Facing::Unknown => StripReading::Unread(UnreadBand::Surface {
-                    reason: SurfaceReason::Facing,
-                    axis: self.axis,
-                    at: None,
-                    ends: Ends::of(self.lo, self.hi),
-                }),
-                Facing::Outward => StripReading::Unread(UnreadBand::Centre { axis: self.axis }),
+                Facing::Unknown => StripReading::Unread(UnreadBand::Facing(self.place(None))),
+                Facing::Outward => StripReading::Unread(self.centre_unread()),
             };
         };
+        let place = self.place(Some(circles.centre));
         match self.facing_about(circles.centre) {
-            Facing::Unknown => self.surface(SurfaceReason::Facing, circles.centre),
+            Facing::Unknown => StripReading::Unread(UnreadBand::Facing(place)),
             Facing::Inward => StripReading::Inward,
             Facing::Outward if self.facets() < roundness.standard_facets => {
-                self.surface(SurfaceReason::Faceted, circles.centre)
+                StripReading::Unread(UnreadBand::Faceted(place))
             }
             Facing::Outward => self.identified(&circles),
         }
@@ -1084,7 +1077,7 @@ impl<'a> Strip<'a> {
 
     fn identified(&self, circles: &ClosedCircles) -> StripReading {
         let Some(at) = self.on_line(circles.centre) else {
-            return StripReading::Unread(UnreadBand::Centre { axis: self.axis });
+            return StripReading::Unread(self.centre_unread());
         };
         match circles.radii.map(sixteenths::identified) {
             [Some(r0), Some(r1)] => StripReading::Read(ReadBand {
@@ -1097,8 +1090,15 @@ impl<'a> Strip<'a> {
             _ => StripReading::Unread(UnreadBand::Radius {
                 axis: self.axis,
                 at,
-                ends: Ends::of(self.lo, self.hi),
+                ends: UnreadEnds::of(self.lo, self.hi),
             }),
+        }
+    }
+
+    fn centre_unread(&self) -> UnreadBand {
+        UnreadBand::Centre {
+            axis: self.axis,
+            ends: UnreadEnds::of(self.lo, self.hi),
         }
     }
 }

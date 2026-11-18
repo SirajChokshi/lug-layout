@@ -378,11 +378,13 @@ const UnreadEnds = {
 export const UnreadBand = v.pipe(
   v.variant("reason", [
     v.object({ reason: v.literal("unoriented") }),
-    v.object({ reason: v.literal("centre"), axis: RollingAxis }),
+    v.object({ reason: v.literal("centre"), axis: RollingAxis, ...UnreadEnds }),
+    v.object({ reason: v.literal("radius"), axis: RollingAxis, at: RollingAt, ...UnreadEnds }),
     v.object({
-      reason: v.picklist(["radius", "width"]),
+      reason: v.literal("width"),
       axis: RollingAxis,
       at: RollingAt,
+      radii: v.tuple([Count, Count]),
       ...UnreadEnds,
     }),
     v.object({
@@ -398,7 +400,7 @@ export const UnreadBand = v.pipe(
     "an unread band runs from no higher than `to`",
   ),
   v.description(
-    "round geometry the bake measured but could not read as a rolling surface, carrying only what identified: unoriented (its axis is not a part axis), centre (axis only: no axis line identified), radius (axis line identified, a radius not), width (axis line and radii identified, an end not), and faceted, partial, facing or irregular (axis, with `at`, `from`, `to` where they identified)",
+    "round geometry the bake measured but could not read as a rolling surface, one entry per band and carrying only what identified: unoriented (its axis is not a part axis), centre (no axis line identified), radius (axis line identified, a radius not), width (axis line and both radii identified, an end not), and faceted, partial, facing or irregular (with `at` where it identified); `from` and `to` appear wherever they identified",
   ),
 );
 export type UnreadBand = v.InferOutput<typeof UnreadBand>;
