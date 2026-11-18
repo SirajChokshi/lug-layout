@@ -1,4 +1,5 @@
 import {
+  meshesSettled,
   runEditorAction,
   type EditorActionId,
   type EditorOptions,
@@ -137,6 +138,7 @@ export function EditorApp({
       data-layout={compact ? "compact" : "wide"}
       data-status={snapshot.status}
       data-far-tier={snapshot.farTier}
+      data-meshes={meshesSettled(snapshot.meshes) ? "settled" : "loading"}
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
       data-selection={snapshot.selection?.item ?? ""}
       data-ghost-rot={snapshot.ghostRot}

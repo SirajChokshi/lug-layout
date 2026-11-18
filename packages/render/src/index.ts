@@ -14,6 +14,7 @@ export type {
   LdrawColor,
   LookFeature,
   LookSettings,
+  NeededMeshListener,
   PartMeshUpdate,
   PaletteLevel,
   PartPalette,

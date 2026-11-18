@@ -10,6 +10,7 @@ import {
   type ModelSection,
   type ModelVehicle,
   type PartRole,
+  type PartRolling,
   type PartTechnic,
   type ProducedColors,
   type PrimitiveConnectorTable,
@@ -52,6 +53,7 @@ export interface PartShapeAsset {
   readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
   readonly technic: PartTechnic | null;
+  readonly rolling: PartRolling | null;
 }
 
 export interface PartAsset extends PartShapeAsset {
@@ -114,6 +116,13 @@ export interface ModelStudCover {
   readonly visibleBits: Uint32Array;
 }
 
+export interface PartModelSubmodels {
+  readonly count: number;
+  readonly parent: Int32Array;
+  readonly matrices: Float64Array;
+  readonly ofPart: Int32Array;
+}
+
 export interface PartModel {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly lattice: PartModelLattice | null;
@@ -123,6 +132,8 @@ export interface PartModel {
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint32Array;
   readonly matrices: Float32Array;
+  readonly partTransforms: Float64Array;
+  readonly submodels: PartModelSubmodels;
   readonly vehicles: ReadonlyArray<PartVehicle>;
 }
 
@@ -135,7 +146,7 @@ export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {
 
 export type PartBundle = Pick<
   BundleManifest,
-  "bundleVersion" | "colors" | "credits" | "models" | "trackCatalog" | "trackShapes"
+  "bundleVersion" | "colors" | "credits" | "models" | "trackCatalog" | "trackShapes" | "tablePlane"
 > & {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
@@ -162,6 +173,7 @@ export interface ImportContext {
   readonly partIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
+  readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
 }
 
@@ -201,6 +213,7 @@ export interface IPartBundleLoader {
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord>;
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord>;
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh>;
+  setPartMeshPriority(lod: BundleLod, file: string, priority: FetchPriority): void;
   loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null>;
   loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>>;
   loadManifest(lod: BundleLod): Promise<BundleManifest>;

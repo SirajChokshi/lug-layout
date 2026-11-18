@@ -21,7 +21,8 @@ import {
   type GeneratedKind,
   type PoolCandidate,
 } from "./generator.ts";
-import { cachingFetch, importThroughWorkerPath, type HeldOutInput } from "./import-path.ts";
+import { importsWithinLimit } from "./import-limit.ts";
+import { cachingFetch, type HeldOutInput } from "./import-path.ts";
 import { runTrains, trainsMarkdown } from "./trains/train-harness.ts";
 import { partExtras } from "./part-connectors.ts";
 import { markdownReport, partCoverage, type CheckedInput, type InputSet } from "./report.ts";
@@ -34,6 +35,7 @@ const CACHE_ROOT = join(REPO_ROOT, ".cache/held-out");
 const SEED_RANGE = 2 ** 31;
 const DEFAULT_BUILDS_PER_KIND = 4;
 const DEFAULT_TRAINS_PER_KIND = 1;
+const DEFAULT_IMPORT_LIMIT_SECONDS = 60;
 const HARNESS_TIMEOUT_MS = 3_600_000;
 const MS_PER_SECOND = 1000;
 const STUD_TOP_Y = 7;
@@ -52,6 +54,14 @@ function seedFromEnvironment(): number {
   const seed = Number(given);
   if (!Number.isInteger(seed) || seed < 0) throw new Error(`HELD_OUT_SEED ${given} is not a seed`);
   return seed;
+}
+
+function importLimitFromEnvironment(): number {
+  const given = process.env["HELD_OUT_IMPORT_LIMIT_SECONDS"];
+  if (given === undefined || given === "") return DEFAULT_IMPORT_LIMIT_SECONDS;
+  const limit = Number(given);
+  if (!(limit > 0)) throw new Error(`HELD_OUT_IMPORT_LIMIT_SECONDS ${given} is not a time limit`);
+  return limit;
 }
 
 function revision(): string {
@@ -90,13 +100,15 @@ interface Detail {
   readonly input: string;
   readonly set: InputSet;
   readonly checks: InputChecks;
+  readonly importSeconds: number;
 }
 
 function detailJson(details: ReadonlyArray<Detail>): string {
   return JSON.stringify(
-    details.map(({ input, set, checks }) => ({
+    details.map(({ input, set, checks, importSeconds }) => ({
       input,
       set,
+      importSeconds,
       outcomes: Object.fromEntries(checks.outcomes),
       skippedAndReported: checks.skippedAndReported,
       connectorSources: Object.fromEntries(checks.connectorSources),
@@ -114,15 +126,23 @@ it(
     const seed = seedFromEnvironment();
     process.stdout.write(`held-out generator seed ${seed} (HELD_OUT_SEED=${seed} reproduces it)\n`);
     const bundle = await openBundle(BUNDLE_ROOT);
-    const fetchUrl = cachingFetch(join(CACHE_ROOT, "ldraw"));
+    const ldrawCache = join(CACHE_ROOT, "ldraw");
+    const fetchUrl = cachingFetch(ldrawCache);
+    const importLimitSeconds = importLimitFromEnvironment();
+    const imports = importsWithinLimit(BUNDLE_ROOT, ldrawCache, importLimitSeconds);
     const memo: ConnectorMemo = new Map();
     const checked: CheckedInput[] = [];
     const details: Detail[] = [];
     const run = async (set: InputSet, label: string, input: HeldOutInput): Promise<void> => {
-      const outcome = await importThroughWorkerPath(bundle, fetchUrl, input);
+      const { outcome, seconds } = await imports.run(input);
       const checks = await checkInput(outcome, bundle, memo);
-      checked.push({ set, checks });
-      details.push({ input: label, set, checks });
+      checked.push({
+        set,
+        checks,
+        importSeconds: seconds,
+        importFinished: outcome.kind !== "unfinished",
+      });
+      details.push({ input: label, set, checks, importSeconds: seconds });
       process.stdout.write(`${set}: ${checked.length} inputs checked\n`);
     };
     const unsound: string[] = [];
@@ -164,6 +184,7 @@ it(
       if (collisions(build.collidingAssembly) < 1)
         unsound.push(`${build.name} doubled: no collision`);
     }
+    await imports.close();
 
     const pair = modulePair(pools, seed);
     for (const model of [pair.subject, pair.renamedSubject, pair.partner]) {
@@ -197,6 +218,7 @@ it(
         seed,
         corpusFiles: corpus.length,
         elapsedSeconds: Math.round((performance.now() - started) / MS_PER_SECOND),
+        importLimitSeconds,
       },
       checked,
     ).concat("\n", acceptanceMarkdown(acceptance), "\n", trainsMarkdown(trains, seed));

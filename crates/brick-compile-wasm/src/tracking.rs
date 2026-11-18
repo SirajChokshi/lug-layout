@@ -2,7 +2,9 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 
+use brick_compile::ldraw::{parse, LdrawFile};
 use brick_compile::Library;
 
 #[derive(Default)]
@@ -11,6 +13,7 @@ pub struct TrackingLibrary {
     files: HashMap<String, String>,
     absent: HashSet<String>,
     requested: RefCell<BTreeSet<String>>,
+    parsed: RefCell<HashMap<String, Rc<LdrawFile>>>,
 }
 
 impl TrackingLibrary {
@@ -46,5 +49,16 @@ impl Library for TrackingLibrary {
             self.requested.borrow_mut().insert(path.to_string());
         }
         None
+    }
+
+    fn parsed(&self, path: &str) -> Option<Rc<LdrawFile>> {
+        if let Some(file) = self.parsed.borrow().get(path) {
+            return Some(Rc::clone(file));
+        }
+        let file = Rc::new(parse(self.source(path)?));
+        self.parsed
+            .borrow_mut()
+            .insert(path.to_string(), Rc::clone(&file));
+        Some(file)
     }
 }

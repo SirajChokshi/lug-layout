@@ -7,6 +7,7 @@ export const STUD = 20;
 export const TRACK_ITEM = "track:lego-9v";
 
 const READY_TIMEOUT_MS = 150_000;
+const STATS_SETTLE_MS = 1_500;
 const SAMPLE_GRID = [-2, -1, 0, 1, 2] as const;
 const SAMPLE_STEP_PX = 140;
 const LOCAL_SAMPLES_PX = [-12, 0, 12] as const;
@@ -57,6 +58,21 @@ export interface TrackEnd {
   readonly xLdu: number;
   readonly zLdu: number;
   readonly heading: number;
+}
+
+export interface ModelTrack {
+  readonly pieces: number;
+  readonly runFrame: number;
+  readonly offField: number;
+  readonly unanchored: number;
+}
+
+export interface PlayState {
+  readonly status: string;
+  readonly xLdu: number;
+  readonly zLdu: number;
+  readonly bogiesOff: number;
+  readonly derailSpeed: number;
 }
 
 export interface TrackCounts {
@@ -131,10 +147,10 @@ export class EditorPage {
     this.canvas = page.locator("canvas.scene");
   }
 
-  static async open(page: Page): Promise<EditorPage> {
+  static async open(page: Page, query = ""): Promise<EditorPage> {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto("/?api=webgl2&state=1");
+    await page.goto(`/?api=webgl2&state=1${query}`);
     const editor = new EditorPage(page);
     await expect(editor.root).toHaveAttribute("data-status", SETTLED_STATUS, {
       timeout: READY_TIMEOUT_MS,
@@ -153,6 +169,37 @@ export class EditorPage {
           requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
         }),
     );
+  }
+
+  async waitForFarTierAndMeshesSettled(): Promise<void> {
+    await expect(this.root).not.toHaveAttribute("data-far-tier", "loading", {
+      timeout: READY_TIMEOUT_MS,
+    });
+    await expect(this.root).toHaveAttribute("data-meshes", "settled", {
+      timeout: READY_TIMEOUT_MS,
+    });
+    await this.settle();
+  }
+
+  async hud(label: string): Promise<string> {
+    return this.page.evaluate((wanted) => {
+      for (const row of document.querySelectorAll(".editor-hud dl > div")) {
+        if (row.querySelector("dt")?.textContent === wanted) {
+          return row.querySelector("dd")?.textContent ?? "";
+        }
+      }
+      return "";
+    }, label);
+  }
+
+  async steadyTriangles(): Promise<number> {
+    let previous = -1;
+    for (;;) {
+      await this.page.waitForTimeout(STATS_SETTLE_MS);
+      const triangles = Number((await this.hud("Drawn triangles")).replaceAll(",", ""));
+      if (triangles > 0 && triangles === previous) return triangles;
+      previous = triangles;
+    }
   }
 
   private async canvasCentre(): Promise<ScreenPoint> {
@@ -355,6 +402,34 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+    };
+  }
+
+  async modelTrack(): Promise<ModelTrack> {
+    const panel = this.page.locator("section.track-panel");
+    return {
+      pieces: Number(await panel.getAttribute("data-model-pieces")),
+      runFrame: Number(await panel.getAttribute("data-run-frame-pieces")),
+      offField: Number(await panel.getAttribute("data-off-field")),
+      unanchored: Number(await panel.getAttribute("data-unanchored")),
+    };
+  }
+
+  async startPlay(): Promise<void> {
+    await this.page.keyboard.press("Shift+P");
+    await this.page.waitForSelector('section.play-panel[data-play-status="running"]');
+  }
+
+  async playState(): Promise<PlayState> {
+    const panel = this.page.locator("section.play-panel");
+    const read = async (name: string): Promise<string> =>
+      (await panel.getAttribute(`data-${name}`)) ?? "";
+    return {
+      status: await read("play-status"),
+      xLdu: Number(await read("train-x")),
+      zLdu: Number(await read("train-z")),
+      bogiesOff: Number(await read("bogies-off")),
+      derailSpeed: Number(await read("derail-speed")),
     };
   }
 

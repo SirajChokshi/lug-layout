@@ -708,23 +708,35 @@
   "checks": [
     {
       "id": "ldraw:53401",
-      "railTopY": -16,
+      "railTopY": "-16",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/53401s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0,
-          "railHalfSpacingLdu": 50
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "5070602400912917605986812821504"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "50",
+            "denominator": "1"
+          }
         },
         {
           "connector": 1,
           "marker": "s/53401s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0,
-          "railHalfSpacingLdu": 50
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "10141204801825835211973625643008"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "50",
+            "denominator": "1"
+          }
         }
       ],
       "routes": [
@@ -733,8 +745,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            1,
-            1
+            {
+              "numerator": "1",
+              "denominator": "1"
+            },
+            {
+              "numerator": "1",
+              "denominator": "1"
+            }
           ],
           "rejected": []
         }
@@ -742,23 +760,35 @@
     },
     {
       "id": "ldraw:53400",
-      "railTopY": -16,
+      "railTopY": "-16",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/53400s03.dat",
           "derivation": "reference end",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": -0.25,
-          "railHalfSpacingLdu": 50.015625
+          "railCentreOffsetLdu": {
+            "numerator": "-4908544424184279286956867421106657928460650991919263533950723138514480451710116402564449755743791825199",
+            "denominator": "19555529962249300580877143229194616490203538534053333603494823498023620501377922839457236128448044531250"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "978089064954974048342397181909762276408763402434640228906668123406257180633993547811047091452083407150799",
+            "denominator": "19555529962249300580877143229194616490203538534053333603494823498023620501377922839457236128448044531250"
+          }
         },
         {
           "connector": 1,
           "marker": "s/53400s04.dat",
           "derivation": "arc: radius 40 studs from the file's !HELP rotation point (0/-800), turn -1 step from the end markers; not certified (no unique field candidate within the file's precision)",
           "markerResidualLdu": 0.0014847741947485202,
-          "railCentreOffsetLdu": 0.25,
-          "railHalfSpacingLdu": 50.015625
+          "railCentreOffsetLdu": {
+            "numerator": "195108374373855055069752931943429194095978908522043596733216293738449439116332647011437328213287617530297",
+            "denominator": "778091011899912099278784263411654594430741616310655213141797119560727095068033605172765135444089804687500"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "38916795959753277517202639584540660454488261208813010758965078382194016604182770788808063234592779563648047",
+            "denominator": "778091011899912099278784263411654594430741616310655213141797119560727095068033605172765135444089804687500"
+          }
         }
       ],
       "routes": [
@@ -767,8 +797,14 @@
           "to": 1,
           "family": "arc",
           "railCoverage": [
-            0.9622641509433962,
-            0.9685534591194969
+            {
+              "numerator": "51",
+              "denominator": "53"
+            },
+            {
+              "numerator": "154",
+              "denominator": "159"
+            }
           ],
           "rejected": []
         }
@@ -776,23 +812,35 @@
     },
     {
       "id": "ldraw:74746",
-      "railTopY": -16,
+      "railTopY": "-16",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.5
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "2535301200456458802993406410752"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "101",
+            "denominator": "2"
+          }
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 7.837739514543061e-14,
-          "railCentreOffsetLdu": -0.015625,
-          "railHalfSpacingLdu": 50.5
+          "railCentreOffsetLdu": {
+            "numerator": "-180081213000779783",
+            "denominator": "2535301200456458802993406410752"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "101",
+            "denominator": "2"
+          }
         }
       ],
       "routes": [
@@ -801,8 +849,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            1,
-            1
+            {
+              "numerator": "1",
+              "denominator": "1"
+            },
+            {
+              "numerator": "1",
+              "denominator": "1"
+            }
           ],
           "rejected": []
         }
@@ -810,23 +864,35 @@
     },
     {
       "id": "ldraw:74747",
-      "railTopY": -16,
+      "railTopY": "-16",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/2867as04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": -0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": {
+            "numerator": "-23524865507161032881199205686983255066908697132723665059477246202574880253700396299055055269353",
+            "denominator": "91137174823661587792262511844135915425801136701089068028552312766402022652827305098826586875000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "4603444168259908288075277966891659873330928651091403745566316153189365696492897884535212272718697",
+            "denominator": "91137174823661587792262511844135915425801136701089068028552312766402022652827305098826586875000"
+          }
         },
         {
           "connector": 1,
           "marker": "s/2867as03.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 7.741948029150472e-7,
-          "railCentreOffsetLdu": 0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": {
+            "numerator": "31517544359494817287753974616343685416773367961239680510149301789827660594015587563386566676513",
+            "denominator": "122101886065763239770768410979946386739254696840838680157399226698348105785064534202936035000000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "6167507666594328064009729540812284632947004895734589160877925100961718987702386445825105326438049",
+            "denominator": "122101886065763239770768410979946386739254696840838680157399226698348105785064534202936035000000"
+          }
         }
       ],
       "routes": [
@@ -835,8 +901,14 @@
           "to": 1,
           "family": "arc",
           "railCoverage": [
-            0.9622641509433962,
-            0.9685534591194969
+            {
+              "numerator": "51",
+              "denominator": "53"
+            },
+            {
+              "numerator": "154",
+              "denominator": "159"
+            }
           ],
           "rejected": []
         }
@@ -844,31 +916,49 @@
     },
     {
       "id": "ldraw:75541-f1",
-      "railTopY": -16,
+      "railTopY": "-16",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/2859s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": -0.125,
-          "railHalfSpacingLdu": 50.640625
+          "railCentreOffsetLdu": {
+            "numerator": "-439516278936139821193014087513581746510057135260283235797839640384644915946321455176986802570599230369800781",
+            "denominator": "3264292643975249102967601631887592034246454688778253565761689674867470611230523087101044333684922200883200000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "165286294799686235511479048195994737157450284090593108418975273505692657072865014085485399129894093894330244531",
+            "denominator": "3264292643975249102967601631887592034246454688778253565761689674867470611230523087101044333684922200883200000"
+          }
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.5
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "10141204801825835211973625643008"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "101",
+            "denominator": "2"
+          }
         },
         {
           "connector": 2,
           "marker": "s/2867as04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 8.921174634225937e-7,
-          "railCentreOffsetLdu": -0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": {
+            "numerator": "-192975694399310637476467918589493430520604773472788573353555653933080307118368581639774644937",
+            "denominator": "747569055385457026411595465943732745710865747383557063290383853909444602707400623752441125000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "7552114475511443039507294414796392457815816748830006243204477943908571231105454614209852091203",
+            "denominator": "149513811077091405282319093188746549142173149476711412658076770781888920541480124750488225000"
+          }
         }
       ],
       "routes": [
@@ -877,8 +967,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.8442367601246106,
-            0.9781931464174455
+            {
+              "numerator": "271",
+              "denominator": "321"
+            },
+            {
+              "numerator": "314",
+              "denominator": "321"
+            }
           ],
           "rejected": []
         },
@@ -887,13 +983,22 @@
           "to": 2,
           "family": "reversed-arcs",
           "railCoverage": [
-            0.9833333333333333,
-            0.8805555555555555
+            {
+              "numerator": "59",
+              "denominator": "60"
+            },
+            {
+              "numerator": "317",
+              "denominator": "360"
+            }
           ],
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": 0.13559322033898305
+              "worseRailCoverage": {
+                "numerator": "8",
+                "denominator": "59"
+              }
             }
           ]
         }
@@ -901,31 +1006,49 @@
     },
     {
       "id": "ldraw:75541-f2",
-      "railTopY": -16,
+      "railTopY": "-16",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/2859s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": -0.125,
-          "railHalfSpacingLdu": 50.640625
+          "railCentreOffsetLdu": {
+            "numerator": "-439516278936139821193014087513581746510057135260283235797839640384644915946321455176986802570599230369800781",
+            "denominator": "3264292643975249102967601631887592034246454688778253565761689674867470611230523087101044333684922200883200000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "165286294799686235511479048195994737157450284090593108418975273505692657072865014085485399129894093894330244531",
+            "denominator": "3264292643975249102967601631887592034246454688778253565761689674867470611230523087101044333684922200883200000"
+          }
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.5
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "10141204801825835211973625643008"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "101",
+            "denominator": "2"
+          }
         },
         {
           "connector": 2,
           "marker": "s/2867as04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 8.921174634225937e-7,
-          "railCentreOffsetLdu": -0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": {
+            "numerator": "-192975694399310637476467918589493430520604773472788573353555653933080307118368581639774644937",
+            "denominator": "747569055385457026411595465943732745710865747383557063290383853909444602707400623752441125000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "7552114475511443039507294414796392457815816748830006243204477943908571231105454614209852091203",
+            "denominator": "149513811077091405282319093188746549142173149476711412658076770781888920541480124750488225000"
+          }
         }
       ],
       "routes": [
@@ -934,8 +1057,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.8442367601246106,
-            0.9781931464174455
+            {
+              "numerator": "271",
+              "denominator": "321"
+            },
+            {
+              "numerator": "314",
+              "denominator": "321"
+            }
           ],
           "rejected": []
         },
@@ -944,13 +1073,22 @@
           "to": 2,
           "family": "reversed-arcs",
           "railCoverage": [
-            0.9833333333333333,
-            0.9527777777777777
+            {
+              "numerator": "59",
+              "denominator": "60"
+            },
+            {
+              "numerator": "343",
+              "denominator": "360"
+            }
           ],
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": 0.13559322033898305
+              "worseRailCoverage": {
+                "numerator": "8",
+                "denominator": "59"
+              }
             }
           ]
         }
@@ -958,31 +1096,49 @@
     },
     {
       "id": "ldraw:75542-f1",
-      "railTopY": -16,
+      "railTopY": "-16",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/2859s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.140625,
-          "railHalfSpacingLdu": 50.625
+          "railCentreOffsetLdu": {
+            "numerator": "1318548836808519350287511358849253673000317203735199612564695691695403010034484927056132850585151753766770969",
+            "denominator": "9792877931925746994817931284716532847909550866940338868045055414790313698220398177302627313360197124096000000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "495858884399058694617326586142562428020090353453335709879901690992528020688492236927100622219798223668650239719",
+            "denominator": "9792877931925746994817931284716532847909550866940338868045055414790313698220398177302627313360197124096000000"
+          }
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.5
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "10141204801825835211973625643008"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "101",
+            "denominator": "2"
+          }
         },
         {
           "connector": 2,
           "marker": "s/2867as03.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 8.921174634225937e-7,
-          "railCentreOffsetLdu": 0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": {
+            "numerator": "21105325840081440953552956638316473459984611534142582958861671916987175745426528488552704168709",
+            "denominator": "81760237121011670371146632370957514022072863357705220059008146744556539468635565806921305750000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "4129803633796944723861965543121724324931252489909427961493580323121687974705645229168514122933157",
+            "denominator": "81760237121011670371146632370957514022072863357705220059008146744556539468635565806921305750000"
+          }
         }
       ],
       "routes": [
@@ -991,8 +1147,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.9813084112149533,
-            0.8411214953271028
+            {
+              "numerator": "105",
+              "denominator": "107"
+            },
+            {
+              "numerator": "90",
+              "denominator": "107"
+            }
           ],
           "rejected": []
         },
@@ -1001,13 +1163,22 @@
           "to": 2,
           "family": "reversed-arcs",
           "railCoverage": [
-            0.8833333333333333,
-            0.9861111111111112
+            {
+              "numerator": "53",
+              "denominator": "60"
+            },
+            {
+              "numerator": "71",
+              "denominator": "72"
+            }
           ],
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": 0.14124293785310735
+              "worseRailCoverage": {
+                "numerator": "25",
+                "denominator": "177"
+              }
             }
           ]
         }
@@ -1015,31 +1186,49 @@
     },
     {
       "id": "ldraw:75542-f2",
-      "railTopY": -16,
+      "railTopY": "-16",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/2859s02.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.140625,
-          "railHalfSpacingLdu": 50.625
+          "railCentreOffsetLdu": {
+            "numerator": "1318548836808519350287511358849253673000317203735199612564695691695403010034484927056132850585151753766770969",
+            "denominator": "9792877931925746994817931284716532847909550866940338868045055414790313698220398177302627313360197124096000000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "495858884399058694617326586142562428020090353453335709879901690992528020688492236927100622219798223668650239719",
+            "denominator": "9792877931925746994817931284716532847909550866940338868045055414790313698220398177302627313360197124096000000"
+          }
         },
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.5
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "10141204801825835211973625643008"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "101",
+            "denominator": "2"
+          }
         },
         {
           "connector": 2,
           "marker": "s/2867as03.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 8.921174634225937e-7,
-          "railCentreOffsetLdu": 0.25,
-          "railHalfSpacingLdu": 50.515625
+          "railCentreOffsetLdu": {
+            "numerator": "21105325840081440953552956638316473459984611534142582958861671916987175745426528488552704168709",
+            "denominator": "81760237121011670371146632370957514022072863357705220059008146744556539468635565806921305750000"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "4129803633796944723861965543121724324931252489909427961493580323121687974705645229168514122933157",
+            "denominator": "81760237121011670371146632370957514022072863357705220059008146744556539468635565806921305750000"
+          }
         }
       ],
       "routes": [
@@ -1048,8 +1237,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.9813084112149533,
-            0.8411214953271028
+            {
+              "numerator": "105",
+              "denominator": "107"
+            },
+            {
+              "numerator": "90",
+              "denominator": "107"
+            }
           ],
           "rejected": []
         },
@@ -1058,13 +1253,22 @@
           "to": 2,
           "family": "reversed-arcs",
           "railCoverage": [
-            0.9555555555555556,
-            0.9861111111111112
+            {
+              "numerator": "43",
+              "denominator": "45"
+            },
+            {
+              "numerator": "71",
+              "denominator": "72"
+            }
           ],
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": 0.14124293785310735
+              "worseRailCoverage": {
+                "numerator": "25",
+                "denominator": "177"
+              }
             }
           ]
         }
@@ -1072,39 +1276,63 @@
     },
     {
       "id": "ldraw:32087",
-      "railTopY": -16.05,
+      "railTopY": "-16.05",
       "connectors": [
         {
           "connector": 0,
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.25
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "5070602400912917605986812821504"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "201",
+            "denominator": "4"
+          }
         },
         {
           "connector": 1,
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.25
+          "railCentreOffsetLdu": {
+            "numerator": "24838788000107555",
+            "denominator": "10141204801825835211973625643008"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "201",
+            "denominator": "4"
+          }
         },
         {
           "connector": 2,
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.25
+          "railCentreOffsetLdu": {
+            "numerator": "31048485000134445",
+            "denominator": "5070602400912917605986812821504"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "201",
+            "denominator": "4"
+          }
         },
         {
           "connector": 3,
           "marker": "s/2865s04.dat",
           "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
           "markerResidualLdu": 0,
-          "railCentreOffsetLdu": 0.015625,
-          "railHalfSpacingLdu": 50.25
+          "railCentreOffsetLdu": {
+            "numerator": "18629091000080665",
+            "denominator": "5070602400912917605986812821504"
+          },
+          "railHalfSpacingLdu": {
+            "numerator": "201",
+            "denominator": "4"
+          }
         }
       ],
       "routes": [
@@ -1113,8 +1341,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.9503105590062112,
-            0.9565217391304348
+            {
+              "numerator": "153",
+              "denominator": "161"
+            },
+            {
+              "numerator": "22",
+              "denominator": "23"
+            }
           ],
           "rejected": []
         },
@@ -1123,8 +1357,14 @@
           "to": 3,
           "family": "straight",
           "railCoverage": [
-            0.9192546583850931,
-            0.9254658385093167
+            {
+              "numerator": "148",
+              "denominator": "161"
+            },
+            {
+              "numerator": "149",
+              "denominator": "161"
+            }
           ],
           "rejected": []
         }
