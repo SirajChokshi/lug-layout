@@ -33,7 +33,7 @@ import {
 import { LatticeStudFinder } from "./lattice-stud-finder.ts";
 import { MateReport } from "./mate-report.ts";
 import { SnapMating } from "./mating.ts";
-import { IDENTIFICATION_RESIDUAL_LDU, ModelConnectors } from "./model-connectors.ts";
+import { IDENTIFICATION_RESIDUAL_LDU, MODEL_ROOT, ModelConnectors } from "./model-connectors.ts";
 import { SparseConnectorFinder } from "./sparse-connector-finder.ts";
 import { TrackEndFinder } from "./track-end-finder.ts";
 import {
@@ -528,6 +528,7 @@ describe("ModelConnectors", () => {
       [0, translation(0, 0.03, 0)],
       [0, [1, -tilt, 0, 0, tilt, 1, 0, -tilt * HALF, 0, 0, 1, 0]],
       [0, [diagonal, -diagonal, 0, 0, diagonal, diagonal, 0, 0, 0, 0, 1, 0]],
+      [0, translation(Number.NaN, 0, 0)],
       [1, translation(0, 0, 0)],
     ];
     const connectors = model([stud, null], placements);
@@ -535,7 +536,7 @@ describe("ModelConnectors", () => {
       connectors.count,
       connectors.offLattice,
       connectors.instancesWithoutConnectors,
-    ]).toEqual([2, 4, 1]);
+    ]).toEqual([2, 5, 1]);
     expect(Array.from(connectors.origin)).toEqual(
       [HALF, 0, HALF, HALF, 0, HALF].map((ldu) => ldu * SIXTEENTHS_PER_LDU),
     );
@@ -706,6 +707,284 @@ describe("ConnectionSolver with sparse connectors", () => {
     solver.remove(holes, pose(0, 0, 0));
     expect(matesAt(solver, pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0))).toBe(0);
     expect(() => solver.remove(holes, pose(0, 0, 0))).toThrow(RangeError);
+  });
+});
+
+type Matrix = ReadonlyArray<number>;
+
+interface Submodel {
+  readonly parent: number;
+  readonly local: Matrix;
+}
+
+interface Placed {
+  readonly part: number;
+  readonly submodel: number;
+  readonly local: Matrix;
+}
+
+const IDENTITY = translation(0, 0, 0);
+const DUST = 0.02;
+const COS_45_TO_3_DECIMALS = Math.round(Math.SQRT1_2 * 1000) / 1000;
+
+function then(outer: Matrix, inner: Matrix): number[] {
+  const out: number[] = [];
+  for (let r = 0; r < 3; r++) {
+    for (let k = 0; k < 4; k++) {
+      let sum = k === 3 ? (outer[r * 4 + 3] ?? 0) : 0;
+      for (let j = 0; j < 3; j++) sum += (outer[r * 4 + j] ?? 0) * (inner[j * 4 + k] ?? 0);
+      out.push(sum);
+    }
+  }
+  return out;
+}
+
+function quarterTurn(rot: QuarterTurn, x: number, y: number, z: number): number[] {
+  const c = rot90Cos(rot);
+  const s = rot90Sin(rot);
+  return [c, 0, s, x, 0, 1, 0, y, -s, 0, c, z];
+}
+
+function inverseRigid(m: Matrix): number[] {
+  const rotation = [0, 1, 2].map((r) => [0, 1, 2].map((k) => m[k * 4 + r] ?? 0));
+  const out: number[] = [];
+  for (const row of rotation) {
+    const shift = -row.reduce((sum, value, k) => sum + value * (m[k * 4 + 3] ?? 0), 0);
+    out.push(...row, shift);
+  }
+  return out;
+}
+
+function tiltAboutX(radians: number): number[] {
+  const c = Math.cos(radians);
+  const s = Math.sin(radians);
+  return [1, 0, 0, 0, 0, c, -s, 0, 0, s, c, 0];
+}
+
+function assembled(
+  parts: ReadonlyArray<ConnectorTable>,
+  submodels: ReadonlyArray<Submodel>,
+  placed: ReadonlyArray<Placed>,
+  withTree: boolean,
+): ModelConnectors {
+  const world: number[][] = [];
+  for (const s of submodels) world.push(then(world[s.parent] ?? IDENTITY, s.local));
+  const instances = {
+    count: placed.length,
+    partIndex: placed.map((p) => p.part),
+    matrices: Float64Array.from(
+      placed.flatMap((p) => then(world[p.submodel] ?? IDENTITY, p.local)),
+    ),
+  };
+  if (!withTree) return ModelConnectors.fromParts(parts, instances, mating);
+  return ModelConnectors.fromParts(
+    parts,
+    {
+      ...instances,
+      submodels: {
+        count: submodels.length,
+        parent: Int32Array.from(submodels, (s) => s.parent),
+        matrices: Float64Array.from(world.flat()),
+        ofPart: Int32Array.from(placed, (p) => p.submodel),
+      },
+    },
+    mating,
+  );
+}
+
+function tally(connectors: ModelConnectors): number[] {
+  return [connectors.count, connectors.internalMates, connectors.offLattice];
+}
+
+function oneSubmodel(local: Matrix): Submodel[] {
+  return [{ parent: MODEL_ROOT, local }];
+}
+
+function twoSiblings(dust: number): Submodel[] {
+  return [
+    { parent: MODEL_ROOT, local: translation(dust, 0, 0) },
+    { parent: MODEL_ROOT, local: translation(dust - STUD_LDU, 0, 0) },
+  ];
+}
+
+function pinAndHoleShifted(dust: number): Placed[] {
+  return [
+    { part: 0, submodel: 1, local: translation(dust, 0, 0) },
+    { part: 1, submodel: 1, local: translation(dust, 0, 0) },
+  ];
+}
+
+describe("ModelConnectors in a sub-model tree", () => {
+  const pin = table([
+    { shape: PIN, gender: GENDER_MALE, origin: [0, HOLE_HEIGHT, 0], axis: AXIS_POS_X },
+  ]);
+  const hole = table([
+    { shape: PIN_HOLE, gender: GENDER_FEMALE, origin: [0, HOLE_HEIGHT, 0], axis: AXIS_NEG_X },
+  ]);
+
+  it("mates a sub-model's own pin and hole in its frame, in double precision, when it's placed with dust, far away or turned with 3-decimal entries, and keeps its exposed hole absolute and off-lattice", () => {
+    const holes = table([
+      { shape: PIN_HOLE, gender: GENDER_FEMALE, origin: [0, HOLE_HEIGHT, 0], axis: AXIS_NEG_X },
+      {
+        shape: PIN_HOLE,
+        gender: GENDER_FEMALE,
+        origin: [0, HOLE_HEIGHT, STUD_LDU],
+        axis: AXIS_NEG_X,
+      },
+    ]);
+    const inside = translation(2 * STUD_LDU, 0, STUD_LDU);
+    const contents: Placed[] = [
+      { part: 0, submodel: 0, local: inside },
+      { part: 1, submodel: 0, local: inside },
+    ];
+    const [x, y, z] = [5 * STUD_LDU, PLATE_LDU, 2 * STUD_LDU];
+    const c = COS_45_TO_3_DECIMALS;
+    const farDusty = FAR_LDU + DUST + IDENTIFICATION_RESIDUAL_LDU;
+    expect(Math.abs(Math.fround(farDusty) - farDusty)).toBeGreaterThan(IDENTIFICATION_RESIDUAL_LDU);
+    for (const placement of [
+      translation(x + DUST, y, z),
+      [c, 0, c, x, 0, 1, 0, y, -c, 0, c, z],
+      translation(farDusty, y, z),
+    ]) {
+      expect(tally(assembled([pin, holes], oneSubmodel(placement), contents, false))).toEqual([
+        0, 0, 3,
+      ]);
+      expect(tally(assembled([pin, holes], oneSubmodel(placement), contents, true))).toEqual([
+        0, 1, 1,
+      ]);
+    }
+    const exact = assembled([pin, holes], oneSubmodel(translation(x, y, z)), contents, true);
+    expect(tally(exact)).toEqual([1, 1, 0]);
+    expect(Array.from(exact.origin)).toEqual(
+      [x + 2 * STUD_LDU, y + HOLE_HEIGHT, z + 2 * STUD_LDU].map((ldu) => ldu * SIXTEENTHS_PER_LDU),
+    );
+  });
+
+  it("refuses dust between faces far inside a sub-model, which single precision would round away", () => {
+    const deep = (holeDust: number): Placed[] => [
+      { part: 0, submodel: 0, local: translation(FAR_LDU, 0, 0) },
+      { part: 1, submodel: 0, local: translation(FAR_LDU + holeDust, 0, 0) },
+    ];
+    expect(Math.fround(FAR_LDU + DUST_BEYOND_RESIDUAL_LDU)).toBe(FAR_LDU);
+    const dusty = oneSubmodel(translation(DUST, 0, 0));
+    expect(tally(assembled([pin, hole], dusty, deep(0), true))).toEqual([0, 1, 0]);
+    expect(tally(assembled([pin, hole], dusty, deep(DUST_BEYOND_RESIDUAL_LDU), true))).toEqual([
+      0, 0, 2,
+    ]);
+  });
+
+  it("judges a pair only absolutely or in its lowest common sub-model instance, never in a sibling's or an ancestor's frame", () => {
+    const pinAndHole = table([
+      { shape: PIN, gender: GENDER_MALE, origin: [0, HOLE_HEIGHT, 0], axis: AXIS_POS_X },
+      {
+        shape: PIN_HOLE,
+        gender: GENDER_FEMALE,
+        origin: [STUD_LDU, HOLE_HEIGHT, 0],
+        axis: AXIS_NEG_X,
+      },
+    ]);
+    const twoInstances: Placed[] = [
+      { part: 0, submodel: 0, local: IDENTITY },
+      { part: 0, submodel: 1, local: IDENTITY },
+    ];
+    expect(tally(assembled([pinAndHole], twoSiblings(0), twoInstances, true))).toEqual([2, 1, 0]);
+    expect(tally(assembled([pinAndHole], twoSiblings(DUST), twoInstances, true))).toEqual([
+      0, 0, 4,
+    ]);
+    const compensated: Submodel[] = [
+      { parent: MODEL_ROOT, local: translation(1.5 * DUST, 0, 0) },
+      { parent: 0, local: translation(-DUST, 0, 0) },
+    ];
+    expect(tally(assembled([pin, hole], compensated, pinAndHoleShifted(0), true))).toEqual([
+      0, 1, 0,
+    ]);
+    expect(tally(assembled([pin, hole], compensated, pinAndHoleShifted(DUST), true))).toEqual([
+      0, 0, 2,
+    ]);
+  });
+
+  it("changes nothing for an exactly placed tree, and keeps every internal mate when the whole tree is tilted and placed with dust", () => {
+    const plate = block(1, 1, PLATE_LDU, PLATE_RECEPTOR);
+    const side = 4;
+    const submodelCount = 5;
+    const plates = 24;
+    const outerMove = then(translation(0.013, -0.007, DUST), tiltAboutX(0.3));
+    let seed = 20261118;
+    const next = (span: number): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % span;
+    };
+    let mates = 0;
+    for (let trial = 0; trial < 12; trial++) {
+      const exactTree: Submodel[] = [{ parent: MODEL_ROOT, local: IDENTITY }];
+      for (let s = 1; s < submodelCount; s++) {
+        exactTree.push({
+          parent: next(s),
+          local: quarterTurn(
+            next(4) as QuarterTurn,
+            (next(5) - 2) * STUD_LDU,
+            (next(3) - 1) * PLATE_LDU,
+            (next(5) - 2) * STUD_LDU,
+          ),
+        });
+      }
+      const world: number[][] = [];
+      for (const s of exactTree) world.push(then(world[s.parent] ?? IDENTITY, s.local));
+      const cells = Array.from({ length: side ** 3 }, (_, k) => k);
+      for (let k = cells.length - 1; k > 0; k--) {
+        const j = next(k + 1);
+        [cells[k], cells[j]] = [cells[j] ?? 0, cells[k] ?? 0];
+      }
+      const placed: Placed[] = cells.slice(0, plates).map((cell) => {
+        const submodel = next(submodelCount);
+        const at = translation(
+          (cell % side) * STUD_LDU,
+          (Math.floor(cell / side) % side) * PLATE_LDU,
+          Math.floor(cell / side ** 2) * STUD_LDU,
+        );
+        return { part: 0, submodel, local: then(inverseRigid(world[submodel] ?? IDENTITY), at) };
+      });
+      const flat = assembled([plate], exactTree, placed, false);
+      const nested = assembled([plate], exactTree, placed, true);
+      expect(tally(nested)).toEqual(tally(flat));
+      expect([
+        Array.from(nested.origin),
+        Array.from(nested.axis),
+        Array.from(nested.instance),
+      ]).toEqual([Array.from(flat.origin), Array.from(flat.axis), Array.from(flat.instance)]);
+      const moved = exactTree.map((s, k) => (k === 0 ? { ...s, local: outerMove } : s));
+      expect(tally(assembled([plate], moved, placed, false))).toEqual([0, 0, 2 * plates]);
+      expect(tally(assembled([plate], moved, placed, true))).toEqual([
+        0,
+        flat.internalMates,
+        flat.count,
+      ]);
+      mates += flat.internalMates;
+    }
+    expect(mates).toBeGreaterThan(0);
+  });
+
+  it("refuses a tree whose parents aren't earlier instances or whose parts name no instance", () => {
+    const plate = block(1, 1, PLATE_LDU, PLATE_RECEPTOR);
+    const one = { count: 1, partIndex: [0], matrices: Float64Array.from(IDENTITY) };
+    const tree = (parent: ReadonlyArray<number>, ofPart: ReadonlyArray<number>) => ({
+      ...one,
+      submodels: {
+        count: parent.length,
+        parent,
+        matrices: Float64Array.from(parent.flatMap(() => IDENTITY)),
+        ofPart,
+      },
+    });
+    expect(() => ModelConnectors.fromParts([plate], tree([MODEL_ROOT, 1], [1]), mating)).toThrow(
+      RangeError,
+    );
+    expect(() => ModelConnectors.fromParts([plate], tree([MODEL_ROOT], [1]), mating)).toThrow(
+      RangeError,
+    );
+    expect(tally(ModelConnectors.fromParts([plate], tree([MODEL_ROOT, 0], [1]), mating))).toEqual([
+      2, 0, 0,
+    ]);
   });
 });
 
