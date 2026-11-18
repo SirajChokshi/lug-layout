@@ -145,6 +145,7 @@ jobs:
           path: .cache/catalog
           key: library-connector-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
       - run: pnpm --filter @brr/asset-pipeline library-connectors --check
+      - run: pnpm --filter @brr/asset-pipeline shadow-library --check
 
   check:
     if: ${{ always() }}
