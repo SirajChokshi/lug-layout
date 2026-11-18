@@ -75,7 +75,7 @@ import {
   type FramedTrackPiece,
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
-import { placeableVolumes, type FrozenVolumes } from "../connect/placeable-volumes.ts";
+import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
   TRACK_SYSTEM,
@@ -2206,7 +2206,7 @@ export class Editor implements IEditor, IEditedWorld {
           placeable.partTransforms,
           this.trackOf(placeable)?.openEnds ?? [],
         ),
-        volumes: placeableVolumes(placeable),
+        volumes: FrozenVolumes.ofPlaceable(placeable),
       };
       this.connected.set(placeable, connected);
     }

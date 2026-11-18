@@ -117,13 +117,14 @@ class VolumeBuffer implements CellVolumes {
     const cos = rot90Cos(rot);
     const sin = rot90Sin(rot);
     const yLdu = pose.yPlates * PLATE_LDU;
+    const { cellX, cellZ, bottomLdu, topLdu } = local;
     for (let c = 0; c < local.count; c++) {
-      const cx = (local.cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
-      const cz = (local.cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+      const cx = (cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+      const cz = (cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
       this.cellX[c] = Math.floor((cos * cx + sin * cz + pose.x) / STUD_LDU);
       this.cellZ[c] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
-      this.bottomLdu[c] = (local.bottomLdu[c] ?? 0) + yLdu;
-      this.topLdu[c] = (local.topLdu[c] ?? 0) + yLdu;
+      this.bottomLdu[c] = (bottomLdu[c] ?? 0) + yLdu;
+      this.topLdu[c] = (topLdu[c] ?? 0) + yLdu;
     }
     this.count = local.count;
     return this;

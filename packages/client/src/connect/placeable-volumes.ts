@@ -27,13 +27,39 @@ function copied(values: ArrayLike<number>, count: number): Int32Array {
 }
 
 export class FrozenVolumes implements CellVolumes {
+  readonly #cellX: Int32Array;
+  readonly #cellZ: Int32Array;
+  readonly #bottomLdu: Int32Array;
+  readonly #topLdu: Int32Array;
+
   private constructor(
     readonly count: number,
-    readonly cellX: ArrayLike<number>,
-    readonly cellZ: ArrayLike<number>,
-    readonly bottomLdu: ArrayLike<number>,
-    readonly topLdu: ArrayLike<number>,
-  ) {}
+    cellX: Int32Array,
+    cellZ: Int32Array,
+    bottomLdu: Int32Array,
+    topLdu: Int32Array,
+  ) {
+    this.#cellX = cellX;
+    this.#cellZ = cellZ;
+    this.#bottomLdu = bottomLdu;
+    this.#topLdu = topLdu;
+  }
+
+  get cellX(): ArrayLike<number> {
+    return this.#cellX;
+  }
+
+  get cellZ(): ArrayLike<number> {
+    return this.#cellZ;
+  }
+
+  get bottomLdu(): ArrayLike<number> {
+    return this.#bottomLdu;
+  }
+
+  get topLdu(): ArrayLike<number> {
+    return this.#topLdu;
+  }
 
   static copyOf(cells: CellVolumes): FrozenVolumes {
     return new FrozenVolumes(
@@ -44,32 +70,32 @@ export class FrozenVolumes implements CellVolumes {
       copied(cells.topLdu, cells.count),
     );
   }
-}
 
-export function placeableVolumes(placeable: Placeable): FrozenVolumes {
-  const { cells, slabBoxes } = placeable;
-  const slab = slabBottoms(cells, slabBoxes);
-  let count = 0;
-  for (let c = 0; c < cells.width * cells.depth; c++) {
-    if ((cells.columnTop[c] ?? EMPTY_COLUMN) !== EMPTY_COLUMN) count++;
-  }
-  const cellX = new Int32Array(count);
-  const cellZ = new Int32Array(count);
-  const bottomLdu = new Int32Array(count);
-  const topLdu = new Int32Array(count);
-  let n = 0;
-  for (let j = 0; j < cells.depth; j++) {
-    for (let i = 0; i < cells.width; i++) {
-      const c = j * cells.width + i;
-      const top = cells.columnTop[c] ?? EMPTY_COLUMN;
-      if (top === EMPTY_COLUMN) continue;
-      const bottom = (cells.columnBottom[c] ?? 0) * PLATE_LDU;
-      cellX[n] = cells.cellX0 + i;
-      cellZ[n] = cells.cellZ0 + j;
-      bottomLdu[n] = bottom === 0 ? Math.floor(slab[c] ?? 0) : bottom;
-      topLdu[n] = top * PLATE_LDU;
-      n++;
+  static ofPlaceable(placeable: Placeable): FrozenVolumes {
+    const { cells, slabBoxes } = placeable;
+    const slab = slabBottoms(cells, slabBoxes);
+    let count = 0;
+    for (let c = 0; c < cells.width * cells.depth; c++) {
+      if ((cells.columnTop[c] ?? EMPTY_COLUMN) !== EMPTY_COLUMN) count++;
     }
+    const cellX = new Int32Array(count);
+    const cellZ = new Int32Array(count);
+    const bottomLdu = new Int32Array(count);
+    const topLdu = new Int32Array(count);
+    let n = 0;
+    for (let j = 0; j < cells.depth; j++) {
+      for (let i = 0; i < cells.width; i++) {
+        const c = j * cells.width + i;
+        const top = cells.columnTop[c] ?? EMPTY_COLUMN;
+        if (top === EMPTY_COLUMN) continue;
+        const bottom = (cells.columnBottom[c] ?? 0) * PLATE_LDU;
+        cellX[n] = cells.cellX0 + i;
+        cellZ[n] = cells.cellZ0 + j;
+        bottomLdu[n] = bottom === 0 ? Math.floor(slab[c] ?? 0) : bottom;
+        topLdu[n] = top * PLATE_LDU;
+        n++;
+      }
+    }
+    return new FrozenVolumes(count, cellX, cellZ, bottomLdu, topLdu);
   }
-  return FrozenVolumes.copyOf({ count, cellX, cellZ, bottomLdu, topLdu });
 }
