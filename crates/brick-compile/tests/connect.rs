@@ -1050,6 +1050,53 @@ fn a_wall_off_to_the_side_does_not_stop_a_stud_sliding_toward_its_line() {
     assert_eq!(at_mouth("parts/walled.dat"), open);
 }
 
+fn slit_pocket(far_brick: bool) -> String {
+    let upright = |(x0, z0): (f64, f64), (x1, z1): (f64, f64)| {
+        format!("4 16 {x0} 0 {z0} {x1} 0 {z1} {x1} 8 {z1} {x0} 8 {z0}\n")
+    };
+    let mut text = String::from("0 Custom Slit Pocket\n");
+    for (x0, x1, z0, z1) in [
+        (6, 10, -10, 10),
+        (-10, -6, -10, 10),
+        (-6, 6, 6, 10),
+        (-6, 6, -10, -6),
+    ] {
+        text += &format!("4 16 {x0} 0 {z0} {x1} 0 {z0} {x1} 0 {z1} {x0} 0 {z1}\n");
+    }
+    text += &upright((6.0, -6.0), (6.0, 4.0));
+    text += &upright((-6.0, 6.0), (4.0, 6.0));
+    text += &upright((-6.0, -6.0), (-6.0, 6.0));
+    text += &upright((-6.0, -6.0), (6.0, -6.0));
+    text += "4 16 -6 8 -6 6 8 -6 6 8 6 -6 8 6\n";
+    if far_brick {
+        text +=
+            "1 16 141.421 0 141.421 -0.707107 0 -0.707107 0 1 0 0.707107 0 -0.707107 3009.dat\n";
+    }
+    text
+}
+
+#[test]
+fn a_pocket_with_a_slit_takes_a_receptor_only_when_a_far_brick_closes_the_slit() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/slit.dat", slit_pocket(false)),
+            ("parts/slit-closed.dat", slit_pocket(true)),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut centred = |path: &str| -> usize {
+        faces_of(&inferred.infer(path).connectors)
+            .iter()
+            .filter(|f| f.gender == Gender::Female && f.origin == [0.0, 0.0, 0.0])
+            .count()
+    };
+    assert_eq!(centred("parts/slit.dat"), 0);
+    assert_eq!(centred("parts/slit-closed.dat"), 1);
+}
+
 fn female_faces(connectors: &[Connector]) -> Vec<MatingFace> {
     let mut found: Vec<MatingFace> = faces_of(connectors)
         .into_iter()
