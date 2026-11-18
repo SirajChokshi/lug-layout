@@ -33,7 +33,8 @@ import {
 import { LatticeStudFinder } from "./lattice-stud-finder.ts";
 import { MateReport } from "./mate-report.ts";
 import { SnapMating } from "./mating.ts";
-import { IDENTIFICATION_RESIDUAL_LDU, MODEL_ROOT, ModelConnectors } from "./model-connectors.ts";
+import { ModelConnectors } from "./model-connectors.ts";
+import { IDENTIFICATION_RESIDUAL_LDU, MODEL_ROOT } from "./submodel-frames.ts";
 import { SparseConnectorFinder } from "./sparse-connector-finder.ts";
 import { TrackEndFinder } from "./track-end-finder.ts";
 import {

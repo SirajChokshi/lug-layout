@@ -198,12 +198,20 @@ export {
   SnapShapes,
 } from "./connect/snap-shapes.ts";
 export { SnapMating, type MateFreedom } from "./connect/mating.ts";
+export { ModelConnectors } from "./connect/model-connectors.ts";
 export {
+  ALL_COORDINATES,
+  IDENTIFICATION_RESIDUAL_LDU,
+  IdentifiedPoint,
   MODEL_ROOT,
-  ModelConnectors,
+  SubmodelFrames,
+  TRANSFORM_FLOATS,
+  coordinatesAcross,
+  identifyDirection,
+  identifyPoint,
   type PartInstances,
   type SubmodelInstances,
-} from "./connect/model-connectors.ts";
+} from "./connect/submodel-frames.ts";
 export { CandidatePoses, type LatticePose, type SnapWindow } from "./connect/candidate-poses.ts";
 export { MateReport } from "./connect/mate-report.ts";
 export type { MateFinder } from "./connect/mate-finder.ts";
