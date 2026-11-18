@@ -11,13 +11,19 @@ import {
 } from "@brr/schema/bundle";
 import type * as v from "valibot";
 import {
+  addExactRational,
+  compareExactRational,
   conjugateZeta16,
+  exactRationalFromDecimal,
+  exactRationalFromFloat64,
   exactRationalToFloat64,
   formatExactDecimal,
   formatExactRational,
   HALF_TURN_16,
+  multiplyExactRational,
   normalizeHeading16,
   rotateZeta16,
+  subtractExactRational,
   subtractZeta16,
   ZETA16_ORDER,
   ZETA16_ZERO,
@@ -29,6 +35,7 @@ import {
   type ExactRationalText,
   type Zeta16,
 } from "@brr/math";
+import { exactPlacements, type ExactPlacement } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { metaValues } from "../ldraw/parse.ts";
 import {
@@ -39,6 +46,7 @@ import {
   type PlanPoint,
   type RailHeads,
   type RailSection,
+  type ScanEnd,
 } from "./rail-heads.ts";
 import {
   findTrackEnds,
@@ -306,21 +314,56 @@ function partFrameInBundle(frame: EntryFrame): v.InferInput<typeof TrackPiece>["
   return { xLdu: x, zLdu: -z, headingHalfSteps: halfSteps };
 }
 
+function squaredPlanDistance(placement: ExactPlacement, point: PlanPoint): ExactRational {
+  const [x, , z] = placement.origin;
+  const dx = subtractExactRational(exactRationalFromDecimal(x), exactRationalFromFloat64(point.x));
+  const dz = subtractExactRational(exactRationalFromDecimal(z), exactRationalFromFloat64(point.z));
+  return addExactRational(multiplyExactRational(dx, dx), multiplyExactRational(dz, dz));
+}
+
+function endSleeperNearest(
+  endSleepers: ReadonlyArray<ExactPlacement>,
+  point: PlanPoint,
+): ExactPlacement {
+  const [first, ...rest] = endSleepers;
+  if (first === undefined) throw new Error("a track part has no end sleepers");
+  return rest.reduce(
+    (nearest, candidate) =>
+      compareExactRational(
+        squaredPlanDistance(candidate, point),
+        squaredPlanDistance(nearest, point),
+      ) < 0
+        ? candidate
+        : nearest,
+    first,
+  );
+}
+
 function endInPart(
   frame: EntryFrame,
   end: ExactEnd,
-): { readonly origin: PlanPoint; readonly along: number } {
+  endSleepers: ReadonlyArray<ExactPlacement>,
+): ScanEnd & { readonly origin: PlanPoint } {
   const pose = poseInEntryFrame(end);
-  return { origin: toPartFrame(frame, pose), along: pose.heading + Math.PI + frame.inward };
+  const origin = toPartFrame(frame, pose);
+  return {
+    origin,
+    along: pose.heading + Math.PI + frame.inward,
+    endSleeper: endSleeperNearest(endSleepers, origin).vertices,
+  };
 }
 
 function exactRationalText(value: ExactRational | undefined): ExactRationalText | null {
   return value === undefined ? null : formatExactRational(value);
 }
 
-function railCheck(heads: RailHeads, frame: EntryFrame, end: ExactEnd): RailSection | null {
-  const { origin, along } = endInPart(frame, end);
-  return railSection(heads, origin, along, RAIL_SECTION_INWARD_LDU);
+function railCheck(
+  heads: RailHeads,
+  frame: EntryFrame,
+  end: ExactEnd,
+  endSleepers: ReadonlyArray<ExactPlacement>,
+): RailSection | null {
+  return railSection(heads, endInPart(frame, end, endSleepers), RAIL_SECTION_INWARD_LDU);
 }
 
 export function buildTrackPiece(
@@ -345,14 +388,13 @@ export function buildTrackPiece(
   const frame = entryFrame(firstEnd);
   const reference = ordered[0];
   if (reference === undefined) throw new Error(`${part}: no reference end`);
-  const referenceEnd = endInPart(frame, reference);
+  const endSleepers = exactPlacements(library, part, new Set(markers.map((marker) => marker.file)));
   const heads = railHeadsAtEnd(
     flatPolygons(library, part),
-    referenceEnd.origin,
-    referenceEnd.along,
+    endInPart(frame, reference, endSleepers),
   );
   if (heads === null) throw new Error(`${part}: no rail pair at the reference end`);
-  const sections = ordered.map((end) => railCheck(heads, frame, end));
+  const sections = ordered.map((end) => railCheck(heads, frame, end, endSleepers));
   const referenceSection = sections[0];
   if (!referenceSection) throw new Error(`${part}: no rail pair at the reference end`);
   const halfSpacing = exactRationalToFloat64(referenceSection.railHalfSpacingLdu);

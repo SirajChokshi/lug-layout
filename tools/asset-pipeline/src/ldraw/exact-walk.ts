@@ -99,25 +99,74 @@ function verticesOf(tokens: ReadonlyArray<string>, count: number): ReadonlyArray
   });
 }
 
+export interface ExactPlacement {
+  readonly file: string;
+  readonly origin: ExactVec3;
+  readonly vertices: ReadonlyArray<ExactVec3>;
+}
+
+function visitPolygons(
+  library: LdrawLibrary,
+  name: string,
+  world: ExactAffine,
+  skipStuds: boolean,
+  emit: (polygon: ExactPolygon) => void,
+): void {
+  const file = library.load(name);
+  if (file === undefined) throw new Error(`${name} is not in the pinned library`);
+  for (const line of file.lines) {
+    if (line.kind === "geometry" && (line.type === 3 || line.type === 4)) {
+      emit({
+        vertices: verticesOf(line.tokens, line.type).map((vertex) => applyExactly(world, vertex)),
+      });
+    } else if (line.kind === "subfile" && !(skipStuds && isStudPrimitive(line.reference))) {
+      visitPolygons(
+        library,
+        line.reference,
+        composeExactly(world, placementOf(line.tokens)),
+        skipStuds,
+        emit,
+      );
+    }
+  }
+}
+
 export function exactPolygons(
   library: LdrawLibrary,
   part: string,
   skipStuds: boolean,
 ): ReadonlyArray<ExactPolygon> {
   const polygons: ExactPolygon[] = [];
+  visitPolygons(library, `${part}.dat`.toLowerCase(), EXACT_IDENTITY, skipStuds, (polygon) =>
+    polygons.push(polygon),
+  );
+  return polygons;
+}
+
+export function exactPlacements(
+  library: LdrawLibrary,
+  part: string,
+  files: ReadonlySet<string>,
+): ReadonlyArray<ExactPlacement> {
+  const placements: ExactPlacement[] = [];
   const visit = (name: string, world: ExactAffine): void => {
     const file = library.load(name);
     if (file === undefined) throw new Error(`${name} is not in the pinned library`);
     for (const line of file.lines) {
-      if (line.kind === "geometry" && (line.type === 3 || line.type === 4)) {
-        polygons.push({
-          vertices: verticesOf(line.tokens, line.type).map((vertex) => applyExactly(world, vertex)),
-        });
-      } else if (line.kind === "subfile" && !(skipStuds && isStudPrimitive(line.reference))) {
-        visit(line.reference, composeExactly(world, placementOf(line.tokens)));
+      if (line.kind !== "subfile" || isStudPrimitive(line.reference)) continue;
+      const placement = composeExactly(world, placementOf(line.tokens));
+      if (!files.has(line.reference)) {
+        visit(line.reference, placement);
+        continue;
       }
+      const vertices: ExactVec3[] = [];
+      visitPolygons(library, line.reference, placement, false, (polygon) =>
+        vertices.push(...polygon.vertices),
+      );
+      const origin: ExactVec3 = [entry(placement, 9), entry(placement, 10), entry(placement, 11)];
+      placements.push({ file: line.reference, origin, vertices });
     }
   };
   visit(`${part}.dat`.toLowerCase(), EXACT_IDENTITY);
-  return polygons;
+  return placements;
 }

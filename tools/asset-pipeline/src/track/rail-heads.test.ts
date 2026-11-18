@@ -1,8 +1,14 @@
-import { exactRational, exactRationalEquals, formatExactDecimal } from "@brr/math";
+import {
+  exactRational,
+  exactRationalEquals,
+  formatExactDecimal,
+  parseExactDecimal,
+} from "@brr/math";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import type { ExactVec3 } from "../ldraw/exact-walk.ts";
 import { LdrawLibrary } from "../ldraw/library.ts";
 import { flatPolygons, onRailHead, railHeadsAtEnd, railSection } from "./rail-heads.ts";
 
@@ -59,12 +65,22 @@ function nextFloat64Up(value: number): number {
 
 describe("rail heads", () => {
   const library = new LdrawLibrary([root]);
-  const end = { x: -20, z: 0 };
-  const heads = railHeadsAtEnd(flatPolygons(library, "custom-rail"), end, 0);
+  const endSleeper = [
+    ["-30", "-8", "-80"],
+    ["-10", "-8", "-80"],
+    ["-10", "-8", "80"],
+    ["-30", "-8", "80"],
+  ].map(([x = "", y = "", z = ""]): ExactVec3 => [
+    parseExactDecimal(x),
+    parseExactDecimal(y),
+    parseExactDecimal(z),
+  ]);
+  const end = { origin: { x: -20, z: 0 }, along: 0, endSleeper };
+  const heads = railHeadsAtEnd(flatPolygons(library, "custom-rail"), end);
 
   it("find the rail centres exactly where the scan line crosses the heads", () => {
     if (heads === null) throw new Error("the custom rail has no rail pair");
-    const section = railSection(heads, end, 0, INWARD_LDU);
+    const section = railSection(heads, end, INWARD_LDU);
     if (section === null) throw new Error("the scan line finds no rail pair");
     const [nearCentre, farCentre] = section.railCentresLdu;
     const halfSpacing = exactRational(10003n, 200n);
@@ -82,19 +98,19 @@ describe("rail heads", () => {
   });
 
   it("read a rail pair across adjacent measured levels when no single level holds both heads", () => {
-    const split = railHeadsAtEnd(flatPolygons(library, "custom-split-rail"), end, 0);
+    const split = railHeadsAtEnd(flatPolygons(library, "custom-split-rail"), end);
     if (split === null) throw new Error("the split rail has no rail pair");
     expect(formatExactDecimal(split.topY)).toBe("-16.5");
-    const section = railSection(split, end, 0, INWARD_LDU);
+    const section = railSection(split, end, INWARD_LDU);
     if (section === null) throw new Error("the scan line finds no rail pair");
     expect(exactRationalEquals(section.railHalfSpacingLdu, exactRational(50n, 1n))).toBe(true);
   });
 
   it("read the levels the scan line crosses, however far their corners are from the end", () => {
-    const long = railHeadsAtEnd(flatPolygons(library, "custom-long-rail"), end, 0);
+    const long = railHeadsAtEnd(flatPolygons(library, "custom-long-rail"), end);
     if (long === null) throw new Error("the long rail has no rail pair");
     expect(formatExactDecimal(long.topY)).toBe("-16");
-    const section = railSection(long, end, 0, INWARD_LDU);
+    const section = railSection(long, end, INWARD_LDU);
     if (section === null) throw new Error("the scan line finds no rail pair");
     expect(exactRationalEquals(section.railHalfSpacingLdu, exactRational(50n, 1n))).toBe(true);
   });

@@ -7,15 +7,15 @@ import {
   exactRationalEquals,
   exactRationalFromDecimal,
   exactRationalFromFloat64,
+  formatExactDecimal,
   multiplyExactRational,
   subtractExactRational,
   type ExactDecimal,
   type ExactRational,
 } from "@brr/math";
-import { exactPolygons } from "../ldraw/exact-walk.ts";
+import { exactPolygons, type ExactVec3 } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 
-const LATERAL_SCAN_LDU = 90;
 export const RAIL_SECTION_INWARD_LDU = 20;
 
 export interface PlanPoint {
@@ -26,6 +26,12 @@ export interface PlanPoint {
 interface ExactPlanPoint {
   readonly x: ExactRational;
   readonly z: ExactRational;
+}
+
+export interface ScanEnd {
+  readonly origin: PlanPoint;
+  readonly along: number;
+  readonly endSleeper: ReadonlyArray<ExactVec3>;
 }
 
 export interface RailHeads {
@@ -52,8 +58,6 @@ interface Interval {
 const ZERO = exactRational(0n, 1n);
 const ONE = exactRational(1n, 1n);
 const TWO = exactRational(2n, 1n);
-const SCAN_FROM = exactRational(BigInt(-LATERAL_SCAN_LDU), 1n);
-const SCAN_TO = exactRational(BigInt(LATERAL_SCAN_LDU), 1n);
 
 function exactPlanPoint(point: PlanPoint): ExactPlanPoint {
   return { x: exactRationalFromFloat64(point.x), z: exactRationalFromFloat64(point.z) };
@@ -130,12 +134,8 @@ function levelScansFromTop(
   });
 }
 
-export function railHeadsAtEnd(
-  flat: ReadonlyArray<FlatPolygon>,
-  origin: PlanPoint,
-  along: number,
-): RailHeads | null {
-  const levelScans = levelScansFromTop(flat, scanLine(origin, along, RAIL_SECTION_INWARD_LDU));
+export function railHeadsAtEnd(flat: ReadonlyArray<FlatPolygon>, end: ScanEnd): RailHeads | null {
+  const levelScans = levelScansFromTop(flat, scanLine(end, RAIL_SECTION_INWARD_LDU));
   for (const run of adjacentRunsSmallestFirst(levelScans)) {
     const [top] = run;
     if (top === undefined) continue;
@@ -215,18 +215,65 @@ function mergedIntervals(intervals: ReadonlyArray<Interval>): ReadonlyArray<Inte
 interface ScanLine {
   readonly centre: ExactPlanPoint;
   readonly normal: ExactPlanPoint;
+  readonly endSleeperSpan: Interval;
 }
 
-function scanLine(origin: PlanPoint, along: number, inwardLdu: number): ScanLine {
-  const direction = exactPlanPoint({ x: Math.cos(along), z: Math.sin(along) });
-  const normal = exactPlanPoint({ x: -Math.sin(along), z: Math.cos(along) });
+function offsetAcross(
+  point: ExactPlanPoint,
+  centre: ExactPlanPoint,
+  normal: ExactPlanPoint,
+  direction: ExactPlanPoint,
+): ExactRational {
+  return divideExactRational(cross(sub(point, centre), direction), cross(normal, direction));
+}
+
+function distinctPlanPoints(vertices: ReadonlyArray<ExactVec3>): ReadonlyArray<ExactPlanPoint> {
+  const byText = new Map<string, ExactPlanPoint>();
+  for (const [x, , z] of vertices) {
+    const key = `${formatExactDecimal(x)} ${formatExactDecimal(z)}`;
+    if (!byText.has(key)) {
+      byText.set(key, { x: exactRationalFromDecimal(x), z: exactRationalFromDecimal(z) });
+    }
+  }
+  return [...byText.values()];
+}
+
+function spanAcross(
+  points: ReadonlyArray<ExactPlanPoint>,
+  centre: ExactPlanPoint,
+  normal: ExactPlanPoint,
+  direction: ExactPlanPoint,
+): Interval {
+  const [first, ...rest] = points;
+  if (first === undefined) throw new Error("a track end has no end-sleeper geometry");
+  const sideOf = (point: ExactPlanPoint) => cross(point, direction);
+  const upward = compareExactRational(cross(normal, direction), ZERO) > 0;
+  const lowest = rest.reduce(
+    (low, point) => (compareExactRational(sideOf(point), sideOf(low)) < 0 ? point : low),
+    first,
+  );
+  const highest = rest.reduce(
+    (high, point) => (compareExactRational(sideOf(point), sideOf(high)) > 0 ? point : high),
+    first,
+  );
+  const [from, to] = upward ? [lowest, highest] : [highest, lowest];
+  return {
+    from: offsetAcross(from, centre, normal, direction),
+    to: offsetAcross(to, centre, normal, direction),
+  };
+}
+
+function scanLine(end: ScanEnd, inwardLdu: number): ScanLine {
+  const direction = exactPlanPoint({ x: Math.cos(end.along), z: Math.sin(end.along) });
+  const normal = exactPlanPoint({ x: -Math.sin(end.along), z: Math.cos(end.along) });
   const inward = exactRationalFromFloat64(inwardLdu);
-  const start = exactPlanPoint(origin);
+  const start = exactPlanPoint(end.origin);
   const centre = {
     x: addExactRational(start.x, multiplyExactRational(direction.x, inward)),
     z: addExactRational(start.z, multiplyExactRational(direction.z, inward)),
   };
-  return { centre, normal };
+  const endSleeperSpan = spanAcross(distinctPlanPoints(end.endSleeper), centre, normal, direction);
+  return { centre, normal, endSleeperSpan };
 }
 
 function scanIntervals(
@@ -236,7 +283,10 @@ function scanIntervals(
   return polygons.flatMap((polygon) => {
     const interval = crossingInterval(polygon, line.centre, line.normal);
     if (interval === null) return [];
-    const clipped = { from: greater(interval.from, SCAN_FROM), to: lesser(interval.to, SCAN_TO) };
+    const clipped = {
+      from: greater(interval.from, line.endSleeperSpan.from),
+      to: lesser(interval.to, line.endSleeperSpan.to),
+    };
     return compareExactRational(clipped.from, clipped.to) <= 0 ? [clipped] : [];
   });
 }
@@ -268,13 +318,6 @@ function railSectionFromIntervals(intervals: ReadonlyArray<Interval>): RailSecti
   };
 }
 
-export function railSection(
-  heads: RailHeads,
-  origin: PlanPoint,
-  along: number,
-  inwardLdu: number,
-): RailSection | null {
-  return railSectionFromIntervals(
-    scanIntervals(heads.polygons, scanLine(origin, along, inwardLdu)),
-  );
+export function railSection(heads: RailHeads, end: ScanEnd, inwardLdu: number): RailSection | null {
+  return railSectionFromIntervals(scanIntervals(heads.polygons, scanLine(end, inwardLdu)));
 }

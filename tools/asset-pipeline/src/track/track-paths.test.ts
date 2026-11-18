@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { parseExactDecimal } from "@brr/math";
+import type { ExactVec3 } from "../ldraw/exact-walk.ts";
 import { LdrawLibrary } from "../ldraw/library.ts";
 import { flatPolygons, railHeadsAtEnd } from "./rail-heads.ts";
 import { fitRoutePath } from "./track-paths.ts";
@@ -37,9 +39,23 @@ describe("route fitting", () => {
   const start = { x: 0, z: 0, heading: 0 };
   const finish = { x: 8, z: 0, heading: 0 };
   const halfSpacing = 50;
+  const endSleeper = [
+    ["-30", "-8", "-80"],
+    ["-10", "-8", "-80"],
+    ["-10", "-8", "80"],
+    ["-30", "-8", "80"],
+  ].map(([x = "", y = "", z = ""]): ExactVec3 => [
+    parseExactDecimal(x),
+    parseExactDecimal(y),
+    parseExactDecimal(z),
+  ]);
 
   function fit(part: string) {
-    const heads = railHeadsAtEnd(flatPolygons(library, part), { x: -20, z: 0 }, 0);
+    const heads = railHeadsAtEnd(flatPolygons(library, part), {
+      origin: { x: -20, z: 0 },
+      along: 0,
+      endSleeper,
+    });
     if (heads === null) throw new Error(`${part} has no rail pair`);
     return fitRoutePath(heads, (point) => point, start, finish, halfSpacing, part);
   }
