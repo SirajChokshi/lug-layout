@@ -11,11 +11,9 @@ export { loadSession, type LoadedSession } from "./load.ts";
 export type { SimFrameMessage, SimLoad, SimLoaded, SimReply, SimRequest } from "./protocol.ts";
 export type { PlanPose, SimPathSegment } from "./route-geometry.ts";
 export {
-  replay,
   simFrameLayout,
   type SimCommand,
   type SimFrameLayout,
-  type SimLogEntry,
   type SimRailway,
   type SimScenario,
   type SimSession,

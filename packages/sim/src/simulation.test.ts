@@ -7,7 +7,7 @@ import {
   type SimPathSegment,
 } from "./route-geometry.ts";
 import { createSimSession } from "./create-sim-session.ts";
-import { replay, type SimScenario, type SimSession } from "./sim-session.ts";
+import type { SimCommand, SimScenario, SimSession } from "./sim-session.ts";
 import type { VehicleGeometry } from "./running-gear.ts";
 import { backwardEdge, buildSimTrack, forwardEdge, type SimRoute } from "./sim-track.ts";
 import {
@@ -70,6 +70,17 @@ function circle(): SimScenario {
 
 function run(sim: Simulation, seconds: number): void {
   for (let i = 0; i < seconds * SIM_TICK_HZ; i++) sim.step();
+}
+
+type ScriptStep = SimCommand | { readonly seconds: number };
+
+function play(session: SimSession, script: ReadonlyArray<ScriptStep>): boolean[] {
+  const accepted: boolean[] = [];
+  for (const step of script) {
+    if ("kind" in step) accepted.push(session.apply(step));
+    else run(session.simulation, step.seconds);
+  }
+  return accepted;
 }
 
 describe("Simulation on a closed circle of arcs", () => {
@@ -352,20 +363,66 @@ describe("Coupled running gear on a circle", () => {
 });
 
 describe("Simulation determinism", () => {
-  it("replays a command log to the same state hash", () => {
-    const live = createSimSession(circle());
-    const sim = live.simulation;
-    live.apply({ kind: "throttle", train: 0, speedLduPerS: 500 });
-    run(sim, 4);
-    live.apply({ kind: "throttle", train: 0, speedLduPerS: 0 });
-    run(sim, 4);
-    expect(live.apply({ kind: "reverse", train: 0 })).toBe(true);
-    live.apply({ kind: "throttle", train: 0, speedLduPerS: 300 });
-    run(sim, 5);
-    const replayed = replay(createSimSession, circle(), live.log, sim.tick);
-    expect(replayed.tick).toBe(sim.tick);
-    expect(replayed.stateHash()).toBe(sim.stateHash());
-    expect(Array.from(replayed.trainOffset)).toEqual(Array.from(sim.trainOffset));
+  it("reaches the same state hash on a fresh session given the same commands at the same ticks", () => {
+    const script: ScriptStep[] = [
+      { kind: "throttle", train: 0, speedLduPerS: 500 },
+      { seconds: 4 },
+      { kind: "throttle", train: 0, speedLduPerS: 0 },
+      { seconds: 4 },
+      { kind: "reverse", train: 0 },
+      { kind: "throttle", train: 0, speedLduPerS: 300 },
+      { seconds: 5 },
+    ];
+    const first = createSimSession(circle());
+    const second = createSimSession(circle());
+    expect(play(first, script)).toEqual([true, true, true, true]);
+    expect(play(second, script)).toEqual([true, true, true, true]);
+    expect(second.simulation.tick).toBe(first.simulation.tick);
+    expect(second.simulation.stateHash()).toBe(first.simulation.stateHash());
+    expect(Array.from(second.simulation.trainOffset)).toEqual(
+      Array.from(first.simulation.trainOffset),
+    );
+  });
+
+  it("reaches the same state hash through a signed-speed reversal on a fresh session", () => {
+    const script: ScriptStep[] = [
+      { kind: "drive", train: 0, signedSpeedLduPerS: 500 },
+      { seconds: 4 },
+      { kind: "drive", train: 0, signedSpeedLduPerS: -300 },
+      { seconds: 8 },
+    ];
+    const first = createSimSession(circle());
+    const second = createSimSession(circle());
+    expect(play(first, script)).toEqual([true, true]);
+    expect(play(second, script)).toEqual([true, true]);
+    expect(first.simulation.direction(0)).toBe(-1);
+    expect(second.simulation.stateHash()).toBe(first.simulation.stateHash());
+  });
+
+  it("reaches the same state hash through a derailment and a rerail whether or not the commands it refused were sent", () => {
+    const driveForward: SimCommand = { kind: "drive", train: 0, signedSpeedLduPerS: 500 };
+    const driveBack: SimCommand = { kind: "drive", train: 0, signedSpeedLduPerS: -500 };
+    const rerail: SimCommand = { kind: "rerail", train: 0 };
+    const withRefused = createSimSession(lineEndingInCurve("derail"));
+    const withoutRefused = createSimSession(lineEndingInCurve("derail"));
+    expect(
+      play(withRefused, [
+        driveForward,
+        { seconds: 25 },
+        { kind: "reverse", train: 0 },
+        driveBack,
+        { seconds: 2 },
+      ]),
+    ).toEqual([true, false, false]);
+    expect(play(withoutRefused, [driveForward, { seconds: 27 }])).toEqual([true]);
+    expect(withoutRefused.simulation.stateHash()).toBe(withRefused.simulation.stateHash());
+    expect(play(withRefused, [rerail, rerail, driveBack, { seconds: 3 }])).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    expect(play(withoutRefused, [rerail, driveBack, { seconds: 3 }])).toEqual([true, true]);
+    expect(withoutRefused.simulation.stateHash()).toBe(withRefused.simulation.stateHash());
   });
 
   it("hashes a different state when one command lands a tick later", () => {
@@ -628,8 +685,6 @@ describe("Open ends under the derail rule", () => {
     expect(sim.trainSpeed[0]).toBe(500);
     expect(sim.derailed(0)).toBe(false);
     expect(distanceFrom(sim, end)).toBeGreaterThan(rerailedAt + 500);
-    const replayed = replay(createSimSession, lineEndingInCurve("derail"), session.log, sim.tick);
-    expect(replayed.stateHash()).toBe(sim.stateHash());
   });
 });
 
@@ -674,7 +729,5 @@ describe("Driving with a signed speed", () => {
     const turned = frameOf(session);
     expect(turned[session.layout.trainDirectionStart]).toBe(-1);
     expect(turned[session.layout.trainFacingStart]).toBe(-1);
-    const replayed = replay(createSimSession, circle(), session.log, sim.tick);
-    expect(replayed.stateHash()).toBe(sim.stateHash());
   });
 });

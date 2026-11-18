@@ -18,11 +18,6 @@ export type SimCommand =
   | { readonly kind: "reverse"; readonly train: number }
   | { readonly kind: "goTo"; readonly train: number; readonly placement: number };
 
-export interface SimLogEntry {
-  readonly tick: number;
-  readonly command: SimCommand;
-}
-
 export interface SimTrainLoad {
   readonly spec: TrainSpec;
   readonly placement: TrainPlacement;
@@ -112,7 +107,6 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
 
 export class SimSession {
   readonly layout: SimFrameLayout;
-  private readonly entries: SimLogEntry[] = [];
 
   constructor(readonly simulation: Simulation) {
     this.layout = simFrameLayout(
@@ -122,14 +116,8 @@ export class SimSession {
     );
   }
 
-  get log(): ReadonlyArray<SimLogEntry> {
-    return this.entries;
-  }
-
   apply(command: SimCommand): boolean {
-    const accepted = applyCommand(this.simulation, command);
-    if (accepted) this.entries.push({ tick: this.simulation.tick, command });
-    return accepted;
+    return applyCommand(this.simulation, command);
   }
 
   writeFrame(out: Float64Array): void {
@@ -180,28 +168,4 @@ function applyCommand(simulation: Simulation, command: SimCommand): boolean {
       throw new Error(`unhandled sim command ${String(unhandled)}`);
     }
   }
-}
-
-export function replay(
-  createSession: SimSessionFactory,
-  scenario: SimScenario,
-  log: ReadonlyArray<SimLogEntry>,
-  ticks: number,
-): Simulation {
-  const session = createSession(scenario);
-  const sim = session.simulation;
-  let next = 0;
-  while (sim.tick < ticks || next < log.length) {
-    const entry = log[next];
-    if (entry && entry.tick === sim.tick) {
-      session.apply(entry.command);
-      next++;
-      continue;
-    }
-    if (entry && entry.tick < sim.tick)
-      throw new Error(`log entry at tick ${entry.tick} is out of order`);
-    if (sim.tick >= ticks) break;
-    sim.step();
-  }
-  return sim;
 }
