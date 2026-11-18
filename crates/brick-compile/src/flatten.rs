@@ -60,6 +60,7 @@ pub struct Flattener<'a, L: Library> {
     lod: Lod,
     stud_primitives: &'a [String],
     parsed: HashMap<String, Rc<LdrawFile>>,
+    first_unresolved: Option<FlattenError>,
 }
 
 struct Frame {
@@ -77,6 +78,7 @@ impl<'a, L: Library> Flattener<'a, L> {
             lod,
             stud_primitives,
             parsed: HashMap::new(),
+            first_unresolved: None,
         }
     }
 
@@ -110,6 +112,7 @@ impl<'a, L: Library> Flattener<'a, L> {
     }
 
     pub fn flatten(&mut self, path: &str) -> Result<Flattened, FlattenError> {
+        self.first_unresolved = None;
         let mut out = Flattened::default();
         let frame = Frame {
             matrix: Affine::IDENTITY,
@@ -124,8 +127,19 @@ impl<'a, L: Library> Flattener<'a, L> {
                 reference: path.to_string(),
                 from: String::new(),
             })?;
-        self.walk(path, &file, &frame, &mut out)?;
-        Ok(out)
+        let walked = self.walk(path, &file, &frame, &mut out);
+        match (self.first_unresolved.take(), walked) {
+            (Some(error), _) | (None, Err(error)) => Err(error),
+            (None, Ok(())) => Ok(out),
+        }
+    }
+
+    fn unresolved(&mut self, reference: &str, from: &str) {
+        self.first_unresolved
+            .get_or_insert_with(|| FlattenError::Unresolved {
+                reference: reference.to_string(),
+                from: from.to_string(),
+            });
     }
 
     fn is_stud(&self, reference: &str) -> bool {
@@ -173,18 +187,14 @@ impl<'a, L: Library> Flattener<'a, L> {
                         });
                         continue;
                     }
-                    let child_path =
-                        self.resolve(reference)
-                            .ok_or_else(|| FlattenError::Unresolved {
-                                reference: reference.clone(),
-                                from: path.to_string(),
-                            })?;
-                    let child =
-                        self.load(&child_path, out)
-                            .ok_or_else(|| FlattenError::Unresolved {
-                                reference: reference.clone(),
-                                from: path.to_string(),
-                            })?;
+                    let Some(child_path) = self.resolve(reference) else {
+                        self.unresolved(reference, path);
+                        continue;
+                    };
+                    let Some(child) = self.load(&child_path, out) else {
+                        self.unresolved(reference, path);
+                        continue;
+                    };
                     let child_frame = Frame {
                         matrix: child_matrix,
                         color: child_color,
