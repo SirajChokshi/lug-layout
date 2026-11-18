@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,7 @@ const lockPath = join(toolRoot, "ldraw.lock.json");
 const catalogRoot = join(repoRoot, ".cache", "catalog");
 const extractRoot = join(repoRoot, ".cache", "ldraw-library");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "ldraw-library.json");
+const shadowPatchesRoot = join(toolRoot, "shadow-patches");
 const HTTP_NOT_FOUND = 404;
 
 interface StoreConfig {
@@ -118,6 +120,34 @@ async function checkCommand(): Promise<void> {
   );
 }
 
+async function shadowPatchesCommand(check: boolean): Promise<void> {
+  const lock = await readLock();
+  const { problems } = await extractLibrary(await archivePath(lock), lock, extractRoot);
+  if (problems.length > 0) throw new Error(problems.join("\n"));
+  const run = spawnSync(
+    "cargo",
+    [
+      "run",
+      "--release",
+      "--quiet",
+      "-p",
+      "brick-compile-cli",
+      "--bin",
+      "shadow-patches",
+      "--",
+      "--ldraw",
+      extractRoot,
+      "--patches",
+      shadowPatchesRoot,
+      "--lock",
+      lockPath,
+      ...(check ? ["--check"] : []),
+    ],
+    { cwd: repoRoot, stdio: "inherit" },
+  );
+  if (run.status !== 0) throw new Error(`shadow-patches exited with ${String(run.status)}`);
+}
+
 type ServedState = "served" | "absent" | "unknown";
 
 async function indexState(url: string): Promise<ServedState> {
@@ -179,9 +209,12 @@ switch (command) {
   case "verify-served":
     await verifyServedCommand(process.argv.includes("--all") ? "all" : "pinned");
     break;
+  case "shadow-patches":
+    await shadowPatchesCommand(process.argv.includes("--check"));
+    break;
   default:
     process.stderr.write(
-      "usage: library/cli.ts check|published|upload|served|verify-served [--all]\n",
+      "usage: library/cli.ts check|published|upload|served|verify-served [--all]|shadow-patches [--check]\n",
     );
     process.exitCode = 2;
 }

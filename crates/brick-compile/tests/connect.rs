@@ -3,15 +3,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use brick_compile::affine::Vec3;
+use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::connect::{
     mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, InferredFeatures,
     Issue, MatingFace, PrimitiveConnectors, PrimitiveTable, Section, SectionShape,
-    SectionVocabulary, ShadowSnaps, Shape, Source, Uninferred, Unreadable, CAP_FAR, CAP_ROOT,
-    FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
+    SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable,
+    CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
+use brick_compile::flatten::{Flattener, Lod};
 use brick_compile::ldraw::{parse, Line};
+use brick_compile::technic::is_circular_primitive;
 use brick_compile::Library;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 
 struct MemoryLibrary(HashMap<String, String>);
 
@@ -1174,4 +1178,136 @@ fn a_face_already_held_gets_no_second_receptor() {
             ..
         }
     )));
+}
+
+const FACE_PAIR_AT_PLUS_Z: &str = "0 !LDCAD SNAP_GEN [id=face] [group=token] [gender=M] [bounding=cyl 15 0] [match=group] [pos=0 0 8] [ori=1 0 0 0 0 1 0 -1 0]
+0 !LDCAD SNAP_GEN [id=face] [group=token] [gender=F] [bounding=cyl 15 0] [match=group] [pos=0 0 8] [ori=1 0 0 0 0 -1 0 1 0]
+";
+
+#[test]
+fn project_patches_add_curated_snaps_with_their_status_and_clear_by_id() {
+    let library = memory(&[
+        ("parts/casing.dat", "0 Casing\n"),
+        (
+            "parts/assembly.dat",
+            "0 Assembly\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 casing.dat\n",
+        ),
+    ]);
+    let shadow = memory(&[(
+        "parts/casing.dat",
+        "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 2 4]\n",
+    )]);
+    let reassembled = FACE_PAIR_AT_PLUS_Z.replace("pos=0 0 8", "pos=0 0 9");
+    let assembly_patch = format!("0 !LDCAD SNAP_CLEAR [id=face]\n{reassembled}");
+    let patches = memory(&[
+        ("parts/casing.dat", FACE_PAIR_AT_PLUS_Z),
+        ("parts/assembly.dat", &assembly_patch),
+    ]);
+    let verified: HashSet<String> = ["parts/assembly.dat".to_string()].into();
+    let mut snaps = ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
+        files: &patches,
+        verified: &verified,
+    });
+    let tally = |connectors: &[Connector]| {
+        let mut rows: Vec<(Source, Status, i64)> = connectors
+            .iter()
+            .map(|c| (c.source, c.status, c.placement.m[11].round() as i64))
+            .collect();
+        rows.sort();
+        rows
+    };
+    assert_eq!(
+        tally(&snaps.snaps("parts/casing.dat").connectors),
+        vec![
+            (Source::Shadow, Status::Verified, 0),
+            (Source::Patch, Status::Unverified, -8),
+            (Source::Patch, Status::Unverified, -8),
+        ]
+    );
+    assert_eq!(
+        tally(&snaps.snaps("parts/assembly.dat").connectors),
+        vec![
+            (Source::Shadow, Status::Verified, 0),
+            (Source::Patch, Status::Verified, -9),
+            (Source::Patch, Status::Verified, -9),
+        ]
+    );
+}
+
+#[test]
+fn a_group_matched_disc_generic_reads_as_one_contact_face_per_gender() {
+    let library = memory(&[("parts/casing.dat", "0 Casing\n")]);
+    let shadow = memory(&[("parts/casing.dat", FACE_PAIR_AT_PLUS_Z)]);
+    let connectors = ShadowSnaps::new(&library, &shadow)
+        .snaps("parts/casing.dat")
+        .connectors;
+    let faces = faces_of(&connectors);
+    let genders: Vec<Gender> = faces.iter().map(|f| f.gender).collect();
+    assert_eq!(genders, vec![Gender::Male, Gender::Female]);
+    for face in &faces {
+        assert_eq!(face.origin, [0.0, 0.0, -8.0]);
+        assert_eq!(face.axis, [0.0, 0.0, -1.0]);
+        assert_eq!(
+            face.sections,
+            vec![FaceSection {
+                code: ROUND,
+                size: 15.0,
+                length: 0.0
+            }]
+        );
+        assert_eq!((face.caps, face.slide), (0, false));
+        assert_eq!(face.group.as_deref(), Some("token"));
+    }
+    for unreadable in [
+        FACE_PAIR_AT_PLUS_Z.replace("[group=token] ", ""),
+        FACE_PAIR_AT_PLUS_Z.replace("cyl 15 0", "cyl 15 4"),
+        FACE_PAIR_AT_PLUS_Z.replace("cyl 15 0", "sph 15"),
+    ] {
+        let shadow = memory(&[("parts/casing.dat", &unreadable)]);
+        for connector in ShadowSnaps::new(&library, &shadow)
+            .snaps("parts/casing.dat")
+            .connectors
+        {
+            assert_eq!(
+                mating_faces(&connector),
+                Err(Unreadable::Generic),
+                "{unreadable}"
+            );
+        }
+    }
+}
+
+#[test]
+fn outward_round_bands_skip_inverted_surfaces_and_end_faces_sit_at_the_extremes() {
+    let mut files = pinned("ldraw").0;
+    files.insert(
+        "parts/casing.dat".to_string(),
+        "0 Casing\n0 BFC CERTIFY CCW\n\
+         1 16 0 0 -8 15 0 0 0 0 15 0 16 0 4-4cyli.dat\n\
+         0 BFC INVERTNEXT\n\
+         1 16 0 0 -8 12 0 0 0 0 12 0 16 0 4-4cyli.dat\n\
+         1 16 0 0 8 15 0 0 0 0 15 0 -1 0 4-4disc.dat\n\
+         1 16 0 0 -8 15 0 0 0 0 15 0 1 0 4-4disc.dat\n\
+         1 16 0 0 9 2 0 0 0 0 2 0 -1 0 4-4disc.dat\n"
+            .to_string(),
+    );
+    let library = MemoryLibrary(files);
+    let records = |reference: &str| is_circular_primitive(reference);
+    let flattened = Flattener::new(&library, Lod::Standard, &[])
+        .recording_spans(&records)
+        .flatten("parts/casing.dat")
+        .expect("the casing flattens");
+    let bands = outward_round_bands(&flattened.spans, &flattened.triangles);
+    assert_eq!(bands.len(), 1, "{bands:?}");
+    let band = bands[0];
+    assert_eq!((band.radius, band.from, band.to), (15.0, -8.0, 8.0));
+    assert_eq!(band.axis, [0.0, 0.0, 1.0]);
+    let [far, near] = end_faces(&band, &flattened.triangles).expect("planar end faces");
+    assert_eq!((far.origin, far.normal), ([0.0, 0.0, 9.0], [0.0, 0.0, 1.0]));
+    assert!((far.radius - 2.0).abs() <= 0.0005, "{far:?}");
+    assert_eq!(
+        (near.origin, near.normal),
+        ([0.0, 0.0, -8.0], [0.0, 0.0, -1.0])
+    );
+    assert!((near.radius - 15.0).abs() <= 0.0005, "{near:?}");
 }
