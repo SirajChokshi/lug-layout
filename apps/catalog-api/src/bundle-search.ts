@@ -1,4 +1,4 @@
-import { BundleIndex, type BundleModelEntry } from "@brr/schema/bundle";
+import { BundleIndex, BundleModelEntry, CatalogPart } from "@brr/schema/bundle";
 import {
   BUNDLE_SEARCH_LOD,
   MIN_PREFIX_LETTERS,
@@ -10,7 +10,21 @@ import {
 import { decode, issueText } from "@brr/schema/decode";
 import * as v from "valibot";
 
-const SearchedIndex = v.pick(BundleIndex, ["colors", "models", "catalogParts", "trackCatalog"]);
+const SearchedModel = v.pick(BundleModelEntry, [
+  "name",
+  "file",
+  "origin",
+  "set",
+  "role",
+  "sections",
+]);
+type SearchedModel = v.InferOutput<typeof SearchedModel>;
+const SearchedIndex = v.object({
+  colors: BundleIndex.entries.colors,
+  models: v.array(SearchedModel),
+  catalogParts: v.array(v.pick(CatalogPart, ["id", "role", "title", "producedColors", "shape"])),
+  trackCatalog: BundleIndex.entries.trackCatalog,
+});
 type SearchedIndex = v.InferOutput<typeof SearchedIndex>;
 
 export type LoadedIndex =
@@ -104,11 +118,11 @@ function partItems(index: SearchedIndex): ReadonlyArray<IndexedItem> {
   });
 }
 
-function setLabel(model: BundleModelEntry): string {
+function setLabel(model: SearchedModel): string {
   return model.set ? `${model.name} ${model.set.name} (${model.set.year})` : model.name;
 }
 
-function modelItem(model: BundleModelEntry): IndexedItem {
+function modelItem(model: SearchedModel): IndexedItem {
   const isModule = model.role === "mils-module";
   return indexed(
     {

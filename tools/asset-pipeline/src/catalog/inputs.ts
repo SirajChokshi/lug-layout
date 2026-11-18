@@ -45,6 +45,7 @@ export function crosswalkSources(lock: CatalogLock): Record<string, CrosswalkSou
 
 interface ScannedPart {
   readonly title: string;
+  readonly category: string | undefined;
   readonly keywords: ReadonlyArray<string>;
   readonly ldrawOrg: string;
   readonly references: ReadonlyArray<LdrawComponent>;
@@ -52,6 +53,7 @@ interface ScannedPart {
 
 function scanPart(text: string): ScannedPart {
   let title: string | undefined;
+  let category: string | undefined;
   let ldrawOrg = "";
   const keywords: string[] = [];
   const references: LdrawComponent[] = [];
@@ -62,6 +64,7 @@ function scanPart(text: string): ScannedPart {
     if (tokens[0] === "0") {
       if (title === undefined) title = tokens.slice(1).join(" ");
       else if (tokens[1] === "!LDRAW_ORG") ldrawOrg = tokens.slice(2).join(" ");
+      else if (tokens[1] === "!CATEGORY") category = tokens.slice(2).join(" ");
       else if (tokens[1] === "!KEYWORDS") {
         keywords.push(
           ...tokens
@@ -78,7 +81,7 @@ function scanPart(text: string): ScannedPart {
       if (id !== undefined) references.push({ id, color: Number(tokens[1]) });
     }
   }
-  return { title: title ?? "", keywords, ldrawOrg, references };
+  return { title: title ?? "", category, keywords, ldrawOrg, references };
 }
 
 async function ldrawPartFacts(
@@ -100,6 +103,7 @@ async function ldrawPartFacts(
       id,
       {
         title: part.title,
+        ...(part.category === undefined ? {} : { category: part.category }),
         keywords: part.keywords,
         ldrawOrg: part.ldrawOrg,
         components: part.references.filter((reference) => scanned.has(reference.id)),
