@@ -18,6 +18,7 @@ import {
   GENDER_FEMALE,
   GENDER_MALE,
   SOURCE_SHADOW,
+  STATUS_VERIFIED,
 } from "../src/connect/connector-table.ts";
 import { LatticeStudFinder } from "../src/connect/lattice-stud-finder.ts";
 import { SparseConnectorFinder } from "../src/connect/sparse-connector-finder.ts";
@@ -95,6 +96,7 @@ function slab(
     shape,
     gender,
     new Uint8Array(count).fill(SOURCE_SHADOW),
+    new Uint8Array(count).fill(STATUS_VERIFIED),
     origin,
     axis,
     new Float32Array(count * 3),
@@ -130,6 +132,7 @@ function baseplate(): ConnectorTable {
     shape,
     gender,
     new Uint8Array(count).fill(SOURCE_SHADOW),
+    new Uint8Array(count).fill(STATUS_VERIFIED),
     origin,
     axis,
     new Float32Array(count * 3),

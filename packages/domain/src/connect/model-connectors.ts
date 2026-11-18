@@ -31,6 +31,7 @@ interface Frames {
   readonly shape: Uint16Array;
   readonly gender: Uint8Array;
   readonly source: Uint8Array;
+  readonly status: Uint8Array;
   readonly origin: Int32Array;
   readonly axis: Int8Array;
   readonly instance: Uint32Array;
@@ -41,6 +42,7 @@ function allocateFrames(count: number): Frames {
     shape: new Uint16Array(count),
     gender: new Uint8Array(count),
     source: new Uint8Array(count),
+    status: new Uint8Array(count),
     origin: new Int32Array(count * VECTOR_FLOATS),
     axis: new Int8Array(count),
     instance: new Uint32Array(count),
@@ -189,6 +191,7 @@ export class ModelConnectors {
     readonly shape: Uint16Array,
     readonly gender: Uint8Array,
     readonly source: Uint8Array,
+    readonly status: Uint8Array,
     readonly origin: Int32Array,
     readonly axis: Int8Array,
     readonly instance: Uint32Array,
@@ -273,6 +276,7 @@ export class ModelConnectors {
         frames.shape[exact] = part.shape[c] ?? 0;
         frames.gender[exact] = part.gender[c] ?? 0;
         frames.source[exact] = part.source[c] ?? 0;
+        frames.status[exact] = part.status[c] ?? 0;
         frames.instance[exact] = i;
         exact++;
       }
@@ -286,6 +290,7 @@ export class ModelConnectors {
       exposed.shape[n] = frames.shape[i] ?? 0;
       exposed.gender[n] = frames.gender[i] ?? 0;
       exposed.source[n] = frames.source[i] ?? 0;
+      exposed.status[n] = frames.status[i] ?? 0;
       exposed.axis[n] = frames.axis[i] ?? 0;
       exposed.instance[n] = frames.instance[i] ?? 0;
       for (let k = 0; k < VECTOR_FLOATS; k++) {
@@ -299,6 +304,7 @@ export class ModelConnectors {
       exposed.shape,
       exposed.gender,
       exposed.source,
+      exposed.status,
       exposed.origin,
       exposed.axis,
       exposed.instance,

@@ -24,7 +24,10 @@ import {
   GENDER_FEMALE,
   GENDER_MALE,
   SOURCE_INFERRED,
+  SOURCE_PATCH,
   SOURCE_SHADOW,
+  STATUS_UNVERIFIED,
+  STATUS_VERIFIED,
 } from "./connector-table.ts";
 import { LatticeStudFinder } from "./lattice-stud-finder.ts";
 import { MateReport } from "./mate-report.ts";
@@ -38,6 +41,7 @@ import {
   SECTION_AXLE,
   SECTION_ROUND,
   SECTION_SQUARE,
+  NO_GROUP,
   SnapShapes,
 } from "./snap-shapes.ts";
 
@@ -48,6 +52,7 @@ interface Spec {
   readonly shape: number;
   readonly gender: number;
   readonly source?: number;
+  readonly status?: number;
   readonly origin: readonly [number, number, number];
   readonly axis: number;
 }
@@ -77,6 +82,7 @@ function table(specs: ReadonlyArray<Spec>): ConnectorTable {
     Uint16Array.from(specs, (s) => s.shape),
     Uint8Array.from(specs, (s) => s.gender),
     Uint8Array.from(specs, (s) => s.source ?? SOURCE_SHADOW),
+    Uint8Array.from(specs, (s) => s.status ?? STATUS_VERIFIED),
     Float32Array.from(specs.flatMap((s) => s.origin)),
     Int8Array.from(specs, (s) => s.axis),
     new Float32Array(specs.length * 3),
@@ -120,11 +126,12 @@ function baseplate(width: number, depth: number, source = SOURCE_SHADOW): Connec
   );
 }
 
-function withSource(part: ConnectorTable, source: number): ConnectorTable {
+function withProvenance(part: ConnectorTable, source: number, status: number): ConnectorTable {
   return new ConnectorTable(
     part.shape,
     part.gender,
     new Uint8Array(part.count).fill(source),
+    new Uint8Array(part.count).fill(status),
     part.origin,
     part.axis,
     part.axisFree,
@@ -410,30 +417,62 @@ describe("ConnectionSolver with lattice studs", () => {
     expect(matesAt(engine, upward, pose(0, 0, 0))).toBe(0);
   });
 
+  const VERIFIED = STATUS_VERIFIED;
+  const UNVERIFIED = STATUS_UNVERIFIED;
   it.each([
-    ["both curated", SOURCE_SHADOW, SOURCE_SHADOW, SOURCE_SHADOW],
-    ["the placed side inferred", SOURCE_INFERRED, SOURCE_SHADOW, SOURCE_INFERRED],
-    ["the held side inferred", SOURCE_SHADOW, SOURCE_INFERRED, SOURCE_INFERRED],
-  ])("reports each mate's source as the weaker tier: %s", (_, placed, held, expected) => {
-    const engine = allFamilies();
-    engine.insert(single(baseplate(2, 2, placed)), pose(0, 0, 0));
-    engine.insert(single(withSource(edgeHoles(), placed)), pose(0, 0, 0));
-    const plate = single(withSource(block(2, 2, PLATE_LDU, PLATE_RECEPTOR), held));
-    const pins = single(withSource(edgePins(), held));
-    for (const [piece, at] of [
-      [plate, pose(0, 0, 0)],
-      [pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0)],
-    ] as const) {
-      const report = evaluated(engine, piece, at);
-      expect(report.count).toBe(4);
-      expect(Array.from(report.source.subarray(0, report.count))).toEqual([
-        expected,
-        expected,
-        expected,
-        expected,
-      ]);
-    }
-  });
+    [
+      "both curated",
+      [SOURCE_SHADOW, VERIFIED],
+      [SOURCE_SHADOW, VERIFIED],
+      [SOURCE_SHADOW, VERIFIED],
+    ],
+    [
+      "the placed side inferred",
+      [SOURCE_INFERRED, VERIFIED],
+      [SOURCE_SHADOW, VERIFIED],
+      [SOURCE_INFERRED, VERIFIED],
+    ],
+    [
+      "the held side inferred",
+      [SOURCE_SHADOW, VERIFIED],
+      [SOURCE_INFERRED, VERIFIED],
+      [SOURCE_INFERRED, VERIFIED],
+    ],
+    [
+      "the placed side an unverified patch",
+      [SOURCE_PATCH, UNVERIFIED],
+      [SOURCE_SHADOW, VERIFIED],
+      [SOURCE_PATCH, UNVERIFIED],
+    ],
+    [
+      "the held side unverified",
+      [SOURCE_SHADOW, VERIFIED],
+      [SOURCE_SHADOW, UNVERIFIED],
+      [SOURCE_SHADOW, UNVERIFIED],
+    ],
+  ] as const)(
+    "reports each mate's weaker tier and its status, unverified if either side is: %s",
+    (_, placed, held, expected) => {
+      const engine = allFamilies();
+      engine.insert(single(withProvenance(baseplate(2, 2), ...placed)), pose(0, 0, 0));
+      engine.insert(single(withProvenance(edgeHoles(), ...placed)), pose(0, 0, 0));
+      const plate = single(withProvenance(block(2, 2, PLATE_LDU, PLATE_RECEPTOR), ...held));
+      const pins = single(withProvenance(edgePins(), ...held));
+      for (const [piece, at] of [
+        [plate, pose(0, 0, 0)],
+        [pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0)],
+      ] as const) {
+        const report = evaluated(engine, piece, at);
+        expect(report.count).toBe(4);
+        expect(Array.from(report.source.subarray(0, report.count))).toEqual(
+          Array(4).fill(expected[0]),
+        );
+        expect(Array.from(report.status.subarray(0, report.count))).toEqual(
+          Array(4).fill(expected[1]),
+        );
+      }
+    },
+  );
 });
 
 describe("ModelConnectors", () => {
@@ -777,5 +816,38 @@ describe("SnapMating", () => {
     );
     expect(mating.engages(grouped(CAP_ROOT, "token-a"), PLATE_RECEPTOR, 0)).toBe(false);
     expect(mating.engages(STUD, grouped(CAP_FAR, "token-a"), 0)).toBe(false);
+  });
+});
+
+const FACE_TOKEN = "token-face";
+const face = (group: string): number => shapes.intern(0, false, [SECTION_ROUND], [0], [0], group);
+const FACE_X = 40;
+const FACE_Y = 12;
+
+function facePair(axis: number): ConnectorTable {
+  const at = [FACE_X, FACE_Y, HALF] as const;
+  return table([
+    { shape: face(FACE_TOKEN), gender: GENDER_MALE, origin: at, axis },
+    { shape: face(FACE_TOKEN), gender: GENDER_FEMALE, origin: at, axis },
+  ]);
+}
+
+describe("zero-length grouped faces", () => {
+  it("engage only at offset 0 and only with the same group token", () => {
+    expect(mating.offsets(face(FACE_TOKEN), face(FACE_TOKEN))).toEqual(Int32Array.from([0]));
+    expect(mating.engages(face(FACE_TOKEN), face("token-other"), 0)).toBe(false);
+    expect(mating.engages(face(FACE_TOKEN), PLATE_RECEPTOR, 0)).toBe(false);
+    expect(mating.engages(face(NO_GROUP), PLATE_RECEPTOR, 0)).toBe(false);
+  });
+
+  it("keep a face's own male and female exposed, and mate two faces that meet with opposed axes", () => {
+    const end = single(facePair(AXIS_POS_X));
+    expect([end.count, end.internalMates]).toEqual([2, 0]);
+    const engine = allFamilies();
+    engine.insert(end, pose(0, 0, 0));
+    const facing = single(facePair(AXIS_NEG_X));
+    expect(matesAt(engine, facing, pose(0, 0, 0))).toBe(2);
+    expect(matesAt(engine, facing, pose(STUD_LDU, 0, 0))).toBe(0);
+    expect(matesAt(engine, single(facePair(AXIS_POS_X)), pose(0, 0, 0))).toBe(0);
   });
 });

@@ -1,6 +1,6 @@
 import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
-import { SOURCES, VECTOR_FLOATS } from "./connector-table.ts";
+import { SOURCES, STATUSES, VECTOR_FLOATS } from "./connector-table.ts";
 import { QUARTER_TURNS, checkPose, isLatticeStud, phaseOf, verticalSign } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
 import { MateClasses } from "./mate-classes.ts";
@@ -16,6 +16,7 @@ const WORD_SHIFT = 5;
 const WORD_MASK = 31;
 const NOT_ON_LATTICE = -1;
 const INITIAL_GROUPS = 16;
+const PROVENANCES = SOURCES.length * STATUSES.length;
 
 export class LatticeStudFinder implements MateFinder {
   private readonly classes: MateClasses;
@@ -37,6 +38,9 @@ export class LatticeStudFinder implements MateFinder {
   private groupWords = new Int32Array(INITIAL_GROUPS);
   private groupOffset = new Int32Array(INITIAL_GROUPS);
   private raster = new Uint32Array(0);
+  private readonly provenanceUses = new Int32Array(PROVENANCES);
+  private readonly present = new Int32Array(PROVENANCES);
+  private presentCount = 0;
 
   constructor(mating: SnapMating) {
     this.classes = new MateClasses(mating);
@@ -93,8 +97,8 @@ export class LatticeStudFinder implements MateFinder {
           k++
         ) {
           const partnerY = y + axis * (classes.offsets[k] ?? 0);
-          for (let s = 0; s < SOURCES.length; s++) {
-            const level = this.levels.get(levelKey(partner, -axis, SOURCES[s] ?? 0, partnerY));
+          for (let q = 0; q < this.presentCount; q++) {
+            const level = this.levels.get(levelKey(partner, -axis, this.present[q] ?? 0, partnerY));
             if (!level) continue;
             n += level.countRows(this.raster, offset, rows, words, cellX + minX, cellZ + minZ);
           }
@@ -120,6 +124,7 @@ export class LatticeStudFinder implements MateFinder {
       const own = this.groupClass[g] ?? 0;
       const axis = this.groupAxis[g] ?? 0;
       const ownSource = model.source[i] ?? 0;
+      const ownStatus = model.status[i] ?? 0;
       const y = (model.origin[i * VECTOR_FLOATS + 1] ?? 0) + baseY;
       const x = cellX + (this.connectorCellX[at + i] ?? 0);
       const z = cellZ + (this.connectorCellZ[at + i] ?? 0);
@@ -131,10 +136,15 @@ export class LatticeStudFinder implements MateFinder {
           k++
         ) {
           const partnerY = y + axis * (classes.offsets[k] ?? 0);
-          for (let s = 0; s < SOURCES.length; s++) {
-            const source = SOURCES[s] ?? 0;
-            const level = this.levels.get(levelKey(partner, -axis, source, partnerY));
-            if (level?.has(x, z)) out.push(i, Math.max(ownSource, source));
+          for (let q = 0; q < this.presentCount; q++) {
+            const provenance = this.present[q] ?? 0;
+            const level = this.levels.get(levelKey(partner, -axis, provenance, partnerY));
+            if (!level?.has(x, z)) continue;
+            out.push(
+              i,
+              Math.max(ownSource, provenanceSource(provenance)),
+              Math.max(ownStatus, provenanceStatus(provenance)),
+            );
           }
         }
       }
@@ -153,10 +163,11 @@ export class LatticeStudFinder implements MateFinder {
     for (let i = 0; i < model.count; i++) {
       const g = this.connectorGroup[at + i] ?? NOT_ON_LATTICE;
       if (g === NOT_ON_LATTICE) continue;
+      const provenance = provenanceOf(model.source[i] ?? 0, model.status[i] ?? 0);
       const key = levelKey(
         this.groupClass[g] ?? 0,
         this.groupAxis[g] ?? 0,
-        model.source[i] ?? 0,
+        provenance,
         (model.origin[i * VECTOR_FLOATS + 1] ?? 0) + baseY,
       );
       const x = cellX + (this.connectorCellX[at + i] ?? 0);
@@ -168,10 +179,23 @@ export class LatticeStudFinder implements MateFinder {
           this.levels.set(key, level);
         }
         level.add(x, z);
+        this.use(provenance, 1);
       } else {
         if (!level) throw new RangeError(`no placed connector to remove at cell ${x}, ${z}`);
         level.remove(x, z);
+        this.use(provenance, -1);
       }
+    }
+  }
+
+  private use(provenance: number, delta: number): void {
+    const before = this.provenanceUses[provenance] ?? 0;
+    const after = before + delta;
+    this.provenanceUses[provenance] = after;
+    if ((before === 0) === (after === 0)) return;
+    this.presentCount = 0;
+    for (let p = 0; p < PROVENANCES; p++) {
+      if ((this.provenanceUses[p] ?? 0) > 0) this.present[this.presentCount++] = p;
     }
   }
 
@@ -190,8 +214,10 @@ export class LatticeStudFinder implements MateFinder {
           k++
         ) {
           const partnerY = y + axis * (classes.offsets[k] ?? 0);
-          for (let s = 0; s < SOURCES.length; s++) {
-            if (this.levels.has(levelKey(partner, -axis, SOURCES[s] ?? 0, partnerY))) return true;
+          for (let q = 0; q < this.presentCount; q++) {
+            if (this.levels.has(levelKey(partner, -axis, this.present[q] ?? 0, partnerY))) {
+              return true;
+            }
           }
         }
       }
@@ -317,10 +343,22 @@ export class LatticeStudFinder implements MateFinder {
   }
 }
 
-const BUCKETS_PER_CLASS = 2 * SOURCES.length;
+const BUCKETS_PER_CLASS = 2 * PROVENANCES;
 
-function levelKey(mateClass: number, axis: number, source: number, yLdu: number): number {
-  const bucket = mateClass * BUCKETS_PER_CLASS + (axis > 0 ? SOURCES.length : 0) + (source >> 1);
+function provenanceOf(source: number, status: number): number {
+  return SOURCES.indexOf(source) * STATUSES.length + status;
+}
+
+function provenanceSource(provenance: number): number {
+  return SOURCES[Math.floor(provenance / STATUSES.length)] ?? 0;
+}
+
+function provenanceStatus(provenance: number): number {
+  return provenance % STATUSES.length;
+}
+
+function levelKey(mateClass: number, axis: number, provenance: number, yLdu: number): number {
+  const bucket = mateClass * BUCKETS_PER_CLASS + (axis > 0 ? PROVENANCES : 0) + provenance;
   return bucket * LEVEL_Y_SPAN + yLdu + LEVEL_Y_BIAS;
 }
 

@@ -11,7 +11,7 @@ import {
 } from "@brr/math";
 import { NEAR_MISS_RADIUS_LDU } from "../track/end-gaps.ts";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
-import { SOURCE_SHADOW } from "./connector-table.ts";
+import { SOURCE_SHADOW, STATUS_VERIFIED } from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import { QUARTER_TURNS, checkPose } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
@@ -98,7 +98,7 @@ export class TrackEndFinder implements MateFinder {
     for (let e = 0; e < model.trackEndCount; e++) {
       const slot = this.index.get(this.facingKey(model, e, pose));
       const joined = slot === MISSING ? 0 : (this.slotCount[slot] ?? 0);
-      for (let j = 0; j < joined; j++) out.push(e, SOURCE_SHADOW);
+      for (let j = 0; j < joined; j++) out.push(e, SOURCE_SHADOW, STATUS_VERIFIED);
     }
   }
 

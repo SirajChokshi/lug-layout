@@ -57,7 +57,9 @@ export class SnapShapes {
     let length = 0;
     for (let s = 0; s < n; s++) {
       const span = lengths[s] ?? 0;
-      if (!(span > 0)) throw new RangeError(`snap section ${s} has length ${span}`);
+      if (!(span >= 0) || !Number.isFinite(span)) {
+        throw new RangeError(`snap section ${s} has length ${span}`);
+      }
       this.codeOf[this.sections] = codes[s] ?? 0;
       this.sizeOf[this.sections] = sizes[s] ?? 0;
       this.spanOf[this.sections] = span;

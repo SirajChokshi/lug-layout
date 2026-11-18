@@ -76,6 +76,7 @@ export class SparseConnectorFinder implements MateFinder {
   private slotAxis = new Int8Array(INITIAL_SLOTS);
   private slotClass = new Int32Array(INITIAL_SLOTS);
   private slotSource = new Uint8Array(INITIAL_SLOTS);
+  private slotStatus = new Uint8Array(INITIAL_SLOTS);
   private slotNext = new Int32Array(INITIAL_SLOTS);
   private slotRegionNext = new Int32Array(INITIAL_SLOTS);
   private slots = 0;
@@ -102,6 +103,7 @@ export class SparseConnectorFinder implements MateFinder {
       this.slotAxis[slot] = axis;
       this.slotClass[slot] = turned.connectorClass[i] ?? UNCLASSED;
       this.slotSource[slot] = model.source[i] ?? 0;
+      this.slotStatus[slot] = model.status[i] ?? 0;
       this.slotNext[slot] = this.cells.get(this.keyOf(x, y, z, CELL_LDU));
       this.cells.set(this.cellKey, slot);
       this.slotRegionNext[slot] = this.regions.get(this.keyOf(x, y, z, REGION_LDU));
@@ -200,6 +202,7 @@ export class SparseConnectorFinder implements MateFinder {
     const classes = this.classes;
     const i = m % model.count;
     const ownSource = model.source[i] ?? 0;
+    const ownStatus = model.status[i] ?? 0;
     let n = 0;
     const at = m * VECTOR_FLOATS;
     const x = (turned.position[at + X] ?? 0) + pose.x;
@@ -235,7 +238,11 @@ export class SparseConnectorFinder implements MateFinder {
             this.slotClass[slot] === partner
           ) {
             n++;
-            out?.push(i, Math.max(ownSource, this.slotSource[slot] ?? 0));
+            out?.push(
+              i,
+              Math.max(ownSource, this.slotSource[slot] ?? 0),
+              Math.max(ownStatus, this.slotStatus[slot] ?? 0),
+            );
           }
         }
       }
@@ -477,6 +484,7 @@ export class SparseConnectorFinder implements MateFinder {
     this.slotAxis = grown(this.slotAxis, new Int8Array(capacity));
     this.slotClass = grown(this.slotClass, new Int32Array(capacity));
     this.slotSource = grown(this.slotSource, new Uint8Array(capacity));
+    this.slotStatus = grown(this.slotStatus, new Uint8Array(capacity));
     this.slotNext = grown(this.slotNext, new Int32Array(capacity));
     this.slotRegionNext = grown(this.slotRegionNext, new Int32Array(capacity));
   }

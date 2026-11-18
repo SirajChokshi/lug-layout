@@ -160,9 +160,9 @@ export class SnapMating {
     let femaleFrom = offset;
     let femaleTo = offset + shapes.span(f);
     while (m < maleEnd && f < femaleEnd) {
-      if (Math.min(maleTo, femaleTo) > Math.max(maleFrom, femaleFrom) && !visit(m, f)) {
-        return false;
-      }
+      const shared = Math.min(maleTo, femaleTo) - Math.max(maleFrom, femaleFrom);
+      const degenerate = maleTo === maleFrom || femaleTo === femaleFrom;
+      if ((shared > 0 || (shared === 0 && degenerate)) && !visit(m, f)) return false;
       if (maleTo <= femaleTo) {
         m++;
         maleFrom = maleTo;
