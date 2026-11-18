@@ -20,10 +20,6 @@ pub struct EndFace {
     pub radius: f64,
 }
 
-pub fn round_band_reference(reference: &str) -> bool {
-    is_circular_primitive(reference)
-}
-
 fn sub(a: Vec3, b: Vec3) -> Vec3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -174,7 +170,7 @@ fn same_line(a: &RoundBand, b: &RoundBand) -> bool {
 pub fn outward_round_bands(spans: &[ReferenceSpan], triangles: &[Triangle]) -> Vec<RoundBand> {
     let mut pieces: Vec<RoundBand> = spans
         .iter()
-        .filter(|span| round_band_reference(&span.reference))
+        .filter(|span| is_circular_primitive(&span.reference))
         .filter_map(|span| outward_band(span, triangles))
         .collect();
     pieces.sort_by(|a, b| a.from.total_cmp(&b.from));

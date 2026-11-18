@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::affine::Vec3;
-use brick_compile::bands::{end_faces, outward_round_bands, round_band_reference, EndFace};
+use brick_compile::bands::{end_faces, outward_round_bands, EndFace};
 use brick_compile::connect::{mating_faces, Gender, ShadowPatches, ShadowSnaps, Source, Status};
 use brick_compile::flatten::{resolve_reference, Flattener, Library, Lod};
 use brick_compile::ldraw::{parse, Line};
-use brick_compile::technic::{identified_steps, STEPS_PER_LDU};
+use brick_compile::technic::{identified_steps, is_circular_primitive, STEPS_PER_LDU};
 use brick_compile_cli::LazyLibrary;
 use serde_json::{json, Value};
 
@@ -161,7 +161,7 @@ fn measure(
         return Err(format!("{}: unknown feature {}", entry.part, entry.feature));
     }
     let path = patch_path(&entry.part);
-    let records = |reference: &str| round_band_reference(reference);
+    let records = |reference: &str| is_circular_primitive(reference);
     let flattened = Flattener::new(library, Lod::Standard, &[])
         .recording_spans(&records)
         .flatten(&path)
