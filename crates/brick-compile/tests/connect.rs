@@ -9,7 +9,8 @@ use brick_compile::connect::{
     mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, InferredFeatures,
     Issue, MatingFace, PrimitiveConnectors, PrimitiveTable, Section, SectionShape,
     SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable,
-    CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
+    CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT,
+    FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
@@ -651,11 +652,6 @@ fn caps_read_as_attached_male_ends_and_blind_female_ends() {
             "SNAP_CYL",
             "[gender=F] [caps=two] [secs=R 6 4]",
             Unreadable::ClosedAtBothEnds,
-        ),
-        (
-            "SNAP_FGR",
-            "[genderOfs=M] [seq=4 4 4] [radius=4]",
-            Unreadable::FingerHinge,
         ),
         (
             "SNAP_GEN",
@@ -1561,4 +1557,152 @@ fn the_wand_handle_is_free_at_both_ends_and_the_sextant_handle_only_at_its_tip()
         handle_ends("parts/30154.dat"),
         vec![(vec![8.0], [true, true]), (vec![12.0], [true, false])]
     );
+}
+
+type FingerFace = (
+    Gender,
+    Vec3,
+    Vec3,
+    Vec<FaceSection>,
+    u8,
+    bool,
+    Option<String>,
+);
+
+#[test]
+fn a_finger_snap_is_a_male_and_a_female_at_each_end_of_its_fingers() {
+    let cases = [
+        (
+            "[genderOfs=M] [seq=6 4 6] [radius=4]",
+            vec![
+                (MALE_FINGER, 4.0, 6.0),
+                (FEMALE_FINGER, 4.0, 4.0),
+                (MALE_FINGER, 4.0, 6.0),
+            ],
+        ),
+        (
+            "[genderOfs=F] [seq=2 3]",
+            vec![
+                (FEMALE_FINGER, FINGER_RADIUS_UNSTATED, 2.0),
+                (MALE_FINGER, FINGER_RADIUS_UNSTATED, 3.0),
+            ],
+        ),
+    ];
+    for (descriptor, fingers) in cases {
+        let library = memory(&[("parts/part.dat", "0 Part\n")]);
+        let text = format!("0 !LDCAD SNAP_FGR [group=hinge] {descriptor} [pos=0 4 0]\n");
+        let shadow = memory(&[("parts/part.dat", &text)]);
+        let connectors = ShadowSnaps::new(&library, &shadow)
+            .snaps("parts/part.dat")
+            .connectors;
+        let total: f64 = fingers.iter().map(|&(_, _, width)| width).sum();
+        let up = [0.0, 1.0, 0.0];
+        let down = [0.0, -1.0, 0.0];
+        let start = [0.0, -4.0 - total / 2.0, 0.0];
+        let far = [0.0, -4.0 + total / 2.0, 0.0];
+        let forward: Vec<FaceSection> = fingers
+            .iter()
+            .map(|&(code, size, length)| FaceSection { code, size, length })
+            .collect();
+        let backward: Vec<FaceSection> = forward.iter().rev().copied().collect();
+        let found: Vec<FingerFace> = mating_faces(&connectors[0])
+            .expect("a finger snap has faces")
+            .into_iter()
+            .map(|f| {
+                (
+                    f.gender, f.origin, f.axis, f.sections, f.caps, f.slide, f.group,
+                )
+            })
+            .collect();
+        let group = Some("hinge".to_string());
+        assert_eq!(
+            found,
+            vec![
+                (
+                    Gender::Male,
+                    start,
+                    up,
+                    forward.clone(),
+                    0,
+                    false,
+                    group.clone()
+                ),
+                (
+                    Gender::Male,
+                    far,
+                    down,
+                    backward.clone(),
+                    0,
+                    false,
+                    group.clone()
+                ),
+                (
+                    Gender::Female,
+                    start,
+                    down,
+                    forward,
+                    0,
+                    false,
+                    group.clone()
+                ),
+                (Gender::Female, far, up, backward, 0, false, group),
+            ],
+            "{descriptor}"
+        );
+    }
+}
+
+#[test]
+fn finger_snaps_without_a_center_flag_are_centred_on_their_position_as_their_parts_are_drawn() {
+    let library = pinned("ldraw");
+    let shadow = pinned("ldcad-shadow-bundle");
+    for part in ["parts/4593.dat", "parts/3854.dat"] {
+        let line = shadow
+            .source(part)
+            .expect("pinned shadow file")
+            .lines()
+            .find(|line| line.contains("SNAP_FGR"))
+            .expect("a finger snap");
+        assert!(!line.to_ascii_lowercase().contains("center"), "{line}");
+        let flattened = Flattener::new(&library, Lod::Standard, &[])
+            .recording_spans(&|reference: &str| is_circular_primitive(reference))
+            .flatten(part)
+            .expect("part flattens");
+        let bands = outward_round_bands(&flattened.spans, &flattened.triangles);
+        let snaps = ShadowSnaps::new(&library, &shadow).snaps(part);
+        let finger = snaps
+            .connectors
+            .iter()
+            .find(|c| matches!(c.shape, Shape::Finger { .. }))
+            .expect("a finger connector");
+        let Shape::Finger {
+            radius: Some(radius),
+            ..
+        } = finger.shape
+        else {
+            panic!("{part}: the finger snap states its radius");
+        };
+        let ends: Vec<Vec3> = mating_faces(finger)
+            .expect("finger faces")
+            .iter()
+            .filter(|face| face.gender == Gender::Male)
+            .map(|face| Affine::LDRAW_TO_Y_UP.apply(face.origin))
+            .collect();
+        let along = |band: &brick_compile::bands::RoundBand, p: Vec3| -> f64 {
+            (0..3).map(|k| (p[k] - band.point[k]) * band.axis[k]).sum()
+        };
+        let on_axis = |band: &brick_compile::bands::RoundBand, p: Vec3| -> bool {
+            let t = along(band, p);
+            (0..3).all(|k| (band.point[k] + band.axis[k] * t - p[k]).abs() < 1e-9)
+        };
+        let band = bands
+            .iter()
+            .find(|band| band.radius == radius && ends.iter().all(|&p| on_axis(band, p)))
+            .unwrap_or_else(|| {
+                panic!("{part}: a round band of radius {radius} on the finger axis")
+            });
+        let mut span: Vec<f64> = ends.iter().map(|&p| along(band, p)).collect();
+        span.sort_by(f64::total_cmp);
+        assert_eq!(span, vec![band.from, band.to], "{part}");
+    }
 }
