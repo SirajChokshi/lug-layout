@@ -1275,14 +1275,7 @@ mod tests {
                 .map(|instance| super::super::world_box(instance, &solids[instance.part]))
                 .collect();
             let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
-            let mut coverers = Coverers {
-                model: &model,
-                stud: STUD,
-                directions: super::super::enclosure_directions(),
-                enclosed: FxHashMap::default(),
-                nearby: Vec::new(),
-                blockers: Vec::new(),
-            };
+            let mut coverers = Coverers::new(&model, STUD);
             let mut below = BelowCertifier::new(&model, STUD);
             let mut reference = BelowCertifier::new(&model, STUD);
             for (owner, instance) in instances.iter().enumerate() {
@@ -1461,14 +1454,7 @@ mod tests {
                 .map(|instance| super::super::world_box(instance, &solids[instance.part]))
                 .collect();
             let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
-            let mut coverers = Coverers {
-                model: &model,
-                stud: STUD,
-                directions: super::super::enclosure_directions(),
-                enclosed: FxHashMap::default(),
-                nearby: Vec::new(),
-                blockers: Vec::new(),
-            };
+            let mut coverers = Coverers::new(&model, STUD);
             let mut below = BelowCertifier::new(&model, STUD);
             let mut reference = BelowCertifier::new(&model, STUD);
             for (owner, instance) in instances.iter().enumerate() {
