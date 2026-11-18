@@ -19,6 +19,8 @@ use serde_json::{json, Value};
 
 const WIDEST_BAND_END_FACES: &str = "widestOutwardRoundBandEndFaces";
 const MEASURED_SECTIONS: &str = "measuredSections";
+const UNGROUPED_TWIN: &str = "ungroupedTwin";
+const GROUP_KEY: &str = " [group=";
 const SNAP_PREFIX: &str = "0 !LDCAD SNAP_";
 const SECS_KEY: &str = "[secs=";
 const SECTION_GAP: &str = "   ";
@@ -31,7 +33,7 @@ const UNVERIFIED: &str = "unverified";
 
 enum Feature {
     CouplingFaces { id: String, group: String },
-    MeasuredSections { snap: usize },
+    MeasuredSections { snap: usize, twin: bool },
 }
 
 struct Entry {
@@ -45,6 +47,7 @@ struct Sections {
     title: String,
     replaced: String,
     measured: Vec<BoreSection>,
+    twin: bool,
     text: String,
 }
 
@@ -101,11 +104,12 @@ fn entries(manifest: &Value) -> Result<Vec<Entry>, String> {
                     id: text(entry, "id")?,
                     group: text(entry, "group")?,
                 },
-                MEASURED_SECTIONS => Feature::MeasuredSections {
+                name @ (MEASURED_SECTIONS | UNGROUPED_TWIN) => Feature::MeasuredSections {
                     snap: entry["snap"]
                         .as_u64()
                         .and_then(|i| usize::try_from(i).ok())
-                        .ok_or("a measuredSections entry needs a snap index")?,
+                        .ok_or(format!("a {name} entry needs a snap index"))?,
+                    twin: name == UNGROUPED_TWIN,
                 },
                 other => return Err(format!("unknown feature {other}")),
             };
@@ -120,7 +124,17 @@ fn entries(manifest: &Value) -> Result<Vec<Entry>, String> {
 }
 
 fn patch_path(part: &str) -> String {
-    format!("{PART_FOLDER}{part}.dat")
+    if part.contains('/') {
+        format!("{part}.dat")
+    } else {
+        format!("{PART_FOLDER}{part}.dat")
+    }
+}
+
+fn without_group(line: &str) -> Option<String> {
+    let start = line.find(GROUP_KEY)?;
+    let length = line[start + 1..].find(']')? + 2;
+    Some(format!("{}{}", &line[..start], &line[start + length..]))
 }
 
 fn number(v: f64) -> String {
@@ -369,6 +383,7 @@ fn measure_sections(
     library: &LazyLibrary,
     entry: &Entry,
     snap: usize,
+    twin: bool,
     upstream: &[String],
     source: &Value,
 ) -> Result<Sections, String> {
@@ -427,16 +442,22 @@ fn measure_sections(
     let mut lines = header(&title, &entry.added, source);
     lines.push("0 !LDCAD SNAP_CLEAR".to_string());
     for (index, line) in upstream.iter().enumerate() {
-        lines.push(if index == snap {
-            corrected.clone()
+        if index != snap {
+            lines.push(line.clone());
+        } else if twin {
+            lines.push(line.clone());
+            lines.push(
+                without_group(&corrected).ok_or(format!("{path}: snap {snap} has no group"))?,
+            );
         } else {
-            line.clone()
-        });
+            lines.push(corrected.clone());
+        }
     }
     Ok(Sections {
         title,
         replaced,
         measured,
+        twin,
         text: lines.join("\n") + "\n",
     })
 }
@@ -478,6 +499,7 @@ fn sections_round_trip(
     let corrected = extraction
         .connectors
         .iter()
+        .filter(|c| !sections.twin || c.group.is_none())
         .filter(|c| match &c.shape {
             Shape::Cylinder { sections, .. } => {
                 sections
@@ -493,7 +515,8 @@ fn sections_round_trip(
         .connectors
         .iter()
         .all(|c| c.source == Source::Patch && c.status == status);
-    if extraction.connectors.len() != snaps || corrected != 1 || !all_patched {
+    let expected = snaps + usize::from(sections.twin);
+    if extraction.connectors.len() != expected || corrected != 1 || !all_patched {
         return Err(format!(
             "{path}: the patch reads back as {} connectors, {corrected} with the measured sections",
             extraction.connectors.len()
@@ -738,9 +761,9 @@ fn run() -> Result<bool, String> {
                 measured_rows.push((faces_json(&measured)?, None));
                 faces_checks.push((entry, group, measured));
             }
-            Feature::MeasuredSections { snap } => {
+            Feature::MeasuredSections { snap, twin } => {
                 let upstream = upstream_snaps(&entry.part, row, shadow.as_ref())?;
-                let sections = measure_sections(&library, entry, *snap, &upstream, &source)?;
+                let sections = measure_sections(&library, entry, *snap, *twin, &upstream, &source)?;
                 texts.insert(patch_path(&entry.part), sections.text.clone());
                 measured_rows.push((
                     json!({

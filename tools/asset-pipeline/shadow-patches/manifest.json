@@ -311,6 +311,29 @@
           "root": ""
         }
       }
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "ungroupedTwin",
+      "measured": {
+        "replacedSecs": "R 4 1",
+        "secs": "R 4 1",
+        "title": "Wheel Hole Notched Through"
+      },
+      "part": "p/wpinhole",
+      "snap": 0,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [id=wpAxHole] [group=wpAxHole] [gender=F] [caps=none] [secs=R 4 1] [slide=true] [scale=YOnly]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
     }
   ]
 }
