@@ -283,6 +283,7 @@ fn source_key(source: Source) -> &'static str {
         Source::Shadow => "tier 1 shadow",
         Source::Primitive => "tier 2 primitive",
         Source::Inferred => "tier 4 inferred",
+        Source::Patch => "project shadow patch",
     }
 }
 

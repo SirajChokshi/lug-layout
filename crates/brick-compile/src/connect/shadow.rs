@@ -9,6 +9,7 @@ use crate::ldraw::{self, Line};
 use super::meta::{parse_metas, Meta, ParsedMeta};
 use super::{
     finished, malformed_shape, placeable_cells, placed, slots, Connector, Extraction, Issue, Slot,
+    Source, Status,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -24,9 +25,21 @@ struct Gathered {
     curated: bool,
 }
 
+pub struct ShadowPatches<'a, S: Library + ?Sized> {
+    pub files: &'a S,
+    pub verified: &'a HashSet<String>,
+}
+
+#[derive(Clone, Copy)]
+struct Tier {
+    source: Source,
+    status: Status,
+}
+
 pub struct ShadowSnaps<'a, L: Library + ?Sized, S: Library + ?Sized> {
     library: &'a L,
     shadow: &'a S,
+    patches: Option<ShadowPatches<'a, S>>,
     gathered: HashMap<String, Rc<Gathered>>,
 }
 
@@ -39,8 +52,14 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
         ShadowSnaps {
             library,
             shadow,
+            patches: None,
             gathered: HashMap::new(),
         }
+    }
+
+    pub fn patched(mut self, patches: ShadowPatches<'a, S>) -> Self {
+        self.patches = Some(patches);
+        self
     }
 
     pub fn snaps(&mut self, path: &str) -> Extraction {
@@ -154,25 +173,24 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 out.children.push(child);
             }
         }
-        if let Some(shadow) = self.shadow.source(path) {
-            let metas = parse_metas(shadow);
-            out.curated |= path.starts_with(PART_FOLDER) && !metas.is_empty();
-            for parsed in metas {
-                match parsed {
-                    Err(error) => out.issues.push(Issue::Meta {
-                        file: path.to_string(),
-                        error,
-                    }),
-                    Ok(ParsedMeta { meta, ignored }) => {
-                        out.issues.extend(ignored.into_iter().map(|parameter| {
-                            Issue::IgnoredParameter {
-                                file: path.to_string(),
-                                parameter,
-                            }
-                        }));
-                        self.apply(path, meta, depth, &mut out);
-                    }
-                }
+        let upstream = Tier {
+            source: Source::Shadow,
+            status: Status::Verified,
+        };
+        if let Some(text) = self.shadow.source(path) {
+            self.read_tier(path, text, upstream, depth, &mut out);
+        }
+        if let Some(patches) = &self.patches {
+            let tier = Tier {
+                source: Source::Patch,
+                status: if patches.verified.contains(path) {
+                    Status::Verified
+                } else {
+                    Status::Unverified
+                },
+            };
+            if let Some(text) = patches.files.source(path) {
+                self.read_tier(path, text, tier, depth, &mut out);
             }
         }
         let gathered = Rc::new(out);
@@ -180,7 +198,29 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
         gathered
     }
 
-    fn apply(&mut self, path: &str, meta: Meta, depth: usize, out: &mut Gathered) {
+    fn read_tier(&mut self, path: &str, text: &str, tier: Tier, depth: usize, out: &mut Gathered) {
+        let metas = parse_metas(text);
+        out.curated |= path.starts_with(PART_FOLDER) && !metas.is_empty();
+        for parsed in metas {
+            match parsed {
+                Err(error) => out.issues.push(Issue::Meta {
+                    file: path.to_string(),
+                    error,
+                }),
+                Ok(ParsedMeta { meta, ignored }) => {
+                    out.issues.extend(ignored.into_iter().map(|parameter| {
+                        Issue::IgnoredParameter {
+                            file: path.to_string(),
+                            parameter,
+                        }
+                    }));
+                    self.apply(path, meta, tier, depth, out);
+                }
+            }
+        }
+    }
+
+    fn apply(&mut self, path: &str, meta: Meta, tier: Tier, depth: usize, out: &mut Gathered) {
         match meta {
             Meta::Clear { id } => {
                 let (removed, kept): (Vec<Connector>, Vec<Connector>) =
@@ -223,7 +263,12 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 for malformation in findings {
                     report(out, path, malformation);
                 }
-                out.connectors.extend(cells);
+                out.connectors
+                    .extend(cells.into_iter().map(|cell| Connector {
+                        source: tier.source,
+                        status: tier.status,
+                        ..cell
+                    }));
             }
         }
     }

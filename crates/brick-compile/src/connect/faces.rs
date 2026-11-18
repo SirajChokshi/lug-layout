@@ -1,6 +1,10 @@
 use crate::affine::Vec3;
+use crate::sixteenths;
 
-use super::{column, Caps, Connector, Gender, SectionShape, Shape, Source};
+use super::{
+    column, direction_code, Bounding, Caps, Connector, Gender, GenericMatch, SectionShape, Shape,
+    Source, Status,
+};
 
 pub const CAP_ROOT: u8 = 1;
 pub const CAP_FAR: u8 = 2;
@@ -21,9 +25,13 @@ pub struct FaceSection {
 #[derive(Clone, Debug, PartialEq)]
 pub struct MatingFace {
     pub source: Source,
+    pub status: Status,
+    pub group: Option<String>,
     pub gender: Gender,
     pub origin: Vec3,
     pub axis: Vec3,
+    pub sixteenths: Option<[i32; 3]>,
+    pub direction: Option<u8>,
     pub sections: Vec<FaceSection>,
     pub caps: u8,
     pub slide: bool,
@@ -74,6 +82,8 @@ fn reversed(direction: Vec3) -> Vec3 {
 
 struct Cylinder<'a> {
     source: Source,
+    status: Status,
+    group: &'a Option<String>,
     gender: Gender,
     sections: &'a [FaceSection],
     closed: (bool, bool),
@@ -89,9 +99,13 @@ impl Cylinder<'_> {
             self.sections.iter().rev().map(reversed_section).collect();
         let face = |origin, axis, sections, caps| MatingFace {
             source: self.source,
+            status: self.status,
+            group: self.group.clone(),
             gender: self.gender,
             origin,
             axis,
+            sixteenths: on_grid(origin),
+            direction: direction_code(axis),
             sections,
             caps,
             slide: self.slide,
@@ -101,6 +115,10 @@ impl Cylinder<'_> {
             Gender::Male if far_closed && !start_closed => {
                 vec![face(far, reversed(direction), backwards, CAP_ROOT)]
             }
+            Gender::Male if !start_closed && !far_closed => vec![
+                face(start, direction, in_order, 0),
+                face(far, reversed(direction), backwards, 0),
+            ],
             Gender::Male => {
                 let caps = if far_closed {
                     CAP_ROOT | CAP_FAR
@@ -126,6 +144,45 @@ impl Cylinder<'_> {
             }
         })
     }
+}
+
+fn on_grid(origin: Vec3) -> Option<[i32; 3]> {
+    Some([
+        sixteenths::identified(origin[0])?,
+        sixteenths::identified(origin[1])?,
+        sixteenths::identified(origin[2])?,
+    ])
+}
+
+fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<MatingFace> {
+    let direction = column(&connector.placement, 1);
+    let axis = match gender {
+        Gender::Male => direction,
+        Gender::Female => reversed(direction),
+    };
+    connector
+        .grid
+        .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets())
+        .into_iter()
+        .map(|offset| connector.placement.apply(offset))
+        .map(|origin| MatingFace {
+            source: connector.source,
+            status: connector.status,
+            group: connector.group.clone(),
+            gender,
+            origin,
+            axis,
+            sixteenths: on_grid(origin),
+            direction: direction_code(axis),
+            sections: vec![FaceSection {
+                code: ROUND,
+                size: radius,
+                length: 0.0,
+            }],
+            caps: 0,
+            slide: false,
+        })
+        .collect()
 }
 
 pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable> {
@@ -168,10 +225,20 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
             *slide,
         ),
         Shape::Finger { .. } => return Err(Unreadable::FingerHinge),
+        Shape::Generic {
+            gender,
+            bounding: Bounding::Cylinder { radius, length },
+            matching: Some(GenericMatch::Group),
+            free_placement: false,
+        } if connector.group.is_some() && *length == 0.0 => {
+            return Ok(contact_faces(connector, *gender, *radius))
+        }
         Shape::Generic { .. } => return Err(Unreadable::Generic),
     };
     let cylinder = Cylinder {
         source: connector.source,
+        status: connector.status,
+        group: &connector.group,
         gender,
         sections: &sections,
         closed,

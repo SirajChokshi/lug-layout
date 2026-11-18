@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -7,7 +7,7 @@ use brick_compile::affine::Vec3;
 use brick_compile::connect::{
     mating_faces, parse_metas, ConnectorExtractor, FaceSection, Gender, InferredFeatures,
     MatingFace, Meta, PrimitiveConnectors, PrimitiveTable, SectionShape, SectionVocabulary,
-    ShadowSnaps, Shape, AXLE, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
+    ShadowPatches, ShadowSnaps, Shape, AXLE, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
 use brick_compile::flatten::{resolve_reference, Lod};
 use brick_compile::model::{bake_model, official_reference};
@@ -219,8 +219,20 @@ fn run() -> Result<bool, String> {
         .ok_or(format!("{inferred_path}: cavityProbe must be a part path"))?;
     let vocabulary =
         SectionVocabulary::from_metas(shadow_texts(&shadow_root).iter().map(String::as_str));
+    let patches = values
+        .get("--patches")
+        .map(|root| LazyLibrary::new(PathBuf::from(root)));
+    let unverified = HashSet::new();
+    let snaps = ShadowSnaps::new(&library, &shadow);
+    let snaps = match &patches {
+        Some(files) => snaps.patched(ShadowPatches {
+            files,
+            verified: &unverified,
+        }),
+        None => snaps,
+    };
     let mut extractor = ConnectorExtractor::new(
-        ShadowSnaps::new(&library, &shadow),
+        snaps,
         PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&table)?),
         InferredFeatures::new(&library, vocabulary, probe_part)?,
     );
