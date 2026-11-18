@@ -3,14 +3,14 @@ use std::rc::Rc;
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Flattener, Library, Lod};
+use crate::identify::{identified, identifies, sixteenth, IDENTIFY_LDU};
 use crate::ldraw::{self, Line, Winding};
 
 use super::axle::{AxleFound, AxleMiss, AxleProbe};
 use super::meta::{parse_metas, Meta};
 use super::profile::Profile;
 use super::solid::{
-    covers_circle, identified, plan_axes, sixteenth, span_of, Probe, RoundShape, RoundSurface,
-    Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
+    covers_circle, plan_axes, span_of, Probe, RoundShape, RoundSurface, Slab, Solid, HALF_GRID_LDU,
 };
 use super::{
     finished, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape, Source, Status,
@@ -106,9 +106,7 @@ impl SectionVocabulary {
         Self::unique(
             self.sizes
                 .iter()
-                .filter(|(g, s, v)| {
-                    *g == mate && *s == shape && (v - measured).abs() <= IDENTIFY_LDU
-                })
+                .filter(|(g, s, v)| *g == mate && *s == shape && identifies(v - measured))
                 .map(|(_, _, v)| *v),
         )
     }
@@ -118,7 +116,7 @@ impl SectionVocabulary {
             Self::unique(
                 self.lengths
                     .iter()
-                    .filter(|(s, v)| *s == shape && (v - measured).abs() <= IDENTIFY_LDU)
+                    .filter(|(s, v)| *s == shape && identifies(v - measured))
                     .map(|(_, v)| *v),
             )
         })
@@ -245,10 +243,8 @@ fn key(value: f64) -> i64 {
 fn aligned_axis(direction: Vec3) -> Option<usize> {
     let size = norm(direction);
     let unit = direction.map(|c| c / size);
-    (0..3).find(|&k| {
-        (0..3).all(|j| j == k || unit[j].abs() <= IDENTIFY_LDU)
-            && (unit[k].abs() - 1.0).abs() <= IDENTIFY_LDU
-    })
+    (0..3)
+        .find(|&k| (0..3).all(|j| j == k || identifies(unit[j])) && identifies(unit[k].abs() - 1.0))
 }
 
 fn unit_axis(axis: usize, sign: f64) -> Vec3 {
@@ -332,12 +328,10 @@ fn unit_round(source: &str) -> Option<UnitRound> {
         return None;
     }
     let radius = |p: &Vec3| p[0].hypot(p[2]);
-    let level = |p: &Vec3, y: f64| (p[1] - y).abs() <= IDENTIFY_LDU;
+    let level = |p: &Vec3, y: f64| identifies(p[1] - y);
     let all = || polygons.iter().flat_map(|(points, _, _)| points.iter());
     let wall = polygons.iter().all(|(points, _, _)| {
-        points
-            .iter()
-            .all(|p| (radius(p) - 1.0).abs() <= IDENTIFY_LDU)
+        points.iter().all(|p| identifies(radius(p) - 1.0))
             && points.iter().all(|p| level(p, 0.0) || level(p, 1.0))
             && points.iter().any(|p| level(p, 0.0))
             && points.iter().any(|p| level(p, 1.0))
@@ -347,11 +341,9 @@ fn unit_round(source: &str) -> Option<UnitRound> {
     } else if all().all(|p| level(p, 0.0)) {
         let inner = all().map(radius).fold(f64::INFINITY, f64::min);
         let outer = all().map(radius).fold(0.0, f64::max);
-        let hollow = inner > IDENTIFY_LDU;
+        let hollow = !identifies(inner);
         let circle = if hollow { inner } else { outer };
-        let on_circle = all()
-            .filter(|p| (radius(p) - circle).abs() <= IDENTIFY_LDU)
-            .count();
+        let on_circle = all().filter(|p| identifies(radius(p) - circle)).count();
         let covers_center = hollow
             && polygons
                 .iter()
@@ -380,7 +372,7 @@ fn unit_round(source: &str) -> Option<UnitRound> {
         all_certified &= *certified;
         let angles: Vec<f64> = points
             .iter()
-            .filter(|p| radius(p) > IDENTIFY_LDU)
+            .filter(|p| !identifies(radius(p)))
             .map(|p| p[2].atan2(p[0]))
             .collect();
         arcs.extend(span_of(&angles));
@@ -724,11 +716,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             let t = [m.m[3], m.m[7], m.m[11]];
             let (rx, rz, height) = (norm(c0), norm(c2), norm(c1));
             let circular = rx > 0.0
+                && rz > 0.0
                 && height > 0.0
-                && (rx - rz).abs() <= IDENTIFY_LDU
-                && dot(c0, c2).abs() <= IDENTIFY_LDU * rx * rz
-                && dot(c0, c1).abs() <= IDENTIFY_LDU * rx * height
-                && dot(c2, c1).abs() <= IDENTIFY_LDU * rz * height;
+                && identifies(rx - rz)
+                && identifies(dot(c0, c2) / (rx * rz))
+                && identifies(dot(c0, c1) / (rx * height))
+                && identifies(dot(c2, c1) / (rz * height));
             if !circular {
                 continue;
             }
@@ -1367,7 +1360,7 @@ pub(super) fn axle_section<L: Library + ?Sized>(
         .triangles
         .iter()
         .flat_map(|t| t.points.iter())
-        .any(|p| (p[1] - level).abs() > IDENTIFY_LDU)
+        .any(|p| !identifies(p[1] - level))
     {
         return Err(format!("axle probe {probe_part} is not a flat section"));
     }
@@ -1396,8 +1389,7 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
         for piece in pieces {
             match bands.last_mut() {
                 Some(band)
-                    if (band.from - piece.from).abs() <= IDENTIFY_LDU
-                        && (band.to - piece.to).abs() <= IDENTIFY_LDU =>
+                    if identifies(band.from - piece.from) && identifies(band.to - piece.to) =>
                 {
                     band.arcs.extend(piece.arcs);
                 }
@@ -1460,7 +1452,7 @@ fn off_centre(travel: &[f64]) -> Option<f64> {
                 .map(move |(j, _)| (travel[i] - travel[j]).abs() / 2.0)
         })
         .fold(0.0, f64::max);
-    (worst > IDENTIFY_LDU).then_some(worst)
+    (!identifies(worst)).then_some(worst)
 }
 
 fn cylinder(

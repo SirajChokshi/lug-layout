@@ -12,6 +12,7 @@ use brick_compile::connect::{
     Source, Uninferred,
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
+use brick_compile::identify::{self, identifies, SIXTEENTHS_PER_LDU};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::model::{bake_model, official_reference};
 use brick_compile_cli::{shadow_texts, LazyLibrary};
@@ -26,8 +27,6 @@ const EXAMPLES: usize = 12;
 const TUBE_TITLE: &str = "Stud Tube Open";
 const AXLE_TITLE: &str = "Technic Axle";
 const FACE_KEY_STEPS: f64 = 2000.0;
-const SIXTEENTHS: f64 = 16.0;
-const IDENTIFY_LDU: f64 = 0.0005;
 const CLEARANCE_STEPS: f64 = 1000.0;
 
 type AuditSlot = (Option<Gender>, [i64; 3], [i64; 3]);
@@ -351,13 +350,10 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
 type FaceKey = (u8, [i64; 3], [i64; 3]);
 
 fn face_key(face: &MatingFace) -> FaceKey {
-    let sixteenths = |c: f64| {
-        let steps = (c * SIXTEENTHS).round();
-        if (c - steps / SIXTEENTHS).abs() <= IDENTIFY_LDU {
-            steps as i64 * FACE_KEY_STEPS as i64
-        } else {
-            (c * SIXTEENTHS * FACE_KEY_STEPS).round() as i64
-        }
+    let per_ldu = f64::from(SIXTEENTHS_PER_LDU);
+    let sixteenths = |c: f64| match identify::sixteenths(c) {
+        Some(steps) => steps * FACE_KEY_STEPS as i64,
+        None => (c * per_ldu * FACE_KEY_STEPS).round() as i64,
     };
     (
         u8::from(face.gender == Gender::Female),
@@ -392,7 +388,7 @@ fn face_family(face: &MatingFace) -> String {
 }
 
 fn section_agreement(kept: &MatingFace, inferred: &MatingFace) -> &'static str {
-    let same = |a: f64, b: f64| (a - b).abs() <= 0.0005;
+    let same = |a: f64, b: f64| identifies(a - b);
     let identical = kept.sections.len() == inferred.sections.len()
         && kept
             .sections

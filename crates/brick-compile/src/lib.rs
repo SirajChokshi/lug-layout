@@ -10,6 +10,7 @@ pub mod cover;
 pub mod ends;
 pub mod flatten;
 pub mod glb;
+pub mod identify;
 pub mod inline;
 pub mod lattice;
 pub mod ldraw;
