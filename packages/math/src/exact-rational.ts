@@ -14,6 +14,7 @@ const INTEGER_TEXT = /^(?:0|-?[1-9]\d*)$/u;
 const POSITIVE_INTEGER_TEXT = /^[1-9]\d*$/u;
 const MAX_DIGITS = 1200;
 const TERM_LIMIT = 10n ** BigInt(MAX_DIGITS);
+const OPERAND_LIMIT = 10n ** BigInt(2 * MAX_DIGITS + 1);
 const SIXTEENTHS_PER_LDU = 16n;
 const SIGNIFICAND_BITS = 53;
 const GUARD_BITS = 2;
@@ -57,6 +58,9 @@ function bitLength(value: bigint): number {
 
 export function exactRational(numerator: bigint, denominator: bigint): ExactRational {
   if (denominator === 0n) throw new Error("an exact rational has a nonzero denominator");
+  if (magnitude(numerator) >= OPERAND_LIMIT || magnitude(denominator) >= OPERAND_LIMIT) {
+    throw new Error(`an exact rational writes more than ${MAX_DIGITS} digits in a term`);
+  }
   const sign = denominator < 0n ? -1n : 1n;
   const divisor = greatestCommonDivisor(numerator, denominator);
   const reduced = {
@@ -143,11 +147,16 @@ export function formatExactRational(value: ExactRational): ExactRationalText {
   return { numerator: value.numerator.toString(), denominator: value.denominator.toString() };
 }
 
+function ownText(value: object, key: string): string | undefined {
+  const field: unknown = Object.getOwnPropertyDescriptor(value, key)?.value;
+  return typeof field === "string" ? field : undefined;
+}
+
 export function isCanonicalExactRationalText(text: unknown): text is ExactRationalText {
   if (typeof text !== "object" || text === null || Array.isArray(text)) return false;
-  if (!("numerator" in text) || !("denominator" in text)) return false;
-  const { numerator, denominator } = text;
-  if (typeof numerator !== "string" || typeof denominator !== "string") return false;
+  const numerator = ownText(text, "numerator");
+  const denominator = ownText(text, "denominator");
+  if (numerator === undefined || denominator === undefined) return false;
   const numeratorDigits = numerator.length - (numerator.startsWith("-") ? 1 : 0);
   if (
     numeratorDigits > MAX_DIGITS ||
@@ -160,9 +169,9 @@ export function isCanonicalExactRationalText(text: unknown): text is ExactRation
   return greatestCommonDivisor(BigInt(numerator), BigInt(denominator)) === 1n;
 }
 
-export function parseExactRational(text: ExactRationalText): ExactRational {
+export function parseExactRational(text: unknown): ExactRational {
   if (!isCanonicalExactRationalText(text)) {
-    throw new Error(`${JSON.stringify(text)} is not a reduced exact rational`);
+    throw new Error("the text is not a reduced exact rational of decimal integer strings");
   }
   return { numerator: BigInt(text.numerator), denominator: BigInt(text.denominator) };
 }

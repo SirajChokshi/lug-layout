@@ -1,3 +1,5 @@
+export type ExactDecimalText = string;
+
 export interface ExactDecimal {
   readonly coefficient: bigint;
   readonly places: number;
@@ -15,6 +17,10 @@ export const EXACT_DECIMAL_ZERO: ExactDecimal = { coefficient: 0n, places: 0 };
 export function exactDecimal(coefficient: bigint, places: number): ExactDecimal {
   if (!Number.isSafeInteger(places) || places < 0 || places >= MAX_DIGITS) {
     throw new Error(`${places} is not a count of decimal places below ${MAX_DIGITS}`);
+  }
+  const magnitude = coefficient < 0n ? -coefficient : coefficient;
+  if (magnitude >= COEFFICIENT_LIMIT * TEN ** BigInt(places)) {
+    throw new Error(`an exact decimal writes canonically with more than ${MAX_DIGITS} digits`);
   }
   return requireWithinDigitBound(normalized(coefficient, places));
 }
@@ -57,7 +63,7 @@ function literalParts(text: string): LiteralParts | null {
   };
 }
 
-export function parseExactDecimal(text: string): ExactDecimal {
+export function parseExactDecimal(text: ExactDecimalText): ExactDecimal {
   const parts = literalParts(text);
   if (parts === null) {
     throw new Error(
@@ -89,7 +95,7 @@ function requireWithinDigitBound(value: ExactDecimal): ExactDecimal {
   return value;
 }
 
-export function formatExactDecimal(value: ExactDecimal): string {
+export function formatExactDecimal(value: ExactDecimal): ExactDecimalText {
   const negative = value.coefficient < 0n;
   const digits = (negative ? -value.coefficient : value.coefficient)
     .toString()
@@ -99,7 +105,7 @@ export function formatExactDecimal(value: ExactDecimal): string {
   return `${negative ? "-" : ""}${whole}${fraction === "" ? "" : `.${fraction}`}`;
 }
 
-export function isCanonicalExactDecimalText(text: unknown): text is string {
+export function isCanonicalExactDecimalText(text: unknown): text is ExactDecimalText {
   if (typeof text !== "string" || text === "-0" || !CANONICAL_DECIMAL.test(text)) return false;
   const digits = text.length - (text.startsWith("-") ? 1 : 0) - (text.includes(".") ? 1 : 0);
   return digits <= MAX_DIGITS;

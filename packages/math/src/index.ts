@@ -52,6 +52,7 @@ export {
   parseExactDecimal,
   subtractExactDecimal,
   type ExactDecimal,
+  type ExactDecimalText,
 } from "./exact-decimal.ts";
 export {
   addExactRational,

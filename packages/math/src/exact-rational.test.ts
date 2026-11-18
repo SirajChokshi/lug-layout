@@ -145,18 +145,27 @@ describe("exact rationals", () => {
     expect(() => multiplyExactRational(tiny, tiny)).toThrow("more than 1200 digits in a term");
     const huge = exactRational(10n ** 700n, 1n);
     expect(() => multiplyExactRational(huge, huge)).toThrow("more than 1200 digits in a term");
+    expect(() => exactRational(10n ** 5000n + 1n, 3n)).toThrow("more than 1200 digits in a term");
   });
 
-  it("call nothing but a pair of integer strings canonical text", () => {
+  it("refuse anything but own integer-string fields as canonical text", () => {
     for (const notText of [
       null,
       undefined,
       "31/5",
       { numerator: 31, denominator: 5 },
       Object.assign(["31", "5"], { numerator: "31", denominator: "5" }),
+      Object.create({ numerator: "31", denominator: "5" }),
+      {
+        get numerator(): string {
+          throw new Error("a getter is not text");
+        },
+        denominator: "5",
+      },
     ]) {
       expect(isCanonicalExactRationalText(notText)).toBe(false);
     }
+    expect(() => parseExactRational(null)).toThrow("is not a reduced exact rational");
   });
 
   it("read back a numerator of the full digit bound whatever its sign", () => {
