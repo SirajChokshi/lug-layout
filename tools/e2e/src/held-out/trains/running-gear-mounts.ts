@@ -1,9 +1,9 @@
 import { type SeededRandom } from "../generator.ts";
 import { type Vec3 } from "../assembly.ts";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import { pivotOptions, stackAt } from "./bogies.ts";
 import { meetsHeadBand } from "./head-band-contact.ts";
 import { VERTICAL } from "./part-geometry.ts";
+import { pivotOptions, stackAt } from "./pivot-stacks.ts";
 import {
   type Carrier,
   LATERAL,
@@ -11,6 +11,7 @@ import {
   SEAT_TRIES,
   TRAVEL,
   footprint,
+  headBandSpan,
   onLattice,
   pickColor,
   pointOnLine,
@@ -82,26 +83,17 @@ function plannedWheelsets(
   return part.axes.map((each) => {
     const point = add(position, apply(rotation, pointOnLine(each.axis, each.at, 0)));
     const wheelLine = { x: point[TRAVEL], y: point[VERTICAL] };
-    const contact = (rail: RailHeadBands, side: number): number | undefined => {
-      const from = side > 0 ? rail.inner : -rail.outer;
-      const to = side > 0 ? rail.outer : -rail.inner;
-      return indices.find((instance) => meetsHeadBand(model, { instance, from, to }, wheelLine));
-    };
+    const contact = (rail: RailHeadBands, side: number): number | undefined =>
+      indices.find((instance) =>
+        meetsHeadBand(model, { instance, headBand: headBandSpan(rail, side) }, wheelLine),
+      );
     const rail = rails.find((candidate) =>
       [1, -1].every((side) => contact(candidate, side) !== undefined),
     );
-    const surfaces = rail
+    const rollingSurfaces = rail
       ? [1, -1].flatMap((side) => {
           const instance = contact(rail, side);
-          return instance === undefined
-            ? []
-            : [
-                {
-                  instance,
-                  from: side > 0 ? rail.inner : -rail.outer,
-                  to: side > 0 ? rail.outer : -rail.inner,
-                },
-              ];
+          return instance === undefined ? [] : [{ instance, headBand: headBandSpan(rail, side) }];
         })
       : [];
     return {
@@ -109,7 +101,7 @@ function plannedWheelsets(
       unit,
       instances: indices,
       rail: rail ? rail.part : null,
-      surfaces,
+      rollingSurfaces,
       negative: null,
     };
   });
@@ -129,7 +121,7 @@ function midline(
 function everyOnRail(wheelsets: ReadonlyArray<PlannedWheelset>): boolean {
   return (
     wheelsets.length > 0 &&
-    wheelsets.every((wheelset) => wheelset.rail !== null && wheelset.surfaces.length === 2)
+    wheelsets.every((wheelset) => wheelset.rail !== null && wheelset.rollingSurfaces.length === 2)
   );
 }
 

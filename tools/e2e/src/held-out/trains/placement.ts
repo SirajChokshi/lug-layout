@@ -220,3 +220,12 @@ export const PIVOT_PART_SUFFIX = " pivot";
 export function transpose(m: Mat3): Mat3 {
   return [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
 }
+
+export interface HeadBandSpan {
+  readonly from: number;
+  readonly to: number;
+}
+
+export function headBandSpan(rail: RailHeadBands, side: number): HeadBandSpan {
+  return side > 0 ? { from: rail.inner, to: rail.outer } : { from: -rail.outer, to: -rail.inner };
+}

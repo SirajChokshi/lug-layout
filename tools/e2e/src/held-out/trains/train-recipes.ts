@@ -1,8 +1,9 @@
 import { type AxleMode, type HungAxle, hangAxle, hangSplitAxle, positiveSeats } from "./axles.ts";
-import { type HungBogie, hangBogie, pivotAxles, pivotOptions, stackAt } from "./bogies.ts";
+import { type HungBogie, hangBogie } from "./bogies.ts";
 import { carBody } from "./car-bodies.ts";
 import { type EndVariant, buildEnd } from "./end-features.ts";
 import { VERTICAL } from "./part-geometry.ts";
+import { pivotOptions, pivotPartAxles, stackAt } from "./pivot-stacks.ts";
 import {
   type Carrier,
   PIVOT_PART_SUFFIX,
@@ -189,7 +190,7 @@ export function single(wheelsets: ReadonlyArray<PlannedWheelset>, vehicle: Vehic
   };
 }
 
-function bogieCar(axlesPerBogie: () => 1 | 2): Recipe {
+function bogieCar(axlesPerBogie: 1 | 2, capFront: boolean): Recipe {
   return (context) => {
     const wheel = wheelFor(context);
     const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
@@ -198,18 +199,20 @@ function bogieCar(axlesPerBogie: () => 1 | 2): Recipe {
       context,
       car,
       third(car, 2),
-      axlesPerBogie(),
+      axlesPerBogie,
       "car",
       "front bogie",
       "pivot",
       wheel,
+      "around",
+      capFront,
     );
     const rear = front
       ? bogieWithAxles(
           context,
           car,
           third(car, 0),
-          axlesPerBogie(),
+          axlesPerBogie,
           "car",
           "rear bogie",
           "pivot",
@@ -430,7 +433,7 @@ const roofTurntable: Recipe = (context) => {
   const top = baseBox.max[VERTICAL];
   for (let attempt = 0; attempt < TURNTABLE_TRIES; attempt++) {
     const option = random.choice(pivotOptions(pools));
-    const axle = random.choice(pivotAxles(pools));
+    const axle = random.choice(pivotPartAxles(pools));
     const hole = option ? random.choice(option.holes) : null;
     if (!option || !axle || !hole) return null;
     const [length, width] = [
@@ -490,40 +493,6 @@ const roofTurntable: Recipe = (context) => {
   return null;
 };
 
-const cappedPivotCar: Recipe = (context) => {
-  const wheel = wheelFor(context);
-  const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
-  if (!wheel || !car) return null;
-  const front = bogieWithAxles(
-    context,
-    car,
-    third(car, 2),
-    2,
-    "car",
-    "front bogie",
-    "pivot",
-    wheel,
-    "around",
-    true,
-  );
-  const rear = front
-    ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
-    : null;
-  if (!front || !rear) return null;
-  return single(
-    [...front.axles, ...rear.axles].map((axle) => axle.wheelset),
-    {
-      body: ["car"],
-      bogies: [
-        { unit: "front bogie", pivot: front.hung.pivots[0] ?? [0, 0] },
-        { unit: "rear bogie", pivot: rear.hung.pivots[0] ?? [0, 0] },
-      ],
-      front: "plain",
-      rear: "plain",
-    },
-  );
-};
-
 const splitAcrossPivot: Recipe = (context) => {
   const wheel = wheelFor(context);
   const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
@@ -574,8 +543,8 @@ const splitAcrossPivot: Recipe = (context) => {
 
 const RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
   ["axle car", axleCar],
-  ["bogie car", bogieCar(() => 2)],
-  ["single-axle bogie car", bogieCar(() => 1)],
+  ["bogie car", bogieCar(2, false)],
+  ["single-axle bogie car", bogieCar(1, false)],
   ["locomotive with one bogie", locomotive(1, false)],
   ["locomotive with two bogies", locomotive(2, false)],
   ["locomotive with a pony truck", locomotive(1, true)],
@@ -584,7 +553,7 @@ const RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
   ["motor bogie, two axles in one part", motorBogieCar],
   ["car on a single bogie", singleBogieBody],
   ["roof turntable", roofTurntable],
-  ["bush capping a pivot", cappedPivotCar],
+  ["bush capping a pivot", bogieCar(2, true)],
   ["co-linear wheels split across a pivot", splitAcrossPivot],
   ["gauge miss", negativeAxleCar(["gauge miss", "gauge miss"])],
   ["one head band", negativeAxleCar(["positive", "one head band", "positive"])],

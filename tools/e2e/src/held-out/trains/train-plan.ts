@@ -1,8 +1,8 @@
 import { type Vec3 } from "../assembly.ts";
-export interface HeadBandContact {
+import type { HeadBandSpan } from "./placement.ts";
+export interface RollingSurfaceContact {
   readonly instance: number;
-  readonly from: number;
-  readonly to: number;
+  readonly headBand: HeadBandSpan;
 }
 
 export interface PlannedWheelset {
@@ -11,7 +11,7 @@ export interface PlannedWheelset {
   readonly unit: string;
   readonly instances: ReadonlyArray<number>;
   readonly rail: string | null;
-  readonly surfaces: ReadonlyArray<HeadBandContact>;
+  readonly rollingSurfaces: ReadonlyArray<RollingSurfaceContact>;
   readonly negative: "gauge miss" | "one head band" | "split across pivot" | null;
 }
 

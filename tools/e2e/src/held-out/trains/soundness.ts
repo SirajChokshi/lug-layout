@@ -27,7 +27,7 @@ export function soundness(
   for (const line of plan.wheelsets) {
     const label = `axis line at x ${line.x}, y ${line.y}`;
     if (line.negative === null) {
-      if (line.surfaces.some((surface) => !meetsHeadBand(model, surface, line))) {
+      if (line.rollingSurfaces.some((contact) => !meetsHeadBand(model, contact, line))) {
         problems.push(`${label}: a surface misses its head band`);
       }
       continue;

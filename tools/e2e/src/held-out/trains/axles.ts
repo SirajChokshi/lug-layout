@@ -14,6 +14,7 @@ import {
   SEAT_TRIES,
   bearingOptions,
   footprint,
+  headBandSpan,
   pickColor,
   placeAlong,
   placeBlock,
@@ -21,7 +22,7 @@ import {
   spacerStack,
 } from "./placement.ts";
 import type { TrainModel } from "./train-model.ts";
-import type { HeadBandContact, PlannedWheelset } from "./train-plan.ts";
+import type { PlannedWheelset, RollingSurfaceContact } from "./train-plan.ts";
 import type { AxlePart, TrainPools, WheelPart } from "./train-pools.ts";
 interface WheelSeat {
   readonly sign: Sign;
@@ -158,10 +159,6 @@ export interface SplitRequest {
   readonly xRange: readonly [number, number];
   readonly wheel: WheelPart;
   readonly rail: RailHeadBands;
-}
-
-function headBand(rail: RailHeadBands, side: Sign): readonly [number, number] {
-  return side > 0 ? [rail.inner, rail.outer] : [-rail.outer, -rail.inner];
 }
 
 function hangBearing(
@@ -331,10 +328,10 @@ export function hangSplitAxle(
           unit: bogie.unit,
           instances: wheels,
           rail: rail.part,
-          surfaces: wheels.map((instance, k) => {
-            const [from, to] = headBand(rail, halves[k]?.side ?? 1);
-            return { instance, from, to };
-          }),
+          rollingSurfaces: wheels.map((instance, k) => ({
+            instance,
+            headBand: headBandSpan(rail, halves[k]?.side ?? 1),
+          })),
           negative: "split across pivot",
         },
         radius: wheel.radius,
@@ -428,10 +425,10 @@ function hangAxleAt(
     model.join(index, axle);
     return index;
   });
-  const surfaces: HeadBandContact[] = instances.map((instance, k) => {
-    const [from, to] = headBand(rail, request.sides[k] ?? 1);
-    return { instance, from, to };
-  });
+  const rollingSurfaces: RollingSurfaceContact[] = instances.map((instance, k) => ({
+    instance,
+    headBand: headBandSpan(rail, request.sides[k] ?? 1),
+  }));
   return {
     wheelset: {
       x,
@@ -439,7 +436,7 @@ function hangAxleAt(
       unit: request.unit,
       instances,
       rail: mode === "positive" ? rail.part : null,
-      surfaces: mode === "positive" ? surfaces : [],
+      rollingSurfaces: mode === "positive" ? rollingSurfaces : [],
       negative: mode === "positive" ? null : mode,
     },
     radius: wheel.radius,

@@ -1,7 +1,7 @@
 import { type Vec3 } from "../assembly.ts";
 import { PIVOT_PART_SUFFIX } from "./placement.ts";
 import type { TrainModel } from "./train-model.ts";
-import type { EndPlan, HeadBandContact, PlannedWheelset, TrainPlan } from "./train-plan.ts";
+import type { EndPlan, PlannedWheelset, RollingSurfaceContact, TrainPlan } from "./train-plan.ts";
 const FRAME =
   "y-up LDU in the generated file's model space (LDraw x, -y, -z); instance i is the file's i-th part line; axis lines run along +z; pivot parts are contracted out of the partition and credited to no asserted sub-assembly";
 const LATERAL_DIRECTION: Vec3 = [0, 0, 1];
@@ -15,7 +15,7 @@ export interface WheelsetExpectation {
   readonly axisLine: AxisLineExpectation;
   readonly rail: string;
   readonly instances: ReadonlyArray<number>;
-  readonly surfaces: ReadonlyArray<HeadBandContact>;
+  readonly rollingSurfaces: ReadonlyArray<RollingSurfaceContact>;
 }
 
 export type Guide =
@@ -85,19 +85,21 @@ function axisLine(line: PlannedWheelset): AxisLineExpectation {
 
 export function lineUnits(model: TrainModel, line: PlannedWheelset): ReadonlySet<string> {
   const instances =
-    line.surfaces.length > 0 ? line.surfaces.map((surface) => surface.instance) : line.instances;
+    line.rollingSurfaces.length > 0
+      ? line.rollingSurfaces.map((contact) => contact.instance)
+      : line.instances;
   return new Set(instances.map((index) => model.placements[index]?.unit ?? ""));
 }
 
 export function expectationOf(model: TrainModel, plan: TrainPlan): TrainExpectation | null {
   const positives = plan.wheelsets.filter(
-    (line) => line.negative === null && line.rail !== null && line.surfaces.length > 0,
+    (line) => line.negative === null && line.rail !== null && line.rollingSurfaces.length > 0,
   );
   const wheelsets = positives.map((line) => ({
     axisLine: axisLine(line),
     rail: line.rail ?? "",
-    instances: [...new Set(line.surfaces.map((surface) => surface.instance))],
-    surfaces: line.surfaces,
+    instances: [...new Set(line.rollingSurfaces.map((contact) => contact.instance))],
+    rollingSurfaces: line.rollingSurfaces,
   }));
   const unitOfWheelset = positives.map((line) => [...lineUnits(model, line)][0] ?? "");
   const vehicles = plan.vehicles.map((vehicle): VehicleExpectation | null => {

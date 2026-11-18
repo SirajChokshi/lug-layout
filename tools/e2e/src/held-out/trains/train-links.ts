@@ -1,4 +1,6 @@
 import type { HungAxle } from "./axles.ts";
+import { carBody } from "./car-bodies.ts";
+import type { Box } from "./part-readings.ts";
 import {
   type PivotOption,
   type PlacedStack,
@@ -7,9 +9,7 @@ import {
   pivotOptions,
   stackWithHoleAt,
   verticalLink,
-} from "./bogies.ts";
-import { carBody } from "./car-bodies.ts";
-import type { Box } from "./part-readings.ts";
+} from "./pivot-stacks.ts";
 import {
   type Carrier,
   PIVOT_PART_SUFFIX,
@@ -209,94 +209,186 @@ function pinBoth(
   );
 }
 
-const stackedDrawbars: Recipe = (context) => {
-  const { model, pools, random } = context;
-  const wheel = wheelFor(context);
-  if (!wheel) return null;
-  const a = wagon(context, wheel, -12 * STUD_LDU, 8, "car A", FACING_CLEAR_STUDS, 0);
-  if (!a) return null;
-  const gap = 2 + random.int(2);
-  const b = wagon(context, wheel, a.car.x1 + gap * STUD_LDU, 8, "car B", 0, FACING_CLEAR_STUDS);
-  if (!b) return null;
-  const length = random.choice(
-    linkLengths(pools).filter((each) => linkPlateCount(each) >= 3 && -each > lowestWheel([a, b])),
-  );
-  if (length === null) return null;
-  const upperPlates = 1 + random.int(linkPlateCount(length) - 2);
-  const lowerPlates = linkPlateCount(length) - 1 - upperPlates;
-  const pivot = [a.car.x1 + STUD_LDU * (1 + random.int(gap - 1)), 0] as const;
-  const options = linkOptions(context, 1);
-  const upper = stackWithHoleAt(
-    model,
-    pools,
-    random,
-    options,
-    pivot,
-    0,
-    upperPlates,
-    b.car.x0,
-    b.car.z0,
-    (box) => box.min[0] >= a.car.x1 && box.max[0] >= b.car.x0 + STUD_LDU && box.max[0] <= b.car.x1,
-    "car B",
-    b.car.index,
-  );
-  if (!upper) return null;
-  const lowerTop = -(upperPlates + 1) * PLATE_LDU;
-  const lower = stackWithHoleAt(
-    model,
-    pools,
-    random,
-    options,
-    pivot,
-    lowerTop,
-    lowerPlates,
-    a.car.x0,
-    a.car.z0,
-    (box) => box.min[0] <= a.car.x1 - STUD_LDU && box.min[0] >= a.car.x0 && box.max[0] <= b.car.x0,
-    "car A",
-    null,
-  );
-  if (!lower) return null;
-  const under = (a.car.x1 - lower.box.min[0]) / STUD_LDU;
-  const across = (lower.box.max[2] - lower.box.min[2]) / STUD_LDU;
-  const spacers = spacerStack(pools, under, across, upperPlates + 1);
-  if (!spacers) return null;
-  let top = 0;
-  for (const spacer of spacers) {
-    placeBlock(
+function stackedDrawbars(sharedBogie: boolean): Recipe {
+  return (context) => {
+    const { model, pools, random } = context;
+    const wheel = wheelFor(context);
+    if (!wheel) return null;
+    const clear = sharedBogie
+      ? Math.ceil((2 * wheel.radius) / STUD_LDU) + FACING_CLEAR_STUDS
+      : FACING_CLEAR_STUDS;
+    const a = wagon(context, wheel, -12 * STUD_LDU, clear + 8, "car A", clear, 0);
+    if (!a) return null;
+    const gap = 2 + random.int(2);
+    const b = wagon(context, wheel, a.car.x1 + gap * STUD_LDU, clear + 8, "car B", 0, clear);
+    if (!b) return null;
+    const stacks = sharedBogie ? 3 : 2;
+    const linkPlatesOf = (each: number): number => linkPlateCount(each) - (stacks - 2);
+    const length = random.choice(
+      linkLengths(pools).filter(
+        (each) => linkPlatesOf(each) >= stacks && (sharedBogie || -each > lowestWheel([a, b])),
+      ),
+    );
+    if (length === null) return null;
+    const linkPlates = linkPlatesOf(length);
+    const lowerPlates = 1;
+    const upperPlates = sharedBogie ? 1 + random.int(linkPlates - 2) : linkPlates - lowerPlates;
+    const bogiePlates = linkPlates - upperPlates - lowerPlates;
+    const pivot = [a.car.x1 + STUD_LDU * (1 + random.int(gap - 1)), 0] as const;
+    const options = linkOptions(context, 1);
+    const upper = stackWithHoleAt(
       model,
       pools,
-      spacer.block,
-      spacer.turns,
-      [lower.box.min[0], lower.box.min[2]],
-      top,
-      pickColor(random, pools),
-      "car A",
+      random,
+      options,
+      pivot,
+      0,
+      upperPlates,
+      b.car.x0,
+      b.car.z0,
+      (box) =>
+        box.min[0] >= a.car.x1 && box.max[0] >= b.car.x0 + STUD_LDU && box.max[0] <= b.car.x1,
+      "car B",
+      b.car.index,
     );
-    top -= spacer.block.heightPlates * PLATE_LDU;
-  }
-  const link = verticalLink(
-    model,
-    pools,
-    random,
-    pivot,
-    -length,
-    0,
-    [...upper.indices, ...lower.indices],
-    `drawbar${PIVOT_PART_SUFFIX}`,
-  );
-  if (link === null || model.collidesSince(0)) return null;
-  return {
-    wheelsets: [...a.axles, ...b.axles].map((axle) => axle.wheelset),
-    vehicles: [
-      { body: ["car A"], bogies: [], front: "unasserted", rear: "plain" },
-      { body: ["car B"], bogies: [], front: "plain", rear: "unasserted" },
-    ],
-    attachments: [],
-    couplingsInModel: [{ vehicles: [0, 1], via: [], pivots: [pivot] }],
-    unresolvedRunningGear: [],
+    if (!upper) return null;
+    const lowerTop = -(upperPlates + 1) * PLATE_LDU;
+    const lower = stackWithHoleAt(
+      model,
+      pools,
+      random,
+      options,
+      pivot,
+      lowerTop,
+      lowerPlates,
+      a.car.x0,
+      a.car.z0,
+      (box) =>
+        box.min[0] <= a.car.x1 - STUD_LDU && box.min[0] >= a.car.x0 && box.max[0] <= b.car.x0,
+      "car A",
+      null,
+    );
+    if (!lower) return null;
+    const under = (a.car.x1 - lower.box.min[0]) / STUD_LDU;
+    const across = (lower.box.max[2] - lower.box.min[2]) / STUD_LDU;
+    const spacers = spacerStack(pools, under, across, upperPlates + 1);
+    if (!spacers) return null;
+    let top = 0;
+    for (const spacer of spacers) {
+      placeBlock(
+        model,
+        pools,
+        spacer.block,
+        spacer.turns,
+        [lower.box.min[0], lower.box.min[2]],
+        top,
+        pickColor(random, pools),
+        "car A",
+      );
+      top -= spacer.block.heightPlates * PLATE_LDU;
+    }
+    const bogie = sharedBogie
+      ? sharedBogieUnder(
+          context,
+          wheel,
+          pivot,
+          lowerTop - (lowerPlates + 1) * PLATE_LDU,
+          bogiePlates,
+        )
+      : null;
+    if (sharedBogie && !bogie) return null;
+    const link = verticalLink(
+      model,
+      pools,
+      random,
+      pivot,
+      -length,
+      0,
+      [...upper.indices, ...lower.indices, ...(bogie?.stack.indices ?? [])],
+      `drawbar${PIVOT_PART_SUFFIX}`,
+    );
+    if (link === null || model.collidesSince(0)) return null;
+    const wheelsets = [...a.axles, ...b.axles, ...(bogie?.axles ?? [])].map(
+      (axle) => axle.wheelset,
+    );
+    if (!bogie) {
+      return {
+        wheelsets,
+        vehicles: [
+          { body: ["car A"], bogies: [], front: "unasserted", rear: "plain" },
+          { body: ["car B"], bogies: [], front: "plain", rear: "unasserted" },
+        ],
+        attachments: [],
+        couplingsInModel: [{ vehicles: [0, 1], via: [], pivots: [pivot] }],
+        unresolvedRunningGear: [],
+      };
+    }
+    const other = independentCar(context, b.car.x1 + FAR_CAR_GAP_STUDS * STUD_LDU);
+    if (!other) return null;
+    return {
+      wheelsets: wheelsets.concat(other.wheelsets),
+      vehicles: other.vehicles,
+      attachments: [],
+      couplingsInModel: [],
+      unresolvedRunningGear: [
+        {
+          units: ["car A", "car B", "shared bogie"],
+          reason: "a bogie carrying more than one body on one axis line",
+        },
+      ],
+    };
   };
-};
+}
+
+function sharedBogieUnder(
+  context: RecipeContext,
+  wheel: WheelPart,
+  pivot: Pivot,
+  top: number,
+  plates: number,
+): { readonly stack: PlacedStack; readonly axles: ReadonlyArray<HungAxle> } | null {
+  const stack = stackWithHoleAt(
+    context.model,
+    context.pools,
+    context.random,
+    linkOptions(context, 1).filter(
+      (option) => option.box.max[0] - option.box.min[0] >= 4 * wheel.radius + STUD_LDU,
+    ),
+    pivot,
+    top,
+    plates,
+    pivot[0],
+    pivot[1],
+    () => true,
+    "shared bogie",
+    null,
+  );
+  const index = stack?.indices.at(-1);
+  if (!stack || index === undefined) return null;
+  const carrier: Carrier = {
+    index,
+    unit: "shared bogie",
+    bottom: top - plates * PLATE_LDU,
+    top,
+    x0: stack.box.min[0],
+    z0: stack.box.min[2],
+    x1: stack.box.max[0],
+    z1: stack.box.max[2],
+  };
+  const hung = axles(
+    context,
+    carrier,
+    0,
+    [
+      [-WIDE, pivot[0]],
+      [pivot[0], WIDE],
+    ],
+    "shared bogie",
+    [],
+    wheel,
+  );
+  return hung ? { stack, axles: hung } : null;
+}
 
 const separateDrawbar: Recipe = (context) => {
   const { model, pools, random } = context;
@@ -313,12 +405,12 @@ const separateDrawbar: Recipe = (context) => {
   ] as const;
   const length = random.choice(
     linkLengths(pools).filter(
-      (each) => linkPlateCount(each) >= 3 && -(each + PLATE_LDU) > lowestWheel([a, b]),
+      (each) => linkPlateCount(each) >= 2 && -(each + PLATE_LDU) > lowestWheel([a, b]),
     ),
   );
   if (length === null) return null;
-  const drawbarPlates = 1 + random.int(linkPlateCount(length) - 2);
-  const bodyPlates = linkPlateCount(length) - 1 - drawbarPlates;
+  const drawbarPlates = 1 + random.int(linkPlateCount(length) - 1);
+  const bodyPlates = linkPlateCount(length) - drawbarPlates;
   const stackA = carStack(context, a.car, pivots[0], 0, bodyPlates, "car A");
   const stackB = stackA ? carStack(context, b.car, pivots[1], 0, bodyPlates, "car B") : null;
   if (!stackA || !stackB) return null;
@@ -393,10 +485,10 @@ const jacobsTwoAxis: Recipe = (context) => {
   ] as const;
   const b = wagon(context, wheel, a.car.x1, clearance + 10, "car B", 0, clearance);
   if (!b) return null;
-  const length = random.choice(linkLengths(pools).filter((each) => linkPlateCount(each) >= 3));
+  const length = random.choice(linkLengths(pools).filter((each) => linkPlateCount(each) >= 2));
   if (length === null) return null;
-  const bogiePlates = 1 + random.int(linkPlateCount(length) - 2);
-  const bodyPlates = linkPlateCount(length) - 1 - bogiePlates;
+  const bogiePlates = 1 + random.int(linkPlateCount(length) - 1);
+  const bodyPlates = linkPlateCount(length) - bogiePlates;
   const stackA = carStack(context, a.car, pivots[0], 0, bodyPlates, "car A");
   const stackB = stackA ? carStack(context, b.car, pivots[1], 0, bodyPlates, "car B") : null;
   if (!stackA || !stackB) return null;
@@ -477,10 +569,10 @@ const spanBolster: Recipe = (context) => {
   if (pivots[0][0] <= rearA) return null;
   const b = wagon(context, wheel, startB, reachB + 6, "car B", 0, 0, pivots[1][0]);
   if (!b || a.car.top !== b.car.top) return null;
-  const length = random.choice(linkLengths(pools).filter((each) => linkPlateCount(each) >= 3));
+  const length = random.choice(linkLengths(pools).filter((each) => linkPlateCount(each) >= 2));
   if (length === null) return null;
-  const beamPlates = 1 + random.int(linkPlateCount(length) - 2);
-  const roofPlates = linkPlateCount(length) - 1 - beamPlates;
+  const beamPlates = 1 + random.int(linkPlateCount(length) - 1);
+  const roofPlates = linkPlateCount(length) - beamPlates;
   const roof = a.car.top;
   const roofA = carStack(
     context,
@@ -560,7 +652,8 @@ const pivotOutsideWheelbase: Recipe = (context) => {
 };
 
 export const LINK_RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
-  ["stacked drawbars", stackedDrawbars],
+  ["stacked drawbars", stackedDrawbars(false)],
+  ["one-axis shared bogie", stackedDrawbars(true)],
   ["separate drawbar piece", separateDrawbar],
   ["two-axis shared bogie", jacobsTwoAxis],
   ["span bolster", spanBolster],

@@ -9,7 +9,7 @@ import {
 } from "./part-geometry.ts";
 import { CONTACT_FRACTION, transpose } from "./placement.ts";
 import { type TrainModel, apply, subtract } from "./train-model.ts";
-import type { HeadBandContact } from "./train-plan.ts";
+import type { RollingSurfaceContact } from "./train-plan.ts";
 function worldBottom(model: TrainModel, instance: number): number {
   return model.box(instance).min[VERTICAL];
 }
@@ -54,12 +54,12 @@ function localBand(
 
 export function meetsHeadBand(
   model: TrainModel,
-  surface: HeadBandContact,
+  contact: RollingSurfaceContact,
   line: { readonly x: number; readonly y: number },
 ): boolean {
-  const band = localBand(model, surface.instance, line, surface.from, surface.to);
+  const band = localBand(model, contact.instance, line, contact.headBand.from, contact.headBand.to);
   if (!band) return false;
-  const bottom = line.y - worldBottom(model, surface.instance);
+  const bottom = line.y - worldBottom(model, contact.instance);
   return (
     rollingContact(
       band.triangles,
