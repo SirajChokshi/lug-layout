@@ -7,7 +7,6 @@ use super::profile::{collides, Placed, Point, Profile};
 use super::solid::{plan_axes, Probe, Solid, HALF_GRID_LDU, IDENTIFY_LDU};
 
 const TRAVEL_PRECISION_LDU: f64 = IDENTIFY_LDU / 64.0;
-const TEETH_FOR_A_HOLE: usize = 2;
 
 const STEPS: [Point; 8] = [
     [HALF_GRID_LDU, 0.0],
@@ -280,16 +279,12 @@ impl AxleProbe {
             let end = floor.depth.min(far);
             let section =
                 solid.cross_section(probe, (IDENTIFY_LDU, end - IDENTIFY_LDU), self.reach());
-            let teeth = placed
-                .eroded_pockets(IDENTIFY_LDU)
-                .iter()
-                .filter(|pocket| {
-                    section
-                        .iter()
-                        .any(|p| collides(std::slice::from_ref(*pocket), p))
-                })
-                .count();
-            if teeth < TEETH_FOR_A_HOLE || !self.keyed(angle, &section) {
+            let toothed = placed.eroded_pockets(IDENTIFY_LDU).iter().all(|pocket| {
+                section
+                    .iter()
+                    .any(|p| collides(std::slice::from_ref(pocket), p))
+            });
+            if !toothed || !self.keyed(angle, &section) {
                 continue;
             }
             return Some(
