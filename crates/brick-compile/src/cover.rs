@@ -1475,6 +1475,25 @@ mod tests {
     }
 
     #[test]
+    fn a_box_within_rounding_of_an_unknown_cell_or_height_is_never_skipped() {
+        let mut reach = ColumnReach::new([0.0, 0.0], 2, 1, true);
+        reach.lowest[0] = 0.0;
+        reach.highest[0] = 10.0;
+        let next_square = STUD_LDU + WELD_EPSILON_LDU;
+        let short_of_next = |gap: f64| {
+            [
+                [WELD_EPSILON_LDU + 1.0, 2.0, WELD_EPSILON_LDU + 1.0],
+                [next_square - gap, 8.0, STUD_LDU - WELD_EPSILON_LDU - 1.0],
+            ]
+        };
+        assert!(reach.brackets_box(short_of_next(10.0 * CLIPPED_HEIGHT_ROUNDING_LDU)));
+        assert!(!reach.brackets_box(short_of_next(CLIPPED_HEIGHT_ROUNDING_LDU / 2.0)));
+        let mut touching = short_of_next(10.0 * CLIPPED_HEIGHT_ROUNDING_LDU);
+        touching[1][1] = reach.highest[0];
+        assert!(!reach.brackets_box(touching));
+    }
+
+    #[test]
     fn a_stud_is_covered_only_when_one_opaque_part_encloses_it_and_it_is_closed_below() {
         let solids = [
             solid([-200.0, -16.0, -40.0], [0.0, -8.0, 40.0], true, true, -8.0),
