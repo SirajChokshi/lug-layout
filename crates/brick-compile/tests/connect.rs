@@ -459,9 +459,11 @@ fn a_stud_is_attached_only_at_its_root_so_a_deep_blind_receptor_takes_it() {
     );
 }
 
+type FaceSummary = (Vec3, Vec3, u8, Vec<f64>);
+
 #[test]
 fn caps_read_as_attached_male_ends_and_blind_female_ends() {
-    let cases: [(&str, Vec<(Vec3, Vec3, u8, Vec<f64>)>); 7] = [
+    let cases: [(&str, Vec<FaceSummary>); 7] = [
         (
             "[gender=M] [caps=one] [secs=R 6 4]",
             vec![([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], CAP_ROOT, vec![4.0])],
@@ -519,7 +521,7 @@ fn caps_read_as_attached_male_ends_and_blind_female_ends() {
         let connectors = ShadowSnaps::new(&library, &shadow)
             .snaps("parts/part.dat")
             .connectors;
-        let found: Vec<(Vec3, Vec3, u8, Vec<f64>)> = faces_of(&connectors)
+        let found: Vec<FaceSummary> = faces_of(&connectors)
             .into_iter()
             .map(|f| {
                 (
