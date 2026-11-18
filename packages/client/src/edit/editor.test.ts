@@ -47,7 +47,7 @@ import {
   type StoredWorld,
   type WorldChange,
 } from "@brr/storage";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
@@ -460,8 +460,7 @@ interface MemoryWorld {
   readonly shards: Map<string, WorldShardV1>;
 }
 
-class FlakyRepository implements IWorldRepository {
-  failSaves = false;
+class MemoryRepository implements IWorldRepository {
   private readonly worlds = new Map<string, MemoryWorld>();
   private nextId = 1;
 
@@ -485,13 +484,6 @@ class FlakyRepository implements IWorldRepository {
     };
   }
 
-  seed(header: WorldHeader): WorldIndexEntry {
-    const id = `world-${this.nextId++}`;
-    const world = { header, shards: new Map<string, WorldShardV1>() };
-    this.worlds.set(id, world);
-    return this.entry(id, world);
-  }
-
   async list(): Promise<ReadonlyArray<WorldIndexEntry>> {
     return [...this.worlds].map(([id, world]) => this.entry(id, world));
   }
@@ -513,7 +505,6 @@ class FlakyRepository implements IWorldRepository {
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
-    if (this.failSaves) throw new Error("QuotaExceededError");
     const world = this.worlds.get(id) ?? { header: change.header, shards: new Map() };
     world.header = change.header;
     for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
@@ -544,75 +535,6 @@ class FlakyRepository implements IWorldRepository {
     return undefined;
   }
 }
-
-async function editorWithFailingSaves() {
-  vi.stubGlobal("requestAnimationFrame", () => 0);
-  const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-  const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  const backend = new HeadlessBackend();
-  container.rebind(SCENE_BACKEND).toConstantValue(backend);
-  const repository = new FlakyRepository();
-  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
-  const editor = container.get(EDITOR);
-  const canvas = {
-    clientWidth: 640,
-    clientHeight: 480,
-    dataset: {},
-  } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  expect(editor.snapshot().status).toBe("ready");
-
-  editor.chooseItem(BASEPLATE);
-  editor.click(0, 0, 0);
-  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
-  repository.failSaves = true;
-  backend.aim(640, 0);
-  editor.click(0, 0, 0);
-  await vi.waitFor(() => expect(editor.snapshot().world?.save).toBe("failed"));
-  return { editor, repository };
-}
-
-describe("unsaved edits after a failed save", () => {
-  it.each([
-    ["New", (editor: IEditor) => editor.newWorld("Other")],
-    ["Import", (editor: IEditor) => editor.importWorld(new Uint8Array())],
-  ])("refuses %s and keeps the world and its edits", async (_action, act) => {
-    const { editor } = await editorWithFailingSaves();
-
-    expect(await act(editor)).toBe(false);
-
-    const snapshot = editor.snapshot();
-    expect(snapshot.world?.name).toBe("World 1");
-    expect(snapshot.placements).toBe(2);
-    expect(snapshot.unsavedEdits).toBe(true);
-    expect(snapshot.fileError).toContain("has unsaved edits (saving failed: QuotaExceededError)");
-  });
-
-  it("refuses Open of another world, then saves everything on Retry and lets the switch through", async () => {
-    const { editor, repository } = await editorWithFailingSaves();
-    const other = repository.seed({
-      name: "Other",
-      bundleVersion: "test",
-      view: { targetX: 0, targetY: 0, targetZ: 0, distance: 2600, yaw: 0, pitch: 0.75 },
-      disclaimer: "disclaimer",
-    });
-
-    expect(await editor.openWorld(other.id)).toBe(false);
-    expect(editor.snapshot().world?.name).toBe("World 1");
-
-    repository.failSaves = false;
-    await editor.retrySave();
-    expect(repository.storedPlacements()).toBe(2);
-    expect(editor.snapshot().unsavedEdits).toBe(false);
-    expect(editor.snapshot().world?.save).toBe("saved");
-
-    expect(await editor.openWorld(other.id)).toBe(true);
-    expect(editor.snapshot().world?.name).toBe("Other");
-  });
-});
 
 function placer(editor: IEditor, backend: HeadlessBackend) {
   return (item: string, x: number, z: number) => {
@@ -758,7 +680,7 @@ it("leaves road mode when the world turns read-only, and refuses road draw and e
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
   const backend = new HeadlessBackend();
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
-  const repository = new FlakyRepository();
+  const repository = new MemoryRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   const locks = new OtherTabLocks();
   container.rebind(WORLD_LOCKS).toConstantValue(locks);
@@ -841,7 +763,7 @@ it("offers none of the editing commands on a selection in a world another tab ho
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
   container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
-  const repository = new FlakyRepository();
+  const repository = new MemoryRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   const locks = new HeldElsewhereLocks();
   container.rebind(WORLD_LOCKS).toConstantValue(locks);

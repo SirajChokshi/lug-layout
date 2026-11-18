@@ -9,6 +9,7 @@ import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
+import type { IWorldSession } from "./edit/world-session.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
@@ -23,6 +24,8 @@ import type { ITrainPlay } from "./play/train-play.ts";
 export const MODEL_SCENE: ServiceIdentifier<IModelScene> = Symbol.for("brr.client.ModelScene");
 export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.client.TrackScene");
 export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor");
+export const WORLD_SESSION: ServiceIdentifier<IWorldSession> =
+  Symbol.for("brr.client.WorldSession");
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
