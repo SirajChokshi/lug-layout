@@ -1090,6 +1090,35 @@ footer a {
   text-align: right;
 }
 
+.module-report .custom-heading {
+  color: #3d3a8a;
+}
+
+.custom-parts {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.custom-parts li {
+  margin-bottom: 3px;
+}
+
+.part-badge {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.part-badge[data-badge="custom"] {
+  color: #fff;
+  background: #5b4bb7;
+}
+
 .not-drawn {
   margin: 0;
   padding-left: 18px;

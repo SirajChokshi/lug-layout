@@ -1,9 +1,10 @@
-import type {
-  BundleColor,
-  BundleIndex,
-  BundleLod,
-  BundleModelEntry,
-  NotDrawnSection,
+import {
+  isCustomPartId,
+  type BundleColor,
+  type BundleIndex,
+  type BundleLod,
+  type BundleModelEntry,
+  type NotDrawnSection,
 } from "@brr/schema/bundle";
 import {
   BUNDLE_BASE_URL,
@@ -156,6 +157,7 @@ export interface CatalogItemView {
   readonly draggable: boolean;
   readonly toggleable: boolean;
   readonly listedUnder: string | null;
+  readonly customParts: number;
 }
 
 export interface LatencySample {
@@ -672,6 +674,7 @@ function catalogItem(
     draggable: true,
     toggleable: false,
     listedUnder: null,
+    customParts: 0,
   };
 }
 
@@ -721,6 +724,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
       draggable: true,
       toggleable: false,
       listedUnder: null,
+      customParts: 0,
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -1184,7 +1188,11 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.bakes.set(id, model);
     this.placeables.push(placeable);
-    const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
+    const plain = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
+    const slot = {
+      ...plain,
+      view: { ...plain.view, customParts: result.partIds.filter(isCustomPartId).length },
+    };
     this.slots = [...this.slots, slot];
     const credits = this.state.credits;
     this.update({
@@ -1451,6 +1459,7 @@ export class Editor implements IEditor, IEditedWorld {
       draggable: false,
       toggleable: true,
       listedUnder: null,
+      customParts: 0,
     };
   }
 
@@ -1480,6 +1489,7 @@ export class Editor implements IEditor, IEditedWorld {
         draggable: false,
         toggleable: true,
         listedUnder: TRACK_ITEM_ID,
+        customParts: 0,
       };
     });
   }

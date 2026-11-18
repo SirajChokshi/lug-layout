@@ -314,8 +314,23 @@ function ColorPicker({
 }
 
 function itemMeta(item: CatalogItemView): string {
-  const parts = `${integer.format(item.parts)} ${item.parts === 1 ? "part" : "parts"}`;
+  const counted = `${integer.format(item.parts)} ${item.parts === 1 ? "part" : "parts"}`;
+  const parts =
+    item.customParts > 0 ? `${counted} (${integer.format(item.customParts)} custom)` : counted;
   return item.studsWide > 0 ? `${parts} · ${item.studsWide}×${item.studsDeep} studs` : parts;
+}
+
+function CustomBadge({ item }: { readonly item: CatalogItemView }) {
+  if (item.customParts === 0) return null;
+  return (
+    <span
+      className="part-badge"
+      data-badge="custom"
+      title={`${item.customParts} custom ${item.customParts === 1 ? "part" : "parts"} from the file: drawn on this device only, connectors inferred and unverified, never counted as buyable`}
+    >
+      custom
+    </span>
+  );
 }
 
 function ItemButton({
@@ -339,7 +354,9 @@ function ItemButton({
         {...prefetchProps(prefetch, item.id)}
         {...paletteDragProps(drag, item)}
       >
-        <span className="catalog-name">{item.label}</span>
+        <span className="catalog-name">
+          {item.label} <CustomBadge item={item} />
+        </span>
         <span className="catalog-meta">
           {snapshot.pendingItem === item.id ? "loading…" : itemMeta(item)}
         </span>

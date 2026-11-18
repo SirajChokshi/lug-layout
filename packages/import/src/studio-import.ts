@@ -1,5 +1,6 @@
 import type { StudioRejection } from "@brr/schema/bundle";
 import type { BrickCompiler } from "./brick-compiler.ts";
+import type { CustomSource } from "./custom-parts.ts";
 import type { StudioFileInput } from "./worker-protocol.ts";
 import type { LdrawMirror } from "./ldraw-mirror.ts";
 import {
@@ -34,6 +35,7 @@ export type StudioPrepared =
       readonly fileName: string;
       readonly ldraw: string;
       readonly report: StudioReport;
+      readonly customFiles: ReadonlyArray<CustomSource>;
     };
 
 const LIBRARY_PART_DIRECTORY = "parts/";
@@ -74,6 +76,7 @@ export async function prepareStudioImport(
       parts: mapping.parts,
       unknownColors: mapping.unknownColors,
     },
+    customFiles: archive.customFiles,
   };
 }
 
@@ -93,10 +96,9 @@ export async function importStudioFile(
     new Set(input.job.ldconfigCodes),
   );
   if (prepared.kind === "rejected") throw new Error(prepared.rejection.message);
-  const result = await new ModelImportEngine(compiler, mirror, connectors, now).importText({
-    ...input.job,
-    fileName: prepared.fileName,
-    text: prepared.ldraw,
-  });
+  const result = await new ModelImportEngine(compiler, mirror, connectors, now).importText(
+    { ...input.job, fileName: prepared.fileName, text: prepared.ldraw },
+    prepared.customFiles,
+  );
   return { ...result, studio: prepared.report };
 }
