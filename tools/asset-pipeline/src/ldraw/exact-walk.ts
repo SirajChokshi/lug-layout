@@ -100,9 +100,8 @@ function verticesOf(tokens: ReadonlyArray<string>, count: number): ReadonlyArray
 }
 
 export interface ExactPlacement {
-  readonly file: string;
   readonly origin: ExactVec3;
-  readonly vertices: ReadonlyArray<ExactVec3>;
+  readonly visitVertices: (visit: (vertex: ExactVec3) => void) => void;
 }
 
 function visitPolygons(
@@ -159,12 +158,14 @@ export function exactPlacements(
         visit(line.reference, placement);
         continue;
       }
-      const vertices: ExactVec3[] = [];
-      visitPolygons(library, line.reference, placement, false, (polygon) =>
-        vertices.push(...polygon.vertices),
-      );
-      const origin: ExactVec3 = [entry(placement, 9), entry(placement, 10), entry(placement, 11)];
-      placements.push({ file: line.reference, origin, vertices });
+      const reference = line.reference;
+      placements.push({
+        origin: [entry(placement, 9), entry(placement, 10), entry(placement, 11)],
+        visitVertices: (visitVertex) =>
+          visitPolygons(library, reference, placement, true, (polygon) =>
+            polygon.vertices.forEach(visitVertex),
+          ),
+      });
     }
   };
   visit(`${part}.dat`.toLowerCase(), EXACT_IDENTITY);

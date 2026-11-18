@@ -7,13 +7,12 @@ import {
   exactRationalEquals,
   exactRationalFromDecimal,
   exactRationalFromFloat64,
-  formatExactDecimal,
   multiplyExactRational,
   subtractExactRational,
   type ExactDecimal,
   type ExactRational,
 } from "@brr/math";
-import { exactPolygons, type ExactVec3 } from "../ldraw/exact-walk.ts";
+import { exactPolygons, type ExactPlacement } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 
 export const RAIL_SECTION_INWARD_LDU = 20;
@@ -30,8 +29,8 @@ interface ExactPlanPoint {
 
 export interface ScanEnd {
   readonly origin: PlanPoint;
-  readonly along: number;
-  readonly endSleeper: ReadonlyArray<ExactVec3>;
+  readonly heading: number;
+  readonly endSleeperEdges: readonly [ExactPlanPoint, ExactPlanPoint];
 }
 
 export interface RailHeads {
@@ -218,6 +217,40 @@ interface ScanLine {
   readonly endSleeperSpan: Interval;
 }
 
+function headingDirection(heading: number): ExactPlanPoint {
+  return exactPlanPoint({ x: Math.cos(heading), z: Math.sin(heading) });
+}
+
+function headingNormal(heading: number): ExactPlanPoint {
+  return exactPlanPoint({ x: -Math.sin(heading), z: Math.cos(heading) });
+}
+
+interface SideExtreme {
+  readonly point: ExactPlanPoint;
+  readonly side: ExactRational;
+}
+
+export function scanEndAt(origin: PlanPoint, heading: number, endSleeper: ExactPlacement): ScanEnd {
+  const direction = headingDirection(heading);
+  const extremes: { lowest?: SideExtreme; highest?: SideExtreme } = {};
+  endSleeper.visitVertices(([x, , z]) => {
+    const point = { x: exactRationalFromDecimal(x), z: exactRationalFromDecimal(z) };
+    const side = cross(point, direction);
+    const { lowest, highest } = extremes;
+    if (lowest === undefined || compareExactRational(side, lowest.side) < 0) {
+      extremes.lowest = { point, side };
+    }
+    if (highest === undefined || compareExactRational(side, highest.side) > 0) {
+      extremes.highest = { point, side };
+    }
+  });
+  const { lowest, highest } = extremes;
+  if (lowest === undefined || highest === undefined) {
+    throw new Error("an end sleeper has no vertices");
+  }
+  return { origin, heading, endSleeperEdges: [lowest.point, highest.point] };
+}
+
 function offsetAcross(
   point: ExactPlanPoint,
   centre: ExactPlanPoint,
@@ -227,52 +260,20 @@ function offsetAcross(
   return divideExactRational(cross(sub(point, centre), direction), cross(normal, direction));
 }
 
-function distinctPlanPoints(vertices: ReadonlyArray<ExactVec3>): ReadonlyArray<ExactPlanPoint> {
-  const byText = new Map<string, ExactPlanPoint>();
-  for (const [x, , z] of vertices) {
-    const key = `${formatExactDecimal(x)} ${formatExactDecimal(z)}`;
-    if (!byText.has(key)) {
-      byText.set(key, { x: exactRationalFromDecimal(x), z: exactRationalFromDecimal(z) });
-    }
-  }
-  return [...byText.values()];
-}
-
-function spanAcross(
-  points: ReadonlyArray<ExactPlanPoint>,
-  centre: ExactPlanPoint,
-  normal: ExactPlanPoint,
-  direction: ExactPlanPoint,
-): Interval {
-  const [first, ...rest] = points;
-  if (first === undefined) throw new Error("a track end has no end-sleeper geometry");
-  const sideOf = (point: ExactPlanPoint) => cross(point, direction);
-  const upward = compareExactRational(cross(normal, direction), ZERO) > 0;
-  const lowest = rest.reduce(
-    (low, point) => (compareExactRational(sideOf(point), sideOf(low)) < 0 ? point : low),
-    first,
-  );
-  const highest = rest.reduce(
-    (high, point) => (compareExactRational(sideOf(point), sideOf(high)) > 0 ? point : high),
-    first,
-  );
-  const [from, to] = upward ? [lowest, highest] : [highest, lowest];
-  return {
-    from: offsetAcross(from, centre, normal, direction),
-    to: offsetAcross(to, centre, normal, direction),
-  };
-}
-
 function scanLine(end: ScanEnd, inwardLdu: number): ScanLine {
-  const direction = exactPlanPoint({ x: Math.cos(end.along), z: Math.sin(end.along) });
-  const normal = exactPlanPoint({ x: -Math.sin(end.along), z: Math.cos(end.along) });
+  const direction = headingDirection(end.heading);
+  const normal = headingNormal(end.heading);
   const inward = exactRationalFromFloat64(inwardLdu);
   const start = exactPlanPoint(end.origin);
   const centre = {
     x: addExactRational(start.x, multiplyExactRational(direction.x, inward)),
     z: addExactRational(start.z, multiplyExactRational(direction.z, inward)),
   };
-  const endSleeperSpan = spanAcross(distinctPlanPoints(end.endSleeper), centre, normal, direction);
+  const [first, second] = end.endSleeperEdges.map((edge) =>
+    offsetAcross(edge, centre, normal, direction),
+  );
+  if (first === undefined || second === undefined) throw new Error("an end sleeper has no edges");
+  const endSleeperSpan = { from: lesser(first, second), to: greater(first, second) };
   return { centre, normal, endSleeperSpan };
 }
 

@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parseExactDecimal } from "@brr/math";
-import type { ExactVec3 } from "../ldraw/exact-walk.ts";
+import type { ExactPlacement, ExactVec3 } from "../ldraw/exact-walk.ts";
 import { LdrawLibrary } from "../ldraw/library.ts";
-import { flatPolygons, railHeadsAtEnd } from "./rail-heads.ts";
+import { flatPolygons, railHeadsAtEnd, scanEndAt } from "./rail-heads.ts";
 import { fitRoutePath } from "./track-paths.ts";
 
 const root = mkdtempSync(join(tmpdir(), "track-paths-"));
@@ -39,7 +39,7 @@ describe("route fitting", () => {
   const start = { x: 0, z: 0, heading: 0 };
   const finish = { x: 8, z: 0, heading: 0 };
   const halfSpacing = 50;
-  const endSleeper = [
+  const endSleeperVertices = [
     ["-30", "-8", "-80"],
     ["-10", "-8", "-80"],
     ["-10", "-8", "80"],
@@ -49,13 +49,16 @@ describe("route fitting", () => {
     parseExactDecimal(y),
     parseExactDecimal(z),
   ]);
+  const endSleeper: ExactPlacement = {
+    origin: [parseExactDecimal("-20"), parseExactDecimal("-8"), parseExactDecimal("0")],
+    visitVertices: (visit) => endSleeperVertices.forEach((vertex) => visit(vertex)),
+  };
 
   function fit(part: string) {
-    const heads = railHeadsAtEnd(flatPolygons(library, part), {
-      origin: { x: -20, z: 0 },
-      along: 0,
-      endSleeper,
-    });
+    const heads = railHeadsAtEnd(
+      flatPolygons(library, part),
+      scanEndAt({ x: -20, z: 0 }, 0, endSleeper),
+    );
     if (heads === null) throw new Error(`${part} has no rail pair`);
     return fitRoutePath(heads, (point) => point, start, finish, halfSpacing, part);
   }

@@ -8,9 +8,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import type { ExactVec3 } from "../ldraw/exact-walk.ts";
+import type { ExactPlacement, ExactVec3 } from "../ldraw/exact-walk.ts";
 import { LdrawLibrary } from "../ldraw/library.ts";
-import { flatPolygons, onRailHead, railHeadsAtEnd, railSection } from "./rail-heads.ts";
+import { flatPolygons, onRailHead, railHeadsAtEnd, railSection, scanEndAt } from "./rail-heads.ts";
 
 const INWARD_LDU = 20;
 const root = mkdtempSync(join(tmpdir(), "rail-heads-"));
@@ -65,7 +65,7 @@ function nextFloat64Up(value: number): number {
 
 describe("rail heads", () => {
   const library = new LdrawLibrary([root]);
-  const endSleeper = [
+  const endSleeperVertices = [
     ["-30", "-8", "-80"],
     ["-10", "-8", "-80"],
     ["-10", "-8", "80"],
@@ -75,7 +75,11 @@ describe("rail heads", () => {
     parseExactDecimal(y),
     parseExactDecimal(z),
   ]);
-  const end = { origin: { x: -20, z: 0 }, along: 0, endSleeper };
+  const endSleeper: ExactPlacement = {
+    origin: [parseExactDecimal("-20"), parseExactDecimal("-8"), parseExactDecimal("0")],
+    visitVertices: (visit) => endSleeperVertices.forEach((vertex) => visit(vertex)),
+  };
+  const end = scanEndAt({ x: -20, z: 0 }, 0, endSleeper);
   const heads = railHeadsAtEnd(flatPolygons(library, "custom-rail"), end);
 
   it("find the rail centres exactly where the scan line crosses the heads", () => {

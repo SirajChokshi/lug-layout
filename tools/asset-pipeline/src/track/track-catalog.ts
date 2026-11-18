@@ -43,9 +43,8 @@ import {
   RAIL_SECTION_INWARD_LDU,
   railHeadsAtEnd,
   railSection,
+  scanEndAt,
   type PlanPoint,
-  type RailHeads,
-  type RailSection,
   type ScanEnd,
 } from "./rail-heads.ts";
 import {
@@ -321,7 +320,7 @@ function squaredPlanDistance(placement: ExactPlacement, point: PlanPoint): Exact
   return addExactRational(multiplyExactRational(dx, dx), multiplyExactRational(dz, dz));
 }
 
-function endSleeperNearest(
+function nearestEndSleeper(
   endSleepers: ReadonlyArray<ExactPlacement>,
   point: PlanPoint,
 ): ExactPlacement {
@@ -343,27 +342,15 @@ function endInPart(
   frame: EntryFrame,
   end: ExactEnd,
   endSleepers: ReadonlyArray<ExactPlacement>,
-): ScanEnd & { readonly origin: PlanPoint } {
+): ScanEnd {
   const pose = poseInEntryFrame(end);
   const origin = toPartFrame(frame, pose);
-  return {
-    origin,
-    along: pose.heading + Math.PI + frame.inward,
-    endSleeper: endSleeperNearest(endSleepers, origin).vertices,
-  };
+  const heading = pose.heading + Math.PI + frame.inward;
+  return scanEndAt(origin, heading, nearestEndSleeper(endSleepers, origin));
 }
 
 function exactRationalText(value: ExactRational | undefined): ExactRationalText | null {
   return value === undefined ? null : formatExactRational(value);
-}
-
-function railCheck(
-  heads: RailHeads,
-  frame: EntryFrame,
-  end: ExactEnd,
-  endSleepers: ReadonlyArray<ExactPlacement>,
-): RailSection | null {
-  return railSection(heads, endInPart(frame, end, endSleepers), RAIL_SECTION_INWARD_LDU);
 }
 
 export function buildTrackPiece(
@@ -386,15 +373,13 @@ export function buildTrackPiece(
   const firstEnd = ends[0];
   if (firstEnd === undefined) throw new Error(`${part}: no track ends`);
   const frame = entryFrame(firstEnd);
-  const reference = ordered[0];
-  if (reference === undefined) throw new Error(`${part}: no reference end`);
   const endSleepers = exactPlacements(library, part, new Set(markers.map((marker) => marker.file)));
-  const heads = railHeadsAtEnd(
-    flatPolygons(library, part),
-    endInPart(frame, reference, endSleepers),
-  );
+  const scanEnds = ordered.map((end) => endInPart(frame, end, endSleepers));
+  const [referenceScan] = scanEnds;
+  if (referenceScan === undefined) throw new Error(`${part}: no reference end`);
+  const heads = railHeadsAtEnd(flatPolygons(library, part), referenceScan);
   if (heads === null) throw new Error(`${part}: no rail pair at the reference end`);
-  const sections = ordered.map((end) => railCheck(heads, frame, end, endSleepers));
+  const sections = scanEnds.map((scan) => railSection(heads, scan, RAIL_SECTION_INWARD_LDU));
   const referenceSection = sections[0];
   if (!referenceSection) throw new Error(`${part}: no rail pair at the reference end`);
   const halfSpacing = exactRationalToFloat64(referenceSection.railHalfSpacingLdu);

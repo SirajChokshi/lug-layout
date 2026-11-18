@@ -23,25 +23,27 @@ writeFileSync(
 
 function writeStraightTrack(
   name: string,
-  endSleeperHalfWidth: number,
+  entrySleeperHalfWidth: number,
+  exitSleeperHalfWidth: number,
   headCentres: ReadonlyArray<number>,
 ): void {
   writeFileSync(
     join(root, "parts", `${name}.dat`),
     [
-      `0 Custom 9V Straight with end sleepers ${2 * endSleeperHalfWidth} LDU wide`,
+      `0 Custom 9V Straight with end sleepers ${2 * entrySleeperHalfWidth} and ${2 * exitSleeperHalfWidth} LDU wide`,
       `0 Name: ${name}.dat`,
       "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
-      `1 16 160 0 0 1 0 0 0 1 0 0 0 ${endSleeperHalfWidth} s/custom-end-sleeper.dat`,
-      `1 16 -160 0 0 -1 0 0 0 1 0 0 0 -${endSleeperHalfWidth} s/custom-end-sleeper.dat`,
+      `1 16 160 0 0 1 0 0 0 1 0 0 0 ${exitSleeperHalfWidth} s/custom-end-sleeper.dat`,
+      `1 16 -160 0 0 -1 0 0 0 1 0 0 0 -${entrySleeperHalfWidth} s/custom-end-sleeper.dat`,
       ...headCentres.map((z) => `1 16 0 -16 ${z} 160 0 0 0 1 0 0 0 3 head.dat`),
       "4 16 -160 8 -160 160 8 -160 160 8 160 -160 8 160",
     ].join("\r\n"),
   );
 }
 
-writeStraightTrack("custom-wide-track", 140, [-120, 120]);
-writeStraightTrack("custom-narrow-track", 40, [-70, -30, 30, 70]);
+writeStraightTrack("custom-wide-track", 140, 140, [-120, 120]);
+writeStraightTrack("custom-narrow-track", 40, 40, [-70, -30, 30, 70]);
+writeStraightTrack("custom-mixed-sleeper-track", 40, 140, [-70, -30, 30, 70]);
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
@@ -66,6 +68,13 @@ describe("track pieces", () => {
     expect(halfSpacings("custom-narrow-track")).toEqual([
       { numerator: "30", denominator: "1" },
       { numerator: "30", denominator: "1" },
+    ]);
+  });
+
+  it("clip each end to the end sleeper placed at that end", () => {
+    expect(halfSpacings("custom-mixed-sleeper-track")).toEqual([
+      { numerator: "30", denominator: "1" },
+      null,
     ]);
   });
 });
