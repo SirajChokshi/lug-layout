@@ -486,6 +486,15 @@ importers:
       '@brr/import':
         specifier: workspace:*
         version: link:../../packages/import
+      '@brr/math':
+        specifier: workspace:*
+        version: link:../../packages/math
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+      valibot:
+        specifier: 1.5.0
+        version: 1.5.0(typescript@7.0.2)
     devDependencies:
       '@brr/config':
         specifier: workspace:*
@@ -502,6 +511,9 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(happy-dom@21.0.4)(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2))
 
   tools/oxlint-plugin:
     dependencies:

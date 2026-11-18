@@ -1,0 +1,216 @@
+import { execFileSync } from "node:child_process";
+import { randomInt } from "node:crypto";
+import { LdrawMirror, type FetchFunction } from "@brr/import";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { STUD_LDU } from "@brr/math";
+import { expect, it } from "vitest";
+import { acceptanceMarkdown, runAcceptance } from "./acceptance.ts";
+import { collisions } from "./assembly.ts";
+import { bundlePartGlb, openBundle, type Bundle } from "./bundle.ts";
+import { checkInput, type ConnectorMemo, type InputChecks } from "./checks.ts";
+import { fetchPinned, formatOf, readCorpus } from "./corpus.ts";
+import {
+  blockPools,
+  generateBuilds,
+  isPoolCandidate,
+  modulePair,
+  needsLdrawText,
+  type BlockPools,
+  type GeneratedKind,
+  type PoolCandidate,
+} from "./generator.ts";
+import { cachingFetch, importThroughWorkerPath, type HeldOutInput } from "./import-path.ts";
+import { partExtras } from "./part-connectors.ts";
+import { markdownReport, partCoverage, type CheckedInput, type InputSet } from "./report.ts";
+
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+const CORPUS = fileURLToPath(new URL("../../held-out/corpus.json", import.meta.url));
+const BUNDLE_ROOT =
+  process.env["HELD_OUT_BUNDLE"] ?? join(REPO_ROOT, "tools/asset-pipeline/dist/bundle");
+const CACHE_ROOT = join(REPO_ROOT, ".cache/held-out");
+const SEED_RANGE = 2 ** 31;
+const DEFAULT_BUILDS_PER_KIND = 4;
+const HARNESS_TIMEOUT_MS = 3_600_000;
+const MS_PER_SECOND = 1000;
+const STUD_TOP_Y = 7;
+const PALETTE_TEMPLATE = "docs/verified-facts/scenes/mils-plain.ldr";
+const SQUARE_MODULE_LDU = 640;
+
+const SET_OF_KIND: Readonly<Record<GeneratedKind, InputSet>> = {
+  "MILS-style module": "generated MILS-style modules",
+  modular: "generated modulars",
+  "small MOC": "generated small MOCs",
+};
+
+function seedFromEnvironment(): number {
+  const given = process.env["HELD_OUT_SEED"];
+  if (given === undefined || given === "") return randomInt(SEED_RANGE);
+  const seed = Number(given);
+  if (!Number.isInteger(seed) || seed < 0) throw new Error(`HELD_OUT_SEED ${given} is not a seed`);
+  return seed;
+}
+
+function revision(): string {
+  const sha = process.env["GITHUB_SHA"];
+  if (sha) return sha.slice(0, 12);
+  return execFileSync("git", ["rev-parse", "--short=12", "HEAD"], { cwd: REPO_ROOT })
+    .toString()
+    .trim();
+}
+
+async function poolCandidates(bundle: Bundle, fetchUrl: FetchFunction): Promise<PoolCandidate[]> {
+  const mirror = new LdrawMirror(bundle.source, fetchUrl);
+  const candidates: PoolCandidate[] = [];
+  for (const part of bundle.parts.values()) {
+    if (!isPoolCandidate(part.title)) continue;
+    const extras = partExtras(await bundlePartGlb(bundle, part), part.id);
+    candidates.push({
+      part,
+      studTopsY: extras.studs.map((stud) => stud.matrix[STUD_TOP_Y] ?? 0),
+      ldrawText: needsLdrawText(part.title) ? ((await mirror.file(part.path)) ?? null) : null,
+    });
+  }
+  return candidates;
+}
+
+function bareBaseplate(pools: BlockPools): string {
+  const square = pools.baseplates.find(
+    (block) =>
+      block.width * STUD_LDU === SQUARE_MODULE_LDU && block.depth * STUD_LDU === SQUARE_MODULE_LDU,
+  );
+  if (!square) throw new Error("the bundle has no square module baseplate");
+  return `0 Bare baseplate\n0 Name: baseplate.ldr\n1 2 0 0 0 1 0 0 0 1 0 0 0 1 ${square.reference}\n`;
+}
+
+interface Detail {
+  readonly input: string;
+  readonly set: InputSet;
+  readonly checks: InputChecks;
+}
+
+function detailJson(details: ReadonlyArray<Detail>): string {
+  return JSON.stringify(
+    details.map(({ input, set, checks }) => ({
+      input,
+      set,
+      outcomes: Object.fromEntries(checks.outcomes),
+      skippedAndReported: checks.skippedAndReported,
+      connectorSources: Object.fromEntries(checks.connectorSources),
+      drawnInstances: checks.drawnInstances,
+    })),
+    null,
+    2,
+  );
+}
+
+it(
+  "runs the pinned held-out corpus and freshly generated builds through the import worker path and the editor's checks",
+  async () => {
+    const started = performance.now();
+    const seed = seedFromEnvironment();
+    process.stdout.write(`held-out generator seed ${seed} (HELD_OUT_SEED=${seed} reproduces it)\n`);
+    const bundle = await openBundle(BUNDLE_ROOT);
+    const fetchUrl = cachingFetch(join(CACHE_ROOT, "ldraw"));
+    const memo: ConnectorMemo = new Map();
+    const checked: CheckedInput[] = [];
+    const details: Detail[] = [];
+    const run = async (set: InputSet, label: string, input: HeldOutInput): Promise<void> => {
+      const outcome = await importThroughWorkerPath(bundle, fetchUrl, input);
+      const checks = await checkInput(outcome, bundle, memo);
+      checked.push({ set, checks });
+      details.push({ input: label, set, checks });
+      process.stdout.write(`${set}: ${checked.length} inputs checked\n`);
+    };
+    const unsound: string[] = [];
+
+    const corpus = await readCorpus(CORPUS);
+    for (const file of corpus) {
+      const format = formatOf(file);
+      const bytes = await fetchPinned(file, join(CACHE_ROOT, "corpus"));
+      const name = decodeURIComponent(basename(new URL(file.url).pathname));
+      await run(format === "studio" ? "corpus, Studio" : "corpus, LDraw", file.url, {
+        name,
+        format,
+        bytes,
+      });
+    }
+
+    const perKind = Number(process.env["HELD_OUT_BUILDS_PER_KIND"] ?? DEFAULT_BUILDS_PER_KIND);
+    const pools = blockPools(
+      await poolCandidates(bundle, fetchUrl),
+      bundle.parts.values(),
+      bundle.colors,
+    );
+    const encoder = new TextEncoder();
+    const builds = join(CACHE_ROOT, "results", `seed-${seed}`);
+    await mkdir(builds, { recursive: true });
+    for (const build of generateBuilds(pools, seed, perKind)) {
+      await writeFile(join(builds, build.name), build.text);
+      await run(SET_OF_KIND[build.kind], build.name, {
+        name: build.name,
+        format: "ldraw",
+        bytes: encoder.encode(build.text),
+      });
+      await run("generated copies with a doubled part", `${build.name} doubled`, {
+        name: build.name,
+        format: "ldraw",
+        bytes: encoder.encode(build.collidingText),
+      });
+      if (collisions(build.assembly) !== 0) unsound.push(`${build.name}: parts collide`);
+      if (collisions(build.collidingAssembly) < 1)
+        unsound.push(`${build.name} doubled: no collision`);
+    }
+
+    const pair = modulePair(pools, seed);
+    for (const model of [pair.subject, pair.renamedSubject, pair.partner]) {
+      await writeFile(join(builds, model.names.file), model.text);
+    }
+    const acceptance = await runAcceptance({
+      bundle,
+      fetchUrl,
+      pair,
+      templateName: basename(PALETTE_TEMPLATE),
+      templateText: await readFile(join(REPO_ROOT, PALETTE_TEMPLATE), "utf8"),
+      bareBaseplate: bareBaseplate(pools),
+      repoRoot: REPO_ROOT,
+    });
+
+    const report = markdownReport(
+      {
+        coverage: partCoverage(memo.values()),
+        revision: revision(),
+        bundleVersion: bundle.version,
+        ldraw: `${bundle.source.repo}@${bundle.source.commit.slice(0, 7)}`,
+        seed,
+        corpusFiles: corpus.length,
+        elapsedSeconds: Math.round((performance.now() - started) / MS_PER_SECOND),
+      },
+      checked,
+    ).concat("\n", acceptanceMarkdown(acceptance));
+    const results = join(CACHE_ROOT, "results");
+    await mkdir(results, { recursive: true });
+    await writeFile(join(results, `seed-${seed}.md`), report);
+    await writeFile(join(results, `seed-${seed}.detail.json`), detailJson(details));
+    const summary = process.env["GITHUB_STEP_SUMMARY"];
+    if (summary) await appendFile(summary, `${report}\n`);
+    process.stdout.write(`${report}\n`);
+    expect(
+      details
+        .filter(({ set }) => set.startsWith("generated"))
+        .flatMap(({ input, checks }) =>
+          checks.outcomes.get("import")?.kind === "pass" ? [] : [input],
+        ),
+      "generated builds use only bundle parts, so each must import cleanly",
+    ).toEqual([]);
+    expect(unsound, "a generated build collides nowhere, and its doubled copy somewhere").toEqual(
+      [],
+    );
+    expect(
+      acceptance.scenarioProblems,
+      "the acceptance pair joins only by its pins when aligned, and a pin collides one stud off",
+    ).toEqual([]);
+  },
+  HARNESS_TIMEOUT_MS,
+);

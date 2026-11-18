@@ -8,16 +8,21 @@
     "export-parts-lists": "node src/export-parts-lists.ts",
     "measure-startup": "node src/measure-startup.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "compiler-parity": "node --experimental-transform-types --no-warnings src/compiler-parity.ts"
+    "compiler-parity": "node --experimental-transform-types --no-warnings src/compiler-parity.ts",
+    "held-out": "vitest run --config held-out.config.ts"
   },
   "dependencies": {
-    "@brr/import": "workspace:*"
+    "@brr/import": "workspace:*",
+    "@brr/math": "workspace:*",
+    "@brr/schema": "workspace:*",
+    "valibot": "1.5.0"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",
     "@playwright/test": "1.58.2",
     "@types/node": "22.20.5",
     "playwright-core": "1.58.2",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
   }
 }
