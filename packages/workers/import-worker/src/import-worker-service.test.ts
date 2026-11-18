@@ -117,7 +117,7 @@ afterAll(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-it("loads a bundle part's published connector records identically through the catalog loader and the import worker", async () => {
+it("gives a bundle part the same connector table from the catalog loader as when an import fetches it as a pinned part", async () => {
   const container = new Container();
   await container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
@@ -147,7 +147,7 @@ it("loads a bundle part's published connector records identically through the ca
         studPrimitives: context.studPrimitiveNames,
         unofficialAllowlist: context.unofficialAllowlist,
         primitives: context.primitives,
-        bundlePartIds: context.partIds,
+        bundlePartIds: context.partIds.filter((partId) => partId !== TECHNIC_PART),
         ldconfigCodes: context.ldconfigCodes,
         translucentColors: context.translucentCodes,
         vehicles: context.vehicles,
@@ -165,6 +165,10 @@ it("loads a bundle part's published connector records identically through the ca
 
   const technic = imported.partIds.indexOf(TECHNIC_PART);
   const unbundled = imported.partIds.indexOf(UNBUNDLED_PART);
+  expect(imported.report.parts.map(({ kind, reference }) => [reference, kind])).toEqual([
+    ["52031.dat", "compiled"],
+    ["3023b.dat", "compiled"],
+  ]);
   expect(imported.connectors[technic]).toEqual(fromCatalog);
   expect(imported.connectors[unbundled]).toBeNull();
   expect(imported.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
