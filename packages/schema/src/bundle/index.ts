@@ -296,6 +296,8 @@ export const ManifestPart = v.object({
   role: PartRole,
   file: v.string(),
   title: v.string(),
+  ldrawCategory: v.string(),
+  keywords: v.array(v.string()),
   author: v.string(),
   license: v.nullable(v.string()),
   displayColor: v.optional(DisplayColor),
@@ -797,7 +799,7 @@ export const LdrawLibraryIndex = v.strictObject({
 });
 export type LdrawLibraryIndex = v.InferOutput<typeof LdrawLibraryIndex>;
 
-export const CatalogSourceUse = v.picklist(["crosswalk", "inventory-check"]);
+export const CatalogSourceUse = v.picklist(["crosswalk", "inventory-check", "categories"]);
 export type CatalogSourceUse = v.InferOutput<typeof CatalogSourceUse>;
 
 export const CatalogSource = v.strictObject({

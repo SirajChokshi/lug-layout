@@ -2619,6 +2619,18 @@
         "part_relationships.csv.gz": "dc3a2213bdf761b96a114ba5a3f5da96b1a40c6fa68bd9eb8ed185cc6b7967f3",
         "sets.csv.gz": "f1a170ad535b8c6505b50344b921c141e572be5f7a68dc481975e90314802724"
       }
+    },
+    "ldraw-part-categories": {
+      "use": "categories",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "ldraw-org/ldraworg-library",
+        "commit": "a9047fddaaeb9cba208e322b43b482fd731c99d7",
+        "root": "app/Enums"
+      },
+      "files": {
+        "PartCategory.php": "2435dfaaced5258eff7f2f5664b1eddecfb5b3c541f50f3a1e0aec4bca2614e2"
+      }
     }
   }
 }

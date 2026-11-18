@@ -27,6 +27,12 @@ import { deriveCrosswalk } from "./catalog/crosswalk.ts";
 import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
 import { bomCheck } from "./catalog/bom-check.ts";
 import {
+  attachPartCategories,
+  paletteCategoryProblems,
+  PART_CATEGORY_SOURCE,
+  readLdrawCategories,
+} from "./catalog/part-categories.ts";
+import {
   catalogSourceDirectory,
   fetchAuditInputs,
   fetchCatalogSources,
@@ -180,6 +186,7 @@ async function restoreCommand(): Promise<void> {
   }
   await restoreModels(await readPalette(palettePath));
   await restoreCatalog(lock, "crosswalk");
+  await restoreCatalog(lock, "categories");
 }
 
 async function verifyCommand(): Promise<void> {
@@ -189,6 +196,7 @@ async function verifyCommand(): Promise<void> {
     ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyModels(palette, modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
+    ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
   ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
@@ -393,10 +401,15 @@ async function bundleCommand(): Promise<void> {
   };
   const lock = await readLock();
   const catalog = catalogLock(lock);
-  const crosswalk = deriveCrosswalk(
-    await readCrosswalkInputs(catalog, catalogRoot, lock.source, ldrawRoot),
-    crosswalkSources(catalog),
+  const crosswalkInputs = await readCrosswalkInputs(catalog, catalogRoot, lock.source, ldrawRoot);
+  const crosswalk = deriveCrosswalk(crosswalkInputs, crosswalkSources(catalog));
+  const categories = await readLdrawCategories(
+    catalogSourceDirectory(catalogRoot, PART_CATEGORY_SOURCE),
   );
+  const misfiled = paletteCategoryProblems(palette, crosswalkInputs.ldrawParts, categories);
+  if (misfiled.length > 0) {
+    throw new Error(`palette parts are uncategorized or misfiled:\n${misfiled.join("\n")}`);
+  }
   runCargo(["build", "--release", "--quiet", "-p", "brick-compile-cli"]);
   runCargo([
     "build",
@@ -438,6 +451,7 @@ async function bundleCommand(): Promise<void> {
       "--cover-cache",
       coverCache,
     ]);
+    await attachPartCategories(join(out, MANIFEST_FILE), crosswalkInputs.ldrawParts, categories);
     await addVerifiedFacts(out);
     await attachCrosswalk(out, crosswalk);
     await attachRecords(out);

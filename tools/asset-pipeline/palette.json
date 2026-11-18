@@ -1090,7 +1090,12 @@
       "file": "10014-1.mpd",
       "sha256": "f3aead9fe55512171565803f187f3f7a952fb70515983c39970cffd89431644d",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10014-1.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
+      "retrieved": "2026-11-16T20:31:00Z",
+      "set": {
+        "name": "Caboose",
+        "year": 2001,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10020-1",
@@ -1098,7 +1103,12 @@
       "file": "10020-1.mpd",
       "sha256": "6c35f5b15c1c65dc8d7363ee9ac2e89cd007e69a76bf904109ac5adb0c597282",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10020-1.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
+      "retrieved": "2026-11-16T20:31:00Z",
+      "set": {
+        "name": "Santa Fe Super Chief",
+        "year": 2002,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10022-1_Dining-Car",
@@ -1106,7 +1116,12 @@
       "file": "10022-1_Dining-Car.mpd",
       "sha256": "956cf254e21d9284b7b7a63e34e41e0405113529a2e5e1fb75d2ae26d50451be",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10022-1_Dining-Car.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
+      "retrieved": "2026-11-16T20:31:00Z",
+      "set": {
+        "name": "Santa Fe Cars - Set II (Dining, Observation, or Sleeping Car)",
+        "year": 2002,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10025-1_Baggage-Car",
@@ -1114,7 +1129,12 @@
       "file": "10025-1_Baggage-Car.mpd",
       "sha256": "6c630a8b627ee827a917a6464e99bdad66bc767c9680a8162e7e65a16ca532d7",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10025-1_Baggage-Car.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
+      "retrieved": "2026-11-16T20:31:00Z",
+      "set": {
+        "name": "Santa Fe Cars - Set I (Mail or Baggage Car)",
+        "year": 2002,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10205-1",
@@ -1122,7 +1142,12 @@
       "file": "10205-1.mpd",
       "sha256": "13e4cd9bc6b7bc79c61d5042b1a670e19e0e39add9fc2b27713a2a19d0011232",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10205-1.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
+      "retrieved": "2026-11-16T20:31:00Z",
+      "set": {
+        "name": "Locomotive",
+        "year": 2002,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10013-1",
@@ -1130,7 +1155,12 @@
       "file": "10013-1.mpd",
       "sha256": "1aaac96c6ed21aa482cde43aa1213e95f0026cc39910b81d9e1bf51549756e45",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10013-1.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
+      "retrieved": "2026-11-16T20:31:00Z",
+      "set": {
+        "name": "Open Freight Wagon",
+        "year": 2001,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10016-1",
@@ -1138,7 +1168,12 @@
       "file": "10016-1.mpd",
       "sha256": "81981f0124907de90eeb914f144c1a50ed3baebd5bee3fdc80dcf59a5ccd632b",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10016-1.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
+      "retrieved": "2026-11-16T20:31:00Z",
+      "set": {
+        "name": "Tanker",
+        "year": 2001,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "10017-1",
@@ -1146,7 +1181,12 @@
       "file": "10017-1.mpd",
       "sha256": "b0dd718aef85579deb3145bfe14a83e253a13aaec70c31443f3c4021bce2ad3f",
       "source": "https://raw.githubusercontent.com/anteloc/ldraw-lib/606be1421f6c353d9f23f6c467e0be1812280455/models/10017-1.mpd",
-      "retrieved": "2026-11-16T20:31:00Z"
+      "retrieved": "2026-11-16T20:31:00Z",
+      "set": {
+        "name": "Hopper Wagon",
+        "year": 2001,
+        "source": "Rebrickable database export sets.csv.gz (sha256 2c7415bb349066fe34f78c84cff3f24f113c18723f02f1da9ca22d622b9e2739, retrieved 2026-11-16)"
+      }
     },
     {
       "name": "switch-then-reversed-curve",
@@ -1524,6 +1564,18 @@
         "part_relationships.csv.gz",
         "part_categories.csv.gz"
       ]
+    },
+    {
+      "name": "ldraw-part-categories",
+      "use": "categories",
+      "describes": "The LDraw Parts Tracker's PartCategory enum (ldraw-org/ldraworg-library, MIT): every official part category, with Moved and Obsolete inactive and Minifig, Pov-RAY, Lever, Grab and Forklift retired. A part's category is its !CATEGORY meta, otherwise the first word of its title after any ~ _ = | prefix (LDrawRegex::Description, ParsedPartCollection::category())",
+      "source": {
+        "kind": "github-mirror",
+        "repo": "ldraw-org/ldraworg-library",
+        "commit": "a9047fddaaeb9cba208e322b43b482fd731c99d7",
+        "root": "app/Enums"
+      },
+      "files": ["PartCategory.php"]
     }
   ]
 }
