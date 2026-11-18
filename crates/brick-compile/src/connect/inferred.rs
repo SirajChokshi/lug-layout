@@ -40,6 +40,7 @@ pub enum Uninferred {
     EntranceInsideCavity,
     SleeveOfReceptor,
     UnpairedThroughCavity { radius: f64 },
+    MergedIntoRejectedProbe { survivor: Vec3 },
     TiltedRound { radius: f64 },
     UnknownFacing { radius: f64 },
     OpenArc { radius: f64 },
@@ -970,7 +971,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         }
     }
 
-    fn candidates(&self, solid: &Solid, runs: &[Run], inference: &mut Inference) -> Vec<Probe> {
+    fn candidates(
+        &self,
+        solid: &Solid,
+        runs: &[Run],
+        inference: &mut Inference,
+    ) -> (Vec<Probe>, Vec<Vec<Probe>>) {
         let mut bores: Vec<(Run, f64)> = Vec::new();
         for run in runs.iter().filter(|r| r.facing < 0.0) {
             match self
@@ -988,26 +994,46 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
         let mut probes: Vec<Probe> = Vec::new();
-        let mut seen: HashSet<(usize, i8, [i64; 3], i64)> = HashSet::new();
-        let mut add = |probe: Probe| {
-            if seen.insert((
+        let mut on_axis: Vec<bool> = Vec::new();
+        let mut merged: Vec<Vec<Probe>> = Vec::new();
+        let mut seen: HashMap<(usize, i8, [i64; 3], i64), usize> = HashMap::new();
+        let mut add = |probe: Probe, bore: bool| {
+            let slot = (
                 probe.axis,
                 probe.inward as i8,
                 probe.entrance.map(key),
                 key(probe.radius),
-            )) {
-                probes.push(probe);
+            );
+            match seen.get(&slot) {
+                Some(&survivor) if probes[survivor].entrance != probe.entrance => {
+                    if bore && !on_axis[survivor] {
+                        on_axis[survivor] = true;
+                        merged[survivor].push(std::mem::replace(&mut probes[survivor], probe));
+                    } else {
+                        merged[survivor].push(probe);
+                    }
+                }
+                Some(_) => {}
+                None => {
+                    seen.insert(slot, probes.len());
+                    probes.push(probe);
+                    on_axis.push(bore);
+                    merged.push(Vec::new());
+                }
             }
         };
         for plane in solid.planes() {
             let inward = -plane.outward;
             for center in solid.grid(&plane, plan_reach(self.probe.radius)) {
-                add(Probe {
-                    axis: plane.axis,
-                    inward,
-                    entrance: point_on(plane.axis, center, plane.at),
-                    radius: self.probe.radius,
-                });
+                add(
+                    Probe {
+                        axis: plane.axis,
+                        inward,
+                        entrance: point_on(plane.axis, center, plane.at),
+                        radius: self.probe.radius,
+                    },
+                    false,
+                );
             }
             for (run, radius) in bores.iter().filter(|(r, _)| r.axis == plane.axis) {
                 let inside = (0..2).all(|k| {
@@ -1015,16 +1041,19 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         && run.center[k] <= plane.max[k] + IDENTIFY_LDU
                 });
                 if inside {
-                    add(Probe {
-                        axis: plane.axis,
-                        inward,
-                        entrance: point_on(plane.axis, run.center, plane.at),
-                        radius: *radius,
-                    });
+                    add(
+                        Probe {
+                            axis: plane.axis,
+                            inward,
+                            entrance: point_on(plane.axis, run.center, plane.at),
+                            radius: *radius,
+                        },
+                        true,
+                    );
                 }
             }
         }
-        probes
+        (probes, merged)
     }
 
     fn cavities(
@@ -1037,18 +1066,29 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         let mut blind: Vec<(Probe, f64)> = Vec::new();
         let mut slabs: HashMap<(usize, i8, i64), Slab> = HashMap::new();
         let range = (IDENTIFY_LDU, self.probe.reach - IDENTIFY_LDU);
-        let candidates = self.candidates(solid, runs, inference);
+        let (candidates, merged) = self.candidates(solid, runs, inference);
         let mut columns: HashMap<Column, Vec<usize>> = HashMap::new();
         for (index, probe) in candidates.iter().enumerate() {
             columns.entry(column_of(probe)).or_default().push(index);
         }
-        for probe in &candidates {
+        for (probe, merged_into) in candidates.iter().zip(&merged) {
             let at = probe.entrance[probe.axis];
             let slab = slabs
                 .entry((probe.axis, probe.inward as i8, key(at)))
                 .or_insert_with(|| solid.slab(probe.axis, probe.inward, at, range, outward_wall));
             match self.probe(solid, slab, probe) {
-                Probed::Rejected => {}
+                Probed::Rejected => {
+                    for lost in merged_into {
+                        if !matches!(self.probe(solid, slab, lost), Probed::Rejected) {
+                            inference.issues.push(Issue::Uninferred {
+                                origin: lost.entrance,
+                                reason: Uninferred::MergedIntoRejectedProbe {
+                                    survivor: probe.entrance,
+                                },
+                            });
+                        }
+                    }
+                }
                 Probed::Loose(clearance) => {
                     if probe.radius == self.probe.radius {
                         inference.issues.push(Issue::Uninferred {

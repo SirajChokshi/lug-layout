@@ -337,6 +337,9 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
             "probe gripped but its free travel along a lattice line is not centred on the grid point"
         }
         Uninferred::UnpairedThroughCavity { .. } => "through cavity whose far end was not probed",
+        Uninferred::MergedIntoRejectedProbe { .. } => {
+            "probe the cavity checks accept, merged on its key into one they rejected"
+        }
         Uninferred::TiltedRound { .. } => "round feature on a tilted axis",
         Uninferred::UnknownFacing { .. } => "round feature without BFC facing",
         Uninferred::OpenArc { .. } => "inward open arc wider than half a circle",
