@@ -1,4 +1,4 @@
-import type { PartConnectors } from "@brr/catalog/connector-records";
+import type { ConnectorLoad, PartConnectors } from "@brr/catalog/connector-records";
 import type {
   BakedModel,
   BrickCompiler,
@@ -97,6 +97,7 @@ export interface ImportReport {
   readonly directColors: ReadonlyArray<number>;
   readonly compileRounds: number;
   readonly withoutConnectorRecords: ReadonlyArray<string>;
+  readonly refusedConnectorRecords: ReadonlyArray<RefusedConnectorRecord>;
   readonly bakeRounds: number;
   readonly bakeIssue: string | null;
   readonly fetched: MirrorStats;
@@ -124,7 +125,12 @@ export interface ImportResult {
 }
 
 export interface PartConnectorSource {
-  load(partId: string): Promise<PartConnectors | null>;
+  read(partId: string): Promise<ConnectorLoad>;
+}
+
+export interface RefusedConnectorRecord {
+  readonly partId: string;
+  readonly reason: string;
 }
 
 const MAX_COMPILE_ROUNDS = 64;
@@ -152,7 +158,12 @@ interface Assembled {
   readonly result: Omit<ImportResult, "bake" | "report" | "connectors"> & {
     readonly report: Omit<
       ImportReport,
-      "bakeRounds" | "bakeIssue" | "fetched" | "timings" | "withoutConnectorRecords"
+      | "bakeRounds"
+      | "bakeIssue"
+      | "fetched"
+      | "timings"
+      | "withoutConnectorRecords"
+      | "refusedConnectorRecords"
     >;
   };
   readonly drawn: Uint8Array;
@@ -201,9 +212,10 @@ export class ModelImportEngine {
     });
     const assembled = assemble(job, read, parts, outcomes);
     const baked = await this.bakeDrawn(job, library, assembled.drawn);
-    const connectors = await Promise.all(
-      assembled.result.partIds.map((partId) => this.connectors.load(partId)),
+    const loads = await Promise.all(
+      assembled.result.partIds.map((partId) => this.connectors.read(partId)),
     );
+    const connectors = loads.map((load) => (load.kind === "loaded" ? load.connectors : null));
     const bakedAt = this.now();
     return {
       ...assembled.result,
@@ -212,8 +224,12 @@ export class ModelImportEngine {
       report: {
         ...assembled.result.report,
         withoutConnectorRecords: assembled.result.partIds.filter(
-          (_, index) => connectors[index] === null,
+          (_, index) => loads[index]?.kind === "unlisted",
         ),
+        refusedConnectorRecords: assembled.result.partIds.flatMap((partId, index) => {
+          const load = loads[index];
+          return load?.kind === "refused" ? [{ partId, reason: load.reason }] : [];
+        }),
         bakeRounds: baked.rounds,
         bakeIssue: baked.issue,
         fetched: this.mirror.stats(),

@@ -829,6 +829,7 @@ function refusedBake(fileName: string): ImportResult {
       directColors: [],
       compileRounds: 0,
       withoutConnectorRecords: [],
+      refusedConnectorRecords: [],
       bakeRounds: 1,
       bakeIssue: NO_LATTICE_REASON,
       fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },

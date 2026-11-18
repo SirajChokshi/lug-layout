@@ -428,6 +428,11 @@ describe("publishBundle", () => {
     const written = `${JSON.stringify(sectionVocabulary(), null, 2)}\n`;
     expect((await readFile(join(directory, file))).toString("utf8")).toBe(written);
     expect(sha256).toBe(createHash("sha256").update(written).digest("hex"));
+    const index = JSON.parse(await readFile(join(directory, manifest.connectors.file), "utf8"));
+    const record = JSON.parse(await readFile(join(directory, index.parts[BRICK].file), "utf8"));
+    expect([index.sectionVocabulary, record.sectionVocabulary]).toEqual([sha256, sha256]);
+    const tier1 = JSON.parse(await readFile(join(directory, manifest.connectivity.file), "utf8"));
+    expect(tier1.sectionVocabulary).toBeUndefined();
   });
 
   it.each([
@@ -486,6 +491,40 @@ describe("publishBundle", () => {
       },
       refusal:
         "section-vocabulary.json: the section vocabulary is derived from owner/repo@def, but the connectivity package from owner/repo@abc",
+    },
+    {
+      file: "a connector record inferred with another section vocabulary",
+      edit: (bundle: CompiledBundle) => {
+        withCompiler(bundle);
+        bundle.afterAttach.push((directory) =>
+          editJson(join(directory, "connectors-3001.json"), (record) => {
+            record["sectionVocabulary"] = SHA256_ZERO;
+          }),
+        );
+      },
+      refusal: `ldraw:3001's connectors record was inferred with section vocabulary ${SHA256_ZERO}, not the manifest's`,
+    },
+    {
+      file: "a connectivity record that names a section vocabulary",
+      edit: (bundle: CompiledBundle) => {
+        withCompiler(bundle);
+        Object.assign(bundle.connectivityRecord, { sectionVocabulary: SHA256_ZERO });
+      },
+      refusal:
+        "ldraw:3001's connectivity record names a section vocabulary, but tier 1 is not inferred",
+    },
+    {
+      file: "a connectors index that names no section vocabulary",
+      edit: (bundle: CompiledBundle) => {
+        withCompiler(bundle);
+        bundle.afterAttach.push((directory) =>
+          editJson(join(directory, "connector-index.json"), (index) => {
+            delete index["sectionVocabulary"];
+          }),
+        );
+      },
+      refusal:
+        "the connectors index was inferred with section vocabulary (none), not the manifest's",
     },
     {
       file: "a section vocabulary whose bytes are not the ones the manifest's SHA-256 names",

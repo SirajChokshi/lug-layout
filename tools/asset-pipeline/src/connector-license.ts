@@ -112,13 +112,36 @@ function packageLicenseIssues(expected: ConnectorPackage, index: ConnectorIndexF
     );
 }
 
+function vocabularyIssues(
+  expected: ConnectorPackage,
+  label: string,
+  found: string | undefined,
+  sectionVocabulary: string | null,
+): string[] {
+  if (expected === "connectivity") {
+    return found === undefined
+      ? []
+      : [`${label} names a section vocabulary, but tier 1 is not inferred`];
+  }
+  if (sectionVocabulary === null || found === sectionVocabulary) return [];
+  return [
+    `${label} was inferred with section vocabulary ${found ?? "(none)"}, not the manifest's ${sectionVocabulary}`,
+  ];
+}
+
 function recordIssues(
   expected: ConnectorPackage,
   index: ConnectorIndexFile,
   partId: string,
   record: ConnectorRecordFile,
+  sectionVocabulary: string | null,
 ): string[] {
-  const issues: string[] = [];
+  const issues = vocabularyIssues(
+    expected,
+    `${partId}'s ${expected} record`,
+    record.sectionVocabulary,
+    sectionVocabulary,
+  );
   if (record.part !== partId)
     issues.push(`the ${expected} index files ${record.part} under ${partId}`);
   if (!index.licenses.includes(record.license)) {
@@ -143,11 +166,20 @@ export function connectorPackageIssues(
   expected: ConnectorPackage,
   index: ConnectorIndexFile,
   records: ReadonlyMap<string, ConnectorRecordFile>,
+  sectionVocabulary: string | null,
 ): string[] {
   const issues =
     index.package === expected ? [] : [`the ${expected} index declares package ${index.package}`];
   issues.push(...packageLicenseIssues(expected, index));
+  issues.push(
+    ...vocabularyIssues(
+      expected,
+      `the ${expected} index`,
+      index.sectionVocabulary,
+      sectionVocabulary,
+    ),
+  );
   for (const [partId, record] of records)
-    issues.push(...recordIssues(expected, index, partId, record));
+    issues.push(...recordIssues(expected, index, partId, record, sectionVocabulary));
   return issues;
 }
