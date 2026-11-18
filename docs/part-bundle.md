@@ -153,6 +153,8 @@ The pointer and prune are generic, in `pinned-publication.ts` (`PointerAdapter`,
 
   `verify-pointer --all` checks every file against it.
 - **Adapters can retain more manifests.** Their files are kept beyond the current and previous ones. `prune` and `verify-pointer` read and verify them the same way. The part bundle can retain its committed fallback manifest, and the LDraw library the commits the live bundle manifests name. An adapter whose retained manifests come from another publication, like the LDraw library's, must publish in the same concurrency group as that publication. `prune` refuses if the retained set changes during its listing, but only the group stops it changing between that check and the deletes.
+
+Sharing a group across two differently triggered workflows has a catch: a newer run of one cancels a pending run of the other, and the cancelled publication doesn't run again until its next trigger. So such publications belong in one workflow that runs both, or the other workflow must be re-dispatched.
 - **`library-bake`** is the first adapter. `pinnedIndexPointer` serves any publication pinned by an index's SHA-256.
 
 `.github/workflows/library-bake.yml` runs on `main` when the pin, `src/library-bake/**`, `src/publication/**`, `src/r2.ts` or the bucket config change, and on demand:
@@ -167,7 +169,7 @@ The pointer and prune are generic, in `pinned-publication.ts` (`PointerAdapter`,
 
   Every step is idempotent, so any later run, pushed or on demand, finishes a publish or prune that an earlier run left unfinished. `--wait` polls the public URL for the index or the pointer for up to 20 minutes, then checks the files once.
 
-**Publishing is serialized.** The workflow has one concurrency group with `cancel-in-progress: false`, so two runs never overlap. A prune never sees another run's freshly uploaded objects before that run has pointed at them. That, with the reference set, is what makes pruning safe: there is no time-based grace period. GitHub never cancels the running run, but keeps at most one pending run per group: a newer queued run cancels an older pending one. That loses nothing, because the newer run does the whole sequence for its own, later pin. Setting `cancel-in-progress` to `true` would be unsafe, since it could stop a run between its upload and its pointer move, or mid-prune.
+**Publishing is serialized.** The workflow has one concurrency group with `cancel-in-progress: false`, so two runs never overlap. A prune never sees another run's freshly uploaded objects before that run has pointed at them. That, with the reference set, is what makes pruning safe: there is no time-based grace period. GitHub never cancels the running run, but keeps at most one pending run per group: a newer queued run cancels an older pending one. Within this workflow that loses nothing, because the newer run does the whole sequence for its own, later pin. Setting `cancel-in-progress` to `true` would be unsafe, since it could stop a run between its upload and its pointer move, or mid-prune.
 
 **Between publishes the bucket holds the current and previous libraries.** During a publish it briefly holds a third, the new upload, until `prune` deletes the oldest. For three full libraries sharing nothing that's about 7.75 GB, against 5.17 GB for two. If a run stops before its prune, the third stays until the next run.
 
