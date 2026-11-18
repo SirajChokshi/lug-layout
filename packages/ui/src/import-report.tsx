@@ -9,11 +9,56 @@ function commitOf(report: ImportReport): string {
   return `${report.mirror.repo}@${report.mirror.commit.slice(0, SHORT_COMMIT)}`;
 }
 
+type CustomPart = Extract<PartResolution, { kind: "custom" }>;
+type InlineDifference = NonNullable<CustomPart["difference"]>;
+
+function differenceText(difference: InlineDifference, official: string): string {
+  if (!difference.colorsMatch) {
+    return `The file's inline copy uses colours ${difference.inlineColors.join(", ")} where official ${official} uses ${difference.officialColors.join(", ")}.`;
+  }
+  if (difference.maxMeasuredDistanceLdu > difference.weldEpsilonLdu) {
+    return `The file's inline copy differs from official ${official}: a point on one surface is ${difference.maxMeasuredDistanceLdu.toFixed(3)} LDU from the other (weld tolerance ${difference.weldEpsilonLdu} LDU).`;
+  }
+  return `The file's inline copy could not be proven to lie within the ${difference.weldEpsilonLdu} LDU weld of official ${official}.`;
+}
+type RefusedCustomPart = Extract<PartResolution, { kind: "customRefused" }>;
+
+const CUSTOM_ORIGIN_TEXT: Readonly<Record<CustomPart["origin"], string>> = {
+  mpd: "defined inside the file",
+  inlineDiffers: "the file's own version of an official part number",
+  studio: "a Studio CustomParts file",
+};
+
+function refusedCustomReason(part: RefusedCustomPart): string {
+  const difference = part.difference ? `${differenceText(part.difference, part.official)} ` : "";
+  return `${difference}${refusalText(part)}`;
+}
+
+function refusalText(part: RefusedCustomPart): string {
+  const origin = `Custom part, ${CUSTOM_ORIGIN_TEXT[part.origin]}`;
+  switch (part.gate) {
+    case "license":
+      return `${origin}: ${part.path} carries no CA licence header (CC BY 4.0, CC BY 2.0 or CCAL 2.0), so it is reported and not drawn.`;
+    case "unofficial":
+      return `${origin}: ${part.path} declares an Unofficial LDraw org, and unofficial parts are drawn only from the allowlist.`;
+    case "unresolved":
+    case "tooDeep":
+      return `${origin}: it does not compile. ${part.message}`;
+    default: {
+      const unhandled: never = part.gate;
+      throw new Error(`unhandled custom part gate ${String(unhandled)}`);
+    }
+  }
+}
+
 function notDrawnReason(part: PartResolution, report: ImportReport): string | null {
   switch (part.kind) {
     case "bundle":
     case "compiled":
+    case "custom":
       return null;
+    case "customRefused":
+      return refusedCustomReason(part);
     case "notInLibrary":
       return `Not in the official LDraw library at ${commitOf(report)}: unofficial, custom or unknown part${part.definedInline ? ". The file defines it inline, and nothing inside it is drawn" : ""}.`;
     case "missingSubfile":
@@ -21,13 +66,7 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
     case "rejected":
       return `Rejected by the ${part.gate === "license" ? "license" : "unofficial-part"} gate: ${part.path}.`;
     case "inlineDiffers":
-      if (!part.colorsMatch) {
-        return `The file's inline copy uses colours ${part.inlineColors.join(", ")} where official ${part.official} uses ${part.officialColors.join(", ")}.`;
-      }
-      if (part.maxMeasuredDistanceLdu > part.weldEpsilonLdu) {
-        return `The file's inline copy differs from official ${part.official}: a point on one surface is ${part.maxMeasuredDistanceLdu.toFixed(3)} LDU from the other (weld tolerance ${part.weldEpsilonLdu} LDU).`;
-      }
-      return `The file's inline copy could not be proven to lie within the ${part.weldEpsilonLdu} LDU weld of official ${part.official}.`;
+      return differenceText(part, part.official);
     case "failed":
       return part.message;
     default: {
@@ -52,7 +91,7 @@ function studioReason(part: StudioPart): string {
     case "ambiguous":
       return `${id} has ${part.outcome.candidates.length} LDraw candidates (${part.outcome.candidates.join(", ")}), so nothing is substituted.`;
     case "custom":
-      return "A Studio CustomParts file: custom geometry stays in the user's file and is never drawn.";
+      return "A Studio CustomParts file: drawn as a custom part only when it carries a CA licence header.";
     default: {
       const unhandled: never = part.outcome;
       throw new Error(`unhandled Studio outcome ${JSON.stringify(unhandled)}`);
@@ -105,6 +144,40 @@ function StudioSummary({ studio }: { readonly studio: StudioReport }) {
   );
 }
 
+function connectorText(part: CustomPart): string {
+  const { total, primitive, inferred, unverified } = part.connectors;
+  if (total === 0) return "no connectors inferred";
+  return `${integer.format(total)} connectors inferred at import (${integer.format(primitive)} from stud and primitive geometry, ${integer.format(inferred)} from shape inference), ${integer.format(unverified)} unverified`;
+}
+
+function CustomParts({ parts }: { readonly parts: ReadonlyArray<CustomPart> }) {
+  return (
+    <>
+      <h3 className="custom-heading">
+        Custom parts: {integer.format(parts.reduce((sum, part) => sum + part.instances, 0))}{" "}
+        instances of {parts.length} parts
+      </h3>
+      <ul className="custom-parts">
+        {parts.map((part) => (
+          <li key={part.partId} data-kind="custom" data-part={part.partId}>
+            <span className="part-badge" data-badge="custom">
+              custom
+            </span>{" "}
+            <code>{part.reference}</code> ×{part.instances}: {part.header.title || part.file}, by{" "}
+            {part.header.author || "no author given"}, {part.header.license ?? "no licence"};{" "}
+            {CUSTOM_ORIGIN_TEXT[part.origin]}.{" "}
+            {part.difference ? `${differenceText(part.difference, part.official)} ` : ""}Drawn on
+            this device only; the parts list shows it as custom, never as a buyable part.{" "}
+            <span data-kind="inferredConnectors" data-unverified={part.connectors.unverified}>
+              {connectorText(part)}.
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function uniqueText(values: ReadonlyArray<string | null>): string {
   return [...new Set(values.filter((v): v is string => v !== null && v !== ""))].join("; ");
 }
@@ -120,6 +193,7 @@ export function ImportReportDetails({
 }) {
   const bundled = report.parts.filter((p) => p.kind === "bundle");
   const compiled = report.parts.filter((p) => p.kind === "compiled");
+  const custom = report.parts.filter((p): p is CustomPart => p.kind === "custom");
   const notDrawn = report.parts.flatMap((part) => {
     const reason = notDrawnReason(part, report);
     if (reason === null) return [];
@@ -154,7 +228,7 @@ export function ImportReportDetails({
           <dt>Unique parts</dt>
           <dd>
             {report.parts.length}: {bundled.length} from the bundle, {compiled.length} compiled from
-            LDraw {commitOf(report)}, {notDrawn.length} not drawn
+            LDraw {commitOf(report)}, {custom.length} custom, {notDrawn.length} not drawn
           </dd>
         </div>
         {report.refusedConnectorRecords.length > 0 && (
@@ -179,6 +253,7 @@ export function ImportReportDetails({
           </dd>
         </div>
       </dl>
+      {custom.length > 0 && <CustomParts parts={custom} />}
       {(notDrawn.length > 0 || report.unknownColors.length > 0 || hasLooseGeometry) && (
         <>
           <h3>

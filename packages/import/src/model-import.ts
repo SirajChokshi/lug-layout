@@ -1,9 +1,14 @@
-import type { ConnectorLoad, PartConnectors } from "@brr/catalog/connector-records";
+import {
+  partConnectors,
+  type ConnectorLoad,
+  type PartConnectors,
+} from "@brr/catalog/connector-records";
 import type {
   BakedModel,
   BrickCompiler,
   CompileLod,
   Failure,
+  FailureKind,
   InlineOutcome,
   InlinePart,
   LdrawHeader,
@@ -12,11 +17,22 @@ import type {
   ModelRead,
   PartOutcome,
 } from "./brick-compiler.ts";
+import {
+  customClosure,
+  mpdSections,
+  normalizeReference,
+  renameReferences,
+  type CustomClosure,
+  type CustomSource,
+  withoutReservedPaths,
+} from "./custom-parts.ts";
 import { isDirectColor } from "@brr/catalog/colors";
-import type {
-  CompilerVehicles,
-  PrimitiveConnectorTable,
-  SectionVocabulary,
+import {
+  CONNECTOR_SOURCE,
+  CONNECTOR_STATUS,
+  type CompilerVehicles,
+  type PrimitiveConnectorTable,
+  type SectionVocabulary,
 } from "@brr/schema/bundle";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
@@ -43,8 +59,44 @@ interface Counted {
   readonly instances: number;
 }
 
+export type CustomOrigin = "mpd" | "inlineDiffers" | "studio";
+
+export interface InlineDifference {
+  readonly colorsMatch: boolean;
+  readonly inlineColors: ReadonlyArray<number>;
+  readonly officialColors: ReadonlyArray<number>;
+  readonly maxMeasuredDistanceLdu: number;
+  readonly surfaceWithinWeld: boolean;
+  readonly weldEpsilonLdu: number;
+}
+
+export interface CustomConnectorCounts {
+  readonly total: number;
+  readonly primitive: number;
+  readonly inferred: number;
+  readonly unverified: number;
+}
+
 export type PartResolution =
   | (Counted & { readonly kind: "bundle"; readonly partId: string })
+  | (Counted & {
+      readonly kind: "custom";
+      readonly partId: string;
+      readonly origin: CustomOrigin;
+      readonly file: string;
+      readonly header: LdrawHeader;
+      readonly sourceFiles: number;
+      readonly connectors: CustomConnectorCounts;
+      readonly difference: InlineDifference | null;
+    })
+  | (Counted & {
+      readonly kind: "customRefused";
+      readonly origin: CustomOrigin;
+      readonly gate: FailureKind;
+      readonly path: string;
+      readonly message: string;
+      readonly difference: InlineDifference | null;
+    })
   | (Counted & {
       readonly kind: "compiled";
       readonly partId: string;
@@ -60,15 +112,7 @@ export type PartResolution =
       readonly path: string;
       readonly message: string;
     })
-  | (Counted & {
-      readonly kind: "inlineDiffers";
-      readonly colorsMatch: boolean;
-      readonly inlineColors: ReadonlyArray<number>;
-      readonly officialColors: ReadonlyArray<number>;
-      readonly maxMeasuredDistanceLdu: number;
-      readonly surfaceWithinWeld: boolean;
-      readonly weldEpsilonLdu: number;
-    })
+  | (Counted & InlineDifference & { readonly kind: "inlineDiffers" })
   | (Counted & { readonly kind: "failed"; readonly message: string });
 
 export interface ColorIssue {
@@ -135,6 +179,7 @@ export interface RefusedConnectorRecord {
 
 const MAX_COMPILE_ROUNDS = 64;
 const ONLY_PINNED_PARTS_ARE_COMPILED: ReadonlyArray<string> = [];
+const RESOLVER_DIRECTORIES: ReadonlyArray<string> = ["p/8/", "parts/", "p/"];
 const FETCH_CONCURRENCY = 16;
 const MATRIX_FLOATS = 12;
 
@@ -175,6 +220,72 @@ interface BakeRounds {
   readonly rounds: number;
 }
 
+interface CustomCandidate {
+  readonly index: number;
+  readonly origin: CustomOrigin;
+  readonly closure: CustomClosure;
+}
+
+interface CustomCompiled {
+  readonly glb: Uint8Array;
+  readonly connectors: PartConnectors | null;
+}
+
+interface CustomCompileRequest {
+  readonly references: ReadonlyArray<string>;
+  readonly infer: ReadonlyArray<string>;
+  readonly unofficialAllowlist: ReadonlyArray<string>;
+}
+
+interface CustomPass {
+  readonly parts: ReadonlyArray<PartResolution>;
+  readonly compiled: ReadonlyMap<string, CustomCompiled>;
+  readonly bakeSource: string;
+  readonly rounds: number;
+}
+
+function customOrigin(
+  part: PartResolution,
+  studioFiles: ReadonlyMap<string, string>,
+): CustomOrigin | null {
+  if (studioFiles.has(normalizeReference(part.reference))) return "studio";
+  if (part.kind === "inlineDiffers") return "inlineDiffers";
+  return part.kind === "notInLibrary" && part.definedInline ? "mpd" : null;
+}
+
+function inlineDifference(part: PartResolution): InlineDifference | null {
+  if (part.kind !== "inlineDiffers") return null;
+  const {
+    colorsMatch,
+    inlineColors,
+    officialColors,
+    maxMeasuredDistanceLdu,
+    surfaceWithinWeld,
+    weldEpsilonLdu,
+  } = part;
+  return {
+    colorsMatch,
+    inlineColors,
+    officialColors,
+    maxMeasuredDistanceLdu,
+    surfaceWithinWeld,
+    weldEpsilonLdu,
+  };
+}
+
+function connectorCounts(connectors: PartConnectors | null): CustomConnectorCounts {
+  let primitive = 0;
+  let inferred = 0;
+  let unverified = 0;
+  for (let face = 0; face < (connectors?.count ?? 0); face++) {
+    const source = connectors?.source[face];
+    if (source === CONNECTOR_SOURCE.primitive) primitive++;
+    if (source === CONNECTOR_SOURCE.inferred) inferred++;
+    if (connectors?.status[face] === CONNECTOR_STATUS.unverified) unverified++;
+  }
+  return { total: connectors?.count ?? 0, primitive, inferred, unverified };
+}
+
 function libraryKey(source: MirrorSource): string {
   return `${source.repo}@${source.commit}/${source.root}`;
 }
@@ -187,7 +298,10 @@ export class ModelImportEngine {
     private readonly now: () => number,
   ) {}
 
-  async importText(job: ImportJob): Promise<ImportResult> {
+  async importText(
+    job: ImportJob,
+    customFiles: ReadonlyArray<CustomSource> = [],
+  ): Promise<ImportResult> {
     const started = this.now();
     const read = this.compiler.readModel(job.text);
     const readAt = this.now();
@@ -203,17 +317,24 @@ export class ModelImportEngine {
     const outcomes = await this.resolveOutside(job, library, outside, read.inlineParts);
     const resolvedAt = this.now();
     const counts = instanceCounts(read);
-    const parts = read.parts.map((key, index) => {
+    const resolved = read.parts.map((key, index) => {
       const official = officialOf.get(key);
       const instances = counts[index] ?? 0;
       return official === undefined
         ? officialResolution({ reference: key, official: key, instances }, bundleIds, outcomes)
         : inlineResolution({ reference: key, official, instances }, bundleIds, outcomes);
     });
-    const assembled = assemble(job, read, parts, outcomes);
-    const baked = await this.bakeDrawn(job, library, assembled.drawn);
+    const custom = await this.compileCustom(job, library, resolved, customFiles);
+    const assembled = assemble(job, read, custom.parts, outcomes, custom);
+    const baked = await this.bakeDrawn(job, library, assembled.drawn, custom.bakeSource);
     const loads = await Promise.all(
-      assembled.result.partIds.map((partId) => this.connectors.read(partId)),
+      assembled.result.partIds.map((partId): Promise<ConnectorLoad> | ConnectorLoad => {
+        const compiled = custom.compiled.get(partId);
+        if (!compiled) return this.connectors.read(partId);
+        return compiled.connectors
+          ? { kind: "loaded", connectors: compiled.connectors }
+          : { kind: "unlisted" };
+      }),
     );
     const connectors = loads.map((load) => (load.kind === "loaded" ? load.connectors : null));
     const bakedAt = this.now();
@@ -255,16 +376,139 @@ export class ModelImportEngine {
     for (const path of probe.absent) library.absent.add(path);
   }
 
+  private async compileCustom(
+    job: ImportJob,
+    library: ImportLibrary,
+    parts: ReadonlyArray<PartResolution>,
+    customFiles: ReadonlyArray<CustomSource>,
+  ): Promise<CustomPass> {
+    const studioFiles = new Map(
+      customFiles.map((file) => [normalizeReference(file.name), file.text] as const),
+    );
+    const sources = new Map([...mpdSections(job.text), ...studioFiles]);
+    const candidates: CustomCandidate[] = [];
+    for (const [index, part] of parts.entries()) {
+      const origin = customOrigin(part, studioFiles);
+      if (origin === null) continue;
+      const closure = await customClosure(part.reference, sources);
+      if (closure !== null) candidates.push({ index, origin, closure });
+    }
+    if (candidates.length === 0) {
+      return { parts, compiled: new Map(), bakeSource: job.text, rounds: 0 };
+    }
+    for (const { closure } of candidates) {
+      for (const [path, text] of closure.files) {
+        library.files.set(path, text);
+        for (const directory of RESOLVER_DIRECTORIES) library.absent.add(`${directory}${path}`);
+      }
+    }
+    const references = candidates.map((candidate) => candidate.closure.path);
+    const { outcomes, rounds } = await this.compileReferences(job, library, {
+      references,
+      infer: references,
+      unofficialAllowlist: job.unofficialAllowlist,
+    });
+    const resolved = [...parts];
+    const compiled = new Map<string, CustomCompiled>();
+    const renames = new Map<string, string>();
+    for (const { index, origin, closure } of candidates) {
+      const part = parts[index];
+      const outcome = outcomes.get(closure.path);
+      if (!part || !outcome) continue;
+      const counted = {
+        reference: part.reference,
+        official: part.official,
+        instances: part.instances,
+      };
+      if (outcome.status === "failed") {
+        resolved[index] = {
+          kind: "customRefused",
+          ...counted,
+          origin,
+          gate: outcome.kind,
+          path: withoutReservedPaths(outcome.path ?? closure.reference),
+          message: withoutReservedPaths(outcome.message),
+          difference: inlineDifference(part),
+        };
+        continue;
+      }
+      const connectors = outcome.connectors ? partConnectors([outcome.connectors]) : null;
+      compiled.set(closure.partId, { glb: outcome.glb, connectors });
+      renames.set(part.reference, closure.path);
+      resolved[index] = {
+        kind: "custom",
+        ...counted,
+        partId: closure.partId,
+        origin,
+        file: outcome.file,
+        header: outcome.header,
+        sourceFiles: outcome.files,
+        connectors: connectorCounts(connectors),
+        difference: inlineDifference(part),
+      };
+    }
+    return { parts: resolved, compiled, bakeSource: renameReferences(job.text, renames), rounds };
+  }
+
+  private async compileReferences(
+    job: ImportJob,
+    library: ImportLibrary,
+    { references, infer, unofficialAllowlist }: CustomCompileRequest,
+  ): Promise<{
+    readonly outcomes: Map<string, Exclude<PartOutcome, { status: "need" }>>;
+    readonly rounds: number;
+  }> {
+    const outcomes = new Map<string, Exclude<PartOutcome, { status: "need" }>>();
+    let pending = [...references];
+    let rounds = 0;
+    while (pending.length > 0) {
+      if (rounds === MAX_COMPILE_ROUNDS) {
+        throw new Error(`custom part closure still growing after ${MAX_COMPILE_ROUNDS} rounds`);
+      }
+      rounds++;
+      const output = this.compiler.compile(
+        {
+          lod: job.lod,
+          studPrimitives: job.studPrimitives,
+          unofficialAllowlist,
+          connectors: {
+            primitives: job.primitives,
+            sectionVocabulary: job.sectionVocabulary,
+            cavityProbe: job.cavityProbe,
+            infer: job.primitives === null ? [] : infer,
+          },
+          parts: pending,
+          model: job.text,
+          inlineChecks: [],
+        },
+        library,
+      );
+      const needed = new Set<string>();
+      pending = [];
+      for (const outcome of output.parts) {
+        if (outcome.status === "need") {
+          outcome.paths.forEach((path) => needed.add(path));
+          pending.push(outcome.reference);
+        } else {
+          outcomes.set(outcome.reference, outcome);
+        }
+      }
+      await this.fetchNeeded(library, needed);
+    }
+    return { outcomes, rounds };
+  }
+
   private async bakeDrawn(
     job: ImportJob,
     library: ImportLibrary,
     drawn: Uint8Array,
+    source: string,
   ): Promise<BakeRounds> {
     if (!drawn.includes(1)) return { bake: null, issue: "nothing in the file is drawn", rounds: 0 };
     for (let rounds = 1; rounds <= MAX_COMPILE_ROUNDS; rounds++) {
       const outcome = this.compiler.bake(
         {
-          source: job.text,
+          source,
           drawn,
           studPrimitives: job.studPrimitives,
           unofficialAllowlist: job.unofficialAllowlist,
@@ -451,8 +695,8 @@ function inlineResolution(
 
 function isDrawable(
   part: PartResolution,
-): part is Extract<PartResolution, { kind: "bundle" | "compiled" }> {
-  return part.kind === "bundle" || part.kind === "compiled";
+): part is Extract<PartResolution, { kind: "bundle" | "compiled" | "custom" }> {
+  return part.kind === "bundle" || part.kind === "compiled" || part.kind === "custom";
 }
 
 function assemble(
@@ -460,6 +704,7 @@ function assemble(
   read: ModelRead,
   parts: ReadonlyArray<PartResolution>,
   outcomes: Outcomes,
+  custom: CustomPass,
 ): Assembled {
   const ldconfig = new Set(job.ldconfigCodes);
   const unknownColors = new Map<number, number>();
@@ -504,12 +749,15 @@ function assemble(
   const compiled: CompiledGlb[] = [];
   const compiledIds = new Set<string>();
   for (const resolved of parts) {
-    if (resolved.kind !== "compiled" || compiledIds.has(resolved.partId)) continue;
-    if (!localIndex.has(resolved.partId)) continue;
-    const outcome = outcomes.parts.get(resolved.official);
-    if (outcome?.status !== "compiled") continue;
+    if (resolved.kind !== "compiled" && resolved.kind !== "custom") continue;
+    if (compiledIds.has(resolved.partId) || !localIndex.has(resolved.partId)) continue;
+    const glb =
+      resolved.kind === "custom"
+        ? custom.compiled.get(resolved.partId)?.glb
+        : compiledGlb(outcomes.parts.get(resolved.official));
+    if (glb === undefined) continue;
     compiledIds.add(resolved.partId);
-    compiled.push({ partId: resolved.partId, glb: outcome.glb });
+    compiled.push({ partId: resolved.partId, glb });
   }
   return {
     drawn: drawnMask,
@@ -526,7 +774,7 @@ function assemble(
         looseGeometry: read.looseGeometry,
         unknownColors: [...unknownColors].map(([code, instances]) => ({ code, instances })),
         directColors: [...directColors],
-        compileRounds: outcomes.rounds,
+        compileRounds: outcomes.rounds + custom.rounds,
       },
       partIds,
       instanceCount: drawn,
@@ -536,4 +784,10 @@ function assemble(
       compiled,
     },
   };
+}
+
+function compiledGlb(
+  outcome: Exclude<PartOutcome, { status: "need" }> | undefined,
+): Uint8Array | undefined {
+  return outcome?.status === "compiled" ? outcome.glb : undefined;
 }
