@@ -36,7 +36,11 @@ export interface PlacedModel {
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
   readonly box: WorldBox;
+  readonly studCellX: Int32Array;
+  readonly studCellZ: Int32Array;
+  readonly studBaseLdu: Int32Array;
   rayHit(ray: Float64Array): number;
+  worldPartBoxes(): Float64Array;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -344,6 +348,15 @@ class PlacedEntry implements PlacedModel {
 
   partsOverlap(box: Float64Array, from: number): boolean {
     return partsOverlap(this.placeable, this.pose, this.yLdu, box, from);
+  }
+
+  worldPartBoxes(): Float64Array {
+    const local = this.placeable.partBoxes;
+    const boxes = new Float64Array(local.length);
+    for (let b = 0; b < local.length; b += BOX_FLOATS) {
+      this.pose.worldBox(local, b, this.yLdu, boxes, b);
+    }
+    return boxes;
   }
 
   private registerCells(chunkOrigins: Map<number, readonly [number, number]>): void {

@@ -58,6 +58,26 @@ export function runMoves(kit: DrawingKit, run: TrackRun): ReadonlyArray<TrackMov
   return moves;
 }
 
+export function runOfMoves(kit: DrawingKit, moves: ReadonlyArray<TrackMove>): TrackRun {
+  const segments: TrackSegment[] = [];
+  for (const move of moves) {
+    const lastSegment = segments.at(-1);
+    if (move === kit.straight) {
+      if (lastSegment?.kind === "straight")
+        segments[segments.length - 1] = { kind: "straight", count: lastSegment.count + 1 };
+      else segments.push({ kind: "straight", count: 1 });
+    } else {
+      const sign = move === kit.left ? 1 : -1;
+      if (lastSegment?.kind === "turn" && lastSegment.sign === sign) {
+        segments[segments.length - 1] = { kind: "turn", sign, curves: lastSegment.curves + 1 };
+      } else {
+        segments.push({ kind: "turn", sign, curves: 1 });
+      }
+    }
+  }
+  return { segments, pieces: moves.length };
+}
+
 function signedTurns(maxCurves: number): ReadonlyArray<number> {
   const turns: number[] = [];
   for (let m = 1; m <= maxCurves; m++) turns.push(m, -m);
@@ -132,22 +152,40 @@ export function closureWithinTurns(
   goal: Pose16,
   maxTurns: number = DEFAULT_CLOSURE_TURNS,
 ): TrackRun | null {
-  const needed = normalizeHeading16(goal.heading + HALF_TURN_16 - start.heading);
+  return fewestWithinTurns(closuresWithinTurns(kit, start, goal, maxTurns));
+}
+
+function turnCount(run: TrackRun): number {
+  return run.segments.filter((segment) => segment.kind === "turn").length;
+}
+
+export function fewestWithinTurns(runs: ReadonlyArray<TrackRun>): TrackRun | null {
   let best: TrackRun | null = null;
-  let bestTurns = Infinity;
-  for (const turns of turnSequences(needed, maxTurns)) {
-    const run = closureRun(kit, start, goal, turns);
-    if (!run) continue;
+  for (const run of runs) {
     if (
       !best ||
       run.pieces < best.pieces ||
-      (run.pieces === best.pieces && turns.length < bestTurns)
+      (run.pieces === best.pieces && turnCount(run) < turnCount(best))
     ) {
       best = run;
-      bestTurns = turns.length;
     }
   }
   return best;
+}
+
+export function closuresWithinTurns(
+  kit: DrawingKit,
+  start: Pose16,
+  goal: Pose16,
+  maxTurns: number = DEFAULT_CLOSURE_TURNS,
+): ReadonlyArray<TrackRun> {
+  const needed = normalizeHeading16(goal.heading + HALF_TURN_16 - start.heading);
+  const runs: TrackRun[] = [];
+  for (const turns of turnSequences(needed, maxTurns)) {
+    const run = closureRun(kit, start, goal, turns);
+    if (run) runs.push(run);
+  }
+  return runs;
 }
 
 interface Vec {

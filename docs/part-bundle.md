@@ -17,7 +17,7 @@ Every object except the pointer is stored with `Cache-Control: public, max-age=3
 
 ## What a LOD holds
 
-The manifest is the small index the editor reads first. It holds the colours, stud primitives, model entries, track catalog and MILS edge rules. It also lists the `catalogParts`: the ground, road and track parts the editor offers, each with the file of its shape. And it holds each track piece's `trackShapes`: its plan footprint at all 16 headings and its height range, measured from its mesh. Everything else is in files the manifest names:
+The manifest is the small index the editor reads first. It holds the colours, stud primitives, model entries, track catalog and MILS edge rules. It also lists the `catalogParts`: the ground, road and track parts the editor offers, each with the file of its shape. And it holds each track piece's `trackShapes`: its plan footprint at all 16 headings, the convex hull of its mesh in plan (the outline the editor's closure check uses), and its height range, all measured from its mesh. Everything else is in files the manifest names:
 - `partTable`: every bundled part (id, path, GLB file, bounds, licence);
 - `creditTable`: the attribution of every LDraw file the bundle uses;
 - each model file is that model's record: its instances, stud cells and cover, plus the shape of every part it places;
