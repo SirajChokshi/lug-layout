@@ -100,6 +100,7 @@ import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
 import { CATALOG_SEARCH, CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
 import type { CatalogSearchView, ICatalogSearch } from "../catalog/catalog-search.ts";
+import { modelLabel } from "../catalog/model-label.ts";
 import {
   TRACK_SYSTEM,
   TrackDrawing,
@@ -770,7 +771,7 @@ function studsAcross(min: number, max: number): number {
 
 function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, string>): CatalogSlot {
   const id = `omr:${entry.name}`;
-  const label = setLabel(entry);
+  const label = modelLabel(entry);
   const aabb = entry.lattice?.aabb;
   return {
     id,
@@ -794,13 +795,6 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
   };
-}
-
-function setLabel(entry: {
-  readonly name: string;
-  readonly set: { readonly name: string; readonly year: number } | null;
-}): string {
-  return entry.set ? `${entry.name} ${entry.set.name} (${entry.set.year})` : entry.name;
 }
 
 function undrawableTrack(
@@ -1001,7 +995,7 @@ export class Editor implements IEditor {
       for (const color of index.colors) colors.indexOfCode(color.code);
       this.colors = colors;
       const startModels = index.models.filter(
-        (entry) => entry.role === "mils-module" || (entry.origin === "omr" && entry.vehicles > 0),
+        (entry) => entry.role === "mils-module" || entry.vehicles > 0,
       );
       const [studPrimitives, shapes, startRecords] = await Promise.all([
         this.loader.loadStudPrimitives(EDITOR_LOD),
@@ -1227,7 +1221,7 @@ export class Editor implements IEditor {
     for (const part of record.parts) this.meshes?.register(palette.indexOf(part.id), part.meshFile);
     const placeable = modelPlaceable(
       entry.name,
-      entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : setLabel(entry),
+      entry.role === "mils-module" ? (model.sections[0]?.title ?? entry.name) : modelLabel(entry),
       entry.role,
       merged,
       { name: entry.name, source: entry.source, sections: model.sections },

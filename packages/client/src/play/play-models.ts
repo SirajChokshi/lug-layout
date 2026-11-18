@@ -1,5 +1,6 @@
 import type { PartAsset, PartModel } from "@brr/catalog";
 import type { BundleModelEntry } from "@brr/schema/bundle";
+import { modelLabel } from "../catalog/model-label.ts";
 import type { MergedParts } from "../edit/merged-parts.ts";
 import type { PlayTrack } from "../edit/track-drawing.ts";
 import { instanceBoxes } from "../running-gear/instance-boxes.ts";
@@ -8,7 +9,7 @@ import type { ColorTable } from "../scene/viewer-scene.ts";
 
 export interface PlayModel {
   readonly name: string;
-  readonly setName: string | null;
+  readonly label: string;
   readonly model: PartModel;
   readonly colorIndex: Uint16Array;
   readonly gear: GearModelSource;
@@ -28,7 +29,7 @@ export function playModel(
   }
   return {
     name: entry.name,
-    setName: entry.set?.name ?? null,
+    label: modelLabel(entry),
     model: remapped,
     colorIndex,
     gear: {
