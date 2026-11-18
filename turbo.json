@@ -20,6 +20,7 @@
         "!src/pointer/**",
         "palette.json",
         "fixture-models.json",
+        "primitive-connectors.json",
         "ldraw.lock.json",
         "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml",

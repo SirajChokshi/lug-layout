@@ -444,6 +444,8 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
     join(repoRoot, BUNDLE_DATA_FILES.geometry),
     "--palette",
     palette,
+    "--primitives",
+    join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors),
     "--out",
     out,
     "--lod",

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::Range;
 use std::rc::Rc;
 
 use crate::affine::{Affine, Vec3};
@@ -46,12 +47,21 @@ pub struct VisitedFile {
     pub license: LicenseVerdict,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReferenceSpan {
+    pub reference: String,
+    pub path: String,
+    pub matrix: Affine,
+    pub triangles: Range<usize>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Flattened {
     pub triangles: Vec<Triangle>,
     pub hard_edges: Vec<[Vec3; 2]>,
     pub studs: Vec<StudReference>,
     pub files: Vec<VisitedFile>,
+    pub spans: Vec<ReferenceSpan>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,6 +93,7 @@ pub struct Flattener<'a, L: Library> {
     library: &'a L,
     lod: Lod,
     stud_primitives: &'a [String],
+    records_span: Option<&'a dyn Fn(&str) -> bool>,
     parsed: HashMap<String, Rc<LdrawFile>>,
     first_unresolved: Option<FlattenError>,
     root: String,
@@ -103,11 +114,17 @@ impl<'a, L: Library> Flattener<'a, L> {
             library,
             lod,
             stud_primitives,
+            records_span: None,
             parsed: HashMap::new(),
             first_unresolved: None,
             root: String::new(),
             malformed: Vec::new(),
         }
+    }
+
+    pub fn recording_spans(mut self, records_span: &'a dyn Fn(&str) -> bool) -> Self {
+        self.records_span = Some(records_span);
+        self
     }
 
     pub fn malformed(&self) -> &[MalformedGeometry] {
@@ -271,7 +288,16 @@ impl<'a, L: Library> Flattener<'a, L> {
                         culling: frame.culling && certified,
                         depth: frame.depth + 1,
                     };
+                    let first = out.triangles.len();
                     self.walk(&child_path, &child, &child_frame, out)?;
+                    if self.records_span.is_some_and(|records| records(reference)) {
+                        out.spans.push(ReferenceSpan {
+                            reference: reference.clone(),
+                            path: child_path,
+                            matrix: child_matrix,
+                            triangles: first..out.triangles.len(),
+                        });
+                    }
                 }
                 Line::Edge { points } => {
                     let edge = points.map(|point| frame.matrix.apply(point));

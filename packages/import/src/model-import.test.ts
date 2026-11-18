@@ -19,7 +19,7 @@ import {
 } from "@brr/domain";
 import type { ModelFile } from "@brr/schema/bundle";
 import { beforeAll, describe, expect, it } from "vitest";
-import { BrickCompiler } from "./brick-compiler.ts";
+import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
 import { LdrawMirror, type FetchFunction } from "./ldraw-mirror.ts";
 import { ModelImportEngine, type IBakeHelper, type ImportResult } from "./model-import.ts";
 
@@ -65,7 +65,11 @@ interface Manifest {
   readonly partTable: { readonly file: string };
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
-  readonly compiler: { readonly file: string; readonly vehicles?: CompilerVehicles };
+  readonly compiler: {
+    readonly file: string;
+    readonly vehicles?: CompilerVehicles;
+    readonly primitives?: CompileRequest["primitives"];
+  };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
   readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
 }
@@ -149,6 +153,7 @@ async function importWith(
     source: manifest.source,
     studPrimitives: studPrimitives ?? manifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: [],
+    primitives: manifest.compiler.primitives ?? null,
     bundlePartIds: partTable.parts.map((part) => part.id),
     ldconfigCodes: manifest.colors.map((color) => color.code),
     translucentColors: manifest.colors

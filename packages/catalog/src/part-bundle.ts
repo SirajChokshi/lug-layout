@@ -13,6 +13,7 @@ import {
   type PartRolling,
   type PartTechnic,
   type ProducedColors,
+  type PrimitiveConnectorTable,
   type TrackEnd,
   type Vec3,
 } from "@brr/schema/bundle";
@@ -168,6 +169,7 @@ export interface ImportContext {
   readonly compilerPath: string;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly studPrimitiveNames: ReadonlyArray<string>;
+  readonly primitives: PrimitiveConnectorTable | null;
   readonly partIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
