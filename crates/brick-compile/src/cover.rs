@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::thread;
 
 use crate::affine::{Affine, Vec3};
+use crate::clip::{clip_to_box, polygon_area};
 use crate::flatten::INHERIT_COLOR;
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
@@ -783,7 +784,8 @@ pub fn model_cover(
         .iter()
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
-    let cells = phase.map(|phase| model_cells(&boxes, &mut coverers, aabb, rest_y, phase));
+    let cells =
+        phase.map(|phase| model_cells(instances, solids, &mut coverers, aabb, rest_y, phase));
     ModelCover {
         visible,
         open_below,
@@ -791,8 +793,70 @@ pub fn model_cover(
     }
 }
 
+struct ColumnReach {
+    origin: [f64; 2],
+    width: usize,
+    depth: usize,
+    lowest: Vec<f64>,
+    highest: Vec<f64>,
+}
+
+impl ColumnReach {
+    fn new(origin: [f64; 2], width: usize, depth: usize) -> Self {
+        ColumnReach {
+            origin,
+            width,
+            depth,
+            lowest: vec![f64::INFINITY; width * depth],
+            highest: vec![f64::NEG_INFINITY; width * depth],
+        }
+    }
+
+    fn add(&mut self, triangle: &[Vec3; 3]) {
+        let span = |axis: usize| {
+            triangle
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                    (lo.min(p[axis]), hi.max(p[axis]))
+                })
+        };
+        let ((lo_x, hi_x), (lo_z, hi_z)) = (span(0), span(2));
+        let (x0, x1) = overlapping_cells(lo_x, hi_x, self.origin[0], self.width);
+        let (z0, z1) = overlapping_cells(lo_z, hi_z, self.origin[1], self.depth);
+        for j in z0..z1 {
+            for i in x0..x1 {
+                let edge_x = self.origin[0] + STUD_LDU * i as f64;
+                let edge_z = self.origin[1] + STUD_LDU * j as f64;
+                let inside = clip_to_box(
+                    triangle,
+                    [
+                        edge_x + WELD_EPSILON_LDU,
+                        f64::NEG_INFINITY,
+                        edge_z + WELD_EPSILON_LDU,
+                    ],
+                    [
+                        edge_x + STUD_LDU - WELD_EPSILON_LDU,
+                        f64::INFINITY,
+                        edge_z + STUD_LDU - WELD_EPSILON_LDU,
+                    ],
+                );
+                if polygon_area(&inside) <= 0.0 {
+                    continue;
+                }
+                let cell = j * self.width + i;
+                let (points, len) = inside;
+                for point in &points[..len] {
+                    self.lowest[cell] = self.lowest[cell].min(point[1]);
+                    self.highest[cell] = self.highest[cell].max(point[1]);
+                }
+            }
+        }
+    }
+}
+
 fn model_cells(
-    boxes: &[[Vec3; 2]],
+    instances: &[CoverInstance],
+    solids: &[PartSolid],
     coverers: &mut Coverers,
     aabb: Bounds,
     bottom_y: f64,
@@ -826,26 +890,22 @@ fn model_cells(
         }
     }
 
-    let mut column_bottom = vec![EMPTY_COLUMN; width * depth];
-    let mut column_top = vec![EMPTY_COLUMN; width * depth];
+    let mut reach = ColumnReach::new(origin, width, depth);
+    for instance in instances {
+        for points in &solids[instance.part].triangles {
+            reach.add(&points.map(|p| instance.matrix.apply(p)));
+        }
+    }
     let plates = |y: f64| (y - bottom_y) / PLATE_LDU;
     let slack = WELD_EPSILON_LDU / PLATE_LDU;
-    for [min, max] in boxes {
-        let (x0, x1) = overlapping_cells(min[0], max[0], origin[0], width);
-        let (z0, z1) = overlapping_cells(min[2], max[2], origin[1], depth);
-        let bottom = ((plates(min[1]) + slack).floor() as i32).max(0);
-        let top = (plates(max[1]) - slack).ceil() as i32;
-        for j in z0..z1 {
-            for i in x0..x1 {
-                let cell = j * width + i;
-                column_bottom[cell] = if column_bottom[cell] == EMPTY_COLUMN {
-                    bottom
-                } else {
-                    column_bottom[cell].min(bottom)
-                };
-                column_top[cell] = column_top[cell].max(top);
-            }
+    let mut column_bottom = vec![EMPTY_COLUMN; width * depth];
+    let mut column_top = vec![EMPTY_COLUMN; width * depth];
+    for (cell, (&lowest, &highest)) in reach.lowest.iter().zip(&reach.highest).enumerate() {
+        if lowest > highest {
+            continue;
         }
+        column_bottom[cell] = ((plates(lowest) + slack).floor() as i32).max(0);
+        column_top[cell] = (plates(highest) - slack).ceil() as i32;
     }
 
     ModelCells {
