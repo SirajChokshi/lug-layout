@@ -1,6 +1,7 @@
 pub mod affine;
 pub mod colors;
 pub mod compile;
+pub mod connect;
 pub mod cover;
 pub mod flatten;
 pub mod glb;
