@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use brick_compile::affine::Vec3;
 use brick_compile::connect::{
-    Caps, Connector, ConnectorExtractor, Gender, PrimitiveConnectors, PrimitiveTable, Section,
-    SectionShape, ShadowSnaps, Shape, Source,
+    Caps, Connector, ConnectorExtractor, Gender, Issue, PrimitiveConnectors, PrimitiveTable,
+    Section, SectionShape, ShadowSnaps, Shape, Source,
 };
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::Library;
@@ -108,9 +108,10 @@ fn summary(connector: &Connector) -> (Source, Gender, Vec<Section>, Vec3) {
 const IDENTIFY_LDU: f64 = 0.0005;
 const TOWARD_PLUS_Z: &str = "1 0 0 0 0 -1 0 1 0";
 const TOWARD_MINUS_Z: &str = "1 0 0 0 0 1 0 -1 0";
+const BORE_ALONG_Z: &str = "6 0 0 0 0 -6 0 16 0";
 
 #[test]
-fn lower_tiers_fill_only_poses_tier_one_neither_holds_nor_removed() {
+fn lower_tiers_fill_only_empty_slots_and_never_slots_a_clear_wiped() {
     let part = format!(
         "0 Part\n\
          1 16 0 0 0 1 0 0 0 1 0 0 0 1 pin.dat\n\
@@ -118,7 +119,8 @@ fn lower_tiers_fill_only_poses_tier_one_neither_holds_nor_removed() {
          1 16 80 0 0 1 0 0 0 1 0 0 0 1 tube.dat\n\
          1 16 0 0 80 1 0 0 0 1 0 0 0 1 old.dat\n\
          1 16 0 0 -10 {TOWARD_PLUS_Z} end.dat\n\
-         1 16 0 0 10 {TOWARD_MINUS_Z} end.dat\n"
+         1 16 0 0 10 {TOWARD_MINUS_Z} end.dat\n\
+         1 16 0 0 -8 {BORE_ALONG_Z} 4-4cyli.dat\n"
     );
     let library = memory(&[
         ("parts/part.dat", &part),
@@ -126,11 +128,12 @@ fn lower_tiers_fill_only_poses_tier_one_neither_holds_nor_removed() {
         ("p/tube.dat", "0 Tube\n"),
         ("p/old.dat", "0 Old\n"),
         ("p/end.dat", "0 End\n"),
+        ("p/4-4cyli.dat", "0 Cylinder 1.0\n"),
     ]);
     let shadow = memory(&[
         (
             "parts/part.dat",
-            "0 !LDCAD SNAP_CLEAR\n0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [pos=40 0 0]\n",
+            "0 !LDCAD SNAP_CLEAR\n0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 6] [pos=40 0 0]\n",
         ),
         ("p/tube.dat", "0 //!LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4]\n"),
         ("p/old.dat", "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4]\n"),
@@ -174,11 +177,25 @@ fn lower_tiers_fill_only_poses_tier_one_neither_holds_nor_removed() {
             (
                 Source::Shadow,
                 Gender::Male,
-                vec![round(4.0, 4.0)],
+                vec![round(4.0, 6.0)],
                 [40.0, 0.0, 0.0]
+            ),
+            (
+                Source::Primitive,
+                Gender::Female,
+                vec![round(6.0, 4.0)],
+                [80.0, 0.0, 0.0]
             ),
         ]
     );
+    assert!(matches!(
+        extraction.issues.as_slice(),
+        [Issue::SectionDisagreement {
+            kept: (Source::Shadow, _),
+            lower: (Source::Primitive, _),
+            ..
+        }]
+    ));
     let hole = extraction
         .connectors
         .iter()
@@ -187,6 +204,7 @@ fn lower_tiers_fill_only_poses_tier_one_neither_holds_nor_removed() {
                 c.shape,
                 Shape::Cylinder {
                     gender: Gender::Female,
+                    caps: Caps::None,
                     ..
                 }
             )
@@ -205,19 +223,31 @@ fn lower_tiers_fill_only_poses_tier_one_neither_holds_nor_removed() {
 }
 
 #[test]
-fn a_hole_end_without_a_facing_partner_is_reported_not_guessed() {
-    let part = format!("0 Part\n1 16 0 0 -10 {TOWARD_PLUS_Z} end.dat\n");
-    let library = memory(&[("parts/part.dat", &part), ("p/end.dat", "0 End\n")]);
-    let table = PrimitiveTable::from_json(&json!({
-        "primitives": [
-            { "file": "p/end.dat", "holeEnd": { "counterbore": { "radius": 8, "length": 2 }, "boreRadius": 6 } }
-        ]
-    }))
-    .expect("table parses");
-    let (connectors, issues) =
-        PrimitiveConnectors::new(&library, table).connectors("parts/part.dat");
-    assert!(connectors.is_empty());
-    assert_eq!(issues.len(), 1);
+fn hole_ends_become_a_hole_only_with_a_partner_and_a_drawn_bore() {
+    let table = || {
+        PrimitiveTable::from_json(&json!({
+            "primitives": [
+                { "file": "p/end.dat", "holeEnd": { "counterbore": { "radius": 8, "length": 2 }, "boreRadius": 6 } }
+            ]
+        }))
+        .expect("table parses")
+    };
+    let lone = format!("0 Part\n1 16 0 0 -10 {TOWARD_PLUS_Z} end.dat\n");
+    let undrawn = format!(
+        "0 Part\n1 16 0 0 -10 {TOWARD_PLUS_Z} end.dat\n1 16 0 0 10 {TOWARD_MINUS_Z} end.dat\n"
+    );
+    for (part, expected) in [(lone, "unpaired"), (undrawn, "undrawn")] {
+        let library = memory(&[("parts/part.dat", &part), ("p/end.dat", "0 End\n")]);
+        let (connectors, issues) =
+            PrimitiveConnectors::new(&library, table()).connectors("parts/part.dat");
+        assert!(connectors.is_empty(), "{expected}");
+        let reported = match issues.as_slice() {
+            [Issue::UnpairedHoleEnd { .. }] => "unpaired",
+            [Issue::UndrawnHoleInterior { .. }] => "undrawn",
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(reported, expected);
+    }
 }
 
 #[test]

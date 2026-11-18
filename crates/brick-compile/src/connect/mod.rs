@@ -2,7 +2,7 @@ mod meta;
 mod primitive;
 mod shadow;
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
@@ -171,6 +171,15 @@ pub enum Issue {
         primitive: String,
         origin: Vec3,
     },
+    UndrawnHoleInterior {
+        primitive: String,
+        origin: Vec3,
+    },
+    SectionDisagreement {
+        origin: Vec3,
+        kept: (Source, Shape),
+        lower: (Source, Shape),
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -259,10 +268,38 @@ fn finished(connector: &Connector, issues: &mut Vec<Issue>) -> Connector {
     }
 }
 
-type PoseKey = (u8, [i64; 3], [i64; 3]);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Slot {
+    Lattice {
+        polarity: u8,
+        origin: [i64; 3],
+        axis: u8,
+    },
+    Free {
+        polarity: u8,
+        origin: [i64; 3],
+        axis: [i64; 3],
+    },
+}
 
-fn identified(value: f64) -> i64 {
-    (value / (2.0 * SAME_PLACE_LDU)).round() as i64
+const FREE_ORIGIN_STEPS_PER_LDU: f64 = 1e3;
+const FREE_AXIS_STEPS: f64 = 1e6;
+
+fn identified_integer(value: f64) -> Option<i64> {
+    let rounded = value.round();
+    ((value - rounded).abs() <= SAME_PLACE_LDU).then_some(rounded as i64)
+}
+
+fn direction_code(axis: Vec3) -> Option<u8> {
+    (0..3).find_map(|k| {
+        let aligned = (0..3).all(|j| j == k || axis[j].abs() <= SAME_PLACE_LDU);
+        let sign = axis[k];
+        match aligned && (sign.abs() - 1.0).abs() <= SAME_PLACE_LDU {
+            true if sign > 0.0 => Some(2 * k as u8),
+            true => Some(2 * k as u8 + 1),
+            false => None,
+        }
+    })
 }
 
 fn polarity(shape: &Shape) -> u8 {
@@ -304,25 +341,55 @@ fn symmetric(shape: &Shape) -> bool {
     )
 }
 
-fn pose_keys(connector: &Connector) -> Vec<PoseKey> {
-    let axis = column(&connector.placement, 1);
-    let flip = symmetric(&connector.shape)
-        && axis
-            .iter()
-            .copied()
-            .find(|c| identified(*c) != 0)
-            .is_some_and(|c| c < 0.0);
-    let axis = axis.map(|c| identified(if flip { -c } else { c }));
-    let offsets = connector
+fn slots(connector: &Connector) -> Vec<Slot> {
+    let mut axis = column(&connector.placement, 1);
+    let first = axis.iter().copied().find(|c| c.abs() > SAME_PLACE_LDU);
+    if symmetric(&connector.shape) && first.is_some_and(|c| c < 0.0) {
+        axis = axis.map(|c| -c);
+    }
+    let polarity = polarity(&connector.shape);
+    let code = direction_code(axis);
+    connector
         .grid
-        .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets());
-    offsets
+        .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets())
         .into_iter()
         .map(|offset| {
-            let origin = connector.placement.apply(offset).map(identified);
-            (polarity(&connector.shape), origin, axis)
+            let origin = connector.placement.apply(offset);
+            let lattice = [0, 1, 2].map(|k| identified_integer(origin[k]));
+            match (lattice, code) {
+                ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
+                    polarity,
+                    origin: [x, y, z],
+                    axis,
+                },
+                _ => Slot::Free {
+                    polarity,
+                    origin: origin.map(|c| (c * FREE_ORIGIN_STEPS_PER_LDU).round() as i64),
+                    axis: axis.map(|c| (c * FREE_AXIS_STEPS).round() as i64),
+                },
+            }
         })
         .collect()
+}
+
+fn same_sections(a: &Shape, b: &Shape) -> bool {
+    match (a, b) {
+        (Shape::Cylinder { sections: x, .. }, Shape::Cylinder { sections: y, .. }) => {
+            x.len() == y.len()
+                && x.iter().zip(y).all(|(p, q)| {
+                    p.shape == q.shape
+                        && (p.radius - q.radius).abs() <= SAME_PLACE_LDU
+                        && (p.length - q.length).abs() <= SAME_PLACE_LDU
+                })
+        }
+        _ => a == b,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Occupant {
+    Tier(usize),
+    Cleared,
 }
 
 pub struct ConnectorExtractor<'a, L: Library + ?Sized, S: Library + ?Sized> {
@@ -337,21 +404,44 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
 
     pub fn extract(&mut self, path: &str) -> Extraction {
         let mut extraction = self.shadow.snaps(path);
-        let mut occupied: HashSet<PoseKey> = extraction
-            .connectors
-            .iter()
-            .chain(&extraction.suppressed)
-            .flat_map(pose_keys)
-            .collect();
+        let mut occupied: HashMap<Slot, Occupant> = HashMap::new();
+        for (index, connector) in extraction.connectors.iter().enumerate() {
+            for slot in slots(connector) {
+                occupied.entry(slot).or_insert(Occupant::Tier(index));
+            }
+        }
+        for connector in &extraction.suppressed {
+            for slot in slots(connector) {
+                occupied.entry(slot).or_insert(Occupant::Cleared);
+            }
+        }
         let (primitive, issues) = self.primitives.connectors(path);
         extraction.issues.extend(issues);
         for candidate in primitive {
-            let keys = pose_keys(&candidate);
-            if keys.iter().any(|key| occupied.contains(key)) {
-                continue;
+            let candidate_slots = slots(&candidate);
+            let holder = candidate_slots
+                .iter()
+                .find_map(|slot| occupied.get(slot).copied());
+            match holder {
+                Some(Occupant::Tier(index)) => {
+                    let kept = &extraction.connectors[index];
+                    if !same_sections(&kept.shape, &candidate.shape) {
+                        extraction.issues.push(Issue::SectionDisagreement {
+                            origin: translation(&candidate.placement),
+                            kept: (kept.source, kept.shape.clone()),
+                            lower: (candidate.source, candidate.shape.clone()),
+                        });
+                    }
+                }
+                Some(Occupant::Cleared) => {}
+                None => {
+                    let index = extraction.connectors.len();
+                    for slot in candidate_slots {
+                        occupied.insert(slot, Occupant::Tier(index));
+                    }
+                    extraction.connectors.push(candidate);
+                }
             }
-            occupied.extend(keys);
-            extraction.connectors.push(candidate);
         }
         extraction
     }

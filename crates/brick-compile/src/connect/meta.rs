@@ -8,13 +8,11 @@ use super::{
 };
 
 const META_PREFIX: &str = "!LDCAD";
-const COMMENT_PREFIX: &str = "//";
 const IDENTITY_ROTATION: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Meta {
     Snap(Connector),
-    Suppressed(Connector),
     Include {
         reference: String,
         placement: Affine,
@@ -362,10 +360,6 @@ pub fn parse_metas(source: &str) -> Vec<Result<ParsedMeta, MetaError>> {
         .lines()
         .filter_map(|line| {
             let rest = line.trim().strip_prefix('0')?.trim_start();
-            let (commented, rest) = match rest.strip_prefix(COMMENT_PREFIX) {
-                Some(text) => (true, text.trim_start()),
-                None => (false, rest),
-            };
             let rest = rest.strip_prefix(META_PREFIX)?;
             if !rest.starts_with(char::is_whitespace) {
                 return None;
@@ -377,18 +371,13 @@ pub fn parse_metas(source: &str) -> Vec<Result<ParsedMeta, MetaError>> {
                 values: bracketed(text),
                 used: Vec::new(),
             };
-            match (commented, meta(&mut params)) {
-                (true, Ok(Some(Meta::Snap(connector)))) => Some(Ok(ParsedMeta {
-                    meta: Meta::Suppressed(connector),
-                    ignored: Vec::new(),
-                })),
-                (true, _) => None,
-                (false, Ok(Some(meta))) => Some(Ok(ParsedMeta {
+            match meta(&mut params) {
+                Ok(Some(meta)) => Some(Ok(ParsedMeta {
                     meta,
                     ignored: params.ignored(),
                 })),
-                (false, Ok(None)) => None,
-                (false, Err(error)) => Some(Err(error)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
             }
         })
         .collect()
@@ -488,12 +477,9 @@ mod tests {
     }
 
     #[test]
-    fn a_commented_out_snap_is_a_suppression_and_other_comments_are_ignored() {
-        let parsed =
-            only("0 //!LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4]").expect("parses");
-        assert!(matches!(parsed.meta, Meta::Suppressed(_)));
+    fn only_live_meta_lines_count_and_commented_out_snaps_stay_comments() {
         assert!(parse_metas(
-            "0 //NOTE: !LDCAD snaps need multi matching\n0 // !LDCAD SNAP_INCL [ref=x.dat]"
+            "0 //!LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4]\n0 // !LDCAD SNAP_INCL [ref=x.dat]\n0 !LDCADSNAP_CLEAR"
         )
         .is_empty());
     }

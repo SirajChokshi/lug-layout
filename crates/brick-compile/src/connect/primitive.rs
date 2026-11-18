@@ -16,6 +16,7 @@ use super::{
 const MAX_DEPTH: usize = 64;
 const COAXIAL_LDU: f64 = 1e-3;
 const OPPOSED_COSINE: f64 = 1e-6;
+const CYLINDER_KIND: &str = "cyli";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct HoleEnd {
@@ -92,6 +93,28 @@ struct PlacedEnd {
 struct Found {
     connectors: Vec<Connector>,
     ends: Vec<PlacedEnd>,
+    cylinders: Vec<Affine>,
+}
+
+fn is_cylinder_primitive(path: &str) -> bool {
+    let Some(name) = path
+        .strip_prefix("p/")
+        .map(|rest| rest.rsplit('/').next().unwrap_or(rest))
+    else {
+        return false;
+    };
+    let Some((numerator, rest)) = name.split_once('-') else {
+        return false;
+    };
+    let denominator: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let kind = &rest[denominator.len()..];
+    let suffix = kind
+        .strip_prefix(CYLINDER_KIND)
+        .and_then(|tail| tail.strip_suffix(".dat"));
+    !numerator.is_empty()
+        && numerator.chars().all(|c| c.is_ascii_digit())
+        && !denominator.is_empty()
+        && suffix.is_some_and(|digits| digits.chars().all(|c| c.is_ascii_digit()))
 }
 
 pub struct PrimitiveConnectors<'a, L: Library + ?Sized> {
@@ -168,7 +191,45 @@ fn through(a: &PlacedEnd, b: &PlacedEnd) -> Connector {
     }
 }
 
-fn paired(ends: &[PlacedEnd], issues: &mut Vec<Issue>) -> Vec<Connector> {
+fn bore_is_drawn(a: &PlacedEnd, b: &PlacedEnd, cylinders: &[Affine]) -> bool {
+    let along = inward(a);
+    let start = translation(&a.placement);
+    let span = dot(sub(translation(&b.placement), start), along);
+    let from = a.end.counterbore_length * length(column(&a.placement, 1));
+    let to = span - b.end.counterbore_length * length(column(&b.placement, 1));
+    let bore = a.end.bore_radius * length(column(&a.placement, 0));
+    let mut pieces: Vec<(f64, f64)> = cylinders
+        .iter()
+        .filter_map(|m| {
+            let axis = column(m, 1);
+            let size = length(axis);
+            if size == 0.0
+                || dot(axis, along).abs() < size * (1.0 - OPPOSED_COSINE)
+                || (length(column(m, 0)) - bore).abs() > COAXIAL_LDU
+            {
+                return None;
+            }
+            let offset = sub(translation(m), start);
+            let near = dot(offset, along);
+            if length(sub(offset, along.map(|c| c * near))) > COAXIAL_LDU {
+                return None;
+            }
+            let far = near + dot(axis, along);
+            Some((near.min(far), near.max(far)))
+        })
+        .collect();
+    pieces.sort_by(|p, q| p.0.total_cmp(&q.0));
+    let mut covered = from;
+    for (low, high) in pieces {
+        if low > covered + COAXIAL_LDU {
+            break;
+        }
+        covered = covered.max(high);
+    }
+    covered >= to - COAXIAL_LDU
+}
+
+fn paired(ends: &[PlacedEnd], cylinders: &[Affine], issues: &mut Vec<Issue>) -> Vec<Connector> {
     let mut used = vec![false; ends.len()];
     let mut out = Vec::new();
     for (i, a) in ends.iter().enumerate() {
@@ -199,7 +260,14 @@ fn paired(ends: &[PlacedEnd], issues: &mut Vec<Issue>) -> Vec<Connector> {
             Some(j) => {
                 used[i] = true;
                 used[j] = true;
-                out.push(through(a, &ends[j]));
+                if bore_is_drawn(a, &ends[j], cylinders) {
+                    out.push(through(a, &ends[j]));
+                } else {
+                    issues.push(Issue::UndrawnHoleInterior {
+                        primitive: a.primitive.clone(),
+                        origin: start,
+                    });
+                }
             }
             None => issues.push(Issue::UnpairedHoleEnd {
                 primitive: a.primitive.clone(),
@@ -223,7 +291,7 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
         let found = self.find(path, 0);
         let mut issues = Vec::new();
         let mut raw = found.connectors.clone();
-        raw.extend(paired(&found.ends, &mut issues));
+        raw.extend(paired(&found.ends, &found.cylinders, &mut issues));
         let connectors = raw
             .iter()
             .map(|connector| finished(connector, &mut issues))
@@ -254,6 +322,10 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                             .extend(templates.iter().map(|c| placed(c, &matrix)));
                         continue;
                     }
+                    if is_cylinder_primitive(&child) {
+                        out.cylinders.push(matrix);
+                        continue;
+                    }
                     if let Some(end) = self.table.hole_ends.get(&child) {
                         out.ends.push(PlacedEnd {
                             primitive: child.clone(),
@@ -269,6 +341,8 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                         placement: matrix.then(&e.placement),
                         ..e.clone()
                     }));
+                    out.cylinders
+                        .extend(inner.cylinders.iter().map(|c| matrix.then(c)));
                 }
             }
         }

@@ -6,7 +6,7 @@ use crate::flatten::{resolve_reference, Library, Lod};
 use crate::ldraw::{self, Line};
 
 use super::meta::{parse_metas, Meta, ParsedMeta};
-use super::{finished, placed, pose_keys, Connector, Extraction, Issue, PoseKey};
+use super::{finished, placed, slots, Connector, Extraction, Issue, Slot};
 
 const MAX_DEPTH: usize = 64;
 const PART_FOLDER: &str = "parts/";
@@ -46,11 +46,13 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
         let mut seen = HashSet::new();
         self.closure_issues(path, &mut seen, &mut issues);
         let mut connectors: Vec<Connector> = Vec::with_capacity(gathered.connectors.len());
-        let mut at_pose: HashMap<PoseKey, Vec<usize>> = HashMap::new();
+        let mut at_slot: HashMap<Slot, Vec<usize>> = HashMap::new();
         for connector in &gathered.connectors {
             let connector = finished(connector, &mut issues);
-            let key = pose_keys(&connector)[0];
-            let same = at_pose.entry(key).or_default();
+            let Some(&slot) = slots(&connector).first() else {
+                continue;
+            };
+            let same = at_slot.entry(slot).or_default();
             if same.iter().any(|&i| connectors[i] == connector) {
                 continue;
             }
@@ -181,7 +183,6 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 out.children.push(target);
             }
             Meta::Snap(connector) => out.connectors.push(connector),
-            Meta::Suppressed(connector) => out.suppressed.push(connector),
         }
     }
 }

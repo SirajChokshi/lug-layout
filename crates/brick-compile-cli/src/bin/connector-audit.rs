@@ -20,9 +20,12 @@ const MALE_STUD_TITLES: [&str; 3] = ["Stud", "Stud Open", "Stud Truncated"];
 const HOLE_END: &str = "p/peghole.dat";
 const MOVED: &str = "~Moved";
 const EXAMPLES: usize = 12;
+const COMMENTED_SNAP: &str = "0 //!LDCAD SNAP_";
+const LIVE_SNAP: &str = "0 !LDCAD SNAP_";
 
 struct LazyLibrary {
     root: PathBuf,
+    revive_commented_snaps: bool,
     loaded: RefCell<HashMap<String, Option<&'static str>>>,
 }
 
@@ -30,7 +33,15 @@ impl LazyLibrary {
     fn new(root: PathBuf) -> Self {
         LazyLibrary {
             root,
+            revive_commented_snaps: false,
             loaded: RefCell::new(HashMap::new()),
+        }
+    }
+
+    fn reviving_commented_snaps(root: PathBuf) -> Self {
+        LazyLibrary {
+            revive_commented_snaps: true,
+            ..LazyLibrary::new(root)
         }
     }
 }
@@ -41,15 +52,32 @@ impl Library for LazyLibrary {
             return *found;
         }
         let found: Option<&'static str> = fs::read(self.root.join(path)).ok().map(|bytes| {
-            &*Box::leak(
-                String::from_utf8_lossy(&bytes)
-                    .into_owned()
-                    .into_boxed_str(),
-            )
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            let text = if self.revive_commented_snaps {
+                text.replace(COMMENTED_SNAP, LIVE_SNAP)
+            } else {
+                text
+            };
+            &*Box::leak(text.into_boxed_str())
         });
         self.loaded.borrow_mut().insert(path.to_string(), found);
         found
     }
+}
+
+type AuditSlot = (Option<Gender>, [i64; 3], [i64; 3]);
+
+fn audit_slots(connector: &Connector) -> Vec<AuditSlot> {
+    poses(connector)
+        .into_iter()
+        .map(|p| {
+            (
+                gender_of(connector),
+                p.origin.map(|c| (c * 1000.0).round() as i64),
+                p.axis.map(|c| (c * 1000.0).round() as i64),
+            )
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -189,7 +217,11 @@ fn agrees(feature: Feature, at: &Affine, connectors: &[Connector]) -> bool {
 }
 
 fn sections_key(connector: &Connector) -> String {
-    match &connector.shape {
+    shape_key(&connector.shape)
+}
+
+fn shape_key(shape: &Shape) -> String {
+    match shape {
         Shape::Cylinder {
             gender, sections, ..
         } => {
@@ -259,6 +291,14 @@ fn issue_key(issue: &Issue) -> String {
             )
         }
         Issue::UnpairedHoleEnd { primitive, .. } => format!("unpaired hole end {primitive}"),
+        Issue::UndrawnHoleInterior { primitive, .. } => {
+            format!("hole ends {primitive} without a drawn bore between them")
+        }
+        Issue::SectionDisagreement { kept, lower, .. } => format!(
+            "section disagreement: {} kept over {}",
+            source_key(kept.0),
+            source_key(lower.0)
+        ),
     }
 }
 
@@ -372,7 +412,12 @@ fn run() -> Result<(), String> {
     let take = |k: &str| values.get(k).cloned().ok_or(format!("missing {k}"));
     let ldraw = PathBuf::from(take("--ldraw")?);
     let library = LazyLibrary::new(ldraw.clone());
-    let shadow = LazyLibrary::new(PathBuf::from(take("--shadow")?));
+    let shadow_root = PathBuf::from(take("--shadow")?);
+    let shadow = LazyLibrary::new(shadow_root.clone());
+    let revived = LazyLibrary::reviving_commented_snaps(shadow_root);
+    let mut revived_snaps = ShadowSnaps::new(&library, &revived);
+    let mut commented_fills: Vec<Value> = Vec::new();
+    let mut disagreements: Vec<Value> = Vec::new();
     let table_path = take("--primitives")?;
     let table_json: Value =
         serde_json::from_slice(&fs::read(&table_path).map_err(|e| format!("{table_path}: {e}"))?)
@@ -420,6 +465,38 @@ fn run() -> Result<(), String> {
             .filter(|c| c.source == Source::Primitive)
             .count();
         counts[3] += usize::from(tier2_added > 0);
+        if tier2_added > 0 {
+            let live: std::collections::HashSet<AuditSlot> = extraction
+                .connectors
+                .iter()
+                .filter(|c| c.source == Source::Shadow)
+                .flat_map(audit_slots)
+                .collect();
+            let commented: std::collections::HashSet<AuditSlot> = revived_snaps
+                .snaps(&path)
+                .connectors
+                .iter()
+                .flat_map(audit_slots)
+                .filter(|slot| !live.contains(slot))
+                .collect();
+            for connector in extraction
+                .connectors
+                .iter()
+                .filter(|c| c.source == Source::Primitive)
+            {
+                if audit_slots(connector)
+                    .iter()
+                    .any(|slot| commented.contains(slot))
+                {
+                    commented_fills.push(json!({
+                        "part": part,
+                        "title": title,
+                        "tier2": sections_key(connector),
+                        "at": translation(&connector.placement),
+                    }));
+                }
+            }
+        }
         if extraction.curated && tier2_added > 0 {
             completed_count += 1;
             if completed.len() < 200 {
@@ -443,6 +520,22 @@ fn run() -> Result<(), String> {
             }
         }
         for issue in &extraction.issues {
+            if let Issue::SectionDisagreement {
+                origin,
+                kept,
+                lower,
+            } = issue
+            {
+                if disagreements.len() < 400 {
+                    disagreements.push(json!({
+                        "part": part,
+                        "title": title,
+                        "origin": origin,
+                        "tier1": shape_key(&kept.1),
+                        "lower": shape_key(&lower.1),
+                    }));
+                }
+            }
             let key = issue_key(issue);
             *by_issue.entry(key.clone()).or_default() += 1;
             let examples = issue_examples.entry(key).or_default();
@@ -532,6 +625,8 @@ fn run() -> Result<(), String> {
         "connectorPosesByFamily": table(by_family),
         "tier2Shapes": table(tier2_shapes),
         "curatedPartsCompletedByTier2": completed,
+        "tier2FillsAtCommentedOutSnaps": commented_fills,
+        "sectionDisagreements": disagreements,
         "tier2AgainstTier1OnCuratedParts": {
             "tier2Connectors": cross[0],
             "coaxialWithATier1Connector": cross[1],
