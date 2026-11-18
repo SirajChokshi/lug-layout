@@ -21,6 +21,7 @@ export interface PartCoverage {
   readonly withConnectors: number;
   readonly bySource: ReadonlyMap<PartConnectors["source"], number>;
   readonly byFamily: ReadonlyMap<ConnectorFamily, number>;
+  readonly byTier: ReadonlyMap<string, number>;
 }
 
 export function partCoverage(parts: Iterable<PartConnectors>): PartCoverage {
@@ -28,13 +29,15 @@ export function partCoverage(parts: Iterable<PartConnectors>): PartCoverage {
   let withConnectors = 0;
   const bySource = new Map<PartConnectors["source"], number>();
   const byFamily = new Map<ConnectorFamily, number>();
+  const byTier = new Map<string, number>();
   for (const part of parts) {
+    for (const tier of part.tiers.keys()) byTier.set(tier, (byTier.get(tier) ?? 0) + 1);
     distinct++;
     if (part.total > 0) withConnectors++;
     bySource.set(part.source, (bySource.get(part.source) ?? 0) + 1);
     for (const family of part.counts.keys()) byFamily.set(family, (byFamily.get(family) ?? 0) + 1);
   }
-  return { distinct, withConnectors, bySource, byFamily };
+  return { distinct, withConnectors, bySource, byFamily, byTier };
 }
 
 export interface RunContext {
@@ -163,9 +166,17 @@ function listed(counts: ReadonlyMap<string, number>): string {
   return [...counts].map(([name, count]) => `${count} with ${name}`).join(", ") || "none";
 }
 
-function coverageLine({ distinct, withConnectors, bySource, byFamily }: PartCoverage): string {
+function coverageLine({
+  distinct,
+  withConnectors,
+  bySource,
+  byFamily,
+  byTier,
+}: PartCoverage): string {
   const sources = [...bySource].map(([source, count]) => `${count} from ${source}`).join(", ");
-  return `Distinct drawn parts: ${distinct}, of which ${withConnectors} yield at least one connector. Connector data: ${sources || "none"}. Parts carrying each connector kind: ${listed(byFamily)}.`;
+  const tiers =
+    byTier.size > 0 ? ` Parts with connectors from each source tier: ${listed(byTier)}.` : "";
+  return `Distinct drawn parts: ${distinct}, of which ${withConnectors} yield at least one connector. Connector data: ${sources || "none"}. Parts carrying each connector kind: ${listed(byFamily)}.${tiers}`;
 }
 
 export function markdownReport(context: RunContext, inputs: ReadonlyArray<CheckedInput>): string {

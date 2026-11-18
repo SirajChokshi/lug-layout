@@ -10,20 +10,26 @@ const MALE = 0;
 
 const Finite = v.pipe(v.number(), v.finite());
 
+const AXIS_CODE = v.pipe(v.number(), v.integer(), v.minValue(-1), v.maxValue(5));
+
 const ConnectorTable = v.pipe(
   v.object({
     profile: v.array(v.picklist([0, 1])),
     gender: v.array(v.picklist([0, 1])),
     radius: v.array(Finite),
     origin: v.array(Finite),
-    axis: v.array(Finite),
+    axis: v.union([v.array(AXIS_CODE), v.array(Finite)]),
+    axisFree: v.optional(v.array(Finite)),
     reach: v.array(Finite),
+    source: v.optional(v.array(v.union([v.string(), v.number()]))),
   }),
   v.check(
-    ({ profile, gender, radius, origin, axis, reach }) =>
-      [gender, radius, reach].every((column) => column.length === profile.length) &&
+    ({ profile, gender, radius, origin, axis, reach, source }) =>
+      [gender, radius, reach, ...(source ? [source] : [])].every(
+        (column) => column.length === profile.length,
+      ) &&
       origin.length === profile.length * VEC3_FLOATS &&
-      axis.length === profile.length * VEC3_FLOATS,
+      (axis.length === profile.length || axis.length === profile.length * VEC3_FLOATS),
     "the connector columns do not have one entry per connector",
   ),
 );
@@ -42,6 +48,7 @@ export interface PartConnectors {
   readonly title: string;
   readonly source: "connector table" | "pre-engine records" | "unreadable connector table";
   readonly counts: ReadonlyMap<ConnectorFamily, number>;
+  readonly tiers: ReadonlyMap<string, number>;
   readonly total: number;
   readonly problem: string | null;
 }
@@ -79,10 +86,11 @@ function summary(
   source: PartConnectors["source"],
   counts: PartConnectors["counts"],
   problem: string | null,
+  tiers: PartConnectors["tiers"] = new Map(),
 ): PartConnectors {
   let total = 0;
   for (const count of counts.values()) total += count;
-  return { title, source, counts, total, problem };
+  return { title, source, counts, tiers, total, problem };
 }
 
 function decodedExtras(document: unknown, label: string): PartExtras {
@@ -111,11 +119,14 @@ export function partConnectors(glb: Uint8Array, label: string): PartConnectors {
       );
     }
     const tally = new Map<ConnectorFamily, number>();
+    const tiers = new Map<string, number>();
     for (let i = 0; i < decoded.value.profile.length; i++) {
       const family = familyOf(decoded.value, i);
       tally.set(family, (tally.get(family) ?? 0) + 1);
+      const tier = decoded.value.source?.[i];
+      if (tier !== undefined) tiers.set(String(tier), (tiers.get(String(tier)) ?? 0) + 1);
     }
-    return summary(title, "connector table", tally, null);
+    return summary(title, "connector table", tally, null, tiers);
   }
   return summary(
     title,
