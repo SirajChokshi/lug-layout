@@ -14,7 +14,12 @@ import type {
   PartOutcome,
 } from "./brick-compiler.ts";
 import { isDirectColor } from "@brr/catalog/colors";
-import { submodelTreeFits, type CompilerVehicles, type MalformedFinding } from "@brr/schema/bundle";
+import {
+  submodelTreeFits,
+  type CompilerVehicles,
+  type MalformedFinding,
+  type PrimitiveConnectorTable,
+} from "@brr/schema/bundle";
 import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
@@ -26,6 +31,7 @@ export interface ImportJob {
   readonly source: MirrorSource;
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
+  readonly primitives: PrimitiveConnectorTable | null;
   readonly bundlePartIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentColors: ReadonlyArray<number>;
@@ -393,6 +399,7 @@ export class ModelImportEngine {
           lod: job.lod,
           studPrimitives: job.studPrimitives,
           unofficialAllowlist: job.unofficialAllowlist,
+          primitives: job.primitives,
           parts: pendingParts,
           model: job.text,
           inlineChecks: pendingChecks,

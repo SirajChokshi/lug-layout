@@ -1,6 +1,6 @@
 import type { FetchFunction, ImportWorkerRequest } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
-import type { CompilerVehicles } from "@brr/schema/bundle";
+import type { CompilerVehicles, PrimitiveConnectorTable } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
@@ -24,7 +24,11 @@ interface Manifest {
   readonly partTable: { readonly file: string };
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
-  readonly compiler: { readonly file: string; readonly vehicles?: CompilerVehicles };
+  readonly compiler: {
+    readonly file: string;
+    readonly vehicles?: CompilerVehicles;
+    readonly primitives?: PrimitiveConnectorTable;
+  };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
 }
 
@@ -82,6 +86,7 @@ it("imports with the compiler and LDraw library the request names and the worker
           .map((color) => color.code),
         vehicles: manifest.compiler.vehicles ?? null,
         tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
+        primitives: manifest.compiler.primitives ?? null,
       },
     },
   });

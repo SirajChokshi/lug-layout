@@ -71,6 +71,7 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
       source,
       studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
       unofficialAllowlist: [],
+      primitives: null,
       bundlePartIds: partTable.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
       translucentColors: manifest.colors

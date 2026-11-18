@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use brick_compile::compile::{required_stud_roundness, RollingMode};
 use brick_compile::flatten::{Library, Lod};
-use brick_compile::{compile_part, CompileOptions};
+use brick_compile::{compile_part, CompileOptions, TechnicPrimitives};
 use serde_json::json;
 
 const DEFAULT_STUDS: &str = "stud.dat,stud2.dat";
@@ -124,6 +124,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: args.studs.clone(),
         unofficial_allowlist: Vec::new(),
+        technic: TechnicPrimitives::default(),
         rolling_mode: RollingMode::Skip,
     };
     let with = CompileOptions {

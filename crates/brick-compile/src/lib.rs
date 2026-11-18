@@ -1,10 +1,13 @@
 pub mod affine;
 pub mod bake;
+pub mod bands;
+pub mod bore;
 pub mod clip;
 pub mod colors;
 pub mod compile;
 pub mod connect;
 pub mod cover;
+pub mod ends;
 pub mod flatten;
 pub mod glb;
 pub mod inline;
@@ -18,9 +21,11 @@ pub mod rolling;
 pub mod sixteenths;
 pub mod studio;
 pub mod surface;
+pub mod technic;
 pub mod vehicle;
 pub mod voxel;
 pub mod zip;
 
 pub use compile::{compile_part, CompileError, CompileOptions, CompiledPart};
 pub use flatten::{Library, Lod};
+pub use technic::TechnicPrimitives;

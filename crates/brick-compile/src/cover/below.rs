@@ -1580,6 +1580,7 @@ mod tests {
             lod: crate::flatten::Lod::Standard,
             stud_primitives: vec!["stud.dat".to_string(), "stud2.dat".to_string()],
             unofficial_allowlist: Vec::new(),
+            technic: crate::technic::TechnicPrimitives::default(),
             rolling_mode: crate::compile::RollingMode::Skip,
         };
         let references = [

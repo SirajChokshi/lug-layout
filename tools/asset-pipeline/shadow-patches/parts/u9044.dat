@@ -1,0 +1,11 @@
+0 LDCad shadow info for "~Magnet Cylindrical  1.3 x  1.3"
+
+0 Author: Brick Railroad project additions
+0 !LICENSE CC BY-SA 4.0, see LICENSE.md
+
+0 !HISTORY 2026-11-18 {Brick Railroad} Measured from kulits/ldraw-parts@c70360d1 geometry
+
+0 !LDCAD SNAP_GEN [id=couplingFace] [group=trainMagnet] [gender=M] [bounding=cyl 13 0] [match=group] [pos=0 0 7.5] [ori=1 0 0 0 0 1 0 -1 0]
+0 !LDCAD SNAP_GEN [id=couplingFace] [group=trainMagnet] [gender=F] [bounding=cyl 13 0] [match=group] [pos=0 0 7.5] [ori=1 0 0 0 0 -1 0 1 0]
+0 !LDCAD SNAP_GEN [id=couplingFace] [group=trainMagnet] [gender=M] [bounding=cyl 13 0] [match=group] [pos=0 0 -7.5] [ori=1 0 0 0 0 -1 0 1 0]
+0 !LDCAD SNAP_GEN [id=couplingFace] [group=trainMagnet] [gender=F] [bounding=cyl 13 0] [match=group] [pos=0 0 -7.5] [ori=1 0 0 0 0 1 0 -1 0]
