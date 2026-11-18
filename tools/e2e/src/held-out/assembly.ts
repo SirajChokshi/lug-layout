@@ -16,12 +16,18 @@ export interface AssemblyPart {
 
 export type Assembly = ReadonlyArray<AssemblyPart>;
 
-export interface PinContacts {
-  readonly pins: number;
-  readonly inHole: number;
-  readonly colliding: number;
-  readonly free: number;
-}
+export type PinOutcome =
+  | {
+      readonly kind: "inHole";
+      readonly pin: AssemblyPart;
+      readonly holders: ReadonlyArray<AssemblyPart>;
+    }
+  | {
+      readonly kind: "colliding";
+      readonly pin: AssemblyPart;
+      readonly blockers: ReadonlyArray<AssemblyPart>;
+    }
+  | { readonly kind: "free"; readonly pin: AssemblyPart };
 
 const AXES: ReadonlyArray<Axis> = [0, 1, 2];
 
@@ -89,17 +95,15 @@ export function collisions(assembly: Assembly, others: Assembly = []): number {
   return count;
 }
 
-export function pinContacts(subject: Assembly, neighbour: Assembly): PinContacts {
-  let pins = 0;
-  let inHole = 0;
-  let colliding = 0;
+export function pinOutcomes(subject: Assembly, neighbour: Assembly): ReadonlyArray<PinOutcome> {
+  const outcomes: PinOutcome[] = [];
   for (const part of subject) {
     if (!part.pin) continue;
-    pins++;
     const touched = neighbour.filter((other) => boxesOverlap(part, other));
-    if (touched.length === 0) continue;
-    if (touched.every((other) => pinThroughHole(part, other))) inHole++;
-    else colliding++;
+    const blockers = touched.filter((other) => !pinThroughHole(part, other));
+    if (blockers.length > 0) outcomes.push({ kind: "colliding", pin: part, blockers });
+    else if (touched.length > 0) outcomes.push({ kind: "inHole", pin: part, holders: touched });
+    else outcomes.push({ kind: "free", pin: part });
   }
-  return { pins, inHole, colliding, free: pins - inHole - colliding };
+  return outcomes;
 }

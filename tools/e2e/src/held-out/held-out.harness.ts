@@ -260,7 +260,7 @@ it(
     ).toEqual([]);
     expect(
       acceptance.scenarioProblems,
-      "the acceptance pair joins only by its pins when aligned, and a pin collides one stud off",
+      "the acceptance pair engages every pin in a hole with no collision only when aligned; one stud forward or back, at least one pin collides or misses a hole",
     ).toEqual([]);
   },
   HARNESS_TIMEOUT_MS,
