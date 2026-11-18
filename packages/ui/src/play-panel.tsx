@@ -38,9 +38,10 @@ interface PlayPanelProps {
 
 export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPanelProps) {
   const snapshot = usePlaySnapshot(play);
+  const trains = editor.playSetup()?.models;
   useEffect(() => {
-    if (ready) play.offer(editor.playSetup());
-  }, [editor, play, ready]);
+    play.offer(trains ?? []);
+  }, [play, trains]);
   useEffect(() => {
     followWith(camera, play, true);
     return () => play.follow(null);
@@ -65,20 +66,24 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
       <h2>Play</h2>
       {!running && (
         <div className="play-start">
-          <label>
-            Train
-            <select
-              value={snapshot.trainModel ?? ""}
-              disabled={busy}
-              onChange={(event) => play.chooseTrain(event.target.value)}
-            >
-              {editor.playSetup()?.models.map((train) => (
-                <option key={train.name} value={train.name}>
-                  {train.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {trains?.length ? (
+            <label>
+              Train
+              <select
+                value={snapshot.trainModel ?? ""}
+                disabled={busy}
+                onChange={(event) => play.chooseTrain(event.target.value)}
+              >
+                {trains.map((train) => (
+                  <option key={train.name} value={train.name}>
+                    {train.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="toolbar-hint">Place a train on the layout to run it.</p>
+          )}
           <button
             type="button"
             className="play-primary"
