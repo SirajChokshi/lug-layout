@@ -247,22 +247,18 @@ function mateInSubmodelFrames(
   const nodes = submodels.count;
   const bucket = new Uint32Array(nodes + 1);
   for (let i = 0; i < instances.count; i++) {
-    let n = submodels.ofPart[i] ?? MODEL_ROOT;
-    while (n !== MODEL_ROOT) {
+    for (let n = submodelFrames.frameOf(i); n !== MODEL_ROOT; n = submodelFrames.parentFrame(n)) {
       bucket[n + 1] = (bucket[n + 1] ?? 0) + 1;
-      n = submodels.parent[n] ?? MODEL_ROOT;
     }
   }
   for (let n = 0; n < nodes; n++) bucket[n + 1] = (bucket[n + 1] ?? 0) + (bucket[n] ?? 0);
   const member = new Uint32Array(bucket[nodes] ?? 0);
   const filled = bucket.slice(0, nodes);
   for (let i = 0; i < instances.count; i++) {
-    let n = submodels.ofPart[i] ?? MODEL_ROOT;
-    while (n !== MODEL_ROOT) {
+    for (let n = submodelFrames.frameOf(i); n !== MODEL_ROOT; n = submodelFrames.parentFrame(n)) {
       const e = filled[n] ?? 0;
       filled[n] = e + 1;
       member[e] = i;
-      n = submodels.parent[n] ?? MODEL_ROOT;
     }
   }
   const transform = new Float64Array(TRANSFORM_FLOATS);
