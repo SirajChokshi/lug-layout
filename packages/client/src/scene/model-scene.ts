@@ -108,7 +108,6 @@ export class ModelScene implements IModelScene {
       },
       bundle.parts,
       colors,
-      undefined,
       model.studCover,
     );
     const key = chunkKey(0, 0);

@@ -1,21 +1,16 @@
 import {
   LOOK_FEATURES,
-  type IRunningGear,
   type IBomService,
   type IBomSource,
   type IImportScene,
   type ImportedModule,
-  type IRunScene,
   type IViewerScene,
   type LookSettings,
-  type PlacementDump,
-  type RunStatus,
   type SceneSummary,
-  type SimBenchResult,
   type TrackSummary,
 } from "@brr/client";
-import { CreditLinks, partsCreditText, RunningGearPanel } from "@brr/ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { CreditLinks, partsCreditText } from "@brr/ui";
+import { useEffect, useRef, useState } from "react";
 import { BomPanel } from "@brr/ui";
 import { ImportPanel } from "./import-panel.tsx";
 import { MIN_SCENE_COVERAGE } from "./viewer/frame-coverage.ts";
@@ -31,115 +26,8 @@ const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
-  readonly placements: (() => PlacementDump) | null;
-  readonly run: IRunScene | null;
-  readonly runningGear: IRunningGear | null;
   readonly importScene: IImportScene | null;
   readonly bom: { readonly service: IBomService; readonly source: IBomSource } | null;
-}
-
-const BENCH_AFTER_MS = 5_000;
-
-function useSimBench(
-  run: IRunScene | null,
-  ticks: number,
-  onError: (error: unknown) => void,
-): SimBenchResult | null {
-  const [result, setResult] = useState<SimBenchResult | null>(null);
-  useEffect(() => {
-    if (!run || ticks <= 0) return;
-    const timer = setTimeout(() => {
-      run.sim.bench(ticks).then(setResult, onError);
-    }, BENCH_AFTER_MS);
-    return () => clearTimeout(timer);
-  }, [run, ticks, onError]);
-  return result;
-}
-
-const MICROSECONDS_PER_MS = 1000;
-const THROTTLE_STEP_LDU_PER_S = 50;
-
-function runRows(status: RunStatus | null): ReadonlyArray<readonly [string, string]> {
-  if (!status) return [];
-  const { tickCost } = status;
-  const perTick = tickCost.ticks > 0 ? (tickCost.stepMs / tickCost.ticks) * MICROSECONDS_PER_MS : 0;
-  const speeds = status.trainSpeedLduPerS.map((speed) => speed.toFixed(0)).join(", ");
-  const rows: Array<readonly [string, string]> = [
-    ["Sim tick (60 Hz, worker)", integer.format(status.tick)],
-    ["Sim state hash", status.stateHash.toString(16).padStart(8, "0")],
-    [
-      "Sim step cost (live, worker clock)",
-      `${perTick.toFixed(2)} µs/tick over ${integer.format(tickCost.ticks)} ticks`,
-    ],
-    ["Trains (speed LDU/s)", `${status.trains} (${speeds})`],
-    ["Train edges", status.trainEdge.join(", ")],
-    ["Train routes", status.routeStates.join(", ")],
-    ["Arrivals per train", status.arrivals.join(", ")],
-    [
-      "Ticks with two trains on one track piece",
-      `${integer.format(status.sharedPieceTicks)} of ${integer.format(status.checkedTicks)}`,
-    ],
-    [
-      "Closest bogies of different trains",
-      Number.isFinite(status.minBogieSeparationLdu)
-        ? `${integer.format(status.minBogieSeparationLdu)} LDU`
-        : "none yet",
-    ],
-  ];
-  status.vehicles.forEach((vehicle, v) => {
-    const { lengthLdu, frontBogieLdu, rearBogieLdu } = vehicle.spec;
-    rows.push([
-      `Vehicle ${v + 1} (LDU)`,
-      `${vehicle.model}${vehicle.reversed ? " reversed" : ""}: length ${lengthLdu.toFixed(2)}, guides at ${frontBogieLdu.toFixed(2)} and ${rearBogieLdu.toFixed(2)}, ${vehicle.wheelsets} wheelsets, ${vehicle.bogieBodies} pivoting bogies, running gear ${vehicle.gear}`,
-    ]);
-  });
-  const spans: string[] = [];
-  for (let p = 0; p + 3 < status.bogiePointsLdu.length; p += 4) {
-    const [fx = 0, fz = 0, rx = 0, rz = 0] = status.bogiePointsLdu.slice(p, p + 4);
-    spans.push(Math.hypot(fx - rx, fz - rz).toFixed(6));
-  }
-  rows.push(["Bogie centres apart (LDU, per vehicle)", spans.join(", ")]);
-  rows.push([
-    "Route path end vs exact end",
-    `${status.maxEndResidualLdu.toExponential(1)} LDU, ${status.maxEndHeadingResidualRadians.toExponential(1)} rad`,
-  ]);
-  return rows;
-}
-
-function useTrainKeys(
-  run: IRunScene | null,
-  topSpeed: number,
-  onError: (error: unknown) => void,
-): void {
-  useEffect(() => {
-    if (!run) return;
-    let speed = topSpeed;
-    const switchStates = new Map<number, number>();
-    const onKey = (event: KeyboardEvent): void => {
-      const status = run.status();
-      if (!status) return;
-      const send = (command: Parameters<IRunScene["sim"]["command"]>[0]): void => {
-        run.sim.command(command).catch(onError);
-      };
-      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-        const step = event.key === "ArrowUp" ? THROTTLE_STEP_LDU_PER_S : -THROTTLE_STEP_LDU_PER_S;
-        speed = Math.min(Math.max(speed + step, 0), topSpeed);
-        for (let train = 0; train < status.trains; train++) {
-          send({ kind: "throttle", train, speedLduPerS: speed });
-        }
-      } else if (event.key === "r") {
-        for (let train = 0; train < status.trains; train++) send({ kind: "reverse", train });
-      } else if (/^[1-9]$/u.test(event.key)) {
-        const switchIndex = Number(event.key) - 1;
-        if (switchIndex >= status.switches) return;
-        const state = switchStates.get(switchIndex) === 1 ? 0 : 1;
-        switchStates.set(switchIndex, state);
-        send({ kind: "switch", switchIndex, state });
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [run, topSpeed, onError]);
 }
 
 function mebibytes(bytes: number): string {
@@ -276,7 +164,7 @@ function modelCredit(report: ViewerReport): string {
   return `Model ${model.name}${by}${license}. Source: ${model.source}. `;
 }
 
-export function App({ scene, params, placements, run, runningGear, importScene, bom }: AppProps) {
+export function App({ scene, params, importScene, bom }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const started = useRef(false);
   const [viewerReport, setReport] = useState<ViewerReport | null>(null);
@@ -285,18 +173,14 @@ export function App({ scene, params, placements, run, runningGear, importScene, 
     viewerReport && importedSummary ? { ...viewerReport, summary: importedSummary } : viewerReport;
   const [result, setResult] = useState<ViewerResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const showRunError = useCallback((e: unknown): void => setError(String(e)), []);
-  useTrainKeys(run, params.speedLduPerS, showRunError);
-  const bench = useSimBench(run, params.simBenchTicks, showRunError);
-  const runStatus = run?.status() ?? null;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || started.current) return;
     started.current = true;
     const showError = (e: unknown): void => setError(String(e));
-    runViewer(scene, canvas, params, placements, setReport, setResult, showError).catch(showError);
-  }, [scene, params, placements]);
+    runViewer(scene, canvas, params, setReport, setResult, showError).catch(showError);
+  }, [scene, params]);
 
   return (
     <>
@@ -306,19 +190,13 @@ export function App({ scene, params, placements, run, runningGear, importScene, 
         {error && <p className="error">{error}</p>}
         {report && !error && (
           <dl>
-            {[...hudRows(report, params), ...runRows(runStatus)].map(([label, value]) => (
+            {hudRows(report, params).map(([label, value]) => (
               <div key={label}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>
               </div>
             ))}
           </dl>
-        )}
-        {runStatus && !error && <pre id="sim">{JSON.stringify(runStatus)}</pre>}
-        {bench && !error && (
-          <pre id="sim-bench" data-done="1">
-            {JSON.stringify(bench)}
-          </pre>
         )}
         {report && !error && bom && (
           <BomPanel
@@ -334,7 +212,6 @@ export function App({ scene, params, placements, run, runningGear, importScene, 
           </pre>
         )}
       </aside>
-      {runningGear && params.gear && <RunningGearPanel gear={runningGear} />}
       {importScene && (
         <ImportPanel
           scene={importScene}

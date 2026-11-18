@@ -669,7 +669,7 @@ export class TrackDrawing {
     });
     const base: ChunkPartInstances = { originX, originZ, count, partIndex, colorIndex, matrices };
     return {
-      instances: withStuds(base, this.parts, this.colors, undefined),
+      instances: withStuds(base, this.parts, this.colors),
       x: originX,
       z: originZ,
     };
@@ -790,7 +790,7 @@ export class TrackDrawing {
       matrices,
     };
     return {
-      instances: withStuds(base, this.parts, this.colors, undefined),
+      instances: withStuds(base, this.parts, this.colors),
       x: originX,
       z: originZ,
     };
@@ -980,6 +980,6 @@ export class TrackDrawing {
       );
     });
     const base: ChunkPartInstances = { originX, originZ, count, partIndex, colorIndex, matrices };
-    return withStuds(base, this.parts, this.colors, undefined);
+    return withStuds(base, this.parts, this.colors);
   }
 }

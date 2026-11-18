@@ -1,26 +1,20 @@
 import {
   BOM_SERVICE,
-  CITY_SCENE,
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
-  LAYOUT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
   PALETTE_MEMORY,
   PALETTE_THUMBNAILS,
-  PART_DISPLAY_SCENE,
-  RUN_SCENE,
   RUNNING_GEAR,
   TRACK_SCENE,
   TRAIN_PLAY,
   type IBomSource,
   type IImportScene,
-  type IRunScene,
   PLAN_SERVICE,
   type IViewerScene,
-  type PlacementDump,
 } from "@brr/client";
 import { AboutPage, CreditsPage, EditorApp } from "@brr/ui";
 import { Container } from "inversify";
@@ -62,73 +56,26 @@ const params = readViewerParams(location.search);
 
 interface ViewerChoice {
   readonly scene: IViewerScene;
-  readonly placements: (() => PlacementDump) | null;
-  readonly run: IRunScene | null;
   readonly importScene?: IImportScene;
   readonly bomSource?: IBomSource;
 }
 
 function viewerScene(viewer: ViewerParams): ViewerChoice {
   switch (viewer.mode) {
-    case "city": {
-      const city = container.get(CITY_SCENE);
-      city.configure({
-        targetParts: viewer.parts,
-        seed: viewer.seed,
-        camera: viewer.camera,
-        originChunkX: viewer.originChunkX,
-        originChunkZ: viewer.originChunkZ,
-      });
-      return {
-        scene: city,
-        placements: viewer.dumpWorld ? () => city.placementDump() : null,
-        run: null,
-        bomSource: city,
-      };
-    }
-    case "layout": {
-      const layout = container.get(LAYOUT_SCENE);
-      layout.configure({ camera: viewer.camera, tiles: viewer.tiles });
-      return { scene: layout, placements: null, run: null };
-    }
     case "model": {
       const modelScene = container.get(MODEL_SCENE);
       modelScene.selectModel(viewer.model ?? "", viewer.modelView);
       modelScene.configureCamera({ distanceLdu: viewer.distanceLdu, zoom: viewer.zoom });
-      return { scene: modelScene, placements: null, run: null, bomSource: modelScene };
+      return { scene: modelScene, bomSource: modelScene };
     }
     case "track": {
       const trackScene = container.get(TRACK_SCENE);
       trackScene.selectPlan(viewer.track ?? "");
-      return { scene: trackScene, placements: null, run: null };
+      return { scene: trackScene };
     }
-    case "run": {
-      const runScene = container.get(RUN_SCENE);
-      runScene.configure({
-        plan: viewer.track ?? "",
-        consist: viewer.consist,
-        trains: viewer.trains,
-        speedLduPerS: viewer.speedLduPerS,
-        accelerationLduPerS2: viewer.accelerationLduPerS2,
-        brakingLduPerS2: viewer.brakingLduPerS2,
-        follow: viewer.follow,
-        start: viewer.start,
-        autopilotSeed: viewer.autopilotSeed,
-        followDistanceLdu: viewer.followDistanceLdu,
-      });
-      return { scene: runScene, placements: null, run: runScene };
-    }
-    case "parts":
-      return { scene: container.get(PART_DISPLAY_SCENE), placements: null, run: null };
     case "import": {
       const importScene = container.get(IMPORT_SCENE);
-      return {
-        scene: importScene,
-        placements: null,
-        run: null,
-        importScene,
-        bomSource: importScene,
-      };
+      return { scene: importScene, importScene, bomSource: importScene };
     }
     case "edit":
       throw new Error("the editor is not a viewer scene");
@@ -163,6 +110,7 @@ function root(): ReactNode {
         play={container.get(TRAIN_PLAY)}
         palette={container.get(PALETTE_MEMORY)}
         thumbnails={container.get(PALETTE_THUMBNAILS)}
+        runningGear={container.get(RUNNING_GEAR)}
         options={{
           api: params.api,
           pixelRatio: window.devicePixelRatio,
@@ -174,19 +122,9 @@ function root(): ReactNode {
       />
     );
   }
-  const { scene, placements, run, importScene, bomSource } = viewerScene(params);
+  const { scene, importScene, bomSource } = viewerScene(params);
   const bom = bomSource ? { service: container.get(BOM_SERVICE), source: bomSource } : null;
-  return (
-    <App
-      scene={scene}
-      params={params}
-      placements={placements}
-      run={run}
-      runningGear={run ? container.get(RUNNING_GEAR) : null}
-      importScene={importScene ?? null}
-      bom={bom}
-    />
-  );
+  return <App scene={scene} params={params} importScene={importScene ?? null} bom={bom} />;
 }
 
 createRoot(rootElement).render(<StrictMode>{root()}</StrictMode>);

@@ -6,6 +6,7 @@ import type {
   IPaletteMemory,
   IPaletteThumbnails,
   IPlanService,
+  IRunningGear,
   ITrainPlay,
   ShellCommandId,
 } from "@brr/client";
@@ -46,6 +47,7 @@ interface EditorAppProps {
   readonly play: ITrainPlay;
   readonly palette: IPaletteMemory;
   readonly thumbnails: IPaletteThumbnails;
+  readonly runningGear: IRunningGear;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -93,6 +95,7 @@ export function EditorApp({
   play,
   palette,
   thumbnails,
+  runningGear,
   options,
   disclaimer,
   showState,
@@ -162,6 +165,7 @@ export function EditorApp({
           editor={editor}
           camera={camera}
           play={play}
+          runningGear={runningGear}
           ready={snapshot.status === "ready"}
         />
         <PalettePanel

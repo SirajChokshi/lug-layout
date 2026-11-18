@@ -19,9 +19,6 @@ export type {
   TrackSummary,
 } from "./scene/viewer-scene.ts";
 export type { ITrackScene } from "./scene/track-scene.ts";
-export type { CityCamera, CityRequest, ICityScene } from "./scene/city-scene.ts";
-export type { ILayoutScene, LayoutRequest } from "./scene/layout-scene.ts";
-export type { PlacementDump } from "./scene/placements.ts";
 export type { IModelScene, ModelCamera, ModelView } from "./scene/model-scene.ts";
 export type { ICredits } from "./credits/credits-service.ts";
 export {
@@ -96,14 +93,6 @@ export type {
   StudioReport,
 } from "@brr/import";
 export type {
-  IRunScene,
-  RunRequest,
-  RunStatus,
-  RunVehicleStatus,
-  TrainRequest,
-} from "./scene/run-scene.ts";
-export type { ConsistEntry } from "./sim/consist.ts";
-export type {
   GearBox,
   GearCoupler,
   GearModelView,
@@ -113,9 +102,8 @@ export type {
   RunningGearSource,
 } from "./running-gear/running-gear-editor.ts";
 export { exactLduText } from "./running-gear/running-gear-editor.ts";
-export type { ISimClient, SimTickCost } from "./sim/sim-client.ts";
+export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
-export type { SimBenchResult } from "@brr/sim";
 export { MM_PER_STUD, STUD_LDU } from "@brr/math";
 export {
   DEFAULT_MAX_OVERHANG_MM,
@@ -145,17 +133,13 @@ export type {
 export {
   RUNNING_GEAR,
   BOM_SERVICE,
-  CITY_SCENE,
   CATALOG_SEARCH,
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
-  LAYOUT_SCENE,
   MODEL_IMPORTER,
   MODEL_SCENE,
-  PART_DISPLAY_SCENE,
-  RUN_SCENE,
   SIM_CLIENT,
   TRACK_SCENE,
   TRAIN_PLAY,

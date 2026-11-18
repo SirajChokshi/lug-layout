@@ -961,45 +961,9 @@ footer a {
   color: #b0141c;
 }
 
-.gear-panel {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  bottom: 84px;
-  width: 520px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 0.94);
-  color: #1b2a34;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
-}
-
-.gear-panel h2 {
-  margin: 0 0 6px;
-  font-size: 15px;
-}
-
 .gear-panel select {
   width: 100%;
   margin-bottom: 6px;
-}
-
-.gear-panel dl div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.gear-panel dt {
-  color: #556;
-}
-
-.gear-panel dd {
-  margin: 0;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 .gear-view {
@@ -1037,10 +1001,8 @@ footer a {
   font-variant-numeric: tabular-nums;
 }
 
-.gear-hint,
-.gear-note {
+.gear-panel p {
   margin: 4px 0;
-  color: #556;
 }
 
 .gear-actions {

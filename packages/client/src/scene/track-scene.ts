@@ -1,10 +1,14 @@
-import { PART_BUNDLE_LOADER, type IPartBundleLoader, type PartBundle } from "@brr/catalog";
+import {
+  PART_BUNDLE_LOADER,
+  type IPartBundleLoader,
+  type PartBundle,
+  type PartShapeAsset,
+} from "@brr/catalog";
 import type { BundleLod, TrackPiece } from "@brr/schema/bundle";
 import { TrackGraph, type TrackLayout } from "@brr/domain";
 import { CHUNK_LDU, chunkKey, chunkOf, PLATE_LDU, STUD_LDU, zeta16ToStuds } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
-import { plateDepthBelowOrigin } from "./part-footprint.ts";
 import type { ChunkPartInstances } from "./placements.ts";
 import { withStuds } from "./stud-stream.ts";
 import { buildTrackPlan } from "./track-plan.ts";
@@ -35,6 +39,16 @@ interface PlacedPart {
   readonly y: number;
   readonly z: number;
   readonly angle: number;
+}
+
+function plateDepthBelowOrigin(part: PartShapeAsset): number {
+  const depthLdu = -part.boundsMin[1];
+  if (!Number.isInteger(depthLdu) || depthLdu % PLATE_LDU !== 0) {
+    throw new Error(
+      `${part.id}: depth below origin ${depthLdu} LDU is not a whole number of plates`,
+    );
+  }
+  return depthLdu / PLATE_LDU;
 }
 
 function partPlacement(
@@ -99,7 +113,7 @@ function chunkedInstances(placed: ReadonlyArray<PlacedPart>): Map<number, ChunkP
   return chunks;
 }
 
-export function trackChunks(
+function trackChunks(
   layout: TrackLayout,
   catalogPieces: ReadonlyArray<TrackPiece>,
   bundle: PartBundle,
@@ -113,12 +127,12 @@ export function trackChunks(
   }
   const chunks: KeyedChunk[] = [];
   for (const [key, instances] of chunkedInstances(placed)) {
-    chunks.push({ key, instances: withStuds(instances, bundle.parts, colors, undefined) });
+    chunks.push({ key, instances: withStuds(instances, bundle.parts, colors) });
   }
   return chunks;
 }
 
-export function summarizeTrack(
+function summarizeTrack(
   plan: string,
   graph: TrackGraph,
   layout: TrackLayout,

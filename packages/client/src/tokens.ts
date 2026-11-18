@@ -9,25 +9,16 @@ import type { IEditor } from "./edit/editor.ts";
 import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
-import type { ICityScene } from "./scene/city-scene.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
 import type { IRunningGear } from "./running-gear/running-gear-editor.ts";
 import type { IImportScene } from "./scene/import-scene.ts";
-import type { ILayoutScene } from "./scene/layout-scene.ts";
 import type { IModelScene } from "./scene/model-scene.ts";
-import type { IRunScene } from "./scene/run-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
-import type { IViewerScene } from "./scene/viewer-scene.ts";
 import type { ISimClient } from "./sim/sim-client.ts";
 import type { ITrainPlay } from "./play/train-play.ts";
 
-export const PART_DISPLAY_SCENE: ServiceIdentifier<IViewerScene> = Symbol.for(
-  "brr.client.PartDisplayScene",
-);
 export const MODEL_SCENE: ServiceIdentifier<IModelScene> = Symbol.for("brr.client.ModelScene");
 export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.client.TrackScene");
-export const CITY_SCENE: ServiceIdentifier<ICityScene> = Symbol.for("brr.client.CityScene");
-export const LAYOUT_SCENE: ServiceIdentifier<ILayoutScene> = Symbol.for("brr.client.LayoutScene");
 export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor");
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
@@ -45,7 +36,6 @@ export const MODEL_IMPORTER: ServiceIdentifier<IModelImporter> = Symbol.for(
   "brr.client.ModelImporter",
 );
 export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.client.ImportScene");
-export const RUN_SCENE: ServiceIdentifier<IRunScene> = Symbol.for("brr.client.RunScene");
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");

@@ -20,35 +20,27 @@ import { Editor } from "./edit/editor.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { BomService } from "./bom/bom-service.ts";
-import { CityScene } from "./scene/city-scene.ts";
 import { ImportScene } from "./scene/import-scene.ts";
-import { LayoutScene } from "./scene/layout-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
-import { PartDisplayScene } from "./scene/part-display-scene.ts";
 import { IndexedDbRunningGearOverrideStore } from "./running-gear/override-store.ts";
 import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
-import { RunScene } from "./scene/run-scene.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
 import {
   BOM_SERVICE,
   CATALOG_SEARCH,
-  CITY_SCENE,
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
   IMPORT_WORKER_FACTORY,
-  LAYOUT_SCENE,
   LDRAW_LIBRARY_BASE_URL,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
   PALETTE_THUMBNAILS,
-  PART_DISPLAY_SCENE,
-  RUN_SCENE,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
@@ -60,17 +52,13 @@ import {
 } from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
-  bind(PART_DISPLAY_SCENE).to(PartDisplayScene).inSingletonScope();
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
-  bind(CITY_SCENE).to(CityScene).inSingletonScope();
-  bind(LAYOUT_SCENE).to(LayoutScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();
   bind(TRACK_SCENE).to(TrackScene).inSingletonScope();
-  bind(RUN_SCENE).to(RunScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
