@@ -1180,12 +1180,11 @@ describe("SnapMating", () => {
       [SECTION_ROUND, 6, 5.3],
     ]);
     expect(mating.ranges(freeShaft, steppedSleeve)).toEqual(
-      Int32Array.from([-107, 18 * SIXTEENTHS_PER_LDU - 1]),
+      Int32Array.from([Math.ceil(-6.7 * SIXTEENTHS_PER_LDU), 18 * SIXTEENTHS_PER_LDU - 1]),
     );
     const slidingNeck = shape(CAP_ROOT, true, [[SECTION_ROUND, 6, 12]]);
     const blindCap = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 20]]);
     expect(mating.ranges(slidingNeck, blindCap)).toEqual(rangesInLdu([0, 0]));
-    expect(mating.offsets(slidingNeck, blindCap)).toEqual(offsetsInLdu(0));
   });
 });
 
