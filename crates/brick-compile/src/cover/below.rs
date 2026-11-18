@@ -342,7 +342,40 @@ impl Prepared {
         }
     }
 
+    fn keeps_depth_between(&self) -> bool {
+        let widest = (self.normal[0] * self.normal[0] + self.normal[1] * self.normal[1]).sqrt();
+        let required = FLOAT_ERROR_BOUND_LDU * self.face.double_area;
+        self.depth.abs() - HIT_EPSILON * widest >= 2.0 * required
+    }
+
+    fn cover_between(&self, slopes: &[(f64, f64)], pending: u64) -> (u64, Clearance) {
+        let mut rest = pending;
+        let first_certified = |rest: &mut u64, step_of: fn(u64) -> usize| {
+            while *rest != 0 {
+                let step = step_of(*rest);
+                *rest &= !(1 << step);
+                if let Some(clearance) = self.rigid_certify(slopes[step]) {
+                    return Some((step, clearance));
+                }
+            }
+            None
+        };
+        let lowest = |bits: u64| bits.trailing_zeros() as usize;
+        let highest = |bits: u64| (u64::BITS - 1 - bits.leading_zeros()) as usize;
+        let Some((low, low_clearance)) = first_certified(&mut rest, lowest) else {
+            return (0, Clearance::UNBOUNDED);
+        };
+        let Some((high, high_clearance)) = first_certified(&mut rest, highest) else {
+            return (1 << low, low_clearance);
+        };
+        let between = (u64::MAX << low) & (u64::MAX >> (u64::BITS as usize - 1 - high));
+        (pending & between, low_clearance.tightest(&high_clearance))
+    }
+
     fn cover(&self, slopes: &[(f64, f64)], pending: u64) -> (u64, Clearance) {
+        if self.rigid && pending.count_ones() > 2 && self.keeps_depth_between() {
+            return self.cover_between(slopes, pending);
+        }
         let mut covered = 0;
         let mut tightest = Clearance::UNBOUNDED;
         let mut steps = pending;
@@ -746,6 +779,13 @@ impl<'m, 'a> BelowCertifier<'m, 'a> {
         triangle: usize,
         pending: u64,
     ) -> Option<(u64, Clearance)> {
+        let (covered, clearance) = self
+            .prepare(fan, instance, triangle)?
+            .cover(&self.slopes, pending);
+        (covered != 0).then_some((covered, clearance))
+    }
+
+    fn prepare(&self, fan: &Fan, instance: usize, triangle: usize) -> Option<Prepared> {
         let Fan { origin, radial, up } = *fan;
         let model = self.model;
         let placed = model.placed[instance].as_ref()?;
@@ -766,7 +806,7 @@ impl<'m, 'a> BelowCertifier<'m, 'a> {
         let (radial, up) = (linear(radial), linear(up));
         let pair = |v: Vec3| [dot(radial, v), dot(up, v)];
         let lengths = [dot(radial, radial), dot(radial, up), dot(up, up)];
-        let prepared = Prepared {
+        Some(Prepared {
             face: Face::of(points),
             rigid: (lengths[0] - 1.0).abs() <= UNIT_SCALE_BOUND
                 && lengths[1].abs() <= UNIT_SCALE_BOUND
@@ -779,9 +819,7 @@ impl<'m, 'a> BelowCertifier<'m, 'a> {
             across: pair(cross(edge2, offset)),
             turn: pair(turn),
             depth: dot(edge2, turn),
-        };
-        let (covered, clearance) = prepared.cover(&self.slopes, pending);
-        (covered != 0).then_some((covered, clearance))
+        })
     }
 
     fn exact_walk(&mut self, origin: Vec3, direction: Vec3, stud: &BelowStud) -> Verdict {
@@ -1166,6 +1204,162 @@ mod tests {
             "{spans} steps certified at both end heights, {near_bound} within {NEAR_BOUND_LDU} LDU of the bound"
         );
         assert_eq!(middle_refusals, 0);
+    }
+
+    #[test]
+    fn a_witness_certified_at_two_elevations_blocks_every_elevation_between() {
+        let opacity = Opacity::new([CLEAR]);
+        let mut scene = Scene { state: 2027 };
+        let (mut spans, mut near_bound, mut middle_refusals, mut stretched) = (0, 0, 0, 0);
+        for _ in 0..WITNESS_SCENES {
+            let mut t = Vec::new();
+            let points = [0, 1, 2].map(|_| around(&mut scene, WITNESS_REACH_LDU));
+            triangle(&mut t, points);
+            let solids = [PartSolid::from_mesh(&mesh::build(&t, &[]))];
+            let far = around(&mut scene, FAR_LDU);
+            let stud = turned(&mut scene, [1.0; 3], far);
+            let frame = StudFrame::of(&stud);
+            let scale = match scene.next(3) {
+                0 => [1.0; 3],
+                1 => [-1.0, 1.0, 1.0],
+                _ => [STRETCH_X, 1.0, STRETCH_Z],
+            };
+            let offset = around(&mut scene, WITNESS_REACH_LDU);
+            let at = [0, 1, 2].map(|axis| frame.base[axis] + offset[axis]);
+            let witness = turned(&mut scene, scale, at);
+            let instances = [CoverInstance {
+                matrix: &witness,
+                color: OPAQUE,
+                part: 0,
+                studs: &[],
+            }];
+            let boxes = [super::super::world_box(&instances[0], &solids[0])];
+            let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
+            let mut certifier = BelowCertifier::new(&model, STUD);
+            certifier.radials = frame.radials();
+            for radial in 0..certifier.radials.len() {
+                let first = radial * BELOW_HEIGHT_STEPS;
+                for index in [first, first + BELOW_HEIGHT_STEPS - 1] {
+                    let Some(prepared) = certifier.prepare(&certifier.fan_at(&frame, index), 0, 0)
+                    else {
+                        continue;
+                    };
+                    let slopes = &certifier.slopes;
+                    let (claimed, recorded) = prepared.cover(slopes, ALL_STEPS);
+                    let least_recorded = rooms(&recorded).fold(f64::INFINITY, f64::min);
+                    for step in (0..BELOW_ELEVATION_STEPS).filter(|s| claimed & (1 << s) != 0) {
+                        let (origin, direction) =
+                            certifier.ray(&frame, index * BELOW_ELEVATION_STEPS + step);
+                        assert!(
+                            model
+                                .search(&Segment::new(origin, direction, BELOW_REACH_LDU))
+                                .is_some(),
+                            "fan {index}, step {step}: claimed by a cover but not blocked"
+                        );
+                        match prepared.certify(slopes[step]) {
+                            Some(own) => assert!(
+                                rooms(&own)
+                                    .zip(rooms(&recorded))
+                                    .all(|(room, kept)| room >= kept - AFFINE_SLACK_LDU),
+                                "fan {index}, step {step}: a cover records more room than the step has"
+                            ),
+                            None => assert!(least_recorded < AFFINE_SLACK_LDU),
+                        }
+                    }
+                    let alone: u64 = (0..BELOW_ELEVATION_STEPS)
+                        .filter(|&step| prepared.certify(slopes[step]).is_some())
+                        .fold(0, |bits, step| bits | 1 << step);
+                    if !prepared.rigid {
+                        assert_eq!(claimed, alone);
+                        stretched += alone.count_ones();
+                        continue;
+                    }
+                    if alone.count_ones() < 2 || !prepared.keeps_depth_between() {
+                        assert_eq!(claimed, alone);
+                        continue;
+                    }
+                    let (low, high) = (
+                        alone.trailing_zeros(),
+                        u64::BITS - 1 - alone.leading_zeros(),
+                    );
+                    let between = (u64::MAX << low) & (u64::MAX >> (u64::BITS - 1 - high));
+                    assert_eq!(claimed, between, "fan {index}: claims exactly the steps between the first and last that certify alone");
+                    spans += 1;
+                    near_bound += usize::from(least_recorded < NEAR_BOUND_LDU);
+                    middle_refusals += (between & !alone).count_ones();
+                }
+            }
+        }
+        assert!(
+            spans > 1000 && near_bound > 10 && stretched > 100,
+            "{spans} spans, {near_bound} within {NEAR_BOUND_LDU} LDU of the bound, {stretched} stretched steps"
+        );
+        assert_eq!(middle_refusals, 0);
+    }
+
+    #[test]
+    fn a_span_never_claims_an_elevation_too_close_to_the_face_to_certify() {
+        let (low, middle, high) = (0, BELOW_ELEVATION_STEPS / 2, BELOW_ELEVATION_STEPS - 1);
+        let opacity = Opacity::new([CLEAR]);
+        let tilt = |y: f64| {
+            let (rise, run) = (-BELOW_ELEVATION_STEP_DEGREES * (middle + 1) as f64)
+                .to_radians()
+                .sin_cos();
+            let turn = (-(rise.atan2(run) + std::f64::consts::FRAC_PI_2)).sin_cos();
+            Affine {
+                m: [
+                    turn.1, -turn.0, 0.0, 0.0, turn.0, turn.1, 0.0, y, 0.0, 0.0, 1.0, 0.0,
+                ],
+            }
+        };
+        let face_height = -10.0;
+        let gap = FLOAT_ERROR_BOUND_LDU + 0.85 * HIT_EPSILON;
+        let fan_origin = |stud: &Affine| {
+            let frame = StudFrame::of(stud);
+            let placeholder = [PartSolid::from_mesh(&mesh::build(&[], &[]))];
+            let none: [CoverInstance; 0] = [];
+            let empty = ModelSolids::new(&none, &[], &placeholder, &opacity);
+            let mut probe = BelowCertifier::new(&empty, STUD);
+            probe.radials = frame.radials();
+            probe.fan_at(&frame, 0).origin
+        };
+        let unlifted = fan_origin(&tilt(0.0));
+        let stud = tilt(face_height + gap - unlifted[1]);
+        let origin = fan_origin(&stud);
+        let [x, z] = [origin[0].round(), origin[2].round()];
+        let mut t = Vec::new();
+        triangle(
+            &mut t,
+            [
+                [x - WITNESS_REACH_LDU, face_height, z - WITNESS_REACH_LDU],
+                [x + WITNESS_REACH_LDU, face_height, z - WITNESS_REACH_LDU],
+                [x, face_height, z + WITNESS_REACH_LDU],
+            ],
+        );
+        let solids = [PartSolid::from_mesh(&mesh::build(&t, &[]))];
+        let identity = Affine::IDENTITY;
+        let instances = [CoverInstance {
+            matrix: &identity,
+            color: OPAQUE,
+            part: 0,
+            studs: &[],
+        }];
+        let boxes = [super::super::world_box(&instances[0], &solids[0])];
+        let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
+        let frame = StudFrame::of(&stud);
+        let mut certifier = BelowCertifier::new(&model, STUD);
+        certifier.radials = frame.radials();
+        let prepared = certifier
+            .prepare(&certifier.fan_at(&frame, 0), 0, 0)
+            .expect("an opaque certifiable face");
+        let slopes = &certifier.slopes;
+        assert!(prepared.rigid);
+        assert!(prepared.rigid_certify(slopes[low]).is_some());
+        assert!(prepared.rigid_certify(slopes[high]).is_some());
+        assert!(prepared.rigid_certify(slopes[middle]).is_none());
+        assert!(!prepared.keeps_depth_between());
+        let (covered, _) = prepared.cover(slopes, ALL_STEPS);
+        assert_eq!(covered & (1 << middle), 0);
     }
 
     #[test]
