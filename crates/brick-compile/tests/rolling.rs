@@ -28,6 +28,7 @@ struct Band {
     oblique_top: f64,
     high_shift: Point,
     high_wobble: f64,
+    missing: &'static [usize],
 }
 
 impl Band {
@@ -57,6 +58,7 @@ impl Band {
             oblique_top: 0.0,
             high_shift: [0.0; 3],
             high_wobble: 0.0,
+            missing: &[],
         }
     }
 
@@ -126,7 +128,7 @@ impl Band {
 
     fn lines(&self) -> String {
         let mut out = String::new();
-        for k in 0..self.drawn {
+        for k in (0..self.drawn).filter(|k| !self.missing.contains(k)) {
             let (a, b) = (self.angle(k), self.angle(k + 1));
             let low = |angle| self.point(self.from, self.radii[0], angle);
             let high = |index: usize| {
@@ -267,6 +269,15 @@ fn custom_wheel() -> String {
         oblique_top: 0.25,
         ..Band::along(0, at(0.0, -240.0, 0.0), 105.0, 110.0, [8.0, 8.0])
     };
+    let two_arcs = Band {
+        missing: &[7, 15],
+        ..Band::along(0, at(0.0, -280.0, 0.0), 120.0, 125.0, [8.0, 8.0])
+    };
+    let oblique_cut_above_one_arc = Band {
+        drawn: 7,
+        oblique_top: 0.25,
+        ..Band::along(0, at(0.0, -280.0, 0.0), 125.0, 130.0, [8.0, 8.0])
+    };
     let alternate_meridians_cut = Band::along(0, at(0.0, -160.0, 0.0), 60.0, 70.0, [8.0, 8.0]);
     let read_before_an_oblique_cut = Band::along(0, at(0.0, -80.0, 0.0), 40.0, 45.0, [8.0, 8.0]);
     let oblique_cut_after_a_read_band = Band {
@@ -302,6 +313,8 @@ fn custom_wheel() -> String {
         notched_and_cut_on_every_meridian,
         notched_before_an_oblique_cut,
         oblique_cut_after_a_notched_band,
+        two_arcs,
+        oblique_cut_above_one_arc,
         read_before_an_oblique_cut,
         oblique_cut_after_a_read_band,
         tilted,
@@ -420,6 +433,14 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
             },
             {
                 "reason": "partial",
+                "axis": 0,
+                "at": [4480, 0],
+                "radii": [128, 128],
+                "from": 1920,
+                "to": 2000
+            },
+            {
+                "reason": "partial",
                 "axis": 2,
                 "at": [-1600, 0],
                 "radii": [null, 160],
@@ -466,6 +487,14 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "radii": [128, null],
                 "from": 1600,
                 "to": 1792
+            },
+            {
+                "reason": "irregular",
+                "axis": 0,
+                "at": [4480, 0],
+                "radii": [128, null],
+                "from": 1920,
+                "to": 2112
             },
             { "reason": "irregular", "axis": 1, "radii": [160, 160], "from": 0, "to": 128 },
             {
