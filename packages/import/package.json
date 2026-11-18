@@ -7,7 +7,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:bundle-models": "IMPORT_EVERY_BUNDLE_MODEL=1 vitest run src/model-import.test.ts --testNamePattern \"every bundle model, imported\""
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",
