@@ -4,7 +4,6 @@ import type { SimScenario, SimSession, SimSessionFactory } from "./sim-session.t
 import { SIM_TICK_HZ } from "./simulation.ts";
 
 export interface LoadedSession {
-  readonly scenario: SimScenario;
   readonly session: SimSession;
   readonly loaded: SimLoaded;
 }
@@ -20,7 +19,6 @@ export function loadSession(createSession: SimSessionFactory, load: SimLoad): Lo
   };
   const session = createSession(scenario);
   return {
-    scenario,
     session,
     loaded: {
       layout: session.layout,
