@@ -6,8 +6,9 @@ on:
     branches: [main]
 
 jobs:
-  check:
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -59,12 +60,68 @@ jobs:
         with:
           path: tools/asset-pipeline/dist/bundle
           key: ${{ steps.bundle-cache.outputs.cache-primary-key }}
-      - run: pnpm e2e
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: bundle-key
+        run: |
+          manifest_file=$(node tools/asset-pipeline/src/cli.ts manifest-file)
+          input_key=${manifest_file#manifest.}
+          echo "input-key=${input_key%.json}" >> "$GITHUB_OUTPUT"
+      - id: bundle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: tools/asset-pipeline/dist/bundle
+          key: part-bundle-${{ steps.bundle-key.outputs.input-key }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - uses: dtolnay/rust-toolchain@master
+        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        with:
+          toolchain: 1.100.0
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/ldraw
+            .cache/ldraw-audit
+            .cache/ldcad-shadow
+            .cache/omr
+            .cache/catalog
+          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: e2e-report
+          name: e2e-report-${{ matrix.shard }}
           path: |
             tools/e2e/playwright-report
             tools/e2e/test-results
           retention-days: 7
+
+  check:
+    if: ${{ always() }}
+    needs: [verify, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          VERIFY: ${{ needs.verify.result }}
+          E2E: ${{ needs.e2e.result }}
+        run: |
+          echo "verify: $VERIFY, e2e: $E2E"
+          test "$VERIFY" = success && test "$E2E" = success
