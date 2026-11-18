@@ -85,12 +85,19 @@ function grid(
 
 function columns(width: number, depth: number, bottom: number, top: number): FrozenVolumes {
   const count = width * depth;
-  return FrozenVolumes.copyOf({
-    count,
-    cellX: Int32Array.from({ length: count }, (_, c) => c % width),
-    cellZ: Int32Array.from({ length: count }, (_, c) => Math.floor(c / width)),
-    bottomLdu: new Int32Array(count).fill(bottom),
-    topLdu: new Int32Array(count).fill(top),
+  return FrozenVolumes.ofPlaceable({
+    cells: {
+      cellX0: 0,
+      cellZ0: 0,
+      width,
+      depth,
+      columnBottom: new Int16Array(count),
+      columnTop: new Int16Array(count).fill(top / PLATE_LDU),
+    },
+    slabBoxes:
+      bottom < 0
+        ? Float32Array.of(0, bottom, 0, width * STUD_LDU, 0, depth * STUD_LDU)
+        : new Float32Array(0),
   });
 }
 

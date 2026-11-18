@@ -2,9 +2,19 @@ import { EMPTY_COLUMN } from "@brr/catalog";
 import type { CellVolumes } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { BOX_FLOATS } from "../edit/local-box.ts";
-import type { Placeable, PlaceableCells } from "../edit/placeable.ts";
+import type { PlaceableCells } from "../edit/placeable.ts";
 
-function slabBottoms(cells: PlaceableCells, slabBoxes: Float32Array): Float64Array {
+type ColumnCells = Pick<
+  PlaceableCells,
+  "cellX0" | "cellZ0" | "width" | "depth" | "columnBottom" | "columnTop"
+>;
+
+export interface PlaceableColumns {
+  readonly cells: ColumnCells;
+  readonly slabBoxes: Float32Array;
+}
+
+function slabBottoms(cells: ColumnCells, slabBoxes: Float32Array): Float64Array {
   const bottoms = new Float64Array(cells.width * cells.depth);
   for (let b = 0; b < slabBoxes.length; b += BOX_FLOATS) {
     const i0 = Math.max(0, Math.floor((slabBoxes[b] ?? 0) / STUD_LDU) - cells.cellX0);
@@ -20,10 +30,6 @@ function slabBottoms(cells: PlaceableCells, slabBoxes: Float32Array): Float64Arr
     }
   }
   return bottoms;
-}
-
-function copied(values: ArrayLike<number>, count: number): Int32Array {
-  return Int32Array.from({ length: count }, (_, c) => values[c] ?? 0);
 }
 
 export class FrozenVolumes implements CellVolumes {
@@ -61,17 +67,7 @@ export class FrozenVolumes implements CellVolumes {
     return this.#topLdu;
   }
 
-  static copyOf(cells: CellVolumes): FrozenVolumes {
-    return new FrozenVolumes(
-      cells.count,
-      copied(cells.cellX, cells.count),
-      copied(cells.cellZ, cells.count),
-      copied(cells.bottomLdu, cells.count),
-      copied(cells.topLdu, cells.count),
-    );
-  }
-
-  static ofPlaceable(placeable: Placeable): FrozenVolumes {
+  static ofPlaceable(placeable: PlaceableColumns): FrozenVolumes {
     const { cells, slabBoxes } = placeable;
     const slab = slabBottoms(cells, slabBoxes);
     let count = 0;
