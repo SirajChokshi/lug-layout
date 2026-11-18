@@ -5,7 +5,7 @@ import {
   compareExactDecimal,
   conjugateZeta16,
   exactDecimalEquals,
-  exactDecimalFromInteger,
+  exactDecimal,
   formatExactDecimal,
   multiplyExactDecimal,
   parseExactDecimal,
@@ -161,7 +161,7 @@ export function measureRails(
   sectionX: number,
 ): RailMeasurement {
   const polygons = exactPolygons(library, part, false);
-  const section = exactDecimalFromInteger(BigInt(sectionX));
+  const section = exactDecimal(BigInt(sectionX), 0);
   const vertical = exactExtent(polygons, 1);
   const railTopY = vertical.from;
   const railHeads = mergeExactIntervals(

@@ -1,7 +1,7 @@
 import {
   addExactDecimal,
   EXACT_DECIMAL_ZERO,
-  exactDecimalFromInteger,
+  exactDecimal,
   multiplyExactDecimal,
   parseExactDecimal,
   type ExactDecimal,
@@ -18,7 +18,7 @@ export interface ExactPolygon {
 }
 
 const SUBFILE_NUMBER_COUNT = 12;
-const ONE = exactDecimalFromInteger(1n);
+const ONE = exactDecimal(1n, 0);
 const EXACT_IDENTITY: ExactAffine = [
   ONE,
   EXACT_DECIMAL_ZERO,

@@ -1,5 +1,5 @@
 import {
-  isCanonicalExactDecimal,
+  isCanonicalExactDecimalText,
   isCanonicalExactRationalText,
   pose16,
   ZETA16_COEFFICIENT_COUNT,
@@ -25,7 +25,7 @@ const Matrix = v.pipe(v.array(Finite), v.length(MATRIX_FLOATS));
 
 export const ExactDecimalText = v.pipe(
   v.string(),
-  v.check(isCanonicalExactDecimal, "must be an exact decimal written canonically"),
+  v.check(isCanonicalExactDecimalText, "must be an exact decimal written canonically"),
   v.description(
     "an exact decimal in LDU, written canonically: an optional minus, the integer digits, and a fractional part with no trailing zeros; read with @brr/math parseExactDecimal",
   ),

@@ -104,6 +104,17 @@ export function multiplyExactRational(a: ExactRational, b: ExactRational): Exact
   return exactRational(a.numerator * b.numerator, a.denominator * b.denominator);
 }
 
+export function divideExactRational(
+  dividend: ExactRational,
+  divisor: ExactRational,
+): ExactRational {
+  if (divisor.numerator === 0n) throw new Error("an exact rational can't be divided by zero");
+  return exactRational(
+    dividend.numerator * divisor.denominator,
+    dividend.denominator * divisor.numerator,
+  );
+}
+
 export function meanExactRational(a: ExactRational, b: ExactRational): ExactRational {
   return exactRational(
     a.numerator * b.denominator + b.numerator * a.denominator,
@@ -125,8 +136,9 @@ export function formatExactRational(value: ExactRational): ExactRationalText {
 }
 
 export function isCanonicalExactRationalText(text: ExactRationalText): boolean {
+  const numeratorDigits = text.numerator.replace(/^-/u, "").length;
   if (
-    text.numerator.length > MAX_TEXT_DIGITS + 1 ||
+    numeratorDigits > MAX_TEXT_DIGITS ||
     text.denominator.length > MAX_TEXT_DIGITS ||
     !INTEGER_TEXT.test(text.numerator) ||
     !POSITIVE_INTEGER_TEXT.test(text.denominator)

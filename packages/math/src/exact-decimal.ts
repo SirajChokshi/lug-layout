@@ -11,6 +11,13 @@ const MAX_EXPONENT_MAGNITUDE = 1100;
 
 export const EXACT_DECIMAL_ZERO: ExactDecimal = { coefficient: 0n, places: 0 };
 
+export function exactDecimal(coefficient: bigint, places: number): ExactDecimal {
+  if (!Number.isSafeInteger(places) || places < 0) {
+    throw new Error(`${places} is not a count of decimal places`);
+  }
+  return normalized(coefficient, places);
+}
+
 function normalized(coefficient: bigint, places: number): ExactDecimal {
   let reduced = coefficient;
   let remaining = places;
@@ -57,6 +64,10 @@ export function parseExactDecimal(text: string): ExactDecimal {
     );
   }
   const places = parts.fractionDigits - parts.shift;
+  const significant = parts.digits.replace(/^0+/u, "");
+  if (places < 0 && significant.length - places > MAX_LITERAL_DIGITS) {
+    throw new Error(`"${text}" writes canonically with more than ${MAX_LITERAL_DIGITS} digits`);
+  }
   const magnitude = BigInt(parts.digits) * (places < 0 ? TEN ** BigInt(-places) : 1n);
   const value = normalized(parts.negative ? -magnitude : magnitude, Math.max(places, 0));
   if (canonicalDigits(value) > MAX_LITERAL_DIGITS) {
@@ -70,10 +81,6 @@ function canonicalDigits(value: ExactDecimal): number {
   return Math.max(magnitude.toString().length, value.places + 1);
 }
 
-export function exactDecimalFromInteger(value: bigint): ExactDecimal {
-  return { coefficient: value, places: 0 };
-}
-
 export function formatExactDecimal(value: ExactDecimal): string {
   const negative = value.coefficient < 0n;
   const digits = (negative ? -value.coefficient : value.coefficient)
@@ -84,7 +91,7 @@ export function formatExactDecimal(value: ExactDecimal): string {
   return `${negative ? "-" : ""}${whole}${fraction === "" ? "" : `.${fraction}`}`;
 }
 
-export function isCanonicalExactDecimal(text: string): boolean {
+export function isCanonicalExactDecimalText(text: string): boolean {
   if (text === "-0" || !CANONICAL_DECIMAL.test(text)) return false;
   return text.replace(/\D/gu, "").length <= MAX_LITERAL_DIGITS;
 }

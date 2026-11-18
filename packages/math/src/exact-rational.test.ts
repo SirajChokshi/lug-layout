@@ -3,6 +3,7 @@ import { compareExactDecimal, parseExactDecimal } from "./exact-decimal.ts";
 import {
   addExactRational,
   compareExactRational,
+  divideExactRational,
   exactRational,
   formatExactRational,
   meanExactRational,
@@ -90,6 +91,21 @@ describe("exact rationals", () => {
     ).toBe(true);
   });
 
+  it("interpolate a cone's radius at a rail head edge exactly", () => {
+    const [from, to] = [fromDecimal("46.5"), exactRationalFromSixteenths(52 * 16)];
+    const [atFrom, atTo] = [exactRationalFromSixteenths(21 * 16), fromDecimal("20.5")];
+    const along = divideExactRational(
+      subtractExactRational(fromDecimal("46.9"), from),
+      subtractExactRational(to, from),
+    );
+    const radius = addExactRational(
+      atFrom,
+      multiplyExactRational(subtractExactRational(atTo, atFrom), along),
+    );
+    expect(formatExactRational(radius)).toEqual({ numerator: "1153", denominator: "55" });
+    expect(() => divideExactRational(atFrom, exactRational(0n, 1n))).toThrow("divided by zero");
+  });
+
   it("stay reduced with the sign on the numerator", () => {
     expect(
       formatExactRational(addExactRational(exactRational(1n, 6n), exactRational(1n, 3n))),
@@ -148,7 +164,7 @@ describe("exact rationals", () => {
         ).toBe(compareExactDecimal(asDecimal, parseExactDecimal(text)));
         expect(
           compareExactRational(exactRationalFromFloat64(sixteenths / 16), fromDecimal(text)),
-        ).toBe(compareExactRational(exactRationalFromSixteenths(sixteenths), fromDecimal(text)));
+        ).toBe(compareExactDecimal(asDecimal, parseExactDecimal(text)));
       }
     }
   });

@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   addExactDecimal,
+  exactDecimal,
   compareExactDecimal,
   formatExactDecimal,
-  isCanonicalExactDecimal,
+  isCanonicalExactDecimalText,
   multiplyExactDecimal,
   parseExactDecimal,
   subtractExactDecimal,
@@ -34,6 +35,12 @@ describe("exact decimals", () => {
     expect(written(multiplyExactDecimal(decimal("3.1"), decimal("-15.2")))).toBe("-47.12");
   });
 
+  it("normalize a coefficient and places into one value", () => {
+    expect(exactDecimal(4690n, 2)).toEqual(decimal("46.9"));
+    expect(exactDecimal(0n, 7)).toEqual(decimal("0"));
+    expect(() => exactDecimal(1n, -1)).toThrow("is not a count of decimal places");
+  });
+
   it("compare by value, whatever the written places", () => {
     expect(compareExactDecimal(decimal("46.9"), decimal("46.900"))).toBe(0);
     expect(compareExactDecimal(decimal("-53.1"), decimal("-46.9"))).toBe(-1);
@@ -54,28 +61,28 @@ describe("exact decimals", () => {
     "9".repeat(1101),
   ])("refuse %j, which is not a decimal literal in range", (text) => {
     expect(() => decimal(text)).toThrow("is not a decimal literal");
-    expect(isCanonicalExactDecimal(text)).toBe(false);
+    expect(isCanonicalExactDecimalText(text)).toBe(false);
   });
 
   it("write every value it reads in a form it reads back", () => {
     for (const literal of ["1e-1099", "-9.5e1098", `0.${"0".repeat(1097)}25`]) {
       const canonical = formatExactDecimal(decimal(literal));
-      expect(isCanonicalExactDecimal(canonical)).toBe(true);
+      expect(isCanonicalExactDecimalText(canonical)).toBe(true);
       expect(formatExactDecimal(decimal(canonical))).toBe(canonical);
     }
     expect(() => decimal("1e-1100")).toThrow("writes canonically with more than");
-    expect(isCanonicalExactDecimal("1e-1100")).toBe(false);
-    expect(isCanonicalExactDecimal(`0.${"0".repeat(1099)}1`)).toBe(false);
+    expect(isCanonicalExactDecimalText("1e-1100")).toBe(false);
+    expect(isCanonicalExactDecimalText(`0.${"0".repeat(1099)}1`)).toBe(false);
   });
 
   it("call only the written form canonical", () => {
-    expect(["46.9", "-0.5", "250", "0"].map(isCanonicalExactDecimal)).toEqual([
+    expect(["46.9", "-0.5", "250", "0"].map(isCanonicalExactDecimalText)).toEqual([
       true,
       true,
       true,
       true,
     ]);
-    expect(["46.90", "-0", "+1", ".5", "2.5e2", "007"].map(isCanonicalExactDecimal)).toEqual([
+    expect(["46.90", "-0", "+1", ".5", "2.5e2", "007"].map(isCanonicalExactDecimalText)).toEqual([
       false,
       false,
       false,
