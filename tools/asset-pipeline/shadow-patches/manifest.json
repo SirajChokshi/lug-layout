@@ -284,6 +284,33 @@
       },
       "part": "u9044",
       "status": "unverified"
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "measuredSections",
+      "measured": {
+        "replacedSecs": "R 8 2   A 6 22",
+        "secs": "R 8 2   R 6 16   R 8 3   A 6 3",
+        "title": "Bar  1L Quadruple with Axlehole Hub"
+      },
+      "part": "48723",
+      "snap": 4,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 18] [slide=true] [pos=0 0 12] [ori=1 0 0 0 0 1 0 -1 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 18] [slide=true] [pos=-12 0 0] [ori=0 1 0 0 0 1 1 0 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 18] [slide=true] [pos=0 0 -12] [ori=-1 0 0 0 0 1 0 1 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 18] [slide=true] [pos=12 0 0] [ori=0 -1 0 0 0 1 -1 0 0]",
+          "0 !LDCAD SNAP_CYL [gender=F] [caps=none] [secs=R 8 2   A 6 22] [center=true] [slide=true] [pos=0 2 0]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
     }
   ]
 }

@@ -111,6 +111,13 @@ fn round_frame(span: &ReferenceSpan) -> Option<(Axis, f64)> {
     })
 }
 
+pub(crate) fn coaxial_radius(span: &ReferenceSpan, point: Vec3, direction: Vec3) -> Option<f64> {
+    let (axis, radius) = round_frame(span)?;
+    let parallel = (dot(axis.direction, direction).abs() - 1.0).abs() <= IDENTIFY_LDU;
+    let on_line = length(Axis { point, direction }.off(axis.point)) <= IDENTIFY_LDU;
+    (parallel && on_line).then_some(radius)
+}
+
 fn front_normal(triangle: &Triangle) -> Vec3 {
     let [a, b, c] = triangle.points;
     cross(sub(b, a), sub(c, a))
