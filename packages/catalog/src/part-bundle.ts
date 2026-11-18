@@ -105,6 +105,7 @@ export interface ModelCells {
   readonly footprint: Uint32Array;
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
+  readonly columnBottomLdu: Int32Array;
   readonly columnTop: Int16Array;
 }
 

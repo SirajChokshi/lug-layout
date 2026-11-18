@@ -393,6 +393,7 @@ pub struct ModelCells {
     pub footprint: Vec<usize>,
     pub flat: Vec<usize>,
     pub column_bottom: Vec<i32>,
+    pub column_bottom_ldu: Vec<i32>,
     pub column_top: Vec<i32>,
 }
 
@@ -860,6 +861,7 @@ fn model_cells(
     }
 
     let mut column_bottom = vec![EMPTY_COLUMN; width * depth];
+    let mut column_bottom_ldu = vec![EMPTY_COLUMN; width * depth];
     let mut column_top = vec![EMPTY_COLUMN; width * depth];
     let datum_y = ground_y.unwrap_or(bottom_y);
     let plates = |y: f64| (y - datum_y) / PLATE_LDU;
@@ -868,6 +870,7 @@ fn model_cells(
         let (x0, x1) = overlapping_cells(min[0], max[0], origin[0], width);
         let (z0, z1) = overlapping_cells(min[2], max[2], origin[1], depth);
         let bottom = ((plates(min[1]) - slack).ceil() as i32).max(0);
+        let bottom_ldu = ((min[1] - datum_y + WELD_EPSILON_LDU).floor() as i32).max(0);
         let top = (plates(max[1]) - slack).ceil() as i32;
         for j in z0..z1 {
             for i in x0..x1 {
@@ -876,6 +879,11 @@ fn model_cells(
                     bottom
                 } else {
                     column_bottom[cell].min(bottom)
+                };
+                column_bottom_ldu[cell] = if column_bottom_ldu[cell] == EMPTY_COLUMN {
+                    bottom_ldu
+                } else {
+                    column_bottom_ldu[cell].min(bottom_ldu)
                 };
                 column_top[cell] = column_top[cell].max(top);
             }
@@ -891,6 +899,7 @@ fn model_cells(
         footprint,
         flat,
         column_bottom,
+        column_bottom_ldu,
         column_top,
     }
 }
@@ -1068,6 +1077,11 @@ mod tests {
             cells.column_bottom,
             [0, 0, 1, 1, 0, 0, 1, 1],
             "a part hanging 7.8 LDU up stands on nothing at the datum"
+        );
+        assert_eq!(
+            cells.column_bottom_ldu,
+            [0, 0, 7, 7, 0, 0, 7, 7],
+            "its volume still starts where the part does"
         );
         assert_eq!(cells.column_top, [1, 1, 3, 3, 1, 1, 3, 3]);
     }

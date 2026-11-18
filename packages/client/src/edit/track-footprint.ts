@@ -2,6 +2,7 @@ import type { TrackPartFrame, TrackPlan } from "@brr/schema/bundle";
 import {
   PLAN_TRIANGLE_FLOATS,
   placedPlanCells,
+  planTriangleCells,
   type BaseCells,
   type PlaneTransform,
 } from "@brr/domain";
@@ -41,10 +42,30 @@ export function trackPartTransform(placement: Pose16, frame: TrackPartFrame): Pl
   return { cos: Math.cos(phi), sin: Math.sin(phi), x, z };
 }
 
-export function supportCells(
+export interface PlacedPlan {
+  readonly triangles: Float64Array;
+  readonly cells: BaseCells;
+  readonly support: BaseCells;
+}
+
+export function placedPlan(
+  plan: Float64Array,
   support: Float64Array,
   placement: Pose16,
   frame: TrackPartFrame,
-): BaseCells {
-  return placedPlanCells(support, trackPlanTransform(placement, frame), NO_CLIP_PLANES);
+): PlacedPlan {
+  const transform = trackPlanTransform(placement, frame);
+  const world = new Float64Array(plan.length);
+  const { cos, sin, x, z } = transform;
+  for (let i = 0; i + 1 < plan.length; i += 2) {
+    const lx = plan[i] ?? 0;
+    const lz = plan[i + 1] ?? 0;
+    world[i] = cos * lx - sin * lz + x;
+    world[i + 1] = sin * lx + cos * lz + z;
+  }
+  return {
+    triangles: world,
+    cells: planTriangleCells(world),
+    support: placedPlanCells(support, transform, NO_CLIP_PLANES),
+  };
 }

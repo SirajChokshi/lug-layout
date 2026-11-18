@@ -24,6 +24,7 @@ import {
   TrackDrawing,
   type TrackCommit,
   type TrackFootprint,
+  type TrackHost,
   type TrackSupportProbe,
 } from "./track-drawing.ts";
 
@@ -103,10 +104,13 @@ function grow(extent: Extent, x: number, z: number): void {
   extent.maxZ = Math.max(extent.maxZ, z);
 }
 
-const onBaseplates = (cells: BaseCells): TrackSupport => ({
-  kind: "on-baseplate",
-  cells: cells.count,
-});
+const openTable: TrackHost = {
+  support: (cells: BaseCells): TrackSupport => ({ kind: "on-baseplate", cells: cells.count }),
+  overlap: () => null,
+  neighbours: () => new Set(),
+  laid: () => undefined,
+  relaid: () => undefined,
+};
 
 const container = new Container();
 let drawing: TrackDrawing;
@@ -130,7 +134,7 @@ beforeAll(async () => {
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
   trackBundle = bundle;
-  drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), onBaseplates);
+  drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), openTable);
   drag([180, 190], [260, 190]);
   drag([260, 190], [260, 270]);
   drag([260, 270], [180, 270]);
@@ -208,7 +212,7 @@ it("marks a drag target as joining only when the closure solver finds an exact j
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), onBaseplates);
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), openTable);
   const aim = (from: readonly [number, number], to: readonly [number, number]) => {
     layout.beginDrag(
       from[0] * STUD_LDU,
@@ -243,7 +247,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  const siding = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), onBaseplates);
+  const siding = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), openTable);
   const index = (id: string): number => {
     const part = siding.pieceParts().find((p) => p.piece.id === id);
     if (!part) throw new Error(`${id} is not placeable`);
@@ -293,7 +297,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   expect(siding.joinedPairs()).toBe(8);
   expect(siding.openEnds()).toHaveLength(2);
 
-  const reopened = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), onBaseplates);
+  const reopened = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle), openTable);
   expect(reopened.restore(siding.records()).ok).toBe(true);
   expect(reopened.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
   expect(reopened.joinedPairs()).toBe(8);
@@ -317,12 +321,10 @@ function probeOn(grid: SupportGrid): TrackSupportProbe {
 }
 
 function drawingOn(grid: SupportGrid): TrackDrawing {
-  return new TrackDrawing(
-    trackBundle,
-    trackBundle.parts,
-    new ColorTable(trackBundle),
-    probeOn(grid),
-  );
+  return new TrackDrawing(trackBundle, trackBundle.parts, new ColorTable(trackBundle), {
+    ...openTable,
+    support: probeOn(grid),
+  });
 }
 
 function lay(
