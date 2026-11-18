@@ -111,7 +111,10 @@ export function switchParallelScene(
   return toLdraw("Switch Then Reversed Curve", "placed from measured track-end poses", placements);
 }
 
-export function roadBaseplateScene(plates: ReadonlyArray<BaseplateMeasurement>): string {
+export function roadBaseplateScene(
+  plates: ReadonlyArray<BaseplateMeasurement>,
+  title: string,
+): string {
   const placements: ScenePlacement[] = [];
   let edge = 0;
   for (const plate of plates) {
@@ -120,9 +123,5 @@ export function roadBaseplateScene(plates: ReadonlyArray<BaseplateMeasurement>):
     placements.push({ part: plate.part, transform: translated(IDENTITY, x, z) });
     edge = z + plate.zExtent.to;
   }
-  return toLdraw(
-    "Road Baseplates",
-    "abutted edge to edge using measured plate extents",
-    placements,
-  );
+  return toLdraw(title, "abutted edge to edge using measured plate extents", placements);
 }

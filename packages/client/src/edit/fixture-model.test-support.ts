@@ -1,4 +1,9 @@
-import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import {
+  ASSET_FETCHER,
+  PART_BUNDLE_LOADER,
+  type IAssetFetcher,
+  type IPartBundleLoader,
+} from "@brr/catalog";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { mainThreadModules } from "../client.module.ts";
@@ -20,18 +25,19 @@ function fixtureBundleFetcher(): IAssetFetcher {
   };
 }
 
-export async function fixtureModel(name: string): Promise<Placeable> {
+export function fixtureBundleLoader(): IPartBundleLoader {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fixtureBundleFetcher());
-  const { bundle, model, entry } = await container
-    .get(PART_BUNDLE_LOADER)
-    .loadModel("standard", name);
+  return container.get(PART_BUNDLE_LOADER);
+}
+
+export async function fixtureModel(name: string): Promise<Placeable> {
+  const { bundle, model, entry } = await fixtureBundleLoader().loadModel("standard", name);
   return modelPlaceable(
     `${entry.origin}:${name}`,
     name,
     name,
-    entry.role,
     model,
     { name, source: entry.source, sections: model.sections },
     bundle.parts,

@@ -29,6 +29,7 @@ export interface ImportJob {
   readonly bundlePartIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentColors: ReadonlyArray<number>;
+  readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
 }
 
@@ -297,6 +298,7 @@ export class ModelImportEngine {
       studPrimitives: job.studPrimitives,
       unofficialAllowlist: job.unofficialAllowlist,
       translucentColors: job.translucentColors,
+      tableDepthLdu: job.tableDepthLdu,
       vehicles: job.vehicles,
     };
     const of = HELPER_SLICES * this.helpers.length + PRIMARY_SLICES;

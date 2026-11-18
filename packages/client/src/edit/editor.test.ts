@@ -18,11 +18,19 @@ import {
   type PartShapeRecord,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
+import type {
+  BundleIndex,
+  BundleLod,
+  BundleManifest,
+  BundleModelEntry,
+  CatalogPart,
+} from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
+  INSTANCE_MATRIX_FLOATS,
   type BackendInfo,
   type BufferMemory,
+  type ChunkInstances,
   type ChunkTier,
   type ISceneBackend,
   type LookSettings,
@@ -61,6 +69,7 @@ import type { ImportResult } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY } from "../tokens.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -123,10 +132,16 @@ class InFlightFetcher implements IAssetFetcher {
   }
 }
 
+function importedByUser(entry: BundleModelEntry): BundleModelEntry {
+  return { ...entry, origin: "omr" };
+}
+
 class ModelSubsetLoader implements IPartBundleLoader {
   constructor(
     private readonly loader: IPartBundleLoader,
     private readonly models: ReadonlyArray<string>,
+    private readonly userModels: ReadonlyArray<string> = [],
+    private readonly userLoader: IPartBundleLoader | null = null,
   ) {}
 
   loadManifestFile(): Promise<string> {
@@ -135,7 +150,15 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   async loadIndex(lod: BundleLod): Promise<BundleIndex> {
     const index = await this.loader.loadIndex(lod);
-    return { ...index, models: index.models.filter((m) => this.models.includes(m.name)) };
+    const imported = this.userLoader
+      ? (await this.userLoader.loadIndex(lod)).models
+          .filter((m) => this.userModels.includes(m.name))
+          .map(importedByUser)
+      : [];
+    return {
+      ...index,
+      models: [...index.models.filter((m) => this.models.includes(m.name)), ...imported],
+    };
   }
 
   loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
@@ -146,8 +169,12 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.loadPartShape(lod, part);
   }
 
-  loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
-    return this.loader.loadModelRecord(lod, name);
+  async loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
+    if (!this.userLoader || !this.userModels.includes(name)) {
+      return this.loader.loadModelRecord(lod, name);
+    }
+    const record = await this.userLoader.loadModelRecord(lod, name);
+    return { ...record, entry: importedByUser(record.entry) };
   }
 
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
@@ -214,14 +241,24 @@ class HeadlessBackend implements ISceneBackend {
       look: NO_LOOK,
     };
   }
-  setPalette(): void {}
-  addParts(): void {}
+  readonly partIds: string[] = [];
+  readonly chunks = new Map<number, ChunkInstances>();
+  setPalette(palette: PartPalette): void {
+    this.partIds.splice(0, this.partIds.length, ...palette.detailed.parts.map((part) => part.id));
+  }
+  addParts(parts: ReadonlyArray<PartAsset>): void {
+    this.partIds.push(...parts.map((part) => part.id));
+  }
   setPartMeshes(): void {}
   setFarStuds(): void {}
   setFarModelMesh(): void {}
   setColors(): void {}
-  setChunk(): void {}
-  deleteChunk(): void {}
+  setChunk(key: number, chunk: ChunkInstances): void {
+    this.chunks.set(key, chunk);
+  }
+  deleteChunk(key: number): void {
+    this.chunks.delete(key);
+  }
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
@@ -266,6 +303,7 @@ afterEach(() => {
 async function startEditor(
   models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
+  userModels: ReadonlyArray<string> = [],
 ) {
   const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
@@ -280,7 +318,16 @@ async function startEditor(
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
   const realLoader = container.get(PART_BUNDLE_LOADER);
   if (models !== null) {
-    container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
+    container
+      .rebind(PART_BUNDLE_LOADER)
+      .toConstantValue(
+        new ModelSubsetLoader(
+          realLoader,
+          models,
+          userModels,
+          userModels.length > 0 ? fixtureBundleLoader() : null,
+        ),
+      );
   }
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const editor = container.get(EDITOR);
@@ -1027,6 +1074,102 @@ it.each([
     const outcome = place(held, at[0], at[1]);
 
     expect({ outcome, ghostRefusal }).toEqual(expected);
+  },
+  120_000,
+);
+
+it.each([
+  {
+    name: "a set built on its own baseplates, 10185-1",
+    model: "10185-1",
+    userModels: [],
+    besideX: 640,
+  },
+  {
+    name: "10190-1, its one-stud overhang and tilted hinge reaching over the 3811 from beside it,",
+    model: "10190-1",
+    userModels: [],
+    besideX: -640,
+  },
+  {
+    name: "a user's model of a 3811 beside a road baseplate",
+    model: "baseplate-row",
+    userModels: ["baseplate-row"],
+    besideX: 640,
+  },
+] as const)(
+  "$name lies in the baseplate layer: refused across a 3811 and taken flush beside it",
+  async ({ model, userModels, besideX }) => {
+    const { editor, backend } = await startEditor(
+      [model],
+      new BundleDirectoryFetcher(),
+      userModels,
+    );
+    const held = `omr:${model}`;
+    expect(await editor.prefetch(held)).toBe(true);
+    const place = placer(editor, backend);
+    place(BASEPLATE, 0, 0);
+    const across = place(held, 0, 0);
+    const beside = place(held, besideX, 0);
+
+    expect({ across, placements: beside.placements, poses: posesOf(editor) }).toEqual({
+      across: OVERLAP_REFUSED.outcome,
+      placements: 2,
+      poses: [`${BASEPLATE} 0,0 y0`, `${held} ${besideX},0 y0`],
+    });
+  },
+  120_000,
+);
+
+function placedHeights(backend: HeadlessBackend, partId: string) {
+  const heights = new Set<number>();
+  let instances = 0;
+  for (const chunk of backend.chunks.values()) {
+    for (let i = 0; i < chunk.count; i++) {
+      if (backend.partIds[chunk.partIndex[i] ?? -1] !== partId) continue;
+      instances++;
+      heights.add(chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 7] ?? Number.NaN);
+    }
+  }
+  return { instances, heights: [...heights] };
+}
+
+it.each([
+  {
+    name: "a 3811 and a user's model of a 3811 beside a road baseplate: both lie on the table, top face at 0",
+    part: "ldraw:3811",
+    model: "baseplate-row",
+    topFace: 0,
+  },
+  {
+    name: "a 30225b road baseplate and a user's model of road baseplates: both lie on the table, top face at 0",
+    part: "ldraw:30225b",
+    model: "road-baseplates",
+    topFace: 0,
+  },
+  {
+    name: "a 69958 road plate and a user's model of road plates: studs a plate above the underside keep both on the plate lattice, top face at 16",
+    part: "ldraw:69958",
+    model: "road-plates",
+    topFace: 16,
+  },
+] as const)(
+  "$name",
+  async ({ part, model, topFace }) => {
+    const { editor, backend } = await startEditor([model], new BundleDirectoryFetcher(), [model]);
+    const held = `omr:${model}`;
+    expect(await editor.prefetch(held)).toBe(true);
+    const loose = editor.snapshot().catalog.find((item) => item.group === part)?.id;
+    if (!loose) throw new Error(`${part} is not in the catalog`);
+    const place = placer(editor, backend);
+    place(loose, -1280, 0);
+    place(held, 1280, 0);
+
+    expect({ placements: editor.snapshot().placements, ...placedHeights(backend, part) }).toEqual({
+      placements: 2,
+      instances: 2,
+      heights: [topFace],
+    });
   },
   120_000,
 );

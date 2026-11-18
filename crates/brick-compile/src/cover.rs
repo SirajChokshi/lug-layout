@@ -719,13 +719,23 @@ fn closed_below_all(model: &ModelSolids, candidates: &[BelowStud], shape: StudSh
     closed
 }
 
+fn column_floor_y(underside_y: f64, stud_layer_y: f64, table_depth: f64) -> f64 {
+    let on_table = underside_y + table_depth;
+    if (stud_layer_y - on_table).rem_euclid(PLATE_LDU) == 0.0 {
+        on_table
+    } else {
+        underside_y
+    }
+}
+
 pub fn model_cover(
     instances: &[CoverInstance],
     solids: &[PartSolid],
     opacity: &Opacity,
-    phase: Option<[u32; 2]>,
+    lattice: Option<([u32; 2], f64)>,
     stud: StudShape,
     shard: CoverShard,
+    table_depth: f64,
 ) -> ModelCover {
     let boxes: Vec<[Vec3; 2]> = instances
         .iter()
@@ -773,18 +783,19 @@ pub fn model_cover(
             open_below += 1;
         }
     }
-    let rest_y = instances
+    let underside_y = instances
         .iter()
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
-    let cells = phase.map(|phase| {
+    let cells = lattice.map(|(phase, stud_layer_y)| {
+        let floor_y = column_floor_y(underside_y, stud_layer_y, table_depth);
         model_cells(
             instances,
             &boxes,
             solids,
             &mut coverers,
             aabb,
-            rest_y,
+            [underside_y, floor_y],
             phase,
         )
     });
@@ -965,7 +976,7 @@ fn model_cells(
     solids: &[PartSolid],
     coverers: &mut Coverers,
     aabb: Bounds,
-    bottom_y: f64,
+    [underside_y, bottom_y]: [f64; 2],
     phase: [u32; 2],
 ) -> ModelCells {
     let [phase_x, phase_z] = phase.map(f64::from);
@@ -984,7 +995,7 @@ fn model_cells(
     for j in 0..depth {
         for i in 0..width {
             let cell = j * width + i;
-            let base = [centre(0, i), bottom_y, centre(1, j)];
+            let base = [centre(0, i), underside_y, centre(1, j)];
             match coverers.covers(StudFrame::upright_at(base), None) {
                 None => {}
                 Some((CoverKind::AntiStud, _)) => footprint.push(cell),
@@ -1044,6 +1055,8 @@ mod tests {
     };
     const OPAQUE: u32 = 4;
     const TRANS_CLEAR: u32 = 47;
+    const TABLE_DEPTH: f64 = 4.0;
+    const PHASE: [u32; 2] = [10, 10];
 
     fn quad(out: &mut Vec<Triangle>, [a, b, c, d]: [Vec3; 4]) {
         for points in [[a, b, c], [a, c, d]] {
@@ -1162,7 +1175,7 @@ mod tests {
         solids: &[PartSolid],
         parts: &[(usize, u32, Affine)],
         studs: &[Affine],
-        phase: Option<[u32; 2]>,
+        lattice: Option<([u32; 2], f64)>,
     ) -> ModelCover {
         let instances: Vec<CoverInstance> = parts
             .iter()
@@ -1178,9 +1191,10 @@ mod tests {
             &instances,
             solids,
             &Opacity::new([TRANS_CLEAR]),
-            phase,
+            lattice,
             STUD,
             CoverShard::WHOLE,
+            TABLE_DEPTH,
         )
     }
 
@@ -1421,7 +1435,7 @@ mod tests {
                     (part, OPAQUE, placed_piece(&mut draws))
                 })
                 .collect();
-            let cells = cover_of(&solids, &parts, &[], Some([0, 0]))
+            let cells = cover_of(&solids, &parts, &[], Some(([0, 0], 0.0)))
                 .cells
                 .expect("a phase gives cells");
             let (lowest, highest) = columns_clipping_every_triangle(&solids, &parts, &cells);
@@ -1545,7 +1559,7 @@ mod tests {
         ];
         let identity = Affine::IDENTITY;
         let parts = [(0, OPAQUE, identity), (1, OPAQUE, identity)];
-        let cells = cover_of(&solids, &parts, &[], Some([10, 10]))
+        let cells = cover_of(&solids, &parts, &[], Some((PHASE, 0.0)))
             .cells
             .expect("a phase gives cells");
         assert_eq!([cells.width, cells.depth], [4, 2]);
@@ -1555,7 +1569,40 @@ mod tests {
     }
 
     #[test]
-    fn the_rest_plane_is_the_lowest_transformed_vertex_of_any_part() {
+    fn a_model_whose_studs_sit_the_table_depth_above_its_underside_stands_on_the_table_plane() {
+        let solids = [
+            solid([-40.0, -4.0, -20.0], [40.0, 0.0, 20.0], true, true, -4.0),
+            solid([-40.0, 0.0, -20.0], [0.0, 24.0, 20.0], true, true, 0.0),
+            solid([-40.0, -8.0, -20.0], [40.0, 0.0, 20.0], true, true, -8.0),
+        ];
+        let identity = Affine::IDENTITY;
+        let floor_and_tops = |base: usize, stud_layer_y: f64| {
+            let parts = [(base, OPAQUE, identity), (1, OPAQUE, identity)];
+            let cells = cover_of(&solids, &parts, &[], Some((PHASE, stud_layer_y)))
+                .cells
+                .expect("a phase gives cells");
+            (cells.bottom_y, cells.column_top, cells.flat)
+        };
+        let all_cells: Vec<usize> = (0..8).collect();
+        assert_eq!(
+            floor_and_tops(0, 0.0),
+            (0.0, vec![3, 3, 0, 0, 3, 3, 0, 0], all_cells.clone()),
+            "studs 4 LDU above the underside: the underside meets the table and columns start at the stud plane, while the footprint is still probed at the underside"
+        );
+        assert_eq!(
+            floor_and_tops(0, 24.0).0,
+            0.0,
+            "studs a whole number of plates above that plane put the model on the table too"
+        );
+        assert_eq!(
+            floor_and_tops(2, 0.0),
+            (-8.0, vec![4, 4, 1, 1, 4, 4, 1, 1], all_cells),
+            "studs a whole plate above the underside: the underside stays on the plate lattice"
+        );
+    }
+
+    #[test]
+    fn off_the_table_plane_the_rest_plane_is_the_lowest_transformed_vertex_of_any_part() {
         let solids = [solid(
             [-20.0, -8.0, -20.0],
             [20.0, 0.0, 20.0],
@@ -1570,7 +1617,7 @@ mod tests {
             ],
         };
         let parts = [(0, OPAQUE, Affine::IDENTITY), (0, OPAQUE, tilted)];
-        let cells = cover_of(&solids, &parts, &[], Some([10, 10]))
+        let cells = cover_of(&solids, &parts, &[], Some((PHASE, 0.0)))
             .cells
             .expect("a phase gives cells");
         let lowest = -10.0 - 8.0 * cos - 20.0 * sin;

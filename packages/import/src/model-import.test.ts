@@ -65,6 +65,7 @@ interface Manifest {
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
   readonly compiler: { readonly file: string; readonly vehicles?: CompilerVehicles };
+  readonly tablePlane: { readonly depthBelowTopLdu: number };
   readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
 }
 
@@ -152,6 +153,7 @@ async function importWith(
     translucentColors: manifest.colors
       .filter((color) => color.alpha < OPAQUE_ALPHA)
       .map((color) => color.code),
+    tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
     vehicles: manifest.compiler.vehicles ?? null,
   });
 }

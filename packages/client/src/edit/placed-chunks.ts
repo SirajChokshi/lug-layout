@@ -39,6 +39,7 @@ export interface PlacedModel {
   studCellX(stud: number): number;
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
+  readonly slab: Float64Array;
   rayHit(ray: Float64Array): number;
   worldPartBoxes(): Float64Array;
 }
@@ -326,27 +327,6 @@ function boxesOverlap(a: Float64Array, ao: number, b: Float64Array, bo: number):
   );
 }
 
-function slabBox(
-  placeable: Placeable,
-  pose: LatticePose,
-  yLdu: number,
-  out: Float64Array,
-  to: number,
-): void {
-  const { cellX0, cellZ0, width, depth } = placeable.cells;
-  pose.worldBoxOf(
-    cellX0 * STUD_LDU,
-    -placeable.slabDepthLdu,
-    cellZ0 * STUD_LDU,
-    (cellX0 + width) * STUD_LDU,
-    0,
-    (cellZ0 + depth) * STUD_LDU,
-    yLdu,
-    out,
-    to,
-  );
-}
-
 function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: LatticePose): number {
   const { cells } = placeable;
   let yPlates = 0;
@@ -365,7 +345,7 @@ function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: Lat
 
 class PlacedEntry implements PlacedModel {
   readonly chunks = new TouchedChunks();
-  readonly slab: Float64Array | null;
+  readonly slab: Float64Array;
   readonly box: WorldBox;
   readonly pose: LatticePose;
   readonly x: number;
@@ -390,8 +370,11 @@ class PlacedEntry implements PlacedModel {
     this.tallyParts(chunkOrigins);
     this.tallyStuds(chunkOrigins);
     this.markCells(chunkOrigins);
-    this.slab = placeable.slabDepthLdu > 0 ? new Float64Array(BOX_FLOATS) : null;
-    if (this.slab) slabBox(placeable, this.pose, this.yLdu, this.slab, 0);
+    const slabs = placeable.slabBoxes;
+    this.slab = new Float64Array(slabs.length);
+    for (let b = 0; b < slabs.length; b += BOX_FLOATS) {
+      this.pose.worldBox(slabs, b, this.yLdu, this.slab, b);
+    }
     this.box = this.worldBox();
   }
 
@@ -872,12 +855,19 @@ export class PlacedChunks {
     yPlates: number,
     ignore: PlacedModel | null,
   ): PlacedModel | null {
-    if (placeable.slabDepthLdu <= 0) return null;
-    slabBox(placeable, this.probe.at(x, z, rot), yPlates * PLATE_LDU, scratchBox, 0);
-    for (let e = 0; e < this.slabbed.length; e++) {
-      const entry = this.slabbed[e];
-      if (!entry?.slab || entry === ignore) continue;
-      if (boxesOverlap(scratchBox, 0, entry.slab, 0)) return entry;
+    const slabs = placeable.slabBoxes;
+    const pose = this.probe.at(x, z, rot);
+    const yLdu = yPlates * PLATE_LDU;
+    for (let b = 0; b < slabs.length; b += BOX_FLOATS) {
+      pose.worldBox(slabs, b, yLdu, scratchBox, 0);
+      for (let e = 0; e < this.slabbed.length; e++) {
+        const entry = this.slabbed[e];
+        if (!entry || entry === ignore) continue;
+        const theirs = entry.slab;
+        for (let t = 0; t < theirs.length; t += BOX_FLOATS) {
+          if (boxesOverlap(scratchBox, 0, theirs, t)) return entry;
+        }
+      }
     }
     return null;
   }
@@ -972,7 +962,7 @@ export class PlacedChunks {
       if (chunks.hasFootprint(row)) addTo(this.byFootprintChunk, key, entry);
       if (chunks.hasColumns(row)) addTo(this.byColumnChunk, key, entry);
     }
-    if (entry.slab) this.slabbed.push(entry);
+    if (entry.slab.length > 0) this.slabbed.push(entry);
     entry.stampColumns(this.occupancy, null);
     return entry;
   }

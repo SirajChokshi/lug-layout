@@ -416,11 +416,19 @@ fn run(args: &Args) -> Result<(), String> {
     let ldconfig = library
         .source(LDCONFIG)
         .ok_or("LDConfig.ldr is missing from the LDraw library")?;
+    let geometry: Value = serde_json::from_slice(
+        &fs::read(&args.geometry).map_err(|e| format!("{}: {e}", args.geometry.display()))?,
+    )
+    .map_err(|e| e.to_string())?;
+    let table_depth = geometry["tablePlane"]["depthBelowTopLdu"]
+        .as_f64()
+        .ok_or("geometry.tablePlane.depthBelowTopLdu must be a number")?;
     let mut baker = ModelBaker::new(
         &library,
         stud_primitives.clone(),
         unofficial_allowlist,
         translucent_codes(&parse_ldconfig(ldconfig)),
+        table_depth,
     )
     .map_err(|e| e.to_string())?;
 
@@ -468,10 +476,6 @@ fn run(args: &Args) -> Result<(), String> {
         shapes.push(shape);
     }
 
-    let geometry: Value = serde_json::from_slice(
-        &fs::read(&args.geometry).map_err(|e| format!("{}: {e}", args.geometry.display()))?,
-    )
-    .map_err(|e| e.to_string())?;
     for entry in geometry["trackEnds"]
         .as_array()
         .cloned()
