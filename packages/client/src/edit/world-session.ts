@@ -31,9 +31,9 @@ import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
 import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
+import type { ModelCredit } from "../scene/viewer-scene.ts";
 import { CREDITS, EDITOR_CAMERA, TRADEMARK_DISCLAIMER } from "../tokens.ts";
 import { errorText } from "./error-text.ts";
-import type { PlacedModel } from "./placed-chunks.ts";
 import { creditsForWorld, exportFileName } from "./world-credits.ts";
 
 export type SaveState = "saved" | "saving" | "failed" | "off";
@@ -67,12 +67,12 @@ export interface WorldContents {
   readonly world: World;
   readonly refs: ReadonlyArray<string>;
   readonly track: ReadonlyArray<TrackRecordV1>;
-  readonly placed: ReadonlyArray<Pick<PlacedModel, "placeable">>;
 }
 
 export interface IEditedWorld {
   contents(): WorldContents;
-  check(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue>;
+  placedCredits(): ReadonlyArray<ModelCredit>;
+  validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue>;
   load(shards: ReadonlyArray<WorldShardV1>): Promise<ReadonlyArray<Issue>>;
   clear(): void;
   addImport(file: ImportedFile): Promise<string | null>;
@@ -91,11 +91,11 @@ export interface IWorldFiles {
 
 export interface IWorldSession extends IWorldFiles {
   view(): WorldSessionView;
-  subscribe(listener: (change: Partial<WorldSessionView>) => void): () => void;
+  subscribe(listener: () => void): () => void;
   start(edited: IEditedWorld, bundleVersion: string): Promise<void>;
   placementsEdited(edit: AppliedEdit): void;
   trackEdited(): void;
-  watchView(): void;
+  pollCamera(): void;
   importModelFile(file: ModelFileInput): Promise<ModelFileImport>;
 }
 
@@ -109,7 +109,7 @@ export interface ModelFileImport {
   readonly item: string | null;
 }
 
-const VIEW_SAVE_DELAY_MS = 500;
+const CAMERA_SAVE_DELAY_MS = 500;
 const FIRST_WORLD_NAME = "World 1";
 
 interface OpenWorld {
@@ -122,7 +122,7 @@ interface OpenWorld {
 @injectable()
 export class WorldSession implements IWorldSession {
   readonly worldNameMaxLength = WORLD_NAME_MAX_LENGTH;
-  private readonly listeners = new Set<(change: Partial<WorldSessionView>) => void>();
+  private readonly listeners = new Set<() => void>();
   private state: WorldSessionView = {
     world: null,
     worlds: [],
@@ -135,10 +135,10 @@ export class WorldSession implements IWorldSession {
   private bundleVersion = "";
   private readonly dirty = new DirtyShards();
   private current: OpenWorld | null = null;
-  private viewDirty = false;
-  private lastView: SavedViewV1 | null = null;
+  private cameraDirty = false;
+  private lastCamera: SavedViewV1 | null = null;
   private saveScheduled = false;
-  private viewTimer: ReturnType<typeof setTimeout> | null = null;
+  private cameraSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private fileQueue: Promise<void> = Promise.resolve();
   private creditsView: Promise<CreditsView> | null = null;
   private lease: WorldLease | null = null;
@@ -158,14 +158,14 @@ export class WorldSession implements IWorldSession {
     return this.state;
   }
 
-  subscribe(listener: (change: Partial<WorldSessionView>) => void): () => void {
+  subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  private update(change: Partial<WorldSessionView>): void {
-    this.state = { ...this.state, ...change };
-    for (const listener of this.listeners) listener(change);
+  private update(patch: Partial<WorldSessionView>): void {
+    this.state = { ...this.state, ...patch };
+    for (const listener of this.listeners) listener();
   }
 
   async start(edited: IEditedWorld, bundleVersion: string): Promise<void> {
@@ -220,29 +220,29 @@ export class WorldSession implements IWorldSession {
     }, 0);
   }
 
-  watchView(): void {
-    const view = this.camera.savedView();
-    const last = this.lastView;
+  pollCamera(): void {
+    const saved = this.camera.savedView();
+    const last = this.lastCamera;
     const same =
       last !== null &&
-      last.targetX === view.targetX &&
-      last.targetY === view.targetY &&
-      last.targetZ === view.targetZ &&
-      last.distance === view.distance &&
-      last.yaw === view.yaw &&
-      last.pitch === view.pitch;
+      last.targetX === saved.targetX &&
+      last.targetY === saved.targetY &&
+      last.targetZ === saved.targetZ &&
+      last.distance === saved.distance &&
+      last.yaw === saved.yaw &&
+      last.pitch === saved.pitch;
     if (same) return;
-    this.lastView = view;
-    if (this.current !== null) this.viewChanged();
+    this.lastCamera = saved;
+    if (this.current !== null) this.cameraMoved();
   }
 
-  private viewChanged(): void {
-    this.viewDirty = true;
-    if (this.viewTimer !== null) clearTimeout(this.viewTimer);
-    this.viewTimer = setTimeout(() => {
-      this.viewTimer = null;
+  private cameraMoved(): void {
+    this.cameraDirty = true;
+    if (this.cameraSaveTimer !== null) clearTimeout(this.cameraSaveTimer);
+    this.cameraSaveTimer = setTimeout(() => {
+      this.cameraSaveTimer = null;
       void this.inFileQueue(() => this.saveNow());
-    }, VIEW_SAVE_DELAY_MS);
+    }, CAMERA_SAVE_DELAY_MS);
   }
 
   private canSave(): boolean {
@@ -257,11 +257,11 @@ export class WorldSession implements IWorldSession {
   private async saveNow(): Promise<void> {
     const current = this.current;
     if (!current || current.id === null || !this.canSave()) return;
-    if (this.dirty.size === 0 && !this.viewDirty) return;
+    if (this.dirty.size === 0 && !this.cameraDirty) return;
     const contents = this.editedWorld().contents();
     const change = this.dirty.take(contents.world, contents.refs, contents.track);
-    const viewWasDirty = this.viewDirty;
-    this.viewDirty = false;
+    const cameraWasDirty = this.cameraDirty;
+    this.cameraDirty = false;
     this.setWorldView(current, { save: "saving" });
     try {
       const summary = await this.repository.save(current.id, {
@@ -270,7 +270,7 @@ export class WorldSession implements IWorldSession {
         drop: change.drop,
       });
       this.current = { ...current, pinnedBundleVersion: this.bundleVersion };
-      const unsaved = this.dirty.size > 0 || this.viewDirty;
+      const unsaved = this.dirty.size > 0 || this.cameraDirty;
       this.setWorldView(this.current, {
         save: unsaved ? "saving" : "saved",
         placements: summary.placements,
@@ -286,7 +286,7 @@ export class WorldSession implements IWorldSession {
       this.syncUnsaved();
     } catch (error) {
       this.dirty.restore(change);
-      this.viewDirty ||= viewWasDirty;
+      this.cameraDirty ||= cameraWasDirty;
       this.saveFailed = true;
       this.lastSaveError = errorText(error);
       this.syncUnsaved();
@@ -362,7 +362,7 @@ export class WorldSession implements IWorldSession {
       openMs: 0,
     };
     this.editedWorld().clear();
-    this.opened(null, current);
+    this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
     this.update({ storageError: reason, worlds: [] });
   }
@@ -405,12 +405,12 @@ export class WorldSession implements IWorldSession {
     await this.loadWorld(id);
   }
 
-  private opened(view: SavedViewV1 | null, current: OpenWorld): void {
-    this.camera.restoreView(view);
-    this.lastView = this.camera.savedView();
+  private finishOpen(savedView: SavedViewV1 | null, current: OpenWorld): void {
+    this.camera.restoreView(savedView);
+    this.lastCamera = this.camera.savedView();
     this.current = current;
     this.dirty.clear();
-    this.viewDirty = false;
+    this.cameraDirty = false;
     this.saveFailed = false;
     this.lastSaveError = null;
     this.update({ fileError: null });
@@ -436,7 +436,7 @@ export class WorldSession implements IWorldSession {
       openMs: performance.now() - started,
     };
     this.editedWorld().clear();
-    this.opened(null, current);
+    this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
   }
 
@@ -456,7 +456,7 @@ export class WorldSession implements IWorldSession {
       pinnedBundleVersion: manifest.bundleVersion,
       openMs: performance.now() - started,
     };
-    this.opened(manifest.view, opened);
+    this.finishOpen(manifest.view, opened);
     this.setWorldView(opened, {
       placements: manifest.placements,
       track: manifest.track,
@@ -577,14 +577,11 @@ export class WorldSession implements IWorldSession {
         this.creditsView = null;
         throw error;
       });
-      const creditsView = await this.creditsView;
-      const contents = this.editedWorld().contents();
+      const edited = this.editedWorld();
       const credits = this.credits.exportText(
-        creditsForWorld(
-          creditsView,
-          contents.placed.map((model) => model.placeable),
-        ),
+        creditsForWorld(await this.creditsView, edited.placedCredits()),
       );
+      const contents = edited.contents();
       const shards = worldShards(worldPlacements(contents.world, contents.refs), contents.track);
       const manifest = worldManifest(this.header(current), shards.map(shardEntry));
       const imports = [...referencedImports(shards)].map((sha256) => {
@@ -610,7 +607,7 @@ export class WorldSession implements IWorldSession {
       if (this.state.storageError === null) {
         for (const file of imports) await this.repository.putImportedFile(file);
       }
-      const issues = this.editedWorld().check(shards);
+      const issues = this.editedWorld().validate(shards);
       if (issues.length > 0) throw new Error(issueText(issues));
       if (this.state.storageError !== null) {
         await this.loadShards(null, manifest, shards, started);

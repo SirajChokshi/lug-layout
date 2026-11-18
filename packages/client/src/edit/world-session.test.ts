@@ -26,12 +26,13 @@ import { Container } from "inversify";
 import { describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { WORLD_SESSION } from "../tokens.ts";
+import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { IEditedWorld, IWorldSession, WorldContents } from "./world-session.ts";
 
 const BASEPLATE = "ldraw:3811@2";
 const BASEPLATE_LDU = 640;
 
-class ViewOnlyBackend implements ISceneBackend {
+class StubSceneBackend implements ISceneBackend {
   async init(): Promise<never> {
     throw new Error("not used");
   }
@@ -89,10 +90,14 @@ class BaseplateWorld implements IEditedWorld {
   }
 
   contents(): WorldContents {
-    return { world: this.world, refs: [BASEPLATE], track: [], placed: [] };
+    return { world: this.world, refs: [BASEPLATE], track: [] };
   }
 
-  check(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue> {
+  placedCredits(): ReadonlyArray<ModelCredit> {
+    return [];
+  }
+
+  validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue> {
     const handles = addShards(new World(), shards, baseplateTarget);
     return handles.ok ? [] : handles.issues;
   }
@@ -124,7 +129,7 @@ interface MemoryWorld {
   readonly shards: Map<string, WorldShardV1>;
 }
 
-class FlakyRepository implements IWorldRepository {
+class FailingSaveRepository implements IWorldRepository {
   failSaves = false;
   private readonly worlds = new Map<string, MemoryWorld>();
   private readonly imports = new Map<string, ImportedFile>();
@@ -215,8 +220,8 @@ class FlakyRepository implements IWorldRepository {
 async function sessionWithFailingSaves() {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
-  container.rebind(SCENE_BACKEND).toConstantValue(new ViewOnlyBackend());
-  const repository = new FlakyRepository();
+  container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
+  const repository = new FailingSaveRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   const session = container.get(WORLD_SESSION);
   const edited = new BaseplateWorld();
