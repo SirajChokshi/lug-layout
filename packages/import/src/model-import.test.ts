@@ -17,7 +17,7 @@ import {
   SnapShapes,
 } from "@brr/domain";
 import type { ModelFile } from "@brr/schema/bundle";
-import { expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler } from "./brick-compiler.ts";
 import { LdrawMirror, type FetchFunction } from "./ldraw-mirror.ts";
 import { ModelImportEngine, type ImportResult } from "./model-import.ts";
@@ -32,6 +32,7 @@ const paletteTemplate = new URL(
 );
 const PALETTE_TEMPLATE_MODEL = "mils-road-straight";
 const BAKE_TIMEOUT_MS = 120_000;
+const BUNDLE_MODEL_IMPORT_TIMEOUT_MS = 300_000;
 const OPAQUE_ALPHA = 255;
 const paletteFile = new URL("../../../tools/asset-pipeline/palette.json", import.meta.url);
 const omrRoot = new URL("../../../.cache/omr/", import.meta.url);
@@ -41,6 +42,18 @@ const COLOR_NOT_IN_LDCONFIG = 99_999;
 const MAIN_COLOUR = 16;
 const RED = 4;
 const YELLOW = 14;
+
+interface PaletteModel {
+  readonly name: string;
+  readonly origin: string;
+  readonly file: string;
+}
+
+const paletteModels = (
+  JSON.parse(await readFile(paletteFile, "utf8")) as {
+    readonly models: ReadonlyArray<PaletteModel>;
+  }
+).models;
 
 interface Manifest {
   readonly source: { readonly repo: string; readonly commit: string; readonly root: string };
@@ -76,20 +89,25 @@ async function bundleManifest(): Promise<Manifest> {
   return JSON.parse(await readFile(new URL("manifest.json", bundleRoot), "utf8")) as Manifest;
 }
 
+async function bundleCompiler(): Promise<BrickCompiler> {
+  const manifest = await bundleManifest();
+  return new BrickCompiler(
+    new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot))),
+  );
+}
+
 async function importWith(
   fetchUrl: FetchFunction,
   fileName: string,
   text: string,
+  compiler?: BrickCompiler,
 ): Promise<ImportResult> {
   const manifest = await bundleManifest();
   const partTable = JSON.parse(
     await readFile(new URL(manifest.partTable.file, bundleRoot), "utf8"),
   ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
-  const compiler = new BrickCompiler(
-    new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot))),
-  );
   const engine = new ModelImportEngine(
-    compiler,
+    compiler ?? (await bundleCompiler()),
     new LdrawMirror(manifest.source, fetchUrl),
     () => 0,
   );
@@ -261,38 +279,46 @@ it("identifies a turned sub-model's own stud mate 20,000 LDU from the origin fro
   expect(identified(Float64Array.from(result.matrices))).toEqual([0, 0, 4]);
 });
 
-it("imports every bundle model with the sub-model tree and part transforms its bake recorded", async () => {
-  const manifest = JSON.parse(await readFile(new URL("manifest.json", bundleRoot), "utf8")) as {
-    readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
-  };
-  const palette = JSON.parse(await readFile(paletteFile, "utf8")) as {
-    readonly models: ReadonlyArray<{
-      readonly name: string;
-      readonly origin: string;
-      readonly file: string;
-    }>;
-  };
-  const records = new Map(manifest.models.map((model) => [model.name, model.file]));
-  expect(records.size).toBe(palette.models.length);
+describe("every bundle model, imported", () => {
+  let compiler: BrickCompiler | undefined;
 
-  for (const model of palette.models) {
-    const root = model.origin === "omr" ? omrRoot : fixturesRoot;
-    const result = await importWith(
-      pinnedMirror,
-      model.file,
-      await readFile(new URL(model.file, root), "utf8"),
+  beforeAll(async () => {
+    compiler = await bundleCompiler();
+  });
+
+  it("has a bundle record for every palette model", async () => {
+    const manifest = await bundleManifest();
+    expect(manifest.models.map((model) => model.name).toSorted()).toEqual(
+      paletteModels.map((model) => model.name).toSorted(),
     );
-    const record = JSON.parse(
-      await readFile(new URL(records.get(model.name) ?? "", bundleRoot), "utf8"),
-    ) as ModelFile;
+  });
 
-    expect({
-      parent: Array.from(result.submodels.parent),
-      matrices: Array.from(result.submodels.matrices),
-      ofPart: Array.from(result.submodels.ofPart),
-      partTransforms: Array.from(result.partTransforms),
-    }).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
-  }
+  it.each(paletteModels)(
+    "$name imports with the sub-model tree and part transforms its bake recorded",
+    async (model) => {
+      const manifest = await bundleManifest();
+      const entry = manifest.models.find((bundled) => bundled.name === model.name);
+      expect(entry).toBeDefined();
+      const root = model.origin === "omr" ? omrRoot : fixturesRoot;
+      const result = await importWith(
+        pinnedMirror,
+        model.file,
+        await readFile(new URL(model.file, root), "utf8"),
+        compiler,
+      );
+      const record = JSON.parse(
+        await readFile(new URL(entry?.file ?? "", bundleRoot), "utf8"),
+      ) as ModelFile;
+
+      expect({
+        parent: Array.from(result.submodels.parent),
+        matrices: Array.from(result.submodels.matrices),
+        ofPart: Array.from(result.submodels.ofPart),
+        partTransforms: Array.from(result.partTransforms),
+      }).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
+    },
+    BUNDLE_MODEL_IMPORT_TIMEOUT_MS,
+  );
 });
 
 it("reports a headerless custom part, loose model geometry and a recoloured inline copy, and draws a copy whose quads only start elsewhere", async () => {
