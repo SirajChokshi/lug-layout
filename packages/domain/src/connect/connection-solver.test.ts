@@ -1096,6 +1096,10 @@ const through = (code: number, size: number): number => shape(0, false, [[code, 
 const peg = (code: number, size: number): number => shape(CAP_ROOT, false, [[code, size, 8]]);
 const offsetsInLdu = (...ldu: number[]): Int32Array =>
   Int32Array.from(ldu, (offset) => offset * SIXTEENTHS_PER_LDU);
+const rangesInLdu = (...ldu: ReadonlyArray<readonly [number, number]>): Int32Array =>
+  Int32Array.from(
+    ldu.flatMap(([from, to]) => [from * SIXTEENTHS_PER_LDU, to * SIXTEENTHS_PER_LDU]),
+  );
 const grouped = (caps: number, group: string): number =>
   shapes.intern(caps, false, [SECTION_ROUND], [6], [4], group);
 
@@ -1129,23 +1133,59 @@ describe("SnapMating", () => {
     expect(mating.engages(STUD, grouped(CAP_FAR, "token-a"), 0)).toBe(false);
   });
 
-  it("seats a male wherever the next move along the axis meets a section that doesn't fit or a stop", () => {
+  it("seats a male rooted in a blind female only where the next move meets a section that doesn't fit or a stop", () => {
+    const shallowReceptor = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 2]]);
+    expect(mating.offsets(STUD, shallowReceptor)).toEqual(offsetsInLdu(2));
+    const collaredShaft = shape(CAP_ROOT, false, [
+      [SECTION_ROUND, 6, 4],
+      [SECTION_ROUND, 8, 2],
+      [SECTION_ROUND, 6, 16],
+    ]);
+    const deepSocket = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 30]]);
+    expect(mating.offsets(collaredShaft, deepSocket)).toEqual(offsetsInLdu(6));
+  });
+
+  it("lets a pair with one connector open at both ends rest wherever the shorter lies fully on the longer, besides its seats", () => {
     const collaredPin = shape(0, false, [
       [SECTION_ROUND, 6, 4],
       [SECTION_ROUND, 8, 2],
       [SECTION_ROUND, 6, 16],
     ]);
-    expect(mating.offsets(collaredPin, through(SECTION_ROUND, 6))).toEqual(offsetsInLdu(-4, 6));
+    expect(mating.ranges(collaredPin, through(SECTION_ROUND, 6))).toEqual(
+      rangesInLdu([-4, -4], [6, 14]),
+    );
     const boreInTwoHalves = shape(0, false, [
       [SECTION_ROUND, 6, 4],
       [SECTION_ROUND, 6, 4],
     ]);
-    expect(mating.offsets(collaredPin, boreInTwoHalves)).toEqual(offsetsInLdu(-4, 6));
-    const shallowReceptor = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 2]]);
-    expect(mating.offsets(STUD, shallowReceptor)).toEqual(offsetsInLdu(2));
+    expect(mating.ranges(collaredPin, boreInTwoHalves)).toEqual(rangesInLdu([-4, -4], [6, 14]));
     const barHeldAtBothEnds = shape(CAP_ROOT | CAP_FAR, false, [[SECTION_ROUND, 4, 12]]);
     const sleeve = shape(0, false, [[SECTION_ROUND, 4, 4]]);
-    expect(mating.offsets(barHeldAtBothEnds, sleeve)).toEqual(offsetsInLdu(0, 8));
+    expect(mating.ranges(barHeldAtBothEnds, sleeve)).toEqual(rangesInLdu([0, 8]));
+  });
+
+  it("lets such a pair also rest partway on when either slides, while a rooted shaft in a blind socket rests only home", () => {
+    const slidingBar = shape(CAP_ROOT, true, [[SECTION_ROUND, 4, 18]]);
+    const sleeve = shape(0, false, [[SECTION_ROUND, 4, 12]]);
+    expect(mating.ranges(slidingBar, sleeve)).toEqual(
+      Int32Array.from([0, 18 * SIXTEENTHS_PER_LDU - 1]),
+    );
+    const freeShaft = shape(0, true, [[SECTION_ROUND, 4, 18]]);
+    const blindSocket = shape(CAP_FAR, false, [[SECTION_ROUND, 4, 20]]);
+    expect(mating.ranges(freeShaft, blindSocket)).toEqual(
+      Int32Array.from([-2 * SIXTEENTHS_PER_LDU, 18 * SIXTEENTHS_PER_LDU - 1]),
+    );
+    const steppedSleeve = shape(0, false, [
+      [SECTION_ROUND, 4, 6.7],
+      [SECTION_ROUND, 6, 5.3],
+    ]);
+    expect(mating.ranges(freeShaft, steppedSleeve)).toEqual(
+      Int32Array.from([-107, 18 * SIXTEENTHS_PER_LDU - 1]),
+    );
+    const slidingNeck = shape(CAP_ROOT, true, [[SECTION_ROUND, 6, 12]]);
+    const blindCap = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 20]]);
+    expect(mating.ranges(slidingNeck, blindCap)).toEqual(rangesInLdu([0, 0]));
+    expect(mating.offsets(slidingNeck, blindCap)).toEqual(offsetsInLdu(0));
   });
 });
 
@@ -1249,7 +1289,12 @@ describe("flared sections", () => {
       [SECTION_ROUND, 6, 12],
       [SECTION_SQUARE, 6, 8],
     ]);
-    expect(mating.offsets(lipped(0), roundThenSquare)).toEqual(offsetsInLdu(-10, 0));
+    expect(mating.ranges(lipped(0), roundThenSquare)).toEqual(rangesInLdu([-10, -10], [-8, 0]));
+    const squareThenRoundSocket = shape(CAP_FAR, false, [
+      [SECTION_SQUARE, 6, 8],
+      [SECTION_ROUND, 6, 12],
+    ]);
+    expect(mating.offsets(lipped(CAP_ROOT), squareThenRoundSocket)).toEqual(offsetsInLdu(0));
   });
 
   it("read a female flare as round at its own radius, whatever sits beside it", () => {
