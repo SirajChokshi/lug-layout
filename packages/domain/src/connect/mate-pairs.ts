@@ -21,15 +21,17 @@ export class MatePairs {
     readonly mateOffset: Int32Array,
   ) {
     const count = maleInstance.length;
-    if (
-      femaleInstance.length !== count ||
-      maleConnector.length !== count ||
-      femaleConnector.length !== count ||
-      pass.length !== count ||
-      mateAxis.length !== count ||
-      mateOffset.length !== count
-    ) {
-      throw new RangeError(`mate pair columns disagree on the count of ${count} mates`);
+    for (const column of [
+      femaleInstance,
+      maleConnector,
+      femaleConnector,
+      pass,
+      mateAxis,
+      mateOffset,
+    ]) {
+      if (column.length !== count) {
+        throw new RangeError(`mate pair columns disagree on the count of ${count} mates`);
+      }
     }
     for (let k = 0; k < count; k++) {
       if (!isMatePass(pass[k])) throw new RangeError(`mate ${k} has pass ${pass[k]}`);

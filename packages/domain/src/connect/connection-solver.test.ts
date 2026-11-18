@@ -1154,7 +1154,7 @@ const QUARTER_TURN_ABOUT_X = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0];
 const AXLE_LENGTH = 3 * PLATE_LDU;
 const THROUGH_SHAFT = shape(0, true, [[SECTION_AXLE, 6, AXLE_LENGTH]]);
 const THROUGH_HOLE = shape(0, false, [[SECTION_AXLE, 6, PLATE_LDU]]);
-const SIXTEENTHS_PER_PLATE = PLATE_LDU * 16;
+const SIXTEENTHS_PER_PLATE = PLATE_LDU * SIXTEENTHS_PER_LDU;
 
 function twoEndedAxle(): ConnectorTable {
   return table([
@@ -1235,7 +1235,7 @@ function axleInBeamComposite(): ConnectorTable {
   ]);
 }
 
-function matePairColumns(count: number, pass: Uint8Array): MatePairs {
+function matePairColumns(count: number, pass: Uint8Array, offsets = count): MatePairs {
   return new MatePairs(
     new Uint32Array(count),
     new Uint32Array(count),
@@ -1243,7 +1243,7 @@ function matePairColumns(count: number, pass: Uint8Array): MatePairs {
     new Uint32Array(count),
     pass,
     new Int8Array(count),
-    new Int32Array(count),
+    new Int32Array(offsets),
   );
 }
 
@@ -1267,6 +1267,22 @@ describe("ModelConnectors mate pairs", () => {
       expect(stack.internalMates).toBe(exactRecords.length);
       expectEachConnectorOnce(stack, [2, 2, 2, 2]);
     }
+  });
+
+  it("records the offset with its sign, for a hole behind the male's end", () => {
+    const behind = 4;
+    const overhanging = model(
+      [twoEndedAxle(), twoHoleBeam()],
+      [
+        [0, IDENTITY],
+        [1, translation(0, -behind, 0)],
+      ],
+    );
+    expect(records(overhanging)).toEqual([
+      [0, 0, 1, 0, inModel, AXIS_POS_Y, -behind * SIXTEENTHS_PER_LDU],
+      [0, 1, 1, 1, inModel, AXIS_NEG_Y, (AXLE_LENGTH - PLATE_LDU + behind) * SIXTEENTHS_PER_LDU],
+    ]);
+    expectEachConnectorOnce(overhanging, [2, 2]);
   });
 
   it("records a pair in the model pass when both connectors identify there, and otherwise in its lowest common sub-model frame", () => {
@@ -1318,9 +1334,27 @@ describe("ModelConnectors mate pairs", () => {
     expectEachConnectorOnce(exact, [3]);
   });
 
+  it("keeps every record of a model with more mates than its first buffer holds", () => {
+    const side = 10;
+    const studs = side * side;
+    const stacked = model(
+      [block(side, side, PLATE_LDU, PLATE_RECEPTOR)],
+      [
+        [0, translation(0, PLATE_LDU, 0)],
+        [0, IDENTITY],
+      ],
+    );
+    expect(records(stacked)).toEqual(
+      Array.from({ length: studs }, (_, c) => [1, c, 0, studs + c, inModel, AXIS_POS_Y, 0]),
+    );
+    expectEachConnectorOnce(stacked, [2 * studs, 2 * studs]);
+  });
+
   it("refuses columns that disagree on the count or name an unknown pass", () => {
     expect(matePairColumns(1, Uint8Array.of(MATE_PASS_PART)).passOf(0)).toBe(MATE_PASS_PART);
-    expect(() => matePairColumns(2, Uint8Array.of(MATE_PASS_MODEL))).toThrow(RangeError);
+    const bothModel = Uint8Array.of(MATE_PASS_MODEL, MATE_PASS_MODEL);
+    expect(matePairColumns(2, bothModel).count).toBe(2);
+    expect(() => matePairColumns(2, bothModel, 1)).toThrow(RangeError);
     expect(() => matePairColumns(1, Uint8Array.of(MATE_PASS_PART + 1))).toThrow(RangeError);
     expect(() => matePairColumns(1, Uint8Array.of(MATE_PASS_MODEL)).passOf(1)).toThrow(RangeError);
   });

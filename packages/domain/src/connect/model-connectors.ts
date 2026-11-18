@@ -168,17 +168,51 @@ class MateRecorder {
     this.offset[k] = offset;
   }
 
+  private orderByMale(connectors: number): Uint32Array {
+    const count = this.size;
+    const end = new Uint32Array(connectors + 1);
+    for (let k = 0; k < count; k++) {
+      const bucket = (this.male[k] ?? 0) + 1;
+      end[bucket] = (end[bucket] ?? 0) + 1;
+    }
+    for (let c = 0; c < connectors; c++) end[c + 1] = (end[c + 1] ?? 0) + (end[c] ?? 0);
+    const order = new Uint32Array(count);
+    for (let k = 0; k < count; k++) {
+      const m = this.male[k] ?? 0;
+      const at = end[m] ?? 0;
+      order[at] = k;
+      end[m] = at + 1;
+    }
+    return order;
+  }
+
+  private sortEachMaleByFemale(order: Uint32Array): void {
+    const male = this.male;
+    const female = this.female;
+    for (let i = 1; i < order.length; i++) {
+      const r = order[i] ?? 0;
+      const m = male[r] ?? 0;
+      const f = female[r] ?? 0;
+      let j = i - 1;
+      for (; j >= 0; j--) {
+        const s = order[j] ?? 0;
+        if (male[s] !== m || (female[s] ?? 0) < f) break;
+        order[j + 1] = s;
+      }
+      order[j + 1] = r;
+    }
+  }
+
   pairs(
     frames: Frames,
     parts: ReadonlyArray<ConnectorTable | null>,
     instances: PartInstances,
   ): MatePairs {
     const count = this.size;
+    const order = this.orderByMale(frames.instance.length);
+    this.sortEachMaleByFemale(order);
     const male = this.male;
     const female = this.female;
-    const order = new Uint32Array(count);
-    for (let k = 0; k < count; k++) order[k] = k;
-    order.sort((a, b) => (male[a] ?? 0) - (male[b] ?? 0) || (female[a] ?? 0) - (female[b] ?? 0));
     const maleInstance = new Uint32Array(count);
     const femaleInstance = new Uint32Array(count);
     const maleConnector = new Uint32Array(count);
