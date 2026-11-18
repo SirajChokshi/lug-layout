@@ -1,0 +1,440 @@
+import { describe, expect, it } from "vitest";
+import { PLATE_LDU, STUD_LDU, rot90Cos, rot90Sin } from "@brr/math";
+import { CandidatePoses, type LatticePose, type SnapWindow } from "./candidate-poses.ts";
+import { ConnectionSolver } from "./connection-solver.ts";
+import {
+  AXIS_NEG_Y,
+  AXIS_POS_Y,
+  ConnectorTable,
+  GENDER_FEMALE,
+  GENDER_MALE,
+  SOURCE_INFERRED,
+  SOURCE_SHADOW,
+} from "./connector-table.ts";
+import { LatticeStudFinder } from "./lattice-stud-finder.ts";
+import { MateReport } from "./mate-report.ts";
+import { SnapMating } from "./mating.ts";
+import { ModelConnectors } from "./model-connectors.ts";
+import {
+  CAP_FAR,
+  CAP_ROOT,
+  SECTION_AXLE,
+  SECTION_ROUND,
+  SECTION_SQUARE,
+  SnapShapes,
+} from "./snap-shapes.ts";
+
+type QuarterTurn = 0 | 1 | 2 | 3;
+type Section = readonly [code: number, size: number, length: number];
+
+interface Spec {
+  readonly shape: number;
+  readonly gender: number;
+  readonly source?: number;
+  readonly origin: readonly [number, number, number];
+  readonly axis: number;
+}
+
+const shapes = new SnapShapes();
+const mating = new SnapMating(shapes);
+
+function shape(caps: number, slide: boolean, sections: ReadonlyArray<Section>): number {
+  return shapes.intern(
+    caps,
+    slide,
+    sections.map(([code]) => code),
+    sections.map(([, size]) => size),
+    sections.map(([, , length]) => length),
+  );
+}
+
+const STUD = shape(CAP_ROOT, false, [[SECTION_ROUND, 6, 4]]);
+const PLATE_RECEPTOR = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 4]]);
+const BRICK_RECEPTOR = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 20]]);
+const BRICK_LDU = 3 * PLATE_LDU;
+const UNMODELLED_SECTION = 7;
+const HALF = STUD_LDU / 2;
+
+function table(specs: ReadonlyArray<Spec>): ConnectorTable {
+  return new ConnectorTable(
+    Uint16Array.from(specs, (s) => s.shape),
+    Uint8Array.from(specs, (s) => s.gender),
+    Uint8Array.from(specs, (s) => s.source ?? SOURCE_SHADOW),
+    Float32Array.from(specs.flatMap((s) => s.origin)),
+    Int8Array.from(specs, (s) => s.axis),
+    new Float32Array(specs.length * 3),
+  );
+}
+
+function grid(width: number, depth: number, spec: (x: number, z: number) => Spec): Spec[] {
+  const specs: Spec[] = [];
+  for (let j = 0; j < depth; j++) {
+    for (let i = 0; i < width; i++) specs.push(spec(i * STUD_LDU + HALF, j * STUD_LDU + HALF));
+  }
+  return specs;
+}
+
+function block(width: number, depth: number, heightLdu: number, receptor: number): ConnectorTable {
+  return table([
+    ...grid(width, depth, (x, z) => ({
+      shape: STUD,
+      gender: GENDER_MALE,
+      origin: [x, heightLdu, z],
+      axis: AXIS_POS_Y,
+    })),
+    ...grid(width, depth, (x, z) => ({
+      shape: receptor,
+      gender: GENDER_FEMALE,
+      origin: [x, 0, z],
+      axis: AXIS_NEG_Y,
+    })),
+  ]);
+}
+
+function baseplate(width: number, depth: number, source = SOURCE_SHADOW): ConnectorTable {
+  return table(
+    grid(width, depth, (x, z) => ({
+      shape: STUD,
+      gender: GENDER_MALE,
+      source,
+      origin: [x, 0, z],
+      axis: AXIS_POS_Y,
+    })),
+  );
+}
+
+function translation(x: number, y: number, z: number): number[] {
+  return [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z];
+}
+
+function model(
+  parts: ReadonlyArray<ConnectorTable | null>,
+  placements: ReadonlyArray<readonly [number, ReadonlyArray<number>]>,
+): ModelConnectors {
+  return ModelConnectors.fromParts(
+    parts,
+    {
+      count: placements.length,
+      partIndex: placements.map(([part]) => part),
+      matrices: Float32Array.from(placements.flatMap(([, matrix]) => matrix)),
+    },
+    mating,
+  );
+}
+
+function single(part: ConnectorTable): ModelConnectors {
+  return model([part], [[0, translation(0, 0, 0)]]);
+}
+
+function pose(x: number, z: number, yPlates: number, rot: QuarterTurn = 0): LatticePose {
+  return { x, z, yPlates, rot };
+}
+
+function solver(): ConnectionSolver {
+  return new ConnectionSolver([new LatticeStudFinder(mating)]);
+}
+
+function evaluated(engine: ConnectionSolver, piece: ModelConnectors, at: LatticePose): MateReport {
+  const report = new MateReport();
+  engine.evaluate(piece, at, report);
+  return report;
+}
+
+function matesAt(engine: ConnectionSolver, piece: ModelConnectors, at: LatticePose): number {
+  return evaluated(engine, piece, at).count;
+}
+
+function window(at: LatticePose, cells: number, plates: number, turns = 1): SnapWindow {
+  return { ...at, cells, plates, turns };
+}
+
+describe("ConnectionSolver with lattice studs", () => {
+  it("mates every receptor that lands on a baseplate stud, at every turn and offset", () => {
+    const engine = solver();
+    const width = 6;
+    engine.insert(single(baseplate(width, width)), pose(0, 0, 0));
+    const plate = single(block(2, 3, PLATE_LDU, PLATE_RECEPTOR));
+    const candidates = new CandidatePoses();
+    for (const rot of [0, 1, 2, 3] as const) {
+      for (let cx = -4; cx <= width + 4; cx++) {
+        for (let cz = -4; cz <= width + 4; cz++) {
+          const at = pose(cx * STUD_LDU, cz * STUD_LDU, 0, rot);
+          let expected = 0;
+          for (let j = 0; j < 3; j++) {
+            for (let i = 0; i < 2; i++) {
+              const lx = i * STUD_LDU + HALF;
+              const lz = j * STUD_LDU + HALF;
+              const wx = rot90Cos(rot) * lx + rot90Sin(rot) * lz + at.x;
+              const wz = -rot90Sin(rot) * lx + rot90Cos(rot) * lz + at.z;
+              if (wx > 0 && wz > 0 && wx < width * STUD_LDU && wz < width * STUD_LDU) expected++;
+            }
+          }
+          expect(matesAt(engine, plate, at)).toBe(expected);
+          engine.rank(plate, window(at, 0, 0), candidates);
+          expect(candidates.votes[0]).toBe(expected);
+          expect(matesAt(engine, plate, pose(at.x, at.z, 1, rot))).toBe(0);
+        }
+      }
+    }
+  });
+
+  it("ranks the pose with the most mates first, and the nearest one among equals", () => {
+    const engine = solver();
+    engine.insert(single(baseplate(4, 4)), pose(0, 0, 0));
+    const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
+    const candidates = new CandidatePoses();
+    engine.rank(plate, window(pose(-STUD_LDU, STUD_LDU, 0), 1, 1), candidates);
+    expect([candidates.x[0], candidates.z[0], candidates.yPlates[0], candidates.votes[0]]).toEqual([
+      0,
+      STUD_LDU,
+      0,
+      4,
+    ]);
+    expect([candidates.x[1], candidates.z[1], candidates.votes[1]]).toEqual([0, 0, 4]);
+    for (let i = 1; i < candidates.count; i++) {
+      expect(candidates.votes[i]).toBeLessThanOrEqual(candidates.votes[i - 1] ?? 0);
+    }
+  });
+
+  it("finds the height where the model seats on the stack under the cursor", () => {
+    const engine = solver();
+    engine.insert(single(baseplate(8, 8)), pose(0, 0, 0));
+    const brick = single(block(2, 2, BRICK_LDU, BRICK_RECEPTOR));
+    engine.insert(brick, pose(2 * STUD_LDU, 2 * STUD_LDU, 0));
+    const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
+    const candidates = new CandidatePoses();
+    engine.rank(plate, window(pose(2 * STUD_LDU, 2 * STUD_LDU, 2), 0, 1), candidates);
+    expect([candidates.yPlates[0], candidates.votes[0]]).toEqual([BRICK_LDU / PLATE_LDU, 4]);
+  });
+
+  it("keeps a connector placed twice until both placements are removed", () => {
+    const engine = solver();
+    const base = single(baseplate(2, 2));
+    const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
+    engine.insert(base, pose(0, 0, 0));
+    engine.insert(base, pose(0, 0, 0));
+    engine.remove(base, pose(0, 0, 0));
+    expect(matesAt(engine, plate, pose(0, 0, 0))).toBe(4);
+    engine.remove(base, pose(0, 0, 0));
+    expect(matesAt(engine, plate, pose(0, 0, 0))).toBe(0);
+    expect(() => engine.remove(base, pose(0, 0, 0))).toThrow(RangeError);
+  });
+
+  it("mates a half-stud offset connector only at the offset that puts it on the lattice", () => {
+    const engine = solver();
+    engine.insert(single(baseplate(4, 4)), pose(0, 0, 0));
+    const jumper = single(
+      table([
+        { shape: PLATE_RECEPTOR, gender: GENDER_FEMALE, origin: [0, 0, HALF], axis: AXIS_NEG_Y },
+      ]),
+    );
+    expect(matesAt(engine, jumper, pose(HALF + STUD_LDU, 0, 0))).toBe(1);
+    expect(matesAt(engine, jumper, pose(STUD_LDU, 0, 0))).toBe(0);
+  });
+
+  it.each<[string, ReadonlyArray<Section>, ReadonlyArray<Section>, number]>([
+    ["round in round of its size", [[SECTION_ROUND, 6, 8]], [[SECTION_ROUND, 6, 8]], 1],
+    ["axle in round of its half-width", [[SECTION_AXLE, 6, 8]], [[SECTION_ROUND, 6, 8]], 1],
+    ["axle in axle", [[SECTION_AXLE, 4, 8]], [[SECTION_AXLE, 4, 8]], 1],
+    ["round in square of its half-width", [[SECTION_ROUND, 6, 8]], [[SECTION_SQUARE, 6, 8]], 1],
+    ["round never in axle", [[SECTION_ROUND, 4, 8]], [[SECTION_AXLE, 4, 8]], 0],
+    ["square corners outside a round", [[SECTION_SQUARE, 6, 8]], [[SECTION_ROUND, 6, 8]], 0],
+    [
+      "an unmodelled section shape never mates",
+      [[UNMODELLED_SECTION, 6, 8]],
+      [[SECTION_ROUND, 6, 8]],
+      0,
+    ],
+    ["round loose in a larger round", [[SECTION_ROUND, 4, 8]], [[SECTION_ROUND, 6, 8]], 0],
+    ["round too large for the round", [[SECTION_ROUND, 6, 8]], [[SECTION_ROUND, 4, 8]], 0],
+    [
+      "stud gripped past a counterbore",
+      [[SECTION_ROUND, 6, 4]],
+      [
+        [SECTION_ROUND, 8, 2],
+        [SECTION_ROUND, 6, 16],
+      ],
+      1,
+    ],
+    [
+      "counterbore-sized round blocked by the bore",
+      [[SECTION_ROUND, 8, 4]],
+      [
+        [SECTION_ROUND, 8, 2],
+        [SECTION_ROUND, 6, 16],
+      ],
+      0,
+    ],
+  ])("section containment: %s", (_, maleSections, femaleSections, mates) => {
+    const engine = solver();
+    const female = shape(CAP_FAR, false, femaleSections);
+    const receptors = grid(2, 2, (x, z) => ({
+      shape: female,
+      gender: GENDER_FEMALE,
+      origin: [x, 0, z],
+      axis: AXIS_POS_Y,
+    }));
+    engine.insert(single(table(receptors)), pose(-STUD_LDU, -STUD_LDU, 0));
+    const male = shape(CAP_ROOT, false, maleSections);
+    const piece = single(
+      table([{ shape: male, gender: GENDER_MALE, origin: [HALF, 0, HALF], axis: AXIS_NEG_Y }]),
+    );
+    for (const rot of [0, 1, 2, 3] as const) {
+      expect(matesAt(engine, piece, pose(0, 0, 0, rot))).toBe(mates);
+    }
+  });
+
+  interface Engagement {
+    readonly male: readonly [caps: number, slide: boolean, sections: ReadonlyArray<Section>];
+    readonly female: readonly [caps: number, slide: boolean, sections: ReadonlyArray<Section>];
+    readonly engaged: ReadonlyArray<number>;
+    readonly refused: ReadonlyArray<number>;
+  }
+
+  it.each<[string, Engagement]>([
+    [
+      "a bar slides through a shorter open clip",
+      {
+        male: [CAP_ROOT, true, [[SECTION_ROUND, 4, 20]]],
+        female: [0, false, [[SECTION_ROUND, 4, 4]]],
+        engaged: [0, 1, 2],
+        refused: [-1, 3],
+      },
+    ],
+    [
+      "a bar attached at its root enters a longer sliding tube only up to its root",
+      {
+        male: [CAP_ROOT, true, [[SECTION_ROUND, 4, 4]]],
+        female: [0, true, [[SECTION_ROUND, 4, 20]]],
+        engaged: [0],
+        refused: [-1, -2],
+      },
+    ],
+    [
+      "a stud inserts fully into a deeper blind cavity",
+      {
+        male: [CAP_ROOT, false, [[SECTION_ROUND, 6, 4]]],
+        female: [CAP_FAR, false, [[SECTION_ROUND, 6, 20]]],
+        engaged: [0],
+        refused: [-1, 1],
+      },
+    ],
+    [
+      "a stud longer than a blind cavity never seats",
+      {
+        male: [CAP_ROOT, false, [[SECTION_ROUND, 6, 8]]],
+        female: [CAP_FAR, false, [[SECTION_ROUND, 6, 4]]],
+        engaged: [],
+        refused: [0, 1],
+      },
+    ],
+    [
+      "a tube longer than a bar held at both ends can't slide over it",
+      {
+        male: [CAP_ROOT | CAP_FAR, true, [[SECTION_ROUND, 4, 8]]],
+        female: [0, true, [[SECTION_ROUND, 4, 20]]],
+        engaged: [],
+        refused: [0, -1],
+      },
+    ],
+    [
+      "a pin longer than a through hole passes through it",
+      {
+        male: [CAP_ROOT, false, [[SECTION_ROUND, 6, 8]]],
+        female: [0, false, [[SECTION_ROUND, 6, 4]]],
+        engaged: [0],
+        refused: [1],
+      },
+    ],
+  ])("axial engagement: %s", (_, { male, female, engaged, refused }) => {
+    const engine = solver();
+    const maleShape = shape(...male);
+    engine.insert(
+      single(
+        table([
+          { shape: maleShape, gender: GENDER_MALE, origin: [HALF, 0, HALF], axis: AXIS_POS_Y },
+        ]),
+      ),
+      pose(0, 0, 0),
+    );
+    const femaleShape = shape(...female);
+    const receptor = single(
+      table([
+        { shape: femaleShape, gender: GENDER_FEMALE, origin: [HALF, 0, HALF], axis: AXIS_NEG_Y },
+      ]),
+    );
+    for (const y of engaged) expect(matesAt(engine, receptor, pose(0, 0, y))).toBe(1);
+    for (const y of refused) expect(matesAt(engine, receptor, pose(0, 0, y))).toBe(0);
+  });
+
+  it("never mates connectors whose axes point the same way", () => {
+    const engine = solver();
+    engine.insert(single(baseplate(1, 1)), pose(0, 0, 0));
+    const upward = single(
+      table([
+        { shape: PLATE_RECEPTOR, gender: GENDER_FEMALE, origin: [HALF, 0, HALF], axis: AXIS_POS_Y },
+      ]),
+    );
+    expect(matesAt(engine, upward, pose(0, 0, 0))).toBe(0);
+  });
+
+  it("mates inferred connectors and reports each such mate as inferred", () => {
+    const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
+    for (const source of [SOURCE_SHADOW, SOURCE_INFERRED]) {
+      const engine = solver();
+      engine.insert(single(baseplate(2, 2, source)), pose(0, 0, 0));
+      const report = evaluated(engine, plate, pose(0, 0, 0));
+      expect(Array.from(report.source.subarray(0, report.count))).toEqual([
+        source,
+        source,
+        source,
+        source,
+      ]);
+    }
+  });
+});
+
+describe("ModelConnectors", () => {
+  it("consumes internal mates, so studs covered inside a model never vote outside it", () => {
+    const plate = block(2, 2, PLATE_LDU, PLATE_RECEPTOR);
+    const stack = model(
+      [plate],
+      [
+        [0, translation(0, 0, 0)],
+        [0, translation(0, PLATE_LDU, 0)],
+      ],
+    );
+    expect([stack.internalMates, stack.count]).toEqual([4, 8]);
+    const engine = solver();
+    engine.insert(stack, pose(0, 0, 0));
+    const piece = single(plate);
+    expect(matesAt(engine, piece, pose(0, 0, 1))).toBe(0);
+    expect(matesAt(engine, piece, pose(0, 0, 2))).toBe(4);
+  });
+
+  it("identifies connector frames within 0.0005 LDU of the lattice and reports the rest", () => {
+    const stud = table([
+      { shape: STUD, gender: GENDER_MALE, origin: [HALF, 0, HALF], axis: AXIS_POS_Y },
+    ]);
+    const dust = 0.9999999;
+    const residue = 1e-7;
+    const tilt = 0.0006;
+    const diagonal = Math.SQRT1_2;
+    const placements: ReadonlyArray<readonly [number, ReadonlyArray<number>]> = [
+      [0, translation(0.0003, 0, -0.0002)],
+      [0, [dust, -residue, 0, 0, residue, dust, 0, 0, 0, 0, 1, 0]],
+      [0, translation(0.0006, 0, 0)],
+      [0, translation(0, 0.03, 0)],
+      [0, [1, -tilt, 0, 0, tilt, 1, 0, -tilt * HALF, 0, 0, 1, 0]],
+      [0, [diagonal, -diagonal, 0, 0, diagonal, diagonal, 0, 0, 0, 0, 1, 0]],
+      [1, translation(0, 0, 0)],
+    ];
+    const connectors = model([stud, null], placements);
+    expect([
+      connectors.count,
+      connectors.offLattice,
+      connectors.instancesWithoutConnectors,
+    ]).toEqual([2, 4, 1]);
+    expect(Array.from(connectors.origin)).toEqual([HALF, 0, HALF, HALF, 0, HALF]);
+  });
+});
