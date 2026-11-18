@@ -1,0 +1,200 @@
+import {
+  CONNECTIVITY_LICENSE,
+  CONNECTOR_SOURCE,
+  type LibraryConnectorsPin,
+} from "@brr/schema/bundle";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, expect, it } from "vitest";
+import { assembleLibraryConnectors, LIBRARY_CONNECTORS_INDEX } from "./assemble.ts";
+import {
+  libraryConnectorsIndexKey,
+  LIBRARY_CONNECTORS_PREFIX,
+  uploadLibraryConnectors,
+  verifyServedLibraryConnectors,
+} from "./publish.ts";
+import type { ObjectStore } from "../r2.ts";
+import { CA_LICENSE_LINES } from "../verify/license-audit.ts";
+
+const [PART_LICENSE = ""] = CA_LICENSE_LINES;
+const VOCABULARY = "a".repeat(64);
+const ldraw = { kind: "github-mirror" as const, repo: "owner/ldraw", commit: "abc", root: "ldraw" };
+const shadow = { kind: "github-archive" as const, repo: "owner/shadow", commit: "def", root: "" };
+const directories: string[] = [];
+
+function record(part: string, license: string, tier: number, piece: number) {
+  return {
+    part,
+    license,
+    faces: {
+      gender: [0],
+      source: [tier],
+      status: [0],
+      caps: [0],
+      slide: [false],
+      group: [""],
+      origin: [0, 0, 0],
+      axis: [0],
+      sectionStart: [0],
+      sectionCount: [1],
+      sectionCode: [0],
+      sectionSize: [6],
+      sectionLength: [8],
+      piece: [piece],
+    },
+    free: { face: [], origin: [], axis: [] },
+    unreadable: [],
+  };
+}
+
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+});
+
+async function assembled(): Promise<{ readonly out: string; readonly pin: LibraryConnectorsPin }> {
+  const build = await mkdtemp(join(tmpdir(), "brr-library-build-"));
+  const out = await mkdtemp(join(tmpdir(), "brr-library-out-"));
+  directories.push(build, out);
+  for (const pkg of ["connectivity", "connectors"]) await mkdir(join(build, pkg));
+  await writeFile(
+    join(build, "connectivity", "3815c01.json"),
+    JSON.stringify(record("ldraw:3815c01", CONNECTIVITY_LICENSE, CONNECTOR_SOURCE.shadow, 2)),
+  );
+  await writeFile(
+    join(build, "connectors", "3815c01.json"),
+    JSON.stringify(record("ldraw:3815c01", PART_LICENSE, CONNECTOR_SOURCE.inferred, 1)),
+  );
+  const listing = [
+    {
+      part: "ldraw:3815c01",
+      path: "parts/3815c01.dat",
+      license: PART_LICENSE,
+      connectivity: "connectivity/3815c01.json",
+      connectors: "connectors/3815c01.json",
+    },
+    {
+      part: "ldraw:nonca",
+      path: "parts/nonca.dat",
+      license: "Not redistributable : see NonCAreadme.txt",
+      connectivity: null,
+      connectors: null,
+    },
+  ];
+  await writeFile(
+    join(build, "parts-0-of-1.jsonl"),
+    listing.map((line) => JSON.stringify(line)).join("\n"),
+  );
+
+  const pin = await assembleLibraryConnectors({
+    build,
+    out,
+    ldraw,
+    shadow,
+    sectionVocabulary: VOCABULARY,
+  });
+  return { out, pin };
+}
+
+it("publishes CA parts' records under their content addresses, stamps the connector records with the section vocabulary, and refuses a part outside the CA licences", async () => {
+  const { out, pin } = await assembled();
+
+  expect(pin).toMatchObject({
+    parts: 2,
+    refused: [{ part: "ldraw:nonca", license: "Not redistributable : see NonCAreadme.txt" }],
+    records: { connectivity: 1, connectors: 1 },
+    partsWithPieces: 1,
+  });
+  const index = JSON.parse(await readFile(join(out, LIBRARY_CONNECTORS_INDEX), "utf8"));
+  expect(index).toMatchObject({ format: 1, ldraw, shadow, sectionVocabulary: VOCABULARY });
+  for (const [pkg, stamped] of [
+    ["connectivity", undefined],
+    ["connectors", VOCABULARY],
+  ] as const) {
+    const packageIndex = JSON.parse(await readFile(join(out, index[pkg].file), "utf8"));
+    expect(packageIndex.sectionVocabulary).toBe(stamped);
+    expect(packageIndex.parts["ldraw:nonca"]).toBeUndefined();
+    const file: string = packageIndex.parts["ldraw:3815c01"].file;
+    expect(file).toMatch(new RegExp(`^${pkg}/3815c01\\.[0-9a-f]{16}\\.json$`, "u"));
+    expect(JSON.parse(await readFile(join(out, file), "utf8")).sectionVocabulary).toBe(stamped);
+  }
+});
+
+class MemoryStore implements ObjectStore {
+  readonly objects = new Map<string, Uint8Array>();
+  readonly order: string[] = [];
+
+  async has(key: string): Promise<boolean> {
+    return this.objects.has(key);
+  }
+
+  async put(key: string, body: Uint8Array): Promise<void> {
+    this.objects.set(key, body);
+    this.order.push(key);
+  }
+
+  readonly read = async (key: string): Promise<Uint8Array | undefined> => this.objects.get(key);
+}
+
+async function addressedFiles(out: string): Promise<string[]> {
+  const index = JSON.parse(await readFile(join(out, LIBRARY_CONNECTORS_INDEX), "utf8"));
+  const files: string[] = [];
+  for (const pkg of ["connectivity", "connectors"]) {
+    const packageIndex = JSON.parse(await readFile(join(out, index[pkg].file), "utf8"));
+    files.push(
+      index[pkg].file,
+      ...Object.values<{ file: string }>(packageIndex.parts).map((e) => e.file),
+    );
+  }
+  return files;
+}
+
+it("uploads every record and both package indexes under their content addresses, then the pinned index, and only once", async () => {
+  const { out, pin } = await assembled();
+  const store = new MemoryStore();
+
+  const first = await uploadLibraryConnectors(store, out, pin);
+  const again = await uploadLibraryConnectors(store, out, pin);
+
+  const files = await addressedFiles(out);
+  const indexKey = libraryConnectorsIndexKey(pin);
+  expect(indexKey).toBe(
+    `${LIBRARY_CONNECTORS_PREFIX}/library-connectors.${pin.index.sha256.slice(0, 16)}.json`,
+  );
+  expect(store.order.toSorted()).toEqual(
+    [...files.map((file) => `${LIBRARY_CONNECTORS_PREFIX}/${file}`), indexKey].toSorted(),
+  );
+  expect(store.order.at(-1)).toBe(indexKey);
+  expect([first, again]).toEqual([
+    { uploaded: files.length + 1, present: 0 },
+    { uploaded: 0, present: files.length + 1 },
+  ]);
+  expect(await verifyServedLibraryConnectors(store.read, pin, "all")).toEqual([]);
+});
+
+it("refuses to upload a dist whose index is not the pinned one, or a record not named by its content", async () => {
+  const { out, pin } = await assembled();
+  const otherPin = { ...pin, index: { ...pin.index, sha256: "0".repeat(64) } };
+  await expect(uploadLibraryConnectors(new MemoryStore(), out, otherPin)).rejects.toThrow(
+    "is not the pinned index",
+  );
+  const [, recordFile = ""] = await addressedFiles(out);
+  await writeFile(join(out, recordFile), "{}");
+  await expect(uploadLibraryConnectors(new MemoryStore(), out, pin)).rejects.toThrow(
+    `${recordFile} is not named by its content hash`,
+  );
+});
+
+it("finds a served record that differs from its content address only when every record is checked", async () => {
+  const { out, pin } = await assembled();
+  const store = new MemoryStore();
+  await uploadLibraryConnectors(store, out, pin);
+  const [, recordFile = ""] = await addressedFiles(out);
+  const key = `${LIBRARY_CONNECTORS_PREFIX}/${recordFile}`;
+  store.objects.set(key, new TextEncoder().encode("{}"));
+
+  expect(await verifyServedLibraryConnectors(store.read, pin, "indexes")).toEqual([]);
+  expect(await verifyServedLibraryConnectors(store.read, pin, "all")).toEqual([
+    `${key} differs from its content address`,
+  ]);
+});

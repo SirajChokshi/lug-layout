@@ -187,6 +187,20 @@ function Credits({ credits, view }: { readonly credits: ICredits; readonly view:
         </>
       )}
 
+      <h2>Connector data</h2>
+      <ul className="data-packages">
+        {view.dataPackages.map((data) => (
+          <li key={data.attribution.join("\n")} data-credit-package={data.name}>
+            <strong>{data.name}</strong>: {data.usedFor}. License: {data.licenses.join("; ")}
+            {data.attribution.map((line) => (
+              <div key={line} className="muted" data-credit-attribution={line}>
+                {line}
+              </div>
+            ))}
+          </li>
+        ))}
+      </ul>
+
       <h2>Set and colour data</h2>
       <ul className="data-sources">
         {view.dataSources.map((data) => (

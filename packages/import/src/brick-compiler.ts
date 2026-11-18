@@ -9,6 +9,7 @@ import {
   StudioRead,
   type CompilerBaked,
   type CompilerBlobs,
+  type CompilerConnectorInputs,
   type CompilerEnvelope,
   type CompilerLibraryDelta,
   type CompilerRequest,
@@ -58,6 +59,7 @@ export interface CompileRequest {
   readonly lod: CompileLod;
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
+  readonly connectors: CompilerConnectorInputs;
   readonly parts: ReadonlyArray<string>;
   readonly model: string;
   readonly inlineChecks: ReadonlyArray<InlinePart>;

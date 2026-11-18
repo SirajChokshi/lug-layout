@@ -23,7 +23,80 @@
         },
         "boreRadius": 6
       },
-      "derivation": "inward 4-4cyli radius 8 from y=0 to y=2; 4-4ring3 scaled 2 at y=2 spans radius 6 to 8, so the bore beyond it is radius 6; two ends facing each other on one axis bound a through hole"
+      "derivation": "inward 4-4cyli radius 8 from y=0 to y=2; 4-4ring3 scaled 2 at y=2 spans radius 6 to 8, so the bore beyond it is radius 6; two ends facing each other on one axis bound a through hole",
+      "technic": "hole"
+    },
+    {
+      "file": "p/connect.dat",
+      "title": "Technic Pin 1.0 with Base Collar",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/connect2.dat",
+      "title": "Technic Pin 1.0 without Base Collar",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/connect3.dat",
+      "title": "Technic Pin 0.5 with Base Collar",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/connect4.dat",
+      "title": "Technic Pin 0.5 without Base Collar",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/connect8.dat",
+      "title": "Technic Pin 1.0 with Base Collar and Blind Hole",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/confric.dat",
+      "title": "Technic Friction Pin 1.0 with Base Collar",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/confric4.dat",
+      "title": "Technic Friction Pin 1.0 with Base Collar and Blind Hole",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/confric5.dat",
+      "title": "Technic Friction Pin 1.0 Slotted with Split Base Collar",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/confric6.dat",
+      "title": "Technic Friction Pin 1.0 Slotted without Base Collar",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/confric9.dat",
+      "title": "Technic Friction Pin Middle Slotted with Unsplit Base Collar",
+      "technic": "pin",
+      "derivation": "pin half along its local Y from the collar at y = 0; the Technic shaft envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/axleend2.dat",
+      "title": "Technic Axle End Beveled",
+      "technic": "axleEnd",
+      "derivation": "closes an axle on its local Y axis; marks the part as a Technic shaft whose envelope is read from its geometry (technic.rs)"
+    },
+    {
+      "file": "p/axleend20.dat",
+      "title": "Technic Axle End 20 LDU",
+      "technic": "axleEnd",
+      "derivation": "closes an axle on its local Y axis; marks the part as a Technic shaft whose envelope is read from its geometry (technic.rs)"
     },
     {
       "file": "p/stud4.dat",

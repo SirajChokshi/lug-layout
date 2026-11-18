@@ -520,11 +520,54 @@ export const CompilerVehicles = v.object({
   ),
 });
 export type CompilerVehicles = v.InferOutput<typeof CompilerVehicles>;
+export const TECHNIC_ROLES = ["hole", "pin", "axleEnd"] as const;
+
+export const PrimitiveConnectorTable = v.strictObject({
+  source: BundleSource,
+  license: v.string(),
+  primitives: v.array(
+    v.strictObject({
+      file: v.string(),
+      title: v.string(),
+      derivation: v.string(),
+      snaps: v.optional(v.array(v.string())),
+      whereOpen: v.optional(v.array(v.string())),
+      holeEnd: v.optional(
+        v.strictObject({
+          counterbore: v.strictObject({ radius: Finite, length: Finite }),
+          boreRadius: Finite,
+        }),
+      ),
+      technic: v.optional(v.picklist(TECHNIC_ROLES)),
+    }),
+  ),
+});
+export type PrimitiveConnectorTable = v.InferOutput<typeof PrimitiveConnectorTable>;
+
+export const SECTION_SHAPE_CODES = ["R", "A", "S", "_L", "L_"] as const;
+
+export const SectionVocabulary = v.strictObject({
+  sizes: v.array(
+    v.strictObject({
+      gender: v.picklist(["M", "F"]),
+      shape: v.picklist(SECTION_SHAPE_CODES),
+      size: Finite,
+    }),
+  ),
+  lengths: v.array(v.strictObject({ shape: v.picklist(SECTION_SHAPE_CODES), length: Finite })),
+});
+export type SectionVocabulary = v.InferOutput<typeof SectionVocabulary>;
+
+export const SectionVocabularyRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
 
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
   vehicles: v.optional(CompilerVehicles),
+  primitives: v.optional(PrimitiveConnectorTable),
+  sectionVocabulary: SectionVocabularyRef,
+  cavityProbe: v.string(),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -577,6 +620,93 @@ export type BundleThumbnail = v.InferOutput<typeof BundleThumbnail>;
 export const BundleLod = v.picklist(["standard", "low", "far"]);
 export type BundleLod = v.InferOutput<typeof BundleLod>;
 
+export const CONNECTIVITY_LICENSE = "CC BY-SA 4.0";
+export const CONNECTOR_SOURCE = { shadow: 1, primitive: 2, inferred: 4, patch: 8 } as const;
+export const CONNECTIVITY_SOURCES: ReadonlyArray<number> = [
+  CONNECTOR_SOURCE.shadow,
+  CONNECTOR_SOURCE.patch,
+];
+const AXIS_FREE = -1;
+const MAX_PIECE = 0xffff;
+const AXIS_LAST = 5;
+const VECTOR_FLOATS = 3;
+
+export const ConnectorPackage = v.picklist(["connectivity", "connectors"]);
+export type ConnectorPackage = v.InferOutput<typeof ConnectorPackage>;
+
+const ConnectorFaces = v.object({
+  gender: v.array(v.picklist([0, 1])),
+  source: v.array(v.picklist(Object.values(CONNECTOR_SOURCE))),
+  status: v.array(v.picklist([0, 1])),
+  caps: v.array(Count),
+  slide: v.array(v.boolean()),
+  group: v.array(v.string()),
+  origin: v.array(Integer),
+  axis: v.array(v.pipe(Integer, v.minValue(AXIS_FREE), v.maxValue(AXIS_LAST))),
+  sectionStart: v.array(Count),
+  sectionCount: v.array(Count),
+  sectionCode: v.array(Count),
+  sectionSize: v.array(Finite),
+  sectionLength: v.array(Finite),
+  piece: v.array(v.pipe(Integer, v.minValue(0), v.maxValue(MAX_PIECE))),
+});
+
+const ConnectorFreeFaces = v.object({
+  face: v.array(Count),
+  origin: v.array(Finite),
+  axis: v.array(Finite),
+});
+
+export const UnreadableConnector = v.picklist(["generic", "closedAtBothEnds"]);
+export type UnreadableConnector = v.InferOutput<typeof UnreadableConnector>;
+
+export const ConnectorRecordFile = v.pipe(
+  v.object({
+    part: v.string(),
+    license: v.string(),
+    sectionVocabulary: v.optional(Sha256Hex),
+    faces: ConnectorFaces,
+    free: ConnectorFreeFaces,
+    unreadable: v.array(UnreadableConnector),
+  }),
+  v.check(({ faces, free }) => {
+    const count = faces.gender.length;
+    const perFace = [
+      faces.source,
+      faces.status,
+      faces.caps,
+      faces.slide,
+      faces.group,
+      faces.axis,
+      faces.sectionStart,
+      faces.sectionCount,
+      faces.piece,
+    ];
+    const sections = faces.sectionCode.length;
+    return (
+      perFace.every((column) => column.length === count) &&
+      faces.origin.length === count * VECTOR_FLOATS &&
+      faces.sectionSize.length === sections &&
+      faces.sectionLength.length === sections &&
+      faces.sectionStart.every((start, i) => start + (faces.sectionCount[i] ?? 0) <= sections) &&
+      free.origin.length === free.face.length * VECTOR_FLOATS &&
+      free.axis.length === free.face.length * VECTOR_FLOATS &&
+      free.face.every((face) => face < count && faces.axis[face] === AXIS_FREE)
+    );
+  }, "connector record arrays are inconsistent"),
+);
+export type ConnectorRecordFile = v.InferOutput<typeof ConnectorRecordFile>;
+
+export const ConnectorIndexFile = v.object({
+  package: ConnectorPackage,
+  licenses: v.array(v.string()),
+  attribution: v.array(v.string()),
+  sectionVocabulary: v.optional(Sha256Hex),
+  source: BundleSource,
+  parts: v.record(v.string(), v.nullable(FileRef)),
+});
+export type ConnectorIndexFile = v.InferOutput<typeof ConnectorIndexFile>;
+
 export const TablePlane = v.object({
   part: v.string(),
   depthBelowTopLdu: v.pipe(Finite, v.gtValue(0)),
@@ -605,6 +735,8 @@ export const BundleIndex = v.object({
   trackShapes: v.array(TrackShape),
   tablePlane: TablePlane,
   compiler: v.nullable(BundleCompiler),
+  connectors: FileRef,
+  connectivity: FileRef,
   crosswalk: FileRef,
   partTable: FileRef,
   creditTable: FileRef,
@@ -746,6 +878,14 @@ const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
 
+export const CompilerConnectorInputs = v.strictObject({
+  primitives: v.nullable(PrimitiveConnectorTable),
+  sectionVocabulary: SectionVocabulary,
+  cavityProbe: v.string(),
+  infer: StringList,
+});
+export type CompilerConnectorInputs = v.InferOutput<typeof CompilerConnectorInputs>;
+
 export const BakeShard = v.pipe(
   v.strictObject({ from: Count, to: Count, of: Count, visibilityOnly: v.boolean() }),
   v.check(
@@ -764,6 +904,7 @@ export const CompilerRequest = v.variant("op", [
     lod: BundleLod,
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
+    connectors: CompilerConnectorInputs,
     parts: StringList,
     inlineChecks: v.pipe(
       v.array(v.strictObject({ inline: v.string(), official: v.string() })),
@@ -854,6 +995,7 @@ export const CompilerCompile = v.object({
         file: v.string(),
         header: ModelSection,
         files: Count,
+        connectors: v.nullable(ConnectorRecordFile),
       }),
       v.object({ ...CompilerNeed.entries, ...Reference }),
       v.object({ ...CompilerFailure.entries, ...Reference }),
@@ -1169,6 +1311,37 @@ export const GithubArchive = v.strictObject({
 });
 export type GithubArchive = v.InferOutput<typeof GithubArchive>;
 
+export const SectionVocabularyFile = v.strictObject({
+  source: GithubArchive,
+  archive: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  license: v.string(),
+  attribution: v.array(v.string()),
+  ...SectionVocabulary.entries,
+});
+export type SectionVocabularyFile = v.InferOutput<typeof SectionVocabularyFile>;
+
+export const LIBRARY_CONNECTORS_FORMAT = 1;
+
+export const LibraryConnectorsIndex = v.strictObject({
+  format: v.literal(LIBRARY_CONNECTORS_FORMAT),
+  ldraw: GithubMirror,
+  shadow: GithubArchive,
+  sectionVocabulary: Sha256Hex,
+  connectivity: v.strictObject({ file: v.string() }),
+  connectors: v.strictObject({ file: v.string() }),
+});
+export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex>;
+
+export const LibraryConnectorsPin = v.strictObject({
+  index: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  parts: Count,
+  refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
+  records: v.strictObject({ connectivity: Count, connectors: Count }),
+  faces: v.strictObject({ connectivity: Count, connectors: Count }),
+  partsWithPieces: Count,
+});
+export type LibraryConnectorsPin = v.InferOutput<typeof LibraryConnectorsPin>;
+
 export const CatalogLocation = v.variant("kind", [GithubMirror, GithubArchive]);
 export type CatalogLocation = v.InferOutput<typeof CatalogLocation>;
 
@@ -1180,7 +1353,12 @@ export const LdrawLibraryIndex = v.strictObject({
 });
 export type LdrawLibraryIndex = v.InferOutput<typeof LdrawLibraryIndex>;
 
-export const CatalogSourceUse = v.picklist(["crosswalk", "inventory-check", "categories"]);
+export const CatalogSourceUse = v.picklist([
+  "crosswalk",
+  "inventory-check",
+  "categories",
+  "connectors",
+]);
 export type CatalogSourceUse = v.InferOutput<typeof CatalogSourceUse>;
 
 export const CatalogSource = v.strictObject({

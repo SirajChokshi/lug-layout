@@ -46,6 +46,7 @@ pub enum Operation {
         lod: LodName,
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
+        connectors: ConnectorInputs,
         parts: Vec<String>,
         inline_checks: Vec<InlineCheck>,
     },
@@ -60,6 +61,15 @@ pub enum Operation {
         vehicles: Option<VehicleInputs>,
         shard: Option<Shard>,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ConnectorInputs {
+    pub primitives: Option<serde_json::Value>,
+    pub section_vocabulary: serde_json::Value,
+    pub cavity_probe: String,
+    pub infer: Vec<String>,
 }
 
 #[derive(Clone, Copy, Deserialize)]

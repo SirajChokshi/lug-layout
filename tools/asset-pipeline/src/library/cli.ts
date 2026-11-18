@@ -1,8 +1,14 @@
+import { spawnSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
 import { R2ObjectStore, sha256Hex } from "../r2.ts";
+import {
+  CONNECTOR_SOURCE_USE,
+  extractShadowArchive,
+  pinnedShadowArchive,
+} from "../section-vocabulary.ts";
 import {
   extractLibrary,
   httpReader,
@@ -19,7 +25,11 @@ const repoRoot = join(toolRoot, "..", "..");
 const lockPath = join(toolRoot, "ldraw.lock.json");
 const catalogRoot = join(repoRoot, ".cache", "catalog");
 const extractRoot = join(repoRoot, ".cache", "ldraw-library");
+const shadowLibraryRoot = join(repoRoot, ".cache", "ldcad-shadow-library");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "ldraw-library.json");
+const shadowPatchesRoot = join(toolRoot, "shadow-patches");
+const sectionVocabularyPath = join(toolRoot, "section-vocabulary.json");
+const inferredConnectorsPath = join(toolRoot, "inferred-connectors.json");
 const HTTP_NOT_FOUND = 404;
 
 interface StoreConfig {
@@ -118,6 +128,51 @@ async function checkCommand(): Promise<void> {
   );
 }
 
+async function restoreShadowLibrary(lock: InputLock): Promise<void> {
+  if (lock.catalog === undefined) throw new Error("ldraw.lock.json has no catalog sources");
+  const shadow = pinnedShadowArchive(lock.catalog);
+  const entry = lock.catalog[shadow.name];
+  if (entry?.use !== CONNECTOR_SOURCE_USE) throw new Error(`${shadow.name} is not pinned`);
+  const directory = catalogSourceDirectory(catalogRoot, shadow.name);
+  await restoreFiles(entry.source, entry.files, directory);
+  await extractShadowArchive(join(directory, shadow.file), shadow.sha256, shadowLibraryRoot);
+}
+
+async function shadowPatchesCommand(check: boolean): Promise<void> {
+  const lock = await readLock();
+  const { problems } = await extractLibrary(await archivePath(lock), lock, extractRoot);
+  if (problems.length > 0) throw new Error(problems.join("\n"));
+  await restoreShadowLibrary(lock);
+  const run = spawnSync(
+    "cargo",
+    [
+      "run",
+      "--release",
+      "--quiet",
+      "-p",
+      "brick-compile-cli",
+      "--bin",
+      "shadow-patches",
+      "--",
+      "--ldraw",
+      extractRoot,
+      "--patches",
+      shadowPatchesRoot,
+      "--lock",
+      lockPath,
+      "--shadow",
+      shadowLibraryRoot,
+      "--vocabulary",
+      sectionVocabularyPath,
+      "--inferred",
+      inferredConnectorsPath,
+      ...(check ? ["--check"] : []),
+    ],
+    { cwd: repoRoot, stdio: "inherit" },
+  );
+  if (run.status !== 0) throw new Error(`shadow-patches exited with ${String(run.status)}`);
+}
+
 type ServedState = "served" | "absent" | "unknown";
 
 async function indexState(url: string): Promise<ServedState> {
@@ -179,9 +234,12 @@ switch (command) {
   case "verify-served":
     await verifyServedCommand(process.argv.includes("--all") ? "all" : "pinned");
     break;
+  case "shadow-patches":
+    await shadowPatchesCommand(process.argv.includes("--check"));
+    break;
   default:
     process.stderr.write(
-      "usage: library/cli.ts check|published|upload|served|verify-served [--all]\n",
+      "usage: library/cli.ts check|published|upload|served|verify-served [--all]|shadow-patches [--check]\n",
     );
     process.exitCode = 2;
 }

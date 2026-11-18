@@ -5,6 +5,7 @@ mod inferred;
 mod meta;
 mod primitive;
 mod profile;
+mod records;
 mod shadow;
 mod solid;
 
@@ -13,15 +14,19 @@ use std::collections::{HashMap, HashSet};
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
 use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
+use crate::pieces::NO_PIECE;
 
 pub use faces::{
-    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARED_FAR_END,
-    FLARED_NEAR_END, ROUND, SQUARE,
+    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
+    FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
-pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
+pub use inferred::{Inference, InferredFeatures, Openness, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
-pub use shadow::ShadowSnaps;
+pub use records::{
+    is_connectivity, record_json, source_code, status_code, PartRecords, TierRecord,
+};
+pub use shadow::{IncludeRefusal, ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;
@@ -32,6 +37,13 @@ pub enum Source {
     Shadow,
     Primitive,
     Inferred,
+    Patch,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Status {
+    Verified,
+    Unverified,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -63,6 +75,17 @@ pub enum Caps {
     Two,
     A,
     B,
+}
+
+impl Caps {
+    pub fn closed_ends(self, gender: Gender) -> (bool, bool) {
+        match (self, gender) {
+            (Caps::None, _) => (false, false),
+            (Caps::Two, _) => (true, true),
+            (Caps::A, _) | (Caps::One, Gender::Male) => (true, false),
+            (Caps::B, _) | (Caps::One, Gender::Female) => (false, true),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -215,11 +238,71 @@ pub(crate) fn linear_part(placement: &Affine) -> [f64; 9] {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Connector {
     pub source: Source,
+    pub status: Status,
     pub id: Option<String>,
     pub group: Option<String>,
     pub shape: Shape,
     pub placement: Affine,
     pub grid: Option<Grid>,
+    pub pieces: Vec<u16>,
+}
+
+impl Connector {
+    pub fn piece(&self) -> u16 {
+        self.pieces.first().copied().unwrap_or(NO_PIECE)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct Traced {
+    pub(crate) connector: Connector,
+    pub(crate) trail: Vec<u32>,
+}
+
+impl Traced {
+    pub(crate) fn declared(connector: Connector) -> Self {
+        Traced {
+            connector,
+            trail: Vec::new(),
+        }
+    }
+
+    pub(crate) fn through(&self, ordinal: u32, matrix: &Affine) -> Self {
+        let mut trail = Vec::with_capacity(self.trail.len() + 1);
+        trail.push(ordinal);
+        trail.extend_from_slice(&self.trail);
+        Traced {
+            connector: placed(&self.connector, matrix),
+            trail,
+        }
+    }
+}
+
+pub fn same_connector(a: &Connector, b: &Connector) -> bool {
+    let Connector {
+        source,
+        status,
+        id,
+        group,
+        shape,
+        placement,
+        grid,
+        pieces: _,
+    } = a;
+    *source == b.source
+        && *status == b.status
+        && *id == b.id
+        && *group == b.group
+        && *shape == b.shape
+        && *placement == b.placement
+        && *grid == b.grid
+}
+
+pub fn joined_pieces(a: &[u16], b: &[u16]) -> Vec<u16> {
+    let mut pieces: Vec<u16> = a.iter().chain(b).copied().collect();
+    pieces.sort_unstable();
+    pieces.dedup();
+    pieces
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -285,7 +368,7 @@ pub struct Extraction {
     pub issues: Vec<Issue>,
 }
 
-fn column(m: &Affine, c: usize) -> Vec3 {
+pub(crate) fn column(m: &Affine, c: usize) -> Vec3 {
     [m.m[c], m.m[4 + c], m.m[8 + c]]
 }
 
@@ -367,7 +450,7 @@ fn finished(connector: &Connector, issues: &mut Vec<Issue>) -> Connector {
 enum Slot {
     Lattice {
         polarity: u8,
-        origin: [i64; 3],
+        sixteenths: [i64; 3],
         axis: u8,
     },
     Free {
@@ -449,7 +532,7 @@ fn slots(connector: &Connector) -> Vec<Slot> {
             match (lattice, code) {
                 ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
                     polarity,
-                    origin: [x, y, z],
+                    sixteenths: [x, y, z],
                     axis,
                 },
                 _ => Slot::Free {
@@ -501,7 +584,7 @@ fn face_slot(face: &MatingFace) -> Slot {
     match (lattice, direction_code(face.axis)) {
         ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
             polarity,
-            origin: [x, y, z],
+            sixteenths: [x, y, z],
             axis,
         },
         _ => Slot::Free {
@@ -545,13 +628,17 @@ fn merge(
             .find_map(|key| occupied.get(key).copied());
         match holder {
             Some(Occupant::Tier(index)) => {
-                let kept = &extraction.connectors[index];
+                let kept = &mut extraction.connectors[index];
+                if candidate.source != Source::Inferred || kept.source == Source::Inferred {
+                    kept.pieces = joined_pieces(&kept.pieces, &candidate.pieces);
+                }
                 if !same_sections(&kept.shape, &candidate.shape) {
-                    extraction.issues.push(Issue::SectionDisagreement {
+                    let disagreement = Issue::SectionDisagreement {
                         origin: translation(&candidate.placement),
                         kept: (kept.source, kept.shape.clone()),
                         lower: (candidate.source, candidate.shape.clone()),
-                    });
+                    };
+                    extraction.issues.push(disagreement);
                 }
             }
             Some(Occupant::Cleared) => {}
@@ -621,12 +708,17 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                 } => {
                     let entrance = MatingFace {
                         source: Source::Inferred,
+                        status: Status::Unverified,
+                        group: None,
                         gender: Gender::Female,
                         origin: [origin[0], -origin[1], -origin[2]].map(|c| c + 0.0),
                         axis: [0.0; 3],
+                        sixteenths: None,
+                        direction: None,
                         sections: Vec::new(),
                         caps: 0,
                         slide: false,
+                        piece: NO_PIECE,
                     };
                     !held.contains(&face_slot(&entrance))
                 }
