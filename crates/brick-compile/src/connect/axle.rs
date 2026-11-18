@@ -86,6 +86,12 @@ fn within(section: &[Vec<Point>], low: Point, high: Point) -> Vec<&Vec<Point>> {
         .collect()
 }
 
+fn segment_distance(from: Point, along: Point) -> f64 {
+    let squared = along[0] * along[0] + along[1] * along[1];
+    let t = (-(from[0] * along[0] + from[1] * along[1]) / squared).clamp(0.0, 1.0);
+    (from[0] + t * along[0]).hypot(from[1] + t * along[1])
+}
+
 fn offset(forward: f64, back: f64) -> f64 {
     (forward - back).abs() / 2.0
 }
@@ -190,7 +196,7 @@ impl AxleProbe {
         self.radius() + HALF_GRID_LDU * SQRT_2 + IDENTIFY_LDU
     }
 
-    fn angles(&self, section: &[Vec<Point>]) -> Vec<f64> {
+    fn angles(&self, section: &[Vec<Point>], reach: f64) -> Vec<f64> {
         let within = IDENTIFY_LDU / self.radius();
         let mut out: Vec<f64> = Vec::new();
         for polygon in section {
@@ -198,7 +204,7 @@ impl AxleProbe {
                 let (p, q) = (polygon[k], polygon[(k + 1) % polygon.len()]);
                 let d = [q[0] - p[0], q[1] - p[1]];
                 let span = d[0].hypot(d[1]);
-                if span <= IDENTIFY_LDU {
+                if span <= IDENTIFY_LDU || segment_distance(p, d) > reach {
                     continue;
                 }
                 let distance = (p[0] * d[1] - p[1] * d[0]).abs() / span;
@@ -284,8 +290,9 @@ impl AxleProbe {
         if !solid.comes_within(probe, near, self.radius(), self.radius() - IDENTIFY_LDU) {
             return None;
         }
-        let glance = solid.cross_section(probe, near, self.radius() + IDENTIFY_LDU);
-        for angle in self.angles(&glance) {
+        let reach = self.radius() + IDENTIFY_LDU;
+        let glance = solid.cross_section(probe, near, reach);
+        for angle in self.angles(&glance, reach) {
             let placed = self.profile.placed([0.0, 0.0], angle);
             let floor = solid.profile_floor(probe, &placed.eroded(IDENTIFY_LDU), self.radius());
             if floor.depth <= 2.0 * IDENTIFY_LDU || floor.faces_probe == Some(false) {
@@ -322,9 +329,9 @@ impl AxleProbe {
         let glance = solid.cross_section(
             probe,
             (IDENTIFY_LDU, far.min(self.radius()) - IDENTIFY_LDU),
-            self.radius() + IDENTIFY_LDU,
+            reach,
         );
-        for angle in self.angles(&glance) {
+        for angle in self.angles(&glance, reach) {
             let placed = self.profile.placed([0.0, 0.0], angle);
             let floor =
                 solid.profile_floor(probe, &placed.eroded_pockets(IDENTIFY_LDU), self.radius());
@@ -351,5 +358,144 @@ impl AxleProbe {
             );
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::Path;
+
+    use super::super::inferred::axle_section;
+    use super::*;
+    use crate::flatten::{Library, Triangle};
+
+    #[derive(Default)]
+    struct Pinned(RefCell<HashMap<String, Option<&'static str>>>);
+
+    impl Library for Pinned {
+        fn source(&self, path: &str) -> Option<&str> {
+            *self
+                .0
+                .borrow_mut()
+                .entry(path.to_string())
+                .or_insert_with(|| {
+                    fs::read_to_string(
+                        Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .join("../../.cache/ldraw")
+                            .join(path),
+                    )
+                    .ok()
+                    .map(|text| &*Box::leak(text.into_boxed_str()))
+                })
+        }
+    }
+
+    const AXLE_SECTION: &str = "p/axleend.dat";
+
+    fn axle_probe() -> AxleProbe {
+        let library = Pinned::default();
+        AxleProbe::new(axle_section(&library, AXLE_SECTION).expect(
+            "pinned inputs are restored; run `pnpm --filter @brr/asset-pipeline restore-ldraw`",
+        ))
+        .expect("the pinned axle section is an axle probe")
+    }
+
+    fn triangle(points: [Vec3; 3]) -> Triangle {
+        Triangle {
+            color: 16,
+            points,
+            double_sided: true,
+        }
+    }
+
+    fn upright(a: Point, b: Point, depth: f64) -> [Triangle; 2] {
+        let at = |p: Point, y: f64| [p[0], y, p[1]];
+        [
+            triangle([at(a, 0.0), at(b, 0.0), at(b, depth)]),
+            triangle([at(a, 0.0), at(b, depth), at(a, depth)]),
+        ]
+    }
+
+    fn level(low: Point, high: Point, y: f64) -> [Triangle; 2] {
+        let at = |x: f64, z: f64| [x, y, z];
+        [
+            triangle([
+                at(low[0], low[1]),
+                at(high[0], low[1]),
+                at(high[0], high[1]),
+            ]),
+            triangle([
+                at(low[0], low[1]),
+                at(high[0], high[1]),
+                at(low[0], high[1]),
+            ]),
+        ]
+    }
+
+    const SOCKET_DEPTH: f64 = 29.0;
+
+    fn toothed_socket_with_slots() -> Vec<Triangle> {
+        let mut walls = Vec::new();
+        for (sx, sz) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+            let tip = [3.464 * sx, 4.0 * sz];
+            walls.extend(upright(tip, [6.0 * sx, 4.0 * sz], SOCKET_DEPTH));
+            walls.extend(upright(tip, [6.0 * sx, 6.536 * sz], SOCKET_DEPTH));
+        }
+        for x in [-2.0, 2.0] {
+            for sz in [-1.0, 1.0] {
+                walls.extend(upright([x, 8.657 * sz], [x, 13.582 * sz], SOCKET_DEPTH));
+            }
+        }
+        for (low, high) in [
+            ([-20.0, -20.0], [-7.0, 20.0]),
+            ([7.0, -20.0], [20.0, 20.0]),
+            ([-7.0, -20.0], [7.0, -15.0]),
+            ([-7.0, 15.0], [7.0, 20.0]),
+        ] {
+            walls.extend(level(low, high, 0.0));
+        }
+        walls.extend(level([-7.0, -7.0], [7.0, 7.0], SOCKET_DEPTH));
+        walls
+    }
+
+    const CELL_SIZES: [f64; 5] = [2.5, 5.0, HALF_GRID_LDU, 20.0, 40.0];
+
+    #[test]
+    fn a_socket_whose_walls_miss_the_axle_sides_takes_no_axle_whatever_the_index_cell_size() {
+        let probe = axle_probe();
+        let socket = toothed_socket_with_slots();
+        let found: Vec<Vec<AxleFound>> = CELL_SIZES
+            .iter()
+            .map(|&size| {
+                probe
+                    .find(&Solid::with_cell_size(&socket, Vec::new(), size))
+                    .0
+            })
+            .collect();
+        for (size, at) in CELL_SIZES.iter().zip(&found) {
+            assert_eq!(at, &found[0], "cell size {size}");
+        }
+        assert!(!found[0].iter().any(|feature| matches!(
+            feature,
+            AxleFound::Hole { probe, .. } if probe.entrance[0] == 0.0 && probe.entrance[2] == 0.0
+        )));
+    }
+
+    #[test]
+    fn an_edge_whose_segment_stays_outside_the_axle_gives_no_side_angle() {
+        let probe = axle_probe();
+        let reach = probe.radius() + IDENTIFY_LDU;
+        let corner = probe.radius() + 0.2;
+        let on_the_arm_side_line = |from: f64, to: f64| vec![[from, 2.0], [to, 2.0], [to, 2.5]];
+        assert!(probe
+            .angles(&[on_the_arm_side_line(corner, corner + 0.1)], reach)
+            .is_empty());
+        assert_eq!(
+            probe.angles(&[on_the_arm_side_line(3.0, 4.0)], reach),
+            vec![0.0]
+        );
     }
 }

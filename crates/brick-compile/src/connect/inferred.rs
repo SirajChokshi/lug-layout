@@ -472,32 +472,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
     }
 
     pub fn with_axle_probe(mut self, probe_part: &str) -> Result<Self, String> {
-        let path = resolve_reference(self.library, Lod::Standard, probe_part)
-            .ok_or(format!("axle probe {probe_part} is not in the library"))?;
-        let borrowed = Borrowed(self.library);
-        let flattened = Flattener::new(&borrowed, Lod::Standard, &[])
-            .flatten(&path)
-            .map_err(|e| format!("axle probe {probe_part}: {e:?}"))?;
-        let level = flattened
-            .triangles
-            .first()
-            .map(|t| t.points[0][1])
-            .ok_or(format!("axle probe {probe_part} has no faces"))?;
-        if flattened
-            .triangles
-            .iter()
-            .flat_map(|t| t.points.iter())
-            .any(|p| (p[1] - level).abs() > IDENTIFY_LDU)
-        {
-            return Err(format!("axle probe {probe_part} is not a flat section"));
-        }
-        let triangles: Vec<[[f64; 2]; 3]> = flattened
-            .triangles
-            .iter()
-            .map(|t| t.points.map(|p| [p[0], p[2]]))
-            .collect();
-        let profile = Profile::from_triangles(&triangles, IDENTIFY_LDU)
-            .map_err(|e| format!("axle probe {probe_part}: {e}"))?;
+        let profile = axle_section(self.library, probe_part)?;
         let size = |gender: Gender| {
             self.vocabulary
                 .size(gender, SectionShape::Axle, profile.radius())
@@ -1367,6 +1342,38 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
     }
+}
+
+pub(super) fn axle_section<L: Library + ?Sized>(
+    library: &L,
+    probe_part: &str,
+) -> Result<Profile, String> {
+    let path = resolve_reference(library, Lod::Standard, probe_part)
+        .ok_or(format!("axle probe {probe_part} is not in the library"))?;
+    let borrowed = Borrowed(library);
+    let flattened = Flattener::new(&borrowed, Lod::Standard, &[])
+        .flatten(&path)
+        .map_err(|e| format!("axle probe {probe_part}: {e:?}"))?;
+    let level = flattened
+        .triangles
+        .first()
+        .map(|t| t.points[0][1])
+        .ok_or(format!("axle probe {probe_part} has no faces"))?;
+    if flattened
+        .triangles
+        .iter()
+        .flat_map(|t| t.points.iter())
+        .any(|p| (p[1] - level).abs() > IDENTIFY_LDU)
+    {
+        return Err(format!("axle probe {probe_part} is not a flat section"));
+    }
+    let triangles: Vec<[[f64; 2]; 3]> = flattened
+        .triangles
+        .iter()
+        .map(|t| t.points.map(|p| [p[0], p[2]]))
+        .collect();
+    Profile::from_triangles(&triangles, IDENTIFY_LDU)
+        .map_err(|e| format!("axle probe {probe_part}: {e}"))
 }
 
 pub(super) fn by_key<K: Ord, V>(map: HashMap<K, V>) -> Vec<V> {
