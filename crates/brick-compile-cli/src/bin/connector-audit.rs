@@ -341,6 +341,9 @@ fn issue_key(issue: &Issue) -> String {
         }
         Issue::UnresolvedInclude { reference, .. } => format!("unresolved include {reference}"),
         Issue::TooDeep { .. } => "too deep".to_string(),
+        Issue::MalformedGeometry { malformation, .. } => {
+            format!("malformed geometry: {malformation:?}")
+        }
         Issue::ScaledFixedShape { source, .. } => {
             format!(
                 "{}: scaled reference to a fixed-size snap",

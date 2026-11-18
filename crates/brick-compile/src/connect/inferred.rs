@@ -521,8 +521,15 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
         let borrowed = Borrowed(self.library);
-        let flattened = Flattener::new(&borrowed, Lod::Standard, &[]).flatten(path);
-        let mut issues = Vec::new();
+        let mut flattener = Flattener::new(&borrowed, Lod::Standard, &[]);
+        let flattened = flattener.flatten(path);
+        let mut issues: Vec<Issue> = flattener
+            .malformed()
+            .iter()
+            .cloned()
+            .map(Issue::from)
+            .collect();
+        let malformed = !issues.is_empty();
         let prepared = match flattened {
             Err(_) => {
                 issues.push(Issue::Uninferred {
@@ -535,6 +542,11 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     issues,
                 }
             }
+            Ok(_) if malformed => Prepared {
+                solid: None,
+                runs: Vec::new(),
+                issues,
+            },
             Ok(flattened) => {
                 let placed = self.placed(path, &mut issues);
                 let solid = Solid::new(&flattened.triangles, placed.surfaces);

@@ -9,7 +9,7 @@ use crate::affine::Vec3;
 use crate::flatten::Triangle;
 use crate::lattice::STUD_LDU;
 
-pub const IDENTIFY_LDU: f64 = 0.0005;
+pub use crate::lattice::IDENTIFY_LDU;
 const CELL_HASH_ROTATION: u32 = 26;
 const CELL_HASH_MULTIPLIER: u64 = 0x9e37_79b9_7f4a_7c15;
 
