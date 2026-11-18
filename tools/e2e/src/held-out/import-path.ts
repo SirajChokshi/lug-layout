@@ -64,6 +64,17 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function studioArchive(
+  compiler: BrickCompiler,
+  bytes: Uint8Array,
+): ReturnType<BrickCompiler["readStudio"]> | null {
+  try {
+    return compiler.readStudio(bytes);
+  } catch {
+    return null;
+  }
+}
+
 export async function importThroughWorkerPath(
   bundle: Bundle,
   fetchUrl: FetchFunction,
@@ -100,7 +111,7 @@ export async function importThroughWorkerPath(
   } catch (error) {
     const message = messageOf(error);
     if (input.format !== "studio") return { kind: "threw", message };
-    const archive = await compiler.readStudio(input.bytes).catch(() => null);
+    const archive = studioArchive(compiler, input.bytes);
     if (archive?.status !== "rejected") return { kind: "threw", message };
     return { kind: "rejected", rejection: archive, surfacedMessage: message };
   }

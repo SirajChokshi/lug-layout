@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type * as v from "valibot";
 
 const LOD = "standard";
+const OPAQUE_ALPHA = 255;
 
 export interface Bundle {
   readonly directory: string;
@@ -55,6 +56,10 @@ export async function openBundle(root: string): Promise<Bundle> {
       unofficialAllowlist: index.compiler.unofficialAllowlist,
       bundlePartIds: table.parts.map((part) => part.id),
       ldconfigCodes: index.colors.map((color) => color.code),
+      translucentColors: index.colors
+        .filter((color) => color.alpha < OPAQUE_ALPHA)
+        .map((color) => color.code),
+      vehicles: index.compiler.vehicles ?? null,
     },
   };
 }
