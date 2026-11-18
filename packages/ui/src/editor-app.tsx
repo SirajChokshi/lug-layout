@@ -39,7 +39,6 @@ import { useSafeArea } from "./safe-area.ts";
 import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
-import { useRecentItems } from "./use-recent-items.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WorldMenu } from "./world-menu.tsx";
 
@@ -112,7 +111,6 @@ export function EditorApp({
 }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   const playSnapshot = usePlaySnapshot(play);
-  const recent = useRecentItems(snapshot.activeItem);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
   const toggleOverlay = useCallback(
@@ -212,8 +210,8 @@ export function EditorApp({
           editor={editor}
           camera={camera}
           play={play}
+          search={paletteSearch}
           snapshot={snapshot}
-          recent={recent}
           onClose={closeOverlay}
           onShellCommand={toggleOverlay}
         />

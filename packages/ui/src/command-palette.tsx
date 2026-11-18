@@ -5,25 +5,26 @@ import {
   isShellCommand,
   runEditorAction,
   runPlayAction,
-  searchPalette,
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
   type IEditorCamera,
+  type IPaletteSearch,
   type ITrainPlay,
   type PaletteResult,
   type ShellCommandId,
 } from "@brr/client";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CommandKeys } from "./keys.tsx";
+import { usePaletteSearchSnapshot } from "./use-palette-search.ts";
 import { usePlaySnapshot } from "./use-play.ts";
 
 interface CommandPaletteProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
   readonly play: ITrainPlay;
+  readonly search: IPaletteSearch;
   readonly snapshot: EditorSnapshot;
-  readonly recent: ReadonlyArray<string>;
   readonly onClose: () => void;
   readonly onShellCommand: (id: ShellCommandId) => void;
 }
@@ -100,8 +101,8 @@ export function CommandPalette({
   editor,
   camera,
   play,
+  search,
   snapshot,
-  recent,
   onClose,
   onShellCommand,
 }: CommandPaletteProps) {
@@ -109,14 +110,10 @@ export function CommandPalette({
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
   const playSnapshot = usePlaySnapshot(play);
+  const { find } = usePaletteSearchSnapshot(search);
   const results = useMemo(
-    () =>
-      searchPalette(query, {
-        catalog: snapshot.catalog,
-        recent,
-        enabled: (id) => commandEnabled(id, snapshot, playSnapshot),
-      }),
-    [query, snapshot, playSnapshot, recent],
+    () => find(query, (id) => commandEnabled(id, snapshot, playSnapshot)),
+    [find, query, snapshot, playSnapshot],
   );
   const active = Math.min(cursor, Math.max(results.length - 1, 0));
 

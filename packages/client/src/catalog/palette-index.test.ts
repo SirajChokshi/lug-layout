@@ -94,6 +94,26 @@ const catalog: ReadonlyArray<CatalogItemView> = [
   },
 ];
 
+const trackSiding: CatalogItemView = {
+  id: "generated:station-track-siding",
+  label: "Station Track Siding",
+  group: "generated:station-track-siding",
+  shortLabel: "Station Track Siding",
+  groupLabel: "Station Track Siding",
+  color: null,
+  kind: "model",
+  parts: 30,
+  studsWide: 32,
+  studsDeep: 32,
+  thumbnail: null,
+  aliases: [],
+  elements: [],
+  displayColor: false,
+  draggable: true,
+  toggleable: false,
+  listedUnder: null,
+};
+
 const index = new PaletteIndex(catalog, [
   { entryKey: "track:lego-9v", terms: ["2865", "Train Track 9V Straight", "2867"] },
 ]);
@@ -153,6 +173,20 @@ it("forgives typos and abbreviations but ranks exact words first", () => {
   expect(keys("passenger")[0]).toBe("omr:7938-1");
 });
 
+it("forgives a misspelt colour, but never reads one real colour word as another", () => {
+  expect(colorsOf("gren 3811", "ldraw:3811")?.[0]).toBe("Green");
+  for (const key of ["ldraw:4186", "ldraw:3811", "ldraw:3867"]) {
+    expect(colorsOf("baseplate gren", key)?.[0]).toBe("Green");
+  }
+  expect(colorsOf("green", "ldraw:3867")).toEqual(["Green"]);
+});
+
+it("matches the words for a kind of part as typed or abbreviated, never as a typo", () => {
+  expect(keys("ground")).toEqual(["ldraw:4186", "ldraw:3811", "ldraw:3867"]);
+  expect(keys("grou")).toEqual(["ldraw:4186", "ldraw:3811", "ldraw:3867"]);
+  expect(keys("plan")).toEqual([]);
+});
+
 it("reads quoted phrases, minus to exclude, and # for numbers only", () => {
   expect(keys('"road crossroads"')).toEqual(["ldraw:2358p02"]);
   expect(keys('"crossroads road"')).toEqual([]);
@@ -196,4 +230,45 @@ it("defaults a part to the current colour, else its display colour, else its sec
   expect(pick("ldraw:3867", TAN.code)).toBe("ldraw:3867@2");
   const [searched] = index.search("4186", "all");
   expect(searched && index.defaultItem(searched.items, null)?.id).toBe("ldraw:4186@2");
+});
+
+function trackPiece(number: string, title: string): CatalogItemView {
+  return {
+    id: `track-piece:ldraw:${number}`,
+    label: `${number} ${title}`,
+    group: "track-pieces",
+    shortLabel: "Track",
+    groupLabel: "Track pieces",
+    color: null,
+    kind: "track",
+    parts: 1,
+    studsWide: 16,
+    studsDeep: 8,
+    thumbnail: null,
+    aliases: [],
+    elements: [],
+    displayColor: false,
+    draggable: false,
+    toggleable: true,
+    listedUnder: "track:lego-9v",
+  };
+}
+
+it("keeps colourless parts that share a group as separate parts", () => {
+  const pieces = new PaletteIndex([
+    trackPiece("74746", "Train Track 9V Straight"),
+    trackPiece("75541-f1", "Train Track 9V Switch Right Straight"),
+  ]);
+  const found = (query: string) =>
+    pieces.search(query, "all").map((hit) => hit.items.map((item) => item.id));
+  expect(found("75541")).toEqual([["track-piece:ldraw:75541-f1"]]);
+  expect(found("straight")).toEqual([["track-piece:ldraw:74746"], ["track-piece:ldraw:75541-f1"]]);
+});
+
+it("ranks a part named by the word above parts that only mention it", () => {
+  const withSiding = new PaletteIndex([trackSiding, ...catalog]);
+  expect(withSiding.search("track", "all").map((hit) => hit.entry.key)).toEqual([
+    "track:lego-9v",
+    "generated:station-track-siding",
+  ]);
 });

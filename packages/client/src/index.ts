@@ -184,13 +184,7 @@ export {
   type ToolHintView,
   type ToolTone,
 } from "./commands/tool-hints.ts";
-export {
-  searchPalette,
-  type CommandResult,
-  type ItemResult,
-  type PaletteResult,
-  type PaletteSources,
-} from "./commands/command-search.ts";
+export type { CommandResult, ItemResult, PaletteResult } from "./commands/command-search.ts";
 export {
   chordKeys,
   chordText,
