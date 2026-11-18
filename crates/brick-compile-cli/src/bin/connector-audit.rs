@@ -386,7 +386,7 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
         Uninferred::OpenArc { .. } => "inward open arc wider than half a circle",
         Uninferred::Unflattened => "part does not flatten",
         Uninferred::Oversized { .. } => {
-            "geometry spanning more than 65,536 half-stud squares on some axis; it seeds no probes on that axis"
+            "geometry spanning more than 65,536 half-stud squares on some axis; on that axis it stays off the cell index and seeds no probes of its own"
         }
     }
 }

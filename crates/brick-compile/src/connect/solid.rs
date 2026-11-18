@@ -351,7 +351,7 @@ fn reach_box(center: [f64; 2], reach: f64) -> PlanBox {
     [center.map(|c| c - reach), center.map(|c| c + reach)]
 }
 
-fn narrower(a: &PlanBox, b: &PlanBox) -> PlanBox {
+fn intersection(a: &PlanBox, b: &PlanBox) -> PlanBox {
     [
         [0, 1].map(|k| a[0][k].max(b[0][k])),
         [0, 1].map(|k| a[1][k].min(b[1][k])),
@@ -376,7 +376,7 @@ pub struct Solid {
     no_line: Rc<DepthBands>,
     bounds: (Vec3, Vec3),
     columns: [OnceCell<Column>; 3],
-    occupied: [OnceCell<Squares>; 3],
+    occupied: [OnceCell<SquareSet>; 3],
     surfaces: Vec<RoundSurface>,
     axes: Cells<(usize, i64, i64), Vec<usize>>,
     walls: [Cells<(i64, i64), Vec<usize>>; 3],
@@ -399,11 +399,9 @@ fn cross(a: Vec3, b: Vec3) -> Vec3 {
     ]
 }
 
-const OVERSIZED_CELLS: f64 = 65_536.0;
+const PLAN_BUDGET: f64 = 65_536.0;
 
-const OVERSIZED_SQUARES: f64 = 65_536.0;
-
-type Squares = HashSet<(i64, i64), BuildHasherDefault<CellHasher>>;
+type SquareSet = HashSet<(i64, i64), BuildHasherDefault<CellHasher>>;
 
 fn square(value: f64) -> i64 {
     (value / HALF_GRID_LDU).floor() as i64
@@ -417,7 +415,7 @@ fn squares_across(low: [f64; 2], high: [f64; 2]) -> f64 {
 
 fn beyond_budget(low: [f64; 2], high: [f64; 2]) -> bool {
     !matches!(
-        squares_across(low, high).partial_cmp(&OVERSIZED_SQUARES),
+        squares_across(low, high).partial_cmp(&PLAN_BUDGET),
         Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
     )
 }
@@ -444,7 +442,7 @@ fn window_cells(window: [[i64; 2]; 2]) -> f64 {
 }
 
 fn sparser_than<V>(cells: &Cells<(i64, i64), V>, span: f64) -> bool {
-    span > (cells.len() as f64).max(OVERSIZED_CELLS)
+    span > (cells.len() as f64).max(PLAN_BUDGET)
 }
 
 fn in_window<'a, V>(
@@ -1112,9 +1110,9 @@ impl Solid {
         })
     }
 
-    fn occupied(&self, axis: usize) -> &Squares {
+    fn occupied(&self, axis: usize) -> &SquareSet {
         self.occupied[axis].get_or_init(|| {
-            let mut occupied = Squares::default();
+            let mut occupied = SquareSet::default();
             let mut cover = |low: [f64; 2], high: [f64; 2]| {
                 for x in square(low[0])..=square(high[0]) {
                     for y in square(low[1])..=square(high[1]) {
@@ -1249,17 +1247,12 @@ impl Solid {
         plan: Option<&PlanBox>,
         found: &mut impl FnMut(u32) -> bool,
     ) -> bool {
-        let (i, j) = plan_axes(axis);
         let low_of = |index: u32| self.facets[index as usize].low[axis];
         bands.starting_before((from, to), low_of, &mut |index| {
             let facet = &self.facets[index as usize];
-            let meets = |plan: &PlanBox| {
-                plan[0][0] <= facet.high[i]
-                    && facet.low[i] <= plan[1][0]
-                    && plan[0][1] <= facet.high[j]
-                    && facet.low[j] <= plan[1][1]
-            };
-            !(facet.high[axis] >= from && plan.is_none_or(meets)) || found(index)
+            let (low, high) = self.plan_box(facet, axis);
+            !(facet.high[axis] >= from && plan.is_none_or(|plan| meets(low, high, plan)))
+                || found(index)
         })
     }
 
@@ -1283,7 +1276,7 @@ impl Solid {
         let column = self.column(probe.axis);
         let center = probe.center();
         let within = reach_box(center, reach);
-        let query = plan.map_or(within, |plan| narrower(plan, &within));
+        let query = plan.map_or(within, |plan| intersection(plan, &within));
         let window = self.cell.window(center, reach);
         let indexed = in_window(&column.cells, window, |bands| {
             self.meeting(bands, probe.axis, (from, to), Some(&query), &mut found)
@@ -2148,7 +2141,7 @@ impl Solid {
                 .collect();
         }
         let pad = (reach / HALF_GRID_LDU).ceil() as i64 + 1;
-        let mut live = Squares::default();
+        let mut live = SquareSet::default();
         for &(x, y) in self.occupied(plane.axis) {
             for a in x.saturating_sub(pad).max(range[0][0])..=x.saturating_add(pad).min(range[0][1])
             {
@@ -2274,7 +2267,7 @@ mod tests {
         };
         let reach = 1500.0;
         let window = 2.0 * reach / HALF_GRID_LDU + 1.0;
-        assert!(window * window > OVERSIZED_CELLS);
+        assert!(window * window > PLAN_BUDGET);
         let mut visited = Vec::new();
         solid.each(&probe, reach, (0.0, 10.0), None, |facet| {
             visited.push(facet);
@@ -2352,11 +2345,20 @@ mod tests {
 
     #[test]
     fn probes_are_seeded_where_geometry_lies_whatever_the_index_cell_size() {
-        let triangles = [
-            flat(-800.0, 0.0, 1.0),
-            flat(0.0, 0.0, 400.0),
-            flat(800.0, 0.0, 1.0),
-        ];
+        let flats = [(-800.0, 1.0), (0.0, 400.0), (800.0, 1.0)];
+        let triangles = flats.map(|(x, half)| flat(x, 0.0, half));
+        let boxes = flats.map(|(x, half)| [[-half, x - half], [half, x + half]]);
+        let reach = 25.0;
+        let gap = |point: [f64; 2]| {
+            boxes
+                .iter()
+                .map(|plan| {
+                    (0..2)
+                        .map(|k| (plan[0][k] - point[k]).max(point[k] - plan[1][k]).max(0.0))
+                        .fold(0.0, f64::max)
+                })
+                .fold(f64::INFINITY, f64::min)
+        };
         let seeded = |size: f64| {
             let solid = Solid::with_cell_size(&triangles, vec![huge_ring()], size);
             let plane = solid
@@ -2364,13 +2366,32 @@ mod tests {
                 .into_iter()
                 .find(|plane| plane.axis == 1)
                 .expect("the flats share a plane");
-            solid.grid(&plane, 25.0)
+            let lattice = |low: f64, high: f64| {
+                (low / HALF_GRID_LDU).ceil() as i64..=(high / HALF_GRID_LDU).floor() as i64
+            };
+            let near: Vec<[f64; 2]> = lattice(plane.min[0], plane.max[0])
+                .flat_map(|a| {
+                    lattice(plane.min[1], plane.max[1])
+                        .map(move |b| [a as f64 * HALF_GRID_LDU, b as f64 * HALF_GRID_LDU])
+                })
+                .filter(|&point| gap(point) <= reach)
+                .collect();
+            (solid.grid(&plane, reach), near)
         };
-        let canonical = seeded(HALF_GRID_LDU);
-        assert!(canonical.contains(&[0.0, 0.0]));
-        assert!(canonical.contains(&[0.0, -800.0]));
-        for size in [2.5, 5.0, 20.0, 40.0] {
-            assert_eq!(seeded(size), canonical, "cell size {size}");
+        let (canonical, _) = seeded(HALF_GRID_LDU);
+        for size in [2.5, 5.0, HALF_GRID_LDU, 20.0, 40.0] {
+            let (found, near) = seeded(size);
+            assert!(
+                near.iter().all(|point| found.contains(point)),
+                "cell size {size}"
+            );
+            assert!(
+                found
+                    .iter()
+                    .all(|&point| gap(point) <= reach + 3.0 * HALF_GRID_LDU),
+                "cell size {size}"
+            );
+            assert_eq!(found, canonical, "cell size {size}");
         }
     }
 
@@ -2527,19 +2548,19 @@ mod tests {
             );
             let mut found = Vec::new();
             solid.each(&vertical_probe(0.0), 6.0, (0.0, 10.0), None, |facet| {
-                found.push(facet);
+                found.push(solid.facets[facet as usize].points);
                 true
             });
-            assert_eq!(found, vec![0], "cell size {size}");
-            assert!(
-                solid.exact(&vertical_probe(0.0), 6.0).is_empty(),
-                "cell size {size}"
-            );
-            assert_eq!(
-                solid.exact(&vertical_probe(0.0), 7.0),
-                vec![0],
-                "cell size {size}"
-            );
+            assert_eq!(found, vec![near.points], "cell size {size}");
+            let walls = |reach: f64| -> Vec<[f64; 2]> {
+                solid
+                    .exact(&vertical_probe(0.0), reach)
+                    .into_iter()
+                    .map(|index| solid.surfaces[index].center)
+                    .collect()
+            };
+            assert!(walls(6.0).is_empty(), "cell size {size}");
+            assert_eq!(walls(7.0), vec![ring.center], "cell size {size}");
         }
     }
 
@@ -2571,11 +2592,12 @@ mod tests {
         let corner = upright([13.0, 12.0], [12.0, 13.0]);
         let inside = upright([12.0, -3.0], [12.0, 3.0]);
         let range = (IDENTIFY_LDU, 10.0 - IDENTIFY_LDU);
-        let far = Solid::new(&corner, vec![huge_ring()]);
-        assert!(far
-            .nearest(&vertical_probe(0.0), range, reach)
-            .is_infinite());
-        let near = Solid::new(&[corner, inside].concat(), vec![huge_ring()]);
-        assert_eq!(near.nearest(&vertical_probe(0.0), range, reach), 12.0);
+        let nearest = |solid: Solid| solid.nearest(&vertical_probe(0.0), range, reach);
+        assert!(nearest(Solid::new(&corner, Vec::new())).is_infinite());
+        assert!(nearest(Solid::new(&[], vec![huge_ring()])).is_infinite());
+        assert_eq!(
+            nearest(Solid::new(&[corner, inside].concat(), vec![huge_ring()])),
+            12.0
+        );
     }
 }

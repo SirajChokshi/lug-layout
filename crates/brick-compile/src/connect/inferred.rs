@@ -947,7 +947,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         let nearest = solid.nearest(
             probe,
             (IDENTIFY_LDU, reach - IDENTIFY_LDU),
-            probe.radius + HALF_GRID_LDU,
+            plan_reach(probe.radius),
         );
         if !nearest.is_finite() {
             return Probed::Rejected;
@@ -1007,7 +1007,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         };
         for plane in solid.planes() {
             let inward = -plane.outward;
-            for center in solid.grid(&plane, self.probe.radius + HALF_GRID_LDU) {
+            for center in solid.grid(&plane, plan_reach(self.probe.radius)) {
                 add(Probe {
                     axis: plane.axis,
                     inward,
@@ -1341,6 +1341,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
     }
+}
+
+fn plan_reach(radius: f64) -> f64 {
+    radius + HALF_GRID_LDU + IDENTIFY_LDU
 }
 
 pub(super) fn axle_section<L: Library + ?Sized>(

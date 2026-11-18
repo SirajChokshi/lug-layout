@@ -363,8 +363,6 @@ impl AxleProbe {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
     use std::fs;
     use std::path::Path;
 
@@ -372,34 +370,28 @@ mod tests {
     use super::*;
     use crate::flatten::{Library, Triangle};
 
-    #[derive(Default)]
-    struct Pinned(RefCell<HashMap<String, Option<&'static str>>>);
+    const AXLE_SECTION: &str = "p/axleend.dat";
 
-    impl Library for Pinned {
+    struct AxleEnd(String);
+
+    impl Library for AxleEnd {
         fn source(&self, path: &str) -> Option<&str> {
-            *self
-                .0
-                .borrow_mut()
-                .entry(path.to_string())
-                .or_insert_with(|| {
-                    fs::read_to_string(
-                        Path::new(env!("CARGO_MANIFEST_DIR"))
-                            .join("../../.cache/ldraw")
-                            .join(path),
-                    )
-                    .ok()
-                    .map(|text| &*Box::leak(text.into_boxed_str()))
-                })
+            (path == AXLE_SECTION).then_some(self.0.as_str())
         }
     }
 
-    const AXLE_SECTION: &str = "p/axleend.dat";
-
     fn axle_probe() -> AxleProbe {
-        let library = Pinned::default();
-        AxleProbe::new(axle_section(&library, AXLE_SECTION).expect(
+        let text = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../.cache/ldraw")
+                .join(AXLE_SECTION),
+        )
+        .expect(
             "pinned inputs are restored; run `pnpm --filter @brr/asset-pipeline restore-ldraw`",
-        ))
+        );
+        AxleProbe::new(
+            axle_section(&AxleEnd(text), AXLE_SECTION).expect("the pinned axle end is flat"),
+        )
         .expect("the pinned axle section is an axle probe")
     }
 
@@ -437,16 +429,17 @@ mod tests {
 
     const SOCKET_DEPTH: f64 = 29.0;
 
-    fn toothed_socket_with_slots() -> Vec<Triangle> {
+    fn toothed_socket(arm_side_walls: (f64, f64)) -> Vec<Triangle> {
         let mut walls = Vec::new();
         for (sx, sz) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
             let tip = [3.464 * sx, 4.0 * sz];
             walls.extend(upright(tip, [6.0 * sx, 4.0 * sz], SOCKET_DEPTH));
             walls.extend(upright(tip, [6.0 * sx, 6.536 * sz], SOCKET_DEPTH));
         }
+        let (from, to) = arm_side_walls;
         for x in [-2.0, 2.0] {
             for sz in [-1.0, 1.0] {
-                walls.extend(upright([x, 8.657 * sz], [x, 13.582 * sz], SOCKET_DEPTH));
+                walls.extend(upright([x, from * sz], [x, to * sz], SOCKET_DEPTH));
             }
         }
         for (low, high) in [
@@ -466,36 +459,29 @@ mod tests {
     #[test]
     fn a_socket_whose_walls_miss_the_axle_sides_takes_no_axle_whatever_the_index_cell_size() {
         let probe = axle_probe();
-        let socket = toothed_socket_with_slots();
-        let found: Vec<Vec<AxleFound>> = CELL_SIZES
-            .iter()
-            .map(|&size| {
-                probe
-                    .find(&Solid::with_cell_size(&socket, Vec::new(), size))
-                    .0
-            })
-            .collect();
-        for (size, at) in CELL_SIZES.iter().zip(&found) {
-            assert_eq!(at, &found[0], "cell size {size}");
+        let slotted = toothed_socket((8.657, 13.582));
+        for size in CELL_SIZES {
+            let (found, _) = probe.find(&Solid::with_cell_size(&slotted, Vec::new(), size));
+            assert!(found.is_empty(), "cell size {size}: {found:?}");
         }
-        assert!(!found[0].iter().any(|feature| matches!(
-            feature,
-            AxleFound::Hole { probe, .. } if probe.entrance[0] == 0.0 && probe.entrance[2] == 0.0
-        )));
     }
 
     #[test]
-    fn an_edge_whose_segment_stays_outside_the_axle_gives_no_side_angle() {
+    fn only_walls_that_reach_the_axle_sides_make_a_socket_an_axle_hole() {
         let probe = axle_probe();
-        let reach = probe.radius() + IDENTIFY_LDU;
-        let corner = probe.radius() + 0.2;
-        let on_the_arm_side_line = |from: f64, to: f64| vec![[from, 2.0], [to, 2.0], [to, 2.5]];
-        assert!(probe
-            .angles(&[on_the_arm_side_line(corner, corner + 0.1)], reach)
-            .is_empty());
-        assert_eq!(
-            probe.angles(&[on_the_arm_side_line(3.0, 4.0)], reach),
-            vec![0.0]
+        let corner = probe.radius() + 0.1;
+        let stubs = toothed_socket((corner - 0.3, corner));
+        let (found, _) = probe.find(&Solid::new(&stubs, Vec::new()));
+        assert!(found.is_empty(), "{found:?}");
+        let hugging = toothed_socket((2.5, 5.5));
+        let (found, _) = probe.find(&Solid::new(&hugging, Vec::new()));
+        assert!(
+            matches!(
+                found.as_slice(),
+                [AxleFound::Hole { probe, angle, depth: Some(depth) }]
+                    if probe.entrance == [0.0, 0.0, 0.0] && *angle == 0.0 && *depth == SOCKET_DEPTH
+            ),
+            "{found:?}"
         );
     }
 }
