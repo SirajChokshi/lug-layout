@@ -8,7 +8,7 @@ import {
   oppositeAxis,
   type ConnectorTable,
 } from "./connector-table.ts";
-import { ZETA16_COEFFICIENT_COUNT } from "@brr/math";
+import { SIXTEENTHS_PER_LDU, ZETA16_COEFFICIENT_COUNT } from "@brr/math";
 import type { TrackEnd } from "../track/end-gaps.ts";
 import type { SnapMating } from "./mating.ts";
 
@@ -114,7 +114,7 @@ class InternalMates {
     private readonly mating: SnapMating,
   ) {
     this.consumed = new Uint8Array(count);
-    this.reach = mating.shapes.longest;
+    this.reach = Math.ceil(mating.shapes.longest * SIXTEENTHS_PER_LDU);
     this.keys = new Int32Array(count * LINE_KEYS);
     this.order = new Uint32Array(count);
     for (let i = 0; i < count; i++) {
@@ -260,10 +260,15 @@ export class ModelConnectors {
           r4 * dx + r5 * dy + r6 * dz,
           r8 * dx + r9 * dy + r10 * dz,
         );
-        const ix = Math.round(wx);
-        const iy = Math.round(wy);
-        const iz = Math.round(wz);
-        const residual = Math.hypot(wx - ix, wy - iy, wz - iz);
+        const ix = Math.round(wx * SIXTEENTHS_PER_LDU);
+        const iy = Math.round(wy * SIXTEENTHS_PER_LDU);
+        const iz = Math.round(wz * SIXTEENTHS_PER_LDU);
+        const residual =
+          Math.hypot(
+            wx * SIXTEENTHS_PER_LDU - ix,
+            wy * SIXTEENTHS_PER_LDU - iy,
+            wz * SIXTEENTHS_PER_LDU - iz,
+          ) / SIXTEENTHS_PER_LDU;
         if (axis === AXIS_FREE || residual > IDENTIFICATION_RESIDUAL_LDU) {
           offLattice++;
           continue;

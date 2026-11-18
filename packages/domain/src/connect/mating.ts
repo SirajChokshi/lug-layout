@@ -1,3 +1,4 @@
+import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import {
   AXIS_FREE,
   AXIS_NEG_X,
@@ -71,6 +72,7 @@ function axisLine(axis: number): number {
 export interface MateFreedom {
   readonly spins: boolean;
   readonly axis: number;
+  readonly freeAboutVertical: boolean;
 }
 
 export class SnapMating {
@@ -88,25 +90,34 @@ export class SnapMating {
     return offsets;
   }
 
-  engages(maleShape: number, femaleShape: number, offset: number): boolean {
+  engages(maleShape: number, femaleShape: number, offsetSixteenths: number): boolean {
     const offsets = this.offsets(maleShape, femaleShape);
-    for (let i = 0; i < offsets.length; i++) if (offsets[i] === offset) return true;
+    for (let i = 0; i < offsets.length; i++) if (offsets[i] === offsetSixteenths) return true;
     return false;
   }
 
-  freedom(maleShape: number, femaleShape: number, offset: number, maleAxis: number): MateFreedom {
-    if (!this.engages(maleShape, femaleShape, offset)) {
+  freedom(
+    maleShape: number,
+    femaleShape: number,
+    offsetSixteenths: number,
+    maleAxis: number,
+  ): MateFreedom {
+    if (!this.engages(maleShape, femaleShape, offsetSixteenths)) {
       throw new RangeError(
-        `shapes ${maleShape} and ${femaleShape} don't mate at offset ${offset}, so they have no freedom to report`,
+        `shapes ${maleShape} and ${femaleShape} don't mate at offset ${offsetSixteenths}/${SIXTEENTHS_PER_LDU} LDU, so they have no freedom to report`,
       );
     }
     const shapes = this.shapes;
-    let spins = true;
-    this.overlaps(maleShape, femaleShape, offset, (m, f) => {
-      if (locksRotation(shapes.maleCode(m), shapes.femaleCode(f))) spins = false;
-      return spins;
+    let locked = false;
+    let inserted = false;
+    const offset = offsetSixteenths / SIXTEENTHS_PER_LDU;
+    this.overlaps(maleShape, femaleShape, offset, (m, f, shared) => {
+      if (shared === 0) return true;
+      inserted = true;
+      locked ||= locksRotation(shapes.maleCode(m), shapes.femaleCode(f));
+      return true;
     });
-    return { spins, axis: axisLine(maleAxis) };
+    return { spins: !locked, axis: axisLine(maleAxis), freeAboutVertical: !inserted };
   }
 
   private engagedOffsets(male: number, female: number): Int32Array {
@@ -114,11 +125,12 @@ export class SnapMating {
     if (shapes.group(male) !== shapes.group(female)) return NO_OFFSETS;
     const maleLength = shapes.length(male);
     const femaleLength = shapes.length(female);
+    const travel = (maleLength - femaleLength) * SIXTEENTHS_PER_LDU;
     let low = 0;
     let high = 0;
     if (shapes.slides(male) || shapes.slides(female)) {
-      low = femaleLength <= maleLength ? 0 : Math.ceil(maleLength - femaleLength);
-      high = femaleLength <= maleLength ? Math.floor(maleLength - femaleLength) : 0;
+      low = femaleLength <= maleLength ? 0 : Math.ceil(travel);
+      high = femaleLength <= maleLength ? Math.floor(travel) : 0;
     }
     const candidates: number[] = [];
     for (let d = low; d <= high; d++) candidates.push(d);
@@ -128,8 +140,9 @@ export class SnapMating {
     for (let i = 0; i < candidates.length; i++) {
       const d = candidates[i] ?? 0;
       if (i > 0 && d === candidates[i - 1]) continue;
-      if (!this.stopsAllow(male, female, d) || !this.contains(male, female, d)) continue;
-      if ((d >= low && d <= high) || this.seated(male, female, d)) valid.push(d);
+      const offset = d / SIXTEENTHS_PER_LDU;
+      if (!this.stopsAllow(male, female, offset) || !this.contains(male, female, offset)) continue;
+      if ((d >= low && d <= high) || this.seated(male, female, offset)) valid.push(d);
     }
     return valid.length === 0 ? NO_OFFSETS : Int32Array.from(valid);
   }
@@ -142,7 +155,7 @@ export class SnapMating {
       let femaleAt = 0;
       for (let f = 0; f <= shapes.sectionCount(female); f++) {
         if (f > 0) femaleAt += shapes.span(shapes.firstSection(female) + f - 1);
-        const d = maleAt - femaleAt;
+        const d = (maleAt - femaleAt) * SIXTEENTHS_PER_LDU;
         if (Number.isInteger(d)) out.push(d);
       }
     }
@@ -262,7 +275,7 @@ export class SnapMating {
     male: number,
     female: number,
     offset: number,
-    visit: (maleSection: number, femaleSection: number) => boolean,
+    visit: (maleSection: number, femaleSection: number, shared: number) => boolean,
   ): boolean {
     const shapes = this.shapes;
     let m = shapes.firstSection(male);
@@ -276,7 +289,7 @@ export class SnapMating {
     while (m < maleEnd && f < femaleEnd) {
       const shared = Math.min(maleTo, femaleTo) - Math.max(maleFrom, femaleFrom);
       const degenerate = maleTo === maleFrom || femaleTo === femaleFrom;
-      if ((shared > 0 || (shared === 0 && degenerate)) && !visit(m, f)) return false;
+      if ((shared > 0 || (shared === 0 && degenerate)) && !visit(m, f, shared)) return false;
       if (maleTo <= femaleTo) {
         m++;
         maleFrom = maleTo;

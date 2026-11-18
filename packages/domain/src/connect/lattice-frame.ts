@@ -1,9 +1,11 @@
-import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { LatticePose } from "./candidate-poses.ts";
 import { AXIS_NEG_Y, AXIS_POS_Y, axisDimension, axisSign } from "./connector-table.ts";
 
 export const QUARTER_TURNS = 4;
-const STUD_CENTRE_LDU = STUD_LDU / 2;
+export const STUD_SIXTEENTHS = STUD_LDU * SIXTEENTHS_PER_LDU;
+export const PLATE_SIXTEENTHS = PLATE_LDU * SIXTEENTHS_PER_LDU;
+const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
 const AXIS_CODES = 6;
 const X = 0;
 const Z = 2;
@@ -15,6 +17,10 @@ export function checkPose(pose: LatticePose): void {
   }
 }
 
+export function sixteenths(ldu: number): number {
+  return ldu * SIXTEENTHS_PER_LDU;
+}
+
 export function turnCos(rot: number): number {
   return isRot90(rot) ? rot90Cos(rot) : 1;
 }
@@ -23,8 +29,8 @@ export function turnSin(rot: number): number {
   return isRot90(rot) ? rot90Sin(rot) : 0;
 }
 
-export function phaseOf(ldu: number): number {
-  return ((ldu % STUD_LDU) + STUD_LDU) % STUD_LDU;
+export function phaseOf(sixteenthsAlong: number): number {
+  return ((sixteenthsAlong % STUD_SIXTEENTHS) + STUD_SIXTEENTHS) % STUD_SIXTEENTHS;
 }
 
 export function verticalSign(axis: number): number {
@@ -32,12 +38,19 @@ export function verticalSign(axis: number): number {
   return axis === AXIS_NEG_Y ? -1 : 0;
 }
 
-export function isStudCentre(x: number, z: number): boolean {
-  return (x - STUD_CENTRE_LDU) % STUD_LDU === 0 && (z - STUD_CENTRE_LDU) % STUD_LDU === 0;
+export function isStudCentre(x16: number, z16: number): boolean {
+  return (
+    (x16 - STUD_CENTRE_SIXTEENTHS) % STUD_SIXTEENTHS === 0 &&
+    (z16 - STUD_CENTRE_SIXTEENTHS) % STUD_SIXTEENTHS === 0
+  );
 }
 
-export function isLatticeStud(axis: number, x: number, z: number): boolean {
-  return verticalSign(axis) !== 0 && isStudCentre(x, z);
+export function studCell(centre16: number): number {
+  return (centre16 - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
+}
+
+export function isLatticeStud(axis: number, x16: number, z16: number): boolean {
+  return verticalSign(axis) !== 0 && isStudCentre(x16, z16);
 }
 
 function turnedAxis(code: number, rot: number): number {

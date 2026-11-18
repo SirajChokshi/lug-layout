@@ -4,6 +4,7 @@ export {
   CHUNK_STUDS,
   MM_PER_STUD,
   PLATE_LDU,
+  SIXTEENTHS_PER_LDU,
   STUD_LDU,
   lduFromMm,
   mmFromLdu,

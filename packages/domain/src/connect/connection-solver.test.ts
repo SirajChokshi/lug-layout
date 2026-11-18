@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PLATE_LDU,
+  SIXTEENTHS_PER_LDU,
   STUD_LDU,
   ZETA16_ZERO,
   composePose16,
@@ -497,7 +498,7 @@ describe("ModelConnectors", () => {
     expect(matesAt(engine, piece, pose(0, 0, 2))).toBe(4);
   });
 
-  it("identifies connector frames within 0.0005 LDU of the lattice and reports the rest", () => {
+  it("identifies connector frames within 0.0005 LDU of the sixteenth-LDU grid and reports the rest", () => {
     const stud = table([
       { shape: STUD, gender: GENDER_MALE, origin: [HALF, 0, HALF], axis: AXIS_POS_Y },
     ]);
@@ -520,7 +521,9 @@ describe("ModelConnectors", () => {
       connectors.offLattice,
       connectors.instancesWithoutConnectors,
     ]).toEqual([2, 4, 1]);
-    expect(Array.from(connectors.origin)).toEqual([HALF, 0, HALF, HALF, 0, HALF]);
+    expect(Array.from(connectors.origin)).toEqual(
+      [HALF, 0, HALF, HALF, 0, HALF].map((ldu) => ldu * SIXTEENTHS_PER_LDU),
+    );
   });
 });
 
@@ -791,6 +794,8 @@ describe("ConnectionSolver with track ends", () => {
 
 const through = (code: number, size: number): number => shape(0, false, [[code, size, 8]]);
 const peg = (code: number, size: number): number => shape(CAP_ROOT, false, [[code, size, 8]]);
+const offsetsInLdu = (...ldu: number[]): Int32Array =>
+  Int32Array.from(ldu, (offset) => offset * SIXTEENTHS_PER_LDU);
 const grouped = (caps: number, group: string): number =>
   shapes.intern(caps, false, [SECTION_ROUND], [6], [4], group);
 
@@ -799,10 +804,12 @@ describe("SnapMating", () => {
     expect(mating.freedom(STUD, PLATE_RECEPTOR, 0, AXIS_NEG_Y)).toEqual({
       spins: true,
       axis: AXIS_POS_Y,
+      freeAboutVertical: false,
     });
     expect(mating.freedom(peg(SECTION_AXLE, 6), through(SECTION_ROUND, 6), 0, AXIS_NEG_X)).toEqual({
       spins: true,
       axis: AXIS_POS_X,
+      freeAboutVertical: false,
     });
     expect(
       mating.freedom(peg(SECTION_AXLE, 6), through(SECTION_AXLE, 6), 0, AXIS_POS_X).spins,
@@ -828,14 +835,12 @@ describe("SnapMating", () => {
       [SECTION_ROUND, 8, 2],
       [SECTION_ROUND, 6, 16],
     ]);
-    expect(mating.offsets(collaredPin, through(SECTION_ROUND, 6))).toEqual(
-      Int32Array.from([-4, 6]),
-    );
+    expect(mating.offsets(collaredPin, through(SECTION_ROUND, 6))).toEqual(offsetsInLdu(-4, 6));
     const shallowReceptor = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 2]]);
-    expect(mating.offsets(STUD, shallowReceptor)).toEqual(Int32Array.from([2]));
+    expect(mating.offsets(STUD, shallowReceptor)).toEqual(offsetsInLdu(2));
     const barHeldAtBothEnds = shape(CAP_ROOT | CAP_FAR, false, [[SECTION_ROUND, 4, 12]]);
     const sleeve = shape(0, false, [[SECTION_ROUND, 4, 4]]);
-    expect(mating.offsets(barHeldAtBothEnds, sleeve)).toEqual(Int32Array.from([0, 8]));
+    expect(mating.offsets(barHeldAtBothEnds, sleeve)).toEqual(offsetsInLdu(0, 8));
   });
 });
 
@@ -844,8 +849,8 @@ const face = (group: string): number => shapes.intern(0, false, [SECTION_ROUND],
 const FACE_X = 40;
 const FACE_Y = 12;
 
-function facePair(axis: number): ConnectorTable {
-  const at = [FACE_X, FACE_Y, HALF] as const;
+function facePair(axis: number, x = FACE_X): ConnectorTable {
+  const at = [x, FACE_Y, HALF] as const;
   return table([
     { shape: face(FACE_TOKEN), gender: GENDER_MALE, origin: at, axis },
     { shape: face(FACE_TOKEN), gender: GENDER_FEMALE, origin: at, axis },
@@ -853,6 +858,14 @@ function facePair(axis: number): ConnectorTable {
 }
 
 describe("zero-length grouped faces", () => {
+  it("leave a face-contact mate free about its own axis and the vertical through the face, unlike an inserted one", () => {
+    expect(mating.freedom(face(FACE_TOKEN), face(FACE_TOKEN), 0, AXIS_NEG_X)).toEqual({
+      spins: true,
+      axis: AXIS_POS_X,
+      freeAboutVertical: true,
+    });
+  });
+
   it("engage only at offset 0 and only with the same group token", () => {
     expect(mating.offsets(face(FACE_TOKEN), face(FACE_TOKEN))).toEqual(Int32Array.from([0]));
     expect(mating.engages(face(FACE_TOKEN), face("token-other"), 0)).toBe(false);
@@ -869,6 +882,30 @@ describe("zero-length grouped faces", () => {
     expect(matesAt(engine, facing, pose(0, 0, 0))).toBe(2);
     expect(matesAt(engine, facing, pose(STUD_LDU, 0, 0))).toBe(0);
     expect(matesAt(engine, single(facePair(AXIS_POS_X)), pose(0, 0, 0))).toBe(0);
+  });
+
+  it("mate a face measured off whole LDU, at 136/16 LDU, with its opposite at the coincident pose only, never with one a sixteenth away", () => {
+    const measured = 136 / SIXTEENTHS_PER_LDU;
+    const engine = allFamilies();
+    engine.insert(single(facePair(AXIS_POS_X, measured)), pose(0, 0, 0));
+    engine.insert(single(facePair(AXIS_POS_X, 137 / SIXTEENTHS_PER_LDU)), pose(0, 0, 0));
+    const facing = single(facePair(AXIS_NEG_X, measured));
+    for (const rot of [0, 1, 2, 3] as const) {
+      for (let x = -STUD_LDU; x <= STUD_LDU; x++) {
+        for (const y of [-1, 0, 1]) {
+          const coincident = x === 0 && y === 0 && rot === 0;
+          expect(matesAt(engine, facing, pose(x, 0, y, rot))).toBe(coincident ? 2 : 0);
+        }
+      }
+    }
+    const candidates = new CandidatePoses();
+    engine.rank(facing, window(pose(STUD_LDU, 0, 0), 1, 1, 4), candidates);
+    expect([candidates.x[0], candidates.z[0], candidates.rot[0], candidates.votes[0]]).toEqual([
+      0, 0, 0, 2,
+    ]);
+    expect(Array.from(candidates.votes.subarray(1, candidates.count))).toEqual(
+      Array(candidates.count - 1).fill(0),
+    );
   });
 });
 
@@ -902,12 +939,12 @@ describe("flared sections", () => {
       [SECTION_ROUND, 8, 3],
       [SECTION_ROUND, 6, 6],
     ]);
-    expect(mating.offsets(lipped(CAP_ROOT), grooved)).toEqual(Int32Array.from([0, 3, 4]));
+    expect(mating.offsets(lipped(CAP_ROOT), grooved)).toEqual(offsetsInLdu(0, 3, 4));
     const roundThenSquare = shape(0, false, [
       [SECTION_ROUND, 6, 12],
       [SECTION_SQUARE, 6, 8],
     ]);
-    expect(mating.offsets(lipped(0), roundThenSquare)).toEqual(Int32Array.from([-10, 0]));
+    expect(mating.offsets(lipped(0), roundThenSquare)).toEqual(offsetsInLdu(-10, 0));
   });
 
   it("read a female flare as round at its own radius, whatever sits beside it", () => {
