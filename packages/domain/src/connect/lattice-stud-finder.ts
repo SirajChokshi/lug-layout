@@ -1,123 +1,34 @@
-import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
+import { SOURCES, STATUSES, VECTOR_FLOATS } from "./connector-table.ts";
 import {
-  AXIS_NEG_Y,
-  AXIS_POS_Y,
-  GENDER_FEMALE,
-  GENDER_MALE,
-  VECTOR_FLOATS,
-} from "./connector-table.ts";
+  PLATE_SIXTEENTHS,
+  QUARTER_TURNS,
+  STUD_SIXTEENTHS,
+  checkPose,
+  isLatticeStud,
+  phaseOf,
+  sixteenths,
+  studCell,
+  verticalSign,
+} from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
+import { MateClasses } from "./mate-classes.ts";
 import type { MateReport } from "./mate-report.ts";
 import type { SnapMating } from "./mating.ts";
 import type { ModelConnectors } from "./model-connectors.ts";
 import { StudLevel } from "./stud-level.ts";
 
-const STUD_CENTRE_LDU = STUD_LDU / 2;
-const QUARTER_TURNS = 4;
-const LEVEL_Y_SPAN = 2 ** 20;
+const LEVEL_Y_SPAN = 2 ** 20 * SIXTEENTHS_PER_LDU;
 const LEVEL_Y_BIAS = LEVEL_Y_SPAN / 2;
 const WORD_SHIFT = 5;
 const WORD_MASK = 31;
 const NOT_ON_LATTICE = -1;
 const INITIAL_GROUPS = 16;
-
-function phaseOf(ldu: number): number {
-  return ((ldu % STUD_LDU) + STUD_LDU) % STUD_LDU;
-}
-
-function checkPose(pose: LatticePose): void {
-  if (!isRot90(pose.rot)) throw new RangeError(`rotation ${pose.rot} is not a quarter turn 0-3`);
-  if (!Number.isInteger(pose.x) || !Number.isInteger(pose.z) || !Number.isInteger(pose.yPlates)) {
-    throw new RangeError(`pose ${pose.x}, ${pose.z}, ${pose.yPlates} is not on integer LDU`);
-  }
-}
-
-function verticalSign(axis: number): number {
-  if (axis === AXIS_POS_Y) return 1;
-  return axis === AXIS_NEG_Y ? -1 : 0;
-}
-
-class StudClasses {
-  private readonly shape: number[] = [];
-  private readonly gender: number[] = [];
-  private readonly axisY: number[] = [];
-  private readonly source: number[] = [];
-  pairStart = new Int32Array(1);
-  pairClass = new Int32Array(0);
-  pairStep = new Int8Array(0);
-  pairSource = new Uint8Array(0);
-  pairOffsetStart = new Int32Array(1);
-  offsets = new Int32Array(0);
-
-  constructor(private readonly mating: SnapMating) {}
-
-  classOf(model: ModelConnectors, connector: number): number {
-    const shape = model.shape[connector] ?? 0;
-    const gender = model.gender[connector] ?? 0;
-    const axisY = verticalSign(model.axis[connector] ?? 0);
-    const source = model.source[connector] ?? 0;
-    for (let c = 0; c < this.shape.length; c++) {
-      if (
-        this.shape[c] === shape &&
-        this.gender[c] === gender &&
-        this.axisY[c] === axisY &&
-        this.source[c] === source
-      ) {
-        return c;
-      }
-    }
-    this.shape.push(shape);
-    this.gender.push(gender);
-    this.axisY.push(axisY);
-    this.source.push(source);
-    this.rebuildPairs();
-    return this.shape.length - 1;
-  }
-
-  private engagement(own: number, other: number): Int32Array | null {
-    if (this.axisY[own] !== -(this.axisY[other] ?? 0)) return null;
-    if (this.gender[own] === GENDER_MALE && this.gender[other] === GENDER_FEMALE) {
-      return this.mating.offsets(this.shape[own] ?? 0, this.shape[other] ?? 0);
-    }
-    if (this.gender[own] === GENDER_FEMALE && this.gender[other] === GENDER_MALE) {
-      return this.mating.offsets(this.shape[other] ?? 0, this.shape[own] ?? 0);
-    }
-    return null;
-  }
-
-  private rebuildPairs(): void {
-    const classes = this.shape.length;
-    const start = new Int32Array(classes + 1);
-    const partner: number[] = [];
-    const step: number[] = [];
-    const source: number[] = [];
-    const offsetStart: number[] = [0];
-    const offsets: number[] = [];
-    for (let own = 0; own < classes; own++) {
-      start[own] = partner.length;
-      for (let other = 0; other < classes; other++) {
-        const engaged = this.engagement(own, other);
-        if (!engaged || engaged.length === 0) continue;
-        partner.push(other);
-        step.push(this.axisY[own] ?? 0);
-        source.push(Math.max(this.source[own] ?? 0, this.source[other] ?? 0));
-        for (let k = 0; k < engaged.length; k++) offsets.push(engaged[k] ?? 0);
-        offsetStart.push(offsets.length);
-      }
-    }
-    start[classes] = partner.length;
-    this.pairStart = start;
-    this.pairClass = Int32Array.from(partner);
-    this.pairStep = Int8Array.from(step);
-    this.pairSource = Uint8Array.from(source);
-    this.pairOffsetStart = Int32Array.from(offsetStart);
-    this.offsets = Int32Array.from(offsets);
-  }
-}
+const PROVENANCES = SOURCES.length * STATUSES.length;
 
 export class LatticeStudFinder implements MateFinder {
-  private readonly classes: StudClasses;
+  private readonly classes: MateClasses;
   private readonly levels = new Map<number, StudLevel>();
   private rasterModel: ModelConnectors | null = null;
   private rasterPhaseX = 0;
@@ -127,6 +38,7 @@ export class LatticeStudFinder implements MateFinder {
   private connectorCellZ = new Int32Array(0);
   private readonly groupStart = new Int32Array(QUARTER_TURNS + 1);
   private groupClass = new Int32Array(INITIAL_GROUPS);
+  private groupAxis = new Int32Array(INITIAL_GROUPS);
   private groupY = new Int32Array(INITIAL_GROUPS);
   private groupMinX = new Int32Array(INITIAL_GROUPS);
   private groupMinZ = new Int32Array(INITIAL_GROUPS);
@@ -135,9 +47,12 @@ export class LatticeStudFinder implements MateFinder {
   private groupWords = new Int32Array(INITIAL_GROUPS);
   private groupOffset = new Int32Array(INITIAL_GROUPS);
   private raster = new Uint32Array(0);
+  private readonly provenanceUses = new Int32Array(PROVENANCES);
+  private readonly present = new Int32Array(PROVENANCES);
+  private presentCount = 0;
 
   constructor(mating: SnapMating) {
-    this.classes = new StudClasses(mating);
+    this.classes = new MateClasses(mating);
   }
 
   insert(model: ModelConnectors, pose: LatticePose): void {
@@ -150,7 +65,7 @@ export class LatticeStudFinder implements MateFinder {
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
     checkPose(window);
-    this.prepare(model, phaseOf(window.x), phaseOf(window.z));
+    this.prepare(model, phaseOf(sixteenths(window.x)), phaseOf(sixteenths(window.z)));
     for (let turn = 0; turn < window.turns; turn++) {
       const rot = (window.rot + turn) % QUARTER_TURNS;
       for (let y = window.yPlates - window.plates; y <= window.yPlates + window.plates; y++) {
@@ -166,16 +81,19 @@ export class LatticeStudFinder implements MateFinder {
 
   count(model: ModelConnectors, pose: LatticePose): number {
     checkPose(pose);
-    const phaseX = phaseOf(pose.x);
-    const phaseZ = phaseOf(pose.z);
+    const x16 = sixteenths(pose.x);
+    const z16 = sixteenths(pose.z);
+    const phaseX = phaseOf(x16);
+    const phaseZ = phaseOf(z16);
     this.prepare(model, phaseX, phaseZ);
-    const cellX = (pose.x - phaseX) / STUD_LDU;
-    const cellZ = (pose.z - phaseZ) / STUD_LDU;
-    const baseY = pose.yPlates * PLATE_LDU;
+    const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
+    const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
+    const baseY = pose.yPlates * PLATE_SIXTEENTHS;
     const classes = this.classes;
     let n = 0;
     for (let g = this.groupStart[pose.rot] ?? 0; g < (this.groupStart[pose.rot + 1] ?? 0); g++) {
       const own = this.groupClass[g] ?? 0;
+      const axis = this.groupAxis[g] ?? 0;
       const y = (this.groupY[g] ?? 0) + baseY;
       const minX = this.groupMinX[g] ?? 0;
       const minZ = this.groupMinZ[g] ?? 0;
@@ -184,15 +102,17 @@ export class LatticeStudFinder implements MateFinder {
       const offset = this.groupOffset[g] ?? 0;
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
-        const step = classes.pairStep[p] ?? 0;
         for (
           let k = classes.pairOffsetStart[p] ?? 0;
           k < (classes.pairOffsetStart[p + 1] ?? 0);
           k++
         ) {
-          const level = this.levels.get(levelKey(partner, y + step * (classes.offsets[k] ?? 0)));
-          if (!level) continue;
-          n += level.countRows(this.raster, offset, rows, words, cellX + minX, cellZ + minZ);
+          const partnerY = y + axis * (classes.offsets[k] ?? 0);
+          for (let q = 0; q < this.presentCount; q++) {
+            const level = this.levels.get(levelKey(partner, -axis, this.present[q] ?? 0, partnerY));
+            if (!level) continue;
+            n += level.countRows(this.raster, offset, rows, words, cellX + minX, cellZ + minZ);
+          }
         }
       }
     }
@@ -201,32 +121,44 @@ export class LatticeStudFinder implements MateFinder {
 
   mates(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
     checkPose(pose);
-    const phaseX = phaseOf(pose.x);
-    const phaseZ = phaseOf(pose.z);
+    const x16 = sixteenths(pose.x);
+    const z16 = sixteenths(pose.z);
+    const phaseX = phaseOf(x16);
+    const phaseZ = phaseOf(z16);
     this.prepare(model, phaseX, phaseZ);
-    const cellX = (pose.x - phaseX) / STUD_LDU;
-    const cellZ = (pose.z - phaseZ) / STUD_LDU;
-    const baseY = pose.yPlates * PLATE_LDU;
+    const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
+    const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
+    const baseY = pose.yPlates * PLATE_SIXTEENTHS;
     const classes = this.classes;
     const at = pose.rot * model.count;
     for (let i = 0; i < model.count; i++) {
       const g = this.connectorGroup[at + i] ?? NOT_ON_LATTICE;
       if (g === NOT_ON_LATTICE) continue;
       const own = this.groupClass[g] ?? 0;
+      const axis = this.groupAxis[g] ?? 0;
+      const ownSource = model.source[i] ?? 0;
+      const ownStatus = model.status[i] ?? 0;
       const y = (model.origin[i * VECTOR_FLOATS + 1] ?? 0) + baseY;
       const x = cellX + (this.connectorCellX[at + i] ?? 0);
       const z = cellZ + (this.connectorCellZ[at + i] ?? 0);
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
-        const step = classes.pairStep[p] ?? 0;
-        const source = classes.pairSource[p] ?? 0;
         for (
           let k = classes.pairOffsetStart[p] ?? 0;
           k < (classes.pairOffsetStart[p + 1] ?? 0);
           k++
         ) {
-          const level = this.levels.get(levelKey(partner, y + step * (classes.offsets[k] ?? 0)));
-          if (level?.has(x, z)) out.push(i, source);
+          const partnerY = y + axis * (classes.offsets[k] ?? 0);
+          for (let q = 0; q < this.presentCount; q++) {
+            const provenance = this.present[q] ?? 0;
+            const level = this.levels.get(levelKey(partner, -axis, provenance, partnerY));
+            if (!level?.has(x, z)) continue;
+            out.push(
+              i,
+              ownSource | provenanceSource(provenance),
+              Math.max(ownStatus, provenanceStatus(provenance)),
+            );
+          }
         }
       }
     }
@@ -234,18 +166,23 @@ export class LatticeStudFinder implements MateFinder {
 
   private stamp(model: ModelConnectors, pose: LatticePose, adding: boolean): void {
     checkPose(pose);
-    const phaseX = phaseOf(pose.x);
-    const phaseZ = phaseOf(pose.z);
+    const x16 = sixteenths(pose.x);
+    const z16 = sixteenths(pose.z);
+    const phaseX = phaseOf(x16);
+    const phaseZ = phaseOf(z16);
     this.prepare(model, phaseX, phaseZ);
-    const cellX = (pose.x - phaseX) / STUD_LDU;
-    const cellZ = (pose.z - phaseZ) / STUD_LDU;
-    const baseY = pose.yPlates * PLATE_LDU;
+    const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
+    const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
+    const baseY = pose.yPlates * PLATE_SIXTEENTHS;
     const at = pose.rot * model.count;
     for (let i = 0; i < model.count; i++) {
       const g = this.connectorGroup[at + i] ?? NOT_ON_LATTICE;
       if (g === NOT_ON_LATTICE) continue;
+      const provenance = provenanceOf(model.source[i] ?? 0, model.status[i] ?? 0);
       const key = levelKey(
         this.groupClass[g] ?? 0,
+        this.groupAxis[g] ?? 0,
+        provenance,
         (model.origin[i * VECTOR_FLOATS + 1] ?? 0) + baseY,
       );
       const x = cellX + (this.connectorCellX[at + i] ?? 0);
@@ -257,28 +194,46 @@ export class LatticeStudFinder implements MateFinder {
           this.levels.set(key, level);
         }
         level.add(x, z);
+        this.use(provenance, 1);
       } else {
         if (!level) throw new RangeError(`no placed connector to remove at cell ${x}, ${z}`);
         level.remove(x, z);
+        this.use(provenance, -1);
       }
+    }
+  }
+
+  private use(provenance: number, delta: number): void {
+    const before = this.provenanceUses[provenance] ?? 0;
+    const after = before + delta;
+    this.provenanceUses[provenance] = after;
+    if ((before === 0) === (after === 0)) return;
+    this.presentCount = 0;
+    for (let p = 0; p < PROVENANCES; p++) {
+      if ((this.provenanceUses[p] ?? 0) > 0) this.present[this.presentCount++] = p;
     }
   }
 
   private reachesLevel(rot: number, yPlates: number): boolean {
     const classes = this.classes;
-    const baseY = yPlates * PLATE_LDU;
+    const baseY = yPlates * PLATE_SIXTEENTHS;
     for (let g = this.groupStart[rot] ?? 0; g < (this.groupStart[rot + 1] ?? 0); g++) {
       const own = this.groupClass[g] ?? 0;
+      const axis = this.groupAxis[g] ?? 0;
       const y = (this.groupY[g] ?? 0) + baseY;
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
-        const step = classes.pairStep[p] ?? 0;
         for (
           let k = classes.pairOffsetStart[p] ?? 0;
           k < (classes.pairOffsetStart[p + 1] ?? 0);
           k++
         ) {
-          if (this.levels.has(levelKey(partner, y + step * (classes.offsets[k] ?? 0)))) return true;
+          const partnerY = y + axis * (classes.offsets[k] ?? 0);
+          for (let q = 0; q < this.presentCount; q++) {
+            if (this.levels.has(levelKey(partner, -axis, this.present[q] ?? 0, partnerY))) {
+              return true;
+            }
+          }
         }
       }
     }
@@ -349,21 +304,27 @@ export class LatticeStudFinder implements MateFinder {
     for (let i = 0; i < model.count; i++) {
       this.connectorGroup[at + i] = NOT_ON_LATTICE;
       const o = i * VECTOR_FLOATS;
-      if (verticalSign(model.axis[i] ?? 0) === 0) continue;
       const mx = model.origin[o] ?? 0;
       const mz = model.origin[o + 2] ?? 0;
-      const fromCentreX = cos * mx + sin * mz + phaseX - STUD_CENTRE_LDU;
-      const fromCentreZ = -sin * mx + cos * mz + phaseZ - STUD_CENTRE_LDU;
-      if (fromCentreX % STUD_LDU !== 0 || fromCentreZ % STUD_LDU !== 0) continue;
-      const cellX = fromCentreX / STUD_LDU;
-      const cellZ = fromCentreZ / STUD_LDU;
-      const own = this.classes.classOf(model, i);
+      const phasedX = cos * mx + sin * mz + phaseX;
+      const phasedZ = -sin * mx + cos * mz + phaseZ;
+      if (!isLatticeStud(model.axis[i] ?? 0, phasedX, phasedZ)) continue;
+      const cellX = studCell(phasedX);
+      const cellZ = studCell(phasedZ);
+      const own = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
+      const axis = verticalSign(model.axis[i] ?? 0);
       const y = model.origin[o + 1] ?? 0;
       let g = firstGroup;
-      while (g < groups && (this.groupClass[g] !== own || this.groupY[g] !== y)) g++;
+      while (
+        g < groups &&
+        (this.groupClass[g] !== own || this.groupAxis[g] !== axis || this.groupY[g] !== y)
+      ) {
+        g++;
+      }
       if (g === groups) {
         if (groups === this.groupClass.length) this.growGroups();
         this.groupClass[g] = own;
+        this.groupAxis[g] = axis;
         this.groupY[g] = y;
         this.groupMinX[g] = cellX;
         this.groupMinZ[g] = cellZ;
@@ -386,6 +347,7 @@ export class LatticeStudFinder implements MateFinder {
   private growGroups(): void {
     const capacity = this.groupClass.length * 2;
     this.groupClass = widened(this.groupClass, capacity);
+    this.groupAxis = widened(this.groupAxis, capacity);
     this.groupY = widened(this.groupY, capacity);
     this.groupMinX = widened(this.groupMinX, capacity);
     this.groupMinZ = widened(this.groupMinZ, capacity);
@@ -396,8 +358,23 @@ export class LatticeStudFinder implements MateFinder {
   }
 }
 
-function levelKey(studClass: number, yLdu: number): number {
-  return studClass * LEVEL_Y_SPAN + yLdu + LEVEL_Y_BIAS;
+const BUCKETS_PER_CLASS = 2 * PROVENANCES;
+
+function provenanceOf(source: number, status: number): number {
+  return SOURCES.indexOf(source) * STATUSES.length + status;
+}
+
+function provenanceSource(provenance: number): number {
+  return SOURCES[Math.floor(provenance / STATUSES.length)] ?? 0;
+}
+
+function provenanceStatus(provenance: number): number {
+  return provenance % STATUSES.length;
+}
+
+function levelKey(mateClass: number, axis: number, provenance: number, yLdu: number): number {
+  const bucket = mateClass * BUCKETS_PER_CLASS + (axis > 0 ? PROVENANCES : 0) + provenance;
+  return bucket * LEVEL_Y_SPAN + yLdu + LEVEL_Y_BIAS;
 }
 
 function widened(values: Int32Array, capacity: number): Int32Array<ArrayBuffer> {
