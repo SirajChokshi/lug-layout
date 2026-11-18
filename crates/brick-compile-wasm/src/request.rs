@@ -49,6 +49,8 @@ pub enum Operation {
         connectors: ConnectorInputs,
         parts: Vec<String>,
         inline_checks: Vec<InlineCheck>,
+        #[serde(default)]
+        records: bool,
     },
     BakeNeeds {
         stud_primitives: Vec<String>,
