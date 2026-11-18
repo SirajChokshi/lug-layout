@@ -161,14 +161,12 @@ function observed(editor: IEditor): unknown {
   return {
     hover: state.hover,
     snap: state.snap,
-    moduleFit: state.moduleFit,
     ghostRot: state.ghostRot,
     placements: state.placements,
     lastRefusal: state.lastRefusal,
     refusedClicks: state.refusedClicks,
     selection: state.selection,
     roads: { ...state.roads, checkMs: 0 },
-    modules: state.modules,
     studs: state.studs,
     held: state.track?.held ?? null,
     trackPieces: state.track?.pieces ?? 0,
@@ -303,8 +301,8 @@ function partsOf(editor: IEditor): number {
 const loadStart = performance.now();
 const { editor, backend } = await startEditor();
 const loadMs = performance.now() - loadStart;
-for (const set of SETS) {
-  if (!(await editor.prefetch(set))) throw new Error(`${set} did not load`);
+for (const model of [...SETS, RAIL_MODULE, ROAD_MODULE]) {
+  if (!(await editor.prefetch(model))) throw new Error(`${model} did not load`);
 }
 const clickMs: number[] = [];
 const place = placer(editor, backend, clickMs);
@@ -464,7 +462,7 @@ await timeCalls(editor, "select click: pick a placed set", 200, 20, (i) => {
 
 const header = [
   `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}`,
-  `layout: ${snapshot.placements} placements, ${totalParts} parts, ${snapshot.track?.pieces ?? 0} track pieces, ${snapshot.modules.modules} MILS modules, ${snapshot.roads.placements} road placements`,
+  `layout: ${snapshot.placements} placements, ${totalParts} parts, ${snapshot.track?.pieces ?? 0} track pieces, ${snapshot.roads.placements} road placements`,
   `editor start: ${loadMs.toFixed(0)} ms, build through the UI: ${buildMs.toFixed(0)} ms`,
 ];
 const table = [

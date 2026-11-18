@@ -28,7 +28,8 @@ import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
-import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
+import { fixtureModel } from "./fixture-model.test-support.ts";
+import { partPlaceable, type Placeable } from "./placeable.ts";
 import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
 import {
   TrackDrawing,
@@ -936,22 +937,6 @@ async function loosePart(id: string): Promise<Placeable> {
   return partPlaceable(part, index, color, String(color), bundle.parts, new ColorTable(bundle));
 }
 
-async function bundledModel(name: string): Promise<Placeable> {
-  const { bundle, model, entry } = await container
-    .get(PART_BUNDLE_LOADER)
-    .loadModel("standard", name);
-  return modelPlaceable(
-    name,
-    name,
-    entry.role,
-    model,
-    { name, source: entry.source, sections: model.sections },
-    bundle.parts,
-    new ColorTable(bundle),
-    null,
-  );
-}
-
 async function trackOver(ground: ReadonlyArray<PlacedModel>): Promise<TrackDrawing> {
   const bundle = await trackAndRoadBundle();
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
@@ -997,7 +982,7 @@ it("seats a closure on the studs of a road plate's sidewalk and the baseplate be
 
 it("judges a road plate inside a model by the same geometry as one placed alone", async () => {
   const alone = await loosePart(DUAL_ROAD_BASEPLATE);
-  const roadContainer = await bundledModel(ROAD_CONTAINER_MODEL);
+  const roadContainer = await fixtureModel(ROAD_CONTAINER_MODEL);
   const plateSide = alone.box.max[0] - alone.box.min[0];
   const verdicts = async (item: Placeable) => {
     const ground = placeGround([{ placeable: item, x: 0, z: 0 }]);

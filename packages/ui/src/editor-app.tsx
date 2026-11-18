@@ -19,7 +19,6 @@ import {
   EditorHud,
   Inspector,
   PlacementToolbar,
-  ModuleJoins,
   RoadJoins,
 } from "./editor-panels.tsx";
 import { Minimap } from "./minimap.tsx";
@@ -134,14 +133,6 @@ export function EditorApp({
       data-road-joined={snapshot.roads.joinedCells}
       data-road-open={snapshot.roads.openCells}
       data-road-mismatch={snapshot.roads.mismatchedCells}
-      data-module-joined={snapshot.modules.joined}
-      data-module-open={snapshot.modules.open}
-      data-module-mismatch={snapshot.modules.mismatched}
-      data-module-fit={
-        snapshot.moduleFit
-          ? `${snapshot.moduleFit.column},${snapshot.moduleFit.row},${snapshot.moduleFit.rot},${snapshot.moduleFit.joined},${snapshot.moduleFit.mismatched}`
-          : ""
-      }
       data-world={snapshot.world?.id ?? ""}
       data-save={snapshot.world?.save ?? ""}
       data-road-pieces={snapshot.roads.placements}
@@ -177,7 +168,6 @@ export function EditorApp({
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
-        <ModuleJoins editor={editor} snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />
         {snapshot.status === "ready" && (
           <BomPanel

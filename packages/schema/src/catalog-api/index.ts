@@ -201,14 +201,8 @@ export type ThemePageResponse = v.InferOutput<typeof ThemePageResponse>;
 export const BUNDLE_MANIFEST_KEY_HEX_DIGITS = 16;
 export const BUNDLE_MANIFEST_KEY_PATTERN = `[0-9a-f]{${BUNDLE_MANIFEST_KEY_HEX_DIGITS}}`;
 export const BUNDLE_SEARCH_LOD = "standard";
-export const BUNDLE_SEARCH_SECTIONS = ["track", "baseplates", "road", "mils", "sets"] as const;
-export const BUNDLE_ITEM_KINDS = [
-  "track",
-  "baseplate",
-  "road-plate",
-  "mils-module",
-  "model",
-] as const;
+export const BUNDLE_SEARCH_SECTIONS = ["track", "baseplates", "road", "sets"] as const;
+export const BUNDLE_ITEM_KINDS = ["track", "baseplate", "road-plate", "model"] as const;
 const BUNDLE_SEARCH_LIMIT = { fallback: "20", max: 50 } as const;
 const keyedManifestFile = new RegExp(`^manifest\\.(${BUNDLE_MANIFEST_KEY_PATTERN})\\.json$`, "u");
 
