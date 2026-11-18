@@ -20,7 +20,10 @@ import {
   AXIS_NEG_X,
   AXIS_NEG_Y,
   AXIS_POS_X,
+  AXIS_NEG_Z,
   AXIS_POS_Y,
+  AXIS_POS_Z,
+  AXIS_FREE,
   ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
@@ -29,6 +32,10 @@ import {
   SOURCE_SHADOW,
   STATUS_UNVERIFIED,
   STATUS_VERIFIED,
+  VECTOR_FLOATS,
+  axisDimension,
+  axisSign,
+  oppositeAxis,
 } from "./connector-table.ts";
 import { LatticeStudFinder } from "./lattice-stud-finder.ts";
 import { MateReport } from "./mate-report.ts";
@@ -40,11 +47,14 @@ import { TrackEndFinder } from "./track-end-finder.ts";
 import {
   CAP_FAR,
   CAP_ROOT,
+  FINGER_RADIUS_UNSTATED,
   SECTION_AXLE,
   SECTION_ROUND,
   SECTION_SQUARE,
   SECTION_FLARE_JOINS_NEXT,
   SECTION_FLARE_JOINS_PREVIOUS,
+  SECTION_FEMALE_FINGER,
+  SECTION_MALE_FINGER,
   NO_GROUP,
   SnapShapes,
 } from "./snap-shapes.ts";
@@ -80,6 +90,7 @@ const BRICK_RECEPTOR = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 20]]);
 const BRICK_LDU = 3 * PLATE_LDU;
 const UNMODELLED_SECTION = 7;
 const HALF = STUD_LDU / 2;
+const PROPERTY_TIMEOUT_MS = 30_000;
 
 function table(specs: ReadonlyArray<Spec>): ConnectorTable {
   return new ConnectorTable(
@@ -512,6 +523,55 @@ describe("ModelConnectors", () => {
     const piece = single(plate);
     expect(matesAt(engine, piece, pose(0, 0, 1))).toBe(0);
     expect(matesAt(engine, piece, pose(0, 0, 2))).toBe(4);
+  });
+
+  it("occupies every hole an axle passes through and both copies of a stud declared twice, in whichever frame they engage", () => {
+    const length = 3 * PLATE_LDU;
+    const shaft = shape(0, true, [[SECTION_AXLE, 6, length]]);
+    const axle = table([
+      { shape: shaft, gender: GENDER_MALE, origin: [0, 0, 0], axis: AXIS_POS_Y },
+      { shape: shaft, gender: GENDER_MALE, origin: [0, length, 0], axis: AXIS_NEG_Y },
+    ]);
+    const hole = shape(0, false, [[SECTION_AXLE, 6, PLATE_LDU]]);
+    const beam = table([
+      { shape: hole, gender: GENDER_FEMALE, origin: [0, 0, 0], axis: AXIS_NEG_Y },
+      { shape: hole, gender: GENDER_FEMALE, origin: [0, PLATE_LDU, 0], axis: AXIS_POS_Y },
+    ]);
+    const stack = model(
+      [axle, beam],
+      [
+        [0, translation(0, 0, 0)],
+        [1, translation(0, 0, 0)],
+        [1, translation(0, PLATE_LDU, 0)],
+        [1, translation(0, 2 * PLATE_LDU, 0)],
+      ],
+    );
+    expect([stack.internalMates, stack.count]).toEqual([6, 0]);
+    const lean = IDENTIFICATION_RESIDUAL_LDU / (1.25 * PLATE_LDU);
+    const leaningSoOnlyTheLowerFacesIdentifyInTheModelFrame = assembled(
+      [axle, beam],
+      [{ parent: MODEL_ROOT, local: [1, -lean, 0, 0, lean, 1, 0, 0, 0, 0, 1, 0] }],
+      [
+        { part: 1, submodel: 0, local: IDENTITY },
+        { part: 0, submodel: 0, local: IDENTITY },
+        { part: 1, submodel: 0, local: translation(0, PLATE_LDU, 0) },
+        { part: 1, submodel: 0, local: translation(0, 2 * PLATE_LDU, 0) },
+      ],
+      true,
+    );
+    expect(tally(leaningSoOnlyTheLowerFacesIdentifyInTheModelFrame)).toEqual([0, 6, 0]);
+    const doubledStud = table([
+      { shape: STUD, gender: GENDER_MALE, origin: [HALF, PLATE_LDU, HALF], axis: AXIS_POS_Y },
+      { shape: STUD, gender: GENDER_MALE, origin: [HALF, PLATE_LDU, HALF], axis: AXIS_POS_Y },
+    ]);
+    const covered = model(
+      [doubledStud, block(1, 1, PLATE_LDU, PLATE_RECEPTOR)],
+      [
+        [0, translation(0, 0, 0)],
+        [1, translation(0, PLATE_LDU, 0)],
+      ],
+    );
+    expect([covered.internalMates, covered.count]).toEqual([2, 1]);
   });
 
   it("identifies connector frames within 0.0005 LDU of the sixteenth-LDU grid and reports the rest", () => {
@@ -1096,6 +1156,10 @@ const through = (code: number, size: number): number => shape(0, false, [[code, 
 const peg = (code: number, size: number): number => shape(CAP_ROOT, false, [[code, size, 8]]);
 const offsetsInLdu = (...ldu: number[]): Int32Array =>
   Int32Array.from(ldu, (offset) => offset * SIXTEENTHS_PER_LDU);
+const rangesInLdu = (...ldu: ReadonlyArray<readonly [number, number]>): Int32Array =>
+  Int32Array.from(
+    ldu.flatMap(([from, to]) => [from * SIXTEENTHS_PER_LDU, to * SIXTEENTHS_PER_LDU]),
+  );
 const grouped = (caps: number, group: string): number =>
   shapes.intern(caps, false, [SECTION_ROUND], [6], [4], group);
 
@@ -1129,23 +1193,63 @@ describe("SnapMating", () => {
     expect(mating.engages(STUD, grouped(CAP_FAR, "token-a"), 0)).toBe(false);
   });
 
-  it("seats a male wherever the next move along the axis meets a section that doesn't fit or a stop", () => {
+  it("seats a male rooted in a blind female only where the next move meets a section that doesn't fit or a stop", () => {
+    const shallowReceptor = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 2]]);
+    expect(mating.offsets(STUD, shallowReceptor)).toEqual(offsetsInLdu(2));
+    const collaredShaft = shape(CAP_ROOT, false, [
+      [SECTION_ROUND, 6, 4],
+      [SECTION_ROUND, 8, 2],
+      [SECTION_ROUND, 6, 16],
+    ]);
+    const deepSocket = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 30]]);
+    expect(mating.offsets(collaredShaft, deepSocket)).toEqual(offsetsInLdu(6));
+  });
+
+  it("lets a pair with one connector open at both ends rest wherever the shorter lies fully on the longer, besides its seats", () => {
     const collaredPin = shape(0, false, [
       [SECTION_ROUND, 6, 4],
       [SECTION_ROUND, 8, 2],
       [SECTION_ROUND, 6, 16],
     ]);
-    expect(mating.offsets(collaredPin, through(SECTION_ROUND, 6))).toEqual(offsetsInLdu(-4, 6));
+    expect(mating.ranges(collaredPin, through(SECTION_ROUND, 6))).toEqual(
+      rangesInLdu([-4, -4], [6, 14]),
+    );
     const boreInTwoHalves = shape(0, false, [
       [SECTION_ROUND, 6, 4],
       [SECTION_ROUND, 6, 4],
     ]);
-    expect(mating.offsets(collaredPin, boreInTwoHalves)).toEqual(offsetsInLdu(-4, 6));
-    const shallowReceptor = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 2]]);
-    expect(mating.offsets(STUD, shallowReceptor)).toEqual(offsetsInLdu(2));
+    expect(mating.ranges(collaredPin, boreInTwoHalves)).toEqual(rangesInLdu([-4, -4], [6, 14]));
     const barHeldAtBothEnds = shape(CAP_ROOT | CAP_FAR, false, [[SECTION_ROUND, 4, 12]]);
     const sleeve = shape(0, false, [[SECTION_ROUND, 4, 4]]);
-    expect(mating.offsets(barHeldAtBothEnds, sleeve)).toEqual(offsetsInLdu(0, 8));
+    expect(mating.ranges(barHeldAtBothEnds, sleeve)).toEqual(rangesInLdu([0, 8]));
+  });
+
+  it("lets such a pair also rest partway on when either slides, while a rooted shaft in a blind socket rests only home", () => {
+    const slidingBar = shape(CAP_ROOT, true, [[SECTION_ROUND, 4, 18]]);
+    const sleeve = shape(0, false, [[SECTION_ROUND, 4, 12]]);
+    expect(mating.ranges(slidingBar, sleeve)).toEqual(
+      Int32Array.from([0, 18 * SIXTEENTHS_PER_LDU - 1]),
+    );
+    const freeShaft = shape(0, true, [[SECTION_ROUND, 4, 18]]);
+    const blindSocket = shape(CAP_FAR, false, [[SECTION_ROUND, 4, 20]]);
+    expect(mating.ranges(freeShaft, blindSocket)).toEqual(
+      Int32Array.from([-2 * SIXTEENTHS_PER_LDU, 18 * SIXTEENTHS_PER_LDU - 1]),
+    );
+    const steppedSleeve = shape(0, false, [
+      [SECTION_ROUND, 4, 6.7],
+      [SECTION_ROUND, 6, 5.3],
+    ]);
+    expect(mating.ranges(freeShaft, steppedSleeve)).toEqual(
+      Int32Array.from([Math.ceil(-6.7 * SIXTEENTHS_PER_LDU), 18 * SIXTEENTHS_PER_LDU - 1]),
+    );
+    const slidingNeck = shape(CAP_ROOT, true, [[SECTION_ROUND, 6, 12]]);
+    const blindCap = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 20]]);
+    expect(mating.ranges(slidingNeck, blindCap)).toEqual(rangesInLdu([0, 0]));
+  });
+
+  it("keeps a rooted male shorter than a through female from sinking past its root", () => {
+    const deepThroughHole = shape(0, false, [[SECTION_ROUND, 6, 20]]);
+    expect(mating.ranges(STUD, deepThroughHole)).toEqual(rangesInLdu([0, 0]));
   });
 });
 
@@ -1249,7 +1353,12 @@ describe("flared sections", () => {
       [SECTION_ROUND, 6, 12],
       [SECTION_SQUARE, 6, 8],
     ]);
-    expect(mating.offsets(lipped(0), roundThenSquare)).toEqual(offsetsInLdu(-10, 0));
+    expect(mating.ranges(lipped(0), roundThenSquare)).toEqual(rangesInLdu([-10, -10], [-8, 0]));
+    const squareThenRoundSocket = shape(CAP_FAR, false, [
+      [SECTION_SQUARE, 6, 8],
+      [SECTION_ROUND, 6, 12],
+    ]);
+    expect(mating.offsets(lipped(CAP_ROOT), squareThenRoundSocket)).toEqual(offsetsInLdu(0));
   });
 
   it("read a female flare as round at its own radius, whatever sits beside it", () => {
@@ -1279,5 +1388,394 @@ describe("flared sections", () => {
       [2, 10],
     );
     expect(new SnapMating(fresh).offsets(orphan, bore)).toEqual(new Int32Array(0));
+  });
+});
+
+interface WorldConnector {
+  readonly shape: number;
+  readonly gender: number;
+  readonly at: readonly [number, number, number];
+  readonly axis: number;
+}
+
+function worldConnectors(piece: ModelConnectors, at: LatticePose): WorldConnector[] {
+  const rot = at.rot as QuarterTurn;
+  return Array.from({ length: piece.count }, (_, c) => {
+    const x = piece.origin[c * 3] ?? 0;
+    const z = piece.origin[c * 3 + 2] ?? 0;
+    return {
+      shape: piece.shape[c] ?? 0,
+      gender: piece.gender[c] ?? 0,
+      at: [
+        rot90Cos(rot) * x + rot90Sin(rot) * z + at.x * SIXTEENTHS_PER_LDU,
+        (piece.origin[c * 3 + 1] ?? 0) + at.yPlates * PLATE_LDU * SIXTEENTHS_PER_LDU,
+        -rot90Sin(rot) * x + rot90Cos(rot) * z + at.z * SIXTEENTHS_PER_LDU,
+      ],
+      axis: turnedAxis(piece.axis[c] ?? 0, rot),
+    };
+  });
+}
+
+const connectorKey = (p: WorldConnector): string =>
+  `${p.at.join(",")}/${p.axis}/${p.shape}/${p.gender}`;
+
+function coaxialLine(axis: number, at: readonly [number, number, number]): string {
+  const dimension = axis >> 1;
+  return `${axis}/${at[(dimension + 1) % 3]}/${at[(dimension + 2) % 3]}`;
+}
+
+const worldLines = new WeakMap<
+  ReadonlyArray<WorldConnector>,
+  { size: number; lines: Map<string, WorldConnector[]> }
+>();
+
+function linesOf(world: ReadonlyArray<WorldConnector>): Map<string, WorldConnector[]> {
+  const known = worldLines.get(world);
+  if (known && known.size === world.length) return known.lines;
+  const lines = new Map<string, WorldConnector[]>();
+  for (const other of world) {
+    const key = coaxialLine(other.axis, other.at);
+    const line = lines.get(key);
+    if (line) line.push(other);
+    else lines.set(key, [other]);
+  }
+  worldLines.set(world, { size: world.length, lines });
+  return lines;
+}
+
+function engagedPairs(
+  held: ModelConnectors,
+  at: LatticePose,
+  world: ReadonlyArray<WorldConnector>,
+): number[] {
+  const lines = linesOf(world);
+  return worldConnectors(held, at).map((own) => {
+    let n = 0;
+    for (const other of lines.get(coaxialLine(own.axis ^ 1, own.at)) ?? []) {
+      if (own.gender === other.gender) continue;
+      const dimension = own.axis >> 1;
+      const [male, female] = own.gender === GENDER_MALE ? [own, other] : [other, own];
+      const toward = (male.axis & 1) === 0 ? 1 : -1;
+      const offset = ((female.at[dimension] ?? 0) - (male.at[dimension] ?? 0)) * toward;
+      if (mating.engages(male.shape, female.shape, offset)) n++;
+    }
+    return n;
+  });
+}
+
+function turnedAxis(axis: number, rot: QuarterTurn): number {
+  const dimension = axis >> 1;
+  if (dimension === 1) return axis;
+  const sign = (axis & 1) === 0 ? 1 : -1;
+  const x = dimension === 0 ? sign : 0;
+  const z = dimension === 2 ? sign : 0;
+  const tx = rot90Cos(rot) * x + rot90Sin(rot) * z;
+  const tz = -rot90Sin(rot) * x + rot90Cos(rot) * z;
+  if (tx !== 0) return tx > 0 ? AXIS_POS_X : AXIS_NEG_X;
+  return tz > 0 ? AXIS_POS_Z : AXIS_NEG_Z;
+}
+
+function specKey(s: Spec): string {
+  return `${s.origin.join(",")}/${s.axis}/${s.shape}/${s.gender}`;
+}
+
+describe("ConnectionSolver against every coaxial pair", () => {
+  const BAR = shape(CAP_ROOT, true, [[SECTION_ROUND, 4, 20]]);
+  const CLIP = shape(0, false, [[SECTION_ROUND, 4, 4]]);
+  const AXLE = shape(CAP_ROOT, true, [[SECTION_AXLE, 4, 16]]);
+  const AXLE_HOLE = shape(0, true, [[SECTION_AXLE, 4, 10]]);
+  const SLEEVE = shape(0, true, [
+    [SECTION_ROUND, 4, 6],
+    [SECTION_ROUND, 6, 2],
+  ]);
+  const PALETTE = [
+    [STUD, GENDER_MALE],
+    [PLATE_RECEPTOR, GENDER_FEMALE],
+    [BRICK_RECEPTOR, GENDER_FEMALE],
+    [PIN, GENDER_MALE],
+    [PIN_HOLE, GENDER_FEMALE],
+    [BAR, GENDER_MALE],
+    [CLIP, GENDER_FEMALE],
+    [AXLE, GENDER_MALE],
+    [AXLE_HOLE, GENDER_FEMALE],
+    [SLEEVE, GENDER_FEMALE],
+  ] as const;
+  const AXES = [AXIS_POS_X, AXIS_NEG_X, AXIS_POS_Y, AXIS_NEG_Y, AXIS_POS_Z, AXIS_NEG_Z] as const;
+  const ALONG_STEP_LDU = 2.5;
+  const ALONG_STEPS = 5;
+  const ACROSS_STEP_LDU = 10;
+  const ACROSS_STEPS = 3;
+
+  function partnerAtOffsetZero(own: Spec): (typeof PALETTE)[number] | undefined {
+    return PALETTE.find(([s, gender]) =>
+      gender === GENDER_MALE
+        ? own.gender === GENDER_FEMALE && mating.engages(s, own.shape, 0)
+        : own.gender === GENDER_MALE && mating.engages(own.shape, s, 0),
+    );
+  }
+
+  it(
+    "mates and votes exactly the coaxial pairs that SnapMating engages, on seeded worlds and after stamping the held model",
+    () => {
+      let seed = 0x6a7e;
+      const next = (span: number): number => {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        return seed % span;
+      };
+      const randomSpecs = (count: number): Map<string, Spec> => {
+        const specs = new Map<string, Spec>();
+        while (specs.size < count) {
+          const [s, gender] = PALETTE[next(PALETTE.length)] ?? PALETTE[0];
+          const axis = AXES[next(AXES.length)] ?? AXIS_POS_Y;
+          const coordinate = (k: number): number =>
+            k === axis >> 1
+              ? next(ALONG_STEPS) * ALONG_STEP_LDU
+              : next(ACROSS_STEPS) * ACROSS_STEP_LDU;
+          const spec: Spec = {
+            shape: s,
+            gender,
+            origin: [coordinate(0), coordinate(1), coordinate(2)],
+            axis,
+          };
+          specs.set(specKey(spec), spec);
+        }
+        return specs;
+      };
+      const randomPiece = (count: number): ModelConnectors =>
+        single(table([...randomSpecs(count).values()]));
+      const withPartnersAStudAlong = (count: number): ModelConnectors => {
+        const specs = randomSpecs(count);
+        for (const own of Array.from(specs.values())) {
+          const partner = partnerAtOffsetZero(own);
+          if (!partner) continue;
+          const [x, y, z] = own.origin;
+          const spec: Spec = {
+            shape: partner[0],
+            gender: partner[1],
+            origin: [x + STUD_LDU, y, z],
+            axis: own.axis ^ 1,
+          };
+          if (!specs.has(specKey(spec))) specs.set(specKey(spec), spec);
+        }
+        return single(table([...specs.values()]));
+      };
+      const randomPose = (): LatticePose =>
+        pose((next(3) - 1) * HALF, (next(3) - 1) * HALF, next(3) - 1, next(4) as QuarterTurn);
+      let mates = 0;
+      let votes = 0;
+      for (let trial = 0; trial < 32; trial++) {
+        const solver = allFamilies();
+        const world: WorldConnector[] = [];
+        const seen = new Set<string>();
+        const placeAt = (piece: ModelConnectors, at: LatticePose): boolean => {
+          const connectors = worldConnectors(piece, at);
+          if (connectors.some((c) => seen.has(connectorKey(c)))) return false;
+          for (const c of connectors) seen.add(connectorKey(c));
+          world.push(...connectors);
+          solver.insert(piece, at);
+          return true;
+        };
+        const heldIsLarge = trial % 2 === 0;
+        for (let m = 0; m < 8; m++) {
+          const piece = randomPiece(heldIsLarge ? 4 : 40);
+          while (!placeAt(piece, randomPose()));
+        }
+        const held = withPartnersAStudAlong(heldIsLarge ? 30 : 2);
+        const candidates = new CandidatePoses();
+        let at = randomPose();
+        for (let probe = 0; probe < 10; probe++) {
+          if (probe === 5) {
+            const rot = at.rot as QuarterTurn;
+            placeAt(
+              held,
+              pose(
+                at.x - rot90Cos(rot) * STUD_LDU,
+                at.z + rot90Sin(rot) * STUD_LDU,
+                at.yPlates,
+                rot,
+              ),
+            );
+          } else {
+            at = randomPose();
+          }
+          const report = evaluated(solver, held, at);
+          const reported = Array<number>(held.count).fill(0);
+          for (let k = 0; k < report.count; k++) {
+            const c = report.connector[k] ?? 0;
+            reported[c] = (reported[c] ?? 0) + 1;
+          }
+          expect(reported).toEqual(engagedPairs(held, at, world));
+          mates += report.count;
+          solver.rank(held, window(at, 1, 1, 4), candidates);
+          for (let i = 0; i < candidates.count; i++) {
+            const candidate = pose(
+              candidates.x[i] ?? 0,
+              candidates.z[i] ?? 0,
+              candidates.yPlates[i] ?? 0,
+              (candidates.rot[i] ?? 0) as QuarterTurn,
+            );
+            const engaged = engagedPairs(held, candidate, world).reduce((a, b) => a + b, 0);
+            expect(candidates.votes[i]).toBe(engaged);
+            votes += engaged;
+          }
+          solver.rank(held, window(at, 0, 0, 1), candidates);
+          expect([candidates.count, candidates.votes[0]]).toEqual([1, report.count]);
+        }
+      }
+      expect(mates).toBeGreaterThanOrEqual(50);
+      expect(votes).toBeGreaterThanOrEqual(5_000);
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
+});
+
+const FINGER_X = 40;
+const FINGER_Y = 12;
+const FINGER_TOKEN = "token-finger";
+const SIXTEENTH = 1 / SIXTEENTHS_PER_LDU;
+
+function fingerCodes(firstMale: boolean, widths: ReadonlyArray<number>): number[] {
+  return widths.map((_, k) =>
+    (k % 2 === 0) === firstMale ? SECTION_MALE_FINGER : SECTION_FEMALE_FINGER,
+  );
+}
+
+function fingers(
+  codes: ReadonlyArray<number>,
+  widths: ReadonlyArray<number>,
+  radius = FINGER_RADIUS_UNSTATED,
+  group = NO_GROUP,
+): number {
+  return shapes.intern(
+    0,
+    false,
+    codes,
+    widths.map(() => radius),
+    widths,
+    group,
+  );
+}
+
+function lone(code: number, width: number): number {
+  return fingers([code], [width]);
+}
+
+function radiiEngage(maleRadius: number, femaleRadius: number, group = NO_GROUP): boolean {
+  const finger = fingers([SECTION_MALE_FINGER], [8], maleRadius, group);
+  return mating.engages(finger, fingers([SECTION_FEMALE_FINGER], [8], femaleRadius, group), 0);
+}
+
+function fingerHalf(
+  firstMale: boolean,
+  widths: ReadonlyArray<number>,
+  axis: number,
+): ConnectorTable {
+  const codes = fingerCodes(firstMale, widths);
+  const reach = (axisSign(axis) * widths.reduce((sum, width) => sum + width, 0)) / 2;
+  const start = [FINGER_X - reach, FINGER_Y, HALF] as const;
+  const far = [FINGER_X + reach, FINGER_Y, HALF] as const;
+  const inOrder = fingers(codes, widths);
+  const backwards = fingers(codes.toReversed(), widths.toReversed());
+  return table([
+    { shape: inOrder, gender: GENDER_MALE, origin: start, axis },
+    { shape: inOrder, gender: GENDER_FEMALE, origin: start, axis: oppositeAxis(axis) },
+    { shape: backwards, gender: GENDER_MALE, origin: far, axis: oppositeAxis(axis) },
+    { shape: backwards, gender: GENDER_FEMALE, origin: far, axis },
+  ]);
+}
+
+function freeFaces(part: ConnectorTable, shiftLdu: number): ConnectorTable {
+  const origin = Float32Array.from(part.origin, (value, k) =>
+    k % VECTOR_FLOATS === 0 ? value + shiftLdu : value,
+  );
+  const axisFree = new Float32Array(part.count * VECTOR_FLOATS);
+  for (let c = 0; c < part.count; c++) {
+    const code = part.axis[c] ?? AXIS_FREE;
+    axisFree[c * VECTOR_FLOATS + axisDimension(code)] = axisSign(code);
+  }
+  const axis = new Int8Array(part.count).fill(AXIS_FREE);
+  return new ConnectorTable(
+    part.shape,
+    part.gender,
+    part.source,
+    part.status,
+    origin,
+    axis,
+    axisFree,
+  );
+}
+
+function exposure(connectors: ModelConnectors): number[] {
+  return [connectors.count, connectors.internalMates, connectors.offLattice];
+}
+
+describe("finger sequences", () => {
+  const uneven = [3.5, 5, 1.5];
+
+  it("mate two halves whose fingers interleave exactly, whichever way their sequences run, and never a swapped finger order or a copy", () => {
+    const engine = allFamilies();
+    engine.insert(single(fingerHalf(true, uneven, AXIS_POS_X)), pose(0, 0, 0));
+    const partner = single(fingerHalf(false, uneven, AXIS_POS_X));
+    expect(matesAt(engine, partner, pose(0, 0, 0))).toBe(4);
+    expect(matesAt(engine, partner, pose(1, 0, 0))).toBe(0);
+    const runningBack = single(fingerHalf(false, uneven.toReversed(), AXIS_NEG_X));
+    expect(matesAt(engine, runningBack, pose(0, 0, 0))).toBe(4);
+    const swapped = single(fingerHalf(false, uneven.toReversed(), AXIS_POS_X));
+    expect(matesAt(engine, swapped, pose(0, 0, 0))).toBe(0);
+    expect(matesAt(engine, single(fingerHalf(true, uneven, AXIS_POS_X)), pose(0, 0, 0))).toBe(0);
+    const candidates = new CandidatePoses();
+    engine.rank(partner, window(pose(1, 0, 0), 1, 1, 4), candidates);
+    expect([candidates.x[0], candidates.z[0], candidates.rot[0], candidates.votes[0]]).toEqual([
+      0, 0, 0, 4,
+    ]);
+  });
+
+  it("consume both halves of a joint inside one model, identifying free faces like any other, while a lone or unidentified half stays exposed", () => {
+    const half = fingerHalf(false, uneven, AXIS_POS_X);
+    const offGrid = freeFaces(half, SIXTEENTH / 2);
+    const joint = (other: ConnectorTable, shiftLdu: number): ModelConnectors =>
+      model(
+        [fingerHalf(true, uneven, AXIS_POS_X), other],
+        [
+          [0, translation(0, 0, 0)],
+          [1, translation(shiftLdu, 0, 0)],
+        ],
+      );
+    expect(exposure(joint(half, 0))).toEqual([0, 4, 0]);
+    expect(exposure(joint(offGrid, -SIXTEENTH / 2))).toEqual([0, 4, 0]);
+    expect(exposure(joint(offGrid, 0))).toEqual([4, 0, 4]);
+    expect(exposure(single(fingerHalf(true, uneven, AXIS_POS_X)))).toEqual([4, 0, 0]);
+  });
+
+  it("seat a finger only in a gap of exactly its width, to the sixteenth, at every such gap of a longer sequence", () => {
+    const finger = lone(SECTION_MALE_FINGER, 8);
+    expect(mating.ranges(finger, lone(SECTION_FEMALE_FINGER, 8))).toEqual(rangesInLdu([0, 0]));
+    const none = new Int32Array(0);
+    expect(mating.ranges(finger, lone(SECTION_FEMALE_FINGER, 8 + SIXTEENTH))).toEqual(none);
+    expect(mating.ranges(finger, lone(SECTION_FEMALE_FINGER, 8 - SIXTEENTH))).toEqual(none);
+    const knuckles = [8, 8, 8, 8, 8];
+    expect(mating.ranges(finger, fingers(fingerCodes(true, knuckles), knuckles))).toEqual(
+      rangesInLdu([-24, -24], [-8, -8]),
+    );
+  });
+
+  it("need equal radii between ungrouped fingers only where both state one", () => {
+    expect(radiiEngage(1.5, 1.5)).toBe(true);
+    expect(radiiEngage(9.5, 9)).toBe(false);
+    expect(radiiEngage(9.5, FINGER_RADIUS_UNSTATED)).toBe(true);
+    expect(radiiEngage(FINGER_RADIUS_UNSTATED, 1.5)).toBe(true);
+  });
+
+  it("mate grouped fingers on their token and widths, whatever radii they state", () => {
+    expect(radiiEngage(2, 4, FINGER_TOKEN)).toBe(true);
+  });
+
+  it("leave a finger mate free about its own axis only, unlike a face contact", () => {
+    const finger = lone(SECTION_MALE_FINGER, 8);
+    expect(mating.freedom(finger, lone(SECTION_FEMALE_FINGER, 8), 0, AXIS_POS_Z)).toEqual({
+      spins: true,
+      axis: AXIS_POS_Z,
+      freeAboutVertical: false,
+    });
   });
 });

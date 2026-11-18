@@ -11,7 +11,10 @@ import {
 import {
   CAP_FAR,
   CAP_ROOT,
+  FINGER_RADIUS_UNSTATED,
   SECTION_AXLE,
+  SECTION_FEMALE_FINGER,
+  SECTION_MALE_FINGER,
   SECTION_ROUND,
   SECTION_SQUARE,
   type SnapShapes,
@@ -49,6 +52,21 @@ function containment(
     : inside(maleSize, femaleSize);
 }
 
+function interleaves(maleCode: number, femaleCode: number): boolean {
+  return (
+    (maleCode === SECTION_MALE_FINGER && femaleCode === SECTION_FEMALE_FINGER) ||
+    (maleCode === SECTION_FEMALE_FINGER && femaleCode === SECTION_MALE_FINGER)
+  );
+}
+
+function radiiAgree(maleRadius: number, femaleRadius: number): boolean {
+  return (
+    maleRadius === FINGER_RADIUS_UNSTATED ||
+    femaleRadius === FINGER_RADIUS_UNSTATED ||
+    maleRadius === femaleRadius
+  );
+}
+
 function locksRotation(maleCode: number, femaleCode: number): boolean {
   return maleCode === femaleCode && maleCode !== SECTION_ROUND;
 }
@@ -69,6 +87,26 @@ function axisLine(axis: number): number {
   }
 }
 
+function addRange(ranges: number[], from: number, to: number): void {
+  const last = ranges.length - 1;
+  if (last > 0 && (ranges[last] ?? 0) + 1 >= from) {
+    ranges[last] = Math.max(ranges[last] ?? 0, to);
+    return;
+  }
+  ranges.push(from, to);
+}
+
+function pointsOf(ranges: Int32Array): Int32Array {
+  let count = 0;
+  for (let i = 0; i < ranges.length; i += 2) count += (ranges[i + 1] ?? 0) - (ranges[i] ?? 0) + 1;
+  const points = new Int32Array(count);
+  let n = 0;
+  for (let i = 0; i < ranges.length; i += 2) {
+    for (let d = ranges[i] ?? 0; d <= (ranges[i + 1] ?? 0); d++) points[n++] = d;
+  }
+  return points;
+}
+
 export interface MateFreedom {
   readonly spins: boolean;
   readonly axis: number;
@@ -76,23 +114,37 @@ export interface MateFreedom {
 }
 
 export class SnapMating {
-  private readonly memo = new Map<number, Int32Array>();
+  private readonly rangeMemo = new Map<number, Int32Array>();
+  private readonly offsetMemo = new Map<number, Int32Array>();
 
   constructor(readonly shapes: SnapShapes) {}
 
+  ranges(maleShape: number, femaleShape: number): Int32Array {
+    const key = maleShape * PAIR_KEY_SPAN + femaleShape;
+    let ranges = this.rangeMemo.get(key);
+    if (!ranges) {
+      ranges = this.engagedRanges(maleShape, femaleShape);
+      this.rangeMemo.set(key, ranges);
+    }
+    return ranges;
+  }
+
   offsets(maleShape: number, femaleShape: number): Int32Array {
     const key = maleShape * PAIR_KEY_SPAN + femaleShape;
-    let offsets = this.memo.get(key);
+    let offsets = this.offsetMemo.get(key);
     if (!offsets) {
-      offsets = this.engagedOffsets(maleShape, femaleShape);
-      this.memo.set(key, offsets);
+      offsets = pointsOf(this.ranges(maleShape, femaleShape));
+      this.offsetMemo.set(key, offsets);
     }
     return offsets;
   }
 
   engages(maleShape: number, femaleShape: number, offsetSixteenths: number): boolean {
-    const offsets = this.offsets(maleShape, femaleShape);
-    for (let i = 0; i < offsets.length; i++) if (offsets[i] === offsetSixteenths) return true;
+    const ranges = this.ranges(maleShape, femaleShape);
+    for (let i = 0; i < ranges.length; i += 2) {
+      if (offsetSixteenths < (ranges[i] ?? 0)) return false;
+      if (offsetSixteenths <= (ranges[i + 1] ?? 0)) return true;
+    }
     return false;
   }
 
@@ -120,45 +172,54 @@ export class SnapMating {
     return { spins: !locked, axis: axisLine(maleAxis), freeAboutVertical: !inserted };
   }
 
-  private engagedOffsets(male: number, female: number): Int32Array {
+  private engagedRanges(male: number, female: number): Int32Array {
     const shapes = this.shapes;
     if (shapes.group(male) !== shapes.group(female)) return NO_OFFSETS;
     const maleLength = shapes.length(male);
     const femaleLength = shapes.length(female);
     const travel = (maleLength - femaleLength) * SIXTEENTHS_PER_LDU;
+    const threadable =
+      (shapes.caps(female) & CAP_FAR) === 0 || (shapes.caps(male) & CAP_ROOT) === 0;
+    const sliding = shapes.slides(male) || shapes.slides(female);
     let low = 0;
     let high = 0;
-    if (shapes.slides(male) || shapes.slides(female)) {
+    if (sliding || threadable) {
       low = femaleLength <= maleLength ? 0 : Math.ceil(travel);
       high = femaleLength <= maleLength ? Math.floor(travel) : 0;
     }
-    const seats = this.boundaryMeetings(male, female);
-    const valid: number[] = [];
-    let s = 0;
-    for (; s < seats.length && (seats[s] ?? 0) < low; s++) {
-      this.keepSeat(male, female, seats[s] ?? 0, valid);
-    }
-    for (let d = low; d <= high; d++) {
-      const offset = d / SIXTEENTHS_PER_LDU;
-      if (this.stopsAllow(male, female, offset) && this.contains(male, female, offset)) {
-        valid.push(d);
+    const partway = sliding && threadable;
+    const events = this.events(male, female, low, high);
+    const ranges: number[] = [];
+    for (let i = 0; i < events.length; i++) {
+      const at = events[i] ?? 0;
+      if (this.engagedAt(male, female, at, low, high, partway)) addRange(ranges, at, at);
+      const next = events[i + 1];
+      if (next === undefined || next - at < 2) continue;
+      if (this.engagedAt(male, female, at + 1, low, high, partway)) {
+        addRange(ranges, at + 1, next - 1);
       }
     }
-    for (; s < seats.length; s++) {
-      if ((seats[s] ?? 0) > high) this.keepSeat(male, female, seats[s] ?? 0, valid);
-    }
-    return valid.length === 0 ? NO_OFFSETS : Int32Array.from(valid);
+    return ranges.length === 0 ? NO_OFFSETS : Int32Array.from(ranges);
   }
 
-  private keepSeat(male: number, female: number, sixteenths: number, valid: number[]): void {
+  private engagedAt(
+    male: number,
+    female: number,
+    sixteenths: number,
+    low: number,
+    high: number,
+    partway: boolean,
+  ): boolean {
     const offset = sixteenths / SIXTEENTHS_PER_LDU;
-    if (!this.stopsAllow(male, female, offset) || !this.contains(male, female, offset)) return;
-    if (this.seated(male, female, offset)) valid.push(sixteenths);
+    if (!this.stopsAllow(male, female, offset) || !this.contains(male, female, offset))
+      return false;
+    if (partway || (sixteenths >= low && sixteenths <= high)) return true;
+    return this.seated(male, female, offset);
   }
 
-  private boundaryMeetings(male: number, female: number): number[] {
+  private events(male: number, female: number, low: number, high: number): number[] {
     const shapes = this.shapes;
-    const meetings: number[] = [];
+    const events: number[] = [low, high];
     let maleAt = 0;
     for (let m = 0; m <= shapes.sectionCount(male); m++) {
       if (m > 0) maleAt += shapes.span(shapes.firstSection(male) + m - 1);
@@ -166,11 +227,11 @@ export class SnapMating {
       for (let f = 0; f <= shapes.sectionCount(female); f++) {
         if (f > 0) femaleAt += shapes.span(shapes.firstSection(female) + f - 1);
         const d = (maleAt - femaleAt) * SIXTEENTHS_PER_LDU;
-        if (Number.isInteger(d)) meetings.push(d);
+        events.push(Math.floor(d), Math.ceil(d));
       }
     }
-    meetings.sort((a, b) => a - b);
-    return meetings.filter((d, i) => i === 0 || d !== meetings[i - 1]);
+    events.sort((a, b) => a - b);
+    return events.filter((d, i) => i === 0 || d !== events[i - 1]);
   }
 
   private seated(male: number, female: number, offset: number): boolean {
@@ -268,19 +329,28 @@ export class SnapMating {
   }
 
   private contains(male: number, female: number, offset: number): boolean {
-    const shapes = this.shapes;
     let touched = false;
-    const fits = this.overlaps(male, female, offset, (m, f) => {
-      const fit = containment(
-        shapes.maleCode(m),
-        shapes.maleSize(m),
-        shapes.femaleCode(f),
-        shapes.femaleSize(f),
-      );
+    const comparesRadii = !this.shapes.grouped(male);
+    const fits = this.overlaps(male, female, offset, (m, f, shared) => {
+      const fit = this.fit(m, f, shared, comparesRadii);
       touched ||= fit === TOUCHING;
       return fit !== MISFIT;
     });
     return fits && touched;
+  }
+
+  private fit(m: number, f: number, shared: number, comparesRadii: boolean): number {
+    const shapes = this.shapes;
+    const maleCode = shapes.maleCode(m);
+    const femaleCode = shapes.femaleCode(f);
+    const maleSize = shapes.maleSize(m);
+    const femaleSize = shapes.femaleSize(f);
+    if (interleaves(maleCode, femaleCode)) {
+      const exact = shared === shapes.span(m) && shared === shapes.span(f);
+      const radii = !comparesRadii || radiiAgree(maleSize, femaleSize);
+      return exact && radii ? TOUCHING : MISFIT;
+    }
+    return containment(maleCode, maleSize, femaleCode, femaleSize);
   }
 
   private overlaps(
