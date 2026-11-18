@@ -3,6 +3,7 @@ use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, SQRT_2};
 
 use crate::affine::Vec3;
 
+use super::inferred::by_key;
 use super::profile::{collides, Placed, Point, Profile};
 use super::solid::{plan_axes, Probe, Solid, HALF_GRID_LDU, IDENTIFY_LDU};
 
@@ -168,7 +169,7 @@ impl AxleProbe {
                 }
             }
         }
-        let mut blind: Vec<(f64, AxleFound)> = holes.into_values().collect();
+        let mut blind: Vec<(f64, AxleFound)> = by_key(holes);
         blind.sort_by(|a, b| {
             let at = |f: &AxleFound| match f {
                 AxleFound::Hole { probe, .. } | AxleFound::Axle { probe, .. } => probe.entrance,

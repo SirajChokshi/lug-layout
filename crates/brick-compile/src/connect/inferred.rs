@@ -1206,10 +1206,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 }
             }
         }
-        let mut lines: Vec<(Gender, AxleEnds)> = through
-            .into_values()
+        let mut lines: Vec<(Gender, AxleEnds)> = by_key(through)
+            .into_iter()
             .map(|e| (Gender::Female, e))
-            .chain(bare.into_values().map(|e| (Gender::Male, e)))
+            .chain(by_key(bare).into_iter().map(|e| (Gender::Male, e)))
             .collect();
         lines.sort_by(|a, b| {
             let first = |e: &AxleEnds| e.iter().flatten().next().map(|(p, _)| p.entrance);
@@ -1291,7 +1291,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 ends[side] = Some(*probe);
             }
         }
-        let mut lines: Vec<[Option<Probe>; 2]> = lines.into_values().collect();
+        let mut lines: Vec<[Option<Probe>; 2]> = by_key(lines);
         lines.sort_by(|a, b| {
             let first = |e: &[Option<Probe>; 2]| e.iter().flatten().next().map(|p| p.entrance);
             first(a)
@@ -1346,6 +1346,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
     }
+}
+
+pub(super) fn by_key<K: Ord, V>(map: HashMap<K, V>) -> Vec<V> {
+    let mut entries: Vec<(K, V)> = map.into_iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.into_iter().map(|(_, value)| value).collect()
 }
 
 fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run> {
