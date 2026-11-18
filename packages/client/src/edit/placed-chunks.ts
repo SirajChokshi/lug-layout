@@ -726,6 +726,7 @@ export interface RebuildReport {
 
 export interface ViewUpdate {
   readonly added: ReadonlyArray<PlacedModel>;
+  readonly removed: ReadonlyArray<PlacedModel>;
   readonly report: RebuildReport;
 }
 
@@ -818,9 +819,12 @@ export class PlacedChunks {
 
   apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
     const touched = new Set<number>();
+    const removed: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.removed) continue;
-      this.detach(change.removed).addRebuildKeys(touched);
+      const entry = this.detach(change.removed);
+      entry.addRebuildKeys(touched);
+      removed.push(entry);
     }
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
@@ -829,7 +833,7 @@ export class PlacedChunks {
       entry.addRebuildKeys(touched);
       added.push(entry);
     }
-    return { added, report: this.rebuild(touched) };
+    return { added, removed, report: this.rebuild(touched) };
   }
 
   restingHeight(
