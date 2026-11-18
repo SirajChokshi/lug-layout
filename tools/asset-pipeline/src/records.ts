@@ -43,7 +43,7 @@ function arrayBuffer(bytes: Buffer): ArrayBuffer {
 
 function partShape(
   part: ManifestPart,
-  { studs, technic }: Pick<PartExtras, "studs" | "technic">,
+  { studs, technic, rolling }: Pick<PartExtras, "studs" | "technic" | "rolling">,
 ): PartShape {
   return {
     id: part.id,
@@ -56,6 +56,7 @@ function partShape(
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
     ...(technic ? { technic } : {}),
+    ...(rolling ? { rolling } : {}),
   };
 }
 
