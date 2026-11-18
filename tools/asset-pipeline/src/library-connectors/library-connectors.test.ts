@@ -163,7 +163,7 @@ it("publishes every file the assembly wrote as JSON under library-connectors/, w
   expect(new Set(store.types.values())).toEqual(new Set(["application/json"]));
 });
 
-it("routes the CLI's publication commands to the committed pin's index under library-connectors/", async () => {
+it("routes the CLI's served command to the committed pin's index under library-connectors/", async () => {
   const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
   const committed = JSON.parse(
     await readFile(join(toolRoot, "..", "..", LIBRARY_CONNECTORS_PIN), "utf8"),
