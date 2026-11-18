@@ -1,20 +1,19 @@
-import { runningGearSpanProblem } from "@brr/domain";
-import { Autopilot } from "./blocks/autopilot.ts";
-import { BlockKeeper } from "./blocks/block-keeper.ts";
-import { BlockMap, NO_BLOCK, type BlockTopology } from "./blocks/block-map.ts";
+import { NO_EDGE, runningGearSpanProblem } from "@brr/domain";
+import type { Autopilot } from "./blocks/autopilot.ts";
+import type { BlockKeeper } from "./blocks/block-keeper.ts";
+import { NO_BLOCK } from "./blocks/block-map.ts";
 import {
   GEOMETRY_FIELDS,
   packGeometry,
   packSpecOnlyGeometry,
-  RunningGearPoser,
   type PathSampler,
+  type RunningGearPoser,
   type VehicleGeometry,
 } from "./running-gear.ts";
 import { trackPoint, type SimTrack } from "./sim-track.ts";
 
 export const SIM_TICK_HZ = 60;
 export const SIM_TICK_SECONDS = 1 / SIM_TICK_HZ;
-export const NO_EDGE = -1;
 export const POSE_FLOATS_PER_VEHICLE = 4;
 const PATH_CAPACITY = 64;
 const PATH_MARGIN_EDGES = 2;
@@ -48,18 +47,11 @@ export interface SimCapacity {
   readonly vehicles: number;
 }
 
-export interface SimRailway {
-  readonly topology: BlockTopology;
-  readonly autopilotSeed: number | null;
-}
-
 export type OpenEndRule = "brake" | "derail";
 
 export const DIRECTION_FORWARD = 1;
 export const DIRECTION_BACKWARD = -1;
 
-const AUTOPILOT_DWELL_SECONDS = 3;
-const AUTOPILOT_RETRY_SECONDS = 2;
 const NOBODY = -1;
 const NOT_SOLVED = -1;
 
@@ -87,7 +79,7 @@ export class Simulation {
   private readonly vehicleAxles: Float64Array;
   private readonly vehicleGeometry: Float64Array;
   private readonly vehicleGeometryAt: Int32Array;
-  private readonly poser = new RunningGearPoser();
+  private readonly poser: RunningGearPoser;
   private samplingTrain = 0;
   private readonly pathSampler: PathSampler = {
     pointBehind: (io, at) => this.pointBehind(this.samplingTrain, io, at),
@@ -101,8 +93,7 @@ export class Simulation {
 
   readonly track: SimTrack;
   readonly capacity: SimCapacity;
-  readonly blockMap: BlockMap | null;
-  readonly blocks: BlockKeeper | null;
+  readonly keeper: BlockKeeper | null;
   private readonly autopilot: Autopilot | null;
   private readonly edgePlacement: Int32Array | null;
   private readonly placementTrain: Int32Array;
@@ -116,37 +107,20 @@ export class Simulation {
   constructor(
     track: SimTrack,
     capacity: SimCapacity,
-    railway: SimRailway | null = null,
-    openEnds: OpenEndRule = "brake",
+    openEnds: OpenEndRule,
+    poser: RunningGearPoser,
+    keeper: BlockKeeper | null,
+    autopilot: Autopilot | null,
   ) {
     this.track = track;
     this.capacity = capacity;
     this.openEnds = openEnds;
     this.openEndsDerail = openEnds === "derail";
-    if (railway) {
-      const map = new BlockMap(railway.topology, track.edgeLength);
-      const keeper = new BlockKeeper(map, capacity.trains);
-      this.blockMap = map;
-      this.blocks = keeper;
-      this.autopilot =
-        railway.autopilotSeed === null
-          ? null
-          : new Autopilot(
-              map,
-              keeper,
-              railway.autopilotSeed,
-              capacity.trains,
-              AUTOPILOT_DWELL_SECONDS * SIM_TICK_HZ,
-              AUTOPILOT_RETRY_SECONDS * SIM_TICK_HZ,
-            );
-      this.edgePlacement = railway.topology.edgePlacement;
-    } else {
-      this.blockMap = null;
-      this.blocks = null;
-      this.autopilot = null;
-      this.edgePlacement = null;
-    }
-    const placements = railway?.topology.placementCount ?? 0;
+    this.poser = poser;
+    this.keeper = keeper;
+    this.autopilot = autopilot;
+    this.edgePlacement = keeper?.blocks.graph.edgePlacement ?? null;
+    const placements = keeper?.blocks.graph.placementCount ?? 0;
     this.placementTrain = new Int32Array(placements);
     this.placementTick = new Int32Array(placements).fill(NOBODY);
     this.poseScratch = new Float64Array(capacity.vehicles * POSE_FLOATS_PER_VEHICLE);
@@ -256,14 +230,14 @@ export class Simulation {
       this.vehicleCount = firstVehicle;
       throw new Error(`a ${length} LDU train does not fit behind (${edge}, ${offsetLdu})`);
     }
-    this.blocks?.place(train, this, this.switchStates);
+    this.keeper?.place(train, this, this.switchStates);
     this.trainCount++;
     return train;
   }
 
   setThrottle(train: number, speedLduPerS: number): void {
     this.assertTrain(train);
-    this.blocks?.drive(train);
+    this.keeper?.drive(train);
     this.trainTurnPending[train] = 0;
     this.applyThrottle(train, speedLduPerS);
   }
@@ -271,7 +245,7 @@ export class Simulation {
   drive(train: number, signedSpeedLduPerS: number): boolean {
     this.assertTrain(train);
     if (this.derailed(train)) return false;
-    this.blocks?.drive(train);
+    this.keeper?.drive(train);
     const wanted = signedSpeedLduPerS < 0 ? DIRECTION_BACKWARD : DIRECTION_FORWARD;
     const facing = this.trainReversed[train] === 1 ? DIRECTION_BACKWARD : DIRECTION_FORWARD;
     const speed = Math.abs(signedSpeedLduPerS);
@@ -356,9 +330,9 @@ export class Simulation {
 
   goTo(train: number, placement: number): boolean {
     this.assertTrain(train);
-    const map = this.blockMap;
-    const keeper = this.blocks;
-    if (!map || !keeper) return false;
+    const keeper = this.keeper;
+    if (!keeper) return false;
+    const map = keeper.blocks;
     const block = map.placementBlock[placement] ?? NO_BLOCK;
     if (block === NO_BLOCK || map.blockIsJunction[block] === 1) return false;
     keeper.goTo(train, block);
@@ -384,7 +358,7 @@ export class Simulation {
     if (switchIndex < 0 || switchIndex >= this.switchStates.length) {
       throw new Error(`switch ${switchIndex} is not on this track`);
     }
-    if (this.blocks && !this.blocks.canThrow(switchIndex)) return false;
+    if (this.keeper && !this.keeper.canThrow(switchIndex)) return false;
     this.switchStates[switchIndex] = state;
     return true;
   }
@@ -420,16 +394,16 @@ export class Simulation {
     this.trainOffset[train] = (this.track.edgeLength[tailEdge] ?? 0) - tailOffset;
     this.trainReversed[train] = this.trainReversed[train] === 1 ? 0 : 1;
     this.trainSolvedTick[train] = NOT_SOLVED;
-    this.blocks?.reseat(train, this, this.switchStates);
+    this.keeper?.reseat(train, this, this.switchStates);
     return true;
   }
 
   step(): void {
     this.autopilot?.update(this);
-    const blocks = this.blocks;
-    if (blocks) {
+    const keeper = this.keeper;
+    if (keeper) {
       for (let t = 0; t < this.trainCount; t++) {
-        if (blocks.routeState(t) === "reversing" && this.trainSpeed[t] === 0) this.reverse(t);
+        if (keeper.routeState(t) === "reversing" && this.trainSpeed[t] === 0) this.reverse(t);
       }
     }
     for (let t = 0; t < this.trainCount; t++) {
@@ -600,11 +574,11 @@ export class Simulation {
     );
   }
 
-  private runsOffHeldEnd(train: number, blocks: BlockKeeper): boolean {
+  private runsOffHeldEnd(train: number, keeper: BlockKeeper): boolean {
     return (
       this.openEndsDerail &&
-      blocks.routeState(train) === "manual" &&
-      blocks.heldEndIsOpen(train, this.switchStates)
+      keeper.routeState(train) === "manual" &&
+      keeper.heldEndIsOpen(train, this.switchStates)
     );
   }
 
@@ -616,13 +590,13 @@ export class Simulation {
     const braking = this.trainBraking[train] ?? 0;
     const acceleration = this.trainAcceleration[train] ?? 0;
     let speed = this.trainSpeed[train] ?? 0;
-    const blocks = this.blocks;
+    const keeper = this.keeper;
     let clear: number;
-    if (blocks) {
-      blocks.updateClearAhead(train, this, this.switchStates);
-      clear = this.runsOffHeldEnd(train, blocks)
+    if (keeper) {
+      keeper.updateClearAhead(train, this, this.switchStates);
+      clear = this.runsOffHeldEnd(train, keeper)
         ? Number.POSITIVE_INFINITY
-        : (blocks.clearAheadLdu[train] ?? 0);
+        : (keeper.clearAheadLdu[train] ?? 0);
     } else clear = this.freeClearAhead(train, speed, braking);
     const stopCap = Math.sqrt(2 * braking * clear);
     const target = Math.min(this.trainThrottle[train] ?? 0, stopCap);
@@ -630,11 +604,11 @@ export class Simulation {
     else speed = Math.max(target, speed - braking * SIM_TICK_SECONDS);
     let edge = this.trainEdge[train] ?? 0;
     const travel = speed * SIM_TICK_SECONDS;
-    let offset = (this.trainOffset[train] ?? 0) + (blocks && travel > clear ? clear : travel);
+    let offset = (this.trainOffset[train] ?? 0) + (keeper && travel > clear ? clear : travel);
     let length = this.track.edgeLength[edge] ?? 0;
     while (offset > length) {
-      const next = blocks
-        ? blocks.heldSuccessor(train, edge, this.switchStates)
+      const next = keeper
+        ? keeper.heldSuccessor(train, edge, this.switchStates)
         : this.successor(edge);
       if (next === NO_EDGE) {
         if (this.openEndsDerail && this.successor(edge) === NO_EDGE) {

@@ -1,3 +1,4 @@
+import { NO_SWITCH } from "@brr/domain";
 import { describe, expect, it } from "vitest";
 import {
   placeSegments,
@@ -5,9 +6,10 @@ import {
   type PlanPose,
   type SimPathSegment,
 } from "./route-geometry.ts";
-import { replay, SimSession, type SimScenario } from "./sim-session.ts";
+import { createSimSession } from "./create-sim-session.ts";
+import { replay, type SimScenario, type SimSession } from "./sim-session.ts";
 import type { VehicleGeometry } from "./running-gear.ts";
-import { backwardEdge, buildSimTrack, forwardEdge, NO_SWITCH, type SimRoute } from "./sim-track.ts";
+import { backwardEdge, buildSimTrack, forwardEdge, type SimRoute } from "./sim-track.ts";
 import {
   POSE_FLOATS_PER_VEHICLE,
   SIM_TICK_HZ,
@@ -72,7 +74,7 @@ function run(sim: Simulation, seconds: number): void {
 
 describe("Simulation on a closed circle of arcs", () => {
   it("keeps every bogie on the circle while the train laps it", () => {
-    const session = new SimSession(circle());
+    const session = createSimSession(circle());
     session.apply({ kind: "throttle", train: 0, speedLduPerS: 600 });
     const poses = new Float64Array(2 * POSE_FLOATS_PER_VEHICLE);
     let worst = 0;
@@ -87,7 +89,7 @@ describe("Simulation on a closed circle of arcs", () => {
   });
 
   it("covers distance at its top speed once accelerated", () => {
-    const sim = new SimSession(circle()).simulation;
+    const sim = createSimSession(circle()).simulation;
     sim.setThrottle(0, 600);
     run(sim, 3);
     expect(sim.trainSpeed[0]).toBe(600);
@@ -103,7 +105,7 @@ describe("Simulation on a closed circle of arcs", () => {
   });
 
   it("keeps bogies at their spacing along the track", () => {
-    const sim = new SimSession(circle()).simulation;
+    const sim = createSimSession(circle()).simulation;
     sim.setThrottle(0, 450);
     run(sim, 7);
     const poses = new Float64Array(2 * POSE_FLOATS_PER_VEHICLE);
@@ -120,7 +122,7 @@ describe("Placing a train", () => {
     const behindHead = [175, 515, 690 + 80, 690 + 320];
     for (const offsetLdu of [0, arcLength / 3, arcLength]) {
       const scenario = circle();
-      const sim = new SimSession({
+      const sim = createSimSession({
         ...scenario,
         trains: [{ spec: TRAIN, placement: { edge: forwardEdge(4), offsetLdu } }],
       }).simulation;
@@ -282,7 +284,7 @@ function vehiclePoses(session: SimSession): Float64Array {
 
 describe("Coupled running gear on a circle", () => {
   it("keeps every axle on the circle and the coupling faces in contact, both ways", () => {
-    const session = new SimSession(coupledCircle());
+    const session = createSimSession(coupledCircle());
     const sim = session.simulation;
     sim.setThrottle(0, 500);
     run(sim, 6);
@@ -300,7 +302,7 @@ describe("Coupled running gear on a circle", () => {
   });
 
   it("leaves every body and bogie where it stood when a stopped train reverses", () => {
-    const session = new SimSession(coupledCircle());
+    const session = createSimSession(coupledCircle());
     const sim = session.simulation;
     sim.setThrottle(0, 500);
     run(sim, 6);
@@ -324,7 +326,7 @@ describe("Coupled running gear on a circle", () => {
   });
 
   it("gives the body length as head to solved tail, the distance a stopped reverse moves the head", () => {
-    const session = new SimSession(coupledCircle());
+    const session = createSimSession(coupledCircle());
     const sim = session.simulation;
     sim.setThrottle(0, 500);
     run(sim, 6);
@@ -351,7 +353,7 @@ describe("Coupled running gear on a circle", () => {
 
 describe("Simulation determinism", () => {
   it("replays a command log to the same state hash", () => {
-    const live = new SimSession(circle());
+    const live = createSimSession(circle());
     const sim = live.simulation;
     live.apply({ kind: "throttle", train: 0, speedLduPerS: 500 });
     run(sim, 4);
@@ -360,17 +362,17 @@ describe("Simulation determinism", () => {
     expect(live.apply({ kind: "reverse", train: 0 })).toBe(true);
     live.apply({ kind: "throttle", train: 0, speedLduPerS: 300 });
     run(sim, 5);
-    const replayed = replay(circle(), live.log, sim.tick);
+    const replayed = replay(createSimSession, circle(), live.log, sim.tick);
     expect(replayed.tick).toBe(sim.tick);
     expect(replayed.stateHash()).toBe(sim.stateHash());
     expect(Array.from(replayed.trainOffset)).toEqual(Array.from(sim.trainOffset));
   });
 
   it("hashes a different state when one command lands a tick later", () => {
-    const a = new SimSession(circle());
+    const a = createSimSession(circle());
     a.apply({ kind: "throttle", train: 0, speedLduPerS: 500 });
     run(a.simulation, 2);
-    const b = new SimSession(circle());
+    const b = createSimSession(circle());
     b.simulation.step();
     b.apply({ kind: "throttle", train: 0, speedLduPerS: 500 });
     for (let i = 1; i < 2 * SIM_TICK_HZ; i++) b.simulation.step();
@@ -381,7 +383,7 @@ describe("Simulation determinism", () => {
 
 describe("Reversing a stopped train", () => {
   it("keeps every bogie where it stood and runs the other way", () => {
-    const sim = new SimSession(circle()).simulation;
+    const sim = createSimSession(circle()).simulation;
     sim.setThrottle(0, 400);
     run(sim, 3);
     expect(sim.reverse(0)).toBe(false);
@@ -434,7 +436,7 @@ function stemWithLoop(): SimScenario {
 
 describe("Switches and dead ends", () => {
   it("returns down the stem in the opposite direction after a reversing loop", () => {
-    const sim = new SimSession(stemWithLoop()).simulation;
+    const sim = createSimSession(stemWithLoop()).simulation;
     sim.setThrottle(0, 500);
     const visited = new Set<number>();
     for (let tick = 0; tick < 40 * SIM_TICK_HZ; tick++) {
@@ -448,7 +450,7 @@ describe("Switches and dead ends", () => {
   });
 
   it("takes the other loop direction when the switch is thrown", () => {
-    const sim = new SimSession(stemWithLoop()).simulation;
+    const sim = createSimSession(stemWithLoop()).simulation;
     sim.setSwitch(0, 1);
     sim.setThrottle(0, 500);
     const visited = new Set<number>();
@@ -461,7 +463,7 @@ describe("Switches and dead ends", () => {
   });
 
   it("brakes to a stop at a buffer without running past the track end, under the default open-end rule", () => {
-    const sim = new SimSession(stemWithLoop()).simulation;
+    const sim = createSimSession(stemWithLoop()).simulation;
     sim.setThrottle(0, 500);
     run(sim, 40);
     expect(sim.trainEdge[0]).toBe(backwardEdge(0));
@@ -542,7 +544,7 @@ function driveIntoEnd(session: SimSession, speed: number): number {
 
 describe("Open ends under the derail rule", () => {
   it("derails once its leading axle runs off the open end, then skids to rest along the end's tangent", () => {
-    const session = new SimSession(lineEndingInCurve("derail"));
+    const session = createSimSession(lineEndingInCurve("derail"));
     const sim = session.simulation;
     const end = lineEnd();
     const hitSpeed = driveIntoEnd(session, 600);
@@ -574,7 +576,7 @@ describe("Open ends under the derail rule", () => {
   });
 
   it("stays on the rails when it stops with only its front overhanging the end, and backs away", () => {
-    const session = new SimSession(lineEndingInCurve("derail"));
+    const session = createSimSession(lineEndingInCurve("derail"));
     const sim = session.simulation;
     const end = lineEnd();
     const speed = 300;
@@ -602,7 +604,7 @@ describe("Open ends under the derail rule", () => {
   });
 
   it("ignores throttle and refuses to reverse until rerailed, then drives back the other way", () => {
-    const session = new SimSession(lineEndingInCurve("derail"));
+    const session = createSimSession(lineEndingInCurve("derail"));
     const sim = session.simulation;
     const end = lineEnd();
     driveIntoEnd(session, 500);
@@ -626,7 +628,7 @@ describe("Open ends under the derail rule", () => {
     expect(sim.trainSpeed[0]).toBe(500);
     expect(sim.derailed(0)).toBe(false);
     expect(distanceFrom(sim, end)).toBeGreaterThan(rerailedAt + 500);
-    const replayed = replay(lineEndingInCurve("derail"), session.log, sim.tick);
+    const replayed = replay(createSimSession, lineEndingInCurve("derail"), session.log, sim.tick);
     expect(replayed.stateHash()).toBe(sim.stateHash());
   });
 });
@@ -644,7 +646,7 @@ function angularStep(sim: Simulation): number {
 
 describe("Driving with a signed speed", () => {
   it("brakes to a stop, reverses where it stood and runs the other way when asked to go backward while moving forward", () => {
-    const session = new SimSession(circle());
+    const session = createSimSession(circle());
     const sim = session.simulation;
     session.apply({ kind: "drive", train: 0, signedSpeedLduPerS: 500 });
     run(sim, 4);
@@ -672,7 +674,7 @@ describe("Driving with a signed speed", () => {
     const turned = frameOf(session);
     expect(turned[session.layout.trainDirectionStart]).toBe(-1);
     expect(turned[session.layout.trainFacingStart]).toBe(-1);
-    const replayed = replay(circle(), session.log, sim.tick);
+    const replayed = replay(createSimSession, circle(), session.log, sim.tick);
     expect(replayed.stateHash()).toBe(sim.stateHash());
   });
 });

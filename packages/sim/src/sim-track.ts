@@ -1,3 +1,4 @@
+import { NO_SWITCH } from "@brr/domain";
 import {
   placeSegments,
   reversedSegments,
@@ -7,8 +8,6 @@ import {
   type PlanPose,
   type SimPathSegment,
 } from "./route-geometry.ts";
-
-export const NO_SWITCH = -1;
 
 export interface SimTrack {
   readonly edgeCount: number;

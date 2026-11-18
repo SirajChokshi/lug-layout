@@ -50,6 +50,7 @@ export class WorkerModelImporter implements IModelImporter {
       bundlePartIds: context.partIds,
       ldconfigCodes: context.ldconfigCodes,
       translucentColors: context.translucentCodes,
+      tableDepthLdu: context.tableDepthLdu,
       vehicles: context.vehicles,
     };
   }

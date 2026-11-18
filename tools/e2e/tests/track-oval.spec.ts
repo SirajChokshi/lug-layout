@@ -37,6 +37,7 @@ test("a straight run closed into an oval joins every end exactly", async ({ page
   expect(oval.joins).toBe(oval.pieces);
   expect(await editor.trackEnds()).toEqual([]);
 
+  await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("track-oval.png") });
 });
 
@@ -75,5 +76,6 @@ test("track laid on open ground sits on the studs: a shallow drag and a switch h
     expect(isStudAligned(end.xLdu) && isStudAligned(end.zLdu), JSON.stringify(end)).toBe(true);
   }
 
+  await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("track-on-studs.png") });
 });

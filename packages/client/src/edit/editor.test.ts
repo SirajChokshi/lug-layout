@@ -11,19 +11,33 @@ import {
   type IPartBundleLoader,
   type ModelBundle,
   type ModelRecord,
+  type PartAsset,
   type PartBundle,
   type PartFilter,
   type PartMesh,
   type PartShapeRecord,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
+import type {
+  BundleIndex,
+  BundleLod,
+  BundleManifest,
+  BundleModelEntry,
+  CatalogPart,
+} from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
+  INSTANCE_MATRIX_FLOATS,
   type BackendInfo,
   type BufferMemory,
+  type ChunkInstances,
+  type ChunkTier,
   type ISceneBackend,
   type LookSettings,
+  type NeededMeshListener,
+  type PaletteLevel,
+  type PartMeshUpdate,
+  type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
 import { Container } from "inversify";
@@ -47,7 +61,7 @@ import {
   type StoredWorld,
   type WorldChange,
 } from "@brr/storage";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
@@ -55,6 +69,8 @@ import type { ImportResult } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY } from "../tokens.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
+import { meshesSettled } from "./mesh-progress.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -116,10 +132,16 @@ class InFlightFetcher implements IAssetFetcher {
   }
 }
 
+function importedByUser(entry: BundleModelEntry): BundleModelEntry {
+  return { ...entry, origin: "omr" };
+}
+
 class ModelSubsetLoader implements IPartBundleLoader {
   constructor(
     private readonly loader: IPartBundleLoader,
     private readonly models: ReadonlyArray<string>,
+    private readonly userModels: ReadonlyArray<string> = [],
+    private readonly userLoader: IPartBundleLoader | null = null,
   ) {}
 
   loadManifestFile(): Promise<string> {
@@ -128,7 +150,15 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   async loadIndex(lod: BundleLod): Promise<BundleIndex> {
     const index = await this.loader.loadIndex(lod);
-    return { ...index, models: index.models.filter((m) => this.models.includes(m.name)) };
+    const imported = this.userLoader
+      ? (await this.userLoader.loadIndex(lod)).models
+          .filter((m) => this.userModels.includes(m.name))
+          .map(importedByUser)
+      : [];
+    return {
+      ...index,
+      models: [...index.models.filter((m) => this.models.includes(m.name)), ...imported],
+    };
   }
 
   loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
@@ -139,12 +169,20 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.loadPartShape(lod, part);
   }
 
-  loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
-    return this.loader.loadModelRecord(lod, name);
+  async loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
+    if (!this.userLoader || !this.userModels.includes(name)) {
+      return this.loader.loadModelRecord(lod, name);
+    }
+    const record = await this.userLoader.loadModelRecord(lod, name);
+    return { ...record, entry: importedByUser(record.entry) };
   }
 
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
     return this.loader.loadPartMesh(lod, file, priority);
+  }
+
+  setPartMeshPriority(lod: BundleLod, file: string, priority: FetchPriority): void {
+    this.loader.setPartMeshPriority(lod, file, priority);
   }
 
   loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
@@ -189,6 +227,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
   }
 }
 
+interface AimedBackend {
+  aim(x: number, z: number): void;
+}
+
 class HeadlessBackend implements ISceneBackend {
   async init(): Promise<BackendInfo> {
     return {
@@ -199,14 +241,25 @@ class HeadlessBackend implements ISceneBackend {
       look: NO_LOOK,
     };
   }
-  setPalette(): void {}
-  addParts(): void {}
+  readonly partIds: string[] = [];
+  readonly chunks = new Map<number, ChunkInstances>();
+  setPalette(palette: PartPalette): void {
+    this.partIds.splice(0, this.partIds.length, ...palette.detailed.parts.map((part) => part.id));
+  }
+  addParts(parts: ReadonlyArray<PartAsset>): void {
+    this.partIds.push(...parts.map((part) => part.id));
+  }
   setPartMeshes(): void {}
   setFarStuds(): void {}
   setFarModelMesh(): void {}
   setColors(): void {}
-  setChunk(): void {}
-  deleteChunk(): void {}
+  setChunk(key: number, chunk: ChunkInstances): void {
+    this.chunks.set(key, chunk);
+  }
+  deleteChunk(key: number): void {
+    this.chunks.delete(key);
+  }
+  setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
@@ -250,6 +303,7 @@ afterEach(() => {
 async function startEditor(
   models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
+  userModels: ReadonlyArray<string> = [],
 ) {
   const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
@@ -264,7 +318,16 @@ async function startEditor(
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
   const realLoader = container.get(PART_BUNDLE_LOADER);
   if (models !== null) {
-    container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, models));
+    container
+      .rebind(PART_BUNDLE_LOADER)
+      .toConstantValue(
+        new ModelSubsetLoader(
+          realLoader,
+          models,
+          userModels,
+          userModels.length > 0 ? fixtureBundleLoader() : null,
+        ),
+      );
   }
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const editor = container.get(EDITOR);
@@ -351,11 +414,13 @@ it("loads a set's record only once it is picked, refuses clicks until then, and 
 
   expect(place(set, 640, 640)).toMatchObject({ placements: 1, refusedClicks: 1 });
   await vi.waitFor(() => {
-    const { meshes } = editor.snapshot();
-    expect(meshes.wanted).toBeGreaterThan(0);
-    expect(meshes.loaded).toBe(meshes.wanted);
+    const { detailedPartMeshes } = editor.snapshot().meshes;
+    expect(detailedPartMeshes.wanted).toBeGreaterThan(0);
+    expect(detailedPartMeshes.loaded).toBe(detailedPartMeshes.wanted);
   });
-  expect(await partMeshes(fetcher.paths, "standard")).toHaveLength(editor.snapshot().meshes.wanted);
+  expect(await partMeshes(fetcher.paths, "standard")).toHaveLength(
+    editor.snapshot().meshes.detailedPartMeshes.wanted,
+  );
 }, 120_000);
 
 it("starts without the far tier when its files cannot be fetched", async () => {
@@ -565,7 +630,7 @@ class MemoryRepository implements IWorldRepository {
   }
 }
 
-function placer(editor: IEditor, backend: HeadlessBackend) {
+function placer(editor: IEditor, backend: AimedBackend) {
   return (item: string, x: number, z: number) => {
     editor.chooseItem(item);
     backend.aim(x, z);
@@ -609,7 +674,7 @@ it("R cycles the fitting turns of a road curve at a road straight's open end, an
   expect(placements.rot.at(-1)).toBe(shownRot);
 }, 120_000);
 
-function selectAt(editor: IEditor, backend: HeadlessBackend, x: number, z: number) {
+function selectAt(editor: IEditor, backend: AimedBackend, x: number, z: number) {
   editor.chooseItem(null);
   backend.aim(x, z);
   editor.click(0, 0, 0);
@@ -1013,6 +1078,102 @@ it.each([
   120_000,
 );
 
+it.each([
+  {
+    name: "a set built on its own baseplates, 10185-1",
+    model: "10185-1",
+    userModels: [],
+    besideX: 640,
+  },
+  {
+    name: "10190-1, its one-stud overhang and tilted hinge reaching over the 3811 from beside it,",
+    model: "10190-1",
+    userModels: [],
+    besideX: -640,
+  },
+  {
+    name: "a user's model of a 3811 beside a road baseplate",
+    model: "baseplate-row",
+    userModels: ["baseplate-row"],
+    besideX: 640,
+  },
+] as const)(
+  "$name lies in the baseplate layer: refused across a 3811 and taken flush beside it",
+  async ({ model, userModels, besideX }) => {
+    const { editor, backend } = await startEditor(
+      [model],
+      new BundleDirectoryFetcher(),
+      userModels,
+    );
+    const held = `omr:${model}`;
+    expect(await editor.prefetch(held)).toBe(true);
+    const place = placer(editor, backend);
+    place(BASEPLATE, 0, 0);
+    const across = place(held, 0, 0);
+    const beside = place(held, besideX, 0);
+
+    expect({ across, placements: beside.placements, poses: posesOf(editor) }).toEqual({
+      across: OVERLAP_REFUSED.outcome,
+      placements: 2,
+      poses: [`${BASEPLATE} 0,0 y0`, `${held} ${besideX},0 y0`],
+    });
+  },
+  120_000,
+);
+
+function placedHeights(backend: HeadlessBackend, partId: string) {
+  const heights = new Set<number>();
+  let instances = 0;
+  for (const chunk of backend.chunks.values()) {
+    for (let i = 0; i < chunk.count; i++) {
+      if (backend.partIds[chunk.partIndex[i] ?? -1] !== partId) continue;
+      instances++;
+      heights.add(chunk.matrices[i * INSTANCE_MATRIX_FLOATS + 7] ?? Number.NaN);
+    }
+  }
+  return { instances, heights: [...heights] };
+}
+
+it.each([
+  {
+    name: "a 3811 and a user's model of a 3811 beside a road baseplate: both lie on the table, top face at 0",
+    part: "ldraw:3811",
+    model: "baseplate-row",
+    topFace: 0,
+  },
+  {
+    name: "a 30225b road baseplate and a user's model of road baseplates: both lie on the table, top face at 0",
+    part: "ldraw:30225b",
+    model: "road-baseplates",
+    topFace: 0,
+  },
+  {
+    name: "a 69958 road plate and a user's model of road plates: studs a plate above the underside keep both on the plate lattice, top face at 16",
+    part: "ldraw:69958",
+    model: "road-plates",
+    topFace: 16,
+  },
+] as const)(
+  "$name",
+  async ({ part, model, topFace }) => {
+    const { editor, backend } = await startEditor([model], new BundleDirectoryFetcher(), [model]);
+    const held = `omr:${model}`;
+    expect(await editor.prefetch(held)).toBe(true);
+    const loose = editor.snapshot().catalog.find((item) => item.group === part)?.id;
+    if (!loose) throw new Error(`${part} is not in the catalog`);
+    const place = placer(editor, backend);
+    place(loose, -1280, 0);
+    place(held, 1280, 0);
+
+    expect({ placements: editor.snapshot().placements, ...placedHeights(backend, part) }).toEqual({
+      placements: 2,
+      instances: 2,
+      heights: [topFace],
+    });
+  },
+  120_000,
+);
+
 it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
   const { editor, backend } = await startEditor([]);
   const place = placer(editor, backend);
@@ -1104,3 +1265,590 @@ it.each([
   },
   120_000,
 );
+
+const STREAMED_SET = "10185-1";
+const ROAD_PLATE = "ldraw:44336p01@2";
+
+async function partMeshPaths(lod: BundleLod): Promise<ReadonlyMap<string, string>> {
+  const files = new BundleDirectoryFetcher();
+  const index: { partTable: { file: string } } = JSON.parse(
+    await files.text(`${lod}/manifest.json`),
+  );
+  const table: { parts: ReadonlyArray<{ id: string; file: string }> } = JSON.parse(
+    await files.text(`${lod}/${index.partTable.file}`),
+  );
+  return new Map(table.parts.map((part) => [part.id, `${lod}/${part.file}`]));
+}
+
+function isFarModelMesh(path: string): boolean {
+  return path.startsWith("far/model-") && path.endsWith(".glb");
+}
+
+class PathGate implements IAssetFetcher {
+  readonly started: string[] = [];
+  readonly finishedAt = new Map<string, number>();
+  private shut: (path: string) => boolean = () => false;
+  private waiting: Array<{ readonly path: string; readonly go: () => void }> = [];
+
+  constructor(
+    private readonly files: IAssetFetcher,
+    private readonly watched: ReadonlySet<string>,
+  ) {}
+
+  close(shut: (path: string) => boolean): void {
+    this.shut = shut;
+    const go = this.waiting.filter((fetch) => !shut(fetch.path));
+    this.waiting = this.waiting.filter((fetch) => shut(fetch.path));
+    for (const fetch of go) fetch.go();
+  }
+
+  open(): void {
+    this.close(() => false);
+  }
+
+  releaseOldest(): boolean {
+    const oldest = this.waiting.shift();
+    oldest?.go();
+    return oldest !== undefined;
+  }
+
+  async bytes(path: string): Promise<ArrayBuffer> {
+    if (this.watched.has(path)) this.started.push(path);
+    if (this.shut(path)) await new Promise<void>((go) => this.waiting.push({ path, go }));
+    const bytes = await this.files.bytes(path);
+    if (this.watched.has(path)) this.finishedAt.set(path, performance.now());
+    return bytes;
+  }
+
+  text(path: string): Promise<string> {
+    return this.files.text(path);
+  }
+}
+
+class StreamingBackend implements ISceneBackend, AimedBackend {
+  private readonly partIds: string[] = [];
+  private readonly holdCounts: Record<PaletteLevel, Map<number, number>> = {
+    detailed: new Map(),
+    far: new Map(),
+  };
+  private aimX = 0;
+  private aimZ = 0;
+  readonly published: Array<{ readonly at: number; readonly meshes: ReadonlySet<string> }> = [];
+
+  constructor(private readonly three: ISceneBackend) {}
+
+  heldMeshPaths(
+    detailedPaths: ReadonlyMap<string, string>,
+    farPaths: ReadonlyMap<string, string>,
+  ): ReadonlyMap<string, string> {
+    const held = new Map<string, string>();
+    for (const [level, paths] of [
+      ["detailed", detailedPaths],
+      ["far", farPaths],
+    ] as const) {
+      for (const [index, count] of this.holdCounts[level]) {
+        const path = paths.get(this.partIds[index] ?? "");
+        if (count > 0 && path !== undefined) held.set(`${level} ${index}`, path);
+      }
+    }
+    return held;
+  }
+
+  heldPaths(level: PaletteLevel, paths: ReadonlyMap<string, string>): ReadonlySet<string> {
+    const held = new Set<string>();
+    for (const [index, count] of this.holdCounts[level]) {
+      const path = paths.get(this.partIds[index] ?? "");
+      if (count > 0 && path !== undefined) held.add(path);
+    }
+    return held;
+  }
+
+  private count(level: PaletteLevel, indices: Uint32Array, step: number): void {
+    const counts = this.holdCounts[level];
+    for (const index of indices) counts.set(index, (counts.get(index) ?? 0) + step);
+  }
+
+  async init(): Promise<BackendInfo> {
+    return {
+      requestedApi: "webgl2",
+      activeApi: "webgl2",
+      adapter: "none",
+      backgroundSrgb: 0,
+      look: NO_LOOK,
+    };
+  }
+
+  setPalette(palette: PartPalette): void {
+    this.partIds.length = 0;
+    this.partIds.push(...palette.detailed.parts.map((part) => part.id));
+    this.three.setPalette(palette);
+  }
+
+  addParts(parts: ReadonlyArray<PartAsset>): void {
+    this.partIds.push(...parts.map((part) => part.id));
+    this.three.addParts(parts);
+  }
+
+  setNeededMeshListener(listener: NeededMeshListener | null): void {
+    this.three.setNeededMeshListener(
+      listener && {
+        hold: (detailed, far) => {
+          this.count("detailed", detailed, 1);
+          this.count("far", far, 1);
+          listener.hold(detailed, far);
+        },
+        release: (detailed, far) => {
+          this.count("detailed", detailed, -1);
+          this.count("far", far, -1);
+          listener.release(detailed, far);
+        },
+      },
+    );
+  }
+
+  aim(x: number, z: number): void {
+    this.aimX = x;
+    this.aimZ = z;
+  }
+
+  rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
+    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ, 0, -1, 0]);
+  }
+
+  renderFrame(): void {}
+
+  needsFrame(): boolean {
+    return true;
+  }
+
+  async waitForGpu(): Promise<void> {}
+
+  setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
+    this.published.push({
+      at: performance.now(),
+      meshes: new Set(updates.map(({ level, index }) => `${level} ${index}`)),
+    });
+    this.three.setPartMeshes(updates);
+  }
+  setFarStuds(...args: Parameters<ISceneBackend["setFarStuds"]>): void {
+    this.three.setFarStuds(...args);
+  }
+  setFarModelMesh(...args: Parameters<ISceneBackend["setFarModelMesh"]>): void {
+    this.three.setFarModelMesh(...args);
+  }
+  setColors(...args: Parameters<ISceneBackend["setColors"]>): void {
+    this.three.setColors(...args);
+  }
+  setChunk(...args: Parameters<ISceneBackend["setChunk"]>): void {
+    this.three.setChunk(...args);
+  }
+  deleteChunk(...args: Parameters<ISceneBackend["deleteChunk"]>): void {
+    this.three.deleteChunk(...args);
+  }
+  setGhost(...args: Parameters<ISceneBackend["setGhost"]>): void {
+    this.three.setGhost(...args);
+  }
+  placeGhost(...args: Parameters<ISceneBackend["placeGhost"]>): void {
+    this.three.placeGhost(...args);
+  }
+  setSelectionBox(...args: Parameters<ISceneBackend["setSelectionBox"]>): void {
+    this.three.setSelectionBox(...args);
+  }
+  setMarkers(...args: Parameters<ISceneBackend["setMarkers"]>): void {
+    this.three.setMarkers(...args);
+  }
+  setTrackEnds(...args: Parameters<ISceneBackend["setTrackEnds"]>): void {
+    this.three.setTrackEnds(...args);
+  }
+  setPlanOverlays(...args: Parameters<ISceneBackend["setPlanOverlays"]>): void {
+    this.three.setPlanOverlays(...args);
+  }
+  setIssueBoxes(...args: Parameters<ISceneBackend["setIssueBoxes"]>): void {
+    this.three.setIssueBoxes(...args);
+  }
+  setVehicle(...args: Parameters<ISceneBackend["setVehicle"]>): void {
+    this.three.setVehicle(...args);
+  }
+  setVehiclePose(...args: Parameters<ISceneBackend["setVehiclePose"]>): void {
+    this.three.setVehiclePose(...args);
+  }
+  deleteVehicle(...args: Parameters<ISceneBackend["deleteVehicle"]>): void {
+    this.three.deleteVehicle(...args);
+  }
+  setView(...args: Parameters<ISceneBackend["setView"]>): void {
+    this.three.setView(...args);
+  }
+  resize(...args: Parameters<ISceneBackend["resize"]>): void {
+    this.three.resize(...args);
+  }
+  bufferMemory(): BufferMemory {
+    return this.three.bufferMemory();
+  }
+  rebaseLog(): ReadonlyArray<RebaseEvent> {
+    return this.three.rebaseLog();
+  }
+  forceTier(...args: Parameters<ISceneBackend["forceTier"]>): void {
+    this.three.forceTier(...args);
+  }
+  setFarModel(...args: Parameters<ISceneBackend["setFarModel"]>): void {
+    this.three.setFarModel(...args);
+  }
+}
+
+class FarIndexGapLoader extends ModelSubsetLoader {
+  constructor(
+    loader: IPartBundleLoader,
+    models: ReadonlyArray<string>,
+    private readonly missingPart: string,
+    private readonly missingModel: string,
+  ) {
+    super(loader, models);
+  }
+
+  override async loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>> {
+    const files = await super.loadPartFiles(lod);
+    if (lod !== "far") return files;
+    return new Map([...files].filter(([id]) => id !== this.missingPart));
+  }
+
+  override loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
+    if (name === this.missingModel) return Promise.resolve(null);
+    return super.loadFarModelMesh(name, priority);
+  }
+}
+
+class PriorityRecordingLoader extends ModelSubsetLoader {
+  readonly firstPriority = new Map<string, FetchPriority>();
+
+  override loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
+    const path = `${lod}/${file}`;
+    if (!this.firstPriority.has(path)) this.firstPriority.set(path, priority);
+    return super.loadPartMesh(lod, file, priority);
+  }
+}
+
+interface StreamingEditorOptions {
+  readonly models: ReadonlyArray<string>;
+  readonly tier: ChunkTier | null;
+  readonly fetcher?: IAssetFetcher;
+  readonly repository?: IWorldRepository;
+  readonly loader?: (real: IPartBundleLoader) => IPartBundleLoader;
+}
+
+async function startStreamingEditor({
+  models,
+  tier,
+  fetcher = new BundleDirectoryFetcher(),
+  repository = new MemoryRepository(),
+  loader = (real) => new ModelSubsetLoader(real, models),
+}: StreamingEditorOptions) {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(loader(realLoader));
+  const three = container.get(SCENE_BACKEND);
+  const backend = new StreamingBackend(three);
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier });
+  expect(editor.snapshot().status).toBe("ready");
+  return { editor, backend };
+}
+
+async function streamingEditor(options: StreamingEditorOptions) {
+  const started = await startStreamingEditor(options);
+  expect((await farTierSettled(started.editor)).farTier).toBe("ready");
+  return started;
+}
+
+async function storedWorld(models: ReadonlyArray<string>, item: string) {
+  const repository = new MemoryRepository();
+  const { editor, backend } = await streamingEditor({ models, tier: null, repository });
+  const empty = editor.snapshot().world?.id;
+  expect(await editor.newWorld("Built")).toBe(true);
+  const built = editor.snapshot().world?.id;
+  if (!empty || !built) throw new Error("the fixture editor has no world");
+  expect(await editor.prefetch(item)).toBe(true);
+  expect(placer(editor, backend)(item, 640, 640).placements).toBe(1);
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1), STREAM_WAIT);
+  return { repository, empty, built };
+}
+
+const STREAM_WAIT = { timeout: 60_000 };
+const RELEASE_PAUSE_MS = 5;
+const MIN_HELD_STALL_MS = 1_000;
+
+function meshesOf(editor: IEditor) {
+  return editor.snapshot().meshes;
+}
+
+async function expectHeldFarFirst(
+  editor: IEditor,
+  backend: StreamingBackend,
+  gate: PathGate,
+  detailedPaths: ReadonlyMap<string, string>,
+  farPaths: ReadonlyMap<string, string>,
+) {
+  const startedBefore = gate.started.length;
+  const heldFar = backend.heldPaths("far", farPaths);
+  const heldDetailed = backend.heldPaths("detailed", detailedPaths);
+  gate.open();
+  await vi.waitFor(() => expect(meshesSettled(meshesOf(editor))).toBe(true), STREAM_WAIT);
+
+  const order = gate.started
+    .slice(startedBefore)
+    .flatMap((path) =>
+      heldFar.has(path)
+        ? ["held far"]
+        : path.startsWith("standard/") && !heldDetailed.has(path)
+          ? ["unheld detailed"]
+          : [],
+    );
+  const firstUnheldDetailed = order.indexOf("unheld detailed");
+  expect({
+    heldFarStarted: order.includes("held far"),
+    unheldDetailedStarted: firstUnheldDetailed >= 0,
+    heldFarAfterUnheldDetailed: order.slice(firstUnheldDetailed).includes("held far"),
+  }).toEqual({
+    heldFarStarted: true,
+    unheldDetailedStarted: true,
+    heldFarAfterUnheldDetailed: false,
+  });
+}
+
+async function placeWithOneHeldMeshGated() {
+  const detailedPaths = await partMeshPaths("standard");
+  const farPaths = await partMeshPaths("far");
+  const meshPaths = new Set([...detailedPaths.values(), ...farPaths.values()]);
+  const gate = new PathGate(new BundleDirectoryFetcher(), meshPaths);
+  const { editor, backend } = await streamingEditor({
+    models: [STREAMED_SET],
+    tier: "mid",
+    fetcher: gate,
+  });
+  const set = `omr:${STREAMED_SET}`;
+  expect(await editor.prefetch(set)).toBe(true);
+  gate.close((path) => meshPaths.has(path));
+  expect(placer(editor, backend)(set, 640, 640).placements).toBe(1);
+  editor.chooseItem(null);
+  const heldMeshes = backend.heldMeshPaths(detailedPaths, farPaths);
+  const [lastMesh, lastPath] = [...heldMeshes].at(-1) ?? ["", ""];
+  gate.close((path) => path === lastPath);
+  const otherPaths = [...heldMeshes.values()].filter((path) => path !== lastPath);
+  await vi.waitFor(
+    () => expect(otherPaths.filter((path) => !gate.finishedAt.has(path))).toEqual([]),
+    STREAM_WAIT,
+  );
+  const lastLanding = Math.max(...otherPaths.map((path) => gate.finishedAt.get(path) ?? 0));
+  return { backend, gate, heldMeshes, lastMesh, lastLanding };
+}
+
+async function waitForHeldMeshPublishes(
+  backend: StreamingBackend,
+  heldMeshes: ReadonlyMap<string, string>,
+) {
+  const isHeld = ({ meshes }: { readonly meshes: ReadonlySet<string> }) =>
+    [...heldMeshes.keys()].some((mesh) => meshes.has(mesh));
+  await vi.waitFor(() => expect(backend.published.some(isHeld)).toBe(true), STREAM_WAIT);
+  return backend.published.filter(isHeld);
+}
+
+describe("part mesh streaming", () => {
+  it("keeps mesh progress unsettled until far-level part meshes and far model meshes have arrived", async () => {
+    const farParts = new Set((await partMeshPaths("far")).values());
+    const gate = new PathGate(new BundleDirectoryFetcher(), new Set());
+    gate.close((path) => farParts.has(path) || isFarModelMesh(path));
+    const { editor, backend } = await streamingEditor({
+      models: [PLACEABLE_SET],
+      tier: "near",
+      fetcher: gate,
+    });
+    expect(await editor.prefetch(SET)).toBe(true);
+    expect(placer(editor, backend)(SET, 640, 640).placements).toBe(1);
+
+    await vi.waitFor(() => {
+      const { detailedPartMeshes } = meshesOf(editor);
+      expect(detailedPartMeshes.loaded).toBe(detailedPartMeshes.wanted);
+    }, STREAM_WAIT);
+    const detailedLoaded = meshesOf(editor);
+    gate.close(isFarModelMesh);
+    await vi.waitFor(() => {
+      const { farPartMeshes } = meshesOf(editor);
+      expect(farPartMeshes.loaded).toBe(farPartMeshes.wanted);
+    }, STREAM_WAIT);
+    const farPartsLoaded = meshesOf(editor);
+    gate.open();
+    await vi.waitFor(() => expect(meshesSettled(meshesOf(editor))).toBe(true), STREAM_WAIT);
+
+    expect({
+      detailedLoaded: meshesSettled(detailedLoaded),
+      farPartsWanted: detailedLoaded.farPartMeshes.wanted,
+      farPartsLoaded: meshesSettled(farPartsLoaded),
+      farModels: meshesOf(editor).farModelMeshes,
+    }).toEqual({
+      detailedLoaded: false,
+      farPartsWanted: detailedLoaded.detailedPartMeshes.wanted,
+      farPartsLoaded: false,
+      farModels: { wanted: 1, loaded: 1, failed: 0, absent: 0 },
+    });
+  }, 120_000);
+
+  it("settles with a part missing from the far part table as absent, a failed far fetch as failed, and a model with no far mesh as absent", async () => {
+    const roadPlateFar = (await partMeshPaths("far")).get(ROAD_PLATE.split("@")[0] ?? "");
+    const models = [PLACEABLE_SET];
+    const { editor, backend } = await streamingEditor({
+      models,
+      tier: "near",
+      fetcher: new InFlightFetcher(new BundleDirectoryFetcher(), (path) => path === roadPlateFar),
+      loader: (real) =>
+        new FarIndexGapLoader(real, models, BASEPLATE.split("@")[0] ?? "", PLACEABLE_SET),
+    });
+    expect(await editor.prefetch(SET)).toBe(true);
+    const place = placer(editor, backend);
+    expect(place(BASEPLATE, 320, 320).placements).toBe(1);
+    expect(place(ROAD_PLATE, 960, 320).placements).toBe(2);
+    expect(place(SET, 320, 1600).placements).toBe(3);
+
+    await vi.waitFor(() => expect(meshesSettled(meshesOf(editor))).toBe(true), STREAM_WAIT);
+    const { detailedPartMeshes, farPartMeshes, farModelMeshes } = meshesOf(editor);
+    expect({
+      detailed: detailedPartMeshes.loaded === detailedPartMeshes.wanted,
+      farFailed: farPartMeshes.failed,
+      farAbsent: farPartMeshes.absent,
+      farModelMeshes,
+    }).toEqual({
+      detailed: true,
+      farFailed: 1,
+      farAbsent: 1,
+      farModelMeshes: { wanted: 1, loaded: 0, failed: 0, absent: 1 },
+    });
+  }, 120_000);
+
+  it.each([
+    {
+      holder: "a stored world opened at the near tier, then switched to mid",
+      tier: "near" as const,
+      setUp: async (editor: IEditor, _backend: AimedBackend, built: string) => {
+        expect(await editor.openWorld(built)).toBe(true);
+        editor.cycleTier();
+        expect(editor.snapshot().tier).toBe("mid");
+      },
+    },
+    {
+      holder: "two ghosts shown and cleared at the mid tier, one of them placed",
+      tier: "mid" as const,
+      setUp: async (editor: IEditor, backend: AimedBackend) => {
+        editor.chooseItem(SET);
+        backend.aim(640, 640);
+        editor.pointerMove(0, 0);
+        editor.chooseItem(null);
+        expect(placer(editor, backend)(`omr:${STREAMED_SET}`, 640, 640).placements).toBe(1);
+        editor.chooseItem(null);
+      },
+    },
+  ])(
+    "starts every far mesh the mid tier holds before any detailed mesh nothing holds, after $holder",
+    async ({ tier, setUp }) => {
+      const models = [PLACEABLE_SET, STREAMED_SET];
+      const { repository, built } = await storedWorld(models, `omr:${STREAMED_SET}`);
+      const detailedPaths = await partMeshPaths("standard");
+      const farPaths = await partMeshPaths("far");
+      const meshPaths = new Set([...detailedPaths.values(), ...farPaths.values()]);
+      const gate = new PathGate(new BundleDirectoryFetcher(), meshPaths);
+      const { editor, backend } = await streamingEditor({
+        models,
+        tier,
+        fetcher: gate,
+        repository,
+      });
+      expect(await editor.prefetch(SET)).toBe(true);
+      expect(await editor.prefetch(`omr:${STREAMED_SET}`)).toBe(true);
+      gate.close((path) => meshPaths.has(path));
+
+      await setUp(editor, backend, built);
+      await expectHeldFarFirst(editor, backend, gate, detailedPaths, farPaths);
+    },
+    240_000,
+  );
+
+  it("loads the far tier ahead of the detailed meshes of a world opened at startup, then starts every far mesh the mid tier holds before any detailed mesh nothing holds", async () => {
+    const models = [PLACEABLE_SET, STREAMED_SET];
+    const { repository, empty } = await storedWorld(models, `omr:${STREAMED_SET}`);
+    await repository.remove(empty);
+    const detailedPaths = await partMeshPaths("standard");
+    const farPaths = await partMeshPaths("far");
+    const meshPaths = new Set([...detailedPaths.values(), ...farPaths.values()]);
+    const gate = new PathGate(new BundleDirectoryFetcher(), meshPaths);
+    gate.close((path) => meshPaths.has(path));
+    const { editor, backend } = await startStreamingEditor({
+      models,
+      tier: "mid",
+      fetcher: gate,
+      repository,
+    });
+
+    while (editor.snapshot().farTier === "loading" && gate.releaseOldest()) {
+      await new Promise((resolve) => setTimeout(resolve, RELEASE_PAUSE_MS));
+    }
+    await vi.waitFor(() => expect(editor.snapshot().farTier).toBe("ready"), STREAM_WAIT);
+
+    await expectHeldFarFirst(editor, backend, gate, detailedPaths, farPaths);
+  }, 240_000);
+
+  it("publishes every mesh the scene holds in one flush once the last of them lands", async () => {
+    const { backend, gate, heldMeshes, lastMesh } = await placeWithOneHeldMeshGated();
+    gate.open();
+    const published = await waitForHeldMeshPublishes(backend, heldMeshes);
+
+    expect({
+      flushes: published.length,
+      held: [...heldMeshes.keys()].filter((mesh) => published[0]?.meshes.has(mesh)).length,
+      lastIncluded: published[0]?.meshes.has(lastMesh),
+    }).toEqual({ flushes: 1, held: heldMeshes.size, lastIncluded: true });
+  }, 240_000);
+
+  it("publishes the meshes the scene holds once they stop landing, without the one still loading", async () => {
+    const { backend, gate, heldMeshes, lastMesh, lastLanding } = await placeWithOneHeldMeshGated();
+    const published = await waitForHeldMeshPublishes(backend, heldMeshes);
+
+    expect({
+      flushes: published.length,
+      held: [...heldMeshes.keys()].filter((mesh) => published[0]?.meshes.has(mesh)).length,
+      lastIncluded: published[0]?.meshes.has(lastMesh),
+      waitedForAStall: (published[0]?.at ?? 0) - lastLanding >= MIN_HELD_STALL_MS,
+    }).toEqual({
+      flushes: 1,
+      held: heldMeshes.size - 1,
+      lastIncluded: false,
+      waitedForAStall: true,
+    });
+    gate.open();
+  }, 240_000);
+
+  it("first asks for every far mesh the mid tier holds at high priority when a stored world opens before tiers turn on", async () => {
+    const models = [PLACEABLE_SET, STREAMED_SET];
+    const { repository, empty } = await storedWorld(models, `omr:${STREAMED_SET}`);
+    await repository.remove(empty);
+    const recorded: { loader?: PriorityRecordingLoader } = {};
+    const { backend } = await streamingEditor({
+      models,
+      tier: "mid",
+      repository,
+      loader: (real) => (recorded.loader = new PriorityRecordingLoader(real, models)),
+    });
+    const heldFar = [...backend.heldPaths("far", await partMeshPaths("far"))];
+
+    expect(heldFar.length).toBeGreaterThan(0);
+    expect(heldFar.filter((path) => recorded.loader?.firstPriority.get(path) !== "high")).toEqual(
+      [],
+    );
+  }, 240_000);
+});

@@ -25,6 +25,7 @@ interface Manifest {
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
   readonly compiler: { readonly file: string; readonly vehicles?: CompilerVehicles };
+  readonly tablePlane: { readonly depthBelowTopLdu: number };
 }
 
 async function readManifest(): Promise<Manifest> {
@@ -80,6 +81,7 @@ it("imports with the compiler and LDraw library the request names and the worker
           .filter((color) => color.alpha < OPAQUE_ALPHA)
           .map((color) => color.code),
         vehicles: manifest.compiler.vehicles ?? null,
+        tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
       },
     },
   });
