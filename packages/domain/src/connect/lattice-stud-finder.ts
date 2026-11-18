@@ -1,4 +1,4 @@
-import { SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
 import { SOURCES, STATUSES, VECTOR_FLOATS } from "./connector-table.ts";
 import {
@@ -6,10 +6,8 @@ import {
   QUARTER_TURNS,
   STUD_SIXTEENTHS,
   checkPose,
-  isLatticeStud,
   phaseOf,
   sixteenths,
-  studCell,
   verticalSign,
 } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
@@ -19,33 +17,53 @@ import type { SnapMating } from "./mating.ts";
 import type { ModelConnectors } from "./model-connectors.ts";
 import { StudLevel } from "./stud-level.ts";
 
-const LEVEL_Y_SPAN = 2 ** 20 * SIXTEENTHS_PER_LDU;
-const LEVEL_Y_BIAS = LEVEL_Y_SPAN / 2;
 const WORD_SHIFT = 5;
 const WORD_MASK = 31;
-const NOT_ON_LATTICE = -1;
-const INITIAL_GROUPS = 16;
+const NO_PHASE = -1;
+const INITIAL_LEVELS = 4;
+const INITIAL_MATCHES = 256;
 const PROVENANCES = SOURCES.length * STATUSES.length;
+const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
+
+function partnerPhase(phase: number): number {
+  return phaseOf(STUD_CENTRE_SIXTEENTHS - phase);
+}
+
+function centredCell(turned16: number): number {
+  return (turned16 + partnerPhase(phaseOf(turned16)) - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
+}
 
 export class LatticeStudFinder implements MateFinder {
   private readonly classes: MateClasses;
-  private readonly levels = new Map<number, StudLevel>();
-  private rasterModel: ModelConnectors | null = null;
-  private rasterPhaseX = 0;
-  private rasterPhaseZ = 0;
-  private connectorGroup = new Int32Array(0);
-  private connectorCellX = new Int32Array(0);
-  private connectorCellZ = new Int32Array(0);
-  private readonly groupStart = new Int32Array(QUARTER_TURNS + 1);
-  private groupClass = new Int32Array(INITIAL_GROUPS);
-  private groupAxis = new Int32Array(INITIAL_GROUPS);
-  private groupY = new Int32Array(INITIAL_GROUPS);
-  private groupMinX = new Int32Array(INITIAL_GROUPS);
-  private groupMinZ = new Int32Array(INITIAL_GROUPS);
-  private groupMaxX = new Int32Array(INITIAL_GROUPS);
-  private groupMaxZ = new Int32Array(INITIAL_GROUPS);
-  private groupWords = new Int32Array(INITIAL_GROUPS);
-  private groupOffset = new Int32Array(INITIAL_GROUPS);
+  private readonly levelYs: Int32Array[] = [];
+  private readonly levelsOf: StudLevel[][] = [];
+  private levelCount = new Int32Array(0);
+  private revision = 0;
+  private matchedRevision = -1;
+  private matchedPhase = NO_PHASE;
+  private matchedBaseY = 0;
+  private matches = 0;
+  private matchGroup = new Int32Array(INITIAL_MATCHES);
+  private matchBucket = new Int32Array(INITIAL_MATCHES);
+  private matchLevel = new Int32Array(INITIAL_MATCHES);
+  private preparedModel: ModelConnectors | null = null;
+  private readonly phaseStart = new Int32Array(QUARTER_TURNS + 1);
+  private phaseKey = new Int32Array(0);
+  private phaseGroupStart = new Int32Array(1);
+  private phaseMemberStart = new Int32Array(1);
+  private memberConnector = new Int32Array(0);
+  private memberGroup = new Int32Array(0);
+  private memberCellX = new Int32Array(0);
+  private memberCellZ = new Int32Array(0);
+  private groupClass = new Int32Array(0);
+  private groupAxis = new Int32Array(0);
+  private groupY = new Int32Array(0);
+  private groupMinX = new Int32Array(0);
+  private groupMinZ = new Int32Array(0);
+  private groupMaxX = new Int32Array(0);
+  private groupMaxZ = new Int32Array(0);
+  private groupWords = new Int32Array(0);
+  private groupOffset = new Int32Array(0);
   private raster = new Uint32Array(0);
   private readonly provenanceUses = new Int32Array(PROVENANCES);
   private readonly present = new Int32Array(PROVENANCES);
@@ -65,11 +83,15 @@ export class LatticeStudFinder implements MateFinder {
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
     checkPose(window);
-    this.prepare(model, phaseOf(sixteenths(window.x)), phaseOf(sixteenths(window.z)));
+    this.prepare(model);
+    const phaseX = phaseOf(sixteenths(window.x));
+    const phaseZ = phaseOf(sixteenths(window.z));
     for (let turn = 0; turn < window.turns; turn++) {
       const rot = (window.rot + turn) % QUARTER_TURNS;
+      const phase = this.phaseAt(rot, phaseX, phaseZ);
+      if (phase === NO_PHASE) continue;
       for (let y = window.yPlates - window.plates; y <= window.yPlates + window.plates; y++) {
-        if (!this.reachesLevel(rot, y)) continue;
+        if (!this.reachesLevel(phase, y)) continue;
         for (let dz = -window.cells; dz <= window.cells; dz++) {
           for (let dx = -window.cells; dx <= window.cells; dx++) {
             out.add(window.x + dx * STUD_LDU, window.z + dz * STUD_LDU, y, rot);
@@ -81,78 +103,83 @@ export class LatticeStudFinder implements MateFinder {
 
   count(model: ModelConnectors, pose: LatticePose): number {
     checkPose(pose);
+    this.prepare(model);
     const x16 = sixteenths(pose.x);
     const z16 = sixteenths(pose.z);
     const phaseX = phaseOf(x16);
     const phaseZ = phaseOf(z16);
-    this.prepare(model, phaseX, phaseZ);
+    const phase = this.phaseAt(pose.rot, phaseX, phaseZ);
+    if (phase === NO_PHASE) return 0;
     const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
     const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
     const baseY = pose.yPlates * PLATE_SIXTEENTHS;
-    const classes = this.classes;
+    if (
+      this.matchedRevision !== this.revision ||
+      this.matchedPhase !== phase ||
+      this.matchedBaseY !== baseY
+    ) {
+      this.match(phase, baseY);
+    }
     let n = 0;
-    for (let g = this.groupStart[pose.rot] ?? 0; g < (this.groupStart[pose.rot + 1] ?? 0); g++) {
-      const own = this.groupClass[g] ?? 0;
-      const axis = this.groupAxis[g] ?? 0;
-      const y = (this.groupY[g] ?? 0) + baseY;
+    for (let j = 0; j < this.matches; j++) {
+      const g = this.matchGroup[j] ?? 0;
       const minX = this.groupMinX[g] ?? 0;
       const minZ = this.groupMinZ[g] ?? 0;
-      const rows = (this.groupMaxZ[g] ?? 0) - minZ + 1;
-      const words = this.groupWords[g] ?? 0;
-      const offset = this.groupOffset[g] ?? 0;
-      for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
-        const partner = classes.pairClass[p] ?? 0;
-        for (
-          let k = classes.pairOffsetStart[p] ?? 0;
-          k < (classes.pairOffsetStart[p + 1] ?? 0);
-          k++
-        ) {
-          const partnerY = y + axis * (classes.offsets[k] ?? 0);
-          for (let q = 0; q < this.presentCount; q++) {
-            const level = this.levels.get(levelKey(partner, -axis, this.present[q] ?? 0, partnerY));
-            if (!level) continue;
-            n += level.countRows(this.raster, offset, rows, words, cellX + minX, cellZ + minZ);
-          }
-        }
-      }
+      n +=
+        this.levelsOf[this.matchBucket[j] ?? 0]?.[this.matchLevel[j] ?? 0]?.countRows(
+          this.raster,
+          this.groupOffset[g] ?? 0,
+          (this.groupMaxZ[g] ?? 0) - minZ + 1,
+          this.groupWords[g] ?? 0,
+          cellX + minX,
+          cellZ + minZ,
+        ) ?? 0;
     }
     return n;
   }
 
   mates(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
     checkPose(pose);
+    this.prepare(model);
     const x16 = sixteenths(pose.x);
     const z16 = sixteenths(pose.z);
     const phaseX = phaseOf(x16);
     const phaseZ = phaseOf(z16);
-    this.prepare(model, phaseX, phaseZ);
+    const phase = this.phaseAt(pose.rot, phaseX, phaseZ);
+    if (phase === NO_PHASE) return;
     const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
     const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
     const baseY = pose.yPlates * PLATE_SIXTEENTHS;
     const classes = this.classes;
-    const at = pose.rot * model.count;
-    for (let i = 0; i < model.count; i++) {
-      const g = this.connectorGroup[at + i] ?? NOT_ON_LATTICE;
-      if (g === NOT_ON_LATTICE) continue;
+    for (
+      let k = this.phaseMemberStart[phase] ?? 0;
+      k < (this.phaseMemberStart[phase + 1] ?? 0);
+      k++
+    ) {
+      const i = this.memberConnector[k] ?? 0;
+      const g = this.memberGroup[k] ?? 0;
       const own = this.groupClass[g] ?? 0;
       const axis = this.groupAxis[g] ?? 0;
       const ownSource = model.source[i] ?? 0;
       const ownStatus = model.status[i] ?? 0;
-      const y = (model.origin[i * VECTOR_FLOATS + 1] ?? 0) + baseY;
-      const x = cellX + (this.connectorCellX[at + i] ?? 0);
-      const z = cellZ + (this.connectorCellZ[at + i] ?? 0);
+      const y = (this.groupY[g] ?? 0) + baseY;
+      const x = cellX + (this.memberCellX[k] ?? 0);
+      const z = cellZ + (this.memberCellZ[k] ?? 0);
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
-        for (
-          let k = classes.pairOffsetStart[p] ?? 0;
-          k < (classes.pairOffsetStart[p + 1] ?? 0);
-          k++
-        ) {
-          const partnerY = y + axis * (classes.offsets[k] ?? 0);
-          for (let q = 0; q < this.presentCount; q++) {
-            const provenance = this.present[q] ?? 0;
-            const level = this.levels.get(levelKey(partner, -axis, provenance, partnerY));
-            if (!level?.has(x, z)) continue;
+        const from = y + this.nearestTravel(p, axis);
+        const to = y + this.farthestTravel(p, axis);
+        for (let q = 0; q < this.presentCount; q++) {
+          const provenance = this.present[q] ?? 0;
+          const bucket = levelBucket(partner, -axis, provenance);
+          const size = this.levelCount[bucket] ?? 0;
+          if (size === 0) continue;
+          const ys = this.levelYs[bucket];
+          const levels = this.levelsOf[bucket];
+          if (!ys || !levels) continue;
+          for (let l = this.firstLevelFrom(bucket, from); l < size && (ys[l] ?? 0) <= to; l++) {
+            if (!this.classes.pairEngages(p, Math.imul((ys[l] ?? 0) - y, axis))) continue;
+            if (!levels[l]?.has(x, z)) continue;
             out.push(
               i,
               ownSource | provenanceSource(provenance),
@@ -166,34 +193,33 @@ export class LatticeStudFinder implements MateFinder {
 
   private stamp(model: ModelConnectors, pose: LatticePose, adding: boolean): void {
     checkPose(pose);
+    this.prepare(model);
     const x16 = sixteenths(pose.x);
     const z16 = sixteenths(pose.z);
     const phaseX = phaseOf(x16);
     const phaseZ = phaseOf(z16);
-    this.prepare(model, phaseX, phaseZ);
+    const phase = this.phaseAt(pose.rot, phaseX, phaseZ);
+    if (phase === NO_PHASE) return;
     const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
     const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
     const baseY = pose.yPlates * PLATE_SIXTEENTHS;
-    const at = pose.rot * model.count;
-    for (let i = 0; i < model.count; i++) {
-      const g = this.connectorGroup[at + i] ?? NOT_ON_LATTICE;
-      if (g === NOT_ON_LATTICE) continue;
+    for (
+      let k = this.phaseMemberStart[phase] ?? 0;
+      k < (this.phaseMemberStart[phase + 1] ?? 0);
+      k++
+    ) {
+      const i = this.memberConnector[k] ?? 0;
+      const g = this.memberGroup[k] ?? 0;
       const provenance = provenanceOf(model.source[i] ?? 0, model.status[i] ?? 0);
-      const key = levelKey(
-        this.groupClass[g] ?? 0,
-        this.groupAxis[g] ?? 0,
-        provenance,
-        (model.origin[i * VECTOR_FLOATS + 1] ?? 0) + baseY,
-      );
-      const x = cellX + (this.connectorCellX[at + i] ?? 0);
-      const z = cellZ + (this.connectorCellZ[at + i] ?? 0);
-      let level = this.levels.get(key);
+      const bucket = levelBucket(this.groupClass[g] ?? 0, this.groupAxis[g] ?? 0, provenance);
+      const y = (this.groupY[g] ?? 0) + baseY;
+      const x = cellX + (this.memberCellX[k] ?? 0);
+      const z = cellZ + (this.memberCellZ[k] ?? 0);
+      const l = this.firstLevelFrom(bucket, y);
+      const found = l < (this.levelCount[bucket] ?? 0) && this.levelYs[bucket]?.[l] === y;
+      const level = found ? this.levelsOf[bucket]?.[l] : undefined;
       if (adding) {
-        if (!level) {
-          level = new StudLevel();
-          this.levels.set(key, level);
-        }
-        level.add(x, z);
+        (level ?? this.addLevel(bucket, l, y)).add(x, z);
         this.use(provenance, 1);
       } else {
         if (!level) throw new RangeError(`no placed connector to remove at cell ${x}, ${z}`);
@@ -201,6 +227,7 @@ export class LatticeStudFinder implements MateFinder {
         this.use(provenance, -1);
       }
     }
+    this.revision++;
   }
 
   private use(provenance: number, delta: number): void {
@@ -214,25 +241,29 @@ export class LatticeStudFinder implements MateFinder {
     }
   }
 
-  private reachesLevel(rot: number, yPlates: number): boolean {
+  private reachesLevel(phase: number, yPlates: number): boolean {
     const classes = this.classes;
     const baseY = yPlates * PLATE_SIXTEENTHS;
-    for (let g = this.groupStart[rot] ?? 0; g < (this.groupStart[rot + 1] ?? 0); g++) {
+    for (
+      let g = this.phaseGroupStart[phase] ?? 0;
+      g < (this.phaseGroupStart[phase + 1] ?? 0);
+      g++
+    ) {
       const own = this.groupClass[g] ?? 0;
       const axis = this.groupAxis[g] ?? 0;
       const y = (this.groupY[g] ?? 0) + baseY;
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
-        for (
-          let k = classes.pairOffsetStart[p] ?? 0;
-          k < (classes.pairOffsetStart[p + 1] ?? 0);
-          k++
-        ) {
-          const partnerY = y + axis * (classes.offsets[k] ?? 0);
-          for (let q = 0; q < this.presentCount; q++) {
-            if (this.levels.has(levelKey(partner, -axis, this.present[q] ?? 0, partnerY))) {
-              return true;
-            }
+        const from = y + this.nearestTravel(p, axis);
+        const to = y + this.farthestTravel(p, axis);
+        for (let q = 0; q < this.presentCount; q++) {
+          const bucket = levelBucket(partner, -axis, this.present[q] ?? 0);
+          const size = this.levelCount[bucket] ?? 0;
+          if (size === 0) continue;
+          const ys = this.levelYs[bucket];
+          if (!ys) continue;
+          for (let l = this.firstLevelFrom(bucket, from); l < size && (ys[l] ?? 0) <= to; l++) {
+            if (this.classes.pairEngages(p, Math.imul((ys[l] ?? 0) - y, axis))) return true;
           }
         }
       }
@@ -240,26 +271,153 @@ export class LatticeStudFinder implements MateFinder {
     return false;
   }
 
-  private prepare(model: ModelConnectors, phaseX: number, phaseZ: number): void {
-    if (
-      this.rasterModel === model &&
-      this.rasterPhaseX === phaseX &&
-      this.rasterPhaseZ === phaseZ
-    ) {
-      return;
+  private phaseAt(rot: number, phaseX: number, phaseZ: number): number {
+    const key = partnerPhase(phaseX) * STUD_SIXTEENTHS + partnerPhase(phaseZ);
+    let low = this.phaseStart[rot] ?? 0;
+    let high = (this.phaseStart[rot + 1] ?? 0) - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      const at = this.phaseKey[middle] ?? 0;
+      if (at === key) return middle;
+      if (at < key) low = middle + 1;
+      else high = middle - 1;
     }
+    return NO_PHASE;
+  }
+
+  private prepare(model: ModelConnectors): void {
+    if (this.preparedModel !== model) this.groupPhases(model);
+  }
+
+  private groupPhases(model: ModelConnectors): void {
     const n = model.count;
-    if (this.connectorGroup.length < n * QUARTER_TURNS) {
-      this.connectorGroup = new Int32Array(n * QUARTER_TURNS);
-      this.connectorCellX = new Int32Array(n * QUARTER_TURNS);
-      this.connectorCellZ = new Int32Array(n * QUARTER_TURNS);
+    const ownClass = new Int32Array(n);
+    let vertical = 0;
+    for (let i = 0; i < n; i++) {
+      ownClass[i] = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
+      if (verticalSign(model.axis[i] ?? 0) !== 0) vertical++;
     }
-    let groups = 0;
+    const total = vertical * QUARTER_TURNS;
+    const entryTurn = new Int32Array(total);
+    const entryKey = new Int32Array(total);
+    const entryClass = new Int32Array(total);
+    const entryAxis = new Int32Array(total);
+    const entryY = new Int32Array(total);
+    const entryCellX = new Int32Array(total);
+    const entryCellZ = new Int32Array(total);
+    const entryConnector = new Int32Array(total);
+    let e = 0;
     for (let rot = 0; rot < QUARTER_TURNS; rot++) {
-      this.groupStart[rot] = groups;
-      groups = this.groupTurn(model, rot, phaseX, phaseZ, groups);
+      if (!isRot90(rot)) throw new RangeError(`rotation ${rot} is not a quarter turn 0-3`);
+      const cos = rot90Cos(rot);
+      const sin = rot90Sin(rot);
+      for (let i = 0; i < n; i++) {
+        const axis = verticalSign(model.axis[i] ?? 0);
+        if (axis === 0) continue;
+        const o = i * VECTOR_FLOATS;
+        const mx = model.origin[o] ?? 0;
+        const mz = model.origin[o + 2] ?? 0;
+        const tx = cos * mx + sin * mz;
+        const tz = -sin * mx + cos * mz;
+        entryTurn[e] = rot;
+        entryKey[e] = phaseOf(tx) * STUD_SIXTEENTHS + phaseOf(tz);
+        entryClass[e] = ownClass[i] ?? 0;
+        entryAxis[e] = axis;
+        entryY[e] = model.origin[o + 1] ?? 0;
+        entryCellX[e] = centredCell(tx);
+        entryCellZ[e] = centredCell(tz);
+        entryConnector[e] = i;
+        e++;
+      }
     }
-    this.groupStart[QUARTER_TURNS] = groups;
+    const order = Int32Array.from({ length: total }, (_, k) => k).toSorted(
+      (a, b) =>
+        (entryTurn[a] ?? 0) - (entryTurn[b] ?? 0) ||
+        (entryKey[a] ?? 0) - (entryKey[b] ?? 0) ||
+        (entryClass[a] ?? 0) - (entryClass[b] ?? 0) ||
+        (entryAxis[a] ?? 0) - (entryAxis[b] ?? 0) ||
+        (entryY[a] ?? 0) - (entryY[b] ?? 0) ||
+        (entryConnector[a] ?? 0) - (entryConnector[b] ?? 0),
+    );
+    const startsPhase = (k: number): boolean => {
+      if (k === 0) return true;
+      const a = order[k - 1] ?? 0;
+      const b = order[k] ?? 0;
+      return entryTurn[a] !== entryTurn[b] || entryKey[a] !== entryKey[b];
+    };
+    const startsGroup = (k: number): boolean => {
+      if (startsPhase(k)) return true;
+      const a = order[k - 1] ?? 0;
+      const b = order[k] ?? 0;
+      return (
+        entryClass[a] !== entryClass[b] || entryAxis[a] !== entryAxis[b] || entryY[a] !== entryY[b]
+      );
+    };
+    let phases = 0;
+    let groups = 0;
+    for (let k = 0; k < total; k++) {
+      if (startsPhase(k)) phases++;
+      if (startsGroup(k)) groups++;
+    }
+    this.phaseKey = new Int32Array(phases);
+    this.phaseGroupStart = new Int32Array(phases + 1);
+    this.phaseMemberStart = new Int32Array(phases + 1);
+    this.memberConnector = new Int32Array(total);
+    this.memberGroup = new Int32Array(total);
+    this.memberCellX = new Int32Array(total);
+    this.memberCellZ = new Int32Array(total);
+    this.groupClass = new Int32Array(groups);
+    this.groupAxis = new Int32Array(groups);
+    this.groupY = new Int32Array(groups);
+    this.groupMinX = new Int32Array(groups);
+    this.groupMinZ = new Int32Array(groups);
+    this.groupMaxX = new Int32Array(groups);
+    this.groupMaxZ = new Int32Array(groups);
+    this.phaseStart.fill(0);
+    let phase = -1;
+    let g = -1;
+    for (let k = 0; k < total; k++) {
+      const entry = order[k] ?? 0;
+      const cellX = entryCellX[entry] ?? 0;
+      const cellZ = entryCellZ[entry] ?? 0;
+      if (startsPhase(k)) {
+        phase++;
+        this.phaseKey[phase] = entryKey[entry] ?? 0;
+        this.phaseGroupStart[phase] = g + 1;
+        this.phaseMemberStart[phase] = k;
+        for (let r = (entryTurn[entry] ?? 0) + 1; r <= QUARTER_TURNS; r++) {
+          this.phaseStart[r] = phase + 1;
+        }
+      }
+      if (startsGroup(k)) {
+        g++;
+        this.groupClass[g] = entryClass[entry] ?? 0;
+        this.groupAxis[g] = entryAxis[entry] ?? 0;
+        this.groupY[g] = entryY[entry] ?? 0;
+        this.groupMinX[g] = cellX;
+        this.groupMinZ[g] = cellZ;
+        this.groupMaxX[g] = cellX;
+        this.groupMaxZ[g] = cellZ;
+      }
+      this.groupMinX[g] = Math.min(this.groupMinX[g] ?? 0, cellX);
+      this.groupMinZ[g] = Math.min(this.groupMinZ[g] ?? 0, cellZ);
+      this.groupMaxX[g] = Math.max(this.groupMaxX[g] ?? 0, cellX);
+      this.groupMaxZ[g] = Math.max(this.groupMaxZ[g] ?? 0, cellZ);
+      this.memberConnector[k] = entryConnector[entry] ?? 0;
+      this.memberGroup[k] = g;
+      this.memberCellX[k] = cellX;
+      this.memberCellZ[k] = cellZ;
+    }
+    this.phaseGroupStart[phases] = groups;
+    this.phaseMemberStart[phases] = total;
+    this.rasterize(groups, total);
+    this.preparedModel = model;
+    this.revision++;
+  }
+
+  private rasterize(groups: number, members: number): void {
+    this.groupWords = new Int32Array(groups);
+    this.groupOffset = new Int32Array(groups);
     let words = 0;
     for (let g = 0; g < groups; g++) {
       const columns = (this.groupMaxX[g] ?? 0) - (this.groupMinX[g] ?? 0);
@@ -269,92 +427,103 @@ export class LatticeStudFinder implements MateFinder {
       this.groupOffset[g] = words;
       words += rows * wordsPerRow;
     }
-    if (this.raster.length < words) this.raster = new Uint32Array(words);
-    this.raster.fill(0, 0, words);
-    for (let rot = 0; rot < QUARTER_TURNS; rot++) {
-      const at = rot * n;
-      for (let i = 0; i < n; i++) {
-        const g = this.connectorGroup[at + i] ?? NOT_ON_LATTICE;
-        if (g === NOT_ON_LATTICE) continue;
-        const bx = (this.connectorCellX[at + i] ?? 0) - (this.groupMinX[g] ?? 0);
-        const bz = (this.connectorCellZ[at + i] ?? 0) - (this.groupMinZ[g] ?? 0);
-        const word =
-          (this.groupOffset[g] ?? 0) + bz * (this.groupWords[g] ?? 0) + (bx >> WORD_SHIFT);
-        this.raster[word] = ((this.raster[word] ?? 0) | (1 << (bx & WORD_MASK))) >>> 0;
-      }
+    this.raster = new Uint32Array(words);
+    for (let k = 0; k < members; k++) {
+      const g = this.memberGroup[k] ?? 0;
+      const bx = (this.memberCellX[k] ?? 0) - (this.groupMinX[g] ?? 0);
+      const bz = (this.memberCellZ[k] ?? 0) - (this.groupMinZ[g] ?? 0);
+      const word = (this.groupOffset[g] ?? 0) + bz * (this.groupWords[g] ?? 0) + (bx >> WORD_SHIFT);
+      this.raster[word] = ((this.raster[word] ?? 0) | (1 << (bx & WORD_MASK))) >>> 0;
     }
-    this.rasterModel = model;
-    this.rasterPhaseX = phaseX;
-    this.rasterPhaseZ = phaseZ;
   }
 
-  private groupTurn(
-    model: ModelConnectors,
-    rot: number,
-    phaseX: number,
-    phaseZ: number,
-    firstGroup: number,
-  ): number {
-    const turn = rot % QUARTER_TURNS;
-    if (!isRot90(turn)) throw new RangeError(`rotation ${rot} is not a quarter turn 0-3`);
-    const cos = rot90Cos(turn);
-    const sin = rot90Sin(turn);
-    const at = rot * model.count;
-    let groups = firstGroup;
-    for (let i = 0; i < model.count; i++) {
-      this.connectorGroup[at + i] = NOT_ON_LATTICE;
-      const o = i * VECTOR_FLOATS;
-      const mx = model.origin[o] ?? 0;
-      const mz = model.origin[o + 2] ?? 0;
-      const phasedX = cos * mx + sin * mz + phaseX;
-      const phasedZ = -sin * mx + cos * mz + phaseZ;
-      if (!isLatticeStud(model.axis[i] ?? 0, phasedX, phasedZ)) continue;
-      const cellX = studCell(phasedX);
-      const cellZ = studCell(phasedZ);
-      const own = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
-      const axis = verticalSign(model.axis[i] ?? 0);
-      const y = model.origin[o + 1] ?? 0;
-      let g = firstGroup;
-      while (
-        g < groups &&
-        (this.groupClass[g] !== own || this.groupAxis[g] !== axis || this.groupY[g] !== y)
-      ) {
-        g++;
+  private match(phase: number, baseY: number): void {
+    const classes = this.classes;
+    this.matches = 0;
+    for (
+      let g = this.phaseGroupStart[phase] ?? 0;
+      g < (this.phaseGroupStart[phase + 1] ?? 0);
+      g++
+    ) {
+      const own = this.groupClass[g] ?? 0;
+      const axis = this.groupAxis[g] ?? 0;
+      const y = (this.groupY[g] ?? 0) + baseY;
+      for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
+        const partner = classes.pairClass[p] ?? 0;
+        const from = y + this.nearestTravel(p, axis);
+        const to = y + this.farthestTravel(p, axis);
+        for (let q = 0; q < this.presentCount; q++) {
+          const bucket = levelBucket(partner, -axis, this.present[q] ?? 0);
+          const size = this.levelCount[bucket] ?? 0;
+          if (size === 0) continue;
+          const ys = this.levelYs[bucket];
+          if (!ys) continue;
+          for (let l = this.firstLevelFrom(bucket, from); l < size && (ys[l] ?? 0) <= to; l++) {
+            if (!this.classes.pairEngages(p, Math.imul((ys[l] ?? 0) - y, axis))) continue;
+            if (this.matches === this.matchGroup.length) this.growMatches();
+            this.matchGroup[this.matches] = g;
+            this.matchBucket[this.matches] = bucket;
+            this.matchLevel[this.matches] = l;
+            this.matches++;
+          }
+        }
       }
-      if (g === groups) {
-        if (groups === this.groupClass.length) this.growGroups();
-        this.groupClass[g] = own;
-        this.groupAxis[g] = axis;
-        this.groupY[g] = y;
-        this.groupMinX[g] = cellX;
-        this.groupMinZ[g] = cellZ;
-        this.groupMaxX[g] = cellX;
-        this.groupMaxZ[g] = cellZ;
-        groups++;
-      } else {
-        this.groupMinX[g] = Math.min(this.groupMinX[g] ?? 0, cellX);
-        this.groupMinZ[g] = Math.min(this.groupMinZ[g] ?? 0, cellZ);
-        this.groupMaxX[g] = Math.max(this.groupMaxX[g] ?? 0, cellX);
-        this.groupMaxZ[g] = Math.max(this.groupMaxZ[g] ?? 0, cellZ);
-      }
-      this.connectorGroup[at + i] = g;
-      this.connectorCellX[at + i] = cellX;
-      this.connectorCellZ[at + i] = cellZ;
     }
-    return groups;
+    this.matchedRevision = this.revision;
+    this.matchedPhase = phase;
+    this.matchedBaseY = baseY;
   }
 
-  private growGroups(): void {
-    const capacity = this.groupClass.length * 2;
-    this.groupClass = widened(this.groupClass, capacity);
-    this.groupAxis = widened(this.groupAxis, capacity);
-    this.groupY = widened(this.groupY, capacity);
-    this.groupMinX = widened(this.groupMinX, capacity);
-    this.groupMinZ = widened(this.groupMinZ, capacity);
-    this.groupMaxX = widened(this.groupMaxX, capacity);
-    this.groupMaxZ = widened(this.groupMaxZ, capacity);
-    this.groupWords = widened(this.groupWords, capacity);
-    this.groupOffset = widened(this.groupOffset, capacity);
+  private growMatches(): void {
+    const capacity = this.matchGroup.length * 2;
+    this.matchGroup = widened(this.matchGroup, capacity);
+    this.matchBucket = widened(this.matchBucket, capacity);
+    this.matchLevel = widened(this.matchLevel, capacity);
+  }
+
+  private nearestTravel(pair: number, axis: number): number {
+    const classes = this.classes;
+    const first = classes.rangeLow[classes.pairRangeStart[pair] ?? 0] ?? 0;
+    const last = classes.rangeHigh[(classes.pairRangeStart[pair + 1] ?? 0) - 1] ?? 0;
+    return Math.min(Math.imul(axis, first), Math.imul(axis, last));
+  }
+
+  private farthestTravel(pair: number, axis: number): number {
+    const classes = this.classes;
+    const first = classes.rangeLow[classes.pairRangeStart[pair] ?? 0] ?? 0;
+    const last = classes.rangeHigh[(classes.pairRangeStart[pair + 1] ?? 0) - 1] ?? 0;
+    return Math.max(Math.imul(axis, first), Math.imul(axis, last));
+  }
+
+  private firstLevelFrom(bucket: number, y: number): number {
+    const ys = this.levelYs[bucket];
+    if (!ys) return 0;
+    let low = 0;
+    let high = this.levelCount[bucket] ?? 0;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if ((ys[middle] ?? 0) < y) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  private addLevel(bucket: number, at: number, y: number): StudLevel {
+    if (bucket >= this.levelCount.length) {
+      this.levelCount = widened(this.levelCount, Math.max(bucket + 1, this.levelCount.length * 2));
+    }
+    const size = this.levelCount[bucket] ?? 0;
+    let ys = this.levelYs[bucket] ?? new Int32Array(INITIAL_LEVELS);
+    if (size === ys.length) ys = widened(ys, size * 2);
+    ys.copyWithin(at + 1, at, size);
+    ys[at] = y;
+    this.levelYs[bucket] = ys;
+    const level = new StudLevel();
+    const levels = this.levelsOf[bucket] ?? [];
+    levels.splice(at, 0, level);
+    this.levelsOf[bucket] = levels;
+    this.levelCount[bucket] = size + 1;
+    return level;
   }
 }
 
@@ -372,9 +541,8 @@ function provenanceStatus(provenance: number): number {
   return provenance % STATUSES.length;
 }
 
-function levelKey(mateClass: number, axis: number, provenance: number, yLdu: number): number {
-  const bucket = mateClass * BUCKETS_PER_CLASS + (axis > 0 ? PROVENANCES : 0) + provenance;
-  return bucket * LEVEL_Y_SPAN + yLdu + LEVEL_Y_BIAS;
+function levelBucket(mateClass: number, axis: number, provenance: number): number {
+  return mateClass * BUCKETS_PER_CLASS + (axis > 0 ? PROVENANCES : 0) + provenance;
 }
 
 function widened(values: Int32Array, capacity: number): Int32Array<ArrayBuffer> {

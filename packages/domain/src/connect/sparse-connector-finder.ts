@@ -1,4 +1,4 @@
-import { SIXTEENTHS_PER_LDU } from "@brr/math";
+import { CHUNK_LDU, SIXTEENTHS_PER_LDU } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
 import { VECTOR_FLOATS, axisDimension, axisSign, oppositeAxis } from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
@@ -23,6 +23,12 @@ import type { ModelConnectors } from "./model-connectors.ts";
 
 const CELL_SIXTEENTHS = STUD_SIXTEENTHS;
 const REGION_SIXTEENTHS = 8 * STUD_SIXTEENTHS;
+const CHUNK_SIXTEENTHS = CHUNK_LDU * SIXTEENTHS_PER_LDU;
+const REGIONS_PER_CHUNK = CHUNK_SIXTEENTHS / REGION_SIXTEENTHS;
+const WALK_MODEL = -1;
+const WALKS_PER_PROBE = 8;
+const AXIS_CODES = 6;
+const GATHER_MARGIN = 2 * STUD_SIXTEENTHS;
 const NO_SLOT = MISSING;
 const CELL_KEY_INTS = 3;
 const MODEL_KEY_INTS = 4;
@@ -54,6 +60,55 @@ function latticeKey(pose: LatticePose): number {
   );
 }
 
+function lineIndex(
+  position: Int32Array,
+  axis: Int8Array,
+  n: number,
+  size: number,
+): readonly [IntKeyMap, Int32Array<ArrayBuffer>, Int32Array<ArrayBuffer>, Int32Array<ArrayBuffer>] {
+  const total = QUARTER_TURNS * n;
+  const key = new Int32Array(MODEL_KEY_INTS);
+  const lineOf = new Int32Array(total);
+  const lines = new IntKeyMap(MODEL_KEY_INTS);
+  let count = 0;
+  for (let m = 0; m < total; m++) {
+    const dimension = axisDimension(axis[m] ?? 0);
+    const at = m * VECTOR_FLOATS;
+    key[0] = Math.floor(m / n);
+    key[1] = dimension;
+    key[2] = cellOf(position[at + ((dimension + 1) % VECTOR_FLOATS)] ?? 0, size);
+    key[3] = cellOf(position[at + ((dimension + 2) % VECTOR_FLOATS)] ?? 0, size);
+    let line = lines.get(key);
+    if (line === MISSING) {
+      line = count++;
+      lines.set(key, line);
+    }
+    lineOf[m] = line;
+  }
+  const start = new Int32Array(count + 1);
+  for (let m = 0; m < total; m++)
+    start[(lineOf[m] ?? 0) + 1] = (start[(lineOf[m] ?? 0) + 1] ?? 0) + 1;
+  for (let line = 0; line < count; line++)
+    start[line + 1] = (start[line + 1] ?? 0) + (start[line] ?? 0);
+  const alongOf = (m: number): number =>
+    position[m * VECTOR_FLOATS + axisDimension(axis[m] ?? 0)] ?? 0;
+  const order = Int32Array.from({ length: total }, (_, m) => m).toSorted(
+    (a, b) => (lineOf[a] ?? 0) - (lineOf[b] ?? 0) || alongOf(a) - alongOf(b) || a - b,
+  );
+  return [lines, start, order, Int32Array.from(order, alongOf)];
+}
+
+function firstAtLeast(values: Int32Array, from: number, to: number, value: number): number {
+  let low = from;
+  let high = to;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if ((values[middle] ?? 0) < value) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
 function isWholeLdu(sixteenthsAlong: number): boolean {
   return sixteenthsAlong % SIXTEENTHS_PER_LDU === 0;
 }
@@ -66,17 +121,29 @@ class TurnedModel {
   readonly groupsOfTurn = new Int32Array(QUARTER_TURNS + 1);
   readonly axesOfTurn = new Uint8Array(QUARTER_TURNS);
   connectorClass = new Int32Array(0);
+  classes = new Int32Array(0);
+  classCount = 0;
+  axisClasses = new Uint8Array(0);
   position = new Int32Array(0);
   axis = new Int8Array(0);
   next = new Int32Array(0);
   readonly box = new Int32Array(QUARTER_TURNS * BOX_INTS);
   cells = new IntKeyMap(MODEL_KEY_INTS);
+  exactLines = new IntKeyMap(MODEL_KEY_INTS);
+  exactStart = new Int32Array(1);
+  exactOrder = new Int32Array(0);
+  exactAlong = new Int32Array(0);
+  columnLines = new IntKeyMap(MODEL_KEY_INTS);
+  columnStart = new Int32Array(1);
+  columnOrder = new Int32Array(0);
+  columnAlong = new Int32Array(0);
 }
 
 export class SparseConnectorFinder implements MateFinder {
   private readonly classes: MateClasses;
   private readonly cells = new IntKeyMap(CELL_KEY_INTS);
   private readonly regions = new IntKeyMap(CELL_KEY_INTS);
+  private readonly chunks = new IntKeyMap(CELL_KEY_INTS);
   private readonly cellKey = new Int32Array(CELL_KEY_INTS);
   private readonly modelKey = new Int32Array(MODEL_KEY_INTS);
   private readonly turned = new TurnedModel();
@@ -89,6 +156,18 @@ export class SparseConnectorFinder implements MateFinder {
   private slotStatus = new Uint8Array(INITIAL_SLOTS);
   private slotNext = new Int32Array(INITIAL_SLOTS);
   private slotRegionNext = new Int32Array(INITIAL_SLOTS);
+  private nearby = new Int32Array(0);
+  private readonly poseBox = new Int32Array(BOX_INTS);
+  private readonly block = new Int32Array(BOX_INTS);
+  private candidates = new Int32Array(0);
+  private readonly proposeBox = new Int32Array(BOX_INTS);
+  private readonly gatheredBox = new Int32Array(QUARTER_TURNS * BOX_INTS);
+  private readonly gathered: Int32Array[] = [];
+  private readonly gatheredCount = new Int32Array(QUARTER_TURNS);
+  private readonly gatheredDense = new Uint8Array(QUARTER_TURNS);
+  private readonly gatheredRevision = new Int32Array(QUARTER_TURNS).fill(-1);
+  private readonly gatheredReach = new Int32Array(QUARTER_TURNS);
+  private revision = 0;
   private slots = 0;
   private freeSlot = NO_SLOT;
 
@@ -118,7 +197,9 @@ export class SparseConnectorFinder implements MateFinder {
       this.cells.set(this.cellKey, slot);
       this.slotRegionNext[slot] = this.regions.get(this.keyOf(x, y, z, REGION_SIXTEENTHS));
       this.regions.set(this.cellKey, slot);
+      this.countChunk(x, y, z, 1);
     }
+    this.revision++;
   }
 
   remove(model: ModelConnectors, pose: LatticePose): void {
@@ -133,15 +214,17 @@ export class SparseConnectorFinder implements MateFinder {
       if (isLatticeStud(axis, x, z)) continue;
       const slot = this.unlinkCell(x, y, z, axis, turned.connectorClass[i] ?? UNCLASSED);
       this.unlinkRegion(slot);
+      this.countChunk(x, y, z, -1);
       this.slotNext[slot] = this.freeSlot;
       this.freeSlot = slot;
     }
+    this.revision++;
   }
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
     checkPose(window);
     const turned = this.turn(model);
-    const reach = Math.ceil(sixteenths(this.mating.shapes.longest));
+    const reach = this.modelTravel(turned);
     const spanXZ = window.cells * STUD_SIXTEENTHS + reach;
     const spanY = window.plates * PLATE_SIXTEENTHS + reach;
     const baseX = sixteenths(window.x);
@@ -150,12 +233,25 @@ export class SparseConnectorFinder implements MateFinder {
     for (let t = 0; t < window.turns; t++) {
       const rot = (window.rot + t) % QUARTER_TURNS;
       const b = rot * BOX_INTS;
-      const fromX = cellOf(baseX + (turned.box[b] ?? 0) - spanXZ, REGION_SIXTEENTHS);
-      const toX = cellOf(baseX + (turned.box[b + 3] ?? 0) + spanXZ, REGION_SIXTEENTHS);
-      const fromY = cellOf(baseY + (turned.box[b + 1] ?? 0) - spanY, REGION_SIXTEENTHS);
-      const toY = cellOf(baseY + (turned.box[b + 4] ?? 0) + spanY, REGION_SIXTEENTHS);
-      const fromZ = cellOf(baseZ + (turned.box[b + 2] ?? 0) - spanXZ, REGION_SIXTEENTHS);
-      const toZ = cellOf(baseZ + (turned.box[b + 5] ?? 0) + spanXZ, REGION_SIXTEENTHS);
+      const minX = baseX + (turned.box[b] ?? 0) - spanXZ;
+      const maxX = baseX + (turned.box[b + 3] ?? 0) + spanXZ;
+      const minY = baseY + (turned.box[b + 1] ?? 0) - spanY;
+      const maxY = baseY + (turned.box[b + 4] ?? 0) + spanY;
+      const minZ = baseZ + (turned.box[b + 2] ?? 0) - spanXZ;
+      const maxZ = baseZ + (turned.box[b + 5] ?? 0) + spanXZ;
+      const fromX = cellOf(minX, REGION_SIXTEENTHS);
+      const toX = cellOf(maxX, REGION_SIXTEENTHS);
+      const fromY = cellOf(minY, REGION_SIXTEENTHS);
+      const toY = cellOf(maxY, REGION_SIXTEENTHS);
+      const fromZ = cellOf(minZ, REGION_SIXTEENTHS);
+      const toZ = cellOf(maxZ, REGION_SIXTEENTHS);
+      const near = this.proposeBox;
+      near[0] = minX + reach;
+      near[1] = minY + reach;
+      near[2] = minZ + reach;
+      near[3] = maxX - reach;
+      near[4] = maxY - reach;
+      near[5] = maxZ - reach;
       for (let rx = fromX; rx <= toX; rx++) {
         for (let ry = fromY; ry <= toY; ry++) {
           for (let rz = fromZ; rz <= toZ; rz++) {
@@ -167,7 +263,9 @@ export class SparseConnectorFinder implements MateFinder {
               slot !== NO_SLOT;
               slot = this.slotRegionNext[slot] ?? NO_SLOT
             ) {
-              this.proposeFromSlot(slot, model.count, rot, window, reach, out);
+              if (!this.reachable(slot, near, 0, reach)) continue;
+              const travel = Math.min(reach, this.travelOf(this.slotClass[slot] ?? UNCLASSED));
+              this.proposeFromSlot(slot, model.count, rot, window, travel, out);
             }
           }
         }
@@ -188,6 +286,195 @@ export class SparseConnectorFinder implements MateFinder {
   private matesAt(model: ModelConnectors, pose: LatticePose, out: MateReport | null): number {
     const turned = this.turn(model);
     const skipped = latticeKey(pose);
+    const own = model.count - this.latticeGroupSize(turned, pose.rot, skipped, model.count);
+    if (own === 0) return 0;
+    const near = this.gatherNear(turned, pose, own);
+    if (near === WALK_MODEL) return this.matesFromModel(model, pose, skipped, out);
+    let n = 0;
+    for (let k = 0; k < near; k++) n += this.slotMates(model, this.nearby[k] ?? 0, pose, out);
+    return n;
+  }
+
+  private travelOf(mateClass: number): number {
+    const low = this.classes.lineLow[mateClass] ?? 0;
+    const high = this.classes.lineHigh[mateClass] ?? 0;
+    return low > high ? 0 : Math.max(Math.abs(low), Math.abs(high));
+  }
+
+  private modelTravel(turned: TurnedModel): number {
+    let travel = 0;
+    for (let c = 0; c < turned.classes.length; c++) {
+      travel = Math.max(travel, this.travelOf(turned.classes[c] ?? UNCLASSED));
+    }
+    return travel;
+  }
+
+  private latticeGroupSize(
+    turned: TurnedModel,
+    rot: number,
+    key: number,
+    connectors: number,
+  ): number {
+    const first = turned.groupsOfTurn[rot] ?? 0;
+    let low = first;
+    let high = (turned.groupsOfTurn[rot + 1] ?? 0) - 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      const at = turned.groupKey[middle] ?? 0;
+      if (at < key) low = middle + 1;
+      else if (at > key) high = middle - 1;
+      else {
+        const from = middle === first ? rot * connectors : (turned.groupEnd[middle - 1] ?? 0);
+        return (turned.groupEnd[middle] ?? 0) - from;
+      }
+    }
+    return 0;
+  }
+
+  private gatherNear(turned: TurnedModel, pose: LatticePose, own: number): number {
+    const reach = this.modelTravel(turned);
+    const rot = pose.rot;
+    const box = this.poseBox;
+    const b = rot * BOX_INTS;
+    box[0] = sixteenths(pose.x) + (turned.box[b] ?? 0);
+    box[1] = pose.yPlates * PLATE_SIXTEENTHS + (turned.box[b + 1] ?? 0);
+    box[2] = sixteenths(pose.z) + (turned.box[b + 2] ?? 0);
+    box[3] = sixteenths(pose.x) + (turned.box[b + 3] ?? 0);
+    box[4] = pose.yPlates * PLATE_SIXTEENTHS + (turned.box[b + 4] ?? 0);
+    box[5] = sixteenths(pose.z) + (turned.box[b + 5] ?? 0);
+    if (!this.gatheredCovers(rot, reach, box)) this.regather(rot, reach, box, own);
+    if (this.gatheredDense[rot] === 1) return WALK_MODEL;
+    const list = this.gathered[rot] ?? this.nearby;
+    const count = this.gatheredCount[rot] ?? 0;
+    let budget = own * WALKS_PER_PROBE;
+    let near = 0;
+    for (let j = 0; j < count; j++) {
+      if (--budget < 0) return WALK_MODEL;
+      const slot = list[j] ?? 0;
+      if (!this.reachable(slot, box, 0, reach)) continue;
+      budget -= WALKS_PER_PROBE;
+      if (budget < 0) return WALK_MODEL;
+      this.nearby[near++] = slot;
+    }
+    return near;
+  }
+
+  private reachable(slot: number, box: Int32Array, at: number, reach: number): boolean {
+    const along = axisDimension(this.slotAxis[slot] ?? 0);
+    const travel = Math.min(reach, this.travelOf(this.slotClass[slot] ?? UNCLASSED));
+    const x = this.slotX[slot] ?? 0;
+    const y = this.slotY[slot] ?? 0;
+    const z = this.slotZ[slot] ?? 0;
+    const sx = along === X ? travel : 0;
+    const sy = along === Y ? travel : 0;
+    const sz = along === Z ? travel : 0;
+    return (
+      x >= (box[at] ?? 0) - sx &&
+      y >= (box[at + 1] ?? 0) - sy &&
+      z >= (box[at + 2] ?? 0) - sz &&
+      x <= (box[at + 3] ?? 0) + sx &&
+      y <= (box[at + 4] ?? 0) + sy &&
+      z <= (box[at + 5] ?? 0) + sz
+    );
+  }
+
+  private pairsWithTurn(slot: number, rot: number): boolean {
+    const turned = this.turned;
+    const classes = this.classes;
+    const own = this.slotClass[slot] ?? UNCLASSED;
+    const row = (rot * AXIS_CODES + oppositeAxis(this.slotAxis[slot] ?? 0)) * turned.classCount;
+    for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
+      const partner = classes.pairClass[p] ?? UNCLASSED;
+      if (partner < turned.classCount && turned.axisClasses[row + partner] === 1) return true;
+    }
+    return false;
+  }
+
+  private gatheredCovers(rot: number, reach: number, box: Int32Array): boolean {
+    const wide = this.gatheredBox;
+    const at = rot * BOX_INTS;
+    return (
+      this.gatheredRevision[rot] === this.revision &&
+      this.gatheredReach[rot] === reach &&
+      (box[0] ?? 0) >= (wide[at] ?? 0) &&
+      (box[1] ?? 0) >= (wide[at + 1] ?? 0) &&
+      (box[2] ?? 0) >= (wide[at + 2] ?? 0) &&
+      (box[3] ?? 0) <= (wide[at + 3] ?? 0) &&
+      (box[4] ?? 0) <= (wide[at + 4] ?? 0) &&
+      (box[5] ?? 0) <= (wide[at + 5] ?? 0)
+    );
+  }
+
+  private regather(rot: number, reach: number, box: Int32Array, own: number): void {
+    const wide = this.gatheredBox;
+    const at = rot * BOX_INTS;
+    for (let k = 0; k < BOX_INTS; k++) {
+      wide[at + k] = (box[k] ?? 0) + (k < VECTOR_FLOATS ? -GATHER_MARGIN : GATHER_MARGIN);
+    }
+    this.gatheredRevision[rot] = this.revision;
+    this.gatheredReach[rot] = reach;
+    this.gatheredDense[rot] = 0;
+    let list = this.gathered[rot] ?? new Int32Array(INITIAL_SLOTS);
+    let count = 0;
+    const limit = own * WALKS_PER_PROBE;
+    const minX = (wide[at] ?? 0) - reach;
+    const minY = (wide[at + 1] ?? 0) - reach;
+    const minZ = (wide[at + 2] ?? 0) - reach;
+    const maxX = (wide[at + 3] ?? 0) + reach;
+    const maxY = (wide[at + 4] ?? 0) + reach;
+    const maxZ = (wide[at + 5] ?? 0) + reach;
+    for (let cx = cellOf(minX, CHUNK_SIXTEENTHS); cx <= cellOf(maxX, CHUNK_SIXTEENTHS); cx++) {
+      for (let cy = cellOf(minY, CHUNK_SIXTEENTHS); cy <= cellOf(maxY, CHUNK_SIXTEENTHS); cy++) {
+        for (let cz = cellOf(minZ, CHUNK_SIXTEENTHS); cz <= cellOf(maxZ, CHUNK_SIXTEENTHS); cz++) {
+          this.cellKey[0] = cx;
+          this.cellKey[1] = cy;
+          this.cellKey[2] = cz;
+          if (this.chunks.get(this.cellKey) <= 0) continue;
+          const rx0 = Math.max(cx * REGIONS_PER_CHUNK, cellOf(minX, REGION_SIXTEENTHS));
+          const ry0 = Math.max(cy * REGIONS_PER_CHUNK, cellOf(minY, REGION_SIXTEENTHS));
+          const rz0 = Math.max(cz * REGIONS_PER_CHUNK, cellOf(minZ, REGION_SIXTEENTHS));
+          const rx1 = Math.min((cx + 1) * REGIONS_PER_CHUNK - 1, cellOf(maxX, REGION_SIXTEENTHS));
+          const ry1 = Math.min((cy + 1) * REGIONS_PER_CHUNK - 1, cellOf(maxY, REGION_SIXTEENTHS));
+          const rz1 = Math.min((cz + 1) * REGIONS_PER_CHUNK - 1, cellOf(maxZ, REGION_SIXTEENTHS));
+          for (let rx = rx0; rx <= rx1; rx++) {
+            for (let ry = ry0; ry <= ry1; ry++) {
+              for (let rz = rz0; rz <= rz1; rz++) {
+                this.cellKey[0] = rx;
+                this.cellKey[1] = ry;
+                this.cellKey[2] = rz;
+                for (
+                  let slot = this.regions.get(this.cellKey);
+                  slot !== NO_SLOT;
+                  slot = this.slotRegionNext[slot] ?? NO_SLOT
+                ) {
+                  if (!this.reachable(slot, wide, at, reach) || !this.pairsWithTurn(slot, rot))
+                    continue;
+                  if (count >= limit) {
+                    this.gatheredDense[rot] = 1;
+                    this.gathered[rot] = list;
+                    this.gatheredCount[rot] = 0;
+                    return;
+                  }
+                  if (count === list.length) list = grown(list, new Int32Array(list.length * 2));
+                  list[count++] = slot;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    this.gathered[rot] = list;
+    this.gatheredCount[rot] = count;
+  }
+
+  private matesFromModel(
+    model: ModelConnectors,
+    pose: LatticePose,
+    skipped: number,
+    out: MateReport | null,
+  ): number {
+    const turned = this.turned;
     let n = 0;
     let from = pose.rot * model.count;
     for (
@@ -197,14 +484,16 @@ export class SparseConnectorFinder implements MateFinder {
     ) {
       const to = turned.groupEnd[g] ?? from;
       if (turned.groupKey[g] !== skipped) {
-        for (let k = from; k < to; k++) n += this.matesOf(model, turned.order[k] ?? 0, pose, out);
+        for (let k = from; k < to; k++) {
+          n += this.connectorMates(model, turned.order[k] ?? 0, pose, out);
+        }
       }
       from = to;
     }
     return n;
   }
 
-  private matesOf(
+  private connectorMates(
     model: ModelConnectors,
     m: number,
     pose: LatticePose,
@@ -213,51 +502,103 @@ export class SparseConnectorFinder implements MateFinder {
     const turned = this.turned;
     const classes = this.classes;
     const i = m % model.count;
+    const own = turned.connectorClass[i] ?? UNCLASSED;
+    const low = classes.lineLow[own] ?? 0;
+    const high = classes.lineHigh[own] ?? 0;
+    if (low > high) return 0;
     const ownSource = model.source[i] ?? 0;
     const ownStatus = model.status[i] ?? 0;
-    let n = 0;
     const at = m * VECTOR_FLOATS;
     const x = (turned.position[at + X] ?? 0) + sixteenths(pose.x);
     const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_SIXTEENTHS;
     const z = (turned.position[at + Z] ?? 0) + sixteenths(pose.z);
     const axis = turned.axis[m] ?? 0;
-    const own = turned.connectorClass[i] ?? UNCLASSED;
     const partnerAxis = oppositeAxis(axis);
+    const dimension = axisDimension(axis);
     const dx = axisStep(axis, X);
     const dy = axisStep(axis, Y);
     const dz = axisStep(axis, Z);
-    for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
-      const partner = classes.pairClass[p] ?? UNCLASSED;
+    const along = x * Math.abs(dx) + y * Math.abs(dy) + z * Math.abs(dz);
+    const first = along + Math.min(Math.imul(axisSign(axis), low), Math.imul(axisSign(axis), high));
+    const last = along + Math.max(Math.imul(axisSign(axis), low), Math.imul(axisSign(axis), high));
+    this.keyOf(x, y, z, CELL_SIXTEENTHS);
+    let n = 0;
+    for (let c = cellOf(first, CELL_SIXTEENTHS); c <= cellOf(last, CELL_SIXTEENTHS); c++) {
+      this.cellKey[dimension] = c;
       for (
-        let k = classes.pairOffsetStart[p] ?? 0;
-        k < (classes.pairOffsetStart[p + 1] ?? 0);
-        k++
+        let slot = this.cells.get(this.cellKey);
+        slot !== NO_SLOT;
+        slot = this.slotNext[slot] ?? NO_SLOT
       ) {
-        const d = classes.offsets[k] ?? 0;
-        const qx = x + dx * d;
-        const qy = y + dy * d;
-        const qz = z + dz * d;
-        for (
-          let slot = this.cells.get(this.keyOf(qx, qy, qz, CELL_SIXTEENTHS));
-          slot !== NO_SLOT;
-          slot = this.slotNext[slot] ?? NO_SLOT
-        ) {
-          if (
-            this.slotX[slot] === qx &&
-            this.slotY[slot] === qy &&
-            this.slotZ[slot] === qz &&
-            this.slotAxis[slot] === partnerAxis &&
-            this.slotClass[slot] === partner
-          ) {
-            n++;
-            out?.push(
-              i,
-              ownSource | (this.slotSource[slot] ?? 0),
-              Math.max(ownStatus, this.slotStatus[slot] ?? 0),
-            );
-          }
-        }
+        if (this.slotAxis[slot] !== partnerAxis) continue;
+        const sx = (this.slotX[slot] ?? 0) - x;
+        const sy = (this.slotY[slot] ?? 0) - y;
+        const sz = (this.slotZ[slot] ?? 0) - z;
+        const d = Math.imul(sx, dx) + Math.imul(sy, dy) + Math.imul(sz, dz);
+        if (sx !== dx * d || sy !== dy * d || sz !== dz * d) continue;
+        if (!classes.engagesAt(own, this.slotClass[slot] ?? UNCLASSED, d)) continue;
+        n++;
+        out?.push(
+          i,
+          ownSource | (this.slotSource[slot] ?? 0),
+          Math.max(ownStatus, this.slotStatus[slot] ?? 0),
+        );
       }
+    }
+    return n;
+  }
+
+  private slotMates(
+    model: ModelConnectors,
+    slot: number,
+    pose: LatticePose,
+    out: MateReport | null,
+  ): number {
+    const turned = this.turned;
+    const classes = this.classes;
+    const rot = pose.rot;
+    const slotAxis = this.slotAxis[slot] ?? 0;
+    const wanted = oppositeAxis(slotAxis);
+    if (((turned.axesOfTurn[rot] ?? 0) & (1 << wanted)) === 0) return 0;
+    const slotClass = this.slotClass[slot] ?? UNCLASSED;
+    const low = classes.lineLow[slotClass] ?? 0;
+    const high = classes.lineHigh[slotClass] ?? 0;
+    if (low > high) return 0;
+    const slotSource = this.slotSource[slot] ?? 0;
+    const slotStatus = this.slotStatus[slot] ?? 0;
+    const tx = (this.slotX[slot] ?? 0) - sixteenths(pose.x);
+    const ty = (this.slotY[slot] ?? 0) - pose.yPlates * PLATE_SIXTEENTHS;
+    const tz = (this.slotZ[slot] ?? 0) - sixteenths(pose.z);
+    const dimension = axisDimension(slotAxis);
+    const sign = axisSign(slotAxis);
+    const across = (dimension + 1) % VECTOR_FLOATS;
+    const beyond = (dimension + 2) % VECTOR_FLOATS;
+    const along = dimension === X ? tx : dimension === Y ? ty : tz;
+    const ta = across === X ? tx : across === Y ? ty : tz;
+    const tb = beyond === X ? tx : beyond === Y ? ty : tz;
+    this.modelKey[0] = rot;
+    this.modelKey[1] = dimension;
+    this.modelKey[2] = ta;
+    this.modelKey[3] = tb;
+    const line = turned.exactLines.get(this.modelKey);
+    if (line === MISSING) return 0;
+    const first = along + Math.min(Math.imul(sign, low), Math.imul(sign, high));
+    const last = along + Math.max(Math.imul(sign, low), Math.imul(sign, high));
+    const end = turned.exactStart[line + 1] ?? 0;
+    const base = rot * model.count;
+    let n = 0;
+    for (
+      let k = firstAtLeast(turned.exactAlong, turned.exactStart[line] ?? 0, end, first);
+      k < end && (turned.exactAlong[k] ?? 0) <= last;
+      k++
+    ) {
+      const m = turned.exactOrder[k] ?? 0;
+      if (turned.axis[m] !== wanted) continue;
+      const i = m - base;
+      const d = Math.imul((turned.exactAlong[k] ?? 0) - along, sign);
+      if (!classes.engagesAt(slotClass, turned.connectorClass[i] ?? UNCLASSED, d)) continue;
+      n++;
+      out?.push(i, (model.source[i] ?? 0) | slotSource, Math.max(model.status[i] ?? 0, slotStatus));
     }
     return n;
   }
@@ -267,7 +608,7 @@ export class SparseConnectorFinder implements MateFinder {
     connectors: number,
     rot: number,
     window: SnapWindow,
-    reach: number,
+    travel: number,
     out: CandidatePoses,
   ): void {
     const turned = this.turned;
@@ -280,86 +621,130 @@ export class SparseConnectorFinder implements MateFinder {
     const sz = (this.slotZ[slot] ?? 0) - sixteenths(window.z);
     const spanXZ = window.cells * STUD_SIXTEENTHS;
     const spanY = window.plates * PLATE_SIXTEENTHS;
-    const ax = Math.abs(axisStep(wanted, X)) * reach;
-    const ay = Math.abs(axisStep(wanted, Y)) * reach;
-    const az = Math.abs(axisStep(wanted, Z)) * reach;
-    for (
-      let cx = cellOf(sx - spanXZ - ax, CELL_SIXTEENTHS);
-      cx <= cellOf(sx + spanXZ + ax, CELL_SIXTEENTHS);
-      cx++
-    ) {
-      for (
-        let cy = cellOf(sy - spanY - ay, CELL_SIXTEENTHS);
-        cy <= cellOf(sy + spanY + ay, CELL_SIXTEENTHS);
-        cy++
-      ) {
+    const ax = Math.abs(axisStep(wanted, X)) * travel;
+    const ay = Math.abs(axisStep(wanted, Y)) * travel;
+    const az = Math.abs(axisStep(wanted, Z)) * travel;
+    const wantedDimension = axisDimension(wanted);
+    const wantedSign = axisSign(wanted);
+    const sAlong = wantedDimension === X ? sx : wantedDimension === Y ? sy : sz;
+    const spanAlong = wantedDimension === Y ? spanY : spanXZ;
+    const block = this.block;
+    block[0] = cellOf(sx - spanXZ - ax, CELL_SIXTEENTHS);
+    block[1] = cellOf(sy - spanY - ay, CELL_SIXTEENTHS);
+    block[2] = cellOf(sz - spanXZ - az, CELL_SIXTEENTHS);
+    block[3] = cellOf(sx + spanXZ + ax, CELL_SIXTEENTHS);
+    block[4] = cellOf(sy + spanY + ay, CELL_SIXTEENTHS);
+    block[5] = cellOf(sz + spanXZ + az, CELL_SIXTEENTHS);
+    const found = this.inBlock(rot, wanted, block);
+    for (let j = 0; j < found; j++) {
+      const m = this.candidates[j] ?? 0;
+      const i = m - rot * connectors;
+      const own = turned.connectorClass[i] ?? UNCLASSED;
+      const along = sAlong - (turned.position[m * VECTOR_FLOATS + wantedDimension] ?? 0);
+      const lowest = Math.imul(wantedSign, along) - spanAlong;
+      const highest = Math.imul(wantedSign, along) + spanAlong;
+      for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
+        if (classes.pairClass[p] !== slotClass) continue;
         for (
-          let cz = cellOf(sz - spanXZ - az, CELL_SIXTEENTHS);
-          cz <= cellOf(sz + spanXZ + az, CELL_SIXTEENTHS);
-          cz++
+          let r = classes.firstRangeReaching(p, lowest);
+          r < (classes.pairRangeStart[p + 1] ?? 0) && (classes.rangeLow[r] ?? 0) <= highest;
+          r++
         ) {
-          this.modelKey[0] = rot;
-          this.modelKey[1] = cx;
-          this.modelKey[2] = cy;
-          this.modelKey[3] = cz;
-          for (
-            let m = turned.cells.get(this.modelKey);
-            m !== NO_SLOT;
-            m = turned.next[m] ?? NO_SLOT
-          ) {
-            const i = m - rot * connectors;
-            if (turned.axis[m] !== wanted) continue;
-            const own = turned.connectorClass[i] ?? UNCLASSED;
-            for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
-              if (classes.pairClass[p] !== slotClass) continue;
-              for (
-                let k = classes.pairOffsetStart[p] ?? 0;
-                k < (classes.pairOffsetStart[p + 1] ?? 0);
-                k++
-              ) {
-                const d = classes.offsets[k] ?? 0;
-                const shiftX =
-                  sx - axisStep(wanted, X) * d - (turned.position[m * VECTOR_FLOATS + X] ?? 0);
-                const shiftY =
-                  sy - axisStep(wanted, Y) * d - (turned.position[m * VECTOR_FLOATS + Y] ?? 0);
-                const shiftZ =
-                  sz - axisStep(wanted, Z) * d - (turned.position[m * VECTOR_FLOATS + Z] ?? 0);
-                if (!isWholeLdu(shiftX) || !isWholeLdu(shiftZ)) continue;
-                if (shiftY % PLATE_SIXTEENTHS !== 0) continue;
-                const plates = shiftY / PLATE_SIXTEENTHS;
-                if (
-                  Math.abs(shiftX) > spanXZ ||
-                  Math.abs(shiftZ) > spanXZ ||
-                  Math.abs(plates) > window.plates
-                ) {
-                  continue;
-                }
-                out.add(
-                  window.x + shiftX / SIXTEENTHS_PER_LDU,
-                  window.z + shiftZ / SIXTEENTHS_PER_LDU,
-                  window.yPlates + plates,
-                  rot,
-                );
-              }
+          const top = Math.min(classes.rangeHigh[r] ?? 0, highest);
+          for (let d = Math.max(classes.rangeLow[r] ?? 0, lowest); d <= top; d++) {
+            const shiftX =
+              sx - axisStep(wanted, X) * d - (turned.position[m * VECTOR_FLOATS + X] ?? 0);
+            const shiftY =
+              sy - axisStep(wanted, Y) * d - (turned.position[m * VECTOR_FLOATS + Y] ?? 0);
+            const shiftZ =
+              sz - axisStep(wanted, Z) * d - (turned.position[m * VECTOR_FLOATS + Z] ?? 0);
+            if (!isWholeLdu(shiftX) || !isWholeLdu(shiftZ)) continue;
+            if (shiftY % PLATE_SIXTEENTHS !== 0) continue;
+            const plates = shiftY / PLATE_SIXTEENTHS;
+            if (
+              Math.abs(shiftX) > spanXZ ||
+              Math.abs(shiftZ) > spanXZ ||
+              Math.abs(plates) > window.plates
+            ) {
+              continue;
             }
+            out.add(
+              window.x + shiftX / SIXTEENTHS_PER_LDU,
+              window.z + shiftZ / SIXTEENTHS_PER_LDU,
+              window.yPlates + plates,
+              rot,
+            );
           }
         }
       }
     }
   }
 
-  private turn(model: ModelConnectors): TurnedModel {
+  private inBlock(rot: number, wanted: number, block: Int32Array): number {
     const turned = this.turned;
-    if (turned.model === model) return turned;
+    const dimension = axisDimension(wanted);
+    const across = (dimension + 1) % VECTOR_FLOATS;
+    const beyond = (dimension + 2) % VECTOR_FLOATS;
+    const alongLow = (block[dimension] ?? 0) * CELL_SIXTEENTHS;
+    const alongHigh = ((block[dimension + VECTOR_FLOATS] ?? 0) + 1) * CELL_SIXTEENTHS - 1;
+    let found = 0;
+    for (let a = block[across] ?? 0; a <= (block[across + VECTOR_FLOATS] ?? 0); a++) {
+      for (let b = block[beyond] ?? 0; b <= (block[beyond + VECTOR_FLOATS] ?? 0); b++) {
+        this.modelKey[0] = rot;
+        this.modelKey[1] = dimension;
+        this.modelKey[2] = a;
+        this.modelKey[3] = b;
+        const line = turned.columnLines.get(this.modelKey);
+        if (line === MISSING) continue;
+        const end = turned.columnStart[line + 1] ?? 0;
+        for (
+          let k = firstAtLeast(turned.columnAlong, turned.columnStart[line] ?? 0, end, alongLow);
+          k < end && (turned.columnAlong[k] ?? 0) <= alongHigh;
+          k++
+        ) {
+          const m = turned.columnOrder[k] ?? 0;
+          if (turned.axis[m] !== wanted) continue;
+          let j = found++;
+          while (j > 0 && this.scansBefore(m, this.candidates[j - 1] ?? 0)) {
+            this.candidates[j] = this.candidates[j - 1] ?? 0;
+            j--;
+          }
+          this.candidates[j] = m;
+        }
+      }
+    }
+    return found;
+  }
+
+  private scansBefore(a: number, b: number): boolean {
+    const position = this.turned.position;
+    for (let d = 0; d < VECTOR_FLOATS; d++) {
+      const ca = cellOf(position[a * VECTOR_FLOATS + d] ?? 0, CELL_SIXTEENTHS);
+      const cb = cellOf(position[b * VECTOR_FLOATS + d] ?? 0, CELL_SIXTEENTHS);
+      if (ca !== cb) return ca < cb;
+    }
+    return a > b;
+  }
+
+  private turn(model: ModelConnectors): TurnedModel {
+    return this.turned.model === model ? this.turned : this.turnModel(model);
+  }
+
+  private turnModel(model: ModelConnectors): TurnedModel {
+    const turned = this.turned;
     const n = model.count;
     turned.connectorClass = new Int32Array(n);
     turned.position = new Int32Array(QUARTER_TURNS * n * VECTOR_FLOATS);
     turned.axis = new Int8Array(QUARTER_TURNS * n);
     turned.next = new Int32Array(QUARTER_TURNS * n);
     turned.cells = new IntKeyMap(MODEL_KEY_INTS);
+    if (this.nearby.length < n) this.nearby = new Int32Array(n);
     for (let i = 0; i < n; i++) {
       turned.connectorClass[i] = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
     }
+    turned.classes = Int32Array.from(new Set(turned.connectorClass));
+    turned.classCount = this.classes.count;
+    turned.axisClasses = new Uint8Array(QUARTER_TURNS * AXIS_CODES * turned.classCount);
     turned.axesOfTurn.fill(0);
     for (let rot = 0; rot < QUARTER_TURNS; rot++) {
       const cos = turnCos(rot);
@@ -378,6 +763,10 @@ export class SparseConnectorFinder implements MateFinder {
         turned.position[m * VECTOR_FLOATS + Y] = y;
         turned.position[m * VECTOR_FLOATS + Z] = z;
         turned.axis[m] = rotatedAxis(model.axis[i] ?? 0, rot);
+        turned.axisClasses[
+          (rot * AXIS_CODES + (turned.axis[m] ?? 0)) * turned.classCount +
+            (turned.connectorClass[i] ?? 0)
+        ] = 1;
         turned.axesOfTurn[rot] = (turned.axesOfTurn[rot] ?? 0) | (1 << (turned.axis[m] ?? 0));
         this.grow(turned.box, b, x, y, z, i === 0);
         this.modelKey[0] = rot;
@@ -389,8 +778,26 @@ export class SparseConnectorFinder implements MateFinder {
       }
     }
     this.groupByPhase(turned, n);
+    this.indexLines(turned, n);
     turned.model = model;
+    this.gatheredRevision.fill(-1);
     return turned;
+  }
+
+  private indexLines(turned: TurnedModel, n: number): void {
+    [turned.exactLines, turned.exactStart, turned.exactOrder, turned.exactAlong] = lineIndex(
+      turned.position,
+      turned.axis,
+      n,
+      1,
+    );
+    [turned.columnLines, turned.columnStart, turned.columnOrder, turned.columnAlong] = lineIndex(
+      turned.position,
+      turned.axis,
+      n,
+      CELL_SIXTEENTHS,
+    );
+    if (this.candidates.length < n) this.candidates = new Int32Array(n);
   }
 
   private groupByPhase(turned: TurnedModel, n: number): void {
@@ -492,6 +899,11 @@ export class SparseConnectorFinder implements MateFinder {
       else this.slotRegionNext[previous] = next;
       return;
     }
+  }
+
+  private countChunk(x: number, y: number, z: number, delta: number): void {
+    const key = this.keyOf(x, y, z, CHUNK_SIXTEENTHS);
+    this.chunks.set(key, Math.max(0, this.chunks.get(key)) + delta);
   }
 
   private growSlots(): void {
