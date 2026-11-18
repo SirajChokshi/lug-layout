@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
-use brick_compile::compile::stud_roundness;
+use brick_compile::compile::rolling_from_studs;
 use brick_compile::cover::ModelCover;
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
@@ -58,13 +58,13 @@ impl Session {
                 parts,
                 inline_checks,
             } => {
-                let roundness = stud_roundness(&self.library, stud_primitives);
+                let rolling = rolling_from_studs(&self.library, stud_primitives);
                 let stud_needs = self.library.take_requested();
                 let options = CompileOptions {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
                     unofficial_allowlist: unofficial_allowlist.clone(),
-                    roundness,
+                    rolling,
                 };
                 let model = request.text("source")?;
                 Ok(compile(
@@ -181,13 +181,7 @@ fn compile(
     } = work;
     let mut parts = Vec::with_capacity(references.len());
     for reference in references {
-        let result = compile_part(library, reference, options).and_then(|compiled| {
-            if options.roundness.is_none() {
-                Err(CompileError::NoStudRing)
-            } else {
-                Ok(compiled)
-            }
-        });
+        let result = compile_part(library, reference, options);
         let mut requested = library.take_requested();
         requested.extend(stud_needs.iter().cloned());
         let reference = reference.clone();

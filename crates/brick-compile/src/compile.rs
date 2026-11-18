@@ -37,12 +37,20 @@ pub enum CompileError {
     NoStudRing,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Rolling {
+    #[default]
+    NotRead,
+    ReadBy(Roundness),
+    StudRingMissing,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
     pub unofficial_allowlist: Vec<String>,
-    pub roundness: Option<Roundness>,
+    pub rolling: Rolling,
 }
 
 const UNOFFICIAL_PREFIX: &str = "Unofficial_";
@@ -124,13 +132,17 @@ fn standard_triangles<L: Library>(
 }
 
 pub const NO_STUD_RING: &str =
-    "the stud primitives draw no closed round band to measure roundness by";
+    "the stud primitives draw no closed round ring to measure roundness by";
 
 pub fn required_stud_roundness<L: Library>(
     library: &L,
     stud_primitives: &[String],
 ) -> Result<Roundness, String> {
     stud_roundness(library, stud_primitives).ok_or_else(|| NO_STUD_RING.to_string())
+}
+
+pub fn rolling_from_studs<L: Library>(library: &L, stud_primitives: &[String]) -> Rolling {
+    stud_roundness(library, stud_primitives).map_or(Rolling::StudRingMissing, Rolling::ReadBy)
 }
 
 pub fn stud_roundness<L: Library>(library: &L, stud_primitives: &[String]) -> Option<Roundness> {
@@ -164,10 +176,15 @@ pub fn compile_part<L: Library>(
             }))?;
     let mut flattened = flattener.flatten(&path).map_err(CompileError::Flatten)?;
     license_gate(&flattened, &options.unofficial_allowlist)?;
+    let roundness = match options.rolling {
+        Rolling::NotRead => None,
+        Rolling::ReadBy(roundness) => Some(roundness),
+        Rolling::StudRingMissing => return Err(CompileError::NoStudRing),
+    };
     for triangle in &mut flattened.triangles {
         triangle.points = triangle.points.map(to_y_up);
     }
-    let rolling = match (options.roundness, options.lod) {
+    let rolling = match (roundness, options.lod) {
         (None, _) => None,
         (Some(roundness), Lod::Standard) => Some(read_rolling(&flattened.triangles, roundness)),
         (Some(roundness), Lod::Low | Lod::Far) => {

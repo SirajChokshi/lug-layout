@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use brick_compile::compile::required_stud_roundness;
+use brick_compile::compile::{required_stud_roundness, Rolling};
 use brick_compile::flatten::{Library, Lod};
 use brick_compile::{compile_part, CompileOptions};
 use serde_json::json;
@@ -124,10 +124,10 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: args.studs.clone(),
         unofficial_allowlist: Vec::new(),
-        roundness: None,
+        rolling: Rolling::NotRead,
     };
     let with = CompileOptions {
-        roundness: Some(roundness),
+        rolling: Rolling::ReadBy(roundness),
         ..without.clone()
     };
     eprintln!(

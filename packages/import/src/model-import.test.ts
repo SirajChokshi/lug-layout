@@ -274,7 +274,7 @@ it(
   BAKE_TIMEOUT_MS,
 );
 
-it("reports, without drawing, a part it can't measure when the stud primitives draw no ring to measure roundness by", async () => {
+it("reports, without drawing, a part when the stud primitives draw no ring to measure roundness by", async () => {
   const result = await importWith(
     pinnedMirror,
     "wheelset.ldr",
@@ -288,7 +288,7 @@ it("reports, without drawing, a part it can't measure when the stud primitives d
       reference: "70720c01.dat",
       official: "70720c01.dat",
       instances: 1,
-      message: "the stud primitives draw no closed round band to measure roundness by",
+      message: "the stud primitives draw no closed round ring to measure roundness by",
     },
   ]);
   expect(result.compiled).toEqual([]);
