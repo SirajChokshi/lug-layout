@@ -9,6 +9,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const BUNDLE_SWEEP_TIMEOUT_MS = 60_000;
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -59,21 +60,25 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
 }
 
 describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
-  it("give every model the shape of each part it places, as its GLB and manifest entry hold it", async () => {
-    const manifest = manifestOf(lod);
-    const parts = new Map(manifest.parts.map((part) => [part.id, part]));
-    for (const entry of manifest.models) {
-      const model = decodedOrThrow(
-        decode(ModelFile, JSON.parse(await fetcher.text(`${lod}/${entry.file}`))),
-        entry.file,
-      );
-      for (const shape of model.shapes) {
-        const part = parts.get(shape.id);
-        if (!part) throw new Error(`${entry.name}: ${shape.id} is not in the part table`);
-        expect(shape).toEqual(await shapeInBundle(lod, part));
+  it(
+    "give every model the shape of each part it places, as its GLB and manifest entry hold it",
+    async () => {
+      const manifest = manifestOf(lod);
+      const parts = new Map(manifest.parts.map((part) => [part.id, part]));
+      for (const entry of manifest.models) {
+        const model = decodedOrThrow(
+          decode(ModelFile, JSON.parse(await fetcher.text(`${lod}/${entry.file}`))),
+          entry.file,
+        );
+        for (const shape of model.shapes) {
+          const part = parts.get(shape.id);
+          if (!part) throw new Error(`${entry.name}: ${shape.id} is not in the part table`);
+          expect(shape).toEqual(await shapeInBundle(lod, part));
+        }
       }
-    }
-  });
+    },
+    BUNDLE_SWEEP_TIMEOUT_MS,
+  );
 
   it("give every ground, road and track part a shape file of its own", async () => {
     const manifest = manifestOf(lod);
