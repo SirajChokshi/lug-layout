@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{ReferenceSpan, Triangle, VisitedFile};
+use crate::trig::{cos, planar_length};
 
 pub const STEPS_PER_LDU: i32 = sixteenths::PER_LDU;
 const IDENTIFY_LDU: f64 = 0.0005;
@@ -231,7 +232,7 @@ fn others(axis: usize) -> [usize; 2] {
 
 fn radial(p: Vec3, line: Line) -> f64 {
     let [a, b] = others(line.axis);
-    (p[a] - f64::from(line.at[0])).hypot(p[b] - f64::from(line.at[1]))
+    planar_length(p[a] - f64::from(line.at[0]), p[b] - f64::from(line.at[1]))
 }
 
 fn line_through(m: &Affine) -> Option<(Line, i32)> {
@@ -309,7 +310,7 @@ fn sagitta(span: &ReferenceSpan, triangles: &[Triangle]) -> f64 {
         ];
         reach = reach.max(length(off));
     }
-    reach * (1.0 - (PI / segments(&span.path)).cos())
+    reach * (1.0 - cos(PI / segments(&span.path)))
 }
 
 fn slacks(triangles: &[Triangle], spans: &[ReferenceSpan], line: Line) -> Vec<f64> {
@@ -417,7 +418,7 @@ fn segment_distance(a: [f64; 2], b: [f64; 2]) -> f64 {
     } else {
         (-(a[0] * d[0] + a[1] * d[1]) / span).clamp(0.0, 1.0)
     };
-    (a[0] + d[0] * t).hypot(a[1] + d[1] * t)
+    planar_length(a[0] + d[0] * t, a[1] + d[1] * t)
 }
 
 fn polygon_distance(points: &[Vec3], line: Line) -> f64 {

@@ -8,6 +8,7 @@ use std::path::Path;
 use brick_compile::flatten::FlattenError;
 use brick_compile::license::LicenseVerdict;
 use brick_compile::technic::{Line, Pin, TechnicPart};
+use brick_compile::trig::{atan2, planar_length};
 use brick_compile::{compile_part, CompileError, CompileOptions, Library, TechnicPrimitives};
 use common::{fixture_library, MemoryLibrary};
 
@@ -323,11 +324,11 @@ fn circular_primitives_have_16_48_and_8_segments_on_the_unit_circle() {
         for vertex in compiled.mesh.positions.as_chunks::<3>().0 {
             let [x, _, z] = vertex.map(f64::from);
             assert!(
-                (x.hypot(z) - 1.0).abs() < 1e-4,
+                (planar_length(x, z) - 1.0).abs() < 1e-4,
                 "{primitive} vertex off the unit circle"
             );
             angles
-                .push((z.atan2(x).to_degrees().rem_euclid(360.0) * 100.0).round() as i64 % 36_000);
+                .push((atan2(z, x).to_degrees().rem_euclid(360.0) * 100.0).round() as i64 % 36_000);
         }
         angles.sort_unstable();
         angles.dedup();

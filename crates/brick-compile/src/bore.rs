@@ -5,6 +5,7 @@ use crate::bands::coaxial_radius;
 use crate::flatten::{ReferenceSpan, Triangle};
 use crate::sixteenths;
 use crate::technic::is_circular_primitive;
+use crate::trig::{cos, sin};
 
 const IDENTIFY_LDU: f64 = 0.0005;
 const DIRECTIONS: usize = 64;
@@ -130,7 +131,7 @@ fn free_radii(
     (0..DIRECTIONS)
         .map(|k| {
             let angle = 2.0 * PI * k as f64 / DIRECTIONS as f64;
-            let ray = [0, 1, 2].map(|i| e1[i] * angle.cos() + e2[i] * angle.sin());
+            let ray = [0, 1, 2].map(|i| e1[i] * cos(angle) + e2[i] * sin(angle));
             triangles
                 .iter()
                 .zip(walls)

@@ -7,6 +7,7 @@ use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Flattener, Library, Lod};
 use crate::ldraw::{self, Line, Winding};
 use crate::pieces::{PieceMap, PieceNumbering, NO_PIECE};
+use crate::trig::{atan2, planar_length};
 
 use super::meta::{parse_metas, Meta};
 use super::solid::{
@@ -231,6 +232,7 @@ enum UnitShape {
 struct UnitRound {
     shape: UnitShape,
     arcs: Vec<(f64, f64)>,
+    ends: Vec<([f64; 2], [f64; 2])>,
     facing: Option<f64>,
 }
 
@@ -428,7 +430,7 @@ fn unit_round(source: &str) -> Option<UnitRound> {
     if polygons.is_empty() {
         return None;
     }
-    let radius = |p: &Vec3| p[0].hypot(p[2]);
+    let radius = |p: &Vec3| planar_length(p[0], p[2]);
     let level = |p: &Vec3, y: f64| (p[1] - y).abs() <= IDENTIFY_LDU;
     let all = || polygons.iter().flat_map(|(points, _, _)| points.iter());
     let wall = polygons.iter().all(|(points, _, _)| {
@@ -465,6 +467,7 @@ fn unit_round(source: &str) -> Option<UnitRound> {
     };
     let mut facings = Vec::new();
     let mut arcs = Vec::new();
+    let mut ends = Vec::new();
     let mut all_certified = true;
     for (points, certified, winding) in &polygons {
         let normal = polygon_normal(points, *winding);
@@ -475,18 +478,24 @@ fn unit_round(source: &str) -> Option<UnitRound> {
             UnitShape::Annulus { .. } => normal[1].signum(),
         });
         all_certified &= *certified;
-        let angles: Vec<f64> = points
+        let rim: Vec<[f64; 2]> = points
             .iter()
             .filter(|p| radius(p) > IDENTIFY_LDU)
-            .map(|p| p[2].atan2(p[0]))
+            .map(|p| [p[0], p[2]])
             .collect();
-        arcs.extend(span_of(&angles));
+        let angles: Vec<f64> = rim.iter().map(|p| atan2(p[1], p[0])).collect();
+        if let Some((low, high)) = span_of(&angles) {
+            let point = |angle: f64| rim[angles.iter().position(|a| *a == angle).unwrap_or(0)];
+            arcs.push((low, high));
+            ends.push((point(low), point(high)));
+        }
     }
     let first = facings[0];
     let agree = facings.iter().all(|f| *f == first);
     Some(UnitRound {
         shape,
         arcs,
+        ends,
         facing: (agree && all_certified).then_some(first),
     })
 }
@@ -830,13 +839,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             let (i, j) = plan_axes(axis);
             let center = [t[i], t[j]];
             let orientation = c0[i] * c2[j] - c0[j] * c2[i];
-            let map = |theta: f64| {
-                let direction = [0, 1, 2].map(|k| c0[k] * theta.cos() + c2[k] * theta.sin());
-                direction[j].atan2(direction[i])
+            let map = |point: [f64; 2]| {
+                let direction = [0, 1, 2].map(|k| c0[k] * point[0] + c2[k] * point[1]);
+                atan2(direction[j], direction[i])
             };
             let arcs: Vec<(f64, f64)> = round
                 .unit
-                .arcs
+                .ends
                 .iter()
                 .map(|&(low, high)| {
                     if orientation > 0.0 {

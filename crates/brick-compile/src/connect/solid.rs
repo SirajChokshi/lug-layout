@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::affine::Vec3;
 use crate::flatten::Triangle;
 use crate::lattice::STUD_LDU;
+use crate::trig::{atan2, planar_length};
 
 pub const IDENTIFY_LDU: f64 = 0.0005;
 pub const HALF_GRID_LDU: f64 = STUD_LDU / 2.0;
@@ -76,7 +77,7 @@ impl RoundSurface {
     }
 
     fn nearest_from(&self, center: [f64; 2]) -> f64 {
-        let apart = (self.center[0] - center[0]).hypot(self.center[1] - center[1]);
+        let apart = planar_length(self.center[0] - center[0], self.center[1] - center[1]);
         match self.shape {
             RoundShape::Wall { radius, .. } => (apart - radius).abs(),
             RoundShape::Annulus { inner, outer, .. } => {
@@ -91,7 +92,7 @@ impl RoundSurface {
 
     fn radius_of(&self, p: Vec3) -> f64 {
         let (i, j) = plan_axes(self.axis);
-        (p[i] - self.center[0]).hypot(p[j] - self.center[1])
+        planar_length(p[i] - self.center[0], p[j] - self.center[1])
     }
 
     fn holds(&self, p: Vec3) -> bool {
@@ -282,7 +283,7 @@ fn segment_radius(a: Local, b: Local) -> f64 {
     } else {
         (-(a[0] * du + a[1] * dv) / span).clamp(0.0, 1.0)
     };
-    (a[0] + t * du).hypot(a[1] + t * dv)
+    planar_length(a[0] + t * du, a[1] + t * dv)
 }
 
 fn nearest_radius(polygon: &[Local]) -> f64 {
@@ -302,7 +303,7 @@ fn point_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
     } else {
         (((p[0] - a[0]) * du + (p[1] - a[1]) * dv) / span).clamp(0.0, 1.0)
     };
-    (p[0] - a[0] - t * du).hypot(p[1] - a[1] - t * dv)
+    planar_length(p[0] - a[0] - t * du, p[1] - a[1] - t * dv)
 }
 
 fn segments_cross(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
@@ -336,7 +337,10 @@ fn polygon_segment_distance(polygon: &[Local], to: [f64; 2]) -> f64 {
 }
 
 fn farthest_radius(polygon: &[Local]) -> f64 {
-    polygon.iter().map(|p| p[0].hypot(p[1])).fold(0.0, f64::max)
+    polygon
+        .iter()
+        .map(|p| planar_length(p[0], p[1]))
+        .fold(0.0, f64::max)
 }
 
 fn newell(polygon: &[Local]) -> Local {
@@ -383,7 +387,7 @@ fn first_depth(polygon: &[Local], inside: f64) -> Option<f64> {
     if polygon.len() >= 3 && n[2] != 0.0 {
         let origin = polygon[0];
         let gradient = [-n[0] / n[2], -n[1] / n[2]];
-        let steep = gradient[0].hypot(gradient[1]);
+        let steep = planar_length(gradient[0], gradient[1]);
         let lowest = if steep > 0.0 {
             [-inside * gradient[0] / steep, -inside * gradient[1] / steep]
         } else {
@@ -424,7 +428,7 @@ pub fn span_of(angles: &[f64]) -> Option<(f64, f64)> {
 }
 
 fn arc(polygon: &[Local]) -> Option<(f64, f64)> {
-    let angles: Vec<f64> = polygon.iter().map(|p| p[1].atan2(p[0])).collect();
+    let angles: Vec<f64> = polygon.iter().map(|p| atan2(p[1], p[0])).collect();
     span_of(&angles)
 }
 
@@ -582,7 +586,7 @@ impl Solid {
                 };
                 out.extend(found.iter().copied().filter(|&index| {
                     let s = &self.surfaces[index];
-                    (s.center[0] - center[0]).hypot(s.center[1] - center[1]) <= IDENTIFY_LDU
+                    planar_length(s.center[0] - center[0], s.center[1] - center[1]) <= IDENTIFY_LDU
                 }));
             }
         }
@@ -838,9 +842,8 @@ impl Solid {
     fn swept_reach(&self, surface: &RoundSurface, center: [f64; 2], to: [f64; 2]) -> f64 {
         let offset = [surface.center[0] - center[0], surface.center[1] - center[1]];
         let low = point_segment(offset, [0.0, 0.0], to);
-        let high = offset[0]
-            .hypot(offset[1])
-            .max((offset[0] - to[0]).hypot(offset[1] - to[1]));
+        let high = planar_length(offset[0], offset[1])
+            .max(planar_length(offset[0] - to[0], offset[1] - to[1]));
         let between = |radius: f64| {
             if (low..=high).contains(&radius) {
                 0.0
@@ -869,7 +872,10 @@ impl Solid {
         steps: &[[f64; 2]],
         clearance: f64,
     ) -> Surroundings<'_> {
-        let longest = steps.iter().map(|s| s[0].hypot(s[1])).fold(0.0, f64::max);
+        let longest = steps
+            .iter()
+            .map(|s| planar_length(s[0], s[1]))
+            .fold(0.0, f64::max);
         let reach = probe.radius + longest + IDENTIFY_LDU;
         let exact = self.exact(probe, reach);
         let polygons: Vec<Vec<Local>> = self
@@ -923,7 +929,7 @@ impl Solid {
         steps
             .iter()
             .map(|&step| {
-                let length = step[0].hypot(step[1]);
+                let length = planar_length(step[0], step[1]);
                 let contact = IDENTIFY_LDU / length;
                 let (mut free, mut blocked) =
                     if self.sweep_collides(&around, [step[0] * contact, step[1] * contact]) {
@@ -1010,7 +1016,7 @@ impl Solid {
                 .is_some_and(|o| coaxial.contains(&o) || ignores(&self.surfaces[o]))
         };
         let covered_by_coaxial = |direction: [f64; 2]| {
-            let angle = direction[1].atan2(direction[0]);
+            let angle = atan2(direction[1], direction[0]);
             arcs.iter().any(|&(low, high)| {
                 if high >= low {
                     (low..=high).contains(&angle)

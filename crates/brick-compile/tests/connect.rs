@@ -17,6 +17,7 @@ use brick_compile::flatten::{Flattener, Lod, Triangle};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::pieces::PieceNumbering;
 use brick_compile::technic::is_circular_primitive;
+use brick_compile::trig::planar_length;
 use brick_compile::Library;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -362,7 +363,7 @@ fn ring_radii(library: &MemoryLibrary, reference: &str) -> (f64, f64) {
             _ => None,
         })
         .flatten()
-        .map(|p| p[0].hypot(p[2]))
+        .map(|p| planar_length(p[0], p[2]))
         .collect();
     (
         radii.iter().copied().fold(f64::INFINITY, f64::min),
@@ -384,7 +385,7 @@ fn the_primitive_table_matches_the_pinned_primitive_geometry() {
         let cylinder = |radius: f64, from: f64, to: f64| {
             lines.iter().any(|(reference, m)| {
                 reference == "4-4cyli.dat"
-                    && m[0].hypot(m[8]) == radius
+                    && planar_length(m[0], m[8]) == radius
                     && (m[7].min(m[7] + m[5]), m[7].max(m[7] + m[5])) == (from, to)
             })
         };
@@ -447,12 +448,12 @@ fn the_primitive_table_matches_the_pinned_primitive_geometry() {
                         reference == "4-4cyli.dat"
                             && (m[7].min(m[7] + m[5]), m[7].max(m[7] + m[5])) == (rim, rim + reach)
                     })
-                    .map(|(_, m)| m[0].hypot(m[8]))
+                    .map(|(_, m)| planar_length(m[0], m[8]))
                     .collect();
                 let outer = walls.iter().copied().fold(0.0, f64::max);
                 let grid = connector.grid.expect("a neighbour grid");
                 for offset in grid.offsets() {
-                    let apart = offset[0].hypot(offset[2]);
+                    let apart = planar_length(offset[0], offset[2]);
                     assert!(
                         apart - outer >= sections[0].radius,
                         "{file}: a receptor at {offset:?} cuts the radius-{outer} wall"

@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{FlattenError, Flattener, Library, Lod, StudReference, Triangle};
 use crate::model::ModelInstance;
+use crate::trig::{atan2, planar_length};
 
 pub const CONTACT_OVERLAP_LDU: f64 = 2.0;
 const VERTICAL_AXIS_MIN_COSINE: f64 = 0.999;
@@ -470,7 +471,7 @@ fn pivot_point<L: Library>(
         .iter()
         .flat_map(|t| t.points)
         .map(|p| placed.matrix.apply(ldraw_point_to_y_up(p)))
-        .filter(|p| (p[0] - point[0]).hypot(p[2] - point[2]) > PIN_CLEARANCE_LDU)
+        .filter(|p| planar_length(p[0] - point[0], p[2] - point[2]) > PIN_CLEARANCE_LDU)
         .map(|p| p[1])
         .fold(f64::NEG_INFINITY, f64::max);
     Ok(Pivot { point, plate_top })
@@ -626,12 +627,13 @@ fn analyse<L: Library>(
     let pivots: Vec<Vec3> = bogie_members.iter().map(|(p, _)| *p).collect();
     let guides = choose_guides(&pivots, &fixed)?;
     let forward = sub(guides.front, guides.rear);
-    let yaw = forward[2].atan2(forward[0]);
+    let yaw = atan2(forward[2], forward[0]);
     let centre = midpoint(guides.front, guides.rear);
+    let plan_length = planar_length(forward[0], forward[2]);
     let frame = PlanFrame {
         origin: [centre[0], centre[2]],
-        cos: yaw.cos(),
-        sin: yaw.sin(),
+        cos: forward[0] / plan_length,
+        sin: forward[2] / plan_length,
     };
     let bogies = bogie_members
         .iter()
@@ -716,6 +718,7 @@ fn analyse<L: Library>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::trig::{cos, sin};
 
     #[test]
     fn contact_radius_of_a_cylinder_band_is_its_radius() {
@@ -725,7 +728,7 @@ mod tests {
         for k in 0..steps {
             let a = k as f64 * std::f64::consts::TAU / steps as f64;
             let b = (k + 1) as f64 * std::f64::consts::TAU / steps as f64;
-            let ring = |angle: f64, x: f64| [x, radius * angle.cos(), radius * angle.sin()];
+            let ring = |angle: f64, x: f64| [x, radius * cos(angle), radius * sin(angle)];
             triangles.extend([ring(a, 40.0), ring(b, 40.0), ring(b, 60.0)]);
             triangles.extend([ring(a, 40.0), ring(b, 60.0), ring(a, 60.0)]);
         }
