@@ -566,6 +566,15 @@ impl<'m, 'a> BelowCertifier<'m, 'a> {
         (origin, radial)
     }
 
+    fn fan_at(&self, frame: &StudFrame, fan: usize) -> Fan {
+        let (origin, radial) = self.fan(frame, fan);
+        Fan {
+            origin,
+            radial,
+            up: frame.up,
+        }
+    }
+
     fn ray(&self, frame: &StudFrame, index: usize) -> (Vec3, Vec3) {
         let (origin, radial) = self.fan(frame, index / BELOW_ELEVATION_STEPS);
         let (rise, run) = self.slopes[index % BELOW_ELEVATION_STEPS];
@@ -600,50 +609,73 @@ impl<'m, 'a> BelowCertifier<'m, 'a> {
             others: Vec::new(),
             exact_rays: Vec::new(),
         };
-        let mut previous: Vec<(usize, usize)> = Vec::new();
-        for fan_index in 0..rays / BELOW_ELEVATION_STEPS {
-            let (origin, radial) = self.fan(&stud.frame, fan_index);
-            let fan = Fan {
-                origin,
-                radial,
-                up: stud.frame.up,
-            };
-            let mut pending = ALL_STEPS;
-            let mut used: Vec<(usize, usize)> = Vec::new();
-            for witness in previous.drain(..) {
-                if pending == 0 {
-                    break;
-                }
-                self.take(&fan, witness, &mut proof, &mut pending, &mut used);
-            }
-            while pending != 0 {
-                let step = pending.trailing_zeros() as usize;
-                pending &= !(1 << step);
-                let index = fan_index * BELOW_ELEVATION_STEPS + step;
-                let (ray_origin, direction) = self.ray(&stud.frame, index);
-                match self.exact_walk(ray_origin, direction, stud) {
-                    Verdict::Certified {
-                        instance,
-                        triangle,
-                        clearance,
-                    } => {
-                        proof.record(instance, triangle, &clearance);
-                        self.take(
-                            &fan,
-                            (instance, triangle),
-                            &mut proof,
-                            &mut pending,
-                            &mut used,
-                        );
-                    }
-                    Verdict::ExactBlocked => proof.exact_rays.push(index),
-                    Verdict::ExactOpen => {
-                        self.escaped(index);
-                        return None;
+        let mut previous_fan: Vec<(usize, usize)> = Vec::new();
+        let mut fan_used: Vec<(usize, usize)> = Vec::new();
+        let mut previous_radial: Vec<(usize, usize)> = Vec::new();
+        let mut radial_used: Vec<(usize, usize)> = Vec::new();
+        let mut offers: Vec<(usize, usize)> = Vec::new();
+        for radial in 0..rays / RAYS_PER_RADIAL {
+            let first_fan = radial * BELOW_HEIGHT_STEPS;
+            radial_used.clear();
+            let unspanned = self.certify_across_heights(
+                stud,
+                first_fan,
+                &previous_radial,
+                &mut proof,
+                &mut radial_used,
+            );
+            for fan_index in first_fan..first_fan + BELOW_HEIGHT_STEPS {
+                let fan = self.fan_at(&stud.frame, fan_index);
+                let mut pending = unspanned;
+                fan_used.clear();
+                offers.clear();
+                offers.extend_from_slice(&previous_fan);
+                for witness in &previous_radial {
+                    if !offers.contains(witness) {
+                        offers.push(*witness);
                     }
                 }
+                for &witness in &offers {
+                    if pending == 0 {
+                        break;
+                    }
+                    self.take(&fan, witness, &mut proof, &mut pending, &mut fan_used);
+                }
+                while pending != 0 {
+                    let step = pending.trailing_zeros() as usize;
+                    pending &= !(1 << step);
+                    let index = fan_index * BELOW_ELEVATION_STEPS + step;
+                    let (ray_origin, direction) = self.ray(&stud.frame, index);
+                    match self.exact_walk(ray_origin, direction, stud) {
+                        Verdict::Certified {
+                            instance,
+                            triangle,
+                            clearance,
+                        } => {
+                            proof.record(instance, triangle, &clearance);
+                            self.take(
+                                &fan,
+                                (instance, triangle),
+                                &mut proof,
+                                &mut pending,
+                                &mut fan_used,
+                            );
+                        }
+                        Verdict::ExactBlocked => proof.exact_rays.push(index),
+                        Verdict::ExactOpen => {
+                            self.escaped(index);
+                            return None;
+                        }
+                    }
+                }
+                for witness in &fan_used {
+                    if !radial_used.contains(witness) {
+                        radial_used.push(*witness);
+                    }
+                }
+                std::mem::swap(&mut previous_fan, &mut fan_used);
             }
-            previous = used;
+            std::mem::swap(&mut previous_radial, &mut radial_used);
         }
         let base = stud.frame.base;
         let anchors = proof
@@ -657,6 +689,35 @@ impl<'m, 'a> BelowCertifier<'m, 'a> {
             anchors,
             exact_rays: proof.exact_rays,
         })
+    }
+
+    fn certify_across_heights(
+        &self,
+        stud: &BelowStud,
+        first_fan: usize,
+        witnesses: &[(usize, usize)],
+        proof: &mut Proof,
+        spanned_by: &mut Vec<(usize, usize)>,
+    ) -> u64 {
+        let lowest = self.fan_at(&stud.frame, first_fan);
+        let highest = self.fan_at(&stud.frame, first_fan + BELOW_HEIGHT_STEPS - 1);
+        let mut pending = ALL_STEPS;
+        for &(instance, triangle) in witnesses {
+            if pending == 0 {
+                break;
+            }
+            let Some((low, low_clearance)) = self.cover(&lowest, instance, triangle, pending)
+            else {
+                continue;
+            };
+            let Some((both, high_clearance)) = self.cover(&highest, instance, triangle, low) else {
+                continue;
+            };
+            pending &= !both;
+            proof.record(instance, triangle, &low_clearance.tightest(&high_clearance));
+            spanned_by.push((instance, triangle));
+        }
+        pending
     }
 
     fn take(
@@ -790,6 +851,11 @@ mod tests {
     const BEYOND_BOUNDED_LDU: f64 = 2e6;
     const REAL_BUILDS: u64 = 3;
     const REAL_PARTS_PER_BUILD: usize = 10;
+    const WITNESS_SCENES: u64 = 400;
+    const WITNESS_REACH_LDU: f64 = 30.0;
+    const FAR_LDU: f64 = 1e5;
+    const NEAR_BOUND_LDU: f64 = 1e-2;
+    const AFFINE_SLACK_LDU: f64 = 1e-9;
 
     struct Scene {
         state: u64,
@@ -932,6 +998,62 @@ mod tests {
         }
     }
 
+    fn unit(scene: &mut Scene) -> f64 {
+        scene.next(1 << 30) as f64 / f64::from(1u32 << 30)
+    }
+
+    fn around(scene: &mut Scene, reach: f64) -> Vec3 {
+        [0, 1, 2].map(|_| (unit(scene) * 2.0 - 1.0) * reach)
+    }
+
+    fn turned(scene: &mut Scene, scale: Vec3, at: Vec3) -> Affine {
+        let q = [0, 1, 2, 3].map(|_| unit(scene) * 2.0 - 1.0);
+        let norm = q.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let [w, x, y, z] = q.map(|v| v / norm);
+        let r = [
+            [
+                1.0 - 2.0 * (y * y + z * z),
+                2.0 * (x * y - w * z),
+                2.0 * (x * z + w * y),
+            ],
+            [
+                2.0 * (x * y + w * z),
+                1.0 - 2.0 * (x * x + z * z),
+                2.0 * (y * z - w * x),
+            ],
+            [
+                2.0 * (x * z - w * y),
+                2.0 * (y * z + w * x),
+                1.0 - 2.0 * (x * x + y * y),
+            ],
+        ];
+        Affine {
+            m: [
+                r[0][0] * scale[0],
+                r[0][1] * scale[1],
+                r[0][2] * scale[2],
+                at[0],
+                r[1][0] * scale[0],
+                r[1][1] * scale[1],
+                r[1][2] * scale[2],
+                at[1],
+                r[2][0] * scale[0],
+                r[2][1] * scale[1],
+                r[2][2] * scale[2],
+                at[2],
+            ],
+        }
+    }
+
+    fn rooms(clearance: &Clearance) -> impl Iterator<Item = f64> + '_ {
+        clearance
+            .edges
+            .iter()
+            .chain(&clearance.low)
+            .chain(&clearance.high)
+            .copied()
+    }
+
     fn studs_of(half: [f64; 2]) -> Vec<Affine> {
         let mut studs = Vec::new();
         let mut x = -half[0] + 10.0;
@@ -944,6 +1066,106 @@ mod tests {
             x += 20.0;
         }
         studs
+    }
+
+    #[test]
+    fn a_witness_certified_at_both_end_heights_blocks_every_height_between() {
+        let opacity = Opacity::new([CLEAR]);
+        let mut scene = Scene { state: 2026 };
+        let (mut spans, mut near_bound, mut middle_refusals) = (0, 0, 0);
+        for _ in 0..WITNESS_SCENES {
+            let mut t = Vec::new();
+            let points = [0, 1, 2].map(|_| around(&mut scene, WITNESS_REACH_LDU));
+            triangle(&mut t, points);
+            let solids = [PartSolid::from_mesh(&mesh::build(&t, &[]))];
+            let far = around(&mut scene, FAR_LDU);
+            let stud = turned(&mut scene, [1.0; 3], far);
+            let frame = StudFrame::of(&stud);
+            let scale = match scene.next(3) {
+                0 => [1.0; 3],
+                1 => [-1.0, 1.0, 1.0],
+                _ => [STRETCH_X, 1.0, STRETCH_Z],
+            };
+            let offset = around(&mut scene, WITNESS_REACH_LDU);
+            let at = [0, 1, 2].map(|axis| frame.base[axis] + offset[axis]);
+            let witness = turned(&mut scene, scale, at);
+            let instances = [CoverInstance {
+                matrix: &witness,
+                color: OPAQUE,
+                part: 0,
+                studs: &[],
+            }];
+            let boxes = [super::super::world_box(&instances[0], &solids[0])];
+            let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
+            let mut certifier = BelowCertifier::new(&model, STUD);
+            certifier.radials = frame.radials();
+            let below = BelowStud {
+                frame,
+                rotation: super::super::rotation_bits(&stud),
+                owner: 0,
+                coverer: 0,
+            };
+            for radial in 0..certifier.radials.len() {
+                let first = radial * BELOW_HEIGHT_STEPS;
+                let last = first + BELOW_HEIGHT_STEPS - 1;
+                let fan = |index: usize| certifier.fan_at(&frame, index);
+                for triangle in 0..solids[0].tree_points.len() {
+                    let mut proof = Proof {
+                        owner: 0,
+                        slides: Vec::new(),
+                        others: Vec::new(),
+                        exact_rays: Vec::new(),
+                    };
+                    let unspanned = certifier.certify_across_heights(
+                        &below,
+                        first,
+                        &[(0, triangle)],
+                        &mut proof,
+                        &mut Vec::new(),
+                    );
+                    let both = ALL_STEPS & !unspanned;
+                    for step in (0..BELOW_ELEVATION_STEPS).filter(|step| both & (1 << step) != 0) {
+                        spans += 1;
+                        let [lowest, highest] = [first, last].map(|index| {
+                            certifier
+                                .cover(&fan(index), 0, triangle, 1 << step)
+                                .expect("both end heights certify this step")
+                                .1
+                        });
+                        let least = lowest.tightest(&highest);
+                        let smallest = rooms(&least).fold(f64::INFINITY, f64::min);
+                        near_bound += usize::from(smallest < NEAR_BOUND_LDU);
+                        for index in first + 1..last {
+                            let (origin, direction) =
+                                certifier.ray(&frame, index * BELOW_ELEVATION_STEPS + step);
+                            assert!(
+                                model
+                                    .search(&Segment::new(origin, direction, BELOW_REACH_LDU))
+                                    .is_some(),
+                                "fan {index}, step {step}: certified at both end heights but not blocked"
+                            );
+                            match certifier.cover(&fan(index), 0, triangle, 1 << step) {
+                                Some((_, middle)) => assert!(
+                                    rooms(&middle)
+                                        .zip(rooms(&least))
+                                        .all(|(room, end)| room >= end - AFFINE_SLACK_LDU),
+                                    "fan {index}, step {step}: a clearance dips below both end heights"
+                                ),
+                                None => {
+                                    assert!(smallest < AFFINE_SLACK_LDU);
+                                    middle_refusals += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            spans > 1000 && near_bound > 10,
+            "{spans} steps certified at both end heights, {near_bound} within {NEAR_BOUND_LDU} LDU of the bound"
+        );
+        assert_eq!(middle_refusals, 0);
     }
 
     #[test]
