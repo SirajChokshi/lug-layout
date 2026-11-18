@@ -6,6 +6,7 @@ import type { Palette } from "@brr/schema/bundle";
 import { CATALOG_LAYOUTS, catalogScene } from "../track/catalog-scenes.ts";
 import { buildTrackCatalog } from "../track/track-catalog.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
+import { measureBaseplate } from "./geometry.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
 import { milsModules } from "../mils/mils-modules.ts";
@@ -59,6 +60,8 @@ export function licenseAuditReport(inputs: LicenseAuditInputs): FactReport {
 }
 
 const ROAD_SCENE_PLATES = ["44336", "2358", "610", "606", "30225b"];
+const RECESSED_ROAD_SCENE_PLATES = ["69958", "71772"];
+const BASEPLATE_ROW_PLATES = ["3811", "44336"];
 
 export function geometryReports(
   source: InputLock["source"],
@@ -81,7 +84,26 @@ export function geometryReports(
       fileName: "scenes/switch-then-reversed-curve.ldr",
       render: () => switchParallelScene(library, loadTrackEndMarkers()),
     },
-    { fileName: "scenes/road-baseplates.ldr", render: () => roadBaseplateScene(roadPlates) },
+    {
+      fileName: "scenes/road-baseplates.ldr",
+      render: () => roadBaseplateScene(roadPlates, "Road Baseplates"),
+    },
+    {
+      fileName: "scenes/baseplate-row.ldr",
+      render: () =>
+        roadBaseplateScene(
+          BASEPLATE_ROW_PLATES.map((part) => measureBaseplate(library, part)),
+          "Baseplate Row",
+        ),
+    },
+    {
+      fileName: "scenes/road-plates.ldr",
+      render: () =>
+        roadBaseplateScene(
+          RECESSED_ROAD_SCENE_PLATES.map((part) => measureBaseplate(library, part)),
+          "Road Plates",
+        ),
+    },
     {
       fileName: "track-loops.json",
       render: () => asJson(trackLoopReport(library, loadTrackEndMarkers())),

@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
-use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart};
-use crate::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
+use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart, RollingMode};
+use crate::cover::{
+    model_cover, CoverInstance, CoverShard, ModelCover, Opacity, PartSolid, StudShape,
+};
 use crate::flatten::{Library, Lod};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
 use crate::model::ModelInstance;
@@ -104,6 +106,7 @@ pub struct ModelBaker<'a, L: Library> {
     compiled: Vec<CompiledPart>,
     solids: Vec<PartSolid>,
     studs: Vec<Vec<Affine>>,
+    table_depth: f64,
 }
 
 impl<'a, L: Library> ModelBaker<'a, L> {
@@ -112,9 +115,11 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
         translucent: HashSet<u32>,
+        table_depth: f64,
     ) -> Result<Self, BakeError> {
         let options = CompileOptions {
             lod: Lod::Standard,
+            rolling_mode: RollingMode::Skip,
             stud_primitives,
             unofficial_allowlist,
             technic: TechnicPrimitives::default(),
@@ -130,6 +135,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             compiled: Vec::new(),
             solids: Vec::new(),
             studs: Vec::new(),
+            table_depth,
         })
     }
 
@@ -184,6 +190,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         &mut self,
         drawn: &[ModelInstance],
         lattice: Option<&ModelLattice>,
+        shard: CoverShard,
     ) -> Result<ModelCover, BakeError> {
         let slots = self.slots(drawn)?;
         let instances: Vec<CoverInstance> = drawn
@@ -200,8 +207,10 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             &instances,
             &self.solids,
             &self.opacity,
-            lattice.map(|lattice| lattice.phase),
+            lattice.map(|lattice| (lattice.phase, lattice.phase_layer_y)),
             self.stud_shape,
+            shard,
+            self.table_depth,
         ))
     }
 

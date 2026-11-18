@@ -21,6 +21,7 @@ interface Manifest {
     readonly vehicles?: NonNullable<BakeRequest["vehicles"]>;
     readonly primitives?: PrimitiveConnectorTable;
   };
+  readonly tablePlane: { readonly depthBelowTopLdu: number };
 }
 
 const GLB_HEADER_BYTES = 12;
@@ -165,6 +166,7 @@ interface ModelFile {
     readonly color: ReadonlyArray<number>;
     readonly matrix: ReadonlyArray<number>;
   };
+  readonly partTransforms: ReadonlyArray<number>;
 }
 
 function bundlePartId(reference: string): string {
@@ -221,9 +223,10 @@ for (const model of standardManifest.models) {
     const sameColor = read.instanceColor[i] === bundled.instances.color[n];
     let sameMatrix = true;
     for (let k = 0; k < MATRIX_FLOATS; k++) {
+      const transform = read.instanceTransform[i * MATRIX_FLOATS + k] ?? Number.NaN;
       if (
-        read.instanceMatrix[i * MATRIX_FLOATS + k] !==
-        bundled.instances.matrix[n * MATRIX_FLOATS + k]
+        transform !== bundled.partTransforms[n * MATRIX_FLOATS + k] ||
+        Math.fround(transform) !== bundled.instances.matrix[n * MATRIX_FLOATS + k]
       ) {
         sameMatrix = false;
       }
@@ -237,6 +240,7 @@ for (const model of standardManifest.models) {
     studPrimitives: standardManifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: standardManifest.compiler.unofficialAllowlist,
     translucentColors,
+    tableDepthLdu: standardManifest.tablePlane.depthBelowTopLdu,
     vehicles: standardManifest.compiler.vehicles ?? null,
   };
   let baked = baker.bake(request, library);

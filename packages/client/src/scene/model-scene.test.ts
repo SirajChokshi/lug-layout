@@ -64,6 +64,7 @@ class RecordingBackend implements ISceneBackend {
     this.chunks.push(instances);
   }
   deleteChunk(): void {}
+  setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}

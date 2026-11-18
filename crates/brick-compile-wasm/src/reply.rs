@@ -49,6 +49,8 @@ pub enum Reply {
     },
     #[serde(rename = "need")]
     Need { paths: Vec<String> },
+    #[serde(rename = "complete")]
+    Complete,
     #[serde(rename = "baked")]
     Baked {
         instances: usize,
@@ -141,6 +143,7 @@ impl From<&CompileError> for Failure {
                 path: Some(path.clone()),
                 ..failure("license")
             },
+            CompileError::NoStudRing => failure("noStudRing"),
             CompileError::Unofficial { path, ldraw_org } => Failure {
                 path: Some(path.clone()),
                 ldraw_org: Some(ldraw_org.clone()),
