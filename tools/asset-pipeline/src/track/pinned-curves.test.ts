@@ -17,12 +17,13 @@ it("keeps the plastic curve's exit unverified, because its printed ends sit off 
   const nineVolt = buildTrackPiece(library, "74747", markers).piece;
   const chordAsPrinted = 2 * PLASTIC_END_X_AS_PRINTED;
   const chordOfR40 = 2 * R40_LDU * Math.sin(HALF_TURN_STEP_RADIANS);
+  const chordErrorAlongEntry = (chordAsPrinted - chordOfR40) * Math.cos(HALF_TURN_STEP_RADIANS);
 
   const [, plasticExit] = plastic.connectors;
   const [, nineVoltExit] = nineVolt.connectors;
 
   expect(plasticExit?.status).toBe("unverified");
-  expect(plasticExit?.residualLdu).toBeCloseTo(chordAsPrinted - chordOfR40, PRINTED_DIGITS);
+  expect(plasticExit?.residualLdu).toBeCloseTo(chordErrorAlongEntry, PRINTED_DIGITS);
   expect(plasticExit?.residualLdu).toBeGreaterThan(CERTIFIED_RESIDUAL_LIMIT_LDU);
   expect(nineVoltExit?.status).toBe("certified");
   expect(nineVoltExit?.coefficients).toEqual(plasticExit?.coefficients);
