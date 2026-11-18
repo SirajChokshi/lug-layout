@@ -27,6 +27,7 @@ struct Band {
     meridian_cuts: Option<[f64; 2]>,
     oblique_top: f64,
     high_shift: Point,
+    high_wobble: f64,
 }
 
 impl Band {
@@ -55,6 +56,7 @@ impl Band {
             meridian_cuts: None,
             oblique_top: 0.0,
             high_shift: [0.0; 3],
+            high_wobble: 0.0,
         }
     }
 
@@ -97,13 +99,19 @@ impl Band {
         for k in 0..self.drawn {
             let (a, b) = (self.angle(k), self.angle(k + 1));
             let low = |angle| self.point(self.from, self.radii[0], angle);
-            let high = |angle: f64| {
+            let high = |index: usize| {
+                let angle = self.angle(index);
                 let top = self.to + self.oblique_top * self.radii[1] * angle.cos();
-                let p = self.point(top, self.radii[1], angle);
+                let wobble = if index % 2 == 1 {
+                    self.high_wobble
+                } else {
+                    0.0
+                };
+                let p = self.point(top, self.radii[1] + wobble, angle);
                 [0, 1, 2].map(|k| p[k] + self.high_shift[k])
             };
             match self.meridian_cuts {
-                None => out.push_str(&self.polygon(vec![low(a), low(b), high(b), high(a)])),
+                None => out.push_str(&self.polygon(vec![low(a), low(b), high(k + 1), high(k)])),
                 Some([first, step]) => {
                     let cut = |j: usize| {
                         let t = first + step * (j % self.facets) as f64;
@@ -112,8 +120,8 @@ impl Band {
                     let (here, next) = (cut(k), cut(k + 1));
                     out.push_str(&self.polygon(vec![low(a), low(b), next]));
                     out.push_str(&self.polygon(vec![low(a), next, here]));
-                    out.push_str(&self.polygon(vec![here, next, high(b)]));
-                    out.push_str(&self.polygon(vec![here, high(b), high(a)]));
+                    out.push_str(&self.polygon(vec![here, next, high(k + 1)]));
+                    out.push_str(&self.polygon(vec![here, high(k + 1), high(k)]));
                 }
             }
         }
@@ -203,6 +211,19 @@ fn custom_wheel() -> String {
             [8.0, 8.0],
         )
     };
+    let round_below_a_wobbly_ring = Band {
+        high_wobble: 0.5,
+        ..Band::along(1, at(100.0, 0.0, 0.0), -8.0, 0.0, [10.0, 10.0])
+    };
+    let rings_a_stud_apart = Band {
+        high_shift: [1.0, 0.0, 0.0],
+        ..Band::along(1, at(100.0, 0.0, 40.0), -8.0, 0.0, [10.0, 10.0])
+    };
+    let notched_below_a_wobbly_ring = Band {
+        drawn: 15,
+        high_wobble: 0.5,
+        ..Band::along(2, at(-100.0, 0.0, 0.0), 0.0, 10.0, [10.0, 10.0])
+    };
     let read_before_an_oblique_cut = Band::along(0, at(0.0, -80.0, 0.0), 40.0, 45.0, [8.0, 8.0]);
     let oblique_cut_after_a_read_band = Band {
         oblique_top: 0.25,
@@ -231,6 +252,9 @@ fn custom_wheel() -> String {
         rings_a_sixteenth_apart,
         cut_up_to_an_off_grid_ring,
         cut_obliquely_beyond_it,
+        round_below_a_wobbly_ring,
+        rings_a_stud_apart,
+        notched_below_a_wobbly_ring,
         read_before_an_oblique_cut,
         oblique_cut_after_a_read_band,
         tilted,
@@ -343,6 +367,14 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "to": 480
             },
             {
+                "reason": "partial",
+                "axis": 2,
+                "at": [-1600, 0],
+                "radii": [null, 160],
+                "from": -160,
+                "to": 0
+            },
+            {
                 "reason": "facing",
                 "axis": 2,
                 "at": [-960, 640],
@@ -366,6 +398,15 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "radii": [128, null],
                 "from": 720,
                 "to": 832
+            },
+            { "reason": "irregular", "axis": 1, "radii": [160, 160], "from": 0, "to": 128 },
+            {
+                "reason": "irregular",
+                "axis": 1,
+                "at": [1600, 0],
+                "radii": [null, 160],
+                "from": 0,
+                "to": 128
             },
         ])
     );

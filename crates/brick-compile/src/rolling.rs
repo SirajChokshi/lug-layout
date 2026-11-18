@@ -199,7 +199,7 @@ fn coarsest_closed_ring(studs: &[Vec<Triangle>]) -> Option<StudRing> {
             for span in mesh.spans(axis) {
                 for group in span.groups {
                     let strip = Strip::new(&mesh, axis, span.key, group);
-                    let Some(turn_cosine) = strip.closed_circles().turn_cosine(&strip.rings) else {
+                    let Some(turn_cosine) = strip.ring_circles().turn_cosine(&strip.rings) else {
                         continue;
                     };
                     let facets = strip.facets();
@@ -1074,30 +1074,34 @@ impl Ring {
     }
 }
 
-enum ClosedCircles {
-    NotRound,
-    OneEnd {
+enum RingCircles {
+    Absent,
+    DenserOnly {
         centre: [f64; 2],
         radii: [Option<f64>; 2],
     },
-    BothEnds {
+    Misaligned {
         centres: Vec<[f64; 2]>,
         radii: [Option<f64>; 2],
-        denser_ring: usize,
+    },
+    Coaxial {
+        centres: Vec<[f64; 2]>,
+        radii: [Option<f64>; 2],
+        reference_ring: usize,
     },
 }
 
-impl ClosedCircles {
+impl RingCircles {
     fn turn_cosine(&self, rings: &[Ring; 2]) -> Option<f64> {
-        let ClosedCircles::BothEnds {
+        let RingCircles::Coaxial {
             centres,
-            denser_ring,
+            reference_ring,
             ..
         } = self
         else {
             return None;
         };
-        let ring = &rings[*denser_ring];
+        let ring = &rings[*reference_ring];
         let centre = centres[0];
         Some(
             ring.chords
@@ -1280,47 +1284,61 @@ impl<'a> Strip<'a> {
         self.rings.iter().map(|r| r.points.len()).max().unwrap_or(0)
     }
 
-    fn closed_circles(&self) -> ClosedCircles {
-        if !self.is_closed() {
-            return ClosedCircles::NotRound;
-        }
+    fn reference_circle(&self) -> Option<(usize, Circle)> {
         let denser_ring = usize::from(self.rings[1].points.len() > self.rings[0].points.len());
-        let Some((circle, _)) = self.rings[denser_ring].circle() else {
-            return ClosedCircles::NotRound;
+        [denser_ring, 1 - denser_ring]
+            .into_iter()
+            .find_map(|index| {
+                self.rings[index]
+                    .circle()
+                    .map(|(circle, _)| (index, circle))
+            })
+    }
+
+    fn ring_circles(&self) -> RingCircles {
+        if !self.is_closed() {
+            return RingCircles::Absent;
+        }
+        let Some((reference_ring, circle)) = self.reference_circle() else {
+            return RingCircles::Absent;
         };
         let mut radii = [None; 2];
-        radii[denser_ring] = Some(circle.radius);
-        let one_end = ClosedCircles::OneEnd {
-            centre: circle.centre,
-            radii,
-        };
-        let other = &self.rings[1 - denser_ring];
-        let other_centre = if other.is_apex() {
-            if planar_distance(other.points[0], circle.centre) >= circle.sagitta {
-                return one_end;
-            }
-            radii[1 - denser_ring] = Some(0.0);
-            other.points[0]
+        radii[reference_ring] = Some(circle.radius);
+        let other = &self.rings[1 - reference_ring];
+        let (other_centre, coaxial) = if other.is_apex() {
+            radii[1 - reference_ring] = Some(0.0);
+            (
+                other.points[0],
+                planar_distance(other.points[0], circle.centre) < circle.sagitta,
+            )
         } else {
-            let about_common = Circle::about(
+            let Some((own, _)) = other.circle() else {
+                return RingCircles::DenserOnly {
+                    centre: circle.centre,
+                    radii,
+                };
+            };
+            radii[1 - reference_ring] = Some(own.radius);
+            let coaxial = Circle::about(
                 &other.points,
                 &other.chords,
                 circle.centre,
                 other.circumradius(circle.centre),
-            );
-            let Some(((own, _), about_common)) = other.circle().zip(about_common) else {
-                return one_end;
-            };
-            if (about_common.radius - own.radius).abs() >= about_common.sagitta {
-                return one_end;
-            }
-            radii[1 - denser_ring] = Some(own.radius);
-            own.centre
+            )
+            .is_some_and(|about_common| {
+                (about_common.radius - own.radius).abs() < about_common.sagitta
+            });
+            (own.centre, coaxial)
         };
-        ClosedCircles::BothEnds {
-            centres: vec![circle.centre, other_centre],
-            radii,
-            denser_ring,
+        let centres = vec![circle.centre, other_centre];
+        if coaxial {
+            RingCircles::Coaxial {
+                centres,
+                radii,
+                reference_ring,
+            }
+        } else {
+            RingCircles::Misaligned { centres, radii }
         }
     }
 
@@ -1351,17 +1369,16 @@ impl<'a> Strip<'a> {
     }
 
     fn open_candidate(&self, roundness: Roundness) -> Option<BandCandidate> {
-        let denser_ring = usize::from(self.rings[1].points.len() > self.rings[0].points.len());
-        let ring = &self.rings[denser_ring];
+        let (reference_ring, circle) = self.reference_circle()?;
+        let ring = &self.rings[reference_ring];
         if ring.points.len() < roundness.coarse_facets {
             return None;
         }
-        let (circle, _) = ring.circle()?;
-        let other = &self.rings[1 - denser_ring];
+        let other = &self.rings[1 - reference_ring];
         let mut radii = [None; 2];
-        radii[denser_ring] = Some(circle.radius);
+        radii[reference_ring] = Some(circle.radius);
         if !other.points.is_empty() && !other.chords.is_empty() {
-            radii[1 - denser_ring] = Circle::about(
+            radii[1 - reference_ring] = Circle::about(
                 &other.points,
                 &other.chords,
                 circle.centre,
@@ -1391,17 +1408,22 @@ impl<'a> Strip<'a> {
         if self.facets() < roundness.coarse_facets {
             return BandReading::NotRound;
         }
-        match self.closed_circles() {
-            ClosedCircles::NotRound => {
+        match self.ring_circles() {
+            RingCircles::Absent => {
                 let denser_ring = self.rings.iter().max_by_key(|r| r.points.len());
                 let extents_centre = denser_ring.map_or([0.0; 2], |r| r.extents().0);
                 self.candidate(extents_centre, Vec::new(), [None; 2])
                     .reading(roundness)
             }
-            ClosedCircles::OneEnd { centre, radii } => self
+            RingCircles::DenserOnly { centre, radii } => self
                 .candidate(centre, vec![centre], radii)
                 .unread_when_outward(UnreadBand::Irregular),
-            ClosedCircles::BothEnds { centres, radii, .. } => {
+            RingCircles::Misaligned { centres, radii } => {
+                let oriented_about = centres[0];
+                self.candidate(oriented_about, centres, radii)
+                    .unread_when_outward(UnreadBand::Irregular)
+            }
+            RingCircles::Coaxial { centres, radii, .. } => {
                 let oriented_about = centres[0];
                 self.candidate(oriented_about, centres, radii)
                     .reading(roundness)
