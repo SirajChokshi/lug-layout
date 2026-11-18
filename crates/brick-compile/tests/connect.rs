@@ -1311,3 +1311,44 @@ fn outward_round_bands_skip_inverted_surfaces_and_end_faces_sit_at_the_extremes(
     );
     assert!((near.radius - 15.0).abs() <= 0.0005, "{near:?}");
 }
+
+#[test]
+fn connectors_half_an_ldu_apart_keep_their_own_slots_on_the_sixteenth_grid() {
+    let table: Value =
+        serde_json::from_slice(&fs::read(table_path()).expect("the primitive table"))
+            .expect("json");
+    let shadow = memory(&[(
+        "parts/pair.dat",
+        "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [pos=0 -8 0]\n",
+    )]);
+    let extract = |tier_two_y: &str| {
+        let mut files = pinned("ldraw").0;
+        files.insert(
+            "parts/pair.dat".to_string(),
+            format!("0 Pair\n1 16 0 {tier_two_y} 0 1 0 0 0 1 0 0 0 1 stud3a.dat\n"),
+        );
+        let library = MemoryLibrary(files);
+        let mut extractor = ConnectorExtractor::new(
+            ShadowSnaps::new(&library, &shadow),
+            PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&table).expect("table")),
+        );
+        let extraction = extractor.extract("parts/pair.dat");
+        let mut placed: Vec<(Source, Option<[i32; 3]>)> = faces_of(&extraction.connectors)
+            .iter()
+            .map(|face| (face.source, face.sixteenths))
+            .collect();
+        placed.sort();
+        placed
+    };
+    assert_eq!(
+        extract("-8.5"),
+        vec![
+            (Source::Shadow, Some([0, 128, 0])),
+            (Source::Primitive, Some([0, 136, 0])),
+        ]
+    );
+    assert_eq!(
+        extract("-8.0003"),
+        vec![(Source::Shadow, Some([0, 128, 0]))]
+    );
+}
