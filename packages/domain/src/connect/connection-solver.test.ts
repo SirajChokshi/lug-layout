@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PLATE_LDU,
+  SIXTEENTHS_PER_LDU,
   STUD_LDU,
   ZETA16_ZERO,
   composePose16,
@@ -497,7 +498,7 @@ describe("ModelConnectors", () => {
     expect(matesAt(engine, piece, pose(0, 0, 2))).toBe(4);
   });
 
-  it("identifies connector frames within 0.0005 LDU of the lattice and reports the rest", () => {
+  it("identifies connector frames within 0.0005 LDU of the sixteenth-LDU grid and reports the rest", () => {
     const stud = table([
       { shape: STUD, gender: GENDER_MALE, origin: [HALF, 0, HALF], axis: AXIS_POS_Y },
     ]);
@@ -520,7 +521,9 @@ describe("ModelConnectors", () => {
       connectors.offLattice,
       connectors.instancesWithoutConnectors,
     ]).toEqual([2, 4, 1]);
-    expect(Array.from(connectors.origin)).toEqual([HALF, 0, HALF, HALF, 0, HALF]);
+    expect(Array.from(connectors.origin)).toEqual(
+      [HALF, 0, HALF, HALF, 0, HALF].map((ldu) => ldu * SIXTEENTHS_PER_LDU),
+    );
   });
 });
 
@@ -830,8 +833,8 @@ const face = (group: string): number => shapes.intern(0, false, [SECTION_ROUND],
 const FACE_X = 40;
 const FACE_Y = 12;
 
-function facePair(axis: number): ConnectorTable {
-  const at = [FACE_X, FACE_Y, HALF] as const;
+function facePair(axis: number, x = FACE_X): ConnectorTable {
+  const at = [x, FACE_Y, HALF] as const;
   return table([
     { shape: face(FACE_TOKEN), gender: GENDER_MALE, origin: at, axis },
     { shape: face(FACE_TOKEN), gender: GENDER_FEMALE, origin: at, axis },
@@ -863,6 +866,30 @@ describe("zero-length grouped faces", () => {
     expect(matesAt(engine, facing, pose(0, 0, 0))).toBe(2);
     expect(matesAt(engine, facing, pose(STUD_LDU, 0, 0))).toBe(0);
     expect(matesAt(engine, single(facePair(AXIS_POS_X)), pose(0, 0, 0))).toBe(0);
+  });
+
+  it("mate a face measured off whole LDU, at 136/16 LDU, with its opposite at the coincident pose only, never with one a sixteenth away", () => {
+    const measured = 136 / SIXTEENTHS_PER_LDU;
+    const engine = allFamilies();
+    engine.insert(single(facePair(AXIS_POS_X, measured)), pose(0, 0, 0));
+    engine.insert(single(facePair(AXIS_POS_X, 137 / SIXTEENTHS_PER_LDU)), pose(0, 0, 0));
+    const facing = single(facePair(AXIS_NEG_X, measured));
+    for (const rot of [0, 1, 2, 3] as const) {
+      for (let x = -STUD_LDU; x <= STUD_LDU; x++) {
+        for (const y of [-1, 0, 1]) {
+          const coincident = x === 0 && y === 0 && rot === 0;
+          expect(matesAt(engine, facing, pose(x, 0, y, rot))).toBe(coincident ? 2 : 0);
+        }
+      }
+    }
+    const candidates = new CandidatePoses();
+    engine.rank(facing, window(pose(STUD_LDU, 0, 0), 1, 1, 4), candidates);
+    expect([candidates.x[0], candidates.z[0], candidates.rot[0], candidates.votes[0]]).toEqual([
+      0, 0, 0, 2,
+    ]);
+    expect(Array.from(candidates.votes.subarray(1, candidates.count))).toEqual(
+      Array(candidates.count - 1).fill(0),
+    );
   });
 });
 

@@ -1,7 +1,17 @@
-import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
 import { SOURCES, STATUSES, VECTOR_FLOATS } from "./connector-table.ts";
-import { QUARTER_TURNS, checkPose, isLatticeStud, phaseOf, verticalSign } from "./lattice-frame.ts";
+import {
+  PLATE_SIXTEENTHS,
+  QUARTER_TURNS,
+  STUD_SIXTEENTHS,
+  checkPose,
+  isLatticeStud,
+  phaseOf,
+  sixteenths,
+  studCell,
+  verticalSign,
+} from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
 import { MateClasses } from "./mate-classes.ts";
 import type { MateReport } from "./mate-report.ts";
@@ -9,8 +19,7 @@ import type { SnapMating } from "./mating.ts";
 import type { ModelConnectors } from "./model-connectors.ts";
 import { StudLevel } from "./stud-level.ts";
 
-const STUD_CENTRE_LDU = STUD_LDU / 2;
-const LEVEL_Y_SPAN = 2 ** 20;
+const LEVEL_Y_SPAN = 2 ** 20 * SIXTEENTHS_PER_LDU;
 const LEVEL_Y_BIAS = LEVEL_Y_SPAN / 2;
 const WORD_SHIFT = 5;
 const WORD_MASK = 31;
@@ -56,7 +65,7 @@ export class LatticeStudFinder implements MateFinder {
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
     checkPose(window);
-    this.prepare(model, phaseOf(window.x), phaseOf(window.z));
+    this.prepare(model, phaseOf(sixteenths(window.x)), phaseOf(sixteenths(window.z)));
     for (let turn = 0; turn < window.turns; turn++) {
       const rot = (window.rot + turn) % QUARTER_TURNS;
       for (let y = window.yPlates - window.plates; y <= window.yPlates + window.plates; y++) {
@@ -72,12 +81,14 @@ export class LatticeStudFinder implements MateFinder {
 
   count(model: ModelConnectors, pose: LatticePose): number {
     checkPose(pose);
-    const phaseX = phaseOf(pose.x);
-    const phaseZ = phaseOf(pose.z);
+    const x16 = sixteenths(pose.x);
+    const z16 = sixteenths(pose.z);
+    const phaseX = phaseOf(x16);
+    const phaseZ = phaseOf(z16);
     this.prepare(model, phaseX, phaseZ);
-    const cellX = (pose.x - phaseX) / STUD_LDU;
-    const cellZ = (pose.z - phaseZ) / STUD_LDU;
-    const baseY = pose.yPlates * PLATE_LDU;
+    const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
+    const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
+    const baseY = pose.yPlates * PLATE_SIXTEENTHS;
     const classes = this.classes;
     let n = 0;
     for (let g = this.groupStart[pose.rot] ?? 0; g < (this.groupStart[pose.rot + 1] ?? 0); g++) {
@@ -110,12 +121,14 @@ export class LatticeStudFinder implements MateFinder {
 
   mates(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
     checkPose(pose);
-    const phaseX = phaseOf(pose.x);
-    const phaseZ = phaseOf(pose.z);
+    const x16 = sixteenths(pose.x);
+    const z16 = sixteenths(pose.z);
+    const phaseX = phaseOf(x16);
+    const phaseZ = phaseOf(z16);
     this.prepare(model, phaseX, phaseZ);
-    const cellX = (pose.x - phaseX) / STUD_LDU;
-    const cellZ = (pose.z - phaseZ) / STUD_LDU;
-    const baseY = pose.yPlates * PLATE_LDU;
+    const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
+    const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
+    const baseY = pose.yPlates * PLATE_SIXTEENTHS;
     const classes = this.classes;
     const at = pose.rot * model.count;
     for (let i = 0; i < model.count; i++) {
@@ -153,12 +166,14 @@ export class LatticeStudFinder implements MateFinder {
 
   private stamp(model: ModelConnectors, pose: LatticePose, adding: boolean): void {
     checkPose(pose);
-    const phaseX = phaseOf(pose.x);
-    const phaseZ = phaseOf(pose.z);
+    const x16 = sixteenths(pose.x);
+    const z16 = sixteenths(pose.z);
+    const phaseX = phaseOf(x16);
+    const phaseZ = phaseOf(z16);
     this.prepare(model, phaseX, phaseZ);
-    const cellX = (pose.x - phaseX) / STUD_LDU;
-    const cellZ = (pose.z - phaseZ) / STUD_LDU;
-    const baseY = pose.yPlates * PLATE_LDU;
+    const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
+    const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
+    const baseY = pose.yPlates * PLATE_SIXTEENTHS;
     const at = pose.rot * model.count;
     for (let i = 0; i < model.count; i++) {
       const g = this.connectorGroup[at + i] ?? NOT_ON_LATTICE;
@@ -201,7 +216,7 @@ export class LatticeStudFinder implements MateFinder {
 
   private reachesLevel(rot: number, yPlates: number): boolean {
     const classes = this.classes;
-    const baseY = yPlates * PLATE_LDU;
+    const baseY = yPlates * PLATE_SIXTEENTHS;
     for (let g = this.groupStart[rot] ?? 0; g < (this.groupStart[rot + 1] ?? 0); g++) {
       const own = this.groupClass[g] ?? 0;
       const axis = this.groupAxis[g] ?? 0;
@@ -294,8 +309,8 @@ export class LatticeStudFinder implements MateFinder {
       const phasedX = cos * mx + sin * mz + phaseX;
       const phasedZ = -sin * mx + cos * mz + phaseZ;
       if (!isLatticeStud(model.axis[i] ?? 0, phasedX, phasedZ)) continue;
-      const cellX = (phasedX - STUD_CENTRE_LDU) / STUD_LDU;
-      const cellZ = (phasedZ - STUD_CENTRE_LDU) / STUD_LDU;
+      const cellX = studCell(phasedX);
+      const cellZ = studCell(phasedZ);
       const own = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
       const axis = verticalSign(model.axis[i] ?? 0);
       const y = model.origin[o + 1] ?? 0;
