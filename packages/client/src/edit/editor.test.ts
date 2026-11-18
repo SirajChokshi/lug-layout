@@ -538,6 +538,12 @@ class FlakyRepository implements IWorldRepository {
   async readArchive(): Promise<Decoded<WorldArchive>> {
     return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
   }
+
+  async putImportedFile(): Promise<void> {}
+
+  async importedFile(): Promise<undefined> {
+    return undefined;
+  }
 }
 
 async function editorWithFailingSaves() {

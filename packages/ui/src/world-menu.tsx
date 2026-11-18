@@ -1,6 +1,8 @@
-import type { EditorSnapshot, IEditor, WorldFileView } from "@brr/client";
+import type { EditorSnapshot, IEditor, ModelImportView, WorldFileView } from "@brr/client";
 import type { WorldIndexEntry } from "@brr/schema/world";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { ImportReportDetails } from "./import-report.tsx";
+import { MODEL_FILE_ACCEPT, importModelFiles } from "./model-files.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DOWNLOAD_URL_LIFETIME_MS = 60_000;
@@ -91,6 +93,42 @@ function WorldRow({
   );
 }
 
+function modelImportText(view: ModelImportView): string {
+  switch (view.status) {
+    case "importing":
+      return `Importing ${view.file}: reading, compiling and baking its parts…`;
+    case "placeable":
+      return `${view.file} is in the palette. Click the layout to place it.`;
+    case "refused":
+      return `${view.file} can't be placed: ${view.reason ?? "no stud lattice from the bake"}.`;
+    default: {
+      const unhandled: never = view.status;
+      throw new Error(`unhandled ${String(unhandled)}`);
+    }
+  }
+}
+
+function ModelImportStatus({ view }: { readonly view: ModelImportView }) {
+  return (
+    <section
+      className="model-import"
+      data-file={view.file}
+      data-status={view.status}
+      data-item={view.item ?? ""}
+    >
+      <p className={view.status === "refused" ? "world-warning" : "world-note"}>
+        {modelImportText(view)}
+      </p>
+      {view.report && (
+        <details className="model-import-report">
+          <summary>Import report</summary>
+          <ImportReportDetails report={view.report} studio={view.studio} />
+        </details>
+      )}
+    </section>
+  );
+}
+
 function useUnloadGuard(unsavedEdits: boolean): void {
   useEffect(() => {
     if (!unsavedEdits) return;
@@ -106,12 +144,19 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
   const [newName, setNewName] = useState("");
   const [open, setOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
+  const modelInput = useRef<HTMLInputElement>(null);
   const { world, worlds, bundleVersion, storageError, readOnly } = snapshot;
   const ready = snapshot.status === "ready" && world !== null;
   const stored = ready && storageError === null;
   const nameIssue = editor.worldNameIssue(newName);
+  const modelImport = snapshot.modelImport;
   const needsAttention =
-    storageError !== null || readOnly || world?.save === "failed" || snapshot.fileError !== null;
+    storageError !== null ||
+    readOnly ||
+    world?.save === "failed" ||
+    snapshot.fileError !== null ||
+    modelImport?.status === "importing" ||
+    modelImport?.status === "refused";
   useUnloadGuard(snapshot.unsavedEdits);
 
   const onNew = (event: FormEvent<HTMLFormElement>): void => {
@@ -124,6 +169,13 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
 
   const onExport = (): void => {
     void editor.exportWorld().then(({ fileName, bytes }) => downloadFile(fileName, bytes));
+  };
+
+  const onImportModel = (event: ChangeEvent<HTMLInputElement>): void => {
+    const input = event.currentTarget;
+    void importModelFiles(editor, input.files ?? []).finally(() => {
+      input.value = "";
+    });
   };
 
   const onImport = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -237,7 +289,24 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
           aria-label="Import a .brr.zip world"
           onChange={onImport}
         />
+        <button
+          type="button"
+          disabled={!ready || readOnly || modelImport?.status === "importing"}
+          onClick={() => modelInput.current?.click()}
+        >
+          Import model
+        </button>
+        <input
+          ref={modelInput}
+          className="world-import model-file-import"
+          type="file"
+          accept={MODEL_FILE_ACCEPT}
+          multiple
+          aria-label="Import a model file (.io, .ldr, .mpd)"
+          onChange={onImportModel}
+        />
       </div>
+      {modelImport && <ModelImportStatus view={modelImport} />}
       {snapshot.fileError !== null && <p className="error">{snapshot.fileError}</p>}
     </details>
   );

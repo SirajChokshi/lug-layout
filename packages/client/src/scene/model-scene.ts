@@ -47,7 +47,7 @@ interface LoadedModel {
   readonly ldrawColors: ReadonlyArray<number>;
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
-  readonly ldrawColor: Uint16Array;
+  readonly ldrawColor: Uint32Array;
   readonly notDrawn: ReadonlyArray<NotDrawnSection>;
 }
 

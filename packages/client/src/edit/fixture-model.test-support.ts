@@ -28,8 +28,8 @@ export async function fixtureModel(name: string): Promise<Placeable> {
     .get(PART_BUNDLE_LOADER)
     .loadModel("standard", name);
   return modelPlaceable(
+    `${entry.origin}:${name}`,
     name,
-    entry.origin,
     name,
     entry.role,
     model,
