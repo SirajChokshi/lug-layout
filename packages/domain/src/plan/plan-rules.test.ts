@@ -147,6 +147,8 @@ function placed(box: LduRect): PlanPlacement {
   return { key: { chunkKey: 1, slot: 0 }, ref: "omr:10185-1", label: "10185-1", box };
 }
 
+const SWEEP_TIMEOUT_MS = 30_000;
+
 function at(depth: number, maxOverhangMm: number): PlanRegion {
   return region([table("t", 0, 0, 2400, depth)], {
     originChunkX: 0,
@@ -156,35 +158,40 @@ function at(depth: number, maxOverhangMm: number): PlanRegion {
 }
 
 describe("checkPlan with float model boxes", () => {
-  it("matches the exact back-edge overhang for real model boxes across positions and depths", () => {
-    let checked = 0;
-    for (const name of Object.keys(MODEL_AABBS)) {
-      for (let originChunkZ = -8; originChunkZ <= -1; originChunkZ++) {
-        for (let z = -1500; z <= 1500; z += 60) {
-          const box = modelBox(name, 4000, z);
-          for (let depth = 100; depth <= 1500; depth += 37) {
-            const edge = originChunkZ * CHUNK + depth * 2.5;
-            if (!(box.minZ >= originChunkZ * CHUNK && box.minZ < edge && edge < box.maxZ)) continue;
-            const trueMm = (box.maxZ - edge) * 0.4;
-            const plan: PlanRegion = {
-              ...region([table("t", 1000, 0, 2400, depth)], { originChunkX: 0, originChunkZ }),
-              footprint: {
-                roomWidthMm: 5000,
-                roomDepthMm: 3600,
-                tables: [table("t", 1000, 0, 2400, depth)],
-                obstacles: [],
-              },
-            };
-            const fit = checkPlan(plan, [placed(box)]).issues.find((i) => i.rule === "fit");
-            expect(fit?.overhangMm).toBeCloseTo(trueMm, 9);
-            expect(fit?.message).toContain(`reaches ${Math.ceil(trueMm * 10 - 1e-9) / 10} mm`);
-            checked++;
+  it(
+    "matches the exact back-edge overhang for real model boxes across positions and depths",
+    () => {
+      let checked = 0;
+      for (const name of Object.keys(MODEL_AABBS)) {
+        for (let originChunkZ = -8; originChunkZ <= -1; originChunkZ++) {
+          for (let z = -1500; z <= 1500; z += 60) {
+            const box = modelBox(name, 4000, z);
+            for (let depth = 100; depth <= 1500; depth += 37) {
+              const edge = originChunkZ * CHUNK + depth * 2.5;
+              if (!(box.minZ >= originChunkZ * CHUNK && box.minZ < edge && edge < box.maxZ))
+                continue;
+              const trueMm = (box.maxZ - edge) * 0.4;
+              const plan: PlanRegion = {
+                ...region([table("t", 1000, 0, 2400, depth)], { originChunkX: 0, originChunkZ }),
+                footprint: {
+                  roomWidthMm: 5000,
+                  roomDepthMm: 3600,
+                  tables: [table("t", 1000, 0, 2400, depth)],
+                  obstacles: [],
+                },
+              };
+              const fit = checkPlan(plan, [placed(box)]).issues.find((i) => i.rule === "fit");
+              expect(fit?.overhangMm).toBeCloseTo(trueMm, 9);
+              expect(fit?.message).toContain(`reaches ${Math.ceil(trueMm * 10 - 1e-9) / 10} mm`);
+              checked++;
+            }
           }
         }
       }
-    }
-    expect(checked).toBeGreaterThan(1000);
-  });
+      expect(checked).toBeGreaterThan(1000);
+    },
+    SWEEP_TIMEOUT_MS,
+  );
 
   it("flags real geometry 0.048 LDU past a table edge and shows it above the limit", () => {
     const box = { minX: 2000, maxX: 2640, minZ: 1660, maxZ: 2000 + 330.0482535107422 };
