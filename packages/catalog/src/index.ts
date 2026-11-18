@@ -5,6 +5,7 @@ export {
   ConnectorRecords,
   partConnectors,
   type ConnectorIndexPaths,
+  type ConnectorLoad,
   type PackageAttribution,
   type PartConnectors,
   type ReadJson,

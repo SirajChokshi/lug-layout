@@ -38,6 +38,7 @@ pub struct MatingFace {
     pub sections: Vec<FaceSection>,
     pub caps: u8,
     pub slide: bool,
+    pub piece: u16,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,6 +98,7 @@ struct Cylinder<'a> {
     sections: &'a [FaceSection],
     closed: (bool, bool),
     slide: bool,
+    piece: u16,
 }
 
 impl Cylinder<'_> {
@@ -118,6 +120,7 @@ impl Cylinder<'_> {
             sections,
             caps,
             slide: self.slide,
+            piece: self.piece,
         };
         let (start_closed, far_closed) = self.closed;
         Ok(match self.gender {
@@ -190,6 +193,7 @@ fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<Mati
             }],
             caps: 0,
             slide: false,
+            piece: connector.piece(),
         })
         .collect()
 }
@@ -265,6 +269,7 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
             sections: &sections,
             closed,
             slide,
+            piece: connector.piece(),
         })
         .collect();
     let total: f64 = sections.iter().map(|s| s.length).sum();

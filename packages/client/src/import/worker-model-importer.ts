@@ -70,6 +70,7 @@ export class WorkerModelImporter implements IModelImporter {
         compilerUrl: new URL(context.compilerPath, bundleBase).href,
         bundleBaseUrl: bundleBase.href,
         connectorIndexes: context.connectorIndexes,
+        connectorVocabulary: context.sectionVocabulary.sha256,
         ...(this.ldrawLibraryBaseUrl === null ? {} : { ldrawLibraryUrl: this.ldrawLibraryBaseUrl }),
         input,
       },

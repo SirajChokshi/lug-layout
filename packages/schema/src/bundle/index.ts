@@ -627,6 +627,7 @@ export const CONNECTIVITY_SOURCES: ReadonlyArray<number> = [
   CONNECTOR_SOURCE.patch,
 ];
 const AXIS_FREE = -1;
+const MAX_PIECE = 0xffff;
 const AXIS_LAST = 5;
 const VECTOR_FLOATS = 3;
 
@@ -647,6 +648,7 @@ const ConnectorFaces = v.object({
   sectionCode: v.array(Count),
   sectionSize: v.array(Finite),
   sectionLength: v.array(Finite),
+  piece: v.array(v.pipe(Integer, v.minValue(0), v.maxValue(MAX_PIECE))),
 });
 
 const ConnectorFreeFaces = v.object({
@@ -662,6 +664,7 @@ export const ConnectorRecordFile = v.pipe(
   v.object({
     part: v.string(),
     license: v.string(),
+    sectionVocabulary: v.optional(Sha256Hex),
     faces: ConnectorFaces,
     free: ConnectorFreeFaces,
     unreadable: v.array(UnreadableConnector),
@@ -677,6 +680,7 @@ export const ConnectorRecordFile = v.pipe(
       faces.axis,
       faces.sectionStart,
       faces.sectionCount,
+      faces.piece,
     ];
     const sections = faces.sectionCode.length;
     return (
@@ -697,6 +701,7 @@ export const ConnectorIndexFile = v.object({
   package: ConnectorPackage,
   licenses: v.array(v.string()),
   attribution: v.array(v.string()),
+  sectionVocabulary: v.optional(Sha256Hex),
   source: BundleSource,
   parts: v.record(v.string(), v.nullable(FileRef)),
 });
@@ -1314,6 +1319,28 @@ export const SectionVocabularyFile = v.strictObject({
   ...SectionVocabulary.entries,
 });
 export type SectionVocabularyFile = v.InferOutput<typeof SectionVocabularyFile>;
+
+export const LIBRARY_CONNECTORS_FORMAT = 1;
+
+export const LibraryConnectorsIndex = v.strictObject({
+  format: v.literal(LIBRARY_CONNECTORS_FORMAT),
+  ldraw: GithubMirror,
+  shadow: GithubArchive,
+  sectionVocabulary: Sha256Hex,
+  connectivity: v.strictObject({ file: v.string() }),
+  connectors: v.strictObject({ file: v.string() }),
+});
+export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex>;
+
+export const LibraryConnectorsPin = v.strictObject({
+  index: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  parts: Count,
+  refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
+  records: v.strictObject({ connectivity: Count, connectors: Count }),
+  faces: v.strictObject({ connectivity: Count, connectors: Count }),
+  partsWithPieces: Count,
+});
+export type LibraryConnectorsPin = v.InferOutput<typeof LibraryConnectorsPin>;
 
 export const CatalogLocation = v.variant("kind", [GithubMirror, GithubArchive]);
 export type CatalogLocation = v.InferOutput<typeof CatalogLocation>;

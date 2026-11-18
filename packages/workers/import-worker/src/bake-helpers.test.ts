@@ -72,7 +72,7 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
     const engine = new ModelImportEngine(
       new BrickCompiler(module),
       new LdrawMirror(source, pinnedMirror),
-      { load: async () => null },
+      { read: async () => ({ kind: "unlisted" }) },
       () => 0,
       helpers,
     );

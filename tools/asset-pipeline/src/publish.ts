@@ -16,7 +16,7 @@ import {
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
-import { extname, join, relative, sep } from "node:path";
+import { dirname, extname, join, relative, sep } from "node:path";
 import * as v from "valibot";
 import {
   connectorPackageIssues,
@@ -126,6 +126,30 @@ function addressedFiles(raw: unknown, renamed: ReadonlyMap<string, string>): unk
   );
 }
 
+async function stampedJson(path: string, sectionVocabulary: string): Promise<unknown> {
+  const raw: unknown = JSON.parse(await readFile(path, "utf8"));
+  if (!isRecord(raw)) throw new Error(`${path} is not a JSON object`);
+  return { ...raw, sectionVocabulary };
+}
+
+export async function stampSectionVocabulary(
+  directory: string,
+  indexFile: string,
+  sectionVocabulary: string,
+): Promise<void> {
+  const indexPath = join(directory, indexFile);
+  const index = decodedOrThrow(
+    decode(ConnectorIndexFile, await stampedJson(indexPath, sectionVocabulary)),
+    indexPath,
+  );
+  await writeFile(indexPath, JSON.stringify(index));
+  for (const record of Object.values(index.parts)) {
+    if (record === null) continue;
+    const recordPath = join(dirname(indexPath), record.file);
+    await writeFile(recordPath, JSON.stringify(await stampedJson(recordPath, sectionVocabulary)));
+  }
+}
+
 export async function attachSectionVocabulary(
   directory: string,
   vocabularyPath: string,
@@ -142,6 +166,11 @@ export async function attachSectionVocabulary(
     file: SECTION_VOCABULARY_FILE,
     sha256: sha256(bytes),
   };
+  const connectors = compiled["connectors"];
+  if (!isRecord(connectors) || typeof connectors["file"] !== "string") {
+    throw new Error(`${manifestPath} names no connectors package`);
+  }
+  await stampSectionVocabulary(directory, connectors["file"], sectionVocabulary.sha256);
   await writeFile(
     manifestPath,
     `${JSON.stringify({ ...compiled, compiler: { ...compiler, sectionVocabulary } }, null, 2)}\n`,
@@ -234,7 +263,12 @@ export async function publishBundle(
       records.set(partId, (await readJson(ConnectorRecordFile, record.file)).value);
       await publish(record.file);
     }
-    const issues = connectorPackageIssues(expected, index, records);
+    const issues = connectorPackageIssues(
+      expected,
+      index,
+      records,
+      manifest.compiler?.sectionVocabulary.sha256 ?? null,
+    );
     if (issues.length > 0) throw new Error(`${file}: ${issues.join("; ")}`);
     await publishJson(ConnectorIndexFile, file);
   }

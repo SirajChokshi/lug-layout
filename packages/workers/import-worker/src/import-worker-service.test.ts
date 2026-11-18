@@ -92,6 +92,7 @@ const FACE_COLUMNS = [
   "sectionCode",
   "sectionSize",
   "sectionLength",
+  "piece",
 ] as const;
 
 function expectTableOf(table: PartConnectors, records: ReadonlyArray<ConnectorRecordFile>): void {
@@ -128,9 +129,17 @@ function served(path: string): URL {
   return new URL(path.slice(mirrorRoot.length), pinnedLibrary);
 }
 
+const tampered = new Map<string, unknown>();
+
 beforeAll(async () => {
   server = createServer((request, response) => {
-    readFile(served(decodeURIComponent(request.url ?? "/"))).then(
+    const path = decodeURIComponent(request.url ?? "/");
+    const replaced = tampered.get(path);
+    if (replaced !== undefined) {
+      response.writeHead(HTTP_OK).end(JSON.stringify(replaced));
+      return;
+    }
+    readFile(served(path)).then(
       (bytes) => response.writeHead(HTTP_OK).end(bytes),
       () => response.writeHead(HTTP_NOT_FOUND).end(),
     );
@@ -177,6 +186,7 @@ it("gives a bundle part the same connector table from the catalog loader as when
     compilerUrl: new URL(context.compilerPath, base).href,
     bundleBaseUrl: base,
     connectorIndexes: context.connectorIndexes,
+    connectorVocabulary: context.sectionVocabulary.sha256,
     ldrawLibraryUrl: new URL(MIRROR_PREFIX, base).href,
     input: {
       kind: "ldraw",
@@ -265,10 +275,71 @@ it("infers tier 4 at import for a part outside the pinned library with the bundl
   expect(bundled?.faces.source).toEqual(
     Array.from({ length: INFERRED_ONLY_FACES }, () => CONNECTOR_SOURCE.inferred),
   );
+  expect(bundled?.sectionVocabulary).toBe(context.sectionVocabulary.sha256);
   expect(outcome?.status === "compiled" ? outcome.connectors : outcome).toEqual({
     ...bundled,
     part: OUTSIDE_PINNED_LIBRARY,
+    sectionVocabulary: undefined,
   });
+});
+
+it("refuses, and reports, a bundle part whose connector record was inferred with another section vocabulary", async () => {
+  const loader = await bundleLoader();
+  const context = await loader.importContext(LOD);
+  const manifest = decodedOrThrow(decode(BundleIndex, await published("manifest.json")), LOD);
+  const index = decodedOrThrow(
+    decode(ConnectorIndexFile, await published(manifest.connectors.file)),
+    manifest.connectors.file,
+  );
+  const entry = index.parts[TECHNIC_PART];
+  if (!entry) throw new Error(`${TECHNIC_PART} has no connector record`);
+  const otherVocabulary = "0".repeat(context.sectionVocabulary.sha256.length);
+  tampered.set(`/${LOD}/${entry.file}`, {
+    ...((await published(entry.file)) as object),
+    sectionVocabulary: otherVocabulary,
+  });
+  try {
+    const { repo, commit, root } = context.source;
+    mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
+    const imported = await importWorker().run({
+      kind: "import",
+      compilerUrl: new URL(context.compilerPath, base).href,
+      bundleBaseUrl: base,
+      connectorIndexes: context.connectorIndexes,
+      connectorVocabulary: context.sectionVocabulary.sha256,
+      ldrawLibraryUrl: new URL(MIRROR_PREFIX, base).href,
+      input: {
+        kind: "ldraw",
+        job: {
+          fileName: "technic.ldr",
+          text: "1 4 0 0 0 1 0 0 0 1 0 0 0 1 52031.dat",
+          lod: LOD,
+          source: context.source,
+          studPrimitives: context.studPrimitiveNames,
+          unofficialAllowlist: context.unofficialAllowlist,
+          primitives: context.primitives,
+          sectionVocabulary: context.sectionVocabulary.vocabulary,
+          cavityProbe: context.cavityProbe,
+          bundlePartIds: context.partIds,
+          ldconfigCodes: context.ldconfigCodes,
+          translucentColors: context.translucentCodes,
+          tableDepthLdu: context.tableDepthLdu,
+          vehicles: context.vehicles,
+        },
+      },
+    });
+    expect(imported.partIds).toEqual([TECHNIC_PART]);
+    expect(imported.connectors).toEqual([null]);
+    expect(imported.report.withoutConnectorRecords).toEqual([]);
+    expect(imported.report.refusedConnectorRecords).toEqual([
+      {
+        partId: TECHNIC_PART,
+        reason: `${TECHNIC_PART}'s connector record was inferred with section vocabulary ${otherVocabulary}, not ${context.sectionVocabulary.sha256}`,
+      },
+    ]);
+  } finally {
+    tampered.clear();
+  }
 });
 
 const standardBundleRoot = new URL(
@@ -290,7 +361,7 @@ interface Manifest {
     readonly file: string;
     readonly vehicles?: CompilerVehicles;
     readonly primitives?: PrimitiveConnectorTable;
-    readonly sectionVocabulary: { readonly file: string };
+    readonly sectionVocabulary: { readonly file: string; readonly sha256: string };
     readonly cavityProbe: string;
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
@@ -356,6 +427,7 @@ it("imports with the compiler and LDraw library the request names and the worker
       connectivity: manifest.connectivity.file,
       connectors: manifest.connectors.file,
     },
+    connectorVocabulary: manifest.compiler.sectionVocabulary.sha256,
     ldrawLibraryUrl: LIBRARY_URL,
     input: {
       kind: "ldraw",

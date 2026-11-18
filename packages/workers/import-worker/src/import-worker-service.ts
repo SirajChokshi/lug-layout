@@ -49,15 +49,19 @@ export class ImportWorkerService implements IImportWorkerService {
 
   private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
     const base = new URL(request.bundleBaseUrl.replace(/\/?$/u, "/"));
-    const key = JSON.stringify([base.href, request.connectorIndexes]);
+    const key = JSON.stringify([base.href, request.connectorIndexes, request.connectorVocabulary]);
     let records = this.records.get(key);
     if (records === undefined) {
-      records = new ConnectorRecords(async (path) => {
-        const url = new URL(path, base);
-        const response = await this.fetchUrl(url.href);
-        if (!response.ok) throw new Error(`GET ${url.href} failed with ${response.status}`);
-        return response.json();
-      }, request.connectorIndexes);
+      records = new ConnectorRecords(
+        async (path) => {
+          const url = new URL(path, base);
+          const response = await this.fetchUrl(url.href);
+          if (!response.ok) throw new Error(`GET ${url.href} failed with ${response.status}`);
+          return response.json();
+        },
+        request.connectorIndexes,
+        request.connectorVocabulary,
+      );
       this.records.set(key, records);
     }
     return records;

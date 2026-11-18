@@ -11,6 +11,7 @@ use crate::flatten::Triangle;
 use crate::lattice::STUD_LDU;
 
 pub use crate::lattice::IDENTIFY_LDU;
+const ANY_DEPTH: (f64, f64) = (f64::NEG_INFINITY, f64::INFINITY);
 const CELL_HASH_ROTATION: u32 = 26;
 const CELL_HASH_MULTIPLIER: u64 = 0x9e37_79b9_7f4a_7c15;
 
@@ -95,6 +96,7 @@ pub struct RoundSurface {
     pub full: bool,
     pub arcs: Vec<(f64, f64)>,
     pub facing: Option<f64>,
+    pub piece: u16,
 }
 
 impl RoundSurface {
@@ -190,6 +192,7 @@ struct Facet {
     low: Vec3,
     high: Vec3,
     owner: Option<usize>,
+    piece: u16,
 }
 
 struct SlabPolygon {
@@ -924,8 +927,13 @@ fn axis_probe(axis: usize, center: [f64; 2], along: f64, inward: f64) -> Probe {
 }
 
 impl Solid {
-    pub fn new(triangles: &[Triangle], surfaces: Vec<RoundSurface>) -> Self {
-        Self::indexed(triangles, surfaces, CellSize::CANONICAL)
+    pub fn new(triangles: &[Triangle], pieces: &[u16], surfaces: Vec<RoundSurface>) -> Self {
+        Self::indexed(triangles, pieces, surfaces, CellSize::CANONICAL)
+    }
+
+    #[cfg(test)]
+    pub(super) fn unpieced(triangles: &[Triangle], surfaces: Vec<RoundSurface>) -> Self {
+        Self::with_cell_size(triangles, surfaces, CellSize::CANONICAL.0)
     }
 
     #[cfg(test)]
@@ -934,12 +942,18 @@ impl Solid {
         surfaces: Vec<RoundSurface>,
         size: f64,
     ) -> Self {
-        Self::indexed(triangles, surfaces, CellSize(size))
+        let pieces = vec![crate::pieces::NO_PIECE; triangles.len()];
+        Self::indexed(triangles, &pieces, surfaces, CellSize(size))
     }
 
-    fn indexed(triangles: &[Triangle], surfaces: Vec<RoundSurface>, cell: CellSize) -> Self {
+    fn indexed(
+        triangles: &[Triangle],
+        pieces: &[u16],
+        surfaces: Vec<RoundSurface>,
+        cell: CellSize,
+    ) -> Self {
         let mut facets = Vec::with_capacity(triangles.len());
-        for triangle in triangles {
+        for (triangle, &piece) in triangles.iter().zip(pieces) {
             let [a, b, c] = triangle.points;
             let normal = cross(sub(b, a), sub(c, a));
             if normal == [0.0; 3] {
@@ -953,6 +967,7 @@ impl Solid {
                 low,
                 high,
                 owner: None,
+                piece,
             });
         }
         let bounds = facets.iter().fold(
@@ -1432,6 +1447,69 @@ impl Solid {
         self.facets[facet]
             .owner
             .is_some_and(|owner| surfaces.contains(&owner))
+    }
+
+    pub fn contributors(&self, probe: &Probe, range: (f64, f64), floor: Option<f64>) -> Vec<u16> {
+        let reach = probe.radius + IDENTIFY_LDU;
+        let coaxial = self.exact(probe, reach);
+        let mut pieces: Vec<u16> = Vec::new();
+        let walls = (-IDENTIFY_LDU, range.1);
+        for index in self.near(probe, reach, ANY_DEPTH) {
+            if self.owned_by(index as usize, &coaxial) {
+                continue;
+            }
+            let facet = &self.facets[index as usize];
+            let (low, high) = self.depth_range(probe, facet);
+            if high < walls.0 || low > walls.1 {
+                continue;
+            }
+            let clipped = slab_clip(self.polygon(probe, facet), walls.0, walls.1);
+            if !clipped.is_empty() && nearest_radius(&clipped) <= reach {
+                pieces.push(facet.piece);
+            }
+        }
+        for &index in &coaxial {
+            let surface = &self.surfaces[index];
+            let (low, high) = surface.depths(probe);
+            if high >= walls.0 && low <= walls.1 && surface.nearest_from(probe.center()) <= reach {
+                pieces.push(surface.piece);
+            }
+        }
+        if let Some(depth) = floor {
+            pieces.extend(self.floor_pieces(probe, probe.radius - IDENTIFY_LDU, depth));
+        }
+        pieces.sort_unstable();
+        pieces.dedup();
+        pieces
+    }
+
+    fn floor_pieces(&self, probe: &Probe, inside: f64, depth: f64) -> Vec<u16> {
+        let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
+        let mut pieces = Vec::new();
+        for index in self.near(probe, inside + IDENTIFY_LDU, ANY_DEPTH) {
+            if self.owned_by(index as usize, &coaxial) {
+                continue;
+            }
+            let facet = &self.facets[index as usize];
+            if self.depth_range(probe, facet).1 < -IDENTIFY_LDU {
+                continue;
+            }
+            let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
+            if first_depth(&polygon, inside).is_some_and(|d| d <= depth + IDENTIFY_LDU) {
+                pieces.push(facet.piece);
+            }
+        }
+        for &index in &coaxial {
+            let surface = &self.surfaces[index];
+            let (low, high) = surface.depths(probe);
+            if surface.nearest_from(probe.center()) < inside
+                && high >= -IDENTIFY_LDU
+                && low.max(-IDENTIFY_LDU) <= depth + IDENTIFY_LDU
+            {
+                pieces.push(surface.piece);
+            }
+        }
+        pieces
     }
 
     pub fn floor(&self, probe: &Probe, inside: f64) -> Floor {
@@ -2225,7 +2303,7 @@ mod tests {
             points: [[1.0, -1.0, FAR], [1.0, 1.0, FAR], [-1.0, 0.0, NEAR]],
             double_sided: true,
         };
-        let solid = Solid::new(&[steep], Vec::new());
+        let solid = Solid::unpieced(&[steep], Vec::new());
         let probe = Probe {
             axis: 2,
             inward: 1.0,
@@ -2248,7 +2326,7 @@ mod tests {
             ],
             double_sided: true,
         };
-        let solid = Solid::new(
+        let solid = Solid::unpieced(
             &[
                 at(905.0, 905.0),
                 at(-895.0, 905.0),
@@ -2300,6 +2378,7 @@ mod tests {
             full: true,
             arcs: Vec::new(),
             facing: Some(1.0),
+            piece: crate::pieces::NO_PIECE,
         }
     }
 
@@ -2314,14 +2393,14 @@ mod tests {
 
     #[test]
     fn an_oversized_wall_is_still_found_by_queries_whose_window_meets_it() {
-        let solid = Solid::new(&[], vec![huge_ring()]);
+        let solid = Solid::unpieced(&[], vec![huge_ring()]);
         assert_eq!(solid.exact(&vertical_probe(1495.0), 20.0), vec![0]);
         assert!(solid.exact(&vertical_probe(5000.0), 20.0).is_empty());
     }
 
     #[test]
     fn an_oversized_slab_polygon_still_encloses_and_blocks_rays() {
-        let solid = Solid::new(&[flat(0.0, 0.0, 1_000_000.0)], Vec::new());
+        let solid = Solid::unpieced(&[flat(0.0, 0.0, 1_000_000.0)], Vec::new());
         let slab = solid.slab(1, 1.0, 0.0, (0.0, 10.0), |_| false);
         assert!(solid.blocked_on_axes(&slab, [0.0, 0.0], |_| false));
         assert!(solid.enclosed(&slab, [0.0, 0.0], |_| false));
@@ -2329,7 +2408,7 @@ mod tests {
 
     #[test]
     fn oversized_geometry_seeds_no_probes_of_its_own() {
-        let solid = Solid::new(
+        let solid = Solid::unpieced(
             &[flat(-800.0, 0.0, 1.0), flat(800.0, 0.0, 1.0)],
             vec![huge_ring()],
         );
@@ -2435,7 +2514,7 @@ mod tests {
     }
 
     fn encloses_centre(walls: &[Triangle]) -> bool {
-        let solid = Solid::new(walls, Vec::new());
+        let solid = Solid::unpieced(walls, Vec::new());
         let slab = solid.slab(1, 1.0, 0.0, (0.0, 10.0), |_| false);
         solid.blocked_on_axes(&slab, [0.0, 0.0], |_| false)
             && solid.enclosed(&slab, [0.0, 0.0], |_| false)
@@ -2484,7 +2563,7 @@ mod tests {
             vec![unreadable],
         ]
         .concat();
-        let solid = Solid::new(&walls, Vec::new());
+        let solid = Solid::unpieced(&walls, Vec::new());
         let slab = solid.slab(1, 1.0, 0.0, (0.0, 10.0), |_| false);
         let holds = |bounds: PlanBounds, point: &Local| {
             (0..2).all(|k| {
@@ -2570,14 +2649,14 @@ mod tests {
         let end = level_triangle([[-1.0, -1.0], [1.0, -1.0], [0.0, 1.0]], 0.0);
         let corner = level_triangle([[5.0, 5.0], [6.0, 5.0], [6.0, 6.0]], 0.0);
         let flush = level_triangle([[5.0, -0.5], [9.0, -0.5], [9.0, 0.5]], 0.0);
-        let free = Solid::new(&[end.clone(), corner.clone()], Vec::new());
+        let free = Solid::unpieced(&[end.clone(), corner.clone()], Vec::new());
         assert!(!free.section_reaches(
             &vertical_probe(0.0),
             (-IDENTIFY_LDU, IDENTIFY_LDU),
             reach,
             reach
         ));
-        let joined = Solid::new(&[end, corner, flush], Vec::new());
+        let joined = Solid::unpieced(&[end, corner, flush], Vec::new());
         assert!(joined.section_reaches(
             &vertical_probe(0.0),
             (-IDENTIFY_LDU, IDENTIFY_LDU),
@@ -2593,10 +2672,13 @@ mod tests {
         let inside = upright([12.0, -3.0], [12.0, 3.0]);
         let range = (IDENTIFY_LDU, 10.0 - IDENTIFY_LDU);
         let nearest = |solid: Solid| solid.nearest(&vertical_probe(0.0), range, reach);
-        assert!(nearest(Solid::new(&corner, Vec::new())).is_infinite());
-        assert!(nearest(Solid::new(&[], vec![huge_ring()])).is_infinite());
+        assert!(nearest(Solid::unpieced(&corner, Vec::new())).is_infinite());
+        assert!(nearest(Solid::unpieced(&[], vec![huge_ring()])).is_infinite());
         assert_eq!(
-            nearest(Solid::new(&[corner, inside].concat(), vec![huge_ring()])),
+            nearest(Solid::unpieced(
+                &[corner, inside].concat(),
+                vec![huge_ring()]
+            )),
             12.0
         );
     }
