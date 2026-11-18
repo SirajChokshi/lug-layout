@@ -341,6 +341,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       unofficialAllowlist: manifest.compiler.unofficialAllowlist,
       studPrimitiveNames: manifest.studPrimitives.map((primitive) => primitive.name),
       primitives: manifest.compiler.primitives ?? null,
+      sectionVocabulary: manifest.compiler.sectionVocabulary ?? null,
       partIds: manifest.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
       translucentCodes: manifest.colors

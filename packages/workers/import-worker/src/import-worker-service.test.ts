@@ -10,6 +10,7 @@ import {
   CONNECTIVITY_SOURCES,
   ConnectorIndexFile,
   ConnectorRecordFile,
+  SectionVocabularyFile,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { Container } from "inversify";
@@ -21,6 +22,10 @@ import { ImportWorkerService } from "./import-worker-service.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const pinnedLibrary = new URL("../../../../.cache/ldraw/", import.meta.url);
+const vocabularyFile = new URL(
+  "../../../../tools/asset-pipeline/section-vocabulary.json",
+  import.meta.url,
+);
 const MIRROR_PREFIX = "/mirror/";
 const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
@@ -117,12 +122,28 @@ afterAll(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-it("gives a bundle part the same connector table from the catalog loader as when an import fetches it as a pinned part", async () => {
+async function bundleLoader() {
   const container = new Container();
   await container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
-  const loader = container.get(PART_BUNDLE_LOADER);
+  return container.get(PART_BUNDLE_LOADER);
+}
+
+it("hands the import path the committed section vocabulary that the bundle's tier 4 records were inferred with", async () => {
+  const context = await (await bundleLoader()).importContext(LOD);
+  const committed = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
+    vocabularyFile.pathname,
+  );
+  expect(context.sectionVocabulary).toEqual({
+    sizes: committed.sizes,
+    lengths: committed.lengths,
+  });
+});
+
+it("gives a bundle part the same connector table from the catalog loader as when an import fetches it as a pinned part", async () => {
+  const loader = await bundleLoader();
   const context = await loader.importContext(LOD);
   const { repo, commit, root } = context.source;
   mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
