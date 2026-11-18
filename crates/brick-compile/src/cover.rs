@@ -31,6 +31,7 @@ const BELOW_HEIGHT_STEPS: usize = 8;
 const BELOW_START_OUTSIDE: f64 = 1.001;
 const BELOW_REACH_LDU: f64 = 3.0 * STUD_LDU;
 const RIM_PROBE_FRACTION: f64 = 0.9;
+const TREE_WALK_TRIANGLES: usize = 64;
 const CANDIDATES_PER_DEAL: usize = 32;
 const CLIPPED_HEIGHT_ROUNDING_LDU: f64 = 1e-6;
 const ENCLOSURE_BLOCKERS_KEPT: usize = 8;
@@ -355,16 +356,20 @@ fn inverse(matrix: &Affine) -> Option<Affine> {
 }
 
 fn world_box(instance: &CoverInstance, solid: &PartSolid) -> [Vec3; 2] {
+    corner_box(instance.matrix, solid.min, solid.max)
+}
+
+fn corner_box(matrix: &Affine, min: Vec3, max: Vec3) -> [Vec3; 2] {
     let mut bounds = Bounds::EMPTY;
     for i in 0..8 {
         let pick = |bit: usize, axis: usize| {
             if i & bit == 0 {
-                solid.min[axis]
+                min[axis]
             } else {
-                solid.max[axis]
+                max[axis]
             }
         };
-        bounds = bounds.grow(instance.matrix.apply([pick(1, 0), pick(2, 1), pick(4, 2)]));
+        bounds = bounds.grow(matrix.apply([pick(1, 0), pick(2, 1), pick(4, 2)]));
     }
     [bounds.min, bounds.max]
 }
@@ -801,6 +806,10 @@ impl ColumnReach {
             && high <= self.highest[cell] - CLIPPED_HEIGHT_ROUNDING_LDU
     }
 
+    fn holds_level(&self, cell: usize, y: f64) -> bool {
+        self.lowest[cell] <= y && y <= self.highest[cell]
+    }
+
     fn brackets_box(&self, [min, max]: [Vec3; 2]) -> bool {
         let (x0, x1) = overlapping_cells(
             min[0] - CLIPPED_HEIGHT_ROUNDING_LDU,
@@ -817,6 +826,32 @@ impl ColumnReach {
         (z0..z1).all(|j| (x0..x1).all(|i| self.brackets(j * self.width + i, min[1], max[1])))
     }
 
+    fn add_solid(&mut self, solid: &PartSolid, faces: &Faces, matrix: &Affine) {
+        let add_unless_face = |reach: &mut Self, t: usize| {
+            if !faces.marked[t] {
+                reach.add(&solid.tree_points[t].map(|p| matrix.apply(p)));
+            }
+        };
+        for &face in &faces.first {
+            self.add(&solid.tree_points[face].map(|p| matrix.apply(p)));
+        }
+        if solid.tree_points.len() < TREE_WALK_TRIANGLES {
+            for t in 0..solid.tree_points.len() {
+                add_unless_face(self, t);
+            }
+            return;
+        }
+        solid.tree.walk(|bounds, leaf| match leaf {
+            Some(range) => {
+                for t in range {
+                    add_unless_face(self, t);
+                }
+                false
+            }
+            None => !self.brackets_box(corner_box(matrix, bounds.min, bounds.max)),
+        });
+    }
+
     fn add(&mut self, triangle: &[Vec3; 3]) {
         let span = |axis: usize| {
             triangle
@@ -828,9 +863,11 @@ impl ColumnReach {
         let ((lo_x, hi_x), (lo_y, hi_y), (lo_z, hi_z)) = (span(0), span(1), span(2));
         let (x0, x1) = overlapping_cells(lo_x, hi_x, self.origin[0], self.width);
         let (z0, z1) = overlapping_cells(lo_z, hi_z, self.origin[1], self.depth);
+        let level = lo_y == hi_y;
         for j in z0..z1 {
             for i in x0..x1 {
-                if self.brackets(j * self.width + i, lo_y, hi_y) {
+                let cell = j * self.width + i;
+                if self.brackets(cell, lo_y, hi_y) || (level && self.holds_level(cell, lo_y)) {
                     continue;
                 }
                 let edge_x = self.origin[0] + STUD_LDU * i as f64;
@@ -851,7 +888,6 @@ impl ColumnReach {
                 if polygon_area(&inside) <= 0.0 {
                     continue;
                 }
-                let cell = j * self.width + i;
                 let (points, len) = inside;
                 for point in &points[..len] {
                     self.lowest[cell] = self.lowest[cell].min(point[1]);
@@ -859,6 +895,34 @@ impl ColumnReach {
                 }
             }
         }
+    }
+}
+
+struct Faces {
+    first: Vec<usize>,
+    marked: Vec<bool>,
+}
+
+fn extreme_faces(solid: &PartSolid) -> Faces {
+    fn heights(t: &[Vec3; 3]) -> impl Iterator<Item = f64> + '_ {
+        t.iter().map(|p| p[1])
+    }
+    let points = &solid.tree_points;
+    let low = points
+        .iter()
+        .flat_map(heights)
+        .fold(f64::INFINITY, f64::min);
+    let high = points
+        .iter()
+        .flat_map(heights)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let marked: Vec<bool> = points
+        .iter()
+        .map(|t| heights(t).all(|y| y == low) || heights(t).all(|y| y == high))
+        .collect();
+    Faces {
+        first: (0..points.len()).filter(|&t| marked[t]).collect(),
+        marked,
     }
 }
 
@@ -917,14 +981,15 @@ fn model_cells(
     }
 
     let mut reach = ColumnReach::new(origin, width, depth, coverers.model.coordinates_bounded);
+    let mut faces: Vec<Option<Faces>> = solids.iter().map(|_| None).collect();
     for index in extremes_first(boxes) {
         if reach.brackets_box(boxes[index]) {
             continue;
         }
         let instance = &instances[index];
-        for points in &solids[instance.part].triangles {
-            reach.add(&points.map(|p| instance.matrix.apply(p)));
-        }
+        let solid = &solids[instance.part];
+        let faces = faces[instance.part].get_or_insert_with(|| extreme_faces(solid));
+        reach.add_solid(solid, faces, instance.matrix);
     }
     let plates = |y: f64| (y - bottom_y) / PLATE_LDU;
     let slack = WELD_EPSILON_LDU / PLATE_LDU;
@@ -1015,6 +1080,59 @@ mod tests {
                 [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]],
             );
         }
+        PartSolid::from_mesh(&mesh::build(&t, &[]))
+    }
+
+    fn tessellated(min: Vec3, max: Vec3, divisions: usize) -> PartSolid {
+        let [x0, y0, z0] = min;
+        let [x1, y1, z1] = max;
+        let step = |lo: f64, hi: f64, k: usize| lo + (hi - lo) * k as f64 / divisions as f64;
+        let mut t = Vec::new();
+        for a in 0..divisions {
+            for b in 0..divisions {
+                let (xa, xb) = (step(x0, x1, a), step(x0, x1, a + 1));
+                let (za, zb) = (step(z0, z1, b), step(z0, z1, b + 1));
+                for y in [y0, y1] {
+                    quad(&mut t, [[xa, y, za], [xb, y, za], [xb, y, zb], [xa, y, zb]]);
+                }
+                let xm = (xa + xb) / 2.0;
+                let zm = (za + zb) / 2.0;
+                quad(
+                    &mut t,
+                    [
+                        [xa, y0, zm],
+                        [xb, y0, zm],
+                        [xb, y1 - 3.0, zm],
+                        [xa, y0 + 1.0, zm],
+                    ],
+                );
+                quad(
+                    &mut t,
+                    [
+                        [xm, y0 + 2.0, za],
+                        [xm, y0 + 2.0, zb],
+                        [xm, y1 - 2.0, zb],
+                        [xm, y1 - 2.0, za],
+                    ],
+                );
+            }
+        }
+        quad(
+            &mut t,
+            [[x0, y0, z0], [x0, y1, z0], [x0, y1, z1], [x0, y0, z1]],
+        );
+        quad(
+            &mut t,
+            [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]],
+        );
+        quad(
+            &mut t,
+            [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]],
+        );
+        quad(
+            &mut t,
+            [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]],
+        );
         PartSolid::from_mesh(&mesh::build(&t, &[]))
     }
 
@@ -1285,12 +1403,20 @@ mod tests {
             solid([-20.0, 0.0, -20.0], [20.0, 24.0, 20.0], true, false, 4.0),
             solid([-20.0, 0.0, -40.0], [20.0, 8.0, 40.0], true, true, 4.0),
             solid([-10.0, 0.0, -10.0], [10.0, 24.0, 10.0], false, true, 12.0),
+            tessellated([-40.0, 0.0, -40.0], [40.0, 8.0, 40.0], 4),
         ];
+        let walked = solids.len() - 1;
+        assert!(solids[walked].tree_points.len() >= TREE_WALK_TRIANGLES);
+        let walls = [[-40.0, 2.0, -40.0], [40.0, 6.0, 40.0]];
         let mut draws = Draws(7);
         let mut inside_known_heights = 0;
+        let mut walls_inside_known_heights = 0;
         for _ in 0..COLUMN_SCENES {
             let parts: Vec<(usize, u32, Affine)> = (0..PIECES_PER_COLUMN_SCENE)
-                .map(|_| (draws.below(3) as usize, OPAQUE, placed_piece(&mut draws)))
+                .map(|_| {
+                    let part = draws.below(solids.len() as u64) as usize;
+                    (part, OPAQUE, placed_piece(&mut draws))
+                })
                 .collect();
             let cells = cover_of(&solids, &parts, &[], Some([0, 0]))
                 .cells
@@ -1313,31 +1439,58 @@ mod tests {
                     "cell {cell}"
                 );
             }
-            for (part, _, matrix) in &parts {
-                let [min, max] = world_box(
-                    &CoverInstance {
-                        matrix,
-                        color: OPAQUE,
-                        part: *part,
-                        studs: &[],
-                    },
-                    &solids[*part],
-                );
+            let inside = |[min, max]: [Vec3; 2]| {
                 let (x0, x1) = overlapping_cells(min[0], max[0], cells.origin[0], cells.width);
                 let (z0, z1) = overlapping_cells(min[2], max[2], cells.origin[1], cells.depth);
-                inside_known_heights += usize::from((z0..z1).all(|j| {
+                (z0..z1).all(|j| {
                     (x0..x1).all(|i| {
                         let cell = j * cells.width + i;
                         lowest[cell] + CLIPPED_HEIGHT_ROUNDING_LDU <= min[1]
                             && max[1] <= highest[cell] - CLIPPED_HEIGHT_ROUNDING_LDU
                     })
-                }));
+                })
+            };
+            for (part, _, matrix) in &parts {
+                let instance = CoverInstance {
+                    matrix,
+                    color: OPAQUE,
+                    part: *part,
+                    studs: &[],
+                };
+                inside_known_heights += usize::from(inside(world_box(&instance, &solids[*part])));
+                if *part == walked {
+                    walls_inside_known_heights +=
+                        usize::from(inside(corner_box(matrix, walls[0], walls[1])));
+                }
             }
         }
         assert!(
             inside_known_heights > 20,
             "{inside_known_heights} pieces lie strictly inside their columns' heights"
         );
+        assert!(
+            walls_inside_known_heights > 20,
+            "{walls_inside_known_heights} tessellated pieces have walls strictly inside their columns' heights"
+        );
+    }
+
+    #[test]
+    fn a_box_within_rounding_of_an_unknown_cell_or_height_is_never_skipped() {
+        let mut reach = ColumnReach::new([0.0, 0.0], 2, 1, true);
+        reach.lowest[0] = 0.0;
+        reach.highest[0] = 10.0;
+        let next_square = STUD_LDU + WELD_EPSILON_LDU;
+        let short_of_next = |gap: f64| {
+            [
+                [WELD_EPSILON_LDU + 1.0, 2.0, WELD_EPSILON_LDU + 1.0],
+                [next_square - gap, 8.0, STUD_LDU - WELD_EPSILON_LDU - 1.0],
+            ]
+        };
+        assert!(reach.brackets_box(short_of_next(10.0 * CLIPPED_HEIGHT_ROUNDING_LDU)));
+        assert!(!reach.brackets_box(short_of_next(CLIPPED_HEIGHT_ROUNDING_LDU / 2.0)));
+        let mut touching = short_of_next(10.0 * CLIPPED_HEIGHT_ROUNDING_LDU);
+        touching[1][1] = reach.highest[0];
+        assert!(!reach.brackets_box(touching));
     }
 
     #[test]
