@@ -22,7 +22,7 @@ export function exactDecimal(coefficient: bigint, places: number): ExactDecimal 
     throw new Error(`${places} is not a count of decimal places below ${MAX_DIGITS}`);
   }
   const magnitude = coefficient < 0n ? -coefficient : coefficient;
-  if (magnitude >= COEFFICIENT_LIMIT * TEN ** BigInt(places)) {
+  if (magnitude >= COEFFICIENT_LIMIT && magnitude >= COEFFICIENT_LIMIT * TEN ** BigInt(places)) {
     throw new Error(`an exact decimal writes canonically with more than ${MAX_DIGITS} digits`);
   }
   return requireWithinDigitBound(normalized(coefficient, places));
@@ -77,7 +77,7 @@ export function parseExactDecimal(text: unknown): ExactDecimal {
   const parts = literalParts(text);
   if (parts === null) {
     throw new Error(
-      `the text is not a decimal literal with at most ${MAX_DIGITS} digits and an exponent magnitude of at most ${MAX_EXPONENT_MAGNITUDE}`,
+      `the text is not a decimal literal with at most ${MAX_DIGITS} digits and an exponent of at most ${MAX_EXPONENT_DIGITS} digits whose magnitude is at most ${MAX_EXPONENT_MAGNITUDE}`,
     );
   }
   const places = parts.fractionDigits - parts.exponent;

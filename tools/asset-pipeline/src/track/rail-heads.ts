@@ -139,7 +139,7 @@ export function railHeadsAtEnd(
   for (const run of adjacentRunsSmallestFirst(levelScans)) {
     const [top] = run;
     if (top === undefined) continue;
-    if (railSectionFromIntervals(run.flatMap((level) => level.intervals)) === null) continue;
+    if (railPairRuns(run.flatMap((level) => level.intervals)) === null) continue;
     return { topY: top.y, polygons: run.flatMap((level) => level.polygons) };
   }
   return null;
@@ -241,14 +241,23 @@ function scanIntervals(
   });
 }
 
+function railPairRuns(intervals: ReadonlyArray<Interval>): readonly [Interval, Interval] | null {
+  const runs = mergedRuns(intervals);
+  const [near, far] = runs;
+  return runs.length === 2 && near !== undefined && far !== undefined ? [near, far] : null;
+}
+
+function midpoint(run: Interval): ExactRational {
+  return divideExactRational(addExactRational(run.from, run.to), TWO);
+}
+
 function railSectionFromIntervals(intervals: ReadonlyArray<Interval>): RailSection | null {
-  const railCentresLdu = mergedRuns(intervals).map((run) =>
-    divideExactRational(addExactRational(run.from, run.to), TWO),
-  );
-  const [near, far] = railCentresLdu;
-  if (railCentresLdu.length !== 2 || near === undefined || far === undefined) return null;
+  const pair = railPairRuns(intervals);
+  if (pair === null) return null;
+  const near = midpoint(pair[0]);
+  const far = midpoint(pair[1]);
   return {
-    railCentresLdu,
+    railCentresLdu: [near, far],
     railHalfSpacingLdu: divideExactRational(subtractExactRational(far, near), TWO),
     railCentreOffsetLdu: divideExactRational(addExactRational(far, near), TWO),
   };
