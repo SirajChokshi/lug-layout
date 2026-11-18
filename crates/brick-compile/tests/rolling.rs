@@ -124,13 +124,14 @@ fn custom_wheel() -> String {
         phase: TAU / 32.0,
         ..Band::along(1, [-60.0, 0.0, 0.0], -8.0, 0.0, [10.0, 10.0])
     };
+    let off_grid = Band::along(1, [-60.0, 0.0, 60.0], -8.0, 0.0, [10.01, 10.01]);
     let diagonal = std::f64::consts::FRAC_1_SQRT_2;
     let tilted = Band {
         axis: [diagonal, diagonal, 0.0],
         across: [[diagonal, -diagonal, 0.0], [0.0, 0.0, 1.0]],
         ..Band::along(0, [0.0, 60.0, 60.0], 0.0, 10.0, [10.0, 10.0])
     };
-    let bands = [tread, flange, bore, post, octagon, turned, tilted];
+    let bands = [tread, flange, bore, post, octagon, turned, off_grid, tilted];
     let body: String = bands.iter().map(Band::quads).collect();
     format!("0 Custom wheel drawn from plain quads\n{HEADER}{body}")
 }
@@ -187,6 +188,7 @@ fn a_custom_part_drawn_from_plain_quads_yields_its_outward_bands_on_every_axis()
         vec![
             surface(0, [12.0, 0.0], -4.0, 6.0, [20.0, 20.0]),
             surface(0, [12.0, 0.0], 6.0, 8.0, [20.0, 24.0]),
+            surface(1, [-60.0, 0.0], 0.0, 8.0, [10.0, 10.0]),
             surface(1, [0.0, -60.0], 0.0, 24.0, [8.0, 8.0]),
         ]
     );
@@ -199,7 +201,11 @@ fn a_custom_part_drawn_from_plain_quads_yields_its_outward_bands_on_every_axis()
         reasons,
         vec![
             (Unread::Unoriented, None, None),
-            (Unread::Radius, Some(1), Some([sixteenths(-60.0), 0])),
+            (
+                Unread::Radius,
+                Some(1),
+                Some([sixteenths(-60.0), sixteenths(-60.0)])
+            ),
             (Unread::Faceted, Some(2), Some([sixteenths(60.0), 0])),
         ]
     );

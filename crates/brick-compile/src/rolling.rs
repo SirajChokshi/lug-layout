@@ -978,21 +978,60 @@ impl<'a> Strip<'a> {
 
     fn identified(&self, circle: &ClosedCircle) -> StripReading {
         let centre = Some(circle.centre);
-        let at = circle.centre.map(sixteenths::identified);
-        let radii = circle.radii.map(sixteenths::identified);
-        match (at, radii) {
-            ([None, _] | [_, None], _) => StripReading::Unread(Unread::Centre, centre),
-            ([Some(a), Some(b)], [Some(r0), Some(r1)]) if circle.extents_meet_circle => {
-                StripReading::Read(ReadBand {
-                    axis: self.axis,
-                    at: [a, b],
-                    lo: self.lo,
-                    hi: self.hi,
-                    radii: [r0, r1],
-                })
+        let extents = circle
+            .extents_meet_circle
+            .then(|| self.read_band(circle.centre, circle.radii))
+            .flatten();
+        let fitted = || {
+            let fitted = self.fitted_circle()?;
+            self.read_band(fitted.0, fitted.1)
+        };
+        match extents.or_else(fitted) {
+            Some(band) => StripReading::Read(band),
+            None if circle
+                .centre
+                .iter()
+                .any(|c| sixteenths::identified(*c).is_none()) =>
+            {
+                StripReading::Unread(Unread::Centre, centre)
             }
-            _ => StripReading::Unread(Unread::Radius, centre),
+            None => StripReading::Unread(Unread::Radius, centre),
         }
+    }
+
+    fn read_band(&self, centre: [f64; 2], radii: [f64; 2]) -> Option<ReadBand> {
+        let [a, b] = centre.map(sixteenths::identified);
+        let [r0, r1] = radii.map(sixteenths::identified);
+        Some(ReadBand {
+            axis: self.axis,
+            at: [a?, b?],
+            lo: self.lo,
+            hi: self.hi,
+            radii: [r0?, r1?],
+        })
+    }
+
+    fn fitted_circle(&self) -> Option<([f64; 2], [f64; 2])> {
+        let shaped = self.rings.iter().max_by_key(|r| r.points.len())?;
+        let centre = fitted_circle(&shaped.points)?;
+        let mut radii = [0.0; 2];
+        for (side, ring) in self.rings.iter().enumerate() {
+            let distances: Vec<f64> = ring
+                .points
+                .iter()
+                .map(|p| planar_distance(*p, centre))
+                .collect();
+            let mean = distances.iter().sum::<f64>() / distances.len() as f64;
+            if distances.iter().any(|d| (d - mean).abs() > HALF_STEP_LDU) {
+                return None;
+            }
+            radii[side] = match ring.is_apex() {
+                true if mean > HALF_STEP_LDU => return None,
+                true => 0.0,
+                false => mean,
+            };
+        }
+        Some((centre, radii))
     }
 }
 
