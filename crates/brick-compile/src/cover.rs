@@ -1,6 +1,7 @@
 mod below;
 mod instance_tree;
 mod ray;
+mod reservation;
 mod triangle_tree;
 
 use std::thread;
@@ -10,6 +11,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use self::below::{certifiable_faces, coordinates_bounded, BelowCertifier, BelowStud};
 use self::instance_tree::InstanceTree;
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
+use self::reservation::{axis_span, cell_span, CellColumns};
+pub use self::reservation::{part_cover_fits, AxisSpan, CellsCause, CellsTooLarge, ModelTooLarge};
 use self::triangle_tree::{TriangleHit, TriangleTree};
 use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area};
@@ -606,7 +609,9 @@ impl Coverers<'_, '_> {
             return *known;
         }
         let found = self.enclosure(placed, local);
-        self.enclosed.insert(key, found);
+        if self.enclosed.try_reserve(1).is_ok() {
+            self.enclosed.insert(key, found);
+        }
         found
     }
 
@@ -736,7 +741,7 @@ pub fn model_cover(
     stud: StudShape,
     shard: CoverShard,
     table_depth: f64,
-) -> ModelCover {
+) -> Result<ModelCover, ModelTooLarge> {
     let boxes: Vec<[Vec3; 2]> = instances
         .iter()
         .map(|instance| world_box(instance, &solids[instance.part]))
@@ -787,23 +792,30 @@ pub fn model_cover(
         .iter()
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
-    let cells = lattice.map(|(phase, stud_layer_y)| {
-        let floor_y = column_floor_y(underside_y, stud_layer_y, table_depth);
-        model_cells(
-            instances,
-            &boxes,
-            solids,
-            &mut coverers,
-            aabb,
-            [underside_y, floor_y],
-            phase,
-        )
-    });
-    ModelCover {
+    let cells = lattice
+        .map(|(phase, stud_layer_y)| {
+            let floor_y = column_floor_y(underside_y, stud_layer_y, table_depth);
+            model_cells(
+                instances,
+                &boxes,
+                solids,
+                &mut coverers,
+                aabb,
+                [underside_y, floor_y],
+                phase,
+            )
+        })
+        .transpose()
+        .map_err(|cells| ModelTooLarge {
+            cells,
+            x: axis_span(&boxes, 0),
+            z: axis_span(&boxes, 2),
+        })?;
+    Ok(ModelCover {
         visible,
         open_below,
         cells,
-    }
+    })
 }
 
 struct ColumnReach {
@@ -816,13 +828,20 @@ struct ColumnReach {
 }
 
 impl ColumnReach {
-    fn new(origin: [f64; 2], width: usize, depth: usize, bounded: bool) -> Self {
+    fn new(
+        origin: [f64; 2],
+        [width, depth]: [usize; 2],
+        bounded: bool,
+        [mut lowest, mut highest]: [Vec<f64>; 2],
+    ) -> Self {
+        lowest.resize(width * depth, f64::INFINITY);
+        highest.resize(width * depth, f64::NEG_INFINITY);
         ColumnReach {
             origin,
             width,
             depth,
-            lowest: vec![f64::INFINITY; width * depth],
-            highest: vec![f64::NEG_INFINITY; width * depth],
+            lowest,
+            highest,
             bounded,
         }
     }
@@ -978,20 +997,27 @@ fn model_cells(
     aabb: Bounds,
     [underside_y, bottom_y]: [f64; 2],
     phase: [u32; 2],
-) -> ModelCells {
+) -> Result<ModelCells, CellsTooLarge> {
     let [phase_x, phase_z] = phase.map(f64::from);
     let (first_x, last_x) = cell_range(aabb.min[0], aabb.max[0], phase_x);
     let (first_z, last_z) = cell_range(aabb.min[2], aabb.max[2], phase_z);
-    let width = (last_x - first_x + 1) as usize;
-    let depth = (last_z - first_z + 1) as usize;
+    let CellColumns {
+        width,
+        depth,
+        count,
+        lowest,
+        highest,
+        mut bottom,
+        mut top,
+        mut footprint,
+        mut flat,
+    } = CellColumns::reserve(cell_span((first_x, last_x)), cell_span((first_z, last_z)))?;
     let origin = [
         phase_x - HALF_STUD_LDU + STUD_LDU * first_x as f64,
         phase_z - HALF_STUD_LDU + STUD_LDU * first_z as f64,
     ];
     let centre = |axis: usize, i: usize| origin[axis] + HALF_STUD_LDU + STUD_LDU * i as f64;
 
-    let mut footprint = Vec::new();
-    let mut flat = Vec::new();
     for j in 0..depth {
         for i in 0..width {
             let cell = j * width + i;
@@ -1007,7 +1033,12 @@ fn model_cells(
         }
     }
 
-    let mut reach = ColumnReach::new(origin, width, depth, coverers.model.coordinates_bounded);
+    let mut reach = ColumnReach::new(
+        origin,
+        [width, depth],
+        coverers.model.coordinates_bounded,
+        [lowest, highest],
+    );
     let mut faces: Vec<Option<Faces>> = solids.iter().map(|_| None).collect();
     for index in extremes_first(boxes) {
         if reach.brackets_box(boxes[index]) {
@@ -1020,26 +1051,26 @@ fn model_cells(
     }
     let plates = |y: f64| (y - bottom_y) / PLATE_LDU;
     let slack = WELD_EPSILON_LDU / PLATE_LDU;
-    let mut column_bottom = vec![EMPTY_COLUMN; width * depth];
-    let mut column_top = vec![EMPTY_COLUMN; width * depth];
+    bottom.resize(count, EMPTY_COLUMN);
+    top.resize(count, EMPTY_COLUMN);
     for (cell, (&lowest, &highest)) in reach.lowest.iter().zip(&reach.highest).enumerate() {
         if lowest > highest {
             continue;
         }
-        column_bottom[cell] = ((plates(lowest) + slack).floor() as i32).max(0);
-        column_top[cell] = (plates(highest) - slack).ceil() as i32;
+        bottom[cell] = ((plates(lowest) + slack).floor() as i32).max(0);
+        top[cell] = (plates(highest) - slack).ceil() as i32;
     }
 
-    ModelCells {
+    Ok(ModelCells {
         origin,
         width,
         depth,
         bottom_y,
         footprint,
         flat,
-        column_bottom,
-        column_top,
-    }
+        column_bottom: bottom,
+        column_top: top,
+    })
 }
 
 #[cfg(test)]
@@ -1196,6 +1227,7 @@ mod tests {
             CoverShard::WHOLE,
             TABLE_DEPTH,
         )
+        .expect("a test model's stud cover is allocated")
     }
 
     const COLUMN_SCENES: u64 = 12;
@@ -1493,7 +1525,7 @@ mod tests {
 
     #[test]
     fn a_box_within_rounding_of_an_unknown_cell_or_height_is_never_skipped() {
-        let mut reach = ColumnReach::new([0.0, 0.0], 2, 1, true);
+        let mut reach = ColumnReach::new([0.0, 0.0], [2, 1], true, [Vec::new(), Vec::new()]);
         reach.lowest[0] = 0.0;
         reach.highest[0] = 10.0;
         let next_square = STUD_LDU + WELD_EPSILON_LDU;

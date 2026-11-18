@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
+use crate::cover::{part_cover_fits, CellsTooLarge};
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
@@ -39,6 +40,11 @@ pub enum CompileError {
     Malformed {
         findings: Vec<MalformedGeometry>,
     },
+    TooLarge {
+        path: String,
+        extent_ldu: [f64; 2],
+        cells: CellsTooLarge,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -58,6 +64,19 @@ pub struct CompileOptions {
 }
 
 const UNOFFICIAL_PREFIX: &str = "Unofficial_";
+
+impl CompileError {
+    pub fn depends_on_machine(&self) -> bool {
+        match self {
+            CompileError::TooLarge { cells, .. } => cells.cause.depends_on_machine(),
+            CompileError::Flatten(_)
+            | CompileError::License { .. }
+            | CompileError::Unofficial { .. }
+            | CompileError::NoStudRing
+            | CompileError::Malformed { .. } => false,
+        }
+    }
+}
 
 impl std::fmt::Display for CompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -79,6 +98,11 @@ impl std::fmt::Display for CompileError {
             }
             CompileError::NoStudRing => f.write_str(NO_STUD_RING),
             CompileError::Malformed { findings } => f.write_str(&describe_malformed(findings)),
+            CompileError::TooLarge {
+                path,
+                extent_ldu: [x, z],
+                cells,
+            } => write!(f, "{path} spans {x} × {z} LDU, and {cells}"),
         }
     }
 }
@@ -215,6 +239,14 @@ pub fn compile_part<L: Library>(
         *edge = edge.map(to_y_up);
     }
     let mesh = mesh::build(&flattened.triangles, &flattened.hard_edges);
+    if let Some(bounds) = mesh.bounds() {
+        let [min, max] = bounds.map(|corner| corner.map(f64::from));
+        part_cover_fits([min, max]).map_err(|cells| CompileError::TooLarge {
+            path: path.clone(),
+            extent_ldu: [max[0] - min[0], max[2] - min[2]],
+            cells,
+        })?;
+    }
     let studs = flattened
         .studs
         .iter()

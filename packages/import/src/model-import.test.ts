@@ -668,3 +668,162 @@ it("reports, without drawing, a part when the stud primitives draw no ring to me
   ]);
   expect(result.compiled).toEqual([]);
 });
+
+const HUB_FAR_APART_LDU = 10_000_000;
+const FACET_HALF_LDU = 1_000_000;
+const VAST_SIDE_LDU = 171_798_691_840;
+const SIDE_JUST_BEYOND_WASM32_LDU = 231_700;
+const SIDE_JUST_WITHIN_WASM32_LDU = 231_680;
+const BRICKS_APART_LDU = 1_000_000;
+const STUD_LDU = 20;
+const HALF_BRICK_2X4_LDU = 40;
+const HALF_BRICK_2X2_LDU = 20;
+const HALF_BRICK_DEPTH_LDU = 20;
+
+function square(side: number): ReadonlyArray<string> {
+  return [`4 16 0 0 0 ${side} 0 0 ${side} 0 ${side} 0 0 ${side}`];
+}
+
+function customPart(name: string, lines: ReadonlyArray<string>): string {
+  return [`0 Custom ${name}`, `0 Name: ${name}`, CA_LICENSE, "0 BFC CERTIFY CCW", ...lines].join(
+    "\n",
+  );
+}
+
+const largeCustomParts = new Map([
+  [
+    "parts/zz-custom-oversized-facet.dat",
+    customHub("zz-custom-oversized-facet.dat", [
+      `3 16 -${FACET_HALF_LDU} 40 -${FACET_HALF_LDU} 0 40 ${FACET_HALF_LDU} ${FACET_HALF_LDU} 40 -${FACET_HALF_LDU}`,
+    ]),
+  ],
+  [
+    "parts/zz-custom-far-hubs.dat",
+    customPart("zz-custom-far-hubs.dat", [
+      "1 16 0 0 0 1 0 0 0 1 0 0 0 1 zz-custom-round-hub.dat",
+      `1 16 ${HUB_FAR_APART_LDU} 0 ${HUB_FAR_APART_LDU} 1 0 0 0 1 0 0 0 1 zz-custom-round-hub.dat`,
+    ]),
+  ],
+  [
+    "parts/zz-custom-vast-square.dat",
+    customPart("zz-custom-vast-square.dat", square(VAST_SIDE_LDU)),
+  ],
+  [
+    "parts/zz-custom-square-within-wasm32.dat",
+    customPart("zz-custom-square-within-wasm32.dat", square(SIDE_JUST_WITHIN_WASM32_LDU)),
+  ],
+  ["parts/square.dat", customPart("square.dat", square(SIDE_JUST_BEYOND_WASM32_LDU))],
+]);
+
+const largeCustomMirror: FetchFunction = async (url) => {
+  const path = /\/ldraw\/(?<path>.+)$/u.exec(url)?.groups?.["path"];
+  const custom = path === undefined ? undefined : largeCustomParts.get(path);
+  return custom === undefined ? customMirror(url) : new Response(custom);
+};
+
+function tooLarge(
+  name: string,
+  extentLdu: number,
+  cause: "beyondAddressSpace" | "memoryUnavailable",
+  because: string,
+) {
+  const cells = Math.floor(extentLdu / STUD_LDU) + 1;
+  return {
+    kind: "tooLarge",
+    reference: name,
+    official: name,
+    instances: 1,
+    cause,
+    message: `parts/${name} spans ${extentLdu} × ${extentLdu} LDU, and a stud cover of ${cells} × ${cells} cells ${because}`,
+  };
+}
+
+const BEYOND_WASM32 = "needs more memory than the 32-bit WASM compiler can address";
+const MEMORY_UNAVAILABLE = "needs more memory than this machine could reserve";
+
+it(
+  "reports, without drawing, custom parts whose stud cover a 32-bit compiler cannot address, and imports the rest exactly as without them",
+  async () => {
+    const kept = [
+      "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 1 80 0 0 1 0 0 0 1 0 0 0 1 zz-custom-round-hub.dat",
+    ];
+    const large = [
+      "1 2 160 0 0 1 0 0 0 1 0 0 0 1 zz-custom-oversized-facet.dat",
+      "1 2 240 0 0 1 0 0 0 1 0 0 0 1 zz-custom-far-hubs.dat",
+      "1 2 320 0 0 1 0 0 0 1 0 0 0 1 zz-custom-vast-square.dat",
+      "1 2 400 0 0 1 0 0 0 1 0 0 0 1 zz-custom-square-within-wasm32.dat",
+    ];
+
+    const control = await importWith(largeCustomMirror, "control.ldr", kept.join("\n"));
+    const result = await importWith(largeCustomMirror, "large.ldr", [...kept, ...large].join("\n"));
+
+    expect(result.report.parts.slice(2)).toEqual([
+      tooLarge(
+        "zz-custom-oversized-facet.dat",
+        2 * FACET_HALF_LDU,
+        "beyondAddressSpace",
+        BEYOND_WASM32,
+      ),
+      tooLarge(
+        "zz-custom-far-hubs.dat",
+        HUB_FAR_APART_LDU + 2 * HALF_BRICK_2X2_LDU,
+        "beyondAddressSpace",
+        BEYOND_WASM32,
+      ),
+      tooLarge("zz-custom-vast-square.dat", VAST_SIDE_LDU, "beyondAddressSpace", BEYOND_WASM32),
+      tooLarge(
+        "zz-custom-square-within-wasm32.dat",
+        SIDE_JUST_WITHIN_WASM32_LDU,
+        "memoryUnavailable",
+        MEMORY_UNAVAILABLE,
+      ),
+    ]);
+    expect(result.report.parts.slice(0, 2)).toEqual(control.report.parts);
+    expect(result.partIds).toEqual(control.partIds);
+    expect(result.instanceCount).toBe(control.instanceCount);
+    expect(result.report.bakeIssue).toBeNull();
+    expect(result.bake).toEqual(control.bake);
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it("refuses a part whose stud cover the 32-bit WASM compiler cannot address with the message the native compiler gives", async () => {
+  const result = await importWith(
+    largeCustomMirror,
+    "square.ldr",
+    "1 2 0 0 0 1 0 0 0 1 0 0 0 1 square.dat\n",
+  );
+
+  expect(result.report.parts).toEqual([
+    {
+      kind: "tooLarge",
+      reference: "square.dat",
+      official: "square.dat",
+      instances: 1,
+      cause: "beyondAddressSpace",
+      message:
+        "parts/square.dat spans 231700 × 231700 LDU, and a stud cover of 11586 × 11586 cells needs more memory than the 32-bit WASM compiler can address",
+    },
+  ]);
+});
+
+it(
+  "fails the bake softly, naming both parts and how far apart they are, when their stud cover a 32-bit compiler cannot address",
+  async () => {
+    const text = [
+      "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      `1 4 ${BRICKS_APART_LDU} 0 ${BRICKS_APART_LDU} 1 0 0 0 1 0 0 0 1 3003.dat`,
+    ].join("\n");
+    const cellsApart = BRICKS_APART_LDU / STUD_LDU;
+
+    const result = await importWith(pinnedMirror, "far-apart.ldr", text);
+
+    expect(result.instanceCount).toBe(2);
+    expect(result.bake).toBeNull();
+    expect(result.report.bakeIssue).toBe(
+      `the drawn parts span ${BRICKS_APART_LDU + HALF_BRICK_2X4_LDU + HALF_BRICK_2X2_LDU} LDU from 3001.dat to 3003.dat along x and ${BRICKS_APART_LDU + HALF_BRICK_DEPTH_LDU + HALF_BRICK_2X2_LDU} LDU from 3003.dat to 3001.dat along z, and a stud cover of ${cellsApart + 3} × ${cellsApart + 2} cells ${BEYOND_WASM32}`,
+    );
+  },
+  BAKE_TIMEOUT_MS,
+);
