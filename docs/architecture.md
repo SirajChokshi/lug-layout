@@ -180,6 +180,69 @@ This comes from connection rules §4.3, generalized for D3.
 - When a layout mixes N = 16 and N = 32, poses embed into ℤ[ζ₃₂] through ζ₁₆ = ζ₃₂², so adding fan track later doesn't migrate existing layouts.
 - Parts whose poses fall outside the field get an exact algebraic pose from their data, compared with ε = 1e-6 LDU to absorb representation error only. Some switches may fall in this group, and flex track does (P1+).
 - **Importing poses from LDraw decimals (project decision, delegated by the owner, 2026-11-16).** LDraw prints connector poses with 3 to 6 decimals, so a pose read from a file is identified with a field element when its residual to the unique ℤ[ζ₁₆] candidate is ≤ 0.0005 LDU, half the last decimal of 3-decimal data. The candidate must be the only one in the search box (|c₀|, |c₄| ≤ 64 and |cₖ ± c₈₋ₖ| ≤ 64) within the file's printed precision. This is a data-identification tolerance used once, at import. It isn't physical slack and isn't the join ε: joins still compare the exact coefficients.
+  - **Read per coordinate (approved 2026-11-18).** The rule says a pose "is identified with a field element when its residual to the unique ℤ[ζ₁₆] candidate is ≤ 0.0005 LDU, half the last decimal of 3-decimal data". Its stated basis is a bound on rounding each printed coordinate. So the residual is read per coordinate, the L∞ norm: every coordinate is within 0.0005 LDU. This matches how connector origins and axes are identified one component at a time (connector-engine plan §2.3).
+- **Identifying placed track in an imported model** (`modelTrackEnds`) applies that rule to every catalog track piece. It reads only the Float64 part transforms, never the Float32 render copy.
+  - **Why not each end directly:** the search box holds about 1,049 candidates within 0.0005 LDU of a point, so no end's float position has a unique candidate on its own. Uniqueness is obtained in the steps below.
+  - **Rotation, per printed entry:**
+    - The heading is certified like an axis code. Each of the four plan rotation entries must lie within 0.0005 of the exact cos or sin of θ = k·22.5° plus the profile's half step (the part frame's heading offset), for one k ∈ ℤ₁₆.
+    - Headings 22.5° apart differ by 0.39 in (cos θ, sin θ), and so by at least 0.27 in one entry, so the certified heading is unique.
+    - A shear, a scale, a mirror or an angle off the ζ₁₆ steps doesn't certify, and the piece is `overLimit`.
+    - Ends are then composed from the exact ζ₁₆ rotation, so the printed rotation decimals never multiply a connector's distance from the part origin. The residual measures the translation only. The placement is read from the translation with ζ₁₆ᵏ applied exactly.
+  - **Seat (stud seating):**
+    - A piece whose certified heading is a quarter turn, and whose placement is within 0.0005 per coordinate of a lattice pose (`isLatticePose16`: whole-stud x and z, quarter-turn heading), is anchored on that pose.
+    - An axis-aligned track piece on a baseplate is on the lattice through its stud mates. Lattice poses are 20 LDU apart, so the seat is unique.
+  - **Window anchor:** any other piece's placement offset from the nearest whole-stud point must be the only candidate in the search box within 1e-6 LDU on each axis. The stud lattice is an exact symmetry of the field, so the whole-stud shift lifts the box's limit on c₀ and c₄ without loosening uniqueness.
+    - Two candidates in the box differ by an element whose coefficients lie within twice the box (128). The smallest nonzero such element is 3.86e-6 LDU on its larger axis, more than the window's 2e-6 LDU diameter, so the window never holds two candidates. A math test pins this.
+    - This uniqueness covers only offsets inside the box. An offset always lies within a stud of the lattice, but its coefficients grow with every turned piece between it and a whole-stud point. In a 1,020-piece test layout they reach 208, and about half the offsets fall outside the box. For such a piece the search finds no candidate, or rarely a stray one.
+    - A window candidate is only as good as the translation's printed precision. A 3-decimal translation lies up to 5e-4 LDU from its true offset, and about 0.5% of such points have an unrelated candidate inside the window. Before the rule below, a layout with 3-decimal translations had 21 of 1,020 pieces identified at exact but wrong poses.
+  - **One embedding per run:**
+    - Seats anchor first, then window anchors. Each anchor spreads through joins, and every anchor in the reached run votes for the shift between its own pose and the propagated one.
+    - A shift is corroborated by a seat, or by at least two agreeing window anchors; correct anchors agree with each other, and strays don't. The run takes the corroborated shift with the most votes.
+    - No corroborated shift leaves the run `noAnchor`. A tie is a contradiction.
+    - Every other vote implies a rival embedding of the run. A piece whose data passes 0.0005 under both embeddings has two field candidates, and is a contradiction.
+    - So a quarter-turn straight at the box element 3.59e-5 LDU from a stud point is never seated silently: if a neighbour's own anchor implies that true pose, the straight is a contradiction.
+  - **End consistency:** a placement is accepted only if every composed end is within 0.0005 LDU of its exact ζ₁₆ end in each coordinate. Neighbour lookup searches twice that distance, because two float ends of one exact end can each be 0.0005 off. Acceptance still compares each float end with the exact end.
+  - **Propagation:** a piece whose float end meets a certified exact end with the opposite heading takes the placement that end implies through `attachPose16`. Exactness follows the joins, so a piece whose offset leaves the box is identified only through them, however large its coefficients grow.
+  - **Contradictions are off-field:** a piece whose passing candidates disagree is reported, never snapped and never joined. Its candidates can come from different neighbours, from a neighbour and its own anchor, or from rival embeddings. A loop that closes only approximately is reported this way, not forced shut.
+  - **Every unidentified piece is reported with a reason:**
+    - `notFlat`: it isn't flat, or it sits between plates.
+    - `noAnchor`: nothing gave it a candidate. Neither its own anchor nor a certified neighbour did, and no certified neighbour's end faces one of its ends within the near-miss radius.
+    - `overLimit`: its rotation doesn't certify, a candidate missed 0.0005, or one of its ends misses a certified neighbour's.
+    - `contradiction`: two field candidates within 0.0005 LDU.
+    - The editor counts `noAnchor` pieces separately from off-field ones.
+  - **Printed precision of real files:**
+    - Files that print 6 decimals are identified completely.
+    - At 3 decimals, every run with an axis-aligned piece on the lattice is identified: the R40 circle 16 of 16, and a quarter-turned 117-piece set 117 of 117.
+    - **Known limit:** a run turned off the quarter turns as a whole has no seat.
+      - At 3 or 4 decimals it has no window anchor either, so it isn't identified on the field. At 5 decimals that happens only when two window anchors happen to agree: one 33-piece arrangement of the 117-piece set, and none of the 22 such runs in the 1,020-piece layout. At 6 decimals it is identified.
+      - Below that, it is identified in a run frame (next bullet), not on the field.
+    - No piece is identified at a wrong pose in any of these cases.
+- **Run frames: unanchored runs identified up to one shared translation.**
+  - **The idea:** inside one imported model, a run's relative poses are exact compositions of certified profile vectors, given the certified headings and which ends join. So the run is identified up to one unknown translation t. That is the same structure the absolute rule has, minus the anchor.
+  - **Who takes part:** every piece whose only failure is the anchor. That means `noAnchor` pieces, and pieces labelled `overLimit` only because an end misses a certified neighbour's within the near-miss radius. Never a contradiction, a rotation that doesn't certify, or a piece whose own candidate missed 0.0005.
+  - **Joins:**
+    - Two such pieces join when their float ends are within the neighbour lookup's reach, on the same plates, with exact headings half a turn apart.
+    - An end with two partners, which a duplicated piece gives, makes every piece involved a contradiction.
+    - Relative poses spread breadth-first through `attachPose16` from a root at the origin. A piece reached twice with different exact poses (a loop that doesn't close exactly) makes the run a contradiction.
+  - **The test:**
+    - Per coordinate, t must lie in the intersection over pieces of [fᵢ − Δᵢ − 0.0005 LDU, fᵢ − Δᵢ + 0.0005 LDU]. Here fᵢ is the float placement and Δᵢ the exact relative position. With exact rotations, an end's residual equals its placement's residual.
+    - An empty intersection makes the run a contradiction, and a run needs at least one internal join.
+    - This is the per-coordinate rule applied to the run as a whole. There is no new tolerance, and no field search, so there's no density problem: the joins fix the relations combinatorially.
+  - **What the run frame is:** exact relative `Pose16`s and a float centre t̂ of the interval. Joined runs pass or fail as a whole; nothing is split to make one pass. Runs that come near without joining keep separate frames, and their gap is reported as a near-miss gap.
+  - **Track graph:**
+    - Each placed run gets a frame id, and `TrackLayout`, `TrackGraph` and `TrackEnd` carry it. Join keys include the frame, so ends join only inside one frame.
+    - A run-frame end never joins world track or another run frame, even at the same exact pose.
+    - `ModelConnectors` refuses a run-frame end, so it can't join another model's track either.
+    - Drawn track can't attach to a run-frame end.
+  - **Play and views:**
+    - Play and the views use the float placement: the model's exact lattice frame, then t̂ rotated by the model's quarter turn, then the exact relative pose.
+    - A train runs on a run frame's own graph, closed loops included.
+    - No absolute ℤ[ζ₁₆] pose is ever claimed for run-frame track. If a later rule anchors one of its pieces, the run becomes absolute through the existing propagation.
+  - **Validity:**
+    - A run frame's internal joins satisfy the track rule (ends join exactly), so a closed run frame with no open ends counts toward Valid.
+    - Its open ends are ordinary open-end errors unless capped by a buffer or marked open by the user, because no external join is possible.
+    - All other rules apply unchanged. Run-frame track never claims stud support: off-lattice track must rest on flat support.
+  - **Panel:** the editor counts model pieces on the field, in a run frame, and off the field or unanchored, on three rows.
 - Every track part's connector poses are **imported from data and tested against the field at build time. Nothing is hand-coded.**
 
 ### 5.4 Profiles

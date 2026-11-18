@@ -12,6 +12,7 @@ import {
   rotateZeta16,
   subtractExactDecimal,
   ZETA16_ORDER,
+  ZETA16_STEP_RADIANS,
   zeta16ToStuds,
   type ExactDecimal,
   type Zeta16,
@@ -21,7 +22,6 @@ import { exactPolygons, type ExactPolygon } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { isStudPrimitive, LDCAD_META, metaValues, subfilePlacement } from "../ldraw/parse.ts";
 import { dependencyClosure, INHERIT_COLOR, walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
-import { ZETA16_STEP_RADIANS } from "../track/cyclotomic.ts";
 import {
   findTrackEnds,
   LDU_PER_STUD,

@@ -58,6 +58,7 @@ import type { EditorSnapshot, IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
+const SET_WITHOUT_TRACK = "10185-1";
 const RAY_HEIGHT_LDU = 10_000;
 const STUDLESS_SET = "10016-1";
 const NO_LOOK: LookSettings = {
@@ -387,10 +388,14 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
 }, 120_000);
 
 it("offers exactly the placed models with running gear as trains under their palette labels, after every place, delete and undo, and Play takes its train from them when it opens", async () => {
-  const { editor, backend, container } = await startEditor([PLACEABLE_SET, "10205-1", "10133-1"]);
+  const { editor, backend, container } = await startEditor([
+    SET_WITHOUT_TRACK,
+    "10205-1",
+    "10133-1",
+  ]);
   const play = container.get(TRAIN_PLAY);
   const place = placer(editor, backend);
-  const set = `omr:${PLACEABLE_SET}`;
+  const set = `omr:${SET_WITHOUT_TRACK}`;
   const myOwnTrain = "omr:10205-1";
   const locomotive = "omr:10133-1";
   const trains = () => editor.playSetup()?.models.map((model) => model.name);
@@ -438,6 +443,28 @@ it("offers exactly the placed models with running gear as trains under their pal
     playAfterDelete: noTrack,
     deleteUndone: ["10133-1", "10205-1"],
   });
+}, 120_000);
+
+it("runs Play on the track inside a placed set, with the placed train", async () => {
+  const { editor, backend, container } = await startEditor([PLACEABLE_SET, "10205-1"]);
+  const play = container.get(TRAIN_PLAY);
+  const place = placer(editor, backend);
+  for (const item of [`omr:${PLACEABLE_SET}`, "omr:10205-1"]) {
+    expect(await editor.prefetch(item)).toBe(true);
+  }
+  place(`omr:${PLACEABLE_SET}`, 0, 0);
+  place("omr:10205-1", 1600, 0);
+  const setTrack = editor.snapshot().track?.modelPieces ?? 0;
+
+  startPlay(editor, play);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const started = play.snapshot();
+  play.stop();
+
+  expect(setTrack).toBeGreaterThan(0);
+  expect(editor.playSetup()?.track.layout.count).toBe(setTrack);
+  expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
+  expect(started).toMatchObject({ status: "loading", error: null });
 }, 120_000);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
@@ -824,6 +851,13 @@ function refusedBake(fileName: string): ImportResult {
     partIndex: new Uint32Array(),
     ldrawColor: new Uint32Array(),
     matrices: new Float32Array(),
+    partTransforms: new Float64Array(),
+    submodels: {
+      count: 0,
+      parent: new Int32Array(),
+      matrices: new Float64Array(),
+      ofPart: new Int32Array(),
+    },
     compiled: [],
     bake: null,
   };

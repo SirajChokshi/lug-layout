@@ -10,7 +10,7 @@ use brick_compile::cover::ModelCover;
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
-use brick_compile::model::{bake_model, ModelInstance};
+use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
@@ -601,6 +601,8 @@ fn run(args: &Args) -> Result<(), String> {
         let mut instance_global_parts = Vec::with_capacity(drawn.len());
         let mut instance_colors = Vec::with_capacity(drawn.len());
         let mut instance_matrices = Vec::with_capacity(drawn.len() * 12);
+        let mut part_transforms = Vec::with_capacity(drawn.len() * 12);
+        let mut of_part = Vec::with_capacity(drawn.len());
         for instance in &drawn {
             let index = match part_index.get(&instance.part) {
                 Some(&index) => index,
@@ -628,6 +630,8 @@ fn run(args: &Args) -> Result<(), String> {
             instance_global_parts.push(index);
             instance_colors.push(instance.color);
             instance_matrices.extend(instance.matrix.m.map(|v| v as f32));
+            part_transforms.extend(instance.matrix.m);
+            of_part.push(submodel_index(instance.submodel));
         }
         let drawn_shapes: Vec<&LatticeShape> = instance_global_parts
             .iter()
@@ -702,6 +706,12 @@ fn run(args: &Args) -> Result<(), String> {
             "lattice": lattice_json,
             "cover": cover_file,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
+            "partTransforms": part_transforms,
+            "submodels": {
+                "parent": baked.submodel_parents(),
+                "matrices": baked.submodel_matrices(),
+                "ofPart": of_part,
+            },
             "vehicles": vehicles,
         });
         if !not_drawn.is_empty() {

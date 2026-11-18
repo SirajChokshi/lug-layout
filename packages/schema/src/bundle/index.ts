@@ -801,6 +801,38 @@ function vehicleInstances(vehicle: ModelVehicle): ReadonlyArray<number> {
   ];
 }
 
+export const MODEL_ROOT = -1;
+
+export interface SubmodelTreeArrays {
+  readonly parent: ArrayLike<number>;
+  readonly matrices: ArrayLike<number>;
+  readonly ofPart: ArrayLike<number>;
+}
+
+function isInstanceIndex(value: number | undefined, below: number): boolean {
+  return value !== undefined && Number.isInteger(value) && value >= MODEL_ROOT && value < below;
+}
+
+export function submodelTreeFits(tree: SubmodelTreeArrays, instanceCount: number): boolean {
+  const count = tree.parent.length;
+  if (tree.matrices.length !== count * MATRIX_FLOATS || tree.ofPart.length !== instanceCount) {
+    return false;
+  }
+  for (let n = 0; n < count; n++) {
+    if (!isInstanceIndex(tree.parent[n], n)) return false;
+  }
+  for (let i = 0; i < instanceCount; i++) {
+    if (!isInstanceIndex(tree.ofPart[i], count)) return false;
+  }
+  return true;
+}
+
+export const SubmodelTree = v.object({
+  parent: v.array(Integer),
+  matrices: v.array(Finite),
+  ofPart: v.array(Integer),
+});
+
 export const ModelFile = v.pipe(
   v.object({
     name: v.string(),
@@ -821,13 +853,20 @@ export const ModelFile = v.pipe(
       color: v.array(Integer),
       matrix: v.array(Finite),
     }),
+    partTransforms: v.array(Finite),
+    submodels: SubmodelTree,
   }),
   v.check(
-    ({ parts, instances }) =>
+    ({ parts, instances, partTransforms }) =>
       instances.part.length === instances.color.length &&
       instances.matrix.length === instances.part.length * MATRIX_FLOATS &&
+      partTransforms.length === instances.part.length * MATRIX_FLOATS &&
       instances.part.every((index) => index < parts.length),
     "model instance arrays are inconsistent",
+  ),
+  v.check(
+    ({ instances, submodels }) => submodelTreeFits(submodels, instances.part.length),
+    "model sub-model tree is inconsistent",
   ),
   v.check(
     ({ parts, shapes }) =>

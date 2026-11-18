@@ -113,6 +113,13 @@ export interface ModelStudCover {
   readonly visibleBits: Uint32Array;
 }
 
+export interface PartModelSubmodels {
+  readonly count: number;
+  readonly parent: Int32Array;
+  readonly matrices: Float64Array;
+  readonly ofPart: Int32Array;
+}
+
 export interface PartModel {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly lattice: PartModelLattice | null;
@@ -122,6 +129,8 @@ export interface PartModel {
   readonly partIndex: Uint16Array;
   readonly ldrawColor: Uint32Array;
   readonly matrices: Float32Array;
+  readonly partTransforms: Float64Array;
+  readonly submodels: PartModelSubmodels;
   readonly vehicles: ReadonlyArray<PartVehicle>;
 }
 

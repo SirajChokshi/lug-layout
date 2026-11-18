@@ -26,6 +26,26 @@ function customModule(): string {
   ].join("\n");
 }
 
+const FAR_BASEPLATE_X = 20_480;
+const AUTHORING_DUST_LDU = 0.0009;
+const STRAIGHT_LENGTH_LDU = 320;
+const SINGLE_PRECISION_RESIDUAL_LIMIT_LDU = 8192;
+
+function farLayout(): string {
+  return [
+    "0 Layout with track on a baseplate far from the first",
+    "0 Name: far-layout.ldr",
+    "0 Author: lug-layout e2e (generated at test time)",
+    "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+    "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+    `1 2 ${FAR_BASEPLATE_X} 0 0 1 0 0 0 1 0 0 0 1 3811.dat`,
+    "1 16 0 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+    `1 16 ${FAR_BASEPLATE_X} 0 -160 1 0 0 0 1 0 0 0 1 74746.dat`,
+    `1 16 ${FAR_BASEPLATE_X + AUTHORING_DUST_LDU} 0 160 1 0 0 0 1 0 0 0 1 74746.dat`,
+    "",
+  ].join("\n");
+}
+
 test("the palette's MILS template imported as a file bakes to the palette item's lattice, footprint and columns", async ({
   page,
 }) => {
@@ -85,4 +105,26 @@ test("a custom model file is placed in the editor through the UI and comes back 
   await expect
     .poll(() => reopened.poses(), { timeout: 180_000, message: "the import comes back" })
     .toEqual(placed);
+});
+
+test("track far from an imported layout's centre is identified from its double-precision transforms, and dust beyond the residual is not", async ({
+  page,
+}) => {
+  const file = test.info().outputPath("far-layout.ldr");
+  await writeFile(file, farLayout());
+  const editor = await EditorPage.open(page);
+  await editor.serveLdrawLibrary();
+
+  const imported = await editor.importModel(file);
+  expect(imported.status, imported.text).toBe("placeable");
+  await editor.zoom(400);
+  await editor.placeAt(imported.item, { x: 0, z: 0 });
+  await editor.escape();
+
+  const ends = (await editor.trackEnds()).toSorted((a, b) => a.xLdu - b.xLdu);
+  expect(ends).toHaveLength(4);
+  const [, , west, east] = ends;
+  expect(west?.xLdu ?? 0).toBeGreaterThan(SINGLE_PRECISION_RESIDUAL_LIMIT_LDU);
+  expect((east?.xLdu ?? 0) - (west?.xLdu ?? 0)).toBe(STRAIGHT_LENGTH_LDU);
+  expect(east?.zLdu).toBe(west?.zLdu);
 });

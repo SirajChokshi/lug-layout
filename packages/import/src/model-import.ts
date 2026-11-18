@@ -12,7 +12,8 @@ import type {
   PartOutcome,
 } from "./brick-compiler.ts";
 import { isDirectColor } from "@brr/catalog/colors";
-import type { CompilerVehicles } from "@brr/schema/bundle";
+import { submodelTreeFits, type CompilerVehicles } from "@brr/schema/bundle";
+import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
 
@@ -94,6 +95,11 @@ export interface ImportReport {
   readonly timings: ImportTimings;
 }
 
+export interface ImportedSubmodels extends SubmodelInstances {
+  readonly parent: Int32Array;
+  readonly ofPart: Int32Array;
+}
+
 export interface CompiledGlb {
   readonly partId: string;
   readonly glb: Uint8Array;
@@ -108,6 +114,8 @@ export interface ImportResult {
   readonly partIndex: Uint32Array;
   readonly ldrawColor: Uint32Array;
   readonly matrices: Float32Array;
+  readonly partTransforms: Float64Array;
+  readonly submodels: ImportedSubmodels;
   readonly compiled: ReadonlyArray<CompiledGlb>;
   readonly bake: ModelBake | null;
   readonly studio?: StudioReport;
@@ -420,11 +428,14 @@ function assemble(
   const partIds: string[] = [];
   const part = read.instancePart;
   const color = read.instanceColor;
-  const matrix = read.instanceMatrix;
+  const transform = read.instanceTransform;
+  const submodel = read.instanceSubmodel;
   const total = part.length;
   const partIndex = new Uint32Array(total);
   const ldrawColor = new Uint32Array(total);
   const matrices = new Float32Array(total * MATRIX_FLOATS);
+  const partTransforms = new Float64Array(total * MATRIX_FLOATS);
+  const ofPart = new Int32Array(total);
   const drawnMask = new Uint8Array(total);
   let drawn = 0;
   for (let i = 0; i < total; i++) {
@@ -446,12 +457,21 @@ function assemble(
     }
     partIndex[drawn] = local;
     ldrawColor[drawn] = code;
-    matrices.set(
-      matrix.subarray(i * MATRIX_FLOATS, (i + 1) * MATRIX_FLOATS),
-      drawn * MATRIX_FLOATS,
-    );
+    const row = transform.subarray(i * MATRIX_FLOATS, (i + 1) * MATRIX_FLOATS);
+    partTransforms.set(row, drawn * MATRIX_FLOATS);
+    matrices.set(row, drawn * MATRIX_FLOATS);
+    ofPart[drawn] = submodel[i] ?? MODEL_ROOT;
     drawnMask[i] = 1;
     drawn++;
+  }
+  const submodels: ImportedSubmodels = {
+    count: read.submodelParent.length,
+    parent: read.submodelParent,
+    matrices: read.submodelMatrix,
+    ofPart: ofPart.slice(0, drawn),
+  };
+  if (!submodelTreeFits(submodels, drawn)) {
+    throw new Error(`${job.fileName}: the bake returned an inconsistent sub-model tree`);
   }
   const compiled: CompiledGlb[] = [];
   const compiledIds = new Set<string>();
@@ -485,6 +505,8 @@ function assemble(
       partIndex: partIndex.slice(0, drawn),
       ldrawColor: ldrawColor.slice(0, drawn),
       matrices: matrices.slice(0, drawn * MATRIX_FLOATS),
+      partTransforms: partTransforms.slice(0, drawn * MATRIX_FLOATS),
+      submodels,
       compiled,
     },
   };

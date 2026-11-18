@@ -4,6 +4,7 @@ export {
   CHUNK_STUDS,
   MM_PER_STUD,
   PLATE_LDU,
+  SIXTEENTHS_PER_LDU,
   STUD_LDU,
   lduFromMm,
 } from "./units.ts";
@@ -40,6 +41,15 @@ export {
   posesJoin16,
   type Pose16,
 } from "./pose16.ts";
+export {
+  CERTIFIED_RESIDUAL_LIMIT_LDU,
+  COEFFICIENT_BOUND,
+  certifiedZeta16,
+  findZeta16Representation,
+  UNROUNDED_TOLERANCE_LDU,
+  ZETA16_STEP_RADIANS,
+  type FieldRepresentation,
+} from "./cyclotomic.ts";
 export {
   addExactDecimal,
   compareExactDecimal,
