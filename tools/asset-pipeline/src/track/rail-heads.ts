@@ -3,14 +3,11 @@ import {
   compareExactDecimal,
   compareExactRational,
   divideExactRational,
-  EXACT_DECIMAL_ZERO,
   exactRational,
   exactRationalEquals,
   exactRationalFromDecimal,
   exactRationalFromFloat64,
   multiplyExactRational,
-  parseExactDecimal,
-  subtractExactDecimal,
   subtractExactRational,
   type ExactDecimal,
   type ExactRational,
@@ -20,7 +17,6 @@ import type { LdrawLibrary } from "../ldraw/library.ts";
 
 const LATERAL_SCAN_LDU = 90;
 const RAIL_TOP_PROBE_RADIUS_LDU = 70;
-const RAIL_LEVEL_BAND_LDU = parseExactDecimal("0.25");
 export const RAIL_SECTION_INWARD_LDU = 20;
 
 export interface PlanPoint {
@@ -95,16 +91,16 @@ export function flatPolygons(library: LdrawLibrary, part: string): ReadonlyArray
   });
 }
 
-function headsAtLevel(flat: ReadonlyArray<FlatPolygon>, level: ExactDecimal): RailHeads {
-  const withinBand = (y: ExactDecimal) => {
-    const gap = subtractExactDecimal(y, level);
-    const magnitude =
-      compareExactDecimal(gap, EXACT_DECIMAL_ZERO) < 0 ? subtractExactDecimal(level, y) : gap;
-    return compareExactDecimal(magnitude, RAIL_LEVEL_BAND_LDU) <= 0;
-  };
+function headsOnLevels(
+  flat: ReadonlyArray<FlatPolygon>,
+  levels: ReadonlyArray<ExactDecimal>,
+): RailHeads | null {
+  const [topY] = levels;
+  if (topY === undefined) return null;
+  const onALevel = (y: ExactDecimal) => levels.some((level) => compareExactDecimal(y, level) === 0);
   return {
-    topY: level,
-    polygons: flat.filter((polygon) => withinBand(polygon.y)).map((polygon) => polygon.outline),
+    topY,
+    polygons: flat.filter((polygon) => onALevel(polygon.y)).map((polygon) => polygon.outline),
   };
 }
 
@@ -132,9 +128,13 @@ export function railHeadsAtEnd(
     .filter(
       (y, index, sorted) => index === 0 || compareExactDecimal(y, sorted[index - 1] ?? y) !== 0,
     );
-  for (const level of levels) {
-    const heads = headsAtLevel(flat, level);
-    if (railSection(heads, origin, along, RAIL_SECTION_INWARD_LDU) !== null) return heads;
+  for (let count = 1; count <= levels.length; count += 1) {
+    for (let first = 0; first + count <= levels.length; first += 1) {
+      const heads = headsOnLevels(flat, levels.slice(first, first + count));
+      if (heads !== null && railSection(heads, origin, along, RAIL_SECTION_INWARD_LDU) !== null) {
+        return heads;
+      }
+    }
   }
   return null;
 }

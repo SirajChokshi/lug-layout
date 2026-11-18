@@ -314,7 +314,7 @@ function endInPart(
   return { origin: toPartFrame(frame, pose), along: pose.heading + Math.PI + frame.inward };
 }
 
-function rationalText(value: ExactRational | undefined): ExactRationalText | null {
+function exactRationalText(value: ExactRational | undefined): ExactRationalText | null {
   return value === undefined ? null : formatExactRational(value);
 }
 
@@ -409,8 +409,8 @@ export function buildTrackPiece(
       marker: relative[index]?.marker ?? "",
       derivation: ordered[connector]?.derivation ?? "",
       markerResidualLdu: ordered[connector]?.residualLdu ?? Number.NaN,
-      railCentreOffsetLdu: rationalText(sections[connector]?.centreOffsetLdu),
-      railHalfSpacingLdu: rationalText(sections[connector]?.halfSpacingLdu),
+      railCentreOffsetLdu: exactRationalText(sections[connector]?.centreOffsetLdu),
+      railHalfSpacingLdu: exactRationalText(sections[connector]?.halfSpacingLdu),
     })),
     routes: fitted.map(({ from, to, path }) => ({
       from,

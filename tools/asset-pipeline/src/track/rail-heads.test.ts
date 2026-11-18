@@ -1,4 +1,4 @@
-import { exactRational, exactRationalEquals } from "@brr/math";
+import { exactRational, exactRationalEquals, formatExactDecimal } from "@brr/math";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,11 +13,22 @@ mkdirSync(join(root, "p"), { recursive: true });
 writeFileSync(
   join(root, "parts", "custom-rail.dat"),
   [
-    "0 Custom rail whose heads sit between the sixty-fourths",
+    "0 Custom rail whose rail centres fall between 1/32-LDU scan steps",
     "0 Name: custom-rail.dat",
     "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
     "1 16 0 -16 50.015 20 0 0 0 1 0 0 0 3.115 head.dat",
     "1 16 0 -16 -50.015 20 0 0 0 1 0 0 0 3.115 head.dat",
+    "4 16 -20 8 -80 20 8 -80 20 8 80 -20 8 80",
+  ].join("\r\n"),
+);
+writeFileSync(
+  join(root, "parts", "custom-split-rail.dat"),
+  [
+    "0 Custom rail whose two heads sit at different measured levels",
+    "0 Name: custom-split-rail.dat",
+    "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+    "1 16 0 -16.05 50 20 0 0 0 1 0 0 0 3 head.dat",
+    "1 16 0 -16 -50 20 0 0 0 1 0 0 0 3 head.dat",
     "4 16 -20 8 -80 20 8 -80 20 8 80 -20 8 80",
   ].join("\r\n"),
 );
@@ -47,10 +58,10 @@ describe("rail heads", () => {
     if (section === null || near === undefined || far === undefined) {
       throw new Error("the scan line finds no rail pair");
     }
-    const centre = exactRational(10003n, 200n);
+    const halfSpacing = exactRational(10003n, 200n);
     expect(exactRationalEquals(near, exactRational(-10003n, 200n))).toBe(true);
-    expect(exactRationalEquals(far, centre)).toBe(true);
-    expect(exactRationalEquals(section.halfSpacingLdu, centre)).toBe(true);
+    expect(exactRationalEquals(far, halfSpacing)).toBe(true);
+    expect(exactRationalEquals(section.halfSpacingLdu, halfSpacing)).toBe(true);
     expect(exactRationalEquals(section.centreOffsetLdu, exactRational(0n, 1n))).toBe(true);
   });
 
@@ -59,5 +70,14 @@ describe("rail heads", () => {
     const innerEdgeNearest = 46.9;
     expect(onRailHead(heads, { x: 0, z: innerEdgeNearest })).toBe(false);
     expect(onRailHead(heads, { x: 0, z: nextFloat64Up(innerEdgeNearest) })).toBe(true);
+  });
+
+  it("read a rail pair across adjacent measured levels when no single level holds both heads", () => {
+    const split = railHeadsAtEnd(flatPolygons(library, "custom-split-rail"), end, 0);
+    if (split === null) throw new Error("the split rail has no rail pair");
+    expect(formatExactDecimal(split.topY)).toBe("-16.05");
+    const section = railSection(split, end, 0, INWARD_LDU);
+    if (section === null) throw new Error("the scan line finds no rail pair");
+    expect(exactRationalEquals(section.halfSpacingLdu, exactRational(50n, 1n))).toBe(true);
   });
 });
