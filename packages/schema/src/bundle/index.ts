@@ -370,6 +370,11 @@ export const RollingSurface = v.pipe(
 );
 export type RollingSurface = v.InferOutput<typeof RollingSurface>;
 
+const EndRadii = v.pipe(
+  v.tuple([v.nullable(Count), v.nullable(Count)]),
+  v.description("the radius at `from` and at `to` in sixteenths, null where it didn't identify"),
+);
+
 const UnreadEnds = {
   from: v.optional(RollingAlong),
   to: v.optional(RollingAlong),
@@ -378,8 +383,19 @@ const UnreadEnds = {
 export const UnreadBand = v.pipe(
   v.variant("reason", [
     v.object({ reason: v.literal("unoriented") }),
-    v.object({ reason: v.literal("centre"), axis: RollingAxis, ...UnreadEnds }),
-    v.object({ reason: v.literal("radius"), axis: RollingAxis, at: RollingAt, ...UnreadEnds }),
+    v.object({
+      reason: v.literal("centre"),
+      axis: RollingAxis,
+      radii: v.optional(EndRadii),
+      ...UnreadEnds,
+    }),
+    v.object({
+      reason: v.literal("radius"),
+      axis: RollingAxis,
+      at: RollingAt,
+      radii: EndRadii,
+      ...UnreadEnds,
+    }),
     v.object({
       reason: v.literal("width"),
       axis: RollingAxis,
@@ -400,7 +416,7 @@ export const UnreadBand = v.pipe(
     "an unread band runs from no higher than `to`",
   ),
   v.description(
-    "round geometry the bake measured but could not read as a rolling surface, one entry per band and carrying only what identified: unoriented (its axis is not a part axis), centre (no axis line identified), radius (axis line identified, a radius not), width (axis line and both radii identified, an end not), and faceted, partial, facing or irregular (with `at` where it identified); `from` and `to` appear wherever they identified",
+    "round geometry the part compile measured but could not read as a rolling surface, one entry per band, carrying only what identified. unoriented: round about a line that is not a part axis. centre: closed about a part axis, but no axis line identified. radius: axis line identified, a radius not (`radii` holds null for that end). width: axis line and both radii identified, an end not. faceted: closed with fewer facets than the Standard-LOD stud. partial: round about the line but not a closed band. facing: outward can't be told from the winding. irregular: smooth and round about a part axis but not one complete band (oblique cuts, patches between holes). `at`, `from`, `to` and `radii` appear wherever they identified",
   ),
 );
 export type UnreadBand = v.InferOutput<typeof UnreadBand>;

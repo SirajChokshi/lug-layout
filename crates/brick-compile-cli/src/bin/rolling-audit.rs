@@ -134,6 +134,11 @@ fn run(args: &Args) -> Result<(), String> {
         "roundness: standard {} facets, coarse {} facets",
         roundness.standard_facets, roundness.coarse_facets
     );
+    let lod_name = match args.lod {
+        Lod::Standard => "standard",
+        Lod::Low => "low",
+        Lod::Far => "far",
+    };
     for part in &args.parts {
         let title = library
             .source(&format!("parts/{part}"))
@@ -152,6 +157,8 @@ fn run(args: &Args) -> Result<(), String> {
                 json!({
                     "part": part,
                     "title": title,
+                    "lod": lod_name,
+                    "bounds": compiled.mesh.bounds(),
                     "triangles": compiled.mesh.triangle_count(),
                     "withoutMicros": without_time.as_secs_f64() * 1e6,
                     "withMicros": with_time.as_secs_f64() * 1e6,

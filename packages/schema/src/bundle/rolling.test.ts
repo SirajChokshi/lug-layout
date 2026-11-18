@@ -17,6 +17,7 @@ describe("PartRolling", () => {
         [
           { reason: "unoriented", axis: 0, at: [0, 0] },
           { reason: "centre", axis: 2, at: [0, 0], from: -96 },
+          { reason: "radius", axis: 2, at: [0, 0], radii: [336, null] },
           { reason: "width", axis: 2, at: [0, 0], radii: [160, 160], from: -96 },
           { reason: "partial", axis: 1 },
         ],
@@ -26,6 +27,7 @@ describe("PartRolling", () => {
     expect(decoded.value.unread).toEqual([
       { reason: "unoriented" },
       { reason: "centre", axis: 2, from: -96 },
+      { reason: "radius", axis: 2, at: [0, 0], radii: [336, null] },
       { reason: "width", axis: 2, at: [0, 0], radii: [160, 160], from: -96 },
       { reason: "partial", axis: 1 },
     ]);
@@ -35,7 +37,10 @@ describe("PartRolling", () => {
     ["a surface that doesn't run from below its end", rolling([{ ...tread, to: -56 }], [])],
     ["a surface on an axis that isn't x, y or z", rolling([{ ...tread, axis: 3 }], [])],
     ["a centre band without the axis it identified", rolling([], [{ reason: "centre" }])],
-    ["a radius band without its axis line", rolling([], [{ reason: "radius", axis: 0 }])],
+    [
+      "a radius band without its axis line",
+      rolling([], [{ reason: "radius", axis: 0, radii: [null, null] }]),
+    ],
     [
       "a width band without the radii it identified",
       rolling([], [{ reason: "width", axis: 0, at: [0, 0] }]),
