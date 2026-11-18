@@ -129,7 +129,7 @@ impl AxleProbe {
             } else {
                 plane.at - low[plane.axis]
             };
-            for center in solid.grid(&plane, self.reach()) {
+            for center in solid.grid(&plane, self.sweep_reach()) {
                 let entrance = point_on(plane.axis, center, plane.at);
                 let cell = entrance.map(|c| (c / IDENTIFY_LDU).round() as i64);
                 if !seen.insert((plane.axis, inward as i8, cell)) {
@@ -192,8 +192,12 @@ impl AxleProbe {
         (found, missed)
     }
 
-    fn reach(&self) -> f64 {
+    fn sweep_reach(&self) -> f64 {
         self.radius() + HALF_GRID_LDU * SQRT_2 + IDENTIFY_LDU
+    }
+
+    fn contact_reach(&self) -> f64 {
+        self.radius() + IDENTIFY_LDU
     }
 
     fn angles(&self, section: &[Vec<Point>], reach: f64) -> Vec<f64> {
@@ -230,7 +234,7 @@ impl AxleProbe {
 
     fn located(&self, placed: &Placed, angle: f64, section: &[Vec<Point>]) -> Result<(), AxleMiss> {
         let mut travel = [0.0; 8];
-        let reach = self.radius() + IDENTIFY_LDU;
+        let reach = self.contact_reach();
         for (k, step) in STEPS.iter().enumerate() {
             let span = step[0].hypot(step[1]);
             let path = within(
@@ -290,7 +294,7 @@ impl AxleProbe {
         if !solid.comes_within(probe, near, self.radius(), self.radius() - IDENTIFY_LDU) {
             return None;
         }
-        let reach = self.radius() + IDENTIFY_LDU;
+        let reach = self.contact_reach();
         let glance = solid.cross_section(probe, near, reach);
         for angle in self.angles(&glance, reach) {
             let placed = self.profile.placed([0.0, 0.0], angle);
@@ -299,8 +303,11 @@ impl AxleProbe {
                 continue;
             }
             let end = floor.depth.min(far);
-            let section =
-                solid.cross_section(probe, (IDENTIFY_LDU, end - IDENTIFY_LDU), self.reach());
+            let section = solid.cross_section(
+                probe,
+                (IDENTIFY_LDU, end - IDENTIFY_LDU),
+                self.sweep_reach(),
+            );
             let toothed = placed.eroded_pockets(IDENTIFY_LDU).iter().all(|pocket| {
                 section
                     .iter()
@@ -322,7 +329,7 @@ impl AxleProbe {
     }
 
     fn tip(&self, solid: &Solid, probe: &Probe, far: f64) -> Option<Result<AxleFound, AxleMiss>> {
-        let reach = self.radius() + IDENTIFY_LDU;
+        let reach = self.contact_reach();
         if solid.section_reaches(probe, (-IDENTIFY_LDU, IDENTIFY_LDU), reach, reach) {
             return None;
         }
@@ -340,11 +347,7 @@ impl AxleProbe {
                 continue;
             }
             let end = root.min(far);
-            let section = solid.cross_section(
-                probe,
-                (IDENTIFY_LDU, end - IDENTIFY_LDU),
-                self.radius() + IDENTIFY_LDU,
-            );
+            let section = solid.cross_section(probe, (IDENTIFY_LDU, end - IDENTIFY_LDU), reach);
             if !placed.outline_covered(&section, IDENTIFY_LDU) || !self.keyed(angle, &section) {
                 continue;
             }
