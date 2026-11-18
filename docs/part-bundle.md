@@ -2,9 +2,9 @@
 
 The compiled part bundle lives only in the `brr-part-bundles` R2 bucket: GLBs, model JSON, the in-browser compiler (`brick-compile-wasm.wasm`) and one manifest per LOD. Nothing generated is committed, the web deploy ships only the app, and the app loads parts from the bucket's public URL. Terraform in `infra/cloudflare` manages the bucket, its CORS and its public domain (*Part bundle bucket* in its README).
 
-Only `main` publishes. Pull requests never write or read R2. Their `check` job builds the bundle locally, and every test that loads parts reads `tools/asset-pipeline/dist/bundle` from disk.
+Only `main` publishes. Pull requests never write or read R2. Their CI jobs build the bundle locally, and every test that loads parts reads `tools/asset-pipeline/dist/bundle` from disk.
 
-`bundle` records what it built from in `dist/bundle/build-key.json`: the input key (*Keys* below) and the SHA-256 of `pnpm-lock.yaml`. When that file matches the checkout, every LOD has its manifest and no untracked file matches the bundle inputs, `bundle` keeps the existing output instead of compiling it again. The `check` job restores `dist/bundle` from the GitHub Actions cache under `part-bundle-<input key>-<lockfile hash>` and saves it there after a fresh build, so runs that don't change the bundle inputs skip the compile. Pushes to `main` fill the cache that pull requests read. Delete `build-key.json` to force a rebuild.
+`bundle` records what it built from in `dist/bundle/build-key.json`: the input key (*Keys* below) and the SHA-256 of `pnpm-lock.yaml`. When that file matches the checkout, every LOD has its manifest and no untracked file matches the bundle inputs, `bundle` keeps the existing output instead of compiling it again. CI's `verify` job and both `e2e` shards restore `dist/bundle` from the GitHub Actions cache under `part-bundle-<input key>-<lockfile hash>`, and `verify` saves it there after a fresh build, so runs that don't change the bundle inputs skip the compile. The required `check` status comes from a job that passes only when `verify` and every `e2e` shard passed. Pushes to `main` fill the cache that pull requests read. Delete `build-key.json` to force a rebuild.
 
 ## Keys
 
