@@ -19,6 +19,7 @@ import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
+import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
@@ -39,6 +40,9 @@ export const WORLD_SESSION: ServiceIdentifier<IWorldSession> =
   Symbol.for("brr.client.WorldSession");
 export const PLACEABLE_CATALOG: ServiceIdentifier<IPlaceableCatalog> = Symbol.for(
   "brr.client.PlaceableCatalog",
+);
+export const EDITOR_FRAME_LOOP: ServiceIdentifier<IEditorFrameLoop> = Symbol.for(
+  "brr.client.EditorFrameLoop",
 );
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");

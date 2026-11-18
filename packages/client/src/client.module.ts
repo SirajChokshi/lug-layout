@@ -31,6 +31,7 @@ import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
+import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import { WorldSession } from "./edit/world-session.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
@@ -78,6 +79,7 @@ import {
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
+  EDITOR_FRAME_LOOP,
   WORLD_SESSION,
 } from "./tokens.ts";
 
@@ -86,6 +88,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
   bind(PLACEABLE_CATALOG).to(PlaceableCatalog).inSingletonScope();
+  bind(EDITOR_FRAME_LOOP).to(EditorFrameLoop).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(IMPORT_WORKER_POOL).to(ImportWorkerPool).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
