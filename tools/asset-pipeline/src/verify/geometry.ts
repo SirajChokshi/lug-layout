@@ -510,7 +510,8 @@ export function composeDivergingWithCurve(
     measuredXStuds,
     measuredZStuds,
     measuredResidualToExactLdu:
-      Math.hypot(exact.x - measuredXStuds, exact.z - measuredZStuds) * LDU_PER_STUD,
+      Math.max(Math.abs(exact.x - measuredXStuds), Math.abs(exact.z - measuredZStuds)) *
+      LDU_PER_STUD,
   };
 }
 

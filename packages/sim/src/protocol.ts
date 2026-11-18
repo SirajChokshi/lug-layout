@@ -22,29 +22,17 @@ export interface SimLoaded {
 export interface SimFrameMessage {
   readonly tick: number;
   readonly stateHash: number;
-  readonly batchTicks: number;
-  readonly batchStepMs: number;
   readonly data: Float64Array;
-}
-
-export interface SimBenchResult {
-  readonly replayedToTick: number;
-  readonly replayHash: number;
-  readonly liveHash: number;
-  readonly ticks: number;
-  readonly elapsedMs: number;
 }
 
 export type SimRequest =
   | { readonly kind: "load"; readonly load: SimLoad }
   | { readonly kind: "run"; readonly running: boolean }
   | { readonly kind: "command"; readonly command: SimCommand }
-  | { readonly kind: "recycle"; readonly buffer: Float64Array }
-  | { readonly kind: "bench"; readonly ticks: number };
+  | { readonly kind: "recycle"; readonly buffer: Float64Array };
 
 export type SimReply =
   | { readonly kind: "loaded"; readonly loaded: SimLoaded }
   | { readonly kind: "frame"; readonly frame: SimFrameMessage }
   | { readonly kind: "commanded"; readonly accepted: boolean; readonly tick: number }
-  | { readonly kind: "bench"; readonly result: SimBenchResult }
   | { readonly kind: "failed"; readonly message: string };

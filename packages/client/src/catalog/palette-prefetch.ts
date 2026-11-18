@@ -1,6 +1,6 @@
 import { inject, injectable } from "inversify";
-import type { IEditor } from "../edit/editor.ts";
-import { EDITOR } from "../tokens.ts";
+import { PLACEABLE_CATALOG } from "../tokens.ts";
+import type { IPlaceableCatalog } from "./placeable-catalog.ts";
 
 export interface IPalettePrefetch {
   pointerEnter(id: string): void;
@@ -14,13 +14,16 @@ const DWELL_MS = 120;
 export class PalettePrefetch implements IPalettePrefetch {
   private dwell: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(@inject(EDITOR) private readonly editor: Pick<IEditor, "prefetch">) {}
+  constructor(
+    @inject(PLACEABLE_CATALOG)
+    private readonly catalog: Pick<IPlaceableCatalog, "itemRefId" | "load">,
+  ) {}
 
   pointerEnter(id: string): void {
     this.pointerLeave();
     this.dwell = setTimeout(() => {
       this.dwell = null;
-      void this.editor.prefetch(id);
+      this.prefetch(id);
     }, DWELL_MS);
   }
 
@@ -30,6 +33,11 @@ export class PalettePrefetch implements IPalettePrefetch {
   }
 
   focus(id: string): void {
-    void this.editor.prefetch(id);
+    this.prefetch(id);
+  }
+
+  private prefetch(id: string): void {
+    const refId = this.catalog.itemRefId(id);
+    if (refId !== null) void this.catalog.load(refId).catch(() => null);
   }
 }

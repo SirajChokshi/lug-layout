@@ -15,6 +15,7 @@ import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memo
 import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
@@ -36,6 +37,9 @@ export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.clien
 export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor");
 export const WORLD_SESSION: ServiceIdentifier<IWorldSession> =
   Symbol.for("brr.client.WorldSession");
+export const PLACEABLE_CATALOG: ServiceIdentifier<IPlaceableCatalog> = Symbol.for(
+  "brr.client.PlaceableCatalog",
+);
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");

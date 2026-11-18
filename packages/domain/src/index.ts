@@ -208,6 +208,13 @@ export {
 export { SnapMating, type MateFreedom } from "./connect/mating.ts";
 export { ModelConnectors } from "./connect/model-connectors.ts";
 export {
+  MATE_PASS_MODEL,
+  MATE_PASS_PART,
+  MATE_PASS_SUBMODEL,
+  MatePairs,
+  type MatePass,
+} from "./connect/mate-pairs.ts";
+export {
   ALL_COORDINATES,
   IDENTIFICATION_RESIDUAL_LDU,
   IdentifiedPoint,

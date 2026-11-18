@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { CatalogItemView } from "../edit/editor.ts";
+import type { CatalogItemView } from "./placeable-catalog.ts";
 import { PaletteIndex, itemInColor } from "./palette-index.ts";
 
 const GREEN = { code: 2, name: "Green", rgb: "#237841" };

@@ -29,7 +29,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import { mainThreadModules } from "../src/client.module.ts";
-import { EDITOR } from "../src/tokens.ts";
+import { EDITOR, PLACEABLE_CATALOG } from "../src/tokens.ts";
+import { loadCatalogItem } from "../src/catalog/catalog-item.test-support.ts";
 import type { IEditor } from "../src/edit/editor.ts";
 import { meshesSettled } from "../src/edit/mesh-progress.ts";
 import { parseHeapSnapshot, tallyOwners, type OwnerRules, type OwnerTally } from "./heap-owners.ts";
@@ -115,7 +116,7 @@ const RULES: OwnerRules = {
         ...fields(SCENE, ["chunks", "chunkList", "scene"]),
       ]),
     ],
-    ["Editor", fields(PART_MESHES, ["placeables", "palette", "slots", "modelPlaceables"])],
+    ["PlaceableCatalog", fields(PART_MESHES, ["placeablesByRefId", "palette", "slots"])],
     ["PlacedEntry", fields(PART_MESHES, ["placeable"])],
     ["PlacedChunks", new Map([...fields(SCENE, ["backend"]), ...fields(OCCUPANCY, ["occupancy"])])],
     ["ChunkRecord", fields(INSTANCES, ["page"])],
@@ -478,8 +479,9 @@ async function runChild(
   const started = editor.snapshot();
   if (started.status !== "ready") throw new Error(`editor did not start: ${started.error ?? ""}`);
   await settled(editor, backend);
+  const catalog = container.get(PLACEABLE_CATALOG);
   for (const item of ITEMS) {
-    if (!(await editor.prefetch(item))) throw new Error(`${item} did not load`);
+    await loadCatalogItem(catalog, item);
     editor.chooseItem(item);
   }
   editor.chooseItem(TRACK_ITEM);
