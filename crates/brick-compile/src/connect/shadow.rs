@@ -68,6 +68,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
         Extraction {
             connectors,
             suppressed,
+            off_lattice: Vec::new(),
             curated: gathered.curated,
             issues,
         }

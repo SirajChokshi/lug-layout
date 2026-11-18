@@ -1,9 +1,11 @@
 mod faces;
+mod inferred;
 mod meta;
 mod primitive;
 mod shadow;
+mod solid;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
@@ -12,6 +14,7 @@ pub use faces::{
     mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARED_FAR_END,
     FLARED_NEAR_END, ROUND, SQUARE,
 };
+pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use shadow::ShadowSnaps;
@@ -24,6 +27,7 @@ const SAME_PLACE_LDU: f64 = 0.0005;
 pub enum Source {
     Shadow,
     Primitive,
+    Inferred,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -185,12 +189,17 @@ pub enum Issue {
         kept: (Source, Shape),
         lower: (Source, Shape),
     },
+    Uninferred {
+        origin: Vec3,
+        reason: Uninferred,
+    },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Extraction {
     pub connectors: Vec<Connector>,
     pub suppressed: Vec<Connector>,
+    pub off_lattice: Vec<Connector>,
     pub curated: bool,
     pub issues: Vec<Issue>,
 }
@@ -290,11 +299,6 @@ enum Slot {
 const FREE_ORIGIN_STEPS_PER_LDU: f64 = 1e3;
 const FREE_AXIS_STEPS: f64 = 1e6;
 
-fn identified_integer(value: f64) -> Option<i64> {
-    let rounded = value.round();
-    ((value - rounded).abs() <= SAME_PLACE_LDU).then_some(rounded as i64)
-}
-
 fn direction_code(axis: Vec3) -> Option<u8> {
     (0..3).find_map(|k| {
         let aligned = (0..3).all(|j| j == k || axis[j].abs() <= SAME_PLACE_LDU);
@@ -360,7 +364,7 @@ fn slots(connector: &Connector) -> Vec<Slot> {
         .into_iter()
         .map(|offset| {
             let origin = connector.placement.apply(offset);
-            let lattice = [0, 1, 2].map(|k| identified_integer(origin[k]));
+            let lattice = [0, 1, 2].map(|k| solid::sixteenths(origin[k]));
             match (lattice, code) {
                 ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
                     polarity,
@@ -397,57 +401,155 @@ enum Occupant {
     Cleared,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum SlotKey {
+    Anchor(Slot),
+    Face(Slot),
+}
+
+fn anchor_keys(connector: &Connector) -> Vec<SlotKey> {
+    slots(connector).into_iter().map(SlotKey::Anchor).collect()
+}
+
+fn face_slot(face: &MatingFace) -> Slot {
+    let polarity = match face.gender {
+        Gender::Male => 0,
+        Gender::Female => 1,
+    };
+    let lattice = face.origin.map(solid::sixteenths);
+    match (lattice, direction_code(face.axis)) {
+        ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
+            polarity,
+            origin: [x, y, z],
+            axis,
+        },
+        _ => Slot::Free {
+            polarity,
+            origin: face
+                .origin
+                .map(|c| (c * FREE_ORIGIN_STEPS_PER_LDU).round() as i64),
+            axis: face.axis.map(|c| (c * FREE_AXIS_STEPS).round() as i64),
+        },
+    }
+}
+
+fn anchor_and_face_keys(connector: &Connector) -> Vec<SlotKey> {
+    let mut keys = anchor_keys(connector);
+    if let Ok(faces) = mating_faces(connector) {
+        keys.extend(faces.iter().map(|face| SlotKey::Face(face_slot(face))));
+    }
+    keys
+}
+
+fn merge(
+    extraction: &mut Extraction,
+    candidates: Vec<Connector>,
+    keys: fn(&Connector) -> Vec<SlotKey>,
+) {
+    let mut occupied: HashMap<SlotKey, Occupant> = HashMap::new();
+    for (index, connector) in extraction.connectors.iter().enumerate() {
+        for key in keys(connector) {
+            occupied.entry(key).or_insert(Occupant::Tier(index));
+        }
+    }
+    for connector in &extraction.suppressed {
+        for key in keys(connector) {
+            occupied.entry(key).or_insert(Occupant::Cleared);
+        }
+    }
+    for candidate in candidates {
+        let candidate_keys = keys(&candidate);
+        let holder = candidate_keys
+            .iter()
+            .find_map(|key| occupied.get(key).copied());
+        match holder {
+            Some(Occupant::Tier(index)) => {
+                let kept = &extraction.connectors[index];
+                if !same_sections(&kept.shape, &candidate.shape) {
+                    extraction.issues.push(Issue::SectionDisagreement {
+                        origin: translation(&candidate.placement),
+                        kept: (kept.source, kept.shape.clone()),
+                        lower: (candidate.source, candidate.shape.clone()),
+                    });
+                }
+            }
+            Some(Occupant::Cleared) => {}
+            None => {
+                let index = extraction.connectors.len();
+                for key in candidate_keys {
+                    occupied.insert(key, Occupant::Tier(index));
+                }
+                extraction.connectors.push(candidate);
+            }
+        }
+    }
+}
+
 pub struct ConnectorExtractor<'a, L: Library + ?Sized, S: Library + ?Sized> {
     shadow: ShadowSnaps<'a, L, S>,
     primitives: PrimitiveConnectors<'a, L>,
+    inferred: InferredFeatures<'a, L>,
 }
 
 impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> {
-    pub fn new(shadow: ShadowSnaps<'a, L, S>, primitives: PrimitiveConnectors<'a, L>) -> Self {
-        ConnectorExtractor { shadow, primitives }
+    pub fn new(
+        shadow: ShadowSnaps<'a, L, S>,
+        primitives: PrimitiveConnectors<'a, L>,
+        inferred: InferredFeatures<'a, L>,
+    ) -> Self {
+        ConnectorExtractor {
+            shadow,
+            primitives,
+            inferred,
+        }
     }
 
     pub fn extract(&mut self, path: &str) -> Extraction {
         let mut extraction = self.shadow.snaps(path);
-        let mut occupied: HashMap<Slot, Occupant> = HashMap::new();
-        for (index, connector) in extraction.connectors.iter().enumerate() {
-            for slot in slots(connector) {
-                occupied.entry(slot).or_insert(Occupant::Tier(index));
-            }
-        }
-        for connector in &extraction.suppressed {
-            for slot in slots(connector) {
-                occupied.entry(slot).or_insert(Occupant::Cleared);
-            }
-        }
-        let (primitive, issues) = self.primitives.connectors(path);
+        let (mut primitive, issues) = self.primitives.connectors(path);
         extraction.issues.extend(issues);
-        for candidate in primitive {
-            let candidate_slots = slots(&candidate);
-            let holder = candidate_slots
-                .iter()
-                .find_map(|slot| occupied.get(slot).copied());
-            match holder {
-                Some(Occupant::Tier(index)) => {
-                    let kept = &extraction.connectors[index];
-                    if !same_sections(&kept.shape, &candidate.shape) {
-                        extraction.issues.push(Issue::SectionDisagreement {
-                            origin: translation(&candidate.placement),
-                            kept: (kept.source, kept.shape.clone()),
-                            lower: (candidate.source, candidate.shape.clone()),
-                        });
-                    }
+        let candidates = self.primitives.where_open(path);
+        primitive.extend(self.inferred.open(path, candidates));
+        merge(&mut extraction, primitive, anchor_keys);
+        let inferred = self.inferred.infer(path);
+        let held: HashSet<Slot> = extraction
+            .connectors
+            .iter()
+            .filter_map(|c| mating_faces(c).ok())
+            .flatten()
+            .filter(|face| face.gender == Gender::Female)
+            .map(|face| {
+                face_slot(&MatingFace {
+                    axis: [0.0; 3],
+                    ..face
+                })
+            })
+            .collect();
+        extraction
+            .issues
+            .extend(inferred.issues.into_iter().filter(|issue| match issue {
+                Issue::Uninferred {
+                    origin,
+                    reason:
+                        Uninferred::LooseCavity { .. }
+                        | Uninferred::SlidingCavity
+                        | Uninferred::OffCentreCavity { .. },
+                } => {
+                    let entrance = MatingFace {
+                        source: Source::Inferred,
+                        gender: Gender::Female,
+                        origin: [origin[0], -origin[1], -origin[2]].map(|c| c + 0.0),
+                        axis: [0.0; 3],
+                        sections: Vec::new(),
+                        caps: 0,
+                        slide: false,
+                    };
+                    !held.contains(&face_slot(&entrance))
                 }
-                Some(Occupant::Cleared) => {}
-                None => {
-                    let index = extraction.connectors.len();
-                    for slot in candidate_slots {
-                        occupied.insert(slot, Occupant::Tier(index));
-                    }
-                    extraction.connectors.push(candidate);
-                }
-            }
-        }
+                _ => true,
+            }));
+        extraction.off_lattice.extend(inferred.off_lattice);
+        merge(&mut extraction, inferred.connectors, anchor_and_face_keys);
         extraction
     }
 }
