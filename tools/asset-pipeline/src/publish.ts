@@ -1,5 +1,8 @@
 import {
   BundleIndex,
+  ConnectorIndexFile,
+  ConnectorRecordFile,
+  type ConnectorPackage,
   CreditTableFile,
   CrosswalkFile,
   FarMeshGltfDocument,
@@ -13,6 +16,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { extname, join, relative, sep } from "node:path";
 import * as v from "valibot";
+import { connectorPackageIssues } from "./connector-license.ts";
 import { readPngHeader } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
@@ -157,6 +161,22 @@ export async function publishBundle(
     manifest.crosswalk.file,
   );
   for (const { shape } of manifest.catalogParts) await publishJson(PartShape, shape.file);
+  const packages: ReadonlyArray<readonly [ConnectorPackage, string]> = [
+    ["connectors", manifest.connectors.file],
+    ["connectivity", manifest.connectivity.file],
+  ];
+  for (const [expected, file] of packages) {
+    const { value: index } = await readJson(ConnectorIndexFile, file);
+    const records = new Map<string, v.InferOutput<typeof ConnectorRecordFile>>();
+    for (const [partId, record] of Object.entries(index.parts)) {
+      if (record === null) continue;
+      records.set(partId, (await readJson(ConnectorRecordFile, record.file)).value);
+      await publish(record.file);
+    }
+    const issues = connectorPackageIssues(expected, index, records);
+    if (issues.length > 0) throw new Error(`${file}: ${issues.join("; ")}`);
+    await publishJson(ConnectorIndexFile, file);
+  }
   await publishJson(CreditTableFile, manifest.creditTable.file);
   const published = new Set(renamed.values());
   const unreferenced = (await bundleFiles(directory)).filter(

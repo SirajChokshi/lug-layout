@@ -1,3 +1,4 @@
+import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
   BrickCompiler,
   importStudioFile,
@@ -15,6 +16,7 @@ export interface IImportWorkerService {
 @injectable()
 export class ImportWorkerService implements IImportWorkerService {
   private readonly compilers = new Map<string, Promise<BrickCompiler>>();
+  private readonly records = new Map<string, ConnectorRecords>();
 
   private compiler(url: string): Promise<BrickCompiler> {
     const cached = this.compilers.get(url);
@@ -30,8 +32,25 @@ export class ImportWorkerService implements IImportWorkerService {
     return loading;
   }
 
+  private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
+    const base = new URL(request.bundleBaseUrl.replace(/\/?$/u, "/"));
+    const key = JSON.stringify([base.href, request.connectorIndexes]);
+    let records = this.records.get(key);
+    if (records === undefined) {
+      records = new ConnectorRecords(async (path) => {
+        const url = new URL(path, base);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`GET ${url.href} failed with ${response.status}`);
+        return response.json();
+      }, request.connectorIndexes);
+      this.records.set(key, records);
+    }
+    return records;
+  }
+
   async run(request: ImportWorkerRequest): Promise<ImportResult> {
     const compiler = await this.compiler(request.compilerUrl);
+    const connectors = this.connectorRecords(request);
     const { input } = request;
     switch (input.kind) {
       case "ldraw": {
@@ -40,7 +59,7 @@ export class ImportWorkerService implements IImportWorkerService {
           (url) => fetch(url),
           request.ldrawLibraryUrl,
         );
-        const engine = new ModelImportEngine(compiler, mirror, () => performance.now());
+        const engine = new ModelImportEngine(compiler, mirror, connectors, () => performance.now());
         return engine.importText(input.job);
       }
       case "studio": {
@@ -49,7 +68,7 @@ export class ImportWorkerService implements IImportWorkerService {
           (url) => fetch(url),
           request.ldrawLibraryUrl,
         );
-        return importStudioFile(compiler, mirror, () => performance.now(), input);
+        return importStudioFile(compiler, mirror, connectors, () => performance.now(), input);
       }
       default: {
         const unhandled: never = input;

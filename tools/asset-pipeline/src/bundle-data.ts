@@ -13,3 +13,7 @@ export const BUNDLE_DATA_FILES = {
   geometry: `${VERIFIED_FACTS_DIRECTORY}/geometry.json`,
   trackCatalog: `${VERIFIED_FACTS_DIRECTORY}/${TRACK_CATALOG_FILE}`,
 } as const;
+
+export const BUNDLE_DATA_DIRECTORIES = {
+  shadowPatches: `${PIPELINE_DIRECTORY}/shadow-patches`,
+} as const;

@@ -10,13 +10,15 @@ import type {
   PaletteModel,
 } from "@brr/schema/bundle";
 
+export interface ConnectivityLock {
+  readonly source: Palette["source"];
+  readonly files: Readonly<Record<string, string>>;
+}
+
 export interface AuditLock {
   readonly files: Readonly<Record<string, string>>;
   readonly absentParts: ReadonlyArray<string>;
-  readonly connectivity: {
-    readonly source: Palette["source"];
-    readonly files: Readonly<Record<string, string>>;
-  };
+  readonly connectivity: ConnectivityLock;
 }
 
 export interface CatalogSourceLock {
@@ -30,6 +32,7 @@ export type CatalogLock = Readonly<Record<string, CatalogSourceLock>>;
 export interface InputLock {
   readonly source: Palette["source"];
   readonly files: Readonly<Record<string, string>>;
+  readonly connectivity?: ConnectivityLock;
   readonly audit?: AuditLock;
   readonly catalog?: CatalogLock;
 }
@@ -172,16 +175,45 @@ export async function fetchAuditInputs(
       queue.push(child);
     }
   }
-  const connectivity: Record<string, string> = {};
-  for (const path of [CONNECTIVITY_LICENSE, ...Object.keys(files)]) {
-    const bytes = await download(palette.connectivitySource, path);
-    if (bytes) await storeInto(connectivityDirectory, connectivity, path, bytes);
-  }
   return {
     files: sortedRecord(files),
     absentParts: absentParts.toSorted(),
-    connectivity: { source: palette.connectivitySource, files: sortedRecord(connectivity) },
+    connectivity: await fetchConnectivity(
+      palette.connectivitySource,
+      Object.keys(files),
+      connectivityDirectory,
+    ),
   };
+}
+
+export async function fetchConnectivity(
+  source: Palette["source"],
+  paths: ReadonlyArray<string>,
+  directory: string,
+): Promise<ConnectivityLock> {
+  const files: Record<string, string> = {};
+  for (const path of [CONNECTIVITY_LICENSE, ...paths]) {
+    const bytes = await download(source, path);
+    if (bytes) await storeInto(directory, files, path, bytes);
+  }
+  return { source, files: sortedRecord(files) };
+}
+
+function sameSource(a: Palette["source"], b: Palette["source"]): boolean {
+  return a.kind === b.kind && a.repo === b.repo && a.commit === b.commit && a.root === b.root;
+}
+
+export async function verifyConnectivity(
+  lock: ConnectivityLock,
+  source: Palette["source"],
+  directory: string,
+): Promise<string[]> {
+  const stale = sameSource(lock.source, source)
+    ? []
+    : [
+        `ldraw.lock.json pins LDCad connectivity from ${lock.source.repo}@${lock.source.commit}, but the palette names ${source.repo}@${source.commit}; run fetch-ldraw`,
+      ];
+  return [...stale, ...(await hashProblems(lock.files, directory))];
 }
 
 export async function fetchCatalogSources(

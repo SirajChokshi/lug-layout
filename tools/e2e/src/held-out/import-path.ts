@@ -88,7 +88,7 @@ export async function importThroughWorkerPath(
       case "ldraw":
         return {
           kind: "imported",
-          result: await new ModelImportEngine(compiler, mirror, now).importText({
+          result: await new ModelImportEngine(compiler, mirror, bundle.connectors, now).importText({
             ...job,
             text: new TextDecoder().decode(input.bytes),
           }),
@@ -96,7 +96,7 @@ export async function importThroughWorkerPath(
       case "studio":
         return {
           kind: "imported",
-          result: await importStudioFile(compiler, mirror, now, {
+          result: await importStudioFile(compiler, mirror, bundle.connectors, now, {
             kind: "studio",
             job,
             bytes: input.bytes,

@@ -1,3 +1,4 @@
+import { ConnectorRecords } from "@brr/catalog/connector-records";
 import type { CompilerVehicles } from "@brr/schema/bundle";
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
@@ -33,6 +34,8 @@ interface Manifest {
     readonly primitives?: CompileRequest["primitives"];
   };
   readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
+  readonly connectors: { readonly file: string };
+  readonly connectivity: { readonly file: string };
 }
 
 interface BundledModel {
@@ -75,6 +78,10 @@ async function importWith(
   const engine = new ModelImportEngine(
     compiler,
     new LdrawMirror(manifest.source, fetchUrl),
+    new ConnectorRecords(
+      async (path) => JSON.parse(await readFile(new URL(path, bundleRoot), "utf8")),
+      { connectivity: manifest.connectivity.file, connectors: manifest.connectors.file },
+    ),
     () => 0,
   );
   return engine.importText({

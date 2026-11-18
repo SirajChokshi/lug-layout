@@ -15,6 +15,7 @@ import {
   type PartMesh,
   type PartShapeRecord,
   type StudPrimitiveAsset,
+  type PartConnectors,
 } from "@brr/catalog";
 import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
 import {
@@ -118,6 +119,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   importContext(lod: BundleLod): Promise<ImportContext> {
     return this.loader.importContext(lod);
+  }
+
+  loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
+    return this.loader.loadPartConnectors(lod, partId);
   }
 
   loadPartSet(

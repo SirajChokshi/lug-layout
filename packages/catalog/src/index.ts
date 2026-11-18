@@ -2,6 +2,13 @@ export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
 export {
+  ConnectorRecords,
+  partConnectors,
+  type ConnectorIndexPaths,
+  type PartConnectors,
+  type ReadJson,
+} from "./connector-records.ts";
+export {
   BUNDLE_LODS,
   DEFAULT_BUNDLE_MANIFEST_FILE,
   EMPTY_COLUMN,
