@@ -1,4 +1,5 @@
 pub mod affine;
+pub mod clip;
 pub mod colors;
 pub mod compile;
 pub mod cover;
