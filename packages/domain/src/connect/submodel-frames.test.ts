@@ -6,6 +6,7 @@ import {
   IDENTIFICATION_RESIDUAL_LDU,
   IdentifiedPoint,
   MODEL_ROOT,
+  NO_FRAME,
   SubmodelFrames,
   TRANSFORM_FLOATS,
   coordinatesAcross,
@@ -142,5 +143,32 @@ describe("SubmodelFrames", () => {
     expect(() => flat.relate(0, 0, transform)).toThrow(RangeError);
     expect(() => coordinatesAcross(AXIS_FREE)).toThrow(RangeError);
     expect(() => identifyPoint(transform, 0, 0, 0, 0, new IdentifiedPoint())).toThrow(RangeError);
+  });
+
+  it("walks a part's frames from its innermost sub-model instance out to the model root", () => {
+    const nested = tree(
+      [
+        [MODEL_ROOT, translation(DUST, 0, 0)],
+        [0, translation(STUD_LDU, 0, 0)],
+        [1, translation(0, STUD_LDU, 0)],
+      ],
+      [
+        { submodel: 2, local: translation(0, 0, 0) },
+        { submodel: MODEL_ROOT, local: translation(0, 0, 0) },
+      ],
+    );
+    const frames = new SubmodelFrames(nested);
+    const walk = (instance: number): number[] => {
+      const visited: number[] = [];
+      for (let f = frames.frameOf(instance); f !== NO_FRAME; f = frames.parentFrame(f)) {
+        visited.push(f);
+      }
+      return visited;
+    };
+    expect(walk(0)).toEqual([2, 1, 0, MODEL_ROOT]);
+    expect(walk(1)).toEqual([MODEL_ROOT]);
+    const transform = new Float64Array(TRANSFORM_FLOATS);
+    for (const frame of walk(0)) expect(frames.relate(0, frame, transform)).toBe(true);
+    expect(() => frames.parentFrame(3)).toThrow(RangeError);
   });
 });

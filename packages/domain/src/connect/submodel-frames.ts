@@ -3,6 +3,7 @@ import { AXIS_FREE, AXIS_NEG_Z, VECTOR_FLOATS, axisDimension } from "./connector
 
 export const IDENTIFICATION_RESIDUAL_LDU = 0.0005;
 export const MODEL_ROOT = -1;
+export const NO_FRAME = -2;
 export const TRANSFORM_FLOATS = 12;
 export const ALL_COORDINATES = 0b111;
 const TRANSFORM_ROW = 4;
@@ -200,6 +201,7 @@ function checkSubmodels(instances: PartInstances, submodels: SubmodelInstances):
 
 export class SubmodelFrames {
   private readonly count: number;
+  private readonly nodes: number;
   private readonly matrices: Float64Array;
   private readonly parent: ArrayLike<number>;
   private readonly ofPart: ArrayLike<number> | null;
@@ -217,6 +219,7 @@ export class SubmodelFrames {
     if (submodels) checkSubmodels(instances, submodels);
     const nodes = submodels?.count ?? 0;
     this.count = instances.count;
+    this.nodes = nodes;
     this.matrices = instances.matrices;
     this.parent = submodels?.parent ?? [];
     this.ofPart = submodels ? submodels.ofPart : null;
@@ -233,8 +236,8 @@ export class SubmodelFrames {
   }
 
   lowestCommonFrame(a: number, b: number): number {
-    let x = this.ownerOf(a);
-    let y = this.ownerOf(b);
+    let x = this.frameOf(a);
+    let y = this.frameOf(b);
     while (x !== y) {
       if (this.depthOf(x) >= this.depthOf(y)) x = this.parentOf(x);
       else y = this.parentOf(y);
@@ -244,7 +247,7 @@ export class SubmodelFrames {
 
   relate(instance: number, frame: number, out: Float64Array): boolean {
     checkTransform(out);
-    let n = this.ownerOf(instance);
+    let n = this.frameOf(instance);
     const o = instance * TRANSFORM_FLOATS;
     if (frame === MODEL_ROOT) {
       for (let k = 0; k < TRANSFORM_FLOATS; k++) out[k] = this.matrices[o + k] ?? 0;
@@ -259,11 +262,21 @@ export class SubmodelFrames {
     return true;
   }
 
-  private ownerOf(instance: number): number {
+  frameOf(instance: number): number {
     if (!Number.isInteger(instance) || instance < 0 || instance >= this.count) {
       throw new RangeError(`part instance ${instance} is outside the ${this.count} given`);
     }
     return this.ofPart ? (this.ofPart[instance] ?? MODEL_ROOT) : MODEL_ROOT;
+  }
+
+  parentFrame(frame: number): number {
+    if (frame === MODEL_ROOT) return NO_FRAME;
+    if (!Number.isInteger(frame) || frame < 0 || frame >= this.nodes) {
+      throw new RangeError(
+        `frame ${frame} is neither the model root nor one of the ${this.nodes} sub-model instances`,
+      );
+    }
+    return this.parentOf(frame);
   }
 
   private parentOf(node: number): number {

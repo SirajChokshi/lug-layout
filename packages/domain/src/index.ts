@@ -204,6 +204,7 @@ export {
   IDENTIFICATION_RESIDUAL_LDU,
   IdentifiedPoint,
   MODEL_ROOT,
+  NO_FRAME,
   SubmodelFrames,
   TRANSFORM_FLOATS,
   coordinatesAcross,
