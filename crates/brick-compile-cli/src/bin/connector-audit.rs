@@ -575,6 +575,7 @@ fn run() -> Result<(), String> {
     let revived = LazyLibrary::reviving_commented_snaps(shadow_root);
     let mut revived_snaps = ShadowSnaps::new(&library, &revived);
     let mut commented_fills: Vec<Value> = Vec::new();
+    let mut commented_fill_counts: BTreeMap<&str, usize> = BTreeMap::new();
     let mut disagreements: Vec<Value> = Vec::new();
     let table_path = take("--primitives")?;
     let table_json: Value =
@@ -657,22 +658,40 @@ fn run() -> Result<(), String> {
                 .filter(|c| c.source == Source::Shadow)
                 .flat_map(audit_slots)
                 .collect();
-            let commented: std::collections::HashSet<AuditSlot> = revived_snaps
-                .snaps(&path)
-                .connectors
+            let revived_connectors = revived_snaps.snaps(&path).connectors;
+            let commented: std::collections::HashSet<AuditSlot> = revived_connectors
                 .iter()
                 .flat_map(audit_slots)
                 .filter(|slot| !live.contains(slot))
                 .collect();
+            let live_faces: std::collections::HashSet<FaceKey> =
+                faces_of(&extraction.connectors, Some(Source::Shadow))
+                    .iter()
+                    .map(face_key)
+                    .collect();
+            let commented_faces: std::collections::HashSet<FaceKey> =
+                faces_of(&revived_connectors, None)
+                    .iter()
+                    .map(face_key)
+                    .filter(|key| !live_faces.contains(key))
+                    .collect();
             for connector in extraction
                 .connectors
                 .iter()
                 .filter(|c| c.source != Source::Shadow)
             {
-                if audit_slots(connector)
+                let at_commented = audit_slots(connector)
                     .iter()
                     .any(|slot| commented.contains(slot))
-                {
+                    || faces_of(std::slice::from_ref(connector), None)
+                        .iter()
+                        .any(|face| commented_faces.contains(&face_key(face)));
+                if at_commented {
+                    *commented_fill_counts
+                        .entry(source_key(connector.source))
+                        .or_default() += 1;
+                }
+                if at_commented && commented_fills.len() < 400 {
                     commented_fills.push(json!({
                         "part": part,
                         "title": title,
@@ -1030,7 +1049,8 @@ fn run() -> Result<(), String> {
         "connectorPosesByFamily": table(by_family),
         "tier2Shapes": table(tier2_shapes),
         "curatedPartsCompletedByTier2": completed,
-        "tier2FillsAtCommentedOutSnaps": commented_fills,
+        "lowerTierFillsAtCommentedOutSnaps": commented_fills,
+        "lowerTierFillsAtCommentedOutSnapsByTier": commented_fill_counts,
         "sectionDisagreements": disagreements,
         "tier2AgainstTier1OnCuratedParts": {
             "tier2Connectors": cross[0],
