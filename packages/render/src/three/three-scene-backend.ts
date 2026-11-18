@@ -512,6 +512,10 @@ export class ThreeSceneBackend implements ISceneBackend {
   private eyeX = 0;
   private eyeY = 0;
   private eyeZ = 0;
+  private atX = 0;
+  private atY = 0;
+  private atZ = 0;
+  private changed = true;
   private sceneMinX = Number.POSITIVE_INFINITY;
   private sceneMaxX = Number.NEGATIVE_INFINITY;
   private sceneMinZ = Number.POSITIVE_INFINITY;
@@ -700,6 +704,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setPalette(palette: PartPalette): void {
+    this.changed = true;
     this.clearChunks();
     for (const node of this.farModelList) this.scene.remove(node.group);
     this.farModelNodes.clear();
@@ -748,6 +753,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
+    this.changed = true;
     this.installColors(colorsSrgb, colorsAlpha);
     for (const [key, chunk] of Array.from(this.chunkSources)) this.setChunk(key, chunk);
     for (const [vehicle, model] of Array.from(this.vehicleSources)) {
@@ -757,6 +763,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   addParts(parts: ReadonlyArray<PartAsset>): void {
+    this.changed = true;
     for (const part of parts) {
       const index = this.detailedLevel.parts.length;
       this.detailedLevel.parts.push(this.partGeometries(part));
@@ -765,6 +772,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
+    this.changed = true;
     const changed = new Set<number>();
     for (const { index, level, part } of updates) {
       if (index >= this.detailedLevel.parts.length) {
@@ -787,6 +795,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setFarStuds(studPrimitives: ReadonlyArray<StudPrimitiveAsset>): void {
+    this.changed = true;
     if (studPrimitives.length !== this.detailedLevel.studs.length) {
       throw new Error("the far stud primitives do not match the palette's stud primitives");
     }
@@ -799,6 +808,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setFarModelMesh(modelIndex: number, mesh: PartMesh): void {
+    this.changed = true;
     for (const fixed of this.farModelGeometries[modelIndex] ?? []) fixed.geometry.dispose();
     this.farModelGeometries[modelIndex] = fixedColorGeometries(
       mesh,
@@ -811,6 +821,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setChunk(key: number, chunk: ChunkInstances): void {
+    this.changed = true;
     this.removeChunk(key);
     this.chunkSources.set(key, chunk);
     const record = this.buildChunk(chunk);
@@ -824,6 +835,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setVehicle(vehicle: number, model: ChunkInstances): void {
+    this.changed = true;
     this.removeVehicle(vehicle);
     this.vehicleSources.set(vehicle, model);
     const body = this.buildChunk({
@@ -848,6 +860,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     pitch = 0,
     roll = 0,
   ): void {
+    this.changed = true;
     const record = this.vehicles.get(vehicle);
     if (!record) throw new Error(`vehicle ${vehicle} has no model`);
     record.x = x;
@@ -869,6 +882,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   deleteVehicle(vehicle: number): void {
+    this.changed = true;
     this.removeVehicle(vehicle);
   }
 
@@ -896,6 +910,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   deleteChunk(key: number): void {
+    this.changed = true;
     this.removeChunk(key);
   }
 
@@ -910,6 +925,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setGhost(model: ChunkInstances | null): void {
+    this.changed = true;
     if (this.ghost) {
       this.scene.remove(this.ghost);
       disposeInstancedChildren(this.ghost);
@@ -933,6 +949,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   placeGhost(x: number, yLdu: number, z: number, rot: number): void {
+    this.changed = true;
     const ghost = this.ghost;
     if (!ghost) return;
     this.ghostPose = [x, yLdu, z, rot];
@@ -946,6 +963,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setSelectionBox(box: WorldBox | null): void {
+    this.changed = true;
     if (!box) {
       this.selection.visible = false;
       return;
@@ -964,6 +982,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
+    this.changed = true;
     this.markerGroup.clear();
     this.markers = markers;
     for (const marker of markers) {
@@ -993,6 +1012,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
+    this.changed = true;
     this.trackEndGroup.clear();
     this.trackEnds = markers;
     for (const marker of markers) {
@@ -1028,6 +1048,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
+    this.changed = true;
     for (const anchored of this.planObjects) {
       this.scene.remove(anchored.object);
       disposeTree(anchored.object);
@@ -1108,6 +1129,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
+    this.changed = true;
     for (const anchored of this.issueObjects) this.scene.remove(anchored.object);
     this.issueObjects = boxes.map((box) => {
       const lines = new LineSegments(this.issueEdges, this.issueMaterial);
@@ -1497,15 +1519,26 @@ export class ThreeSceneBackend implements ISceneBackend {
   ): void {
     if (eyeX !== this.eyeX || eyeY !== this.eyeY || eyeZ !== this.eyeZ) {
       this.eyeMovedAt = performance.now();
+      this.changed = true;
+    }
+    const camera = orthoHalfHeightLdu === undefined ? this.perspective : this.orthographic;
+    if (atX !== this.atX || atY !== this.atY || atZ !== this.atZ || camera !== this.camera) {
+      this.changed = true;
     }
     this.eyeX = eyeX;
     this.eyeY = eyeY;
     this.eyeZ = eyeZ;
+    this.atX = atX;
+    this.atY = atY;
+    this.atZ = atZ;
+    const rebases = this.rebaseCount;
     this.followEye();
-    this.camera = orthoHalfHeightLdu === undefined ? this.perspective : this.orthographic;
+    if (this.rebaseCount !== rebases) this.changed = true;
+    this.camera = camera;
     if (orthoHalfHeightLdu !== undefined && orthoHalfHeightLdu !== this.orthoHalfHeight) {
       this.orthoHalfHeight = orthoHalfHeightLdu;
       this.fitOrthographic();
+      this.changed = true;
     }
     this.aim(this.perspective, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.aim(this.orthographic, eyeX, eyeY, eyeZ, atX, atY, atZ);
@@ -1627,6 +1660,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   resize(width: number, height: number): void {
+    this.changed = true;
     this.renderer?.setSize(width, height, false);
     this.aspect = width / Math.max(height, 1);
     this.perspective.aspect = this.aspect;
@@ -1640,6 +1674,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   setFarModel(id: number, placement: FarModelPlacement | null): void {
+    this.changed = true;
     const existing = this.farModelNodes.get(id);
     if (existing) {
       this.scene.remove(existing.group);
@@ -1691,6 +1726,7 @@ export class ThreeSceneBackend implements ISceneBackend {
   }
 
   forceTier(tier: ChunkTier | null): void {
+    this.changed = true;
     this.forcedTier = tier === null ? null : TIER_BY_NAME[tier];
   }
 
@@ -1749,6 +1785,11 @@ export class ThreeSceneBackend implements ISceneBackend {
     out.renderOriginChunkZ = this.renderOriginZ / CHUNK_LDU;
     out.rebaseCount = this.rebaseCount;
     this.frame++;
+    this.changed = false;
+  }
+
+  needsFrame(): boolean {
+    return this.changed;
   }
 
   async waitForGpu(): Promise<void> {
