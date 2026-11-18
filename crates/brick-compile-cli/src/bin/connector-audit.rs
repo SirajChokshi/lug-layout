@@ -810,6 +810,57 @@ fn run() -> Result<(), String> {
         InferredFeatures::new(&library, vocabulary.clone(), &probe_part)?,
     );
     let mut tier4_alone = InferredFeatures::new(&library, vocabulary, &probe_part)?;
+    if let Some(out) = values.get("--unidentified-tube-receptors") {
+        let mut primitives = PrimitiveConnectors::new(&library, primitive_table.clone());
+        let mut rows: Vec<Value> = Vec::new();
+        for part in &list {
+            let Some(path) = resolve_reference(&library, Lod::Standard, part) else {
+                continue;
+            };
+            let candidates = primitives.where_open(&path);
+            let opened = tier4_alone.open(&path, candidates);
+            if opened.off_lattice.is_empty() {
+                continue;
+            }
+            let extraction = extractor.extract(&path);
+            let held = faces_of(&extraction.connectors, None);
+            let mut anchors: Vec<Vec3> = Vec::new();
+            for connector in &opened.off_lattice {
+                let anchor = translation(&connector.placement);
+                if anchors.iter().any(|a| norm(sub(*a, anchor)) <= SAME_LDU) {
+                    continue;
+                }
+                anchors.push(anchor);
+                for face in faces_of(std::slice::from_ref(connector), None) {
+                    let holder = |source: Option<Source>| {
+                        held.iter()
+                            .filter(|h| source.is_none_or(|s| h.source == s))
+                            .find(|h| {
+                                h.gender == Gender::Female
+                                    && dot(h.axis, face.axis) >= 1.0 - PARALLEL
+                                    && norm(sub(h.origin, face.origin)) <= SAME_LDU
+                            })
+                            .map(|h| json!({ "source": source_key(h.source), "sections": h.sections.iter().map(|s| [s.size, s.length]).collect::<Vec<_>>() }))
+                    };
+                    rows.push(json!({
+                        "part": part,
+                        "title": title_of(&library, &path),
+                        "anchor": anchor,
+                        "face": face.origin,
+                        "axis": face.axis,
+                        "connector": sections_key(connector),
+                        "tier1": holder(Some(Source::Shadow)),
+                        "anyTier": holder(None),
+                    }));
+                }
+            }
+        }
+        return fs::write(
+            out,
+            serde_json::to_string_pretty(&rows).map_err(|e| e.to_string())? + "\n",
+        )
+        .map_err(|e| format!("{out}: {e}"));
+    }
     if let Some(out) = values.get("--hole-pairs") {
         let mut primitives = PrimitiveConnectors::new(&library, primitive_table.clone());
         let mut lines = String::new();
