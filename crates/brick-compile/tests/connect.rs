@@ -1319,6 +1319,8 @@ fn outward_round_bands_skip_inverted_surfaces_and_end_faces_sit_at_the_extremes(
     assert!((near.radius - 15.0).abs() <= 0.0005, "{near:?}");
 }
 
+const STUD_RECEPTOR_META: &str = "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4]";
+
 #[test]
 fn connectors_half_an_ldu_apart_keep_their_own_slots_on_the_sixteenth_grid() {
     let table: Value =
@@ -1338,6 +1340,12 @@ fn connectors_half_an_ldu_apart_keep_their_own_slots_on_the_sixteenth_grid() {
         let mut extractor = ConnectorExtractor::new(
             ShadowSnaps::new(&library, &shadow),
             PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&table).expect("table")),
+            InferredFeatures::new(
+                &library,
+                SectionVocabulary::from_metas([STUD_RECEPTOR_META]),
+                "p/stud.dat",
+            )
+            .expect("the pinned stud measures"),
         );
         let extraction = extractor.extract("parts/pair.dat");
         let mut placed: Vec<(Source, Option<[i32; 3]>)> = faces_of(&extraction.connectors)
