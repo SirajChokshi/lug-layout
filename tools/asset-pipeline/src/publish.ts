@@ -10,18 +10,26 @@ import {
   ModelFile,
   PartShape,
   PartTableFile,
+  SectionVocabularyFile,
+  type SectionVocabularyRef,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { extname, join, relative, sep } from "node:path";
 import * as v from "valibot";
-import { connectorPackageIssues } from "./connector-license.ts";
+import {
+  connectorPackageIssues,
+  sectionVocabularyIssues,
+  sectionVocabularyValues,
+} from "./connector-license.ts";
 import { readPngHeader } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
 export const MANIFEST_FILE = "manifest.json";
 export const CROSSWALK_FILE = "crosswalk.json";
+export const SECTION_VOCABULARY_FILE = "section-vocabulary.json";
+const LEAKED_PATHS_SHOWN = 3;
 export const CONTENT_HASH_HEX_DIGITS = 16;
 
 const GLB_MAGIC = 0x46546c67;
@@ -59,11 +67,23 @@ function undeclaredKeys(raw: unknown, decoded: unknown, path: string): ReadonlyA
   );
 }
 
+function refuseSectionVocabularyValues(raw: unknown, label: string): void {
+  const paths = sectionVocabularyValues(raw);
+  if (paths.length === 0) return;
+  const shown = paths.slice(0, LEAKED_PATHS_SHOWN).join(", ");
+  const more =
+    paths.length > LEAKED_PATHS_SHOWN ? ` and ${paths.length - LEAKED_PATHS_SHOWN} more` : "";
+  throw new Error(
+    `${label} carries section vocabulary values at ${shown}${more}; they ship only in the CC BY-SA section vocabulary asset`,
+  );
+}
+
 function decodeDeclared<const TSchema extends v.GenericSchema>(
   schema: TSchema,
   raw: unknown,
   label: string,
 ): v.InferOutput<TSchema> {
+  refuseSectionVocabularyValues(raw, label);
   const value = decodedOrThrow(decode(schema, raw), label);
   const undeclared = [...new Set(undeclaredKeys(raw, value, "$"))];
   if (undeclared.length > 0) {
@@ -103,6 +123,28 @@ function addressedFiles(raw: unknown, renamed: ReadonlyMap<string, string>): unk
     JSON.stringify(raw, (key, value: unknown) =>
       key === "file" && typeof value === "string" ? (renamed.get(value) ?? value) : value,
     ),
+  );
+}
+
+export async function attachSectionVocabulary(
+  directory: string,
+  vocabularyPath: string,
+): Promise<void> {
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (!isRecord(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
+  const { compiler } = compiled;
+  if (compiler === null) return;
+  if (!isRecord(compiler)) throw new Error(`${manifestPath} has no compiler section`);
+  const bytes = await readFile(vocabularyPath);
+  await writeFile(join(directory, SECTION_VOCABULARY_FILE), bytes);
+  const sectionVocabulary: SectionVocabularyRef = {
+    file: SECTION_VOCABULARY_FILE,
+    sha256: sha256(bytes),
+  };
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...compiled, compiler: { ...compiler, sectionVocabulary } }, null, 2)}\n`,
   );
 }
 
@@ -155,6 +197,23 @@ export async function publishBundle(
     }
   }
   if (manifest.compiler !== null) await publish(manifest.compiler.file);
+  const publishSectionVocabulary = async (
+    ref: SectionVocabularyRef,
+    connectivity: v.InferOutput<typeof ConnectorIndexFile>,
+  ): Promise<void> => {
+    const bytes = await readFile(join(directory, ref.file));
+    const digest = sha256(bytes);
+    const vocabulary = decodedOrThrow(
+      decode(SectionVocabularyFile, JSON.parse(bytes.toString("utf8"))),
+      ref.file,
+    );
+    const issues = sectionVocabularyIssues(vocabulary, connectivity);
+    if (digest !== ref.sha256) {
+      issues.push(`its SHA-256 is ${digest}, but the manifest references ${ref.sha256}`);
+    }
+    if (issues.length > 0) throw new Error(`${ref.file}: ${issues.join("; ")}`);
+    await publish(ref.file);
+  };
   decodeDeclared(
     CrosswalkFile,
     JSON.parse((await publish(manifest.crosswalk.file)).toString("utf8")),
@@ -165,8 +224,10 @@ export async function publishBundle(
     ["connectors", manifest.connectors.file],
     ["connectivity", manifest.connectivity.file],
   ];
+  const indexes = new Map<ConnectorPackage, v.InferOutput<typeof ConnectorIndexFile>>();
   for (const [expected, file] of packages) {
     const { value: index } = await readJson(ConnectorIndexFile, file);
+    indexes.set(expected, index);
     const records = new Map<string, v.InferOutput<typeof ConnectorRecordFile>>();
     for (const [partId, record] of Object.entries(index.parts)) {
       if (record === null) continue;
@@ -176,6 +237,10 @@ export async function publishBundle(
     const issues = connectorPackageIssues(expected, index, records);
     if (issues.length > 0) throw new Error(`${file}: ${issues.join("; ")}`);
     await publishJson(ConnectorIndexFile, file);
+  }
+  const connectivity = indexes.get("connectivity");
+  if (manifest.compiler !== null && connectivity !== undefined) {
+    await publishSectionVocabulary(manifest.compiler.sectionVocabulary, connectivity);
   }
   await publishJson(CreditTableFile, manifest.creditTable.file);
   const published = new Set(renamed.values());

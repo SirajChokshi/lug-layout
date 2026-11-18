@@ -7,6 +7,7 @@
     "restore-ldraw": "node src/cli.ts restore",
     "attribution": "node src/cli.ts attribution",
     "verify-ldraw": "node src/cli.ts verify",
+    "section-vocabulary": "node src/cli.ts section-vocabulary",
     "build": "node src/cli.ts bundle",
     "typecheck": "tsc -p tsconfig.json",
     "facts": "node src/cli.ts facts",

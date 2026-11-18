@@ -20,6 +20,7 @@ import {
   type CompilerVehicles,
   type MalformedFinding,
   type PrimitiveConnectorTable,
+  type SectionVocabulary,
 } from "@brr/schema/bundle";
 import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
@@ -33,6 +34,8 @@ export interface ImportJob {
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly primitives: PrimitiveConnectorTable | null;
+  readonly sectionVocabulary: SectionVocabulary;
+  readonly cavityProbe: string;
   readonly bundlePartIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentColors: ReadonlyArray<number>;
@@ -148,6 +151,7 @@ export interface PartConnectorSource {
 }
 
 const MAX_COMPILE_ROUNDS = 64;
+const ONLY_PINNED_PARTS_ARE_COMPILED: ReadonlyArray<string> = [];
 const PRIMARY_SLICES = 1;
 const HELPER_SLICES = 2;
 const HELPER_DEADLINE_PER_PRIMARY_MS = 4;
@@ -419,7 +423,12 @@ export class ModelImportEngine {
           lod: job.lod,
           studPrimitives: job.studPrimitives,
           unofficialAllowlist: job.unofficialAllowlist,
-          primitives: job.primitives,
+          connectors: {
+            primitives: job.primitives,
+            sectionVocabulary: job.sectionVocabulary,
+            cavityProbe: job.cavityProbe,
+            infer: ONLY_PINNED_PARTS_ARE_COMPILED,
+          },
           parts: pendingParts,
           model: job.text,
           inlineChecks: pendingChecks,

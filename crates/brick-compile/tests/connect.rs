@@ -2231,6 +2231,38 @@ fn finger_snaps_without_a_center_flag_are_centred_on_their_position_as_their_par
 }
 
 #[test]
+fn a_section_vocabulary_writes_ldcad_section_codes_and_reads_back_unchanged() {
+    let vocabulary = SectionVocabulary::from_metas([
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4   A 4 2]",
+        "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=_L 6.25 2   L_ 6.5 1   S 3 2]",
+        "0 !LDCAD SNAP_CLP [radius=4] [length=8]",
+    ]);
+    let written = vocabulary.to_json();
+    assert_eq!(
+        written,
+        json!({
+            "sizes": [
+                { "gender": "M", "shape": "S", "size": 3.0 },
+                { "gender": "M", "shape": "_L", "size": 6.25 },
+                { "gender": "M", "shape": "L_", "size": 6.5 },
+                { "gender": "F", "shape": "R", "size": 4.0 },
+                { "gender": "F", "shape": "R", "size": 6.0 },
+                { "gender": "F", "shape": "A", "size": 4.0 },
+            ],
+            "lengths": [
+                { "shape": "R", "length": 4.0 },
+                { "shape": "R", "length": 8.0 },
+                { "shape": "A", "length": 2.0 },
+                { "shape": "S", "length": 2.0 },
+                { "shape": "_L", "length": 2.0 },
+                { "shape": "L_", "length": 1.0 },
+            ],
+        })
+    );
+    assert_eq!(SectionVocabulary::from_json(&written), Ok(vocabulary));
+}
+
+#[test]
 fn tiers_one_and_two_drop_and_report_references_they_cannot_place_and_keep_the_rest() {
     let part = "0 Studs\n\
         1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud.dat\n\

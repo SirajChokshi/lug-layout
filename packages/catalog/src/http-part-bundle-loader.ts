@@ -12,6 +12,7 @@ import {
   ModelFile,
   PartShape,
   PartTableFile,
+  SectionVocabularyFile,
   type BundleCredit,
   type BundleLod,
   type BundleManifest,
@@ -50,6 +51,7 @@ import type {
   PartShapeRecord,
   PartBundle,
   PartFilter,
+  PinnedSectionVocabulary,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { FetchPool, type FetchLane } from "./fetch-pool.ts";
@@ -58,6 +60,20 @@ import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.t
 const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
 const MAX_CONCURRENT_FETCHES = 16;
+const HEX_RADIX = 16;
+const BYTE_HEX_DIGITS = 2;
+
+interface PinnedSectionVocabularyFile {
+  readonly sha256: string;
+  readonly file: SectionVocabularyFile;
+}
+
+async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return [...digest]
+    .map((byte) => byte.toString(HEX_RADIX).padStart(BYTE_HEX_DIGITS, "0"))
+    .join("");
+}
 const POINTER_ATTEMPTS = 2;
 
 interface ResolvedManifest {
@@ -132,6 +148,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   >();
   private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
   private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
+  private readonly sectionVocabularies = new Map<
+    BundleLod,
+    Promise<PinnedSectionVocabularyFile | null>
+  >();
   private resolvedManifest: Promise<ResolvedManifest> | undefined;
 
   constructor(
@@ -340,9 +360,45 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     };
   }
 
+  private sectionVocabularyFile(lod: BundleLod): Promise<PinnedSectionVocabularyFile | null> {
+    let pinned = this.sectionVocabularies.get(lod);
+    if (pinned === undefined) {
+      pinned = this.loadIndex(lod).then(async ({ compiler }) => {
+        if (!compiler) return null;
+        const { file, sha256 } = compiler.sectionVocabulary;
+        const path = `${lod}/${file}`;
+        const bytes = await this.fetcher.bytes(path);
+        const digest = await sha256Hex(bytes);
+        if (digest !== sha256) {
+          throw new Error(`${path} has SHA-256 ${digest}, but the manifest references ${sha256}`);
+        }
+        const text = new TextDecoder().decode(bytes);
+        return {
+          sha256,
+          file: decodedOrThrow(decode(SectionVocabularyFile, JSON.parse(text)), path),
+        };
+      });
+      this.sectionVocabularies.set(lod, pinned);
+    }
+    return pinned;
+  }
+
+  async loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null> {
+    const pinned = await this.sectionVocabularyFile(lod);
+    return pinned && { licenses: [pinned.file.license], attribution: pinned.file.attribution };
+  }
+
+  private async pinnedSectionVocabulary(lod: BundleLod): Promise<PinnedSectionVocabulary> {
+    const pinned = await this.sectionVocabularyFile(lod);
+    if (!pinned) throw new Error(`the ${lod} bundle ships no compiler, so no section vocabulary`);
+    const { sizes, lengths } = pinned.file;
+    return { sha256: pinned.sha256, vocabulary: { sizes, lengths } };
+  }
+
   async importContext(lod: BundleLod): Promise<ImportContext> {
     const manifest = await this.loadManifest(lod);
     if (!manifest.compiler) throw new Error(`bundle ${manifest.bundleVersion} ships no compiler`);
+    const sectionVocabulary = await this.pinnedSectionVocabulary(lod);
     return {
       bundleVersion: manifest.bundleVersion,
       source: manifest.source,
@@ -351,6 +407,8 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       unofficialAllowlist: manifest.compiler.unofficialAllowlist,
       studPrimitiveNames: manifest.studPrimitives.map((primitive) => primitive.name),
       primitives: manifest.compiler.primitives ?? null,
+      sectionVocabulary,
+      cavityProbe: manifest.compiler.cavityProbe,
       partIds: manifest.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
       translucentCodes: manifest.colors

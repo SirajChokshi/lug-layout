@@ -1,0 +1,2286 @@
+{
+  "source": {
+    "kind": "github-archive",
+    "repo": "RolandMelkert/LDCadShadowLibrary",
+    "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+    "root": ""
+  },
+  "archive": {
+    "file": "ldcad-shadow-library.tar.gz",
+    "sha256": "a91dbdb5487a5796bdb76de64966e11e9c25ee1de56121000d7d943d3cfa1b3a"
+  },
+  "license": "CC BY-SA 4.0",
+  "attribution": [
+    "Section sizes and lengths derived from the LDCad Shadow Library by Roland Melkert and the LDCad Shadow Library contributors, github.com/RolandMelkert/LDCadShadowLibrary at 9b1131fb1991f8c0bfc072325e4e12f6271aba35, CC BY-SA 4.0"
+  ],
+  "sizes": [
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 1
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 1.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 1.75
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 1.8
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 2
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 2.25
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 2.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 2.75
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 2.8
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 3
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 3.2
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 3.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 3.75
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 4
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 4.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 5.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 6
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 6.2
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 6.25
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 6.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 7
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 7.25
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 7.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 7.75
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 8
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 8.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 9
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 9.2
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 9.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 9.85
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 10
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 11
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 12
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 12.6
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 13
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 13.25
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 14
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 14.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 15
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 16
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 18
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 20
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 23
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 24
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 27
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 28
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 30
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 36
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 37
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 38
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 39.5
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 40
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 44
+    },
+    {
+      "gender": "M",
+      "shape": "R",
+      "size": 80
+    },
+    {
+      "gender": "M",
+      "shape": "A",
+      "size": 4
+    },
+    {
+      "gender": "M",
+      "shape": "A",
+      "size": 6
+    },
+    {
+      "gender": "M",
+      "shape": "A",
+      "size": 9
+    },
+    {
+      "gender": "M",
+      "shape": "A",
+      "size": 10
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 1.25
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 5
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 6
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 8
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 10
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 14
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 16
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 18
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 26
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 36
+    },
+    {
+      "gender": "M",
+      "shape": "S",
+      "size": 40
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 2.5
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 3
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 3.4
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 4
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 4.2
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 4.25
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 4.5
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 6
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 6.25
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 6.5
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 8
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 8.75
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 10
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 11
+    },
+    {
+      "gender": "M",
+      "shape": "_L",
+      "size": 19
+    },
+    {
+      "gender": "M",
+      "shape": "L_",
+      "size": 6.25
+    },
+    {
+      "gender": "M",
+      "shape": "L_",
+      "size": 6.5
+    },
+    {
+      "gender": "M",
+      "shape": "L_",
+      "size": 7.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 1
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 1.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 1.8
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 2
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 2.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 2.66
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 2.68
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 3
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 3.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 3.6
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 3.75
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 4
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 4.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 4.75
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 6
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 6.25
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 6.3
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 6.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 7
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 7.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 8
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 8.2
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 8.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 9
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 9.2
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 9.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 9.85
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 10
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 11
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 12
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 12.5
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 12.6
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 13
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 14
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 15
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 16
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 17
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 18
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 19
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 20
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 23
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 24
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 26
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 27
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 30
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 32
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 36
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 37
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 38
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 40
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 44
+    },
+    {
+      "gender": "F",
+      "shape": "R",
+      "size": 80
+    },
+    {
+      "gender": "F",
+      "shape": "A",
+      "size": 4
+    },
+    {
+      "gender": "F",
+      "shape": "A",
+      "size": 6
+    },
+    {
+      "gender": "F",
+      "shape": "A",
+      "size": 9
+    },
+    {
+      "gender": "F",
+      "shape": "A",
+      "size": 10
+    },
+    {
+      "gender": "F",
+      "shape": "A",
+      "size": 20
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 1.25
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 3
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 3.75
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 4
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 6
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 6.5
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 7
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 7.5
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 8
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 9
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 10
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 11
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 12
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 14
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 16
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 18
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 20
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 24
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 26
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 28
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 32
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 36
+    },
+    {
+      "gender": "F",
+      "shape": "S",
+      "size": 40
+    },
+    {
+      "gender": "F",
+      "shape": "_L",
+      "size": 4
+    },
+    {
+      "gender": "F",
+      "shape": "_L",
+      "size": 4.5
+    },
+    {
+      "gender": "F",
+      "shape": "_L",
+      "size": 6
+    },
+    {
+      "gender": "F",
+      "shape": "_L",
+      "size": 6.5
+    },
+    {
+      "gender": "F",
+      "shape": "_L",
+      "size": 8
+    },
+    {
+      "gender": "F",
+      "shape": "_L",
+      "size": 9
+    },
+    {
+      "gender": "F",
+      "shape": "_L",
+      "size": 11
+    },
+    {
+      "gender": "F",
+      "shape": "_L",
+      "size": 28
+    },
+    {
+      "gender": "F",
+      "shape": "L_",
+      "size": 6.5
+    }
+  ],
+  "lengths": [
+    {
+      "shape": "R",
+      "length": 0.25
+    },
+    {
+      "shape": "R",
+      "length": 0.5
+    },
+    {
+      "shape": "R",
+      "length": 1
+    },
+    {
+      "shape": "R",
+      "length": 1.5
+    },
+    {
+      "shape": "R",
+      "length": 1.8
+    },
+    {
+      "shape": "R",
+      "length": 2
+    },
+    {
+      "shape": "R",
+      "length": 2.5
+    },
+    {
+      "shape": "R",
+      "length": 2.6
+    },
+    {
+      "shape": "R",
+      "length": 2.75
+    },
+    {
+      "shape": "R",
+      "length": 3
+    },
+    {
+      "shape": "R",
+      "length": 3.5
+    },
+    {
+      "shape": "R",
+      "length": 3.75
+    },
+    {
+      "shape": "R",
+      "length": 4
+    },
+    {
+      "shape": "R",
+      "length": 4.12
+    },
+    {
+      "shape": "R",
+      "length": 4.24
+    },
+    {
+      "shape": "R",
+      "length": 4.25
+    },
+    {
+      "shape": "R",
+      "length": 4.4
+    },
+    {
+      "shape": "R",
+      "length": 4.47
+    },
+    {
+      "shape": "R",
+      "length": 4.5
+    },
+    {
+      "shape": "R",
+      "length": 4.75
+    },
+    {
+      "shape": "R",
+      "length": 4.8
+    },
+    {
+      "shape": "R",
+      "length": 5
+    },
+    {
+      "shape": "R",
+      "length": 5.1
+    },
+    {
+      "shape": "R",
+      "length": 5.2
+    },
+    {
+      "shape": "R",
+      "length": 5.25
+    },
+    {
+      "shape": "R",
+      "length": 5.3
+    },
+    {
+      "shape": "R",
+      "length": 5.39
+    },
+    {
+      "shape": "R",
+      "length": 5.4
+    },
+    {
+      "shape": "R",
+      "length": 5.5
+    },
+    {
+      "shape": "R",
+      "length": 5.7
+    },
+    {
+      "shape": "R",
+      "length": 5.75
+    },
+    {
+      "shape": "R",
+      "length": 5.83
+    },
+    {
+      "shape": "R",
+      "length": 6
+    },
+    {
+      "shape": "R",
+      "length": 6.1
+    },
+    {
+      "shape": "R",
+      "length": 6.2
+    },
+    {
+      "shape": "R",
+      "length": 6.25
+    },
+    {
+      "shape": "R",
+      "length": 6.3
+    },
+    {
+      "shape": "R",
+      "length": 6.33
+    },
+    {
+      "shape": "R",
+      "length": 6.5
+    },
+    {
+      "shape": "R",
+      "length": 6.6
+    },
+    {
+      "shape": "R",
+      "length": 6.64
+    },
+    {
+      "shape": "R",
+      "length": 6.7
+    },
+    {
+      "shape": "R",
+      "length": 7
+    },
+    {
+      "shape": "R",
+      "length": 7.15
+    },
+    {
+      "shape": "R",
+      "length": 7.4
+    },
+    {
+      "shape": "R",
+      "length": 7.5
+    },
+    {
+      "shape": "R",
+      "length": 7.75
+    },
+    {
+      "shape": "R",
+      "length": 8
+    },
+    {
+      "shape": "R",
+      "length": 8.5
+    },
+    {
+      "shape": "R",
+      "length": 8.75
+    },
+    {
+      "shape": "R",
+      "length": 9
+    },
+    {
+      "shape": "R",
+      "length": 9.5
+    },
+    {
+      "shape": "R",
+      "length": 9.75
+    },
+    {
+      "shape": "R",
+      "length": 10
+    },
+    {
+      "shape": "R",
+      "length": 10.5
+    },
+    {
+      "shape": "R",
+      "length": 11
+    },
+    {
+      "shape": "R",
+      "length": 11.3
+    },
+    {
+      "shape": "R",
+      "length": 11.31
+    },
+    {
+      "shape": "R",
+      "length": 11.5
+    },
+    {
+      "shape": "R",
+      "length": 11.75
+    },
+    {
+      "shape": "R",
+      "length": 11.9
+    },
+    {
+      "shape": "R",
+      "length": 12
+    },
+    {
+      "shape": "R",
+      "length": 12.5
+    },
+    {
+      "shape": "R",
+      "length": 12.9
+    },
+    {
+      "shape": "R",
+      "length": 13
+    },
+    {
+      "shape": "R",
+      "length": 13.25
+    },
+    {
+      "shape": "R",
+      "length": 13.5
+    },
+    {
+      "shape": "R",
+      "length": 14
+    },
+    {
+      "shape": "R",
+      "length": 14.5
+    },
+    {
+      "shape": "R",
+      "length": 15
+    },
+    {
+      "shape": "R",
+      "length": 15.5
+    },
+    {
+      "shape": "R",
+      "length": 16
+    },
+    {
+      "shape": "R",
+      "length": 16.5
+    },
+    {
+      "shape": "R",
+      "length": 16.9
+    },
+    {
+      "shape": "R",
+      "length": 17
+    },
+    {
+      "shape": "R",
+      "length": 17.5
+    },
+    {
+      "shape": "R",
+      "length": 18
+    },
+    {
+      "shape": "R",
+      "length": 18.2
+    },
+    {
+      "shape": "R",
+      "length": 18.5
+    },
+    {
+      "shape": "R",
+      "length": 18.7
+    },
+    {
+      "shape": "R",
+      "length": 19
+    },
+    {
+      "shape": "R",
+      "length": 19.5
+    },
+    {
+      "shape": "R",
+      "length": 20
+    },
+    {
+      "shape": "R",
+      "length": 20.5
+    },
+    {
+      "shape": "R",
+      "length": 21
+    },
+    {
+      "shape": "R",
+      "length": 21.5
+    },
+    {
+      "shape": "R",
+      "length": 22
+    },
+    {
+      "shape": "R",
+      "length": 22.5
+    },
+    {
+      "shape": "R",
+      "length": 23
+    },
+    {
+      "shape": "R",
+      "length": 24
+    },
+    {
+      "shape": "R",
+      "length": 25
+    },
+    {
+      "shape": "R",
+      "length": 26
+    },
+    {
+      "shape": "R",
+      "length": 26.5
+    },
+    {
+      "shape": "R",
+      "length": 27
+    },
+    {
+      "shape": "R",
+      "length": 27.5
+    },
+    {
+      "shape": "R",
+      "length": 28
+    },
+    {
+      "shape": "R",
+      "length": 28.5
+    },
+    {
+      "shape": "R",
+      "length": 29
+    },
+    {
+      "shape": "R",
+      "length": 30
+    },
+    {
+      "shape": "R",
+      "length": 31
+    },
+    {
+      "shape": "R",
+      "length": 32
+    },
+    {
+      "shape": "R",
+      "length": 33
+    },
+    {
+      "shape": "R",
+      "length": 34
+    },
+    {
+      "shape": "R",
+      "length": 35
+    },
+    {
+      "shape": "R",
+      "length": 35.9
+    },
+    {
+      "shape": "R",
+      "length": 36
+    },
+    {
+      "shape": "R",
+      "length": 37
+    },
+    {
+      "shape": "R",
+      "length": 38
+    },
+    {
+      "shape": "R",
+      "length": 39
+    },
+    {
+      "shape": "R",
+      "length": 40
+    },
+    {
+      "shape": "R",
+      "length": 41
+    },
+    {
+      "shape": "R",
+      "length": 42
+    },
+    {
+      "shape": "R",
+      "length": 42.5
+    },
+    {
+      "shape": "R",
+      "length": 43
+    },
+    {
+      "shape": "R",
+      "length": 44
+    },
+    {
+      "shape": "R",
+      "length": 44.5
+    },
+    {
+      "shape": "R",
+      "length": 45.1
+    },
+    {
+      "shape": "R",
+      "length": 46
+    },
+    {
+      "shape": "R",
+      "length": 47
+    },
+    {
+      "shape": "R",
+      "length": 47.5
+    },
+    {
+      "shape": "R",
+      "length": 48
+    },
+    {
+      "shape": "R",
+      "length": 49
+    },
+    {
+      "shape": "R",
+      "length": 50
+    },
+    {
+      "shape": "R",
+      "length": 51
+    },
+    {
+      "shape": "R",
+      "length": 52
+    },
+    {
+      "shape": "R",
+      "length": 53
+    },
+    {
+      "shape": "R",
+      "length": 54
+    },
+    {
+      "shape": "R",
+      "length": 55
+    },
+    {
+      "shape": "R",
+      "length": 56
+    },
+    {
+      "shape": "R",
+      "length": 58
+    },
+    {
+      "shape": "R",
+      "length": 59
+    },
+    {
+      "shape": "R",
+      "length": 60
+    },
+    {
+      "shape": "R",
+      "length": 61
+    },
+    {
+      "shape": "R",
+      "length": 62
+    },
+    {
+      "shape": "R",
+      "length": 64
+    },
+    {
+      "shape": "R",
+      "length": 66
+    },
+    {
+      "shape": "R",
+      "length": 67
+    },
+    {
+      "shape": "R",
+      "length": 67.5
+    },
+    {
+      "shape": "R",
+      "length": 68
+    },
+    {
+      "shape": "R",
+      "length": 69
+    },
+    {
+      "shape": "R",
+      "length": 70
+    },
+    {
+      "shape": "R",
+      "length": 72
+    },
+    {
+      "shape": "R",
+      "length": 73
+    },
+    {
+      "shape": "R",
+      "length": 74
+    },
+    {
+      "shape": "R",
+      "length": 76
+    },
+    {
+      "shape": "R",
+      "length": 78
+    },
+    {
+      "shape": "R",
+      "length": 80
+    },
+    {
+      "shape": "R",
+      "length": 82
+    },
+    {
+      "shape": "R",
+      "length": 84
+    },
+    {
+      "shape": "R",
+      "length": 86
+    },
+    {
+      "shape": "R",
+      "length": 88
+    },
+    {
+      "shape": "R",
+      "length": 89
+    },
+    {
+      "shape": "R",
+      "length": 90
+    },
+    {
+      "shape": "R",
+      "length": 92
+    },
+    {
+      "shape": "R",
+      "length": 95
+    },
+    {
+      "shape": "R",
+      "length": 96
+    },
+    {
+      "shape": "R",
+      "length": 99
+    },
+    {
+      "shape": "R",
+      "length": 100
+    },
+    {
+      "shape": "R",
+      "length": 102.5
+    },
+    {
+      "shape": "R",
+      "length": 103
+    },
+    {
+      "shape": "R",
+      "length": 104
+    },
+    {
+      "shape": "R",
+      "length": 104.5
+    },
+    {
+      "shape": "R",
+      "length": 105
+    },
+    {
+      "shape": "R",
+      "length": 108
+    },
+    {
+      "shape": "R",
+      "length": 108.5
+    },
+    {
+      "shape": "R",
+      "length": 110.5
+    },
+    {
+      "shape": "R",
+      "length": 115
+    },
+    {
+      "shape": "R",
+      "length": 116
+    },
+    {
+      "shape": "R",
+      "length": 118
+    },
+    {
+      "shape": "R",
+      "length": 120
+    },
+    {
+      "shape": "R",
+      "length": 124
+    },
+    {
+      "shape": "R",
+      "length": 136
+    },
+    {
+      "shape": "R",
+      "length": 140
+    },
+    {
+      "shape": "R",
+      "length": 144
+    },
+    {
+      "shape": "R",
+      "length": 148
+    },
+    {
+      "shape": "R",
+      "length": 152
+    },
+    {
+      "shape": "R",
+      "length": 160
+    },
+    {
+      "shape": "R",
+      "length": 161
+    },
+    {
+      "shape": "R",
+      "length": 170
+    },
+    {
+      "shape": "R",
+      "length": 172
+    },
+    {
+      "shape": "R",
+      "length": 175
+    },
+    {
+      "shape": "R",
+      "length": 175.5
+    },
+    {
+      "shape": "R",
+      "length": 180
+    },
+    {
+      "shape": "R",
+      "length": 184
+    },
+    {
+      "shape": "R",
+      "length": 196
+    },
+    {
+      "shape": "R",
+      "length": 198
+    },
+    {
+      "shape": "R",
+      "length": 199
+    },
+    {
+      "shape": "R",
+      "length": 200
+    },
+    {
+      "shape": "R",
+      "length": 203.5
+    },
+    {
+      "shape": "R",
+      "length": 218
+    },
+    {
+      "shape": "R",
+      "length": 236
+    },
+    {
+      "shape": "R",
+      "length": 240
+    },
+    {
+      "shape": "R",
+      "length": 255
+    },
+    {
+      "shape": "R",
+      "length": 264
+    },
+    {
+      "shape": "R",
+      "length": 280
+    },
+    {
+      "shape": "R",
+      "length": 290
+    },
+    {
+      "shape": "R",
+      "length": 296.5
+    },
+    {
+      "shape": "R",
+      "length": 299
+    },
+    {
+      "shape": "R",
+      "length": 318
+    },
+    {
+      "shape": "R",
+      "length": 336
+    },
+    {
+      "shape": "R",
+      "length": 340
+    },
+    {
+      "shape": "R",
+      "length": 355
+    },
+    {
+      "shape": "R",
+      "length": 360
+    },
+    {
+      "shape": "R",
+      "length": 380
+    },
+    {
+      "shape": "R",
+      "length": 474
+    },
+    {
+      "shape": "R",
+      "length": 518
+    },
+    {
+      "shape": "R",
+      "length": 600
+    },
+    {
+      "shape": "A",
+      "length": 1
+    },
+    {
+      "shape": "A",
+      "length": 2
+    },
+    {
+      "shape": "A",
+      "length": 3
+    },
+    {
+      "shape": "A",
+      "length": 4
+    },
+    {
+      "shape": "A",
+      "length": 5
+    },
+    {
+      "shape": "A",
+      "length": 5.5
+    },
+    {
+      "shape": "A",
+      "length": 6
+    },
+    {
+      "shape": "A",
+      "length": 7
+    },
+    {
+      "shape": "A",
+      "length": 8
+    },
+    {
+      "shape": "A",
+      "length": 9
+    },
+    {
+      "shape": "A",
+      "length": 10
+    },
+    {
+      "shape": "A",
+      "length": 11
+    },
+    {
+      "shape": "A",
+      "length": 12
+    },
+    {
+      "shape": "A",
+      "length": 14
+    },
+    {
+      "shape": "A",
+      "length": 14.8
+    },
+    {
+      "shape": "A",
+      "length": 15
+    },
+    {
+      "shape": "A",
+      "length": 15.25
+    },
+    {
+      "shape": "A",
+      "length": 16
+    },
+    {
+      "shape": "A",
+      "length": 17
+    },
+    {
+      "shape": "A",
+      "length": 17.5
+    },
+    {
+      "shape": "A",
+      "length": 18
+    },
+    {
+      "shape": "A",
+      "length": 19
+    },
+    {
+      "shape": "A",
+      "length": 20
+    },
+    {
+      "shape": "A",
+      "length": 22
+    },
+    {
+      "shape": "A",
+      "length": 23
+    },
+    {
+      "shape": "A",
+      "length": 24
+    },
+    {
+      "shape": "A",
+      "length": 25
+    },
+    {
+      "shape": "A",
+      "length": 28
+    },
+    {
+      "shape": "A",
+      "length": 30
+    },
+    {
+      "shape": "A",
+      "length": 32
+    },
+    {
+      "shape": "A",
+      "length": 34
+    },
+    {
+      "shape": "A",
+      "length": 36
+    },
+    {
+      "shape": "A",
+      "length": 40
+    },
+    {
+      "shape": "A",
+      "length": 44
+    },
+    {
+      "shape": "A",
+      "length": 46
+    },
+    {
+      "shape": "A",
+      "length": 48
+    },
+    {
+      "shape": "A",
+      "length": 50
+    },
+    {
+      "shape": "A",
+      "length": 58
+    },
+    {
+      "shape": "A",
+      "length": 60
+    },
+    {
+      "shape": "A",
+      "length": 70
+    },
+    {
+      "shape": "A",
+      "length": 72
+    },
+    {
+      "shape": "A",
+      "length": 78
+    },
+    {
+      "shape": "A",
+      "length": 80
+    },
+    {
+      "shape": "A",
+      "length": 82
+    },
+    {
+      "shape": "A",
+      "length": 90
+    },
+    {
+      "shape": "A",
+      "length": 98
+    },
+    {
+      "shape": "A",
+      "length": 100
+    },
+    {
+      "shape": "A",
+      "length": 102
+    },
+    {
+      "shape": "A",
+      "length": 108
+    },
+    {
+      "shape": "A",
+      "length": 116
+    },
+    {
+      "shape": "A",
+      "length": 120
+    },
+    {
+      "shape": "A",
+      "length": 140
+    },
+    {
+      "shape": "A",
+      "length": 158
+    },
+    {
+      "shape": "A",
+      "length": 160
+    },
+    {
+      "shape": "A",
+      "length": 180
+    },
+    {
+      "shape": "A",
+      "length": 200
+    },
+    {
+      "shape": "A",
+      "length": 220
+    },
+    {
+      "shape": "A",
+      "length": 240
+    },
+    {
+      "shape": "A",
+      "length": 320
+    },
+    {
+      "shape": "A",
+      "length": 640
+    },
+    {
+      "shape": "S",
+      "length": 1
+    },
+    {
+      "shape": "S",
+      "length": 2
+    },
+    {
+      "shape": "S",
+      "length": 2.5
+    },
+    {
+      "shape": "S",
+      "length": 2.75
+    },
+    {
+      "shape": "S",
+      "length": 3
+    },
+    {
+      "shape": "S",
+      "length": 3.75
+    },
+    {
+      "shape": "S",
+      "length": 4
+    },
+    {
+      "shape": "S",
+      "length": 5
+    },
+    {
+      "shape": "S",
+      "length": 5.5
+    },
+    {
+      "shape": "S",
+      "length": 5.75
+    },
+    {
+      "shape": "S",
+      "length": 6
+    },
+    {
+      "shape": "S",
+      "length": 7
+    },
+    {
+      "shape": "S",
+      "length": 8
+    },
+    {
+      "shape": "S",
+      "length": 9
+    },
+    {
+      "shape": "S",
+      "length": 10
+    },
+    {
+      "shape": "S",
+      "length": 11
+    },
+    {
+      "shape": "S",
+      "length": 12
+    },
+    {
+      "shape": "S",
+      "length": 13
+    },
+    {
+      "shape": "S",
+      "length": 14
+    },
+    {
+      "shape": "S",
+      "length": 16
+    },
+    {
+      "shape": "S",
+      "length": 17
+    },
+    {
+      "shape": "S",
+      "length": 18
+    },
+    {
+      "shape": "S",
+      "length": 19
+    },
+    {
+      "shape": "S",
+      "length": 20
+    },
+    {
+      "shape": "S",
+      "length": 21
+    },
+    {
+      "shape": "S",
+      "length": 22
+    },
+    {
+      "shape": "S",
+      "length": 24
+    },
+    {
+      "shape": "S",
+      "length": 25
+    },
+    {
+      "shape": "S",
+      "length": 28
+    },
+    {
+      "shape": "S",
+      "length": 29
+    },
+    {
+      "shape": "S",
+      "length": 32
+    },
+    {
+      "shape": "S",
+      "length": 33
+    },
+    {
+      "shape": "S",
+      "length": 36
+    },
+    {
+      "shape": "S",
+      "length": 38
+    },
+    {
+      "shape": "S",
+      "length": 40
+    },
+    {
+      "shape": "S",
+      "length": 40.75
+    },
+    {
+      "shape": "S",
+      "length": 44
+    },
+    {
+      "shape": "S",
+      "length": 45
+    },
+    {
+      "shape": "S",
+      "length": 47.5
+    },
+    {
+      "shape": "S",
+      "length": 52
+    },
+    {
+      "shape": "S",
+      "length": 54.5
+    },
+    {
+      "shape": "S",
+      "length": 57
+    },
+    {
+      "shape": "S",
+      "length": 60
+    },
+    {
+      "shape": "S",
+      "length": 62
+    },
+    {
+      "shape": "S",
+      "length": 68
+    },
+    {
+      "shape": "S",
+      "length": 80
+    },
+    {
+      "shape": "S",
+      "length": 82
+    },
+    {
+      "shape": "S",
+      "length": 92
+    },
+    {
+      "shape": "S",
+      "length": 116
+    },
+    {
+      "shape": "S",
+      "length": 120
+    },
+    {
+      "shape": "S",
+      "length": 140
+    },
+    {
+      "shape": "S",
+      "length": 160
+    },
+    {
+      "shape": "S",
+      "length": 200
+    },
+    {
+      "shape": "S",
+      "length": 232
+    },
+    {
+      "shape": "S",
+      "length": 240
+    },
+    {
+      "shape": "S",
+      "length": 260
+    },
+    {
+      "shape": "S",
+      "length": 270
+    },
+    {
+      "shape": "S",
+      "length": 280
+    },
+    {
+      "shape": "S",
+      "length": 290
+    },
+    {
+      "shape": "_L",
+      "length": 1
+    },
+    {
+      "shape": "_L",
+      "length": 2
+    },
+    {
+      "shape": "_L",
+      "length": 3
+    },
+    {
+      "shape": "_L",
+      "length": 3.25
+    },
+    {
+      "shape": "_L",
+      "length": 4
+    },
+    {
+      "shape": "_L",
+      "length": 5
+    },
+    {
+      "shape": "_L",
+      "length": 6
+    },
+    {
+      "shape": "_L",
+      "length": 8
+    },
+    {
+      "shape": "_L",
+      "length": 12
+    },
+    {
+      "shape": "_L",
+      "length": 20
+    },
+    {
+      "shape": "_L",
+      "length": 23
+    },
+    {
+      "shape": "_L",
+      "length": 28
+    },
+    {
+      "shape": "_L",
+      "length": 32
+    },
+    {
+      "shape": "_L",
+      "length": 92
+    },
+    {
+      "shape": "L_",
+      "length": 2
+    },
+    {
+      "shape": "L_",
+      "length": 12
+    },
+    {
+      "shape": "L_",
+      "length": 32
+    },
+    {
+      "shape": "L_",
+      "length": 92
+    }
+  ]
+}

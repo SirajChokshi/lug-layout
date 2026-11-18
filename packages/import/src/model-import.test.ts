@@ -1,6 +1,7 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import { parseGlb } from "@brr/catalog/glb";
-import type { CompilerVehicles } from "@brr/schema/bundle";
+import { SectionVocabularyFile, type CompilerVehicles } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile } from "node:fs/promises";
 import {
   AXIS_NEG_Y,
@@ -69,7 +70,9 @@ interface Manifest {
   readonly compiler: {
     readonly file: string;
     readonly vehicles?: CompilerVehicles;
-    readonly primitives?: CompileRequest["primitives"];
+    readonly primitives?: CompileRequest["connectors"]["primitives"];
+    readonly sectionVocabulary: { readonly file: string };
+    readonly cavityProbe: string;
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
   readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
@@ -143,6 +146,11 @@ async function importWith(
   const partTable = JSON.parse(
     await readFile(new URL(manifest.partTable.file, bundleRoot), "utf8"),
   ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
+  const vocabularyFile = new URL(manifest.compiler.sectionVocabulary.file, bundleRoot);
+  const vocabulary = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
+    vocabularyFile.pathname,
+  );
   const engine = new ModelImportEngine(
     compiler ?? (await bundleCompiler()),
     new LdrawMirror(manifest.source, fetchUrl),
@@ -161,6 +169,8 @@ async function importWith(
     studPrimitives: studPrimitives ?? manifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: [],
     primitives: manifest.compiler.primitives ?? null,
+    sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+    cavityProbe: manifest.compiler.cavityProbe,
     bundlePartIds: partTable.parts.map((part) => part.id),
     ldconfigCodes: manifest.colors.map((color) => color.code),
     translucentColors: manifest.colors

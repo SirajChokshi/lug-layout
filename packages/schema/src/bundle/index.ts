@@ -544,11 +544,30 @@ export const PrimitiveConnectorTable = v.strictObject({
 });
 export type PrimitiveConnectorTable = v.InferOutput<typeof PrimitiveConnectorTable>;
 
+export const SECTION_SHAPE_CODES = ["R", "A", "S", "_L", "L_"] as const;
+
+export const SectionVocabulary = v.strictObject({
+  sizes: v.array(
+    v.strictObject({
+      gender: v.picklist(["M", "F"]),
+      shape: v.picklist(SECTION_SHAPE_CODES),
+      size: Finite,
+    }),
+  ),
+  lengths: v.array(v.strictObject({ shape: v.picklist(SECTION_SHAPE_CODES), length: Finite })),
+});
+export type SectionVocabulary = v.InferOutput<typeof SectionVocabulary>;
+
+export const SectionVocabularyRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
   vehicles: v.optional(CompilerVehicles),
   primitives: v.optional(PrimitiveConnectorTable),
+  sectionVocabulary: SectionVocabularyRef,
+  cavityProbe: v.string(),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -854,6 +873,14 @@ const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
 
+export const CompilerConnectorInputs = v.strictObject({
+  primitives: v.nullable(PrimitiveConnectorTable),
+  sectionVocabulary: SectionVocabulary,
+  cavityProbe: v.string(),
+  infer: StringList,
+});
+export type CompilerConnectorInputs = v.InferOutput<typeof CompilerConnectorInputs>;
+
 export const BakeShard = v.pipe(
   v.strictObject({ from: Count, to: Count, of: Count, visibilityOnly: v.boolean() }),
   v.check(
@@ -872,7 +899,7 @@ export const CompilerRequest = v.variant("op", [
     lod: BundleLod,
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
-    primitives: v.nullable(PrimitiveConnectorTable),
+    connectors: CompilerConnectorInputs,
     parts: StringList,
     inlineChecks: v.pipe(
       v.array(v.strictObject({ inline: v.string(), official: v.string() })),
@@ -963,6 +990,7 @@ export const CompilerCompile = v.object({
         file: v.string(),
         header: ModelSection,
         files: Count,
+        connectors: v.nullable(ConnectorRecordFile),
       }),
       v.object({ ...CompilerNeed.entries, ...Reference }),
       v.object({ ...CompilerFailure.entries, ...Reference }),
@@ -1278,6 +1306,15 @@ export const GithubArchive = v.strictObject({
 });
 export type GithubArchive = v.InferOutput<typeof GithubArchive>;
 
+export const SectionVocabularyFile = v.strictObject({
+  source: GithubArchive,
+  archive: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  license: v.string(),
+  attribution: v.array(v.string()),
+  ...SectionVocabulary.entries,
+});
+export type SectionVocabularyFile = v.InferOutput<typeof SectionVocabularyFile>;
+
 export const CatalogLocation = v.variant("kind", [GithubMirror, GithubArchive]);
 export type CatalogLocation = v.InferOutput<typeof CatalogLocation>;
 
@@ -1289,7 +1326,12 @@ export const LdrawLibraryIndex = v.strictObject({
 });
 export type LdrawLibraryIndex = v.InferOutput<typeof LdrawLibraryIndex>;
 
-export const CatalogSourceUse = v.picklist(["crosswalk", "inventory-check", "categories"]);
+export const CatalogSourceUse = v.picklist([
+  "crosswalk",
+  "inventory-check",
+  "categories",
+  "connectors",
+]);
 export type CatalogSourceUse = v.InferOutput<typeof CatalogSourceUse>;
 
 export const CatalogSource = v.strictObject({
