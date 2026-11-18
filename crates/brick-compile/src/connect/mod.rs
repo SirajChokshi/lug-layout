@@ -634,6 +634,8 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                         gender: Gender::Female,
                         origin: [origin[0], -origin[1], -origin[2]].map(|c| c + 0.0),
                         axis: [0.0; 3],
+                        sixteenths: None,
+                        direction: None,
                         sections: Vec::new(),
                         caps: 0,
                         slide: false,
