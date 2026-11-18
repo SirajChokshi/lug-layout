@@ -256,7 +256,7 @@ fn run() -> Result<bool, String> {
                     .flatten()
                     .collect()
             });
-            let world = instance.matrix.ldraw_to_y_up();
+            let world = &instance.matrix;
             for face in faces.iter() {
                 let origin = world.apply(face.origin);
                 let tip = world.apply([0, 1, 2].map(|k| face.origin[k] + face.axis[k]));
