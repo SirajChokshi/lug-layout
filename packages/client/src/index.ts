@@ -163,13 +163,7 @@ export {
   PALETTE_MEMORY,
   PALETTE_THUMBNAILS,
 } from "./tokens.ts";
-export type {
-  ITrainPlay,
-  PlaySnapshot,
-  PlayStatus,
-  PlaySwitchView,
-  TrainSetView,
-} from "./play/train-play.ts";
+export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
 export type { PlaySetup } from "./play/play-models.ts";
 export { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./edit/editor.ts";
 export {
