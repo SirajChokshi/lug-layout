@@ -10,6 +10,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { contentAddressedName } from "../publish.ts";
 import { assembleLibraryBake, LIBRARY_BAKE_INDEX } from "./assemble.ts";
 
 const CA = "Licensed under CC BY 4.0 : see CAreadme.txt";
@@ -99,6 +100,12 @@ it("files every part under its own bucket with content-addressed records and GLB
     failed: 0,
     refused: [],
   });
+  expect(
+    await readFile(
+      join(inputs.out, contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256)),
+      "utf8",
+    ),
+  ).toBe(indexText);
   const index = await readIndex(inputs.out);
   expect(index.buckets).toHaveLength(LIBRARY_BAKE_BUCKETS);
   expect(index.licenses).toEqual([CA]);

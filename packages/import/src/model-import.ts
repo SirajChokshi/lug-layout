@@ -13,16 +13,20 @@ import type {
   LooseGeometry,
   ModelRead,
   PartOutcome,
+  RecordFiles,
 } from "./brick-compiler.ts";
 import { isDirectColor } from "@brr/catalog/colors";
+import { parseGlb } from "@brr/catalog/glb";
 import {
   submodelTreeFits,
   type CompilerVehicles,
+  type LibraryBakePart,
   type MalformedFinding,
   type PrimitiveConnectorTable,
   type SectionVocabulary,
 } from "@brr/schema/bundle";
 import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
+import type { IPartRecords } from "./library-bake-store.ts";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
 
@@ -113,7 +117,16 @@ export interface ImportReport {
   readonly bakeIssue: string | null;
   readonly bakeHelpersFailed: number;
   readonly fetched: MirrorStats;
+  readonly records: RecordReport | null;
   readonly timings: ImportTimings;
+}
+
+export interface RecordReport {
+  readonly pinnedParts: number;
+  readonly bakedFromRecords: number;
+  readonly fetched: number;
+  readonly cached: number;
+  readonly bytes: number;
 }
 
 export interface ImportedSubmodels extends SubmodelInstances {
@@ -126,10 +139,14 @@ export interface CompiledGlb {
   readonly glb: Uint8Array;
 }
 
-export type ModelBake = Omit<BakedModel, "status">;
+export type ModelBake = Omit<BakedModel, "status" | "recordedParts">;
 
 export interface IBakeHelper {
-  bake(request: BakeRequest, library: LibraryFiles): Promise<BakeOutcome>;
+  bake(
+    request: BakeRequest,
+    library: LibraryFiles,
+    records: RecordFiles | null,
+  ): Promise<BakeOutcome>;
 }
 
 export interface ImportResult {
@@ -158,6 +175,7 @@ export interface RefusedConnectorRecord {
 
 const MAX_COMPILE_ROUNDS = 64;
 const ONLY_PINNED_PARTS_ARE_COMPILED: ReadonlyArray<string> = [];
+const RECORDED_LOD: CompileLod = "standard";
 const PRIMARY_SLICES = 1;
 const HELPER_SLICES = 2;
 const HELPER_DEADLINE_PER_PRIMARY_MS = 4;
@@ -190,7 +208,7 @@ function asksForHeldFiles(outcome: BakeOutcome, library: ImportLibrary): boolean
 }
 
 function joinedShards(primary: BakedModel, others: ReadonlyArray<BakedModel>): ModelBake {
-  const { status: _baked, ...bake } = primary;
+  const { status: _baked, recordedParts: _recorded, ...bake } = primary;
   const { studs } = primary.studCover;
   const visibleBits = primary.studCover.visibleBits.slice();
   for (const other of others) {
@@ -234,6 +252,7 @@ interface Assembled {
       | "bakeIssue"
       | "bakeHelpersFailed"
       | "fetched"
+      | "records"
       | "timings"
       | "withoutConnectorRecords"
       | "refusedConnectorRecords"
@@ -247,6 +266,7 @@ interface BakeRounds {
   readonly issue: string | null;
   readonly rounds: number;
   readonly helpersFailed: number;
+  readonly recordedParts: number;
 }
 
 function libraryKey(source: MirrorSource): string {
@@ -258,6 +278,7 @@ export class ModelImportEngine {
     private readonly compiler: BrickCompiler,
     private readonly mirror: LdrawMirror,
     private readonly connectors: PartConnectorSource,
+    private readonly records: IPartRecords | null,
     private readonly now: () => number,
     private readonly helpers: ReadonlyArray<IBakeHelper>,
   ) {}
@@ -274,8 +295,9 @@ export class ModelImportEngine {
     const bundleIds = new Set(job.bundlePartIds);
     const officialOf = new Map(read.inlineParts.map((part) => [part.inline, part.official]));
     const officials = new Set(read.parts.map((key) => officialOf.get(key) ?? key));
+    const pinned = await this.pinnedParts(job, officials);
     const outside = [...officials].filter((reference) => !bundleIds.has(bundlePartId(reference)));
-    const outcomes = await this.resolveOutside(job, library, outside, read.inlineParts);
+    const outcomes = await this.resolveOutside(job, library, outside, read.inlineParts, pinned);
     const resolvedAt = this.now();
     const counts = instanceCounts(read);
     const parts = read.parts.map((key, index) => {
@@ -286,7 +308,8 @@ export class ModelImportEngine {
         : inlineResolution({ reference: key, official, instances }, bundleIds, outcomes);
     });
     const assembled = assemble(job, read, parts, outcomes);
-    const baked = await this.bakeDrawn(job, library, assembled.drawn);
+    const recordFiles = await this.recordFiles(read, assembled.drawn, officialOf, pinned);
+    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles);
     const loads = await Promise.all(
       assembled.result.partIds.map((partId) => this.connectors.read(partId)),
     );
@@ -309,6 +332,14 @@ export class ModelImportEngine {
         bakeIssue: baked.issue,
         bakeHelpersFailed: baked.helpersFailed,
         fetched: this.mirror.stats(),
+        records:
+          this.records === null
+            ? null
+            : {
+                pinnedParts: pinned.size,
+                bakedFromRecords: baked.recordedParts,
+                ...this.records.stats(),
+              },
         timings: {
           readMs: readAt - started,
           resolveMs: resolvedAt - readAt,
@@ -331,13 +362,73 @@ export class ModelImportEngine {
     for (const path of probe.absent) library.absent.add(path);
   }
 
+  private async pinnedParts(
+    job: ImportJob,
+    officials: ReadonlySet<string>,
+  ): Promise<ReadonlyMap<string, LibraryBakePart>> {
+    if (this.records === null) return new Map();
+    const references = new Map(
+      [...officials].map((reference) => [bundlePartId(reference), reference]),
+    );
+    const found = await this.records
+      .lookup([...references.keys()], {
+        source: job.source,
+        studPrimitives: job.studPrimitives,
+        unofficialAllowlist: job.unofficialAllowlist,
+        primitives: job.primitives,
+      })
+      .catch(() => new Map<string, LibraryBakePart>());
+    const pinned = new Map<string, LibraryBakePart>();
+    for (const [id, part] of found) {
+      const reference = references.get(id);
+      if (reference !== undefined) pinned.set(reference, part);
+    }
+    return pinned;
+  }
+
+  private async recordFiles(
+    read: ModelRead,
+    drawn: Uint8Array,
+    officialOf: ReadonlyMap<string, string>,
+    pinned: ReadonlyMap<string, LibraryBakePart>,
+  ): Promise<RecordFiles | null> {
+    const records = this.records;
+    if (records === null || pinned.size === 0) return null;
+    const wanted = new Set<string>();
+    for (const [i, isDrawn] of drawn.entries()) {
+      if (isDrawn === 0) continue;
+      const key = read.parts[read.instancePart[i] ?? 0] ?? "";
+      const official = officialOf.get(key) ?? key;
+      if (pinned.has(official)) wanted.add(official);
+    }
+    const fetched = await Promise.all(
+      [...wanted].map(async (reference): Promise<readonly [string, Uint8Array] | null> => {
+        const part = pinned.get(reference);
+        if (part === undefined) return null;
+        return records.bytes(part.record).then(
+          (bytes) => [reference, bytes] as const,
+          () => null,
+        );
+      }),
+    );
+    const files = new Map(fetched.filter((entry) => entry !== null));
+    return { key: records.key, files };
+  }
+
   private async bakeDrawn(
     job: ImportJob,
     library: ImportLibrary,
     drawn: Uint8Array,
+    records: RecordFiles | null,
   ): Promise<BakeRounds> {
     if (!drawn.includes(1)) {
-      return { bake: null, issue: "nothing in the file is drawn", rounds: 0, helpersFailed: 0 };
+      return {
+        bake: null,
+        issue: "nothing in the file is drawn",
+        rounds: 0,
+        helpersFailed: 0,
+        recordedParts: 0,
+      };
     }
     const request: BakeRequest = {
       source: job.text,
@@ -359,16 +450,16 @@ export class ModelImportEngine {
     });
     let helpersFailed = 0;
     for (let rounds = 1; rounds <= MAX_COMPILE_ROUNDS; rounds++) {
-      const needs = this.compiler.bakeNeeds(request, library);
+      const needs = this.compiler.bakeNeeds(request, library, records);
       if (needs.status === "need") {
         await this.fetchNeeded(library, new Set(needs.paths));
         continue;
       }
       const assisted = this.helpers.map((helper, index) =>
-        helper.bake(helperRequests[index] ?? request, library),
+        helper.bake(helperRequests[index] ?? request, library, records),
       );
       const primaryStarted = this.now();
-      const primary = this.compiler.bake(primaryRequest, library);
+      const primary = this.compiler.bake(primaryRequest, library, records);
       const deadlineMs =
         HELPER_DEADLINE_PER_PRIMARY_MS * (this.now() - primaryStarted) + HELPER_DEADLINE_SLACK_MS;
       const answered = await Promise.all(
@@ -381,7 +472,7 @@ export class ModelImportEngine {
           continue;
         }
         helpersFailed++;
-        outcomes.push(this.compiler.bake(helperRequests[index] ?? request, library));
+        outcomes.push(this.compiler.bake(helperRequests[index] ?? request, library, records));
       }
       const needed = new Set(
         outcomes.flatMap((outcome) => (outcome.status === "need" ? outcome.paths : [])),
@@ -397,7 +488,7 @@ export class ModelImportEngine {
             baked.push(outcome);
             break;
           case "failed":
-            return { bake: null, issue: outcome.message, rounds, helpersFailed };
+            return { bake: null, issue: outcome.message, rounds, helpersFailed, recordedParts: 0 };
           case "need":
             throw new Error("a bake shard asked for files after the round that fetched them");
           default: {
@@ -408,9 +499,35 @@ export class ModelImportEngine {
       }
       const [first, ...others] = baked;
       if (!first) throw new Error("the bake round returned no shard");
-      return { bake: joinedShards(first, others), issue: null, rounds, helpersFailed };
+      return {
+        bake: joinedShards(first, others),
+        issue: null,
+        rounds,
+        helpersFailed,
+        recordedParts: first.recordedParts,
+      };
     }
     throw new Error(`bake closure still growing after ${MAX_COMPILE_ROUNDS} rounds`);
+  }
+
+  private async fromRecords(
+    job: ImportJob,
+    outside: ReadonlyArray<string>,
+    pinned: ReadonlyMap<string, LibraryBakePart>,
+  ): Promise<ReadonlyArray<Extract<PartOutcome, { status: "compiled" }>>> {
+    const records = this.records;
+    if (records === null || job.lod !== RECORDED_LOD) return [];
+    const outcomes = await Promise.all(
+      outside.map(async (reference) => {
+        const part = pinned.get(reference);
+        if (part === undefined) return null;
+        return records.bytes(part.glb).then(
+          (glb) => compiledFromGlb(reference, glb),
+          () => null,
+        );
+      }),
+    );
+    return outcomes.filter((outcome) => outcome !== null);
   }
 
   private async resolveOutside(
@@ -418,10 +535,14 @@ export class ModelImportEngine {
     library: ImportLibrary,
     outside: ReadonlyArray<string>,
     inlineParts: ReadonlyArray<InlinePart>,
+    pinned: ReadonlyMap<string, LibraryBakePart>,
   ): Promise<Outcomes> {
     const parts = new Map<string, Exclude<PartOutcome, { status: "need" }>>();
     const inline = new Map<string, Exclude<InlineOutcome, { status: "need" }>>();
-    let pendingParts = [...outside];
+    for (const outcome of await this.fromRecords(job, outside, pinned)) {
+      parts.set(outcome.reference, outcome);
+    }
+    let pendingParts = outside.filter((reference) => !parts.has(reference));
     let pendingChecks = [...inlineParts];
     let weldEpsilonLdu = 0;
     let rounds = 0;
@@ -470,6 +591,34 @@ export class ModelImportEngine {
       await this.fetchNeeded(library, needed);
     }
     return { parts, inline, rounds, weldEpsilonLdu };
+  }
+}
+
+function compiledFromGlb(
+  reference: string,
+  glb: Uint8Array,
+): Extract<PartOutcome, { status: "compiled" }> | null {
+  try {
+    const bytes = glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength);
+    const { ldraw, sources } = parseGlb(bytes as ArrayBuffer, reference).document.extras;
+    return {
+      status: "compiled",
+      reference,
+      glb,
+      record: null,
+      file: ldraw.file,
+      header: {
+        name: ldraw.name,
+        title: ldraw.title,
+        author: ldraw.author,
+        license: ldraw.license,
+        ldrawOrg: ldraw.ldrawOrg,
+      },
+      files: sources.length,
+      connectors: null,
+    };
+  } catch {
+    return null;
   }
 }
 

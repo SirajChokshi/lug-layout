@@ -11,6 +11,7 @@ import {
   type CatalogPart,
   type BundleSource,
   type CompilerVehicles,
+  type LibraryBakeIndexRef,
   type ManifestPart,
   type ModelSection,
   type ModelVehicle,
@@ -189,6 +190,7 @@ export interface ImportContext {
   readonly translucentCodes: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
+  readonly libraryBake: LibraryBakeIndexRef | null;
 }
 
 export interface CompiledPartGlb {

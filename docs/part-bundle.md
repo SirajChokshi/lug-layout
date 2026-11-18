@@ -76,7 +76,7 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 - a **bake record**, which is everything the import-time bake reads from a compiled part;
 - its **standard GLB**, the same bytes the import compiler's `compile` op returns.
 
-They go to `tools/asset-pipeline/dist/library-bake`. The import will fetch them for pinned parts instead of compiling those parts. Parts outside the pinned library, such as MPD-embedded and Studio custom parts, keep compiling at import.
+They go to `.cache/library-bake`. The import will fetch them for pinned parts instead of compiling those parts. Parts outside the pinned library, such as MPD-embedded and Studio custom parts, keep compiling at import.
 
 **Compile options.** The records use the palette's `studPrimitives` and `unofficialAllowlist` and the Technic primitive table `primitive-connectors.json`, the same options the bundle manifest gives the import compiler. The index records all three, so a reader with other options can tell the records don't apply.
 
@@ -130,6 +130,38 @@ The index is two levels, so a reader fetches only what its parts need:
 `pnpm library-bake:check` runs both, as does CI's `library-bake` job; the required `check` status needs it.
 
 The `compile` op returns records only at the standard LOD, and refuses `records` at any other.
+
+### At import
+**Where the import finds them.** `bundle` copies the pin's index into each manifest's `compiler.libraryBake`. The pin file is a bundle input: the records have to match the compiler that ships beside them.
+
+The import worker reads records from a base URL:
+- **`VITE_LIBRARY_BAKE_BASE_URL`**, when it's set;
+- otherwise **`library-bake/` beside the app** whenever the bundle is served locally. That's `pnpm --filter @brr/web dev` and `vite preview`, whose `brr-library-bake-files` plugin serves `.cache/library-bake` at `/library-bake/`. The records live outside `tools/asset-pipeline/dist`, so a local `vite build` doesn't copy their 2.5 GB into `apps/web/dist`.
+- **Deployed builds have none until the records are published,** and import exactly as before.
+
+`.cache/library-bake` holds the top index under its content-addressed name too, `library-bake.<16 hex>.json`, as R2 will.
+
+**`LibraryBakeStore`** (`@brr/import`) verifies everything it reads:
+- the top index against the pinned SHA-256;
+- its LDraw source, stud primitives and unofficial allowlist against the import's;
+- every bucket, record and GLB against its content address.
+
+It keeps verified files in the worker's IndexedDB (`brr-library-bake`).
+
+**What comes from records.** For every official reference the index lists:
+- **GLB:** the standard GLB, and its header, come from the GLB's `extras` instead of the compile op. That's at the standard LOD only.
+- **Bake:** the bake takes the part's record. The solid is rebuilt from the record's tree order, and vehicle detection uses the record's bounds.
+
+**What still compiles.** The bake fetches LDraw only for the stud primitives, the wheelset, bogie-pivot and coupler parts vehicle detection analyses, and parts without a record. Parts the index doesn't list (MPD-embedded and Studio custom parts, and anything unresolvable) compile as before, and so do inline comparisons. If the store can't be read, or a file fails verification, those parts compile too.
+
+**The report.** `report.records` gives:
+- the pinned parts found;
+- the parts the bake actually took from records (`bakedFromRecords`, counted by the bake itself);
+- files fetched and cached, and bytes read.
+
+**Exactness and evidence.**
+- **Exactness:** an import that bakes and draws pinned parts from records equals the import that compiles them: the same part resolutions, GLBs, lattice, cover, cells and vehicles (`model-import.test.ts`, `tests/record.rs`).
+- **CI:** the held-out workflow builds `.cache/library-bake` with `library-bake --check`, and the harness reads it from disk. The report's import-time section says how many pinned parts used records.
 
 Publishing to `brr-part-bundles` comes in a following change, through `src/publication/pinned-publication.ts` like library connectors. `src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
 
