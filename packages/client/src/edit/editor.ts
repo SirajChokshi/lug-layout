@@ -2582,31 +2582,17 @@ export class Editor implements IEditor, IEditedWorld {
     await this.ensureShardPlaceables(shards);
     const restored = this.restore(shards);
     if (!restored.ok) return restored.issues;
-    const { world, handles, track } = restored.value;
-    this.replaceWorld(world, track);
-    this.placed.addAll(
-      handles.flatMap((handle) => {
-        const placeable = this.placeables[handle.refId];
-        return placeable ? [{ placement: this.history.adopt(handle), handle, placeable }] : [];
-      }),
-    );
-    this.update({ studs: this.placed.studTotals() });
+    this.replaceWorld(restored.value);
     for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
       this.requestMeshes(placeable, "high");
       this.requestFarModel(placeable);
     }
+    const { track } = restored.value;
     if (track && track.pieceCount > 0) this.requestTrackMeshes(track);
     this.refreshRoads();
     this.refreshTrains();
     this.syncPlan();
     return [];
-  }
-
-  clear(): void {
-    this.replaceWorld(new World(), this.newTrack?.() ?? null);
-    this.refreshRoads();
-    this.refreshTrains();
-    this.syncPlan();
   }
 
   private restore(shards: ReadonlyArray<WorldShardV1>): Decoded<RestoredWorld> {
@@ -2619,7 +2605,7 @@ export class Editor implements IEditor, IEditedWorld {
     return { ok: true, value: { world, handles: handles.value, track } };
   }
 
-  private replaceWorld(world: World, track: TrackDrawing | null): void {
+  private replaceWorld({ world, handles, track }: RestoredWorld): void {
     this.select(null);
     this.placed.clear();
     for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
@@ -2631,10 +2617,17 @@ export class Editor implements IEditor, IEditedWorld {
     this.showTrackEnds(null);
     this.world = world;
     this.history = new EditHistory(world);
+    this.placed.addAll(
+      handles.flatMap((handle) => {
+        const placeable = this.placeables[handle.refId];
+        return placeable ? [{ placement: this.history.adopt(handle), handle, placeable }] : [];
+      }),
+    );
     this.update({
       placements: world.size,
       history: this.historyView(),
       track: this.trackView(),
+      studs: this.placed.studTotals(),
       catalogError: null,
     });
   }
