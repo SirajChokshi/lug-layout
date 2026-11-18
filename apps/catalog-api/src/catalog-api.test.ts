@@ -438,6 +438,7 @@ function catalogPart(
     bounds: PLATE_BOUNDS,
     colors: [],
     studs: 0,
+    baseplate: role !== "track",
     triangles: 0,
     vertices: 0,
     shape: { file: `shape-ldraw_${number}.0123456789abcdef.json` },

@@ -59,6 +59,7 @@ export {
   type HistoryStep,
   type PlacementPose,
   type PlacementRef,
+  type PendingChange,
   type PlacementRequest,
 } from "./edit-history.ts";
 export { runningGearSpanProblem, type RunningGearSpan } from "./running-gear-span.ts";
@@ -190,3 +191,21 @@ export {
   rebrickableCsv,
   type UncountedItem,
 } from "./bom/export-formats.ts";
+export {
+  SupportGrid,
+  firstLayerSupport,
+  isSupported,
+  trackSupport,
+  upperSupport,
+  type BaseCells,
+  type FirstLayerSupport,
+  type TrackSupport,
+  type UpperSupport,
+} from "./support.ts";
+export {
+  HALF_PLANE_FLOATS,
+  PLAN_TRIANGLE_FLOATS,
+  placedPlanCells,
+  planTriangleCells,
+  type PlaneTransform,
+} from "./cell-raster.ts";

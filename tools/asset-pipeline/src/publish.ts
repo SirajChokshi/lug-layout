@@ -6,6 +6,7 @@ import {
   GltfDocument,
   ModelFile,
   PartShape,
+  TrackSilhouette,
   PartTableFile,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -157,6 +158,9 @@ export async function publishBundle(
     manifest.crosswalk.file,
   );
   for (const { shape } of manifest.catalogParts) await publishJson(PartShape, shape.file);
+  for (const { silhouette } of manifest.trackShapes) {
+    await publishJson(TrackSilhouette, silhouette.file);
+  }
   await publishJson(CreditTableFile, manifest.creditTable.file);
   const published = new Set(renamed.values());
   const unreferenced = (await bundleFiles(directory)).filter(

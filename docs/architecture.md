@@ -203,6 +203,8 @@ The MVP ships four module profiles: `free`, `lego-modular`, `mils` and `club-roa
 
 **Erasing roads.** In Erase, a drag lifts the active kit's plates under the stroke (never another family's). A junction left beside them becomes the smallest kit piece that covers its remaining arms and has fewer arms than before, exact matches first; if the kit has no such piece, or no arm is left, the junction stays and is reported. A plate laid over ground gives back exactly the ground piece that stroke swapped out (part, colour, pose), remembered per placement through later upgrades, undo and redo; a plate laid on an empty table is just lifted, so erasing never adds or recolours a part. The stroke is one undoable edit, and downgrades pass the same join check as drawing.
 
+**Strokes and the placement rules.** Drawing and erasing go through the same placement rules as a click, undo or redo (§7.2). Every piece a stroke lays or gives back is checked at its pose with the plates and ground the stroke lifts taken out: first layer on the table, support, and (with the volume index) no overlap. The plates the stroke lifts must not carry anything, models or laid track, that the new pieces don't carry in turn. A refusal is a tile issue with the rule's reason, so the whole stroke lays nothing. The road tool turns with the snapped turn (`placeRot`), which R advances.
+
 Third-party track arrives later as an extra `TrackProfile` plus a `PartSource` (§3.5).
 
 ## 6. Renderer
@@ -289,9 +291,9 @@ Failing a badge never blocks placement. Users fix their bricks in their own CAD 
 ### 7.2 Layout rules (live and exact; they decide whether a layout is "Valid")
 1. **Real catalog items only.** `thirdParty` parts are refused unless `allowThirdParty` is on, which it isn't in this release.
 2. **Lattice placement.** Models, plates and baseplates sit on the 20-LDU lattice with 90° rotations, at whole plate heights.
-3. **Support.** A placed model's base footprint engages at least one stud of what lies beneath it, or rests fully on a flat area at one height.
-4. **No overlap.** Placements' occupancy and keep-out volumes don't intersect, except at declared connectors.
-5. **Track.** Ends join exactly (§5.3). Open ends are errors unless capped by a buffer part or marked open by the user. Track at an angle off the lattice can't claim stud support and must rest on flat support. A connected run stays at one height (the MVP is flat).
+3. **Support and first layer.** Only the first layer rests on the table: baseplates, road plates (the classic road baseplates and the 60304-system plates), and models that bring their own baseplate. Everything else rests on placed things. A placed model's base footprint engages at least one stud of what lies beneath it, or rests fully on a flat area at one height; the bare table never counts as that flat area. Track rests on a baseplate surface.
+4. **No overlap.** Placements' occupancy and keep-out volumes don't intersect, except at declared connectors. A placement that would intersect is refused, with the reason; nothing is lifted or stacked to make room.
+5. **Track.** Ends join exactly (§5.3). Open ends are errors unless capped by a buffer part or marked open by the user. Track sits on a baseplate. Track at an angle off the lattice can't claim stud support and rests directly on the baseplate surface. A connected run stays at one height (the MVP is flat).
 6. **Clearance.** The profile's parallel spacing is respected, and the swept envelope of the widest and longest consist placed on a layout is checked along curves and switches. S-curves without a straight between them get a warning.
 7. **Roads.** Road edges that meet have equal lane and curb patterns. Level crossings must use real crossing parts.
 8. **Modules** (when a profile is active): modules are on the 32-stud grid, edge connectors are present and aligned, and the surface height matches the profile.
@@ -300,8 +302,28 @@ Failing a badge never blocks placement. Users fix their bricks in their own CAD 
 Layouts can always be saved in an invalid state. They then show as **Draft** with a list of issues.
 
 **How strictly rules apply depends on the mode (D4).**
-- In the **sandbox** (outside plan regions), rules 1 to 9 show as warnings. Building never stops.
+- In the **sandbox** (outside plan regions), rules 1, 2, the rest of rule 5, and rules 6 to 9 show as warnings. Building never stops for them.
 - Inside a **plan region**, the same rules are errors, and a region can only reach "Buildable as planned" (§7.3) with zero errors.
+- **Rules 3, 4 and rule 5's "track sits on a baseplate" apply everywhere** and are hard: the editor refuses a placement, rotation, removal, undo, redo or track run that would break them, and says why (P4).
+
+**Placement decisions (owner, 2026-11-16).** These settle rules 3 to 5. They replace the §12 item 14 default for those rules.
+
+| # | Decision |
+|---|---|
+| P1 | **First layer:** only baseplates and road plates rest on the table. Track must sit on a baseplate. |
+| P2 | **A model that has its own baseplate counts as first layer** (OMR modular buildings, MILS modules, road modules). |
+| P3 | **On overlap, refuse the placement and explain why.** Never auto-lift or auto-stack. |
+| P4 | **The rules apply everywhere,** in the sandbox and in plan regions alike. |
+| P5 | **Off-grid track rests directly on a baseplate surface for now.** Track layout and ballasting get a separate, careful design later. |
+| P6 | **Only the span between a track piece's own connectors must sit on a baseplate** (decided 2026-11-17). The span is bounded by the connector planes taken from the catalog connector poses. The end tongue past a connector may overhang a baseplate edge or a seam. |
+
+*Rule 3 status (PR A, on #44, #45 and #53):*
+- **Baseplate** means a part thinner than one plate that has studs, measured from its compiled geometry (3811 and the classic road baseplates; 4 LDU with the top face at y = 0). The bake writes this as a `baseplate` flag on each part, and the editor reads that flag. A road plate (69958, 71772) rests on the table, so its bottom is the 3811's bottom face, and its top is 1.5 plates above the baseplate datum. Nothing can rest on that top yet: it isn't a whole number of plates up, and the refusal says so.
+- **The bake marks a model as first layer** when every one of its lowest upright parts is a baseplate and their tops agree. It records that top as `groundY`, measures the model's columns from it, and the editor puts it at the baseplate datum. Among the starter sets that is 10128-1, 10185-1, 10190-1, 10218-1, 10264-1, 4555-1 and all 12 MILS modules (the road, earth track, path, river and rail templates). 2150-1 and 4554-1 must stand on baseplates. 7936-1 also has a vehicle part with a solid bottom on its rest plane, so it needs a studless flat surface under that part, such as a classic road baseplate's roadway. 10133-1 and the consist trains stand on wheels, have no base cells and can't be placed on studs. Models without a stud lattice aren't offered.
+- **Upper models** land on the highest column under them (#53). They're supported when at least one anti-stud footprint cell meets a whole-plate stud at exactly that height, or when every footprint cell touches a stud-free top at that height. A solid-bottom cell over studs is refused.
+- **First-layer items** go at yPlates 0. One is refused where it would rise into a cell that already holds something above the datum. Baseplate-on-baseplate overlap is rule 4's job.
+- **Track** needs a baseplate under every stud cell its plan silhouette covers between its own connector planes (P6). The silhouette is the piece's own mesh, projected at the exact solver pose and clipped to those planes. A cell counts when a face overlaps its interior by more than the 1e-6 LDU representation ε of §5.3; touching an edge doesn't count. So an open end may be flush with a baseplate edge, two straights fill a 3811, and a piece that ends at a seam needs only its own baseplate.
+- **Removing, rotating or undoing** is refused if it would leave a placed model with no support or a laid track piece off the baseplates. A rotation is checked as a move to its new pose. A laid track piece can be removed in the track tool (click it, then Delete), so a baseplate under track is never locked for good.
 
 ### 7.3 Plan regions and "Buildable as planned"
 A plan region is a polygon in the world, aligned to the 32-stud grid, linked to a **physical footprint**:

@@ -30,6 +30,7 @@ function part(id: string, size: number): PartAsset {
     producedColor: undefined,
     producedColors: [],
     trackEnds: undefined,
+    baseplate: false,
     mesh: triangle(size),
     studPrimitiveIndex: new Uint8Array(0),
     studColors: new Uint16Array(0),

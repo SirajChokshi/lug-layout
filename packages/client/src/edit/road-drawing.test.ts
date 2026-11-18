@@ -16,7 +16,13 @@ import {
   type PartShapeRecord,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
+import type {
+  BundleIndex,
+  BundleLod,
+  BundleManifest,
+  CatalogPart,
+  TrackSilhouette,
+} from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -31,7 +37,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR } from "../tokens.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, type IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const WORLD_PER_NDC = 10_000;
@@ -75,6 +81,10 @@ class MilsModulesOnly implements IPartBundleLoader {
 
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord> {
     return this.loader.loadPartShape(lod, part);
+  }
+
+  loadTrackSilhouettes(lod: BundleLod): Promise<ReadonlyArray<TrackSilhouette>> {
+    return this.loader.loadTrackSilhouettes(lod);
   }
 
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
@@ -524,3 +534,41 @@ describe("draw road", () => {
     editor.chooseItem(null);
   });
 });
+
+it("refuses an erase across plates where only the last carries track, marking that plate's tile", async () => {
+  const editor = await startEditor();
+  const kit = kitId(
+    editor,
+    (label, edge) => label.startsWith("Dark Bluish Grey") && edge === "6 + 20 road + 6",
+  );
+  const run: ReadonlyArray<readonly [number, number]> = [
+    [0, 0],
+    [1, 0],
+    [2, 0],
+  ];
+  editor.chooseItem(kit);
+  drag(editor, run);
+  const z = centre(0) / WORLD_PER_NDC;
+  const fromX = (2 * TILE + 20) / WORLD_PER_NDC;
+  const toX = (2 * TILE + 340) / WORLD_PER_NDC;
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.pointerMove(fromX, z);
+  editor.dragStart(fromX, z);
+  editor.dragMove(toX, z);
+  editor.dragEnd(toX, z, 0);
+  expect(editor.snapshot().track).toMatchObject({ pieces: 1, lastCommit: "laid" });
+
+  editor.chooseItem(kit);
+  editor.setRoadErase(true);
+  drag(editor, run);
+  expect(placedItems(editor)).toHaveLength(3);
+  expect(editor.snapshot().lastRoadStroke).toMatchObject({ result: "refused" });
+  expect(editor.snapshot().lastRoadStroke?.stroke.issues).toEqual([
+    expect.objectContaining({
+      x: centre(2),
+      z: centre(0),
+      problem: "rules",
+      refusal: expect.stringContaining("carries track"),
+    }),
+  ]);
+}, 120_000);

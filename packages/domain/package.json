@@ -7,8 +7,9 @@
     "./heading-footprints": "./src/track/heading-footprints.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
-    "test": "vitest run"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && tsc -p bench/tsconfig.json",
+    "test": "vitest run",
+    "bench": "node bench/cell-raster.bench.ts"
   },
   "dependencies": {
     "@brr/math": "workspace:*",

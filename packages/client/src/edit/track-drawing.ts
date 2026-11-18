@@ -1,5 +1,5 @@
 import type { PartBundle, PartShapeAsset } from "@brr/catalog";
-import type { TrackPartFrame, TrackPiece, TrackShape } from "@brr/schema/bundle";
+import type { TrackPartFrame, TrackPiece, TrackShape, TrackSilhouette } from "@brr/schema/bundle";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
 import {
@@ -17,9 +17,11 @@ import {
   type DrawingKit,
   type EndGap,
   type TrackEnd,
+  type BaseCells,
   type TrackMove,
   type TrackPieceDef,
   type TrackPieceSpec,
+  type TrackSupport,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -43,15 +45,16 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
+import { planTriangles, supportCells, trackPartTransform } from "./track-footprint.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
-const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
 const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
+const CELL_CACHE_LIMIT = 4096;
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -62,10 +65,22 @@ export interface KitPart {
   readonly partIndex: number;
   readonly color: number;
   readonly yLdu: number;
+  readonly plan: Float64Array;
+  readonly support: Float64Array;
+}
+
+export type TrackSupportProbe = (cells: BaseCells) => TrackSupport;
+
+export interface OffBaseplate {
+  readonly piece: number;
+  readonly pieceId: string;
+  readonly pieces: number;
+  readonly cells: number;
+  readonly missing: BaseCells;
 }
 
 export type ClosureState = "exact" | "impossible" | "limit" | null;
-export type TrackRefusal = "impossible" | "limit";
+export type TrackRefusal = "impossible" | "limit" | "off-baseplate";
 
 export interface TrackDragView {
   readonly pieces: number;
@@ -75,12 +90,14 @@ export interface TrackDragView {
   readonly closure: ClosureState;
   readonly fromOpenEnd: boolean;
   readonly solveMs: number;
+  readonly offBaseplate: OffBaseplate | null;
 }
 
 export interface TrackCommit {
   readonly laid: number;
   readonly joined: boolean;
   readonly refusal: TrackRefusal | null;
+  readonly offBaseplate: OffBaseplate | null;
   readonly chunks: ReadonlyArray<number>;
 }
 
@@ -158,6 +175,7 @@ interface Drag {
   goal: Pose16 | null;
   missStuds: number;
   target: number | null;
+  offBaseplate: OffBaseplate | null;
 }
 
 interface Placed {
@@ -189,27 +207,6 @@ function partForPiece(piece: TrackPiece, parts: ReadonlyArray<PartShapeAsset>): 
   return index;
 }
 
-interface PartTransform {
-  readonly x: number;
-  readonly z: number;
-  readonly c: number;
-  readonly s: number;
-}
-
-function partTransform(placement: Pose16, frame: TrackPartFrame): PartTransform {
-  const studs = zeta16ToStuds(placement.position);
-  const theta = placement.heading * HEADING_RADIANS;
-  const cosTheta = Math.cos(theta);
-  const sinTheta = Math.sin(theta);
-  const phi = theta + frame.headingHalfSteps * HALF_STEP_RADIANS;
-  return {
-    x: studs.x * STUD_LDU + cosTheta * frame.xLdu - sinTheta * frame.zLdu,
-    z: studs.z * STUD_LDU + sinTheta * frame.xLdu + cosTheta * frame.zLdu,
-    c: Math.cos(phi),
-    s: Math.sin(phi),
-  };
-}
-
 function writeMatrix(
   out: Float32Array,
   slot: number,
@@ -219,7 +216,7 @@ function writeMatrix(
   originX: number,
   originZ: number,
 ): void {
-  const { x, z, c, s } = partTransform(placement, frame);
+  const { x, z, cos: c, sin: s } = trackPartTransform(placement, frame);
   const o = slot * INSTANCE_MATRIX_FLOATS;
   out[o] = c;
   out[o + 1] = 0;
@@ -236,8 +233,19 @@ function writeMatrix(
 }
 
 function partCentre(placed: Placed): { readonly x: number; readonly z: number } {
-  const { x, z } = partTransform(placed.placement, placed.part.piece.partFrame);
+  const { x, z } = trackPartTransform(placed.placement, placed.part.piece.partFrame);
   return { x, z };
+}
+
+export type TrackData = Pick<PartBundle, "trackCatalog" | "trackShapes" | "trackSilhouettes">;
+
+function silhouetteOf(
+  piece: TrackPiece,
+  silhouettes: ReadonlyMap<string, TrackSilhouette>,
+): TrackSilhouette {
+  const silhouette = silhouettes.get(piece.id);
+  if (!silhouette) throw new Error(`${piece.id}: the bundle has no track silhouette for it`);
+  return silhouette;
 }
 
 function kitFootprints(piece: TrackPiece, shapes: ReadonlyMap<string, TrackShape>): TrackShape {
@@ -247,7 +255,7 @@ function kitFootprints(piece: TrackPiece, shapes: ReadonlyMap<string, TrackShape
 }
 
 function partBox(placed: Placed): WorldBox {
-  const { x, z } = partTransform(placed.placement, placed.part.piece.partFrame);
+  const { x, z } = trackPartTransform(placed.placement, placed.part.piece.partFrame);
   const o = normalizeHeading16(placed.placement.heading) * FOOTPRINT_FLOATS;
   const boxes = placed.part.footprints;
   const [minY, maxY] = placed.part.meshY;
@@ -271,12 +279,14 @@ export class TrackDrawing {
   private readonly byCatalogIndex = new Map<number, KitPart>();
   private readonly byPieceId = new Map<string, KitPart>();
   readonly pieceSet: TrackPieceSet;
-  private readonly layout: TrackLayout;
+  private layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
   private gapList: ReadonlyArray<EndGap> = [];
+  private pieceCells: BaseCells[] = [];
+  private readonly cellCache = new Map<string, BaseCells>();
   private drag: Drag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -285,12 +295,16 @@ export class TrackDrawing {
   readonly solveSamplesMs: number[] = [];
 
   constructor(
-    { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
+    { trackCatalog: catalog, trackShapes, trackSilhouettes }: TrackData,
     private readonly parts: ReadonlyArray<PartShapeAsset>,
     private readonly colors: ColorTable,
+    private readonly probe: TrackSupportProbe,
   ) {
     this.pieces = catalog.pieces;
     const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));
+    const silhouettes = new Map(
+      trackSilhouettes.map((silhouette) => [silhouette.piece, silhouette]),
+    );
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
@@ -314,6 +328,8 @@ export class TrackDrawing {
         partIndex,
         color: colors.indexOfCode(part.producedColor),
         yLdu: -part.boundsMin[1],
+        plan: planTriangles(silhouetteOf(piece, silhouettes).plan),
+        support: planTriangles(silhouetteOf(piece, silhouettes).support),
       };
       if (inKit) this.byDef.set(piece.id, kitPart);
       this.byCatalogIndex.set(catalogIndex, kitPart);
@@ -457,6 +473,78 @@ export class TrackDrawing {
       goal: null,
       missStuds: 0,
       target: null,
+      offBaseplate: null,
+    };
+  }
+
+  cellsOf(part: KitPart, placement: Pose16): BaseCells {
+    const key = `${part.piece.id}|${placement.heading}|${placement.position.join(",")}`;
+    const cached = this.cellCache.get(key);
+    if (cached) return cached;
+    const cells = supportCells(part.support, placement, part.piece.partFrame);
+    if (this.cellCache.size >= CELL_CACHE_LIMIT) this.cellCache.clear();
+    this.cellCache.set(key, cells);
+    return cells;
+  }
+
+  private offBaseplate(start: Pose16, moves: ReadonlyArray<TrackMove>): OffBaseplate | null {
+    if (moves.length === 0) return null;
+    const { placed } = layMoves(start, moves);
+    for (let i = 0; i < placed.length; i++) {
+      const move = moves[i];
+      const piece = placed[i];
+      if (!move || !piece) continue;
+      const part = this.kitPart(move);
+      const support = this.probe(this.cellsOf(part, piece.placement));
+      if (support.kind === "off-baseplate") {
+        return {
+          piece: i,
+          pieceId: part.piece.id,
+          pieces: placed.length,
+          cells: support.cells,
+          missing: support.missing,
+        };
+      }
+    }
+    return null;
+  }
+
+  piecesIn(box: WorldBox): ReadonlyArray<number> {
+    const pieces: number[] = [];
+    this.pieceCells.forEach((cells, piece) => {
+      for (let c = 0; c < cells.count; c++) {
+        const x = (cells.cellX[c] ?? 0) * STUD_LDU;
+        const z = (cells.cellZ[c] ?? 0) * STUD_LDU;
+        const inX = x + STUD_LDU > box.minX && x - STUD_LDU < box.maxX;
+        if (inX && z + STUD_LDU > box.minZ && z - STUD_LDU < box.maxZ) {
+          pieces.push(piece);
+          return;
+        }
+      }
+    });
+    return pieces;
+  }
+
+  unsupportedPieces(probe: TrackSupportProbe): ReadonlyArray<OffBaseplate> {
+    const off: OffBaseplate[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      const piece = this.unsupportedPiece(p, probe);
+      if (piece) off.push(piece);
+    }
+    return off;
+  }
+
+  unsupportedPiece(p: number, probe: TrackSupportProbe): OffBaseplate | null {
+    const cells = this.pieceCells[p];
+    if (!cells) return null;
+    const support = probe(cells);
+    if (support.kind === "on-baseplate") return null;
+    return {
+      piece: p,
+      pieceId: this.placedAt(p).part.piece.id,
+      pieces: this.layout.count,
+      cells: support.cells,
+      missing: support.missing,
     };
   }
 
@@ -500,6 +588,7 @@ export class TrackDrawing {
       if (result.kind === "exact") {
         drag.moves = runMoves(this.kit, result.run);
         drag.missStuds = 0;
+        drag.offBaseplate = this.offBaseplate(start, drag.moves);
         this.recordSolve(began);
         return;
       }
@@ -515,6 +604,7 @@ export class TrackDrawing {
     drag.previousKey = plan.key;
     drag.moves = runMoves(this.kit, plan);
     drag.missStuds = plan.missStuds;
+    drag.offBaseplate = this.offBaseplate(start, drag.moves);
     this.recordSolve(began);
   }
 
@@ -535,6 +625,7 @@ export class TrackDrawing {
       closure: drag.closure,
       fromOpenEnd: drag.fromEnd !== null,
       solveMs: this.lastSolveMs,
+      offBaseplate: drag.offBaseplate,
     };
   }
 
@@ -588,10 +679,14 @@ export class TrackDrawing {
     const drag = this.drag;
     this.drag = null;
     if (!drag?.start || drag.moves.length === 0) {
-      return { laid: 0, joined: false, refusal: null, chunks: [] };
+      return { laid: 0, joined: false, refusal: null, offBaseplate: null, chunks: [] };
     }
     if (drag.closure === "impossible" || drag.closure === "limit") {
-      return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
+      return { laid: 0, joined: false, refusal: drag.closure, offBaseplate: null, chunks: [] };
+    }
+    const offBaseplate = this.offBaseplate(drag.start, drag.moves);
+    if (offBaseplate) {
+      return { laid: 0, joined: false, refusal: "off-baseplate", offBaseplate, chunks: [] };
     }
     const { placed } = layMoves(drag.start, drag.moves);
     const entries: Placed[] = [];
@@ -604,6 +699,7 @@ export class TrackDrawing {
       laid: entries.length,
       joined: drag.goal !== null && this.graphJoins(drag.goal),
       refusal: null,
+      offBaseplate: null,
       chunks,
     };
   }
@@ -612,6 +708,7 @@ export class TrackDrawing {
     const touched = new Set<number>();
     for (const entry of entries) {
       const index = this.layout.place(entry.part.catalogIndex, entry.placement, GROUND_PLATES);
+      this.pieceCells[index] = this.cellsOf(entry.part, entry.placement);
       const key = this.chunkOfPlaced(entry);
       const members = this.chunkMembers.get(key) ?? [];
       members.push(index);
@@ -690,9 +787,26 @@ export class TrackDrawing {
 
   placePiece(catalogIndex: number, placement: Pose16): TrackCommit {
     const part = this.pieceByIndex(catalogIndex);
+    const support = this.probe(this.cellsOf(part, placement));
+    if (support.kind === "off-baseplate") {
+      const offBaseplate: OffBaseplate = {
+        piece: 0,
+        pieceId: part.piece.id,
+        pieces: 1,
+        cells: support.cells,
+        missing: support.missing,
+      };
+      return { laid: 0, joined: false, refusal: "off-baseplate", offBaseplate, chunks: [] };
+    }
     const before = this.graph.joinCount;
     const chunks = this.commitPlaced([{ part, placement }]);
-    return { laid: 1, joined: this.graph.joinCount > before, refusal: null, chunks };
+    return {
+      laid: 1,
+      joined: this.graph.joinCount > before,
+      refusal: null,
+      offBaseplate: null,
+      chunks,
+    };
   }
 
   switchAt(xLdu: number, zLdu: number): number | null {
@@ -718,6 +832,7 @@ export class TrackDrawing {
     const thrown = this.pieceSet.thrown(placed.part.catalogIndex);
     if (thrown === null) return null;
     this.layout.replace(placement, thrown);
+    this.pieceCells[placement] = this.cellsOf(this.pieceByIndex(thrown), placed.placement);
     const lever = this.pieceSet.lever(thrown);
     if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
     return { chunk: this.chunkOfPlaced(placed), lever };
@@ -767,6 +882,54 @@ export class TrackDrawing {
     }
     this.ends = ends.map((end) => end.pose);
     this.gapList = endGaps(ends);
+  }
+
+  pieceAt(xLdu: number, zLdu: number): number | null {
+    const cellX = Math.floor(xLdu / STUD_LDU);
+    const cellZ = Math.floor(zLdu / STUD_LDU);
+    for (let p = this.layout.count - 1; p >= 0; p--) {
+      const cells = this.pieceCells[p];
+      if (!cells) continue;
+      for (let c = 0; c < cells.count; c++) {
+        if (cells.cellX[c] === cellX && cells.cellZ[c] === cellZ) return p;
+      }
+    }
+    return null;
+  }
+
+  pieceBox(piece: number): WorldBox {
+    return partBox(this.placedAt(piece));
+  }
+
+  pieceId(piece: number): string {
+    return this.placedAt(piece).part.piece.id;
+  }
+
+  removePiece(piece: number): ReadonlyArray<number> {
+    const kept: Placed[] = [];
+    const keptCells: BaseCells[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      if (p === piece) continue;
+      kept.push(this.placedAt(p));
+      keptCells.push(
+        this.pieceCells[p] ?? this.cellsOf(this.placedAt(p).part, this.layout.pose(p)),
+      );
+    }
+    const touched = new Set(this.chunkMembers.keys());
+    this.layout = new TrackLayout(this.layout.pieces);
+    this.chunkMembers.clear();
+    this.pieceCells = keptCells;
+    for (const placed of kept) {
+      const index = this.layout.place(placed.part.catalogIndex, placed.placement, GROUND_PLATES);
+      const centre = partCentre(placed);
+      const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
+      const members = this.chunkMembers.get(key) ?? [];
+      members.push(index);
+      this.chunkMembers.set(key, members);
+      touched.add(key);
+    }
+    this.recomputeEnds();
+    return [...touched];
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {
@@ -822,6 +985,7 @@ export class TrackDrawing {
       if (!part) continue;
       const placement = pose16(decodeTrackPosition(record.position), record.heading);
       const index = this.layout.place(part.catalogIndex, placement, record.yPlates);
+      this.pieceCells[index] = this.cellsOf(part, placement);
       const centre = partCentre({ part, placement });
       const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
       const members = this.chunkMembers.get(key) ?? [];
