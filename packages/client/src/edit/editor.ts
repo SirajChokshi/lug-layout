@@ -396,6 +396,7 @@ export interface EditorSnapshot extends WorldSessionView {
   readonly lastRefusal: RefusedClick | null;
   readonly track: TrackView | null;
   readonly bundleVersion: string | null;
+  readonly catalogError: string | null;
   readonly coldStartMs: number | null;
   readonly roadKits: ReadonlyArray<RoadKitView>;
   readonly roadKit: string | null;
@@ -785,6 +786,7 @@ export class Editor implements IEditor, IEditedWorld {
     storageError: null,
     readOnly: false,
     unsavedEdits: false,
+    catalogError: null,
     coldStartMs: null,
     roadKits: [],
     roadKit: null,
@@ -869,16 +871,12 @@ export class Editor implements IEditor, IEditedWorld {
   ) {
     this.placed = new PlacedChunks(backend);
     this.state = { ...this.state, ...session.view() };
-    session.subscribe((change) => this.sessionChanged(change));
+    session.subscribe(() => this.sessionChanged());
   }
 
-  private get readOnly(): boolean {
-    return this.state.readOnly;
-  }
-
-  private sessionChanged(change: Partial<WorldSessionView>): void {
-    this.update(change);
-    if (change.readOnly === true && (this.active || this.held || this.state.mode === "road")) {
+  private sessionChanged(): void {
+    this.update(this.session.view());
+    if (this.state.readOnly && (this.active || this.held || this.state.mode === "road")) {
       this.chooseItem(null);
     }
   }
@@ -1026,7 +1024,7 @@ export class Editor implements IEditor, IEditedWorld {
       const credits = this.state.credits;
       if (credits) this.update({ credits: { ...credits, partFiles: manifest.credits.length } });
     } catch (error) {
-      this.update({ fileError: `the part credits can't be loaded: ${errorText(error)}` });
+      this.update({ catalogError: `the part credits can't be loaded: ${errorText(error)}` });
     }
   }
 
@@ -1339,7 +1337,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.resizeToCanvas();
       const startMs = performance.now();
       this.camera.frame(startMs);
-      this.session.watchView();
+      this.session.pollCamera();
       const pending = this.pending;
       if (
         pending !== null ||
@@ -1632,7 +1630,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private roadDragStart(ndcX: number, ndcY: number): boolean {
     const roads = this.roadDrawing;
-    if (!roads || this.readOnly || !this.groundHit(ndcX, ndcY)) return false;
+    if (!roads || this.state.readOnly || !this.groundHit(ndcX, ndcY)) return false;
     this.showRoadPreview(roads.begin(this.hitX, this.hitZ, ...this.roadNeighbours()));
     return true;
   }
@@ -1640,7 +1638,7 @@ export class Editor implements IEditor, IEditedWorld {
   private roadDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
     const roads = this.roadDrawing;
     if (!roads) return;
-    if (this.readOnly) {
+    if (this.state.readOnly) {
       roads.cancel();
       this.clearRoadPreview();
       return;
@@ -1664,7 +1662,7 @@ export class Editor implements IEditor, IEditedWorld {
   dragStart(ndcX: number, ndcY: number): boolean {
     if (this.state.mode === "road") return this.roadDragStart(ndcX, ndcY);
     const track = this.track;
-    if (this.state.mode !== "track" || !track || this.readOnly || this.held) return false;
+    if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
     track.setObstacles(trackObstacleRects(this.placed.models(), track.verticalRange()));
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
@@ -1781,7 +1779,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   chooseItem(id: string | null): void {
-    if (id !== null && this.readOnly) return;
+    if (id !== null && this.state.readOnly) return;
     if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();
     if (id?.startsWith(ROAD_KIT_PREFIX) && this.roadDrawing?.choose(id)) {
       this.enterRoadMode(id);
@@ -1863,7 +1861,7 @@ export class Editor implements IEditor, IEditedWorld {
           mode: "select",
           activeItem: null,
           pendingItem: null,
-          fileError: `${this.labelOf(id)} can't be loaded: ${errorText(error)}`,
+          catalogError: `${this.labelOf(id)} can't be loaded: ${errorText(error)}`,
         });
       },
     );
@@ -1948,7 +1946,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private throwSwitchAt(xLdu: number, zLdu: number, eventTimeMs: number): boolean {
     const track = this.track;
-    if (!track || this.readOnly) return false;
+    if (!track || this.state.readOnly) return false;
     const placement = track.switchAt(xLdu, zLdu);
     if (placement === null) return false;
     const thrown = track.throwSwitch(placement);
@@ -2103,7 +2101,7 @@ export class Editor implements IEditor, IEditedWorld {
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
     if (this.state.mode === "road") return;
     if (this.state.mode === "track") {
-      if (!this.held || this.readOnly || !this.groundHit(ndcX, ndcY)) return;
+      if (!this.held || this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
       this.showHeldPiece();
       this.placeHeldPiece(eventTimeMs);
@@ -2111,7 +2109,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     const pendingItem = this.state.pendingItem;
     if (pendingItem !== null) {
-      if (this.readOnly || !this.groundHit(ndcX, ndcY)) return;
+      if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.refuse(
         pendingItem,
         snapToLattice(this.hitX),
@@ -2121,7 +2119,7 @@ export class Editor implements IEditor, IEditedWorld {
       );
       return;
     }
-    if (this.active && !this.readOnly) {
+    if (this.active && !this.state.readOnly) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
       const snap = this.snapGhost();
@@ -2483,7 +2481,7 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const model = this.selected;
-    if (!model || this.readOnly) return;
+    if (!model || this.state.readOnly) return;
     this.turnSelection(model, quarterTurned(model.handle.rot, direction), eventTimeMs);
   }
 
@@ -2540,7 +2538,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   deleteSelection(eventTimeMs: number): void {
     const model = this.selected;
-    if (!model || this.readOnly) return;
+    if (!model || this.state.readOnly) return;
     const rider = this.placed.strandedRider(model);
     if (rider) {
       const label = model.placeable.label;
@@ -2556,12 +2554,12 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   undo(eventTimeMs: number): void {
-    if (this.readOnly) return;
+    if (this.state.readOnly) return;
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
-    if (this.readOnly) return;
+    if (this.state.readOnly) return;
     this.replay(this.history.redo(), eventTimeMs);
   }
 
@@ -2590,11 +2588,16 @@ export class Editor implements IEditor, IEditedWorld {
       world: this.world,
       refs: this.slots.map((slot) => slot.group),
       track: this.track?.records() ?? [],
-      placed: this.placed.models(),
     };
   }
 
-  check(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue> {
+  placedCredits(): ReadonlyArray<ModelCredit> {
+    return this.placed
+      .models()
+      .flatMap((model) => (model.placeable.credit ? [model.placeable.credit] : []));
+  }
+
+  validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue> {
     const restored = this.restore(shards);
     return restored.ok ? [] : restored.issues;
   }
@@ -2654,6 +2657,7 @@ export class Editor implements IEditor, IEditedWorld {
       placements: world.size,
       history: this.historyView(),
       track: this.trackView(),
+      catalogError: null,
     });
   }
 
