@@ -41,7 +41,7 @@ pub enum CompileError {
 pub enum RollingMode {
     #[default]
     Skip,
-    By(Roundness),
+    ReadBy(Roundness),
     NoStudRing,
 }
 
@@ -142,7 +142,7 @@ pub fn required_stud_roundness<L: Library>(
 }
 
 pub fn rolling_mode_from_studs<L: Library>(library: &L, stud_primitives: &[String]) -> RollingMode {
-    stud_roundness(library, stud_primitives).map_or(RollingMode::NoStudRing, RollingMode::By)
+    stud_roundness(library, stud_primitives).map_or(RollingMode::NoStudRing, RollingMode::ReadBy)
 }
 
 pub fn stud_roundness<L: Library>(library: &L, stud_primitives: &[String]) -> Option<Roundness> {
@@ -178,7 +178,7 @@ pub fn compile_part<L: Library>(
     license_gate(&flattened, &options.unofficial_allowlist)?;
     let roundness = match options.rolling_mode {
         RollingMode::Skip => None,
-        RollingMode::By(roundness) => Some(roundness),
+        RollingMode::ReadBy(roundness) => Some(roundness),
         RollingMode::NoStudRing => return Err(CompileError::NoStudRing),
     };
     for triangle in &mut flattened.triangles {

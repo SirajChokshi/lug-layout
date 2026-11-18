@@ -399,7 +399,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
-        rolling_mode: RollingMode::By(required_stud_roundness(&library, &stud_primitives)?),
+        rolling_mode: RollingMode::ReadBy(required_stud_roundness(&library, &stud_primitives)?),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
     let ldconfig = library

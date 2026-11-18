@@ -127,7 +127,7 @@ fn run(args: &Args) -> Result<(), String> {
         rolling_mode: RollingMode::Skip,
     };
     let with = CompileOptions {
-        rolling_mode: RollingMode::By(roundness),
+        rolling_mode: RollingMode::ReadBy(roundness),
         ..without.clone()
     };
     eprintln!(
