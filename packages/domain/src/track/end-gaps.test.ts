@@ -1,10 +1,10 @@
 import { HALF_TURN_16, STUD_LDU, pose16, zeta16, type Pose16 } from "@brr/math";
 import { describe, expect, it } from "vitest";
-import { NEAR_MISS_RADIUS_LDU, endGaps, type TrackEnd } from "./end-gaps.ts";
+import { NEAR_MISS_RADIUS_LDU, WORLD_TRACK_FRAME, endGaps, type TrackEnd } from "./end-gaps.ts";
 
 function at(x: number, z: number, heading: number, yPlates = 0): TrackEnd {
   const pose: Pose16 = pose16(zeta16([BigInt(x), 0n, 0n, 0n, BigInt(z), 0n, 0n, 0n]), heading);
-  return { pose, yPlates };
+  return { pose, yPlates, frame: WORLD_TRACK_FRAME };
 }
 
 const facingEast = at(16, 0, 0);

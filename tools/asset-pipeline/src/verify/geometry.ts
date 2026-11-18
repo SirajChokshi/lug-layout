@@ -1,17 +1,27 @@
 import { type TrackEnd, decodeZeta16 } from "@brr/schema/bundle";
 import {
+  addExactDecimal,
   addZeta16,
+  compareExactDecimal,
   conjugateZeta16,
+  exactDecimalEquals,
+  exactDecimal,
+  formatExactDecimal,
+  multiplyExactDecimal,
+  parseExactDecimal,
   rotateZeta16,
+  subtractExactDecimal,
   ZETA16_ORDER,
+  ZETA16_STEP_RADIANS,
   zeta16ToStuds,
+  type ExactDecimal,
   type Zeta16,
 } from "@brr/math";
 import { applyToPoint, type Vec3 } from "../ldraw/affine.ts";
+import { exactPolygons, type ExactPolygon } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { isStudPrimitive, LDCAD_META, metaValues, subfilePlacement } from "../ldraw/parse.ts";
 import { dependencyClosure, INHERIT_COLOR, walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
-import { ZETA16_STEP_RADIANS } from "../track/cyclotomic.ts";
 import {
   findTrackEnds,
   LDU_PER_STUD,
@@ -20,7 +30,6 @@ import {
   type TrackEndMarker,
 } from "../track/track-ends.ts";
 
-const LDU_IN_MM = 0.4;
 const TRAIN_TRACK_SNAP = /\[group=traintrk\].*\[pos=(\S+) (\S+) (\S+)\]/;
 const FLAT_EPSILON = 1e-6;
 const HELP_META = "!HELP";
@@ -36,11 +45,6 @@ function isFlatHorizontal(polygon: PlacedPolygon): boolean {
   return (
     first !== undefined && rest.every((vertex) => Math.abs(vertex[1] - first[1]) < FLAT_EPSILON)
   );
-}
-
-function spansX(polygon: PlacedPolygon, x: number): boolean {
-  const xs = polygon.vertices.map((vertex) => vertex[0]);
-  return Math.min(...xs) <= x && x <= Math.max(...xs);
 }
 
 function mergeIntervals(intervals: ReadonlyArray<Interval>): ReadonlyArray<Interval> {
@@ -77,17 +81,78 @@ function extent(polygons: ReadonlyArray<PlacedPolygon>, axis: 0 | 1 | 2): Interv
   return { from, to };
 }
 
+interface ExactInterval {
+  readonly from: ExactDecimal;
+  readonly to: ExactDecimal;
+}
+
+interface WrittenInterval {
+  readonly from: string;
+  readonly to: string;
+}
+
 interface RailMeasurement {
   readonly part: string;
   readonly sectionX: number;
-  readonly railTopY: number;
-  readonly railHeads: ReadonlyArray<Interval>;
-  readonly railCentreSpacingLdu: number | null;
-  readonly innerGaugeLdu: number | null;
-  readonly innerGaugeMm: number | null;
-  readonly railHeadWidthLdu: number | null;
-  readonly trackWidthLdu: number;
-  readonly railTopAboveUndersideLdu: number;
+  readonly railTopY: string;
+  readonly railHeads: ReadonlyArray<WrittenInterval>;
+  readonly railCentreSpacingLdu: string | null;
+  readonly innerGaugeLdu: string | null;
+  readonly innerGaugeMm: string | null;
+  readonly railHeadWidthLdu: string | null;
+  readonly trackWidthLdu: string;
+  readonly railTopAboveUndersideLdu: string;
+}
+
+const EXACT_HALF = parseExactDecimal("0.5");
+const EXACT_MM_PER_LDU = parseExactDecimal("0.4");
+
+function lesser(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
+  return compareExactDecimal(a, b) <= 0 ? a : b;
+}
+
+function greater(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
+  return compareExactDecimal(a, b) >= 0 ? a : b;
+}
+
+function exactSpan(values: ReadonlyArray<ExactDecimal>): ExactInterval {
+  const [first, ...rest] = values;
+  if (first === undefined) throw new Error("an extent needs at least one value");
+  return {
+    from: rest.reduce(lesser, first),
+    to: rest.reduce(greater, first),
+  };
+}
+
+function exactExtent(polygons: ReadonlyArray<ExactPolygon>, axis: 0 | 1 | 2): ExactInterval {
+  return exactSpan(polygons.flatMap((polygon) => polygon.vertices.map((vertex) => vertex[axis])));
+}
+
+function mergeExactIntervals(
+  intervals: ReadonlyArray<ExactInterval>,
+): ReadonlyArray<ExactInterval> {
+  const merged: ExactInterval[] = [];
+  for (const interval of intervals.toSorted((a, b) => compareExactDecimal(a.from, b.from))) {
+    const last = merged.at(-1);
+    if (last !== undefined && compareExactDecimal(interval.from, last.to) <= 0) {
+      merged[merged.length - 1] = { from: last.from, to: greater(last.to, interval.to) };
+    } else {
+      merged.push(interval);
+    }
+  }
+  return merged;
+}
+
+function written(value: ExactDecimal | null): string | null {
+  return value === null ? null : formatExactDecimal(value);
+}
+
+function length(interval: ExactInterval): ExactDecimal {
+  return subtractExactDecimal(interval.to, interval.from);
+}
+
+function middle(interval: ExactInterval): ExactDecimal {
+  return multiplyExactDecimal(addExactDecimal(interval.from, interval.to), EXACT_HALF);
 }
 
 export function measureRails(
@@ -95,35 +160,41 @@ export function measureRails(
   part: string,
   sectionX: number,
 ): RailMeasurement {
-  const polygons = collectPolygons(library, part, false);
-  const railTopY = extent(polygons, 1).from;
-  const railHeads = mergeIntervals(
+  const polygons = exactPolygons(library, part, false);
+  const section = exactDecimal(BigInt(sectionX), 0);
+  const vertical = exactExtent(polygons, 1);
+  const railTopY = vertical.from;
+  const railHeads = mergeExactIntervals(
     polygons
-      .filter(
-        (polygon) =>
-          isFlatHorizontal(polygon) &&
-          Math.abs((polygon.vertices[0]?.[1] ?? Number.NaN) - railTopY) < FLAT_EPSILON &&
-          spansX(polygon, sectionX),
-      )
-      .map((polygon) => {
-        const zs = polygon.vertices.map((vertex) => vertex[2]);
-        return { from: Math.min(...zs), to: Math.max(...zs) };
-      }),
+      .filter((polygon) => {
+        const across = exactSpan(polygon.vertices.map((vertex) => vertex[0]));
+        return (
+          polygon.vertices.every((vertex) => exactDecimalEquals(vertex[1], railTopY)) &&
+          compareExactDecimal(across.from, section) <= 0 &&
+          compareExactDecimal(section, across.to) <= 0
+        );
+      })
+      .map((polygon) => exactSpan(polygon.vertices.map((vertex) => vertex[2]))),
   );
   const [near, far] = railHeads;
   const pair = railHeads.length === 2 && near !== undefined && far !== undefined;
-  const innerGauge = pair ? far.from - near.to : null;
+  const innerGauge = pair ? subtractExactDecimal(far.from, near.to) : null;
   return {
     part,
     sectionX,
-    railTopY,
-    railHeads,
-    railCentreSpacingLdu: pair ? (far.from + far.to) / 2 - (near.from + near.to) / 2 : null,
-    innerGaugeLdu: innerGauge,
-    innerGaugeMm: innerGauge === null ? null : innerGauge * LDU_IN_MM,
-    railHeadWidthLdu: pair ? near.to - near.from : null,
-    trackWidthLdu: extent(polygons, 2).to - extent(polygons, 2).from,
-    railTopAboveUndersideLdu: extent(polygons, 1).to - railTopY,
+    railTopY: formatExactDecimal(railTopY),
+    railHeads: railHeads.map((head) => ({
+      from: formatExactDecimal(head.from),
+      to: formatExactDecimal(head.to),
+    })),
+    railCentreSpacingLdu: written(pair ? subtractExactDecimal(middle(far), middle(near)) : null),
+    innerGaugeLdu: written(innerGauge),
+    innerGaugeMm: written(
+      innerGauge === null ? null : multiplyExactDecimal(innerGauge, EXACT_MM_PER_LDU),
+    ),
+    railHeadWidthLdu: written(pair ? length(near) : null),
+    trackWidthLdu: formatExactDecimal(length(exactExtent(polygons, 2))),
+    railTopAboveUndersideLdu: formatExactDecimal(subtractExactDecimal(vertical.to, railTopY)),
   };
 }
 

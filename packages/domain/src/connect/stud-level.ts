@@ -24,6 +24,10 @@ export class StudLevel {
   private bits = new Uint32Array(0);
   private stacked = new Uint8Array(0);
   private slots = 0;
+  private reachedMinX = Infinity;
+  private reachedMinZ = Infinity;
+  private reachedMaxX = -Infinity;
+  private reachedMaxZ = -Infinity;
 
   add(cellX: number, cellZ: number): void {
     const slot = this.ensureTile(cellX >> WORD_SHIFT, cellZ >> TILE_ROW_SHIFT);
@@ -37,6 +41,10 @@ export class StudLevel {
     this.stacked[cell] = stacked + 1;
     const word = slot * TILE_ROWS + row;
     this.bits[word] = ((this.bits[word] ?? 0) | (1 << bit)) >>> 0;
+    this.reachedMinX = Math.min(this.reachedMinX, cellX);
+    this.reachedMinZ = Math.min(this.reachedMinZ, cellZ);
+    this.reachedMaxX = Math.max(this.reachedMaxX, cellX);
+    this.reachedMaxZ = Math.max(this.reachedMaxZ, cellZ);
   }
 
   remove(cellX: number, cellZ: number): void {
@@ -67,18 +75,23 @@ export class StudLevel {
     cellX: number,
     cellZ: number,
   ): number {
+    const firstRow = Math.max(0, this.reachedMinZ - cellZ);
+    const lastRow = Math.min(rows - 1, this.reachedMaxZ - cellZ);
+    const firstWord = Math.max(0, (this.reachedMinX - cellX) >> WORD_SHIFT);
+    const lastWord = Math.min(words - 1, (this.reachedMaxX - cellX) >> WORD_SHIFT);
+    if (firstRow > lastRow || firstWord > lastWord) return 0;
     const shift = cellX & WORD_MASK;
     const column = (cellX >> WORD_SHIFT) - this.tileX0;
     let n = 0;
-    for (let j = 0; j < rows; j++) {
+    for (let j = firstRow; j <= lastRow; j++) {
       const row = cellZ + j;
       const tileRow = (row >> TILE_ROW_SHIFT) - this.tileZ0;
       if (tileRow < 0 || tileRow >= this.tilesD) continue;
       const slotRow = tileRow * this.tilesW;
       const r = row & TILE_ROW_MASK;
       const from = offset + j * words;
-      let current = this.word(slotRow, column, r);
-      for (let w = 0; w < words; w++) {
+      let current = this.word(slotRow, column + firstWord, r);
+      for (let w = firstWord; w <= lastWord; w++) {
         const next = this.word(slotRow, column + w + 1, r);
         const window = shift === 0 ? current : (current >>> shift) | (next << (WORD_BITS - shift));
         n += popcount32(window & (raster[from + w] ?? 0));

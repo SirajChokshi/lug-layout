@@ -57,6 +57,8 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
       data-direction={snapshot.direction}
       data-derail-speed={snapshot.derailSpeedLduPerS}
       data-bogies-off={snapshot.bogiesOffTrack}
+      data-train-x={snapshot.trainXLdu.toFixed(1)}
+      data-train-z={snapshot.trainZLdu.toFixed(1)}
       data-switches={snapshot.switches.map((s) => (s.diverging ? "d" : "s")).join("")}
       data-tick={snapshot.tick}
     >

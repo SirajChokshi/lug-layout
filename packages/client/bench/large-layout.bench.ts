@@ -15,6 +15,7 @@ import { PerformanceObserver, performance } from "node:perf_hooks";
 import { mainThreadModules } from "../src/client.module.ts";
 import { EDITOR } from "../src/tokens.ts";
 import type { IEditor } from "../src/edit/editor.ts";
+import { meshesSettled } from "../src/edit/mesh-progress.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const TILE_LDU = 640;
@@ -32,7 +33,6 @@ const TRACK_RUNS = 5;
 const TRACK_RUN_TILES = 2;
 const RAY_HEIGHT_LDU = 10_000;
 const GC_SETTLE_MS = 50;
-const FAR_MODELS_SETTLE_MS = 2_000;
 const HOVER_CALLS = 2_000;
 const HOVER_WARMUP_CALLS = 200;
 const CLICK_CYCLES = 60;
@@ -91,6 +91,7 @@ class HeadlessBackend implements ISceneBackend {
   setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
@@ -218,10 +219,11 @@ async function timeCalls(
   record(name, samples, gcs, digestOf(seen));
 }
 
-function farTierSettled(editor: IEditor): Promise<void> {
+function farTierAndMeshesSettled(editor: IEditor): Promise<void> {
   return new Promise((resolve) => {
     const check = (): void => {
-      if (editor.snapshot().farTier === "loading") return;
+      const { farTier, meshes } = editor.snapshot();
+      if (farTier === "loading" || !meshesSettled(meshes)) return;
       unsubscribe();
       resolve();
     };
@@ -337,8 +339,7 @@ for (let row = 0; row < TRACK_ROWS; row++) {
   }
 }
 const buildMs = performance.now() - buildStart;
-await farTierSettled(editor);
-await new Promise((resolve) => setTimeout(resolve, FAR_MODELS_SETTLE_MS));
+await farTierAndMeshesSettled(editor);
 const snapshot = editor.snapshot();
 const totalParts = partsOf(editor);
 const placeSamples = Float64Array.from(clickMs);

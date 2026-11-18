@@ -1,10 +1,50 @@
-use std::collections::HashMap;
+use std::cell::{OnceCell, RefCell};
+use std::collections::{HashMap, HashSet};
+use std::f64::consts::{FRAC_PI_2, TAU};
+use std::hash::{BuildHasherDefault, Hasher};
+use std::rc::Rc;
 
+use super::depth_bands::DepthBands;
+use super::profile::Point;
 use crate::affine::Vec3;
 use crate::flatten::Triangle;
 use crate::lattice::STUD_LDU;
 
-pub const IDENTIFY_LDU: f64 = 0.0005;
+pub use crate::lattice::IDENTIFY_LDU;
+const ANY_DEPTH: (f64, f64) = (f64::NEG_INFINITY, f64::INFINITY);
+const CELL_HASH_ROTATION: u32 = 26;
+const CELL_HASH_MULTIPLIER: u64 = 0x9e37_79b9_7f4a_7c15;
+
+#[derive(Default)]
+struct CellHasher(u64);
+
+impl Hasher for CellHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.write_u64(u64::from(byte));
+        }
+    }
+
+    fn write_i64(&mut self, value: i64) {
+        self.write_u64(value as u64);
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.write_u64(value as u64);
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.0 =
+            (self.0.rotate_left(CELL_HASH_ROTATION) ^ value).wrapping_mul(CELL_HASH_MULTIPLIER);
+    }
+}
+
+type Cells<K, V> = HashMap<K, V, BuildHasherDefault<CellHasher>>;
+
 pub const HALF_GRID_LDU: f64 = STUD_LDU / 2.0;
 const TRAVEL_PRECISION_LDU: f64 = IDENTIFY_LDU / 64.0;
 
@@ -157,7 +197,50 @@ struct Facet {
 
 struct SlabPolygon {
     facet: usize,
-    points: Vec<Local>,
+    points: Ring,
+    bounds: PlanBounds,
+    finite: bool,
+}
+
+#[derive(Clone, Copy)]
+struct PlanBounds {
+    low: [f64; 2],
+    high: [f64; 2],
+}
+
+impl PlanBounds {
+    fn of(points: &[Local]) -> Self {
+        let mut bounds = PlanBounds {
+            low: [f64::INFINITY; 2],
+            high: [f64::NEG_INFINITY; 2],
+        };
+        for p in points {
+            bounds.widen(PlanBounds {
+                low: [p[0], p[1]],
+                high: [p[0], p[1]],
+            });
+        }
+        bounds
+    }
+
+    fn everywhere() -> Self {
+        PlanBounds {
+            low: [f64::NEG_INFINITY; 2],
+            high: [f64::INFINITY; 2],
+        }
+    }
+
+    fn widen(&mut self, other: PlanBounds) {
+        for k in 0..2 {
+            self.low[k] = self.low[k].min(other.low[k]);
+            self.high[k] = self.high[k].max(other.high[k]);
+        }
+    }
+}
+
+struct CellGroup {
+    bounds: PlanBounds,
+    cells: Vec<((i64, i64), PlanBounds)>,
 }
 
 pub struct Slab {
@@ -166,23 +249,141 @@ pub struct Slab {
     at: f64,
     range: (f64, f64),
     polygons: Vec<SlabPolygon>,
-    cells: HashMap<(i64, i64), Vec<u32>>,
+    cells: Cells<(i64, i64), Vec<u32>>,
+    groups: OnceCell<Vec<((i64, i64), CellGroup)>>,
+    oversized: Vec<u32>,
     extent: ([i64; 2], [i64; 2]),
 }
 
+impl Slab {
+    fn groups(&self) -> &[((i64, i64), CellGroup)] {
+        self.groups.get_or_init(|| {
+            let mut groups: Cells<(i64, i64), CellGroup> = Cells::default();
+            for (&(x, y), found) in &self.cells {
+                let mut bounds = self.polygons[found[0] as usize].bounds;
+                for &index in found {
+                    let polygon = &self.polygons[index as usize];
+                    bounds.widen(if polygon.finite {
+                        polygon.bounds
+                    } else {
+                        PlanBounds::everywhere()
+                    });
+                }
+                groups
+                    .entry((group_of(x), group_of(y)))
+                    .and_modify(|group| group.bounds.widen(bounds))
+                    .or_insert_with(|| CellGroup {
+                        bounds,
+                        cells: Vec::new(),
+                    })
+                    .cells
+                    .push(((x, y), bounds));
+            }
+            groups.into_iter().collect()
+        })
+    }
+}
+
+#[derive(Clone)]
+struct Patch {
+    points: Vec<Local>,
+    low: [f64; 2],
+    high: [f64; 2],
+}
+
+impl Patch {
+    fn new(points: Vec<Local>) -> Self {
+        let low = [0, 1].map(|k| points.iter().map(|p| p[k]).fold(f64::INFINITY, f64::min));
+        let high = [0, 1].map(|k| {
+            points
+                .iter()
+                .map(|p| p[k])
+                .fold(f64::NEG_INFINITY, f64::max)
+        });
+        Patch { points, low, high }
+    }
+
+    fn near_path(&self, to: [f64; 2], reach: f64) -> bool {
+        (0..2).all(|k| {
+            self.low[k] <= to[k].max(0.0) + reach && self.high[k] >= to[k].min(0.0) - reach
+        })
+    }
+
+    fn within(&self, to: [f64; 2], distance: f64) -> bool {
+        self.near_path(to, distance + IDENTIFY_LDU)
+            && polygon_segment_distance(&self.points, to) < distance
+    }
+}
+
 struct Surroundings<'s> {
-    polygons: Vec<Vec<Local>>,
+    polygons: Vec<Patch>,
     surfaces: Vec<&'s RoundSurface>,
     center: [f64; 2],
     clearance: f64,
 }
 
+impl<'s> Surroundings<'s> {
+    fn along(&self, step: [f64; 2]) -> Surroundings<'s> {
+        let reach = self.clearance + IDENTIFY_LDU;
+        Surroundings {
+            polygons: self
+                .polygons
+                .iter()
+                .filter(|patch| patch.within(step, reach))
+                .cloned()
+                .collect(),
+            surfaces: self.surfaces.clone(),
+            center: self.center,
+            clearance: self.clearance,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum LineUse {
+    Floor,
+    Profile,
+    Within,
+}
+
+type LineKey = (LineUse, usize, [u64; 2], [u64; 2]);
+
+type PlanBox = [[f64; 2]; 2];
+
+fn reach_box(center: [f64; 2], reach: f64) -> PlanBox {
+    [center.map(|c| c - reach), center.map(|c| c + reach)]
+}
+
+fn intersection(a: &PlanBox, b: &PlanBox) -> PlanBox {
+    [
+        [0, 1].map(|k| a[0][k].max(b[0][k])),
+        [0, 1].map(|k| a[1][k].min(b[1][k])),
+    ]
+}
+
+fn meets(low: [f64; 2], high: [f64; 2], query: &PlanBox) -> bool {
+    (0..2).all(|k| query[0][k] <= high[k] && low[k] <= query[1][k])
+}
+
+struct Column {
+    cells: Cells<(i64, i64), DepthBands>,
+    oversized: DepthBands,
+    has_oversized: bool,
+}
+
 pub struct Solid {
+    cell: CellSize,
     facets: Vec<Facet>,
-    columns: [HashMap<(i64, i64), Vec<u32>>; 3],
+    depths: [OnceCell<DepthBands>; 3],
+    lines: RefCell<Cells<LineKey, Rc<DepthBands>>>,
+    no_line: Rc<DepthBands>,
+    bounds: (Vec3, Vec3),
+    columns: [OnceCell<Column>; 3],
+    occupied: [OnceCell<SquareSet>; 3],
     surfaces: Vec<RoundSurface>,
-    axes: HashMap<(usize, i64, i64), Vec<usize>>,
-    walls: [HashMap<(i64, i64), Vec<usize>>; 3],
+    axes: Cells<(usize, i64, i64), Vec<usize>>,
+    walls: [Cells<(i64, i64), Vec<usize>>; 3],
+    oversized_walls: [Vec<usize>; 3],
 }
 
 fn axis_key(value: f64) -> i64 {
@@ -201,8 +402,110 @@ fn cross(a: Vec3, b: Vec3) -> Vec3 {
     ]
 }
 
-fn cell(value: f64) -> i64 {
+const PLAN_BUDGET: f64 = 65_536.0;
+
+type SquareSet = HashSet<(i64, i64), BuildHasherDefault<CellHasher>>;
+
+fn square(value: f64) -> i64 {
     (value / HALF_GRID_LDU).floor() as i64
+}
+
+fn squares_across(low: [f64; 2], high: [f64; 2]) -> f64 {
+    (0..2)
+        .map(|k| (high[k] / HALF_GRID_LDU).floor() - (low[k] / HALF_GRID_LDU).floor() + 1.0)
+        .product()
+}
+
+fn beyond_budget(low: [f64; 2], high: [f64; 2]) -> bool {
+    !matches!(
+        squares_across(low, high).partial_cmp(&PLAN_BUDGET),
+        Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+    )
+}
+
+#[derive(Clone, Copy)]
+struct CellSize(f64);
+
+impl CellSize {
+    const CANONICAL: CellSize = CellSize(HALF_GRID_LDU);
+
+    fn key(self, value: f64) -> i64 {
+        (value / self.0).floor() as i64
+    }
+
+    fn window(self, center: [f64; 2], reach: f64) -> [[i64; 2]; 2] {
+        center.map(|c| [self.key(c - reach), self.key(c + reach)])
+    }
+}
+
+fn window_cells(window: [[i64; 2]; 2]) -> f64 {
+    (0..2)
+        .map(|k| (window[k][1] - window[k][0] + 1).max(0) as f64)
+        .product()
+}
+
+fn sparser_than<V>(cells: &Cells<(i64, i64), V>, span: f64) -> bool {
+    span > (cells.len() as f64).max(PLAN_BUDGET)
+}
+
+fn in_window<'a, V>(
+    cells: &'a Cells<(i64, i64), V>,
+    window: [[i64; 2]; 2],
+    mut visit: impl FnMut(&'a V) -> bool,
+) -> bool {
+    if !sparser_than(cells, window_cells(window)) {
+        for x in window[0][0]..=window[0][1] {
+            for y in window[1][0]..=window[1][1] {
+                if let Some(value) = cells.get(&(x, y)) {
+                    if !visit(value) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    let inside = |key: &(i64, i64)| {
+        (window[0][0]..=window[0][1]).contains(&key.0)
+            && (window[1][0]..=window[1][1]).contains(&key.1)
+    };
+    let mut keys: Vec<(i64, i64)> = cells.keys().copied().filter(inside).collect();
+    keys.sort_unstable();
+    keys.into_iter().all(|key| visit(&cells[&key]))
+}
+
+const GROUP_CELLS: i64 = 8;
+
+fn group_of(cell: i64) -> i64 {
+    cell.div_euclid(GROUP_CELLS)
+}
+
+fn ring((x, y): (i64, i64), home: [i64; 2]) -> i64 {
+    (x - home[0]).abs().max((y - home[1]).abs())
+}
+
+type Nearness = (i64, (i64, i64));
+
+fn nearness(key: (i64, i64), home: [i64; 2]) -> Nearness {
+    (ring(key, home), key)
+}
+
+const ATAN2_SLACK: f64 = 64.0 * f64::EPSILON;
+
+fn angular_span(center: [f64; 2], bounds: PlanBounds) -> Option<(f64, f64)> {
+    let low = [bounds.low[0] - center[0], bounds.low[1] - center[1]];
+    let high = [bounds.high[0] - center[0], bounds.high[1] - center[1]];
+    if (0..2).all(|k| low[k] <= 0.0 && high[k] >= 0.0) {
+        return None;
+    }
+    let corners = [
+        [low[0], low[1]],
+        [high[0], low[1]],
+        [high[0], high[1]],
+        [low[0], high[1]],
+    ];
+    span_of(&corners.map(|p| p[1].atan2(p[0])))
+        .filter(|&(from, to)| (to - from).rem_euclid(TAU) < FRAC_PI_2)
 }
 
 pub const SIXTEENTHS_PER_LDU: f64 = 16.0;
@@ -224,15 +527,49 @@ fn plane_key(value: f64) -> i64 {
     (identified(value) / IDENTIFY_LDU).round() as i64
 }
 
+fn beyond_attaining(best: f64, swept: f64) -> bool {
+    swept > best + 2.0 * IDENTIFY_LDU
+}
+
 fn crossing(p: Local, q: Local, at: f64) -> Local {
     let (a, b) = if p <= q { (p, q) } else { (q, p) };
     let t = (at - a[2]) / (b[2] - a[2]);
     [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), at]
 }
 
-fn clip(polygon: Vec<Local>, at: f64, keep_above: bool) -> Vec<Local> {
+const RING_CAPACITY: usize = 8;
+
+#[derive(Clone, Copy)]
+struct Ring {
+    points: [Local; RING_CAPACITY],
+    len: usize,
+}
+
+impl Ring {
+    fn empty() -> Self {
+        Ring {
+            points: [[0.0; 3]; RING_CAPACITY],
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, point: Local) {
+        self.points[self.len] = point;
+        self.len += 1;
+    }
+}
+
+impl std::ops::Deref for Ring {
+    type Target = [Local];
+
+    fn deref(&self) -> &[Local] {
+        &self.points[..self.len]
+    }
+}
+
+fn clip(polygon: Ring, at: f64, keep_above: bool) -> Ring {
     let inside = |p: &Local| if keep_above { p[2] >= at } else { p[2] <= at };
-    let mut out = Vec::with_capacity(polygon.len() + 1);
+    let mut out = Ring::empty();
     for (k, p) in polygon.iter().enumerate() {
         let q = polygon[(k + 1) % polygon.len()];
         if inside(p) {
@@ -245,8 +582,33 @@ fn clip(polygon: Vec<Local>, at: f64, keep_above: bool) -> Vec<Local> {
     out
 }
 
-fn slab_clip(polygon: Vec<Local>, from: f64, to: f64) -> Vec<Local> {
+fn slab_clip(polygon: Ring, from: f64, to: f64) -> Ring {
     clip(clip(polygon, from, true), to, false)
+}
+
+fn prism_clip(polygon: &[Local], piece: &[Point]) -> Vec<Local> {
+    let mut out = polygon.to_vec();
+    for k in 0..piece.len() {
+        if out.is_empty() {
+            break;
+        }
+        let (a, b) = (piece[k], piece[(k + 1) % piece.len()]);
+        let side = |p: &Local| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        let mut kept = Vec::with_capacity(out.len() + 1);
+        for (m, p) in out.iter().enumerate() {
+            let q = out[(m + 1) % out.len()];
+            let (sp, sq) = (side(p), side(&q));
+            if sp >= 0.0 {
+                kept.push(*p);
+            }
+            if (sp >= 0.0) != (sq >= 0.0) {
+                let t = sp / (sp - sq);
+                kept.push([0, 1, 2].map(|c| p[c] + t * (q[c] - p[c])));
+            }
+        }
+        out = kept;
+    }
+    out
 }
 
 fn turn(a: Local, b: Local, c: [f64; 2]) -> f64 {
@@ -262,9 +624,16 @@ fn plan_area(polygon: &[Local]) -> f64 {
     twice
 }
 
+fn bounds_reach(polygon: &[Local], point: [f64; 2]) -> bool {
+    (0..2).all(|k| {
+        polygon.iter().any(|p| p[k] <= point[k] + IDENTIFY_LDU)
+            && polygon.iter().any(|p| p[k] >= point[k] - IDENTIFY_LDU)
+    })
+}
+
 fn contains(polygon: &[Local], point: [f64; 2]) -> bool {
     let area = plan_area(polygon);
-    if polygon.len() < 3 || area == 0.0 {
+    if polygon.len() < 3 || area == 0.0 || !bounds_reach(polygon, point) {
         return false;
     }
     polygon.iter().enumerate().all(|(k, a)| {
@@ -306,6 +675,13 @@ fn point_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
 }
 
 fn segments_cross(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    let apart = |k: usize| {
+        a[k].min(b[k]) > c[k].max(d[k]) + IDENTIFY_LDU
+            || c[k].min(d[k]) > a[k].max(b[k]) + IDENTIFY_LDU
+    };
+    if apart(0) || apart(1) {
+        return false;
+    }
     let side = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
         (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
     };
@@ -350,6 +726,14 @@ fn newell(polygon: &[Local]) -> Local {
     n
 }
 
+fn depth_span(polygon: &[Local]) -> (f64, f64) {
+    polygon
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(low, high), p| {
+            (low.min(p[2]), high.max(p[2]))
+        })
+}
+
 fn first_depth(polygon: &[Local], inside: f64) -> Option<f64> {
     let squared = inside * inside;
     let mut best: Option<f64> = None;
@@ -375,7 +759,7 @@ fn first_depth(polygon: &[Local], inside: f64) -> Option<f64> {
         let root = discriminant.sqrt();
         for t in [(-qb - root) / (2.0 * qa), (-qb + root) / (2.0 * qa)] {
             if (0.0..=1.0).contains(&t) {
-                take(a[2] + t * dd);
+                take((a[2] + t * dd).clamp(a[2].min(b[2]), a[2].max(b[2])));
             }
         }
     }
@@ -390,10 +774,12 @@ fn first_depth(polygon: &[Local], inside: f64) -> Option<f64> {
             [0.0, 0.0]
         };
         if contains(polygon, lowest) {
+            let (shallowest, deepest) = depth_span(polygon);
             take(
-                origin[2]
+                (origin[2]
                     + gradient[0] * (lowest[0] - origin[0])
-                    + gradient[1] * (lowest[1] - origin[1]),
+                    + gradient[1] * (lowest[1] - origin[1]))
+                    .clamp(shallowest, deepest),
             );
         }
     }
@@ -450,6 +836,82 @@ pub fn covers_circle(arcs: &[(f64, f64)], slack: f64) -> bool {
     reached + slack >= PI
 }
 
+struct Coverage {
+    covered: Vec<(f64, f64)>,
+    within_turn: bool,
+}
+
+impl Coverage {
+    fn new(arcs: &[(f64, f64)]) -> Self {
+        let mut coverage = Coverage {
+            covered: Vec::new(),
+            within_turn: true,
+        };
+        for &arc in arcs {
+            coverage.add(arc);
+        }
+        coverage
+    }
+
+    fn add(&mut self, (low, high): (f64, f64)) {
+        use std::f64::consts::PI;
+        let turn = -PI..=PI;
+        if !(turn.contains(&low) && turn.contains(&high)) {
+            self.within_turn = false;
+        }
+        if !self.within_turn {
+            return;
+        }
+        if high >= low {
+            self.merge(low, high);
+        } else {
+            self.merge(low, PI);
+            self.merge(-PI, high);
+        }
+    }
+
+    fn merge(&mut self, mut low: f64, mut high: f64) {
+        let start = self.covered.partition_point(|&(_, end)| end < low);
+        let mut end = start;
+        while end < self.covered.len() && self.covered[end].0 <= high {
+            low = low.min(self.covered[end].0);
+            high = high.max(self.covered[end].1);
+            end += 1;
+        }
+        self.covered.splice(start..end, [(low, high)]);
+    }
+
+    fn complete(&self) -> bool {
+        use std::f64::consts::PI;
+        self.within_turn
+            && matches!(self.covered.as_slice(), [(low, high)] if *low <= -PI && *high >= PI)
+    }
+
+    fn covers_box(&self, center: [f64; 2], bounds: PlanBounds) -> bool {
+        self.within_turn && angular_span(center, bounds).is_some_and(|span| self.covers_span(span))
+    }
+
+    fn covers_span(&self, (low, high): (f64, f64)) -> bool {
+        use std::f64::consts::PI;
+        let covers = |from: f64, to: f64| {
+            let at = self.covered.partition_point(|&(_, end)| end < to);
+            self.covered
+                .get(at)
+                .is_some_and(|&(start, _)| start <= from)
+        };
+        let (from, to) = (low - ATAN2_SLACK, high + ATAN2_SLACK);
+        if high < low {
+            covers(from, PI) && covers(-PI, to)
+        } else if from < -PI {
+            covers(-PI, to) && covers(from + TAU, PI)
+        } else if to > PI {
+            covers(from, PI) && covers(-PI, to - TAU)
+        } else {
+            covers(from, to)
+        }
+    }
+}
+
 fn axis_probe(axis: usize, center: [f64; 2], along: f64, inward: f64) -> Probe {
     let (i, j) = plan_axes(axis);
     let mut entrance = [0.0; 3];
@@ -466,7 +928,30 @@ fn axis_probe(axis: usize, center: [f64; 2], along: f64, inward: f64) -> Probe {
 
 impl Solid {
     pub fn new(triangles: &[Triangle], pieces: &[u16], surfaces: Vec<RoundSurface>) -> Self {
-        let mut columns: [HashMap<(i64, i64), Vec<u32>>; 3] = Default::default();
+        Self::indexed(triangles, pieces, surfaces, CellSize::CANONICAL)
+    }
+
+    #[cfg(test)]
+    pub(super) fn unpieced(triangles: &[Triangle], surfaces: Vec<RoundSurface>) -> Self {
+        Self::with_cell_size(triangles, surfaces, CellSize::CANONICAL.0)
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_cell_size(
+        triangles: &[Triangle],
+        surfaces: Vec<RoundSurface>,
+        size: f64,
+    ) -> Self {
+        let pieces = vec![crate::pieces::NO_PIECE; triangles.len()];
+        Self::indexed(triangles, &pieces, surfaces, CellSize(size))
+    }
+
+    fn indexed(
+        triangles: &[Triangle],
+        pieces: &[u16],
+        surfaces: Vec<RoundSurface>,
+        cell: CellSize,
+    ) -> Self {
         let mut facets = Vec::with_capacity(triangles.len());
         for (triangle, &piece) in triangles.iter().zip(pieces) {
             let [a, b, c] = triangle.points;
@@ -476,15 +961,6 @@ impl Solid {
             }
             let low = [0, 1, 2].map(|k| a[k].min(b[k]).min(c[k]));
             let high = [0, 1, 2].map(|k| a[k].max(b[k]).max(c[k]));
-            let index = facets.len() as u32;
-            for (axis, column) in columns.iter_mut().enumerate() {
-                let (i, j) = plan_axes(axis);
-                for x in cell(low[i])..=cell(high[i]) {
-                    for y in cell(low[j])..=cell(high[j]) {
-                        column.entry((x, y)).or_default().push(index);
-                    }
-                }
-            }
             facets.push(Facet {
                 points: triangle.points,
                 front: (!triangle.double_sided).then_some(normal),
@@ -494,16 +970,35 @@ impl Solid {
                 piece,
             });
         }
+        let bounds = facets.iter().fold(
+            ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]),
+            |(low, high), facet: &Facet| {
+                (
+                    [0, 1, 2].map(|k| low[k].min(facet.low[k])),
+                    [0, 1, 2].map(|k| high[k].max(facet.high[k])),
+                )
+            },
+        );
         let mut solid = Solid {
+            cell,
             facets,
-            columns,
+            depths: Default::default(),
+            lines: RefCell::default(),
+            no_line: Rc::new(DepthBands::new(Vec::new(), |_| 0.0, |_| 0.0)),
+            bounds,
+            columns: Default::default(),
+            occupied: Default::default(),
             surfaces: Vec::new(),
-            axes: HashMap::new(),
+            axes: Cells::default(),
             walls: Default::default(),
+            oversized_walls: Default::default(),
         };
         for (index, surface) in surfaces.iter().enumerate() {
             let probe = axis_probe(surface.axis, surface.center, 0.0, 1.0);
-            for facet in solid.near(&probe, surface.reach() + IDENTIFY_LDU) {
+            let (from, to) = surface.depths(&probe);
+            let held = (from - IDENTIFY_LDU, to + IDENTIFY_LDU);
+            let reach = surface.reach() + IDENTIFY_LDU;
+            for facet in solid.around(&probe, reach, held, reach) {
                 let facet = &mut solid.facets[facet as usize];
                 if facet.owner.is_none()
                     && facet.points.iter().all(|p| surface.holds(*p))
@@ -515,10 +1010,14 @@ impl Solid {
         }
         for (index, surface) in surfaces.iter().enumerate() {
             if let RoundShape::Wall { radius, .. } = surface.shape {
-                if surface.full {
-                    for x in cell(surface.center[0] - radius)..=cell(surface.center[0] + radius) {
-                        for y in cell(surface.center[1] - radius)..=cell(surface.center[1] + radius)
-                        {
+                let low = surface.center.map(|c| c - radius);
+                let high = surface.center.map(|c| c + radius);
+                if surface.full && beyond_budget(low, high) {
+                    solid.oversized_walls[surface.axis].push(index);
+                } else if surface.full {
+                    let window = cell.window(surface.center, radius);
+                    for x in window[0][0]..=window[0][1] {
+                        for y in window[1][0]..=window[1][1] {
                             solid.walls[surface.axis]
                                 .entry((x, y))
                                 .or_default()
@@ -545,24 +1044,350 @@ impl Solid {
         self.facets.is_empty()
     }
 
-    fn near(&self, probe: &Probe, reach: f64) -> Vec<u32> {
-        let (i, j) = plan_axes(probe.axis);
-        let column = &self.columns[probe.axis];
-        let mut out = Vec::new();
-        for x in cell(probe.entrance[i] - reach)..=cell(probe.entrance[i] + reach) {
-            for y in cell(probe.entrance[j] - reach)..=cell(probe.entrance[j] + reach) {
-                if let Some(found) = column.get(&(x, y)) {
-                    out.extend_from_slice(found);
+    pub fn bounds(&self) -> (Vec3, Vec3) {
+        self.bounds
+    }
+
+    fn bands(&self, axis: usize, facets: Vec<u32>) -> DepthBands {
+        DepthBands::new(
+            facets,
+            |index| self.facets[index as usize].low[axis],
+            |index| self.facets[index as usize].high[axis],
+        )
+    }
+
+    fn plan_box(&self, facet: &Facet, axis: usize) -> ([f64; 2], [f64; 2]) {
+        let (i, j) = plan_axes(axis);
+        ([facet.low[i], facet.low[j]], [facet.high[i], facet.high[j]])
+    }
+
+    fn oversized_on(&self, facet: &Facet, axis: usize) -> bool {
+        let (low, high) = self.plan_box(facet, axis);
+        beyond_budget(low, high)
+    }
+
+    pub fn largest_oversized(&self) -> Option<(Vec3, f64)> {
+        let facets = self.facets.iter().filter_map(|facet| {
+            let squares = (0..3)
+                .map(|axis| {
+                    let (low, high) = self.plan_box(facet, axis);
+                    squares_across(low, high)
+                })
+                .fold(0.0, f64::max);
+            (0..3).any(|axis| self.oversized_on(facet, axis)).then(|| {
+                let centroid =
+                    [0, 1, 2].map(|k| facet.points.iter().map(|p| p[k]).sum::<f64>() / 3.0);
+                (centroid, squares)
+            })
+        });
+        let walls = self.oversized_walls.iter().flatten().filter_map(|&index| {
+            let surface = &self.surfaces[index];
+            let RoundShape::Wall { radius, from, .. } = surface.shape else {
+                return None;
+            };
+            let low = surface.center.map(|c| c - radius);
+            let high = surface.center.map(|c| c + radius);
+            let origin = axis_probe(surface.axis, surface.center, from, 1.0).entrance;
+            Some((origin, squares_across(low, high)))
+        });
+        facets
+            .chain(walls)
+            .fold(None, |largest: Option<(Vec3, f64)>, found| match largest {
+                Some(kept) if kept.1 >= found.1 => Some(kept),
+                _ => Some(found),
+            })
+    }
+
+    fn column(&self, axis: usize) -> &Column {
+        self.columns[axis].get_or_init(|| {
+            let (i, j) = plan_axes(axis);
+            let mut cells: Cells<(i64, i64), Vec<u32>> = Cells::default();
+            let mut oversized = Vec::new();
+            for (index, facet) in self.facets.iter().enumerate() {
+                if self.oversized_on(facet, axis) {
+                    oversized.push(index as u32);
+                    continue;
+                }
+                for x in self.cell.key(facet.low[i])..=self.cell.key(facet.high[i]) {
+                    for y in self.cell.key(facet.low[j])..=self.cell.key(facet.high[j]) {
+                        cells.entry((x, y)).or_default().push(index as u32);
+                    }
                 }
             }
-        }
+            Column {
+                cells: cells
+                    .into_iter()
+                    .map(|(key, facets)| (key, self.bands(axis, facets)))
+                    .collect(),
+                has_oversized: !oversized.is_empty(),
+                oversized: self.bands(axis, oversized),
+            }
+        })
+    }
+
+    fn occupied(&self, axis: usize) -> &SquareSet {
+        self.occupied[axis].get_or_init(|| {
+            let mut occupied = SquareSet::default();
+            let mut cover = |low: [f64; 2], high: [f64; 2]| {
+                for x in square(low[0])..=square(high[0]) {
+                    for y in square(low[1])..=square(high[1]) {
+                        occupied.insert((x, y));
+                    }
+                }
+            };
+            for facet in &self.facets {
+                if !self.oversized_on(facet, axis) {
+                    let (low, high) = self.plan_box(facet, axis);
+                    cover(low, high);
+                }
+            }
+            let oversized_walls = &self.oversized_walls[axis];
+            for (index, surface) in self.surfaces.iter().enumerate() {
+                if surface.axis != axis || oversized_walls.contains(&index) {
+                    continue;
+                }
+                cover(surface.center, surface.center);
+                if let (true, RoundShape::Wall { radius, .. }) = (surface.full, surface.shape) {
+                    cover(
+                        surface.center.map(|c| c - radius),
+                        surface.center.map(|c| c + radius),
+                    );
+                }
+            }
+            occupied
+        })
+    }
+
+    fn depth_index(&self, axis: usize) -> &DepthBands {
+        self.depths[axis].get_or_init(|| self.bands(axis, (0..self.facets.len() as u32).collect()))
+    }
+
+    fn near(&self, probe: &Probe, reach: f64, depths: (f64, f64)) -> Vec<u32> {
+        self.gather(probe, reach, depths, None)
+    }
+
+    fn around(&self, probe: &Probe, reach: f64, depths: (f64, f64), distance: f64) -> Vec<u32> {
+        let mut out = Vec::new();
+        self.each_around(probe, (reach, distance), depths, |index| {
+            out.push(index);
+            true
+        });
         out.sort_unstable();
         out.dedup();
         out
     }
 
-    fn polygon(&self, probe: &Probe, facet: &Facet) -> Vec<Local> {
-        facet.points.iter().map(|p| probe.local(*p)).collect()
+    fn each_around(
+        &self,
+        probe: &Probe,
+        (reach, distance): (f64, f64),
+        depths: (f64, f64),
+        found: impl FnMut(u32) -> bool,
+    ) -> bool {
+        let (i, j) = plan_axes(probe.axis);
+        let margin = distance + IDENTIFY_LDU;
+        let plan = [
+            [probe.entrance[i] - margin, probe.entrance[j] - margin],
+            [probe.entrance[i] + margin, probe.entrance[j] + margin],
+        ];
+        self.each(probe, reach, depths, Some(&plan), found)
+    }
+
+    fn gather(
+        &self,
+        probe: &Probe,
+        reach: f64,
+        depths: (f64, f64),
+        plan: Option<&PlanBox>,
+    ) -> Vec<u32> {
+        let mut out = Vec::new();
+        self.each(probe, reach, depths, plan, |index| {
+            out.push(index);
+            true
+        });
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    fn line(
+        &self,
+        probe: &Probe,
+        purpose: LineUse,
+        (reach, distance): (f64, f64),
+        keep: impl Fn(usize, &Facet) -> bool,
+    ) -> Rc<DepthBands> {
+        let key = (
+            purpose,
+            probe.axis,
+            probe.center().map(f64::to_bits),
+            [reach.to_bits(), distance.to_bits()],
+        );
+        if let Some(found) = self.lines.borrow().get(&key) {
+            return Rc::clone(found);
+        }
+        let mut indices = Vec::new();
+        self.each_around(
+            probe,
+            (reach, distance),
+            (f64::NEG_INFINITY, f64::INFINITY),
+            |index| {
+                indices.push(index);
+                true
+            },
+        );
+        indices.sort_unstable();
+        indices.dedup();
+        if indices.is_empty() {
+            return Rc::clone(&self.no_line);
+        }
+        let kept: Vec<u32> = indices
+            .into_iter()
+            .filter(|&index| keep(index as usize, &self.facets[index as usize]))
+            .collect();
+        let bands = if kept.is_empty() {
+            Rc::clone(&self.no_line)
+        } else {
+            Rc::new(self.bands(probe.axis, kept))
+        };
+        self.lines.borrow_mut().insert(key, Rc::clone(&bands));
+        bands
+    }
+
+    fn meeting(
+        &self,
+        bands: &DepthBands,
+        axis: usize,
+        (from, to): (f64, f64),
+        plan: Option<&PlanBox>,
+        found: &mut impl FnMut(u32) -> bool,
+    ) -> bool {
+        let low_of = |index: u32| self.facets[index as usize].low[axis];
+        bands.starting_before((from, to), low_of, &mut |index| {
+            let facet = &self.facets[index as usize];
+            let (low, high) = self.plan_box(facet, axis);
+            !(facet.high[axis] >= from && plan.is_none_or(|plan| meets(low, high, plan)))
+                || found(index)
+        })
+    }
+
+    fn world_window(probe: &Probe, depths: (f64, f64)) -> (f64, f64) {
+        let ends = [depths.0, depths.1].map(|d| probe.entrance[probe.axis] + probe.inward * d);
+        (
+            ends[0].min(ends[1]) - IDENTIFY_LDU,
+            ends[0].max(ends[1]) + IDENTIFY_LDU,
+        )
+    }
+
+    fn each(
+        &self,
+        probe: &Probe,
+        reach: f64,
+        depths: (f64, f64),
+        plan: Option<&PlanBox>,
+        mut found: impl FnMut(u32) -> bool,
+    ) -> bool {
+        let (from, to) = Self::world_window(probe, depths);
+        let column = self.column(probe.axis);
+        let center = probe.center();
+        let within = reach_box(center, reach);
+        let query = plan.map_or(within, |plan| intersection(plan, &within));
+        let window = self.cell.window(center, reach);
+        let indexed = in_window(&column.cells, window, |bands| {
+            self.meeting(bands, probe.axis, (from, to), Some(&query), &mut found)
+        });
+        indexed
+            && self.meeting(
+                &column.oversized,
+                probe.axis,
+                (from, to),
+                Some(&query),
+                &mut found,
+            )
+    }
+
+    fn deepest(&self, probe: &Probe) -> f64 {
+        let (low, high) = self.bounds;
+        probe
+            .depth(low[probe.axis])
+            .max(probe.depth(high[probe.axis]))
+    }
+
+    fn sweep(
+        &self,
+        probe: &Probe,
+        line: &DepthBands,
+        (mut best, limit): (f64, f64),
+        mut visit: impl FnMut(&Facet) -> Option<f64>,
+    ) -> f64 {
+        if self.facets.is_empty() || best < limit {
+            return best;
+        }
+        let deepest = self.deepest(probe);
+        let mut swept = f64::NEG_INFINITY;
+        let mut from = -IDENTIFY_LDU;
+        let mut width = HALF_GRID_LDU;
+        loop {
+            let to = from + width;
+            let (world_from, world_to) = Self::world_window(probe, (from, to));
+            let window = (world_from, world_to);
+            let finished = self.meeting(line, probe.axis, window, None, &mut |index| {
+                let facet = &self.facets[index as usize];
+                let (low, high) = self.depth_range(probe, facet);
+                if high < -IDENTIFY_LDU || low > to || low <= swept {
+                    return true;
+                }
+                if let Some(d) = visit(facet) {
+                    best = best.min(d);
+                }
+                best >= limit
+            });
+            if !finished {
+                return best;
+            }
+            if to >= deepest || beyond_attaining(best, to) {
+                return best;
+            }
+            swept = to;
+            from = to;
+            width *= 2.0;
+        }
+    }
+
+    fn polygon(&self, probe: &Probe, facet: &Facet) -> Ring {
+        let mut ring = Ring::empty();
+        for point in facet.points {
+            ring.push(probe.local(point));
+        }
+        ring
+    }
+
+    fn plan_gap(&self, probe: &Probe, facet: &Facet) -> f64 {
+        let (i, j) = plan_axes(probe.axis);
+        let gap = |k: usize| {
+            (facet.low[k] - probe.entrance[k])
+                .max(probe.entrance[k] - facet.high[k])
+                .max(0.0)
+        };
+        gap(i).hypot(gap(j))
+    }
+
+    fn apart(&self, probe: &Probe, facet: &Facet, distance: f64) -> bool {
+        self.plan_gap(probe, facet) > distance + IDENTIFY_LDU
+            || self.clear_of(probe, facet, distance)
+    }
+
+    fn clear_of(&self, probe: &Probe, facet: &Facet, distance: f64) -> bool {
+        let (i, j) = plan_axes(probe.axis);
+        let p = facet
+            .points
+            .map(|q| [q[i] - probe.entrance[i], q[j] - probe.entrance[j], 0.0]);
+        let beyond = distance + IDENTIFY_LDU;
+        if (0..3).any(|k| segment_radius(p[k], p[(k + 1) % 3]) <= beyond) {
+            return false;
+        }
+        let area = turn(p[0], p[1], [p[2][0], p[2][1]]);
+        (0..3).any(|k| turn(p[k], p[(k + 1) % 3], [0.0, 0.0]) * area < 0.0)
     }
 
     fn depth_range(&self, probe: &Probe, facet: &Facet) -> (f64, f64) {
@@ -592,13 +1417,27 @@ impl Solid {
     fn exact(&self, probe: &Probe, reach: f64) -> Vec<usize> {
         let center = probe.center();
         let mut out = self.coaxial(probe);
-        for x in cell(center[0] - reach)..=cell(center[0] + reach) {
-            for y in cell(center[1] - reach)..=cell(center[1] + reach) {
-                if let Some(found) = self.walls[probe.axis].get(&(x, y)) {
-                    out.extend_from_slice(found);
-                }
-            }
-        }
+        let query = reach_box(center, reach);
+        let near = |&index: &usize| {
+            let surface = &self.surfaces[index];
+            let radius = surface.reach();
+            meets(
+                surface.center.map(|c| c - radius),
+                surface.center.map(|c| c + radius),
+                &query,
+            )
+        };
+        let window = self.cell.window(center, reach);
+        in_window(&self.walls[probe.axis], window, |found| {
+            out.extend(found.iter().copied().filter(near));
+            true
+        });
+        out.extend(
+            self.oversized_walls[probe.axis]
+                .iter()
+                .copied()
+                .filter(near),
+        );
         out.sort_unstable();
         out.dedup();
         out
@@ -615,7 +1454,7 @@ impl Solid {
         let coaxial = self.exact(probe, reach);
         let mut pieces: Vec<u16> = Vec::new();
         let walls = (-IDENTIFY_LDU, range.1);
-        for index in self.near(probe, reach) {
+        for index in self.near(probe, reach, ANY_DEPTH) {
             if self.owned_by(index as usize, &coaxial) {
                 continue;
             }
@@ -647,7 +1486,7 @@ impl Solid {
     fn floor_pieces(&self, probe: &Probe, inside: f64, depth: f64) -> Vec<u16> {
         let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
         let mut pieces = Vec::new();
-        for index in self.near(probe, inside + IDENTIFY_LDU) {
+        for index in self.near(probe, inside + IDENTIFY_LDU, ANY_DEPTH) {
             if self.owned_by(index as usize, &coaxial) {
                 continue;
             }
@@ -674,26 +1513,16 @@ impl Solid {
     }
 
     pub fn floor(&self, probe: &Probe, inside: f64) -> Floor {
+        self.floor_until(probe, inside, f64::NEG_INFINITY)
+    }
+
+    pub fn floor_beyond(&self, probe: &Probe, inside: f64, limit: f64) -> Option<Floor> {
+        Some(self.floor_until(probe, inside, limit)).filter(|floor| floor.depth >= limit)
+    }
+
+    fn floor_until(&self, probe: &Probe, inside: f64, limit: f64) -> Floor {
         let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
-        let mut depth = f64::INFINITY;
         let mut attaining: Vec<(f64, Option<f64>)> = Vec::new();
-        for index in self.near(probe, inside + IDENTIFY_LDU) {
-            if self.owned_by(index as usize, &coaxial) {
-                continue;
-            }
-            let facet = &self.facets[index as usize];
-            if self.depth_range(probe, facet).1 < -IDENTIFY_LDU {
-                continue;
-            }
-            let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
-            if polygon.is_empty() {
-                continue;
-            }
-            if let Some(d) = first_depth(&polygon, inside) {
-                depth = depth.min(d);
-                attaining.push((d, facet.front.map(|front| front[probe.axis] * probe.inward)));
-            }
-        }
         for &index in &coaxial {
             let surface = &self.surfaces[index];
             let (low, high) = surface.depths(probe);
@@ -701,13 +1530,26 @@ impl Solid {
                 continue;
             }
             let d = low.max(-IDENTIFY_LDU);
-            depth = depth.min(d);
             let along = match surface.shape {
                 RoundShape::Annulus { .. } => surface.facing.map(|f| f * probe.inward),
                 RoundShape::Wall { .. } => Some(0.0),
             };
             attaining.push((d, along));
         }
+        let analytic = attaining.iter().map(|a| a.0).fold(f64::INFINITY, f64::min);
+        let window = (inside + IDENTIFY_LDU, inside);
+        let line = self.line(probe, LineUse::Floor, window, |index, facet| {
+            !self.apart(probe, facet, inside) && !self.owned_by(index, &coaxial)
+        });
+        let depth = self.sweep(probe, &line, (analytic, limit), |facet| {
+            let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
+            if polygon.is_empty() {
+                return None;
+            }
+            let d = first_depth(&polygon, inside)?;
+            attaining.push((d, facet.front.map(|front| front[probe.axis] * probe.inward)));
+            Some(d)
+        });
         let mut faces_probe = None;
         for (d, along) in attaining {
             if d > depth + IDENTIFY_LDU {
@@ -723,6 +1565,77 @@ impl Solid {
         Floor { depth, faces_probe }
     }
 
+    pub fn cross_section(&self, probe: &Probe, range: (f64, f64), reach: f64) -> Vec<Vec<Point>> {
+        self.near(probe, reach, range)
+            .into_iter()
+            .filter_map(|index| {
+                let facet = &self.facets[index as usize];
+                let (low, high) = self.depth_range(probe, facet);
+                if high < range.0 || low > range.1 {
+                    return None;
+                }
+                let clipped = slab_clip(self.polygon(probe, facet), range.0, range.1);
+                (!clipped.is_empty()).then(|| clipped.iter().map(|p| [p[0], p[1]]).collect())
+            })
+            .collect()
+    }
+
+    pub fn section_reaches(
+        &self,
+        probe: &Probe,
+        range: (f64, f64),
+        reach: f64,
+        beyond: f64,
+    ) -> bool {
+        !self.each(probe, reach, range, None, |index| {
+            let facet = &self.facets[index as usize];
+            let (low, high) = self.depth_range(probe, facet);
+            if high < range.0 || low > range.1 {
+                return true;
+            }
+            let clipped = slab_clip(self.polygon(probe, facet), range.0, range.1);
+            clipped.is_empty()
+                || nearest_radius(&clipped) > reach
+                || clipped.iter().all(|p| p[0].hypot(p[1]) <= beyond)
+        })
+    }
+
+    pub fn profile_floor(&self, probe: &Probe, pieces: &[Vec<Point>], reach: f64) -> Floor {
+        let mut attaining: Vec<(f64, Option<f64>)> = Vec::new();
+        let extent = pieces
+            .iter()
+            .flatten()
+            .map(|p| p[0].hypot(p[1]))
+            .fold(0.0, f64::max);
+        let line = self.line(probe, LineUse::Profile, (reach, extent), |_, facet| {
+            !self.apart(probe, facet, extent)
+        });
+        let depth = self.sweep(probe, &line, (f64::INFINITY, f64::NEG_INFINITY), |facet| {
+            let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
+            let (low, high) = depth_span(&polygon);
+            let mut shallowest: Option<f64> = None;
+            for piece in pieces {
+                let inside = prism_clip(&polygon, piece);
+                if let Some(d) = inside.iter().map(|p| p[2]).reduce(f64::min) {
+                    let d = d.clamp(low, high);
+                    shallowest = Some(shallowest.map_or(d, |s| s.min(d)));
+                    attaining.push((d, facet.front.map(|front| front[probe.axis] * probe.inward)));
+                }
+            }
+            shallowest
+        });
+        let mut faces_probe = None;
+        for (d, along) in attaining {
+            if d > depth + IDENTIFY_LDU {
+                continue;
+            }
+            if let Some(along) = along.filter(|a| *a != 0.0) {
+                faces_probe = Some(faces_probe.unwrap_or(true) && along < 0.0);
+            }
+        }
+        Floor { depth, faces_probe }
+    }
+
     pub fn slab(
         &self,
         axis: usize,
@@ -732,8 +1645,22 @@ impl Solid {
         ignores: impl Fn(&RoundSurface) -> bool,
     ) -> Slab {
         let probe = axis_probe(axis, [at, at], at, inward);
+        let (from, to) = Self::world_window(&probe, range);
+        let mut meeting = Vec::new();
+        self.meeting(
+            self.depth_index(axis),
+            axis,
+            (from, to),
+            None,
+            &mut |index| {
+                meeting.push(index as usize);
+                true
+            },
+        );
+        meeting.sort_unstable();
         let mut polygons = Vec::new();
-        for (index, facet) in self.facets.iter().enumerate() {
+        for index in meeting {
+            let facet = &self.facets[index];
             let (low, high) = self.depth_range(&probe, facet);
             if high < range.0
                 || low > range.1
@@ -745,36 +1672,28 @@ impl Solid {
             if clipped.is_empty() {
                 continue;
             }
-            let plan: Vec<Local> = clipped
-                .iter()
-                .map(|p| [p[0] + at, p[1] + at, 0.0])
-                .collect();
+            let mut plan = Ring::empty();
+            for p in clipped.iter() {
+                plan.push([p[0] + at, p[1] + at, 0.0]);
+            }
             polygons.push(SlabPolygon {
                 facet: index,
+                bounds: PlanBounds::of(&plan),
+                finite: plan.iter().all(|p| p[0].is_finite() && p[1].is_finite()),
                 points: plan,
             });
         }
-        let mut cells: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
+        let mut cells: Cells<(i64, i64), Vec<u32>> = Cells::default();
+        let mut oversized_polygons = Vec::new();
         let mut extent = ([i64::MAX; 2], [i64::MIN; 2]);
         for (index, polygon) in polygons.iter().enumerate() {
-            let low = [0, 1].map(|k| {
-                cell(
-                    polygon
-                        .points
-                        .iter()
-                        .map(|p| p[k])
-                        .fold(f64::INFINITY, f64::min),
-                )
-            });
-            let high = [0, 1].map(|k| {
-                cell(
-                    polygon
-                        .points
-                        .iter()
-                        .map(|p| p[k])
-                        .fold(f64::NEG_INFINITY, f64::max),
-                )
-            });
+            let PlanBounds { low, high } = polygon.bounds;
+            if beyond_budget(low, high) {
+                oversized_polygons.push(index as u32);
+                continue;
+            }
+            let low = low.map(|v| self.cell.key(v));
+            let high = high.map(|v| self.cell.key(v));
             for k in 0..2 {
                 extent.0[k] = extent.0[k].min(low[k]);
                 extent.1[k] = extent.1[k].max(high[k]);
@@ -792,16 +1711,18 @@ impl Solid {
             range,
             polygons,
             cells,
+            groups: OnceCell::new(),
+            oversized: oversized_polygons,
             extent,
         }
     }
 
-    fn shifted(polygon: &SlabPolygon, center: [f64; 2]) -> Vec<Local> {
-        polygon
-            .points
-            .iter()
-            .map(|p| [p[0] - center[0], p[1] - center[1], 0.0])
-            .collect()
+    fn shifted(polygon: &SlabPolygon, center: [f64; 2]) -> Ring {
+        let mut shifted = Ring::empty();
+        for p in polygon.points.iter() {
+            shifted.push([p[0] - center[0], p[1] - center[1], 0.0]);
+        }
+        shifted
     }
 
     fn in_slab(slab: &Slab, surface: &RoundSurface, probe: &Probe) -> bool {
@@ -811,28 +1732,69 @@ impl Solid {
 
     pub fn nearest(&self, probe: &Probe, range: (f64, f64), reach: f64) -> f64 {
         let coaxial = self.exact(probe, reach);
-        let polygons = self
-            .near(probe, reach)
+        let mut best = self.analytic_nearest(probe, range, &coaxial);
+        let mut candidates: Vec<(f64, u32)> = self
+            .near(probe, reach, range)
             .into_iter()
             .filter(|&index| !self.owned_by(index as usize, &coaxial))
-            .filter_map(|index| {
-                let facet = &self.facets[index as usize];
-                let (low, high) = self.depth_range(probe, facet);
-                if high < range.0 || low > range.1 {
-                    return None;
-                }
-                let clipped = slab_clip(self.polygon(probe, facet), range.0, range.1);
-                (!clipped.is_empty()).then(|| nearest_radius(&clipped))
-            });
-        let analytic = coaxial
+            .map(|index| (self.plan_gap(probe, &self.facets[index as usize]), index))
+            .collect();
+        candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (gap, index) in candidates {
+            if gap > best.min(reach) + IDENTIFY_LDU {
+                break;
+            }
+            if let Some(radius) = self.slab_radius(probe, &self.facets[index as usize], range) {
+                best = best.min(radius);
+            }
+        }
+        if best <= reach {
+            best
+        } else {
+            f64::INFINITY
+        }
+    }
+
+    pub fn comes_within(
+        &self,
+        probe: &Probe,
+        range: (f64, f64),
+        reach: f64,
+        distance: f64,
+    ) -> bool {
+        let coaxial = self.exact(probe, reach);
+        if self.analytic_nearest(probe, range, &coaxial) < distance {
+            return true;
+        }
+        let line = self.line(probe, LineUse::Within, (reach, distance), |index, facet| {
+            !self.apart(probe, facet, distance) && !self.owned_by(index, &coaxial)
+        });
+        let (from, to) = Self::world_window(probe, range);
+        !self.meeting(&line, probe.axis, (from, to), None, &mut |index| {
+            self.slab_radius(probe, &self.facets[index as usize], range)
+                .is_none_or(|radius| radius >= distance)
+        })
+    }
+
+    fn slab_radius(&self, probe: &Probe, facet: &Facet, range: (f64, f64)) -> Option<f64> {
+        let (low, high) = self.depth_range(probe, facet);
+        if high < range.0 || low > range.1 {
+            return None;
+        }
+        let clipped = slab_clip(self.polygon(probe, facet), range.0, range.1);
+        (!clipped.is_empty()).then(|| nearest_radius(&clipped))
+    }
+
+    fn analytic_nearest(&self, probe: &Probe, range: (f64, f64), coaxial: &[usize]) -> f64 {
+        coaxial
             .iter()
             .map(|&index| &self.surfaces[index])
             .filter(|surface| {
                 let (low, high) = surface.depths(probe);
                 high >= range.0 && low <= range.1
             })
-            .map(|surface| surface.nearest_from(probe.center()));
-        polygons.chain(analytic).fold(f64::INFINITY, f64::min)
+            .map(|surface| surface.nearest_from(probe.center()))
+            .fold(f64::INFINITY, f64::min)
     }
 
     fn swept_reach(&self, surface: &RoundSurface, center: [f64; 2], to: [f64; 2]) -> f64 {
@@ -872,8 +1834,8 @@ impl Solid {
         let longest = steps.iter().map(|s| s[0].hypot(s[1])).fold(0.0, f64::max);
         let reach = probe.radius + longest + IDENTIFY_LDU;
         let exact = self.exact(probe, reach);
-        let polygons: Vec<Vec<Local>> = self
-            .near(probe, reach)
+        let polygons: Vec<Patch> = self
+            .around(probe, reach, range, reach)
             .into_iter()
             .filter(|&index| !self.owned_by(index as usize, &exact))
             .filter_map(|index| {
@@ -883,7 +1845,7 @@ impl Solid {
                     return None;
                 }
                 let clipped = slab_clip(self.polygon(probe, facet), range.0, range.1);
-                (!clipped.is_empty()).then_some(clipped)
+                (!clipped.is_empty()).then(|| Patch::new(clipped.to_vec()))
             })
             .collect();
         let surfaces: Vec<&RoundSurface> = exact
@@ -906,7 +1868,7 @@ impl Solid {
         around
             .polygons
             .iter()
-            .any(|polygon| polygon_segment_distance(polygon, to) < around.clearance)
+            .any(|patch| patch.within(to, around.clearance))
             || around
                 .surfaces
                 .iter()
@@ -919,10 +1881,11 @@ impl Solid {
     }
 
     pub fn travel(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> Vec<f64> {
-        let around = self.surroundings(probe, range, steps, probe.radius);
+        let surroundings = self.surroundings(probe, range, steps, probe.radius);
         steps
             .iter()
             .map(|&step| {
+                let around = surroundings.along(step);
                 let length = step[0].hypot(step[1]);
                 let contact = IDENTIFY_LDU / length;
                 let (mut free, mut blocked) =
@@ -1003,7 +1966,7 @@ impl Solid {
         if slab.polygons.is_empty() {
             return false;
         }
-        let home = [cell(center[0]), cell(center[1])];
+        let home = [self.cell.key(center[0]), self.cell.key(center[1])];
         let blocks = |polygon: &SlabPolygon| {
             !self.facets[polygon.facet]
                 .owner
@@ -1044,55 +2007,112 @@ impl Solid {
         if !self.rays_blocked(slab, center, &coaxial, &arcs, &ignores) {
             return false;
         }
-        let home = [cell(center[0]), cell(center[1])];
-        let rings = (0..2)
-            .map(|k| (home[k] - slab.extent.0[k]).max(slab.extent.1[k] - home[k]))
-            .max()
-            .unwrap_or(0)
-            .max(0);
+        let mut coverage = Coverage::new(&arcs);
+        if coverage.complete() {
+            return true;
+        }
+        for &index in &slab.oversized {
+            let polygon = &slab.polygons[index as usize];
+            if self.encloses(
+                polygon,
+                center,
+                (&coaxial, &ignores),
+                (&mut arcs, &mut coverage),
+            ) {
+                return true;
+            }
+        }
+        let home = [self.cell.key(center[0]), self.cell.key(center[1])];
+        let home_group = home.map(group_of);
+        let mut groups: Vec<(Nearness, &CellGroup)> = slab
+            .groups()
+            .iter()
+            .map(|(key, group)| (nearness(*key, home_group), group))
+            .collect();
+        groups.sort_unstable_by_key(|(order, _)| *order);
         let mut seen = vec![false; slab.polygons.len()];
-        let mut checked = 0;
-        let mut next_check = 0;
-        for ring in 0..=rings {
-            for x in home[0] - ring..=home[0] + ring {
-                for y in home[1] - ring..=home[1] + ring {
-                    if (x - home[0]).abs() != ring && (y - home[1]).abs() != ring {
+        let mut cells: Vec<(Nearness, PlanBounds)> = Vec::new();
+        let (mut checked, mut next_check) = (0, 1);
+        for (visited, (_, group)) in groups.into_iter().enumerate() {
+            if !coverage.covers_box(center, group.bounds) {
+                cells.clear();
+                cells.extend(
+                    group
+                        .cells
+                        .iter()
+                        .map(|&(key, bounds)| (nearness(key, home), bounds)),
+                );
+                cells.sort_unstable_by_key(|(order, _)| *order);
+                for &((_, key), bounds) in &cells {
+                    if coverage.covers_box(center, bounds) {
                         continue;
                     }
-                    let Some(found) = slab.cells.get(&(x, y)) else {
-                        continue;
-                    };
-                    for &index in found {
+                    for &index in &slab.cells[&key] {
                         let index = index as usize;
-                        if std::mem::replace(&mut seen[index], true) {
-                            continue;
-                        }
-                        let polygon = &slab.polygons[index];
-                        let owner = self.facets[polygon.facet].owner;
-                        if owner.is_some_and(|o| coaxial.contains(&o) || ignores(&self.surfaces[o]))
+                        if !std::mem::replace(&mut seen[index], true)
+                            && self.encloses(
+                                &slab.polygons[index],
+                                center,
+                                (&coaxial, &ignores),
+                                (&mut arcs, &mut coverage),
+                            )
                         {
-                            continue;
-                        }
-                        let shifted = Self::shifted(polygon, center);
-                        if nearest_radius(&shifted) == 0.0 {
                             return true;
                         }
-                        arcs.extend(arc(&shifted));
                     }
                 }
             }
-            let due = ring == rings || ring == next_check;
-            if due && arcs.len() > checked {
-                if covers_circle(&arcs, 0.0) {
+            if !coverage.within_turn && visited + 1 == next_check {
+                if arcs.len() > checked && covers_circle(&arcs, 0.0) {
                     return true;
                 }
                 checked = arcs.len();
-            }
-            if ring == next_check {
-                next_check = (next_check * 2).max(1);
+                next_check *= 2;
             }
         }
+        !coverage.within_turn && covers_circle(&arcs, 0.0)
+    }
+
+    fn encloses(
+        &self,
+        polygon: &SlabPolygon,
+        center: [f64; 2],
+        (coaxial, ignores): (&[usize], &impl Fn(&RoundSurface) -> bool),
+        (arcs, coverage): (&mut Vec<(f64, f64)>, &mut Coverage),
+    ) -> bool {
+        let owner = self.facets[polygon.facet].owner;
+        if owner.is_some_and(|o| coaxial.contains(&o) || ignores(&self.surfaces[o])) {
+            return false;
+        }
+        let shifted = Self::shifted(polygon, center);
+        if nearest_radius(&shifted) == 0.0 {
+            return true;
+        }
+        if let Some(span) = arc(&shifted) {
+            arcs.push(span);
+            coverage.add(span);
+            return coverage.complete();
+        }
         false
+    }
+
+    fn stops_ray(polygon: &SlabPolygon, center: [f64; 2], direction: [f64; 2]) -> bool {
+        let (along, across) = if direction[0] != 0.0 { (0, 1) } else { (1, 0) };
+        let sign = direction[along];
+        let shifted = Self::shifted(polygon, center);
+        let hit = shifted.iter().enumerate().any(|(k, a)| {
+            let b = shifted[(k + 1) % shifted.len()];
+            let (a_across, b_across) = (a[across], b[across]);
+            if (a_across > 0.0 && b_across > 0.0) || (a_across < 0.0 && b_across < 0.0) {
+                return false;
+            }
+            if a_across == b_across {
+                return a[along] * sign >= 0.0 || b[along] * sign >= 0.0;
+            }
+            let t = a_across / (a_across - b_across);
+            (a[along] + t * (b[along] - a[along])) * sign >= 0.0
+        });
+        hit || nearest_radius(&shifted) == 0.0
     }
 
     fn ray_hits(
@@ -1102,36 +2122,51 @@ impl Solid {
         direction: [f64; 2],
         blocks: &impl Fn(&SlabPolygon) -> bool,
     ) -> bool {
-        let (along, across) = if direction[0] != 0.0 { (0, 1) } else { (1, 0) };
-        let sign = direction[along];
+        let stops =
+            |polygon: &SlabPolygon| blocks(polygon) && Self::stops_ray(polygon, center, direction);
+        if slab
+            .oversized
+            .iter()
+            .any(|&index| stops(&slab.polygons[index as usize]))
+        {
+            return true;
+        }
+        if slab.cells.is_empty() {
+            return false;
+        }
+        let (along, sign) = if direction[0] != 0.0 {
+            (0, direction[0])
+        } else {
+            (1, direction[1])
+        };
+        let forward = sign as i64;
+        let ahead = if sign > 0.0 {
+            slab.extent.1[along].saturating_sub(home[along])
+        } else {
+            home[along].saturating_sub(slab.extent.0[along])
+        };
+        if sparser_than(&slab.cells, ahead.max(0) as f64 + 1.0) {
+            let across = 1 - along;
+            return slab.cells.iter().any(|(&(x, y), found)| {
+                let key = [x, y];
+                key[across] == home[across]
+                    && (key[along] - home[along]) * forward >= 0
+                    && found
+                        .iter()
+                        .any(|&index| stops(&slab.polygons[index as usize]))
+            });
+        }
         let mut step = home;
         loop {
             if let Some(found) = slab.cells.get(&(step[0], step[1])) {
-                for &index in found {
-                    let polygon = &slab.polygons[index as usize];
-                    if !blocks(polygon) {
-                        continue;
-                    }
-                    let shifted = Self::shifted(polygon, center);
-                    let hit = shifted.iter().enumerate().any(|(k, a)| {
-                        let b = shifted[(k + 1) % shifted.len()];
-                        let (a_across, b_across) = (a[across], b[across]);
-                        if (a_across > 0.0 && b_across > 0.0) || (a_across < 0.0 && b_across < 0.0)
-                        {
-                            return false;
-                        }
-                        if a_across == b_across {
-                            return a[along] * sign >= 0.0 || b[along] * sign >= 0.0;
-                        }
-                        let t = a_across / (a_across - b_across);
-                        (a[along] + t * (b[along] - a[along])) * sign >= 0.0
-                    });
-                    if hit || nearest_radius(&shifted) == 0.0 {
-                        return true;
-                    }
+                if found
+                    .iter()
+                    .any(|&index| stops(&slab.polygons[index as usize]))
+                {
+                    return true;
                 }
             }
-            step[along] += sign as i64;
+            step[along] += forward;
             let past = if sign > 0.0 {
                 step[along] > slab.extent.1[along]
             } else {
@@ -1144,7 +2179,8 @@ impl Solid {
     }
 
     pub fn stands_on(&self, probe: &Probe, at: f64, radius: f64, toward: f64) -> bool {
-        self.near(probe, radius + IDENTIFY_LDU)
+        let reach = radius + IDENTIFY_LDU;
+        self.around(probe, reach, (at - IDENTIFY_LDU, at + IDENTIFY_LDU), reach)
             .into_iter()
             .any(|index| {
                 let facet = &self.facets[index as usize];
@@ -1160,6 +2196,43 @@ impl Solid {
                     && farthest_radius(&polygon) > radius + IDENTIFY_LDU
                     && nearest_radius(&polygon) <= radius + IDENTIFY_LDU
             })
+    }
+
+    pub fn grid(&self, plane: &Plane, reach: f64) -> Vec<[f64; 2]> {
+        let steps = |low: f64, high: f64| {
+            [
+                ((low - IDENTIFY_LDU) / HALF_GRID_LDU).ceil() as i64,
+                ((high + IDENTIFY_LDU) / HALF_GRID_LDU).floor() as i64,
+            ]
+        };
+        let range = [
+            steps(plane.min[0], plane.max[0]),
+            steps(plane.min[1], plane.max[1]),
+        ];
+        let point = |(a, b): (i64, i64)| [a as f64 * HALF_GRID_LDU, b as f64 * HALF_GRID_LDU];
+        let column = self.column(plane.axis);
+        let oversized_walls = &self.oversized_walls[plane.axis];
+        let seeded_everywhere = !column.has_oversized && oversized_walls.is_empty();
+        if seeded_everywhere && !sparser_than(&column.cells, window_cells(range)) {
+            return (range[0][0]..=range[0][1])
+                .flat_map(|a| (range[1][0]..=range[1][1]).map(move |b| point((a, b))))
+                .collect();
+        }
+        let pad = (reach / HALF_GRID_LDU).ceil() as i64 + 1;
+        let mut live = SquareSet::default();
+        for &(x, y) in self.occupied(plane.axis) {
+            for a in x.saturating_sub(pad).max(range[0][0])..=x.saturating_add(pad).min(range[0][1])
+            {
+                for b in
+                    y.saturating_sub(pad).max(range[1][0])..=y.saturating_add(pad).min(range[1][1])
+                {
+                    live.insert((a, b));
+                }
+            }
+        }
+        let mut live: Vec<(i64, i64)> = live.into_iter().collect();
+        live.sort_unstable();
+        live.into_iter().map(point).collect()
     }
 
     pub fn planes(&self) -> Vec<Plane> {
@@ -1206,5 +2279,407 @@ impl Solid {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         planes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FAR: f64 = 3.990524629937766e16;
+    const NEAR: f64 = 9.999501;
+
+    #[test]
+    fn a_floor_never_lies_below_the_facet_that_holds_it() {
+        let steep = [[1.0, -1.0, FAR], [1.0, 1.0, FAR], [-1.0, 0.0, NEAR]];
+        let depth = first_depth(&steep, 1.0).expect("the facet reaches into the disc");
+        assert!(depth >= NEAR, "{depth}");
+    }
+
+    #[test]
+    fn a_profile_floor_never_lies_below_the_facet_that_holds_it() {
+        let steep = Triangle {
+            color: 16,
+            points: [[1.0, -1.0, FAR], [1.0, 1.0, FAR], [-1.0, 0.0, NEAR]],
+            double_sided: true,
+        };
+        let solid = Solid::unpieced(&[steep], Vec::new());
+        let probe = Probe {
+            axis: 2,
+            inward: 1.0,
+            entrance: [0.0; 3],
+            radius: 4.0,
+        };
+        let left_of_the_near_corner = vec![[-3.0, -2.0], [-1.0, -2.0], [-1.0, 2.0], [-3.0, 2.0]];
+        let floor = solid.profile_floor(&probe, &[left_of_the_near_corner], 4.0);
+        assert!(floor.depth >= NEAR, "{}", floor.depth);
+    }
+
+    #[test]
+    fn a_query_wider_than_the_index_visits_its_cells_in_the_nested_loop_order() {
+        let at = |x: f64, z: f64| Triangle {
+            color: 16,
+            points: [
+                [x - 1.0, 5.0, z - 1.0],
+                [x + 1.0, 5.0, z - 1.0],
+                [x, 5.0, z + 1.0],
+            ],
+            double_sided: true,
+        };
+        let solid = Solid::unpieced(
+            &[
+                at(905.0, 905.0),
+                at(-895.0, 905.0),
+                at(5.0, 5.0),
+                at(-895.0, -895.0),
+                at(905.0, -895.0),
+                at(5005.0, 5.0),
+            ],
+            Vec::new(),
+        );
+        let probe = Probe {
+            axis: 1,
+            inward: 1.0,
+            entrance: [0.0; 3],
+            radius: 1.0,
+        };
+        let reach = 1500.0;
+        let window = 2.0 * reach / HALF_GRID_LDU + 1.0;
+        assert!(window * window > PLAN_BUDGET);
+        let mut visited = Vec::new();
+        solid.each(&probe, reach, (0.0, 10.0), None, |facet| {
+            visited.push(facet);
+            true
+        });
+        assert_eq!(visited, vec![3, 4, 2, 1, 0]);
+    }
+
+    fn flat(x: f64, z: f64, half: f64) -> Triangle {
+        Triangle {
+            color: 16,
+            points: [
+                [x - half, 5.0, z - half],
+                [x + half, 5.0, z - half],
+                [x, 5.0, z + half],
+            ],
+            double_sided: true,
+        }
+    }
+
+    fn huge_ring() -> RoundSurface {
+        RoundSurface {
+            axis: 1,
+            center: [0.0, 0.0],
+            shape: RoundShape::Wall {
+                radius: 1500.0,
+                from: 0.0,
+                to: 10.0,
+            },
+            full: true,
+            arcs: Vec::new(),
+            facing: Some(1.0),
+            piece: crate::pieces::NO_PIECE,
+        }
+    }
+
+    fn vertical_probe(x: f64) -> Probe {
+        Probe {
+            axis: 1,
+            inward: 1.0,
+            entrance: [x, 0.0, 0.0],
+            radius: 6.0,
+        }
+    }
+
+    #[test]
+    fn an_oversized_wall_is_still_found_by_queries_whose_window_meets_it() {
+        let solid = Solid::unpieced(&[], vec![huge_ring()]);
+        assert_eq!(solid.exact(&vertical_probe(1495.0), 20.0), vec![0]);
+        assert!(solid.exact(&vertical_probe(5000.0), 20.0).is_empty());
+    }
+
+    #[test]
+    fn an_oversized_slab_polygon_still_encloses_and_blocks_rays() {
+        let solid = Solid::unpieced(&[flat(0.0, 0.0, 1_000_000.0)], Vec::new());
+        let slab = solid.slab(1, 1.0, 0.0, (0.0, 10.0), |_| false);
+        assert!(solid.blocked_on_axes(&slab, [0.0, 0.0], |_| false));
+        assert!(solid.enclosed(&slab, [0.0, 0.0], |_| false));
+    }
+
+    #[test]
+    fn oversized_geometry_seeds_no_probes_of_its_own() {
+        let solid = Solid::unpieced(
+            &[flat(-800.0, 0.0, 1.0), flat(800.0, 0.0, 1.0)],
+            vec![huge_ring()],
+        );
+        let plane = solid
+            .planes()
+            .into_iter()
+            .find(|plane| plane.axis == 1)
+            .expect("the two flats share a plane");
+        let seeded = solid.grid(&plane, 25.0);
+        assert!(!seeded.is_empty());
+        assert!(seeded.iter().all(|point| point[1].abs() > 700.0));
+    }
+
+    #[test]
+    fn probes_are_seeded_where_geometry_lies_whatever_the_index_cell_size() {
+        let flats = [(-800.0, 1.0), (0.0, 400.0), (800.0, 1.0)];
+        let triangles = flats.map(|(x, half)| flat(x, 0.0, half));
+        let boxes = flats.map(|(x, half)| [[-half, x - half], [half, x + half]]);
+        let reach = 25.0;
+        let gap = |point: [f64; 2]| {
+            boxes
+                .iter()
+                .map(|plan| {
+                    (0..2)
+                        .map(|k| (plan[0][k] - point[k]).max(point[k] - plan[1][k]).max(0.0))
+                        .fold(0.0, f64::max)
+                })
+                .fold(f64::INFINITY, f64::min)
+        };
+        let seeded = |size: f64| {
+            let solid = Solid::with_cell_size(&triangles, vec![huge_ring()], size);
+            let plane = solid
+                .planes()
+                .into_iter()
+                .find(|plane| plane.axis == 1)
+                .expect("the flats share a plane");
+            let lattice = |low: f64, high: f64| {
+                (low / HALF_GRID_LDU).ceil() as i64..=(high / HALF_GRID_LDU).floor() as i64
+            };
+            let near: Vec<[f64; 2]> = lattice(plane.min[0], plane.max[0])
+                .flat_map(|a| {
+                    lattice(plane.min[1], plane.max[1])
+                        .map(move |b| [a as f64 * HALF_GRID_LDU, b as f64 * HALF_GRID_LDU])
+                })
+                .filter(|&point| gap(point) <= reach)
+                .collect();
+            (solid.grid(&plane, reach), near)
+        };
+        let (canonical, _) = seeded(HALF_GRID_LDU);
+        for size in [2.5, 5.0, HALF_GRID_LDU, 20.0, 40.0] {
+            let (found, near) = seeded(size);
+            assert!(
+                near.iter().all(|point| found.contains(point)),
+                "cell size {size}"
+            );
+            assert!(
+                found
+                    .iter()
+                    .all(|&point| gap(point) <= reach + 3.0 * HALF_GRID_LDU),
+                "cell size {size}"
+            );
+            assert_eq!(found, canonical, "cell size {size}");
+        }
+    }
+
+    fn toward(degrees: f64, radius: f64) -> [f64; 2] {
+        let angle = degrees.to_radians();
+        [radius * angle.cos(), radius * angle.sin()]
+    }
+
+    fn upright(a: [f64; 2], b: [f64; 2]) -> [Triangle; 2] {
+        let low = |p: [f64; 2]| [p[0], 0.0, p[1]];
+        let high = |p: [f64; 2]| [p[0], 10.0, p[1]];
+        [
+            Triangle {
+                color: 16,
+                points: [low(a), low(b), high(b)],
+                double_sided: true,
+            },
+            Triangle {
+                color: 16,
+                points: [low(a), high(b), high(a)],
+                double_sided: true,
+            },
+        ]
+    }
+
+    fn ring_of(segments: usize, missing: &[usize]) -> Vec<Triangle> {
+        let step = 360.0 / segments as f64;
+        (0..segments)
+            .filter(|k| !missing.contains(k))
+            .flat_map(|k| {
+                upright(
+                    toward(k as f64 * step, 30.0),
+                    toward(((k + 1) % segments) as f64 * step, 30.0),
+                )
+            })
+            .collect()
+    }
+
+    fn ring_without(missing: &[usize]) -> Vec<Triangle> {
+        ring_of(16, missing)
+    }
+
+    fn encloses_centre(walls: &[Triangle]) -> bool {
+        let solid = Solid::unpieced(walls, Vec::new());
+        let slab = solid.slab(1, 1.0, 0.0, (0.0, 10.0), |_| false);
+        solid.blocked_on_axes(&slab, [0.0, 0.0], |_| false)
+            && solid.enclosed(&slab, [0.0, 0.0], |_| false)
+    }
+
+    #[test]
+    fn a_far_wall_closes_the_one_gap_a_near_ring_leaves() {
+        let gap = ring_without(&[2]);
+        let far = |from: f64, to: f64| upright(toward(from, 600.0), toward(to, 600.0));
+        let elsewhere = upright(toward(190.0, 600.0), toward(230.0, 600.0));
+        let closed: Vec<Triangle> = [gap.as_slice(), &far(40.0, 72.0), &elsewhere].concat();
+        assert!(encloses_centre(&closed));
+        let in_two: Vec<Triangle> = [gap.as_slice(), &far(40.0, 57.0), &far(56.0, 72.0)].concat();
+        assert!(encloses_centre(&in_two));
+        let sliver_open: Vec<Triangle> = [gap.as_slice(), &far(46.0, 72.0)].concat();
+        assert!(!encloses_centre(&sliver_open));
+        assert!(!encloses_centre(&[gap.as_slice(), &elsewhere].concat()));
+    }
+
+    #[test]
+    fn a_covered_wall_beside_the_closing_wall_does_not_hide_it() {
+        let gap = ring_of(128, &[16]);
+        let far = |from: f64, to: f64| upright(toward(from, 620.0), toward(to, 620.0));
+        let decoy = far(41.0, 43.0);
+        let closer = far(44.5, 48.5);
+        assert!(encloses_centre(&[gap.as_slice(), &decoy, &closer].concat()));
+        assert!(!encloses_centre(&[gap.as_slice(), &decoy].concat()));
+    }
+
+    #[test]
+    fn every_group_and_cell_bounds_each_vertex_it_lists() {
+        let unreadable = Triangle {
+            color: 16,
+            points: [
+                [300.0, 0.0, 300.0],
+                [f64::NAN, 10.0, 310.0],
+                [310.0, 10.0, 300.0],
+            ],
+            double_sided: true,
+        };
+        let walls: Vec<Triangle> = [
+            ring_of(128, &[16]),
+            upright(toward(41.0, 620.0), toward(43.0, 620.0)).to_vec(),
+            upright(toward(44.5, 620.0), toward(48.5, 620.0)).to_vec(),
+            upright(toward(200.0, 90.0), toward(260.0, 140.0)).to_vec(),
+            vec![unreadable],
+        ]
+        .concat();
+        let solid = Solid::unpieced(&walls, Vec::new());
+        let slab = solid.slab(1, 1.0, 0.0, (0.0, 10.0), |_| false);
+        let holds = |bounds: PlanBounds, point: &Local| {
+            (0..2).all(|k| {
+                (bounds.low[k] <= point[k] && point[k] <= bounds.high[k])
+                    || (bounds.low[k] == f64::NEG_INFINITY && bounds.high[k] == f64::INFINITY)
+            })
+        };
+        let mut listed = 0;
+        for (_, group) in slab.groups() {
+            for &(key, bounds) in &group.cells {
+                for &index in &slab.cells[&key] {
+                    for point in slab.polygons[index as usize].points.iter() {
+                        assert!(holds(bounds, point));
+                        assert!(holds(group.bounds, point));
+                    }
+                    listed += 1;
+                }
+            }
+        }
+        assert!(listed > slab.polygons.len());
+        assert!(slab.polygons.iter().any(|polygon| !polygon.finite));
+    }
+
+    #[test]
+    fn a_gap_across_the_back_of_the_turn_is_closed_by_a_far_wall() {
+        let gap = ring_without(&[7, 8]);
+        let behind = upright(toward(150.0, 600.0), toward(210.0, 600.0));
+        assert!(encloses_centre(&[gap.as_slice(), &behind].concat()));
+        let short = upright(toward(150.0, 600.0), toward(200.0, 600.0));
+        assert!(!encloses_centre(&[gap.as_slice(), &short].concat()));
+    }
+
+    fn level_triangle(points: [[f64; 2]; 3], y: f64) -> Triangle {
+        Triangle {
+            color: 16,
+            points: points.map(|p| [p[0], y, p[1]]),
+            double_sided: true,
+        }
+    }
+
+    const CELL_SIZES: [f64; 4] = [2.5, 5.0, HALF_GRID_LDU, 20.0];
+
+    #[test]
+    fn a_query_finds_what_meets_its_reach_whatever_the_index_cell_size() {
+        let near = level_triangle([[3.0, 0.0], [4.0, 0.0], [3.0, 1.0]], 5.0);
+        let past_the_reach = level_triangle([[8.0, 0.0], [9.0, 0.0], [8.0, 1.0]], 5.0);
+        let ring = RoundSurface {
+            center: [8.5, 0.0],
+            shape: RoundShape::Wall {
+                radius: 2.0,
+                from: 0.0,
+                to: 10.0,
+            },
+            ..huge_ring()
+        };
+        for size in CELL_SIZES {
+            let solid = Solid::with_cell_size(
+                &[near.clone(), past_the_reach.clone()],
+                vec![ring.clone()],
+                size,
+            );
+            let mut found = Vec::new();
+            solid.each(&vertical_probe(0.0), 6.0, (0.0, 10.0), None, |facet| {
+                found.push(solid.facets[facet as usize].points);
+                true
+            });
+            assert_eq!(found, vec![near.points], "cell size {size}");
+            let walls = |reach: f64| -> Vec<[f64; 2]> {
+                solid
+                    .exact(&vertical_probe(0.0), reach)
+                    .into_iter()
+                    .map(|index| solid.surfaces[index].center)
+                    .collect()
+            };
+            assert!(walls(6.0).is_empty(), "cell size {size}");
+            assert_eq!(walls(7.0), vec![ring.center], "cell size {size}");
+        }
+    }
+
+    #[test]
+    fn a_coplanar_face_that_never_reaches_the_axle_leaves_its_end_free() {
+        let reach = 6.0 + IDENTIFY_LDU;
+        let end = level_triangle([[-1.0, -1.0], [1.0, -1.0], [0.0, 1.0]], 0.0);
+        let corner = level_triangle([[5.0, 5.0], [6.0, 5.0], [6.0, 6.0]], 0.0);
+        let flush = level_triangle([[5.0, -0.5], [9.0, -0.5], [9.0, 0.5]], 0.0);
+        let free = Solid::unpieced(&[end.clone(), corner.clone()], Vec::new());
+        assert!(!free.section_reaches(
+            &vertical_probe(0.0),
+            (-IDENTIFY_LDU, IDENTIFY_LDU),
+            reach,
+            reach
+        ));
+        let joined = Solid::unpieced(&[end, corner, flush], Vec::new());
+        assert!(joined.section_reaches(
+            &vertical_probe(0.0),
+            (-IDENTIFY_LDU, IDENTIFY_LDU),
+            reach,
+            reach
+        ));
+    }
+
+    #[test]
+    fn nothing_beyond_a_probes_reach_is_its_nearest_wall() {
+        let reach = 6.0 + HALF_GRID_LDU + IDENTIFY_LDU;
+        let corner = upright([13.0, 12.0], [12.0, 13.0]);
+        let inside = upright([12.0, -3.0], [12.0, 3.0]);
+        let range = (IDENTIFY_LDU, 10.0 - IDENTIFY_LDU);
+        let nearest = |solid: Solid| solid.nearest(&vertical_probe(0.0), range, reach);
+        assert!(nearest(Solid::unpieced(&corner, Vec::new())).is_infinite());
+        assert!(nearest(Solid::unpieced(&[], vec![huge_ring()])).is_infinite());
+        assert_eq!(
+            nearest(Solid::unpieced(
+                &[corner, inside].concat(),
+                vec![huge_ring()]
+            )),
+            12.0
+        );
     }
 }
