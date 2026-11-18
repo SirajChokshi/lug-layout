@@ -33,6 +33,17 @@ writeFileSync(
   ].join("\r\n"),
 );
 writeFileSync(
+  join(root, "parts", "custom-long-rail.dat"),
+  [
+    "0 Custom rail whose heads are single strips with corners far from its ends",
+    "0 Name: custom-long-rail.dat",
+    "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+    "1 16 0 -16 50 200 0 0 0 1 0 0 0 3 head.dat",
+    "1 16 0 -16 -50 200 0 0 0 1 0 0 0 3 head.dat",
+    "4 16 -200 8 -80 200 8 -80 200 8 80 -200 8 80",
+  ].join("\r\n"),
+);
+writeFileSync(
   join(root, "p", "head.dat"),
   ["0 Head top", "4 16 -1 0 -1 1 0 -1 1 0 1 -1 0 1"].join("\n"),
 );
@@ -79,6 +90,15 @@ describe("rail heads", () => {
     if (split === null) throw new Error("the split rail has no rail pair");
     expect(formatExactDecimal(split.topY)).toBe("-16.5");
     const section = railSection(split, end, 0, INWARD_LDU);
+    if (section === null) throw new Error("the scan line finds no rail pair");
+    expect(exactRationalEquals(section.railHalfSpacingLdu, exactRational(50n, 1n))).toBe(true);
+  });
+
+  it("read the levels the scan line crosses, however far their corners are from the end", () => {
+    const long = railHeadsAtEnd(flatPolygons(library, "custom-long-rail"), end, 0);
+    if (long === null) throw new Error("the long rail has no rail pair");
+    expect(formatExactDecimal(long.topY)).toBe("-16");
+    const section = railSection(long, end, 0, INWARD_LDU);
     if (section === null) throw new Error("the scan line finds no rail pair");
     expect(exactRationalEquals(section.railHalfSpacingLdu, exactRational(50n, 1n))).toBe(true);
   });

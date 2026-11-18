@@ -72,6 +72,7 @@ describe("exact decimals", () => {
     "1e-1101",
     "9".repeat(1101),
     `1e${"0".repeat(1200)}1`,
+    "1e+01100",
   ])("refuse %j, which is not a decimal literal in range", (text) => {
     expect(() => decimal(text)).toThrow(
       /^the text is not a decimal literal with at most 1100 digits and an exponent magnitude of at most 1100$/u,

@@ -136,11 +136,11 @@ export function railHeadsAtEnd(
   along: number,
 ): RailHeads | null {
   const levelScans = levelScansFromTop(flat, scanLine(origin, along, RAIL_SECTION_INWARD_LDU));
-  for (const scans of adjacentRunsSmallestFirst(levelScans)) {
-    const [top] = scans;
+  for (const run of adjacentRunsSmallestFirst(levelScans)) {
+    const [top] = run;
     if (top === undefined) continue;
-    if (railSectionFromIntervals(scans.flatMap((scan) => scan.intervals)) === null) continue;
-    return { topY: top.y, polygons: scans.flatMap((scan) => scan.polygons) };
+    if (railSectionFromIntervals(run.flatMap((level) => level.intervals)) === null) continue;
+    return { topY: top.y, polygons: run.flatMap((level) => level.polygons) };
   }
   return null;
 }

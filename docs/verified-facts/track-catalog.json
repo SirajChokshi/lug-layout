@@ -995,7 +995,7 @@
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": {
+              "worseRailCoverage": {
                 "numerator": "8",
                 "denominator": "59"
               }
@@ -1085,7 +1085,7 @@
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": {
+              "worseRailCoverage": {
                 "numerator": "8",
                 "denominator": "59"
               }
@@ -1175,7 +1175,7 @@
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": {
+              "worseRailCoverage": {
                 "numerator": "25",
                 "denominator": "177"
               }
@@ -1265,7 +1265,7 @@
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": {
+              "worseRailCoverage": {
                 "numerator": "25",
                 "denominator": "177"
               }

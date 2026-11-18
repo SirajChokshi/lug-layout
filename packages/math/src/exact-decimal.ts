@@ -11,6 +11,7 @@ const TEN = 10n;
 const MAX_DIGITS = 1100;
 const MAX_EXPONENT_MAGNITUDE = 1100;
 const COEFFICIENT_LIMIT = TEN ** BigInt(MAX_DIGITS);
+const MAX_EXPONENT_DIGITS = String(MAX_EXPONENT_MAGNITUDE).length;
 const MAX_LITERAL_LENGTH = MAX_DIGITS + `-.e-${MAX_EXPONENT_MAGNITUDE}`.length;
 const MAX_CANONICAL_LENGTH = MAX_DIGITS + "-.".length;
 
@@ -54,8 +55,13 @@ function literalParts(text: string): LiteralParts | null {
   if (match === null) return null;
   const [, sign = "", whole = "", fraction = "", bareFraction = "", exponent = "0"] = match;
   const digits = `${whole}${fraction}${bareFraction}`;
+  const exponentDigits = exponent.replace(/^[+-]/u, "");
   const power = Number(exponent);
-  if (digits.length > MAX_DIGITS || !(Math.abs(power) <= MAX_EXPONENT_MAGNITUDE)) {
+  if (
+    digits.length > MAX_DIGITS ||
+    exponentDigits.length > MAX_EXPONENT_DIGITS ||
+    !(Math.abs(power) <= MAX_EXPONENT_MAGNITUDE)
+  ) {
     return null;
   }
   return {

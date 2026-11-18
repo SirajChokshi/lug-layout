@@ -40,7 +40,7 @@ export interface FittedPath {
   readonly railCoverage: readonly [ExactRationalText, ExactRationalText];
   readonly rejected: ReadonlyArray<{
     readonly family: PathFamily;
-    readonly railCoverage: ExactRationalText;
+    readonly worseRailCoverage: ExactRationalText;
   }>;
 }
 
@@ -179,7 +179,7 @@ function railCoverage(
   ];
 }
 
-function worseRail(coverage: readonly [ExactRational, ExactRational]): ExactRational {
+function worseRailCoverage(coverage: readonly [ExactRational, ExactRational]): ExactRational {
   const [first, second] = coverage;
   return compareExactRational(first, second) <= 0 ? first : second;
 }
@@ -218,17 +218,19 @@ export function fitRoutePath(
       candidate,
       coverage: railCoverage(heads, toPartFromLocal, local, candidate.segments, halfSpacing),
     }))
-    .toSorted((p, q) => compareExactRational(worseRail(q.coverage), worseRail(p.coverage)));
+    .toSorted((p, q) =>
+      compareExactRational(worseRailCoverage(q.coverage), worseRailCoverage(p.coverage)),
+    );
   const [best, ...rest] = scored;
   if (
     best === undefined ||
-    compareExactRational(worseRail(best.coverage), MINIMUM_RAIL_COVERAGE) < 0
+    compareExactRational(worseRailCoverage(best.coverage), MINIMUM_RAIL_COVERAGE) < 0
   ) {
     throw new Error(
       `${label}: no path family keeps both rails on rail heads (${scored
         .map(
           (s) =>
-            `${s.candidate.family} ${exactRationalToFloat64(worseRail(s.coverage)).toFixed(3)}`,
+            `${s.candidate.family} ${exactRationalToFloat64(worseRailCoverage(s.coverage)).toFixed(3)}`,
         )
         .join(", ")})`,
     );
@@ -240,7 +242,7 @@ export function fitRoutePath(
     railCoverage: [formatExactRational(best.coverage[0]), formatExactRational(best.coverage[1])],
     rejected: rest.map((s) => ({
       family: s.candidate.family,
-      railCoverage: formatExactRational(worseRail(s.coverage)),
+      worseRailCoverage: formatExactRational(worseRailCoverage(s.coverage)),
     })),
   };
 }
