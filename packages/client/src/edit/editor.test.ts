@@ -391,8 +391,7 @@ it("offers exactly the placed models with running gear as trains under their pal
   const set = `omr:${PLACEABLE_SET}`;
   const myOwnTrain = "omr:10205-1";
   const locomotive = "omr:10133-1";
-  const locomotiveLabel = "10133-1 Burlington Northern Santa Fe Locomotive (2004)";
-  const trains = () => editor.playSetup()?.models.map((model) => model.label);
+  const trains = () => editor.playSetup()?.models.map((model) => model.name);
   const openPlay = async () => {
     startPlay(editor, play);
     await vi.waitFor(() => expect(play.snapshot().status).toBe("error"));
@@ -409,6 +408,7 @@ it("offers exactly the placed models with running gear as trains under their pal
   place(locomotive, 0, 1600);
   place(myOwnTrain, 1600, 1600);
   const allPlaced = trains();
+  const locomotiveLabel = editor.playSetup()?.models[0]?.label;
   play.chooseTrain("10133-1");
   selectAt(editor, backend, 0, 1600);
   editor.deleteSelection(0);
@@ -422,6 +422,7 @@ it("offers exactly the placed models with running gear as trains under their pal
     setPlaced,
     myOwnTrainPlaced,
     allPlaced,
+    locomotiveLabel,
     locomotiveDeleted,
     playAfterDelete,
     deleteUndone,
@@ -429,10 +430,11 @@ it("offers exactly the placed models with running gear as trains under their pal
     nothingPlaced: { trains: [], play: "No train is placed on the layout." },
     setPlaced: [],
     myOwnTrainPlaced: ["10205-1"],
-    allPlaced: [locomotiveLabel, "10205-1"],
+    allPlaced: ["10133-1", "10205-1"],
+    locomotiveLabel: "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
     locomotiveDeleted: ["10205-1"],
     playAfterDelete: noTrack,
-    deleteUndone: [locomotiveLabel, "10205-1"],
+    deleteUndone: ["10133-1", "10205-1"],
   });
 }, 120_000);
 
