@@ -84,19 +84,14 @@ export async function importThroughWorkerPath(
 ): Promise<ImportOutcome> {
   const compiler = new BrickCompiler(bundle.compiler);
   const mirror = new LdrawMirror(bundle.source, fetchUrl);
+  const engine = new ModelImportEngine(compiler, mirror, bundle.connectors, now, NO_BAKE_HELPERS);
   const job = { ...bundle.job, fileName: input.name };
   try {
     switch (input.format) {
       case "ldraw":
         return {
           kind: "imported",
-          result: await new ModelImportEngine(
-            compiler,
-            mirror,
-            bundle.connectors,
-            now,
-            NO_BAKE_HELPERS,
-          ).importText({
+          result: await engine.importText({
             ...job,
             text: new TextDecoder().decode(input.bytes),
           }),
@@ -104,19 +99,12 @@ export async function importThroughWorkerPath(
       case "studio":
         return {
           kind: "imported",
-          result: await importStudioFile(
-            compiler,
-            mirror,
-            bundle.connectors,
-            now,
-            NO_BAKE_HELPERS,
-            {
-              kind: "studio",
-              job,
-              bytes: input.bytes,
-              bricklinkParts: bundle.bricklinkParts,
-            },
-          ),
+          result: await importStudioFile(engine, compiler, mirror, {
+            kind: "studio",
+            job,
+            bytes: input.bytes,
+            bricklinkParts: bundle.bricklinkParts,
+          }),
         };
       default: {
         const unhandled: never = input.format;

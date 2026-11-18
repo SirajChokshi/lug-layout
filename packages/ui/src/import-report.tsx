@@ -28,6 +28,8 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
         return `The file's inline copy differs from official ${part.official}: a point on one surface is ${part.maxMeasuredDistanceLdu.toFixed(3)} LDU from the other (weld tolerance ${part.weldEpsilonLdu} LDU).`;
       }
       return `The file's inline copy could not be proven to lie within the ${part.weldEpsilonLdu} LDU weld of official ${part.official}.`;
+    case "malformed":
+      return `Refused before drawing: ${part.message}.`;
     case "failed":
       return part.message;
     default: {

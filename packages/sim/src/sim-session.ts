@@ -1,10 +1,10 @@
+import type { BlockTopology } from "./blocks/block-map.ts";
 import type { SimTrack } from "./sim-track.ts";
 import {
   POSE_FLOATS_PER_VEHICLE,
-  Simulation,
   type OpenEndRule,
   type SimCapacity,
-  type SimRailway,
+  type Simulation,
   type TrainPlacement,
   type TrainSpec,
 } from "./simulation.ts";
@@ -18,14 +18,14 @@ export type SimCommand =
   | { readonly kind: "reverse"; readonly train: number }
   | { readonly kind: "goTo"; readonly train: number; readonly placement: number };
 
-export interface SimLogEntry {
-  readonly tick: number;
-  readonly command: SimCommand;
-}
-
 export interface SimTrainLoad {
   readonly spec: TrainSpec;
   readonly placement: TrainPlacement;
+}
+
+export interface SimRailway {
+  readonly topology: BlockTopology;
+  readonly autopilotSeed: number | null;
 }
 
 export interface SimScenario {
@@ -35,6 +35,8 @@ export interface SimScenario {
   readonly railway?: SimRailway;
   readonly openEnds?: OpenEndRule;
 }
+
+export type SimSessionFactory = (scenario: SimScenario) => SimSession;
 
 const ROUTE_STATE_CODES = { manual: 0, waiting: 1, routed: 2, arrived: 3, reversing: 4 } as const;
 
@@ -104,36 +106,18 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
 }
 
 export class SimSession {
-  readonly simulation: Simulation;
   readonly layout: SimFrameLayout;
-  private readonly entries: SimLogEntry[] = [];
 
-  readonly scenario: SimScenario;
-
-  constructor(scenario: SimScenario) {
-    this.scenario = scenario;
-    this.simulation = new Simulation(
-      scenario.track,
-      scenario.capacity,
-      scenario.railway ?? null,
-      scenario.openEnds ?? "brake",
-    );
-    for (const train of scenario.trains) this.simulation.addTrain(train.spec, train.placement);
+  constructor(readonly simulation: Simulation) {
     this.layout = simFrameLayout(
-      this.simulation.vehicles,
-      this.simulation.trains,
-      scenario.track.switchCount,
+      simulation.vehicles,
+      simulation.trains,
+      simulation.track.switchCount,
     );
-  }
-
-  get log(): ReadonlyArray<SimLogEntry> {
-    return this.entries;
   }
 
   apply(command: SimCommand): boolean {
-    const accepted = applyCommand(this.simulation, command);
-    if (accepted) this.entries.push({ tick: this.simulation.tick, command });
-    return accepted;
+    return applyCommand(this.simulation, command);
   }
 
   writeFrame(out: Float64Array): void {
@@ -152,10 +136,10 @@ export class SimSession {
     for (let s = 0; s < layout.switches; s++) {
       out[layout.switchStart + s] = sim.switchStates[s] ?? 0;
     }
-    const blocks = sim.blocks;
+    const keeper = sim.keeper;
     for (let t = 0; t < layout.trains; t++) {
-      out[layout.arrivalsStart + t] = blocks?.arrivals[t] ?? 0;
-      out[layout.routeStateStart + t] = blocks ? ROUTE_STATE_CODES[blocks.routeState(t)] : 0;
+      out[layout.arrivalsStart + t] = keeper?.arrivals[t] ?? 0;
+      out[layout.routeStateStart + t] = keeper ? ROUTE_STATE_CODES[keeper.routeState(t)] : 0;
     }
     const separation = sim.separationCounters;
     out[layout.sharedPieceTicksIndex] = separation[0] ?? 0;
@@ -184,27 +168,4 @@ function applyCommand(simulation: Simulation, command: SimCommand): boolean {
       throw new Error(`unhandled sim command ${String(unhandled)}`);
     }
   }
-}
-
-export function replay(
-  scenario: SimScenario,
-  log: ReadonlyArray<SimLogEntry>,
-  ticks: number,
-): Simulation {
-  const session = new SimSession(scenario);
-  const sim = session.simulation;
-  let next = 0;
-  while (sim.tick < ticks || next < log.length) {
-    const entry = log[next];
-    if (entry && entry.tick === sim.tick) {
-      session.apply(entry.command);
-      next++;
-      continue;
-    }
-    if (entry && entry.tick < sim.tick)
-      throw new Error(`log entry at tick ${entry.tick} is out of order`);
-    if (sim.tick >= ticks) break;
-    sim.step();
-  }
-  return sim;
 }

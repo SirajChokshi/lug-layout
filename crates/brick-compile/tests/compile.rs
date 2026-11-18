@@ -7,6 +7,8 @@ use std::path::Path;
 
 use brick_compile::compile::RollingMode;
 use brick_compile::flatten::FlattenError;
+use brick_compile::inline::compare_inline_part;
+use brick_compile::lattice::{Malformation, MalformedGeometry};
 use brick_compile::license::LicenseVerdict;
 use brick_compile::technic::{Line, Pin, TechnicPart};
 use brick_compile::{compile_part, CompileError, CompileOptions, Library, TechnicPrimitives};
@@ -359,5 +361,117 @@ fn a_resolved_part_is_refused_when_its_rolling_surfaces_need_a_missing_stud_ring
             reference: "absent.dat".into(),
             from: String::new(),
         }))
+    );
+}
+
+fn part_with(line: &str) -> String {
+    format!("0 Hostile Custom Part\n{CA}\n0 BFC CERTIFY CCW\n3 16 0 0 0 20 0 0 0 0 20\n{line}\n")
+}
+
+fn found(file: &str, malformation: Malformation) -> CompileError {
+    CompileError::Malformed {
+        findings: vec![MalformedGeometry {
+            file: file.to_string(),
+            malformation,
+        }],
+    }
+}
+
+#[test]
+fn a_part_with_malformed_geometry_is_refused_with_its_findings() {
+    let far = format!("0 Far Plate\n{CA}\n0 BFC CERTIFY CCW\n3 16 0 0 0 20 0 0 0 0 20\n");
+    let library = memory(&[
+        (
+            "parts/well-formed.dat",
+            &part_with("3 16 0 0 0 1 0 0 0 0 1"),
+        ),
+        (
+            "parts/non-finite.dat",
+            &part_with("3 16 0 0 0 1e400 0 0 0 0 1"),
+        ),
+        ("parts/unparsed.dat", &part_with("3 16 0 0 0 abc 0 0 0 0 1")),
+        (
+            "parts/sliver.dat",
+            &part_with("3 16 0 0 0 40000000000000000 0 0 0 0 1"),
+        ),
+        (
+            "parts/placed-far.dat",
+            &part_with("1 16 3000000000000 0 0 1 0 0 0 1 0 0 0 1 s/far.dat"),
+        ),
+        ("parts/s/far.dat", &far),
+        (
+            "parts/placed-far-empty.dat",
+            &part_with("1 16 3000000000000 0 0 1 0 0 0 1 0 0 0 1 s/empty.dat"),
+        ),
+        (
+            "parts/s/empty.dat",
+            &format!("0 Empty\n{CA}\n0 BFC CERTIFY CCW\n"),
+        ),
+    ]);
+    let options = CompileOptions::default();
+
+    assert!(compile_part(&library, "well-formed.dat", &options).is_ok());
+    for (part, refusal) in [
+        (
+            "non-finite.dat",
+            found("parts/non-finite.dat", Malformation::NonFinite),
+        ),
+        (
+            "unparsed.dat",
+            found("parts/unparsed.dat", Malformation::Unparsed),
+        ),
+        (
+            "sliver.dat",
+            found("parts/sliver.dat", Malformation::Unresolvable),
+        ),
+        (
+            "placed-far.dat",
+            found("parts/placed-far.dat", Malformation::Unresolvable),
+        ),
+        (
+            "placed-far-empty.dat",
+            found("parts/placed-far-empty.dat", Malformation::Unresolvable),
+        ),
+    ] {
+        assert_eq!(
+            compile_part(&library, part, &options).err(),
+            Some(refusal),
+            "{part}"
+        );
+    }
+}
+
+#[test]
+fn an_inline_copy_or_its_official_part_with_malformed_geometry_is_refused() {
+    let official = format!("0 Plate\n{CA}\n0 BFC CERTIFY CCW\n3 16 0 0 0 20 0 0 0 0 20\n");
+    let model = |line: &str| {
+        format!(
+            "0 FILE main.ldr\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 copy.dat\n0 FILE copy.dat\n{}",
+            part_with(line)
+        )
+    };
+    let well_formed = model("3 16 0 0 0 1 0 0 0 0 1");
+    let unparsed = model("3 16 0 0 0 abc 0 0 0 0 1");
+    let sliver = model("3 16 0 0 0 40000000000000000 0 0 0 0 1");
+    let library = memory(&[
+        ("parts/plate.dat", &official),
+        (
+            "parts/hostile-plate.dat",
+            &part_with("3 16 0 0 0 abc 0 0 0 0 1"),
+        ),
+    ]);
+
+    assert!(compare_inline_part(&library, &well_formed, "copy.dat", "plate.dat").is_ok());
+    assert_eq!(
+        compare_inline_part(&library, &unparsed, "copy.dat", "plate.dat").err(),
+        Some(found("copy.dat", Malformation::Unparsed))
+    );
+    assert_eq!(
+        compare_inline_part(&library, &sliver, "copy.dat", "plate.dat").err(),
+        Some(found("copy.dat", Malformation::Unresolvable))
+    );
+    assert_eq!(
+        compare_inline_part(&library, &well_formed, "copy.dat", "hostile-plate.dat").err(),
+        Some(found("parts/hostile-plate.dat", Malformation::Unparsed))
     );
 }

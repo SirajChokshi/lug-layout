@@ -1,7 +1,7 @@
 import { THUMBNAIL_RENDERER, type IThumbnailRenderer } from "@brr/render";
 import { inject, injectable } from "inversify";
-import type { CatalogItemModel, IEditor } from "../edit/editor.ts";
-import { EDITOR } from "../tokens.ts";
+import { PLACEABLE_CATALOG } from "../tokens.ts";
+import type { CatalogItemModel, IPlaceableCatalog } from "./placeable-catalog.ts";
 
 export const THUMBNAIL_PX = 112;
 
@@ -25,7 +25,7 @@ export class PaletteThumbnails implements IPaletteThumbnails {
   private draining = false;
 
   constructor(
-    @inject(EDITOR) private readonly editor: IEditor,
+    @inject(PLACEABLE_CATALOG) private readonly catalog: Pick<IPlaceableCatalog, "itemModel">,
     @inject(THUMBNAIL_RENDERER) private readonly renderer: IThumbnailRenderer,
   ) {}
 
@@ -41,7 +41,7 @@ export class PaletteThumbnails implements IPaletteThumbnails {
   request(itemId: string): void {
     if (this.asked.has(itemId)) return;
     this.asked.add(itemId);
-    void this.editor.catalogItemModel(itemId).then((source) => {
+    void this.catalog.itemModel(itemId).then((source) => {
       if (!source) return;
       this.queue.push({ itemId, source });
       void this.drain();

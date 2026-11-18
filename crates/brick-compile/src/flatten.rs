@@ -264,10 +264,8 @@ impl<'a, L: Library> Flattener<'a, L> {
                     let child_matrix = frame.matrix.then(matrix);
                     let inverted = invert_next;
                     invert_next = false;
-                    let stud = self.is_stud(reference);
-                    let placed: &[f64] = if stud { &child_matrix.m } else { &[] };
-                    self.check_line(path, &matrix.m, placed);
-                    if stud {
+                    self.check_line(path, &matrix.m, &child_matrix.m);
+                    if self.is_stud(reference) {
                         out.studs.push(StudReference {
                             primitive: reference.clone(),
                             color: child_color,

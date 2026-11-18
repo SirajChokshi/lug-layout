@@ -1,22 +1,23 @@
-import { TrackGraph, TrackLayout } from "@brr/domain";
+import { NO_SWITCH, TrackGraph, TrackLayout } from "@brr/domain";
 import { HALF_TURN_16, pose16, POSE16_IDENTITY, STUD_LDU, ZETA16_ORDER, zeta16 } from "@brr/math";
 import { spawnSync } from "node:child_process";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { getHeapSpaceStatistics } from "node:v8";
+import { createSimSession } from "../src/create-sim-session.ts";
 import { simTrackFromGraph } from "../src/graph-track.ts";
 import type { SimPathSegment } from "../src/route-geometry.ts";
 import type { VehicleGeometry } from "../src/running-gear.ts";
+import type { SimTrainLoad } from "../src/sim-session.ts";
 import {
   buildSimTrack,
   forwardEdge,
   backwardEdge,
-  NO_SWITCH,
   type SimRoute,
   type SimTrack,
 } from "../src/sim-track.ts";
-import { Simulation, SIM_TICK_HZ, type TrainSpec } from "../src/simulation.ts";
+import { SIM_TICK_HZ, type Simulation, type TrainSpec } from "../src/simulation.ts";
 
 const RING_PIECES = 64;
 const RADIUS_LDU = 4000;
@@ -179,32 +180,32 @@ function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 50));
 }
 
+function spacedTrains(spec: TrainSpec, trains: number, pieces: number): SimTrainLoad[] {
+  return Array.from({ length: trains }, (_, t) => ({
+    spec,
+    placement: { edge: forwardEdge(Math.floor((t * pieces) / trains)), offsetLdu: 0 },
+  }));
+}
+
 function freeSimulation(trains: number): Simulation {
-  const sim = new Simulation(ring(), { trains, vehicles: trains });
-  for (let t = 0; t < trains; t++) {
-    sim.addTrain(TRAIN, {
-      edge: forwardEdge(Math.floor((t * RING_PIECES) / trains)),
-      offsetLdu: 0,
-    });
-    sim.setThrottle(t, TRAIN.maxSpeedLduPerS);
-  }
+  const sim = createSimSession({
+    track: ring(),
+    capacity: { trains, vehicles: trains },
+    trains: spacedTrains(TRAIN, trains, RING_PIECES),
+  }).simulation;
+  for (let t = 0; t < trains; t++) sim.setThrottle(t, TRAIN.maxSpeedLduPerS);
   return sim;
 }
 
 function blockSimulation(trains: number, spec: TrainSpec): Simulation {
   const loop = blockLoop();
-  const sim = new Simulation(
-    loop.track,
-    { trains, vehicles: trains * spec.vehicles.length },
-    { topology: loop.graph, autopilotSeed: AUTOPILOT_SEED },
-  );
-  for (let t = 0; t < trains; t++) {
-    sim.addTrain(spec, {
-      edge: forwardEdge(Math.floor((t * loop.graph.placementCount) / trains)),
-      offsetLdu: 0,
-    });
-    sim.setThrottle(t, spec.maxSpeedLduPerS);
-  }
+  const sim = createSimSession({
+    track: loop.track,
+    capacity: { trains, vehicles: trains * spec.vehicles.length },
+    trains: spacedTrains(spec, trains, loop.graph.placementCount),
+    railway: { topology: loop.graph, autopilotSeed: AUTOPILOT_SEED },
+  }).simulation;
+  for (let t = 0; t < trains; t++) sim.setThrottle(t, spec.maxSpeedLduPerS);
   return sim;
 }
 
