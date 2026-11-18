@@ -244,14 +244,16 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
             .iter()
             .for_each(|&t| reported_by_a_strip[t] = true);
     }
-    let mut read_from_vertices = vec![false; triangles.len()];
+    let mut described_by_vertices = vec![false; triangles.len()];
     for (component, readings) in mesh.vertex_revolutions(roundness, &settled) {
         let reads_a_band = readings.iter().any(|r| matches!(r, BandReading::Read(_)));
-        if reads_a_band {
-            component.iter().for_each(|&t| read_from_vertices[t] = true);
-        } else if component.iter().any(|&t| reported_by_a_strip[t]) {
+        let strips_cover_it = component.iter().all(|&t| reported_by_a_strip[t]);
+        if strips_cover_it && !reads_a_band {
             continue;
         }
+        component
+            .iter()
+            .for_each(|&t| described_by_vertices[t] = true);
         for reading in readings {
             match reading {
                 BandReading::NotRound | BandReading::Inward => {}
@@ -263,7 +265,9 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
     unread.extend(
         strip_reports
             .into_iter()
-            .filter(|(_, strip_triangles)| !strip_triangles.iter().any(|&t| read_from_vertices[t]))
+            .filter(|(_, strip_triangles)| {
+                !strip_triangles.iter().any(|&t| described_by_vertices[t])
+            })
             .map(|(band, _)| band),
     );
     let mut surfaces = Vec::new();
@@ -685,11 +689,11 @@ impl<'a> Mesh<'a> {
         let (lo, hi) = (points.first()?.0, points.last()?.0);
         let profile = Profile::through_full_rings(&points, roundness);
         let complete = self.bounded_by_end_rings(component, axis, lo, hi);
-        let profile = match profile {
-            Some(profile) if complete => profile,
-            incomplete => {
-                let fit = match incomplete {
-                    Some(profile) => profile.fit(),
+        let profile = match (profile, complete) {
+            (Some(profile), true) => profile,
+            (found, _) => {
+                let fit = match found {
+                    Some(incomplete_profile) => incomplete_profile.coaxial_fit(),
                     None => coaxial_rings(&points, 0.0).or_else(|| one_circle(&points))?,
                 };
                 let orientation = orientation_about(fit.centres[0]);
@@ -866,7 +870,7 @@ impl Profile {
         self.rings.iter().map(|ring| ring.facets).min().unwrap_or(0)
     }
 
-    fn fit(&self) -> CoaxialFit {
+    fn coaxial_fit(&self) -> CoaxialFit {
         let radius_of = |ring: Option<&FullRing>| ring.map(|ring| ring.circle.radius);
         CoaxialFit {
             centres: self.rings.iter().map(|ring| ring.circle.centre).collect(),

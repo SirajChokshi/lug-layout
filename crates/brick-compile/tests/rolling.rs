@@ -254,6 +254,11 @@ fn custom_wheel() -> String {
         high_wobble: 0.5,
         ..Band::along(2, at(-100.0, 0.0, 0.0), 0.0, 10.0, [10.0, 10.0])
     };
+    let notched_and_cut_on_every_meridian = Band {
+        drawn: 15,
+        meridian_cuts: Some([81.0, 0.5]),
+        ..Band::along(0, at(0.0, -200.0, 0.0), 80.0, 90.0, [8.0, 8.0])
+    };
     let alternate_meridians_cut = Band::along(0, at(0.0, -160.0, 0.0), 60.0, 70.0, [8.0, 8.0]);
     let read_before_an_oblique_cut = Band::along(0, at(0.0, -80.0, 0.0), 40.0, 45.0, [8.0, 8.0]);
     let oblique_cut_after_a_read_band = Band {
@@ -286,6 +291,7 @@ fn custom_wheel() -> String {
         round_below_a_wobbly_ring,
         rings_a_stud_apart,
         notched_below_a_wobbly_ring,
+        notched_and_cut_on_every_meridian,
         read_before_an_oblique_cut,
         oblique_cut_after_a_read_band,
         tilted,
@@ -434,6 +440,14 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "radii": [128, null],
                 "from": 720,
                 "to": 832
+            },
+            {
+                "reason": "irregular",
+                "axis": 0,
+                "at": [3200, 0],
+                "radii": [128, 128],
+                "from": 1280,
+                "to": 1440
             },
             { "reason": "irregular", "axis": 1, "radii": [160, 160], "from": 0, "to": 128 },
             {
