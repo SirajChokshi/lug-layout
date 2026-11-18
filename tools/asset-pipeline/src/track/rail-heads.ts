@@ -16,7 +16,7 @@ import {
 import { exactPolygons, type ExactPlacement } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 
-const RAIL_SECTION_INWARD_LDU = exactRational(BigInt(STUD_LDU), 1n);
+const SCAN_INWARD_LDU = exactRational(BigInt(STUD_LDU), 1n);
 
 export interface PlanPoint {
   readonly x: number;
@@ -266,8 +266,8 @@ function scanLine(end: ScanEnd): ScanLine {
   const normal = headingNormal(end.heading);
   const start = exactPlanPoint(end.origin);
   const centre = {
-    x: addExactRational(start.x, multiplyExactRational(direction.x, RAIL_SECTION_INWARD_LDU)),
-    z: addExactRational(start.z, multiplyExactRational(direction.z, RAIL_SECTION_INWARD_LDU)),
+    x: addExactRational(start.x, multiplyExactRational(direction.x, SCAN_INWARD_LDU)),
+    z: addExactRational(start.z, multiplyExactRational(direction.z, SCAN_INWARD_LDU)),
   };
   const [leastExtreme, greatestExtreme] = end.endSleeperExtremes;
   const first = offsetAcross(leastExtreme, centre, normal, direction);
