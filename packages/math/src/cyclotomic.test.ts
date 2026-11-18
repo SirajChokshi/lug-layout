@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  COEFFICIENT_BOUND,
   UNROUNDED_TOLERANCE_LDU,
+  ZETA16_STEP_RADIANS,
   certifiedZeta16,
   findZeta16Representation,
 } from "./cyclotomic.ts";
@@ -36,5 +38,45 @@ describe("certifiedZeta16", () => {
   it("refuses the same point once it has been rounded to float32", () => {
     const rounded = { x: Math.fround(exactChord.x), y: Math.fround(exactChord.y) };
     expect(certifiedZeta16(rounded, UNROUNDED_TOLERANCE_LDU)).toBeNull();
+  });
+});
+
+function nearZeroOnAxis(
+  basis: readonly [number, number, number],
+  bound: number,
+  reach: number,
+): ReadonlyArray<readonly [number, number, number, number]> {
+  const hits: Array<readonly [number, number, number, number]> = [];
+  for (let first = -bound; first <= bound; first++) {
+    for (let second = -bound; second <= bound; second++) {
+      for (let third = -bound; third <= bound; third++) {
+        const irrational = first * basis[0] + second * basis[1] + third * basis[2];
+        const rational = Math.round(-irrational);
+        if (Math.abs(rational) <= bound && Math.abs(irrational + rational) <= reach) {
+          hits.push([rational, first, second, third]);
+        }
+      }
+    }
+  }
+  return hits;
+}
+
+describe("the certification window", () => {
+  it("never holds two candidates: no nonzero element of the doubled coefficient domain lies within its diameter of zero", () => {
+    const doubled = 2 * COEFFICIENT_BOUND;
+    const diameter = (2 * UNROUNDED_TOLERANCE_LDU) / LDU_PER_STUD;
+    const [cos1, cos2, cos3] = [1, 2, 3].map((k) => Math.cos(k * ZETA16_STEP_RADIANS));
+    const real = nearZeroOnAxis([cos1 ?? 0, cos2 ?? 0, cos3 ?? 0], doubled, diameter);
+    const imaginary = nearZeroOnAxis([cos3 ?? 0, cos2 ?? 0, cos1 ?? 0], doubled, diameter);
+    const nonzero = real.flatMap((x) =>
+      imaginary.filter(
+        (z) =>
+          (x[1] - z[1]) % 2 === 0 &&
+          (x[2] - z[2]) % 2 === 0 &&
+          (x[3] - z[3]) % 2 === 0 &&
+          [...x, ...z].some((value) => value !== 0),
+      ),
+    );
+    expect(nonzero).toEqual([]);
   });
 });

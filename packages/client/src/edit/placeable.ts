@@ -1,16 +1,17 @@
 import {
   EMPTY_COLUMN,
   type ModelCells,
+  type ModelStudCover,
   type PartShapeAsset,
   type PartModel,
   type PartModelLattice,
 } from "@brr/catalog";
-import type { RoadSurface } from "@brr/domain";
+import type { PartInstances, RoadSurface, SubmodelInstances } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { ModelRole, Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
-import { withStuds } from "../scene/stud-stream.ts";
+import { bakedVisible, withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { roadSurface } from "./road-surface.ts";
@@ -45,6 +46,7 @@ export interface Placeable {
   readonly kind: PlaceableKind;
   readonly worldColor: number;
   readonly parts: ChunkPartInstances;
+  readonly partTransforms: PartInstances;
   readonly studs: StudInstances;
   readonly studLattice: StudLattice;
   readonly bakedCoveredStuds: number;
@@ -96,23 +98,69 @@ function latticeCell(centre: number): number | null {
   return Number.isInteger(cell) ? cell : null;
 }
 
-function studLattice(studs: StudInstances): StudLattice {
-  const onLattice = new Uint8Array(studs.count);
-  const cellX = new Int32Array(studs.count);
-  const cellZ = new Int32Array(studs.count);
-  const baseLdu = new Int32Array(studs.count);
-  const m = studs.matrices;
-  for (let i = 0; i < studs.count; i++) {
+const ROW_X = 0;
+const ROW_Y = 1;
+const ROW_Z = 2;
+const COLUMN_Y = 1;
+const COLUMN_TRANSLATION = 3;
+
+function composed(
+  outer: Float64Array,
+  o: number,
+  inner: Float32Array,
+  n: number,
+  row: number,
+  column: number,
+): number {
+  const translation = column === COLUMN_TRANSLATION ? (outer[o + row * 4 + 3] ?? 0) : 0;
+  return (
+    (outer[o + row * 4] ?? 0) * (inner[n + column] ?? 0) +
+    (outer[o + row * 4 + 1] ?? 0) * (inner[n + 4 + column] ?? 0) +
+    (outer[o + row * 4 + 2] ?? 0) * (inner[n + 8 + column] ?? 0) +
+    translation
+  );
+}
+
+function studLattice(
+  transforms: PartInstances,
+  parts: ReadonlyArray<PartShapeAsset>,
+  cover: ModelStudCover | undefined,
+  count: number,
+): StudLattice {
+  const onLattice = new Uint8Array(count);
+  const cellX = new Int32Array(count);
+  const cellZ = new Int32Array(count);
+  const baseLdu = new Int32Array(count);
+  const m = transforms.matrices;
+  let stud = 0;
+  let visible = 0;
+  for (let i = 0; i < transforms.count; i++) {
+    const part = parts[transforms.partIndex[i] ?? 0];
+    if (!part) continue;
     const o = i * INSTANCE_MATRIX_FLOATS;
-    const upright = m[o + 1] === 0 && m[o + 9] === 0 && (m[o + 5] ?? 0) > 0;
-    const x = latticeCell(m[o + 3] ?? 0);
-    const z = latticeCell(m[o + 11] ?? 0);
-    const base = m[o + 7] ?? 0;
-    if (!upright || x === null || z === null || !Number.isInteger(base)) continue;
-    onLattice[i] = 1;
-    cellX[i] = x;
-    cellZ[i] = z;
-    baseLdu[i] = base;
+    for (let s = 0; s < part.studPrimitiveIndex.length; s++, stud++) {
+      if (!bakedVisible(cover, stud)) continue;
+      const at = visible++;
+      const n = s * INSTANCE_MATRIX_FLOATS;
+      const local = part.studMatrices;
+      const upright =
+        composed(m, o, local, n, ROW_X, COLUMN_Y) === 0 &&
+        composed(m, o, local, n, ROW_Z, COLUMN_Y) === 0 &&
+        composed(m, o, local, n, ROW_Y, COLUMN_Y) > 0;
+      const x = latticeCell(composed(m, o, local, n, ROW_X, COLUMN_TRANSLATION));
+      const z = latticeCell(composed(m, o, local, n, ROW_Z, COLUMN_TRANSLATION));
+      const base = composed(m, o, local, n, ROW_Y, COLUMN_TRANSLATION);
+      if (!upright || x === null || z === null || !Number.isInteger(base)) continue;
+      onLattice[at] = 1;
+      cellX[at] = x;
+      cellZ[at] = z;
+      baseLdu[at] = base;
+    }
+  }
+  if (visible !== count) {
+    throw new Error(
+      `the part transforms give ${visible} visible studs but the render has ${count}`,
+    );
   }
   return { onLattice, cellX, cellZ, baseLdu };
 }
@@ -237,15 +285,29 @@ export function modelFrameShift(
   return [shiftX - pivotOnStudCorner(centreX), -restingOn, shiftZ - pivotOnStudCorner(centreZ)];
 }
 
-function shifted(matrices: Float32Array, count: number, shift: Vec3): Float32Array {
-  const out = Float32Array.from(matrices);
+function shiftTranslations(out: Float32Array | Float64Array, count: number, shift: Vec3): void {
   for (let i = 0; i < count; i++) {
     const o = i * INSTANCE_MATRIX_FLOATS;
     out[o + 3] = (out[o + 3] ?? 0) + shift[0];
     out[o + 7] = (out[o + 7] ?? 0) + shift[1];
     out[o + 11] = (out[o + 11] ?? 0) + shift[2];
   }
+}
+
+function shifted(matrices: Float32Array, count: number, shift: Vec3): Float32Array {
+  const out = Float32Array.from(matrices);
+  shiftTranslations(out, count, shift);
   return out;
+}
+
+function shiftedTransforms(matrices: Float64Array, count: number, shift: Vec3): Float64Array {
+  const out = Float64Array.from(matrices);
+  shiftTranslations(out, count, shift);
+  return out;
+}
+
+function shiftedSubmodels(submodels: SubmodelInstances, shift: Vec3): SubmodelInstances {
+  return { ...submodels, matrices: shiftedTransforms(submodels.matrices, submodels.count, shift) };
 }
 
 function depthBelowRest(box: LocalBox): number {
@@ -324,6 +386,12 @@ export function modelPlaceable(
   const box = shiftedBox(lattice.aabbMin, lattice.aabbMax, shift);
   const partBoxes = instanceBoxes(local, parts);
   const studs = withStuds(local, parts, colors, model.studCover).studs;
+  const partTransforms: PartInstances = {
+    count: model.instanceCount,
+    partIndex: model.partIndex,
+    matrices: shiftedTransforms(model.partTransforms, model.instanceCount, shift),
+    submodels: shiftedSubmodels(model.submodels, shift),
+  };
   const restPlates = (cells.restY - restingOn) / PLATE_LDU;
   return {
     id,
@@ -333,8 +401,9 @@ export function modelPlaceable(
     kind: "model",
     worldColor: 0,
     parts: local,
+    partTransforms,
     studs,
-    studLattice: studLattice(studs),
+    studLattice: studLattice(partTransforms, parts, model.studCover, studs.count),
     bakedCoveredStuds: model.studCover.covered,
     cells: modelCells(cells, shift, name, restPlates),
     box,
@@ -348,6 +417,7 @@ export function modelPlaceable(
 }
 
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
+const IDENTITY_TRANSFORM = Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 
 function isBaseplate(part: PartShapeAsset): boolean {
   return part.boundsMax[1] - part.boundsMin[1] < PLATE_LDU;
@@ -374,6 +444,11 @@ export function partPlaceable(
   const partBoxes = instanceBoxes(local, parts);
   const isRoad = part.role === "road";
   const studs = withStuds(local, parts, colors).studs;
+  const partTransforms: PartInstances = {
+    count: 1,
+    partIndex: local.partIndex,
+    matrices: shiftedTransforms(IDENTITY_TRANSFORM, 1, shift),
+  };
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
@@ -382,8 +457,9 @@ export function partPlaceable(
     kind: isRoad ? "road-plate" : "baseplate",
     worldColor: ldrawColor,
     parts: local,
+    partTransforms,
     studs,
-    studLattice: studLattice(studs),
+    studLattice: studLattice(partTransforms, parts, undefined, studs.count),
     bakedCoveredStuds: 0,
     cells: partCells(part, shift),
     box,
