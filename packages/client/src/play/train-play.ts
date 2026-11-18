@@ -44,7 +44,6 @@ export interface PlaySnapshot {
 export interface ITrainPlay {
   subscribe(listener: () => void): () => void;
   snapshot(): PlaySnapshot;
-  offer(setup: PlaySetup | null): void;
   chooseTrain(model: string): void;
   start(setup: PlaySetup): Promise<void>;
   stop(): void;
@@ -132,12 +131,6 @@ export class TrainPlay implements ITrainPlay {
     for (const listener of this.listeners) listener();
   }
 
-  offer(setup: PlaySetup | null): void {
-    const first = setup?.models[0];
-    if (!first || this.state.trainModel !== null) return;
-    this.update({ trainModel: first.name });
-  }
-
   chooseTrain(model: string): void {
     if (this.state.status === "running" || this.state.status === "loading") return;
     this.update({ trainModel: model });
@@ -145,7 +138,6 @@ export class TrainPlay implements ITrainPlay {
 
   async start(setup: PlaySetup): Promise<void> {
     if (this.state.status === "loading" || this.state.status === "running") return;
-    this.offer(setup);
     this.update({ status: "loading", error: null, notice: null });
     try {
       await this.load(setup);
@@ -164,8 +156,9 @@ export class TrainPlay implements ITrainPlay {
   }
 
   private async load(setup: PlaySetup): Promise<void> {
-    const model = setup.models.find((candidate) => candidate.name === this.state.trainModel);
-    if (!model) throw new Error("No model in the bundle has running gear to run.");
+    const model =
+      setup.models.find((candidate) => candidate.name === this.state.trainModel) ?? setup.models[0];
+    if (!model) throw new Error("No train is placed on the layout.");
     const { layout, pieces } = setup.track;
     if (layout.count === 0) throw new Error("Lay some track first: there is nothing to run on.");
     const graph = new TrackGraph(layout);

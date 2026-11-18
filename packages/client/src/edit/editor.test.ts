@@ -49,7 +49,7 @@ import {
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
+import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import { EDITOR, TRAIN_PLAY } from "../tokens.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
@@ -76,28 +76,6 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 
   async text(path: string): Promise<string> {
     return readFile(new URL(path, bundleRoot), "utf8");
-  }
-}
-
-class GeneratedOriginFetcher implements IAssetFetcher {
-  constructor(
-    private readonly files: IAssetFetcher,
-    private readonly model: string,
-  ) {}
-
-  bytes(path: string): Promise<ArrayBuffer> {
-    return this.files.bytes(path);
-  }
-
-  async text(path: string): Promise<string> {
-    const text = await this.files.text(path);
-    if (!path.endsWith("/manifest.json")) return text;
-    const manifest: { readonly models: ReadonlyArray<{ readonly name: string }> } =
-      JSON.parse(text);
-    const models = manifest.models.map((entry) =>
-      entry.name === this.model ? { ...entry, origin: "generated" } : entry,
-    );
-    return JSON.stringify({ ...manifest, models });
   }
 }
 
@@ -330,7 +308,7 @@ async function partMeshes(paths: ReadonlyArray<string>, lod: BundleLod): Promise
   );
 }
 
-it("starts from the index, part shapes and the train records, fetching no part mesh and at most 16 files at once", async () => {
+it("starts from the index and part shapes, fetching no model record and no part mesh, and at most 16 files at once", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
   const { editor, manifest } = await startEditor(null, fetcher);
 
@@ -344,15 +322,10 @@ it("starts from the index, part shapes and the train records, fetching no part m
   expect(fetcher.paths.filter((path) => path.startsWith("standard/shape-"))).toHaveLength(
     manifest.catalogParts.length,
   );
-  const sets = manifest.models.filter((model) => model.origin === "omr");
-  const fetchedSets = sets.filter((set) => fetcher.paths.includes(`standard/${set.file}`));
-  expect(fetchedSets.map((set) => set.name).toSorted()).toEqual(
-    sets
-      .filter((set) => set.vehicles > 0)
-      .map((set) => set.name)
-      .toSorted(),
+  const fetchedModels = manifest.models.filter((model) =>
+    fetcher.paths.includes(`standard/${model.file}`),
   );
-  expect(fetchedSets.length).toBeLessThan(sets.length);
+  expect(fetchedModels.map((model) => model.name)).toEqual([]);
   expect(fetcher.maxInFlight).toBeLessThanOrEqual(16);
 }, 300_000);
 
@@ -411,32 +384,58 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
 
-it("lists every bundle model with running gear as a train of its own, in bundle order, under its palette label, and picks the first", async () => {
-  const { editor, container } = await startEditor([
-    PLACEABLE_SET,
-    STUDLESS_SET,
-    "10205-1",
-    "10133-1",
-  ]);
+it("offers exactly the placed models with running gear as trains under their palette labels, after every place, delete and undo, and Play takes its train from them when it opens", async () => {
+  const { editor, backend, container } = await startEditor([PLACEABLE_SET, "10205-1", "10133-1"]);
   const play = container.get(TRAIN_PLAY);
-  const setup = editor.playSetup();
+  const place = placer(editor, backend);
+  const set = `omr:${PLACEABLE_SET}`;
+  const myOwnTrain = "omr:10205-1";
+  const locomotive = "omr:10133-1";
+  const trains = () => editor.playSetup()?.models.map((model) => model.name);
+  const openPlay = async () => {
+    startPlay(editor, play);
+    await vi.waitFor(() => expect(play.snapshot().status).toBe("error"));
+    return play.snapshot().error;
+  };
+  const noTrack = expect.stringContaining("Lay some track first");
 
-  expect(setup?.models.map((model) => [model.name, model.label])).toEqual([
-    ["10133-1", "10133-1 Burlington Northern Santa Fe Locomotive (2004)"],
-    ["10205-1", "10205-1 Locomotive (2002)"],
-    [STUDLESS_SET, `${STUDLESS_SET} Tanker (2001)`],
-  ]);
-  play.offer(setup);
-  expect(play.snapshot().trainModel).toBe("10133-1");
-}, 120_000);
+  const nothingPlaced = { trains: trains(), play: await openPlay() };
+  for (const item of [set, myOwnTrain, locomotive]) expect(await editor.prefetch(item)).toBe(true);
+  place(set, 0, 0);
+  const setPlaced = trains();
+  place(myOwnTrain, 1600, 0);
+  const myOwnTrainPlaced = trains();
+  place(locomotive, 0, 1600);
+  place(myOwnTrain, 1600, 1600);
+  const allPlaced = trains();
+  const locomotiveLabel = editor.playSetup()?.models[0]?.label;
+  play.chooseTrain("10133-1");
+  selectAt(editor, backend, 0, 1600);
+  editor.deleteSelection(0);
+  const locomotiveDeleted = trains();
+  const playAfterDelete = await openPlay();
+  editor.undo(0);
+  const deleteUndone = trains();
 
-it("lists a generated model with running gear as a train, as it does a set", async () => {
-  const { editor } = await startEditor(
-    ["10205-1"],
-    new GeneratedOriginFetcher(new BundleDirectoryFetcher(), "10205-1"),
-  );
-
-  expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
+  expect({
+    nothingPlaced,
+    setPlaced,
+    myOwnTrainPlaced,
+    allPlaced,
+    locomotiveLabel,
+    locomotiveDeleted,
+    playAfterDelete,
+    deleteUndone,
+  }).toEqual({
+    nothingPlaced: { trains: [], play: "No train is placed on the layout." },
+    setPlaced: [],
+    myOwnTrainPlaced: ["10205-1"],
+    allPlaced: ["10133-1", "10205-1"],
+    locomotiveLabel: "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
+    locomotiveDeleted: ["10205-1"],
+    playAfterDelete: noTrack,
+    deleteUndone: ["10133-1", "10205-1"],
+  });
 }, 120_000);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {

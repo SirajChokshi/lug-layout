@@ -575,7 +575,6 @@ export function startPlay(editor: IEditor, play: ITrainPlay): void {
   const setup = editor.playSetup();
   if (!setup) return;
   editor.chooseItem(null);
-  editor.loadPlayMeshes();
   void play.start(setup);
 }
 
