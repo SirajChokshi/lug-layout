@@ -34,6 +34,7 @@ const PROBE_KEY_SCALE: f64 = 1_000.0;
 const RIM_PROBE_FRACTION: f64 = 0.9;
 const CANDIDATES_PER_DEAL: usize = 32;
 const CLIPPED_HEIGHT_ROUNDING_LDU: f64 = 1e-6;
+const ENCLOSURE_BLOCKERS_KEPT: usize = 8;
 const UP: Vec3 = [0.0, 1.0, 0.0];
 const DOWN: Vec3 = [0.0, -1.0, 0.0];
 
@@ -556,28 +557,48 @@ struct Coverers<'a, 'b> {
     directions: Vec<Vec3>,
     enclosed: FxHashMap<ProbeKey, Option<CoverKind>>,
     nearby: Vec<usize>,
+    blockers: Vec<(usize, bool, TriangleHit)>,
 }
 
 impl Coverers<'_, '_> {
-    fn enclosure(&self, placed: &Placed, probe: Vec3) -> Option<CoverKind> {
-        let tree = self.model.tree(placed);
-        let counts = self.model.counts(placed);
-        let hits = |direction: Vec3| {
-            let ray = Ray {
-                origin: probe,
-                direction,
-                reach: f64::INFINITY,
-            };
-            tree.first_hit(&ray, &counts).is_some()
-        };
-        if !self.directions.iter().all(|direction| hits(*direction)) {
+    fn enclosure(&mut self, placed: &Placed, probe: Vec3) -> Option<CoverKind> {
+        let enclosed = (0..self.directions.len()).all(|k| {
+            let direction = self.directions[k];
+            self.hits(placed, probe, direction)
+        });
+        if !enclosed {
             return None;
         }
-        if hits(DOWN) {
+        if self.hits(placed, probe, DOWN) {
             Some(CoverKind::Flat)
         } else {
             Some(CoverKind::AntiStud)
         }
+    }
+
+    fn hits(&mut self, placed: &Placed, origin: Vec3, direction: Vec3) -> bool {
+        let tree = self.model.tree(placed);
+        let counts = self.model.counts(placed);
+        let ray = Ray {
+            origin,
+            direction,
+            reach: f64::INFINITY,
+        };
+        let solid = (placed.part, placed.inherited_opaque);
+        let remembered = self.blockers.iter().position(|&(part, opaque, hit)| {
+            (part, opaque) == solid && tree.confirms(&ray, hit, &counts)
+        });
+        if let Some(index) = remembered {
+            self.blockers[..=index].rotate_right(1);
+            return true;
+        }
+        let Some(hit) = tree.first_hit(&ray, &counts) else {
+            return false;
+        };
+        self.blockers
+            .insert(0, (placed.part, placed.inherited_opaque, hit));
+        self.blockers.truncate(ENCLOSURE_BLOCKERS_KEPT);
+        true
     }
 
     fn covers(&mut self, stud: StudFrame, owner: Option<usize>) -> Option<(CoverKind, usize)> {
@@ -697,6 +718,7 @@ pub fn model_cover(
         directions: enclosure_directions(),
         enclosed: FxHashMap::default(),
         nearby: Vec::new(),
+        blockers: Vec::new(),
     };
 
     let mut visible = Vec::new();
@@ -1115,6 +1137,108 @@ mod tests {
         (lowest, highest)
     }
 
+    const PROBED_PIECES: u64 = 24;
+    const PROBES_PER_PIECE: u64 = 40;
+    const EXTRA_DIRECTIONS: u64 = 16;
+
+    fn tilted_piece(draws: &mut Draws) -> Affine {
+        let q = [0, 1, 2, 3].map(|_| draws.unit() * 2.0 - 1.0);
+        let norm = q.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let [w, x, y, z] = q.map(|v| v / norm);
+        Affine {
+            m: [
+                1.0 - 2.0 * (y * y + z * z),
+                2.0 * (x * y - w * z),
+                2.0 * (x * z + w * y),
+                draws.unit() * 100.0,
+                2.0 * (x * y + w * z),
+                1.0 - 2.0 * (x * x + z * z),
+                2.0 * (y * z - w * x),
+                draws.unit() * 100.0,
+                2.0 * (x * z - w * y),
+                2.0 * (y * z + w * x),
+                1.0 - 2.0 * (x * x + y * y),
+                draws.unit() * 100.0,
+            ],
+        }
+    }
+
+    #[test]
+    fn remembered_enclosure_blockers_answer_as_walking_the_part_tree() {
+        let solids = [
+            solid([-20.0, 0.0, -20.0], [20.0, 24.0, 20.0], true, false, 4.0),
+            solid([-20.0, 0.0, -40.0], [20.0, 8.0, 40.0], false, true, 4.0),
+            solid([-10.0, 0.0, -10.0], [10.0, 24.0, 10.0], false, false, 12.0),
+        ];
+        let mut draws = Draws(11);
+        let (mut hits, mut misses) = (0, 0);
+        let parts: Vec<(usize, u32, Affine)> = (0..PROBED_PIECES)
+            .map(|_| {
+                let color = if draws.below(4) == 0 {
+                    TRANS_CLEAR
+                } else {
+                    OPAQUE
+                };
+                (draws.below(3) as usize, color, tilted_piece(&mut draws))
+            })
+            .collect();
+        let instances: Vec<CoverInstance> = parts
+            .iter()
+            .map(|(part, color, matrix)| CoverInstance {
+                matrix,
+                color: *color,
+                part: *part,
+                studs: &[],
+            })
+            .collect();
+        let boxes: Vec<[Vec3; 2]> = instances
+            .iter()
+            .map(|instance| world_box(instance, &solids[instance.part]))
+            .collect();
+        let opacity = Opacity::new([TRANS_CLEAR]);
+        let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
+        let mut coverers = Coverers {
+            model: &model,
+            stud: STUD,
+            directions: enclosure_directions(),
+            enclosed: FxHashMap::default(),
+            nearby: Vec::new(),
+            blockers: Vec::new(),
+        };
+        for placed in model.placed.iter().flatten() {
+            let tree = model.tree(placed);
+            let counts = model.counts(placed);
+            for _ in 0..PROBES_PER_PIECE {
+                let probe = [0, 1, 2].map(|axis| {
+                    let [min, max] = [solids[placed.part].min[axis], solids[placed.part].max[axis]];
+                    min + (max - min) * (draws.unit() * 1.2 - 0.1)
+                });
+                let random = (0..EXTRA_DIRECTIONS)
+                    .map(|_| unit([0, 1, 2].map(|_| draws.unit() * 2.0 - 1.0)));
+                let directions: Vec<Vec3> = enclosure_directions()
+                    .into_iter()
+                    .chain([DOWN])
+                    .chain(random)
+                    .collect();
+                for direction in directions {
+                    let ray = Ray {
+                        origin: probe,
+                        direction,
+                        reach: f64::INFINITY,
+                    };
+                    let walked = tree.first_hit(&ray, &counts).is_some();
+                    assert_eq!(coverers.hits(placed, probe, direction), walked);
+                    if walked {
+                        hits += 1;
+                    } else {
+                        misses += 1;
+                    }
+                }
+            }
+        }
+        assert!(hits > 1000 && misses > 1000, "{hits} hits, {misses} misses");
+    }
+
     #[test]
     fn every_column_matches_clipping_every_triangle_into_every_cell() {
         let solids = [
@@ -1339,6 +1463,7 @@ mod tests {
             directions: enclosure_directions(),
             enclosed: FxHashMap::default(),
             nearby: Vec::new(),
+            blockers: Vec::new(),
         };
         let mut certifier = BelowCertifier::new(&model, STUD);
         let mut decided = [0, 0];
