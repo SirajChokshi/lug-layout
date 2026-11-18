@@ -206,10 +206,12 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
         Shape::Finger { .. } => return Err(Unreadable::FingerHinge),
         Shape::Generic {
             gender,
-            bounding: Bounding::Cylinder { radius, .. },
+            bounding: Bounding::Cylinder { radius, length },
             matching: Some(GenericMatch::Group),
             free_placement: false,
-        } if connector.group.is_some() => return Ok(contact_faces(connector, *gender, *radius)),
+        } if connector.group.is_some() && *length == 0.0 => {
+            return Ok(contact_faces(connector, *gender, *radius))
+        }
         Shape::Generic { .. } => return Err(Unreadable::Generic),
     };
     let cylinder = Cylinder {
