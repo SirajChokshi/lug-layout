@@ -73,7 +73,6 @@ export interface IEditedWorld {
   placedCredits(): ReadonlyArray<ModelCredit>;
   validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue>;
   load(shards: ReadonlyArray<WorldShardV1>): Promise<ReadonlyArray<Issue>>;
-  clear(): void;
   addImportedModel(file: ImportedFile): Promise<string | null>;
 }
 
@@ -329,7 +328,7 @@ export class WorldSession implements IWorldSession {
     try {
       worlds = await this.repository.list();
     } catch (error) {
-      this.startWithoutStorage(errorText(error));
+      await this.startWithoutStorage(errorText(error));
       return;
     }
     const [latest] = worlds;
@@ -340,7 +339,7 @@ export class WorldSession implements IWorldSession {
       try {
         await this.createWorld(`World ${worlds.length + 1}`);
       } catch (fallback) {
-        this.startWithoutStorage(errorText(fallback));
+        await this.startWithoutStorage(errorText(fallback));
         return;
       }
       this.update({ fileError: `opening "${latest?.name ?? ""}" failed: ${errorText(error)}` });
@@ -348,14 +347,14 @@ export class WorldSession implements IWorldSession {
     await this.refreshWorlds();
   }
 
-  private startWithoutStorage(reason: string): void {
+  private async startWithoutStorage(reason: string): Promise<void> {
     const current = {
       id: null,
       name: FIRST_WORLD_NAME,
       pinnedBundleVersion: this.bundleVersion,
       openMs: 0,
     };
-    this.editedWorld().clear();
+    await this.replaceEditedWorld(current.name, []);
     this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
     this.update({ storageError: reason, worlds: [] });
@@ -429,9 +428,19 @@ export class WorldSession implements IWorldSession {
       pinnedBundleVersion: this.bundleVersion,
       openMs: performance.now() - started,
     };
-    this.editedWorld().clear();
+    await this.replaceEditedWorld(name, []);
     this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
+  }
+
+  private async replaceEditedWorld(
+    name: string,
+    shards: ReadonlyArray<WorldShardV1>,
+  ): Promise<void> {
+    const issues = await this.editedWorld().load(shards);
+    if (issues.length > 0) {
+      throw new Error(`world "${name}" can't be opened: ${issueText(issues)}`);
+    }
   }
 
   private async loadShards(
@@ -440,10 +449,7 @@ export class WorldSession implements IWorldSession {
     shards: ReadonlyArray<WorldShardV1>,
     started: number,
   ): Promise<void> {
-    const issues = await this.editedWorld().load(shards);
-    if (issues.length > 0) {
-      throw new Error(`world "${manifest.name}" can't be opened: ${issueText(issues)}`);
-    }
+    await this.replaceEditedWorld(manifest.name, shards);
     const opened = {
       id,
       name: manifest.name,
