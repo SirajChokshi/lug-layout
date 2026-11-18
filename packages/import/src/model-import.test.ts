@@ -274,10 +274,22 @@ it(
   BAKE_TIMEOUT_MS,
 );
 
-it("refuses to compile parts when the stud primitives draw no ring to measure roundness by", async () => {
-  await expect(
-    importWith(pinnedMirror, "wheelset.ldr", "1 0 0 0 0 1 0 0 0 1 0 0 0 1 70720c01.dat\n", [
-      "not-a-stud.dat",
-    ]),
-  ).rejects.toThrow(/stud primitives draw no closed round band/u);
+it("reports, without drawing, a part it can't measure when the stud primitives draw no ring to measure roundness by", async () => {
+  const result = await importWith(
+    pinnedMirror,
+    "wheelset.ldr",
+    "1 0 0 0 0 1 0 0 0 1 0 0 0 1 70720c01.dat\n",
+    ["not-a-stud.dat"],
+  );
+
+  expect(result.report.parts).toEqual([
+    {
+      kind: "failed",
+      reference: "70720c01.dat",
+      official: "70720c01.dat",
+      instances: 1,
+      message: "the stud primitives draw no closed round band to measure roundness by",
+    },
+  ]);
+  expect(result.compiled).toEqual([]);
 });

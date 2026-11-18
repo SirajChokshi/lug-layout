@@ -141,6 +141,7 @@ impl From<&CompileError> for Failure {
                 path: Some(path.clone()),
                 ..failure("license")
             },
+            CompileError::NoStudRing => failure("noStudRing"),
             CompileError::Unofficial { path, ldraw_org } => Failure {
                 path: Some(path.clone()),
                 ldraw_org: Some(ldraw_org.clone()),

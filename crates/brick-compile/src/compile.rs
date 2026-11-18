@@ -34,6 +34,7 @@ pub enum CompileError {
         path: String,
         ldraw_org: String,
     },
+    NoStudRing,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -64,6 +65,7 @@ impl std::fmt::Display for CompileError {
                     "license gate rejected unofficial {path} ({ldraw_org}) not on the allowlist"
                 )
             }
+            CompileError::NoStudRing => f.write_str(NO_STUD_RING),
         }
     }
 }

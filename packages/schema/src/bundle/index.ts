@@ -765,7 +765,7 @@ const CompilerNeed = v.object({ status: v.literal("need"), paths: v.array(v.stri
 
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial"]),
+  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial", "noStudRing"]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),

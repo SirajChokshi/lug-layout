@@ -336,6 +336,7 @@ function failureResolution(
         message: failure.message,
       };
     case "tooDeep":
+    case "noStudRing":
       return { kind: "failed", ...counted, message: failure.message };
     default: {
       const unhandled: never = failure.kind;
