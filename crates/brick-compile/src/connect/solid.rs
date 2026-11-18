@@ -388,6 +388,14 @@ fn newell(polygon: &[Local]) -> Local {
     n
 }
 
+fn depth_span(polygon: &[Local]) -> (f64, f64) {
+    polygon
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(low, high), p| {
+            (low.min(p[2]), high.max(p[2]))
+        })
+}
+
 fn first_depth(polygon: &[Local], inside: f64) -> Option<f64> {
     let squared = inside * inside;
     let mut best: Option<f64> = None;
@@ -413,7 +421,7 @@ fn first_depth(polygon: &[Local], inside: f64) -> Option<f64> {
         let root = discriminant.sqrt();
         for t in [(-qb - root) / (2.0 * qa), (-qb + root) / (2.0 * qa)] {
             if (0.0..=1.0).contains(&t) {
-                take(a[2] + t * dd);
+                take((a[2] + t * dd).clamp(a[2].min(b[2]), a[2].max(b[2])));
             }
         }
     }
@@ -428,10 +436,12 @@ fn first_depth(polygon: &[Local], inside: f64) -> Option<f64> {
             [0.0, 0.0]
         };
         if contains(polygon, lowest) {
+            let (shallowest, deepest) = depth_span(polygon);
             take(
-                origin[2]
+                (origin[2]
                     + gradient[0] * (lowest[0] - origin[0])
-                    + gradient[1] * (lowest[1] - origin[1]),
+                    + gradient[1] * (lowest[1] - origin[1]))
+                    .clamp(shallowest, deepest),
             );
         }
     }
@@ -733,9 +743,11 @@ impl Solid {
                 continue;
             }
             let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
+            let (low, high) = depth_span(&polygon);
             for piece in pieces {
                 let inside = prism_clip(&polygon, piece);
                 if let Some(d) = inside.iter().map(|p| p[2]).reduce(f64::min) {
+                    let d = d.clamp(low, high);
                     depth = depth.min(d);
                     attaining.push((d, facet.front.map(|front| front[probe.axis] * probe.inward)));
                 }
@@ -1236,5 +1248,18 @@ impl Solid {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         planes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_floor_never_lies_below_the_facet_that_holds_it() {
+        let far = 3.990524629937766e16;
+        let steep = [[1.0, -1.0, far], [1.0, 1.0, far], [-1.0, 0.0, 9.999501]];
+        let depth = first_depth(&steep, 1.0).expect("the facet reaches into the disc");
+        assert!(depth >= 9.999501, "{depth}");
     }
 }
