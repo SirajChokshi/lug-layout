@@ -154,7 +154,7 @@ class MateRecorder {
     return this.size;
   }
 
-  add(male: number, female: number, pass: MatePass, offset: number): void {
+  append(male: number, female: number, pass: MatePass, offset: number): void {
     if (this.size === this.male.length) {
       this.male = doubled(this.male, (length) => new Uint32Array(length));
       this.female = doubled(this.female, (length) => new Uint32Array(length));
@@ -333,7 +333,7 @@ class InternalMates {
     if (!this.mating.engages(maleShape, frames.shape[femaleConnector] ?? 0, offset)) return;
     this.consumed[maleConnector] = 1;
     this.consumed[femaleConnector] = 1;
-    this.records.add(maleConnector, femaleConnector, this.pass, offset);
+    this.records.append(maleConnector, femaleConnector, this.pass, offset);
   }
 
   private admits(maleConnector: number, femaleConnector: number): boolean {
