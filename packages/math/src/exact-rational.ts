@@ -12,8 +12,8 @@ export interface ExactRationalText {
 
 const INTEGER_TEXT = /^(?:0|-?[1-9]\d*)$/u;
 const POSITIVE_INTEGER_TEXT = /^[1-9]\d*$/u;
-const MAX_TEXT_DIGITS = 1200;
-const TERM_LIMIT = 10n ** BigInt(MAX_TEXT_DIGITS);
+const MAX_DIGITS = 1200;
+const TERM_LIMIT = 10n ** BigInt(MAX_DIGITS);
 const SIXTEENTHS_PER_LDU = 16n;
 const SIGNIFICAND_BITS = 53;
 const GUARD_BITS = 2;
@@ -64,7 +64,7 @@ export function exactRational(numerator: bigint, denominator: bigint): ExactRati
     denominator: (sign * denominator) / divisor,
   };
   if (magnitude(reduced.numerator) >= TERM_LIMIT || reduced.denominator >= TERM_LIMIT) {
-    throw new Error(`an exact rational writes more than ${MAX_TEXT_DIGITS} digits in a term`);
+    throw new Error(`an exact rational writes more than ${MAX_DIGITS} digits in a term`);
   }
   return reduced;
 }
@@ -144,11 +144,12 @@ export function formatExactRational(value: ExactRational): ExactRationalText {
 }
 
 export function isCanonicalExactRationalText(text: ExactRationalText): boolean {
+  if (typeof text !== "object" || text === null) return false;
   if (typeof text.numerator !== "string" || typeof text.denominator !== "string") return false;
   const numeratorDigits = text.numerator.length - (text.numerator.startsWith("-") ? 1 : 0);
   if (
-    numeratorDigits > MAX_TEXT_DIGITS ||
-    text.denominator.length > MAX_TEXT_DIGITS ||
+    numeratorDigits > MAX_DIGITS ||
+    text.denominator.length > MAX_DIGITS ||
     !INTEGER_TEXT.test(text.numerator) ||
     !POSITIVE_INTEGER_TEXT.test(text.denominator)
   ) {

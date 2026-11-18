@@ -14,7 +14,9 @@ import {
   exactRationalFromFloat64,
   exactRationalFromSixteenths,
   exactRationalToFloat64,
+  isCanonicalExactRationalText,
   subtractExactRational,
+  type ExactRationalText,
 } from "./exact-rational.ts";
 
 const SIXTEENTH_IN_TEN_THOUSANDTHS = 625;
@@ -144,6 +146,12 @@ describe("exact rationals", () => {
     expect(() => multiplyExactRational(tiny, tiny)).toThrow("more than 1200 digits in a term");
     const huge = exactRational(10n ** 700n, 1n);
     expect(() => multiplyExactRational(huge, huge)).toThrow("more than 1200 digits in a term");
+  });
+
+  it("call nothing but a pair of integer strings canonical text", () => {
+    for (const notText of [null, undefined, "31/5", { numerator: 31, denominator: 5 }]) {
+      expect(isCanonicalExactRationalText(notText as unknown as ExactRationalText)).toBe(false);
+    }
   });
 
   it("read back a numerator of the full digit bound whatever its sign", () => {
