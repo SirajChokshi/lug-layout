@@ -5,7 +5,19 @@ import {
   type PartBundle,
 } from "@brr/catalog";
 import { MateReport, ModelConnectors } from "@brr/domain";
-import { STUD_LDU, zeta16ToStuds } from "@brr/math";
+import {
+  STUD_LDU,
+  ZETA16_STEP_RADIANS,
+  addZeta16,
+  attachPose16,
+  composePose16,
+  pose16,
+  pose16Equals,
+  zeta16,
+  zeta16Direction,
+  zeta16ToStuds,
+  type Pose16,
+} from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -19,6 +31,12 @@ import { modelTrackEnds, type TrackInstances } from "./model-track-ends.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const FLOAT_LDU = 1e-6;
+const OFF_FIELD_RADIANS = (0.1 * Math.PI) / 180;
+const PRINTED_DECIMALS = 3;
+const CURVE_PART = "ldraw:74747";
+const STRAIGHT_PART = "ldraw:74746";
+const NEAREST_ELEMENT_TO_A_STUD_POINT = zeta16([-21n, -20n, 59n, -20n, -21n, 10n, 0n, -10n]);
+const STUD_POINT = zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]);
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -65,6 +83,81 @@ function asModel(drawing: TrackDrawing): TrackInstances {
   return { count: partIndex.length, partIndex, matrices: Float64Array.from(matrices) };
 }
 
+function cornerRun(): TrackDrawing {
+  return laid([
+    [
+      [0, 0],
+      [32, 0],
+    ],
+    [
+      [32, 0],
+      [32, 48],
+    ],
+  ]);
+}
+
+function catalogPiece(partId: string): PartBundle["trackCatalog"]["pieces"][number] {
+  const piece = bundle.trackCatalog.pieces.find((candidate) => candidate.part === partId);
+  if (!piece) throw new Error(`${partId} is not in the track catalog`);
+  return piece;
+}
+
+function writtenAt(pieces: ReadonlyArray<readonly [string, Pose16]>): TrackInstances {
+  const partIndex: number[] = [];
+  const matrices: number[] = [];
+  for (const [partId, placement] of pieces) {
+    const part = bundle.parts.findIndex((candidate) => candidate.id === partId);
+    const frame = catalogPiece(partId).partFrame;
+    const turn = (placement.heading + frame.headingHalfSteps / 2) * ZETA16_STEP_RADIANS;
+    const at = zeta16ToStuds(placement.position);
+    const facing = zeta16Direction(placement.heading);
+    const offsetX = frame.xLdu / STUD_LDU;
+    const offsetZ = frame.zLdu / STUD_LDU;
+    partIndex.push(part);
+    matrices.push(
+      Math.cos(turn),
+      0,
+      -Math.sin(turn),
+      STUD_LDU * (at.x + facing.x * offsetX - facing.z * offsetZ),
+      0,
+      1,
+      0,
+      -(bundle.parts[part]?.boundsMin[1] ?? 0),
+      Math.sin(turn),
+      0,
+      Math.cos(turn),
+      STUD_LDU * (at.z + facing.z * offsetX + facing.x * offsetZ),
+    );
+  }
+  return { count: pieces.length, partIndex, matrices: Float64Array.from(matrices) };
+}
+
+function chain(start: Pose16, partIds: ReadonlyArray<string>): Array<readonly [string, Pose16]> {
+  const pieces: Array<readonly [string, Pose16]> = [];
+  for (const partId of partIds) {
+    const previous = pieces.at(-1);
+    const entry = catalogPiece(partId).connectors[0]?.pose;
+    const exit = previous ? catalogPiece(previous[0]).connectors[1]?.pose : undefined;
+    pieces.push([
+      partId,
+      previous && entry && exit ? attachPose16(entry, composePose16(previous[1], exit)) : start,
+    ]);
+  }
+  return pieces;
+}
+
+function turnedAboutItsOrigin(matrices: Float64Array, instance: number, radians: number): void {
+  const o = instance * INSTANCE_MATRIX_FLOATS;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  for (const column of [0, 2]) {
+    const x = matrices[o + column] ?? 0;
+    const z = matrices[o + 8 + column] ?? 0;
+    matrices[o + column] = cos * x - sin * z;
+    matrices[o + 8 + column] = sin * x + cos * z;
+  }
+}
+
 function sortedEnds(
   ends: ReadonlyArray<{ xLdu: number; zLdu: number; heading: number }>,
 ): number[][] {
@@ -106,20 +199,79 @@ describe("modelTrackEnds", () => {
     });
   });
 
-  it("reports a curve whose part frame is a half step off a quarter turn, instead of guessing its ends", () => {
-    const drawing = laid([
-      [
-        [0, 0],
-        [32, 0],
-      ],
-      [
-        [32, 0],
-        [32, 48],
-      ],
-    ]);
+  it("recovers exactly the open ends of a run that turns a corner through curves", () => {
+    const drawing = cornerRun();
     const ends = modelTrackEnds(asModel(drawing), bundle.parts, bundle.trackCatalog);
-    expect(ends.uncertified.length).toBeGreaterThan(0);
-    expect(ends.pieces.length + ends.uncertified.length).toBe(drawing.pieceCount);
+    expect(ends.uncertified).toEqual([]);
+    expect(ends.pieces).toHaveLength(drawing.pieceCount);
+    const recovered = sortedEnds(
+      ends.openEnds.map((end) => {
+        const studs = zeta16ToStuds(end.pose.position);
+        return { xLdu: studs.x * STUD_LDU, zLdu: studs.z * STUD_LDU, heading: end.pose.heading };
+      }),
+    );
+    const expected = sortedEnds(drawing.openEnds());
+    expect(recovered.length).toBe(expected.length);
+    recovered.forEach((end, i) => {
+      expect(end[0]).toBe(expected[i]?.[0]);
+      expect(Math.abs((end[1] ?? 0) - (expected[i]?.[1] ?? 0))).toBeLessThan(FLOAT_LDU);
+      expect(Math.abs((end[2] ?? 0) - (expected[i]?.[2] ?? 0))).toBeLessThan(FLOAT_LDU);
+    });
+  });
+
+  it("identifies a run written with every matrix entry rounded to three decimals exactly as at full precision", () => {
+    const instances = asModel(cornerRun());
+    const exact = modelTrackEnds(instances, bundle.parts, bundle.trackCatalog);
+    const printed = instances.matrices.map((entry) => Number(entry.toFixed(PRINTED_DECIMALS)));
+    const ends = modelTrackEnds(
+      { ...instances, matrices: printed },
+      bundle.parts,
+      bundle.trackCatalog,
+    );
+    expect(ends.uncertified).toEqual([]);
+    expect(ends.pieces).toHaveLength(exact.pieces.length);
+    ends.pieces.forEach((piece, i) => {
+      const twin = exact.pieces[i];
+      expect(twin && pose16Equals(piece.placement, twin.placement)).toBe(true);
+    });
+  });
+
+  it("reports a curve turned 0.1° off the field and joins nothing to it", () => {
+    const instances = asModel(cornerRun());
+    const curve = Array.from(instances.partIndex).findIndex(
+      (part) => bundle.parts[part]?.id === CURVE_PART,
+    );
+    const exact = modelTrackEnds(instances, bundle.parts, bundle.trackCatalog);
+    const matrices = Float64Array.from(instances.matrices);
+    turnedAboutItsOrigin(matrices, curve, OFF_FIELD_RADIANS);
+    const turned = modelTrackEnds({ ...instances, matrices }, bundle.parts, bundle.trackCatalog);
+    expect(turned.uncertified).toEqual([{ partId: CURVE_PART, reason: "overLimit" }]);
+    expect(turned.pieces).toHaveLength(exact.pieces.length - 1);
+    expect(turned.openEnds).toHaveLength(exact.openEnds.length + 2);
+  });
+
+  it("never seats a straight on the stud lattice when a neighbour's own anchor puts it at the field element 3.59e-5 LDU away", () => {
+    const run = [STRAIGHT_PART, CURVE_PART, CURVE_PART, CURVE_PART];
+    const seated = modelTrackEnds(
+      writtenAt(chain(pose16(STUD_POINT, 0), run)),
+      bundle.parts,
+      bundle.trackCatalog,
+    );
+    const nudged = modelTrackEnds(
+      writtenAt(chain(pose16(addZeta16(STUD_POINT, NEAREST_ELEMENT_TO_A_STUD_POINT), 0), run)),
+      bundle.parts,
+      bundle.trackCatalog,
+    );
+    expect(seated.pieces).toHaveLength(run.length);
+    expect(nudged.pieces).toEqual([]);
+    expect(nudged.uncertified).toContainEqual({ partId: STRAIGHT_PART, reason: "contradiction" });
+  });
+
+  it("leaves a lone piece off the stud lattice unanchored, since one window candidate alone could be a stray of rounded data", () => {
+    const [lone] = chain(pose16(STUD_POINT, 1), [CURVE_PART]);
+    if (!lone) throw new Error("no piece laid");
+    const ends = modelTrackEnds(writtenAt([lone]), bundle.parts, bundle.trackCatalog);
+    expect(ends.uncertified).toEqual([{ partId: CURVE_PART, reason: "noAnchor" }]);
   });
 
   it("joins a model's track to another model's exactly where the laid run continues", () => {
