@@ -36,7 +36,7 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 
 **`status`** has no environment and no secrets. It HEADs the three manifests for the commit's input key at the bucket's public URL: the repository variable `PART_BUNDLE_BASE_URL` if it's set, otherwise `public_base_url` in `infra/cloudflare/part-bundles.json`. It also reads `current/latest.json` there. If all three manifests are served and the pointer already names them, the workflow ends there. That covers every commit that doesn't touch the bundle inputs, and nobody is asked to approve anything. If the variable is unset, a manifest is missing, or the URL can't be reached, it falls through to `publish`.
 
-**`publish`** runs in the `production` environment that #62's catalog deploy also uses, so it waits for the owner's approval:
+**`publish`** runs in the `production` environment that #62's catalog deploy also uses. That environment has no protection rules, so the job runs on its own after a merge:
 1. Checks the bucket itself for the three manifests, over R2's S3 API, and stops if they're all there.
 2. Otherwise, restores the pinned LDraw inputs and builds the bundle, including the compiler.
 3. Uploads the objects the bucket doesn't have yet.
@@ -130,7 +130,25 @@ The index is two levels, so a reader fetches only what its parts need:
 
 The `compile` op returns records only at the standard LOD, and refuses `records` at any other.
 
-Publishing to `brr-part-bundles` comes in a following change, through `src/publication/pinned-publication.ts` like library connectors. `src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
+### Publishing
+
+The records publish to `brr-part-bundles` under `library-bake/`, through `src/publication/pinned-publication.ts`; `src/library-bake/publish.ts` describes them to it:
+- every record (`application/octet-stream`), standard GLB (`model/gltf-binary`) and bucket (`application/json`) under its own content-addressed name;
+- then the top index as `library-bake/library-bake.<first 16 hex of its pinned SHA-256>.json`.
+
+Uploading puts the index last, so a served index always has its files behind it. The upload skips any object the bucket already has, so an unchanged library uploads nothing new.
+
+`.github/workflows/library-bake.yml` runs on `main` when the pin, `src/library-bake/**`, `src/publication/**` or the bucket config change, and on demand:
+- **`status`** asks whether the public URL already serves the pinned index.
+- **`publish`** runs when it doesn't. It runs in the `production` environment with the same Cloudflare token and secret handling as the part bundle's `publish`, and does four things:
+  1. it rebuilds the records and checks them against the pin and the licence gate (`library-bake --check`);
+  2. it uploads them;
+  3. it waits for the index to be served;
+  4. it checks every served file against its content address (`verify-served --all --wait`).
+
+The same commands run by hand: `pnpm --filter @brr/asset-pipeline library-bake published | upload | served | verify-served [--all] [--wait]`. `upload` reads `dist/library-bake`, so run `library-bake` first. Readers find the records at the bucket's public URL (`public_base_url` in `infra/cloudflare/part-bundles.json`, or `PART_BUNDLE_BASE_URL`) plus `library-bake/`.
+
+`src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
 
 ## Local development
 
