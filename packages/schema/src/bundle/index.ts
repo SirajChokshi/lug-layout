@@ -333,6 +333,88 @@ export const PartTechnic = v.object({
 });
 export type PartTechnic = v.InferOutput<typeof PartTechnic>;
 
+export const ROLLING_STEPS_PER_LDU = 16;
+
+const RollingAxis = v.pipe(
+  v.picklist([0, 1, 2]),
+  v.description("the part-frame axis the band turns about: 0 is x, 1 is y, 2 is z (y up)"),
+);
+const RollingAt = v.pipe(
+  v.tuple([Integer, Integer]),
+  v.description(
+    "the axis line's two coordinates perpendicular to `axis`, in ascending axis order, in sixteenths of an LDU",
+  ),
+);
+const RollingAlong = v.pipe(
+  Integer,
+  v.description("a position along `axis`, in sixteenths of an LDU"),
+);
+const RollingDiagnostic = v.pipe(
+  v.object({ direction: Vec3, from: Finite, to: Finite }),
+  v.description(
+    "raw part-frame floats for reports only, never identified: the axis direction and the band's extent along it in LDU",
+  ),
+);
+
+export const RollingSurface = v.pipe(
+  v.object({
+    source: v.literal("measured"),
+    axis: RollingAxis,
+    at: RollingAt,
+    from: RollingAlong,
+    to: RollingAlong,
+    radii: v.pipe(
+      v.tuple([Count, Count]),
+      v.description(
+        "the radius at `from`, then at `to`, in sixteenths of an LDU; equal for a cylinder, different for a cone",
+      ),
+    ),
+  }),
+  v.check(({ from, to }) => from < to, "a rolling surface runs from below `to`"),
+  v.description(
+    "an outward round band of the part's own triangles, identified to the sixteenth grid; the bands on one axis line together give its whole outward profile, and neighbours share their end sixteenths",
+  ),
+);
+export type RollingSurface = v.InferOutput<typeof RollingSurface>;
+
+const UnreadAlong = {
+  from: v.optional(RollingAlong),
+  to: v.optional(RollingAlong),
+};
+
+export const UnreadBand = v.pipe(
+  v.variant("reason", [
+    v.object({ reason: v.literal("unoriented"), diagnostic: RollingDiagnostic }),
+    v.object({ reason: v.literal("centre"), axis: RollingAxis, diagnostic: RollingDiagnostic }),
+    v.object({
+      reason: v.picklist(["radius", "faceted", "partial", "facing", "width"]),
+      axis: RollingAxis,
+      at: v.optional(RollingAt),
+      ...UnreadAlong,
+      diagnostic: RollingDiagnostic,
+    }),
+  ]),
+  v.check(
+    (band) =>
+      !("from" in band && "to" in band) ||
+      band.from === undefined ||
+      band.to === undefined ||
+      band.from <= band.to,
+    "an unread band runs from no higher than `to`",
+  ),
+  v.description(
+    "round geometry the bake measured but could not read as a rolling surface; it carries only the fields that identified: unoriented (no axis-aligned axis), centre (axis only), and radius, faceted, partial, facing or width (axis, and `at`, `from`, `to` where they identified)",
+  ),
+);
+export type UnreadBand = v.InferOutput<typeof UnreadBand>;
+
+export const PartRolling = v.object({
+  stepsPerLdu: v.literal(ROLLING_STEPS_PER_LDU),
+  surfaces: v.array(RollingSurface),
+  unread: v.array(UnreadBand),
+});
+export type PartRolling = v.InferOutput<typeof PartRolling>;
+
 export const StudRecord = v.object({ primitive: v.string(), color: Integer, matrix: Matrix });
 export type StudRecord = v.InferOutput<typeof StudRecord>;
 
@@ -347,6 +429,7 @@ export const PartShape = v.object({
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
   technic: v.optional(PartTechnic),
+  rolling: v.optional(PartRolling),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
 
@@ -834,6 +917,7 @@ export const PartExtras = v.object({
   studs: v.array(StudRecord),
   bounds: Bounds,
   technic: v.optional(PartTechnic),
+  rolling: v.optional(PartRolling),
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;
 

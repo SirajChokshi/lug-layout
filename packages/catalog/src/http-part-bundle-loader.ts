@@ -504,6 +504,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     meshFile: shape.file,
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
     technic: shape.technic ?? null,
+    rolling: shape.rolling ?? null,
   };
 }
 
@@ -554,5 +555,6 @@ function toPartAsset(
     mesh: readPartMesh(glb, part.id),
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,
+    rolling: glb.document.extras.rolling ?? null,
   };
 }

@@ -1,3 +1,4 @@
+import { parseGlb } from "@brr/catalog/glb";
 import type { CompilerVehicles } from "@brr/schema/bundle";
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
@@ -220,6 +221,31 @@ it(
         columnTop: [...bake.cells.columnTop],
       },
     ).toEqual(cells);
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "measures the tread and flange cones of a wheelset the bundle doesn't hold when the import compiles it",
+  async () => {
+    const result = await importWith(
+      pinnedMirror,
+      "wheelset.ldr",
+      "0 Wheelset outside the bundle\n1 0 0 0 0 1 0 0 0 1 0 0 0 1 70720c01.dat\n",
+    );
+
+    const [compiled] = result.compiled;
+    if (!compiled) throw new Error("the import compiled no part");
+    const { rolling } = parseGlb(compiled.glb.slice().buffer, compiled.partId).document.extras;
+    const cones = rolling?.surfaces.filter(
+      (surface) => surface.radii[0] !== surface.radii[1] && Math.min(...surface.radii) > 320,
+    );
+    expect(cones).toEqual([
+      { source: "measured", axis: 0, at: [0, 0], from: -832, to: -744, radii: [328, 336] },
+      { source: "measured", axis: 0, at: [0, 0], from: -744, to: -704, radii: [336, 464] },
+      { source: "measured", axis: 0, at: [0, 0], from: 704, to: 744, radii: [464, 336] },
+      { source: "measured", axis: 0, at: [0, 0], from: 744, to: 832, radii: [336, 328] },
+    ]);
   },
   BAKE_TIMEOUT_MS,
 );

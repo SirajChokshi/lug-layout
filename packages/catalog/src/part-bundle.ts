@@ -10,6 +10,7 @@ import {
   type ModelSection,
   type ModelVehicle,
   type PartRole,
+  type PartRolling,
   type PartTechnic,
   type ProducedColors,
   type TrackEnd,
@@ -51,6 +52,7 @@ export interface PartShapeAsset {
   readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
   readonly technic: PartTechnic | null;
+  readonly rolling: PartRolling | null;
 }
 
 export interface PartAsset extends PartShapeAsset {

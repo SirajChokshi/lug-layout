@@ -1,4 +1,10 @@
-import { ASSET_FETCHER, BUNDLE_LODS, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import {
+  ASSET_FETCHER,
+  BUNDLE_LODS,
+  PART_BUNDLE_LOADER,
+  type IAssetFetcher,
+  type IPartBundleLoader,
+} from "@brr/catalog";
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import { headingFootprints, planHull, verticalRange } from "@brr/domain";
 import { ModelFile, PartShape, type BundleManifest, type ManifestPart } from "@brr/schema/bundle";
@@ -24,12 +30,13 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 
 const fetcher = new BundleDirectoryFetcher();
 const manifests = new Map<string, BundleManifest>();
+let loader: IPartBundleLoader;
 
 beforeAll(async () => {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
-  const loader = container.get(PART_BUNDLE_LOADER);
+  loader = container.get(PART_BUNDLE_LOADER);
   for (const lod of BUNDLE_LODS) manifests.set(lod, await loader.loadManifest(lod));
 });
 
@@ -56,6 +63,7 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
     ...(part.producedColors ? { producedColors: part.producedColors } : {}),
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
     ...(glb.document.extras.technic ? { technic: glb.document.extras.technic } : {}),
+    ...(glb.document.extras.rolling ? { rolling: glb.document.extras.rolling } : {}),
   };
 }
 
@@ -76,6 +84,27 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
           expect(shape).toEqual(await shapeInBundle(lod, part));
         }
       }
+    },
+    BUNDLE_SWEEP_TIMEOUT_MS,
+  );
+
+  it(
+    "load into model records whose parts carry the rolling surfaces their GLBs measured",
+    async () => {
+      const manifest = manifestOf(lod);
+      const parts = new Map(manifest.parts.map((part) => [part.id, part]));
+      let rollingParts = 0;
+      for (const entry of manifest.models) {
+        const record = await loader.loadModelRecord(lod, entry.name);
+        for (const shape of record.parts) {
+          const part = parts.get(shape.id);
+          if (!part) throw new Error(`${entry.name}: ${shape.id} is not in the part table`);
+          const measured = (await glbOf(lod, part)).document.extras.rolling ?? null;
+          expect(shape.rolling).toEqual(measured);
+          if (measured && measured.surfaces.length > 0) rollingParts++;
+        }
+      }
+      expect(rollingParts).toBeGreaterThan(0);
     },
     BUNDLE_SWEEP_TIMEOUT_MS,
   );
