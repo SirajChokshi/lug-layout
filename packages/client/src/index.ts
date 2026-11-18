@@ -91,7 +91,6 @@ export type {
   ImportReport,
   ImportResult,
   PartResolution,
-  PartResolutionKind,
   StudioPart,
   StudioReport,
 } from "@brr/import";

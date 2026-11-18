@@ -58,8 +58,6 @@ export type PartResolution =
     })
   | (Counted & { readonly kind: "failed"; readonly message: string });
 
-export type PartResolutionKind = PartResolution["kind"];
-
 export interface ColorIssue {
   readonly code: number;
   readonly instances: number;
