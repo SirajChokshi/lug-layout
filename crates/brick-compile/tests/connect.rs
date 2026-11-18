@@ -417,6 +417,45 @@ fn the_primitive_table_matches_the_pinned_primitive_geometry() {
                 }
             }
         }
+        if let Some(snaps) = entry["whereOpen"].as_array() {
+            for snap in snaps {
+                let line = format!("0 !LDCAD {}", snap.as_str().expect("snap text"));
+                let parsed = brick_compile::connect::parse_metas(&line);
+                let Ok(brick_compile::connect::ParsedMeta {
+                    meta: brick_compile::connect::Meta::Snap(connector),
+                    ..
+                }) = &parsed[0]
+                else {
+                    panic!("{file}: snap descriptor");
+                };
+                let Shape::Cylinder { sections, .. } = &connector.shape else {
+                    panic!("{file}: cylinder descriptor");
+                };
+                let rim = connector.placement.m[7];
+                let reach: f64 = sections.iter().map(|s| s.length).sum();
+                let walls: Vec<f64> = lines
+                    .iter()
+                    .filter(|(reference, m)| {
+                        reference == "4-4cyli.dat"
+                            && (m[7].min(m[7] + m[5]), m[7].max(m[7] + m[5])) == (rim, rim + reach)
+                    })
+                    .map(|(_, m)| m[0].hypot(m[8]))
+                    .collect();
+                let outer = walls.iter().copied().fold(0.0, f64::max);
+                let grid = connector.grid.expect("a neighbour grid");
+                for offset in grid.offsets() {
+                    let apart = offset[0].hypot(offset[2]);
+                    assert!(
+                        apart - outer >= sections[0].radius,
+                        "{file}: a receptor at {offset:?} cuts the radius-{outer} wall"
+                    );
+                }
+                assert!(
+                    walls.len() >= 2,
+                    "{file}: a tube wall spans the receptor's run"
+                );
+            }
+        }
         let hole = &entry["holeEnd"];
         if hole.is_object() {
             let counterbore = hole["counterbore"]["radius"].as_f64().expect("radius");
@@ -846,4 +885,60 @@ fn inferred_origins_identify_to_sixteenths_or_stay_off_lattice_and_reported() {
             ..
         }
     )));
+}
+
+#[test]
+fn a_stud_tube_supplies_its_four_diagonal_receptors_only_where_they_are_open() {
+    let mut off_centre = custom_plate(2, 2, &[]);
+    off_centre = off_centre.replace(
+        "1 16 0 4 0 1 0 0 0 -1 0 0 0 1 stud4.dat",
+        "1 16 10 4 10 1 0 0 0 -1 0 0 0 1 stud4.dat",
+    );
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/custom.dat", custom_plate(4, 4, &[])),
+            ("parts/offcentre.dat", off_centre),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let table: Value =
+        serde_json::from_slice(&fs::read(table_path()).expect("table file")).expect("table json");
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow),
+        PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&table).expect("table")),
+        InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+            .expect("the pinned stud measures"),
+    );
+    let receptors = |extraction: &brick_compile::connect::Extraction, source: Source| {
+        let mut found: Vec<[f64; 3]> = faces_of(&extraction.connectors)
+            .into_iter()
+            .filter(|f| f.gender == Gender::Female && f.source == source)
+            .map(|f| f.origin)
+            .collect();
+        found.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
+        found
+    };
+    let plate = extractor.extract("parts/custom.dat");
+    let mut interior = Vec::new();
+    for x in [-10.0, 10.0] {
+        for z in [-10.0, 10.0] {
+            interior.push([x, -8.0, z]);
+        }
+    }
+    let tube_fed = receptors(&plate, Source::Primitive);
+    assert_eq!(tube_fed.len(), 16);
+    assert!(interior.iter().all(|p| tube_fed.contains(p)));
+    assert!(!plate.issues.iter().any(|issue| matches!(
+        issue,
+        Issue::Uninferred {
+            reason: Uninferred::LooseCavity { .. },
+            ..
+        }
+    )));
+    let shifted = extractor.extract("parts/offcentre.dat");
+    assert_eq!(
+        receptors(&shifted, Source::Primitive),
+        vec![[0.0, -8.0, 0.0]]
+    );
 }

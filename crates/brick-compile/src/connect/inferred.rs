@@ -34,6 +34,8 @@ pub enum Uninferred {
     UnidentifiedOrigin,
     LooseCavity { clearance: f64 },
     SlidingCavity,
+    EntranceInsideCavity,
+    SleeveOfReceptor,
     UnpairedThroughCavity { radius: f64 },
     TiltedRound { radius: f64 },
     UnknownFacing { radius: f64 },
@@ -178,6 +180,35 @@ enum Probed {
 struct Placed {
     surfaces: Vec<RoundSurface>,
     runs: Vec<Run>,
+}
+
+struct Prepared {
+    solid: Option<Solid>,
+    runs: Vec<Run>,
+    issues: Vec<Issue>,
+}
+
+struct MaleCandidate {
+    connector: Connector,
+    identified: bool,
+    tip: (usize, i8, i64, i64, i64),
+}
+
+type Column = (usize, i8, i64, i64, i64);
+
+fn column_of(probe: &Probe) -> Column {
+    let (i, j) = plan_axes(probe.axis);
+    (
+        probe.axis,
+        probe.inward as i8,
+        key(probe.entrance[i]),
+        key(probe.entrance[j]),
+        key(probe.radius),
+    )
+}
+
+fn depth_along(probe: &Probe) -> f64 {
+    probe.entrance[probe.axis] * probe.inward
 }
 
 struct Borrowed<'a, L: Library + ?Sized>(&'a L);
@@ -375,6 +406,7 @@ pub struct InferredFeatures<'a, L: Library + ?Sized> {
     probe: StudProbe,
     units: HashMap<String, Option<Rc<UnitRound>>>,
     rounds: HashMap<String, Rc<Vec<RoundRef>>>,
+    prepared: Option<(String, Rc<Prepared>)>,
 }
 
 impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
@@ -392,6 +424,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             },
             units: HashMap::new(),
             rounds: HashMap::new(),
+            prepared: None,
         };
         let path = resolve_reference(library, Lod::Standard, probe_part)
             .ok_or(format!("probe part {probe_part} is not in the library"))?;
@@ -423,26 +456,117 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         Ok(features)
     }
 
-    pub fn infer(&mut self, path: &str) -> Inference {
-        let mut inference = Inference::default();
+    fn prepare(&mut self, path: &str) -> Rc<Prepared> {
+        if let Some((cached, prepared)) = &self.prepared {
+            if cached == path {
+                return Rc::clone(prepared);
+            }
+        }
         let borrowed = Borrowed(self.library);
-        let Ok(flattened) = Flattener::new(&borrowed, Lod::Standard, &[]).flatten(path) else {
-            inference.issues.push(Issue::Uninferred {
-                origin: [0.0; 3],
-                reason: Uninferred::Unflattened,
-            });
+        let flattened = Flattener::new(&borrowed, Lod::Standard, &[]).flatten(path);
+        let mut issues = Vec::new();
+        let prepared = match flattened {
+            Err(_) => {
+                issues.push(Issue::Uninferred {
+                    origin: [0.0; 3],
+                    reason: Uninferred::Unflattened,
+                });
+                Prepared {
+                    solid: None,
+                    runs: Vec::new(),
+                    issues,
+                }
+            }
+            Ok(flattened) => {
+                let placed = self.placed(path, &mut issues);
+                let solid = Solid::new(&flattened.triangles, placed.surfaces);
+                Prepared {
+                    solid: (!solid.is_empty()).then_some(solid),
+                    runs: placed.runs,
+                    issues,
+                }
+            }
+        };
+        let prepared = Rc::new(prepared);
+        self.prepared = Some((path.to_string(), Rc::clone(&prepared)));
+        prepared
+    }
+
+    pub fn open(&mut self, path: &str, candidates: Vec<Connector>) -> Vec<Connector> {
+        let prepared = self.prepare(path);
+        let Some(solid) = &prepared.solid else {
+            return Vec::new();
+        };
+        candidates
+            .into_iter()
+            .filter(|candidate| {
+                let Ok(faces) = super::mating_faces(candidate) else {
+                    return false;
+                };
+                faces.iter().all(|face| {
+                    let origin =
+                        [face.origin[0], -face.origin[1], -face.origin[2]].map(|c| c + 0.0);
+                    let axis = [face.axis[0], -face.axis[1], -face.axis[2]];
+                    let (Some(k), Some(section)) = (aligned_axis(axis), face.sections.first())
+                    else {
+                        return false;
+                    };
+                    let probe = Probe {
+                        axis: k,
+                        inward: -axis[k].signum(),
+                        entrance: origin,
+                        radius: section.size,
+                    };
+                    let floor = solid.floor(&probe, probe.radius - IDENTIFY_LDU);
+                    floor.depth.is_finite()
+                        && floor.depth >= self.probe.reach - IDENTIFY_LDU
+                        && floor.faces_probe != Some(false)
+                })
+            })
+            .collect()
+    }
+
+    pub fn infer(&mut self, path: &str) -> Inference {
+        let prepared = self.prepare(path);
+        let mut inference = Inference {
+            issues: prepared.issues.clone(),
+            ..Inference::default()
+        };
+        let Some(solid) = &prepared.solid else {
             return inference;
         };
-        let placed = self.placed(path, &mut inference.issues);
-        let solid = Solid::new(&flattened.triangles, placed.surfaces);
-        if solid.is_empty() {
-            return inference;
-        }
         let mut flanks: HashMap<(usize, i64, i64), Slab> = HashMap::new();
-        for run in placed.runs.iter().filter(|run| run.facing > 0.0) {
-            self.male(&solid, run, &mut flanks, &mut inference);
+        let males: Vec<MaleCandidate> = prepared
+            .runs
+            .iter()
+            .filter(|run| run.facing > 0.0)
+            .filter_map(|run| self.male(solid, run, &mut flanks))
+            .collect();
+        let mouths = self.cavities(solid, &prepared.runs, &mut inference);
+        for male in males {
+            if mouths.contains(&male.tip) {
+                let m = &male.connector.placement.m;
+                inference.issues.push(Issue::Uninferred {
+                    origin: [m[3], m[7], m[11]],
+                    reason: Uninferred::SleeveOfReceptor,
+                });
+                continue;
+            }
+            if male.identified {
+                self.keep(male.connector, &mut inference);
+            } else {
+                let m = &male.connector.placement.m;
+                let (size, length) = match &male.connector.shape {
+                    Shape::Cylinder { sections, .. } => (sections[0].radius, sections[0].length),
+                    _ => (0.0, 0.0),
+                };
+                inference.issues.push(Issue::Uninferred {
+                    origin: [m[3], m[7], m[11]],
+                    reason: Uninferred::UnidentifiedSize { size, length },
+                });
+                inference.off_lattice.push(male.connector);
+            }
         }
-        self.cavities(&solid, &placed.runs, &mut inference);
         let finish = |connectors: Vec<Connector>, issues: &mut Vec<Issue>| -> Vec<Connector> {
             connectors
                 .iter()
@@ -686,8 +810,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         solid: &Solid,
         run: &Run,
         flanks: &mut HashMap<(usize, i64, i64), Slab>,
-        inference: &mut Inference,
-    ) {
+    ) -> Option<MaleCandidate> {
         let length = run.to - run.from;
         let from_end = Probe {
             axis: run.axis,
@@ -697,11 +820,11 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         };
         let rooted_from = solid.stands_on(&from_end, 0.0, run.radius, 1.0);
         let rooted_to = solid.stands_on(&from_end, length, run.radius, -1.0);
-        let (root, outward, caps) = match (rooted_from, rooted_to) {
-            (true, true) => (run.from, 1.0, Caps::Two),
-            (true, false) => (run.from, 1.0, Caps::One),
-            (false, true) => (run.to, -1.0, Caps::One),
-            (false, false) => return,
+        let (root, tip, outward, caps) = match (rooted_from, rooted_to) {
+            (true, true) => (run.from, run.to, 1.0, Caps::Two),
+            (true, false) => (run.from, run.to, 1.0, Caps::One),
+            (false, true) => (run.to, run.from, -1.0, Caps::One),
+            (false, false) => return None,
         };
         let flank = flanks
             .entry((run.axis, key(run.from), key(length)))
@@ -715,28 +838,36 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 )
             });
         if solid.enclosed(flank, run.center, RoundSurface::is_wall) {
-            return;
+            return None;
         }
         let frame = ldraw_frame(
             point_on(run.axis, run.center, root),
             unit_axis(run.axis, -outward),
         );
-        match (
+        let tip_key = (
+            run.axis,
+            outward as i8,
+            key(run.center[0]),
+            key(run.center[1]),
+            key(tip),
+        );
+        let sizes = (
             self.vocabulary
                 .size(Gender::Male, SectionShape::Round, run.radius),
             self.vocabulary.length(SectionShape::Round, length),
-        ) {
-            (Some(radius), Some(reach)) => self.keep(
-                cylinder(Gender::Male, caps, radius, reach, frame, false),
-                inference,
-            ),
-            _ => self.unidentified(
-                cylinder(Gender::Male, caps, run.radius, length, frame, false),
-                run.radius,
-                length,
-                inference,
-            ),
-        }
+        );
+        Some(match sizes {
+            (Some(radius), Some(reach)) => MaleCandidate {
+                connector: cylinder(Gender::Male, caps, radius, reach, frame, false),
+                identified: true,
+                tip: tip_key,
+            },
+            _ => MaleCandidate {
+                connector: cylinder(Gender::Male, caps, run.radius, length, frame, false),
+                identified: false,
+                tip: tip_key,
+            },
+        })
     }
 
     fn probe(&self, solid: &Solid, walls: &Slab, probe: &Probe) -> Probed {
@@ -841,16 +972,27 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         probes
     }
 
-    fn cavities(&self, solid: &Solid, runs: &[Run], inference: &mut Inference) {
+    fn cavities(
+        &self,
+        solid: &Solid,
+        runs: &[Run],
+        inference: &mut Inference,
+    ) -> HashSet<(usize, i8, i64, i64, i64)> {
         let mut through: Vec<Probe> = Vec::new();
+        let mut blind: Vec<(Probe, f64)> = Vec::new();
         let mut slabs: HashMap<(usize, i8, i64), Slab> = HashMap::new();
         let range = (IDENTIFY_LDU, self.probe.reach - IDENTIFY_LDU);
-        for probe in self.candidates(solid, runs, inference) {
+        let candidates = self.candidates(solid, runs, inference);
+        let mut columns: HashMap<Column, Vec<usize>> = HashMap::new();
+        for (index, probe) in candidates.iter().enumerate() {
+            columns.entry(column_of(probe)).or_default().push(index);
+        }
+        for probe in &candidates {
             let at = probe.entrance[probe.axis];
             let slab = slabs
                 .entry((probe.axis, probe.inward as i8, key(at)))
                 .or_insert_with(|| solid.slab(probe.axis, probe.inward, at, range, outward_wall));
-            match self.probe(solid, slab, &probe) {
+            match self.probe(solid, slab, probe) {
                 Probed::Rejected => {}
                 Probed::Loose(clearance) => {
                     if probe.radius == self.probe.radius {
@@ -864,98 +1006,116 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     origin: probe.entrance,
                     reason: Uninferred::SlidingCavity,
                 }),
-                Probed::Through => through.push(probe),
-                Probed::Blind(depth) => {
-                    let length = self
-                        .vocabulary
-                        .length(SectionShape::Round, depth)
-                        .unwrap_or(self.probe.reach);
-                    self.keep(
-                        cylinder(
-                            Gender::Female,
-                            Caps::One,
-                            probe.radius,
-                            length,
-                            ldraw_frame(probe.entrance, unit_axis(probe.axis, -probe.inward)),
-                            false,
-                        ),
-                        inference,
-                    );
-                }
+                Probed::Through => through.push(*probe),
+                Probed::Blind(depth) => blind.push((*probe, depth)),
             }
         }
+        let mut mouths = HashSet::new();
+        for (probe, depth) in blind {
+            let opens_further_out = columns[&column_of(&probe)].iter().any(|&other| {
+                let outer = &candidates[other];
+                let separation = depth_along(&probe) - depth_along(outer);
+                if separation <= IDENTIFY_LDU {
+                    return false;
+                }
+                let floor = solid.floor(outer, outer.radius - IDENTIFY_LDU);
+                floor.depth >= separation - IDENTIFY_LDU && floor.faces_probe != Some(false)
+            });
+            if opens_further_out {
+                inference.issues.push(Issue::Uninferred {
+                    origin: probe.entrance,
+                    reason: Uninferred::EntranceInsideCavity,
+                });
+                continue;
+            }
+            if probe.radius == self.probe.radius {
+                let (i, j) = plan_axes(probe.axis);
+                mouths.insert((
+                    probe.axis,
+                    -probe.inward as i8,
+                    key(probe.entrance[i]),
+                    key(probe.entrance[j]),
+                    key(probe.entrance[probe.axis]),
+                ));
+            }
+            let length = self
+                .vocabulary
+                .length(SectionShape::Round, depth)
+                .unwrap_or(self.probe.reach);
+            self.keep(
+                cylinder(
+                    Gender::Female,
+                    Caps::One,
+                    probe.radius,
+                    length,
+                    ldraw_frame(probe.entrance, unit_axis(probe.axis, -probe.inward)),
+                    false,
+                ),
+                inference,
+            );
+        }
         self.through_holes(&through, inference);
+        mouths
     }
 
     fn through_holes(&self, through: &[Probe], inference: &mut Inference) {
-        let mut used = vec![false; through.len()];
-        let mut holes: Vec<(Probe, Vec3)> = Vec::new();
-        for (index, probe) in through.iter().enumerate() {
-            if used[index] {
-                continue;
-            }
+        let mut lines: HashMap<(usize, i64, i64, i64), [Option<Probe>; 2]> = HashMap::new();
+        for probe in through {
             let (i, j) = plan_axes(probe.axis);
-            let ahead = |candidate: &Probe| {
-                (candidate.entrance[probe.axis] - probe.entrance[probe.axis]) * probe.inward
-            };
-            let partner = through
-                .iter()
-                .enumerate()
-                .filter(|(other, candidate)| {
-                    *other != index
-                        && !used[*other]
-                        && candidate.axis == probe.axis
-                        && candidate.inward == -probe.inward
-                        && key(candidate.radius) == key(probe.radius)
-                        && key(candidate.entrance[i]) == key(probe.entrance[i])
-                        && key(candidate.entrance[j]) == key(probe.entrance[j])
-                        && ahead(candidate) > IDENTIFY_LDU
-                })
-                .min_by(|a, b| ahead(a.1).total_cmp(&ahead(b.1)))
-                .map(|(other, _)| other);
-            let Some(other) = partner else {
-                inference.issues.push(Issue::Uninferred {
-                    origin: probe.entrance,
-                    reason: Uninferred::UnpairedThroughCavity {
-                        radius: probe.radius,
-                    },
-                });
-                continue;
-            };
-            used[index] = true;
-            used[other] = true;
-            holes.push((*probe, through[other].entrance));
+            let side = usize::from(probe.inward < 0.0);
+            let ends = lines
+                .entry((
+                    probe.axis,
+                    key(probe.entrance[i]),
+                    key(probe.entrance[j]),
+                    key(probe.radius),
+                ))
+                .or_default();
+            let outer = ends[side].is_none_or(|kept| depth_along(probe) < depth_along(&kept));
+            if outer {
+                ends[side] = Some(*probe);
+            }
         }
-        let along = |probe: &Probe, far: &Vec3| {
-            let (a, b) = (probe.entrance[probe.axis], far[probe.axis]);
-            (a.min(b), a.max(b))
-        };
-        for (probe, far) in &holes {
-            let (low, high) = along(probe, far);
-            let (i, j) = plan_axes(probe.axis);
-            let nested = holes.iter().any(|(other, other_far)| {
-                let (other_low, other_high) = along(other, other_far);
-                other.axis == probe.axis
-                    && key(other.radius) == key(probe.radius)
-                    && key(other.entrance[i]) == key(probe.entrance[i])
-                    && key(other.entrance[j]) == key(probe.entrance[j])
-                    && other_low <= low + IDENTIFY_LDU
-                    && other_high >= high - IDENTIFY_LDU
-                    && other_high - other_low > high - low + IDENTIFY_LDU
-            });
-            if nested {
+        let mut lines: Vec<[Option<Probe>; 2]> = lines.into_values().collect();
+        lines.sort_by(|a, b| {
+            let first = |e: &[Option<Probe>; 2]| e.iter().flatten().next().map(|p| p.entrance);
+            first(a)
+                .partial_cmp(&first(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for ends in lines {
+            let [Some(rising), Some(falling)] = ends else {
+                for probe in ends.iter().flatten() {
+                    inference.issues.push(Issue::Uninferred {
+                        origin: probe.entrance,
+                        reason: Uninferred::UnpairedThroughCavity {
+                            radius: probe.radius,
+                        },
+                    });
+                }
+                continue;
+            };
+            let (low, high) = (rising.entrance[rising.axis], falling.entrance[falling.axis]);
+            if high <= low + IDENTIFY_LDU {
+                for probe in [rising, falling] {
+                    inference.issues.push(Issue::Uninferred {
+                        origin: probe.entrance,
+                        reason: Uninferred::UnpairedThroughCavity {
+                            radius: probe.radius,
+                        },
+                    });
+                }
                 continue;
             }
-            let far = *far;
             let span = high - low;
-            let middle = [0, 1, 2].map(|k| (probe.entrance[k] + far[k]) / 2.0);
-            let frame = ldraw_frame(middle, unit_axis(probe.axis, 1.0));
+            let middle = [0, 1, 2].map(|k| (rising.entrance[k] + falling.entrance[k]) / 2.0);
+            let frame = ldraw_frame(middle, unit_axis(rising.axis, 1.0));
             match self.vocabulary.length(SectionShape::Round, span) {
                 Some(length) => self.keep(
                     cylinder(
                         Gender::Female,
                         Caps::None,
-                        probe.radius,
+                        rising.radius,
                         length,
                         frame,
                         true,
@@ -963,8 +1123,8 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     inference,
                 ),
                 None => self.unidentified(
-                    cylinder(Gender::Female, Caps::None, probe.radius, span, frame, true),
-                    probe.radius,
+                    cylinder(Gender::Female, Caps::None, rising.radius, span, frame, true),
+                    rising.radius,
                     span,
                     inference,
                 ),

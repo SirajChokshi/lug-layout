@@ -13,6 +13,7 @@ use brick_compile::connect::{
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
 use brick_compile::ldraw::{parse, Line};
+use brick_compile::model::{bake_model, official_reference};
 use serde_json::{json, Value};
 
 const SAME_LDU: f64 = 0.01;
@@ -23,6 +24,7 @@ const MOVED: &str = "~Moved";
 const EXAMPLES: usize = 12;
 const COMMENTED_SNAP: &str = "0 //!LDCAD SNAP_";
 const TUBE_TITLE: &str = "Stud Tube Open";
+const AXLE_TITLE: &str = "Technic Axle";
 const FACE_KEY_STEPS: f64 = 2000.0;
 const SIXTEENTHS: f64 = 16.0;
 const IDENTIFY_LDU: f64 = 0.0005;
@@ -91,6 +93,7 @@ enum Feature {
     Stud,
     HoleEnd,
     Tube,
+    Axle,
 }
 
 fn y_up_point(p: Vec3) -> Vec3 {
@@ -170,7 +173,11 @@ fn features(
             continue;
         }
         if child.starts_with("p/") && title_of(library, &child).starts_with(TUBE_TITLE) {
-            out.push((Feature::Tube, name, placed));
+            out.push((Feature::Tube, name.clone(), placed));
+        }
+        if child.starts_with("p/") && title_of(library, &child).starts_with(AXLE_TITLE) {
+            out.push((Feature::Axle, name, placed));
+            continue;
         }
         features(library, &child, &placed, depth + 1, out);
     }
@@ -222,8 +229,19 @@ fn agrees(feature: Feature, at: &Affine, connectors: &[Connector]) -> bool {
                     && dot(p.axis, up).abs() >= 1.0 - PARALLEL
                     && norm(sub(v, p.axis.map(|c| c * dot(v, p.axis)))) <= SAME_LDU
             }
-            Feature::Tube => false,
+            Feature::Tube | Feature::Axle => false,
         })
+    })
+}
+
+fn axle_connector(at: &Affine, faces: &[MatingFace]) -> bool {
+    let origin = y_up_point(translation(at));
+    let along = unit(y_up_point(column(at, 1)));
+    faces.iter().any(|f| {
+        let v = sub(f.origin, origin);
+        f.sections.iter().any(|s| s.code == 1)
+            && dot(f.axis, along).abs() >= 1.0 - PARALLEL
+            && norm(sub(v, along.map(|c| c * dot(v, along)))) <= SAME_LDU
     })
 }
 
@@ -335,6 +353,10 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
         Uninferred::LooseCavity { .. } => {
             "probe free, blocked along the four lattice axes, touching nothing"
         }
+        Uninferred::EntranceInsideCavity => {
+            "gripped entrance inside a column that opens further out (recessed receptor)"
+        }
+        Uninferred::SleeveOfReceptor => "outward wall that is the sleeve of a stud receptor",
         Uninferred::SlidingCavity => {
             "probe gripped but free to slide a half-grid step (the cavity does not locate it)"
         }
@@ -459,6 +481,184 @@ struct Oracle {
     agreement: BTreeMap<&'static str, usize>,
     unmatched: BTreeMap<&'static str, usize>,
     false_positive_parts: BTreeMap<String, usize>,
+}
+
+const OMR_MATCH_LDU: f64 = 0.05;
+
+struct Worldly {
+    instance: usize,
+    origin: Vec3,
+    axis: Vec3,
+}
+
+fn to_world(matrix: &Affine, face: &MatingFace) -> (Vec3, Vec3) {
+    let origin = matrix.apply(face.origin);
+    let tip = matrix.apply([0, 1, 2].map(|k| face.origin[k] + face.axis[k]));
+    (origin, unit(sub(tip, origin)))
+}
+
+fn omr_tube_check(
+    omr: &Path,
+    library: &LazyLibrary,
+    extractor: &mut ConnectorExtractor<LazyLibrary, LazyLibrary>,
+    primitives: &mut PrimitiveConnectors<LazyLibrary>,
+    inferred: &mut InferredFeatures<LazyLibrary>,
+) -> Result<Value, String> {
+    let mut models: Vec<PathBuf> = fs::read_dir(omr)
+        .map_err(|e| format!("{}: {e}", omr.display()))?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "mpd"))
+        .collect();
+    models.sort();
+    type PartFaces = (Vec<MatingFace>, Vec<MatingFace>, Vec<bool>);
+    let mut cache: HashMap<String, PartFaces> = HashMap::new();
+    let mut totals: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut per_model: Vec<Value> = Vec::new();
+    let mut violations: Vec<Value> = Vec::new();
+    let mut by_part: BTreeMap<String, [usize; 4]> = BTreeMap::new();
+    for model_path in &models {
+        let source = fs::read_to_string(model_path).map_err(|e| e.to_string())?;
+        let baked = bake_model(&source).map_err(|e| format!("{}: {e}", model_path.display()))?;
+        let mut studs: Vec<Worldly> = Vec::new();
+        let mut candidates: Vec<(Worldly, bool, String, Vec3)> = Vec::new();
+        let mut seen_candidates: std::collections::HashSet<(usize, [i64; 3])> =
+            std::collections::HashSet::new();
+        for (index, instance) in baked.instances.iter().enumerate() {
+            let reference = instance
+                .inline
+                .as_deref()
+                .map_or_else(|| instance.part.clone(), official_reference);
+            let Some(path) = resolve_reference(library, Lod::Standard, &reference) else {
+                continue;
+            };
+            let (faces, tube_faces, open) = cache.entry(path.clone()).or_insert_with(|| {
+                let faces = faces_of(&extractor.extract(&path).connectors, None);
+                let tube = primitives.where_open(&path);
+                let opened = inferred.open(&path, tube.clone());
+                let open_faces: Vec<FaceKey> =
+                    faces_of(&opened, None).iter().map(face_key).collect();
+                let tube_faces = faces_of(&tube, None);
+                let open = tube_faces
+                    .iter()
+                    .map(|f| open_faces.contains(&face_key(f)))
+                    .collect();
+                (faces, tube_faces, open)
+            });
+            for face in faces.iter() {
+                if face.gender == Gender::Male && face.sections.first().is_some_and(|s| s.code == 0)
+                {
+                    let (origin, axis) = to_world(&instance.matrix, face);
+                    studs.push(Worldly {
+                        instance: index,
+                        origin,
+                        axis,
+                    });
+                }
+            }
+            for (face, open) in tube_faces.iter().zip(open.iter()) {
+                let (origin, axis) = to_world(&instance.matrix, face);
+                if !seen_candidates.insert((index, face_key(face).1)) {
+                    continue;
+                }
+                candidates.push((
+                    Worldly {
+                        instance: index,
+                        origin,
+                        axis,
+                    },
+                    *open,
+                    path.clone(),
+                    face.origin,
+                ));
+            }
+        }
+        let cell = |p: Vec3| p.map(|c| (c / 10.0).floor() as i64);
+        let mut grid: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
+        for (k, stud) in studs.iter().enumerate() {
+            grid.entry(cell(stud.origin)).or_default().push(k);
+        }
+        let mut counts = [0usize; 5];
+        for (candidate, open, part, local) in &candidates {
+            counts[0] += 1;
+            counts[1] += usize::from(*open);
+            let tally = by_part.entry(part.clone()).or_default();
+            tally[0] += 1;
+            let home = cell(candidate.origin);
+            let mut seated = false;
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let key = [home[0] + dx, home[1] + dy, home[2] + dz];
+                        for &k in grid.get(&key).map(Vec::as_slice).unwrap_or(&[]) {
+                            let stud = &studs[k];
+                            seated |= stud.instance != candidate.instance
+                                && norm(sub(stud.origin, candidate.origin)) <= OMR_MATCH_LDU
+                                && dot(stud.axis, candidate.axis) <= -1.0 + PARALLEL;
+                        }
+                    }
+                }
+            }
+            if seated {
+                counts[2] += 1;
+                let tally = by_part.entry(part.clone()).or_default();
+                tally[1] += 1;
+                if *open {
+                    counts[3] += 1;
+                    tally[2] += 1;
+                } else {
+                    counts[4] += 1;
+                    tally[3] += 1;
+                    if violations.len() < 100 {
+                        violations.push(json!({
+                            "model": model_path.file_name().map(|n| n.to_string_lossy().into_owned()),
+                            "part": part,
+                            "at": candidate.origin,
+                            "partLocal": local,
+                        }));
+                    }
+                }
+            }
+        }
+        for (label, value) in [
+            ("tubeNeighbourCandidates", counts[0]),
+            ("emittedOpen", counts[1]),
+            ("studSeatedAtACandidate", counts[2]),
+            ("studSeatedAtAnEmittedReceptor", counts[3]),
+            ("studSeatedAtARejectedCandidate", counts[4]),
+        ] {
+            *totals.entry(label).or_default() += value;
+        }
+        per_model.push(json!({
+            "model": model_path.file_name().map(|n| n.to_string_lossy().into_owned()),
+            "instances": baked.instances.len(),
+            "candidates": counts[0],
+            "emitted": counts[1],
+            "studsAtCandidates": counts[2],
+            "studsAtEmitted": counts[3],
+            "studsAtRejected": counts[4],
+        }));
+    }
+    let parts: Vec<Value> = by_part
+        .iter()
+        .map(|(part, t)| {
+            json!({
+                "part": part,
+                "title": title_of(library, part),
+                "candidates": t[0],
+                "studsAtCandidates": t[1],
+                "studsAtEmitted": t[2],
+                "studsAtRejected": t[3],
+            })
+        })
+        .collect();
+    Ok(json!({
+        "matchLdu": OMR_MATCH_LDU,
+        "parts": parts,
+        "totals": totals,
+        "models": per_model,
+        "studsAtRejectedCandidates": violations,
+    }))
 }
 
 fn category(title: &str) -> &'static str {
@@ -605,6 +805,22 @@ fn run() -> Result<(), String> {
         InferredFeatures::new(&library, vocabulary.clone(), &probe_part)?,
     );
     let mut tier4_alone = InferredFeatures::new(&library, vocabulary, &probe_part)?;
+    if let Some(omr) = values.get("--omr") {
+        let mut primitives = PrimitiveConnectors::new(&library, primitive_table.clone());
+        let report = omr_tube_check(
+            Path::new(omr),
+            &library,
+            &mut extractor,
+            &mut primitives,
+            &mut tier4_alone,
+        )?;
+        let out = take("--out")?;
+        return fs::write(
+            &out,
+            serde_json::to_string_pretty(&report).map_err(|e| e.to_string())? + "\n",
+        )
+        .map_err(|e| format!("{out}: {e}"));
+    }
     let mut coverage: BTreeMap<&str, Coverage> = BTreeMap::new();
     let mut oracle = Oracle::default();
     let mut tubes: BTreeMap<String, usize> = BTreeMap::new();
@@ -612,6 +828,10 @@ fn run() -> Result<(), String> {
     let mut loose: BTreeMap<i64, usize> = BTreeMap::new();
     let mut tier4_timings: Vec<(f64, String, usize)> = Vec::new();
     let mut focused: Vec<Value> = Vec::new();
+    let mut axle_census = [0usize; 4];
+    let mut tube_oracle = [0usize; 2];
+    let mut axle_examples: Vec<Value> = Vec::new();
+    let mut disagreeing_faces: Vec<Value> = Vec::new();
     let mut tier2_alone = PrimitiveConnectors::new(&library, primitive_table);
     let mut by_source: BTreeMap<String, usize> = BTreeMap::new();
     let mut by_family: BTreeMap<String, usize> = BTreeMap::new();
@@ -858,6 +1078,39 @@ fn run() -> Result<(), String> {
                         *oracle.unmatched.entry(kind).or_default() += 1;
                         if !at_tube && curator_covers_gender {
                             *oracle.false_positive_parts.entry(part.clone()).or_default() += 1;
+                            let nearest = curated_faces
+                                .iter()
+                                .filter(|f| f.gender == face.gender)
+                                .min_by(|a, b| {
+                                    norm(sub(a.origin, face.origin))
+                                        .total_cmp(&norm(sub(b.origin, face.origin)))
+                                });
+                            let column_mate = curated_faces.iter().find(|f| {
+                                let v = sub(f.origin, face.origin);
+                                f.gender == face.gender
+                                    && dot(f.axis, face.axis) >= 1.0 - PARALLEL
+                                    && norm(sub(v, face.axis.map(|c| c * dot(v, face.axis))))
+                                        <= SAME_LDU
+                            });
+                            if disagreeing_faces.len() < 5000 {
+                                disagreeing_faces.push(json!({
+                                    "part": part,
+                                    "title": title,
+                                    "category": category(&title),
+                                    "family": face_family(face),
+                                    "origin": face.origin,
+                                    "axis": face.axis,
+                                    "sections": face.sections.iter().map(|s| [f64::from(s.code), s.size, s.length]).collect::<Vec<_>>(),
+                                    "caps": face.caps,
+                                    "nearestTier1": nearest.map(|f| json!({
+                                        "distance": norm(sub(f.origin, face.origin)),
+                                        "origin": f.origin,
+                                        "axis": f.axis,
+                                        "sections": f.sections.iter().map(|s| [f64::from(s.code), s.size, s.length]).collect::<Vec<_>>(),
+                                    })),
+                                    "tier1OnTheSameAxisLine": column_mate.map(|f| json!({ "origin": f.origin, "axis": f.axis })),
+                                }));
+                            }
                         }
                     }
                 }
@@ -906,7 +1159,25 @@ fn run() -> Result<(), String> {
                 "tier4Issues": alone_issues.iter().map(|i| format!("{i:?}")).collect::<Vec<_>>(),
             }));
         }
+        let axles: Vec<&(Feature, String, Affine)> =
+            found.iter().filter(|f| f.0 == Feature::Axle).collect();
+        if !axles.is_empty() {
+            let uncovered = axles
+                .iter()
+                .filter(|(_, _, at)| !axle_connector(at, &all_faces))
+                .count();
+            axle_census[0] += 1;
+            axle_census[1] += axles.len();
+            axle_census[2] += uncovered;
+            axle_census[3] += usize::from(uncovered > 0);
+            if uncovered > 0 && axle_examples.len() < 40 {
+                axle_examples.push(json!({ "part": part, "title": title, "axleFeatures": axles.len(), "withoutAxleConnector": uncovered }));
+            }
+        }
         for (feature, primitive, at) in found {
+            if feature == Feature::Axle {
+                continue;
+            }
             if feature == Feature::Tube {
                 let verdict = match (tube_receptor(&at, &all_faces), extraction.curated) {
                     (Some(Source::Inferred), true) => "curated part: tier 4 receptor",
@@ -929,7 +1200,7 @@ fn run() -> Result<(), String> {
             let label = match feature {
                 Feature::Stud => "male stud primitive (#247 census) → male cylinder at its frame",
                 Feature::HoleEnd => "peghole.dat → coaxial female cylinder",
-                Feature::Tube => continue,
+                Feature::Tube | Feature::Axle => continue,
             };
             let entry = checks.entry(label).or_default();
             entry[0] += 1;
@@ -946,6 +1217,20 @@ fn run() -> Result<(), String> {
             }
         }
         if extraction.curated {
+            let tube_candidates = tier2_alone.where_open(&path);
+            let opened = tier4_alone.open(&path, tube_candidates);
+            let curated_female: std::collections::HashSet<FaceKey> =
+                faces_of(&extraction.connectors, Some(Source::Shadow))
+                    .iter()
+                    .filter(|f| f.gender == Gender::Female)
+                    .map(face_key)
+                    .collect();
+            if !curated_female.is_empty() {
+                for face in faces_of(&opened, None) {
+                    tube_oracle[0] += 1;
+                    tube_oracle[1] += usize::from(curated_female.contains(&face_key(&face)));
+                }
+            }
             let (alone, _) = tier2_alone.connectors(&path);
             for candidate in &alone {
                 cross[0] += 1;
@@ -1027,7 +1312,16 @@ fn run() -> Result<(), String> {
             "sectionsAtMatchedFaces": oracle.agreement.iter().map(|(k, v)| json!({ "kind": k, "count": v })).collect::<Vec<_>>(),
             "partsWithMostUnmatchedInferredFacesWhereTier1CoversTheGender": false_positive_parts.iter().take(40).map(|(p, n)| json!({ "part": p, "unmatched": n })).collect::<Vec<_>>(),
         },
+        "tubeNeighbourReceptorsOnCuratedPartsWithFemales": { "emitted": tube_oracle[0], "atATier1Female": tube_oracle[1] },
         "tubeInteriors": table(tubes),
+        "axleFeatures": {
+            "partsWithAxlePrimitives": axle_census[0],
+            "axlePrimitives": axle_census[1],
+            "axlePrimitivesWithoutAnAxleConnector": axle_census[2],
+            "partsLeftWithoutAxleConnectors": axle_census[3],
+            "examples": axle_examples,
+        },
+        "disagreeingInferredFaces": disagreeing_faces,
         "tubeInteriorExamplesWithoutReceptor": tube_examples,
         "looseCavityClearancesLdu": loose.iter().map(|(k, v)| json!({ "clearance": *k as f64 / CLEARANCE_STEPS, "count": v })).collect::<Vec<_>>(),
         "focus": focused,
@@ -1079,6 +1373,13 @@ fn run() -> Result<(), String> {
             "slowest": timings.iter().take(5).map(|t| json!({ "part": t.1, "ms": t.0, "connectors": t.2 })).collect::<Vec<_>>(),
         },
     });
+    if let Some(path) = values.get("--timings") {
+        let lines: String = tier4_timings
+            .iter()
+            .map(|(ms, part, _)| format!("{part} {ms}\n"))
+            .collect();
+        fs::write(path, lines).map_err(|e| format!("{path}: {e}"))?;
+    }
     let out = take("--out")?;
     fs::write(
         &out,

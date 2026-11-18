@@ -5,7 +5,7 @@ mod primitive;
 mod shadow;
 mod solid;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
@@ -506,11 +506,45 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
 
     pub fn extract(&mut self, path: &str) -> Extraction {
         let mut extraction = self.shadow.snaps(path);
-        let (primitive, issues) = self.primitives.connectors(path);
+        let (mut primitive, issues) = self.primitives.connectors(path);
         extraction.issues.extend(issues);
+        let candidates = self.primitives.where_open(path);
+        primitive.extend(self.inferred.open(path, candidates));
         merge(&mut extraction, primitive, anchor_keys);
         let inferred = self.inferred.infer(path);
-        extraction.issues.extend(inferred.issues);
+        let held: HashSet<Slot> = extraction
+            .connectors
+            .iter()
+            .filter_map(|c| mating_faces(c).ok())
+            .flatten()
+            .filter(|face| face.gender == Gender::Female)
+            .map(|face| {
+                face_slot(&MatingFace {
+                    axis: [0.0; 3],
+                    ..face
+                })
+            })
+            .collect();
+        extraction
+            .issues
+            .extend(inferred.issues.into_iter().filter(|issue| match issue {
+                Issue::Uninferred {
+                    origin,
+                    reason: Uninferred::LooseCavity { .. } | Uninferred::SlidingCavity,
+                } => {
+                    let entrance = MatingFace {
+                        source: Source::Inferred,
+                        gender: Gender::Female,
+                        origin: [origin[0], -origin[1], -origin[2]].map(|c| c + 0.0),
+                        axis: [0.0; 3],
+                        sections: Vec::new(),
+                        caps: 0,
+                        slide: false,
+                    };
+                    !held.contains(&face_slot(&entrance))
+                }
+                _ => true,
+            }));
         extraction.off_lattice.extend(inferred.off_lattice);
         merge(&mut extraction, inferred.connectors, anchor_and_face_keys);
         extraction

@@ -17,10 +17,29 @@
       "file": "p/peghole.dat",
       "title": "Peg Hole End",
       "holeEnd": {
-        "counterbore": { "radius": 8, "length": 2 },
+        "counterbore": {
+          "radius": 8,
+          "length": 2
+        },
         "boreRadius": 6
       },
       "derivation": "inward 4-4cyli radius 8 from y=0 to y=2; 4-4ring3 scaled 2 at y=2 spans radius 6 to 8, so the bore beyond it is radius 6; two ends facing each other on one axis bound a through hole"
+    },
+    {
+      "file": "p/stud4.dat",
+      "title": "Stud Tube Open",
+      "whereOpen": [
+        "SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [scale=YOnly] [pos=0 -4 0] [ori=1 0 0 0 -1 0 0 0 -1] [grid=C 2 C 2 20 20]"
+      ],
+      "derivation": "inward 4-4cyli radius 6 and outward 4-4cyli radius 8 from y=-4 to y=0, with the 4-4ring3 rim at y=-4 (the open end) and parts scaling it along Y; the four stud-grid diagonal neighbours sit 10*sqrt(2) from the axis, so a radius-6 receptor there clears the radius-8 wall by 10*sqrt(2)-14 and runs from the rim plane to the far end; emitted only where the free-space test finds the receptor open"
+    },
+    {
+      "file": "p/stud4a.dat",
+      "title": "Stud Tube Open without Base Edges",
+      "whereOpen": [
+        "SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [scale=YOnly] [pos=0 -4 0] [ori=1 0 0 0 -1 0 0 0 -1] [grid=C 2 C 2 20 20]"
+      ],
+      "derivation": "inward 4-4cyli radius 6 and outward 4-4cyli radius 8 from y=-4 to y=0, with the 4-4ring3 rim at y=-4 (the open end) and parts scaling it along Y; the four stud-grid diagonal neighbours sit 10*sqrt(2) from the axis, so a radius-6 receptor there clears the radius-8 wall by 10*sqrt(2)-14 and runs from the rim plane to the far end; emitted only where the free-space test finds the receptor open"
     }
   ]
 }
