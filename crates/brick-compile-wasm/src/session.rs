@@ -7,7 +7,7 @@ use brick_compile::cover::ModelCover;
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
-use brick_compile::model::{bake_model, ModelInstance};
+use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
 use brick_compile::{compile_part, CompileError, CompileOptions, Lod};
@@ -106,6 +106,10 @@ impl Session {
     }
 }
 
+fn wire_index(index: i64) -> Result<i32, String> {
+    i32::try_from(index).map_err(|_| format!("sub-model index {index} does not fit an Int32"))
+}
+
 fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
     let model = bake_model(source).map_err(|e| e.to_string())?;
     let mut part_ids: Vec<String> = Vec::new();
@@ -113,7 +117,8 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
     let count = model.instances.len();
     let mut parts = Vec::with_capacity(count);
     let mut colors = Vec::with_capacity(count);
-    let mut matrices: Vec<f32> = Vec::with_capacity(count * 12);
+    let mut transforms: Vec<f64> = Vec::with_capacity(count * 12);
+    let mut holders = Vec::with_capacity(count);
     for instance in &model.instances {
         let key = instance.inline.as_deref().unwrap_or(&instance.part);
         let next = u32::try_from(part_ids.len()).map_err(|e| e.to_string())?;
@@ -123,11 +128,20 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
         });
         parts.push(index);
         colors.push(instance.color);
-        matrices.extend(instance.matrix.m.map(|v| v as f32));
+        transforms.extend(instance.matrix.m);
+        holders.push(wire_index(submodel_index(instance.submodel))?);
     }
+    let parents = model
+        .submodel_parents()
+        .into_iter()
+        .map(wire_index)
+        .collect::<Result<Vec<_>, _>>()?;
     body.blob("instancePart", &parts);
     body.blob("instanceColor", &colors);
-    body.blob("instanceMatrix", &matrices);
+    body.blob("instanceTransform", &transforms);
+    body.blob("instanceSubmodel", &holders);
+    body.blob("submodelParent", &parents);
+    body.blob("submodelMatrix", &model.submodel_matrices());
     Ok(Reply::ModelRead {
         sections: model.sections.iter().map(Section::from).collect(),
         parts: part_ids,
