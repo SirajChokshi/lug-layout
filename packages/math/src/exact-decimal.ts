@@ -68,18 +68,18 @@ export function parseExactDecimal(text: unknown): ExactDecimal {
   const parts = literalParts(text);
   if (parts === null) {
     throw new Error(
-      `"${text}" is not a decimal literal of at most ${MAX_DIGITS} digits and exponent magnitude ${MAX_EXPONENT_MAGNITUDE}`,
+      `the text is not a decimal literal of at most ${MAX_DIGITS} digits and exponent magnitude ${MAX_EXPONENT_MAGNITUDE}`,
     );
   }
   const places = parts.fractionDigits - parts.exponent;
   const significant = parts.digits.replace(/^0+/u, "");
   if (places < 0 && significant.length - places > MAX_DIGITS) {
-    throw new Error(`"${text}" writes canonically with more than ${MAX_DIGITS} digits`);
+    throw new Error(`the literal writes canonically with more than ${MAX_DIGITS} digits`);
   }
   const magnitude = BigInt(parts.digits) * (places < 0 ? TEN ** BigInt(-places) : 1n);
   const value = normalized(parts.negative ? -magnitude : magnitude, Math.max(places, 0));
   if (!withinDigitBound(value)) {
-    throw new Error(`"${text}" writes canonically with more than ${MAX_DIGITS} digits`);
+    throw new Error(`the literal writes canonically with more than ${MAX_DIGITS} digits`);
   }
   return value;
 }

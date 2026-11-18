@@ -30,4 +30,9 @@ describe("exact number texts", () => {
       false,
     ]);
   });
+
+  it("read an exact rational only from its own fields", () => {
+    const inherited = Object.create({ numerator: "31", denominator: "5" });
+    expect(decode(ExactRationalText, inherited).ok).toBe(false);
+  });
 });

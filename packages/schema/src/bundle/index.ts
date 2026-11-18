@@ -36,8 +36,9 @@ export const ExactDecimalText = v.pipe(
 export type ExactDecimalText = v.InferOutput<typeof ExactDecimalText>;
 
 export const ExactRationalText = v.pipe(
-  v.object({ numerator: v.string(), denominator: v.string() }),
+  v.unknown(),
   v.check((text) => isCanonicalExactRationalText(text), "must be a reduced exact rational"),
+  v.object({ numerator: v.string(), denominator: v.string() }),
   v.description(
     "an exact rational as decimal integer strings: the numerator carries the sign, the denominator is positive and shares no factor with it; read with @brr/math parseExactRational",
   ),
