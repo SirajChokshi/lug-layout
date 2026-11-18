@@ -1,28 +1,25 @@
-import { StudioRead } from "@brr/schema/bundle";
+import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
+import {
+  CompilerBake,
+  CompilerCompile,
+  CompilerError,
+  CompilerModelRead,
+  StudioRead,
+  type CompilerBaked,
+  type CompilerBlobs,
+  type CompilerEnvelope,
+  type CompilerLibraryDelta,
+  type CompilerRequest,
+  type CompilerVehicle,
+  type CompilerVehicles,
+  type ModelSection,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
-import { runWasiCommand } from "./wasi-command.ts";
+import { WasiReactor } from "./wasi-reactor.ts";
 
-export type CompileLod = "standard" | "low" | "far";
+export type CompileLod = Extract<CompilerRequest, { op: "compile" }>["lod"];
 
-export interface LdrawHeader {
-  readonly name: string;
-  readonly title: string;
-  readonly author: string;
-  readonly license: string | null;
-  readonly ldrawOrg: string | null;
-}
-
-export interface BakeOutput {
-  readonly sections: ReadonlyArray<LdrawHeader>;
-  readonly parts: ReadonlyArray<string>;
-  readonly instances: {
-    readonly part: ReadonlyArray<number>;
-    readonly color: ReadonlyArray<number>;
-    readonly matrix: ReadonlyArray<number>;
-  };
-  readonly inlineParts: ReadonlyArray<InlinePart>;
-  readonly looseGeometry: ReadonlyArray<LooseGeometry>;
-}
+export type LdrawHeader = ModelSection;
 
 export interface LooseGeometry {
   readonly section: string;
@@ -36,55 +33,44 @@ export interface InlinePart {
   readonly official: string;
 }
 
+export interface ModelRead {
+  readonly sections: ReadonlyArray<LdrawHeader>;
+  readonly parts: ReadonlyArray<string>;
+  readonly inlineParts: ReadonlyArray<InlinePart>;
+  readonly looseGeometry: ReadonlyArray<LooseGeometry>;
+  readonly instancePart: Uint32Array;
+  readonly instanceColor: Uint32Array;
+  readonly instanceMatrix: Float32Array;
+}
+
+export interface LibraryFiles {
+  readonly key: string;
+  readonly files: ReadonlyMap<string, string>;
+  readonly absent: ReadonlySet<string>;
+}
+
 export interface CompileRequest {
   readonly lod: CompileLod;
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
-  readonly files: Readonly<Record<string, string>>;
-  readonly absent: ReadonlyArray<string>;
   readonly parts: ReadonlyArray<string>;
   readonly model: string;
   readonly inlineChecks: ReadonlyArray<InlinePart>;
 }
 
-export type FailureKind = "unresolved" | "tooDeep" | "license" | "unofficial";
+type RawCompile = CompilerCompile;
+type RawPartOutcome = RawCompile["parts"][number];
+type RawInlineOutcome = RawCompile["inline"][number];
 
-export interface Failure {
-  readonly status: "failed";
-  readonly kind: FailureKind;
-  readonly message: string;
-  readonly missing?: string;
-  readonly from?: string;
-  readonly path?: string;
-  readonly ldrawOrg?: string;
-}
+export type Failure = Omit<Extract<RawPartOutcome, { status: "failed" }>, "reference">;
+export type FailureKind = Failure["kind"];
+export type Need = Omit<Extract<RawPartOutcome, { status: "need" }>, "reference">;
 
-export interface Need {
-  readonly status: "need";
-  readonly paths: ReadonlyArray<string>;
-}
+export type PartOutcome =
+  | Exclude<RawPartOutcome, { status: "compiled" }>
+  | (Omit<Extract<RawPartOutcome, { status: "compiled" }>, "glb"> & { readonly glb: Uint8Array });
 
-export interface CompiledPartOutput {
-  readonly status: "compiled";
-  readonly file: string;
-  readonly header: LdrawHeader;
-  readonly files: number;
-  readonly glb: Uint8Array;
-}
-
-export type PartOutcome = (CompiledPartOutput | Need | Failure) & { readonly reference: string };
-
-export interface InlineMeasured {
-  readonly status: "measured";
-  readonly maxMeasuredDistanceLdu: number;
-  readonly surfaceWithinWeld: boolean;
-  readonly inlineColors: ReadonlyArray<number>;
-  readonly officialColors: ReadonlyArray<number>;
-  readonly colorsMatch: boolean;
-  readonly withinWeld: boolean;
-}
-
-export type InlineOutcome = (InlineMeasured | Need | Failure) & InlinePart;
+export type InlineOutcome = RawInlineOutcome;
 
 export interface CompileOutput {
   readonly parts: ReadonlyArray<PartOutcome>;
@@ -92,105 +78,251 @@ export interface CompileOutput {
   readonly weldEpsilonLdu: number;
 }
 
-interface RawCompiled {
-  readonly status: "compiled";
-  readonly reference: string;
-  readonly offset: number;
-  readonly length: number;
-  readonly file: string;
-  readonly header: LdrawHeader;
-  readonly files: number;
+export interface BakeRequest {
+  readonly source: string;
+  readonly drawn: Uint8Array;
+  readonly studPrimitives: ReadonlyArray<string>;
+  readonly unofficialAllowlist: ReadonlyArray<string>;
+  readonly translucentColors: ReadonlyArray<number>;
+  readonly vehicles: CompilerVehicles | null;
 }
 
-type RawPartOutcome = RawCompiled | ((Need | Failure) & { readonly reference: string });
-
-interface RawCompileHeader {
-  readonly parts: ReadonlyArray<RawPartOutcome>;
-  readonly inline: ReadonlyArray<InlineOutcome>;
-  readonly weldEpsilonLdu: number;
+export interface BakedModel {
+  readonly status: "baked";
+  readonly lattice: PartModelLattice | null;
+  readonly latticeIssue: string | null;
+  readonly studCover: ModelStudCover;
+  readonly cells: ModelCells | null;
+  readonly vehicles: ReadonlyArray<PartVehicle>;
+  readonly vehicleIssue: string | null;
 }
+
+export interface BakeFailure {
+  readonly status: "failed";
+  readonly message: string;
+}
+
+export type BakeOutcome = BakedModel | Need | BakeFailure;
+
+interface Response {
+  readonly header: unknown;
+  readonly body: Uint8Array;
+}
+
+type Range = readonly [number, number];
+
+type Segments = Readonly<Record<string, Uint8Array>>;
 
 const HEADER_LENGTH_BYTES = 4;
+const utf8 = new TextEncoder();
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+class RequestPayload {
+  private readonly parts: Uint8Array[] = [];
+  private length = 0;
+
+  add(bytes: Uint8Array): Range {
+    const range = [this.length, bytes.length] as const;
+    this.parts.push(bytes);
+    this.length += bytes.length;
+    return range;
+  }
+
+  frame(header: CompilerEnvelope): Uint8Array {
+    const json = utf8.encode(JSON.stringify(header));
+    const request = new Uint8Array(HEADER_LENGTH_BYTES + json.length + this.length);
+    new DataView(request.buffer).setUint32(0, json.length, true);
+    request.set(json, HEADER_LENGTH_BYTES);
+    let offset = HEADER_LENGTH_BYTES + json.length;
+    for (const part of this.parts) {
+      request.set(part, offset);
+      offset += part.length;
+    }
+    return request;
+  }
 }
 
-function isBakeOutput(value: unknown): value is BakeOutput {
-  return (
-    isRecord(value) &&
-    Array.isArray(value["sections"]) &&
-    Array.isArray(value["parts"]) &&
-    isRecord(value["instances"]) &&
-    Array.isArray(value["inlineParts"]) &&
-    Array.isArray(value["looseGeometry"])
-  );
+function bytesOf(body: Uint8Array, blobs: CompilerBlobs, name: string): ArrayBuffer {
+  const range = blobs[name];
+  if (!range) throw new Error(`brick-compile response has no ${name} blob`);
+  const [offset, length] = range;
+  return body.slice(offset, offset + length).buffer;
 }
 
-function framed(header: Record<string, unknown>, payload: Uint8Array): Uint8Array {
-  const json = new TextEncoder().encode(JSON.stringify(header));
-  const out = new Uint8Array(HEADER_LENGTH_BYTES + json.length + payload.length);
-  new DataView(out.buffer).setUint32(0, json.length, true);
-  out.set(json, HEADER_LENGTH_BYTES);
-  out.set(payload, HEADER_LENGTH_BYTES + json.length);
-  return out;
+function indices(all: Uint32Array, [start, count]: Range): Uint32Array {
+  return all.slice(start, start + count);
 }
 
-function isCompileHeader(value: unknown): value is RawCompileHeader {
-  return (
-    isRecord(value) &&
-    Array.isArray(value["parts"]) &&
-    Array.isArray(value["inline"]) &&
-    typeof value["weldEpsilonLdu"] === "number"
-  );
+function vehicleOf(
+  vehicle: CompilerVehicle,
+  body: Uint32Array,
+  bogieInstances: Uint32Array,
+): PartVehicle {
+  return {
+    ...vehicle,
+    body: indices(body, vehicle.body),
+    bogies: vehicle.bogies.map((bogie) => ({
+      ...bogie,
+      instances: indices(bogieInstances, bogie.instances),
+    })),
+  };
+}
+
+function bakedVehicles(header: CompilerBaked, body: Uint8Array): ReadonlyArray<PartVehicle> {
+  const { vehicles, blobs } = header;
+  if (vehicles === undefined) return [];
+  const vehicleBody = new Uint32Array(bytesOf(body, blobs, "vehicleBody"));
+  const bogieInstances = new Uint32Array(bytesOf(body, blobs, "bogieInstances"));
+  return vehicles.map((vehicle) => vehicleOf(vehicle, vehicleBody, bogieInstances));
+}
+
+function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
+  const { blobs, cover, lattice } = header;
+  const cells = cover.cells;
+  return {
+    status: "baked",
+    lattice:
+      lattice === null
+        ? null
+        : {
+            phaseX: lattice.phase[0],
+            phaseZ: lattice.phase[1],
+            aabbMin: lattice.aabb.min,
+            aabbMax: lattice.aabb.max,
+          },
+    latticeIssue: header.latticeIssue ?? null,
+    studCover: {
+      studs: cover.studs,
+      covered: cover.coveredStuds,
+      visibleBits: new Uint32Array(bytesOf(body, blobs, "visibleBits")),
+    },
+    cells:
+      cells === null
+        ? null
+        : {
+            originX: cells.origin[0],
+            originZ: cells.origin[1],
+            width: cells.size[0],
+            depth: cells.size[1],
+            restY: cells.bottomY,
+            footprint: new Uint32Array(bytesOf(body, blobs, "footprint")),
+            flat: new Uint32Array(bytesOf(body, blobs, "flat")),
+            columnBottom: new Int16Array(bytesOf(body, blobs, "columnBottom")),
+            columnTop: new Int16Array(bytesOf(body, blobs, "columnTop")),
+          },
+    vehicles: bakedVehicles(header, body),
+    vehicleIssue: header.vehicleIssue ?? null,
+  };
+}
+
+interface LibraryDelta {
+  readonly header: CompilerLibraryDelta;
+  readonly files: ReadonlyArray<string>;
+  readonly absent: ReadonlyArray<string>;
 }
 
 export class BrickCompiler {
-  constructor(private readonly module: WebAssembly.Module) {}
+  private readonly reactor: WasiReactor;
+  private libraryKey = "";
+  private libraryGeneration = 0;
+  private readonly sentFiles = new Set<string>();
+  private readonly sentAbsent = new Set<string>();
 
-  private async run(request: Record<string, unknown>): Promise<Uint8Array> {
-    return this.runBytes(new TextEncoder().encode(JSON.stringify(request)));
+  constructor(module: WebAssembly.Module) {
+    this.reactor = new WasiReactor(module);
   }
 
-  private async runBytes(stdin: Uint8Array): Promise<Uint8Array> {
-    const result = await runWasiCommand(this.module, stdin);
-    if (result.exitCode !== 0) {
-      throw new Error(result.stderr.trim() || `brick-compile exited with ${result.exitCode}`);
-    }
-    return result.stdout;
+  private call(
+    request: CompilerRequest,
+    segments: Segments,
+    library: LibraryFiles | null = null,
+  ): Response {
+    const payload = new RequestPayload();
+    const ranges: Record<string, Range> = {};
+    for (const [name, bytes] of Object.entries(segments)) ranges[name] = payload.add(bytes);
+    if (library === null) return this.send(payload.frame({ request, segments: ranges }));
+    const delta = this.libraryDelta(library, payload);
+    const response = this.send(payload.frame({ request, segments: ranges, library: delta.header }));
+    for (const path of delta.files) this.sentFiles.add(path);
+    for (const path of delta.absent) this.sentAbsent.add(path);
+    return response;
   }
 
-  async bake(source: string): Promise<BakeOutput> {
+  private send(request: Uint8Array): Response {
+    const response = this.reactor.call(request);
+    const view = new DataView(response.buffer, response.byteOffset, response.byteLength);
+    const headerEnd = HEADER_LENGTH_BYTES + view.getUint32(0, true);
     const parsed: unknown = JSON.parse(
-      new TextDecoder().decode(await this.run({ op: "bake", source })),
+      new TextDecoder().decode(response.subarray(HEADER_LENGTH_BYTES, headerEnd)),
     );
-    if (!isBakeOutput(parsed)) throw new Error("brick-compile bake output is malformed");
-    return parsed;
+    const error = decode(CompilerError, parsed);
+    if (error.ok) throw new Error(`brick-compile: ${error.value.message}`);
+    return { header: parsed, body: response.subarray(headerEnd) };
   }
 
-  async readStudio(io: Uint8Array): Promise<StudioRead> {
-    const output = new TextDecoder().decode(await this.runBytes(framed({ op: "readStudio" }, io)));
-    return decodedOrThrow(decode(StudioRead, JSON.parse(output)), "brick-compile readStudio");
+  private libraryDelta(library: LibraryFiles, payload: RequestPayload): LibraryDelta {
+    if (library.key !== this.libraryKey || this.reactor.generation !== this.libraryGeneration) {
+      this.libraryKey = library.key;
+      this.libraryGeneration = this.reactor.generation;
+      this.sentFiles.clear();
+      this.sentAbsent.clear();
+    }
+    const entries: Array<CompilerLibraryDelta["files"][number]> = [];
+    const files: string[] = [];
+    for (const [path, text] of library.files) {
+      if (this.sentFiles.has(path)) continue;
+      entries.push({ path, bytes: payload.add(utf8.encode(text)) });
+      files.push(path);
+    }
+    const absent = [...library.absent].filter((path) => !this.sentAbsent.has(path));
+    return { header: { key: library.key, files: entries, absent }, files, absent };
   }
 
-  async compile(request: CompileRequest): Promise<CompileOutput> {
-    const bytes = await this.run({ op: "compile", ...request });
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const headerLength = view.getUint32(0, true);
-    const blobStart = HEADER_LENGTH_BYTES + headerLength;
-    const header: unknown = JSON.parse(
-      new TextDecoder().decode(bytes.subarray(HEADER_LENGTH_BYTES, blobStart)),
-    );
-    if (!isCompileHeader(header)) throw new Error("brick-compile compile output is malformed");
-    const blob = bytes.subarray(blobStart);
+  readModel(source: string): ModelRead {
+    const { header, body } = this.call({ op: "readModel" }, { source: utf8.encode(source) });
+    const read = decodedOrThrow(decode(CompilerModelRead, header), "brick-compile readModel");
     return {
-      weldEpsilonLdu: header.weldEpsilonLdu,
-      inline: header.inline,
-      parts: header.parts.map((outcome): PartOutcome => {
+      sections: read.sections,
+      parts: read.parts,
+      inlineParts: read.inlineParts,
+      looseGeometry: read.looseGeometry,
+      instancePart: new Uint32Array(bytesOf(body, read.blobs, "instancePart")),
+      instanceColor: new Uint32Array(bytesOf(body, read.blobs, "instanceColor")),
+      instanceMatrix: new Float32Array(bytesOf(body, read.blobs, "instanceMatrix")),
+    };
+  }
+
+  readStudio(io: Uint8Array): StudioRead {
+    const { header } = this.call({ op: "readStudio" }, { io });
+    return decodedOrThrow(decode(StudioRead, header), "brick-compile readStudio");
+  }
+
+  compile(request: CompileRequest, library: LibraryFiles): CompileOutput {
+    const { model, ...rest } = request;
+    const { header, body } = this.call(
+      { op: "compile", ...rest },
+      { source: utf8.encode(model) },
+      library,
+    );
+    const output = decodedOrThrow(decode(CompilerCompile, header), "brick-compile compile");
+    return {
+      weldEpsilonLdu: output.weldEpsilonLdu,
+      inline: output.inline,
+      parts: output.parts.map((outcome): PartOutcome => {
         if (outcome.status !== "compiled") return outcome;
-        const { offset, length, ...rest } = outcome;
-        return { ...rest, glb: blob.slice(offset, offset + length) };
+        const [offset, length] = outcome.glb;
+        return { ...outcome, glb: body.slice(offset, offset + length) };
       }),
     };
+  }
+
+  bake(request: BakeRequest, library: LibraryFiles): BakeOutcome {
+    const { drawn, source, ...rest } = request;
+    const { header, body } = this.call(
+      { op: "bake", ...rest },
+      { source: utf8.encode(source), drawn },
+      library,
+    );
+    const outcome = decodedOrThrow(decode(CompilerBake, header), "brick-compile bake");
+    return outcome.status === "baked" ? bakedModel(outcome, body) : outcome;
   }
 }

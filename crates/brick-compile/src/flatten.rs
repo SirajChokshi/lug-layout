@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 use crate::affine::{Affine, Vec3};
@@ -109,14 +109,48 @@ impl<'a, L: Library> Flattener<'a, L> {
         if let Some(file) = self.parsed.get(path) {
             return Some(Rc::clone(file));
         }
-        let file = Rc::new(ldraw::parse(self.library.source(path)?));
+        let file = self.parse(path)?;
         out.files.push(VisitedFile {
             path: path.to_string(),
             header: file.header.clone(),
             license: license::classify(file.header.license.as_deref()),
         });
+        Some(file)
+    }
+
+    fn parse(&mut self, path: &str) -> Option<Rc<LdrawFile>> {
+        if let Some(file) = self.parsed.get(path) {
+            return Some(Rc::clone(file));
+        }
+        let file = Rc::new(ldraw::parse(self.library.source(path)?));
         self.parsed.insert(path.to_string(), Rc::clone(&file));
         Some(file)
+    }
+
+    pub fn closure(&mut self, reference: &str) -> Vec<String> {
+        let mut queue: VecDeque<String> = self.resolve(reference).into_iter().collect();
+        let mut seen: HashSet<String> = queue.iter().cloned().collect();
+        let mut files = Vec::new();
+        while let Some(path) = queue.pop_front() {
+            let Some(file) = self.parse(&path) else {
+                continue;
+            };
+            for line in &file.lines {
+                let Line::Subfile { reference, .. } = line else {
+                    continue;
+                };
+                if self.is_stud(reference) {
+                    continue;
+                }
+                if let Some(child) = self.resolve(reference) {
+                    if seen.insert(child.clone()) {
+                        queue.push_back(child);
+                    }
+                }
+            }
+            files.push(path);
+        }
+        files
     }
 
     pub fn flatten(&mut self, path: &str) -> Result<Flattened, FlattenError> {

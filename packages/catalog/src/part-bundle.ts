@@ -5,6 +5,7 @@ import {
   type BundleModelEntry,
   type CatalogPart,
   type BundleSource,
+  type CompilerVehicles,
   type ManifestPart,
   type ModelSection,
   type ModelVehicle,
@@ -158,6 +159,8 @@ export interface ImportContext {
   readonly studPrimitiveNames: ReadonlyArray<string>;
   readonly partIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
+  readonly translucentCodes: ReadonlyArray<number>;
+  readonly vehicles: CompilerVehicles | null;
 }
 
 export interface CompiledPartGlb {
