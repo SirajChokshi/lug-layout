@@ -5,6 +5,7 @@ export {
   ConnectorRecords,
   partConnectors,
   type ConnectorIndexPaths,
+  type PackageAttribution,
   type PartConnectors,
   type ReadJson,
 } from "./connector-records.ts";

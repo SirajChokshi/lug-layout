@@ -31,6 +31,11 @@ export interface ConnectorIndexPaths {
   readonly connectors: string;
 }
 
+export interface PackageAttribution {
+  readonly licenses: ReadonlyArray<string>;
+  readonly attribution: ReadonlyArray<string>;
+}
+
 export type ReadJson = (path: string) => Promise<unknown>;
 
 const VECTOR_FLOATS = 3;
@@ -119,6 +124,11 @@ export class ConnectorRecords {
   private async record(indexPath: string, file: string): Promise<ConnectorRecordFile> {
     const path = `${directoryOf(indexPath)}${file}`;
     return decodedOrThrow(decode(ConnectorRecordFile, await this.read(path)), path);
+  }
+
+  async connectivityAttribution(): Promise<PackageAttribution> {
+    const [{ licenses, attribution }] = await this.loadIndexes();
+    return { licenses, attribution };
   }
 
   async load(partId: string): Promise<PartConnectors | null> {

@@ -30,6 +30,7 @@ export {
   type CreditCounts,
   type CreditedFile,
   type CreditsView,
+  type DataPackageCredit,
   type DataSourceCredit,
   type GeneratedModelCredit,
   type LicenseGroup,
