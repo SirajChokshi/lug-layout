@@ -183,6 +183,7 @@ export interface ISceneBackend {
   ): void;
   resize(width: number, height: number): void;
   renderFrame(out: FrameStats): void;
+  needsFrame(): boolean;
   waitForGpu(): Promise<void>;
   bufferMemory(): BufferMemory;
   rebaseLog(): ReadonlyArray<RebaseEvent>;

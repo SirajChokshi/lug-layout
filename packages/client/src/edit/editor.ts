@@ -1319,8 +1319,15 @@ export class Editor implements IEditor {
       const startMs = performance.now();
       this.camera.frame(startMs);
       this.watchView();
-      this.backend.renderFrame(this.frameStats);
       const pending = this.pending;
+      if (
+        pending !== null ||
+        this.measureFrame >= 0 ||
+        this.firstWorldFrame ||
+        this.backend.needsFrame()
+      ) {
+        this.backend.renderFrame(this.frameStats);
+      }
       if (pending) {
         this.pending = null;
         const submittedMs = performance.now();

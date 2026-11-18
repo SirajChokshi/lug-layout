@@ -116,6 +116,9 @@ class HeadlessBackend implements ISceneBackend {
   setView(): void {}
   resize(): void {}
   renderFrame(): void {}
+  needsFrame(): boolean {
+    return true;
+  }
   async waitForGpu(): Promise<void> {}
   rebaseLog(): ReadonlyArray<RebaseEvent> {
     return [];
