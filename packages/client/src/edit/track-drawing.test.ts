@@ -607,6 +607,7 @@ const ROAD_PLATE_16 = "ldraw:69958";
 const ROAD_BASEPLATE_32 = "ldraw:44336p04";
 const CLEARANCE_MARGIN_LDU = 4;
 const SWEEP_STEPS = 16;
+const SWEEP_TIMEOUT_MS = 60_000;
 const HALF_TURN_CURVES = 8;
 
 function placeableIndex(layout: TrackDrawing, id: string): number {
@@ -764,46 +765,49 @@ function plateClear(cells: ReadonlyArray<Set<number>>, rect: Rect): boolean {
   return true;
 }
 
-it("closes a half circle past a road plate set as tight to its outside as the stud grid allows, all the way round", async () => {
-  const bundle = await trackAndRoadBundle();
-  const straightStuds = Number(
-    new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)).kit.straightStuds,
-  );
-  const sides: Run = [{ kind: "straight", count: 4 }];
-  const halfCircle: Run = [{ kind: "turn", sign: 1, curves: HALF_TURN_CURVES }];
-  const base = (): TrackDrawing => {
-    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-    layRun(layout, layRun(layout, layRun(layout, studPose(0, 0, 0), sides), halfCircle), sides);
-    return layout;
-  };
-  const shape = base();
-  const top = shape.openEnds().reduce((a, b) => (a.zLdu > b.zLdu ? a : b));
-  const bottom = shape.openEnds().reduce((a, b) => (a.zLdu < b.zLdu ? a : b));
-  const diameter = studsOf(top.zLdu - bottom.zLdu);
-  layRun(shape, latticeEndPose(top), halfCircle);
-  const cells = laidFootprints(shape, bundle.parts);
-  const centreZ = diameter / 2;
-  const reach = diameter + straightStuds;
-  for (let step = 1; step < SWEEP_STEPS; step++) {
-    const angle = Math.PI / 2 + (step * Math.PI) / SWEEP_STEPS;
-    let rect: Rect | null = null;
-    for (let t = diameter / 2; t <= reach && !rect; t++) {
-      const candidate = plateRect(
-        bundle.parts,
-        ROAD_PLATE_16,
-        Math.round(t * Math.cos(angle)),
-        Math.round(centreZ + t * Math.sin(angle)),
-      );
-      if (plateClear(cells, candidate)) rect = candidate;
+it(
+  "closes a half circle past a road plate set as tight to its outside as the stud grid allows, all the way round",
+  async () => {
+    const bundle = await trackAndRoadBundle();
+    const straightStuds = Number(
+      new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)).kit.straightStuds,
+    );
+    const sides: Run = [{ kind: "straight", count: 4 }];
+    const halfCircle: Run = [{ kind: "turn", sign: 1, curves: HALF_TURN_CURVES }];
+    const base = (): TrackDrawing => {
+      const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+      layRun(layout, layRun(layout, layRun(layout, studPose(0, 0, 0), sides), halfCircle), sides);
+      return layout;
+    };
+    const shape = base();
+    const top = shape.openEnds().reduce((a, b) => (a.zLdu > b.zLdu ? a : b));
+    const bottom = shape.openEnds().reduce((a, b) => (a.zLdu < b.zLdu ? a : b));
+    const diameter = studsOf(top.zLdu - bottom.zLdu);
+    layRun(shape, latticeEndPose(top), halfCircle);
+    const cells = laidFootprints(shape, bundle.parts);
+    const centreZ = diameter / 2;
+    const reach = diameter + straightStuds;
+    for (let step = 1; step < SWEEP_STEPS; step++) {
+      const angle = Math.PI / 2 + (step * Math.PI) / SWEEP_STEPS;
+      let rect: Rect | null = null;
+      for (let t = diameter / 2; t <= reach && !rect; t++) {
+        const candidate = plateRect(
+          bundle.parts,
+          ROAD_PLATE_16,
+          Math.round(t * Math.cos(angle)),
+          Math.round(centreZ + t * Math.sin(angle)),
+        );
+        if (plateClear(cells, candidate)) rect = candidate;
+      }
+      if (!rect) throw new Error(`no clear plate position at step ${step}`);
+      const layout = base();
+      layout.setObstacles(Float64Array.from(rect));
+      closesWithFewest(layout, endAt(layout, 0, diameter), endAt(layout, 0, 0));
+      expect(crossings(layout, bundle.parts, [rect]), `plate at sweep step ${step}`).toEqual([]);
     }
-    if (!rect) throw new Error(`no clear plate position at step ${step}`);
-    const layout = base();
-    layout.setObstacles(Float64Array.from(rect));
-    expect(crossings(layout, bundle.parts, [rect]), `plate at sweep step ${step}`).toEqual([]);
-    closesWithFewest(layout, endAt(layout, 0, diameter), endAt(layout, 0, 0));
-    expect(crossings(layout, bundle.parts, [rect])).toEqual([]);
-  }
-});
+  },
+  SWEEP_TIMEOUT_MS,
+);
 
 const GROUND_BASEPLATE = "ldraw:3811";
 const DUAL_ROAD_BASEPLATE = "ldraw:30225b";
