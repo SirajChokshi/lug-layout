@@ -9,7 +9,7 @@ import {
   type ConnectorTable,
 } from "./connector-table.ts";
 import { SIXTEENTHS_PER_LDU, ZETA16_COEFFICIENT_COUNT } from "@brr/math";
-import type { TrackEnd } from "../track/end-gaps.ts";
+import { WORLD_TRACK_FRAME, type TrackEnd } from "../track/end-gaps.ts";
 import type { SnapMating } from "./mating.ts";
 import {
   ALL_COORDINATES,
@@ -110,6 +110,9 @@ function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
   for (let e = 0; e < ends.length; e++) {
     const end = ends[e];
     if (!end) continue;
+    if (end.frame.id !== WORLD_TRACK_FRAME.id) {
+      throw new RangeError(`track end ${e} is in run frame ${end.frame.id}, which never joins`);
+    }
     heading[e] = end.pose.heading;
     yPlates[e] = end.yPlates;
     for (let k = 0; k < ZETA16_COEFFICIENT_COUNT; k++) {
