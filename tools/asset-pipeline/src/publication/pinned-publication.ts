@@ -66,7 +66,7 @@ async function runAll<T>(items: ReadonlyArray<T>, work: (item: T) => Promise<voi
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 }
 
-export async function publicationFiles<TPin>(
+async function publicationFiles<TPin>(
   publication: Publication<TPin>,
   root: string,
   pin: TPin,
@@ -80,9 +80,12 @@ export async function publicationFiles<TPin>(
     );
   }
   const files: string[] = [];
+  const seen = new Set<string>([publication.indexFile]);
   const descend = async (listing: IndexListing): Promise<void> => {
     files.push(...listing.leaves);
     for (const { file } of listing.indexes) {
+      if (seen.has(file)) throw new Error(`${file} is listed by more than one index`);
+      seen.add(file);
       files.push(file);
       await descend(publication.list(file, await readFile(join(root, file)), pin));
     }
@@ -129,7 +132,7 @@ export async function uploadPublication<TPin>(
   return { uploaded, present };
 }
 
-export function isPublicationPublished<TPin>(
+function isPublicationPublished<TPin>(
   publication: Publication<TPin>,
   store: ObjectStore,
   pin: TPin,
@@ -151,9 +154,15 @@ export async function verifyServedPublication<TPin>(
   }
   const problems: string[] = [];
   const leaves: string[] = [];
+  const seen = new Set<string>([publication.indexFile]);
   const descend = async (listing: IndexListing): Promise<void> => {
     leaves.push(...listing.leaves);
     for (const { file, leaves: expected } of listing.indexes) {
+      if (seen.has(file)) {
+        problems.push(`${file} is listed by more than one index`);
+        continue;
+      }
+      seen.add(file);
       const served = await read(objectKey(publication, file));
       if (served === undefined) {
         problems.push(`${objectKey(publication, file)} is not served`);
