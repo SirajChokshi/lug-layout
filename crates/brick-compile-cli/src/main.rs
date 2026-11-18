@@ -474,6 +474,19 @@ fn run(args: &Args) -> Result<(), String> {
 
     let signatures = vehicle_signatures(&palette)?;
     let rails = rail_head_bands(&geometry)?;
+    let mut compiler = compiler;
+    if let Some(entry) = compiler.as_object_mut() {
+        entry.insert(
+            "vehicles".into(),
+            json!({
+                "parts": palette["vehicleParts"],
+                "railHeads": rails
+                    .iter()
+                    .map(|rail| json!({ "railPart": rail.rail_part, "inner": rail.inner, "outer": rail.outer }))
+                    .collect::<Vec<_>>(),
+            }),
+        );
+    }
     let ldconfig_colours = library
         .source(LDCONFIG)
         .map(parse_ldconfig)

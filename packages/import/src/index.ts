@@ -1,11 +1,15 @@
 export {
   BrickCompiler,
-  type BakeOutput,
+  type BakedModel,
+  type BakeOutcome,
+  type BakeRequest,
   type CompileLod,
   type CompileOutput,
   type CompileRequest,
   type InlinePart,
   type LdrawHeader,
+  type LibraryFiles,
+  type ModelRead,
   type PartOutcome,
 } from "./brick-compiler.ts";
 export {
@@ -32,7 +36,6 @@ export {
   type MirrorSource,
   type MirrorStats,
 } from "./ldraw-mirror.ts";
-export { runWasiCommand, type WasiResult } from "./wasi-command.ts";
 export {
   bundlePartId,
   ModelImportEngine,
@@ -42,6 +45,7 @@ export {
   type ImportJob,
   type ImportReport,
   type ImportTimings,
+  type ModelBake,
   type PartResolution,
 } from "./model-import.ts";
 export {
