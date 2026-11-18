@@ -4,7 +4,14 @@ import {
   type IAssetFetcher,
   type PartAsset,
 } from "@brr/catalog";
-import { layMoves, runMoves, solveClosure, type TrackSegment } from "@brr/domain";
+import {
+  EditHistory,
+  World,
+  layMoves,
+  runMoves,
+  solveClosure,
+  type TrackSegment,
+} from "@brr/domain";
 import { lduFromMm, pose16, STUD_LDU, zeta16, type Pose16 } from "@brr/math";
 import type { TrackShape } from "@brr/schema/bundle";
 import {
@@ -21,7 +28,15 @@ import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
-import { TrackDrawing, type TrackEndView, type TrackFootprint } from "./track-drawing.ts";
+import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
+import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
+import {
+  TrackDrawing,
+  type ClosureState,
+  type TrackEndView,
+  type TrackFootprint,
+} from "./track-drawing.ts";
+import { trackObstacleRects } from "./track-obstacles.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const MM_PER_LDU = 1 / lduFromMm(1);
@@ -788,4 +803,137 @@ it("closes a half circle past a road plate set as tight to its outside as the st
     closesWithFewest(layout, endAt(layout, 0, diameter), endAt(layout, 0, 0));
     expect(crossings(layout, bundle.parts, [rect])).toEqual([]);
   }
+});
+
+const GROUND_BASEPLATE = "ldraw:3811";
+const DUAL_ROAD_BASEPLATE = "ldraw:30225b";
+const ROAD_CONTAINER_MODEL = "road-baseplates";
+const NORTH = 12;
+const SOUTH = 4;
+
+interface GroundItem {
+  readonly placeable: Placeable;
+  readonly x: number;
+  readonly z: number;
+}
+
+function placeGround(items: ReadonlyArray<GroundItem>): ReadonlyArray<PlacedModel> {
+  const history = new EditHistory(new World());
+  const placed = new PlacedChunks(new PlanOnlyBackend());
+  const refs = items.map((item) => item.placeable);
+  const refOf = (refId: number): Placeable => {
+    const placeable = refs[refId];
+    if (!placeable) throw new Error(`ground ref ${refId} is out of range`);
+    return placeable;
+  };
+  items.forEach((item, refId) => {
+    const edit = history.place({
+      refId,
+      colorId: item.placeable.worldColor,
+      x: item.x,
+      z: item.z,
+      yPlates: 0,
+      rot: 0,
+    });
+    placed.apply(edit, refOf);
+  });
+  return placed.models();
+}
+
+async function loosePart(id: string): Promise<Placeable> {
+  const bundle = await container.get(PART_BUNDLE_LOADER).load("standard", (part) => part.id === id);
+  const index = bundle.parts.findIndex((part) => part.id === id);
+  const part = bundle.parts[index];
+  const color = part?.producedColor;
+  if (!part || color === undefined) throw new Error(`${id} has no produced colour in the bundle`);
+  return partPlaceable(part, index, color, String(color), bundle.parts, new ColorTable(bundle));
+}
+
+async function bundledModel(name: string): Promise<Placeable> {
+  const { bundle, model, entry } = await container
+    .get(PART_BUNDLE_LOADER)
+    .loadModel("standard", name);
+  return modelPlaceable(
+    name,
+    name,
+    entry.role,
+    model,
+    { name, source: entry.source, sections: model.sections },
+    bundle.parts,
+    new ColorTable(bundle),
+    null,
+  );
+}
+
+async function trackOver(ground: ReadonlyArray<PlacedModel>): Promise<TrackDrawing> {
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  layout.setObstacles(trackObstacleRects(ground, layout.verticalRange()));
+  return layout;
+}
+
+function closureVerdict(
+  layout: TrackDrawing,
+  from: readonly [number, number, number],
+  to: readonly [number, number, number],
+): ClosureState {
+  const straights: Run = [{ kind: "straight", count: 2 }];
+  layRun(layout, studPose(...from), straights);
+  layRun(layout, studPose(...to), straights);
+  const { view } = closeFrom(layout, endAt(layout, from[0], from[1]), endAt(layout, to[0], to[1]));
+  return view?.closure ?? null;
+}
+
+it("seats a closure on the studs of a road plate's sidewalk and the baseplate beside it, and keeps it off the roadway", async () => {
+  const baseplate = await loosePart(GROUND_BASEPLATE);
+  const road = await loosePart(ROAD_BASEPLATE_32);
+  const side = baseplate.box.max[0] - baseplate.box.min[0];
+  const ground = placeGround([
+    { placeable: baseplate, x: 0, z: 0 },
+    { placeable: road, x: side, z: 0 },
+  ]);
+  const seam = side / 2 / STUD_LDU;
+  const roadCentre = side / STUD_LDU;
+  const reach = side / STUD_LDU;
+
+  const straddling = await trackOver(ground);
+  const seamFrom = [seam, -reach, NORTH] as const;
+  const seamTo = [seam, reach, SOUTH] as const;
+  expect(closureVerdict(straddling, seamFrom, seamTo)).toBe("exact");
+  expect(crossings(straddling, (await trackAndRoadBundle()).parts)).toEqual([]);
+
+  const roadway = await trackOver(ground);
+  expect(closureVerdict(roadway, [roadCentre, -reach, NORTH], [roadCentre, reach, SOUTH])).toBe(
+    "blocked",
+  );
+});
+
+it("judges a road plate inside a model by the same geometry as one placed alone", async () => {
+  const alone = await loosePart(DUAL_ROAD_BASEPLATE);
+  const roadContainer = await bundledModel(ROAD_CONTAINER_MODEL);
+  const plateSide = alone.box.max[0] - alone.box.min[0];
+  const verdicts = async (item: Placeable) => {
+    const ground = placeGround([{ placeable: item, x: 0, z: 0 }]);
+    const [placed] = ground;
+    if (!placed) throw new Error("nothing was placed");
+    const centreX = studsOf((placed.box.minX + placed.box.maxX) / 2);
+    const centreZ = studsOf(placed.box.minZ + plateSide / 2);
+    const halfSide = studsOf(plateSide / 2);
+    const across = closureVerdict(
+      await trackOver(ground),
+      [centreX - 2 * halfSide, centreZ, HALF_TURN_CURVES],
+      [centreX + 2 * halfSide, centreZ, 0],
+    );
+    const besideX = studsOf(placed.box.minX) - halfSide / 4;
+    const beside = closureVerdict(
+      await trackOver(ground),
+      [besideX, centreZ - 2 * halfSide, NORTH],
+      [besideX, centreZ + 2 * halfSide, SOUTH],
+    );
+    return { across, beside };
+  };
+
+  const loose = await verdicts(alone);
+  expect(loose).toEqual({ across: "blocked", beside: "exact" });
+  expect(await verdicts(roadContainer)).toEqual(loose);
 });

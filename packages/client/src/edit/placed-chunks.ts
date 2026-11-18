@@ -36,6 +36,9 @@ export interface PlacedModel {
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
   readonly box: WorldBox;
+  readonly studCellX: Int32Array;
+  readonly studCellZ: Int32Array;
+  readonly studBaseLdu: Int32Array;
   rayHit(ray: Float64Array): number;
   worldPartBoxes(): Float64Array;
 }
