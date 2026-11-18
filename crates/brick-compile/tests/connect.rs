@@ -1526,6 +1526,37 @@ fn the_wand_handle_is_free_at_both_ends_and_the_sextant_handle_only_at_its_tip()
         handle_ends("parts/36752a.dat"),
         vec![(vec![6.0, 20.0], [false, false])]
     );
+    let wand = ShadowSnaps::new(&library, &shadow).snaps("parts/36752a.dat");
+    let grip = wand
+        .connectors
+        .iter()
+        .find_map(|c| match &c.shape {
+            Shape::Cylinder {
+                slide: true,
+                sections,
+                ..
+            } => Some((cylinder_ends(c)[0][0], sections[0])),
+            _ => None,
+        })
+        .expect("the wand handle");
+    let (start, first) = grip;
+    let section_end = [0, 1, 2].map(|k| start.point[k] - start.outward[k] * first.length);
+    let records = |reference: &str| is_circular_primitive(reference);
+    let flat = Flattener::new(&library, Lod::Standard, &[])
+        .recording_spans(&records)
+        .flatten("parts/36752a.dat")
+        .expect("36752a flattens");
+    let band = outward_round_bands(&flat.spans, &flat.triangles)
+        .into_iter()
+        .find(|b| (b.radius - first.radius).abs() < 1e-3)
+        .expect("the grip's measured band");
+    let mut measured = [band.from, band.to].map(|t| {
+        Affine::LDRAW_TO_Y_UP.apply([0, 1, 2].map(|k| band.point[k] + band.axis[k] * t))[1]
+    });
+    measured.sort_by(f64::total_cmp);
+    let mut read = [start.point[1], section_end[1]];
+    read.sort_by(f64::total_cmp);
+    assert_eq!(read, measured);
     assert_eq!(
         handle_ends("parts/30154.dat"),
         vec![(vec![8.0], [true, true]), (vec![12.0], [true, false])]
