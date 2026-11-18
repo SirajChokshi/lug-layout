@@ -16,8 +16,8 @@ use super::solid::{
     Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
 };
 use super::{
-    finished, joined_pieces, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape,
-    Source, Status,
+    finished, joined_pieces, Caps, Connector, Gender, Issue, MatingFace, Scaling, Section,
+    SectionShape, Shape, Source, Status,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -515,6 +515,13 @@ struct AxleSizes {
     male: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Openness {
+    Open,
+    NotOpen,
+    Unmeasurable,
+}
+
 pub struct InferredFeatures<'a, L: Library + ?Sized> {
     library: &'a L,
     vocabulary: SectionVocabulary,
@@ -653,6 +660,51 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         prepared
     }
 
+    fn face_openness(&self, solid: &Solid, face: &MatingFace) -> Openness {
+        let origin = [face.origin[0], -face.origin[1], -face.origin[2]].map(|c| c + 0.0);
+        let axis = [face.axis[0], -face.axis[1], -face.axis[2]];
+        let (Some(k), Some(section)) = (aligned_axis(axis), face.sections.first()) else {
+            return Openness::Unmeasurable;
+        };
+        let probe = Probe {
+            axis: k,
+            inward: -axis[k].signum(),
+            entrance: origin,
+            radius: section.size,
+        };
+        let floor = solid.floor(&probe, probe.radius - IDENTIFY_LDU);
+        if !floor.depth.is_finite() {
+            Openness::Unmeasurable
+        } else if floor.depth >= self.probe.reach - IDENTIFY_LDU && floor.faces_probe != Some(false)
+        {
+            Openness::Open
+        } else {
+            Openness::NotOpen
+        }
+    }
+
+    fn candidate_openness(&self, solid: &Solid, candidate: &Connector) -> Openness {
+        let Ok(faces) = super::mating_faces(candidate) else {
+            return Openness::Unmeasurable;
+        };
+        faces
+            .iter()
+            .map(|face| self.face_openness(solid, face))
+            .fold(Openness::Open, |worst, next| match (worst, next) {
+                (Openness::Unmeasurable, _) | (_, Openness::Unmeasurable) => Openness::Unmeasurable,
+                (Openness::NotOpen, _) | (_, Openness::NotOpen) => Openness::NotOpen,
+                (Openness::Open, Openness::Open) => Openness::Open,
+            })
+    }
+
+    pub fn openness(&mut self, path: &str, candidate: &Connector) -> Openness {
+        let prepared = self.prepare(path);
+        let Some(solid) = &prepared.solid else {
+            return Openness::Unmeasurable;
+        };
+        self.candidate_openness(solid, candidate)
+    }
+
     pub fn open(&mut self, path: &str, candidates: Vec<Connector>) -> Inference {
         let prepared = self.prepare(path);
         let mut inference = Inference::default();
@@ -661,30 +713,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         };
         let open: Vec<Connector> = candidates
             .into_iter()
-            .filter(|candidate| {
-                let Ok(faces) = super::mating_faces(candidate) else {
-                    return false;
-                };
-                faces.iter().all(|face| {
-                    let origin =
-                        [face.origin[0], -face.origin[1], -face.origin[2]].map(|c| c + 0.0);
-                    let axis = [face.axis[0], -face.axis[1], -face.axis[2]];
-                    let (Some(k), Some(section)) = (aligned_axis(axis), face.sections.first())
-                    else {
-                        return false;
-                    };
-                    let probe = Probe {
-                        axis: k,
-                        inward: -axis[k].signum(),
-                        entrance: origin,
-                        radius: section.size,
-                    };
-                    let floor = solid.floor(&probe, probe.radius - IDENTIFY_LDU);
-                    floor.depth.is_finite()
-                        && floor.depth >= self.probe.reach - IDENTIFY_LDU
-                        && floor.faces_probe != Some(false)
-                })
-            })
+            .filter(|candidate| self.candidate_openness(solid, candidate) == Openness::Open)
             .map(|candidate| Connector {
                 source: Source::Inferred,
                 status: Status::Unverified,

@@ -7,21 +7,25 @@ use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands, EndFace};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
-    mating_faces, parse_metas, Caps, Connector, Gender, Meta, SectionShape, ShadowPatches,
-    ShadowSnaps, Shape, Source, Status,
+    mating_faces, parse_metas, Caps, Connector, Gender, IncludeRefusal, InferredFeatures, Meta,
+    Openness, SectionShape, ShadowPatches, ShadowSnaps, Shape, Source, Status,
 };
 use brick_compile::ends::{cylinder_ends, read_end, Reading};
 use brick_compile::flatten::{resolve_reference, Flattener, Library, Lod, Triangle};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::sixteenths;
 use brick_compile::technic::is_circular_primitive;
-use brick_compile_cli::{patch_path, verified_patch_paths, LazyLibrary};
+use brick_compile_cli::{patch_path, read_section_vocabulary, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
 const WIDEST_BAND_END_FACES: &str = "widestOutwardRoundBandEndFaces";
 const MEASURED_SECTIONS: &str = "measuredSections";
 const UNGROUPED_TWIN: &str = "ungroupedTwin";
 const MEASURED_CAPS: &str = "measuredCaps";
+const MEASURED_GENDER: &str = "measuredGender";
+const REFUSALS: &str = "refusals";
+const MALE_GENDER_KEY: &str = "[gender=M]";
+const FEMALE_GENDER_KEY: &str = "[gender=F]";
 const CAPS_KEY: &str = "[caps=";
 const GROUP_KEY: &str = " [group=";
 const SNAP_PREFIX: &str = "0 !LDCAD SNAP_";
@@ -37,6 +41,7 @@ enum Feature {
     CouplingFaces { id: String, group: String },
     MeasuredSections { snap: usize, twin: bool },
     MeasuredCaps { snap: usize },
+    MeasuredGender { snap: usize },
 }
 
 struct Entry {
@@ -60,6 +65,18 @@ struct CapsPatch {
     caps: Caps,
     ends: [Reading; 2],
     text: String,
+}
+
+struct GenderPatch {
+    title: String,
+    replaced: String,
+    positions: usize,
+    text: String,
+}
+
+enum GenderMeasurement {
+    Contradicted(GenderPatch),
+    MatchesMale(String),
 }
 
 struct Measured {
@@ -128,12 +145,46 @@ fn entries(manifest: &Value) -> Result<Vec<Entry>, String> {
                         .and_then(|i| usize::try_from(i).ok())
                         .ok_or(format!("a {MEASURED_CAPS} entry needs a snap index"))?,
                 },
+                MEASURED_GENDER => Feature::MeasuredGender {
+                    snap: entry["snap"]
+                        .as_u64()
+                        .and_then(|i| usize::try_from(i).ok())
+                        .ok_or(format!("a {MEASURED_GENDER} entry needs a snap index"))?,
+                },
                 other => return Err(format!("unknown feature {other}")),
             };
             Ok(Entry {
                 part: text(entry, "part")?,
                 feature,
                 status,
+                added: text(entry, "added")?,
+            })
+        })
+        .collect()
+}
+
+fn refusals(manifest: &Value) -> Result<Vec<Entry>, String> {
+    manifest[REFUSALS]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(|entry| {
+            let feature = text(entry, "feature")?;
+            if feature != MEASURED_GENDER {
+                return Err(format!(
+                    "a refusal records a {MEASURED_GENDER} measurement, not {feature}"
+                ));
+            }
+            Ok(Entry {
+                part: text(entry, "part")?,
+                feature: Feature::MeasuredGender {
+                    snap: entry["snap"]
+                        .as_u64()
+                        .and_then(|i| usize::try_from(i).ok())
+                        .ok_or("a refusal needs a snap index")?,
+                },
+                status: UNVERIFIED.to_string(),
                 added: text(entry, "added")?,
             })
         })
@@ -696,6 +747,146 @@ fn caps_round_trip(
     Ok(())
 }
 
+fn measure_gender(
+    library: &LazyLibrary,
+    shadow: &LazyLibrary,
+    features: &mut InferredFeatures<LazyLibrary>,
+    entry: &Entry,
+    snap: usize,
+    upstream: &[String],
+    source: &Value,
+) -> Result<GenderMeasurement, String> {
+    let path = patch_path(&entry.part);
+    let target = upstream
+        .get(snap)
+        .ok_or(format!("{path}: no upstream snap {snap}"))?;
+    let declared = extracted(library, &path, std::slice::from_ref(target));
+    let all_male_cylinders = !declared.is_empty()
+        && declared.iter().all(|c| {
+            matches!(
+                c.shape,
+                Shape::Cylinder {
+                    gender: Gender::Male,
+                    ..
+                }
+            )
+        });
+    if !all_male_cylinders || target.matches(MALE_GENDER_KEY).count() != 1 {
+        return Err(format!("{path}: snap {snap} isn't one male SNAP_CYL"));
+    }
+    let corrected = target.replacen(MALE_GENDER_KEY, FEMALE_GENDER_KEY, 1);
+    let candidates = extracted(library, &path, std::slice::from_ref(&corrected));
+    let mut positions = 0;
+    for candidate in &candidates {
+        positions += mating_faces(candidate)
+            .map_err(|e| format!("{path}: {e:?}"))?
+            .len();
+    }
+    let readings: Vec<Openness> = candidates
+        .iter()
+        .map(|candidate| features.openness(&path, candidate))
+        .collect();
+    if candidates.is_empty() || readings.contains(&Openness::Unmeasurable) {
+        return Err(format!(
+            "{path}: snap {snap}'s female counterpart can't be probed in the part's geometry"
+        ));
+    }
+    if readings.contains(&Openness::NotOpen) {
+        return Ok(GenderMeasurement::MatchesMale(format!(
+            "{path}: snap {snap}'s female counterpart isn't an open receptor, so its geometry doesn't contradict the male"
+        )));
+    }
+    if features.open(&path, candidates.clone()).connectors.len() != candidates.len() {
+        return Err(format!(
+            "{path}: snap {snap}'s open receptors don't identify on the 1/16-LDU grid"
+        ));
+    }
+    let title = title(library, &path)?;
+    let mut lines = header(&title, &entry.added, source);
+    lines.push("0 !LDCAD SNAP_CLEAR".to_string());
+    lines.extend(
+        ShadowSnaps::new(library, shadow)
+            .inheritance_includes(&path)
+            .map_err(|refusal| match refusal {
+                IncludeRefusal::NotInLibrary => format!("{path}: not in the library"),
+                IncludeRefusal::PiecesWouldBeLost => format!(
+                    "{path}: re-including its inherited snaps after SNAP_CLEAR would drop their piece numbers"
+                ),
+            })?,
+    );
+    for (index, line) in upstream.iter().enumerate() {
+        lines.push(if index == snap {
+            corrected.clone()
+        } else {
+            line.clone()
+        });
+    }
+    Ok(GenderMeasurement::Contradicted(GenderPatch {
+        title,
+        replaced: target.clone(),
+        positions,
+        text: lines.join("\n") + "\n",
+    }))
+}
+
+fn gender_round_trip(
+    library: &LazyLibrary,
+    shadow: &LazyLibrary,
+    upstream: &[String],
+    patches: &MemoryLibrary,
+    verified: &HashSet<String>,
+    entry: &Entry,
+    snap: usize,
+) -> Result<(), String> {
+    let path = patch_path(&entry.part);
+    let status = if entry.status == VERIFIED {
+        Status::Verified
+    } else {
+        Status::Unverified
+    };
+    let target = extracted(library, &path, &upstream[snap..=snap]);
+    let own = extracted(library, &path, upstream);
+    let whole = ShadowSnaps::new(library, shadow).snaps(&path).connectors;
+    let inherited = whole
+        .len()
+        .checked_sub(own.len())
+        .filter(|&count| whole[count..] == own[..])
+        .ok_or(format!(
+            "{path}: the pinned shadow doesn't read as inherited snaps followed by the recorded upstream lines"
+        ))?;
+    let expected: Vec<Connector> = whole[..inherited]
+        .iter()
+        .cloned()
+        .chain(own.into_iter().map(|mut c| {
+            if target.contains(&c) {
+                if let Shape::Cylinder { gender, .. } = &mut c.shape {
+                    *gender = Gender::Female;
+                }
+            }
+            Connector {
+                source: Source::Patch,
+                status,
+                ..c
+            }
+        }))
+        .collect();
+    let upstream_files = ShadowFiles::Directory(shadow);
+    let generated = ShadowFiles::Generated(patches);
+    let patched = ShadowSnaps::new(library, &upstream_files)
+        .patched(ShadowPatches {
+            files: &generated,
+            verified,
+        })
+        .snaps(&path)
+        .connectors;
+    if patched != expected {
+        return Err(format!(
+            "{path}: the patch doesn't read back as its inherited snaps and upstream with snap {snap} female"
+        ));
+    }
+    Ok(())
+}
+
 fn y_up(v: Vec3) -> Vec3 {
     [v[0], -v[1], -v[2]].map(|c| c + 0.0)
 }
@@ -918,6 +1109,21 @@ fn run() -> Result<bool, String> {
     let mut faces_checks = Vec::new();
     let mut sections_checks = Vec::new();
     let mut caps_checks = Vec::new();
+    let mut gender_checks = Vec::new();
+    let mut features = match (values.get("--vocabulary"), values.get("--inferred")) {
+        (Some(vocabulary), Some(inferred)) => {
+            let probe = read_json(Path::new(inferred))?["cavityProbe"]
+                .as_str()
+                .map(str::to_string)
+                .ok_or(format!("{inferred}: cavityProbe must be a part path"))?;
+            Some(InferredFeatures::new(
+                &library,
+                read_section_vocabulary(Path::new(vocabulary))?,
+                &probe,
+            )?)
+        }
+        _ => None,
+    };
     for (entry, row) in list.iter().zip(&rows) {
         match &entry.feature {
             Feature::CouplingFaces { id, group } => {
@@ -958,7 +1164,77 @@ fn run() -> Result<bool, String> {
                 ));
                 caps_checks.push((entry, upstream, *snap, patch));
             }
+            Feature::MeasuredGender { snap } => {
+                let features = features.as_mut().ok_or(format!(
+                    "a {MEASURED_GENDER} entry needs --vocabulary and --inferred"
+                ))?;
+                let shadow_files = shadow
+                    .as_ref()
+                    .ok_or(format!("a {MEASURED_GENDER} entry needs --shadow"))?;
+                let upstream = upstream_snaps(&entry.part, row, shadow.as_ref())?;
+                let patch = match measure_gender(
+                    &library,
+                    shadow_files,
+                    features,
+                    entry,
+                    *snap,
+                    &upstream,
+                    &source,
+                )? {
+                    GenderMeasurement::Contradicted(patch) => patch,
+                    GenderMeasurement::MatchesMale(reason) => return Err(reason),
+                };
+                texts.insert(patch_path(&entry.part), patch.text.clone());
+                measured_rows.push((
+                    json!({
+                        "title": patch.title,
+                        "replacedSnap": patch.replaced,
+                        "gender": "F",
+                        "openReceptors": patch.positions,
+                    }),
+                    Some(json!({ "source": shadow_source, "snaps": upstream })),
+                ));
+                gender_checks.push((entry, upstream, *snap));
+            }
         }
+    }
+    let refusal_rows: Vec<Value> = manifest[REFUSALS].as_array().cloned().unwrap_or_default();
+    let mut refused_rows = Vec::new();
+    for (entry, row) in refusals(&manifest)?.iter().zip(&refusal_rows) {
+        let Feature::MeasuredGender { snap } = entry.feature else {
+            return Err(format!(
+                "{}: a refusal must be {MEASURED_GENDER}",
+                entry.part
+            ));
+        };
+        let features = features.as_mut().ok_or(format!(
+            "a {MEASURED_GENDER} refusal needs --vocabulary and --inferred"
+        ))?;
+        let shadow_files = shadow
+            .as_ref()
+            .ok_or(format!("a {MEASURED_GENDER} refusal needs --shadow"))?;
+        let upstream = upstream_snaps(&entry.part, row, shadow.as_ref())?;
+        let reason = match measure_gender(
+            &library,
+            shadow_files,
+            features,
+            entry,
+            snap,
+            &upstream,
+            &source,
+        )? {
+            GenderMeasurement::MatchesMale(reason) => reason,
+            GenderMeasurement::Contradicted(_) => {
+                return Err(format!(
+                    "{}: snap {snap} now measures as a male its geometry contradicts; patch it instead of refusing it",
+                    entry.part
+                ))
+            }
+        };
+        refused_rows.push((
+            json!({ "reason": reason }),
+            json!({ "source": shadow_source, "snaps": upstream }),
+        ));
     }
     let patch_library = MemoryLibrary(texts.clone());
     for (entry, group, measured) in &faces_checks {
@@ -985,6 +1261,19 @@ fn run() -> Result<bool, String> {
             patch,
         )?;
     }
+    if let Some(shadow_files) = shadow.as_ref() {
+        for (entry, upstream, snap) in &gender_checks {
+            gender_round_trip(
+                &library,
+                shadow_files,
+                upstream,
+                &patch_library,
+                &verified,
+                entry,
+                *snap,
+            )?;
+        }
+    }
     if let Some(report) = values.get("--report") {
         let shadow = shadow.as_ref().ok_or("--report needs --shadow")?;
         let rows = coverage(
@@ -1006,6 +1295,12 @@ fn run() -> Result<bool, String> {
             if let Some(upstream) = upstream {
                 row["upstream"] = upstream;
             }
+        }
+    }
+    if let Some(rows) = updated[REFUSALS].as_array_mut() {
+        for (row, (measured, upstream)) in rows.iter_mut().zip(refused_rows) {
+            row["measured"] = measured;
+            row["upstream"] = upstream;
         }
     }
     let mut drift = Vec::new();
