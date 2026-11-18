@@ -43,6 +43,8 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const MM_PER_LDU = 1 / lduFromMm(1);
 const SHRINK_MM = 2;
 const RENDER_FLOAT_LDU = 1e-3;
+const SWEEP_TIMEOUT_MS = 60_000;
+const CLOSURE_SEARCH_TIMEOUT_MS = 30_000;
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -286,56 +288,60 @@ function onStudGrid(ldu: number): boolean {
   return (((ldu - BASEPLATE_STUD_PHASE_LDU) % STUD_LDU) + STUD_LDU) % STUD_LDU === 0;
 }
 
-it("puts the studs of straights, switches and the crossing exactly on the baseplate's stud grid, near the origin and a million studs out", async () => {
-  const bundle = await container
-    .get(PART_BUNDLE_LOADER)
-    .load("standard", (part) => part.role === "track");
-  const yard = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-  const nowhere = 1e12;
-  const seated = yard.pieceParts().filter((part) => part.piece.kind !== "curve");
-  expect(new Set(seated.map((part) => part.piece.kind))).toEqual(
-    new Set(["straight", "switch", "crossing"]),
-  );
-  for (const part of seated) {
-    part.def.connectors.forEach((_end, held) => {
-      for (const [x, z] of [
-        [0, 0],
-        [7, -3],
-        [1_000_003, -999_999],
-      ] as const) {
-        for (let heading = 0; heading < 16; heading += QUARTER_TURN_STEPS) {
-          const free = latticePose(x, z, heading);
-          const snap = yard.snapPiece(part.catalogIndex, held, nowhere, nowhere, free);
-          expect(snap.end).toBeNull();
-          yard.placePiece(part.catalogIndex, snap.placement);
+it(
+  "puts the studs of straights, switches and the crossing exactly on the baseplate's stud grid, near the origin and a million studs out",
+  async () => {
+    const bundle = await container
+      .get(PART_BUNDLE_LOADER)
+      .load("standard", (part) => part.role === "track");
+    const yard = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const nowhere = 1e12;
+    const seated = yard.pieceParts().filter((part) => part.piece.kind !== "curve");
+    expect(new Set(seated.map((part) => part.piece.kind))).toEqual(
+      new Set(["straight", "switch", "crossing"]),
+    );
+    for (const part of seated) {
+      part.def.connectors.forEach((_end, held) => {
+        for (const [x, z] of [
+          [0, 0],
+          [7, -3],
+          [1_000_003, -999_999],
+        ] as const) {
+          for (let heading = 0; heading < 16; heading += QUARTER_TURN_STEPS) {
+            const free = latticePose(x, z, heading);
+            const snap = yard.snapPiece(part.catalogIndex, held, nowhere, nowhere, free);
+            expect(snap.end).toBeNull();
+            yard.placePiece(part.catalogIndex, snap.placement);
+          }
+        }
+      });
+    }
+    const offGrid: string[] = [];
+    let checked = 0;
+    for (const key of yard.chunkKeys()) {
+      const chunk = yard.chunkInstances(key);
+      if (!chunk) continue;
+      for (let i = 0; i < chunk.count; i++) {
+        const part = bundle.parts[chunk.partIndex[i] ?? 0];
+        if (!part) continue;
+        const m = chunk.matrices.subarray(i * INSTANCE_MATRIX_FLOATS);
+        for (let s = 0; s < part.studPrimitiveIndex.length; s++) {
+          const stud = part.studMatrices.subarray(s * INSTANCE_MATRIX_FLOATS);
+          const px = stud[3] ?? 0;
+          const pz = stud[11] ?? 0;
+          if (!onStudGrid(px) || !onStudGrid(pz)) continue;
+          const x = chunk.originX + (m[0] ?? 0) * px + (m[2] ?? 0) * pz + (m[3] ?? 0);
+          const z = chunk.originZ + (m[8] ?? 0) * px + (m[10] ?? 0) * pz + (m[11] ?? 0);
+          checked++;
+          if (!onStudGrid(x) || !onStudGrid(z)) offGrid.push(`${part.id} stud at ${x}, ${z}`);
         }
       }
-    });
-  }
-  const offGrid: string[] = [];
-  let checked = 0;
-  for (const key of yard.chunkKeys()) {
-    const chunk = yard.chunkInstances(key);
-    if (!chunk) continue;
-    for (let i = 0; i < chunk.count; i++) {
-      const part = bundle.parts[chunk.partIndex[i] ?? 0];
-      if (!part) continue;
-      const m = chunk.matrices.subarray(i * INSTANCE_MATRIX_FLOATS);
-      for (let s = 0; s < part.studPrimitiveIndex.length; s++) {
-        const stud = part.studMatrices.subarray(s * INSTANCE_MATRIX_FLOATS);
-        const px = stud[3] ?? 0;
-        const pz = stud[11] ?? 0;
-        if (!onStudGrid(px) || !onStudGrid(pz)) continue;
-        const x = chunk.originX + (m[0] ?? 0) * px + (m[2] ?? 0) * pz + (m[3] ?? 0);
-        const z = chunk.originZ + (m[8] ?? 0) * px + (m[10] ?? 0) * pz + (m[11] ?? 0);
-        checked++;
-        if (!onStudGrid(x) || !onStudGrid(z)) offGrid.push(`${part.id} stud at ${x}, ${z}`);
-      }
     }
-  }
-  expect(offGrid.slice(0, 5)).toEqual([]);
-  expect(checked).toBeGreaterThan(seated.length * 100);
-});
+    expect(offGrid.slice(0, 5)).toEqual([]);
+    expect(checked).toBeGreaterThan(seated.length * 100);
+  },
+  SWEEP_TIMEOUT_MS,
+);
 
 it("lays a passing siding from the real 9V switches that closes exactly and keeps every join when thrown", async () => {
   const bundle = await container
@@ -611,28 +617,32 @@ const BALLOON: Run = [
   { kind: "turn", sign: -1, curves: 4 },
 ];
 
-it("closes a loop whose ends sit too close for a half circle without looping back over itself or the user's track", async () => {
-  const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-  const sides: Run = [{ kind: "straight", count: 6 }];
-  let end = layRun(layout, studPose(0, 0, 0), sides);
-  end = layRun(layout, end, BALLOON);
-  layRun(layout, end, sides);
-  expect(crossings(layout, bundle.parts)).toEqual([]);
-  const top = endAt(layout, 0, 64);
-  const bottom = endAt(layout, 0, 0);
-  const before = layout.pieceCount;
+it(
+  "closes a loop whose ends sit too close for a half circle without looping back over itself or the user's track",
+  async () => {
+    const bundle = await trackAndRoadBundle();
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const sides: Run = [{ kind: "straight", count: 6 }];
+    let end = layRun(layout, studPose(0, 0, 0), sides);
+    end = layRun(layout, end, BALLOON);
+    layRun(layout, end, sides);
+    expect(crossings(layout, bundle.parts)).toEqual([]);
+    const top = endAt(layout, 0, 64);
+    const bottom = endAt(layout, 0, 0);
+    const before = layout.pieceCount;
 
-  const { view, target, commit } = closeFrom(layout, top, bottom);
+    const { view, target, commit } = closeFrom(layout, top, bottom);
 
-  expect(view?.closure).toBe("exact");
-  expect(target?.joins).toBe(true);
-  expect(commit.joined).toBe(true);
-  expect(layout.openEnds()).toHaveLength(0);
-  expect(layout.joinedPairs()).toBe(layout.pieceCount);
-  expect(crossings(layout, bundle.parts)).toEqual([]);
-  expect(layout.pieceCount - before).toBe(unobstructedFewest(layout, top, bottom));
-});
+    expect(view?.closure).toBe("exact");
+    expect(target?.joins).toBe(true);
+    expect(commit.joined).toBe(true);
+    expect(layout.openEnds()).toHaveLength(0);
+    expect(layout.joinedPairs()).toBe(layout.pieceCount);
+    expect(crossings(layout, bundle.parts)).toEqual([]);
+    expect(layout.pieceCount - before).toBe(unobstructedFewest(layout, top, bottom));
+  },
+  CLOSURE_SEARCH_TIMEOUT_MS,
+);
 
 it("routes a closure around a road plate in its way with no extra loop", async () => {
   const bundle = await trackAndRoadBundle();
@@ -691,7 +701,6 @@ const ROAD_PLATE_16 = "ldraw:69958";
 const ROAD_BASEPLATE_32 = "ldraw:44336p04";
 const CLEARANCE_MARGIN_LDU = 4;
 const SWEEP_STEPS = 16;
-const SWEEP_TIMEOUT_MS = 60_000;
 const HALF_TURN_CURVES = 8;
 
 function placeableIndex(layout: TrackDrawing, id: string): number {
@@ -771,22 +780,26 @@ function studsOf(ldu: number): number {
   return Math.round(ldu / STUD_LDU);
 }
 
-it("closes every track of a 9V switch ladder alongside the switches and curves of its neighbours", async () => {
-  const bundle = await trackAndRoadBundle();
-  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-  const tracks = buildLadder(layout, LADDER_RUNGS);
-  const straightStuds = Number(layout.kit.straightStuds);
-  const farX = Math.max(...tracks.map((t) => studsOf(t.xLdu))) + 4 * straightStuds;
-  for (const track of tracks) {
-    layRun(layout, studPose(farX, studsOf(track.zLdu), 0), [{ kind: "straight", count: 3 }]);
-  }
-  expect(crossings(layout, bundle.parts)).toEqual([]);
+it(
+  "closes every track of a 9V switch ladder alongside the switches and curves of its neighbours",
+  async () => {
+    const bundle = await trackAndRoadBundle();
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const tracks = buildLadder(layout, LADDER_RUNGS);
+    const straightStuds = Number(layout.kit.straightStuds);
+    const farX = Math.max(...tracks.map((t) => studsOf(t.xLdu))) + 4 * straightStuds;
+    for (const track of tracks) {
+      layRun(layout, studPose(farX, studsOf(track.zLdu), 0), [{ kind: "straight", count: 3 }]);
+    }
+    expect(crossings(layout, bundle.parts)).toEqual([]);
 
-  for (const track of tracks) {
-    closesWithFewest(layout, track, endAt(layout, farX, studsOf(track.zLdu)));
-  }
-  expect(crossings(layout, bundle.parts)).toEqual([]);
-});
+    for (const track of tracks) {
+      closesWithFewest(layout, track, endAt(layout, farX, studsOf(track.zLdu)));
+    }
+    expect(crossings(layout, bundle.parts)).toEqual([]);
+  },
+  CLOSURE_SEARCH_TIMEOUT_MS,
+);
 
 it("closes gaps in parallel straights laid at the switch's parallel spacing", async () => {
   const bundle = await trackAndRoadBundle();

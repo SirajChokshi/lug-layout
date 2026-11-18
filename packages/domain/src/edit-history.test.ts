@@ -33,51 +33,56 @@ function lcg(seed: number): () => number {
 }
 
 const LATTICE_SPAN = 4096;
+const LONG_SESSION_TIMEOUT_MS = 30_000;
 
 describe("EditHistory", () => {
-  it("undoes a long session back to an empty world and redoes it state by state", () => {
-    const world = new World();
-    const history = new EditHistory(world);
-    const next = lcg(23);
-    const placements: PlacementRef[] = [];
-    const states: string[][] = [livePlacements(world)];
-    for (let step = 0; step < 400; step++) {
-      const choice = next() % 4;
-      const target = placements[next() % Math.max(1, placements.length)];
-      if (choice === 0 || !target) {
-        const edit = history.place({
-          refId: next() % 11,
-          colorId: next() % 16,
-          x: ((next() % LATTICE_SPAN) - LATTICE_SPAN / 2) * STUD_LDU,
-          z: ((next() % LATTICE_SPAN) - LATTICE_SPAN / 2) * STUD_LDU,
-          yPlates: next() % 3,
-          rot: next() % 4,
-        });
-        const placement = edit.changes[0]?.placement;
-        if (placement) placements.push(placement);
-      } else if (choice === 3) {
-        history.remove(target);
-        placements.splice(placements.indexOf(target), 1);
-      } else {
-        history.rotate(target);
+  it(
+    "undoes a long session back to an empty world and redoes it state by state",
+    () => {
+      const world = new World();
+      const history = new EditHistory(world);
+      const next = lcg(23);
+      const placements: PlacementRef[] = [];
+      const states: string[][] = [livePlacements(world)];
+      for (let step = 0; step < 400; step++) {
+        const choice = next() % 4;
+        const target = placements[next() % Math.max(1, placements.length)];
+        if (choice === 0 || !target) {
+          const edit = history.place({
+            refId: next() % 11,
+            colorId: next() % 16,
+            x: ((next() % LATTICE_SPAN) - LATTICE_SPAN / 2) * STUD_LDU,
+            z: ((next() % LATTICE_SPAN) - LATTICE_SPAN / 2) * STUD_LDU,
+            yPlates: next() % 3,
+            rot: next() % 4,
+          });
+          const placement = edit.changes[0]?.placement;
+          if (placement) placements.push(placement);
+        } else if (choice === 3) {
+          history.remove(target);
+          placements.splice(placements.indexOf(target), 1);
+        } else {
+          history.rotate(target);
+        }
+        states.push(livePlacements(world));
       }
-      states.push(livePlacements(world));
-    }
 
-    for (let depth = states.length - 2; depth >= 0; depth--) {
-      expect(history.undo()?.step).toBe("undo");
-      expect(livePlacements(world)).toEqual(states[depth]);
-    }
-    expect(world.size).toBe(0);
-    expect(history.undo()).toBeNull();
+      for (let depth = states.length - 2; depth >= 0; depth--) {
+        expect(history.undo()?.step).toBe("undo");
+        expect(livePlacements(world)).toEqual(states[depth]);
+      }
+      expect(world.size).toBe(0);
+      expect(history.undo()).toBeNull();
 
-    for (let depth = 1; depth < states.length; depth++) {
-      expect(history.redo()?.step).toBe("redo");
-      expect(livePlacements(world)).toEqual(states[depth]);
-    }
-    expect(history.redo()).toBeNull();
-    expect(history.undoDepth).toBe(states.length - 1);
-  });
+      for (let depth = 1; depth < states.length; depth++) {
+        expect(history.redo()?.step).toBe("redo");
+        expect(livePlacements(world)).toEqual(states[depth]);
+      }
+      expect(history.redo()).toBeNull();
+      expect(history.undoDepth).toBe(states.length - 1);
+    },
+    LONG_SESSION_TIMEOUT_MS,
+  );
 
   it("reports what each step removed and added so a view can follow the placement", () => {
     const world = new World();

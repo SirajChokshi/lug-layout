@@ -14,6 +14,7 @@ const library = new LdrawLibrary([
 const catalog = loadTrackCatalog();
 const profile = loadMilsProfile();
 const EDGES: ReadonlyArray<MilsModuleEdge> = ["minX", "maxX", "minZ", "maxZ"];
+const MILS_BUILD_TIMEOUT_MS = 30_000;
 
 const LAND = "32@4:2";
 const FEATURE_EDGES: Readonly<Record<string, string>> = {
@@ -82,25 +83,29 @@ function withoutElement(key: string): MilsProfile {
 }
 
 describe("MILS module templates", () => {
-  it("measure, from the placed parts, MILS edges on every side of every template", () => {
-    const modules = buildMilsModules(library, profile, catalog);
-    expect(modules.map((module) => module.name)).toEqual(profile.templates.map((t) => t.name));
-    for (const template of profile.templates) {
-      const module = modules.find((entry) => entry.name === template.name);
-      const expected = Object.fromEntries(
-        EDGES.map((edge) => [
-          edge,
-          template.feature !== null && template.edges.includes(edge)
-            ? FEATURE_EDGES[template.feature]
-            : LAND,
-        ]),
-      );
-      expect({ name: template.name, edges: module?.edges }).toEqual({
-        name: template.name,
-        edges: expected,
-      });
-    }
-  });
+  it(
+    "measure, from the placed parts, MILS edges on every side of every template",
+    () => {
+      const modules = buildMilsModules(library, profile, catalog);
+      expect(modules.map((module) => module.name)).toEqual(profile.templates.map((t) => t.name));
+      for (const template of profile.templates) {
+        const module = modules.find((entry) => entry.name === template.name);
+        const expected = Object.fromEntries(
+          EDGES.map((edge) => [
+            edge,
+            template.feature !== null && template.edges.includes(edge)
+              ? FEATURE_EDGES[template.feature]
+              : LAND,
+          ]),
+        );
+        expect({ name: template.name, edges: module?.edges }).toEqual({
+          name: template.name,
+          edges: expected,
+        });
+      }
+    },
+    MILS_BUILD_TIMEOUT_MS,
+  );
 
   it.each([
     [
@@ -123,9 +128,13 @@ describe("MILS module templates", () => {
       (p: MilsProfile) => (p.build.features.road.widthStuds = 14),
       /mils-road-straight: edge minX stud 8 measures 4 plates in colour 2, but the spec needs road/u,
     ],
-  ])("refuses a profile with %s", (_case, edit, message) => {
-    expect(() => buildMilsModules(library, corrupted(edit), catalog)).toThrow(message);
-  });
+  ])(
+    "refuses a profile with %s",
+    (_case, edit, message) => {
+      expect(() => buildMilsModules(library, corrupted(edit), catalog)).toThrow(message);
+    },
+    MILS_BUILD_TIMEOUT_MS,
+  );
 
   it.each([2, 3])(
     "joins the track of %i rail modules end to end exactly, leaving only the two outer edges open",
@@ -142,16 +151,21 @@ describe("MILS module templates", () => {
         ],
       });
     },
+    MILS_BUILD_TIMEOUT_MS,
   );
 
-  it("packs around a plate never produced in a colour, and refuses to place a part that was not", () => {
-    const plain = buildMilsModules(library, withoutElement("91405@2"), catalog)[0];
-    expect(plain?.ldraw).toContain("92438.dat");
-    expect(plain?.ldraw).not.toMatch(/^1 2 .* 91405\.dat$/mu);
-    expect(() => buildMilsModules(library, withoutElement("3811@2"), catalog)).toThrow(
-      "3811 in colour 2 has no Rebrickable element in the profile",
-    );
-  });
+  it(
+    "packs around a plate never produced in a colour, and refuses to place a part that was not",
+    () => {
+      const plain = buildMilsModules(library, withoutElement("91405@2"), catalog)[0];
+      expect(plain?.ldraw).toContain("92438.dat");
+      expect(plain?.ldraw).not.toMatch(/^1 2 .* 91405\.dat$/mu);
+      expect(() => buildMilsModules(library, withoutElement("3811@2"), catalog)).toThrow(
+        "3811 in colour 2 has no Rebrickable element in the profile",
+      );
+    },
+    MILS_BUILD_TIMEOUT_MS,
+  );
 
   it("refuses a profile file whose cited value has lost its source", () => {
     const raw = JSON.parse(

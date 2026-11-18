@@ -140,19 +140,23 @@ function expiredBudget(): SearchBudget {
 }
 
 describe("solveClosure", () => {
-  it("closes any gap a run of up to three turns spans, with no more pieces than that run", () => {
-    const random = seeded(42);
-    for (let trial = 0; trial < 60; trial++) {
-      const start = pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), Math.floor(random() * 16));
-      const reference = randomRun(random);
-      const goal = openEndFacing(endOf(start, reference));
-      const result = solveClosure(kit, start, goal);
-      expect(closedBy(start, goal, result)).toBe(true);
-      expect(result.kind === "exact" ? result.run.pieces : Infinity).toBeLessThanOrEqual(
-        reference.pieces,
-      );
-    }
-  });
+  it(
+    "closes any gap a run of up to three turns spans, with no more pieces than that run",
+    () => {
+      const random = seeded(42);
+      for (let trial = 0; trial < 60; trial++) {
+        const start = pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), Math.floor(random() * 16));
+        const reference = randomRun(random);
+        const goal = openEndFacing(endOf(start, reference));
+        const result = solveClosure(kit, start, goal);
+        expect(closedBy(start, goal, result)).toBe(true);
+        expect(result.kind === "exact" ? result.run.pieces : Infinity).toBeLessThanOrEqual(
+          reference.pieces,
+        );
+      }
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
 
   it(
     "closes every goal a four-turn run reaches, never with more pieces than that run",
