@@ -58,7 +58,8 @@ jobs:
       - run: pnpm check:infra
       - run: pnpm check:rust
       - run: pnpm --filter @brr/asset-pipeline verify-ldraw
-      - run: pnpm turbo run typecheck test build --concurrency=2
+      - run: pnpm turbo run typecheck build
+      - run: pnpm turbo run test --concurrency=1
       - uses: actions/cache/save@v4
         if: ${{ !cancelled() && steps.bundle-cache.outputs.cache-hit != 'true' && hashFiles('tools/asset-pipeline/dist/bundle/build-key.json') != '' }}
         with:
