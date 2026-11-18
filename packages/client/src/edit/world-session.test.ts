@@ -106,21 +106,13 @@ class BaseplateWorld implements IEditedWorld {
     const world = new World();
     const handles = addShards(world, shards, baseplateTarget);
     if (!handles.ok) return handles.issues;
-    this.replace(world);
+    this.world = world;
+    this.history = new EditHistory(world);
     return [];
-  }
-
-  clear(): void {
-    this.replace(new World());
   }
 
   async addImportedModel(): Promise<string | null> {
     return null;
-  }
-
-  private replace(world: World): void {
-    this.world = world;
-    this.history = new EditHistory(world);
   }
 }
 

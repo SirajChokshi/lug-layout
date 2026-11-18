@@ -879,6 +879,41 @@ it("resolves a model file the bake refuses as not imported and keeps the chosen 
   });
 }, 120_000);
 
+it("shows the stud totals of whichever world is open: none after New World, the placed ones again on reopening", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  const repository = new MemoryRepository();
+  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+
+  editor.chooseItem(BASEPLATE);
+  editor.click(0, 0, 0);
+  const placed = editor.snapshot().studs;
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
+  const first = editor.snapshot().world?.id;
+  if (!first) throw new Error("no current world");
+  expect(await editor.newWorld("Second")).toBe(true);
+  const fresh = editor.snapshot().studs;
+  expect(await editor.openWorld(first)).toBe(true);
+
+  expect(placed?.drawn).toBeGreaterThan(0);
+  expect({ fresh, reopened: editor.snapshot().studs }).toEqual({
+    fresh: { drawn: 0, culledInsideModels: 0, culledUnderFootprints: 0 },
+    reopened: placed,
+  });
+}, 120_000);
+
 const SET = `omr:${PLACEABLE_SET}`;
 const PLAIN_MODULE = "generated:mils-plain";
 const OVERLAP = "would overlap";
