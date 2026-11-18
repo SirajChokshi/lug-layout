@@ -20,7 +20,9 @@ import {
   AXIS_NEG_X,
   AXIS_NEG_Y,
   AXIS_POS_X,
+  AXIS_NEG_Z,
   AXIS_POS_Y,
+  AXIS_POS_Z,
   ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
@@ -1377,5 +1379,210 @@ describe("flared sections", () => {
       [2, 10],
     );
     expect(new SnapMating(fresh).offsets(orphan, bore)).toEqual(new Int32Array(0));
+  });
+});
+
+interface WorldConnector {
+  readonly shape: number;
+  readonly gender: number;
+  readonly at: readonly [number, number, number];
+  readonly axis: number;
+}
+
+function worldConnectors(piece: ModelConnectors, at: LatticePose): WorldConnector[] {
+  const rot = at.rot as QuarterTurn;
+  return Array.from({ length: piece.count }, (_, c) => {
+    const x = piece.origin[c * 3] ?? 0;
+    const z = piece.origin[c * 3 + 2] ?? 0;
+    return {
+      shape: piece.shape[c] ?? 0,
+      gender: piece.gender[c] ?? 0,
+      at: [
+        rot90Cos(rot) * x + rot90Sin(rot) * z + at.x * SIXTEENTHS_PER_LDU,
+        (piece.origin[c * 3 + 1] ?? 0) + at.yPlates * PLATE_LDU * SIXTEENTHS_PER_LDU,
+        -rot90Sin(rot) * x + rot90Cos(rot) * z + at.z * SIXTEENTHS_PER_LDU,
+      ],
+      axis: turnedAxis(piece.axis[c] ?? 0, rot),
+    };
+  });
+}
+
+const connectorKey = (p: WorldConnector): string =>
+  `${p.at.join(",")}/${p.axis}/${p.shape}/${p.gender}`;
+
+function engagedPairs(
+  held: ModelConnectors,
+  at: LatticePose,
+  world: ReadonlyArray<WorldConnector>,
+): number[] {
+  return worldConnectors(held, at).map((own) => {
+    let n = 0;
+    for (const other of world) {
+      if (own.gender === other.gender || (own.axis ^ 1) !== other.axis) continue;
+      const dimension = own.axis >> 1;
+      if ([0, 1, 2].some((k) => k !== dimension && own.at[k] !== other.at[k])) continue;
+      const [male, female] = own.gender === GENDER_MALE ? [own, other] : [other, own];
+      const toward = (male.axis & 1) === 0 ? 1 : -1;
+      const offset = ((female.at[dimension] ?? 0) - (male.at[dimension] ?? 0)) * toward;
+      if (mating.engages(male.shape, female.shape, offset)) n++;
+    }
+    return n;
+  });
+}
+
+function turnedAxis(axis: number, rot: QuarterTurn): number {
+  const dimension = axis >> 1;
+  if (dimension === 1) return axis;
+  const sign = (axis & 1) === 0 ? 1 : -1;
+  const x = dimension === 0 ? sign : 0;
+  const z = dimension === 2 ? sign : 0;
+  const tx = rot90Cos(rot) * x + rot90Sin(rot) * z;
+  const tz = -rot90Sin(rot) * x + rot90Cos(rot) * z;
+  if (tx !== 0) return tx > 0 ? AXIS_POS_X : AXIS_NEG_X;
+  return tz > 0 ? AXIS_POS_Z : AXIS_NEG_Z;
+}
+
+function specKey(s: Spec): string {
+  return `${s.origin.join(",")}/${s.axis}/${s.shape}/${s.gender}`;
+}
+
+describe("ConnectionSolver against every coaxial pair", () => {
+  const BAR = shape(CAP_ROOT, true, [[SECTION_ROUND, 4, 20]]);
+  const CLIP = shape(0, false, [[SECTION_ROUND, 4, 4]]);
+  const AXLE = shape(CAP_ROOT, true, [[SECTION_AXLE, 4, 16]]);
+  const AXLE_HOLE = shape(0, true, [[SECTION_AXLE, 4, 10]]);
+  const SLEEVE = shape(0, true, [
+    [SECTION_ROUND, 4, 6],
+    [SECTION_ROUND, 6, 2],
+  ]);
+  const PALETTE = [
+    [STUD, GENDER_MALE],
+    [PLATE_RECEPTOR, GENDER_FEMALE],
+    [BRICK_RECEPTOR, GENDER_FEMALE],
+    [PIN, GENDER_MALE],
+    [PIN_HOLE, GENDER_FEMALE],
+    [BAR, GENDER_MALE],
+    [CLIP, GENDER_FEMALE],
+    [AXLE, GENDER_MALE],
+    [AXLE_HOLE, GENDER_FEMALE],
+    [SLEEVE, GENDER_FEMALE],
+  ] as const;
+  const AXES = [AXIS_POS_X, AXIS_NEG_X, AXIS_POS_Y, AXIS_NEG_Y, AXIS_POS_Z, AXIS_NEG_Z] as const;
+  const ALONG_STEP_LDU = 2.5;
+  const ALONG_STEPS = 5;
+  const ACROSS_STEP_LDU = 10;
+  const ACROSS_STEPS = 3;
+
+  function partnerAtOffsetZero(own: Spec): (typeof PALETTE)[number] | undefined {
+    return PALETTE.find(([s, gender]) =>
+      gender === GENDER_MALE
+        ? own.gender === GENDER_FEMALE && mating.engages(s, own.shape, 0)
+        : own.gender === GENDER_MALE && mating.engages(own.shape, s, 0),
+    );
+  }
+
+  it("mates and votes exactly the coaxial pairs that SnapMating engages, on seeded worlds and after stamping the held model", () => {
+    let seed = 0x6a7e;
+    const next = (span: number): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % span;
+    };
+    const randomSpecs = (count: number): Map<string, Spec> => {
+      const specs = new Map<string, Spec>();
+      while (specs.size < count) {
+        const [s, gender] = PALETTE[next(PALETTE.length)] ?? PALETTE[0];
+        const axis = AXES[next(AXES.length)] ?? AXIS_POS_Y;
+        const coordinate = (k: number): number =>
+          k === axis >> 1
+            ? next(ALONG_STEPS) * ALONG_STEP_LDU
+            : next(ACROSS_STEPS) * ACROSS_STEP_LDU;
+        const spec: Spec = {
+          shape: s,
+          gender,
+          origin: [coordinate(0), coordinate(1), coordinate(2)],
+          axis,
+        };
+        specs.set(specKey(spec), spec);
+      }
+      return specs;
+    };
+    const randomPiece = (count: number): ModelConnectors =>
+      single(table([...randomSpecs(count).values()]));
+    const withPartnersAStudAlong = (count: number): ModelConnectors => {
+      const specs = randomSpecs(count);
+      for (const own of Array.from(specs.values())) {
+        const partner = partnerAtOffsetZero(own);
+        if (!partner) continue;
+        const [x, y, z] = own.origin;
+        const spec: Spec = {
+          shape: partner[0],
+          gender: partner[1],
+          origin: [x + STUD_LDU, y, z],
+          axis: own.axis ^ 1,
+        };
+        if (!specs.has(specKey(spec))) specs.set(specKey(spec), spec);
+      }
+      return single(table([...specs.values()]));
+    };
+    const randomPose = (): LatticePose =>
+      pose((next(3) - 1) * HALF, (next(3) - 1) * HALF, next(3) - 1, next(4) as QuarterTurn);
+    let mates = 0;
+    let votes = 0;
+    for (let trial = 0; trial < 32; trial++) {
+      const solver = allFamilies();
+      const world: WorldConnector[] = [];
+      const seen = new Set<string>();
+      const placeAt = (piece: ModelConnectors, at: LatticePose): boolean => {
+        const connectors = worldConnectors(piece, at);
+        if (connectors.some((c) => seen.has(connectorKey(c)))) return false;
+        for (const c of connectors) seen.add(connectorKey(c));
+        world.push(...connectors);
+        solver.insert(piece, at);
+        return true;
+      };
+      const heldIsLarge = trial % 2 === 0;
+      for (let m = 0; m < 8; m++) {
+        const piece = randomPiece(heldIsLarge ? 4 : 40);
+        while (!placeAt(piece, randomPose()));
+      }
+      const held = withPartnersAStudAlong(heldIsLarge ? 30 : 2);
+      const candidates = new CandidatePoses();
+      let at = randomPose();
+      for (let probe = 0; probe < 10; probe++) {
+        if (probe === 5) {
+          const rot = at.rot as QuarterTurn;
+          placeAt(
+            held,
+            pose(at.x - rot90Cos(rot) * STUD_LDU, at.z + rot90Sin(rot) * STUD_LDU, at.yPlates, rot),
+          );
+        } else {
+          at = randomPose();
+        }
+        const report = evaluated(solver, held, at);
+        const reported = Array<number>(held.count).fill(0);
+        for (let k = 0; k < report.count; k++) {
+          const c = report.connector[k] ?? 0;
+          reported[c] = (reported[c] ?? 0) + 1;
+        }
+        expect(reported).toEqual(engagedPairs(held, at, world));
+        mates += report.count;
+        solver.rank(held, window(at, 1, 1, 4), candidates);
+        for (let i = 0; i < candidates.count; i++) {
+          const candidate = pose(
+            candidates.x[i] ?? 0,
+            candidates.z[i] ?? 0,
+            candidates.yPlates[i] ?? 0,
+            (candidates.rot[i] ?? 0) as QuarterTurn,
+          );
+          const engaged = engagedPairs(held, candidate, world).reduce((a, b) => a + b, 0);
+          expect(candidates.votes[i]).toBe(engaged);
+          votes += engaged;
+        }
+        solver.rank(held, window(at, 0, 0, 1), candidates);
+        expect([candidates.count, candidates.votes[0]]).toEqual([1, report.count]);
+      }
+    }
+    expect(mates).toBeGreaterThanOrEqual(50);
+    expect(votes).toBeGreaterThanOrEqual(5_000);
   });
 });
