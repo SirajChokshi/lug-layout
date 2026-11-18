@@ -138,9 +138,9 @@ export function railHeadsAtEnd(
 ): RailHeads | null {
   const line = scanLine(origin, along, RAIL_SECTION_INWARD_LDU);
   const levels = levelsFromTopNear(flat, exactPlanPoint(origin));
-  const scanned = new Map<number, LevelScan>();
+  const scansByLevel = new Map<number, LevelScan>();
   const scanOfLevel = (index: number): LevelScan => {
-    const known = scanned.get(index);
+    const known = scansByLevel.get(index);
     if (known !== undefined) return known;
     const y = levels[index];
     if (y === undefined) throw new Error(`no measured level ${index}`);
@@ -148,14 +148,14 @@ export function railHeadsAtEnd(
       .filter((polygon) => compareExactDecimal(polygon.y, y) === 0)
       .map((polygon) => polygon.outline);
     const scan = { y, polygons, intervals: scanIntervals(polygons, line) };
-    scanned.set(index, scan);
+    scansByLevel.set(index, scan);
     return scan;
   };
   for (const run of adjacentRunsSmallestFirst(levels.map((_, index) => index))) {
     const scans = run.map(scanOfLevel);
     const [top] = scans;
     if (top === undefined) continue;
-    if (sectionOf(scans.flatMap((scan) => scan.intervals)) === null) continue;
+    if (railSectionFromIntervals(scans.flatMap((scan) => scan.intervals)) === null) continue;
     return { topY: top.y, polygons: scans.flatMap((scan) => scan.polygons) };
   }
   return null;
@@ -253,7 +253,7 @@ function scanIntervals(
   });
 }
 
-function sectionOf(intervals: ReadonlyArray<Interval>): RailSection | null {
+function railSectionFromIntervals(intervals: ReadonlyArray<Interval>): RailSection | null {
   const railCentresLdu = mergedRuns(intervals).map((run) =>
     divideExactRational(addExactRational(run.from, run.to), TWO),
   );
@@ -272,5 +272,7 @@ export function railSection(
   along: number,
   inwardLdu: number,
 ): RailSection | null {
-  return sectionOf(scanIntervals(heads.polygons, scanLine(origin, along, inwardLdu)));
+  return railSectionFromIntervals(
+    scanIntervals(heads.polygons, scanLine(origin, along, inwardLdu)),
+  );
 }
