@@ -57,12 +57,6 @@ export class SnapMating {
     return false;
   }
 
-  longestShape(): number {
-    let longest = 0;
-    for (let s = 0; s < this.shapes.count; s++) longest = Math.max(longest, this.shapes.length(s));
-    return longest;
-  }
-
   private engagedOffsets(male: number, female: number): Int32Array {
     const shapes = this.shapes;
     const maleLength = shapes.length(male);

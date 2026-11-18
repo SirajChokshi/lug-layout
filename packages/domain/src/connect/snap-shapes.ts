@@ -9,6 +9,7 @@ const INITIAL_SECTIONS = 64;
 export class SnapShapes {
   private shapes = 0;
   private sections = 0;
+  private longestLength = 0;
   private capsOf = new Uint8Array(INITIAL_SHAPES);
   private slideOf = new Uint8Array(INITIAL_SHAPES);
   private firstOf = new Int32Array(INITIAL_SHAPES);
@@ -21,6 +22,10 @@ export class SnapShapes {
 
   get count(): number {
     return this.shapes;
+  }
+
+  get longest(): number {
+    return this.longestLength;
   }
 
   intern(
@@ -55,6 +60,7 @@ export class SnapShapes {
       this.sections++;
     }
     this.lengthOf[shape] = length;
+    this.longestLength = Math.max(this.longestLength, length);
     this.ids.set(key, shape);
     return shape;
   }

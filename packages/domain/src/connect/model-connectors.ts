@@ -83,7 +83,7 @@ class InternalMates {
     private readonly mating: SnapMating,
   ) {
     this.consumed = new Uint8Array(count);
-    this.reach = mating.longestShape();
+    this.reach = mating.shapes.longest;
     this.keys = new Int32Array(count * LINE_KEYS);
     this.order = new Uint32Array(count);
     for (let i = 0; i < count; i++) {
