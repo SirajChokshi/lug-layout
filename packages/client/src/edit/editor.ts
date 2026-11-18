@@ -11,7 +11,10 @@ import {
   withPlaceholderMesh,
   type FetchPriority,
   type IPartBundleLoader,
+  type ModelCells,
   type ModelRecord,
+  type PartModel,
+  type PartModelLattice,
   type PartShapeAsset,
   type PartShapeRecord,
 } from "@brr/catalog";
@@ -60,15 +63,19 @@ import {
   type WorldBox,
 } from "@brr/render";
 import { decode, issueText } from "@brr/schema/decode";
+import type { ImportReport, ImportResult, StudioReport } from "@brr/import";
 import {
   WORLD_NAME_MAX_LENGTH,
   WorldName,
+  importRef,
+  referencedImports,
   shardEntry,
   worldHeader,
   worldManifest,
   worldShards,
   worldTrack,
   type SavedViewV1,
+  type ImportedFile,
   type TrackRecordV1,
   type WorldHeader,
   type WorldIndexEntry,
@@ -78,6 +85,7 @@ import {
 import {
   WORLD_LOCKS,
   WORLD_REPOSITORY,
+  contentSha256,
   type IWorldLocks,
   type IWorldRepository,
   type WorldLease,
@@ -93,7 +101,8 @@ import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import type { ICredits } from "../credits/credits-service.ts";
 import type { CreditsView } from "../credits/credits-view.ts";
-import { CREDITS, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import { CREDITS, MODEL_IMPORTER, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { modelLabel, withoutYear } from "../catalog/model-label.ts";
 import {
   TRACK_SYSTEM,
@@ -379,6 +388,22 @@ export interface PlaceableCoverView {
   readonly heightPlates: number;
 }
 
+export type ModelImportStatus = "importing" | "placeable" | "refused";
+
+export interface ModelImportView {
+  readonly file: string;
+  readonly status: ModelImportStatus;
+  readonly item: string | null;
+  readonly reason: string | null;
+  readonly report: ImportReport | null;
+  readonly studio: StudioReport | null;
+}
+
+export interface ModelFileInput {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
 export interface EditorSnapshot {
   readonly status: EditorStatus;
   readonly error: string | null;
@@ -427,6 +452,7 @@ export interface EditorSnapshot {
   readonly roadStroke: RoadStrokeView | null;
   readonly lastRoadStroke: RoadStrokeResult | null;
   readonly roadErase: boolean;
+  readonly modelImport: ModelImportView | null;
 }
 
 export interface EditorCredits {
@@ -444,12 +470,24 @@ export interface RoadPlacementDump {
   readonly rot: number;
 }
 
+export interface ModelBakeView {
+  readonly id: string;
+  readonly lattice: PartModelLattice;
+  readonly cells: Omit<ModelCells, "footprint" | "flat" | "columnBottom" | "columnTop"> & {
+    readonly footprint: ReadonlyArray<number>;
+    readonly flat: ReadonlyArray<number>;
+    readonly columnBottom: ReadonlyArray<number>;
+    readonly columnTop: ReadonlyArray<number>;
+  };
+}
+
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
   readonly chunkCounts: ReadonlyArray<readonly [number, number, number]>;
   readonly trackEnds: ReturnType<TrackDrawing["openEnds"]>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
   readonly covers: ReadonlyArray<PlaceableCoverView>;
+  readonly bakes: ReadonlyArray<ModelBakeView>;
   readonly placements: PlacementDump;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
@@ -497,6 +535,7 @@ export interface IEditor extends IBomSource {
   retrySave(): Promise<void>;
   exportWorld(): Promise<ExportedWorld>;
   importWorld(bytes: Uint8Array): Promise<boolean>;
+  importModelFile(file: ModelFileInput): Promise<boolean>;
   measureFrames(): void;
   cycleTier(): void;
   trackRoutes(): ReadonlyArray<TrackRouteView>;
@@ -510,6 +549,8 @@ export interface IEditor extends IBomSource {
 const EDITOR_LOD: BundleLod = "standard";
 const FAR_LOD: BundleLod = "far";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
+const STUDIO_FILE = /\.io$/iu;
+const IMPORTED_SOURCE = "imported file";
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 export const TRACK_PIECE_PREFIX = "track-piece:";
 const TRACK_PIECE_GROUP = "track-pieces";
@@ -815,6 +856,7 @@ export class Editor implements IEditor {
     roadStroke: null,
     lastRoadStroke: null,
     roadErase: false,
+    modelImport: null,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -889,6 +931,9 @@ export class Editor implements IEditor {
   private bomTables: EditorBomTables | null = null;
   private readonly notDrawnByPlaceable = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
   private readonly modelPlaceables = new Map<string, Placeable>();
+  private readonly bakes = new Map<string, Pick<PartModel, "lattice" | "cells">>();
+  private readonly importedFiles = new Map<string, ImportedFile>();
+  private bundleColors: ReadonlyArray<BundleColor> = [];
   private readonly modelNames = new Map<Placeable, string>();
   private readonly trainParts = new Map<string, Uint16Array>();
   private readonly planEntries = new WeakMap<PlacedModel, PlacedForPlan>();
@@ -903,6 +948,7 @@ export class Editor implements IEditor {
     @inject(CREDITS) private readonly credits: ICredits,
     @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
     @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
+    @inject(MODEL_IMPORTER) private readonly importer: IModelImporter,
   ) {
     this.placed = new PlacedChunks(backend);
   }
@@ -936,6 +982,7 @@ export class Editor implements IEditor {
       this.update({ tier: options.tier });
       const index = await this.loader.loadIndex(EDITOR_LOD);
       this.bundleVersion = index.bundleVersion;
+      this.bundleColors = index.colors;
       const colorSource = { colors: index.colors, parts: [] };
       const colors = new ColorTable(colorSource);
       for (const color of index.colors) colors.indexOfCode(color.code);
@@ -1159,8 +1206,8 @@ export class Editor implements IEditor {
     const merged = palette.remap(model, record.parts.map(withPlaceholderMesh));
     for (const part of record.parts) this.meshes?.register(palette.indexOf(part.id), part.meshFile);
     const placeable = modelPlaceable(
+      `${entry.origin}:${entry.name}`,
       entry.name,
-      entry.origin,
       modelLabel(entry),
       entry.role,
       merged,
@@ -1176,7 +1223,116 @@ export class Editor implements IEditor {
     this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
     this.modelPlaceables.set(entry.name, placeable);
     this.modelNames.set(placeable, entry.name);
+    this.bakes.set(placeable.id, model);
     return placeable;
+  }
+
+  private async importedResult(file: ImportedFile): Promise<ImportResult> {
+    if (STUDIO_FILE.test(file.name)) {
+      return this.importer.importStudio(file.name, file.bytes.slice(), EDITOR_LOD);
+    }
+    return this.importer.importText(file.name, new TextDecoder().decode(file.bytes), EDITOR_LOD);
+  }
+
+  private async addImportedModel(file: ImportedFile): Promise<Placeable | null> {
+    const view = {
+      file: file.name,
+      status: "importing",
+      item: null,
+      reason: null,
+      report: null,
+      studio: null,
+    } as const;
+    this.update({ modelImport: view });
+    const result = await this.importedResult(file);
+    const reported = { ...view, report: result.report, studio: result.studio ?? null };
+    const { bake } = result;
+    if (!bake || bake.lattice === null || bake.cells === null) {
+      const reason = result.report.bakeIssue ?? bake?.latticeIssue ?? NO_LATTICE_REASON;
+      this.update({ modelImport: { ...reported, status: "refused", reason } });
+      return null;
+    }
+    const set = await this.loader.loadPartSet(EDITOR_LOD, result.partIds, result.compiled);
+    const palette = this.requirePalette();
+    const colors = this.requireColors();
+    const before = palette.parts.length;
+    const model: PartModel = {
+      sections: result.report.sections,
+      lattice: bake.lattice,
+      studCover: bake.studCover,
+      cells: bake.cells,
+      instanceCount: result.instanceCount,
+      partIndex: Uint16Array.from(result.partIndex),
+      ldrawColor: result.ldrawColor,
+      matrices: result.matrices,
+      vehicles: bake.vehicles,
+    };
+    const id = importRef(file.sha256);
+    const credit = {
+      name: file.name,
+      source: `${IMPORTED_SOURCE} ${file.name}`,
+      sections: result.report.sections,
+    };
+    const placeable = modelPlaceable(
+      id,
+      file.name,
+      file.name,
+      undefined,
+      palette.remap(model, set.parts),
+      credit,
+      palette.parts,
+      colors,
+      null,
+    );
+    if (this.palette === palette && this.installedColors > 0) {
+      this.backend.addParts(palette.parts.slice(before));
+      this.syncColors();
+    }
+    this.bakes.set(id, model);
+    this.importedFiles.set(file.sha256, file);
+    this.placeables.push(placeable);
+    const slot = placeableSlot(placeable, null, this.bundleColors, new Map());
+    this.slots = [...this.slots, slot];
+    const credits = this.state.credits;
+    this.update({
+      catalog: [...this.state.catalog, slot.view],
+      modelImport: { ...reported, status: "placeable", item: id },
+      ...(credits ? { credits: { ...credits, models: [...credits.models, credit] } } : {}),
+    });
+    return placeable;
+  }
+
+  private async ensureImports(
+    shards: ReadonlyArray<WorldShardV1>,
+    files: (sha256: string) => Promise<ImportedFile | undefined>,
+  ): Promise<void> {
+    for (const sha256 of referencedImports(shards)) {
+      if (this.slots.some((slot) => slot.id === importRef(sha256))) continue;
+      const file = await files(sha256);
+      if (!file) {
+        throw new Error(`it places an imported file (sha256 ${sha256}) that isn't stored here`);
+      }
+      if (!(await this.addImportedModel(file))) {
+        throw new Error(`the imported file ${file.name} can't be placed any more`);
+      }
+    }
+  }
+
+  importModelFile(input: ModelFileInput): Promise<boolean> {
+    return this.fileAction(
+      "model import",
+      async () => {
+        const sha256 = await contentSha256(input.bytes);
+        const id = importRef(sha256);
+        if (!this.slots.some((slot) => slot.id === id)) {
+          const file = { sha256, name: input.name, bytes: input.bytes.slice() };
+          if (!(await this.addImportedModel(file))) return;
+          if (this.storageError === null) await this.repository.putImportedFile(file);
+        }
+        if (!this.readOnly) this.chooseItem(id);
+      },
+      true,
+    );
   }
 
   private syncColors(): void {
@@ -2875,6 +3031,7 @@ export class Editor implements IEditor {
     const started = performance.now();
     const stored = await this.repository.read(id);
     if (!stored.ok) throw new Error(`world ${id} can't be read: ${issueText(stored.issues)}`);
+    await this.ensureImports(stored.value.shards, (sha256) => this.repository.importedFile(sha256));
     await this.ensureShardPlaceables(stored.value.shards);
     this.installShards(id, stored.value.manifest, stored.value.shards, started);
   }
@@ -2976,9 +3133,14 @@ export class Editor implements IEditor {
       );
       const shards = this.worldShardsNow();
       const manifest = worldManifest(this.header(current), shards.map(shardEntry));
+      const imports = [...referencedImports(shards)].map((sha256) => {
+        const file = this.importedFiles.get(sha256);
+        if (!file) throw new Error(`the imported file with sha256 ${sha256} isn't loaded`);
+        return file;
+      });
       return {
         fileName: exportFileName(current.name),
-        bytes: this.repository.packArchive({ manifest, shards, credits }),
+        bytes: this.repository.packArchive({ manifest, shards, credits, imports }),
       };
     });
   }
@@ -2988,7 +3150,12 @@ export class Editor implements IEditor {
       const started = performance.now();
       const archive = await this.repository.readArchive(bytes);
       if (!archive.ok) throw new Error(issueText(archive.issues));
-      const { manifest, shards } = archive.value;
+      const { manifest, shards, imports } = archive.value;
+      const carried = new Map(imports.map((file) => [file.sha256, file]));
+      await this.ensureImports(shards, async (sha256) => carried.get(sha256));
+      if (this.storageError === null) {
+        for (const file of imports) await this.repository.putImportedFile(file);
+      }
       const check = addShards(new World(), shards, this.resolveRef);
       if (!check.ok) throw new Error(issueText(check.issues));
       const trackCheck = this.newTrack?.().restore(worldTrack(shards));
@@ -3049,6 +3216,23 @@ export class Editor implements IEditor {
         flatCells: p.cells.flatCells,
         heightPlates: p.cells.heightPlates,
       })),
+      bakes: [...this.bakes].flatMap(([id, { lattice, cells }]) =>
+        lattice && cells
+          ? [
+              {
+                id,
+                lattice,
+                cells: {
+                  ...cells,
+                  footprint: [...cells.footprint],
+                  flat: [...cells.flat],
+                  columnBottom: [...cells.columnBottom],
+                  columnTop: [...cells.columnTop],
+                },
+              },
+            ]
+          : [],
+      ),
       placements: dumpPlacements(this.world),
       roadPlacements: this.roadModels.map((model, id) => ({
         id,
