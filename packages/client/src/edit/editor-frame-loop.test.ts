@@ -96,7 +96,7 @@ async function settle(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0);
 }
 
-function startedLoop() {
+function preparedLoop() {
   vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
   let scheduled: FrameRequestCallback | null = null;
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -129,7 +129,7 @@ function startedLoop() {
 }
 
 async function pastFirstFrame() {
-  const started = startedLoop();
+  const started = preparedLoop();
   started.start();
   await started.settledFrame();
   started.published.length = 0;
@@ -148,7 +148,7 @@ afterEach(() => {
 
 describe("editor frame loop", () => {
   it("renders a frame only when the backend needs one, a frame is to be timed or measured, or it is the first frame", async () => {
-    const { loop, backend, start, settledFrame } = startedLoop();
+    const { loop, backend, start, settledFrame } = preparedLoop();
     const rendered: boolean[] = [];
     const counted = async (): Promise<void> => {
       const before = backend.renders;
@@ -171,7 +171,7 @@ describe("editor frame loop", () => {
   });
 
   it("schedules the next frame at once after a steady frame, and only after the GPU wait resolves after a timed one", async () => {
-    const { loop, backend, start, frame, isScheduled } = startedLoop();
+    const { loop, backend, start, frame, isScheduled } = preparedLoop();
     backend.holdGpu = true;
     start();
     frame();
@@ -212,7 +212,7 @@ describe("editor frame loop", () => {
   });
 
   it("publishes the first frame's presented time once", async () => {
-    const { backend, published, start, settledFrame } = startedLoop();
+    const { backend, published, start, settledFrame } = preparedLoop();
     backend.gpuMs = () => 3;
     start();
     const startMs = performance.now();
@@ -225,7 +225,7 @@ describe("editor frame loop", () => {
   });
 
   it("publishes FPS and the backend's frame stats once 500 ms of frames have passed", async () => {
-    const { backend, published, start, settledFrame } = startedLoop();
+    const { backend, published, start, settledFrame } = preparedLoop();
     backend.needed = true;
     start();
     await settledFrame();
@@ -294,7 +294,7 @@ describe("editor frame loop", () => {
   });
 
   it("cycles the forced tier auto, near, mid, far and back to auto", () => {
-    const { loop, backend } = startedLoop();
+    const { loop, backend } = preparedLoop();
     const tiers: Array<ChunkTier | null> = [];
 
     for (let i = 0; i < 4; i++) {
@@ -309,7 +309,7 @@ describe("editor frame loop", () => {
   });
 
   it("resizes the backend at start, then only when the canvas's CSS size changes", async () => {
-    const { backend, canvas, start, settledFrame } = startedLoop();
+    const { backend, canvas, start, settledFrame } = preparedLoop();
     canvas.clientWidth = 0;
     canvas.clientHeight = 0;
     start();
@@ -328,7 +328,7 @@ describe("editor frame loop", () => {
   });
 
   it("a frame that throws stops the loop, reports the error once, and ignores later measurement requests", async () => {
-    const { loop, backend, failures, start, frame, isScheduled } = startedLoop();
+    const { loop, backend, failures, start, frame, isScheduled } = preparedLoop();
     const error = new Error("context lost");
     backend.failure = error;
     start();

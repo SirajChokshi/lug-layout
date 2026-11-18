@@ -92,7 +92,7 @@ export class EditorFrameLoop implements IEditorFrameLoop {
   private stopped = false;
   private firstFrame = false;
   private onPresented: ((frame: FrameTimes) => void) | null = null;
-  private measureFrame = -1;
+  private measureIndex = -1;
   private readonly measuredFrameMs = new Float64Array(MEASURED_FRAMES);
   private readonly measuredCpuMs = new Float64Array(MEASURED_FRAMES);
   private framesSinceStats = 0;
@@ -117,14 +117,14 @@ export class EditorFrameLoop implements IEditorFrameLoop {
     return () => this.listeners.delete(listener);
   }
 
-  private publish(patch: Partial<FrameLoopView>): void {
+  private update(patch: Partial<FrameLoopView>): void {
     this.state = { ...this.state, ...patch };
     for (const listener of this.listeners) listener();
   }
 
   forceTier(tier: ChunkTier | null): void {
     this.backend.forceTier(tier);
-    this.publish({ tier, measurement: null });
+    this.update({ tier, measurement: null });
   }
 
   cycleTier(): void {
@@ -143,9 +143,9 @@ export class EditorFrameLoop implements IEditorFrameLoop {
   }
 
   measureFrames(): void {
-    if (this.measureFrame >= 0 || this.stopped) return;
-    this.measureFrame = 0;
-    this.publish({ measuring: true });
+    if (this.measureIndex >= 0 || this.stopped) return;
+    this.measureIndex = 0;
+    this.update({ measuring: true });
   }
 
   timeNextFrame(onPresented: (frame: FrameTimes) => void): void {
@@ -159,10 +159,10 @@ export class EditorFrameLoop implements IEditorFrameLoop {
       this.camera.frame(startMs);
       this.session.pollCamera();
       const onPresented = this.onPresented;
-      const edge = onPresented !== null || this.measureFrame >= 0 || this.firstFrame;
-      if (edge || this.backend.needsFrame()) this.backend.renderFrame(this.frameStats);
-      if (edge) {
-        void this.finishEdgeFrame(startMs, onPresented);
+      const awaitsGpu = onPresented !== null || this.measureIndex >= 0 || this.firstFrame;
+      if (awaitsGpu || this.backend.needsFrame()) this.backend.renderFrame(this.frameStats);
+      if (awaitsGpu) {
+        void this.finishAwaitedFrame(startMs, onPresented);
         return;
       }
       this.tallyStats();
@@ -172,7 +172,7 @@ export class EditorFrameLoop implements IEditorFrameLoop {
     }
   };
 
-  private async finishEdgeFrame(
+  private async finishAwaitedFrame(
     startMs: number,
     onPresented: ((frame: FrameTimes) => void) | null,
   ): Promise<void> {
@@ -182,7 +182,7 @@ export class EditorFrameLoop implements IEditorFrameLoop {
         const submittedMs = performance.now();
         await this.backend.waitForGpu();
         onPresented({ startMs, submittedMs, presentedMs: performance.now() });
-      } else if (this.measureFrame >= 0) {
+      } else if (this.measureIndex >= 0) {
         const submittedMs = performance.now();
         await this.backend.waitForGpu();
         this.recordMeasuredFrame(startMs, submittedMs, performance.now());
@@ -190,7 +190,7 @@ export class EditorFrameLoop implements IEditorFrameLoop {
       if (this.firstFrame) {
         this.firstFrame = false;
         await this.backend.waitForGpu();
-        this.publish({ coldStartMs: performance.now() });
+        this.update({ coldStartMs: performance.now() });
       }
       this.tallyStats();
       requestAnimationFrame(this.step);
@@ -222,7 +222,7 @@ export class EditorFrameLoop implements IEditorFrameLoop {
     const elapsed = now - this.statsSince;
     if (elapsed < STATS_INTERVAL_MS) return;
     const stats = this.frameStats;
-    this.publish({
+    this.update({
       stats: {
         fps: (this.framesSinceStats * 1000) / elapsed,
         drawCalls: stats.drawCalls,
@@ -241,17 +241,17 @@ export class EditorFrameLoop implements IEditorFrameLoop {
   }
 
   private recordMeasuredFrame(startMs: number, submittedMs: number, presentedMs: number): void {
-    const index = this.measureFrame - MEASURE_WARMUP_FRAMES;
-    this.measureFrame++;
+    const index = this.measureIndex - MEASURE_WARMUP_FRAMES;
+    this.measureIndex++;
     if (index < 0) return;
     this.measuredFrameMs[index] = presentedMs - startMs;
     this.measuredCpuMs[index] = submittedMs - startMs;
     if (index < MEASURED_FRAMES - 1) return;
-    this.measureFrame = -1;
+    this.measureIndex = -1;
     const frames = this.measuredFrameMs.toSorted();
     const cpu = this.measuredCpuMs.toSorted();
     const stats = this.frameStats;
-    this.publish({
+    this.update({
       measuring: false,
       measurement: {
         frames: MEASURED_FRAMES,
