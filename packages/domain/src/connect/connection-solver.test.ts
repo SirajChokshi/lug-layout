@@ -799,12 +799,12 @@ describe("SnapMating", () => {
     expect(mating.freedom(STUD, PLATE_RECEPTOR, 0, AXIS_NEG_Y)).toEqual({
       spins: true,
       axis: AXIS_POS_Y,
-      pivots: false,
+      freeAboutVertical: false,
     });
     expect(mating.freedom(peg(SECTION_AXLE, 6), through(SECTION_ROUND, 6), 0, AXIS_NEG_X)).toEqual({
       spins: true,
       axis: AXIS_POS_X,
-      pivots: false,
+      freeAboutVertical: false,
     });
     expect(
       mating.freedom(peg(SECTION_AXLE, 6), through(SECTION_AXLE, 6), 0, AXIS_POS_X).spins,
@@ -843,7 +843,7 @@ describe("zero-length grouped faces", () => {
     expect(mating.freedom(face(FACE_TOKEN), face(FACE_TOKEN), 0, AXIS_NEG_X)).toEqual({
       spins: true,
       axis: AXIS_POS_X,
-      pivots: true,
+      freeAboutVertical: true,
     });
   });
 

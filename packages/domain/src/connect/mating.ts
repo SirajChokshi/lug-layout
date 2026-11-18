@@ -68,7 +68,7 @@ function axisLine(axis: number): number {
 export interface MateFreedom {
   readonly spins: boolean;
   readonly axis: number;
-  readonly pivots: boolean;
+  readonly freeAboutVertical: boolean;
 }
 
 export class SnapMating {
@@ -107,7 +107,7 @@ export class SnapMating {
       locked ||= locksRotation(shapes.maleCode(m), shapes.femaleCode(f));
       return true;
     });
-    return { spins: !locked, axis: axisLine(maleAxis), pivots: !inserted };
+    return { spins: !locked, axis: axisLine(maleAxis), freeAboutVertical: !inserted };
   }
 
   private engagedOffsets(male: number, female: number): Int32Array {
