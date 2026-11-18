@@ -128,7 +128,7 @@ it(
     }
 
     const perKind = Number(process.env["HELD_OUT_BUILDS_PER_KIND"] ?? DEFAULT_BUILDS_PER_KIND);
-    const pools = blockPools(await poolCandidates(bundle), bundle.colors);
+    const pools = blockPools(await poolCandidates(bundle), bundle.parts.values(), bundle.colors);
     const encoder = new TextEncoder();
     const builds = join(CACHE_ROOT, "results", `seed-${seed}`);
     await mkdir(builds, { recursive: true });

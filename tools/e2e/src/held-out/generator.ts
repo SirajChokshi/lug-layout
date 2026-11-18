@@ -115,8 +115,25 @@ export function isPoolCandidate(title: string): boolean {
   );
 }
 
+function producedColors(
+  parts: Iterable<ManifestPart>,
+  colors: ReadonlyArray<BundleColor>,
+): ReadonlyArray<number> {
+  const opaque = new Set(
+    colors.filter((color) => color.alpha === OPAQUE).map((color) => color.code),
+  );
+  const produced = new Set<number>();
+  for (const part of parts) {
+    for (const color of part.producedColors?.colors ?? []) {
+      if (opaque.has(color.ldraw)) produced.add(color.ldraw);
+    }
+  }
+  return [...produced].toSorted((a, b) => a - b);
+}
+
 export function blockPools(
   candidates: ReadonlyArray<PoolCandidate>,
+  parts: Iterable<ManifestPart>,
   colors: ReadonlyArray<BundleColor>,
 ): BlockPools {
   const pool = (title: RegExp, stacked: boolean, requireStuds: boolean): Block[] =>
@@ -132,7 +149,7 @@ export function blockPools(
     bricks: pool(PLAIN_BRICK, true, true),
     tiles: pool(PLAIN_TILE, true, false),
     technicBricks: pool(TECHNIC_BRICK_WITH_HOLE, true, true),
-    colors: colors.filter((color) => color.alpha === OPAQUE).map((color) => color.code),
+    colors: producedColors(parts, colors),
   };
   for (const [name, items] of Object.entries(pools)) {
     if (items.length === 0) throw new Error(`the bundle offers the generator no ${name}`);
