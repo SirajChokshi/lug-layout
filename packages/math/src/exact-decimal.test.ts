@@ -96,7 +96,7 @@ describe("exact decimals", () => {
   it("refuse anything but a string as a literal or as canonical text", () => {
     for (const notText of [46.9, 469n, null, undefined, { text: "46.9" }]) {
       expect(isCanonicalExactDecimalText(notText)).toBe(false);
-      expect(() => decimal(notText)).toThrow("a decimal literal is a string");
+      expect(() => decimal(notText)).toThrow(/^a decimal literal is a string$/u);
     }
   });
 

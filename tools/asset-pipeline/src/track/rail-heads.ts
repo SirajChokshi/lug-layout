@@ -139,7 +139,7 @@ export function railHeadsAtEnd(
   for (const run of adjacentRunsSmallestFirst(levelScans)) {
     const [top] = run;
     if (top === undefined) continue;
-    if (railPairRuns(run.flatMap((level) => level.intervals)) === null) continue;
+    if (railPairIntervals(run.flatMap((level) => level.intervals)) === null) continue;
     return { topY: top.y, polygons: run.flatMap((level) => level.polygons) };
   }
   return null;
@@ -199,17 +199,17 @@ function crossingInterval(
   return { from: rest.reduce(lesser, first), to: rest.reduce(greater, first) };
 }
 
-function mergedRuns(intervals: ReadonlyArray<Interval>): ReadonlyArray<Interval> {
-  const runs: Interval[] = [];
+function mergedIntervals(intervals: ReadonlyArray<Interval>): ReadonlyArray<Interval> {
+  const merged: Interval[] = [];
   for (const interval of intervals.toSorted((a, b) => compareExactRational(a.from, b.from))) {
-    const last = runs.at(-1);
+    const last = merged.at(-1);
     if (last !== undefined && compareExactRational(interval.from, last.to) <= 0) {
-      runs[runs.length - 1] = { from: last.from, to: greater(last.to, interval.to) };
+      merged[merged.length - 1] = { from: last.from, to: greater(last.to, interval.to) };
     } else {
-      runs.push(interval);
+      merged.push(interval);
     }
   }
-  return runs.filter((run) => compareExactRational(run.from, run.to) < 0);
+  return merged.filter((interval) => compareExactRational(interval.from, interval.to) < 0);
 }
 
 interface ScanLine {
@@ -241,24 +241,26 @@ function scanIntervals(
   });
 }
 
-function railPairRuns(intervals: ReadonlyArray<Interval>): readonly [Interval, Interval] | null {
-  const runs = mergedRuns(intervals);
-  const [nearRun, farRun] = runs;
-  return runs.length === 2 && nearRun !== undefined && farRun !== undefined
-    ? [nearRun, farRun]
+function railPairIntervals(
+  intervals: ReadonlyArray<Interval>,
+): readonly [Interval, Interval] | null {
+  const merged = mergedIntervals(intervals);
+  const [nearInterval, farInterval] = merged;
+  return merged.length === 2 && nearInterval !== undefined && farInterval !== undefined
+    ? [nearInterval, farInterval]
     : null;
 }
 
-function runMidpoint(run: Interval): ExactRational {
-  return divideExactRational(addExactRational(run.from, run.to), TWO);
+function intervalMidpoint(interval: Interval): ExactRational {
+  return divideExactRational(addExactRational(interval.from, interval.to), TWO);
 }
 
 function railSectionFromIntervals(intervals: ReadonlyArray<Interval>): RailSection | null {
-  const pair = railPairRuns(intervals);
+  const pair = railPairIntervals(intervals);
   if (pair === null) return null;
-  const [nearRun, farRun] = pair;
-  const nearCentre = runMidpoint(nearRun);
-  const farCentre = runMidpoint(farRun);
+  const [nearInterval, farInterval] = pair;
+  const nearCentre = intervalMidpoint(nearInterval);
+  const farCentre = intervalMidpoint(farInterval);
   return {
     railCentresLdu: [nearCentre, farCentre],
     railHalfSpacingLdu: divideExactRational(subtractExactRational(farCentre, nearCentre), TWO),
