@@ -1,14 +1,14 @@
+import { PRIMITIVE_FAMILIES } from "./part-geometry.ts";
+import { PartReader } from "./part-readings.ts";
+import { PinnedLibrary } from "./pinned-library.ts";
+import type { RailHeadBands } from "./placement.ts";
+import { trainPools } from "./train-pools.ts";
+import { type GeneratedTrain, generateTrains } from "./trains.ts";
 import { bundlePartId } from "@brr/import";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Bundle } from "../bundle.ts";
 import { importThroughWorkerPath, type ImportOutcome } from "../import-path.ts";
-import { PRIMITIVE_FAMILIES } from "./part-geometry.ts";
-import { PartReader } from "./part-readings.ts";
-import { PinnedLibrary } from "./pinned-library.ts";
-import type { RailBands } from "./train-builder.ts";
-import { trainPools } from "./train-pools.ts";
-import { generateTrains, type GeneratedTrain } from "./trains.ts";
 
 const GEOMETRY_FACTS = "docs/verified-facts/geometry.json";
 const MATRIX_FLOATS = 12;
@@ -41,7 +41,7 @@ export interface TrainRun {
   };
 }
 
-async function railBands(repoRoot: string): Promise<ReadonlyArray<RailBands>> {
+async function railBands(repoRoot: string): Promise<ReadonlyArray<RailHeadBands>> {
   const facts = JSON.parse(await readFile(join(repoRoot, GEOMETRY_FACTS), "utf8")) as RailFacts;
   return facts.rails.map((rail) => {
     const outer = rail.railHeads.find((band) => band.from > 0);
@@ -113,9 +113,15 @@ export async function runTrains(
     "u",
   );
   const vocabulary = [...(await library.primitiveNames(families)), ...bundle.job.studPrimitives];
-  const pools = await trainPools(bundle, library, new PartReader(bundle, library, vocabulary));
+  const rails = await railBands(repoRoot);
+  const pools = await trainPools(
+    bundle,
+    library,
+    new PartReader(bundle, library, vocabulary),
+    rails,
+  );
   const pooled = performance.now();
-  const generation = generateTrains(pools, await railBands(repoRoot), seed, perKind);
+  const generation = generateTrains(pools, rails, seed, perKind);
   const generated = performance.now();
   const directory = join(resultsDirectory, "trains");
   await mkdir(directory, { recursive: true });

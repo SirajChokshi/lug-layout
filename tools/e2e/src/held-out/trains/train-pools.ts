@@ -1,34 +1,35 @@
-import type { Vec3 } from "../assembly.ts";
-import type { Bundle } from "../bundle.ts";
-import { producedColors } from "../generator.ts";
 import {
-  across,
-  axisOf,
-  axleSpan,
-  framesOf,
-  blockOf,
-  holeLines,
-  pinSpan,
-  PRIMITIVE_FAMILIES,
-  rimOver,
-  roundFeatures,
-  sameLine,
-  studsOf,
-  VERTICAL,
   type AxisLine,
   type Block,
   type HoleLine,
+  PRIMITIVE_FAMILIES,
   type PinSpan,
   type Span,
   type Stud,
+  VERTICAL,
+  across,
+  axisOf,
+  axleSpan,
+  blockOf,
+  framesOf,
+  holeLines,
+  pinSpan,
+  roundFeatures,
+  roundProfile,
+  sameLine,
+  studsOf,
 } from "./part-geometry.ts";
-import type { PartReader, PartReading, PrimitiveFrame } from "./part-readings.ts";
+import { type PartReader, type PartReading, type PrimitiveFrame } from "./part-readings.ts";
 import {
-  subfileLines,
   type LibraryPart,
   type PinnedLibrary,
   type SubfileLine,
+  subfileLines,
 } from "./pinned-library.ts";
+import { type RailHeadBands } from "./placement.ts";
+import type { Vec3 } from "../assembly.ts";
+import type { Bundle } from "../bundle.ts";
+import { producedColors } from "../generator.ts";
 
 export type Mat3 = readonly [
   number,
@@ -59,14 +60,14 @@ export interface PinPart {
   readonly span: PinSpan;
 }
 
-export interface RimRun {
+export interface RollingRun {
   readonly from: number;
   readonly to: number;
   readonly radius: number;
 }
 
-export interface RunningLine extends AxisLine {
-  readonly runs: ReadonlyArray<RimRun>;
+export interface RollingAxis extends AxisLine {
+  readonly runs: ReadonlyArray<RollingRun>;
 }
 
 export interface Constituent {
@@ -83,11 +84,11 @@ export interface PivotPin {
   readonly height: number;
 }
 
-export interface RunningPart {
+export interface RunningGearPart {
   readonly reading: PartReading;
   readonly topStuds: ReadonlyArray<Stud>;
   readonly pivotPin: PivotPin | null;
-  readonly lines: ReadonlyArray<RunningLine>;
+  readonly axes: ReadonlyArray<RollingAxis>;
   readonly constituents: ReadonlyArray<Constituent> | null;
 }
 
@@ -99,7 +100,7 @@ export interface TrainPools {
   readonly axles: ReadonlyArray<AxlePart>;
   readonly pins: ReadonlyArray<PinPart>;
   readonly wheels: ReadonlyArray<WheelPart>;
-  readonly running: ReadonlyArray<RunningPart>;
+  readonly running: ReadonlyArray<RunningGearPart>;
   readonly readings: ReadonlyMap<string, PartReading>;
   readonly colors: ReadonlyArray<number>;
 }
@@ -111,8 +112,6 @@ const OUTER_PRIMITIVE_FRACTION = 0.9;
 const CONTACT_FRACTION = 0.5;
 const RUN_SLAB_LDU = 1;
 const WINDOW_LDU = 12;
-const LARGE_ROUND_LDU = 10;
-const MIN_RIM_SEPARATION_LDU = 40;
 const INHERITED_COLOUR = 16;
 const FIELDS = /\s+/u;
 const REFERENCE_FIELD = 14;
@@ -174,7 +173,7 @@ function familyName(primitive: string): string {
   return "";
 }
 
-export function rimRuns(reading: PartReading, line: AxisLine): ReadonlyArray<RimRun> {
+function rollingRuns(reading: PartReading, line: AxisLine): ReadonlyArray<RollingRun> {
   const { min } = reading.bounds;
   const [p] = across(line.axis);
   const height = line.at[p === VERTICAL ? 0 : 1] - min[VERTICAL];
@@ -187,10 +186,10 @@ export function rimRuns(reading: PartReading, line: AxisLine): ReadonlyArray<Rim
     .toSorted((a, b) => a[0] - b[0]);
   const slabs = new Set<number>();
   for (const [from, to] of windows) for (let at = from; at < to; at += RUN_SLAB_LDU) slabs.add(at);
-  const runs: RimRun[] = [];
+  const runs: RollingRun[] = [];
   let open: { from: number; to: number; radius: number } | null = null;
   for (const at of [...slabs].toSorted((a, b) => a - b)) {
-    const rim = rimOver(reading.triangles, line, at, at + RUN_SLAB_LDU, DOWN);
+    const rim = roundProfile(reading.triangles, line, at, at + RUN_SLAB_LDU, DOWN);
     const contact = rim.smooth && rim.radius >= CONTACT_FRACTION * height;
     if (contact && open && open.to === at)
       open = { from: open.from, to: at + RUN_SLAB_LDU, radius: Math.max(open.radius, rim.radius) };
@@ -203,17 +202,24 @@ export function rimRuns(reading: PartReading, line: AxisLine): ReadonlyArray<Rim
   return runs;
 }
 
-function wheelPairLines(frames: ReadonlyArray<PrimitiveFrame>): ReadonlyArray<AxisLine> {
-  const features = roundFeatures(frames).filter(
-    (feature) => feature.axis !== VERTICAL && feature.radius >= LARGE_ROUND_LDU,
-  );
+function minimumWheelSpread(rails: ReadonlyArray<RailHeadBands>): number {
+  const inner = Math.min(...rails.map((rail) => rail.inner));
+  const width = Math.max(...rails.map((rail) => rail.outer - rail.inner));
+  return 2 * (inner - width);
+}
+
+function wheelPairLines(
+  frames: ReadonlyArray<PrimitiveFrame>,
+  spread: number,
+): ReadonlyArray<AxisLine> {
+  const features = roundFeatures(frames).filter((feature) => feature.axis !== VERTICAL);
   const lines: AxisLine[] = [];
   for (const feature of features) {
     if (lines.some((line) => sameLine(line, feature))) continue;
     const lateral = features
       .filter((other) => sameLine(other, feature))
       .map((other) => (other.from + other.to) / 2);
-    if (Math.max(...lateral) - Math.min(...lateral) >= MIN_RIM_SEPARATION_LDU) lines.push(feature);
+    if (Math.max(...lateral) - Math.min(...lateral) >= spread) lines.push(feature);
   }
   return lines;
 }
@@ -251,7 +257,7 @@ async function constituentsOf(
   library: PinnedLibrary,
   part: LibraryPart,
 ): Promise<ReadonlyArray<Constituent> | null> {
-  if (!part.shortcut || part.partReferences.length < 2) return null;
+  if (part.partReferences.length < 2) return null;
   const text = (await library.text(`parts/${part.reference}`)) ?? "";
   const out: Constituent[] = [];
   for (const line of text.split("\n")) {
@@ -283,8 +289,10 @@ export async function trainPools(
   bundle: Bundle,
   library: PinnedLibrary,
   reader: PartReader,
+  rails: ReadonlyArray<RailHeadBands>,
 ): Promise<TrainPools> {
   const studNames = bundle.job.studPrimitives;
+  const spread = minimumWheelSpread(rails);
   const leaves = leafPattern(studNames);
   const parts = await library.officialParts();
   const closures = new Map<string, ReadonlySet<string>>();
@@ -344,7 +352,7 @@ export async function trainPools(
       !hasStud(closure, studNames),
   );
   const runningCandidates = where(
-    (closure, part) => part.shortcut && hasStud(closure, studNames) && has(closure, "round"),
+    (closure) => hasStud(closure, studNames) && has(closure, "round"),
   );
 
   const axles = [...(await reader.read(axleCandidates)).values()].flatMap((reading) => {
@@ -410,10 +418,10 @@ export async function trainPools(
 
   const runningFrames = await reader.frames(runningCandidates);
   const pairLike = [...runningFrames].flatMap(([reference, frames]) =>
-    wheelPairLines(frames).length > 0 ? [reference] : [],
+    wheelPairLines(frames, spread).length > 0 ? [reference] : [],
   );
   const byReference = new Map(parts.map((part) => [part.reference, part]));
-  const running: RunningPart[] = [];
+  const running: RunningGearPart[] = [];
   for (const reading of (await reader.read(pairLike)).values()) {
     const { max } = reading.bounds;
     const topStuds = studsOf(reading).filter(
@@ -424,16 +432,16 @@ export async function trainPools(
     );
     const pivotPin = pivotPinOf(reading, holeFit[1]);
     if (topStuds.length === 0 && !pivotPin) continue;
-    const lines = wheelPairLines(reading.frames)
-      .map((line) => ({ ...line, runs: rimRuns(reading, line) }))
+    const axes = wheelPairLines(reading.frames, spread)
+      .map((line) => ({ ...line, runs: rollingRuns(reading, line) }))
       .filter((line) => line.runs.length >= 2);
-    if (lines.length === 0) continue;
+    if (axes.length === 0) continue;
     const part = byReference.get(reading.reference);
     running.push({
       reading,
       topStuds,
       pivotPin,
-      lines,
+      axes,
       constituents: part ? await constituentsOf(library, part) : null,
     });
   }

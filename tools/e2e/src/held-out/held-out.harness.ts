@@ -225,6 +225,12 @@ it(
       "every generated train is sound: nothing overlaps, each planned wheelset meets its rail, each negative misses",
     ).toEqual([]);
     expect(
+      trains.outcomes.flatMap(({ train, failures }) =>
+        failures.map((failure) => `${train.name}: ${failure}`),
+      ),
+      "generated trains use only official library parts, so each must import cleanly",
+    ).toEqual([]);
+    expect(
       trains.outcomes.flatMap(({ train, mismatches }) =>
         mismatches.map((mismatch) => `${train.name}: ${mismatch}`),
       ),

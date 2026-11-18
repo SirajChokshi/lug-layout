@@ -1,6 +1,6 @@
+import { type Box, type PartReading, type PrimitiveFrame } from "./part-readings.ts";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { Vec3 } from "../assembly.ts";
-import type { Box, PartReading, PrimitiveFrame } from "./part-readings.ts";
 
 export type Axis = 0 | 1 | 2;
 export type Sign = 1 | -1;
@@ -58,7 +58,7 @@ export interface Block {
   readonly sideStuds: ReadonlyArray<Stud>;
 }
 
-export interface Rim {
+export interface RoundProfile {
   readonly radius: number;
   readonly smooth: boolean;
 }
@@ -75,18 +75,18 @@ const CONTACT_CONE_COSINE = Math.cos(CONTACT_CONE);
 const OUTBOARD_REACH_LDU = 1000;
 const OUTBOARD_TOLERANCE_LDU = 0.5;
 
-export function familyOf(primitive: string): PrimitiveFamily | null {
+function familyOf(primitive: string): PrimitiveFamily | null {
   for (const [family, pattern] of Object.entries(PRIMITIVE_FAMILIES)) {
     if (pattern.test(primitive)) return family as PrimitiveFamily;
   }
   return null;
 }
 
-export function norm(v: Vec3): number {
+function norm(v: Vec3): number {
   return Math.hypot(v[0], v[1], v[2]);
 }
 
-export function distance(a: Vec3, b: Vec3): number {
+function distance(a: Vec3, b: Vec3): number {
   return norm([a[0] - b[0], a[1] - b[1], a[2] - b[2]]);
 }
 
@@ -339,13 +339,13 @@ function clip(polygon: ReadonlyArray<Vec3>, axis: Axis, bound: number, keepAbove
   return out;
 }
 
-export function rimOver(
+export function roundProfile(
   triangles: Float32Array,
   line: AxisLine,
   from: number,
   to: number,
   down: Vec3 | null = null,
-): Rim {
+): RoundProfile {
   const [p, q] = across(line.axis);
   const best = new Float64Array(SECTORS);
   const sample = (point: Vec3): void => {
@@ -397,7 +397,7 @@ export function rimOver(
   return { radius, smooth: radius > 0 && lowest >= SMOOTH_FRACTION * radius };
 }
 
-export function contactAt(
+export function rollingContact(
   triangles: Float32Array,
   line: AxisLine,
   from: number,
@@ -405,12 +405,12 @@ export function contactAt(
   outward: Sign,
   down: Vec3 | null,
   minimum: number,
-): Rim | null {
-  const band = rimOver(triangles, line, from, to, down);
+): RoundProfile | null {
+  const band = roundProfile(triangles, line, from, to, down);
   if (!band.smooth || band.radius < minimum) return null;
   const outboard =
     outward > 0
-      ? rimOver(triangles, line, to + EDGE_LDU, to + OUTBOARD_REACH_LDU, down)
-      : rimOver(triangles, line, from - OUTBOARD_REACH_LDU, from - EDGE_LDU, down);
+      ? roundProfile(triangles, line, to + EDGE_LDU, to + OUTBOARD_REACH_LDU, down)
+      : roundProfile(triangles, line, from - OUTBOARD_REACH_LDU, from - EDGE_LDU, down);
   return outboard.radius <= band.radius + OUTBOARD_TOLERANCE_LDU ? band : null;
 }

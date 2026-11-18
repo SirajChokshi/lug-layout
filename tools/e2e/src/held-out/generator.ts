@@ -131,6 +131,23 @@ export class SeededRandom {
     return item;
   }
 
+  choice<T>(items: ReadonlyArray<T>): T | null {
+    return items.length === 0 ? null : this.pick(items);
+  }
+
+  shuffled<T>(items: ReadonlyArray<T>): T[] {
+    const out = [...items];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = this.int(i + 1);
+      const a = out[i];
+      const b = out[j];
+      if (a === undefined || b === undefined) continue;
+      out[i] = b;
+      out[j] = a;
+    }
+    return out;
+  }
+
   token(): string {
     let out = "";
     while (out.length < NAME_LENGTH) out += this.int(NAME_RADIX).toString(NAME_RADIX);

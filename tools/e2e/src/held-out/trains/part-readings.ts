@@ -1,7 +1,7 @@
+import { type PinnedLibrary } from "./pinned-library.ts";
 import { BrickCompiler } from "@brr/import";
 import type { Vec3 } from "../assembly.ts";
 import type { Bundle } from "../bundle.ts";
-import type { PinnedLibrary } from "./pinned-library.ts";
 
 export interface PrimitiveFrame {
   readonly primitive: string;
@@ -89,7 +89,7 @@ function accessorArray(glb: Glb, index: number): Float32Array | Uint32Array {
   }
 }
 
-function triangles(glb: Glb): Float32Array {
+export function triangles(glb: Glb): Float32Array {
   const out: number[] = [];
   for (const mesh of glb.json.meshes) {
     for (const primitive of mesh.primitives) {

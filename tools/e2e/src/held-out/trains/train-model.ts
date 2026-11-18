@@ -1,9 +1,7 @@
-import type { Vec3 } from "../assembly.ts";
 import { AXES, type Axis, type Sign } from "./part-geometry.ts";
 import type { Box, PartReading } from "./part-readings.ts";
 import type { Mat3 } from "./train-pools.ts";
-
-export const IDENTITY: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+import type { Vec3 } from "../assembly.ts";
 
 const QUARTER_TURNS = 4;
 const COS = [1, 0, -1, 0] as const;
@@ -71,7 +69,7 @@ const PERMUTATIONS: ReadonlyArray<readonly [Axis, Axis, Axis]> = [
   [2, 1, 0],
 ];
 
-export const CUBE_ROTATIONS: ReadonlyArray<Mat3> = PERMUTATIONS.flatMap((permutation) =>
+const CUBE_ROTATIONS: ReadonlyArray<Mat3> = PERMUTATIONS.flatMap((permutation) =>
   [1, -1].flatMap((a) =>
     [1, -1].flatMap((b) =>
       [1, -1].map((c) => {

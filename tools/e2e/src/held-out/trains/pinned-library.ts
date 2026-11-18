@@ -47,7 +47,6 @@ export interface LibraryFiles {
 
 export interface LibraryPart {
   readonly reference: string;
-  readonly shortcut: boolean;
   readonly partReferences: ReadonlyArray<string>;
 }
 
@@ -94,7 +93,7 @@ export function subfileLines(text: string): ReadonlyArray<SubfileLine> {
   return out;
 }
 
-function references(text: string): string[] {
+export function references(text: string): string[] {
   const out: string[] = [];
   for (const line of text.split("\n")) {
     const fields = line.trim().split(FIELDS);
@@ -237,7 +236,7 @@ export class PinnedLibrary {
       }
       const alias = !hasOwnGeometry(text) && referenced.length === 1 && partReferences.length === 1;
       if (alias) continue;
-      parts.push({ reference: file.toLowerCase(), shortcut: type === "Shortcut", partReferences });
+      parts.push({ reference: file.toLowerCase(), partReferences });
     }
     return parts;
   }

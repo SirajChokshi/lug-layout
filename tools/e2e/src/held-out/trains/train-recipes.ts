@@ -1,71 +1,29 @@
-import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import type { SeededRandom } from "../generator.ts";
+import { type AxleMode, type HungAxle, hangAxle, hangSplitAxle, positiveSeats } from "./axles.ts";
+import { type HungBogie, hangBogie, pivotAxles, pivotOptions, stackAt } from "./bogies.ts";
+import { carBody } from "./car-bodies.ts";
+import { type EndVariant, buildEnd } from "./end-features.ts";
 import { VERTICAL } from "./part-geometry.ts";
 import {
-  carBody,
-  endFeature,
-  hangAxle,
-  hangBogie,
-  hangSplitAxle,
-  mountPinBogie,
-  mountRunningPart,
-  pick,
+  type Carrier,
+  PIVOT_PART_SUFFIX,
+  type RailHeadBands,
   pickColor,
-  pivotAxles,
-  pivotOptions,
   placeAlong,
   pointOnLine,
-  PIVOT_PART_SUFFIX,
-  stackAt,
-  positiveSeats,
-  shuffled,
-  type AxleMode,
-  type Carrier,
-  type EndFeature,
-  type EndVariant,
-  type HungAxle,
-  type HungBogie,
-  type RailBands,
-  type WheelLine,
-} from "./train-builder.ts";
+} from "./placement.ts";
+import { mountPinBogie, mountRunningGear } from "./running-gear-mounts.ts";
 import type { TrainModel } from "./train-model.ts";
+import type { EndPlan, PlannedWheelset, TrainPlan, VehiclePlan } from "./train-plan.ts";
 import type { TrainPools, WheelPart } from "./train-pools.ts";
-
-export type EndPlan = EndFeature | "plain" | "unasserted";
-
-export interface VehiclePlan {
-  readonly body: ReadonlyArray<string>;
-  readonly bogies: ReadonlyArray<{
-    readonly unit: string;
-    readonly pivot: readonly [number, number];
-  }>;
-  readonly front: EndPlan;
-  readonly rear: EndPlan;
-}
-
-export interface CouplingPlan {
-  readonly vehicles: readonly [number, number];
-  readonly via: ReadonlyArray<string>;
-  readonly pivots: ReadonlyArray<readonly [number, number]>;
-}
-
-export interface TrainPlan {
-  readonly lines: ReadonlyArray<WheelLine>;
-  readonly vehicles: ReadonlyArray<VehiclePlan>;
-  readonly attachments: ReadonlyArray<string>;
-  readonly couplings: ReadonlyArray<CouplingPlan>;
-  readonly unresolved: ReadonlyArray<{
-    readonly units: ReadonlyArray<string>;
-    readonly reason: string;
-  }>;
-}
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
+import type { SeededRandom } from "../generator.ts";
 
 export interface RecipeContext {
   readonly model: TrainModel;
   readonly pools: TrainPools;
   readonly random: SeededRandom;
-  readonly rails: ReadonlyArray<RailBands>;
-  readonly rail: RailBands;
+  readonly rails: ReadonlyArray<RailHeadBands>;
+  readonly rail: RailHeadBands;
   readonly seats: Map<string, number>;
 }
 
@@ -82,7 +40,7 @@ export const WIDE = 1e9;
 const TURNTABLE_TRIES = 6;
 
 export function wheelFor(context: RecipeContext): WheelPart | null {
-  for (const wheel of shuffled(context.random, context.pools.wheels)) {
+  for (const wheel of context.random.shuffled(context.pools.wheels)) {
     const key = `${wheel.reading.reference} ${context.rail.part}`;
     let seats = context.seats.get(key);
     if (seats === undefined) {
@@ -137,8 +95,10 @@ export function bogieWithAxles(
   wheel: WheelPart,
   axleSide: "around" | "behind" = "around",
   cap = false,
+  pivotZ = 0,
+  roomFor: 1 | 2 = count,
 ): { readonly hung: HungBogie; readonly axles: ReadonlyArray<HungAxle> } | null {
-  const lengthStuds = count === 2 ? Math.ceil((4 * wheel.radius) / STUD_LDU) + 1 : 2;
+  const lengthStuds = roomFor === 2 ? Math.ceil((4 * wheel.radius) / STUD_LDU) + 1 : 2;
   const hung = hangBogie(context.model, context.pools, context.random, {
     body: carrier,
     pivotRange,
@@ -147,6 +107,7 @@ export function bogieWithAxles(
     join,
     lengthStuds,
     cap,
+    pivotZ,
   });
   if (!hung) return null;
   const firstPivot = Math.min(...hung.pivots.map((pivot) => pivot[0]));
@@ -175,12 +136,12 @@ export function ends(
 ): { readonly front: EndPlan; readonly rear: EndPlan } | null {
   const plans: EndPlan[] = [];
   for (const end of [1, -1] as const) {
-    const variant = pick(context.random, END_VARIANTS) ?? "plain";
+    const variant = context.random.choice(END_VARIANTS) ?? "plain";
     if (variant === "plain") {
       plans.push("plain");
       continue;
     }
-    const feature = endFeature(
+    const feature = buildEnd(
       context.model,
       context.pools,
       context.random,
@@ -195,7 +156,7 @@ export function ends(
   return { front: plans[0] ?? "plain", rear: plans[1] ?? "plain" };
 }
 
-export function third(carrier: Carrier, part: 0 | 1 | 2): readonly [number, number] {
+function third(carrier: Carrier, part: 0 | 1 | 2): readonly [number, number] {
   const step = (carrier.x1 - carrier.x0) / 3;
   return [carrier.x0 + step * part, carrier.x0 + step * (part + 1)];
 }
@@ -205,7 +166,7 @@ export function half(carrier: Carrier, part: 0 | 1): readonly [number, number] {
   return part === 0 ? [carrier.x0, middle] : [middle, carrier.x1];
 }
 
-export const axleCar: Recipe = (context) => {
+const axleCar: Recipe = (context) => {
   const wheel = wheelFor(context);
   const car = carBody(context.model, context.pools, context.random, 0, 8, "car");
   if (!wheel || !car) return null;
@@ -213,13 +174,19 @@ export const axleCar: Recipe = (context) => {
   const plan = hung ? ends(context, car, "car") : null;
   if (!hung || !plan) return null;
   return single(
-    hung.map((axle) => axle.line),
+    hung.map((axle) => axle.wheelset),
     { body: ["car"], bogies: [], ...plan },
   );
 };
 
-export function single(lines: ReadonlyArray<WheelLine>, vehicle: VehiclePlan): TrainPlan {
-  return { lines, vehicles: [vehicle], attachments: [], couplings: [], unresolved: [] };
+export function single(wheelsets: ReadonlyArray<PlannedWheelset>, vehicle: VehiclePlan): TrainPlan {
+  return {
+    wheelsets,
+    vehicles: [vehicle],
+    attachments: [],
+    couplingsInModel: [],
+    unresolvedRunningGear: [],
+  };
 }
 
 function bogieCar(axlesPerBogie: () => 1 | 2): Recipe {
@@ -252,7 +219,7 @@ function bogieCar(axlesPerBogie: () => 1 | 2): Recipe {
     const plan = rear ? ends(context, car, "car") : null;
     if (!front || !rear || !plan) return null;
     return single(
-      [...front.axles, ...rear.axles].map((axle) => axle.line),
+      [...front.axles, ...rear.axles].map((axle) => axle.wheelset),
       {
         body: ["car"],
         bogies: [
@@ -310,7 +277,7 @@ function locomotive(bogies: 1 | 2, ponyTruck: boolean): Recipe {
     const plan = drivers ? ends(context, car, "locomotive") : null;
     if (!drivers || !plan) return null;
     return single(
-      [...drivers, ...front.axles, ...(rear?.axles ?? [])].map((axle) => axle.line),
+      [...drivers, ...front.axles, ...(rear?.axles ?? [])].map((axle) => axle.wheelset),
       {
         body: ["locomotive"],
         bogies: [
@@ -323,15 +290,15 @@ function locomotive(bogies: 1 | 2, ponyTruck: boolean): Recipe {
   };
 }
 
-function runningCar(explode: boolean): Recipe {
+function runningGearCar(explode: boolean): Recipe {
   return (context) => {
     const candidates = context.pools.running.filter(
       (part) => part.topStuds.length > 0 && (!explode || part.constituents !== null),
     );
-    const part = pick(context.random, candidates);
+    const part = context.random.choice(candidates);
     const car = carBody(context.model, context.pools, context.random, 0, 12, "car");
     if (!part || !car) return null;
-    const first = mountRunningPart(
+    const first = mountRunningGear(
       context.model,
       context.pools,
       context.random,
@@ -343,7 +310,7 @@ function runningCar(explode: boolean): Recipe {
       "car",
     );
     if (!first) return null;
-    const second = mountRunningPart(
+    const second = mountRunningGear(
       context.model,
       context.pools,
       context.random,
@@ -355,7 +322,7 @@ function runningCar(explode: boolean): Recipe {
       "car",
     );
     if (!second) return null;
-    return single([...first.lines, ...second.lines], {
+    return single([...first.wheelsets, ...second.wheelsets], {
       body: ["car"],
       bogies: [],
       front: "unasserted",
@@ -366,9 +333,9 @@ function runningCar(explode: boolean): Recipe {
 
 const motorBogieCar: Recipe = (context) => {
   const motors = context.pools.running.filter(
-    (part) => part.pivotPin !== null && part.lines.length >= 2,
+    (part) => part.pivotPin !== null && part.axes.length >= 2,
   );
-  const motor = pick(context.random, motors);
+  const motor = context.random.choice(motors);
   const wheel = wheelFor(context);
   const car = carBody(context.model, context.pools, context.random, 0, 16, "car");
   if (!motor || !wheel || !car) return null;
@@ -386,7 +353,7 @@ const motorBogieCar: Recipe = (context) => {
   if (!front?.pivot) return null;
   const rear = bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel);
   if (!rear) return null;
-  return single([...front.lines, ...rear.axles.map((axle) => axle.line)], {
+  return single([...front.wheelsets, ...rear.axles.map((axle) => axle.wheelset)], {
     body: ["car"],
     bogies: [
       { unit: "motor bogie", pivot: front.pivot },
@@ -404,11 +371,11 @@ const singleBogieBody: Recipe = (context) => {
   const bogie = bogieWithAxles(context, car, half(car, 1), 2, "car", "bogie", "pivot", wheel);
   if (!bogie) return null;
   return {
-    lines: bogie.axles.map((axle) => axle.line),
+    wheelsets: bogie.axles.map((axle) => axle.wheelset),
     vehicles: [],
     attachments: [],
-    couplings: [],
-    unresolved: [{ units: ["car", "bogie"], reason: "fewer than two guides" }],
+    couplingsInModel: [],
+    unresolvedRunningGear: [{ units: ["car", "bogie"], reason: "fewer than two guides" }],
   };
 };
 
@@ -423,12 +390,12 @@ function negativeAxleCar(modes: ReadonlyArray<AxleMode>): Recipe {
     if (!hung) return null;
     const positives = modes.filter((mode) => mode === "positive").length;
     return {
-      lines: hung.map((axle) => axle.line),
+      wheelsets: hung.map((axle) => axle.wheelset),
       vehicles:
         positives >= 2 ? [{ body: ["car"], bogies: [], front: "plain", rear: "plain" }] : [],
       attachments: [],
-      couplings: [],
-      unresolved: [],
+      couplingsInModel: [],
+      unresolvedRunningGear: [],
     };
   };
 }
@@ -444,7 +411,7 @@ function lockedTruck(join: "rigid" | "two pivots"): Recipe {
       : null;
     if (!truck || !rear) return null;
     return single(
-      [...truck.axles, ...rear.axles].map((axle) => axle.line),
+      [...truck.axles, ...rear.axles].map((axle) => axle.wheelset),
       {
         body: ["car", "truck"],
         bogies: [{ unit: "rear bogie", pivot: rear.hung.pivots[0] ?? [0, 0] }],
@@ -462,9 +429,9 @@ const roofTurntable: Recipe = (context) => {
   const baseBox = model.box(0);
   const top = baseBox.max[VERTICAL];
   for (let attempt = 0; attempt < TURNTABLE_TRIES; attempt++) {
-    const option = pick(random, pivotOptions(pools));
-    const axle = pick(random, pivotAxles(pools));
-    const hole = option ? pick(random, option.holes) : null;
+    const option = random.choice(pivotOptions(pools));
+    const axle = random.choice(pivotAxles(pools));
+    const hole = option ? random.choice(option.holes) : null;
     if (!option || !axle || !hole) return null;
     const [length, width] = [
       option.box.max[0] - option.box.min[0],
@@ -544,7 +511,7 @@ const cappedPivotCar: Recipe = (context) => {
     : null;
   if (!front || !rear) return null;
   return single(
-    [...front.axles, ...rear.axles].map((axle) => axle.line),
+    [...front.axles, ...rear.axles].map((axle) => axle.wheelset),
     {
       body: ["car"],
       bogies: [
@@ -570,11 +537,16 @@ const splitAcrossPivot: Recipe = (context) => {
     "front bogie",
     "pivot",
     wheel,
+    "around",
+    false,
+    -STUD_LDU,
+    2,
   );
   if (!front) return null;
+  if (front.hung.bogie.z1 - front.hung.bogie.z0 > 2 * STUD_LDU) return null;
   const pivotX = front.hung.pivots[0]?.[0] ?? 0;
   const normal = front.axles[0];
-  if (!normal || normal.line.x < pivotX) return null;
+  if (!normal || normal.wheelset.x < pivotX) return null;
   const split = hangSplitAxle(context.model, context.pools, context.random, {
     bogie: front.hung.bogie,
     body: car,
@@ -587,7 +559,7 @@ const splitAcrossPivot: Recipe = (context) => {
     : null;
   if (!split || !rear) return null;
   return single(
-    [normal, split, ...rear.axles].map((axle) => axle.line),
+    [normal, split, ...rear.axles].map((axle) => axle.wheelset),
     {
       body: ["car"],
       bogies: [
@@ -607,9 +579,9 @@ const RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
   ["locomotive with one bogie", locomotive(1, false)],
   ["locomotive with two bogies", locomotive(2, false)],
   ["locomotive with a pony truck", locomotive(1, true)],
-  ["one-piece wheelset-part car", runningCar(false)],
-  ["separate-piece wheelset-part car", runningCar(true)],
-  ["multi-axle motor bogie car", motorBogieCar],
+  ["one-piece running-gear part", runningGearCar(false)],
+  ["running-gear part in separate pieces", runningGearCar(true)],
+  ["motor bogie, two axles in one part", motorBogieCar],
   ["car on a single bogie", singleBogieBody],
   ["roof turntable", roofTurntable],
   ["bush capping a pivot", cappedPivotCar],
