@@ -199,11 +199,10 @@ fn coarsest_closed_ring(studs: &[Vec<Triangle>]) -> Option<StudRing> {
             for span in mesh.spans(axis) {
                 for group in span.groups {
                     let strip = Strip::new(&mesh, axis, span.key, group);
-                    let Some(circles) = strip.closed_circles() else {
+                    let Some(turn_cosine) = strip.closed_circles().turn_cosine(&strip.rings) else {
                         continue;
                     };
                     let facets = strip.facets();
-                    let turn_cosine = circles.turn_cosine(&strip.rings);
                     if coarsest.as_ref().is_none_or(|c| facets < c.facets) {
                         coarsest = Some(StudRing {
                             facets,
@@ -669,7 +668,7 @@ impl<'a> Mesh<'a> {
                 facets: 0,
                 orientation,
             }
-            .unread_as(UnreadBand::Irregular)]);
+            .unread_when_outward(UnreadBand::Irregular)]);
         };
         let orientation = orientation_about(profile.centre);
         let centres: Vec<[f64; 2]> = profile
@@ -692,7 +691,7 @@ impl<'a> Mesh<'a> {
                         facets,
                         orientation,
                     }
-                    .closed_reading(roundness)
+                    .reading(roundness)
                 })
                 .collect(),
         )
@@ -1075,25 +1074,42 @@ impl Ring {
     }
 }
 
-struct ClosedCircles {
-    centres: Vec<[f64; 2]>,
-    radii: [f64; 2],
-    denser_ring: usize,
+enum ClosedCircles {
+    NotRound,
+    OneEnd {
+        centre: [f64; 2],
+        radii: [Option<f64>; 2],
+    },
+    BothEnds {
+        centres: Vec<[f64; 2]>,
+        radii: [Option<f64>; 2],
+        denser_ring: usize,
+    },
 }
 
 impl ClosedCircles {
-    fn turn_cosine(&self, rings: &[Ring; 2]) -> f64 {
-        let ring = &rings[self.denser_ring];
-        let centre = self.centres[0];
-        ring.chords
-            .iter()
-            .map(|&(a, b)| {
-                turn_cosine(
-                    offset(ring.points[a], centre),
-                    offset(ring.points[b], centre),
-                )
-            })
-            .fold(f64::INFINITY, f64::min)
+    fn turn_cosine(&self, rings: &[Ring; 2]) -> Option<f64> {
+        let ClosedCircles::BothEnds {
+            centres,
+            denser_ring,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        let ring = &rings[*denser_ring];
+        let centre = centres[0];
+        Some(
+            ring.chords
+                .iter()
+                .map(|&(a, b)| {
+                    turn_cosine(
+                        offset(ring.points[a], centre),
+                        offset(ring.points[b], centre),
+                    )
+                })
+                .fold(f64::INFINITY, f64::min),
+        )
     }
 }
 
@@ -1148,7 +1164,7 @@ impl BandCandidate {
         }
     }
 
-    fn unread_as(&self, outward: fn(BandPlace) -> UnreadBand) -> BandReading {
+    fn unread_when_outward(&self, outward: fn(BandPlace) -> UnreadBand) -> BandReading {
         match self.orientation {
             Orientation::Inward => BandReading::Inward,
             Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(self.place())),
@@ -1156,7 +1172,7 @@ impl BandCandidate {
         }
     }
 
-    fn closed_reading(&self, roundness: Roundness) -> BandReading {
+    fn reading(&self, roundness: Roundness) -> BandReading {
         match self.orientation {
             Orientation::Inward => BandReading::Inward,
             Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(self.place())),
@@ -1264,40 +1280,48 @@ impl<'a> Strip<'a> {
         self.rings.iter().map(|r| r.points.len()).max().unwrap_or(0)
     }
 
-    fn closed_circles(&self) -> Option<ClosedCircles> {
+    fn closed_circles(&self) -> ClosedCircles {
         if !self.is_closed() {
-            return None;
+            return ClosedCircles::NotRound;
         }
         let denser_ring = usize::from(self.rings[1].points.len() > self.rings[0].points.len());
-        let (circle, _) = self.rings[denser_ring].circle()?;
-        let mut radii = [0.0; 2];
-        radii[denser_ring] = circle.radius;
-        let mut centres = vec![circle.centre];
+        let Some((circle, _)) = self.rings[denser_ring].circle() else {
+            return ClosedCircles::NotRound;
+        };
+        let mut radii = [None; 2];
+        radii[denser_ring] = Some(circle.radius);
+        let one_end = ClosedCircles::OneEnd {
+            centre: circle.centre,
+            radii,
+        };
         let other = &self.rings[1 - denser_ring];
-        if other.is_apex() {
+        let other_centre = if other.is_apex() {
             if planar_distance(other.points[0], circle.centre) >= circle.sagitta {
-                return None;
+                return one_end;
             }
-            centres.push(other.points[0]);
+            radii[1 - denser_ring] = Some(0.0);
+            other.points[0]
         } else {
             let about_common = Circle::about(
                 &other.points,
                 &other.chords,
                 circle.centre,
                 other.circumradius(circle.centre),
-            )?;
-            let (own, _) = other.circle()?;
-            radii[1 - denser_ring] = own.radius;
-            centres.push(own.centre);
+            );
+            let Some(((own, _), about_common)) = other.circle().zip(about_common) else {
+                return one_end;
+            };
             if (about_common.radius - own.radius).abs() >= about_common.sagitta {
-                return None;
+                return one_end;
             }
-        }
-        Some(ClosedCircles {
-            centres,
+            radii[1 - denser_ring] = Some(own.radius);
+            own.centre
+        };
+        ClosedCircles::BothEnds {
+            centres: vec![circle.centre, other_centre],
             radii,
             denser_ring,
-        })
+        }
     }
 
     fn orientation_about(&self, centre: [f64; 2]) -> Orientation {
@@ -1337,13 +1361,13 @@ impl<'a> Strip<'a> {
         let mut radii = [None; 2];
         radii[denser_ring] = Some(circle.radius);
         if !other.points.is_empty() && !other.chords.is_empty() {
-            let about_common = Circle::about(
+            radii[1 - denser_ring] = Circle::about(
                 &other.points,
                 &other.chords,
                 circle.centre,
                 other.circumradius(circle.centre),
-            )?;
-            radii[1 - denser_ring] = Some(about_common.radius);
+            )
+            .map(|about_common| about_common.radius);
         }
         let around = ring.around(circle.centre);
         let goes_round = (0..around.len()).all(|i| {
@@ -1359,7 +1383,7 @@ impl<'a> Strip<'a> {
         }
         self.open_candidate(roundness)
             .map_or(BandReading::NotRound, |candidate| {
-                candidate.unread_as(UnreadBand::Partial)
+                candidate.unread_when_outward(UnreadBand::Partial)
             })
     }
 
@@ -1367,16 +1391,22 @@ impl<'a> Strip<'a> {
         if self.facets() < roundness.coarse_facets {
             return BandReading::NotRound;
         }
-        let Some(circles) = self.closed_circles() else {
-            let denser_ring = self.rings.iter().max_by_key(|r| r.points.len());
-            let extents_centre = denser_ring.map_or([0.0; 2], |r| r.extents().0);
-            return self
-                .candidate(extents_centre, Vec::new(), [None; 2])
-                .closed_reading(roundness);
-        };
-        let oriented_about = circles.centres[0];
-        self.candidate(oriented_about, circles.centres, circles.radii.map(Some))
-            .closed_reading(roundness)
+        match self.closed_circles() {
+            ClosedCircles::NotRound => {
+                let denser_ring = self.rings.iter().max_by_key(|r| r.points.len());
+                let extents_centre = denser_ring.map_or([0.0; 2], |r| r.extents().0);
+                self.candidate(extents_centre, Vec::new(), [None; 2])
+                    .reading(roundness)
+            }
+            ClosedCircles::OneEnd { centre, radii } => self
+                .candidate(centre, vec![centre], radii)
+                .unread_when_outward(UnreadBand::Irregular),
+            ClosedCircles::BothEnds { centres, radii, .. } => {
+                let oriented_about = centres[0];
+                self.candidate(oriented_about, centres, radii)
+                    .reading(roundness)
+            }
+        }
     }
 }
 

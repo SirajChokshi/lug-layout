@@ -187,6 +187,22 @@ fn custom_wheel() -> String {
         high_shift: [1.0 / 16.0, 0.0, 0.0],
         ..Band::along(1, at(-100.0, 0.0, 0.0), -8.0, 0.0, [12.0, 12.0])
     };
+    let off_grid_ring = 0.001;
+    let cut_up_to_an_off_grid_ring = Band {
+        meridian_cuts: Some([40.25, 0.25]),
+        high_shift: [0.0, off_grid_ring, 0.0],
+        ..Band::along(0, at(0.0, -120.0, 0.0), 40.0, 45.0, [8.0, 8.0])
+    };
+    let cut_obliquely_beyond_it = Band {
+        oblique_top: 0.25,
+        ..Band::along(
+            0,
+            at(0.0, -120.0 + off_grid_ring, 0.0),
+            45.0,
+            50.0,
+            [8.0, 8.0],
+        )
+    };
     let read_before_an_oblique_cut = Band::along(0, at(0.0, -80.0, 0.0), 40.0, 45.0, [8.0, 8.0]);
     let oblique_cut_after_a_read_band = Band {
         oblique_top: 0.25,
@@ -213,6 +229,8 @@ fn custom_wheel() -> String {
         cut_obliquely,
         cone_cut_on_every_meridian,
         rings_a_sixteenth_apart,
+        cut_up_to_an_off_grid_ring,
+        cut_obliquely_beyond_it,
         read_before_an_oblique_cut,
         oblique_cut_after_a_read_band,
         tilted,
@@ -332,6 +350,7 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "from": -160,
                 "to": 0
             },
+            { "reason": "irregular", "axis": 0, "radii": [128, null], "from": 640, "to": 832 },
             {
                 "reason": "irregular",
                 "axis": 0,
