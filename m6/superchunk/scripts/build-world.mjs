@@ -289,12 +289,13 @@ if (!BASEPLATE_ITEM) throw new Error(`no green 3811 baseplate in the catalog: ${
 let ghostRot = 0;
 async function choose(item) {
   const button = page.locator(`[data-item="${item}"]`);
-  await button.scrollIntoViewIfNeeded();
-  const box = await button.boundingBox();
-  if (!box) throw new Error(`catalog item ${item} is not on screen`);
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  const active = await page.locator(`[data-item="${item}"]`).getAttribute("aria-pressed");
-  if (active !== "true") throw new Error(`catalog item ${item} did not activate`);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if ((await button.getAttribute("aria-pressed")) === "true") return;
+    await button.scrollIntoViewIfNeeded();
+    await button.evaluate((el) => el.click());
+    await page.waitForTimeout(100 * (attempt + 1));
+  }
+  throw new Error(`catalog item ${item} did not activate`);
 }
 
 const tally = { moves: 0, aims: 0, centres: 0, zooms: 0 };
@@ -490,8 +491,24 @@ if (args.tour) {
   await orbitTo(Math.PI / 4, 0.35);
   await zoomTo(2500);
   await page.mouse.move(canvasBox.width - 2, canvasBox.height - 2);
-  console.log("TOUR READY: touch /tmp/pw/tour-go to start");
-  while (!existsSync("/tmp/pw/tour-go")) await page.waitForTimeout(1000);
+  const castFrames = [];
+  let cdp = null;
+  if (args.screencast) {
+    mkdirSync(args.screencast, { recursive: true });
+    await page.waitForTimeout(20000);
+    cdp = await context.newCDPSession(page);
+    cdp.on("Page.screencastFrame", async ({ data, sessionId, metadata }) => {
+      const file = `${args.screencast}/frame-${String(castFrames.length).padStart(6, "0")}.jpg`;
+      writeFileSync(file, Buffer.from(data, "base64"));
+      castFrames.push({ file, t: metadata.timestamp });
+      await cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+    });
+    await cdp.send("Page.startScreencast", { format: "jpeg", quality: 85, everyNthFrame: 1 });
+    console.log("TOUR START (screencast)");
+  } else {
+    console.log("TOUR READY: touch /tmp/pw/tour-go to start");
+    while (!existsSync("/tmp/pw/tour-go")) await page.waitForTimeout(1000);
+  }
   await page.waitForTimeout(3000);
   const steps = 40;
   const startDistance = cam.distance;
@@ -516,6 +533,18 @@ if (args.tour) {
     await page.waitForTimeout(1500);
   }
   await page.waitForTimeout(10000);
+  if (cdp) {
+    await cdp.send("Page.stopScreencast");
+    const lines = [];
+    for (let i = 0; i < castFrames.length; i++) {
+      const next = castFrames[i + 1];
+      const duration = next ? next.t - castFrames[i].t : 1;
+      lines.push(`file '${castFrames[i].file}'`, `duration ${duration.toFixed(4)}`);
+    }
+    if (castFrames.length > 0) lines.push(`file '${castFrames[castFrames.length - 1].file}'`);
+    writeFileSync(`${args.screencast}/frames.txt`, lines.join("\n") + "\n");
+    console.log(`screencast: ${castFrames.length} frames in ${args.screencast}/frames.txt`);
+  }
   console.log("TOUR DONE");
 }
 if (args.hold) await page.waitForTimeout(Number(args.hold));

@@ -1,0 +1,10 @@
+batch to 500 modules: HUD placements 1000, expected 1000
+m500 street median 607.9 p95 652.2 draws 639 tris 1401396 live 470 superDrawn 25 heap 413MiB gc-heap 146MiB backing 265MiB gpu 30MiB settle 48727
+m500 aerial median 173.0 p95 211.9 draws 74 tris 127754 live 0 superDrawn 36 heap 176MiB gc-heap 29MiB backing 145MiB gpu 39MiB settle 4439
+batch to 1000 modules: HUD placements 2000, expected 2000
+m1000 street median 799.8 p95 859.7 draws 808 tris 1729103 live 508 superDrawn 61 heap 515MiB gc-heap 161MiB backing 326MiB gpu 44MiB settle 60657
+m1000 aerial median 152.8 p95 215.8 draws 146 tris 255506 live 0 superDrawn 72 heap 235MiB gc-heap 33MiB backing 200MiB gpu 44MiB settle 4907
+batch to 2025 modules: HUD placements 4050, expected 4050
+m2025 street median 805.1 p95 905.6 draws 808 tris 1729103 live 486 superDrawn 134 heap 602MiB gc-heap 173MiB backing 423MiB gpu 52MiB settle 60268
+m2025 aerial median 195.8 p95 211.3 draws 290 tris 517310 live 0 superDrawn 144 heap 355MiB gc-heap 41MiB backing 313MiB gpu 55MiB settle 7693
+built 2025 modules in 54360 s; placements 4050

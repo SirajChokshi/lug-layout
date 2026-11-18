@@ -1,0 +1,320 @@
+[
+ {
+  "label": "m500",
+  "pose": "street",
+  "url": "http://127.0.0.1:4182/?api=webgl2&frames=10",
+  "viewport": [
+   1600,
+   1000
+  ],
+  "measurement": {
+   "frames": 10,
+   "maxFrameMs": 652.1999999955297,
+   "frameMs": [
+    626.2999999970198,
+    600.6000000014901,
+    602.1000000014901,
+    617.5,
+    644.3999999985099,
+    607.8999999985099,
+    573,
+    565.8000000044703,
+    652.1999999955297,
+    614.5
+   ],
+   "placements": 1000,
+   "placedParts": 550981,
+   "superChunkLod": true,
+   "settled": true,
+   "settleMs": 48726.70000000298,
+   "liveChunks": 470,
+   "superChunksDrawn": 25,
+   "superChunks": 36,
+   "residentSuperChunks": 11,
+   "jsHeapBytes": 432573974,
+   "gpuVertexIndexBytes": 30822604,
+   "gpuOtherBytes": 518304,
+   "medianFrameMs": 607.8999999985099,
+   "p95FrameMs": 652.1999999955297,
+   "medianCpuSubmitMs": 30.399999998509884,
+   "drawCalls": 639,
+   "triangles": 1401396,
+   "nearChunks": 22,
+   "midChunks": 208,
+   "farChunks": 240,
+   "nearestStudPitchPx": 22.569977919677427
+  },
+  "heapAfterGcBytes": {
+   "usedSize": 153601200,
+   "totalSize": 156176384,
+   "embedderHeapUsedSize": 6596760,
+   "backingStorageSize": 277861281
+  },
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n2,678 ms\nWorld open\n12.2 ms\nFirst world frame\n3,169 ms after navigation\nMode\nselect\nGhost rotation\n180°\nRoad-edge snap\nnone\nModule fit\nnone\nCursor on lattice (LDU)\noff the ground\nLands at (plates)\n–\nPlacements\n1,000\nHistory (undo, redo)\n1,000, 0\nLast edit latency\n359.8 ms (place 7936-1 Level Crossing (2010), 180°)\nRebuilt for it\n4 chunks, 236 parts, 1,378 studs\nStuds drawn\n1,143,836\nStuds culled inside models\n991,198\nStuds culled under footprints\n337,876\nFrame rate (rAF)\n1.5 fps\nDraw calls\n639\nDrawn triangles\n1,401,396\nRender origin (chunks), rebases\n(6, 2); 1022\nTier (L)\nauto\nChunk tiers near/mid/far\n22 / 208 / 240\nProjected stud pitch, nearest chunk\n22.6 px\nLive chunks\n470\nSuper-chunks (mesh / resident / all)\n25 / 11 / 36\nSuper-chunk mesh triangles\n1,115,000\nSuper-chunk mesh: edit to screen (last / max), last build CPU\n53671 / 57704 ms, 75 ms (1035 builds, 4 stale)\nPlaced parts\n550,981\nJS heap\n412.6 MiB\nGPU buffers\n29.9 MiB\nFrame time (M), GPU-synced\nmedian 607.9 ms, p95 652.2 ms, max 652.2 ms over 10 frames; 1,000 placements, 550,981 parts, super-chunk LOD on, settled in 48727 ms"
+ },
+ {
+  "label": "m500",
+  "pose": "aerial",
+  "url": "http://127.0.0.1:4182/?api=webgl2&frames=10",
+  "viewport": [
+   1600,
+   1000
+  ],
+  "measurement": {
+   "frames": 10,
+   "maxFrameMs": 211.90000000596046,
+   "frameMs": [
+    154.19999999552965,
+    160.80000000447035,
+    169,
+    179.70000000298023,
+    173,
+    211.90000000596046,
+    210.20000000298023,
+    199.19999999552965,
+    203.20000000298023,
+    161.30000000447035
+   ],
+   "placements": 1000,
+   "placedParts": 550981,
+   "superChunkLod": true,
+   "settled": true,
+   "settleMs": 4439.19999999553,
+   "liveChunks": 0,
+   "superChunksDrawn": 36,
+   "superChunks": 36,
+   "residentSuperChunks": 0,
+   "jsHeapBytes": 184161840,
+   "gpuVertexIndexBytes": 40937040,
+   "gpuOtherBytes": 22480,
+   "medianFrameMs": 173,
+   "p95FrameMs": 211.90000000596046,
+   "medianCpuSubmitMs": 1.1999999955296516,
+   "drawCalls": 74,
+   "triangles": 127754,
+   "nearChunks": 0,
+   "midChunks": 0,
+   "farChunks": 0,
+   "nearestStudPitchPx": 0
+  },
+  "heapAfterGcBytes": {
+   "usedSize": 30482104,
+   "totalSize": 32325632,
+   "embedderHeapUsedSize": 5507352,
+   "backingStorageSize": 152074705
+  },
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n2,678 ms\nWorld open\n12.2 ms\nFirst world frame\n3,169 ms after navigation\nMode\nselect\nGhost rotation\n180°\nRoad-edge snap\nnone\nModule fit\nnone\nCursor on lattice (LDU)\noff the ground\nLands at (plates)\n–\nPlacements\n1,000\nHistory (undo, redo)\n1,000, 0\nLast edit latency\n359.8 ms (place 7936-1 Level Crossing (2010), 180°)\nRebuilt for it\n4 chunks, 236 parts, 1,378 studs\nStuds drawn\n1,143,836\nStuds culled inside models\n991,198\nStuds culled under footprints\n337,876\nFrame rate (rAF)\n5.0 fps\nDraw calls\n74\nDrawn triangles\n127,754\nRender origin (chunks), rebases\n(216, 230); 1040\nTier (L)\nauto\nChunk tiers near/mid/far\n0 / 0 / 0\nProjected stud pitch, nearest chunk\n0.0 px\nLive chunks\n0\nSuper-chunks (mesh / resident / all)\n36 / 0 / 36\nSuper-chunk mesh triangles\n127,752\nSuper-chunk mesh: edit to screen (last / max), last build CPU\n6961 / 110073 ms, 5 ms (1072 builds, 0 stale)\nPlaced parts\n550,981\nJS heap\n175.3 MiB\nGPU buffers\n39.1 MiB\nFrame time (M), GPU-synced\nmedian 173.0 ms, p95 211.9 ms, max 211.9 ms over 10 frames; 1,000 placements, 550,981 parts, super-chunk LOD on, settled in 4439 ms"
+ },
+ {
+  "label": "m1000",
+  "pose": "street",
+  "url": "http://127.0.0.1:4182/?api=webgl2&frames=10",
+  "viewport": [
+   1600,
+   1000
+  ],
+  "measurement": {
+   "frames": 10,
+   "maxFrameMs": 859.7000000029802,
+   "frameMs": [
+    854.5,
+    796.5,
+    816.5,
+    811.9000000059605,
+    793.5999999940395,
+    859.7000000029802,
+    826.7999999970198,
+    797,
+    799.8000000119209,
+    782.7999999970198
+   ],
+   "placements": 2000,
+   "placedParts": 1103081,
+   "superChunkLod": true,
+   "settled": false,
+   "settleMs": 60657.40000000596,
+   "liveChunks": 508,
+   "superChunksDrawn": 61,
+   "superChunks": 72,
+   "residentSuperChunks": 11,
+   "jsHeapBytes": 539865756,
+   "gpuVertexIndexBytes": 45793120,
+   "gpuOtherBytes": 617712,
+   "medianFrameMs": 799.8000000119209,
+   "p95FrameMs": 859.7000000029802,
+   "medianCpuSubmitMs": 36.400000005960464,
+   "drawCalls": 808,
+   "triangles": 1729103,
+   "nearChunks": 23,
+   "midChunks": 216,
+   "farChunks": 269,
+   "nearestStudPitchPx": 26.021439353115433
+  },
+  "heapAfterGcBytes": {
+   "usedSize": 168856160,
+   "totalSize": 172179456,
+   "embedderHeapUsedSize": 7063072,
+   "backingStorageSize": 342219842
+  },
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n2,678 ms\nWorld open\n12.2 ms\nFirst world frame\n3,169 ms after navigation\nMode\nselect\nGhost rotation\n180°\nRoad-edge snap\nnone\nModule fit\nnone\nCursor on lattice (LDU)\noff the ground\nLands at (plates)\n–\nPlacements\n2,000\nHistory (undo, redo)\n2,000, 0\nLast edit latency\n384.5 ms (place 7936-1 Level Crossing (2010), 180°)\nRebuilt for it\n4 chunks, 236 parts, 1,378 studs\nStuds drawn\n2,289,186\nStuds culled inside models\n1,984,448\nStuds culled under footprints\n676,776\nFrame rate (rAF)\n1.2 fps\nDraw calls\n808\nDrawn triangles\n1,729,103\nRender origin (chunks), rebases\n(6, 2); 2065\nTier (L)\nauto\nChunk tiers near/mid/far\n23 / 216 / 269\nProjected stud pitch, nearest chunk\n26.0 px\nLive chunks\n508\nSuper-chunks (mesh / resident / all)\n61 / 11 / 72\nSuper-chunk mesh triangles\n1,598,642\nSuper-chunk mesh: edit to screen (last / max), last build CPU\n75443 / 110073 ms, 220 ms (2114 builds, 49 stale)\nPlaced parts\n1,103,081\nJS heap\n503.0 MiB\nGPU buffers\n44.3 MiB\nFrame time (M), GPU-synced\nmedian 799.8 ms, p95 859.7 ms, max 859.7 ms over 10 frames; 2,000 placements, 1,103,081 parts, super-chunk LOD on, not settled"
+ },
+ {
+  "label": "m1000",
+  "pose": "aerial",
+  "url": "http://127.0.0.1:4182/?api=webgl2&frames=10",
+  "viewport": [
+   1600,
+   1000
+  ],
+  "measurement": {
+   "frames": 10,
+   "maxFrameMs": 215.79999999701977,
+   "frameMs": [
+    156.19999998807907,
+    149.59999999403954,
+    151.20000000298023,
+    215.79999999701977,
+    170.70000000298023,
+    148.29999999701977,
+    146,
+    152.80000001192093,
+    208,
+    154.20000000298023
+   ],
+   "placements": 2000,
+   "placedParts": 1103081,
+   "superChunkLod": true,
+   "settled": true,
+   "settleMs": 4907.20000000298,
+   "liveChunks": 0,
+   "superChunksDrawn": 72,
+   "superChunks": 72,
+   "residentSuperChunks": 0,
+   "jsHeapBytes": 246097489,
+   "gpuVertexIndexBytes": 46558128,
+   "gpuOtherBytes": 44368,
+   "medianFrameMs": 152.80000001192093,
+   "p95FrameMs": 215.79999999701977,
+   "medianCpuSubmitMs": 1.7000000029802322,
+   "drawCalls": 146,
+   "triangles": 255506,
+   "nearChunks": 0,
+   "midChunks": 0,
+   "farChunks": 0,
+   "nearestStudPitchPx": 0
+  },
+  "heapAfterGcBytes": {
+   "usedSize": 35115924,
+   "totalSize": 36519936,
+   "embedderHeapUsedSize": 5638864,
+   "backingStorageSize": 209859713
+  },
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n2,678 ms\nWorld open\n12.2 ms\nFirst world frame\n3,169 ms after navigation\nMode\nselect\nGhost rotation\n180°\nRoad-edge snap\nnone\nModule fit\nnone\nCursor on lattice (LDU)\noff the ground\nLands at (plates)\n–\nPlacements\n2,000\nHistory (undo, redo)\n2,000, 0\nLast edit latency\n384.5 ms (place 7936-1 Level Crossing (2010), 180°)\nRebuilt for it\n4 chunks, 236 parts, 1,378 studs\nStuds drawn\n2,289,186\nStuds culled inside models\n1,984,448\nStuds culled under footprints\n676,776\nFrame rate (rAF)\n7.2 fps\nDraw calls\n146\nDrawn triangles\n255,506\nRender origin (chunks), rebases\n(216, 231); 2084\nTier (L)\nauto\nChunk tiers near/mid/far\n0 / 0 / 0\nProjected stud pitch, nearest chunk\n0.0 px\nLive chunks\n0\nSuper-chunks (mesh / resident / all)\n72 / 0 / 72\nSuper-chunk mesh triangles\n255,504\nSuper-chunk mesh: edit to screen (last / max), last build CPU\n7270 / 135628 ms, 25 ms (2152 builds, 0 stale)\nPlaced parts\n1,103,081\nJS heap\n234.0 MiB\nGPU buffers\n44.4 MiB\nFrame time (M), GPU-synced\nmedian 152.8 ms, p95 215.8 ms, max 215.8 ms over 10 frames; 2,000 placements, 1,103,081 parts, super-chunk LOD on, settled in 4907 ms"
+ },
+ {
+  "label": "m2025",
+  "pose": "street",
+  "url": "http://127.0.0.1:4182/?api=webgl2&frames=10",
+  "viewport": [
+   1600,
+   1000
+  ],
+  "measurement": {
+   "frames": 10,
+   "maxFrameMs": 905.6000000089407,
+   "frameMs": [
+    799.2000000029802,
+    799.5999999940395,
+    803.1999999880791,
+    828.0999999940395,
+    804.7999999970198,
+    845.8999999910593,
+    905.6000000089407,
+    860.4000000059605,
+    817.3999999910593,
+    805.1000000089407
+   ],
+   "placements": 4050,
+   "placedParts": 2235082,
+   "superChunkLod": true,
+   "settled": false,
+   "settleMs": 60268,
+   "liveChunks": 486,
+   "superChunksDrawn": 134,
+   "superChunks": 144,
+   "residentSuperChunks": 11,
+   "jsHeapBytes": 630778524,
+   "gpuVertexIndexBytes": 53929336,
+   "gpuOtherBytes": 903776,
+   "medianFrameMs": 805.1000000089407,
+   "p95FrameMs": 905.6000000089407,
+   "medianCpuSubmitMs": 39.099999994039536,
+   "drawCalls": 808,
+   "triangles": 1729103,
+   "nearChunks": 23,
+   "midChunks": 216,
+   "farChunks": 247,
+   "nearestStudPitchPx": 26.021439353115444
+  },
+  "heapAfterGcBytes": {
+   "usedSize": 181458488,
+   "totalSize": 184897536,
+   "embedderHeapUsedSize": 7494640,
+   "backingStorageSize": 443324716
+  },
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n2,678 ms\nWorld open\n12.2 ms\nFirst world frame\n3,169 ms after navigation\nMode\nselect\nGhost rotation\n0°\nRoad-edge snap\nnone\nModule fit\nnone\nCursor on lattice (LDU)\noff the ground\nLands at (plates)\n–\nPlacements\n4,050\nHistory (undo, redo)\n4,050, 0\nLast edit latency\n500.5 ms (place 7936-1 Level Crossing (2010), 0°)\nRebuilt for it\n3 chunks, 148 parts, 1,156 studs\nStuds drawn\n4,637,872\nStuds culled inside models\n4,020,186\nStuds culled under footprints\n1,370,480\nFrame rate (rAF)\n1.3 fps\nDraw calls\n808\nDrawn triangles\n1,729,103\nRender origin (chunks), rebases\n(6, 2); 4157\nTier (L)\nauto\nChunk tiers near/mid/far\n23 / 216 / 269\nProjected stud pitch, nearest chunk\n26.0 px\nLive chunks\n508\nSuper-chunks (mesh / resident / all)\n133 / 11 / 144\nSuper-chunk mesh triangles\n1,555,106\nSuper-chunk mesh: edit to screen (last / max), last build CPU\n73407 / 135628 ms, 31 ms (4276 builds, 82 stale)\nPlaced parts\n2,235,082\nJS heap\n613.4 MiB\nGPU buffers\n52.3 MiB\nFrame time (M), GPU-synced\nmedian 805.1 ms, p95 905.6 ms, max 905.6 ms over 10 frames; 4,050 placements, 2,235,082 parts, super-chunk LOD on, not settled"
+ },
+ {
+  "label": "m2025",
+  "pose": "aerial",
+  "url": "http://127.0.0.1:4182/?api=webgl2&frames=10",
+  "viewport": [
+   1600,
+   1000
+  ],
+  "measurement": {
+   "frames": 10,
+   "maxFrameMs": 211.29999999701977,
+   "frameMs": [
+    191.5,
+    197,
+    191.8999999910593,
+    195.79999999701977,
+    211.29999999701977,
+    207.1000000089407,
+    203.6000000089407,
+    183.29999999701977,
+    200.59999999403954,
+    189.5
+   ],
+   "placements": 4050,
+   "placedParts": 2235082,
+   "superChunkLod": true,
+   "settled": true,
+   "settleMs": 7692.70000000298,
+   "liveChunks": 0,
+   "superChunksDrawn": 144,
+   "superChunks": 144,
+   "residentSuperChunks": 0,
+   "jsHeapBytes": 372212051,
+   "gpuVertexIndexBytes": 58077504,
+   "gpuOtherBytes": 88144,
+   "medianFrameMs": 195.79999999701977,
+   "p95FrameMs": 211.29999999701977,
+   "medianCpuSubmitMs": 2.8999999910593033,
+   "drawCalls": 290,
+   "triangles": 517310,
+   "nearChunks": 0,
+   "midChunks": 0,
+   "farChunks": 0,
+   "nearestStudPitchPx": 0
+  },
+  "heapAfterGcBytes": {
+   "usedSize": 43079864,
+   "totalSize": 45170688,
+   "embedderHeapUsedSize": 5758880,
+   "backingStorageSize": 328350641
+  },
+  "hud": "Brick Railroad\nAPI\nwebgl2\nAdapter\nGoogle Inc. (Google) / ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)\nLoad\n2,678 ms\nWorld open\n12.2 ms\nFirst world frame\n3,169 ms after navigation\nMode\nselect\nGhost rotation\n0°\nRoad-edge snap\nnone\nModule fit\nnone\nCursor on lattice (LDU)\noff the ground\nLands at (plates)\n–\nPlacements\n4,050\nHistory (undo, redo)\n4,050, 0\nLast edit latency\n500.5 ms (place 7936-1 Level Crossing (2010), 0°)\nRebuilt for it\n3 chunks, 148 parts, 1,156 studs\nStuds drawn\n4,637,872\nStuds culled inside models\n4,020,186\nStuds culled under footprints\n1,370,480\nFrame rate (rAF)\n6.6 fps\nDraw calls\n290\nDrawn triangles\n517,310\nRender origin (chunks), rebases\n(216, 231); 4176\nTier (L)\nauto\nChunk tiers near/mid/far\n0 / 0 / 0\nProjected stud pitch, nearest chunk\n0.0 px\nLive chunks\n0\nSuper-chunks (mesh / resident / all)\n144 / 0 / 144\nSuper-chunk mesh triangles\n517,308\nSuper-chunk mesh: edit to screen (last / max), last build CPU\n9469 / 135628 ms, 1 ms (4350 builds, 0 stale)\nPlaced parts\n2,235,082\nJS heap\n354.5 MiB\nGPU buffers\n55.5 MiB\nFrame time (M), GPU-synced\nmedian 195.8 ms, p95 211.3 ms, max 211.3 ms over 10 frames; 4,050 placements, 2,235,082 parts, super-chunk LOD on, settled in 7693 ms"
+ }
+]
