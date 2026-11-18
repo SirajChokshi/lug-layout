@@ -25,7 +25,10 @@ const Matrix = v.pipe(v.array(Finite), v.length(MATRIX_FLOATS));
 
 export const ExactDecimalText = v.pipe(
   v.string(),
-  v.check(isCanonicalExactDecimalText, "must be an exact decimal written canonically"),
+  v.check(
+    (text) => isCanonicalExactDecimalText(text),
+    "must be an exact decimal written canonically",
+  ),
   v.description(
     "an exact decimal in LDU, written canonically: an optional minus, the integer digits, and a fractional part with no trailing zeros; read with @brr/math parseExactDecimal",
   ),
@@ -34,7 +37,7 @@ export type ExactDecimalText = v.InferOutput<typeof ExactDecimalText>;
 
 export const ExactRationalText = v.pipe(
   v.object({ numerator: v.string(), denominator: v.string() }),
-  v.check(isCanonicalExactRationalText, "must be a reduced exact rational"),
+  v.check((text) => isCanonicalExactRationalText(text), "must be a reduced exact rational"),
   v.description(
     "an exact rational as decimal integer strings: the numerator carries the sign, the denominator is positive and shares no factor with it; read with @brr/math parseExactRational",
   ),

@@ -143,24 +143,26 @@ export function formatExactRational(value: ExactRational): ExactRationalText {
   return { numerator: value.numerator.toString(), denominator: value.denominator.toString() };
 }
 
-export function isCanonicalExactRationalText(text: ExactRationalText): boolean {
-  if (typeof text !== "object" || text === null) return false;
-  if (typeof text.numerator !== "string" || typeof text.denominator !== "string") return false;
-  const numeratorDigits = text.numerator.length - (text.numerator.startsWith("-") ? 1 : 0);
+export function isCanonicalExactRationalText(text: unknown): text is ExactRationalText {
+  if (typeof text !== "object" || text === null || Array.isArray(text)) return false;
+  if (!("numerator" in text) || !("denominator" in text)) return false;
+  const { numerator, denominator } = text;
+  if (typeof numerator !== "string" || typeof denominator !== "string") return false;
+  const numeratorDigits = numerator.length - (numerator.startsWith("-") ? 1 : 0);
   if (
     numeratorDigits > MAX_DIGITS ||
-    text.denominator.length > MAX_DIGITS ||
-    !INTEGER_TEXT.test(text.numerator) ||
-    !POSITIVE_INTEGER_TEXT.test(text.denominator)
+    denominator.length > MAX_DIGITS ||
+    !INTEGER_TEXT.test(numerator) ||
+    !POSITIVE_INTEGER_TEXT.test(denominator)
   ) {
     return false;
   }
-  return greatestCommonDivisor(BigInt(text.numerator), BigInt(text.denominator)) === 1n;
+  return greatestCommonDivisor(BigInt(numerator), BigInt(denominator)) === 1n;
 }
 
 export function parseExactRational(text: ExactRationalText): ExactRational {
   if (!isCanonicalExactRationalText(text)) {
-    throw new Error(`${text.numerator}/${text.denominator} is not a reduced exact rational`);
+    throw new Error(`${JSON.stringify(text)} is not a reduced exact rational`);
   }
   return { numerator: BigInt(text.numerator), denominator: BigInt(text.denominator) };
 }

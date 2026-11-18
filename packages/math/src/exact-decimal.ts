@@ -99,7 +99,7 @@ export function formatExactDecimal(value: ExactDecimal): string {
   return `${negative ? "-" : ""}${whole}${fraction === "" ? "" : `.${fraction}`}`;
 }
 
-export function isCanonicalExactDecimalText(text: string): boolean {
+export function isCanonicalExactDecimalText(text: unknown): text is string {
   if (typeof text !== "string" || text === "-0" || !CANONICAL_DECIMAL.test(text)) return false;
   const digits = text.length - (text.startsWith("-") ? 1 : 0) - (text.includes(".") ? 1 : 0);
   return digits <= MAX_DIGITS;

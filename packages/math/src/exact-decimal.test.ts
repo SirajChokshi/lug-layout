@@ -89,7 +89,7 @@ describe("exact decimals", () => {
 
   it("call no value but a string canonical text", () => {
     for (const notText of [46.9, 469n, null, undefined, { text: "46.9" }]) {
-      expect(isCanonicalExactDecimalText(notText as unknown as string)).toBe(false);
+      expect(isCanonicalExactDecimalText(notText)).toBe(false);
     }
   });
 

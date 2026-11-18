@@ -16,7 +16,6 @@ import {
   exactRationalToFloat64,
   isCanonicalExactRationalText,
   subtractExactRational,
-  type ExactRationalText,
 } from "./exact-rational.ts";
 
 const SIXTEENTH_IN_TEN_THOUSANDTHS = 625;
@@ -149,8 +148,14 @@ describe("exact rationals", () => {
   });
 
   it("call nothing but a pair of integer strings canonical text", () => {
-    for (const notText of [null, undefined, "31/5", { numerator: 31, denominator: 5 }]) {
-      expect(isCanonicalExactRationalText(notText as unknown as ExactRationalText)).toBe(false);
+    for (const notText of [
+      null,
+      undefined,
+      "31/5",
+      { numerator: 31, denominator: 5 },
+      Object.assign(["31", "5"], { numerator: "31", denominator: "5" }),
+    ]) {
+      expect(isCanonicalExactRationalText(notText)).toBe(false);
     }
   });
 
