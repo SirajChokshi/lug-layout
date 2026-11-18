@@ -64,11 +64,11 @@ pub fn compare_inline_part<L: Library>(
         sections: mpd_sections(model_source),
         library,
     };
-    let inline_faces =
-        faces_by_color(&Flattener::new(&sections_first, Lod::Standard, &[]).flatten(inline)?);
-    let official_faces = faces_by_color(
-        &Flattener::new(library, Lod::Standard, &[]).flatten(&format!("parts/{official}"))?,
-    );
+    let inline_flattened = Flattener::new(&sections_first, Lod::Standard, &[]).flatten(inline);
+    let official_flattened =
+        Flattener::new(library, Lod::Standard, &[]).flatten(&format!("parts/{official}"));
+    let inline_faces = faces_by_color(&inline_flattened?);
+    let official_faces = faces_by_color(&official_flattened?);
     let surface = inline_faces
         .iter()
         .filter_map(|(color, faces)| {
