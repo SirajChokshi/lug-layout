@@ -119,7 +119,7 @@ import {
   type RoadStrokeView,
 } from "./road-drawing.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
-import type { IPlanService } from "../plan/plan-service.ts";
+import type { IPlanService, PlacedForPlan } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
 import { creditsForWorld, exportFileName } from "./world-credits.ts";
@@ -676,6 +676,14 @@ function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).replace(/\.+$/, "");
 }
 
+function sameModels(a: ReadonlyArray<PlacedModel>, b: ReadonlyArray<PlacedModel>): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 function snapToLattice(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU + 0;
 }
@@ -908,6 +916,7 @@ export class Editor implements IEditor {
   private readonly modelPlaceables = new Map<string, Placeable>();
   private readonly modelNames = new Map<Placeable, string>();
   private readonly trainParts = new Map<string, Uint16Array>();
+  private readonly planEntries = new WeakMap<PlacedModel, PlacedForPlan>();
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -1269,14 +1278,22 @@ export class Editor implements IEditor {
     return baseplate.box.min[1];
   }
 
+  private planEntry(model: PlacedModel): PlacedForPlan {
+    const known = this.planEntries.get(model);
+    if (known) return known;
+    const entry: PlacedForPlan = {
+      key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
+      ref: model.placeable.id,
+      label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
+      box: model.box,
+    };
+    this.planEntries.set(model, entry);
+    return entry;
+  }
+
   private syncPlan(): void {
     this.plans.setPlacements([
-      ...this.placed.models().map((model) => ({
-        key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
-        ref: model.placeable.id,
-        label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
-        box: model.box,
-      })),
+      ...this.placed.models().map((model) => this.planEntry(model)),
       ...(this.track?.planFootprints() ?? []),
     ]);
   }
@@ -2291,18 +2308,26 @@ export class Editor implements IEditor {
     return placements;
   }
 
+  private rerunRoadDrawing(): void {
+    const roads = this.roadDrawing;
+    if (!roads) return;
+    roads.worldChanged();
+    if (roads.isDragging()) this.showRoadPreview(roads.rerun(...this.roadNeighbours()));
+  }
+
   private refreshRoads(): void {
     const started = performance.now();
-    this.roadModels = this.placed.models().filter((model) => model.placeable.road !== null);
+    const roadModels = this.placed.models().filter((model) => model.placeable.road !== null);
+    if (sameModels(roadModels, this.roadModels)) {
+      this.rerunRoadDrawing();
+      return;
+    }
+    this.roadModels = roadModels;
     const placements = this.roadPlacements();
     this.roadNetwork = new RoadNetwork(placements);
     this.roadExtents = placements.map(cellExtent);
     this.roadReport = this.roadNetwork.report();
-    const roads = this.roadDrawing;
-    if (roads) {
-      roads.worldChanged();
-      if (roads.isDragging()) this.showRoadPreview(roads.rerun(...this.roadNeighbours()));
-    }
+    this.rerunRoadDrawing();
     const checkMs = performance.now() - started;
     this.showMarkers();
     const report = this.roadReport;

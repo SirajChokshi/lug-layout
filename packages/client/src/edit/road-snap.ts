@@ -1,5 +1,5 @@
-import { placedCells, type RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
-import { STUD_LDU } from "@brr/math";
+import type { RoadNetwork, RoadPlacement, RoadSurface } from "@brr/domain";
+import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 
 export interface CellExtent {
@@ -18,30 +18,61 @@ export interface RoadSnap {
 }
 
 const QUARTER_TURNS = 4;
+const HALF_STUD_LDU = STUD_LDU / 2;
+
+function cornerStep(count: number): number {
+  return Math.max(1, count - 1);
+}
 
 export function cellExtent(placement: RoadPlacement): CellExtent {
+  const { surface, rot } = placement;
+  if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+  const cos = rot90Cos(rot);
+  const sin = rot90Sin(rot);
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let minZ = Number.POSITIVE_INFINITY;
   let maxZ = Number.NEGATIVE_INFINITY;
-  for (const cell of placedCells(placement)) {
-    minX = Math.min(minX, cell.cellX * STUD_LDU);
-    maxX = Math.max(maxX, (cell.cellX + 1) * STUD_LDU);
-    minZ = Math.min(minZ, cell.cellZ * STUD_LDU);
-    maxZ = Math.max(maxZ, (cell.cellZ + 1) * STUD_LDU);
+  for (let row = 0; row < surface.rows; row += cornerStep(surface.rows)) {
+    for (let column = 0; column < surface.columns; column += cornerStep(surface.columns)) {
+      const localX = surface.minX + column * STUD_LDU + HALF_STUD_LDU;
+      const localZ = surface.minZ + row * STUD_LDU + HALF_STUD_LDU;
+      const cellX = Math.floor((placement.x + cos * localX + sin * localZ) / STUD_LDU);
+      const cellZ = Math.floor((placement.z - sin * localX + cos * localZ) / STUD_LDU);
+      minX = Math.min(minX, cellX * STUD_LDU);
+      maxX = Math.max(maxX, (cellX + 1) * STUD_LDU);
+      minZ = Math.min(minZ, cellZ * STUD_LDU);
+      maxZ = Math.max(maxZ, (cellZ + 1) * STUD_LDU);
+    }
   }
   return { minX, maxX, minZ, maxZ };
 }
 
-function* alongSide(placed: CellExtent, ghost: CellExtent): Generator<readonly [number, number]> {
-  for (let z = placed.minZ - ghost.maxZ + STUD_LDU; z < placed.maxZ - ghost.minZ; z += STUD_LDU) {
-    yield [placed.maxX - ghost.minX, z];
-    yield [placed.minX - ghost.maxX, z];
+function stepsBetween(from: number, to: number): number {
+  return Math.max(0, Math.ceil((to - from) / STUD_LDU));
+}
+
+function besideZSteps(placed: CellExtent, ghost: CellExtent): number {
+  return stepsBetween(placed.minZ - ghost.maxZ + STUD_LDU, placed.maxZ - ghost.minZ);
+}
+
+function besideXSteps(placed: CellExtent, ghost: CellExtent): number {
+  return stepsBetween(placed.minX - ghost.maxX + STUD_LDU, placed.maxX - ghost.minX);
+}
+
+function sideX(placed: CellExtent, ghost: CellExtent, index: number, zSteps: number): number {
+  if (index < 2 * zSteps) {
+    return index % 2 === 0 ? placed.maxX - ghost.minX : placed.minX - ghost.maxX;
   }
-  for (let x = placed.minX - ghost.maxX + STUD_LDU; x < placed.maxX - ghost.minX; x += STUD_LDU) {
-    yield [x, placed.maxZ - ghost.minZ];
-    yield [x, placed.minZ - ghost.maxZ];
+  const step = Math.floor((index - 2 * zSteps) / 2);
+  return placed.minX - ghost.maxX + STUD_LDU + step * STUD_LDU;
+}
+
+function sideZ(placed: CellExtent, ghost: CellExtent, index: number, zSteps: number): number {
+  if (index < 2 * zSteps) {
+    return placed.minZ - ghost.maxZ + STUD_LDU + Math.floor(index / 2) * STUD_LDU;
   }
+  return (index - 2 * zSteps) % 2 === 0 ? placed.maxZ - ghost.minZ : placed.minZ - ghost.maxZ;
 }
 
 function cornerFlush(placed: CellExtent, ghost: CellExtent, x: number, z: number): boolean {
@@ -85,12 +116,19 @@ export function snapToRoadEdge(
   cursorZ: number,
 ): RoadSnap | null {
   let best: Ranked | null = null;
+  const probe = { id: -1, x: 0, z: 0, yLdu, rot: 0, surface };
   for (let turn = 0; turn < QUARTER_TURNS; turn++) {
     const rot = quarterTurned(preferredRot, direction * turn);
     const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu, rot, surface });
-    for (const extent of placed) {
-      if (!within(extent, ghost, cursorX, cursorZ)) continue;
-      for (const [x, z] of alongSide(extent, ghost)) {
+    probe.rot = rot;
+    for (let e = 0; e < placed.length; e++) {
+      const extent = placed[e];
+      if (!extent || !within(extent, ghost, cursorX, cursorZ)) continue;
+      const zSteps = besideZSteps(extent, ghost);
+      const positions = 2 * zSteps + 2 * besideXSteps(extent, ghost);
+      for (let p = 0; p < positions; p++) {
+        const x = sideX(extent, ghost, p, zSteps);
+        const z = sideZ(extent, ghost, p, zSteps);
         const inside =
           cursorX >= x + ghost.minX &&
           cursorX <= x + ghost.maxX &&
@@ -101,8 +139,10 @@ export function snapToRoadEdge(
           cursorX - (x + (ghost.minX + ghost.maxX) / 2),
           cursorZ - (z + (ghost.minZ + ghost.maxZ) / 2),
         );
-        const fit = network.fit({ id: -1, x, z, yLdu, rot, surface });
-        if (fit.joinedCells === 0 || fit.mismatchedCells > 0 || fit.overlappingCells > 0) continue;
+        probe.x = x;
+        probe.z = z;
+        const fit = network.cleanFit(probe);
+        if (!fit) continue;
         if (fit.joinedRoadCells === 0 && !cornerFlush(extent, ghost, x, z)) continue;
         const candidate: Ranked = {
           snap: { x, z, rot, joinedCells: fit.joinedCells, joinedRoadCells: fit.joinedRoadCells },

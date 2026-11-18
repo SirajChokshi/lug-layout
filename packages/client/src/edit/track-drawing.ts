@@ -277,6 +277,7 @@ export class TrackDrawing {
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
   private gapList: ReadonlyArray<EndGap> = [];
+  private footprints: ReadonlyArray<TrackFootprint> | null = null;
   private drag: Drag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -718,6 +719,7 @@ export class TrackDrawing {
     const thrown = this.pieceSet.thrown(placed.part.catalogIndex);
     if (thrown === null) return null;
     this.layout.replace(placement, thrown);
+    this.footprints = null;
     const lever = this.pieceSet.lever(thrown);
     if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
     return { chunk: this.chunkOfPlaced(placed), lever };
@@ -755,6 +757,7 @@ export class TrackDrawing {
   }
 
   private recomputeEnds(): void {
+    this.footprints = null;
     this.graph = new TrackGraph(this.layout);
     const ends: TrackEnd[] = [];
     for (const end of this.graph.openEnds) {
@@ -770,6 +773,11 @@ export class TrackDrawing {
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {
+    this.footprints ??= this.measureFootprints();
+    return this.footprints;
+  }
+
+  private measureFootprints(): ReadonlyArray<TrackFootprint> {
     const footprints: TrackFootprint[] = [];
     for (let p = 0; p < this.layout.count; p++) {
       const placed = this.placedAt(p);
