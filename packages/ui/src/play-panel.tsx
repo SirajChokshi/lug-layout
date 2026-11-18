@@ -39,13 +39,11 @@ interface PlayPanelProps {
 export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPanelProps) {
   const snapshot = usePlaySnapshot(play);
   useEffect(() => {
-    if (ready) play.offer(editor.playSetup());
-  }, [editor, play, ready]);
-  useEffect(() => {
     followWith(camera, play, true);
     return () => play.follow(null);
   }, [camera, play]);
   const running = snapshot.status === "running";
+  const trains = running ? undefined : editor.playSetup()?.models;
   const busy = snapshot.status === "loading";
   const derailed = snapshot.derailSpeedLduPerS > 0;
   const moving = snapshot.targetLduPerS !== 0 || snapshot.speedLduPerS !== 0;
@@ -65,20 +63,24 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
       <h2>Play</h2>
       {!running && (
         <div className="play-start">
-          <label>
-            Train
-            <select
-              value={snapshot.trainModel ?? ""}
-              disabled={busy}
-              onChange={(event) => play.chooseTrain(event.target.value)}
-            >
-              {editor.playSetup()?.models.map((train) => (
-                <option key={train.name} value={train.name}>
-                  {train.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {trains?.length ? (
+            <label>
+              Train
+              <select
+                value={snapshot.trainModel ?? ""}
+                disabled={busy}
+                onChange={(event) => play.chooseTrain(event.target.value)}
+              >
+                {trains.map((train) => (
+                  <option key={train.name} value={train.name}>
+                    {train.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="toolbar-hint">Place a train on the layout to run it.</p>
+          )}
           <button
             type="button"
             className="play-primary"
