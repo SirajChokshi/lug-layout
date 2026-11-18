@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PaletteIndex } from "../catalog/palette-index.ts";
-import type { CatalogItemView } from "../edit/editor.ts";
+import type { CatalogItemView } from "../catalog/placeable-catalog.ts";
 import { searchPalette, type PaletteResult } from "./command-search.ts";
 import type { CommandId } from "./editor-commands.ts";
 

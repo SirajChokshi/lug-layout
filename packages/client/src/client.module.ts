@@ -26,6 +26,7 @@ import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/
 import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
 import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
 import { CreditsService } from "./credits/credits-service.ts";
@@ -76,6 +77,7 @@ import {
   TRAIN_PLAY,
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
+  PLACEABLE_CATALOG,
   WORLD_SESSION,
 } from "./tokens.ts";
 
@@ -83,6 +85,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
+  bind(PLACEABLE_CATALOG).to(PlaceableCatalog).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(IMPORT_WORKER_POOL).to(ImportWorkerPool).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();

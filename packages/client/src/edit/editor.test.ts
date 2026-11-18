@@ -32,6 +32,7 @@ import {
   type BufferMemory,
   type ChunkInstances,
   type ChunkTier,
+  type FarModelPlacement,
   type ISceneBackend,
   type LookSettings,
   type NeededMeshListener,
@@ -67,7 +68,8 @@ import { commandEnabled, startPlay, type CommandId } from "../commands/editor-co
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY } from "../tokens.ts";
+import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
@@ -293,7 +295,7 @@ class HeadlessBackend implements ISceneBackend {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
   forceTier(): void {}
-  setFarModel(): void {}
+  setFarModel(_id: number, _placement: FarModelPlacement | null): void {}
 }
 
 afterEach(() => {
@@ -338,7 +340,13 @@ async function startEditor(
   } as unknown as HTMLCanvasElement;
 
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return { editor, backend, container, manifest: await realLoader.loadManifest("standard") };
+  return {
+    editor,
+    backend,
+    container,
+    catalog: container.get(PLACEABLE_CATALOG),
+    manifest: await realLoader.loadManifest("standard"),
+  };
 }
 
 function farTierSettled(editor: IEditor): Promise<EditorSnapshot> {
@@ -397,7 +405,7 @@ it("starts from the index and part shapes, fetching no model record and no part 
 
 it("loads a set's record only once it is picked, refuses clicks until then, and fetches its meshes once placed", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
-  const { editor, backend, manifest } = await startEditor([PLACEABLE_SET], fetcher);
+  const { editor, backend, manifest, catalog } = await startEditor([PLACEABLE_SET], fetcher);
   const set = `omr:${PLACEABLE_SET}`;
   const record = `standard/${manifest.models.find((model) => model.name === PLACEABLE_SET)?.file}`;
   const place = placer(editor, backend);
@@ -409,7 +417,7 @@ it("loads a set's record only once it is picked, refuses clicks until then, and 
     refusedClicks: 1,
     reason: expect.stringContaining("is still loading"),
   });
-  expect(await editor.prefetch(set)).toBe(true);
+  await loadCatalogItem(catalog, set);
   expect(fetcher.paths).toContain(record);
 
   expect(place(set, 640, 640)).toMatchObject({ placements: 1, refusedClicks: 1 });
@@ -453,7 +461,7 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
 }, 120_000);
 
 it("offers exactly the placed models with running gear as trains under their palette labels, after every place, delete and undo, and Play takes its train from them when it opens", async () => {
-  const { editor, backend, container } = await startEditor([
+  const { editor, backend, container, catalog } = await startEditor([
     SET_WITHOUT_TRACK,
     "10205-1",
     "10133-1",
@@ -472,7 +480,7 @@ it("offers exactly the placed models with running gear as trains under their pal
   const noTrack = expect.stringContaining("Lay some track first");
 
   const nothingPlaced = { trains: trains(), play: await openPlay() };
-  for (const item of [set, myOwnTrain, locomotive]) expect(await editor.prefetch(item)).toBe(true);
+  for (const item of [set, myOwnTrain, locomotive]) await loadCatalogItem(catalog, item);
   place(set, 0, 0);
   const setPlaced = trains();
   place(myOwnTrain, 1600, 0);
@@ -511,11 +519,11 @@ it("offers exactly the placed models with running gear as trains under their pal
 }, 120_000);
 
 it("runs Play on the track inside a placed set, with the placed train", async () => {
-  const { editor, backend, container } = await startEditor([PLACEABLE_SET, "10205-1"]);
+  const { editor, backend, container, catalog } = await startEditor([PLACEABLE_SET, "10205-1"]);
   const play = container.get(TRAIN_PLAY);
   const place = placer(editor, backend);
   for (const item of [`omr:${PLACEABLE_SET}`, "omr:10205-1"]) {
-    expect(await editor.prefetch(item)).toBe(true);
+    await loadCatalogItem(catalog, item);
   }
   place(`omr:${PLACEABLE_SET}`, 0, 0);
   place("omr:10205-1", 1600, 0);
@@ -693,10 +701,10 @@ function turnOutcome(editor: IEditor, direction: 1 | -1) {
 }
 
 it("refuses to turn a baseplate while a set rests on it, turns the set itself, and turns the baseplate once the set is gone", async () => {
-  const { editor, backend } = await startEditor([PLACEABLE_SET]);
+  const { editor, backend, catalog } = await startEditor([PLACEABLE_SET]);
   const place = placer(editor, backend);
   const set = `omr:${PLACEABLE_SET}`;
-  expect(await editor.prefetch(set)).toBe(true);
+  await loadCatalogItem(catalog, set);
   place(BASEPLATE, 0, 0);
   place(set, 0, 0);
   const corner = 300;
@@ -1062,9 +1070,9 @@ it.each([
 ] as const)(
   "with a 3811 placed, $name is refused only where two baseplates would share space",
   async ({ held, at, expected }) => {
-    const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
-    expect(await editor.prefetch(PLAIN_MODULE)).toBe(true);
-    expect(await editor.prefetch(SET)).toBe(true);
+    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
     place(BASEPLATE, 0, 0);
     editor.chooseItem(held);
@@ -1100,13 +1108,13 @@ it.each([
 ] as const)(
   "$name lies in the baseplate layer: refused across a 3811 and taken flush beside it",
   async ({ model, userModels, besideX }) => {
-    const { editor, backend } = await startEditor(
+    const { editor, backend, catalog } = await startEditor(
       [model],
       new BundleDirectoryFetcher(),
       userModels,
     );
     const held = `omr:${model}`;
-    expect(await editor.prefetch(held)).toBe(true);
+    await loadCatalogItem(catalog, held);
     const place = placer(editor, backend);
     place(BASEPLATE, 0, 0);
     const across = place(held, 0, 0);
@@ -1156,9 +1164,11 @@ it.each([
 ] as const)(
   "$name",
   async ({ part, model, topFace }) => {
-    const { editor, backend } = await startEditor([model], new BundleDirectoryFetcher(), [model]);
+    const { editor, backend, catalog } = await startEditor([model], new BundleDirectoryFetcher(), [
+      model,
+    ]);
     const held = `omr:${model}`;
-    expect(await editor.prefetch(held)).toBe(true);
+    await loadCatalogItem(catalog, held);
     const loose = editor.snapshot().catalog.find((item) => item.group === part)?.id;
     if (!loose) throw new Error(`${part} is not in the catalog`);
     const place = placer(editor, backend);
@@ -1197,9 +1207,9 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
 }, 120_000);
 
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
-  const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
-  expect(await editor.prefetch(PLAIN_MODULE)).toBe(true);
-  expect(await editor.prefetch(SET)).toBe(true);
+  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
   place(PLAIN_MODULE, 320, 320);
   place(SET, 320, 320);
@@ -1248,9 +1258,9 @@ it.each([
 ] as const)(
   "deletes the support when $name, since the set keeps its resting height",
   async ({ lay, remove }) => {
-    const { editor, backend } = await startEditor(["mils-plain", PLACEABLE_SET]);
-    expect(await editor.prefetch(PLAIN_MODULE)).toBe(true);
-    expect(await editor.prefetch(SET)).toBe(true);
+    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
     for (const [item, x, z] of lay) place(item, x, z);
     const setPose = () => posesOf(editor).find((pose) => pose.startsWith(SET));
@@ -1527,6 +1537,45 @@ class PriorityRecordingLoader extends ModelSubsetLoader {
   }
 }
 
+class Gate {
+  private release = (): void => undefined;
+  readonly opened = new Promise<void>((resolve) => {
+    this.release = resolve;
+  });
+
+  open(): void {
+    this.release();
+  }
+}
+
+class HeldFarLoader extends ModelSubsetLoader {
+  readonly farFiles = new Gate();
+  readonly farModelMesh = new Gate();
+
+  override async loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>> {
+    if (lod === "far") await this.farFiles.opened;
+    return super.loadPartFiles(lod);
+  }
+
+  override async loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
+    await this.farModelMesh.opened;
+    return super.loadFarModelMesh(name, priority);
+  }
+}
+
+class FarModelRecordingBackend extends HeadlessBackend {
+  farModelMeshLoads = 0;
+  readonly farModelUses: number[] = [];
+
+  override setFarModelMesh(): void {
+    this.farModelMeshLoads += 1;
+  }
+
+  override setFarModel(id: number, placement: FarModelPlacement | null): void {
+    if (placement !== null) this.farModelUses.push(id);
+  }
+}
+
 interface StreamingEditorOptions {
   readonly models: ReadonlyArray<string>;
   readonly tier: ChunkTier | null;
@@ -1560,7 +1609,7 @@ async function startStreamingEditor({
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier });
   expect(editor.snapshot().status).toBe("ready");
-  return { editor, backend };
+  return { editor, backend, catalog: container.get(PLACEABLE_CATALOG) };
 }
 
 async function streamingEditor(options: StreamingEditorOptions) {
@@ -1571,12 +1620,12 @@ async function streamingEditor(options: StreamingEditorOptions) {
 
 async function storedWorld(models: ReadonlyArray<string>, item: string) {
   const repository = new MemoryRepository();
-  const { editor, backend } = await streamingEditor({ models, tier: null, repository });
+  const { editor, backend, catalog } = await streamingEditor({ models, tier: null, repository });
   const empty = editor.snapshot().world?.id;
   expect(await editor.newWorld("Built")).toBe(true);
   const built = editor.snapshot().world?.id;
   if (!empty || !built) throw new Error("the fixture editor has no world");
-  expect(await editor.prefetch(item)).toBe(true);
+  await loadCatalogItem(catalog, item);
   expect(placer(editor, backend)(item, 640, 640).placements).toBe(1);
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1), STREAM_WAIT);
   return { repository, empty, built };
@@ -1629,13 +1678,13 @@ async function placeWithOneHeldMeshGated() {
   const farPaths = await partMeshPaths("far");
   const meshPaths = new Set([...detailedPaths.values(), ...farPaths.values()]);
   const gate = new PathGate(new BundleDirectoryFetcher(), meshPaths);
-  const { editor, backend } = await streamingEditor({
+  const { editor, backend, catalog } = await streamingEditor({
     models: [STREAMED_SET],
     tier: "mid",
     fetcher: gate,
   });
   const set = `omr:${STREAMED_SET}`;
-  expect(await editor.prefetch(set)).toBe(true);
+  await loadCatalogItem(catalog, set);
   gate.close((path) => meshPaths.has(path));
   expect(placer(editor, backend)(set, 640, 640).placements).toBe(1);
   editor.chooseItem(null);
@@ -1666,12 +1715,12 @@ describe("part mesh streaming", () => {
     const farParts = new Set((await partMeshPaths("far")).values());
     const gate = new PathGate(new BundleDirectoryFetcher(), new Set());
     gate.close((path) => farParts.has(path) || isFarModelMesh(path));
-    const { editor, backend } = await streamingEditor({
+    const { editor, backend, catalog } = await streamingEditor({
       models: [PLACEABLE_SET],
       tier: "near",
       fetcher: gate,
     });
-    expect(await editor.prefetch(SET)).toBe(true);
+    await loadCatalogItem(catalog, SET);
     expect(placer(editor, backend)(SET, 640, 640).placements).toBe(1);
 
     await vi.waitFor(() => {
@@ -1704,14 +1753,14 @@ describe("part mesh streaming", () => {
   it("settles with a part missing from the far part table as absent, a failed far fetch as failed, and a model with no far mesh as absent", async () => {
     const roadPlateFar = (await partMeshPaths("far")).get(ROAD_PLATE.split("@")[0] ?? "");
     const models = [PLACEABLE_SET];
-    const { editor, backend } = await streamingEditor({
+    const { editor, backend, catalog } = await streamingEditor({
       models,
       tier: "near",
       fetcher: new InFlightFetcher(new BundleDirectoryFetcher(), (path) => path === roadPlateFar),
       loader: (real) =>
         new FarIndexGapLoader(real, models, BASEPLATE.split("@")[0] ?? "", PLACEABLE_SET),
     });
-    expect(await editor.prefetch(SET)).toBe(true);
+    await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
     expect(place(BASEPLATE, 320, 320).placements).toBe(1);
     expect(place(ROAD_PLATE, 960, 320).placements).toBe(2);
@@ -1763,14 +1812,17 @@ describe("part mesh streaming", () => {
       const farPaths = await partMeshPaths("far");
       const meshPaths = new Set([...detailedPaths.values(), ...farPaths.values()]);
       const gate = new PathGate(new BundleDirectoryFetcher(), meshPaths);
-      const { editor, backend } = await streamingEditor({
+      const { editor, backend, catalog } = await streamingEditor({
         models,
         tier,
         fetcher: gate,
         repository,
       });
-      expect(await editor.prefetch(SET)).toBe(true);
-      expect(await editor.prefetch(`omr:${STREAMED_SET}`)).toBe(true);
+      const loaded = [
+        await loadCatalogItem(catalog, SET),
+        await loadCatalogItem(catalog, `omr:${STREAMED_SET}`),
+      ];
+      expect(loaded.map((placeable) => placeable.id)).toEqual([SET, `omr:${STREAMED_SET}`]);
       gate.close((path) => meshPaths.has(path));
 
       await setUp(editor, backend, built);
@@ -1852,3 +1904,53 @@ describe("part mesh streaming", () => {
     );
   }, 240_000);
 });
+
+it("loads and applies a placed set's far model once, however often the set is placed, even while its far mesh is still loading", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const loader = new HeldFarLoader(container.get(PART_BUNDLE_LOADER), [PLACEABLE_SET]);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(loader);
+  const backend = new FarModelRecordingBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  await loadCatalogItem(container.get(PLACEABLE_CATALOG), SET);
+  const place = placer(editor, backend);
+  const farModels = () => ({
+    meshLoads: backend.farModelMeshLoads,
+    uses: backend.farModelUses.length,
+    placementsUsing: new Set(backend.farModelUses).size,
+    counts: editor.snapshot().meshes.farModelMeshes,
+  });
+
+  expect(place(SET, 0, 0).placements).toBe(1);
+  loader.farFiles.open();
+  expect((await farTierSettled(editor)).farTier).toBe("ready");
+  expect(place(SET, 2560, 0).placements).toBe(2);
+  loader.farModelMesh.open();
+  await vi.waitFor(() => expect(backend.farModelUses).toHaveLength(2));
+  const settled = farModels();
+  expect(place(SET, 5120, 0).placements).toBe(3);
+
+  expect({ settled, placedAgain: farModels() }).toEqual({
+    settled: {
+      meshLoads: 1,
+      uses: 2,
+      placementsUsing: 2,
+      counts: { wanted: 1, loaded: 1, failed: 0, absent: 0 },
+    },
+    placedAgain: {
+      meshLoads: 1,
+      uses: 3,
+      placementsUsing: 3,
+      counts: { wanted: 1, loaded: 1, failed: 0, absent: 0 },
+    },
+  });
+}, 120_000);

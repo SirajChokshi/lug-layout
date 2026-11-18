@@ -3,7 +3,7 @@ import type { BundleSearchHit } from "@brr/schema/catalog-api";
 import { Container } from "inversify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import type { CatalogItemView } from "../edit/editor.ts";
+import type { CatalogItemView } from "./placeable-catalog.ts";
 import { CATALOG_SEARCH } from "../tokens.ts";
 import type { ICatalogSearch } from "./catalog-search.ts";
 import { PaletteIndex } from "./palette-index.ts";

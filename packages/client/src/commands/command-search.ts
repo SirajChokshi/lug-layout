@@ -1,5 +1,5 @@
 import type { PaletteIndex } from "../catalog/palette-index.ts";
-import type { CatalogItemView } from "../edit/editor.ts";
+import type { CatalogItemView } from "../catalog/placeable-catalog.ts";
 import { COMMANDS, type CommandId, type CommandSpec } from "./editor-commands.ts";
 
 export interface CommandResult {

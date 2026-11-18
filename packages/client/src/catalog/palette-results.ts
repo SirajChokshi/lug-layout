@@ -1,5 +1,5 @@
 import type { BundleSearchHit } from "@brr/schema/catalog-api";
-import type { CatalogItemView } from "../edit/editor.ts";
+import type { CatalogItemView } from "./placeable-catalog.ts";
 import type { CatalogSearchStatus, CatalogSearchView } from "./catalog-search.ts";
 import {
   PALETTE_CATEGORIES,
