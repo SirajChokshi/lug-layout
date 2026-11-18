@@ -658,17 +658,18 @@ impl<'a> Mesh<'a> {
             })
         };
         let Some(profile) = Profile::through_full_rings(&points, roundness) else {
-            let coaxial = coaxial_rings(&points, 0.0).or_else(|| one_circle(&points))?;
+            let fit = coaxial_rings(&points, 0.0).or_else(|| one_circle(&points))?;
+            let orientation = orientation_about(fit.centres[0]);
             return Some(vec![BandCandidate {
                 axis,
                 lo: points.first()?.0,
                 hi: points.last()?.0,
-                centres: vec![coaxial.centre],
-                radii: coaxial.radii,
+                centres: fit.centres,
+                radii: fit.radii,
                 facets: 0,
-                orientation: orientation_about(coaxial.centre),
+                orientation,
             }
-            .irregular_reading()]);
+            .unread_as(UnreadBand::Irregular)]);
         };
         let orientation = orientation_about(profile.centre);
         let centres: Vec<[f64; 2]> = profile
@@ -733,7 +734,7 @@ impl<'a> Mesh<'a> {
         points.dedup();
         let centre = coaxial_rings(&points, scatter * size)
             .or_else(|| one_circle(&points))?
-            .centre;
+            .centres[0];
         let orientation = self.orientation(component, |normal, at| {
             let r = offset(projected(at), centre);
             let n = projected(normal);
@@ -878,13 +879,16 @@ fn plane_basis(direction: Vec3) -> [Vec3; 2] {
     [u, cross(direction, u)]
 }
 
-struct Coaxial {
-    centre: [f64; 2],
+struct CoaxialFit {
+    centres: Vec<[f64; 2]>,
     radii: [Option<f64>; 2],
 }
 
-fn coaxial_rings(points: &[(f64, [f64; 2])], ring_spread: f64) -> Option<Coaxial> {
-    let mut found: Option<Coaxial> = None;
+fn coaxial_rings(points: &[(f64, [f64; 2])], ring_spread: f64) -> Option<CoaxialFit> {
+    let mut fit = CoaxialFit {
+        centres: Vec::new(),
+        radii: [None; 2],
+    };
     let mut start = 0;
     while start < points.len() {
         let mut end = start + 1;
@@ -897,31 +901,37 @@ fn coaxial_rings(points: &[(f64, [f64; 2])], ring_spread: f64) -> Option<Coaxial
         if ring.len() < 3 {
             continue;
         }
-        let circle = ring_circle(ring)?;
-        let coaxial = found.get_or_insert(Coaxial {
-            centre: circle.centre,
-            radii: [None; 2],
-        });
-        if planar_distance(coaxial.centre, circle.centre) >= circle.sagitta {
-            return None;
+        let circle = ring_circle(ring.clone())?;
+        if let Some(&common) = fit.centres.first() {
+            let radius = ring
+                .iter()
+                .map(|p| planar_distance(*p, common))
+                .fold(0.0, f64::max);
+            let off_the_common_circle = ring
+                .iter()
+                .any(|p| (planar_distance(*p, common) - radius).abs() >= circle.sagitta);
+            if off_the_common_circle {
+                return None;
+            }
         }
+        fit.centres.push(circle.centre);
         if first {
-            coaxial.radii[0] = Some(circle.radius);
+            fit.radii[0] = Some(circle.radius);
         }
         if last {
-            coaxial.radii[1] = Some(circle.radius);
+            fit.radii[1] = Some(circle.radius);
         }
     }
-    found
+    (!fit.centres.is_empty()).then_some(fit)
 }
 
-fn one_circle(points: &[(f64, [f64; 2])]) -> Option<Coaxial> {
+fn one_circle(points: &[(f64, [f64; 2])]) -> Option<CoaxialFit> {
     let mut across: Vec<[f64; 2]> = points.iter().map(|(_, p)| *p).collect();
     across.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
     across.dedup();
     let circle = ring_circle(across)?;
-    Some(Coaxial {
-        centre: circle.centre,
+    Some(CoaxialFit {
+        centres: vec![circle.centre],
         radii: [Some(circle.radius); 2],
     })
 }
@@ -1122,7 +1132,7 @@ impl BandCandidate {
         UnreadEnds::of(self.lo, self.hi)
     }
 
-    fn measured_radii(&self) -> Option<[Option<i32>; 2]> {
+    fn place_radii(&self) -> Option<[Option<i32>; 2]> {
         self.radii
             .iter()
             .any(Option::is_some)
@@ -1133,24 +1143,16 @@ impl BandCandidate {
         BandPlace {
             axis: self.axis,
             at: self.at(),
-            radii: self.measured_radii(),
+            radii: self.place_radii(),
             ends: self.ends(),
         }
     }
 
-    fn irregular_reading(&self) -> BandReading {
+    fn unread_as(&self, outward: fn(BandPlace) -> UnreadBand) -> BandReading {
         match self.orientation {
             Orientation::Inward => BandReading::Inward,
             Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(self.place())),
-            Orientation::Outward => BandReading::Unread(UnreadBand::Irregular(self.place())),
-        }
-    }
-
-    fn open_reading(&self) -> BandReading {
-        match self.orientation {
-            Orientation::Inward => BandReading::Inward,
-            Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(self.place())),
-            Orientation::Outward => BandReading::Unread(UnreadBand::Partial(self.place())),
+            Orientation::Outward => BandReading::Unread(outward(self.place())),
         }
     }
 
@@ -1169,7 +1171,7 @@ impl BandCandidate {
     fn centre_unread(&self) -> BandReading {
         BandReading::Unread(UnreadBand::Centre {
             axis: self.axis,
-            radii: self.measured_radii(),
+            radii: self.place_radii(),
             ends: self.ends(),
         })
     }
@@ -1356,7 +1358,9 @@ impl<'a> Strip<'a> {
             return self.closed_reading(roundness);
         }
         self.open_candidate(roundness)
-            .map_or(BandReading::NotRound, |candidate| candidate.open_reading())
+            .map_or(BandReading::NotRound, |candidate| {
+                candidate.unread_as(UnreadBand::Partial)
+            })
     }
 
     fn closed_reading(&self, roundness: Roundness) -> BandReading {
