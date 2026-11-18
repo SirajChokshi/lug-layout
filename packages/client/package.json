@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p bench/tsconfig.json",
     "test": "vitest run",
     "bench": "node --experimental-transform-types --no-warnings bench/view-camera.bench.ts && pnpm run bench:layout",
-    "bench:layout": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/large-layout.bench.js"
+    "bench:layout": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/large-layout.bench.js",
+    "bench:layout-memory": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/layout-memory.bench.js"
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",
