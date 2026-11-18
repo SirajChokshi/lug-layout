@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { CatalogItemView } from "../edit/editor.ts";
-import { PaletteIndex } from "./palette-index.ts";
+import { PaletteIndex, itemInColor } from "./palette-index.ts";
 
 const GREEN = { code: 2, name: "Green", rgb: "#237841" };
 const DARK_GREEN = { code: 288, name: "Dark_Green", rgb: "#184632" };
@@ -114,7 +114,7 @@ it("reads quoted phrases, minus to exclude, and # for numbers only", () => {
   expect(keys('"road crossroads"')).toEqual(["ldraw:2358p02"]);
   expect(keys('"crossroads road"')).toEqual([]);
   expect(keys("baseplate -road")).toEqual(["ldraw:4186", "ldraw:3811", "ldraw:3867"]);
-  expect(colorsOf("32x32 -dark", "ldraw:3811")).toEqual(["Green", "Tan"]);
+  expect(colorsOf("32x32 -dark", "ldraw:3811")).toEqual(["Tan", "Green"]);
   expect(keys('green -"dark green"')).toContain("ldraw:3811");
   expect(colorsOf('green -"dark green"', "ldraw:3811")).toEqual(["Green"]);
   expect(keys("#7938")).toEqual(["omr:7938-1"]);
@@ -126,4 +126,18 @@ it("searches only the chosen category", () => {
   expect(keys("32", "road")).toEqual(["ldraw:44336p03"]);
   expect(keys("straight", "baseplates")).toEqual([]);
   expect(keys("", "sets")).toEqual(["omr:7938-1"]);
+});
+
+it("offers each colour the parts come in once, with how many parts, colours before greys", () => {
+  const choices = index.colorChoices("baseplates");
+  expect(choices.map(({ color, parts }) => [color.name, parts])).toEqual([
+    ["Tan", 2],
+    ["Green", 3],
+    ["Dark_Green", 1],
+    ["Very_Light_Bluish_Grey", 1],
+    ["Dark_Bluish_Grey", 2],
+  ]);
+  const [sixteen] = index.entries("baseplates").filter((entry) => entry.key === "ldraw:3867");
+  expect(sixteen && itemInColor(sixteen, TAN.code)).toBeUndefined();
+  expect(sixteen && itemInColor(sixteen, GREEN.code)?.id).toBe("ldraw:3867@2");
 });
