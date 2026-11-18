@@ -152,6 +152,7 @@ function withProvenance(part: ConnectorTable, source: number, status: number): C
     part.origin,
     part.axis,
     part.axisFree,
+    part.piece,
   );
 }
 
@@ -1099,13 +1100,34 @@ describe("ModelConnectors with composite parts", () => {
     expect(tally(inDustySubmodel(composite))).toEqual([0, 1, 2]);
   });
 
-  it("never mates two connectors of one piece, in any pass", () => {
+  it("never mates two connectors of one piece, in any pass, even inside a composite", () => {
     for (const piece of [0, 3]) {
       const moulding = hipsAndLegs(piece, piece);
       expect(tally(alone(moulding, exact))).toEqual([3, 0, 1]);
       expect(tally(alone(moulding, dusty))).toEqual([0, 0, 4]);
       expect(tally(inDustySubmodel(moulding))).toEqual([0, 0, 4]);
     }
+    const composite = hipsAndLegs(1, 2);
+    const legPin = {
+      shape: PIN,
+      gender: GENDER_MALE,
+      origin: [0, HOLE_HEIGHT, STUD_LDU] as const,
+      axis: AXIS_POS_X,
+      piece: 2,
+    };
+    const withLegPin = new ConnectorTable(
+      Uint16Array.of(...composite.shape, legPin.shape),
+      Uint8Array.of(...composite.gender, legPin.gender),
+      Uint8Array.of(...composite.source, SOURCE_SHADOW),
+      Uint8Array.of(...composite.status, STATUS_VERIFIED),
+      Float32Array.of(...composite.origin, ...legPin.origin),
+      Int8Array.of(...composite.axis, legPin.axis),
+      new Float32Array((composite.count + 1) * 3),
+      Uint16Array.of(...composite.piece, legPin.piece),
+    );
+    expect(tally(alone(withLegPin, exact))).toEqual([2, 1, 1]);
+    expect(tally(alone(withLegPin, dusty))).toEqual([0, 1, 3]);
+    expect(tally(inDustySubmodel(withLegPin))).toEqual([0, 1, 3]);
   });
 
   it("refuses a piece column that doesn't match the connector count", () => {
@@ -1123,6 +1145,7 @@ describe("ModelConnectors with composite parts", () => {
       );
     expect(withPieces(new Uint16Array(part.count)).count).toBe(part.count);
     expect(() => withPieces(new Uint16Array(part.count - 1))).toThrow(RangeError);
+    expect(() => withPieces(new Uint16Array(part.count + 1))).toThrow(RangeError);
   });
 });
 
