@@ -14,6 +14,8 @@ export type InputSet = (typeof INPUT_SETS)[number];
 export interface CheckedInput {
   readonly set: InputSet;
   readonly checks: InputChecks;
+  readonly importSeconds: number;
+  readonly importFinished: boolean;
 }
 
 export interface PartCoverage {
@@ -48,9 +50,11 @@ export interface RunContext {
   readonly seed: number;
   readonly corpusFiles: number;
   readonly elapsedSeconds: number;
+  readonly importLimitSeconds: number;
 }
 
 const EXAMPLE_PARTS = 8;
+const BUDGET_INSTANCES = 10_000;
 const MAX_CLASS_ROWS = 25;
 
 interface Tally {
@@ -179,6 +183,39 @@ function coverageLine({
   return `Distinct drawn parts: ${distinct}, of which ${withConnectors} yield at least one connector. Connector data: ${sources || "none"}. Parts carrying each connector kind: ${listed(byFamily)}.${tiers}`;
 }
 
+function seconds(value: number): string {
+  return `${value.toFixed(1)} s`;
+}
+
+function timingRow(label: string, members: ReadonlyArray<CheckedInput>): string {
+  const total = members.reduce((sum, input) => sum + input.importSeconds, 0);
+  const drawing = members.filter((input) => input.checks.drawnInstances > 0);
+  const drawn = drawing.reduce((sum, input) => sum + input.checks.drawnInstances, 0);
+  const drawingSeconds = drawing.reduce((sum, input) => sum + input.importSeconds, 0);
+  const perBudget = drawn > 0 ? seconds((drawingSeconds * BUDGET_INSTANCES) / drawn) : "n/a";
+  const slowest = Math.max(...members.map((input) => input.importSeconds));
+  const unfinished = members.filter((input) => !input.importFinished).length;
+  return `| ${label} | ${members.length} | ${seconds(total)} | ${perBudget} | ${seconds(slowest)} | ${unfinished} |`;
+}
+
+function importTimeTable(limitSeconds: number, inputs: ReadonlyArray<CheckedInput>): string[] {
+  const rows = INPUT_SETS.flatMap((set) => {
+    const members = inputs.filter((input) => input.set === set);
+    return members.length === 0 ? [] : [timingRow(set, members)];
+  });
+  return [
+    "#### Import time",
+    "",
+    `Each input imports on its own thread. One that hasn't finished after ${limitSeconds} s is stopped and fails the import check. E0b's budget is ≤ 1 s per ${BUDGET_INSTANCES.toLocaleString("en-US")} instances.`,
+    "",
+    `| Inputs | Files | Import time | Per ${BUDGET_INSTANCES.toLocaleString("en-US")} drawn instances | Slowest input | Unfinished after ${limitSeconds} s |`,
+    "|---|---|---|---|---|---|",
+    ...rows,
+    timingRow("**all**", inputs),
+    "",
+  ];
+}
+
 export function markdownReport(context: RunContext, inputs: ReadonlyArray<CheckedInput>): string {
   const header = `| Inputs | Files | ${CHECKS.map((check) => check[0]?.toUpperCase() + check.slice(1)).join(" | ")} |`;
   const rule = `|---|---|${CHECKS.map(() => "---").join("|")}|`;
@@ -206,6 +243,7 @@ export function markdownReport(context: RunContext, inputs: ReadonlyArray<Checke
     "",
     coverageLine(context.coverage),
     "",
+    ...importTimeTable(context.importLimitSeconds, inputs),
     ...classTable("Failures and blocks by bug class", classRows(inputs, failures)),
     ...classTable("Refused by policy (expected)", classRows(inputs, policies)),
     ...classTable("Skipped and reported by the importer (never drawn, by design)", reported),
