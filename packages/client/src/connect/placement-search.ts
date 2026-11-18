@@ -25,6 +25,7 @@ import {
 } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
+import type { FrozenVolumes } from "./placeable-volumes.ts";
 import { TRACK_FAMILY } from "./finders.ts";
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -72,7 +73,7 @@ export interface IPlacementSearch {
     instances: PartInstances,
     trackEnds: ReadonlyArray<TrackEnd>,
   ): ModelConnectors;
-  add(placement: number, model: ModelConnectors, volumes: CellVolumes, pose: LatticePose): void;
+  add(placement: number, model: ModelConnectors, volumes: FrozenVolumes, pose: LatticePose): void;
   remove(placement: number): void;
   clear(): void;
   search(
@@ -87,9 +88,8 @@ export interface IPlacementSearch {
 
 interface Placed {
   readonly model: ModelConnectors;
-  readonly volumes: CellVolumes;
+  readonly volumes: FrozenVolumes;
   readonly pose: LatticePose;
-  readonly world: CellVolumes;
 }
 
 class VolumeBuffer implements CellVolumes {
@@ -182,39 +182,19 @@ export class PlacementSearch implements IPlacementSearch {
     return ModelConnectors.fromParts(parts, instances, this.mating, trackEnds);
   }
 
-  add(placement: number, model: ModelConnectors, volumes: CellVolumes, pose: LatticePose): void {
+  add(placement: number, model: ModelConnectors, volumes: FrozenVolumes, pose: LatticePose): void {
     if (this.placed.has(placement))
       throw new RangeError(`placement ${placement} is already placed`);
     const at: LatticePose = { x: pose.x, z: pose.z, yPlates: pose.yPlates, rot: pose.rot };
-    const world = new VolumeBuffer(volumes.count).place(volumes, at);
-    for (let c = 0; c < world.count; c++) {
-      if ((world.topLdu[c] ?? 0) <= (world.bottomLdu[c] ?? 0)) continue;
-      this.volumes.add(
-        placement,
-        world.cellX[c] ?? 0,
-        world.cellZ[c] ?? 0,
-        world.bottomLdu[c] ?? 0,
-        world.topLdu[c] ?? 0,
-      );
-    }
+    this.volumes.add(placement, this.scratch.place(volumes, at));
     this.solver.insert(model, at);
-    this.placed.set(placement, { model, volumes, pose: at, world });
+    this.placed.set(placement, { model, volumes, pose: at });
   }
 
   remove(placement: number): void {
     const placed = this.placed.get(placement);
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
-    const { world } = placed;
-    for (let c = 0; c < world.count; c++) {
-      if ((world.topLdu[c] ?? 0) <= (world.bottomLdu[c] ?? 0)) continue;
-      this.volumes.remove(
-        placement,
-        world.cellX[c] ?? 0,
-        world.cellZ[c] ?? 0,
-        world.bottomLdu[c] ?? 0,
-        world.topLdu[c] ?? 0,
-      );
-    }
+    this.volumes.remove(placement, this.scratch.place(placed.volumes, placed.pose));
     this.solver.remove(placed.model, placed.pose);
     this.placed.delete(placement);
   }

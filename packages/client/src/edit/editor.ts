@@ -24,7 +24,6 @@ import {
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
-  type CellVolumes,
   type ModelConnectors,
 } from "@brr/domain";
 import {
@@ -76,7 +75,7 @@ import {
   type FramedTrackPiece,
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
-import { placeableVolumes } from "../connect/placeable-volumes.ts";
+import { placeableVolumes, type FrozenVolumes } from "../connect/placeable-volumes.ts";
 import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
   TRACK_SYSTEM,
@@ -438,7 +437,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
 
 interface Connected {
   readonly model: ModelConnectors;
-  readonly volumes: CellVolumes;
+  readonly volumes: FrozenVolumes;
 }
 
 const EDITOR_LOD: BundleLod = "standard";

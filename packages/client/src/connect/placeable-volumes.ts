@@ -22,7 +22,31 @@ function slabBottoms(cells: PlaceableCells, slabBoxes: Float32Array): Float64Arr
   return bottoms;
 }
 
-export function placeableVolumes(placeable: Placeable): CellVolumes {
+function copied(values: ArrayLike<number>, count: number): Int32Array {
+  return Int32Array.from({ length: count }, (_, c) => values[c] ?? 0);
+}
+
+export class FrozenVolumes implements CellVolumes {
+  private constructor(
+    readonly count: number,
+    readonly cellX: ArrayLike<number>,
+    readonly cellZ: ArrayLike<number>,
+    readonly bottomLdu: ArrayLike<number>,
+    readonly topLdu: ArrayLike<number>,
+  ) {}
+
+  static copyOf(cells: CellVolumes): FrozenVolumes {
+    return new FrozenVolumes(
+      cells.count,
+      copied(cells.cellX, cells.count),
+      copied(cells.cellZ, cells.count),
+      copied(cells.bottomLdu, cells.count),
+      copied(cells.topLdu, cells.count),
+    );
+  }
+}
+
+export function placeableVolumes(placeable: Placeable): FrozenVolumes {
   const { cells, slabBoxes } = placeable;
   const slab = slabBottoms(cells, slabBoxes);
   let count = 0;
@@ -47,5 +71,5 @@ export function placeableVolumes(placeable: Placeable): CellVolumes {
       n++;
     }
   }
-  return { count, cellX, cellZ, bottomLdu, topLdu };
+  return FrozenVolumes.copyOf({ count, cellX, cellZ, bottomLdu, topLdu });
 }

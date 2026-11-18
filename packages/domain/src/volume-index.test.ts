@@ -1,3 +1,4 @@
+import { CHUNK_STUDS } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import {
   NO_VOLUME_TOP,
@@ -34,9 +35,9 @@ function hit(): OverlapHit {
 
 function stack(): VolumeIndex {
   const index = new VolumeIndex();
-  index.add(1, -1, -1, -4, 0);
-  index.add(2, -1, -1, 0, 24);
-  index.add(3, -1, -1, 80, 96);
+  index.add(1, volumes([[-1, -1, -4, 0]]));
+  index.add(2, volumes([[-1, -1, 0, 24]]));
+  index.add(3, volumes([[-1, -1, 80, 96]]));
   return index;
 }
 
@@ -75,17 +76,40 @@ describe("VolumeIndex", () => {
 
   it("removes exactly one owner's span and reuses its record", () => {
     const index = stack();
-    index.remove(3, -1, -1, 80, 96);
+    index.remove(3, volumes([[-1, -1, 80, 96]]));
     expect(index.topAt(-1, -1)).toBe(24);
     expect(firstOverlap(volumes([[-1, -1, 24, 81]]), index, keepAll, hit())).toBe(false);
-    index.add(4, -1, -1, 40, 48);
+    index.add(4, volumes([[-1, -1, 40, 48]]));
     expect(index.topAt(-1, -1)).toBe(48);
-    expect(() => index.remove(3, -1, -1, 80, 96)).toThrow(RangeError);
+    expect(() => index.remove(3, volumes([[-1, -1, 80, 96]]))).toThrow(RangeError);
   });
 
-  it("refuses an empty or fractional span", () => {
+  it("indexes one owner's cells across chunks together, and removes them all", () => {
     const index = stack();
-    expect(() => index.add(4, 0, 0, 8, 8)).toThrow(RangeError);
-    expect(() => index.add(4, 0, 0, 0, 1.5)).toThrow(RangeError);
+    const across = volumes([
+      [-1, -1, 96, 104],
+      [0, 0, 0, 8],
+      [CHUNK_STUDS, -CHUNK_STUDS - 1, 8, 16],
+    ]);
+    index.add(5, across);
+    expect([
+      index.topAt(-1, -1),
+      index.topAt(0, 0),
+      index.topAt(CHUNK_STUDS, -CHUNK_STUDS - 1),
+    ]).toEqual([104, 8, 16]);
+    index.remove(5, across);
+    expect([
+      index.topAt(-1, -1),
+      index.topAt(0, 0),
+      index.topAt(CHUNK_STUDS, -CHUNK_STUDS - 1),
+    ]).toEqual([96, NO_VOLUME_TOP, NO_VOLUME_TOP]);
+  });
+
+  it("takes an empty span as occupying nothing, and refuses a fractional one", () => {
+    const index = stack();
+    index.add(4, volumes([[0, 0, 8, 8]]));
+    expect(index.topAt(0, 0)).toBe(NO_VOLUME_TOP);
+    const fractional = { count: 1, cellX: [0], cellZ: [0], bottomLdu: [0], topLdu: [1.5] };
+    expect(() => index.add(4, fractional)).toThrow(RangeError);
   });
 });

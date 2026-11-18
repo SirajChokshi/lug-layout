@@ -10,7 +10,6 @@ import {
   SECTION_ROUND,
   SOURCE_SHADOW,
   STATUS_VERIFIED,
-  type CellVolumes,
   type SnapWindow,
 } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
@@ -18,6 +17,7 @@ import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
+import { FrozenVolumes } from "./placeable-volumes.ts";
 import { placementChoice, type IPlacementSearch } from "./placement-search.ts";
 
 const HALF = STUD_LDU / 2;
@@ -83,22 +83,22 @@ function grid(
   );
 }
 
-function columns(width: number, depth: number, bottom: number, top: number): CellVolumes {
+function columns(width: number, depth: number, bottom: number, top: number): FrozenVolumes {
   const count = width * depth;
-  return {
+  return FrozenVolumes.copyOf({
     count,
     cellX: Int32Array.from({ length: count }, (_, c) => c % width),
     cellZ: Int32Array.from({ length: count }, (_, c) => Math.floor(c / width)),
     bottomLdu: new Int32Array(count).fill(bottom),
     topLdu: new Int32Array(count).fill(top),
-  };
+  });
 }
 
 function window(x: number, z: number, cells: number): SnapWindow {
   return { x, z, yPlates: 0, rot: 0, cells, plates: 1, turns: 1 };
 }
 
-function world(f: Fixture): { plate: ModelConnectors; plateVolumes: CellVolumes } {
+function world(f: Fixture): { plate: ModelConnectors; plateVolumes: FrozenVolumes } {
   f.search.add(
     BASEPLATE,
     f.connectors([grid(4, 4, f.stud, GENDER_MALE, 0, AXIS_POS_Y)]),
