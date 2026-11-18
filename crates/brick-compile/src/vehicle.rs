@@ -26,6 +26,22 @@ pub struct RailHeadBand {
     pub outer: f64,
 }
 
+impl RailHeadBand {
+    pub fn from_decimals(rail_part: &str, inner: &str, outer: &str) -> Result<Self, String> {
+        let ldu = |text: &str| {
+            text.parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| format!("rail {rail_part}: {text:?} is not a decimal LDU value"))
+        };
+        Ok(RailHeadBand {
+            rail_part: rail_part.to_string(),
+            inner: ldu(inner)?,
+            outer: ldu(outer)?,
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bogie {
     pub instances: Vec<usize>,

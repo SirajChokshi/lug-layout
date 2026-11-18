@@ -77,16 +77,23 @@ async function resolveReference(
   return undefined;
 }
 
+export function libraryReference(path: string): string {
+  const directory = SEARCH_DIRECTORIES.find((prefix) => path.startsWith(prefix));
+  return directory === undefined ? path : path.slice(directory.length);
+}
+
 export async function fetchClosure(
   palette: Palette,
   outDirectory: string,
   modelSources: ReadonlyArray<string>,
+  probeParts: ReadonlyArray<string>,
 ): Promise<InputLock> {
   const files: Record<string, string> = {};
   const queue: string[] = [
     ...new Set([
       ...palette.parts.map((part) => `${part.id}.dat`),
       ...palette.studPrimitives,
+      ...probeParts.map(libraryReference),
       ...modelSources.flatMap((source) => {
         const structure = modelStructure(source);
         return [...structure.parts, ...structure.inlinePartReferences];
@@ -155,6 +162,7 @@ export async function fetchAuditInputs(
   palette: Palette,
   auditDirectory: string,
   connectivityDirectory: string,
+  vocabularySnaps: ReadonlyArray<string>,
 ): Promise<AuditLock> {
   const files: Record<string, string> = {};
   const absentParts: string[] = [];
@@ -180,7 +188,7 @@ export async function fetchAuditInputs(
     absentParts: absentParts.toSorted(),
     connectivity: await fetchConnectivity(
       palette.connectivitySource,
-      Object.keys(files),
+      [...Object.keys(files), ...vocabularySnaps],
       connectivityDirectory,
     ),
   };
@@ -192,7 +200,7 @@ export async function fetchConnectivity(
   directory: string,
 ): Promise<ConnectivityLock> {
   const files: Record<string, string> = {};
-  for (const path of [CONNECTIVITY_LICENSE, ...paths]) {
+  for (const path of new Set([CONNECTIVITY_LICENSE, ...paths])) {
     const bytes = await download(source, path);
     if (bytes) await storeInto(directory, files, path, bytes);
   }

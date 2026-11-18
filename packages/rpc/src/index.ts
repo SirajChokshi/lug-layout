@@ -6,4 +6,9 @@ export {
   type RpcPort,
   type RpcProtocol,
 } from "./rpc-endpoint.ts";
-export { SIM_PROTOCOL } from "./protocols.ts";
+export {
+  BAKE_HELPER_PROTOCOL,
+  IMPORT_PROTOCOL,
+  SIM_PROTOCOL,
+  type BakeHelperHandoff,
+} from "./protocols.ts";

@@ -5,13 +5,15 @@ use serde_json::Value;
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Library, Lod};
+use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
 use crate::ldraw::{self, Line};
 use crate::pieces::{PieceMap, PieceNumbering};
 
 use super::meta::{parse_metas, Meta};
 use super::{
-    column, finished, joined_pieces, length, translation, Caps, Connector, Gender, Issue, Scaling,
-    Section, SectionShape, Shape, Source, Status, Traced,
+    column, finished, grid_cell, joined_pieces, length, linear_part, malformed_shape,
+    placeable_cells, translation, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape,
+    Shape, Source, Status, Traced,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -108,6 +110,32 @@ struct Found {
     where_open: Vec<Traced>,
     ends: Vec<PlacedEnd>,
     cylinders: Vec<Affine>,
+    malformed: Vec<MalformedGeometry>,
+}
+
+fn open_cells(found: &Found, pieces: &PieceMap) -> Vec<(Option<Malformation>, Connector)> {
+    let mut ignored = Vec::new();
+    let mut cells = Vec::new();
+    for traced in &found.where_open {
+        let raw = &traced.connector;
+        let raw_finding =
+            non_finite(&linear_part(&raw.placement)).then_some(Malformation::NonFinite);
+        let connector = Connector {
+            pieces: vec![pieces.piece(&traced.trail)],
+            ..finished(raw, &mut ignored)
+        };
+        let offsets = connector
+            .grid
+            .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets());
+        for offset in offsets {
+            let cell = grid_cell(&connector, offset);
+            let finding = raw_finding
+                .or_else(|| unplaceable(&cell.placement.m))
+                .or_else(|| malformed_shape(&cell));
+            cells.push((finding, cell));
+        }
+    }
+    cells
 }
 
 fn is_cylinder_primitive(path: &str) -> bool {
@@ -313,51 +341,58 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
     pub fn connectors(&mut self, path: &str) -> (Vec<Connector>, Vec<Issue>) {
         let found = self.find(path, 0);
         let pieces = self.numbering.map(path);
-        let mut issues = Vec::new();
-        let mut raw: Vec<Connector> = found
-            .connectors
+        let mut malformed = found.malformed.clone();
+        let mut kept = |finding: Option<Malformation>| match finding {
+            Some(malformation) => {
+                record(&mut malformed, path, malformation);
+                false
+            }
+            None => true,
+        };
+        let mut raw: Vec<Connector> = Vec::with_capacity(found.connectors.len());
+        for traced in &found.connectors {
+            let (cells, findings) = placeable_cells(&traced.connector);
+            for malformation in findings {
+                kept(Some(malformation));
+            }
+            let piece = pieces.piece(&traced.trail);
+            raw.extend(cells.into_iter().map(|cell| Connector {
+                pieces: vec![piece],
+                ..cell
+            }));
+        }
+        let ends: Vec<PlacedEnd> = found
+            .ends
             .iter()
-            .map(|traced| Connector {
-                pieces: vec![pieces.piece(&traced.trail)],
-                ..traced.connector.clone()
-            })
+            .filter(|end| kept(unplaceable(&end.placement.m)))
+            .cloned()
             .collect();
-        raw.extend(paired(&found.ends, &found.cylinders, &pieces, &mut issues));
+        let cylinders: Vec<Affine> = found
+            .cylinders
+            .iter()
+            .filter(|cylinder| kept(unplaceable(&cylinder.m)))
+            .copied()
+            .collect();
+        for (finding, _) in open_cells(&found, &pieces) {
+            kept(finding);
+        }
+        let mut issues = Vec::new();
+        raw.extend(paired(&ends, &cylinders, &pieces, &mut issues));
         let connectors = raw
             .iter()
             .map(|connector| finished(connector, &mut issues))
+            .filter(|connector| kept(malformed_shape(connector)))
             .collect();
+        issues.extend(malformed.into_iter().map(Issue::from));
         (connectors, issues)
     }
 
     pub fn where_open(&mut self, path: &str) -> Vec<Connector> {
         let found = self.find(path, 0);
         let pieces = self.numbering.map(path);
-        let mut ignored = Vec::new();
-        found
-            .where_open
-            .iter()
-            .map(|traced| Connector {
-                pieces: vec![pieces.piece(&traced.trail)],
-                ..finished(&traced.connector, &mut ignored)
-            })
-            .flat_map(|connector| {
-                let offsets = connector
-                    .grid
-                    .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets());
-                offsets.into_iter().map(move |offset| {
-                    let at = connector.placement.apply(offset);
-                    let mut m = connector.placement.m;
-                    m[3] = at[0] + 0.0;
-                    m[7] = at[1] + 0.0;
-                    m[11] = at[2] + 0.0;
-                    Connector {
-                        placement: Affine { m },
-                        grid: None,
-                        ..connector.clone()
-                    }
-                })
-            })
+        open_cells(&found, &pieces)
+            .into_iter()
+            .filter_map(|(finding, cell)| finding.is_none().then_some(cell))
             .collect()
     }
 
@@ -368,17 +403,24 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
         let mut out = Found::default();
         if depth <= MAX_DEPTH {
             if let Some(source) = self.library.source(path) {
-                let subfiles =
-                    ldraw::parse(source)
-                        .lines
-                        .into_iter()
-                        .filter_map(|line| match line {
-                            Line::Subfile {
-                                matrix, reference, ..
-                            } => Some((matrix, reference)),
-                            _ => None,
-                        });
-                for (ordinal, (matrix, reference)) in (0u32..).zip(subfiles) {
+                let parsed = ldraw::parse(source);
+                if parsed.unparsed > 0 {
+                    record(&mut out.malformed, path, Malformation::Unparsed);
+                }
+                let mut next_ordinal: u32 = 0;
+                for line in parsed.lines {
+                    let Line::Subfile {
+                        matrix, reference, ..
+                    } = line
+                    else {
+                        continue;
+                    };
+                    let ordinal = next_ordinal;
+                    next_ordinal += 1;
+                    if non_finite(&matrix.m) {
+                        record(&mut out.malformed, path, Malformation::NonFinite);
+                        continue;
+                    }
                     let Some(child) = resolve_reference(self.library, Lod::Standard, &reference)
                     else {
                         continue;
@@ -421,6 +463,9 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                     }));
                     out.cylinders
                         .extend(inner.cylinders.iter().map(|c| matrix.then(c)));
+                    for found in &inner.malformed {
+                        record(&mut out.malformed, &found.file, found.malformation);
+                    }
                 }
             }
         }

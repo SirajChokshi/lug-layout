@@ -66,6 +66,7 @@ function compiledManifest() {
     catalogParts: [],
     trackCatalog: { n: 16, pieces: [] },
     trackShapes: [],
+    tablePlane: { part: "3811", depthBelowTopLdu: 4 },
     compiler: null as { file: string; unofficialAllowlist: string[]; cavityProbe: string } | null,
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },
@@ -200,6 +201,8 @@ function modelFile() {
     vehicles: [],
     cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, visibleBits: [], cells: null },
     instances: { part: [], color: [], matrix: [] },
+    partTransforms: [],
+    submodels: { parent: [], matrices: [], ofPart: [] },
   };
 }
 

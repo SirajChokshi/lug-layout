@@ -59,5 +59,6 @@ test("sets seat one baseplate apart on the stud lattice and a caboose sits on th
   expect(caboose.minZ).toBeGreaterThanOrEqual(baseplate.minZ);
   expect(caboose.maxZ).toBeLessThanOrEqual(baseplate.maxZ);
 
+  await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("sets-on-baseplates.png") });
 });

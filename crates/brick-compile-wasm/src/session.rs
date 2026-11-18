@@ -3,11 +3,12 @@
 use std::collections::{HashMap, HashSet};
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
-use brick_compile::cover::ModelCover;
+use brick_compile::compile::rolling_mode_from_studs;
+use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
-use brick_compile::model::{bake_model, ModelInstance};
+use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
 use brick_compile::{compile_part, CompileError, CompileOptions, Lod, TechnicPrimitives};
@@ -30,7 +31,10 @@ struct BakeInputs<'a> {
     stud_primitives: &'a [String],
     unofficial_allowlist: &'a [String],
     translucent: HashSet<u32>,
+    table_depth: f64,
     vehicles: Option<&'a VehicleInputs>,
+    shard: CoverShard,
+    visibility_only: bool,
 }
 
 impl Session {
@@ -59,6 +63,8 @@ impl Session {
                 parts,
                 inline_checks,
             } => {
+                let rolling_mode = rolling_mode_from_studs(&self.library, stud_primitives);
+                let stud_needs = self.library.take_requested();
                 let options = CompileOptions {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
@@ -67,31 +73,49 @@ impl Session {
                         || Ok(TechnicPrimitives::default()),
                         TechnicPrimitives::from_table,
                     )?,
+                    rolling_mode,
                 };
                 let inference = ConnectorInference::new(connectors)?;
                 let model = request.text("source")?;
                 compile(
                     &self.library,
                     &options,
-                    &inference,
-                    parts,
-                    inline_checks,
+                    CompileWork {
+                        references: parts,
+                        inline_checks,
+                        stud_needs: &stud_needs,
+                        inference: &inference,
+                    },
                     &model,
                     body,
                 )
+            }
+            Operation::BakeNeeds { stud_primitives } => {
+                let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
+                let paths = missing_bake_files(&self.library, &drawn, stud_primitives);
+                Ok(if paths.is_empty() {
+                    Reply::Complete
+                } else {
+                    Reply::Need { paths }
+                })
             }
             Operation::Bake {
                 stud_primitives,
                 unofficial_allowlist,
                 translucent_colors,
+                table_depth_ldu,
                 vehicles,
+                shard,
             } => {
                 let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
                 let inputs = BakeInputs {
                     stud_primitives,
                     unofficial_allowlist,
                     translucent: translucent_colors.iter().copied().collect(),
+                    table_depth: *table_depth_ldu,
                     vehicles: vehicles.as_ref(),
+                    shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
+                    visibility_only: shard.is_some_and(|shard| shard.visibility_only),
                 };
                 Ok(bake(&self.library, &drawn, &inputs, body))
             }
@@ -114,6 +138,10 @@ impl Session {
     }
 }
 
+fn wire_index(index: i64) -> Result<i32, String> {
+    i32::try_from(index).map_err(|_| format!("sub-model index {index} does not fit an Int32"))
+}
+
 fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
     let model = bake_model(source).map_err(|e| e.to_string())?;
     let mut part_ids: Vec<String> = Vec::new();
@@ -121,7 +149,8 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
     let count = model.instances.len();
     let mut parts = Vec::with_capacity(count);
     let mut colors = Vec::with_capacity(count);
-    let mut matrices: Vec<f32> = Vec::with_capacity(count * 12);
+    let mut transforms: Vec<f64> = Vec::with_capacity(count * 12);
+    let mut holders = Vec::with_capacity(count);
     for instance in &model.instances {
         let key = instance.inline.as_deref().unwrap_or(&instance.part);
         let next = u32::try_from(part_ids.len()).map_err(|e| e.to_string())?;
@@ -131,11 +160,20 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
         });
         parts.push(index);
         colors.push(instance.color);
-        matrices.extend(instance.matrix.m.map(|v| v as f32));
+        transforms.extend(instance.matrix.m);
+        holders.push(wire_index(submodel_index(instance.submodel))?);
     }
+    let parents = model
+        .submodel_parents()
+        .into_iter()
+        .map(wire_index)
+        .collect::<Result<Vec<_>, _>>()?;
     body.blob("instancePart", &parts);
     body.blob("instanceColor", &colors);
-    body.blob("instanceMatrix", &matrices);
+    body.blob("instanceTransform", &transforms);
+    body.blob("instanceSubmodel", &holders);
+    body.blob("submodelParent", &parents);
+    body.blob("submodelMatrix", &model.submodel_matrices());
     Ok(Reply::ModelRead {
         sections: model.sections.iter().map(Section::from).collect(),
         parts: part_ids,
@@ -162,19 +200,31 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
     })
 }
 
+struct CompileWork<'a> {
+    references: &'a [String],
+    inline_checks: &'a [InlineCheck],
+    stud_needs: &'a [String],
+    inference: &'a ConnectorInference<'a>,
+}
+
 fn compile(
     library: &TrackingLibrary,
     options: &CompileOptions,
-    inference: &ConnectorInference,
-    references: &[String],
-    inline_checks: &[InlineCheck],
+    work: CompileWork,
     model: &str,
     body: &mut Body,
 ) -> Result<Reply, String> {
+    let CompileWork {
+        references,
+        inline_checks,
+        stud_needs,
+        inference,
+    } = work;
     let mut parts = Vec::with_capacity(references.len());
     for reference in references {
         let result = compile_part(library, reference, options);
         let mut requested = library.take_requested();
+        requested.extend(stud_needs.iter().cloned());
         let connectors = match &result {
             Ok(compiled) if requested.is_empty() && inference.wants(reference) => {
                 let header = &compiled.flattened_files[0].header;
@@ -254,24 +304,32 @@ fn drawn_instances(source: &str, mask: &[u8]) -> Result<Vec<ModelInstance>, Stri
         .collect())
 }
 
+fn missing_bake_files(
+    library: &TrackingLibrary,
+    drawn: &[ModelInstance],
+    stud_primitives: &[String],
+) -> Vec<String> {
+    let mut scan = Flattener::new(library, Lod::Standard, &[]);
+    let mut scanned: HashSet<&str> = HashSet::new();
+    for reference in drawn
+        .iter()
+        .map(|instance| instance.part.as_str())
+        .chain(stud_primitives.iter().map(String::as_str))
+    {
+        if scanned.insert(reference) {
+            scan.closure(reference);
+        }
+    }
+    library.take_requested()
+}
+
 fn bake(
     library: &TrackingLibrary,
     drawn: &[ModelInstance],
     inputs: &BakeInputs,
     body: &mut Body,
 ) -> Reply {
-    let mut scan = Flattener::new(library, Lod::Standard, &[]);
-    let mut scanned: HashSet<&str> = HashSet::new();
-    for reference in drawn
-        .iter()
-        .map(|instance| instance.part.as_str())
-        .chain(inputs.stud_primitives.iter().map(String::as_str))
-    {
-        if scanned.insert(reference) {
-            scan.closure(reference);
-        }
-    }
-    let requested = library.take_requested();
+    let requested = missing_bake_files(library, drawn, inputs.stud_primitives);
     if !requested.is_empty() {
         return Reply::Need { paths: requested };
     }
@@ -294,6 +352,7 @@ fn bake_drawn(
         inputs.stud_primitives.to_vec(),
         inputs.unofficial_allowlist.to_vec(),
         inputs.translucent.clone(),
+        inputs.table_depth,
     )
     .map_err(|e| e.to_string())?;
     let mut shapes: HashMap<&str, LatticeShape> = HashMap::new();
@@ -309,17 +368,32 @@ fn bake_drawn(
         .iter()
         .map(|instance| &shapes[instance.part.as_str()])
         .collect();
+    if inputs.visibility_only {
+        let cover = baker
+            .cover(drawn, None, inputs.shard)
+            .map_err(|e| e.to_string())?;
+        put_cover(body, &cover)?;
+        return Ok(Reply::Baked {
+            instances: drawn.len(),
+            lattice: None,
+            lattice_issue: None,
+            cover: Cover::from(&cover),
+            vehicles: None,
+            vehicle_issue: None,
+            blobs: body.take_blobs(),
+        });
+    }
     let (lattice, lattice_issue) = match drawn_lattice(drawn, &drawn_shapes) {
         Ok(lattice) => (lattice, None),
         Err(error) => (None, Some(error.to_string())),
     };
     let cover = baker
-        .cover(drawn, lattice.as_ref())
+        .cover(drawn, lattice.as_ref(), inputs.shard)
         .map_err(|e| e.to_string())?;
     put_cover(body, &cover)?;
     let (vehicles, vehicle_issue) = match inputs.vehicles {
         None => (None, None),
-        Some(vehicles) => match baker.vehicles(drawn, &vehicles.signatures(), &vehicles.rails()) {
+        Some(vehicles) => match baker.vehicles(drawn, &vehicles.signatures(), &vehicles.rails()?) {
             Ok(detected) => (Some(vehicle_headers(body, &detected)?), None),
             Err(error) => (None, Some(error.to_string())),
         },
