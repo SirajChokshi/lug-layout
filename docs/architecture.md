@@ -214,10 +214,35 @@ This comes from connection rules §4.3, generalized for D3.
     - Files that print 6 decimals are identified completely.
     - At 3 decimals, every run with an axis-aligned piece on the lattice is identified: the R40 circle 16 of 16, and a quarter-turned 117-piece set 117 of 117.
     - **Known limit:** a run turned off the quarter turns as a whole has no seat.
-      - At 3 or 4 decimals it has no window anchor either, so it is reported `noAnchor`.
-      - At 5 decimals it is identified only when two window anchors happen to agree. In the 117-piece set that happened for one arrangement (33 pieces), and for none of the 22 such runs in the 1,020-piece layout.
-      - At 6 decimals it is identified.
+      - At 3 or 4 decimals it has no window anchor either, so it isn't identified on the field. At 5 decimals that happens only when two window anchors happen to agree: one 33-piece arrangement of the 117-piece set, and none of the 22 such runs in the 1,020-piece layout. At 6 decimals it is identified.
+      - Below that, it is identified in a run frame (next bullet), not on the field.
     - No piece is identified at a wrong pose in any of these cases.
+- **Run frames: unanchored runs identified up to one shared translation.**
+  - **The idea:** inside one imported model, a run's relative poses are exact compositions of certified profile vectors, given the certified headings and which ends join. So the run is identified up to one unknown translation t. That is the same structure the absolute rule has, minus the anchor.
+  - **Who takes part:** every piece whose only failure is the anchor. That means `noAnchor` pieces, and pieces labelled `overLimit` only because an end misses a certified neighbour's within the near-miss radius. Never a contradiction, a rotation that doesn't certify, or a piece whose own candidate missed 0.0005.
+  - **Joins:**
+    - Two such pieces join when their float ends are within the neighbour lookup's reach, on the same plates, with exact headings half a turn apart.
+    - An end with two partners, which a duplicated piece gives, makes every piece involved a contradiction.
+    - Relative poses spread breadth-first through `attachPose16` from a root at the origin. A piece reached twice with different exact poses (a loop that doesn't close exactly) makes the run a contradiction.
+  - **The test:**
+    - Per coordinate, t must lie in the intersection over pieces of [fᵢ − Δᵢ − 0.0005 LDU, fᵢ − Δᵢ + 0.0005 LDU]. Here fᵢ is the float placement and Δᵢ the exact relative position. With exact rotations, an end's residual equals its placement's residual.
+    - An empty intersection makes the run a contradiction, and a run needs at least one internal join.
+    - This is the per-coordinate rule applied to the run as a whole. There is no new tolerance, and no field search, so there's no density problem: the joins fix the relations combinatorially.
+  - **What the run frame is:** exact relative `Pose16`s and a float centre t̂ of the interval. Joined runs pass or fail as a whole; nothing is split to make one pass. Runs that come near without joining keep separate frames, and their gap is reported as a near-miss gap.
+  - **Track graph:**
+    - Each placed run gets a frame id, and `TrackLayout`, `TrackGraph` and `TrackEnd` carry it. Join keys include the frame, so ends join only inside one frame.
+    - A run-frame end never joins world track or another run frame, even at the same exact pose.
+    - `ModelConnectors` refuses a run-frame end, so it can't join another model's track either.
+    - Drawn track can't attach to a run-frame end.
+  - **Play and views:**
+    - Play and the views use the float placement: the model's exact lattice frame, then t̂ rotated by the model's quarter turn, then the exact relative pose.
+    - A train runs on a run frame's own graph, closed loops included.
+    - No absolute ℤ[ζ₁₆] pose is ever claimed for run-frame track. If a later rule anchors one of its pieces, the run becomes absolute through the existing propagation.
+  - **Validity:**
+    - A run frame's internal joins satisfy the track rule (ends join exactly), so a closed run frame with no open ends counts toward Valid.
+    - Its open ends are ordinary open-end errors unless capped by a buffer or marked open by the user, because no external join is possible.
+    - All other rules apply unchanged. Run-frame track never claims stud support: off-lattice track must rest on flat support.
+  - **Panel:** the editor counts model pieces on the field, in a run frame, and off the field or unanchored, on three rows.
 - Every track part's connector poses are **imported from data and tested against the field at build time. Nothing is hand-coded.**
 
 ### 5.4 Profiles
