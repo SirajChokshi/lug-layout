@@ -30,7 +30,6 @@ const BELOW_ELEVATION_STEPS: usize = 36;
 const BELOW_HEIGHT_STEPS: usize = 8;
 const BELOW_START_OUTSIDE: f64 = 1.001;
 const BELOW_REACH_LDU: f64 = 3.0 * STUD_LDU;
-const PROBE_KEY_SCALE: f64 = 1_000.0;
 const RIM_PROBE_FRACTION: f64 = 0.9;
 const CANDIDATES_PER_DEAL: usize = 32;
 const CLIPPED_HEIGHT_ROUNDING_LDU: f64 = 1e-6;
@@ -370,7 +369,7 @@ fn world_box(instance: &CoverInstance, solid: &PartSolid) -> [Vec3; 2] {
     [bounds.min, bounds.max]
 }
 
-type ProbeKey = (usize, u32, i64, i64, i64);
+type ProbeKey = (usize, bool, [u64; 3]);
 
 fn broad_cell(v: f64) -> i64 {
     (v / BROAD_CELL_LDU).floor() as i64
@@ -425,7 +424,6 @@ impl Segment {
 
 struct Placed {
     part: usize,
-    color: u32,
     inverse: Affine,
     translation: Vec3,
     rotation: [u64; 9],
@@ -499,7 +497,6 @@ impl<'a> ModelSolids<'a> {
                     .push(i);
                 Some(Placed {
                     part: instance.part,
-                    color: instance.color,
                     inverse,
                     translation,
                     rotation: rotation_bits(instance.matrix),
@@ -576,6 +573,20 @@ impl Coverers<'_, '_> {
         }
     }
 
+    fn probe(&mut self, placed: &Placed, local: Vec3) -> Option<CoverKind> {
+        let key = (
+            placed.part,
+            placed.inherited_opaque,
+            local.map(f64::to_bits),
+        );
+        if let Some(known) = self.enclosed.get(&key) {
+            return *known;
+        }
+        let found = self.enclosure(placed, local);
+        self.enclosed.insert(key, found);
+        found
+    }
+
     fn hits(&mut self, placed: &Placed, origin: Vec3, direction: Vec3) -> bool {
         let tree = self.model.tree(placed);
         let counts = self.model.counts(placed);
@@ -625,22 +636,7 @@ impl Coverers<'_, '_> {
             }
             let mut centre = None;
             for (k, probe) in probes.iter().enumerate() {
-                let local = placed.inverse.apply(*probe);
-                let probe_key = (
-                    placed.part,
-                    placed.color,
-                    (local[0] * PROBE_KEY_SCALE).round() as i64,
-                    (local[1] * PROBE_KEY_SCALE).round() as i64,
-                    (local[2] * PROBE_KEY_SCALE).round() as i64,
-                );
-                let enclosure = match self.enclosed.get(&probe_key) {
-                    Some(known) => *known,
-                    None => {
-                        let found = self.enclosure(placed, local);
-                        self.enclosed.insert(probe_key, found);
-                        found
-                    }
-                };
+                let enclosure = self.probe(placed, placed.inverse.apply(*probe));
                 if enclosure.is_none() {
                     centre = None;
                     break;
@@ -1237,6 +1233,50 @@ mod tests {
             }
         }
         assert!(hits > 1000 && misses > 1000, "{hits} hits, {misses} misses");
+    }
+
+    #[test]
+    fn two_probes_closer_than_a_thousandth_keep_their_own_enclosures() {
+        let solids = [solid(
+            [-20.0, 0.0, -20.0],
+            [20.0, 24.0, 20.0],
+            true,
+            false,
+            4.0,
+        )];
+        let instances = [CoverInstance {
+            matrix: &Affine::IDENTITY,
+            color: OPAQUE,
+            part: 0,
+            studs: &[],
+        }];
+        let boxes = [world_box(&instances[0], &solids[0])];
+        let opacity = Opacity::new([TRANS_CLEAR]);
+        let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
+        let placed = model.placed[0].as_ref().expect("an invertible placement");
+        let fresh = || Coverers {
+            model: &model,
+            stud: STUD,
+            directions: enclosure_directions(),
+            enclosed: FxHashMap::default(),
+            nearby: Vec::new(),
+            blockers: Vec::new(),
+        };
+        let inside_wall = [20.0 - 4e-4, 2.0, 0.0];
+        let outside_wall = [20.0 + 4e-4, 2.0, 0.0];
+        let alone = [inside_wall, outside_wall].map(|probe| fresh().enclosure(placed, probe));
+        assert_eq!(alone, [Some(CoverKind::AntiStud), None]);
+        for order in [[0, 1], [1, 0]] {
+            let mut coverers = fresh();
+            for index in order {
+                let probe = [inside_wall, outside_wall][index];
+                assert_eq!(
+                    coverers.probe(placed, probe),
+                    alone[index],
+                    "probe {probe:?}"
+                );
+            }
+        }
     }
 
     #[test]
