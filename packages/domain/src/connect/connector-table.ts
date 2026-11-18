@@ -53,7 +53,7 @@ export class ConnectorTable {
     readonly origin: Float32Array,
     readonly axis: Int8Array,
     readonly axisFree: Float32Array,
-    readonly piece: Uint16Array = new Uint16Array(shape.length),
+    readonly piece: Uint16Array,
   ) {
     const count = shape.length;
     if (

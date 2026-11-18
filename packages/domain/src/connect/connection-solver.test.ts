@@ -1802,6 +1802,7 @@ function freeFaces(part: ConnectorTable, shiftLdu: number): ConnectorTable {
     origin,
     axis,
     axisFree,
+    part.piece,
   );
 }
 

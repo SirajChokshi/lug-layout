@@ -218,6 +218,7 @@ function slab(
     origin,
     axis,
     new Float32Array(count * 3),
+    new Uint16Array(count),
   );
 }
 
@@ -235,6 +236,7 @@ function connectors(specs: ReadonlyArray<Spec>): ConnectorTable {
     origin,
     Int8Array.from(specs, (spec) => spec[5]),
     new Float32Array(count * 3),
+    new Uint16Array(count),
   );
 }
 
@@ -340,6 +342,7 @@ function baseplate(): ConnectorTable {
     origin,
     axis,
     new Float32Array(count * 3),
+    new Uint16Array(count),
   );
 }
 
