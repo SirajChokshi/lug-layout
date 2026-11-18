@@ -30,7 +30,7 @@ interface ExactPlanPoint {
 export interface ScanEnd {
   readonly origin: PlanPoint;
   readonly heading: number;
-  readonly endSleeperEdges: readonly [ExactPlanPoint, ExactPlanPoint];
+  readonly endSleeperExtremes: readonly [ExactPlanPoint, ExactPlanPoint];
 }
 
 export interface RailHeads {
@@ -248,7 +248,7 @@ export function scanEndAt(origin: PlanPoint, heading: number, endSleeper: ExactP
   if (lowest === undefined || highest === undefined) {
     throw new Error("an end sleeper has no vertices");
   }
-  return { origin, heading, endSleeperEdges: [lowest.point, highest.point] };
+  return { origin, heading, endSleeperExtremes: [lowest.point, highest.point] };
 }
 
 function offsetAcross(
@@ -269,10 +269,12 @@ function scanLine(end: ScanEnd, inwardLdu: number): ScanLine {
     x: addExactRational(start.x, multiplyExactRational(direction.x, inward)),
     z: addExactRational(start.z, multiplyExactRational(direction.z, inward)),
   };
-  const [first, second] = end.endSleeperEdges.map((edge) =>
-    offsetAcross(edge, centre, normal, direction),
+  const [first, second] = end.endSleeperExtremes.map((extreme) =>
+    offsetAcross(extreme, centre, normal, direction),
   );
-  if (first === undefined || second === undefined) throw new Error("an end sleeper has no edges");
+  if (first === undefined || second === undefined) {
+    throw new Error("an end sleeper has no extremes");
+  }
   const endSleeperSpan = { from: lesser(first, second), to: greater(first, second) };
   return { centre, normal, endSleeperSpan };
 }
