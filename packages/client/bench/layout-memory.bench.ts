@@ -110,13 +110,13 @@ const RULES: OwnerRules = {
       new Map([
         ...fields(INSTANCES, ["ghostPage"]),
         ...fields(GEOMETRY, ["detailedLevel", "farLevel", "farModelGeometries", "partBounds"]),
-        ...fields(SCENE, ["chunks", "chunkList", "scene"]),
+        ...fields(SCENE, ["regions", "regionList", "scene"]),
       ]),
     ],
     ["Editor", fields(PART_MESHES, ["placeables", "palette", "slots", "modelPlaceables"])],
     ["PlacedEntry", fields(PART_MESHES, ["placeable"])],
     ["PlacedChunks", new Map([...fields(SCENE, ["backend"]), ...fields(OCCUPANCY, ["occupancy"])])],
-    ["ChunkRecord", fields(INSTANCES, ["page"])],
+    ["PageRecord", fields(INSTANCES, ["page"])],
     ["Mesh", fields(GEOMETRY, ["geometry"])],
     [
       "InstancedMesh",

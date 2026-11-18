@@ -1,4 +1,5 @@
 import { INHERIT_COLOR, type PartAsset, type PartMesh } from "@brr/catalog";
+import { CHUNK_LDU } from "@brr/math";
 import { expect, it } from "vitest";
 import type { ChunkInstances, PartPalette } from "../scene-backend.ts";
 import { ThreeSceneBackend } from "./three-scene-backend.ts";
@@ -38,10 +39,10 @@ function part(id: string, size: number): PartAsset {
   };
 }
 
-function chunkOf(partIndex: number): ChunkInstances {
+function chunkOf(partIndex: number, originX = 0, originZ = 0): ChunkInstances {
   return {
-    originX: 0,
-    originZ: 0,
+    originX,
+    originZ,
     count: 1,
     partIndex: Uint16Array.of(partIndex),
     colorIndex: Uint16Array.of(0),
@@ -87,4 +88,36 @@ it("swaps meshes, far studs and far model meshes while chunks, a vehicle, a ghos
   expect(() =>
     backend.setPartMeshes([{ index: 2, level: "detailed", part: part("c", 20) }]),
   ).toThrow("part 2 is not in the palette");
+});
+
+const FAR_AWAY_LDU = 20 * CHUNK_LDU;
+
+function lookFrom(backend: ThreeSceneBackend, x: number): void {
+  backend.setView(x, 100, 0, x, 0, 0);
+}
+
+it("keeps a part chunk and a track chunk at one origin apart, and recolours chunks set in the same turn", () => {
+  const backend = new ThreeSceneBackend();
+  backend.setPalette(palette([part("a", 20)]));
+  backend.setChunk(4, chunkOf(0));
+  backend.setChunk(-5, chunkOf(0));
+  backend.setColors(Uint8Array.of(0, 200, 0), Uint8Array.of(255));
+  lookFrom(backend, FAR_AWAY_LDU);
+
+  expect(backend.rebaseLog().map((rebase) => rebase.chunks)).toEqual([2]);
+});
+
+it("moves the chunks set or deleted in one turn once that turn's microtasks have run", async () => {
+  const backend = new ThreeSceneBackend();
+  backend.setPalette(palette([part("a", 20)]));
+  backend.setChunk(1, chunkOf(0));
+  backend.setChunk(2, chunkOf(0, CHUNK_LDU));
+  backend.setChunk(3, chunkOf(0, 8 * CHUNK_LDU, -8 * CHUNK_LDU));
+  await Promise.resolve();
+  lookFrom(backend, FAR_AWAY_LDU);
+  backend.deleteChunk(2);
+  await Promise.resolve();
+  lookFrom(backend, 2 * FAR_AWAY_LDU);
+
+  expect(backend.rebaseLog().map((rebase) => rebase.chunks)).toEqual([3, 2]);
 });

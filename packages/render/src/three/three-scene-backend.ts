@@ -59,20 +59,24 @@ import {
   type PartMesh,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
-import { CHUNK_LDU, chunkOf } from "@brr/math";
+import { CHUNK_LDU, chunkKey, chunkOf } from "@brr/math";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import {
   MATRIX4_FLOATS,
+  TRANSLATION_X,
+  TRANSLATION_Z,
   groupRunEnd,
   linearColorsOf,
   isNotUpright,
   isVoxelized,
   matricesOf,
   pageOf,
+  regionPage,
   regroupedPage,
   usesAnyShape,
   writeMatrix4,
   type InstancePage,
+  type RegionPage,
 } from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
 import {
@@ -101,8 +105,9 @@ const FILL_INTENSITY = 0.7;
 const SUN_DIRECTION = new Vector3(0.45, 1, 0.3);
 const SHADOW_LAYER = 1;
 const BOUNDS_FLOATS = 6;
-const TRANSLATION_X = 12;
-const TRANSLATION_Z = 14;
+const REGION_CHUNKS = 4;
+const REGION_LDU = REGION_CHUNKS * CHUNK_LDU;
+const NO_CHANGES: ReadonlyMap<number, ChunkInstances | null> = new Map();
 const SHADOW_MAP_SIZE = 2048;
 const SHADOW_CASCADES = 3;
 const SHADOW_LIGHT_MARGIN_LDU = 4000;
@@ -299,11 +304,22 @@ interface InstanceAttributes {
   readonly colors: InstancedBufferAttribute;
 }
 
-class ChunkRecord {
+function regionStart(ldu: number): number {
+  return Math.floor(ldu / REGION_LDU) * REGION_LDU;
+}
+
+function firstChunkIn(
+  changes: ReadonlyMap<number, ChunkInstances | null>,
+): ChunkInstances | undefined {
+  for (const chunk of changes.values()) if (chunk) return chunk;
+  return undefined;
+}
+
+class PageRecord<Page extends InstancePage = InstancePage> {
   tier = TIER_UNSET;
 
   constructor(
-    readonly page: InstancePage,
+    readonly page: Page,
     readonly group: Group,
     readonly detailed: Group,
     readonly shellBodies: Group,
@@ -342,7 +358,7 @@ class VehicleRecord {
 
   constructor(
     readonly group: Group,
-    readonly body: ChunkRecord,
+    readonly body: PageRecord,
   ) {}
 }
 
@@ -451,9 +467,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private linearColors = new Float32Array(0);
   private alphaSlots: number[] = [OPAQUE_ALPHA];
   private colorAlphaSlot = new Uint8Array(0);
-  private readonly chunks = new Map<number, ChunkRecord>();
+  private readonly regions = new Map<number, PageRecord<RegionPage>>();
+  private regionList: PageRecord<RegionPage>[] = [];
+  private readonly regionOfChunk = new Map<number, number>();
+  private readonly pendingChanges = new Map<number, Map<number, ChunkInstances | null>>();
   private readonly vehicles = new Map<number, VehicleRecord>();
-  private chunkList: ChunkRecord[] = [];
   private tiered = false;
   private partBounds = new Float32Array(0);
   private readonly unitBox = new BoxGeometry(1, 1, 1);
@@ -657,7 +675,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setPalette(palette: PartPalette): void {
     this.changed = true;
-    this.clearChunks();
+    this.clearPages();
     for (const node of this.farModelList) this.scene.remove(node.group);
     this.farModelNodes.clear();
     this.farModelPlacements.clear();
@@ -709,16 +727,27 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.installColors(colorsSrgb, colorsAlpha);
     this.rebuildPages(
       () => true,
+      (page) =>
+        regionPage(
+          page,
+          NO_CHANGES,
+          page.originX,
+          page.originZ,
+          this.linearColors,
+          this.colorAlphaSlot,
+        ),
       (page) => regroupedPage(page, this.linearColors, this.colorAlphaSlot),
     );
   }
 
   private rebuildPages(
     affected: (page: InstancePage) => boolean,
+    rebuildRegion: (page: RegionPage) => RegionPage | null = (page) => page,
     rebuild: (page: InstancePage) => InstancePage = (page) => page,
   ): void {
-    for (const [key, record] of Array.from(this.chunks)) {
-      if (affected(record.page)) this.placeChunk(key, rebuild(record.page));
+    this.flushRegions();
+    for (const [region, record] of Array.from(this.regions)) {
+      if (affected(record.page)) this.placeRegion(region, rebuildRegion(record.page));
     }
     for (const [vehicle, record] of Array.from(this.vehicles)) {
       if (affected(record.body.page)) this.rebuildVehicle(vehicle, rebuild(record.body.page));
@@ -779,7 +808,46 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setChunk(key: number, chunk: ChunkInstances): void {
     this.changed = true;
-    this.placeChunk(key, pageOf(chunk, this.linearColors, this.colorAlphaSlot));
+    const region = chunkKey(
+      chunkOf(regionStart(chunk.originX)),
+      chunkOf(regionStart(chunk.originZ)),
+    );
+    const before = this.regionOfChunk.get(key);
+    if (before !== undefined && before !== region) this.queueChange(before, key, null);
+    this.regionOfChunk.set(key, region);
+    this.queueChange(region, key, chunk);
+  }
+
+  private queueChange(region: number, key: number, chunk: ChunkInstances | null): void {
+    if (this.pendingChanges.size === 0) queueMicrotask(() => this.flushRegions());
+    let changes = this.pendingChanges.get(region);
+    if (!changes) {
+      changes = new Map();
+      this.pendingChanges.set(region, changes);
+    }
+    changes.set(key, chunk);
+  }
+
+  private flushRegions(): void {
+    if (this.pendingChanges.size === 0) return;
+    this.changed = true;
+    for (const [region, changes] of this.pendingChanges) {
+      const previous = this.regions.get(region)?.page ?? null;
+      const placed = previous ?? firstChunkIn(changes);
+      if (!placed) continue;
+      this.placeRegion(
+        region,
+        regionPage(
+          previous,
+          changes,
+          regionStart(placed.originX),
+          regionStart(placed.originZ),
+          this.linearColors,
+          this.colorAlphaSlot,
+        ),
+      );
+    }
+    this.pendingChanges.clear();
   }
 
   private placeGroup(group: Group, originX: number, originZ: number): void {
@@ -788,12 +856,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     group.updateMatrixWorld(true);
   }
 
-  private placeChunk(key: number, page: InstancePage): void {
-    this.removeChunk(key);
-    const record = this.buildChunk(page);
+  private placeRegion(region: number, page: RegionPage | null): void {
+    this.removeRegion(region);
+    if (!page) return;
+    const record = this.buildPageRecord(page);
     this.placeGroup(record.group, page.originX, page.originZ);
-    this.chunks.set(key, record);
-    this.chunkList.push(record);
+    this.regions.set(region, record);
+    this.regionList.push(record);
     this.scene.add(record.group);
     this.sceneMinX = Math.min(this.sceneMinX, record.minX);
     this.sceneMaxX = Math.max(this.sceneMaxX, record.maxX);
@@ -808,7 +877,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   private placeVehicleBody(vehicle: number, page: InstancePage): void {
     this.removeVehicle(vehicle);
-    const body = this.buildChunk(page);
+    const body = this.buildPageRecord(page);
     const group = new Group();
     group.add(body.group);
     const record = new VehicleRecord(group, body);
@@ -876,16 +945,19 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   deleteChunk(key: number): void {
     this.changed = true;
-    this.removeChunk(key);
+    const region = this.regionOfChunk.get(key);
+    if (region === undefined) return;
+    this.regionOfChunk.delete(key);
+    this.queueChange(region, key, null);
   }
 
-  private removeChunk(key: number): void {
-    const existing = this.chunks.get(key);
+  private removeRegion(region: number): void {
+    const existing = this.regions.get(region);
     if (!existing) return;
     this.scene.remove(existing.group);
     for (const layer of existing.layers()) disposeInstancedChildren(layer);
-    this.chunks.delete(key);
-    this.chunkList = this.chunkList.filter((record) => record !== existing);
+    this.regions.delete(region);
+    this.regionList = this.regionList.filter((record) => record !== existing);
   }
 
   setGhost(model: ChunkInstances | null): void {
@@ -1143,12 +1215,14 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     out[5] = this.rayPoint.z;
   }
 
-  private clearChunks(): void {
-    for (const key of this.chunks.keys()) this.removeChunk(key);
+  private clearPages(): void {
+    this.pendingChanges.clear();
+    this.regionOfChunk.clear();
+    for (const region of this.regions.keys()) this.removeRegion(region);
     for (const vehicle of this.vehicles.keys()) this.removeVehicle(vehicle);
   }
 
-  private buildChunk(page: InstancePage): ChunkRecord {
+  private buildPageRecord<Page extends InstancePage>(page: Page): PageRecord<Page> {
     const group = new Group();
     group.matrixAutoUpdate = false;
     group.updateMatrix();
@@ -1179,7 +1253,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       maxZ = Math.max(maxZ, z);
     }
     group.updateMatrixWorld(true);
-    const record = new ChunkRecord(
+    const record = new PageRecord(
       page,
       group,
       detailed,
@@ -1454,7 +1528,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   private fitShadowRange(): void {
     const shadowNode = this.shadowNode;
-    if (!shadowNode || this.chunkList.length === 0) return;
+    if (!shadowNode || this.regionList.length === 0) return;
     const dx = Math.max(Math.abs(this.sceneMinX - this.eyeX), Math.abs(this.sceneMaxX - this.eyeX));
     const dz = Math.max(Math.abs(this.sceneMinZ - this.eyeZ), Math.abs(this.sceneMaxZ - this.eyeZ));
     const needed = Math.max(Math.hypot(dx, dz, this.eyeY), SHADOW_MIN_FAR_LDU);
@@ -1493,9 +1567,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const started = performance.now();
     this.renderOriginX = chunkX * CHUNK_LDU;
     this.renderOriginZ = chunkZ * CHUNK_LDU;
-    for (let i = 0; i < this.chunkList.length; i++) {
-      const record = this.chunkList[i];
-      if (record) this.placeGroup(record.group, record.page.originX, record.page.originZ);
+    let chunks = 0;
+    for (let i = 0; i < this.regionList.length; i++) {
+      const record = this.regionList[i];
+      if (!record) continue;
+      this.placeGroup(record.group, record.page.originX, record.page.originZ);
+      chunks += record.page.chunkKeys.length;
     }
     for (let i = 0; i < this.farModelList.length; i++) {
       const node = this.farModelList[i];
@@ -1536,7 +1613,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       frame: this.frame,
       chunkX,
       chunkZ,
-      chunks: this.chunkList.length,
+      chunks,
       ms: performance.now() - started,
     });
   }
@@ -1656,8 +1733,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       if (!node) continue;
       let anyFar = false;
       for (let k = 0; k < node.chunkKeys.length; k++) {
-        const record = this.chunks.get(node.chunkKeys[k] ?? 0);
-        if (record?.tier === TIER_FAR) anyFar = true;
+        const region = this.regionOfChunk.get(node.chunkKeys[k] ?? 0);
+        if (region !== undefined && this.regions.get(region)?.tier === TIER_FAR) anyFar = true;
       }
       node.group.visible = this.tiered && anyFar;
     }
@@ -1677,8 +1754,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       (STUD_PITCH_LDU * this.focalLengthPx * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360)) /
       Math.max(this.orthoHalfHeight, CAMERA_NEAR_LDU);
     let nearestStudPitchPx = 0;
-    for (let i = 0; i < this.chunkList.length; i++) {
-      const record = this.chunkList[i];
+    for (let i = 0; i < this.regionList.length; i++) {
+      const record = this.regionList[i];
       if (!record) continue;
       const dx = Math.max(record.minX - this.eyeX, 0, this.eyeX - record.maxX);
       const dz = Math.max(record.minZ - this.eyeZ, 0, this.eyeZ - record.maxZ);
@@ -1694,9 +1771,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       else if (studPitchPx >= MID_MIN_STUD_PITCH_PX) tier = TIER_MID;
       else tier = TIER_FAR;
       record.applyTier(tier);
-      if (tier === TIER_NEAR) near++;
-      else if (tier === TIER_MID) mid++;
-      else far++;
+      const chunks = record.page.chunkKeys.length;
+      if (tier === TIER_NEAR) near += chunks;
+      else if (tier === TIER_MID) mid += chunks;
+      else far += chunks;
     }
     out.nearChunks = near;
     out.midChunks = mid;
