@@ -17,6 +17,16 @@ use super::{
 const MAX_DEPTH: usize = 64;
 const KEY_STEPS: f64 = 1.0 / IDENTIFY_LDU;
 const CIRCLE_POINTS: usize = 3;
+const LATTICE_STEPS: [[f64; 2]; 8] = [
+    [HALF_GRID_LDU, 0.0],
+    [-HALF_GRID_LDU, 0.0],
+    [0.0, HALF_GRID_LDU],
+    [0.0, -HALF_GRID_LDU],
+    [HALF_GRID_LDU, HALF_GRID_LDU],
+    [HALF_GRID_LDU, -HALF_GRID_LDU],
+    [-HALF_GRID_LDU, HALF_GRID_LDU],
+    [-HALF_GRID_LDU, -HALF_GRID_LDU],
+];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Uninferred {
@@ -39,7 +49,7 @@ pub struct Inference {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SectionVocabulary {
-    sizes: Vec<(SectionShape, f64)>,
+    sizes: Vec<(Gender, SectionShape, f64)>,
     lengths: Vec<(SectionShape, f64)>,
 }
 
@@ -53,46 +63,58 @@ impl SectionVocabulary {
                     continue;
                 };
                 match connector.shape {
-                    Shape::Cylinder { sections, .. } => {
+                    Shape::Cylinder {
+                        gender, sections, ..
+                    } => {
                         for section in sections {
-                            sizes.push((section.shape, section.radius));
+                            sizes.push((gender, section.shape, section.radius));
                             lengths.push((section.shape, section.length));
                         }
                     }
                     Shape::Clip { radius, length, .. } => {
-                        sizes.push((SectionShape::Round, radius));
+                        sizes.push((Gender::Female, SectionShape::Round, radius));
                         lengths.push((SectionShape::Round, length));
                     }
                     Shape::Finger { .. } | Shape::Generic { .. } => {}
                 }
             }
         }
-        let tidy = |mut values: Vec<(SectionShape, f64)>| {
-            values.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
-            values.dedup();
-            values
-        };
-        SectionVocabulary {
-            sizes: tidy(sizes),
-            lengths: tidy(lengths),
-        }
+        sizes.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)).then(a.2.total_cmp(&b.2)));
+        sizes.dedup();
+        lengths.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        lengths.dedup();
+        SectionVocabulary { sizes, lengths }
     }
 
-    fn matching(values: &[(SectionShape, f64)], shape: SectionShape, measured: f64) -> Option<f64> {
-        let mut found = values
-            .iter()
-            .filter(|(s, v)| *s == shape && (v - measured).abs() <= IDENTIFY_LDU)
-            .map(|(_, v)| *v);
+    fn unique(mut found: impl Iterator<Item = f64>) -> Option<f64> {
         let first = found.next()?;
         found.next().is_none().then_some(first)
     }
 
-    fn size(&self, shape: SectionShape, measured: f64) -> Option<f64> {
-        Self::matching(&self.sizes, shape, measured)
+    fn size(&self, gender: Gender, shape: SectionShape, measured: f64) -> Option<f64> {
+        let mate = match gender {
+            Gender::Male => Gender::Female,
+            Gender::Female => Gender::Male,
+        };
+        Self::unique(
+            self.sizes
+                .iter()
+                .filter(|(g, s, v)| {
+                    *g == mate && *s == shape && (v - measured).abs() <= IDENTIFY_LDU
+                })
+                .map(|(_, _, v)| *v),
+        )
     }
 
     fn length(&self, shape: SectionShape, measured: f64) -> Option<f64> {
-        sixteenth(measured).or_else(|| Self::matching(&self.lengths, shape, measured))
+        sixteenth(measured).or_else(|| {
+            Self::unique(
+                self.lengths
+                    .iter()
+                    .filter(|(s, v)| *s == shape && (v - measured).abs() <= IDENTIFY_LDU)
+                    .map(|(_, v)| *v),
+            )
+        })
     }
 }
 
@@ -386,7 +408,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         };
         let radius = features
             .vocabulary
-            .size(SectionShape::Round, run.radius)
+            .size(Gender::Male, SectionShape::Round, run.radius)
             .ok_or(format!("probe radius {} is not a section size", run.radius))?;
         let reach = features
             .vocabulary
@@ -526,7 +548,9 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             let mut worth_reporting = |issues: &mut Vec<Issue>, reason: Uninferred| {
                 if is_wall
                     && full
-                    && self.vocabulary.size(SectionShape::Round, rx).is_some()
+                    && [Gender::Male, Gender::Female]
+                        .iter()
+                        .any(|g| self.vocabulary.size(*g, SectionShape::Round, rx).is_some())
                     && reported.insert([key(t[0]), key(t[1]), key(t[2]), key(rx)])
                 {
                     issues.push(Issue::Uninferred { origin: t, reason });
@@ -696,7 +720,8 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             unit_axis(run.axis, -outward),
         );
         match (
-            self.vocabulary.size(SectionShape::Round, run.radius),
+            self.vocabulary
+                .size(Gender::Male, SectionShape::Round, run.radius),
             self.vocabulary.length(SectionShape::Round, length),
         ) {
             (Some(radius), Some(reach)) => self.keep(
@@ -735,7 +760,11 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 Probed::Rejected
             };
         }
-        if !solid.enclosed(walls, center, outward_wall) {
+        let range = (IDENTIFY_LDU, reach - IDENTIFY_LDU);
+        if solid.bore_continues_outward(probe)
+            || !solid.enclosed(walls, center, outward_wall)
+            || !solid.confined(probe, range, &LATTICE_STEPS)
+        {
             return Probed::Rejected;
         }
         if floor.depth.is_infinite() {
@@ -748,7 +777,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
     fn candidates(&self, solid: &Solid, runs: &[Run], inference: &mut Inference) -> Vec<Probe> {
         let mut bores: Vec<(Run, f64)> = Vec::new();
         for run in runs.iter().filter(|r| r.facing < 0.0) {
-            match self.vocabulary.size(SectionShape::Round, run.radius) {
+            match self
+                .vocabulary
+                .size(Gender::Female, SectionShape::Round, run.radius)
+            {
                 Some(radius) => bores.push((*run, radius)),
                 None => inference.issues.push(Issue::Uninferred {
                     origin: point_on(run.axis, run.center, run.from),
@@ -851,6 +883,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
 
     fn through_holes(&self, through: &[Probe], inference: &mut Inference) {
         let mut used = vec![false; through.len()];
+        let mut holes: Vec<(Probe, Vec3)> = Vec::new();
         for (index, probe) in through.iter().enumerate() {
             if used[index] {
                 continue;
@@ -885,8 +918,30 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             };
             used[index] = true;
             used[other] = true;
-            let far = through[other].entrance;
-            let span = ahead(&through[other]);
+            holes.push((*probe, through[other].entrance));
+        }
+        let along = |probe: &Probe, far: &Vec3| {
+            let (a, b) = (probe.entrance[probe.axis], far[probe.axis]);
+            (a.min(b), a.max(b))
+        };
+        for (probe, far) in &holes {
+            let (low, high) = along(probe, far);
+            let (i, j) = plan_axes(probe.axis);
+            let nested = holes.iter().any(|(other, other_far)| {
+                let (other_low, other_high) = along(other, other_far);
+                other.axis == probe.axis
+                    && key(other.radius) == key(probe.radius)
+                    && key(other.entrance[i]) == key(probe.entrance[i])
+                    && key(other.entrance[j]) == key(probe.entrance[j])
+                    && other_low <= low + IDENTIFY_LDU
+                    && other_high >= high - IDENTIFY_LDU
+                    && other_high - other_low > high - low + IDENTIFY_LDU
+            });
+            if nested {
+                continue;
+            }
+            let far = *far;
+            let span = high - low;
             let middle = [0, 1, 2].map(|k| (probe.entrance[k] + far[k]) / 2.0);
             let frame = ldraw_frame(middle, unit_axis(probe.axis, 1.0));
             match self.vocabulary.length(SectionShape::Round, span) {

@@ -173,7 +173,7 @@ fn lower_tiers_fill_only_empty_slots_and_never_slots_a_clear_wiped() {
     }))
     .expect("table parses");
     let vocabulary =
-        SectionVocabulary::from_metas(["0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 6 4]"]);
+        SectionVocabulary::from_metas(["0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4]"]);
     let mut extractor = ConnectorExtractor::new(
         ShadowSnaps::new(&library, &shadow),
         PrimitiveConnectors::new(&library, table),

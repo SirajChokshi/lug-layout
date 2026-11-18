@@ -284,6 +284,47 @@ fn nearest_radius(polygon: &[Local]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
+fn point_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    let (du, dv) = (b[0] - a[0], b[1] - a[1]);
+    let span = du * du + dv * dv;
+    let t = if span == 0.0 {
+        0.0
+    } else {
+        (((p[0] - a[0]) * du + (p[1] - a[1]) * dv) / span).clamp(0.0, 1.0)
+    };
+    (p[0] - a[0] - t * du).hypot(p[1] - a[1] - t * dv)
+}
+
+fn segments_cross(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    let side = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+        (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    };
+    let (d1, d2) = (side(c, d, a), side(c, d, b));
+    let (d3, d4) = (side(a, b, c), side(a, b, d));
+    d1 * d2 < 0.0 && d3 * d4 < 0.0
+}
+
+fn polygon_segment_distance(polygon: &[Local], to: [f64; 2]) -> f64 {
+    let origin = [0.0, 0.0];
+    if contains(polygon, origin) || contains(polygon, to) {
+        return 0.0;
+    }
+    let mut nearest = f64::INFINITY;
+    for (k, a) in polygon.iter().enumerate() {
+        let b = polygon[(k + 1) % polygon.len()];
+        let (a, b) = ([a[0], a[1]], [b[0], b[1]]);
+        if segments_cross(a, b, origin, to) {
+            return 0.0;
+        }
+        nearest = nearest
+            .min(point_segment(a, origin, to))
+            .min(point_segment(b, origin, to))
+            .min(point_segment(origin, a, b))
+            .min(point_segment(to, a, b));
+    }
+    nearest
+}
+
 fn farthest_radius(polygon: &[Local]) -> f64 {
     polygon.iter().map(|p| p[0].hypot(p[1])).fold(0.0, f64::max)
 }
@@ -718,6 +759,81 @@ impl Solid {
             })
             .map(|surface| surface.nearest_from(probe.center()));
         polygons.chain(analytic).fold(f64::INFINITY, f64::min)
+    }
+
+    fn swept_reach(&self, surface: &RoundSurface, center: [f64; 2], to: [f64; 2]) -> f64 {
+        let offset = [surface.center[0] - center[0], surface.center[1] - center[1]];
+        let low = point_segment(offset, [0.0, 0.0], to);
+        let high = offset[0]
+            .hypot(offset[1])
+            .max((offset[0] - to[0]).hypot(offset[1] - to[1]));
+        let between = |radius: f64| {
+            if (low..=high).contains(&radius) {
+                0.0
+            } else {
+                (low - radius).abs().min((high - radius).abs())
+            }
+        };
+        match surface.shape {
+            RoundShape::Wall { radius, .. } => between(radius),
+            RoundShape::Annulus { inner, outer, .. } => {
+                if high < inner {
+                    inner - high
+                } else if low > outer {
+                    low - outer
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
+    pub fn confined(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> bool {
+        let longest = steps.iter().map(|s| s[0].hypot(s[1])).fold(0.0, f64::max);
+        let reach = probe.radius + longest + IDENTIFY_LDU;
+        let exact = self.exact(probe, reach);
+        let polygons: Vec<Vec<Local>> = self
+            .near(probe, reach)
+            .into_iter()
+            .filter(|&index| !self.owned_by(index as usize, &exact))
+            .filter_map(|index| {
+                let facet = &self.facets[index as usize];
+                let (low, high) = self.depth_range(probe, facet);
+                if high < range.0 || low > range.1 {
+                    return None;
+                }
+                let clipped = slab_clip(self.polygon(probe, facet), range.0, range.1);
+                (!clipped.is_empty()).then_some(clipped)
+            })
+            .collect();
+        let surfaces: Vec<&RoundSurface> = exact
+            .iter()
+            .map(|&index| &self.surfaces[index])
+            .filter(|surface| {
+                let (low, high) = surface.depths(probe);
+                high >= range.0 && low <= range.1
+            })
+            .collect();
+        let inside = probe.radius - IDENTIFY_LDU;
+        steps.iter().all(|&to| {
+            polygons
+                .iter()
+                .any(|polygon| polygon_segment_distance(polygon, to) < inside)
+                || surfaces
+                    .iter()
+                    .any(|surface| self.swept_reach(surface, probe.center(), to) < inside)
+        })
+    }
+
+    pub fn bore_continues_outward(&self, probe: &Probe) -> bool {
+        self.coaxial(probe).into_iter().any(|index| {
+            let surface = &self.surfaces[index];
+            let (low, high) = surface.depths(probe);
+            surface.is_wall()
+                && (surface.nearest() - probe.radius).abs() <= IDENTIFY_LDU
+                && low < -IDENTIFY_LDU
+                && high > IDENTIFY_LDU
+        })
     }
 
     fn coaxial_arcs(
