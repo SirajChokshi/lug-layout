@@ -833,6 +833,7 @@ function refusedBake(fileName: string): ImportResult {
       bakeRounds: 1,
       bakeIssue: NO_LATTICE_REASON,
       fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
+      fetchedShadowLibrary: null,
       timings: { readMs: 0, resolveMs: 0, bakeMs: 0, totalMs: 0 },
     },
     partIds: [],
@@ -842,6 +843,7 @@ function refusedBake(fileName: string): ImportResult {
     matrices: new Float32Array(),
     compiled: [],
     connectors: [],
+    inferredConnectors: [],
     bake: null,
   };
 }

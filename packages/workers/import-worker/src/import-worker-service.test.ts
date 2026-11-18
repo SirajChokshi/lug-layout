@@ -45,6 +45,7 @@ const vocabularyFile = new URL(
 );
 const MIRROR_PREFIX = "/mirror/";
 const SHADOW_LIBRARY_PREFIX = "/shadow-library/";
+const PINNED_INDEX_KEY = /^shadow-library\.[0-9a-f]{16}\.json$/u;
 const CUSTOM_BRICK = "brr-custom-2x4.dat";
 const CUSTOM_BRICK_ID = "ldraw:brr-custom-2x4";
 const OFFICIAL_BRICK = "parts/3001.dat";
@@ -141,7 +142,8 @@ function expectTableOf(table: PartConnectors, records: ReadonlyArray<ConnectorRe
 
 function served(path: string): URL {
   if (path.startsWith(SHADOW_LIBRARY_PREFIX)) {
-    return new URL(path.slice(SHADOW_LIBRARY_PREFIX.length), shadowLibraryDist);
+    const file = path.slice(SHADOW_LIBRARY_PREFIX.length);
+    return new URL(PINNED_INDEX_KEY.test(file) ? "shadow-library.json" : file, shadowLibraryDist);
   }
   if (!path.startsWith(MIRROR_PREFIX)) return new URL(path.slice(1), bundleRoot);
   return new URL(path.slice(mirrorRoot.length), pinnedLibrary);
@@ -263,7 +265,10 @@ async function pinnedFile(path: string): Promise<string | null> {
   return readFile(new URL(path, pinnedLibrary), "utf8").catch(() => null);
 }
 
-async function libraryFile(path: string): Promise<string | null> {
+async function libraryFile(path: string, shadowed: boolean): Promise<string | null> {
+  if (!shadowed && (path.startsWith(SHADOW_NAMESPACE) || path.startsWith(SHADOW_PATCH_NAMESPACE))) {
+    return null;
+  }
   if (path.startsWith(SHADOW_NAMESPACE)) {
     const shadowPath = path.slice(SHADOW_NAMESPACE.length);
     return readFile(new URL(shadowPath, shadowLibraryRoot), "utf8").catch(() => null);
@@ -302,6 +307,7 @@ async function customBrick(): Promise<string> {
 async function inferredAtImport(
   part: string,
   files: Map<string, string>,
+  shadowed = true,
 ): Promise<PartOutcome | undefined> {
   const context = await (await bundleLoader()).importContext(LOD);
   const compiler = new BrickCompiler(
@@ -328,7 +334,7 @@ async function inferredAtImport(
     [outcome] = compiler.compile(request, { key: part, files, absent }).parts;
     if (outcome?.status !== "need") break;
     for (const path of outcome.paths) {
-      const text = await libraryFile(path);
+      const text = await libraryFile(path, shadowed);
       if (text === null) absent.add(path);
       else files.set(path, text);
     }
@@ -437,19 +443,20 @@ it("infers at import, face for face, what the native extractor infers for a part
   const files = new Map([
     [`parts/${ROTATED_PART}`, rotatedAboutY(ROTATED_REFERENCE, ROTATION_DEGREES, ROTATED_PART)],
   ]);
-  const outcome = await inferredAtImport(ROTATED_PART, files);
+  const outcome = await inferredAtImport(ROTATED_PART, files, false);
   const root = await mkdtemp(join(tmpdir(), "brr-arc-seams-"));
   try {
     for (const [path, text] of files) {
       await mkdir(dirname(join(root, "ldraw", path)), { recursive: true });
       await writeFile(join(root, "ldraw", path), text);
     }
+    await mkdir(join(root, "shadow"));
     const pipeline = (file: string): string => fileURLToPath(new URL(file, pipelineRoot));
     await runFile(fileURLToPath(nativeExtractor), [
       "--ldraw",
       join(root, "ldraw"),
       "--shadow",
-      fileURLToPath(shadowLibraryRoot),
+      join(root, "shadow"),
       "--patches",
       pipeline("shadow-patches"),
       "--primitives",
@@ -467,7 +474,8 @@ it("infers at import, face for face, what the native extractor infers for a part
       const file = join(root, "out", pkg, ROTATED_PART.replace(/\.dat$/u, ".json"));
       const text = await readFile(file, "utf8").catch(() => null);
       if (text === null) return null;
-      return decodedOrThrow(decode(ConnectorRecordFile, JSON.parse(text)), file);
+      const record = decodedOrThrow(decode(ConnectorRecordFile, JSON.parse(text)), file);
+      return { ...record, part: ROTATED_PART };
     };
     const native = await nativeRecord("connectors");
     expect(native?.faces.source.every((source) => source === CONNECTOR_SOURCE.inferred)).toBe(true);
@@ -489,9 +497,7 @@ it("infers at import, for a custom brick with 3001's geometry, official 3001's p
   const connectors = await publishedRecord(OFFICIAL_BRICK_ID, "connectors");
 
   expect(new Set(connectivity?.faces.source)).toEqual(new Set([CONNECTOR_SOURCE.shadow]));
-  expect(new Set(connectors?.faces.source)).toEqual(
-    new Set([CONNECTOR_SOURCE.primitive, CONNECTOR_SOURCE.inferred]),
-  );
+  expect(new Set(connectors?.faces.source)).toEqual(new Set([CONNECTOR_SOURCE.inferred]));
   expect(outcome?.status === "compiled" ? outcome.connectors : outcome).toEqual({
     connectivity: connectivity && { ...connectivity, part: CUSTOM_BRICK },
     connectors: connectors && { ...connectors, part: CUSTOM_BRICK, sectionVocabulary: undefined },

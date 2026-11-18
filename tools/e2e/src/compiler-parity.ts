@@ -119,6 +119,7 @@ for (const lod of lods) {
           sectionVocabulary: { sizes, lengths },
           cavityProbe: manifest.compiler.cavityProbe,
           infer: [],
+          shadowPatchManifest: null,
         },
         parts: [...references.keys()],
         model: "",
