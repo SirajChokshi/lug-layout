@@ -1,4 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import { fitGroundMap, type GroundMap, type GroundSample } from "./ground-map.ts";
 
 export const STUD = 20;
@@ -13,6 +15,11 @@ const DRAG_STEPS = 10;
 const QUARTER_TURNS = 4;
 const SETTLED_STATUS = /^(?:ready|error)$/u;
 const STUDS_META = /(\d+)×(\d+)/u;
+const MODEL_IMPORT_TIMEOUT_MS = 180_000;
+const GITHUB_RAW = "https://raw.githubusercontent.com/**";
+const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
+const HTTP_NOT_FOUND = 404;
+const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
 
 export interface ScreenPoint {
   readonly sx: number;
@@ -59,6 +66,18 @@ export interface TrackCounts {
   readonly lastCommit: string;
 }
 
+export interface ModelBake {
+  readonly id: string;
+  readonly lattice: unknown;
+  readonly cells: unknown;
+}
+
+export interface ModelImport {
+  readonly status: string;
+  readonly item: string;
+  readonly text: string;
+}
+
 export interface CatalogEntry {
   readonly id: string;
   readonly label: string;
@@ -78,6 +97,7 @@ interface EditState {
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
+    readonly bakes: ReadonlyArray<ModelBake>;
   };
 }
 
@@ -343,6 +363,38 @@ export class EditorPage {
     if (!text) throw new Error("the editor state dump is empty; open the editor with state=1");
     const parsed: EditState = JSON.parse(text);
     return parsed;
+  }
+
+  async serveLdrawLibrary(): Promise<void> {
+    await this.page.context().route(GITHUB_RAW, async (route) => {
+      const path = LDRAW_PATH.exec(decodeURIComponent(new URL(route.request().url()).pathname))
+        ?.groups?.["path"];
+      const text =
+        path === undefined
+          ? undefined
+          : await readFile(new URL(path, PINNED_LDRAW), "utf8").catch(() => undefined);
+      await (text === undefined
+        ? route.fulfill({ status: HTTP_NOT_FOUND })
+        : route.fulfill({ status: 200, body: text }));
+    });
+  }
+
+  async importModel(file: string): Promise<ModelImport> {
+    await this.page.locator("input.model-file-import").setInputFiles(file);
+    const name = basename(file);
+    const status = this.page.locator(
+      `.model-import[data-file="${name}"]:not([data-status="importing"])`,
+    );
+    await expect(status).toHaveCount(1, { timeout: MODEL_IMPORT_TIMEOUT_MS });
+    return {
+      status: (await status.getAttribute("data-status")) ?? "",
+      item: (await status.getAttribute("data-item")) ?? "",
+      text: (await status.locator("p").first().textContent()) ?? "",
+    };
+  }
+
+  async bakes(): Promise<ReadonlyArray<ModelBake>> {
+    return (await this.editState()).world.bakes;
   }
 
   async poses(): Promise<ReadonlyArray<Pose>> {

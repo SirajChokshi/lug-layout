@@ -2,6 +2,7 @@ import type { EditorOptions, IEditor, IEditorCamera, IPaletteDrag, ITrainPlay } 
 import { useEffect, useRef } from "react";
 import { controlTakesKey, isTyping } from "./use-editor-keys.ts";
 import { carriesPaletteItem } from "./palette-drag.ts";
+import { carriesFiles, importModelFiles } from "./model-files.ts";
 
 const CLICK_SLOP_PX = 4;
 const LEFT_BUTTON = 0;
@@ -172,6 +173,11 @@ export function EditorCanvas({ editor, camera, play, paletteDrag, options }: Edi
     const onContextMenu = (event: Event): void => event.preventDefault();
     const onLeave = (): void => editor.pointerLeave();
     const onDragOver = (event: DragEvent): void => {
+      if (carriesFiles(event)) {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+        return;
+      }
       if (!carriesPaletteItem(event)) return;
       event.preventDefault();
       if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
@@ -181,6 +187,16 @@ export function EditorCanvas({ editor, camera, play, paletteDrag, options }: Edi
       editor.pointerMove(x, y);
     };
     const onDrop = (event: DragEvent): void => {
+      if (carriesFiles(event)) {
+        event.preventDefault();
+        const [x, y] = ndc(canvas, event);
+        void importModelFiles(editor, event.dataTransfer?.files ?? []).then((imported) => {
+          if (!imported) return;
+          editor.pointerMove(x, y);
+          editor.click(x, y, performance.now());
+        });
+        return;
+      }
       if (!carriesPaletteItem(event)) return;
       event.preventDefault();
       const [x, y] = ndc(canvas, event);

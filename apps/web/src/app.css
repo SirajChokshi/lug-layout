@@ -1216,6 +1216,21 @@ footer a {
   display: none;
 }
 
+.model-import {
+  margin-top: 8px;
+}
+
+.model-import-report > summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.model-import-report .module-report {
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
 .go-to {
   grid-column: 1 / -1;
   display: grid;

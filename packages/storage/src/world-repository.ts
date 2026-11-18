@@ -1,17 +1,22 @@
 import { decode, decodedOrThrow, type Decoded, type Issue } from "@brr/schema/decode";
 import {
+  IMPORT_DIRECTORY,
   WorldHeader,
   WorldIndexEntry,
   WorldManifestV1,
   WorldShardV1,
   canonicalJson,
   compareSuperChunks,
+  importPath,
+  parseImportPath,
   parseJsonText,
   readWorldArchive,
+  referencedImports,
   shardEntry,
   shardName,
   worldArchiveFiles,
   worldManifest,
+  type ImportedFile,
   type ShardEntryV1,
   type SuperChunk,
   type WorldArchive,
@@ -23,6 +28,8 @@ import { readZip, writeStoredZip } from "./zip.ts";
 
 export const WORLD_INDEX_DATABASE = "brr-worlds";
 export const WORLD_DATABASE_PREFIX = "brr-world-";
+export const IMPORT_DATABASE = "brr-imports";
+const IMPORT_STORE = "files";
 const WORLD_INDEX_STORE = "worlds";
 const MANIFEST_STORE = "manifest";
 const SHARD_STORE = "shards";
@@ -56,6 +63,31 @@ export interface IWorldRepository {
   shardFiles(id: string): Promise<ReadonlyArray<ShardFile>>;
   packArchive(archive: WorldArchive): Uint8Array;
   readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>>;
+  putImportedFile(file: ImportedFile): Promise<void>;
+  importedFile(sha256: string): Promise<ImportedFile | undefined>;
+}
+
+const HEX_RADIX = 16;
+const HEX_BYTE_DIGITS = 2;
+
+export async function contentSha256(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice()));
+  return Array.from(digest, (byte) => byte.toString(HEX_RADIX).padStart(HEX_BYTE_DIGITS, "0")).join(
+    "",
+  );
+}
+
+function isImportedFile(value: unknown): value is ImportedFile {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "sha256" in value &&
+    typeof value.sha256 === "string" &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "bytes" in value &&
+    value.bytes instanceof Uint8Array
+  );
 }
 
 export function worldDatabaseName(id: string): string {
@@ -258,26 +290,84 @@ export class IndexedDbWorldRepository implements IWorldRepository {
   }
 
   packArchive(archive: WorldArchive): Uint8Array {
-    return writeStoredZip(
-      worldArchiveFiles(archive).map((file) => ({
+    return writeStoredZip([
+      ...worldArchiveFiles(archive).map((file) => ({
         name: file.name,
         bytes: utf8.encode(file.text),
       })),
-    );
+      ...archive.imports.map((file) => ({ name: importPath(file), bytes: file.bytes })),
+    ]);
   }
 
   async readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>> {
     const zip = await readZip(bytes);
     if (!zip.ok) return zip;
     const texts = new Map<string, string>();
+    const imports: ImportedFile[] = [];
+    const issues: Issue[] = [];
     const decoder = new TextDecoder("utf-8", { fatal: true });
     for (const [name, data] of zip.value) {
+      if (name.startsWith(IMPORT_DIRECTORY)) {
+        const path = parseImportPath(name);
+        if (path === null) {
+          issues.push({ path: name, message: "is not imports/<sha256>/<file name>" });
+        } else if ((await contentSha256(data)) !== path.sha256) {
+          issues.push({ path: name, message: "does not hash to the SHA-256 in its path" });
+        } else {
+          imports.push({ ...path, bytes: data });
+        }
+        continue;
+      }
       try {
         texts.set(name, decoder.decode(data));
       } catch {
         return { ok: false, issues: [{ path: name, message: "is not UTF-8 text" }] };
       }
     }
-    return readWorldArchive(texts);
+    const archive = readWorldArchive(texts);
+    if (!archive.ok) return { ok: false, issues: [...issues, ...archive.issues] };
+    const referenced = referencedImports(archive.value.shards);
+    const carried = new Set(imports.map((file) => file.sha256));
+    for (const sha256 of referenced) {
+      if (!carried.has(sha256)) {
+        issues.push({
+          path: `${IMPORT_DIRECTORY}${sha256}`,
+          message: "is used by a placement but missing",
+        });
+      }
+    }
+    for (const file of imports) {
+      if (!referenced.has(file.sha256)) {
+        issues.push({ path: importPath(file), message: "is not used by any placement" });
+      }
+    }
+    if (issues.length > 0) return { ok: false, issues };
+    return { ok: true, value: { ...archive.value, imports } };
+  }
+
+  private async withImports<T>(use: (db: IDBDatabase) => Promise<T>): Promise<T> {
+    const db = await openDatabase(this.factory, IMPORT_DATABASE, [
+      { name: IMPORT_STORE, keyPath: "sha256" },
+    ]);
+    try {
+      return await use(db);
+    } finally {
+      db.close();
+    }
+  }
+
+  putImportedFile(file: ImportedFile): Promise<void> {
+    return this.withImports(async (db) => {
+      const transaction = db.transaction(IMPORT_STORE, "readwrite");
+      transaction.objectStore(IMPORT_STORE).put({ ...file });
+      await transactionDone(transaction);
+    });
+  }
+
+  async importedFile(sha256: string): Promise<ImportedFile | undefined> {
+    const value: unknown = await this.withImports((db) =>
+      requestResult(db.transaction(IMPORT_STORE).objectStore(IMPORT_STORE).get(sha256)),
+    );
+    return isImportedFile(value) && value.sha256 === sha256 ? value : undefined;
   }
 }

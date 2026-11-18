@@ -20,6 +20,8 @@ export const SUPER_CHUNK_CHUNKS = 8;
 export const MANIFEST_FILE = "manifest.json";
 export const CREDITS_FILE = "CREDITS.txt";
 export const SHARD_DIRECTORY = "shards/";
+export const IMPORT_DIRECTORY = "imports/";
+export const IMPORT_REF_PREFIX = "import:";
 
 const CATALOG_REF = /^[a-z][a-z0-9]*:[A-Za-z0-9._-]+$/;
 
@@ -327,11 +329,55 @@ export const WorldIndexEntry = v.strictObject(
 );
 export type WorldIndexEntry = v.InferOutput<typeof WorldIndexEntry>;
 
+export interface ImportedFile {
+  readonly sha256: string;
+  readonly name: string;
+  readonly bytes: Uint8Array;
+}
+
 export type WorldArchive = {
   readonly manifest: WorldManifestV1;
   readonly shards: ReadonlyArray<WorldShardV1>;
   readonly credits: string;
+  readonly imports: ReadonlyArray<ImportedFile>;
 };
+
+const SHA256_HEX = /^[0-9a-f]{64}$/u;
+const UNSAFE_FILE_NAME_CHARACTERS = /[^A-Za-z0-9._ -]/gu;
+const IMPORT_PATH = /^imports\/(?<sha256>[0-9a-f]{64})\/(?<name>[^/]+)$/u;
+
+export function importRef(sha256: string): string {
+  return `${IMPORT_REF_PREFIX}${sha256}`;
+}
+
+export function importedSha256(ref: string): string | null {
+  if (!ref.startsWith(IMPORT_REF_PREFIX)) return null;
+  const sha256 = ref.slice(IMPORT_REF_PREFIX.length);
+  return SHA256_HEX.test(sha256) ? sha256 : null;
+}
+
+export function importPath(file: Pick<ImportedFile, "sha256" | "name">): string {
+  const name = file.name.replace(UNSAFE_FILE_NAME_CHARACTERS, "_").trim() || file.sha256;
+  return `${IMPORT_DIRECTORY}${file.sha256}/${name}`;
+}
+
+export function parseImportPath(path: string): Pick<ImportedFile, "sha256" | "name"> | null {
+  const match = IMPORT_PATH.exec(path)?.groups;
+  const sha256 = match?.["sha256"];
+  const name = match?.["name"];
+  return sha256 === undefined || name === undefined ? null : { sha256, name };
+}
+
+export function referencedImports(shards: ReadonlyArray<WorldShardV1>): ReadonlySet<string> {
+  const referenced = new Set<string>();
+  for (const shard of shards) {
+    for (const placement of shard.placements) {
+      const sha256 = importedSha256(placement.ref);
+      if (sha256 !== null) referenced.add(sha256);
+    }
+  }
+  return referenced;
+}
 
 type ArchiveText = {
   readonly name: string;
@@ -478,7 +524,7 @@ export function worldManifest(
   };
 }
 
-export function worldArchiveFiles(archive: WorldArchive): ArchiveText[] {
+export function worldArchiveFiles(archive: Omit<WorldArchive, "imports">): ArchiveText[] {
   const shards = [...archive.shards];
   shards.sort((a, b) => compareSuperChunks(a.superChunk, b.superChunk));
   return [
@@ -496,7 +542,9 @@ export function parseJsonText(text: string, path: string): Decoded<unknown> {
   }
 }
 
-export function readWorldArchive(files: ReadonlyMap<string, string>): Decoded<WorldArchive> {
+export function readWorldArchive(
+  files: ReadonlyMap<string, string>,
+): Decoded<Omit<WorldArchive, "imports">> {
   const manifestText = files.get(MANIFEST_FILE);
   if (manifestText === undefined) {
     return { ok: false, issues: [{ path: MANIFEST_FILE, message: "is missing from the archive" }] };
