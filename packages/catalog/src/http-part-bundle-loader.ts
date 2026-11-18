@@ -520,7 +520,7 @@ function partModel(file: ModelFile): PartModel {
     cells: modelCells(cover.cells),
     instanceCount: file.instances.part.length,
     partIndex: Uint16Array.from(file.instances.part),
-    ldrawColor: Uint16Array.from(file.instances.color),
+    ldrawColor: Uint32Array.from(file.instances.color),
     matrices: Float32Array.from(file.instances.matrix),
     vehicles: file.vehicles.map((vehicle) => ({
       ...vehicle,

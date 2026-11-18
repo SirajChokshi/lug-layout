@@ -120,7 +120,7 @@ export interface PartModel {
   readonly cells: ModelCells | null;
   readonly instanceCount: number;
   readonly partIndex: Uint16Array;
-  readonly ldrawColor: Uint16Array;
+  readonly ldrawColor: Uint32Array;
   readonly matrices: Float32Array;
   readonly vehicles: ReadonlyArray<PartVehicle>;
 }

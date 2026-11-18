@@ -7,7 +7,7 @@ import {
 } from "@brr/catalog";
 import type { RoadSurface } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import type { ModelOrigin, ModelRole, Vec3 } from "@brr/schema/bundle";
+import type { ModelRole, Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
@@ -293,8 +293,8 @@ function restingY(
 }
 
 export function modelPlaceable(
+  id: string,
   name: string,
-  origin: ModelOrigin,
   label: string,
   role: ModelRole | undefined,
   model: PartModel,
@@ -323,7 +323,6 @@ export function modelPlaceable(
   };
   const box = shiftedBox(lattice.aabbMin, lattice.aabbMax, shift);
   const partBoxes = instanceBoxes(local, parts);
-  const id = `${origin}:${name}`;
   const studs = withStuds(local, parts, colors, model.studCover).studs;
   const restPlates = (cells.restY - restingOn) / PLATE_LDU;
   return {
