@@ -1419,7 +1419,7 @@ fn an_axle_end_flush_with_a_plate_that_never_reaches_it_is_still_an_axle_end() {
             ("parts/stub.dat", CUSTOM_AXLE_STUB.to_string()),
             (
                 "parts/stub-beside-a-plate.dat",
-                "0 Stub Beside A Plate\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stub.dat\n1 16 0 -20 18 1 0 0 0 1 0 0 0 1 3710.dat\n"
+                "0 Stub Beside A Plate\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stub.dat\n1 16 45 -20 15 1 0 0 0 1 0 0 0 1 3710.dat\n"
                     .to_string(),
             ),
         ],
