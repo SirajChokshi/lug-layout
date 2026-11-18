@@ -1,7 +1,9 @@
 use crate::affine::Vec3;
+use crate::sixteenths;
 
 use super::{
-    column, Bounding, Caps, Connector, Gender, GenericMatch, SectionShape, Shape, Source, Status,
+    column, direction_code, Bounding, Caps, Connector, Gender, GenericMatch, SectionShape, Shape,
+    Source, Status,
 };
 
 pub const CAP_ROOT: u8 = 1;
@@ -28,6 +30,8 @@ pub struct MatingFace {
     pub gender: Gender,
     pub origin: Vec3,
     pub axis: Vec3,
+    pub sixteenths: Option<[i32; 3]>,
+    pub direction: Option<u8>,
     pub sections: Vec<FaceSection>,
     pub caps: u8,
     pub slide: bool,
@@ -100,6 +104,8 @@ impl Cylinder<'_> {
             gender: self.gender,
             origin,
             axis,
+            sixteenths: on_grid(origin),
+            direction: direction_code(axis),
             sections,
             caps,
             slide: self.slide,
@@ -136,6 +142,14 @@ impl Cylinder<'_> {
     }
 }
 
+fn on_grid(origin: Vec3) -> Option<[i32; 3]> {
+    Some([
+        sixteenths::identified(origin[0])?,
+        sixteenths::identified(origin[1])?,
+        sixteenths::identified(origin[2])?,
+    ])
+}
+
 fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<MatingFace> {
     let direction = column(&connector.placement, 1);
     let axis = match gender {
@@ -146,13 +160,16 @@ fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<Mati
         .grid
         .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets())
         .into_iter()
-        .map(|offset| MatingFace {
+        .map(|offset| connector.placement.apply(offset))
+        .map(|origin| MatingFace {
             source: connector.source,
             status: connector.status,
             group: connector.group.clone(),
             gender,
-            origin: connector.placement.apply(offset),
+            origin,
             axis,
+            sixteenths: on_grid(origin),
+            direction: direction_code(axis),
             sections: vec![FaceSection {
                 code: ROUND,
                 size: radius,
