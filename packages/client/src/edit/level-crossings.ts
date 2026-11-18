@@ -1,4 +1,4 @@
-import type { PartAsset } from "@brr/catalog";
+import type { PartShapeAsset } from "@brr/catalog";
 import {
   planLevelCrossings,
   type CrossingConflict,
@@ -17,8 +17,6 @@ import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 
 const CROSSING_KEY_BASE = 2 ** 47;
-const REPRESENTATION_EPSILON_LDU = 1e-6;
-const TRIANGLE_FLOATS = 6;
 
 export interface TrackCrossingInput {
   readonly pieces: ReadonlyArray<CrossingTrackPiece>;
@@ -66,66 +64,14 @@ export function crossingChunkKey(chunkX: number, chunkZ: number): number {
   return CROSSING_KEY_BASE + chunkKey(chunkX, chunkZ);
 }
 
-function separated(
-  axisX: number,
-  axisZ: number,
-  triangles: Float64Array,
-  offset: number,
-  minX: number,
-  maxX: number,
-  minZ: number,
-  maxZ: number,
-): boolean {
-  let triMin = Number.POSITIVE_INFINITY;
-  let triMax = Number.NEGATIVE_INFINITY;
-  for (let v = 0; v < 3; v++) {
-    const p =
-      axisX * (triangles[offset + v * 2] ?? 0) + axisZ * (triangles[offset + v * 2 + 1] ?? 0);
-    if (p < triMin) triMin = p;
-    if (p > triMax) triMax = p;
-  }
-  const a = axisX * minX + axisZ * minZ;
-  const b = axisX * maxX + axisZ * minZ;
-  const c = axisX * minX + axisZ * maxZ;
-  const d = axisX * maxX + axisZ * maxZ;
-  const rectMin = Math.min(a, b, c, d);
-  const rectMax = Math.max(a, b, c, d);
-  const slack = REPRESENTATION_EPSILON_LDU * Math.hypot(axisX, axisZ);
-  return triMax <= rectMin + slack || triMin >= rectMax - slack;
-}
-
-export function planTrianglesMeetRect(
-  triangles: Float64Array,
-  minX: number,
-  maxX: number,
-  minZ: number,
-  maxZ: number,
-): boolean {
-  for (let t = 0; t + TRIANGLE_FLOATS <= triangles.length; t += TRIANGLE_FLOATS) {
-    if (separated(1, 0, triangles, t, minX, maxX, minZ, maxZ)) continue;
-    if (separated(0, 1, triangles, t, minX, maxX, minZ, maxZ)) continue;
-    let apart = false;
-    for (let e = 0; e < 3 && !apart; e++) {
-      const ax = triangles[t + e * 2] ?? 0;
-      const az = triangles[t + e * 2 + 1] ?? 0;
-      const bx = triangles[t + ((e + 1) % 3) * 2] ?? 0;
-      const bz = triangles[t + ((e + 1) % 3) * 2 + 1] ?? 0;
-      if (ax === bx && az === bz) continue;
-      apart = separated(az - bz, bx - ax, triangles, t, minX, maxX, minZ, maxZ);
-    }
-    if (!apart) return true;
-  }
-  return false;
-}
-
 export class LevelCrossingParts {
   readonly partIndex: number;
   readonly color: number;
-  readonly part: PartAsset;
+  readonly part: PartShapeAsset;
 
   constructor(
     readonly recipe: LevelCrossingRecipe,
-    private readonly parts: ReadonlyArray<PartAsset>,
+    private readonly parts: ReadonlyArray<PartShapeAsset>,
     private readonly colors: ColorTable,
   ) {
     const index = parts.findIndex((part) => part.id === recipe.part);

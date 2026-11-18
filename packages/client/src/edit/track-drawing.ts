@@ -14,7 +14,10 @@ import {
   NO_END,
   TrackGraph,
   TrackLayout,
+  footprintOutline,
+  outlinesOverlap,
   rectsOverlap,
+  rotateOutline,
   type CrossingTrackPiece,
   type DrawingKit,
   type LduRect,
@@ -48,7 +51,7 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
-import { planTrianglesMeetRect, type TrackCrossingInput } from "./level-crossings.ts";
+import type { TrackCrossingInput } from "./level-crossings.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
@@ -64,6 +67,7 @@ const CROSSING_REACH_LDU = CHUNK_LDU;
 
 export interface KitPart {
   readonly footprints: Float64Array;
+  readonly outline: Float64Array;
   readonly meshY: readonly [number, number];
   readonly catalogIndex: number;
   readonly piece: TrackPiece;
@@ -292,25 +296,27 @@ function latticeLine(placed: Placed): TrackLine | null {
   return null;
 }
 
-function planTriangles(placed: Placed, part: PartAsset): Float64Array {
-  const { x, z, c, s } = partTransform(placed.placement, placed.part.piece.partFrame);
-  const positions = part.mesh.positions;
-  let count = 0;
-  for (const group of part.mesh.groups) count += Math.floor(group.indices.length / 3);
-  const out = new Float64Array(count * PLAN_TRIANGLE_FLOATS);
-  let o = 0;
-  for (const group of part.mesh.groups) {
-    for (let t = 0; t + 2 < group.indices.length; t += 3) {
-      for (let v = 0; v < 3; v++) {
-        const index = (group.indices[t + v] ?? 0) * 3;
-        const px = positions[index] ?? 0;
-        const pz = positions[index + 2] ?? 0;
-        out[o++] = x + c * px - s * pz;
-        out[o++] = z + s * px + c * pz;
-      }
-    }
-  }
-  return out;
+function planOutline(placed: Placed): Float64Array {
+  const studs = zeta16ToStuds(placed.placement.position);
+  return rotateOutline(
+    placed.part.outline,
+    placed.placement.heading,
+    studs.x * STUD_LDU,
+    studs.z * STUD_LDU,
+  );
+}
+
+function rectOutline(rect: LduRect): Float64Array {
+  return Float64Array.of(
+    rect.minX,
+    rect.minZ,
+    rect.maxX,
+    rect.minZ,
+    rect.maxX,
+    rect.maxZ,
+    rect.minX,
+    rect.maxZ,
+  );
 }
 
 export function trackChunkKey(chunkX: number, chunkZ: number): number {
@@ -359,6 +365,7 @@ export class TrackDrawing {
       const shape = kitFootprints(piece, shapes);
       const kitPart: KitPart = {
         footprints: Float64Array.from(shape.footprints),
+        outline: footprintOutline(shape, piece.partFrame),
         meshY: [shape.minY, shape.maxY],
         catalogIndex,
         piece,
@@ -837,7 +844,7 @@ export class TrackDrawing {
     region: LduRect | null,
   ): TrackCrossingInput {
     const candidates = [...laid, ...proposed];
-    const triangles = new Map<number, Float64Array>();
+    const outlines = new Map<number, Float64Array>();
     const pieces: CrossingTrackPiece[] = candidates.map((candidate, index) => ({
       index,
       bedLdu: candidate.yPlates * PLATE_LDU,
@@ -851,14 +858,13 @@ export class TrackDrawing {
       region,
       meets: (index, rect) => {
         const candidate = candidates[index];
-        const part = candidate ? this.parts[candidate.part.partIndex] : undefined;
-        if (!candidate || !part) throw new RangeError(`no track piece ${index} to test`);
-        let planned = triangles.get(index);
-        if (!planned) {
-          planned = planTriangles(candidate, part);
-          triangles.set(index, planned);
+        if (!candidate) throw new RangeError(`no track piece ${index} to test`);
+        let outline = outlines.get(index);
+        if (!outline) {
+          outline = planOutline(candidate);
+          outlines.set(index, outline);
         }
-        return planTrianglesMeetRect(planned, rect.minX, rect.maxX, rect.minZ, rect.maxZ);
+        return outlinesOverlap(outline, 0, 0, rectOutline(rect), 0, 0);
       },
     };
   }

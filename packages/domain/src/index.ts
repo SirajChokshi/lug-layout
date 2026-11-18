@@ -161,6 +161,13 @@ export {
   type SearchBudget,
 } from "./track/closure.ts";
 export {
+  footprintOutline,
+  outlinesOverlap,
+  rotateOutline,
+  type PlacementFrame,
+  type TrackOutlineSource,
+} from "./track/track-clearance.ts";
+export {
   FOOTPRINT_FLOATS,
   HEADING_FOOTPRINT_FLOATS,
   headingFootprints,

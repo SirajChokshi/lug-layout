@@ -75,12 +75,12 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
     }
   });
 
-  it("give every ground, road and track part a shape file of its own", async () => {
+  it("give every ground, road, track and crossing part a shape file of its own", async () => {
     const manifest = manifestOf(lod);
     const ids = manifest.catalogParts.map((part) => part.id).toSorted();
     expect(ids).toEqual(
       manifest.parts
-        .filter((part) => part.role === "ground" || part.role === "road" || part.role === "track")
+        .filter((part) => ["ground", "road", "track", "crossing"].includes(part.role))
         .map((part) => part.id)
         .toSorted(),
     );

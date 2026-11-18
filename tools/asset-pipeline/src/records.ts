@@ -20,7 +20,7 @@ import { MANIFEST_FILE } from "./publish.ts";
 export const PART_TABLE_FILE = "parts.json";
 export const CREDIT_TABLE_FILE = "credits.json";
 
-const CATALOG_PART_ROLES: ReadonlySet<PartRole> = new Set(["ground", "road", "track"]);
+const CATALOG_PART_ROLES: ReadonlySet<PartRole> = new Set(["ground", "road", "track", "crossing"]);
 const TABLE_KEYS: ReadonlySet<string> = new Set(["parts", "credits"]);
 const UNSAFE_FILE_CHARACTERS = /[^A-Za-z0-9_-]/gu;
 

@@ -2840,6 +2840,7 @@ export class Editor implements IEditor {
     this.crossingPlan = track
       ? parts.plan(this.roadPlacements(), track.laidCrossingInput())
       : { crossings: [], conflicts: [] };
+    if (this.crossingPlan.crossings.length > 0) this.meshes?.request([parts.partIndex], "high");
     const chunks = parts.chunks(this.crossingPlan);
     for (const key of this.crossingChunks) {
       if (!chunks.has(key)) this.backend.deleteChunk(key);
