@@ -1,3 +1,11 @@
+import type {
+  ConnectionSolver,
+  LatticeStudFinder,
+  SnapMating,
+  SnapShapes,
+  SparseConnectorFinder,
+  TrackEndFinder,
+} from "@brr/domain";
 import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
@@ -7,6 +15,7 @@ import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memo
 import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
@@ -69,4 +78,21 @@ export const PALETTE_MEMORY: ServiceIdentifier<IPaletteMemory> = Symbol.for(
 );
 export const PALETTE_THUMBNAILS: ServiceIdentifier<IPaletteThumbnails> = Symbol.for(
   "brr.client.PaletteThumbnails",
+);
+export const SNAP_SHAPES: ServiceIdentifier<SnapShapes> = Symbol.for("brr.client.SnapShapes");
+export const SNAP_MATING: ServiceIdentifier<SnapMating> = Symbol.for("brr.client.SnapMating");
+export const LATTICE_STUD_FINDER: ServiceIdentifier<LatticeStudFinder> = Symbol.for(
+  "brr.client.LatticeStudFinder",
+);
+export const SPARSE_CONNECTOR_FINDER: ServiceIdentifier<SparseConnectorFinder> = Symbol.for(
+  "brr.client.SparseConnectorFinder",
+);
+export const TRACK_END_FINDER: ServiceIdentifier<TrackEndFinder> = Symbol.for(
+  "brr.client.TrackEndFinder",
+);
+export const CONNECTION_SOLVER: ServiceIdentifier<ConnectionSolver> = Symbol.for(
+  "brr.client.ConnectionSolver",
+);
+export const PLACEMENT_SEARCH: ServiceIdentifier<IPlacementSearch> = Symbol.for(
+  "brr.client.PlacementSearch",
 );

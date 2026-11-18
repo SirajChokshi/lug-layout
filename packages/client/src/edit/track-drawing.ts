@@ -51,6 +51,7 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
+import type { HeldTrackPiece } from "../connect/model-track-ends.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
@@ -306,6 +307,8 @@ export class TrackDrawing {
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
+  private held: ReadonlyArray<HeldTrackPiece> = [];
+  private combined: TrackLayout;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
@@ -328,6 +331,7 @@ export class TrackDrawing {
     this.pieces = catalog.pieces;
     const shapes = new Map(trackShapes.map((shape) => [shape.piece, shape]));
     this.layout = new TrackLayout(catalog.pieces.map(pieceSpec));
+    this.combined = this.layout;
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
@@ -440,15 +444,21 @@ export class TrackDrawing {
 
   routes(): ReadonlyArray<TrackRouteView> {
     const routes: TrackRouteView[] = [];
-    for (let p = 0; p < this.layout.count; p++) {
-      for (const route of this.placedAt(p).part.piece.routes) {
+    const layout = this.combined;
+    for (let p = 0; p < layout.count; p++) {
+      for (const route of this.pieces[layout.piece(p)]?.routes ?? []) {
         routes.push({
-          from: endView(this.layout.connectorPose(p, route.from)),
-          to: endView(this.layout.connectorPose(p, route.to)),
+          from: endView(layout.connectorPose(p, route.from)),
+          to: endView(layout.connectorPose(p, route.to)),
         });
       }
     }
     return routes;
+  }
+
+  syncHeld(held: ReadonlyArray<HeldTrackPiece>): void {
+    this.held = held;
+    this.recomputeEnds();
   }
 
   gappedEnds(): ReadonlySet<number> {
@@ -854,7 +864,7 @@ export class TrackDrawing {
     const graph = this.graph;
     for (let e = 0; e < graph.endCount; e++) {
       if ((graph.endPartner[e] ?? NO_END) === NO_END) continue;
-      const pose = this.layout.connectorPose(
+      const pose = this.combined.connectorPose(
         graph.endPlacement[e] ?? 0,
         graph.endConnector[e] ?? 0,
       );
@@ -863,9 +873,26 @@ export class TrackDrawing {
     return false;
   }
 
+  private combine(): TrackLayout {
+    if (this.held.length === 0) return this.layout;
+    const combined = new TrackLayout(this.pieces.map(pieceSpec));
+    for (let p = 0; p < this.layout.count; p++) {
+      combined.place(
+        this.layout.piece(p),
+        this.layout.pose(p),
+        this.layout.yPlates(p),
+        this.layout.rise(p),
+      );
+    }
+    for (const piece of this.held)
+      combined.place(piece.catalogIndex, piece.placement, piece.yPlates);
+    return combined;
+  }
+
   private recomputeEnds(): void {
     this.footprints = null;
-    this.graph = new TrackGraph(this.layout);
+    this.combined = this.combine();
+    this.graph = new TrackGraph(this.combined);
     const ends: TrackEnd[] = [];
     const owners: number[] = [];
     for (const end of this.graph.openEnds) {
@@ -873,8 +900,8 @@ export class TrackDrawing {
       const connector = this.graph.endConnector[end] ?? 0;
       owners.push(placement);
       ends.push({
-        pose: this.layout.connectorPose(placement, connector),
-        yPlates: this.layout.yPlates(placement),
+        pose: this.combined.connectorPose(placement, connector),
+        yPlates: this.combined.yPlates(placement),
       });
     }
     this.ends = ends.map((end) => end.pose);
