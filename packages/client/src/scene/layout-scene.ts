@@ -194,6 +194,9 @@ class ChunkCapture implements ISceneBackend {
   renderFrame(out: FrameStats): void {
     this.inner.renderFrame(out);
   }
+  needsFrame(): boolean {
+    return this.inner.needsFrame();
+  }
   waitForGpu(): Promise<void> {
     return this.inner.waitForGpu();
   }
