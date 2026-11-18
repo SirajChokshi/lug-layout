@@ -518,9 +518,9 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 && dot(c0, c2).abs() <= IDENTIFY_LDU * rx * rz
                 && dot(c0, c1).abs() <= IDENTIFY_LDU * rx * height
                 && dot(c2, c1).abs() <= IDENTIFY_LDU * rz * height;
-            let Some(to_unit) = m.inverse().filter(|_| circular) else {
+            if !circular {
                 continue;
-            };
+            }
             let is_wall = round.unit.shape == UnitShape::Wall;
             let full = covers_circle(&round.unit.arcs, 0.0);
             let mut worth_reporting = |issues: &mut Vec<Issue>, reason: Uninferred| {
@@ -586,11 +586,6 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 full,
                 arcs: arcs.clone(),
                 facing,
-                to_unit,
-                unit_radii: match round.unit.shape {
-                    UnitShape::Wall => (1.0, 1.0),
-                    UnitShape::Annulus { inner, outer } => (inner, outer),
-                },
             });
             if !is_wall {
                 continue;

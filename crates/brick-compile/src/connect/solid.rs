@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::affine::{Affine, Vec3};
+use crate::affine::Vec3;
 use crate::flatten::Triangle;
 use crate::lattice::STUD_LDU;
 
@@ -55,8 +55,6 @@ pub struct RoundSurface {
     pub full: bool,
     pub arcs: Vec<(f64, f64)>,
     pub facing: Option<f64>,
-    pub to_unit: Affine,
-    pub unit_radii: (f64, f64),
 }
 
 impl RoundSurface {
@@ -89,32 +87,31 @@ impl RoundSurface {
         }
     }
 
-    fn unit_point(&self, p: Vec3) -> (f64, f64) {
-        let q = self.to_unit.apply(p);
-        (q[0].hypot(q[2]), q[1])
+    fn radius_of(&self, p: Vec3) -> f64 {
+        let (i, j) = plan_axes(self.axis);
+        (p[i] - self.center[0]).hypot(p[j] - self.center[1])
     }
 
     fn holds(&self, p: Vec3) -> bool {
-        let (rho, height) = self.unit_point(p);
-        let (inner, outer) = self.unit_radii;
+        let rho = self.radius_of(p);
+        let along = p[self.axis];
         match self.shape {
-            RoundShape::Wall { .. } => {
-                (rho - 1.0).abs() <= IDENTIFY_LDU
-                    && (-IDENTIFY_LDU..=1.0 + IDENTIFY_LDU).contains(&height)
+            RoundShape::Wall { radius, from, to } => {
+                (rho - radius).abs() <= IDENTIFY_LDU
+                    && (from - IDENTIFY_LDU..=to + IDENTIFY_LDU).contains(&along)
             }
-            RoundShape::Annulus { .. } => {
-                height.abs() <= IDENTIFY_LDU
+            RoundShape::Annulus { inner, outer, at } => {
+                (along - at).abs() <= IDENTIFY_LDU
                     && (inner - IDENTIFY_LDU..=outer + IDENTIFY_LDU).contains(&rho)
             }
         }
     }
 
     fn on_circle(&self, p: Vec3) -> bool {
-        let (rho, _) = self.unit_point(p);
-        let (inner, outer) = self.unit_radii;
+        let rho = self.radius_of(p);
         match self.shape {
-            RoundShape::Wall { .. } => (rho - 1.0).abs() <= IDENTIFY_LDU,
-            RoundShape::Annulus { .. } => {
+            RoundShape::Wall { radius, .. } => (rho - radius).abs() <= IDENTIFY_LDU,
+            RoundShape::Annulus { inner, outer, .. } => {
                 (rho - inner).abs() <= IDENTIFY_LDU || (rho - outer).abs() <= IDENTIFY_LDU
             }
         }
