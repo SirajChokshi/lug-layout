@@ -628,6 +628,7 @@ export class SparseConnectorFinder implements MateFinder {
     const wantedSign = axisSign(wanted);
     const sAlong = wantedDimension === X ? sx : wantedDimension === Y ? sy : sz;
     const spanAlong = wantedDimension === Y ? spanY : spanXZ;
+    const latticeStep = wantedDimension === Y ? PLATE_SIXTEENTHS : SIXTEENTHS_PER_LDU;
     const block = this.block;
     block[0] = cellOf(sx - spanXZ - ax, CELL_SIXTEENTHS);
     block[1] = cellOf(sy - spanY - ay, CELL_SIXTEENTHS);
@@ -651,7 +652,13 @@ export class SparseConnectorFinder implements MateFinder {
           r++
         ) {
           const top = Math.min(classes.rangeHigh[r] ?? 0, highest);
-          for (let d = Math.max(classes.rangeLow[r] ?? 0, lowest); d <= top; d++) {
+          const from = Math.max(classes.rangeLow[r] ?? 0, lowest);
+          const onLattice = Math.imul(wantedSign, along) - from;
+          for (
+            let d = from + (((onLattice % latticeStep) + latticeStep) % latticeStep);
+            d <= top;
+            d += latticeStep
+          ) {
             const shiftX =
               sx - axisStep(wanted, X) * d - (turned.position[m * VECTOR_FLOATS + X] ?? 0);
             const shiftY =
