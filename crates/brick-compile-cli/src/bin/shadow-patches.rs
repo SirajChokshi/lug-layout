@@ -411,6 +411,7 @@ fn coverage(
                 faces.push(json!({
                     "gender": format!("{:?}", face.gender),
                     "origin": vector(face.origin),
+                    "sixteenths": face.sixteenths,
                     "axis": vector(face.axis),
                     "radius": face.sections.first().map(|s| s.size),
                     "status": format!("{:?}", face.status),
