@@ -30,6 +30,7 @@ struct BakeInputs<'a> {
     stud_primitives: &'a [String],
     unofficial_allowlist: &'a [String],
     translucent: HashSet<u32>,
+    table_depth: f64,
     vehicles: Option<&'a VehicleInputs>,
     shard: CoverShard,
     visibility_only: bool,
@@ -94,6 +95,7 @@ impl Session {
                 stud_primitives,
                 unofficial_allowlist,
                 translucent_colors,
+                table_depth_ldu,
                 vehicles,
                 shard,
             } => {
@@ -102,6 +104,7 @@ impl Session {
                     stud_primitives,
                     unofficial_allowlist,
                     translucent: translucent_colors.iter().copied().collect(),
+                    table_depth: *table_depth_ldu,
                     vehicles: vehicles.as_ref(),
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
                     visibility_only: shard.is_some_and(|shard| shard.visibility_only),
@@ -324,6 +327,7 @@ fn bake_drawn(
         inputs.stud_primitives.to_vec(),
         inputs.unofficial_allowlist.to_vec(),
         inputs.translucent.clone(),
+        inputs.table_depth,
     )
     .map_err(|e| e.to_string())?;
     let mut shapes: HashMap<&str, LatticeShape> = HashMap::new();

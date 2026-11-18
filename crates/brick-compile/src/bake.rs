@@ -105,6 +105,7 @@ pub struct ModelBaker<'a, L: Library> {
     compiled: Vec<CompiledPart>,
     solids: Vec<PartSolid>,
     studs: Vec<Vec<Affine>>,
+    table_depth: f64,
 }
 
 impl<'a, L: Library> ModelBaker<'a, L> {
@@ -113,6 +114,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
         translucent: HashSet<u32>,
+        table_depth: f64,
     ) -> Result<Self, BakeError> {
         let options = CompileOptions {
             lod: Lod::Standard,
@@ -131,6 +133,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             compiled: Vec::new(),
             solids: Vec::new(),
             studs: Vec::new(),
+            table_depth,
         })
     }
 
@@ -202,9 +205,10 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             &instances,
             &self.solids,
             &self.opacity,
-            lattice.map(|lattice| lattice.phase),
+            lattice.map(|lattice| (lattice.phase, lattice.phase_layer_y)),
             self.stud_shape,
             shard,
+            self.table_depth,
         ))
     }
 

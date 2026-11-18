@@ -948,7 +948,15 @@ async function loosePart(id: string): Promise<Placeable> {
   const part = bundle.parts[index];
   const color = part?.producedColor;
   if (!part || color === undefined) throw new Error(`${id} has no produced colour in the bundle`);
-  return partPlaceable(part, index, color, String(color), bundle.parts, new ColorTable(bundle));
+  return partPlaceable(
+    part,
+    index,
+    color,
+    String(color),
+    bundle.parts,
+    new ColorTable(bundle),
+    bundle.tablePlane.depthBelowTopLdu,
+  );
 }
 
 async function trackOver(ground: ReadonlyArray<PlacedModel>): Promise<TrackDrawing> {
