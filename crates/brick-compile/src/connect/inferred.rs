@@ -1350,6 +1350,8 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
 
 fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run> {
     let mut runs = Vec::new();
+    let mut walls: Vec<(WallKey, Vec<Band>)> = walls.into_iter().collect();
+    walls.sort_by_key(|(key, _)| *key);
     for ((axis, _, _, _, facing), mut pieces) in walls {
         pieces.sort_by(|a, b| a.from.total_cmp(&b.from).then(a.to.total_cmp(&b.to)));
         let mut bands: Vec<Band> = Vec::new();
