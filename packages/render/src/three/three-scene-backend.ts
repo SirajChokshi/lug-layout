@@ -28,7 +28,6 @@ import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
   CAMERA_FOV_DEGREES,
   COLOR_CHANNELS,
-  INSTANCE_MATRIX_FLOATS,
   type BackendInfo,
   type BufferMemory,
   type ChunkInstances,
@@ -47,7 +46,6 @@ import {
   type RebaseEvent,
   type SceneBackendConfig,
   type IThumbnailRenderer,
-  type StudInstances,
   type TrackEndKind,
   type TrackEndMarker,
   type ThumbnailRequest,
@@ -63,6 +61,19 @@ import {
 } from "@brr/catalog";
 import { CHUNK_LDU, chunkOf } from "@brr/math";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
+import {
+  MATRIX4_FLOATS,
+  groupRunEnd,
+  linearColorsOf,
+  isNotUpright,
+  isVoxelized,
+  matricesOf,
+  pageOf,
+  regroupedPage,
+  usesAnyShape,
+  writeMatrix4,
+  type InstancePage,
+} from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
 import {
   fixedColorGeometries,
@@ -73,7 +84,6 @@ import {
 import { OPAQUE_ALPHA, PlasticMaterials } from "./plastic-materials.ts";
 import { skyEnvironment } from "./sky-environment.ts";
 
-const MATRIX4_FLOATS = 16;
 const REBASE_DISTANCE_CHUNKS = 8;
 const SETTLED_EYE_MS = 250;
 const REBASE_LOG_LIMIT = 256;
@@ -91,6 +101,8 @@ const FILL_INTENSITY = 0.7;
 const SUN_DIRECTION = new Vector3(0.45, 1, 0.3);
 const SHADOW_LAYER = 1;
 const BOUNDS_FLOATS = 6;
+const TRANSLATION_X = 12;
+const TRANSLATION_Z = 14;
 const SHADOW_MAP_SIZE = 2048;
 const SHADOW_CASCADES = 3;
 const SHADOW_LIGHT_MARGIN_LDU = 4000;
@@ -110,10 +122,6 @@ const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
   mid: TIER_MID,
   far: TIER_FAR,
 };
-const UPRIGHT_TOLERANCE = 1e-6;
-const CLASS_NOT_UPRIGHT = 1;
-const CLASS_VOXELIZED = 2;
-const INSTANCE_CLASSES = 4;
 const GHOST_OPACITY = 0.55;
 const SELECTION_COLOR = 0xff8c00;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
@@ -227,32 +235,6 @@ function disposeTree(root: Group | LineSegments): void {
   });
 }
 
-function writeMatrix4(
-  source: Float32Array,
-  sourceIndex: number,
-  target: Float32Array,
-  targetIndex: number,
-): void {
-  const s = sourceIndex * INSTANCE_MATRIX_FLOATS;
-  const t = targetIndex * MATRIX4_FLOATS;
-  target[t] = source[s] ?? 0;
-  target[t + 1] = source[s + 4] ?? 0;
-  target[t + 2] = source[s + 8] ?? 0;
-  target[t + 3] = 0;
-  target[t + 4] = source[s + 1] ?? 0;
-  target[t + 5] = source[s + 5] ?? 0;
-  target[t + 6] = source[s + 9] ?? 0;
-  target[t + 7] = 0;
-  target[t + 8] = source[s + 2] ?? 0;
-  target[t + 9] = source[s + 6] ?? 0;
-  target[t + 10] = source[s + 10] ?? 0;
-  target[t + 11] = 0;
-  target[t + 12] = source[s + 3] ?? 0;
-  target[t + 13] = source[s + 7] ?? 0;
-  target[t + 14] = source[s + 11] ?? 0;
-  target[t + 15] = 1;
-}
-
 function webGpuDevice(backend: unknown): GPUDevice | undefined {
   if (typeof backend !== "object" || backend === null || !("device" in backend)) return undefined;
   const device: unknown = backend.device;
@@ -286,13 +268,6 @@ function disposePart(part: PartGeometries | undefined): void {
   for (const fixed of part?.fixed ?? []) fixed.geometry.dispose();
 }
 
-function usesAnyPart(chunk: ChunkInstances, parts: ReadonlySet<number>): boolean {
-  for (let i = 0; i < chunk.count; i++) {
-    if (parts.has(chunk.partIndex[i] ?? 0)) return true;
-  }
-  return false;
-}
-
 function disposeLevel(level: LevelGeometries): void {
   for (const part of level.parts) disposePart(part);
   for (const stud of level.studs) stud.dispose();
@@ -324,53 +299,17 @@ interface InstanceAttributes {
   readonly colors: InstancedBufferAttribute;
 }
 
-interface InstanceKeys {
-  readonly keys: Uint32Array;
-  readonly counts: Uint32Array;
-}
-
-function isUpright(matrices: Float32Array, instance: number): boolean {
-  const o = instance * INSTANCE_MATRIX_FLOATS;
-  return (
-    Math.abs(matrices[o + 1] ?? 0) < UPRIGHT_TOLERANCE &&
-    Math.abs(matrices[o + 9] ?? 0) < UPRIGHT_TOLERANCE &&
-    Math.abs(matrices[o + 4] ?? 0) < UPRIGHT_TOLERANCE &&
-    Math.abs(matrices[o + 6] ?? 0) < UPRIGHT_TOLERANCE &&
-    Math.abs((matrices[o + 5] ?? 0) - 1) < UPRIGHT_TOLERANCE
-  );
-}
-
-function classKeys(alphaKeys: Uint32Array, chunk: ChunkInstances): Uint32Array {
-  const keys = new Uint32Array(chunk.count);
-  for (let i = 0; i < chunk.count; i++) {
-    const voxelized = (chunk.voxelized?.[i] ?? 0) !== 0 ? CLASS_VOXELIZED : 0;
-    const notUpright = isUpright(chunk.matrices, i) ? 0 : CLASS_NOT_UPRIGHT;
-    keys[i] = (alphaKeys[i] ?? 0) * INSTANCE_CLASSES + (voxelized | notUpright);
-  }
-  return keys;
-}
-
-function countBy(select: ArrayLike<number>, total: number, keys: number): Uint32Array {
-  const counts = new Uint32Array(keys);
-  for (let i = 0; i < total; i++) {
-    const key = select[i] ?? 0;
-    counts[key] = (counts[key] ?? 0) + 1;
-  }
-  return counts;
-}
-
 class ChunkRecord {
   tier = TIER_UNSET;
 
   constructor(
+    readonly page: InstancePage,
     readonly group: Group,
     readonly detailed: Group,
     readonly shellBodies: Group,
     readonly midShells: Group,
     readonly coarseStuds: Group,
     readonly shadowCasters: Group,
-    readonly originX: number,
-    readonly originZ: number,
     readonly minX: number,
     readonly maxX: number,
     readonly minZ: number,
@@ -503,9 +442,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private farModelGeometries: Array<ReadonlyArray<FixedColorGeometry> | undefined> = [];
   private readonly farModelPlacements = new Map<number, FarModelPlacement>();
   private ldrawColorTable: ReadonlyMap<number, LdrawColor> = new Map();
-  private readonly chunkSources = new Map<number, ChunkInstances>();
-  private readonly vehicleSources = new Map<number, ChunkInstances>();
-  private ghostSource: ChunkInstances | null = null;
+  private ghostPage: InstancePage | null = null;
   private ghostPose: readonly [number, number, number, number] | null = null;
   private forcedTier: number | null = null;
   private readonly farModelNodes = new Map<number, FarModelNode>();
@@ -770,11 +707,24 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
     this.changed = true;
     this.installColors(colorsSrgb, colorsAlpha);
-    for (const [key, chunk] of Array.from(this.chunkSources)) this.setChunk(key, chunk);
-    for (const [vehicle, model] of Array.from(this.vehicleSources)) {
-      this.rebuildVehicle(vehicle, model);
+    this.rebuildPages(
+      () => true,
+      (page) => regroupedPage(page, this.linearColors, this.colorAlphaSlot),
+    );
+  }
+
+  private rebuildPages(
+    affected: (page: InstancePage) => boolean,
+    rebuild: (page: InstancePage) => InstancePage = (page) => page,
+  ): void {
+    for (const [key, record] of Array.from(this.chunks)) {
+      if (affected(record.page)) this.placeChunk(key, rebuild(record.page));
     }
-    if (this.ghostSource) this.rebuildGhost();
+    for (const [vehicle, record] of Array.from(this.vehicles)) {
+      if (affected(record.body.page)) this.rebuildVehicle(vehicle, rebuild(record.body.page));
+    }
+    const ghost = this.ghostPage;
+    if (ghost && affected(ghost)) this.rebuildGhost(rebuild(ghost));
   }
 
   addParts(parts: ReadonlyArray<PartAsset>): void {
@@ -800,13 +750,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       if (level === "detailed" || this.tiered) changed.add(index);
     }
     if (changed.size === 0) return;
-    for (const [key, chunk] of Array.from(this.chunkSources)) {
-      if (usesAnyPart(chunk, changed)) this.setChunk(key, chunk);
-    }
-    for (const [vehicle, model] of Array.from(this.vehicleSources)) {
-      if (usesAnyPart(model, changed)) this.rebuildVehicle(vehicle, model);
-    }
-    if (this.ghostSource && usesAnyPart(this.ghostSource, changed)) this.rebuildGhost();
+    this.rebuildPages((page) => usesAnyShape(page.partRuns, changed));
   }
 
   setFarStuds(studPrimitives: ReadonlyArray<StudPrimitiveAsset>): void {
@@ -817,9 +761,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     for (const stud of this.farLevel.studs) stud.dispose();
     this.farLevel.studs = studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh));
     this.tiered = true;
-    for (const [key, chunk] of Array.from(this.chunkSources)) this.setChunk(key, chunk);
-    for (const [vehicle, model] of Array.from(this.vehicleSources))
-      this.rebuildVehicle(vehicle, model);
+    this.rebuildPages(() => true);
   }
 
   setFarModelMesh(modelIndex: number, mesh: PartMesh): void {
@@ -837,9 +779,19 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setChunk(key: number, chunk: ChunkInstances): void {
     this.changed = true;
+    this.placeChunk(key, pageOf(chunk, this.linearColors, this.colorAlphaSlot));
+  }
+
+  private placeGroup(group: Group, originX: number, originZ: number): void {
+    group.position.set(originX - this.renderOriginX, 0, originZ - this.renderOriginZ);
+    group.updateMatrix();
+    group.updateMatrixWorld(true);
+  }
+
+  private placeChunk(key: number, page: InstancePage): void {
     this.removeChunk(key);
-    this.chunkSources.set(key, chunk);
-    const record = this.buildChunk(chunk);
+    const record = this.buildChunk(page);
+    this.placeGroup(record.group, page.originX, page.originZ);
     this.chunks.set(key, record);
     this.chunkList.push(record);
     this.scene.add(record.group);
@@ -851,13 +803,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setVehicle(vehicle: number, model: ChunkInstances): void {
     this.changed = true;
+    this.placeVehicleBody(vehicle, pageOf(model, this.linearColors, this.colorAlphaSlot));
+  }
+
+  private placeVehicleBody(vehicle: number, page: InstancePage): void {
     this.removeVehicle(vehicle);
-    this.vehicleSources.set(vehicle, model);
-    const body = this.buildChunk({
-      ...model,
-      originX: this.renderOriginX,
-      originZ: this.renderOriginZ,
-    });
+    const body = this.buildChunk(page);
     const group = new Group();
     group.add(body.group);
     const record = new VehicleRecord(group, body);
@@ -901,9 +852,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.removeVehicle(vehicle);
   }
 
-  private rebuildVehicle(vehicle: number, model: ChunkInstances): void {
+  private rebuildVehicle(vehicle: number, page: InstancePage): void {
     const before = this.vehicles.get(vehicle);
-    this.setVehicle(vehicle, model);
+    this.placeVehicleBody(vehicle, page);
     const after = this.vehicles.get(vehicle);
     if (!before || !after) return;
     after.x = before.x;
@@ -914,7 +865,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private removeVehicle(vehicle: number): void {
-    this.vehicleSources.delete(vehicle);
     const existing = this.vehicles.get(vehicle);
     if (!existing) return;
     this.scene.remove(existing.group);
@@ -930,7 +880,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private removeChunk(key: number): void {
-    this.chunkSources.delete(key);
     const existing = this.chunks.get(key);
     if (!existing) return;
     this.scene.remove(existing.group);
@@ -941,25 +890,29 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setGhost(model: ChunkInstances | null): void {
     this.changed = true;
+    this.showGhost(model ? pageOf(model, this.linearColors, this.colorAlphaSlot) : null);
+  }
+
+  private showGhost(page: InstancePage | null): void {
     if (this.ghost) {
       this.scene.remove(this.ghost);
       disposeInstancedChildren(this.ghost);
       this.ghost = undefined;
     }
-    this.ghostSource = model;
     this.ghostPose = null;
-    if (!model) return;
+    this.ghostPage = page;
+    if (!page) return;
     const ghost = new Group();
     ghost.matrixAutoUpdate = false;
     ghost.visible = false;
-    this.addInstances(ghost, undefined, undefined, model, this.ghostMaterials);
+    this.addInstances(ghost, undefined, undefined, page, this.ghostMaterials);
     this.ghost = ghost;
     this.scene.add(ghost);
   }
 
-  private rebuildGhost(): void {
+  private rebuildGhost(page: InstancePage): void {
     const pose = this.ghostPose;
-    this.setGhost(this.ghostSource);
+    this.showGhost(page);
     if (pose) this.placeGhost(...pose);
   }
 
@@ -1195,9 +1148,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     for (const vehicle of this.vehicles.keys()) this.removeVehicle(vehicle);
   }
 
-  private buildChunk(chunk: ChunkInstances): ChunkRecord {
+  private buildChunk(page: InstancePage): ChunkRecord {
     const group = new Group();
-    group.position.set(chunk.originX - this.renderOriginX, 0, chunk.originZ - this.renderOriginZ);
     group.matrixAutoUpdate = false;
     group.updateMatrix();
     const detailed = new Group();
@@ -1211,34 +1163,30 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       detailed,
       { shellBodies, midShells, coarseStuds },
       shadowCasters,
-      chunk,
+      page,
       this.materials,
     );
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let minZ = Number.POSITIVE_INFINITY;
     let maxZ = Number.NEGATIVE_INFINITY;
-    const extend = (matrices: Float32Array, count: number): void => {
-      for (let i = 0; i < count; i++) {
-        const x = chunk.originX + (matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0);
-        const z = chunk.originZ + (matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0);
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minZ = Math.min(minZ, z);
-        maxZ = Math.max(maxZ, z);
-      }
-    };
-    extend(chunk.matrices, chunk.count);
+    for (let i = 0; i < page.partCount; i++) {
+      const x = page.originX + (page.matrices[i * MATRIX4_FLOATS + TRANSLATION_X] ?? 0);
+      const z = page.originZ + (page.matrices[i * MATRIX4_FLOATS + TRANSLATION_Z] ?? 0);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
     group.updateMatrixWorld(true);
     const record = new ChunkRecord(
+      page,
       group,
       detailed,
       shellBodies,
       midShells,
       coarseStuds,
       shadowCasters ?? new Group(),
-      chunk.originX,
-      chunk.originZ,
       minX,
       maxX,
       minZ,
@@ -1248,111 +1196,53 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     return record;
   }
 
-  private keyInstances(
-    select: ArrayLike<number>,
-    colorIndex: Uint16Array,
-    total: number,
-    selectCount: number,
-  ): InstanceKeys {
-    const slots = this.alphaSlots.length;
-    const keys = new Uint32Array(total);
-    for (let i = 0; i < total; i++) {
-      keys[i] = (select[i] ?? 0) * slots + (this.colorAlphaSlot[colorIndex[i] ?? 0] ?? 0);
-    }
-    return { keys, counts: countBy(keys, total, selectCount * slots) };
+  private pageAttributes(page: InstancePage, start: number, end: number): InstanceAttributes {
+    return {
+      matrices: new InstancedBufferAttribute(matricesOf(page, start, end), MATRIX4_FLOATS),
+      colors: new InstancedBufferAttribute(linearColorsOf(page, start, end), COLOR_CHANNELS),
+    };
   }
 
   private addInstances(
     detailed: Group,
     tiers: TierLayers | undefined,
     shadowCasters: Group | undefined,
-    chunk: ChunkInstances,
+    page: InstancePage,
     materials: PlasticMaterials,
   ): void {
-    const slots = this.alphaSlots.length;
-    const { keys, counts } = this.keyInstances(
-      chunk.partIndex,
-      chunk.colorIndex,
-      chunk.count,
-      this.detailedLevel.parts.length,
-    );
-    const tiered = tiers !== undefined && this.tiered;
-    const tierKeys = tiered ? classKeys(keys, chunk) : new Uint32Array(0);
-    const tierCounts = countBy(tierKeys, tierKeys.length, counts.length * INSTANCE_CLASSES);
-    for (let key = 0; key < counts.length; key++) {
-      const count = counts[key] ?? 0;
-      if (count === 0) continue;
-      const p = Math.floor(key / slots);
-      const alpha = this.alphaSlots[key % slots] ?? OPAQUE_ALPHA;
-      const attributes = this.instanceAttributes(
-        keys,
-        chunk.count,
-        key,
-        count,
-        chunk.matrices,
-        chunk.colorIndex,
-      );
-      this.addPartMeshes(
-        detailed,
-        this.detailedLevel.parts[p],
-        alpha,
-        count,
-        attributes,
-        materials,
-      );
+    const runs = page.partRuns;
+    const count = runs.shape.length;
+    let first = 0;
+    while (first < count) {
+      const p = runs.shape[first] ?? 0;
+      const slot = runs.alphaSlot[first] ?? 0;
+      const next = groupRunEnd(runs, first);
+      const alpha = this.alphaSlots[slot] ?? OPAQUE_ALPHA;
+      const start = runs.start[first] ?? 0;
+      const end = runs.end[next - 1] ?? 0;
+      const attributes = this.pageAttributes(page, start, end);
+      const geometries = this.detailedLevel.parts[p];
+      this.addPartMeshes(detailed, geometries, alpha, end - start, attributes, materials);
       if (shadowCasters && !this.tiered && alpha === OPAQUE_ALPHA) {
-        this.addShadowCasters(shadowCasters, this.detailedLevel.parts[p], count, attributes);
+        this.addShadowCasters(shadowCasters, geometries, end - start, attributes);
       }
-      if (!tiered) continue;
-      for (let c = 0; c < INSTANCE_CLASSES; c++) {
-        const tierKey = key * INSTANCE_CLASSES + c;
-        const tierCount = tierCounts[tierKey] ?? 0;
-        if (tierCount === 0) continue;
-        const tierAttributes =
-          tierCount === count
-            ? attributes
-            : this.instanceAttributes(
-                tierKeys,
-                chunk.count,
-                tierKey,
-                tierCount,
-                chunk.matrices,
-                chunk.colorIndex,
-              );
-        const level = (c & CLASS_NOT_UPRIGHT) !== 0 ? this.detailedLevel : this.farLevel;
-        const layer = (c & CLASS_VOXELIZED) !== 0 ? tiers.midShells : tiers.shellBodies;
-        const geometries = level.parts[p] ?? this.detailedLevel.parts[p];
-        this.addPartMeshes(layer, geometries, alpha, tierCount, tierAttributes, materials);
+      if (tiers && this.tiered) {
+        for (let run = first; run < next; run++) {
+          const c = runs.instanceClass[run] ?? 0;
+          const runStart = runs.start[run] ?? 0;
+          const runEnd = runs.end[run] ?? 0;
+          const runAttributes =
+            next - first === 1 ? attributes : this.pageAttributes(page, runStart, runEnd);
+          const level = isNotUpright(c) ? this.detailedLevel : this.farLevel;
+          const layer = isVoxelized(c) ? tiers.midShells : tiers.shellBodies;
+          const shell = level.parts[p] ?? geometries;
+          this.addPartMeshes(layer, shell, alpha, runEnd - runStart, runAttributes, materials);
+        }
       }
+      first = next;
     }
-    if (shadowCasters && this.tiered) this.addBoundsProxies(shadowCasters, chunk);
-    this.addStudMeshes(chunk.studs, detailed, tiers?.coarseStuds, materials);
-  }
-
-  private instanceAttributes(
-    select: ArrayLike<number>,
-    total: number,
-    key: number,
-    count: number,
-    sourceMatrices: Float32Array,
-    colorIndex: Uint16Array,
-  ): InstanceAttributes {
-    const matrices = new Float32Array(count * MATRIX4_FLOATS);
-    const colors = new Float32Array(count * COLOR_CHANNELS);
-    let slot = 0;
-    for (let i = 0; i < total; i++) {
-      if (select[i] !== key) continue;
-      writeMatrix4(sourceMatrices, i, matrices, slot);
-      const c = (colorIndex[i] ?? 0) * COLOR_CHANNELS;
-      colors[slot * COLOR_CHANNELS] = this.linearColors[c] ?? 0;
-      colors[slot * COLOR_CHANNELS + 1] = this.linearColors[c + 1] ?? 0;
-      colors[slot * COLOR_CHANNELS + 2] = this.linearColors[c + 2] ?? 0;
-      slot++;
-    }
-    return {
-      matrices: new InstancedBufferAttribute(matrices, MATRIX4_FLOATS),
-      colors: new InstancedBufferAttribute(colors, COLOR_CHANNELS),
-    };
+    if (shadowCasters && this.tiered) this.addBoundsProxies(shadowCasters, page);
+    this.addStudMeshes(page, detailed, tiers?.coarseStuds, materials);
   }
 
   private addPartMeshes(
@@ -1388,34 +1278,34 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
   }
 
-  private addBoundsProxies(layer: Group, chunk: ChunkInstances): void {
+  private addBoundsProxies(layer: Group, page: InstancePage): void {
     let count = 0;
-    for (let i = 0; i < chunk.count; i++) {
-      if ((this.colorAlphaSlot[chunk.colorIndex[i] ?? 0] ?? 0) === 0) count++;
+    for (let i = 0; i < page.partCount; i++) {
+      if ((this.colorAlphaSlot[page.colorIndex[i] ?? 0] ?? 0) === 0) count++;
     }
     if (count === 0) return;
     const matrices = new Float32Array(count * MATRIX4_FLOATS);
-    const m = chunk.matrices;
+    const m = page.matrices;
     const b = this.partBounds;
     let slot = 0;
-    for (let i = 0; i < chunk.count; i++) {
-      if ((this.colorAlphaSlot[chunk.colorIndex[i] ?? 0] ?? 0) !== 0) continue;
-      const s = i * INSTANCE_MATRIX_FLOATS;
-      const o = (chunk.partIndex[i] ?? 0) * BOUNDS_FLOATS;
+    for (let i = 0; i < page.partCount; i++) {
+      if ((this.colorAlphaSlot[page.colorIndex[i] ?? 0] ?? 0) !== 0) continue;
+      const s = i * MATRIX4_FLOATS;
+      const o = (page.shape[i] ?? 0) * BOUNDS_FLOATS;
       const t = slot * MATRIX4_FLOATS;
       for (let axis = 0; axis < 3; axis++) {
         const size = (b[o + 3 + axis] ?? 0) - (b[o + axis] ?? 0);
-        matrices[t + axis * 4] = (m[s + axis] ?? 0) * size;
-        matrices[t + axis * 4 + 1] = (m[s + 4 + axis] ?? 0) * size;
-        matrices[t + axis * 4 + 2] = (m[s + 8 + axis] ?? 0) * size;
+        for (let row = 0; row < 3; row++) {
+          matrices[t + axis * 4 + row] = (m[s + axis * 4 + row] ?? 0) * size;
+        }
       }
       for (let row = 0; row < 3; row++) {
-        let centre = m[s + row * 4 + 3] ?? 0;
+        let centre = m[s + TRANSLATION_X + row] ?? 0;
         for (let axis = 0; axis < 3; axis++) {
           const mid = ((b[o + axis] ?? 0) + (b[o + 3 + axis] ?? 0)) / 2;
-          centre += (m[s + row * 4 + axis] ?? 0) * mid;
+          centre += (m[s + axis * 4 + row] ?? 0) * mid;
         }
-        matrices[t + 12 + row] = centre;
+        matrices[t + TRANSLATION_X + row] = centre;
       }
       matrices[t + 15] = 1;
       slot++;
@@ -1456,38 +1346,26 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private addStudMeshes(
-    studs: StudInstances,
+    page: InstancePage,
     detailed: Group,
     coarse: Group | undefined,
     materials: PlasticMaterials,
   ): void {
-    const primitiveCount = this.detailedLevel.studs.length;
-    const slots = this.alphaSlots.length;
-    const { keys, counts } = this.keyInstances(
-      studs.primitiveIndex,
-      studs.colorIndex,
-      studs.count,
-      primitiveCount,
-    );
-    for (let key = 0; key < counts.length; key++) {
-      const count = counts[key] ?? 0;
-      const k = Math.floor(key / slots);
+    const studs = page.studRuns;
+    for (let run = 0; run < studs.shape.length; run++) {
+      const k = studs.shape[run] ?? 0;
       const detailedGeometry = this.detailedLevel.studs[k];
-      if (count === 0 || !detailedGeometry) continue;
-      const material = materials.instanceColored(this.alphaSlots[key % slots] ?? OPAQUE_ALPHA);
-      const attributes = this.instanceAttributes(
-        keys,
-        studs.count,
-        key,
-        count,
-        studs.matrices,
-        studs.colorIndex,
-      );
+      if (!detailedGeometry) continue;
+      const alpha = this.alphaSlots[studs.alphaSlot[run] ?? 0] ?? OPAQUE_ALPHA;
+      const material = materials.instanceColored(alpha);
+      const start = studs.start[run] ?? 0;
+      const end = studs.end[run] ?? 0;
+      const attributes = this.pageAttributes(page, start, end);
       detailed.add(
         this.instancedMesh(
           detailedGeometry,
           material,
-          count,
+          end - start,
           attributes.matrices,
           attributes.colors,
         ),
@@ -1498,7 +1376,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
           this.instancedMesh(
             coarseGeometry,
             material,
-            count,
+            end - start,
             attributes.matrices,
             attributes.colors,
           ),
@@ -1617,14 +1495,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.renderOriginZ = chunkZ * CHUNK_LDU;
     for (let i = 0; i < this.chunkList.length; i++) {
       const record = this.chunkList[i];
-      if (!record) continue;
-      record.group.position.set(
-        record.originX - this.renderOriginX,
-        0,
-        record.originZ - this.renderOriginZ,
-      );
-      record.group.updateMatrix();
-      record.group.updateMatrixWorld(true);
+      if (record) this.placeGroup(record.group, record.page.originX, record.page.originZ);
     }
     for (let i = 0; i < this.farModelList.length; i++) {
       const node = this.farModelList[i];
@@ -1678,7 +1549,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const stage = await (this.thumbnailStage ??= this.createThumbnailStage());
     stage.renderer.setSize(sizePx, sizePx, false);
     const group = new Group();
-    this.addInstances(group, undefined, undefined, model, this.materials);
+    const page = pageOf(model, this.linearColors, this.colorAlphaSlot);
+    this.addInstances(group, undefined, undefined, page, this.materials);
     group.position.set(
       -(box.minX + box.maxX) / 2,
       -(box.minY + box.maxY) / 2,
