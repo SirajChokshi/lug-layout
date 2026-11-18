@@ -210,6 +210,7 @@ export interface IPartBundleLoader {
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord>;
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord>;
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh>;
+  setPartMeshPriority(lod: BundleLod, file: string, priority: FetchPriority): void;
   loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null>;
   loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>>;
   loadManifest(lod: BundleLod): Promise<BundleManifest>;

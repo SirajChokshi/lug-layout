@@ -59,5 +59,6 @@ test("road plates refuse overlaps and mismatched lanes, and join exactly when th
   expect(await editor.counter("road-joined")).toBeGreaterThan(0);
   expect(await editor.counter("refused")).toBe(1 + QUARTER_TURNS.length);
 
+  await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("road-refusals.png") });
 });
