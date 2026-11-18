@@ -7,7 +7,7 @@ use std::thread;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use self::below::{rays_in, BelowSearch};
+use self::below::{certifiable_faces, coordinates_bounded, BelowCertifier, BelowStud};
 use self::instance_tree::InstanceTree;
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
 use self::triangle_tree::{TriangleHit, TriangleTree};
@@ -82,6 +82,8 @@ impl Opacity {
 pub struct PartSolid {
     triangles: Vec<[Vec3; 3]>,
     tree_colors: Vec<u32>,
+    tree_points: Vec<[Vec3; 3]>,
+    certifiable: Vec<bool>,
     tree: TriangleTree,
     min: Vec3,
     max: Vec3,
@@ -110,8 +112,11 @@ impl PartSolid {
             .bounds()
             .unwrap_or([[0.0; 3]; 2])
             .map(|corner| corner.map(f64::from));
+        let tree_points: Vec<[Vec3; 3]> = order.iter().map(|&t| triangles[t]).collect();
         PartSolid {
             tree_colors: order.iter().map(|&t| colors[t]).collect(),
+            certifiable: certifiable_faces(&tree_points, &tree),
+            tree_points,
             triangles,
             tree,
             min,
@@ -166,8 +171,6 @@ pub struct StudShape {
     pub height: f64,
     pub radius: f64,
 }
-
-type Fan = [Vec3; BELOW_ELEVATION_STEPS];
 
 #[derive(Clone, Copy)]
 struct StudFrame {
@@ -233,30 +236,6 @@ impl StudFrame {
             }
         }
         radials
-    }
-
-    fn all_fans_below(&self, shape: StudShape, mut closed: impl FnMut(Vec3, &Fan) -> bool) -> bool {
-        let elevations: [(f64, f64); BELOW_ELEVATION_STEPS] = std::array::from_fn(|index| {
-            let step = index + 1;
-            let elevation = -BELOW_ELEVATION_STEP_DEGREES * step as f64;
-            elevation.to_radians().sin_cos()
-        });
-        for radial in self.radials() {
-            let fan = elevations
-                .map(|(rise, run)| [0, 1, 2].map(|axis| radial[axis] * run + self.up[axis] * rise));
-            for level in 0..BELOW_HEIGHT_STEPS {
-                let fraction = (level as f64 + 0.5) / BELOW_HEIGHT_STEPS as f64;
-                let origin = self.at(
-                    shape.height * fraction,
-                    radial,
-                    shape.radius * BELOW_START_OUTSIDE,
-                );
-                if !closed(origin, &fan) {
-                    return false;
-                }
-            }
-        }
-        true
     }
 }
 
@@ -334,6 +313,10 @@ impl ModelCover {
 
 fn translation(matrix: &Affine) -> Vec3 {
     [matrix.m[3], matrix.m[7], matrix.m[11]]
+}
+
+fn rotation_bits(matrix: &Affine) -> [u64; 9] {
+    [0, 1, 2, 4, 5, 6, 8, 9, 10].map(|k| matrix.m[k].to_bits())
 }
 
 fn up_of(matrix: &Affine) -> Vec3 {
@@ -415,10 +398,6 @@ impl CellRange {
     fn shares_cell(&self, other: &CellRange) -> bool {
         (0..3).all(|axis| self.lo[axis].max(other.lo[axis]) <= self.hi[axis].min(other.hi[axis]))
     }
-
-    fn holds(&self, cell: [i64; 3]) -> bool {
-        (0..3).all(|axis| self.lo[axis] <= cell[axis] && cell[axis] <= self.hi[axis])
-    }
 }
 
 struct Segment {
@@ -446,6 +425,8 @@ struct Placed {
     part: usize,
     color: u32,
     inverse: Affine,
+    translation: Vec3,
+    rotation: [u64; 9],
     up: Vec3,
     cells: CellRange,
     inherited_opaque: bool,
@@ -477,27 +458,13 @@ struct Blocker {
     hit: TriangleHit,
 }
 
-struct FanRays {
-    origin: Vec3,
-    cell: [i64; 3],
-    ends: Fan,
-}
-
-impl FanRays {
-    fn new(origin: Vec3, fan: &Fan, reach: f64) -> Self {
-        FanRays {
-            origin,
-            cell: origin.map(broad_cell),
-            ends: fan.map(|direction| [0, 1, 2].map(|axis| origin[axis] + direction[axis] * reach)),
-        }
-    }
-}
-
 struct ModelSolids<'a> {
     solids: &'a [PartSolid],
     materials: Vec<Vec<Material>>,
     placed: Vec<Option<Placed>>,
     index: InstanceTree,
+    anchors: FxHashMap<[i64; 3], Vec<usize>>,
+    coordinates_bounded: bool,
 }
 
 impl<'a> ModelSolids<'a> {
@@ -514,6 +481,7 @@ impl<'a> ModelSolids<'a> {
             }
         }
         let mut members = Vec::new();
+        let mut anchors: FxHashMap<[i64; 3], Vec<usize>> = FxHashMap::default();
         let placed = instances
             .iter()
             .zip(boxes)
@@ -522,10 +490,17 @@ impl<'a> ModelSolids<'a> {
                 let inverse = inverse(instance.matrix)?;
                 let inherited_opaque = opacity.opaque(instance.color);
                 members.push((i, Bounds { min, max }.padded(WELD_EPSILON_LDU)));
+                let translation = translation(instance.matrix);
+                anchors
+                    .entry(translation.map(broad_cell))
+                    .or_default()
+                    .push(i);
                 Some(Placed {
                     part: instance.part,
                     color: instance.color,
                     inverse,
+                    translation,
+                    rotation: rotation_bits(instance.matrix),
                     up: up_of(instance.matrix),
                     cells: CellRange::welded(min, max),
                     inherited_opaque,
@@ -540,6 +515,8 @@ impl<'a> ModelSolids<'a> {
             materials,
             placed,
             index: InstanceTree::build(members),
+            anchors,
+            coordinates_bounded: coordinates_bounded(boxes),
         }
     }
 
@@ -550,18 +527,6 @@ impl<'a> ModelSolids<'a> {
 
     fn tree(&self, placed: &Placed) -> &TriangleTree {
         &self.solids[placed.part].tree
-    }
-
-    fn confirms(&self, blocker: Blocker, segment: &Segment) -> bool {
-        let Some(placed) = &self.placed[blocker.instance] else {
-            return false;
-        };
-        placed.cells.shares_cell(&segment.cells)
-            && placed.local(segment).is_some_and(|local| {
-                self.tree(placed)
-                    .anchored(local.origin, blocker.hit)
-                    .confirms(local.direction, local.reach)
-            })
     }
 
     fn first_blocker(&self, instance: usize, segment: &Segment) -> Option<Blocker> {
@@ -581,31 +546,6 @@ impl<'a> ModelSolids<'a> {
             found.is_some()
         });
         found
-    }
-
-    fn confirmed_rays(&self, blocker: Blocker, rays: &FanRays, pending: u64) -> u64 {
-        let Some(placed) = &self.placed[blocker.instance] else {
-            return 0;
-        };
-        let local_origin = placed.inverse.apply(rays.origin);
-        let anchored = self.tree(placed).anchored(local_origin, blocker.hit);
-        let every_ray_shares = placed.cells.holds(rays.cell);
-        rays_in(pending)
-            .filter(|&ray| {
-                let end = rays.ends[ray];
-                (every_ray_shares
-                    || placed
-                        .cells
-                        .shares_cell(&CellRange::spanned(rays.origin, end)))
-                    && placed
-                        .local_between(local_origin, end)
-                        .is_some_and(|local| anchored.confirms(local.direction, local.reach))
-            })
-            .fold(0, |confirmed, ray| confirmed | 1 << ray)
-    }
-
-    fn closed_below(&self, stud: StudFrame, shape: StudShape) -> bool {
-        BelowSearch::new(self).closed(stud, shape)
     }
 }
 
@@ -639,7 +579,7 @@ impl Coverers<'_, '_> {
         }
     }
 
-    fn covers(&mut self, stud: StudFrame, owner: Option<usize>) -> Option<CoverKind> {
+    fn covers(&mut self, stud: StudFrame, owner: Option<usize>) -> Option<(CoverKind, usize)> {
         let StudFrame { base, up, .. } = stud;
         let probes = stud.probes(self.stud);
         let model = self.model;
@@ -687,8 +627,8 @@ impl Coverers<'_, '_> {
                     centre = enclosure;
                 }
             }
-            if centre.is_some() {
-                found = centre;
+            if let Some(kind) = centre {
+                found = Some((kind, i));
                 break;
             }
         }
@@ -709,28 +649,23 @@ fn overlapping_cells(lo: f64, hi: f64, edge: f64, count: usize) -> (usize, usize
     (first.min(end), end)
 }
 
-fn closed_below_all(
-    model: &ModelSolids,
-    candidates: &[(usize, StudFrame)],
-    shape: StudShape,
-) -> Vec<bool> {
+fn closed_below_all(model: &ModelSolids, candidates: &[BelowStud], shape: StudShape) -> Vec<bool> {
     if candidates.is_empty() {
         return Vec::new();
     }
     let workers = thread::available_parallelism().map_or(1, |n| n.get());
     if workers == 1 {
-        return candidates
-            .iter()
-            .map(|(_, stud)| model.closed_below(*stud, shape))
-            .collect();
+        let mut below = BelowCertifier::new(model, shape);
+        return candidates.iter().map(|stud| below.closed(stud)).collect();
     }
     let chunk = candidates.len().div_ceil(workers);
     let mut closed = vec![false; candidates.len()];
     thread::scope(|scope| {
         for (slice, out) in candidates.chunks(chunk).zip(closed.chunks_mut(chunk)) {
             scope.spawn(move || {
-                for ((_, stud), result) in slice.iter().zip(out.iter_mut()) {
-                    *result = model.closed_below(*stud, shape);
+                let mut below = BelowCertifier::new(model, shape);
+                for (stud, result) in slice.iter().zip(out.iter_mut()) {
+                    *result = below.closed(stud);
                 }
             });
         }
@@ -767,24 +702,33 @@ pub fn model_cover(
     let mut candidates = Vec::new();
     for (owner, instance) in instances.iter().enumerate() {
         for stud_matrix in instance.studs {
-            let frame = StudFrame::of(&instance.matrix.then(stud_matrix));
-            if coverers.covers(frame, Some(owner)).is_some() {
-                candidates.push((visible.len(), frame));
+            let world = instance.matrix.then(stud_matrix);
+            let frame = StudFrame::of(&world);
+            if let Some((_, coverer)) = coverers.covers(frame, Some(owner)) {
+                candidates.push((
+                    visible.len(),
+                    BelowStud {
+                        frame,
+                        rotation: rotation_bits(&world),
+                        owner,
+                        coverer,
+                    },
+                ));
             }
             visible.push(true);
         }
     }
-    let candidates: Vec<(usize, StudFrame)> = candidates
+    let (indices, candidates): (Vec<usize>, Vec<BelowStud>) = candidates
         .into_iter()
         .enumerate()
         .filter(|(candidate, _)| shard.takes(*candidate))
         .map(|(_, taken)| taken)
-        .collect();
+        .unzip();
     let closed = closed_below_all(&model, &candidates, stud);
     let mut open_below = 0;
-    for ((index, _), closed) in candidates.iter().zip(closed) {
+    for (&index, closed) in indices.iter().zip(closed) {
         if closed {
-            visible[*index] = false;
+            visible[index] = false;
         } else {
             open_below += 1;
         }
@@ -890,8 +834,8 @@ fn model_cells(
             let base = [centre(0, i), bottom_y, centre(1, j)];
             match coverers.covers(StudFrame::upright_at(base), None) {
                 None => {}
-                Some(CoverKind::AntiStud) => footprint.push(cell),
-                Some(CoverKind::Flat) => {
+                Some((CoverKind::AntiStud, _)) => footprint.push(cell),
+                Some((CoverKind::Flat, _)) => {
                     footprint.push(cell);
                     flat.push(cell);
                 }
@@ -1110,17 +1054,29 @@ mod tests {
     }
 
     fn closed_below_testing_every_instance(model: &ModelSolids, stud: StudFrame) -> bool {
-        stud.all_fans_below(STUD, |origin, fan| {
-            fan.iter().all(|direction| {
-                let segment = Segment::new(origin, *direction, BELOW_REACH_LDU);
-                (0..model.placed.len())
-                    .any(|instance| model.first_blocker(instance, &segment).is_some())
+        stud.radials().into_iter().all(|radial| {
+            (0..BELOW_HEIGHT_STEPS).all(|level| {
+                let fraction = (level as f64 + 0.5) / BELOW_HEIGHT_STEPS as f64;
+                let origin = stud.at(
+                    STUD.height * fraction,
+                    radial,
+                    STUD.radius * BELOW_START_OUTSIDE,
+                );
+                (1..=BELOW_ELEVATION_STEPS).all(|step| {
+                    let (rise, run) = (-BELOW_ELEVATION_STEP_DEGREES * step as f64)
+                        .to_radians()
+                        .sin_cos();
+                    let direction = [0, 1, 2].map(|axis| radial[axis] * run + stud.up[axis] * rise);
+                    let segment = Segment::new(origin, direction, BELOW_REACH_LDU);
+                    (0..model.placed.len())
+                        .any(|instance| model.first_blocker(instance, &segment).is_some())
+                })
             })
         })
     }
 
     #[test]
-    fn remembered_blockers_and_the_instance_tree_close_exactly_the_studs_every_instance_closes() {
+    fn the_certifier_closes_exactly_the_studs_casting_through_every_instance_closes() {
         let solids = [
             solid(
                 [-120.0, -16.0, -120.0],
@@ -1180,20 +1136,23 @@ mod tests {
             enclosed: FxHashMap::default(),
             nearby: Vec::new(),
         };
+        let mut certifier = BelowCertifier::new(&model, STUD);
         let mut decided = [0, 0];
         for (owner, instance) in instances.iter().enumerate() {
             for stud in instance.studs {
-                let frame = StudFrame::of(&instance.matrix.then(stud));
-                if coverers.covers(frame, Some(owner)).is_none() {
+                let world = instance.matrix.then(stud);
+                let frame = StudFrame::of(&world);
+                let Some((_, coverer)) = coverers.covers(frame, Some(owner)) else {
                     continue;
-                }
+                };
+                let below = BelowStud {
+                    frame,
+                    rotation: rotation_bits(&world),
+                    owner,
+                    coverer,
+                };
                 let closed = closed_below_testing_every_instance(&model, frame);
-                assert_eq!(
-                    model.closed_below(frame, STUD),
-                    closed,
-                    "stud at {:?}",
-                    frame.base
-                );
+                assert_eq!(certifier.closed(&below), closed, "stud at {:?}", frame.base);
                 decided[usize::from(closed)] += 1;
             }
         }
