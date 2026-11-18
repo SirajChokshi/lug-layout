@@ -22,6 +22,7 @@ export interface PartReading {
   readonly triangles: Float32Array;
 }
 
+const PINNED_LIBRARY_KEY = "held-out-pinned";
 const GLB_HEADER_BYTES = 12;
 const CHUNK_HEADER_BYTES = 8;
 const COMPONENT_FLOAT = 5126;
@@ -141,16 +142,17 @@ export class PartReader {
     vocabulary: ReadonlyArray<string>,
   ): Promise<Map<string, Glb>> {
     const { files, absent } = await this.library.files(references);
-    const output = await new BrickCompiler(this.bundle.compiler).compile({
-      lod: this.bundle.job.lod,
-      studPrimitives: vocabulary,
-      unofficialAllowlist: this.bundle.job.unofficialAllowlist,
-      files,
-      absent,
-      parts: references,
-      model: "",
-      inlineChecks: [],
-    });
+    const output = new BrickCompiler(this.bundle.compiler).compile(
+      {
+        lod: this.bundle.job.lod,
+        studPrimitives: vocabulary,
+        unofficialAllowlist: this.bundle.job.unofficialAllowlist,
+        parts: references,
+        model: "",
+        inlineChecks: [],
+      },
+      { key: PINNED_LIBRARY_KEY, files: new Map(Object.entries(files)), absent: new Set(absent) },
+    );
     const out = new Map<string, Glb>();
     for (const outcome of output.parts) {
       if (outcome.status === "compiled") out.set(outcome.reference, readGlb(outcome.glb));
