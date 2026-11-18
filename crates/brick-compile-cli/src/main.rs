@@ -5,16 +5,16 @@ use std::process::ExitCode;
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
-use brick_compile::compile::{modified_note, MODIFIED_NOTE};
+use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
 use brick_compile::connect::{
     record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
     PrimitiveTable, SectionVocabulary, ShadowPatches, ShadowSnaps, TierRecord,
 };
-use brick_compile::cover::ModelCover;
+use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
-use brick_compile::model::{bake_model, ModelInstance};
+use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
@@ -255,7 +255,17 @@ fn vehicle_signatures(palette: &Value) -> Result<VehicleSignatures, String> {
     })
 }
 
-fn rail_head_bands(geometry: &Value) -> Result<Vec<RailHeadBand>, String> {
+fn is_positive_decimal(text: &str) -> bool {
+    !text.starts_with('-') && text.bytes().any(|digit| (b'1'..=b'9').contains(&digit))
+}
+
+struct RailHeadText {
+    rail_part: String,
+    inner: String,
+    outer: String,
+}
+
+fn rail_head_texts(geometry: &Value) -> Result<Vec<RailHeadText>, String> {
     geometry["rails"]
         .as_array()
         .ok_or("geometry.rails must be an array")?
@@ -267,18 +277,19 @@ fn rail_head_bands(geometry: &Value) -> Result<Vec<RailHeadBand>, String> {
             let heads = rail["railHeads"]
                 .as_array()
                 .ok_or("rails[].railHeads must be an array")?;
+            let text = |head: &Value, end: &str| {
+                head[end].as_str().map(str::to_string).ok_or(format!(
+                    "rail {part}: railHeads[].{end} must be a decimal string"
+                ))
+            };
             let outward = heads
                 .iter()
-                .find(|head| head["from"].as_f64().is_some_and(|from| from > 0.0))
+                .find(|head| head["from"].as_str().is_some_and(is_positive_decimal))
                 .ok_or(format!("rail {part} has no rail head on the +z side"))?;
-            Ok(RailHeadBand {
+            Ok(RailHeadText {
                 rail_part: format!("ldraw:{}", stem(part)),
-                inner: outward["from"]
-                    .as_f64()
-                    .ok_or("railHeads[].from must be a number")?,
-                outer: outward["to"]
-                    .as_f64()
-                    .ok_or("railHeads[].to must be a number")?,
+                inner: text(outward, "from")?,
+                outer: text(outward, "to")?,
             })
         })
         .collect()
@@ -476,6 +487,7 @@ fn run(args: &Args) -> Result<(), String> {
         stud_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
         technic: TechnicPrimitives::default(),
+        rolling_mode: RollingMode::Skip,
     };
     let compiler = match &args.compiler {
         Some(path) => {
@@ -495,16 +507,25 @@ fn run(args: &Args) -> Result<(), String> {
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
         technic,
+        rolling_mode: RollingMode::ReadBy(required_stud_roundness(&library, &stud_primitives)?),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
     let ldconfig = library
         .source(LDCONFIG)
         .ok_or("LDConfig.ldr is missing from the LDraw library")?;
+    let geometry: Value = serde_json::from_slice(
+        &fs::read(&args.geometry).map_err(|e| format!("{}: {e}", args.geometry.display()))?,
+    )
+    .map_err(|e| e.to_string())?;
+    let table_depth = geometry["tablePlane"]["depthBelowTopLdu"]
+        .as_f64()
+        .ok_or("geometry.tablePlane.depthBelowTopLdu must be a number")?;
     let mut baker = ModelBaker::new(
         &library,
         stud_primitives.clone(),
         unofficial_allowlist,
         translucent_codes(&parse_ldconfig(ldconfig)),
+        table_depth,
     )
     .map_err(|e| e.to_string())?;
 
@@ -552,10 +573,6 @@ fn run(args: &Args) -> Result<(), String> {
         shapes.push(shape);
     }
 
-    let geometry: Value = serde_json::from_slice(
-        &fs::read(&args.geometry).map_err(|e| format!("{}: {e}", args.geometry.display()))?,
-    )
-    .map_err(|e| e.to_string())?;
     for entry in geometry["trackEnds"]
         .as_array()
         .cloned()
@@ -570,14 +587,18 @@ fn run(args: &Args) -> Result<(), String> {
     }
 
     let signatures = vehicle_signatures(&palette)?;
-    let rails = rail_head_bands(&geometry)?;
+    let rail_texts = rail_head_texts(&geometry)?;
+    let rails = rail_texts
+        .iter()
+        .map(|rail| RailHeadBand::from_decimals(&rail.rail_part, &rail.inner, &rail.outer))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut compiler = compiler;
     if let Some(entry) = compiler.as_object_mut() {
         entry.insert(
             "vehicles".into(),
             json!({
                 "parts": palette["vehicleParts"],
-                "railHeads": rails
+                "railHeads": rail_texts
                     .iter()
                     .map(|rail| json!({ "railPart": rail.rail_part, "inner": rail.inner, "outer": rail.outer }))
                     .collect::<Vec<_>>(),
@@ -683,6 +704,8 @@ fn run(args: &Args) -> Result<(), String> {
         let mut instance_global_parts = Vec::with_capacity(drawn.len());
         let mut instance_colors = Vec::with_capacity(drawn.len());
         let mut instance_matrices = Vec::with_capacity(drawn.len() * 12);
+        let mut part_transforms = Vec::with_capacity(drawn.len() * 12);
+        let mut of_part = Vec::with_capacity(drawn.len());
         for instance in &drawn {
             let index = match part_index.get(&instance.part) {
                 Some(&index) => index,
@@ -710,6 +733,8 @@ fn run(args: &Args) -> Result<(), String> {
             instance_global_parts.push(index);
             instance_colors.push(instance.color);
             instance_matrices.extend(instance.matrix.m.map(|v| v as f32));
+            part_transforms.extend(instance.matrix.m);
+            of_part.push(submodel_index(instance.submodel));
         }
         let drawn_shapes: Vec<&LatticeShape> = instance_global_parts
             .iter()
@@ -734,7 +759,7 @@ fn run(args: &Args) -> Result<(), String> {
             Some(cached) => (cached["file"].clone(), cached["summary"].clone()),
             None => {
                 let cover = baker
-                    .cover(&drawn, lattice.as_ref())
+                    .cover(&drawn, lattice.as_ref(), CoverShard::WHOLE)
                     .map_err(|e| format!("{file}: {e}"))?;
                 let pair = (cover_json(&cover), cover_summary(&cover));
                 if let (Some(path), Lod::Standard) = (&cached, args.lod) {
@@ -784,6 +809,12 @@ fn run(args: &Args) -> Result<(), String> {
             "lattice": lattice_json,
             "cover": cover_file,
             "instances": { "part": instance_parts, "color": instance_colors, "matrix": instance_matrices },
+            "partTransforms": part_transforms,
+            "submodels": {
+                "parent": baked.submodel_parents(),
+                "matrices": baked.submodel_matrices(),
+                "ofPart": of_part,
+            },
             "vehicles": vehicles,
         });
         if !not_drawn.is_empty() {
@@ -944,5 +975,51 @@ fn main() -> ExitCode {
             eprintln!("brick-compile: {message}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rail_head_texts;
+    use serde_json::json;
+
+    fn rail(heads: serde_json::Value) -> serde_json::Value {
+        json!({ "rails": [{ "part": "custom-rail.dat", "railHeads": heads }] })
+    }
+
+    #[test]
+    fn a_rail_is_read_from_its_head_whose_from_is_a_positive_decimal() {
+        let geometry = rail(json!([
+            { "from": "-53.1", "to": "-46.9" },
+            { "from": "46.9", "to": "53.1" }
+        ]));
+        let rails = rail_head_texts(&geometry).expect("the rail has a positive head");
+        let head = &rails[0];
+        assert_eq!(
+            (
+                head.rail_part.as_str(),
+                head.inner.as_str(),
+                head.outer.as_str()
+            ),
+            ("ldraw:custom-rail", "46.9", "53.1")
+        );
+    }
+
+    #[test]
+    fn a_head_above_zero_is_positive_however_small_its_float_would_be() {
+        let tiny = format!("0.{}1", "0".repeat(399));
+        let geometry = rail(json!([{ "from": tiny, "to": "6.2" }]));
+        let rails = rail_head_texts(&geometry).expect("a head above zero is positive");
+        assert_eq!(rails[0].inner, tiny);
+    }
+
+    #[test]
+    fn a_rail_whose_heads_start_at_zero_or_below_is_refused() {
+        let geometry = rail(json!([
+            { "from": "-53.1", "to": "-46.9" },
+            { "from": "0", "to": "6.2" },
+            { "from": "0.000", "to": "6.2" }
+        ]));
+        assert!(rail_head_texts(&geometry).is_err());
     }
 }

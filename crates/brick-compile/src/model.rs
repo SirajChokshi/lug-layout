@@ -5,6 +5,7 @@ use crate::flatten::INHERIT_COLOR;
 use crate::ldraw::{self, Header, Line};
 
 const MAX_SUBMODEL_DEPTH: usize = 32;
+pub const MODEL_ROOT: i64 = -1;
 const MODEL_ORG: &str = "model";
 const UNOFFICIAL_PREFIX: &str = "unofficial_";
 const PART_FILE_EXTENSION: &str = ".dat";
@@ -17,12 +18,20 @@ pub struct ModelInstance {
     pub inline: Option<String>,
     pub color: u32,
     pub matrix: Affine,
+    pub submodel: Option<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SubmodelInstance {
+    pub parent: Option<usize>,
+    pub matrix: Affine,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BakedModel {
     pub sections: Vec<Header>,
     pub instances: Vec<ModelInstance>,
+    pub submodels: Vec<SubmodelInstance>,
     pub inline_parts: Vec<InlinePart>,
     pub loose_geometry: Vec<LooseGeometry>,
 }
@@ -45,6 +54,23 @@ pub struct InlinePart {
 pub enum ModelError {
     Empty,
     SubmodelCycle { name: String },
+}
+
+pub fn submodel_index(instance: Option<usize>) -> i64 {
+    instance.map_or(MODEL_ROOT, |i| i as i64)
+}
+
+impl BakedModel {
+    pub fn submodel_parents(&self) -> Vec<i64> {
+        self.submodels
+            .iter()
+            .map(|s| submodel_index(s.parent))
+            .collect()
+    }
+
+    pub fn submodel_matrices(&self) -> Vec<f64> {
+        self.submodels.iter().flat_map(|s| s.matrix.m).collect()
+    }
 }
 
 impl std::fmt::Display for ModelError {
@@ -177,19 +203,22 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
         0,
         &Affine::IDENTITY,
         INHERIT_COLOR,
+        None,
         0,
         &mut out,
     )?;
     let WalkOutput {
         mut instances,
+        mut submodels,
         inline_parts,
         reached,
         loose,
     } = out;
     for instance in &mut instances {
-        instance.matrix = Affine {
-            m: instance.matrix.ldraw_to_y_up().m.map(|v| v + 0.0),
-        };
+        instance.matrix = y_up(&instance.matrix);
+    }
+    for submodel in &mut submodels {
+        submodel.matrix = y_up(&submodel.matrix);
     }
     Ok(BakedModel {
         sections: sections
@@ -199,6 +228,7 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
             .map(|(_, section)| section.header.clone())
             .collect(),
         instances,
+        submodels,
         inline_parts: inline_parts
             .into_iter()
             .map(|(inline, official)| InlinePart { inline, official })
@@ -218,9 +248,16 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
     })
 }
 
+fn y_up(matrix: &Affine) -> Affine {
+    Affine {
+        m: matrix.ldraw_to_y_up().m.map(|v| v + 0.0),
+    }
+}
+
 #[derive(Default)]
 struct WalkOutput {
     instances: Vec<ModelInstance>,
+    submodels: Vec<SubmodelInstance>,
     inline_parts: BTreeMap<String, String>,
     reached: BTreeSet<usize>,
     loose: BTreeMap<usize, usize>,
@@ -237,6 +274,7 @@ fn walk(
     section: usize,
     matrix: &Affine,
     color: u32,
+    holder: Option<usize>,
     depth: usize,
     out: &mut WalkOutput,
 ) -> Result<(), ModelError> {
@@ -277,14 +315,31 @@ fn walk(
                     inline: Some(model.names[child].clone()),
                     color: child_color,
                     matrix: child_matrix,
+                    submodel: holder,
                 });
             }
-            Some(&child) => walk(model, child, &child_matrix, child_color, depth + 1, out)?,
+            Some(&child) => {
+                out.submodels.push(SubmodelInstance {
+                    parent: holder,
+                    matrix: child_matrix,
+                });
+                let instance = Some(out.submodels.len() - 1);
+                walk(
+                    model,
+                    child,
+                    &child_matrix,
+                    child_color,
+                    instance,
+                    depth + 1,
+                    out,
+                )?;
+            }
             None => out.instances.push(ModelInstance {
                 part: reference.clone(),
                 inline: None,
                 color: child_color,
                 matrix: child_matrix,
+                submodel: holder,
             }),
         }
     }

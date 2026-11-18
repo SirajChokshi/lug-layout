@@ -75,17 +75,14 @@ impl Params {
         };
         value
             .split_whitespace()
-            .map(|t| t.parse().map_err(|_| self.malformed(key, &value)))
+            .map(|t| finite(t).ok_or_else(|| self.malformed(key, &value)))
             .collect::<Result<Vec<f64>, _>>()
             .map(Some)
     }
 
     fn number(&mut self, key: &'static str) -> Result<f64, MetaError> {
         let value = self.required(key)?;
-        value
-            .trim()
-            .parse()
-            .map_err(|_| self.malformed(key, &value))
+        finite(&value).ok_or_else(|| self.malformed(key, &value))
     }
 
     fn flag(&mut self, key: &'static str) -> Result<bool, MetaError> {
@@ -171,9 +168,17 @@ fn parse_grid(value: &str) -> Option<Grid> {
         grid.counts[axis] = token.parse().ok().filter(|&count| count > 0)?;
     }
     for &axis in axes {
-        grid.steps[axis] = rest.next()?.parse().ok()?;
+        grid.steps[axis] = finite(rest.next()?)?;
     }
     rest.next().is_none().then_some(grid)
+}
+
+fn finite(token: &str) -> Option<f64> {
+    token
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
 }
 
 fn parse_sections(params: &mut Params) -> Result<Vec<Section>, MetaError> {
@@ -193,12 +198,8 @@ fn parse_sections(params: &mut Params) -> Result<Vec<Section>, MetaError> {
                 "L_" => SectionShape::FlexibleStart,
                 _ => return Err(params.malformed("secs", &value)),
             };
-            let radius = chunk[1]
-                .parse()
-                .map_err(|_| params.malformed("secs", &value))?;
-            let length = chunk[2]
-                .parse()
-                .map_err(|_| params.malformed("secs", &value))?;
+            let radius = finite(chunk[1]).ok_or_else(|| params.malformed("secs", &value))?;
+            let length = finite(chunk[2]).ok_or_else(|| params.malformed("secs", &value))?;
             Ok(Section {
                 shape,
                 radius,
@@ -233,7 +234,7 @@ fn parse_bounding(params: &mut Params) -> Result<Bounding, MetaError> {
     let value = params.required("bounding")?;
     let mut tokens = value.split_whitespace();
     let kind = tokens.next().unwrap_or_default().to_ascii_lowercase();
-    let numbers: Option<Vec<f64>> = tokens.map(|t| t.parse().ok()).collect();
+    let numbers: Option<Vec<f64>> = tokens.map(finite).collect();
     match (kind.as_str(), numbers.as_deref()) {
         ("sph", Some([radius])) => Ok(Bounding::Sphere { radius: *radius }),
         ("cube", Some([size])) => Ok(Bounding::Cube { size: *size }),
@@ -304,12 +305,9 @@ fn meta(params: &mut Params) -> Result<Option<Meta>, MetaError> {
             })?;
             let radius = match params.take("radius") {
                 None => None,
-                Some(value) => Some(
-                    value
-                        .trim()
-                        .parse()
-                        .map_err(|_| params.malformed("radius", &value))?,
-                ),
+                Some(value) => {
+                    Some(finite(&value).ok_or_else(|| params.malformed("radius", &value))?)
+                }
             };
             let shape = Shape::Finger {
                 first: params.gender("genderofs")?,

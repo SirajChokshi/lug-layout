@@ -89,6 +89,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.loadPartMesh(lod, file, priority);
   }
 
+  setPartMeshPriority(lod: BundleLod, file: string, priority: FetchPriority): void {
+    this.loader.setPartMeshPriority(lod, file, priority);
+  }
+
   loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
     return this.loader.loadFarModelMesh(name, priority);
   }
@@ -157,6 +161,7 @@ class TopDownBackend implements ISceneBackend {
   setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}

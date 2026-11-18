@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
@@ -201,6 +202,19 @@ fn axle_connector(at: &Affine, faces: &[MatingFace]) -> bool {
     })
 }
 
+fn inside_axle_connector(at: &Affine, faces: &[MatingFace]) -> bool {
+    let origin = y_up_point(translation(at));
+    let along = unit(y_up_point(column(at, 1)));
+    faces.iter().any(|f| {
+        let v = sub(origin, f.origin);
+        let off_axis = norm(sub(v, f.axis.map(|c| c * dot(v, f.axis))));
+        f.sections
+            .iter()
+            .any(|s| s.code == 1 && off_axis <= s.size + SAME_LDU)
+            && dot(f.axis, along).abs() >= 1.0 - PARALLEL
+    })
+}
+
 fn on_tube_axis(at: &Affine, face: &MatingFace) -> bool {
     let origin = y_up_point(translation(at));
     let along = unit(y_up_point(column(at, 1)));
@@ -284,6 +298,9 @@ fn issue_key(issue: &Issue) -> String {
         }
         Issue::UnresolvedInclude { reference, .. } => format!("unresolved include {reference}"),
         Issue::TooDeep { .. } => "too deep".to_string(),
+        Issue::MalformedGeometry { malformation, .. } => {
+            format!("malformed geometry: {malformation:?}")
+        }
         Issue::ScaledFixedShape { source, .. } => {
             format!(
                 "{}: scaled reference to a fixed-size snap",
@@ -325,6 +342,9 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
         Uninferred::UnknownFacing { .. } => "round feature without BFC facing",
         Uninferred::OpenArc { .. } => "inward open arc wider than half a circle",
         Uninferred::Unflattened => "part does not flatten",
+        Uninferred::Oversized { .. } => {
+            "geometry spanning more than 65,536 half-stud squares on some axis; on that axis it stays off the cell index and seeds no probes of its own"
+        }
     }
 }
 
@@ -700,6 +720,12 @@ fn table(rows: BTreeMap<String, usize>) -> Value {
     )
 }
 
+fn digest(value: &impl std::fmt::Debug) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    format!("{value:?}").hash(&mut hasher);
+    hasher.finish()
+}
+
 fn run() -> Result<(), String> {
     let mut values = HashMap::new();
     let mut raw = std::env::args().skip(1);
@@ -732,6 +758,10 @@ fn run() -> Result<(), String> {
         .as_str()
         .ok_or(format!("{inferred_path}: cavityProbe must be a part path"))?
         .to_string();
+    let axle_part = inferred_json["axleProbe"]
+        .as_str()
+        .ok_or(format!("{inferred_path}: axleProbe must be a part path"))?
+        .to_string();
     let focus: Vec<String> = values
         .get("--focus")
         .map(|v| v.split(',').map(str::to_string).collect())
@@ -740,9 +770,11 @@ fn run() -> Result<(), String> {
     let mut extractor = ConnectorExtractor::new(
         ShadowSnaps::new(&library, &shadow),
         PrimitiveConnectors::new(&library, primitive_table.clone()),
-        InferredFeatures::new(&library, vocabulary.clone(), &probe_part)?,
+        InferredFeatures::new(&library, vocabulary.clone(), &probe_part)?
+            .with_axle_probe(&axle_part)?,
     );
-    let mut tier4_alone = InferredFeatures::new(&library, vocabulary, &probe_part)?;
+    let mut tier4_alone =
+        InferredFeatures::new(&library, vocabulary, &probe_part)?.with_axle_probe(&axle_part)?;
     if let Some(out) = values.get("--unidentified-tube-receptors") {
         let mut primitives = PrimitiveConnectors::new(&library, primitive_table.clone());
         let mut rows: Vec<Value> = Vec::new();
@@ -806,6 +838,31 @@ fn run() -> Result<(), String> {
         }
         return fs::write(out, lines).map_err(|e| format!("{out}: {e}"));
     }
+    if let Some(out) = values.get("--digest") {
+        let mut lines = String::new();
+        let mut dump = String::new();
+        for part in &list {
+            let Some(path) = resolve_reference(&library, Lod::Standard, part) else {
+                continue;
+            };
+            let extraction = extractor.extract(&path);
+            let started = Instant::now();
+            let inference = tier4_alone.infer(&path);
+            let ms = started.elapsed().as_secs_f64() * 1000.0;
+            if values.contains_key("--dump") {
+                dump += &format!("{part}\n{extraction:#?}\n{inference:#?}\n");
+            }
+            lines += &format!(
+                "{part}\t{:016x}\t{:016x}\t{ms:.3}\n",
+                digest(&extraction),
+                digest(&inference)
+            );
+        }
+        if let Some(path) = values.get("--dump") {
+            fs::write(path, dump).map_err(|e| format!("{path}: {e}"))?;
+        }
+        return fs::write(out, lines).map_err(|e| format!("{out}: {e}"));
+    }
     if let Some(omr) = values.get("--omr") {
         let mut primitives = PrimitiveConnectors::new(&library, primitive_table.clone());
         let report = omr_tube_check(
@@ -830,6 +887,9 @@ fn run() -> Result<(), String> {
     let mut tier4_timings: Vec<(f64, String, usize)> = Vec::new();
     let mut focused: Vec<Value> = Vec::new();
     let mut axle_census = [0usize; 4];
+    let mut axle_by_primitive: BTreeMap<String, [usize; 2]> = BTreeMap::new();
+    let mut axle_parts_without_any: Vec<String> = Vec::new();
+    let mut axle_parts_with_a_primitive_outside: Vec<String> = Vec::new();
     let mut tube_oracle = [0usize; 2];
     let mut axle_examples: Vec<Value> = Vec::new();
     let mut disagreeing_faces: Vec<Value> = Vec::new();
@@ -1217,6 +1277,23 @@ fn run() -> Result<(), String> {
             if uncovered > 0 && axle_examples.len() < 40 {
                 axle_examples.push(json!({ "part": part, "title": title, "axleFeatures": axles.len(), "withoutAxleConnector": uncovered }));
             }
+            let mut outside_any = false;
+            for (_, primitive, at) in &axles {
+                let outside = !inside_axle_connector(at, &all_faces);
+                let counts = axle_by_primitive.entry(primitive.clone()).or_default();
+                counts[0] += 1;
+                counts[1] += usize::from(outside);
+                outside_any |= outside;
+            }
+            if outside_any {
+                axle_parts_with_a_primitive_outside.push(part.clone());
+            }
+            if !all_faces
+                .iter()
+                .any(|f| f.sections.iter().any(|s| s.code == 1))
+            {
+                axle_parts_without_any.push(part.clone());
+            }
         }
         for (feature, primitive, at) in found {
             if feature == Feature::Axle {
@@ -1370,6 +1447,9 @@ fn run() -> Result<(), String> {
             "axlePrimitivesWithoutAnAxleConnector": axle_census[2],
             "partsLeftWithoutAxleConnectors": axle_census[3],
             "examples": axle_examples,
+            "partsWithAxlePrimitivesAndNoAxleConnector": axle_parts_without_any,
+            "partsWithAnAxlePrimitiveOutsideEveryAxleConnector": axle_parts_with_a_primitive_outside,
+            "byPrimitive": axle_by_primitive.iter().map(|(k, v)| json!({ "primitive": k, "instances": v[0], "outsideEveryAxleConnector": v[1] })).collect::<Vec<_>>(),
         },
         "disagreeingInferredFaces": disagreeing_faces,
         "tubeInteriorExamplesWithoutReceptor": tube_examples,

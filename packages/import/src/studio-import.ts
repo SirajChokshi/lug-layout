@@ -5,6 +5,7 @@ import type { LdrawMirror } from "./ldraw-mirror.ts";
 import {
   bundlePartId,
   ModelImportEngine,
+  type IBakeHelper,
   type ImportResult,
   type PartConnectorSource,
 } from "./model-import.ts";
@@ -82,6 +83,7 @@ export async function importStudioFile(
   mirror: LdrawMirror,
   connectors: PartConnectorSource,
   now: () => number,
+  helpers: ReadonlyArray<IBakeHelper>,
   input: StudioFileInput,
 ): Promise<ImportResult> {
   const prepared = await prepareStudioImport(
@@ -93,10 +95,12 @@ export async function importStudioFile(
     new Set(input.job.ldconfigCodes),
   );
   if (prepared.kind === "rejected") throw new Error(prepared.rejection.message);
-  const result = await new ModelImportEngine(compiler, mirror, connectors, now).importText({
-    ...input.job,
-    fileName: prepared.fileName,
-    text: prepared.ldraw,
-  });
+  const result = await new ModelImportEngine(compiler, mirror, connectors, now, helpers).importText(
+    {
+      ...input.job,
+      fileName: prepared.fileName,
+      text: prepared.ldraw,
+    },
+  );
   return { ...result, studio: prepared.report };
 }
