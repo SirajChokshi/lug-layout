@@ -335,15 +335,18 @@ export function modelPath(model: PaletteModel, roots: ModelRoots): string {
   }
 }
 
-export function omrFiles(palette: Palette): Record<string, string> {
+export function omrFiles(models: ReadonlyArray<PaletteModel>): Record<string, string> {
   return Object.fromEntries(
-    palette.models.filter((model) => model.origin === "omr").map((m) => [m.file, m.sha256]),
+    models.filter((model) => model.origin === "omr").map((m) => [m.file, m.sha256]),
   );
 }
 
-export async function verifyModels(palette: Palette, roots: ModelRoots): Promise<string[]> {
+export async function verifyModels(
+  models: ReadonlyArray<PaletteModel>,
+  roots: ModelRoots,
+): Promise<string[]> {
   const problems: string[] = [];
-  for (const model of palette.models) {
+  for (const model of models) {
     const path = modelPath(model, roots);
     const actual = await readFile(path).then(sha256, () => undefined);
     if (actual === undefined) problems.push(`missing ${path}`);
@@ -356,9 +359,12 @@ function distinct(values: ReadonlyArray<string>): string {
   return [...new Set(values.filter((value) => value !== ""))].toSorted().join("; ");
 }
 
-export async function renderModelAttribution(palette: Palette, roots: ModelRoots): Promise<string> {
+export async function renderModelAttribution(
+  models: ReadonlyArray<PaletteModel>,
+  roots: ModelRoots,
+): Promise<string> {
   const rows: string[] = [];
-  for (const model of palette.models) {
+  for (const model of models) {
     const headers = modelStructure(await readFile(modelPath(model, roots), "utf8")).modelSections;
     rows.push(
       `| ${model.name} | ${headers.length} | ${distinct(headers.map((h) => h.author))} | ${distinct(headers.map((h) => h.license))} | ${model.source} (retrieved ${model.retrieved}) |`,
@@ -367,7 +373,7 @@ export async function renderModelAttribution(palette: Palette, roots: ModelRoots
   return [
     "## Models",
     "",
-    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json`. OMR models are unmodified files from the LDraw Official Model Repository, restored into `.cache/omr` by `restore-ldraw`; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.",
+    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json` (shipped in the part bundle) and `tools/asset-pipeline/fixture-models.json` (baked only into the test fixture bundle). OMR models are unmodified files from the LDraw Official Model Repository, restored into `.cache/omr` by `restore-ldraw`; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.",
     "",
     "| Model | Sections | Authors | Licenses | Source |",
     "|---|---|---|---|---|",

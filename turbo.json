@@ -19,6 +19,7 @@
         "!src/library/**",
         "!src/pointer/**",
         "palette.json",
+        "fixture-models.json",
         "ldraw.lock.json",
         "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml",
@@ -37,7 +38,7 @@
         "$TURBO_ROOT$/packages/catalog/src/part-bundle.ts",
         "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts"
       ],
-      "outputs": ["dist/**"],
+      "outputs": ["dist/**", "fixture-bundle/**"],
       "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]
     },
     "@brr/client#test": {

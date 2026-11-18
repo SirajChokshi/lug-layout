@@ -34,15 +34,13 @@ async function exists(path: string): Promise<boolean> {
 export async function isBundleBuiltFrom(
   repoRoot: string,
   bundleRoot: string,
-  lods: ReadonlyArray<string>,
+  outputs: ReadonlyArray<string>,
   key: BundleBuildKey,
 ): Promise<boolean> {
   if (untrackedBundleInputs(repoRoot).length > 0) return false;
   const recorded = await readFile(join(bundleRoot, BUILD_KEY_FILE), "utf8").catch(() => null);
   if (recorded !== buildKeyText(key)) return false;
-  const manifests = await Promise.all(
-    lods.map((lod) => exists(join(bundleRoot, lod, MANIFEST_FILE))),
-  );
+  const manifests = await Promise.all(outputs.map((output) => exists(join(output, MANIFEST_FILE))));
   return manifests.every(Boolean);
 }
 
