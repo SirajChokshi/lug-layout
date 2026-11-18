@@ -4,6 +4,7 @@ import {
   importStudioFile,
   LdrawMirror,
   ModelImportEngine,
+  ShadowMirror,
   type ImportWorkerRequest,
   type ImportResult,
 } from "@brr/import";
@@ -55,6 +56,13 @@ export class ImportWorkerService implements IImportWorkerService {
   async run(request: ImportWorkerRequest): Promise<ImportResult> {
     const compiler = await this.compiler(request.compilerUrl);
     const connectors = this.connectorRecords(request);
+    const inference =
+      request.shadowLibrary === undefined
+        ? null
+        : {
+            shadow: new ShadowMirror(request.shadowLibrary, (url) => fetch(url)),
+            sectionVocabularySha256: request.connectorVocabulary,
+          };
     const { input } = request;
     switch (input.kind) {
       case "ldraw": {
@@ -63,7 +71,13 @@ export class ImportWorkerService implements IImportWorkerService {
           (url) => fetch(url),
           request.ldrawLibraryUrl,
         );
-        const engine = new ModelImportEngine(compiler, mirror, connectors, () => performance.now());
+        const engine = new ModelImportEngine(
+          compiler,
+          mirror,
+          connectors,
+          () => performance.now(),
+          inference,
+        );
         return engine.importText(input.job);
       }
       case "studio": {
@@ -72,7 +86,14 @@ export class ImportWorkerService implements IImportWorkerService {
           (url) => fetch(url),
           request.ldrawLibraryUrl,
         );
-        return importStudioFile(compiler, mirror, connectors, () => performance.now(), input);
+        return importStudioFile(
+          compiler,
+          mirror,
+          connectors,
+          () => performance.now(),
+          input,
+          inference,
+        );
       }
       default: {
         const unhandled: never = input;

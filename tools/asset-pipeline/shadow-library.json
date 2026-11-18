@@ -1,0 +1,15 @@
+{
+  "index": {
+    "file": "shadow-library.json",
+    "sha256": "11fd2a1f4df29fb3809ad1d82255ea395ff565084f5d7f4daaee83d492935562"
+  },
+  "archive": {
+    "file": "ldcad-shadow-library.tar.gz",
+    "sha256": "a91dbdb5487a5796bdb76de64966e11e9c25ee1de56121000d7d943d3cfa1b3a"
+  },
+  "patchManifest": "1afacaf965bcb48009b6e3424751280f824abbdeb130f1d8c42473ec04dafa67",
+  "files": {
+    "shadow": 4285,
+    "patches": 9
+  }
+}

@@ -1,4 +1,9 @@
-import type { ConnectorLoad, PartConnectors } from "@brr/catalog/connector-records";
+import { connectorRecordIssues } from "@brr/catalog/connector-license";
+import {
+  partConnectors,
+  type ConnectorLoad,
+  type PartConnectors,
+} from "@brr/catalog/connector-records";
 import type {
   BakedModel,
   BrickCompiler,
@@ -13,12 +18,16 @@ import type {
   PartOutcome,
 } from "./brick-compiler.ts";
 import { isDirectColor } from "@brr/catalog/colors";
-import type {
-  CompilerVehicles,
-  PrimitiveConnectorTable,
-  SectionVocabulary,
+import {
+  CONNECTIVITY_LICENSE,
+  type CompilerVehicles,
+  type ConnectorRecordFile,
+  type InferredConnectorRecords,
+  type PrimitiveConnectorTable,
+  type SectionVocabulary,
 } from "@brr/schema/bundle";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
+import { isShadowLibraryPath, type ShadowMirror } from "./shadow-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
 
 export interface ImportJob {
@@ -35,6 +44,7 @@ export interface ImportJob {
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentColors: ReadonlyArray<number>;
   readonly vehicles: CompilerVehicles | null;
+  readonly infer?: ReadonlyArray<string>;
 }
 
 interface Counted {
@@ -101,6 +111,7 @@ export interface ImportReport {
   readonly bakeRounds: number;
   readonly bakeIssue: string | null;
   readonly fetched: MirrorStats;
+  readonly fetchedShadowLibrary: MirrorStats | null;
   readonly timings: ImportTimings;
 }
 
@@ -120,6 +131,7 @@ export interface ImportResult {
   readonly matrices: Float32Array;
   readonly compiled: ReadonlyArray<CompiledGlb>;
   readonly connectors: ReadonlyArray<PartConnectors | null>;
+  readonly inferredConnectors: ReadonlyArray<InferredPartRecords>;
   readonly bake: ModelBake | null;
   readonly studio?: StudioReport;
 }
@@ -132,6 +144,21 @@ export interface RefusedConnectorRecord {
   readonly partId: string;
   readonly reason: string;
 }
+
+export interface InferredPartRecords {
+  readonly partId: string;
+  readonly connectivity: ConnectorRecordFile | null;
+  readonly connectors: ConnectorRecordFile | null;
+}
+
+export interface ConnectorInferenceSources {
+  readonly shadow: ShadowMirror;
+  readonly sectionVocabularySha256: string;
+}
+
+type InferredLoad =
+  | { readonly kind: "inferred"; readonly records: InferredPartRecords }
+  | { readonly kind: "refused"; readonly reason: string };
 
 const MAX_COMPILE_ROUNDS = 64;
 const ONLY_PINNED_PARTS_ARE_COMPILED: ReadonlyArray<string> = [];
@@ -155,12 +182,13 @@ interface ImportLibrary extends LibraryFiles {
 }
 
 interface Assembled {
-  readonly result: Omit<ImportResult, "bake" | "report" | "connectors"> & {
+  readonly result: Omit<ImportResult, "bake" | "report" | "connectors" | "inferredConnectors"> & {
     readonly report: Omit<
       ImportReport,
       | "bakeRounds"
       | "bakeIssue"
       | "fetched"
+      | "fetchedShadowLibrary"
       | "timings"
       | "withoutConnectorRecords"
       | "refusedConnectorRecords"
@@ -185,7 +213,33 @@ export class ModelImportEngine {
     private readonly mirror: LdrawMirror,
     private readonly connectors: PartConnectorSource,
     private readonly now: () => number,
+    private readonly inference: ConnectorInferenceSources | null = null,
   ) {}
+
+  private requireInference(): ConnectorInferenceSources {
+    if (this.inference === null) {
+      throw new Error("inferring connectors at import needs the pinned shadow library");
+    }
+    return this.inference;
+  }
+
+  private inferredLoads(outcomes: Outcomes): Map<string, InferredLoad> {
+    const loads = new Map<string, InferredLoad>();
+    for (const [reference, outcome] of outcomes.parts) {
+      if (outcome.status !== "compiled" || outcome.connectors === null) continue;
+      const partId = bundlePartId(reference);
+      loads.set(
+        partId,
+        inferredLoad(
+          partId,
+          outcome.connectors,
+          outcome.header.license ?? "",
+          this.requireInference().sectionVocabularySha256,
+        ),
+      );
+    }
+    return loads;
+  }
 
   async importText(job: ImportJob): Promise<ImportResult> {
     const started = this.now();
@@ -212,14 +266,22 @@ export class ModelImportEngine {
     });
     const assembled = assemble(job, read, parts, outcomes);
     const baked = await this.bakeDrawn(job, library, assembled.drawn);
+    const inferred = this.inferredLoads(outcomes);
     const loads = await Promise.all(
-      assembled.result.partIds.map((partId) => this.connectors.read(partId)),
+      assembled.result.partIds.map((partId): Promise<ConnectorLoad> =>
+        inferred.has(partId)
+          ? Promise.resolve(loadOf(inferred.get(partId)))
+          : this.connectors.read(partId),
+      ),
     );
     const connectors = loads.map((load) => (load.kind === "loaded" ? load.connectors : null));
     const bakedAt = this.now();
     return {
       ...assembled.result,
       connectors,
+      inferredConnectors: [...inferred.values()].flatMap((load) =>
+        load.kind === "inferred" ? [load.records] : [],
+      ),
       bake: baked.bake,
       report: {
         ...assembled.result.report,
@@ -233,6 +295,7 @@ export class ModelImportEngine {
         bakeRounds: baked.rounds,
         bakeIssue: baked.issue,
         fetched: this.mirror.stats(),
+        fetchedShadowLibrary: this.inference?.shadow.stats() ?? null,
         timings: {
           readMs: readAt - started,
           resolveMs: resolvedAt - readAt,
@@ -250,9 +313,20 @@ export class ModelImportEngine {
     if (needed.size > 0 && unknown.length === 0) {
       throw new Error(`compiler keeps asking for files it already has: ${[...needed]}`);
     }
-    const probe = await this.mirror.probe(unknown, FETCH_CONCURRENCY);
-    for (const [path, text] of probe.found) library.files.set(path, text);
-    for (const path of probe.absent) library.absent.add(path);
+    const shadowPaths = unknown.filter(isShadowLibraryPath);
+    const probes = await Promise.all([
+      this.mirror.probe(
+        unknown.filter((path) => !isShadowLibraryPath(path)),
+        FETCH_CONCURRENCY,
+      ),
+      shadowPaths.length === 0
+        ? { found: new Map<string, string>(), absent: [] }
+        : this.requireInference().shadow.probe(shadowPaths, FETCH_CONCURRENCY),
+    ]);
+    for (const probe of probes) {
+      for (const [path, text] of probe.found) library.files.set(path, text);
+      for (const path of probe.absent) library.absent.add(path);
+    }
   }
 
   private async bakeDrawn(
@@ -304,6 +378,9 @@ export class ModelImportEngine {
     let pendingChecks = [...inlineParts];
     let weldEpsilonLdu = 0;
     let rounds = 0;
+    const infer = job.infer ?? ONLY_PINNED_PARTS_ARE_COMPILED;
+    const shadowPatchManifest =
+      infer.length === 0 ? null : await this.requireInference().shadow.manifest();
     while (pendingParts.length > 0 || pendingChecks.length > 0) {
       if (rounds === MAX_COMPILE_ROUNDS) {
         throw new Error(`part closure still growing after ${MAX_COMPILE_ROUNDS} rounds`);
@@ -318,7 +395,8 @@ export class ModelImportEngine {
             primitives: job.primitives,
             sectionVocabulary: job.sectionVocabulary,
             cavityProbe: job.cavityProbe,
-            infer: ONLY_PINNED_PARTS_ARE_COMPILED,
+            infer,
+            shadowPatchManifest,
           },
           parts: pendingParts,
           model: job.text,
@@ -536,4 +614,42 @@ function assemble(
       compiled,
     },
   };
+}
+
+function loadOf(inferred: InferredLoad | undefined): ConnectorLoad {
+  if (inferred === undefined) return { kind: "unlisted" };
+  if (inferred.kind === "refused") return inferred;
+  const { connectivity, connectors } = inferred.records;
+  const records = [connectivity, connectors].filter((record) => record !== null);
+  return { kind: "loaded", connectors: partConnectors(records) };
+}
+
+function inferredLoad(
+  partId: string,
+  inferred: InferredConnectorRecords,
+  license: string,
+  sectionVocabulary: string,
+): InferredLoad {
+  const connectivity = inferred.connectivity && { ...inferred.connectivity, part: partId };
+  const connectors = inferred.connectors && {
+    ...inferred.connectors,
+    part: partId,
+    sectionVocabulary,
+  };
+  const issues = [
+    ...(connectivity === null
+      ? []
+      : connectorRecordIssues(
+          "connectivity",
+          [CONNECTIVITY_LICENSE],
+          partId,
+          connectivity,
+          sectionVocabulary,
+        )),
+    ...(connectors === null
+      ? []
+      : connectorRecordIssues("connectors", [license], partId, connectors, sectionVocabulary)),
+  ];
+  if (issues.length > 0) return { kind: "refused", reason: issues.join("; ") };
+  return { kind: "inferred", records: { partId, connectivity, connectors } };
 }

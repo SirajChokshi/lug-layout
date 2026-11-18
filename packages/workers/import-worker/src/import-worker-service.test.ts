@@ -13,6 +13,10 @@ import {
   ConnectorIndexFile,
   ConnectorRecordFile,
   SectionVocabularyFile,
+  SHADOW_NAMESPACE,
+  SHADOW_PATCH_NAMESPACE,
+  ShadowLibraryPin,
+  ShadowPatchManifest,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { Container } from "inversify";
@@ -31,12 +35,20 @@ import { ImportWorkerService } from "./import-worker-service.ts";
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const pinnedLibrary = new URL("../../../../.cache/ldraw/", import.meta.url);
 const pipelineRoot = new URL("../../../../tools/asset-pipeline/", import.meta.url);
+const shadowLibraryRoot = new URL("../../../../.cache/ldcad-shadow-library/", import.meta.url);
+const shadowPatchesRoot = new URL("shadow-patches/", pipelineRoot);
+const shadowLibraryDist = new URL("dist/shadow-library/", pipelineRoot);
 const nativeExtractor = new URL("../../../../target/release/library-connectors", import.meta.url);
 const vocabularyFile = new URL(
   "../../../../tools/asset-pipeline/section-vocabulary.json",
   import.meta.url,
 );
 const MIRROR_PREFIX = "/mirror/";
+const SHADOW_LIBRARY_PREFIX = "/shadow-library/";
+const CUSTOM_BRICK = "brr-custom-2x4.dat";
+const CUSTOM_BRICK_ID = "ldraw:brr-custom-2x4";
+const OFFICIAL_BRICK = "parts/3001.dat";
+const OFFICIAL_BRICK_ID = "ldraw:3001";
 const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const LOD = "standard";
@@ -60,22 +72,26 @@ async function published(file: string): Promise<unknown> {
   return JSON.parse(await readFile(new URL(`${LOD}/${file}`, bundleRoot), "utf8"));
 }
 
-async function publishedRecords(partId: string): Promise<ConnectorRecordFile[]> {
+async function publishedRecord(
+  partId: string,
+  pkg: "connectivity" | "connectors",
+): Promise<ConnectorRecordFile | null> {
   const manifest = decodedOrThrow(decode(BundleIndex, await published("manifest.json")), LOD);
-  const records: ConnectorRecordFile[] = [];
-  for (const pkg of ["connectivity", "connectors"] as const) {
-    const packageIndex = decodedOrThrow(
-      decode(ConnectorIndexFile, await published(manifest[pkg].file)),
-      pkg,
-    );
-    const entry = packageIndex.parts[partId];
-    if (entry) {
-      records.push(
-        decodedOrThrow(decode(ConnectorRecordFile, await published(entry.file)), entry.file),
-      );
-    }
-  }
-  return records;
+  const packageIndex = decodedOrThrow(
+    decode(ConnectorIndexFile, await published(manifest[pkg].file)),
+    pkg,
+  );
+  const entry = packageIndex.parts[partId];
+  if (!entry) return null;
+  return decodedOrThrow(decode(ConnectorRecordFile, await published(entry.file)), entry.file);
+}
+
+async function publishedRecords(partId: string): Promise<ConnectorRecordFile[]> {
+  const records = [
+    await publishedRecord(partId, "connectivity"),
+    await publishedRecord(partId, "connectors"),
+  ];
+  return records.filter((record) => record !== null);
 }
 
 let mirrorRoot = MIRROR_PREFIX;
@@ -124,11 +140,15 @@ function expectTableOf(table: PartConnectors, records: ReadonlyArray<ConnectorRe
 }
 
 function served(path: string): URL {
+  if (path.startsWith(SHADOW_LIBRARY_PREFIX)) {
+    return new URL(path.slice(SHADOW_LIBRARY_PREFIX.length), shadowLibraryDist);
+  }
   if (!path.startsWith(MIRROR_PREFIX)) return new URL(path.slice(1), bundleRoot);
   return new URL(path.slice(mirrorRoot.length), pinnedLibrary);
 }
 
 const tampered = new Map<string, unknown>();
+const extraMirrorFiles = new Map<string, string>();
 
 beforeAll(async () => {
   server = createServer((request, response) => {
@@ -138,6 +158,13 @@ beforeAll(async () => {
       response.writeHead(HTTP_OK).end(JSON.stringify(replaced));
       return;
     }
+    const extra = path.startsWith(mirrorRoot)
+      ? extraMirrorFiles.get(path.slice(mirrorRoot.length))
+      : undefined;
+    if (extra !== undefined) {
+      response.writeHead(HTTP_OK).end(extra);
+      return;
+    }
     readFile(served(path)).then(
       (bytes) => response.writeHead(HTTP_OK).end(bytes),
       () => response.writeHead(HTTP_NOT_FOUND).end(),
@@ -145,6 +172,9 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+  await runFile(process.execPath, ["src/shadow-library/cli.ts", "--check"], {
+    cwd: fileURLToPath(pipelineRoot),
+  });
 });
 
 afterAll(async () => {
@@ -233,6 +263,42 @@ async function pinnedFile(path: string): Promise<string | null> {
   return readFile(new URL(path, pinnedLibrary), "utf8").catch(() => null);
 }
 
+async function libraryFile(path: string): Promise<string | null> {
+  if (path.startsWith(SHADOW_NAMESPACE)) {
+    const shadowPath = path.slice(SHADOW_NAMESPACE.length);
+    return readFile(new URL(shadowPath, shadowLibraryRoot), "utf8").catch(() => null);
+  }
+  if (path.startsWith(SHADOW_PATCH_NAMESPACE)) {
+    const patchPath = path.slice(SHADOW_PATCH_NAMESPACE.length);
+    return readFile(new URL(patchPath, shadowPatchesRoot), "utf8").catch(() => null);
+  }
+  return pinnedFile(path);
+}
+
+async function shadowPatchManifest(): Promise<ShadowPatchManifest> {
+  const path = new URL("manifest.json", shadowPatchesRoot);
+  return decodedOrThrow(
+    decode(ShadowPatchManifest, JSON.parse(await readFile(path, "utf8"))),
+    path.pathname,
+  );
+}
+
+async function customBrick(): Promise<string> {
+  const official = await pinnedFile(OFFICIAL_BRICK);
+  if (official === null) throw new Error(`${OFFICIAL_BRICK} is not in the pinned library`);
+  const geometry = official
+    .split("\n")
+    .filter((line) => line.startsWith("1 ") || line.startsWith("4 "));
+  return [
+    "0 A custom 2 x 4 brick with 3001's geometry",
+    `0 Name: ${CUSTOM_BRICK}`,
+    "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+    "0 BFC CERTIFY CCW",
+    ...geometry,
+    "",
+  ].join("\n");
+}
+
 async function inferredAtImport(
   part: string,
   files: Map<string, string>,
@@ -251,6 +317,7 @@ async function inferredAtImport(
       sectionVocabulary: context.sectionVocabulary.vocabulary,
       cavityProbe: context.cavityProbe,
       infer: [part],
+      shadowPatchManifest: await shadowPatchManifest(),
     },
     parts: [part],
     model: "",
@@ -261,7 +328,7 @@ async function inferredAtImport(
     [outcome] = compiler.compile(request, { key: part, files, absent }).parts;
     if (outcome?.status !== "need") break;
     for (const path of outcome.paths) {
-      const text = await pinnedFile(path);
+      const text = await libraryFile(path);
       if (text === null) absent.add(path);
       else files.set(path, text);
     }
@@ -286,9 +353,8 @@ it("infers tier 4 at import for a part outside the pinned library with the bundl
   );
   expect(bundled?.sectionVocabulary).toBe(context.sectionVocabulary.sha256);
   expect(outcome?.status === "compiled" ? outcome.connectors : outcome).toEqual({
-    ...bundled,
-    part: OUTSIDE_PINNED_LIBRARY,
-    sectionVocabulary: undefined,
+    connectivity: null,
+    connectors: { ...bundled, part: OUTSIDE_PINNED_LIBRARY, sectionVocabulary: undefined },
   });
 });
 
@@ -378,13 +444,12 @@ it("infers at import, face for face, what the native extractor infers for a part
       await mkdir(dirname(join(root, "ldraw", path)), { recursive: true });
       await writeFile(join(root, "ldraw", path), text);
     }
-    await mkdir(join(root, "shadow"));
     const pipeline = (file: string): string => fileURLToPath(new URL(file, pipelineRoot));
     await runFile(fileURLToPath(nativeExtractor), [
       "--ldraw",
       join(root, "ldraw"),
       "--shadow",
-      join(root, "shadow"),
+      fileURLToPath(shadowLibraryRoot),
       "--patches",
       pipeline("shadow-patches"),
       "--primitives",
@@ -398,17 +463,109 @@ it("infers at import, face for face, what the native extractor infers for a part
       "--shard",
       "0/1",
     ]);
-    const nativeFile = join(root, "out", "connectors", ROTATED_PART.replace(/\.dat$/u, ".json"));
-    const native = decodedOrThrow(
-      decode(ConnectorRecordFile, JSON.parse(await readFile(nativeFile, "utf8"))),
-      nativeFile,
-    );
-    expect(native.faces.source.every((source) => source === CONNECTOR_SOURCE.inferred)).toBe(true);
+    const nativeRecord = async (pkg: string): Promise<ConnectorRecordFile | null> => {
+      const file = join(root, "out", pkg, ROTATED_PART.replace(/\.dat$/u, ".json"));
+      const text = await readFile(file, "utf8").catch(() => null);
+      if (text === null) return null;
+      return decodedOrThrow(decode(ConnectorRecordFile, JSON.parse(text)), file);
+    };
+    const native = await nativeRecord("connectors");
+    expect(native?.faces.source.every((source) => source === CONNECTOR_SOURCE.inferred)).toBe(true);
     expect(outcome?.status === "compiled" ? outcome.connectors : outcome).toEqual({
-      ...native,
-      part: ROTATED_PART,
+      connectivity: await nativeRecord("connectivity"),
+      connectors: native,
     });
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("infers at import, for a custom brick with 3001's geometry, official 3001's published connectivity and connectors records", async () => {
+  const outcome = await inferredAtImport(
+    CUSTOM_BRICK,
+    new Map([[`parts/${CUSTOM_BRICK}`, await customBrick()]]),
+  );
+  const connectivity = await publishedRecord(OFFICIAL_BRICK_ID, "connectivity");
+  const connectors = await publishedRecord(OFFICIAL_BRICK_ID, "connectors");
+
+  expect(new Set(connectivity?.faces.source)).toEqual(new Set([CONNECTOR_SOURCE.shadow]));
+  expect(new Set(connectors?.faces.source)).toEqual(
+    new Set([CONNECTOR_SOURCE.primitive, CONNECTOR_SOURCE.inferred]),
+  );
+  expect(outcome?.status === "compiled" ? outcome.connectors : outcome).toEqual({
+    connectivity: connectivity && { ...connectivity, part: CUSTOM_BRICK },
+    connectors: connectors && { ...connectors, part: CUSTOM_BRICK, sectionVocabulary: undefined },
+  });
+});
+
+it("hands back through the import worker, for a custom brick listed for inference, official 3001's records in their own licence packages, fetching the shadow files from the pinned shadow library", async () => {
+  const context = await (await bundleLoader()).importContext(LOD);
+  const pin = decodedOrThrow(
+    decode(
+      ShadowLibraryPin,
+      JSON.parse(await readFile(new URL("shadow-library.json", pipelineRoot), "utf8")),
+    ),
+    "shadow-library.json",
+  );
+  const { repo, commit, root } = context.source;
+  mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
+  extraMirrorFiles.set(`parts/${CUSTOM_BRICK}`, await customBrick());
+  try {
+    const imported = await new ImportWorkerService().run({
+      id: 3,
+      compilerUrl: new URL(context.compilerPath, base).href,
+      bundleBaseUrl: base,
+      connectorIndexes: context.connectorIndexes,
+      connectorVocabulary: context.sectionVocabulary.sha256,
+      ldrawLibraryUrl: new URL(MIRROR_PREFIX, base).href,
+      shadowLibrary: {
+        indexUrl: new URL(
+          `${SHADOW_LIBRARY_PREFIX.slice(1)}shadow-library.${pin.index.sha256.slice(0, 16)}.json`,
+          base,
+        ).href,
+        sha256: pin.index.sha256,
+      },
+      input: {
+        kind: "ldraw",
+        job: {
+          fileName: "custom.ldr",
+          text: `1 4 0 0 0 1 0 0 0 1 0 0 0 1 ${CUSTOM_BRICK}`,
+          lod: LOD,
+          source: context.source,
+          studPrimitives: context.studPrimitiveNames,
+          unofficialAllowlist: context.unofficialAllowlist,
+          primitives: context.primitives,
+          sectionVocabulary: context.sectionVocabulary.vocabulary,
+          cavityProbe: context.cavityProbe,
+          bundlePartIds: context.partIds,
+          ldconfigCodes: context.ldconfigCodes,
+          translucentColors: context.translucentCodes,
+          vehicles: context.vehicles,
+          infer: [CUSTOM_BRICK],
+        },
+      },
+    });
+    const connectivity = await publishedRecord(OFFICIAL_BRICK_ID, "connectivity");
+    const connectors = await publishedRecord(OFFICIAL_BRICK_ID, "connectors");
+    if (connectivity === null || connectors === null) {
+      throw new Error(`${OFFICIAL_BRICK_ID} has no published connectivity and connector records`);
+    }
+
+    expect(imported.partIds).toEqual([CUSTOM_BRICK_ID]);
+    expect(imported.inferredConnectors).toEqual([
+      {
+        partId: CUSTOM_BRICK_ID,
+        connectivity: { ...connectivity, part: CUSTOM_BRICK_ID },
+        connectors: { ...connectors, part: CUSTOM_BRICK_ID },
+      },
+    ]);
+    const [table] = imported.connectors;
+    if (!table) throw new Error(`${CUSTOM_BRICK_ID} has no connector table`);
+    expectTableOf(table, [connectivity, connectors]);
+    expect(imported.report.withoutConnectorRecords).toEqual([]);
+    expect(imported.report.refusedConnectorRecords).toEqual([]);
+    expect(imported.report.fetchedShadowLibrary?.requests).toBeGreaterThan(0);
+  } finally {
+    extraMirrorFiles.clear();
   }
 });

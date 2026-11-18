@@ -22,7 +22,7 @@ import { isCaLicense } from "../verify/license-audit.ts";
 export const LIBRARY_CONNECTORS_INDEX = "library-connectors.json";
 export const LIBRARY_CONNECTORS_PIN = "tools/asset-pipeline/library-connectors.json";
 const SHADOW_AUTHORS = "Roland Melkert and the LDCad Shadow Library contributors";
-const PATCH_ATTRIBUTION =
+export const PATCH_ATTRIBUTION =
   "Brick Railroad shadow patches (tools/asset-pipeline/shadow-patches), CC BY-SA 4.0";
 const PACKAGES: ReadonlyArray<ConnectorPackage> = ["connectivity", "connectors"];
 const INDEX_FILES: Readonly<Record<ConnectorPackage, string>> = {

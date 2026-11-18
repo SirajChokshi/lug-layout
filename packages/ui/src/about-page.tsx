@@ -41,10 +41,11 @@ export function AboutPage({ credits, disclaimer }: AboutPageProps) {
         Every part is compiled from the LDraw parts library, and the starter sets are models from
         the LDraw Official Model Repository. The inputs are pinned by commit and SHA-256 and
         compiled into the asset bundle this site serves. Where parts snap together comes from the
-        LDCad Shadow Library, shipped as its own connectivity package under its own license. Set
-        names and some part colours come from Rebrickable database exports. The{" "}
-        <a href={CREDITS_HREF}>credits page</a> names every author, license and source, and lets you
-        download the same list as a text file.
+        LDCad Shadow Library, shipped as its own connectivity package under its own license. When an
+        imported part's connectors are inferred, the same pinned shadow files and patches are
+        fetched file by file under that license. Set names and some part colours come from
+        Rebrickable database exports. The <a href={CREDITS_HREF}>credits page</a> names every
+        author, license and source, and lets you download the same list as a text file.
       </p>
       <LoadingOrError state={state} />
       {state.kind === "loaded" && <BundleFacts view={state.view} />}

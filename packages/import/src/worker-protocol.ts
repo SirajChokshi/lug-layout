@@ -1,6 +1,7 @@
 import type { BricklinkPartCandidates } from "@brr/catalog";
 import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
 import type { ImportResult, ImportJob } from "./model-import.ts";
+import type { ShadowLibraryLocation } from "./shadow-mirror.ts";
 
 export interface LdrawTextInput {
   readonly kind: "ldraw";
@@ -23,6 +24,7 @@ export interface ImportWorkerRequest {
   readonly connectorIndexes: ConnectorIndexPaths;
   readonly connectorVocabulary: string;
   readonly ldrawLibraryUrl?: string;
+  readonly shadowLibrary?: ShadowLibraryLocation;
   readonly input: ImportInput;
 }
 

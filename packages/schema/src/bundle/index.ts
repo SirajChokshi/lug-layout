@@ -742,11 +742,26 @@ const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
 
+export const SHADOW_NAMESPACE = "shadow:";
+export const SHADOW_PATCH_NAMESPACE = "shadow-patch:";
+
+export const InferredConnectorRecords = v.strictObject({
+  connectivity: v.nullable(ConnectorRecordFile),
+  connectors: v.nullable(ConnectorRecordFile),
+});
+export type InferredConnectorRecords = v.InferOutput<typeof InferredConnectorRecords>;
+
+export const ShadowPatchManifest = v.looseObject({
+  patches: v.array(v.looseObject({ part: v.string(), status: v.string() })),
+});
+export type ShadowPatchManifest = v.InferOutput<typeof ShadowPatchManifest>;
+
 export const CompilerConnectorInputs = v.strictObject({
   primitives: v.nullable(PrimitiveConnectorTable),
   sectionVocabulary: SectionVocabulary,
   cavityProbe: v.string(),
   infer: StringList,
+  shadowPatchManifest: v.nullable(ShadowPatchManifest),
 });
 export type CompilerConnectorInputs = v.InferOutput<typeof CompilerConnectorInputs>;
 
@@ -831,7 +846,7 @@ export const CompilerCompile = v.object({
         file: v.string(),
         header: ModelSection,
         files: Count,
-        connectors: v.nullable(ConnectorRecordFile),
+        connectors: v.nullable(InferredConnectorRecords),
       }),
       v.object({ ...CompilerNeed.entries, ...Reference }),
       v.object({ ...CompilerFailure.entries, ...Reference }),
@@ -1131,6 +1146,30 @@ export const LibraryConnectorsPin = v.strictObject({
   partsWithPieces: Count,
 });
 export type LibraryConnectorsPin = v.InferOutput<typeof LibraryConnectorsPin>;
+
+export const SHADOW_LIBRARY_FORMAT = 1;
+
+const AddressedFiles = v.record(v.string(), v.string());
+
+export const ShadowLibraryIndex = v.strictObject({
+  format: v.literal(SHADOW_LIBRARY_FORMAT),
+  source: GithubArchive,
+  license: v.literal(CONNECTIVITY_LICENSE),
+  attribution: v.array(v.string()),
+  shadow: AddressedFiles,
+  patches: AddressedFiles,
+  patchManifest: v.strictObject({ file: v.string() }),
+  licenseText: v.strictObject({ file: v.string() }),
+});
+export type ShadowLibraryIndex = v.InferOutput<typeof ShadowLibraryIndex>;
+
+export const ShadowLibraryPin = v.strictObject({
+  index: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  archive: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  patchManifest: Sha256Hex,
+  files: v.strictObject({ shadow: Count, patches: Count }),
+});
+export type ShadowLibraryPin = v.InferOutput<typeof ShadowLibraryPin>;
 
 export const CatalogLocation = v.variant("kind", [GithubMirror, GithubArchive]);
 export type CatalogLocation = v.InferOutput<typeof CatalogLocation>;

@@ -9,6 +9,7 @@
     "verify-ldraw": "node src/cli.ts verify",
     "section-vocabulary": "node src/cli.ts section-vocabulary",
     "library-connectors": "node src/library-connectors/cli.ts",
+    "shadow-library": "node src/shadow-library/cli.ts",
     "build": "node src/cli.ts bundle",
     "typecheck": "tsc -p tsconfig.json",
     "facts": "node src/cli.ts facts",

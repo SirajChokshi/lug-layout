@@ -36,10 +36,13 @@ export {
   type MirrorSource,
   type MirrorStats,
 } from "./ldraw-mirror.ts";
+export { ShadowMirror, type ShadowLibraryLocation } from "./shadow-mirror.ts";
 export {
   bundlePartId,
   ModelImportEngine,
   type ColorIssue,
+  type ConnectorInferenceSources,
+  type InferredPartRecords,
   type CompiledGlb,
   type ImportResult,
   type ImportJob,
